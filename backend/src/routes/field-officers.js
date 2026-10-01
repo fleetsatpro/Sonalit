@@ -58,6 +58,7 @@ router.patch('/:id', async (req, res, next) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE sonalit_app');
         if (orgId) await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
         if (device_id) {
           // Unlink this device from any other officer that currently has it
