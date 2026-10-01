@@ -622,6 +622,14 @@ DROP TRIGGER IF EXISTS tenant_harden_field_reports ON field_reports;
 CREATE TRIGGER tenant_harden_field_reports BEFORE INSERT OR UPDATE ON field_reports
 FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
 
+DROP TRIGGER IF EXISTS tenant_harden_guardian_captures ON guardian_captures;
+CREATE TRIGGER tenant_harden_guardian_captures BEFORE INSERT OR UPDATE ON guardian_captures
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+DROP TRIGGER IF EXISTS tenant_harden_guardian_voice_messages ON guardian_voice_messages;
+CREATE TRIGGER tenant_harden_guardian_voice_messages BEFORE INSERT OR UPDATE ON guardian_voice_messages
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
 DROP TRIGGER IF EXISTS tenant_harden_command_nonces ON guardian_command_nonces;
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_command_event() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -815,6 +823,42 @@ BEGIN
     IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
 
   -- Guardian command / evidence graph
+  ELSIF TG_TABLE_NAME = 'guardian_captures' THEN
+    SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.command_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM device_commands WHERE id::text = NEW.command_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'guardian_voice_messages' THEN
+    SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.issued_by IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM users WHERE id = NEW.issued_by;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'officer_activity_events' THEN
+    SELECT org_id INTO parent_org FROM field_officers WHERE id = NEW.officer_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.convoy_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'knox_remote_sessions' THEN
+    SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.operator_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM users WHERE id = NEW.operator_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.officer_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM field_officers WHERE id = NEW.officer_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
   ELSIF TG_TABLE_NAME = 'panic_events' THEN
     SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
     IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
@@ -965,6 +1009,22 @@ FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
 
 DROP TRIGGER IF EXISTS tenant_relationship_guard_portal_documents ON portal_documents;
 CREATE TRIGGER tenant_relationship_guard_portal_documents AFTER INSERT OR UPDATE ON portal_documents
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_guardian_captures ON guardian_captures;
+CREATE TRIGGER tenant_relationship_guard_guardian_captures AFTER INSERT OR UPDATE ON guardian_captures
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_guardian_voice_messages ON guardian_voice_messages;
+CREATE TRIGGER tenant_relationship_guard_guardian_voice_messages AFTER INSERT OR UPDATE ON guardian_voice_messages
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_officer_activity_events ON officer_activity_events;
+CREATE TRIGGER tenant_relationship_guard_officer_activity_events AFTER INSERT OR UPDATE ON officer_activity_events
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_knox_remote_sessions ON knox_remote_sessions;
+CREATE TRIGGER tenant_relationship_guard_knox_remote_sessions AFTER INSERT OR UPDATE ON knox_remote_sessions
 FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
 
 DROP TRIGGER IF EXISTS tenant_relationship_guard_panic_events ON panic_events;
