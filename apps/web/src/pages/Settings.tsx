@@ -5,7 +5,7 @@ import { useAuthStore, getAccessToken } from '../stores/auth.js';
 import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette } from 'lucide-react';
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
-import { useUIStore } from '../stores/ui.js';
+import { THEMES, useUIStore } from '../stores/ui.js';
 
 interface ApiKey {
   id: string;
@@ -383,27 +383,40 @@ function AppearanceSection() {
 
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-2">
-        <label className="block text-xs text-slate-400 mb-1">Theme</label>
-        <div className="flex gap-2">
-          {(['dark', 'light'] as const).map((opt) => (
+      <div className="son-theme-picker" role="radiogroup" aria-label="Application theme">
+        {THEMES.map((option) => {
+          const selected = theme === option.id;
+          return (
             <button
-              key={opt}
-              onClick={() => setTheme(opt)}
-              className={`flex-1 text-sm px-3 py-2 rounded border transition-colors capitalize ${
-                theme === opt
-                  ? 'bg-orange-600 border-orange-500 text-white'
-                  : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
-              }`}
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              className="son-theme-option"
+              data-selected={selected}
+              data-theme-preview={option.id}
+              onClick={() => setTheme(option.id)}
             >
-              {opt}
+              <span className="son-theme-preview" aria-hidden="true">
+                <span className="son-theme-preview-bar" />
+                <span className="son-theme-preview-grid">
+                  <span /><span /><span /><span />
+                </span>
+                <span className="son-theme-preview-line" />
+              </span>
+              <span className="son-theme-option-copy">
+                <span className="son-theme-option-name">{option.name}</span>
+                <span className="son-theme-option-desc">{option.descriptor}</span>
+              </span>
+              <span className="son-theme-check" aria-hidden="true">{selected ? '✓' : ''}</span>
             </button>
-          ))}
-        </div>
-        <p className="text-xs text-slate-500 pt-1">
-          Applies to the sidebar, top bar, and dashboard cards immediately and is remembered on this device.
-        </p>
+          );
+        })}
       </div>
+      <p className="son-theme-note">
+        Changes the visual system across Sonalit and is remembered on this device. Operational data,
+        alert semantics, provenance and workflow behaviour are unchanged.
+      </p>
     </SectionCard>
   );
 }
