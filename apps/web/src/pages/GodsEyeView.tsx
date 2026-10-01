@@ -180,6 +180,10 @@ export default function GodsEyeView() {
         </div>
 
         <div className="gev-topright">
+          <div className="gev-fidelity" aria-label="Spatial rendering fidelity">
+            <span className="gev-fidelity-mark"><span /></span>
+            <span><b>UHD</b><small>ADAPTIVE · HIGH FIDELITY</small></span>
+          </div>
           <div className="gev-health">
             <span className="gev-health-dot" />
             <span className="gev-health-label">Operational link</span>
@@ -241,7 +245,7 @@ export default function GodsEyeView() {
               <div>
                 <div className="gev-panel-eyebrow">World picture</div>
                 <div className="gev-panel-title">{view === '3D' ? 'Immersive spatial fabric' : 'Operational world canvas'}</div>
-                <div className="gev-panel-meta">11 intelligence layers · external provenance retained · local telemetry remains authoritative</div>
+                <div className="gev-panel-meta">11 intelligence layers · provenance visible · adaptive UHD rendering · local telemetry remains authoritative</div>
               </div>
               <div className="gev-signal" data-state={syncState}>
                 <span className="gev-signal-dot" />
