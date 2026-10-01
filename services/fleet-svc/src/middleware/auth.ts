@@ -2,7 +2,7 @@ import { jwtVerify, createRemoteJWKSet, importSPKI, type JWTPayload } from 'jose
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { config } from '../config.js';
 import { AuthError } from '../lib/errors.js';
-import { tenantContext } from '../db.js';
+import { tenantContext, query } from '../db.js';
 
 export interface RequestUser {
   sub: string;
@@ -82,8 +82,16 @@ export async function requireAuth(
       throw new AuthError('Token missing required claims');
     }
 
-    request.user = { sub, org_id: orgId, role };
-    tenantContext.enterWith(orgId);
+    const live = (await query<{ id: string; org_id: string; role: string; status: string }>(
+      'SELECT id, org_id, role, status FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [sub],
+    ))[0];
+    if (!live || live.status !== 'active' || live.org_id !== orgId) {
+      throw new AuthError('Token tenant/session is no longer active');
+    }
+
+    request.user = { sub, org_id: live.org_id, role: live.role };
+    tenantContext.enterWith(live.org_id);
   } catch (err) {
     if (err instanceof AuthError) {
       await reply.status(err.statusCode).send({ code: err.code, message: err.message });
