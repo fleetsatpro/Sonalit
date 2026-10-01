@@ -11,6 +11,7 @@ const { query } = require('../config/database');
 const { isCfoModuleEnabled } = require('../utils/cfoFlag');
 const { haversine } = require('../utils/haversine');
 const logger = require('../utils/logger');
+const { runWithOrgContext } = require('../utils/tenantContext');
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8 MB
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/webp'];
@@ -141,8 +142,9 @@ async function deviceAuth(req, res, next) {
     if (device.status === 'revoked' || device.status === 'suspended') {
       return res.status(403).json({ error: `Device is ${device.status}` });
     }
+    if (!device.org_id) return res.status(403).json({ error: 'device_tenant_scope_required' });
     req.device = device;
-    next();
+    return runWithOrgContext(device.org_id, next);
   } catch (err) {
     logger.error(`deviceAuth (cfo) error: ${err.message}`);
     next(err);
@@ -158,7 +160,10 @@ async function optionalDeviceAuth(req, _res, next) {
         [token]
       );
       if (result.rows.length && !['revoked','suspended'].includes(result.rows[0].status)) {
-        req.device = result.rows[0];
+        const device = result.rows[0];
+        if (!device.org_id) return next();
+        req.device = device;
+        return runWithOrgContext(device.org_id, next);
       }
     }
     next();
