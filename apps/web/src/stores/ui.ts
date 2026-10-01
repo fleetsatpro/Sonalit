@@ -22,10 +22,28 @@ const isTheme = (value: unknown): value is Theme => typeof value === 'string' &&
 // and the dashboard token system. This keeps theme changes immediate and
 // prevents individual screens from owning appearance state.
 function applyTheme(theme: Theme) {
-  if (typeof document !== 'undefined') {
-    const meta = THEME_META[theme];
-    document.documentElement.setAttribute('data-theme', theme);
-    document.documentElement.style.colorScheme = meta.density;
+  if (typeof document === 'undefined') return;
+
+  const meta = THEME_META[theme];
+  const root = document.documentElement;
+  root.setAttribute('data-theme', theme);
+  // A small number of legacy screens still use Tailwind dark:* utilities.
+  // Keep that compatibility mode synchronized with the selected theme so a
+  // light theme never inherits dark-only utility rules.
+  root.classList.toggle('dark', meta.density === 'dark');
+  root.style.colorScheme = meta.density;
+
+  const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (themeColor) {
+    const themeColors: Record<Theme, string> = {
+      obsidian: '#030711',
+      arctic: '#f7fbff',
+      graphite: '#0d0f12',
+      copper: '#100b08',
+      signal: '#050b07',
+      ivory: '#fbfaf6',
+    };
+    themeColor.content = themeColors[theme];
   }
 }
 
