@@ -245,6 +245,9 @@ export async function performOperation(
   input: RecordOperationInput & { localEntity?: EligibilityContext['localEntity'] },
 ): Promise<{ ok: true; id: string } | { ok: false; eligibility: Eligibility }> {
   if (!identity) throw new Error('Offline layer not started');
+  if (input.ownerUserId !== identity.userId || input.ownerOrgId !== identity.orgId) {
+    throw new Error('offline_identity_mismatch');
+  }
 
   const eligibility = checkEligibility(input.type, {
     role: identity.role,
