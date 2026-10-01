@@ -1,7 +1,6 @@
 const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
-const { query } = require('../config/database');
 
 router.use(authenticate, attachOrgDb);
 
