@@ -62,7 +62,7 @@ describe('regional RSS soft-block fallback', () => {
         ok: true,
         status: 200,
         headers: { get: () => 'application/rss+xml' },
-        text: async () => '<rss><channel><item><title>Unrelated sports headline</title><description>Football</description><link>https://example.test/2</link></item></channel></rss>'
+        text: async () => '<rss><channel></channel></rss>'
       })
       .mockResolvedValueOnce({
         ok: true,
