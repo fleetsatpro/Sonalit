@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Globe2, Layers3, RadioTower, Orbit } from 'lucide-react'
 import { api } from '../lib/api.js'
+import { fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
+import type { SpatialWorldEntity, WorldContextLayer } from '../lib/spatialClient.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import FleetMap from '../features/live-fleet/components/FleetMap.js'
 import CorridorGlobe from '../components/geofences/CorridorGlobe.js'
@@ -31,8 +33,42 @@ export default function GodsEyeView() {
   const { groups, counts } = useLiveFleet()
   const [view, setView] = useState<View>('2D')
   const [selected, setSelected] = useState<LiveVehicle | null>(null)
+  const [selectedExternalId, setSelectedExternalId] = useState<string | null>(null)
+  const initialWorldCenter = useMemo(() => {
+    const positioned = allVehicles.filter(v => v.lat != null && v.lng != null)
+    if (!positioned.length) return { latitude: 35.5, longitude: 1.2 }
+    return positioned.reduce((sum, v) => ({ latitude: sum.latitude + Number(v.lat), longitude: sum.longitude + Number(v.lng) }), { latitude: 0, longitude: 0 })
+      |> ((sum) => ({ latitude: sum.latitude / positioned.length, longitude: sum.longitude / positioned.length }))
+  }, [allVehicles])
+  const [worldViewport, setWorldViewport] = useState({ ...initialWorldCenter, radiusM: 100000 })
   const allVehicles = useMemo(() => groups.flatMap(g => g.vehicles), [groups])
   const members = useMemo(() => allVehicles.map(toGlobeMember), [allVehicles])
+
+  const { data: worldContext, isFetching: worldFetching, isError: worldError } = useQuery({
+    queryKey: ['gev-3d-world-context', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM],
+    queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
+      center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
+      radiusM: Math.min(100000, worldViewport.radiusM),
+      layers: [...WORLD_CONTEXT_LAYERS],
+      maxEntitiesPerLayer: 75,
+      signal,
+    }),
+    enabled: view === '3D',
+    staleTime: 15000,
+    refetchInterval: 30000,
+    retry: 1,
+  })
+  const externalEntities = useMemo(() => worldContextEntities(worldContext).filter((entity) => !['vehicle', 'guardian_device'].includes(entity.entityType)), [worldContext])
+  const renderableExternalEntities = useMemo(() => externalEntities.filter((entity) => Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude)), [externalEntities])
+  const selectedExternal = useMemo(() => externalEntities.find((entity) => entity.id === selectedExternalId) ?? null, [externalEntities, selectedExternalId])
+  const layerCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const entity of externalEntities) {
+      const layer = spatialEntityLayer(entity)
+      if (layer) counts[layer] = (counts[layer] ?? 0) + 1
+    }
+    return counts
+  }, [externalEntities])
 
   const { data: zones = [] } = useQuery<RiskZone[]>({
     queryKey: ['gev-riskzones'],
