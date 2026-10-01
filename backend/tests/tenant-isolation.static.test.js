@@ -68,4 +68,57 @@ describe('tenant isolation regression guards', () => {
     expect(sql).not.toMatch(/FULL OUTER JOIN\s+[^\n]+\bON\s+false/i);
     expect(sql).not.toMatch(/AS \$\s*\n/);
   });
+
+  test('v4 service HTTP surfaces cannot trust caller-supplied tenant headers', () => {
+    const serviceRoots = [
+      path.join(__dirname, '../../services'),
+    ];
+    const violations = [];
+    for (const serviceRoot of serviceRoots) {
+      if (!fs.existsSync(serviceRoot)) continue;
+      for (const service of fs.readdirSync(serviceRoot, { withFileTypes: true })) {
+        if (!service.isDirectory()) continue;
+        const routesRoot = path.join(serviceRoot, service.name, 'src');
+        for (const scopeRoot of ['routes', 'middleware']) {
+          for (const file of filesUnder(path.join(routesRoot, scopeRoot))) {
+            const source = fs.readFileSync(file, 'utf8');
+            if (/x-org-id|x-org-id header required|headers\[['"]x-org-id['"]\]/i.test(source)) {
+              violations.push(path.relative(path.join(__dirname, '../..'), file));
+            }
+          }
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  test('v4 service DB contexts use the canonical tenant GUC', () => {
+    const serviceRoots = [
+      path.join(__dirname, '../../services'),
+    ];
+    const violations = [];
+    for (const serviceRoot of serviceRoots) {
+      if (!fs.existsSync(serviceRoot)) continue;
+      for (const service of fs.readdirSync(serviceRoot, { withFileTypes: true })) {
+        if (!service.isDirectory()) continue;
+        const file = path.join(serviceRoot, service.name, 'src/db.ts');
+        if (!fs.existsSync(file)) continue;
+        const source = fs.readFileSync(file, 'utf8');
+        if (/withOrgContext/.test(source) && !/app\.current_org_id/.test(source)) {
+          violations.push(path.relative(path.join(__dirname, '../..'), file));
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  test('telemetry ingestion authenticates the device and never derives tenant from request body', () => {
+    const file = path.join(__dirname, '../../services/telemetry-ingest-svc/src/routes/ingest.ts');
+    const source = fs.readFileSync(file, 'utf8');
+    expect(source).toMatch(/preHandler:\s*deviceAuth/);
+    expect(source).toMatch(/authenticatedDevice\.org_id/);
+    expect(source).toMatch(/DEVICE_SCOPE_MISMATCH/);
+    expect(source).toMatch(/withOrgContext\(org_id/);
+  });
+
 });
