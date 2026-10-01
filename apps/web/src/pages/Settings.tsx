@@ -378,31 +378,39 @@ interface WhatsAppConfig {
 }
 
 function AppearanceSection() {
-  const theme = useUIStore((s) => s.theme);
-  const setTheme = useUIStore((s) => s.setTheme);
+  const theme = useUIStore((state) => state.theme);
+  const setTheme = useUIStore((state) => state.setTheme);
+  const themes = [
+    { id: 'obsidian' as const, name: 'Obsidian Command', description: 'Deep-space control room', swatch: 'theme-swatch-obsidian' },
+    { id: 'arctic' as const, name: 'Arctic Signal', description: 'Cool analytical console', swatch: 'theme-swatch-arctic' },
+    { id: 'graphite' as const, name: 'Graphite Pro', description: 'Neutral executive control', swatch: 'theme-swatch-graphite' },
+    { id: 'copper' as const, name: 'Copper Dusk', description: 'Warm field operations', swatch: 'theme-swatch-copper' },
+    { id: 'signal' as const, name: 'Signal Lime', description: 'High-visibility NOC', swatch: 'theme-swatch-signal' },
+    { id: 'ivory' as const, name: 'Ivory Daylight', description: 'Bright field/tablet mode', swatch: 'theme-swatch-ivory' },
+  ];
 
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-2">
-        <label className="block text-xs text-slate-400 mb-1">Theme</label>
-        <div className="flex gap-2">
-          {(['dark', 'light'] as const).map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setTheme(opt)}
-              className={`flex-1 text-sm px-3 py-2 rounded border transition-colors capitalize ${
-                theme === opt
-                  ? 'bg-orange-600 border-orange-500 text-white'
-                  : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
-              }`}
-            >
-              {opt}
+      <div className="space-y-3">
+        <div>
+          <p className="text-sm font-medium text-slate-200">Workspace theme</p>
+          <p className="text-xs text-slate-500 mt-1">Changes presentation only. Fleet state, alerts, permissions and operational meaning remain unchanged.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Workspace theme">
+          {themes.map((item) => (
+            <button key={item.id} type="button" role="radio" aria-checked={theme === item.id}
+              onClick={() => setTheme(item.id)}
+              className={`sonalit-theme-choice ${theme === item.id ? 'is-selected' : ''}`}>
+              <span className={`sonalit-theme-swatch ${item.swatch}`} aria-hidden="true" />
+              <span className="min-w-0 text-left">
+                <span className="block text-sm font-semibold text-slate-200">{item.name}</span>
+                <span className="block text-xs text-slate-500 mt-0.5">{item.description}</span>
+              </span>
+              <span className="sonalit-theme-check" aria-hidden="true">{theme === item.id ? '✓' : ''}</span>
             </button>
           ))}
         </div>
-        <p className="text-xs text-slate-500 pt-1">
-          Applies to the sidebar, top bar, and dashboard cards immediately and is remembered on this device.
-        </p>
+        <p className="text-xs text-slate-500">Saved automatically on this device and restored before the app mounts to avoid a theme flash.</p>
       </div>
     </SectionCard>
   );
