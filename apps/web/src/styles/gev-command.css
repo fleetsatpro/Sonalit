@@ -878,3 +878,91 @@
     transition-duration: .001ms !important;
   }
 }
+
+/* High-end spatial command finish */
+.gev-shell {
+  --gev-hairline: rgba(224,232,246,.11);
+  --gev-depth: 0 30px 90px rgba(0,0,0,.42);
+  background:
+    radial-gradient(900px 520px at 52% 42%, rgba(89,76,164,.105), transparent 62%),
+    radial-gradient(620px 380px at 84% 16%, rgba(30,179,203,.055), transparent 68%),
+    radial-gradient(520px 340px at 12% 86%, rgba(70,207,156,.035), transparent 70%),
+    linear-gradient(180deg,#03060b 0%,#04070d 100%);
+}
+.gev-shell::before {
+  background:
+    linear-gradient(90deg, transparent 49.9%, rgba(126,144,173,.025) 50%, transparent 50.1%),
+    linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.010) 1px, transparent 1px);
+  background-size: 100% 100%, 96px 96px, 96px 96px;
+  mask-image: radial-gradient(ellipse at 50% 46%, black 0%, black 55%, transparent 100%);
+  opacity: .24;
+}
+.gev-stage {
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(86,94,143,.055), transparent 52%),
+    #02050a;
+}
+.gev-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 18;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.018), transparent 12%, transparent 88%, rgba(0,0,0,.20)),
+    radial-gradient(ellipse at center, transparent 54%, rgba(0,0,0,.36) 100%);
+}
+.gev-panel,
+.gev-rail,
+.gev-ribbon {
+  border-color: var(--gev-hairline);
+  box-shadow: var(--gev-depth), inset 0 1px 0 rgba(255,255,255,.065);
+  backdrop-filter: blur(26px) saturate(135%);
+}
+.gev-panel-head {
+  background: linear-gradient(180deg, rgba(255,255,255,.022), transparent);
+}
+.gev-stat,
+.gev-layer,
+.gev-mini,
+.gev-external-row {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.028);
+}
+.gev-stat-value,
+.gev-mini-value,
+.gev-external-value {
+  font-variant-numeric: tabular-nums;
+}
+.gev-stat-value { text-shadow: 0 0 22px rgba(184,166,255,.07); }
+.gev-health-dot,
+.gev-status-orbit span,
+.gev-signal-dot {
+  animation: gev-signal-breathe 2.8s ease-in-out infinite;
+}
+@keyframes gev-signal-breathe {
+  0%,100% { opacity: .72; transform: scale(.92); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.gev-external-row:focus-visible,
+.gev-rail-button:focus-visible,
+.gev-segment:focus-visible,
+.gev-close:focus-visible {
+  outline: 2px solid rgba(98,231,255,.72);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px rgba(98,231,255,.07);
+}
+@media (min-width: 1440px) {
+  .gev-panel-head { padding: 16px 17px 13px; }
+  .gev-stat-grid { gap: 7px; padding: 11px 13px 13px; }
+  .gev-layer-grid { gap: 6px; padding: 0 13px 13px; }
+  .gev-right-panel { width: 378px; }
+  .gev-overview-panel { width: min(470px, calc(100vw - 500px)); }
+  .gev-bottom-ribbon { right: 410px; }
+  .gev-detail { right: 406px; width: 348px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gev-health-dot,
+  .gev-status-orbit span,
+  .gev-signal-dot { animation: none !important; }
+}
