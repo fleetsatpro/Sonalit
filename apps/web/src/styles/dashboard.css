@@ -328,3 +328,31 @@ html, body, #root, * {
 .d-clip {
   clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%);
 }
+
+/* ── Legacy utility compatibility ────────────────────────────────────────
+   A small number of mature surfaces still use Tailwind slate/orange utility
+   classes directly. Re-map the common dashboard primitives to theme tokens
+   so those surfaces participate in the theme system without changing their
+   structure or operational behavior. */
+:root[data-theme] .bg-slate-950 { background-color: var(--d-void) !important; }
+:root[data-theme] .bg-slate-900 { background-color: var(--d-carbon) !important; }
+:root[data-theme] .bg-slate-800 { background-color: var(--d-well) !important; }
+:root[data-theme] .bg-slate-700 { background-color: var(--d-surf) !important; }
+:root[data-theme] .bg-slate-600 { background-color: var(--d-lift) !important; }
+:root[data-theme] .border-slate-700 { border-color: var(--d-rim2) !important; }
+:root[data-theme] .border-slate-600 { border-color: var(--d-rim3) !important; }
+:root[data-theme] .text-slate-100,
+:root[data-theme] .text-slate-200,
+:root[data-theme] .text-slate-300 { color: var(--d-t1) !important; }
+:root[data-theme] .text-slate-400 { color: var(--d-t2) !important; }
+:root[data-theme] .text-slate-500 { color: var(--d-t3) !important; }
+:root[data-theme] .text-slate-600 { color: var(--d-t4) !important; }
+:root[data-theme] .text-orange-300,
+:root[data-theme] .text-orange-400 { color: var(--d-orange) !important; }
+:root[data-theme] .bg-orange-600 { background-color: var(--d-orange) !important; }
+:root[data-theme] .border-orange-500 { border-color: var(--d-orange) !important; }
+:root[data-theme] .hover\\:bg-orange-700:hover,
+:root[data-theme] .hover\\:bg-orange-500:hover { background-color: var(--d-orange) !important; }
+:root[data-theme] .hover\\:text-orange-300:hover { color: var(--d-orange) !important; }
+:root[data-theme] body { background: var(--d-void); color: var(--d-t1); }
+:root[data-theme] #root { background: var(--d-void); }
