@@ -23,3 +23,18 @@ const theme = persisted === 'dark'
 
 document.documentElement.setAttribute('data-theme', theme);
 document.documentElement.style.colorScheme = LIGHT_THEMES.has(theme) ? 'light' : 'dark';
+
+
+const THEME_CHROME: Record<string, string> = {
+  obsidian: '#030711',
+  arctic: '#f7fbff',
+  graphite: '#0d0f12',
+  copper: '#100b08',
+  signal: '#050b07',
+  daylight: '#fbfaf6',
+};
+
+document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
+  'content',
+  THEME_CHROME[theme] ?? THEME_CHROME.obsidian,
+);
