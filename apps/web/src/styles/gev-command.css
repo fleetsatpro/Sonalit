@@ -878,3 +878,207 @@
     transition-duration: .001ms !important;
   }
 }
+
+
+/* Ultra-premium spatial command treatment --------------------------------------- */
+.gev-shell {
+  --gev-glass: rgba(6, 10, 17, .72);
+  --gev-glass-hi: rgba(12, 18, 29, .86);
+  --gev-hairline: rgba(224, 235, 255, .13);
+  --gev-specular: rgba(255, 255, 255, .075);
+  --gev-shadow: 0 30px 100px rgba(0,0,0,.42);
+  --gev-focus: 0 0 0 1px rgba(184,166,255,.28), 0 0 36px rgba(184,166,255,.10);
+}
+
+.gev-shell::before {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(98,231,255,.035), transparent 32%),
+    linear-gradient(rgba(255,255,255,.014) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px);
+  background-size: auto, 96px 96px, 96px 96px;
+  opacity: .24;
+}
+
+.gev-shell::after {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(184,166,255,.78) 16%, rgba(98,231,255,.55) 50%, rgba(85,230,165,.62) 82%, transparent);
+  box-shadow: 0 0 34px rgba(98,231,255,.18), 0 0 60px rgba(184,166,255,.12);
+}
+
+.gev-topbar {
+  background:
+    linear-gradient(180deg, rgba(10,15,24,.98), rgba(6,10,17,.90)),
+    radial-gradient(circle at 22% -40%, rgba(184,166,255,.11), transparent 34%);
+  border-bottom-color: var(--gev-hairline);
+  box-shadow: 0 24px 70px rgba(0,0,0,.34), inset 0 -1px 0 rgba(255,255,255,.025);
+}
+
+.gev-brand-mark {
+  width: 42px;
+  height: 42px;
+  flex-basis: 42px;
+  border-color: rgba(184,166,255,.38);
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255,255,255,.14), transparent 26%),
+    radial-gradient(circle at 65% 70%, rgba(98,231,255,.11), transparent 55%),
+    rgba(184,166,255,.065);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 0 40px rgba(184,166,255,.12), 0 12px 34px rgba(0,0,0,.28);
+}
+
+.gev-title {
+  font-size: 23px;
+  letter-spacing: .075em;
+  text-shadow: 0 0 28px rgba(184,166,255,.12);
+}
+
+.gev-topcenter {
+  padding: 3px;
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 13px;
+  background: rgba(255,255,255,.018);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 14px 38px rgba(0,0,0,.20);
+  backdrop-filter: blur(20px) saturate(140%);
+}
+
+.gev-segment {
+  height: 34px;
+  border-color: transparent;
+}
+
+.gev-segment[aria-pressed="true"] {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 0 26px rgba(184,166,255,.10);
+}
+
+.gev-health {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 24px rgba(85,230,165,.05);
+}
+
+.gev-health-dot {
+  animation: gev-pulse 2.2s ease-in-out infinite;
+}
+
+.gev-workspace,
+.gev-stage {
+  background: #02050a;
+}
+
+.gev-stage::before,
+.gev-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.gev-stage::before {
+  inset: 0;
+  background:
+    radial-gradient(ellipse at center, transparent 46%, rgba(0,0,0,.18) 82%, rgba(0,0,0,.48) 100%),
+    linear-gradient(180deg, rgba(2,5,10,.14), transparent 18%, transparent 78%, rgba(2,5,10,.28));
+  mix-blend-mode: normal;
+}
+
+.gev-stage::after {
+  inset: 12px;
+  border: 1px solid rgba(255,255,255,.035);
+  border-radius: 14px;
+  box-shadow: inset 0 0 80px rgba(0,0,0,.18);
+}
+
+.gev-rail,
+.gev-panel {
+  border-color: var(--gev-hairline);
+  background:
+    linear-gradient(145deg, rgba(12,18,29,.90), rgba(5,9,16,.78)),
+    radial-gradient(circle at 15% 0%, rgba(184,166,255,.055), transparent 38%);
+  box-shadow: var(--gev-shadow), inset 0 1px 0 var(--gev-specular), inset 0 -1px 0 rgba(0,0,0,.28);
+  backdrop-filter: blur(28px) saturate(145%);
+}
+
+.gev-panel-head {
+  background: linear-gradient(180deg, rgba(255,255,255,.018), transparent);
+}
+
+.gev-overview-panel {
+  box-shadow: var(--gev-shadow), 0 0 44px rgba(184,166,255,.035), inset 0 1px 0 var(--gev-specular);
+}
+
+.gev-stat {
+  border-color: rgba(255,255,255,.075);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.042), rgba(255,255,255,.014)),
+    radial-gradient(circle at 0% 0%, rgba(184,166,255,.035), transparent 58%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+.gev-stat-value {
+  font-size: 16px;
+  text-shadow: 0 0 18px rgba(255,255,255,.05);
+}
+
+.gev-layer {
+  min-height: 31px;
+  border-color: rgba(255,255,255,.065);
+  background: rgba(255,255,255,.021);
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+
+.gev-layer:hover {
+  border-color: rgba(184,166,255,.17);
+  background: rgba(184,166,255,.035);
+  transform: translateY(-1px);
+}
+
+.gev-right-panel {
+  box-shadow: var(--gev-shadow), 0 0 52px rgba(98,231,255,.025), inset 0 1px 0 var(--gev-specular);
+}
+
+.gev-entity-hero {
+  border-color: rgba(255,255,255,.085);
+  background:
+    radial-gradient(circle at 88% 12%, rgba(184,166,255,.105), transparent 30%),
+    radial-gradient(circle at 10% 100%, rgba(98,231,255,.045), transparent 42%),
+    linear-gradient(145deg, rgba(255,255,255,.038), rgba(255,255,255,.014));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045);
+}
+
+.gev-entity-title {
+  font-size: 22px;
+  text-shadow: 0 0 22px rgba(184,166,255,.08);
+}
+
+.gev-external-row {
+  min-height: 44px;
+  border-color: rgba(255,255,255,.065);
+  background: linear-gradient(90deg, rgba(255,255,255,.022), rgba(255,255,255,.010));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.022);
+}
+
+.gev-external-row:hover,
+.gev-external-row[data-selected="true"] {
+  border-color: rgba(184,166,255,.25);
+  background: linear-gradient(90deg, rgba(184,166,255,.07), rgba(98,231,255,.025));
+  box-shadow: var(--gev-focus);
+}
+
+.gev-ribbon {
+  border-color: rgba(255,255,255,.10);
+  background: rgba(5,9,15,.68);
+  box-shadow: 0 20px 50px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.055);
+  backdrop-filter: blur(24px) saturate(140%);
+}
+
+@keyframes gev-pulse {
+  0%, 100% { opacity: .65; transform: scale(.92); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+
+@media (max-width: 860px) {
+  .gev-stage::after { inset: 7px; border-radius: 10px; }
+  .gev-overview-panel,
+  .gev-right-panel { box-shadow: 0 24px 70px rgba(0,0,0,.44), inset 0 1px 0 rgba(255,255,255,.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gev-health-dot { animation: none; }
+}
