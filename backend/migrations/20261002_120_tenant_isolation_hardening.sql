@@ -74,6 +74,21 @@ BEGIN
   IF to_regclass('public.notifications') IS NOT NULL THEN
     ALTER TABLE notifications ADD COLUMN IF NOT EXISTS org_id UUID;
   END IF;
+  IF to_regclass('public.devices') IS NOT NULL THEN
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS org_id UUID;
+  END IF;
+  IF to_regclass('public.guardian_audit_log') IS NOT NULL THEN
+    ALTER TABLE guardian_audit_log ADD COLUMN IF NOT EXISTS org_id UUID;
+  END IF;
+  IF to_regclass('public.cfo_login_attempts') IS NOT NULL THEN
+    ALTER TABLE cfo_login_attempts ADD COLUMN IF NOT EXISTS org_id UUID;
+  END IF;
+  IF to_regclass('public.guardian_command_nonces') IS NOT NULL THEN
+    ALTER TABLE guardian_command_nonces ADD COLUMN IF NOT EXISTS org_id UUID;
+  END IF;
+  IF to_regclass('public.device_command_events') IS NOT NULL THEN
+    ALTER TABLE device_command_events ADD COLUMN IF NOT EXISTS org_id UUID;
+  END IF;
 END $tenant$;
 
 UPDATE convoy_assignments ca
@@ -191,6 +206,36 @@ UPDATE notifications n
 SET org_id = u.org_id
 FROM users u
 WHERE n.user_id = u.id AND n.org_id IS NULL;
+
+UPDATE devices d
+SET org_id = v.org_id
+FROM vehicles v
+WHERE d.vehicle_id = v.id AND d.org_id IS NULL;
+
+UPDATE guardian_audit_log a
+SET org_id = u.org_id
+FROM users u
+WHERE a.actor_type = 'admin' AND a.actor_id = u.id AND a.org_id IS NULL;
+
+UPDATE guardian_audit_log a
+SET org_id = d.org_id
+FROM guardian_devices d
+WHERE a.actor_type = 'device' AND a.actor_id = d.id AND a.org_id IS NULL;
+
+UPDATE cfo_login_attempts a
+SET org_id = d.org_id
+FROM guardian_devices d
+WHERE a.device_id = d.id AND a.org_id IS NULL;
+
+UPDATE guardian_command_nonces n
+SET org_id = d.org_id
+FROM guardian_devices d
+WHERE n.device_id = d.id AND n.org_id IS NULL;
+
+UPDATE device_command_events e
+SET org_id = dc.org_id
+FROM device_commands dc
+WHERE e.command_id = dc.id AND e.org_id IS NULL;
 
 -- API keys had no ownership column. Existing legacy keys are intentionally left
 -- NULL and therefore become unreachable from tenant-scoped app sessions. New
@@ -528,6 +573,31 @@ FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
 DROP TRIGGER IF EXISTS tenant_harden_field_reports ON field_reports;
 CREATE TRIGGER tenant_harden_field_reports BEFORE INSERT OR UPDATE ON field_reports
 FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+DROP TRIGGER IF EXISTS tenant_harden_command_nonces ON guardian_command_nonces;
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_command_event() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
+BEGIN
+  SELECT org_id INTO parent_org FROM device_commands WHERE id = NEW.command_id;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_command'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
+  RETURN NEW;
+END $$;
+
+CREATE TRIGGER tenant_harden_command_nonces BEFORE INSERT OR UPDATE ON guardian_command_nonces
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+DROP TRIGGER IF EXISTS tenant_harden_cfo_login_attempts ON cfo_login_attempts;
+CREATE TRIGGER tenant_harden_cfo_login_attempts BEFORE INSERT OR UPDATE ON cfo_login_attempts
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+DROP TRIGGER IF EXISTS tenant_harden_device_command_events ON device_command_events;
+CREATE TRIGGER tenant_harden_device_command_events BEFORE INSERT OR UPDATE ON device_command_events
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_command_event();
+
+DROP TRIGGER IF EXISTS tenant_harden_guardian_audit_log ON guardian_audit_log;
 
 DROP TRIGGER IF EXISTS tenant_harden_notifications ON notifications;
 CREATE TRIGGER tenant_harden_notifications BEFORE INSERT OR UPDATE ON notifications
