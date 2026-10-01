@@ -277,6 +277,12 @@ export default function CorridorWorldScene({
     }
 
     viewerRef.current = viewer;
+    if (globalView) {
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(20, 0, 13000000),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
+      });
+    }
     const compactSurface = window.matchMedia?.('(max-width: 900px)').matches ?? false;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
@@ -732,7 +738,7 @@ export default function CorridorWorldScene({
         </div>
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={recenter} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Recenter world"><Crosshair size={15} /></button>
-          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail, zones, worldEntities); if (points.length === 1) { const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0]; if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
+          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail, zones, worldEntities); if (points.length === 1) { const only = singleWorldPoint(liveMembers, zones, worldEntities); if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
@@ -747,7 +753,7 @@ export default function CorridorWorldScene({
           <p className="mt-1">Operational map tiles: Esri / OpenStreetMap contributors. Cesium terrain and buildings are enabled when the configured Ion token permits them.</p>
         </div>
       )}
-      {liveMembers.length === 0 && (
+      {!globalView && liveMembers.length === 0 && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="rounded-xl border border-white/10 bg-[#070a10]/88 px-4 py-3 text-center backdrop-blur-xl">
             <p className="text-xs font-semibold text-neutral-200">NO LIVE DEVICE FIX</p>
