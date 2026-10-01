@@ -17,14 +17,38 @@ const DEFAULT_THEME: Theme = 'obsidian';
 const isTheme = (value: unknown): value is Theme => typeof value === 'string' && (SONALIT_THEMES as readonly string[]).includes(value);
 
 // The theme field existed here before but nothing ever applied it — no
+// component read useUIStore.theme, so switching it had zero visible effect.
 // Setting data-theme on <html> is the single bridge between persisted UI state
 // and the dashboard token system. This keeps theme changes immediate and
 // prevents individual screens from owning appearance state.
 function applyTheme(theme: Theme) {
   if (typeof document !== 'undefined') {
+    const meta = THEME_META[theme];
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.style.colorScheme = meta.density;
   }
 }
+
+function normalizeTheme(value: unknown): Theme {
+  if (value === 'dark') return 'obsidian';
+  if (value === 'light') return 'ivory';
+  return isTheme(value) ? value : DEFAULT_THEME;
+}
+
+function readPersistedTheme(): Theme {
+  if (typeof window === 'undefined') return DEFAULT_THEME;
+  try {
+    const raw = window.localStorage.getItem('sonalit-ui');
+    if (!raw) return DEFAULT_THEME;
+    const parsed = JSON.parse(raw) as { state?: { theme?: unknown } };
+    return normalizeTheme(parsed?.state?.theme);
+  } catch {
+    return DEFAULT_THEME;
+  }
+}
+
+const initialTheme = readPersistedTheme();
+applyTheme(initialTheme);
 
 type UIState = {
   sidebarOpen: boolean;
@@ -43,24 +67,32 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       sidebarOpen: defaultSidebarOpen,
-      theme: DEFAULT_THEME,
+      theme: initialTheme,
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      setTheme: (theme) => { applyTheme(theme); set({ theme }); },
+      setTheme: (theme) => {
+        const normalized = normalizeTheme(theme);
+        applyTheme(normalized);
+        set({ theme: normalized });
+      },
     }),
     {
       name: 'sonalit-ui',
-      version: 2,
+      version: 3,
       migrate: (persisted: unknown) => {
         const state = persisted as { theme?: unknown } | null;
-        return { theme: isTheme(state?.theme) ? state?.theme : DEFAULT_THEME };
+        return { theme: normalizeTheme(state?.theme) };
       },
       // Only theme is worth remembering across sessions — sidebarOpen should
       // keep re-deriving from viewport width on each load (its original
       // behavior), not get stuck on whatever it was last closed/opened to.
       partialize: (s) => ({ theme: s.theme }),
       onRehydrateStorage: () => (state) => {
-        if (state) applyTheme(state.theme);
+        if (state) {
+          const normalized = normalizeTheme(state.theme);
+          if (normalized !== state.theme) state.setTheme(normalized);
+          else applyTheme(normalized);
+        }
       },
     }
   )
