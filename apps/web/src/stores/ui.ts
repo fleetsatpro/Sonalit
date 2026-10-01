@@ -35,7 +35,9 @@ function applyTheme(theme: Theme) {
     const root = document.documentElement;
     root.setAttribute('data-theme', theme);
     root.style.colorScheme = THEMES.find((item) => item.id === theme)?.mode ?? 'dark';
-    root.style.setProperty('theme-color', THEMES.find((item) => item.id === theme)?.accent ?? '#22e8ff');
+    const accent = THEMES.find((item) => item.id === theme)?.accent ?? '#22e8ff';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', accent);
   }
 }
 
