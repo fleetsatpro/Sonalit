@@ -296,7 +296,6 @@ export default function CorridorWorldScene({
     viewer.scene.fog.density = 0.00002;
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
-    viewer.scene.globe.showSkirts = false;
     viewer.scene.globe.tileCacheSize = highFidelity ? 1200 : 500;
     viewer.scene.msaaSamples = viewer.scene.msaaSupported ? (highFidelity ? 8 : 2) : 1;
     // GEV is a presentation-grade spatial surface: preserve high-DPI raster
