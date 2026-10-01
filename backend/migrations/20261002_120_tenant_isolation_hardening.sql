@@ -324,10 +324,12 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_base ON %I.%I', r.schema_name, r.table_name);
 
     BEGIN
-      EXECUTE format(
-        'GRANT USAGE, SELECT ON SEQUENCE %s TO sonalit_app',
-        quote_ident(r.schema_name) || '.' || quote_ident(pg_get_serial_sequence(format('%I.%I', r.schema_name, r.table_name), 'id'))
-      );
+      IF pg_get_serial_sequence(format('%I.%I', r.schema_name, r.table_name), 'id') IS NOT NULL THEN
+        EXECUTE format(
+          'GRANT USAGE, SELECT ON SEQUENCE %s TO sonalit_app',
+          pg_get_serial_sequence(format('%I.%I', r.schema_name, r.table_name), 'id')
+        );
+      END IF;
     EXCEPTION WHEN undefined_object OR invalid_parameter_value THEN
       NULL;
     END;
