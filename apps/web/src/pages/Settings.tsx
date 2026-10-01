@@ -6,6 +6,7 @@ import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCi
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
 import { useUIStore } from '../stores/ui.js';
+import { SONALIT_THEMES } from '../styles/themes.js';
 
 interface ApiKey {
   id: string;
@@ -383,31 +384,49 @@ function AppearanceSection() {
 
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-2">
-        <label className="block text-xs text-slate-400 mb-1">Theme</label>
-        <div className="flex gap-2">
-          {(['dark', 'light'] as const).map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setTheme(opt)}
-              className={`flex-1 text-sm px-3 py-2 rounded border transition-colors capitalize ${
-                theme === opt
-                  ? 'bg-orange-600 border-orange-500 text-white'
-                  : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-medium text-slate-100">Command surface</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Choose the visual language for Sonalit. Operational semantics, status meaning, permissions and data remain unchanged.
+          </p>
         </div>
-        <p className="text-xs text-slate-500 pt-1">
-          Applies to the sidebar, top bar, and dashboard cards immediately and is remembered on this device.
-        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {SONALIT_THEMES.map((option) => {
+            const selected = theme === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => setTheme(option.id)}
+                className={`group text-left rounded-xl border p-3 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${selected
+                  ? 'border-orange-400 bg-orange-500/10 shadow-[0_0_0_1px_rgba(249,115,22,.18)]'
+                  : 'border-slate-700 bg-slate-900 hover:border-slate-500'}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-100">{option.name}</span>
+                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${selected ? 'bg-orange-400 shadow-[0_0_10px_rgba(249,115,22,.8)]' : 'bg-slate-600'}`} aria-hidden="true" />
+                </div>
+                <div className="flex gap-1.5 mt-3" aria-hidden="true">
+                  {option.swatches.map((swatch) => (
+                    <span key={swatch} className="h-5 flex-1 rounded-md border border-white/10" style={{ backgroundColor: swatch }} />
+                  ))}
+                </div>
+                <p className="text-[11px] leading-4 text-slate-400 mt-3">{option.description}</p>
+              </button>
+            );
+          })}
+        </div>
+        <div className="rounded-lg border border-slate-700/80 bg-slate-900/60 px-3 py-2.5 text-[11px] text-slate-400">
+          <span className="text-slate-200 font-medium">{SONALIT_THEMES.find((t) => t.id === theme)?.name}</span>
+          <span className="mx-1.5 text-slate-600">·</span>
+          Applied instantly and remembered on this device.
+        </div>
       </div>
     </SectionCard>
   );
 }
-
 function WhatsAppSection() {
   const qc = useQueryClient();
   const [form, setForm] = useState({ phone_number_id: '', access_token: '', verify_token: '', business_id: '', active: false });
