@@ -29,6 +29,7 @@ async function processEmail(job) {
 }
 
 async function resolvePanicContext(panicId) {
+  // Resolve event tenant first; subsequent relationship lookups are constrained to it.
   const result = await query(`
     SELECT
       p.id, p.org_id AS panic_org_id, p.device_id, p.lat, p.lng, p.message, p.created_at,
@@ -45,17 +46,18 @@ async function resolvePanicContext(panicId) {
       COALESCE(c.client_id, cfo_c.client_id) AS convoy_client_id
     FROM panic_events p
     LEFT JOIN guardian_devices d
-      ON d.id=p.device_id AND d.deleted_at IS NULL
+      ON d.id=p.device_id AND d.org_id=p.org_id AND d.deleted_at IS NULL
     LEFT JOIN vehicles v
       ON v.id=d.assignment_id
      AND lower(COALESCE(d.assignment_type,'')) IN ('vehicle','fleet_vehicle')
+     AND v.org_id=p.org_id
      AND v.deleted_at IS NULL
     LEFT JOIN convoys c
       ON c.id=v.assigned_convoy_id AND c.deleted_at IS NULL
     LEFT JOIN LATERAL (
       SELECT c2.id, c2.name, c2.region, c2.status, c2.route_origin, c2.route_destination, c2.client_id
       FROM convoy_cfos cc
-      JOIN convoys c2 ON c2.id=cc.convoy_id AND c2.deleted_at IS NULL
+      JOIN convoys c2 ON c2.id=cc.convoy_id AND c2.org_id=p.org_id AND c2.deleted_at IS NULL
       WHERE (
         cc.guardian_device_id=d.id
         OR (
@@ -82,10 +84,11 @@ async function resolvePanicContext(panicId) {
       FROM convoy_assignments ca
       JOIN convoys c ON c.id=ca.convoy_id
       WHERE ca.vehicle_id=$1
+        AND c.org_id=$2
         AND c.deleted_at IS NULL
         AND c.status IN ('active','planned')
       ORDER BY CASE WHEN c.status='active' THEN 0 ELSE 1 END, c.updated_at DESC
-      LIMIT 1`, [event.vehicle_id]);
+      LIMIT 1`, [event.vehicle_id, event.panic_org_id]);
     if (assignment.rows.length) {
       const convoy = assignment.rows[0];
       event.convoy_id = convoy.id;
