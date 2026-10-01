@@ -43,19 +43,6 @@ async function getVerificationKey(): Promise<
     throw new AuthError('AUTH_JWKS_URI or AUTH_PUBLIC_KEY_PEM is required in production');
   }
   throw new AuthError('Authentication verification key is not configured');
-  const { generateKeyPair } = await import('node:crypto');
-  const { privateKey: _pk, publicKey } = await new Promise<{
-    privateKey: string;
-    publicKey: string;
-  }>((resolve, reject) => {
-    generateKeyPair(
-      'rsa',
-      { modulusLength: 2048, publicKeyEncoding: { type: 'spki', format: 'pem' }, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } },
-      (err, pub, priv) => (err ? reject(err) : resolve({ privateKey: priv, publicKey: pub })),
-    );
-  });
-  cachedPublicKey = await importSPKI(publicKey, 'RS256');
-  return cachedPublicKey;
 }
 
 async function verifyBearer(token: string): Promise<JWTPayload> {
@@ -63,6 +50,7 @@ async function verifyBearer(token: string): Promise<JWTPayload> {
   const { payload } = await jwtVerify(token, key as Parameters<typeof jwtVerify>[1], {
     issuer: config.JWT_ISSUER,
     audience: config.JWT_AUDIENCE,
+    algorithms: ['RS256'],
   });
   return payload;
 }
@@ -88,9 +76,9 @@ export async function requireAuth(
 
     const sub = typeof payload.sub === 'string' ? payload.sub : null;
     const orgId = typeof payload['org_id'] === 'string' ? payload['org_id'] : null;
-    const role = typeof payload['role'] === 'string' ? payload['role'] : 'operator';
+    const role = typeof payload['role'] === 'string' ? payload['role'] : '';
 
-    if (!sub || !orgId) {
+    if (!sub || !orgId || !role) {
       throw new AuthError('Token missing required claims');
     }
 
