@@ -78,7 +78,11 @@ function MarketingPhoto({
       width={photo.width}
       height={photo.height}
       loading={priority ? 'eager' : 'lazy'}
-      {...(priority ? { fetchPriority: 'high' as const } : {})}
+      ref={(node) => {
+        if (!node) return;
+        if (priority) node.setAttribute('fetchpriority', 'high');
+        else node.removeAttribute('fetchpriority');
+      }}
       decoding="async"
     />
   );
