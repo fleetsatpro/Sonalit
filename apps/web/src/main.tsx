@@ -70,6 +70,18 @@ const queryClient = new QueryClient({
   },
 });
 
+let lastTenantId = useAuthStore.getState().user?.org_id ?? null;
+
+// Tenant boundary is also a browser-cache boundary. Clear all TanStack Query
+// state when authentication changes organization so data fetched under tenant A
+// can never remain visible while tenant B is mounted, even briefly.
+const unsubscribeTenant = useAuthStore.subscribe((state) => {
+  const nextTenantId = state.user?.org_id ?? null;
+  if (nextTenantId === lastTenantId) return;
+  lastTenantId = nextTenantId;
+  queryClient.clear();
+});
+
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Root element not found');
 
