@@ -150,10 +150,28 @@ function rssText(v){if(v==null)return'';if(typeof v==='string')return v;if(typeo
 function rssLink(v){if(v==null)return null;if(typeof v==='string')return v;if(Array.isArray(v))return rssLink(v[0]);if(typeof v==='object')return v.href||v['#text']||v.url||null;return String(v);}
 async function fetchRss(feed){
   async function fetchOne(url,sourceName){
-    const r=await timeoutFetch(url,{headers:{Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9,*/*;q=0.1','User-Agent':'Sonalit-RiskIntel/1.0'}});
+    const r=await timeoutFetch(url,{headers:{
+      Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9,*/*;q=0.1',
+      'User-Agent':'Sonalit-RiskIntel/1.0'
+    }});
     if(!r.ok) throw new Error(`${sourceName} HTTP ${r.status}`);
-    const x=xmlParser.parse(await r.text()),raw=x?.rss?.channel?.item||x?.feed?.entry||[],items=Array.isArray(raw)?raw:[raw];
-    return items.slice(0,MAX_ITEMS).map(i=>{const title=clean(rssText(i.title),700),body=clean(rssText(i.description)||rssText(i.summary)||rssText(i.content)||title,7000),link=rssLink(i.link),published=parseDate(rssText(i.pubDate)||rssText(i.published)||rssText(i.updated));return{external_id:i.guid?`rss:${rssText(i.guid)}`:(i.id?`rss:${rssText(i.id)}`:(link?`rss:${sha(link)}`:null)),title,body,text:body,url:link,published_at:published,language:rssText(i.language)||null,country_code:feed.country_code,credibility:feed.reliability,raw_metadata:{feed:feed.name,feed_url:url,primary_feed_url:feed.url,fallback_used:url!==feed.url}};}).filter(i=>{const c=detectCountry(`${i.title} ${i.body}`,i.country_code);return c!==null;});
+    const text=await r.text();
+    const contentType=String(r.headers?.get?.('content-type')||'').toLowerCase();
+    if(/^\s*<(?:!doctype\s+)?html\b/i.test(text) || contentType.includes('text/html')) {
+      throw new Error(`${sourceName} returned HTML instead of RSS/XML`);
+    }
+    const x=xmlParser.parse(text),raw=x?.rss?.channel?.item||x?.feed?.entry||[],items=Array.isArray(raw)?raw:[raw];
+    const parsed=items.slice(0,MAX_ITEMS).map(item=>{
+      const title=clean(rssText(item.title),700);
+      const body=clean(rssText(item.description)||rssText(item.summary)||rssText(item.content)||title,7000);
+      const link=rssLink(item.link);
+      const published=parseDate(rssText(item.pubDate)||rssText(item.published)||rssText(item.updated));
+      return{external_id:item.guid?`rss:${rssText(item.guid)}`:(item.id?`rss:${rssText(item.id)}`:(link?`rss:${sha(link)}`:null)),title,body,text:body,url:link,published_at:published,language:rssText(item.language)||null,country_code:feed.country_code,credibility:feed.reliability,raw_metadata:{feed:feed.name,feed_url:url,primary_feed_url:feed.url,fallback_used:url!==feed.url}};
+    }).filter(item=>detectCountry(`${item.title} ${item.body}`,item.country_code)!==null);
+    if(url===feed.url && feed.fallback_url && parsed.length===0) {
+      throw new Error(`${sourceName} primary feed returned no usable regional items`);
+    }
+    return parsed;
   }
   try{return await fetchOne(feed.url,feed.name);}catch(primaryError){
     if(!feed.fallback_url) throw primaryError;
