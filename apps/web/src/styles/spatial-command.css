@@ -455,3 +455,72 @@
     transition: none !important;
   }
 }
+
+/* High-end spatial fabric finish */
+.spatial-command,
+.spatial-surface,
+.spatial-map-surface {
+  --sp-hairline: rgba(220,230,244,.105);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.spatial-surface,
+.spatial-map-surface {
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(96,86,160,.055), transparent 56%),
+    #03060b;
+}
+.spatial-surface::after,
+.spatial-map-surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 14;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.014), transparent 12%, transparent 88%, rgba(0,0,0,.18)),
+    radial-gradient(ellipse at center, transparent 58%, rgba(0,0,0,.30) 100%);
+}
+.spatial-control-rail,
+.spatial-legend,
+.spatial-cesium-chrome,
+.spatial-coordinate,
+.spatial-footnote {
+  border-color: var(--sp-hairline) !important;
+  box-shadow: 0 24px 70px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.055) !important;
+  backdrop-filter: blur(26px) saturate(145%) !important;
+}
+.spatial-control,
+.spatial-view-button {
+  min-height: 38px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 10px 26px rgba(0,0,0,.16);
+}
+.spatial-metric-value {
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 20px rgba(196,181,253,.055);
+}
+.spatial-chip {
+  border-color: rgba(255,255,255,.09);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+.spatial-command button,
+.spatial-surface button,
+.spatial-map-surface button {
+  transition: transform .16s ease, border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;
+}
+.spatial-command button:hover,
+.spatial-surface button:hover,
+.spatial-map-surface button:hover { transform: translateY(-1px); }
+@media (min-width: 1440px) {
+  .spatial-control-rail { padding: 5px; gap: 5px; }
+  .spatial-control { width: 40px !important; height: 40px !important; }
+  .spatial-metric { padding: 10px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spatial-command button,
+  .spatial-surface button,
+  .spatial-map-surface button { transition: none !important; }
+  .spatial-command button:hover,
+  .spatial-surface button:hover,
+  .spatial-map-surface button:hover { transform: none !important; }
+}
