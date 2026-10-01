@@ -3,21 +3,21 @@
 const request = require('supertest');
 const mockDbQuery = jest.fn();
 
-jest.mock('../../src/middleware/auth', () => ({
+jest.mock('../src/middleware/auth', () => ({
   authenticate: (req, _res, next) => {
     req.user = { id: '00000000-0000-0000-0000-000000000001', org_id: '00000000-0000-0000-0000-000000000002', role: 'admin' };
     next();
   },
 }));
 
-jest.mock('../../src/utils/orgScopedDb', () => ({
+jest.mock('../src/utils/orgScopedDb', () => ({
   attachOrgDb: (req, _res, next) => {
     req.db = mockDbQuery;
     next();
   },
 }));
 
-jest.mock('../../src/middleware/error', () => ({
+jest.mock('../src/middleware/error', () => ({
   asyncHandler: fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next),
 }));
 
@@ -29,7 +29,7 @@ describe('intelligence operations read endpoints', () => {
     mockDbQuery.mockReset();
     mockDbQuery.mockResolvedValue({ rows: [] });
     const express = require('express');
-    const router = require('../../src/routes/intelligenceOperations');
+    const router = require('../src/routes/intelligenceOperations');
     app = express();
     app.use(express.json());
     app.use('/intelligence', router);
