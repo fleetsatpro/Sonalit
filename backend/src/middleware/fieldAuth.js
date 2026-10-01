@@ -21,6 +21,7 @@ const { query } = require('../config/database');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { authenticate } = require('./auth');
 const logger = require('../utils/logger');
+const { runWithOrgContext } = require('../utils/tenantContext');
 
 /** Roles that may hold a Field session at all. */
 const FIELD_ROLES = ['yard_agent', 'port_agent', 'response_crew'];
@@ -96,8 +97,9 @@ async function requireDevice(req, res, next) {
     if (!device) {
       return res.status(401).json({ error: 'device_not_paired' });
     }
+    if (!device.org_id) return res.status(403).json({ error: 'device_tenant_scope_required' });
     req.fieldDevice = device;
-    next();
+    return runWithOrgContext(device.org_id, next);
   } catch (err) {
     logger.error(`requireDevice error: ${err.message}`);
     next(err);
