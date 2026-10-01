@@ -210,7 +210,7 @@ if (isClaimChild) {
     shouldTakeOver,
     classifyFenceStart,
     deactivateFence,
-    isFenceActive: () => true,
+    isFenceActive: () => fenceActive,
   };
 } else {
   const childEnv = {
