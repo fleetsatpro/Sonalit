@@ -5,6 +5,7 @@
  */
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
+const { runWithOrgContext } = require('../utils/tenantContext');
 
 async function clientAuth(req, res, next) {
   try {
@@ -54,7 +55,7 @@ async function clientAuth(req, res, next) {
       org_id: access.rows[0].org_id,
       convoy_ids: Array.isArray(access.rows[0].convoy_ids) ? access.rows[0].convoy_ids : [],
     };
-    next();
+    return runWithOrgContext(req.client.org_id, next);
   } catch {
     return res.status(401).json({ error: 'Invalid or expired session' });
   }
