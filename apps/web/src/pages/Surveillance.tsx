@@ -4,6 +4,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Camera, ShieldAlert, X, RefreshCw, ExternalLink, MapPin, Search, LayoutGrid, Map as MapIcon, Crosshair, Siren, Sparkles, Users, Car, Loader, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../lib/spatialRendering.js';
 import { useAuthStore } from '../stores/auth.js';
 
 // Surveillance — the covert-capture console. Every photo a Guardian device took
@@ -481,7 +482,7 @@ function CaptureMap({ captures, onPick, selectedId }: { captures: Capture[]; onP
 
   useEffect(() => {
     if (!el.current || mapRef.current) return;
-    const map = new maplibregl.Map({ container: el.current, style: SAT_STYLE, center: [37, 3], zoom: 4, attributionControl: false });
+    const map = new maplibregl.Map({ container: el.current, style: SAT_STYLE, center: [37, 3], zoom: 4, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.on('load', () => setReady(true));
     mapRef.current = map;
