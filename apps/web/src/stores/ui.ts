@@ -1,27 +1,37 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { SonalitTheme } from '../styles/themes.js';
+import {
+  isDarkSonalitTheme,
+  normalizeSonalitTheme,
+  type SonalitTheme,
+} from '../styles/themes.js';
 
 export type Theme = SonalitTheme;
 
-function normalizeTheme(value: unknown): Theme {
-  if (value === 'light') return 'daylight';
-  if (value === 'dark') return 'obsidian';
-  const valid: SonalitTheme[] = ['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'daylight'];
-  return valid.includes(value as SonalitTheme) ? value as SonalitTheme : 'obsidian';
-}
-
-// The theme field existed here before but nothing ever applied it — no
-// component read useUIStore.theme, so switching it had zero visible effect.
-// Setting data-theme on <html> is what dashboard.css's light-mode variable
-// overrides key off; doing it here (not in a component effect) means it
-// takes effect the instant setTheme is called and right after persisted
-// state rehydrates, with no extra wiring needed in main.tsx.
 function applyTheme(theme: Theme) {
-  if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-theme', normalizeTheme(theme));
-  }
+  if (typeof document === 'undefined') return;
+
+  const normalized = normalizeSonalitTheme(theme);
+  const root = document.documentElement;
+  const dark = isDarkSonalitTheme(normalized);
+
+  root.setAttribute('data-theme', normalized);
+  root.classList.toggle('dark', dark);
+  root.style.colorScheme = dark ? 'dark' : 'light';
+
+  // Keep browser/PWA chrome synchronized with the selected surface when the
+  // meta tag is present. This is presentation-only and never affects data.
+  const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  const themeColors: Record<Theme, string> = {
+    obsidian: '#030711',
+    arctic: '#f4f8fc',
+    graphite: '#0e1012',
+    copper: '#130f0d',
+    signal: '#090d09',
+    daylight: '#f8f7f2',
+  };
+  if (themeColor) themeColor.content = themeColors[normalized];
 }
 
 type UIState = {
@@ -32,7 +42,6 @@ type UIState = {
   setTheme: (theme: Theme) => void;
 };
 
-// T4.6: Default sidebar open on md+ screens, closed on mobile.
 const defaultSidebarOpen = typeof window !== 'undefined'
   ? window.matchMedia('(min-width: 768px)').matches
   : false;
@@ -44,21 +53,28 @@ export const useUIStore = create<UIState>()(
       theme: 'obsidian',
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      setTheme: (theme) => { applyTheme(theme); set({ theme }); },
+      setTheme: (theme) => {
+        const normalized = normalizeSonalitTheme(theme);
+        applyTheme(normalized);
+        set({ theme: normalized });
+      },
     }),
     {
       name: 'sonalit-ui',
-      // Only theme is worth remembering across sessions — sidebarOpen should
-      // keep re-deriving from viewport width on each load (its original
-      // behavior), not get stuck on whatever it was last closed/opened to.
+      version: 2,
       partialize: (s) => ({ theme: s.theme }),
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          const normalized = normalizeTheme(state.theme);
-          if (normalized !== state.theme) state.setTheme(normalized);
-          else applyTheme(normalized);
-        }
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<UIState> | undefined;
+        return {
+          theme: normalizeSonalitTheme(state?.theme),
+        };
       },
-    }
-  )
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const normalized = normalizeSonalitTheme(state.theme);
+        if (state.theme !== normalized) state.setTheme(normalized);
+        else applyTheme(normalized);
+      },
+    },
+  ),
 );
