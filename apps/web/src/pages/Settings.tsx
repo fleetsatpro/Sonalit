@@ -5,7 +5,7 @@ import { useAuthStore, getAccessToken } from '../stores/auth.js';
 import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette } from 'lucide-react';
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
-import { useUIStore } from '../stores/ui.js';
+import { THEMES, useUIStore } from '../stores/ui.js';
 
 interface ApiKey {
   id: string;
@@ -383,31 +383,47 @@ function AppearanceSection() {
 
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-2">
-        <label className="block text-xs text-slate-400 mb-1">Theme</label>
-        <div className="flex gap-2">
-          {(['dark', 'light'] as const).map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setTheme(opt)}
-              className={`flex-1 text-sm px-3 py-2 rounded border transition-colors capitalize ${
-                theme === opt
-                  ? 'bg-orange-600 border-orange-500 text-white'
-                  : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-semibold text-slate-200">Interface theme</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Presentation only — operational data, permissions, status meaning and workflows never change with theme.
+          </p>
         </div>
-        <p className="text-xs text-slate-500 pt-1">
-          Applies to the sidebar, top bar, and dashboard cards immediately and is remembered on this device.
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Sonalit interface theme">
+          {THEMES.map((opt) => {
+            const active = theme === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setTheme(opt.id)}
+                className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all ${active ? 'border-orange-500/70 bg-slate-700 shadow-lg' : 'border-slate-600 bg-slate-900 hover:border-slate-500'}`}
+              >
+                <span className="absolute inset-x-0 top-0 h-1" style={{ background: opt.accent }} />
+                <span className="flex items-center gap-3 pt-1">
+                  <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border" style={{ borderColor: `${opt.accent}66`, background: opt.mode === 'light' ? '#f5f5f0' : '#11161d' }}>
+                    <span className="h-4 w-4 rounded-full" style={{ background: opt.accent, boxShadow: `0 0 16px ${opt.accent}66` }} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-slate-200">{opt.name}</span>
+                    <span className="block mt-0.5 text-[11px] text-slate-500">{opt.descriptor}</span>
+                  </span>
+                  {active && <span className="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-wider" style={{ color: opt.accent }}>Active</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-slate-500">
+          Saved locally on this device. The map remains deliberately high-contrast in every theme for geospatial readability.
         </p>
       </div>
     </SectionCard>
   );
 }
-
 function WhatsAppSection() {
   const qc = useQueryClient();
   const [form, setForm] = useState({ phone_number_id: '', access_token: '', verify_token: '', business_id: '', active: false });
