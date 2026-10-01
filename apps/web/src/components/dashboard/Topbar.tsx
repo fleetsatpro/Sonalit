@@ -45,7 +45,7 @@ const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
   const showBack = pathname !== '/home';
 
   return (
-    <header style={{ position: 'sticky', top: 0, zIndex: 200, height: 'var(--d-top-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', background: 'rgba(5,9,16,.92)', backdropFilter: 'blur(30px)', borderBottom: '1px solid var(--d-rim)' }}>
+    <header style={{ position: 'sticky', top: 0, zIndex: 200, height: 'var(--d-top-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', background: 'var(--d-topbar-bg)', backdropFilter: 'blur(30px)', borderBottom: '1px solid var(--d-rim)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {showBack && <button onClick={goBack} title="Back" aria-label="Back to previous view" style={{ background: 'none', border: '1px solid var(--d-rim2)', color: 'var(--d-t2)', cursor: 'pointer', padding: 6, borderRadius: 8, display: 'flex', alignItems: 'center' }}><ArrowLeft size={17} strokeWidth={2} /></button>}
         <Link to='/home' title='Home — Orbit' aria-label='Home' style={{ background: 'none', border: '1px solid var(--d-rim2)', color: 'var(--d-t2)', cursor: 'pointer', padding: 6, borderRadius: 8, display: 'flex', alignItems: 'center', textDecoration: 'none' }}><Home size={17} strokeWidth={2} /></Link>
