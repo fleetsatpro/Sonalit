@@ -1,3 +1,4 @@
+// The unit suite must never touch the production database or spawn the claim child.
 process.env.NODE_ENV = 'test';
 delete process.env.SONALIT_STANDBY;
 
