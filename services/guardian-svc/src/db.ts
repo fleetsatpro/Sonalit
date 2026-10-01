@@ -45,6 +45,6 @@ export async function queryOne<T extends object = object>(
   text: string,
   values?: unknown[],
 ): Promise<T | null> {
-  const res = await pool.query<T>(text, values);
-  return res.rows[0] ?? null;
+  const rows = await query<T>(text, values);
+  return rows[0] ?? null;
 }
