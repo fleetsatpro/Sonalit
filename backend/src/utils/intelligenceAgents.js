@@ -20,11 +20,12 @@ function evidenceDerivedSynthesis(event){
   else if(/\b(outbreak|cholera|disease|health|ebola|mpox|malaria)\b/.test(text)) intelligence_type='HEALTH';
   else if(/\b(vessel|ship|maritime|shipping lane|seafar|piracy)\b/.test(text)) intelligence_type='MARITIME';
   else if(/\b(border|crossing|checkpoint|customs)\b/.test(text)) intelligence_type='BORDER';
+  else if(/\b(attack|ambush|kidnap|abduct|bomb|explosion|terror|gunfire|militia|insurgent|armed|security)\b/.test(text)) intelligence_type='SECURITY';
   else if(/\b(election|parliament|government|president|minister|vote|coup|opposition|political)\b/.test(text)) intelligence_type='POLITICAL';
   else if(/\b(robbery|theft|murder|arrest|gang|smuggl|fraud|crime)\b/.test(text)) intelligence_type='CRIME';
   else if(/\b(port|cargo|shipment|trucking|freight|logistics|transport|road closure|supply chain)\b/.test(text)) intelligence_type='LOGISTICS';
   else if(/\b(inflation|currency|trade|economy|economic|fuel price)\b/.test(text)) intelligence_type='ECONOMIC';
-  else if(/\b(attack|ambush|kidnap|abduct|bomb|explosion|terror|gunfire|militia|insurgent|armed|security)\b/.test(text)) intelligence_type='SECURITY';
+
   const evidence=Array.isArray(event?.evidence)?event.evidence:[];
   const key_facts=evidence.slice(0,6).map((item)=>{
     const source=clean(item?.source||'Source',120);
