@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { verify } from '@node-rs/argon2';
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { query } from '../db.js';
+import { globalQuery, tenantContext } from '../db.js';
 
 export interface TelemetryDevice { id: string; org_id: string; status: string; }
 
@@ -20,7 +20,7 @@ export async function deviceAuth(
   }
 
   const lookupHash = createHash('sha256').update(token).digest('hex');
-  const rows = await query<TelemetryDevice & { token_hash: string }>(
+  const rows = await globalQuery<TelemetryDevice & { token_hash: string }>(
     `SELECT id, org_id, status, token_hash
        FROM guardian_devices
       WHERE token_lookup_hash = $1 AND deleted_at IS NULL
@@ -44,5 +44,6 @@ export async function deviceAuth(
     return;
   }
 
+  tenantContext.enterWith(device.org_id);
   request.telemetryDevice = { id: device.id, org_id: device.org_id, status: device.status };
 }
