@@ -1,5 +1,5 @@
-const emailQueue={add:jest.fn().mockResolvedValue({})};
-jest.mock('../src/config/queue',()=>({getQueues:()=>({emailQueue})}));
+const mockEmailQueue={add:jest.fn().mockResolvedValue({})};
+jest.mock('../src/config/queue',()=>({getQueues:()=>({emailQueue:mockEmailQueue})}));
 jest.mock('../src/utils/orgScopedDb',()=>({withOrg:async(_org,fn)=>fn({query:jest.fn().mockResolvedValue({rows:[{id:'00000000-0000-0000-0000-000000000001'}]})})}));
 jest.mock('../src/services/email/templates',()=>({
   alertTemplate:()=>({subject:'alert',text:'alert',html:'alert'}),
@@ -13,7 +13,7 @@ process.env.RESEND_API_KEY='test-key';
 const { queueClientPulseEmail } = require('../src/services/email/email.service');
 
 describe('Client Pulse heartbeat enqueue',()=>{
-  beforeEach(()=>emailQueue.add.mockClear());
+  beforeEach(()=>mockEmailQueue.add.mockClear());
 
   test('queues a pulse even when there are zero active bookings',async()=>{
     const result=await queueClientPulseEmail({
@@ -27,6 +27,6 @@ describe('Client Pulse heartbeat enqueue',()=>{
       idempotencyKey:'cds-client-pulse:test'
     });
     expect(result.queued).toBe(1);
-    expect(emailQueue.add).toHaveBeenCalledWith('email.send',{emailNotificationId:'00000000-0000-0000-0000-000000000001'},expect.any(Object));
+    expect(mockEmailQueue.add).toHaveBeenCalledWith('email.send',{emailNotificationId:'00000000-0000-0000-0000-000000000001'},expect.any(Object));
   });
 });
