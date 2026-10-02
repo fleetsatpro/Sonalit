@@ -88,6 +88,17 @@ export default function GodsEyeView() {
     setIntelligenceOpen(nextOpen)
   }
 
+  const setViewMode = (nextView: View) => {
+    setView(nextView)
+    if (nextView === '2D') setSelectedExternalId(null)
+  }
+
+  const toggleExternal = () => {
+    const nextVisible = !externalVisible
+    setExternalVisible(nextVisible)
+    if (!nextVisible) setSelectedExternalId(null)
+  }
+
   const allVehicles = useMemo(() => groups.flatMap(g => g.vehicles), [groups])
   const members = useMemo(() => allVehicles.map(toGlobeMember), [allVehicles])
   const initialWorldCenter = useMemo(() => {
@@ -201,10 +212,10 @@ export default function GodsEyeView() {
         </div>
 
         <div className="gev-topcenter" role="group" aria-label="View mode">
-          <button type="button" className="gev-segment" aria-pressed={view === '2D'} onClick={() => setView('2D')}>
+          <button type="button" className="gev-segment" aria-pressed={view === '2D'} onClick={() => setViewMode('2D')}>
             <Layers3 size={13} /> World 2D
           </button>
-          <button type="button" className="gev-segment" aria-pressed={view === '3D'} onClick={() => setView('3D')}>
+          <button type="button" className="gev-segment" aria-pressed={view === '3D'} onClick={() => setViewMode('3D')}>
             <Orbit size={13} /> Immersive 3D
           </button>
         </div>
@@ -226,17 +237,27 @@ export default function GodsEyeView() {
           <div className="gev-scene-readout" aria-live="polite">
             <div className="gev-scene-readout-primary">
               <span className="gev-scene-chip gev-scene-chip--live"><span className="gev-scene-live-dot" /> LIVE WORLD</span>
-              <span className="gev-scene-chip"><Orbit size={11} /> 3D IMMERSIVE</span>
-              <span className="gev-scene-chip"><Focus size={11} /> {Math.round(worldViewport.radiusM / 1000)} KM VIEW</span>
+              <span className="gev-scene-chip">{view === '3D' ? <Orbit size={11} /> : <Layers3 size={11} />} {view === '3D' ? '3D IMMERSIVE' : '2D OPERATIONAL'}</span>
+              {view === '3D' && <span className="gev-scene-chip"><Focus size={11} /> {Math.round(worldViewport.radiusM / 1000)} KM VIEW</span>}
             </div>
             <div className="gev-scene-readout-secondary">
-              <span>{worldViewport.latitude.toFixed(3)}° {worldViewport.longitude.toFixed(3)}°</span>
-              <span className="gev-readout-divider" />
+              {view === '3D' ? (
+                <>
+                  <span>{worldViewport.latitude.toFixed(3)}° {worldViewport.longitude.toFixed(3)}°</span>
+                  <span className="gev-readout-divider" />
+                </>
+              ) : (
+                <span>OPERATIONAL SCAN</span>
+              )}
               <span>{positionedVehicles.length} POSITIONED</span>
-              <span className="gev-readout-divider" />
-              <button type="button" className="gev-external-toggle" onClick={() => setExternalVisible(v => !v)} aria-pressed={externalVisible}>
-                {externalVisible ? 'EXTERNAL ON' : 'EXTERNAL OFF'} · {externalEntities.length}
-              </button>
+              {view === '3D' && (
+                <>
+                  <span className="gev-readout-divider" />
+                  <button type="button" className="gev-external-toggle" onClick={toggleExternal} aria-pressed={externalVisible}>
+                    {externalVisible ? 'EXTERNAL ON' : 'EXTERNAL OFF'} · {externalEntities.length}
+                  </button>
+                </>
+              )}
             </div>
           </div>
           {view === '2D' ? (
