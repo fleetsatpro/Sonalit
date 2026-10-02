@@ -89,7 +89,15 @@ describe('tenant isolation regression guards', () => {
     expect(normalizeOrgId('aaaaaaaa-0000-0000-0000-00000000000')).toBeNull();
   });
 
-  test('background intelligence establishes tenant context before tenant queries', () => {\n    const collection = fs.readFileSync(path.join(__dirname, '../src/utils/collectionFabric.js'), 'utf8');\n    const regional = fs.readFileSync(path.join(__dirname, '../src/utils/regionalIncidentFabric.js'), 'utf8');\n    expect(collection).toContain('runWithOrgContext(org_id');\n    expect(regional).toContain('globalQuery(`SELECT DISTINCT org_id FROM users');\n    expect(regional).toContain('runWithOrgContext(orgId');\n  });\n\n  test('tenant DB helper is fail-closed and RLS-aware', () => {
+  test('background intelligence establishes tenant context before tenant queries', () => {
+    const collection = fs.readFileSync(path.join(__dirname, '../src/utils/collectionFabric.js'), 'utf8');
+    const regional = fs.readFileSync(path.join(__dirname, '../src/utils/regionalIncidentFabric.js'), 'utf8');
+    expect(collection).toContain('runWithOrgContext(org_id');
+    expect(regional).toContain('globalQuery(`SELECT DISTINCT org_id FROM users');
+    expect(regional).toContain('runWithOrgContext(orgId');
+  });
+
+  test('tenant DB helper is fail-closed and RLS-aware', () => {
     const scoped = fs.readFileSync(path.join(__dirname, '../src/utils/orgScopedDb.js'), 'utf8');
     const database = fs.readFileSync(path.join(__dirname, '../src/config/database.js'), 'utf8');
     expect(scoped).toMatch(/SET LOCAL ROLE sonalit_app/);
