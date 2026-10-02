@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { query } from '../db.js';
+import { query, globalQuery, withOrgContext } from '../db.js';
 import { verifyPassword } from '../lib/password.js';
 import { signAccessToken, signRefreshToken } from '../lib/jwt.js';
 import { publishAudit } from '../lib/audit.js';
@@ -41,7 +41,7 @@ export async function loginRoutes(app: FastifyInstance): Promise<void> {
     const ip = request.ip;
     const ua = request.headers['user-agent'] ?? '';
 
-    const users = await query<UserRow>(
+    const users = await globalQuery<UserRow>(
       `SELECT id, org_id, email, name, role, password_hash, totp_enabled, totp_secret_enc
        FROM users WHERE email = $1 AND deleted_at IS NULL LIMIT 1`,
       [email],
@@ -103,11 +103,11 @@ export async function loginRoutes(app: FastifyInstance): Promise<void> {
     const refreshToken = await signRefreshToken(familyId, user.id, user.org_id);
     const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
 
-    await query(
+    await withOrgContext(user.org_id, () => query(
       `INSERT INTO token_families (id, user_id, org_id, last_refresh_token_hash)
        VALUES ($1, $2, $3, $4)`,
       [familyId, user.id, user.org_id, refreshHash],
-    );
+    ));
 
     loginCounter.inc({ result: 'success' });
     await publishAudit({
