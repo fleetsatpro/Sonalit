@@ -226,6 +226,35 @@ html[data-theme] .hover\\:bg-orange-700:hover { background-color: var(--son-them
 :root[data-theme="daylight"] .gev-shell .gev-footnote,
 :root[data-theme="daylight"] .gev-shell .gev-external-meta { color: #62736b; }
 
+
+/* ── Cross-surface theme bridge ─────────────────────────────────────────── */
+:root[data-theme] [class*="bg-black/"] {
+  background-color: color-mix(in srgb, var(--d-well) 92%, transparent) !important;
+}
+:root[data-theme] [class*="bg-[#05070b]"],
+:root[data-theme] [class*="bg-[#05070c]"],
+:root[data-theme] [class*="bg-[#070a10]"],
+:root[data-theme] [class*="bg-[#080b12]"],
+:root[data-theme] [class*="bg-[#080a0f]"] {
+  background-color: color-mix(in srgb, var(--d-well) 94%, transparent) !important;
+}
+:root[data-theme] .spatial-surface {
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .spatial-surface [class*="text-white"],
+:root[data-theme] .spatial-surface [class*="text-neutral-100"],
+:root[data-theme] .spatial-surface [class*="text-neutral-200"] {
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .spatial-surface [class*="text-neutral-300"],
+:root[data-theme] .spatial-surface [class*="text-neutral-400"] {
+  color: var(--d-t2) !important;
+}
+:root[data-theme] .spatial-surface [class*="text-neutral-500"],
+:root[data-theme] .spatial-surface [class*="text-neutral-600"] {
+  color: var(--d-t3) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html[data-theme] body { transition: none; }
 }
