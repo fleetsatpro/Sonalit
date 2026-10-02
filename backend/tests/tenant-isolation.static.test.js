@@ -165,6 +165,11 @@ describe('tenant isolation regression guards', () => {
   });
 
 
+  test('rule notification NATS subject is tenant-qualified', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../services/alerts-svc/src/consumers/gps.ts'), 'utf8');
+    expect(source).toContain('notifications.${orgId}.${action.channel}');
+    expect(source).not.toContain('notifications.${action.channel}');
+  });
   test('Guardian Convoy report realtime channel is tenant-qualified', () => {
     const source = fs.readFileSync(path.join(__dirname, '../src/routes/guardianConvoy.js'), 'utf8');
     expect(source).not.toContain('publish(`convoy:${report.convoy_id}:report`');
