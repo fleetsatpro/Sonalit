@@ -36,11 +36,11 @@ const dAuto = HAS_DB
   ? describeWhen(LIVE.router && LIVE.geocoder, 'corridor auto-plan needing router + geocoder')
   : describe.skip;
 
-const ORG = 'dddddddd-0000-0000-0000-00000000d00d';
-const USER = 'dddddddd-0000-0000-0001-00000000d00d';
-const CONVOY = 'dddddddd-0000-0000-0002-00000000d00d';
-const DEVICE = 'dddddddd-0000-0000-0003-00000000d00d';
-const TSAVO = 'dddddddd-0000-0000-0004-00000000d00d';
+const ORG = 'dddddddd-1111-4111-8111-00000000d00d';
+const USER = 'dddddddd-1111-4111-8112-00000000d00d';
+const CONVOY = 'dddddddd-1111-4111-8113-00000000d00d';
+const DEVICE = 'dddddddd-1111-4111-8114-00000000d00d';
+const TSAVO = 'dddddddd-1111-4111-8115-00000000d00d';
 
 // Real endpoints of a real 800 km Kenyan trunk route.
 const KISUMU = { lat: -0.0917, lng: 34.768 };
@@ -129,7 +129,7 @@ dRoute('POST /api/v1/convoys/:id/corridor — real router, real DB', () => {
     await pool.query(
       `INSERT INTO convoys (id, name, region, status, org_id) VALUES ($1,'ITEST other','X','planned',$2)
        ON CONFLICT (id) DO NOTHING`,
-      [other, '99999999-0000-0000-0000-000000000099'],
+      [other, '99999999-1111-4111-8116-000000000099'],
     );
     const res = await auth(request(app).post(`/api/v1/convoys/${other}/corridor`))
       .send({ origin: KISUMU, destination: MOMBASA });
