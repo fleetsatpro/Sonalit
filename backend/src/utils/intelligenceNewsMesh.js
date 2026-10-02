@@ -2,7 +2,8 @@
 // This is evidence acquisition, not truth adjudication. Every item is retained with provenance.
 const crypto=require('crypto');
 const {XMLParser}=require('fast-xml-parser');
-const {query}=require('../config/database');
+const {query,globalQuery}=require('../config/database');
+const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 
 const parser=new XMLParser({ignoreAttributes:true});
@@ -61,5 +62,5 @@ async function collectForOrg(orgId){
   return{selectedCountries:selected.map(x=>x[0]),tasks:tasks.length,seen:results.reduce((n,r)=>n+(r.seen||0),0),inserted:results.reduce((n,r)=>n+(r.inserted||0),0),duplicates:results.reduce((n,r)=>n+(r.duplicates||0),0),failed:results.filter(r=>r.status==='failed').length,results};
 }
 
-async function runNewsMesh(){const {rows:orgs}=await query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const output=[];for(const {org_id} of orgs){try{output.push({org_id,...await collectForOrg(org_id)})}catch(error){output.push({org_id,failed:1,error:error.message});logger.warn(`News Mesh org=${org_id} failed: ${error.message}`)}}return output;}
+async function runNewsMesh(){const {rows:orgs}=await globalQuery(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const output=[];for(const {org_id} of orgs){try{output.push({org_id,...await runWithOrgContext(org_id,()=>collectForOrg(org_id))})}catch(error){output.push({org_id,failed:1,error:error.message});logger.warn(`News Mesh org=${org_id} failed: ${error.message}`)}}return output;}
 module.exports={runNewsMesh,collectForOrg,COUNTRIES,NAMED_LOCAL_SOURCES};
