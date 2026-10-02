@@ -18,12 +18,12 @@ async function migrate(): Promise<void> {
       ALTER TABLE media_assets FORCE ROW LEVEL SECURITY;
       DROP POLICY IF EXISTS tenant_isolation_service ON media_assets;
       CREATE POLICY tenant_isolation_service ON media_assets AS RESTRICTIVE FOR ALL
-        USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
-        WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid);
+        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid)
+        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid);
       DROP POLICY IF EXISTS tenant_base_service ON media_assets;
       CREATE POLICY tenant_base_service ON media_assets AS PERMISSIVE FOR ALL
-        USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
-        WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid);
+        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid)
+        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid);
     `);
     await client.query('COMMIT');
     process.stdout.write('media-svc migrations complete\n');
