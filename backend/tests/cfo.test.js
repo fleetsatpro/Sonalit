@@ -230,8 +230,11 @@ describe('Create CFO convoy', () => {
     const res = await request(app).post('/api/v1/convoys').send(body);
     expect(res.status).toBe(201);
     // Verify empty string was coerced to null before the DB call
-    const truckInsertArgs = mockCQ.mock.calls[3][1]; // 4th query = first truck INSERT
-    expect(truckInsertArgs[1]).toBeNull();
+    const truckInsertCall = mockCQ.mock.calls.find(call =>
+      typeof call[0] === 'string' && call[0].includes('INSERT INTO convoy_trucks')
+    );
+    expect(truckInsertCall).toBeDefined();
+    expect(truckInsertCall[1][1]).toBeNull();
   });
 
   test('422 when cfo_truck_limit trigger fires during convoy creation', async () => {
