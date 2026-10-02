@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { query, globalQuery } = require('../config/database');
+const { query } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
 const logger = require('../utils/logger');
@@ -12,8 +12,8 @@ const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
 const captureVision = require('../utils/captureVision');
-const { getOrgId, runWithOrgContext } = require('../utils/tenantContext');
-const { withOrg } = require('../utils/orgScopedDb');
+const { getOrgId } = require('../utils/tenantContext');
+const { runWithOrgContext } = require('../utils/tenantContext');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
@@ -116,20 +116,12 @@ async function resolveOrgOfficer(deviceId, badgeName) {
   try {
     const devRow = await query(`SELECT org_id FROM guardian_devices WHERE id = $1`, [deviceId]);
     orgId = devRow.rows[0]?.org_id ?? null;
-
-    const offRow = orgId
-      ? await query(
-          `SELECT id FROM field_officers
-             WHERE (device_id = $1 OR (badge_number = $2 AND org_id = $3))
-             ORDER BY (device_id = $1) DESC LIMIT 1`,
-          [deviceId, badgeName || null, orgId],
-        )
-      : await query(
-          `SELECT id FROM field_officers
-             WHERE device_id = $1
-             ORDER BY id LIMIT 1`,
-          [deviceId],
-        );
+    const offRow = await query(
+      `SELECT id FROM field_officers
+       WHERE (device_id = $1 OR badge_number = $2)
+       ORDER BY (device_id = $1) DESC LIMIT 1`,
+      [deviceId, badgeName || null]
+    );
     officerId = offRow.rows[0]?.id ?? null;
   } catch (e) {
     logger.warn(`resolveOrgOfficer failed for ${deviceId}: ${e.message}`);
@@ -333,7 +325,6 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS guardian_audit_log (
         id          BIGSERIAL PRIMARY KEY,
-        org_id      UUID,
         actor_type  TEXT NOT NULL CHECK (actor_type IN ('admin','device','system')),
         actor_id    UUID,
         action      TEXT NOT NULL,
@@ -433,7 +424,6 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS guardian_command_nonces (
         device_id UUID NOT NULL REFERENCES guardian_devices(id),
-        org_id    UUID,
         nonce     TEXT NOT NULL,
         seen_at   TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (device_id, nonce)
@@ -444,13 +434,14 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS device_command_events (
         id         BIGSERIAL PRIMARY KEY,
-        org_id     UUID,
         command_id UUID NOT NULL,
         status     TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_command_events_command ON device_command_events(command_id)`);;
+    await query(`CREATE INDEX IF NOT EXISTS idx_device_command_events_command ON device_command_events(command_id)`);
+    // Lazy Guardian control tables are created here in some environments, so
+    // secure them immediately rather than relying on a later migration.
     await query(`DO $guardian_tenant$
 DECLARE t TEXT;
 BEGIN
@@ -469,7 +460,7 @@ BEGIN
     EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO sonalit_app', t);
   END LOOP;
 END $guardian_tenantconst router = require('express').Router();
-const { query, globalQuery } = require('../config/database');
+const { query } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
 const logger = require('../utils/logger');
@@ -482,8 +473,8 @@ const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
 const captureVision = require('../utils/captureVision');
-const { getOrgId, runWithOrgContext } = require('../utils/tenantContext');
-const { withOrg } = require('../utils/orgScopedDb');
+const { getOrgId } = require('../utils/tenantContext');
+const { runWithOrgContext } = require('../utils/tenantContext');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
@@ -586,20 +577,12 @@ async function resolveOrgOfficer(deviceId, badgeName) {
   try {
     const devRow = await query(`SELECT org_id FROM guardian_devices WHERE id = $1`, [deviceId]);
     orgId = devRow.rows[0]?.org_id ?? null;
-
-    const offRow = orgId
-      ? await query(
-          `SELECT id FROM field_officers
-             WHERE (device_id = $1 OR (badge_number = $2 AND org_id = $3))
-             ORDER BY (device_id = $1) DESC LIMIT 1`,
-          [deviceId, badgeName || null, orgId],
-        )
-      : await query(
-          `SELECT id FROM field_officers
-             WHERE device_id = $1
-             ORDER BY id LIMIT 1`,
-          [deviceId],
-        );
+    const offRow = await query(
+      `SELECT id FROM field_officers
+       WHERE (device_id = $1 OR badge_number = $2)
+       ORDER BY (device_id = $1) DESC LIMIT 1`,
+      [deviceId, badgeName || null]
+    );
     officerId = offRow.rows[0]?.id ?? null;
   } catch (e) {
     logger.warn(`resolveOrgOfficer failed for ${deviceId}: ${e.message}`);
@@ -803,7 +786,6 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS guardian_audit_log (
         id          BIGSERIAL PRIMARY KEY,
-        org_id      UUID,
         actor_type  TEXT NOT NULL CHECK (actor_type IN ('admin','device','system')),
         actor_id    UUID,
         action      TEXT NOT NULL,
@@ -903,7 +885,6 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS guardian_command_nonces (
         device_id UUID NOT NULL REFERENCES guardian_devices(id),
-        org_id    UUID,
         nonce     TEXT NOT NULL,
         seen_at   TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (device_id, nonce)
@@ -914,15 +895,12 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS device_command_events (
         id         BIGSERIAL PRIMARY KEY,
-        org_id     UUID,
         command_id UUID NOT NULL,
         status     TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
 );
-
-
 
     logger.info('Guardian tables initialised');
   } catch (err) {
@@ -959,7 +937,7 @@ function auditLog(actor_type, actor_id, action, target_type, target_id, payload,
 
 async function runCommandExpiryJob() {
   try {
-    const result = await globalQuery(
+    const result = await query(
       `UPDATE device_commands
        SET status = 'expired'
        WHERE status IN ('pending', 'sent') AND expires_at < NOW()`
@@ -976,7 +954,7 @@ async function runCommandExpiryJob() {
   // invoked, so guardian_command_nonces grew unbounded. Guarded separately so a
   // failure here never blocks command expiry above.
   try {
-    await globalQuery('SELECT cleanup_command_nonces()');
+    await query('SELECT cleanup_command_nonces()');
   } catch (err) {
     logger.error(`Nonce cleanup job error: ${err.message}`);
   }
@@ -995,7 +973,7 @@ async function runDmsMonitorJob() {
     // once since it was enabled (last_checkin_at NULL = no baseline, never
     // fire blindly), (c) aren't temporarily suspended, and (d) are past their
     // window. A NULL dms_timeout_minutes yields NULL here and is skipped.
-    const due = await globalQuery(
+    const due = await query(
       `SELECT id, org_id, name, last_lat, last_lng
          FROM guardian_devices
         WHERE dms_enabled = true
@@ -1007,28 +985,27 @@ async function runDmsMonitorJob() {
     );
 
     for (const dev of due.rows) {
-      if (!dev.org_id) continue;
-      await withOrg(dev.org_id, async () => {
-        // Claim the device atomically. The tenant context is established before
-        // touching the FORCE-RLS tables.
-        const claim = await query(
-          `UPDATE guardian_devices
-              SET dms_enabled = false, panic_active = true, updated_at = NOW()
-            WHERE id = $1 AND org_id = $2 AND dms_enabled = true
-            RETURNING id`,
-          [dev.id, dev.org_id]
-        );
-        if (!claim.rows.length) return;
+      // Claim the device atomically: flip dms_enabled off (operator re-enables
+      // after resolving) and mark panic_active. The WHERE dms_enabled = true
+      // guard means only one monitor tick can win, so we never double-fire.
+      const claim = await query(
+        `UPDATE guardian_devices
+            SET dms_enabled = false, panic_active = true, updated_at = NOW()
+          WHERE id = $1 AND dms_enabled = true
+          RETURNING id`,
+        [dev.id]
+      );
+      if (!claim.rows.length) continue;
 
-        const eventUuid = uuidv4();
-        const ins = await query(
-          `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
-           VALUES ($1, $2, $3, 'silent', $4, $5, $6, NOW())
-           RETURNING id, created_at`,
-          [eventUuid, dev.id, dev.org_id, dev.last_lat ?? null, dev.last_lng ?? null,
-           "Dead Man's Switch: missed check-in"]
-        );
-        const row = ins.rows[0];
+      const eventUuid = uuidv4();
+      const ins = await query(
+        `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
+         VALUES ($1, $2, $3, 'silent', $4, $5, $6, NOW())
+         RETURNING id, created_at`,
+        [eventUuid, dev.id, dev.org_id ?? null, dev.last_lat ?? null, dev.last_lng ?? null,
+         "Dead Man's Switch: missed check-in"]
+      );
+      const row = ins.rows[0];
 
       // Same payload shape the POST /panic handler publishes, so the dashboard's
       // existing 'panic' realtime handler renders it identically.
@@ -1045,10 +1022,12 @@ async function runDmsMonitorJob() {
         created_at: row.created_at,
         triggered_at: row.created_at,
       };
-        publish(`org#${dev.org_id}`, payload);
-        logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id}`);
-        autoBurstOnPanic(dev, dev.org_id).catch(e => logger.warn(`autoBurstOnPanic (DMS) error: ${e.message}`));
-      });
+      if (dev.org_id) publish(`org#${dev.org_id}`, payload); else publish('device:panic', payload);
+      logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id ?? 'unknown'}`);
+      // Queue a burst too — a missed check-in is exactly when eyes on the scene
+      // matter most. No fcm_token on this partial row, so it rides the device's
+      // next heartbeat/poll claim (6h TTL covers a late reconnect).
+      autoBurstOnPanic(dev, dev.org_id ?? null).catch(e => logger.warn(`autoBurstOnPanic (DMS) error: ${e.message}`));
     }
   } catch (err) {
     logger.error(`DMS monitor job error: ${err.message}`);
@@ -1064,7 +1043,7 @@ const MAX_ESCALATION_LEVEL = 3;
 
 async function runPanicEscalationJob() {
   try {
-    const due = await globalQuery(
+    const due = await query(
       `SELECT pe.id, pe.org_id, pe.device_id, pe.mode, pe.escalation_level, pe.created_at,
               gd.name AS device_name
        FROM panic_events pe
@@ -1080,13 +1059,11 @@ async function runPanicEscalationJob() {
     );
 
     for (const row of due.rows) {
-      if (!row.org_id) continue;
-      await withOrg(row.org_id, async () => {
-        const nextLevel = row.escalation_level + 1;
-        await query(
-          `UPDATE panic_events SET escalation_level = $2, escalated_at = NOW() WHERE id = $1 AND org_id = $3`,
-          [row.id, nextLevel, row.org_id]
-        );
+      const nextLevel = row.escalation_level + 1;
+      await query(
+        `UPDATE panic_events SET escalation_level = $2, escalated_at = NOW() WHERE id = $1`,
+        [row.id, nextLevel]
+      );
 
       publish(`org#${row.org_id}`, {
         type: 'panic_escalated',
@@ -1112,10 +1089,9 @@ async function runPanicEscalationJob() {
         for (const c of contacts.rows) {
           sendWhatsAppMessage(row.org_id, c.phone, text).catch(() => {});
         }
-        } catch (notifyErr) {
-          logger.error(`panic escalation notify error: ${notifyErr.message}`);
-        }
-      });
+      } catch (notifyErr) {
+        logger.error(`panic escalation notify error: ${notifyErr.message}`);
+      }
     }
   } catch (err) {
     logger.error(`Panic escalation job error: ${err.message}`);
@@ -1145,7 +1121,7 @@ async function deviceAuth(req, res, next) {
       return res.status(401).json({ error: 'Missing X-Device-Token header' });
     }
 
-    const result = await globalQuery(
+    const result = await query(
       `SELECT * FROM guardian_devices
        WHERE token = $1 AND deleted_at IS NULL`,
       [token]
@@ -1183,28 +1159,18 @@ async function deviceAuth(req, res, next) {
  * the same officer in every device list.
  */
 async function linkOfficerDevice(officer, deviceId) {
-  const deviceCheck = await query(
-    `SELECT org_id FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
-    [deviceId],
-  );
-  const deviceOrg = deviceCheck.rows[0]?.org_id ?? null;
-  if (!deviceOrg || (officer.org_id && String(officer.org_id) !== String(deviceOrg))) {
-    throw new Error('tenant_scope_parent_mismatch');
-  }
-
   if (officer.device_id && officer.device_id !== deviceId) {
     await query(
-      `UPDATE guardian_devices
-         SET status = 'revoked', deleted_at = NOW(), updated_at = NOW()
-       WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
-      [officer.device_id, officer.org_id]
+      `UPDATE guardian_devices SET status = 'revoked', deleted_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [officer.device_id]
     );
     logger.info(`Retired stale device ${officer.device_id} for officer ${officer.id} (now ${deviceId})`);
   }
   if (officer.device_id !== deviceId) {
     await query(
-      `UPDATE field_officers SET device_id = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
-      [deviceId, officer.id, officer.org_id]
+      `UPDATE field_officers SET device_id = $1, updated_at = NOW() WHERE id = $2`,
+      [deviceId, officer.id]
     );
   }
 }
@@ -1221,34 +1187,15 @@ async function linkOfficerDevice(officer, deviceId) {
  */
 router.post('/recover', enrollLimiter, async (req, res, next) => {
   try {
-    const { device_id, enrollment_code } = req.body; // ANDROID_ID + tenant-scoped recovery credential
+    const { device_id } = req.body; // ANDROID_ID, same value enroll sends
     if (!device_id) {
       return res.status(400).json({ error: 'device_id is required' });
     }
-    if (!enrollment_code || !String(enrollment_code).trim()) {
-      return res.status(403).json({ error: 'Tenant-scoped enrollment code required' });
-    }
-
-    const codeResult = await query(
-      `SELECT id, org_id
-         FROM enrollment_codes
-        WHERE code = $1
-          AND org_id IS NOT NULL
-          AND used_at IS NULL
-          AND expires_at > NOW()
-        LIMIT 1`,
-      [String(enrollment_code).trim().toUpperCase()]
-    );
-    const code = codeResult.rows[0];
-    if (!code) return res.status(403).json({ error: 'Invalid or expired enrollment code' });
-
     const result = await query(
       `SELECT id, token, status, org_id FROM guardian_devices
-       WHERE android_id = $1
-         AND org_id = $2
-         AND deleted_at IS NULL
+       WHERE android_id = $1 AND deleted_at IS NULL
        ORDER BY enrolled_at DESC LIMIT 1`,
-      [device_id, code.org_id]
+      [device_id]
     );
     const dev = result.rows[0];
     if (!dev) return res.status(404).json({ error: 'unknown_device' });
@@ -1309,10 +1256,10 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
 
       // Dedup: return existing if already enrolled with this android device id
       const existing = await query(
-        `SELECT id, token, status, org_id FROM guardian_devices
-         WHERE android_id = $1 AND org_id = $2 AND deleted_at IS NULL
+        `SELECT id, token, status FROM guardian_devices
+         WHERE android_id = $1 AND deleted_at IS NULL
          ORDER BY enrolled_at DESC LIMIT 1`,
-        [device_id, orgId]
+        [device_id]
       );
       if (existing.rows[0]) {
         const dev = existing.rows[0];
@@ -1400,8 +1347,12 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
     // ── legacy format ────────────────────────────────────────────────────────
     const { name, imei, android_id, manufacturer, model, os_version, app_version, org_token, enrollment_code } = req.body;
 
-    if (!name) return res.status(400).json({ error: 'name is required' });
-    if (!org_token) return res.status(400).json({ error: 'org_token is required' });
+    if (!name) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (!org_token) {
+      return res.status(400).json({ error: 'org_token is required' });
+    }
 
     const expectedToken = process.env.GUARDIAN_ORG_TOKEN || 'fleet-guardian-2024';
     if (org_token !== expectedToken) {
@@ -1409,34 +1360,8 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       return res.status(403).json({ error: 'Invalid organisation token' });
     }
 
-    // The legacy global token proves only that the caller reached an approved
-    // enrollment surface. It does NOT identify a tenant. New tenant identity
-    // comes from a one-time, tenant-scoped enrollment code.
-    let enrollmentCodeId = null;
-    let enrollmentOrgId = null;
-    if (!enrollment_code || !enrollment_code.trim()) {
-      return res.status(403).json({ error: 'Tenant-scoped enrollment code required' });
-    }
-    if (enrollment_code && enrollment_code.trim()) {
-      const codeRow = await query(
-        `SELECT id, org_id
-           FROM enrollment_codes
-          WHERE code = $1
-            AND used_at IS NULL
-            AND expires_at > NOW()
-            AND org_id IS NOT NULL`,
-        [enrollment_code.trim().toUpperCase()]
-      );
-      if (!codeRow.rows.length) {
-        return res.status(403).json({ error: 'Invalid or expired enrollment code' });
-      }
-      enrollmentCodeId = codeRow.rows[0].id;
-      enrollmentOrgId = codeRow.rows[0].org_id;
-    }
-
-    // Deduplication by hardware identity is acceptable only as a recovery path
-    // for the same physical device. Name/model matching is deliberately gone:
-    // those are not credentials and are trivially guessable across tenants.
+    // Deduplication: if this hardware is already enrolled return its existing token.
+    // T5.5: hash IMEI with PEPPER — never store raw IMEI in persistent storage
     const IMEI_PEPPER = process.env.IMEI_PEPPER || 'guardian-imei-pepper-dev';
     const rawImei = imei && imei !== 'unknown' ? imei : null;
     const safeImei = rawImei
@@ -1445,21 +1370,42 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
     const safeAndroidId = android_id && android_id !== 'unknown' ? android_id : null;
 
     let existingDev = null;
+
     if (safeImei || safeAndroidId) {
       const r = await query(
-        `SELECT id, token, status, enrolled_at, org_id
-           FROM guardian_devices
-          WHERE deleted_at IS NULL
-            AND org_id = $3
-            AND (
-              ($1::TEXT IS NOT NULL AND imei_hash = $1)
-              OR ($2::TEXT IS NOT NULL AND android_id = $2)
-            )
-          ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, enrolled_at DESC
-          LIMIT 1`,
-        [safeImei, safeAndroidId, enrollmentOrgId]
+        `SELECT id, token, status, enrolled_at FROM guardian_devices
+         WHERE deleted_at IS NULL
+           AND (
+             ($1::TEXT IS NOT NULL AND imei_hash = $1)
+             OR ($2::TEXT IS NOT NULL AND android_id = $2)
+           )
+         ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, enrolled_at DESC
+         LIMIT 1`,
+        [safeImei, safeAndroidId]
       );
       if (r.rows.length) existingDev = r.rows[0];
+    }
+
+    // Legacy fallback: records enrolled before android_id tracking have both hardware IDs null,
+    // OR when a device reports unknown hardware IDs. Match by name + model.
+    if (!existingDev) {
+      const r = await query(
+        `SELECT id, token, status, enrolled_at FROM guardian_devices
+         WHERE deleted_at IS NULL AND android_id IS NULL AND imei IS NULL
+           AND name = $1 AND (model = $2 OR $2 IS NULL)
+         ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, enrolled_at DESC
+         LIMIT 1`,
+        [name, model || null]
+      );
+      if (r.rows.length) {
+        existingDev = r.rows[0];
+        // Backfill hardware IDs so the fast path works on every subsequent enrollment
+        await query(
+          `UPDATE guardian_devices SET android_id = $1, imei_hash = $2, manufacturer = $3 WHERE id = $4`,
+          [safeAndroidId, safeImei, manufacturer || null, existingDev.id]
+        );
+        logger.info(`Guardian legacy device backfilled android_id: ${existingDev.id}`);
+      }
     }
 
     if (existingDev) {
@@ -1467,24 +1413,30 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       if (dev.status === 'revoked' || dev.status === 'suspended') {
         return res.status(403).json({ error: `Device is ${dev.status} — contact your administrator` });
       }
-      if (enrollmentOrgId && dev.org_id && String(enrollmentOrgId) !== String(dev.org_id)) {
-        return res.status(403).json({ error: 'Enrollment code does not match device organization' });
-      }
-
+      // Re-enrollment: refresh metadata, keep token
       await query(
         `UPDATE guardian_devices
-            SET name = $1, os_version = $2, app_version = $3,
-                manufacturer = $4, model = $5, imei_hash = COALESCE($6, imei_hash),
-                android_id = COALESCE($7, android_id), updated_at = NOW()
-          WHERE id = $8
-            AND deleted_at IS NULL
-          RETURNING id, token, status, org_id, enrolled_at`,
-        [name, os_version || null, app_version || null, manufacturer || null, model || null,
-          safeImei, safeAndroidId, dev.id]
+         SET name = $1, os_version = $2, app_version = $3,
+             manufacturer = $4, model = $5, updated_at = NOW()
+         WHERE id = $6`,
+        [name, os_version || null, app_version || null, manufacturer || null, model || null, dev.id]
       );
-      auditLog('device', dev.id, 're_enroll', 'device', dev.id, { name }, req.ip, dev.org_id || enrollmentOrgId);
+      // Soft-delete any other PENDING records for the same physical device
+      await query(
+        `UPDATE guardian_devices SET deleted_at = NOW()
+         WHERE id <> $1 AND status = 'pending' AND deleted_at IS NULL
+           AND (
+             ($2::TEXT IS NOT NULL AND imei_hash = $2)
+             OR ($3::TEXT IS NOT NULL AND android_id = $3)
+             OR (android_id IS NULL AND imei_hash IS NULL AND name = $4
+                 AND (model = $5 OR $5 IS NULL))
+           )`,
+        [dev.id, safeImei, safeAndroidId, name, model || null]
+      );
+      logger.info(`Guardian re-enrollment: device ${dev.id}`);
+      auditLog('device', dev.id, 're_enroll', 'device', dev.id, { name }, req.ip);
       const certPin = process.env.GUARDIAN_CERT_PIN || null;
-      const { orgId: reOrgId, officerId: reOfficerId } = await resolveOrgOfficer(dev.id, null);
+      const { orgId: reOrgId, officerId: reOfficerId } = await resolveOrgOfficer(dev.id, name);
       return res.status(200).json({
         device_id: dev.id,
         token: dev.token,
@@ -1496,31 +1448,39 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       });
     }
 
-    if (!enrollmentCodeId || !enrollmentOrgId) {
-      return res.status(403).json({
-        error: 'Tenant-scoped enrollment code required for new legacy Guardian enrollment',
-      });
+    // Optional enrollment code validation (backward compat: skip if not provided)
+    let enrollmentCodeId = null;
+    if (enrollment_code && enrollment_code.trim()) {
+      const codeRow = await query(
+        `SELECT id FROM enrollment_codes
+         WHERE code = $1 AND used_at IS NULL AND expires_at > NOW()`,
+        [enrollment_code.trim().toUpperCase()]
+      );
+      if (!codeRow.rows.length) {
+        return res.status(403).json({ error: 'Invalid or expired enrollment code' });
+      }
+      enrollmentCodeId = codeRow.rows[0].id;
     }
 
     const result = await query(
       `INSERT INTO guardian_devices
-         (org_id, name, imei_hash, android_id, manufacturer, model, os_version, app_version, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+         (name, imei_hash, android_id, manufacturer, model, os_version, app_version, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
        RETURNING id, token, enrolled_at`,
-      [enrollmentOrgId, name, safeImei, safeAndroidId, manufacturer || null, model || null, os_version || null, app_version || null]
+      [name, safeImei, safeAndroidId, manufacturer || null, model || null, os_version || null, app_version || null]
     );
 
     const device = result.rows[0];
 
     if (enrollmentCodeId) {
       await query(
-        `UPDATE enrollment_codes SET used_at = NOW() WHERE id = $1 AND org_id = $2`,
-        [enrollmentCodeId, enrollmentOrgId]
+        `UPDATE enrollment_codes SET used_at = NOW() WHERE id = $1`,
+        [enrollmentCodeId]
       );
     }
 
     logger.info(`Guardian device enrolled: ${device.id} name="${name}"`);
-    auditLog('device', null, 'enroll', 'device', device.id, { name, android_id }, req.ip, enrollmentOrgId);
+    auditLog('device', null, 'enroll', 'device', device.id, { name, android_id }, req.ip, orgId);
 
     const certPin = process.env.GUARDIAN_CERT_PIN || null;
     const { orgId: newOrgId, officerId: newOfficerId } = await resolveOrgOfficer(device.id, name);
@@ -3329,10 +3289,9 @@ router.get('/enrollment-codes', authenticate, async (req, res, next) => {
       `SELECT ec.id, ec.code, ec.expires_at, ec.created_at,
               u.name AS created_by_name
        FROM enrollment_codes ec
-       LEFT JOIN users u ON u.id = ec.created_by AND u.org_id = ec.org_id
-       WHERE ec.org_id = $1 AND ec.used_at IS NULL AND ec.expires_at > NOW()
-       ORDER BY ec.created_at DESC`,
-      [req.user.org_id]
+       LEFT JOIN users u ON u.id = ec.created_by
+       WHERE ec.used_at IS NULL AND ec.expires_at > NOW()
+       ORDER BY ec.created_at DESC`
     );
     res.json({ data: result.rows });
   } catch (err) {
@@ -3446,10 +3405,9 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
               u.name AS created_by_name,
               COUNT(gd.id) AS current_members
        FROM convoy_codes cc
-       LEFT JOIN users u ON u.id = cc.created_by AND u.org_id = cc.org_id
-       LEFT JOIN guardian_devices gd ON gd.convoy_code = cc.code AND gd.org_id = cc.org_id AND gd.deleted_at IS NULL
-       WHERE cc.org_id = $1
-         AND (cc.expires_at IS NULL OR cc.expires_at > NOW()) AND cc.active = true
+       LEFT JOIN users u ON u.id = cc.created_by
+       LEFT JOIN guardian_devices gd ON gd.convoy_code = cc.code AND gd.deleted_at IS NULL
+       WHERE (cc.expires_at IS NULL OR cc.expires_at > NOW()) AND cc.active = true
        GROUP BY cc.code, cc.max_members, cc.expires_at, cc.active, cc.created_at, u.name
        ORDER BY cc.created_at DESC`, [req.user.org_id]
     );
