@@ -12,7 +12,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 const path = require('path');
 const fs = require('fs');
 const { Worker } = require('bullmq');
-const { pool, query } = require('../config/database');
+const { pool, query, globalQuery } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
 const { withOrg } = require('../utils/orgScopedDb');
 const { generateDailyReport, generateArchiveReport } = require('../utils/convoyPdfGenerator');
@@ -29,7 +29,7 @@ function getRedisConnection() {
 
 async function withConvoyOrg(convoyId, fn) {
   if (!convoyId) throw new Error('convoy_id is required');
-  const owner = await query(
+  const owner = await globalQuery(
     'SELECT org_id FROM convoys WHERE id = $1 AND deleted_at IS NULL',
     [convoyId],
   );
@@ -372,7 +372,7 @@ async function handleGenerateArchive({ convoy_id }) {
 }
 
 async function handleScheduledRecount() {
-  const active = await query(
+  const active = await globalQuery(
     `SELECT DISTINCT cdr.convoy_id, cdr.report_date, c.org_id
      FROM convoy_daily_reports cdr
      JOIN convoys c ON c.id = cdr.convoy_id
