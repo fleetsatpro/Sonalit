@@ -75,6 +75,8 @@ export default function GodsEyeView() {
   const [visibleLayers, setVisibleLayers] = useState<Set<WorldContextLayer>>(() => new Set(WORLD_CONTEXT_LAYERS))
   const [overviewOpen, setOverviewOpen] = useState(true)
   const [intelligenceOpen, setIntelligenceOpen] = useState(true)
+  const [layersOpen, setLayersOpen] = useState(true)
+  const [externalVisible, setExternalVisible] = useState(true)
   const [clock, setClock] = useState(() => new Date())
 
   const chromeExpanded = overviewOpen || intelligenceOpen
@@ -126,12 +128,12 @@ export default function GodsEyeView() {
     [worldContext],
   )
   const renderableExternalEntities = useMemo(
-    () => externalEntities.filter(entity => {
+    () => externalVisible ? externalEntities.filter(entity => {
       if (!Number.isFinite(entity.latitude) || !Number.isFinite(entity.longitude)) return false
       const layer = spatialEntityLayer(entity)
       return layer ? visibleLayers.has(layer) : false
-    }),
-    [externalEntities, visibleLayers],
+    }) : [],
+    [externalEntities, visibleLayers, externalVisible],
   )
 
   useEffect(() => {
@@ -215,6 +217,22 @@ export default function GodsEyeView() {
 
       <main className="gev-workspace">
         <section className="gev-stage" aria-label="Sonalit God’s Eye View map">
+          <div className="gev-scene-readout" aria-live="polite">
+            <div className="gev-scene-readout-primary">
+              <span className="gev-scene-chip gev-scene-chip--live"><span className="gev-scene-live-dot" /> LIVE WORLD</span>
+              <span className="gev-scene-chip"><Orbit size={11} /> 3D IMMERSIVE</span>
+              <span className="gev-scene-chip"><Focus size={11} /> {Math.round(worldViewport.radiusM / 1000)} KM VIEW</span>
+            </div>
+            <div className="gev-scene-readout-secondary">
+              <span>{worldViewport.latitude.toFixed(3)}° {worldViewport.longitude.toFixed(3)}°</span>
+              <span className="gev-readout-divider" />
+              <span>{positionedVehicles.length} POSITIONED</span>
+              <span className="gev-readout-divider" />
+              <button type="button" className="gev-external-toggle" onClick={() => setExternalVisible(v => !v)} aria-pressed={externalVisible}>
+                {externalVisible ? 'EXTERNAL ON' : 'EXTERNAL OFF'} · {externalEntities.length}
+              </button>
+            </div>
+          </div>
           {view === '2D' ? (
             <FleetMap
               vehicles={allVehicles}
@@ -231,6 +249,7 @@ export default function GodsEyeView() {
               surface="gev"
               fixedView="3D"
               showChrome={false}
+              showMapControls
               worldEntities={renderableExternalEntities}
               selectedExternalId={selectedExternalId}
               onExternalSelect={id => { setSelectedExternalId(id); setSelected(null) }}
@@ -241,10 +260,16 @@ export default function GodsEyeView() {
         </section>
 
         <div className="gev-chrome">
-          <aside className="gev-left-rail" aria-label="World context layers">
+          <aside className="gev-left-rail" data-open={layersOpen} aria-label="World context layers">
             <div className="gev-rail">
+              <div className="gev-rail-head">
+                <span className="gev-rail-title">LAYERS</span>
+                <button type="button" className="gev-rail-toggle" onClick={() => setLayersOpen(open => !open)} aria-expanded={layersOpen} aria-label={layersOpen ? 'Collapse world context layers' : 'Expand world context layers'} title={layersOpen ? 'Collapse layers' : 'Expand layers'}>
+                  {layersOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                </button>
+              </div>
               <div className="gev-layer-label">{view}</div>
-              {WORLD_CONTEXT_LAYERS.map(layer => {
+              {layersOpen && WORLD_CONTEXT_LAYERS.map(layer => {
                 const meta = layerMeta[layer]
                 const Icon = meta.icon
                 return (
@@ -269,6 +294,12 @@ export default function GodsEyeView() {
                   </button>
                 )
               })}
+              {layersOpen && (
+                <div className="gev-rail-actions">
+                  <button type="button" onClick={() => setVisibleLayers(new Set(WORLD_CONTEXT_LAYERS))}>ALL</button>
+                  <button type="button" onClick={() => setVisibleLayers(new Set())}>NONE</button>
+                </div>
+              )}
             </div>
             <div className="gev-status-orbit" title={worldError ? 'World context degraded' : 'World context available'}><span /></div>
           </aside>
