@@ -86,7 +86,7 @@ router.post('/', async (req, res) => {
           delivered_at=CASE WHEN $1='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,
           failed_at=CASE WHEN $1 IN ('failed','bounced','suppressed','complained') THEN COALESCE(failed_at,NOW()) ELSE failed_at END,
           updated_at=NOW() WHERE id=$3`, [status, eventId, row.id]
-      );
+      ));
     }
 
     // Provider lifecycle is mirrored into the Communications audit ledger.
