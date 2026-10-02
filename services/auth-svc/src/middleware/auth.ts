@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { verifyToken } from '../lib/jwt.js';
 import { AuthError } from '../lib/errors.js';
+import { tenantContext } from '../db.js';
 
 export interface RequestUser {
   sub: string;
@@ -41,6 +42,7 @@ export async function requireAuth(
       throw new AuthError('Token missing required claims');
     }
 
+    tenantContext.enterWith(orgId);
     request.user = { sub, org_id: orgId, role };
   } catch (err) {
     if (err instanceof AuthError) {
