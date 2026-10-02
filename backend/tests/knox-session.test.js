@@ -13,6 +13,7 @@ const mockClient = {
 };
 
 jest.mock('../src/config/database', () => ({
+  globalQuery: jest.fn().mockResolvedValue({ rows: [] }),
   query: jest.fn().mockResolvedValue({ rows: [] }),
   pool: { connect: jest.fn().mockResolvedValue(mockClient) },
   healthCheck: jest.fn().mockResolvedValue(true),
