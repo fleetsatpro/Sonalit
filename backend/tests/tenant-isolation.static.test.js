@@ -49,6 +49,39 @@ describe('tenant isolation regression guards', () => {
     expect(violations).toEqual([]);
   });
 
+  test('service routes never trust x-org-id or x-user-id for tenant selection', () => {
+    const serviceRoots = [
+      path.join(__dirname, '../../services'),
+    ];
+    const violations = [];
+    for (const root of serviceRoots) {
+      for (const file of filesUnder(root).filter(f => /routes/.test(f))) {
+        const source = fs.readFileSync(file, 'utf8');
+        if (/headers\\[["']x-org-id["']\\]|headers\\[["']x-user-id["']\\]/i.test(source)) {
+          violations.push(path.relative(path.join(__dirname, '../..'), file));
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  test('tenant-bearing realtime publishes do not fall back to global channels', () => {
+    const risky = [
+      path.join(__dirname, '../src/workers/gpsWorker.js'),
+      path.join(__dirname, '../src/workers/alertWorker.js'),
+      path.join(__dirname, '../src/routes/guardian.js'),
+    ];
+    const violations = [];
+    for (const file of risky) {
+      const source = fs.readFileSync(file, 'utf8');
+      if (/publish\\(['"](vehicle:update|alert:new|device:panic|geofence:violation)['"]/.test(source)) {
+        violations.push(path.basename(file));
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+
   test('tenant DB helper is fail-closed and RLS-aware', () => {
     const scoped = fs.readFileSync(path.join(__dirname, '../src/utils/orgScopedDb.js'), 'utf8');
     const database = fs.readFileSync(path.join(__dirname, '../src/config/database.js'), 'utf8');
