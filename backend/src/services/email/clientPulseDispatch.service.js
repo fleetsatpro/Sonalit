@@ -65,10 +65,6 @@ async function generateAndQueueSuperAdminClientPulse(orgId, { snapshotAt = new D
       invoiced: row.invoiced ? 'YES' : 'NO'
     }));
     const activeBookingCount = new Set(active.map(r => r.booking_number).filter(Boolean)).size;
-    if (!active.length) {
-      await withOrg(orgId, client => client.query(`UPDATE cds_client_pulse_runs SET status='skipped',active_booking_count=0,row_count=0,updated_at=NOW() WHERE id=$1`, [runId]));
-      return { runId, skipped: true, reason: 'no_active_bookings', queued: 0 };
-    }
     const workbook = await buildTemplateManifestWorkbook(active, snapshot);
     const filename = `ALL CLIENTS_Client Dispatch Master Active Bookings_${snapshot.toISOString().replace(/:/g,'').replace(/\.\d{3}Z$/,'Z')}_EAT.xlsx`;
     const result = await queueClientPulseEmail({
