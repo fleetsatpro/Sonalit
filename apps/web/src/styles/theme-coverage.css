@@ -571,6 +571,22 @@ html[data-theme] #root {
   color: var(--d-t1) !important;
 }
 
+/* Pure white is usually a legacy light-surface utility in the app. Keep
+   actual media assets (img/canvas/svg) white where that is functional, while
+   ordinary UI boxes follow the active theme. */
+:root[data-theme] [class~="bg-white"]:not(img):not(canvas):not(svg) {
+  background-color: var(--d-surf) !important;
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] [class~="hover:bg-white"]:not(img):not(canvas):not(svg):hover {
+  background-color: var(--d-lift) !important;
+}
+
+:root[data-theme] [class~="text-black"] {
+  color: var(--d-t1) !important;
+}
+
 /* ── CDS utility palette bridge ─────────────────────────────────────────── */
 :root[data-theme] :where(
   [class~="bg-ink-0"], [class~="bg-ink-1"], [class~="bg-ink-2"],
