@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { withOrg } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
@@ -30,7 +30,7 @@ function startGuardianWorkers() {
     }
 
     if (job.name === 'device:heartbeat_check') {
-      const { rows } = await query(
+      const { rows } = await globalQuery(
         `SELECT gd.id, gd.org_id FROM guardian_devices gd
          WHERE gd.telemetry_at < NOW() - INTERVAL '10 minutes'
            AND gd.deleted_at IS NULL AND gd.status = 'active'`
@@ -63,7 +63,7 @@ function startGuardianWorkers() {
   const knoxWorker = new Worker('knox', async (job) => {
     if (job.name === 'knox:finalize_recording') {
       const { session_id } = job.data;
-      const owner = await query(
+      const owner = await globalQuery(
         `SELECT gd.org_id
            FROM knox_remote_sessions k
            JOIN guardian_devices gd ON gd.id = k.device_id
