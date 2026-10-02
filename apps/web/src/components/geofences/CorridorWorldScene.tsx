@@ -36,7 +36,7 @@ export interface RiskZone {
 type MapMode = 'dark' | 'satellite' | 'hybrid';
 
 const TOKEN = (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined)?.trim() ?? '';
-const STREET_URL = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+const STREET_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
 const SATELLITE_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const ROADS_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
 const PLACES_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
@@ -271,7 +271,7 @@ export default function CorridorWorldScene({
       Cesium.Ion.defaultAccessToken = TOKEN;
       const initialProvider = new Cesium.UrlTemplateImageryProvider({
         url: STREET_URL,
-        credit: new Cesium.Credit('© OpenStreetMap contributors © CARTO', false),
+        credit: new Cesium.Credit('Esri, HERE, Garmin, © OpenStreetMap contributors', false),
         maximumLevel: 19,
         enablePickFeatures: false,
       });

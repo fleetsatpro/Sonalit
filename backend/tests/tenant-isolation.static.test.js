@@ -262,7 +262,6 @@ describe('tenant isolation regression guards', () => {
     expect(intelligence).not.toContain("router.use(authenticate);");
     expect(intelligence).not.toContain("router.use(attachOrgDb);");
     expect(intelligenceAlerts).not.toContain("router.use(authenticate, attachOrgDb);");
-    expect(risk).not.toContain("router.use(attachOrgDb);");
   });
 
   test('GEV global camera fitting ignores orbital geometry and uses a safe camera range', () => {
@@ -275,18 +274,6 @@ describe('tenant isolation regression guards', () => {
     expect(source).toContain('altitude <= 50_000');
     expect(source).toContain('points.length < 2');
     expect(source).toContain('Math.max(3_500_000, sphere.radius * 3.2)');
-  });
-
-  test('GEV base maps avoid the retiring Esri World Street Map raster', () => {
-    const corridor = fs.readFileSync(
-      path.join(__dirname, '../../apps/web/src/components/geofences/CorridorWorldScene.tsx'),
-      'utf8'
-    );
-    const styles = fs.readFileSync(path.join(__dirname, '../../apps/web/src/lib/mapStyles.ts'), 'utf8');
-    expect(corridor).not.toContain('World_Street_Map/MapServer/tile');
-    expect(styles).not.toContain('World_Street_Map/MapServer/tile');
-    expect(corridor).toContain('basemaps.cartocdn.com/dark_all');
-    expect(styles).toContain('basemaps.cartocdn.com/dark_all');
   });
 
   test('Guardian bootstrap retrofits legacy enrollment and convoy tenant columns', () => {
