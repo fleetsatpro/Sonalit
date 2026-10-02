@@ -388,6 +388,12 @@ async function ensureTables() {
     // p2t3 — command expiry
     await globalQuery(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
 
+    // Existing Guardian code tables may have been created by the base schema
+    // without tenant columns. CREATE TABLE IF NOT EXISTS does not retrofit them,
+    // so repair them explicitly before tenant policies are installed.
+    await globalQuery('ALTER TABLE enrollment_codes ADD COLUMN IF NOT EXISTS org_id UUID');
+    await globalQuery('ALTER TABLE convoy_codes ADD COLUMN IF NOT EXISTS org_id UUID');
+
     // panic revamp — establish the tenant column before any index/policy can
     // reference it. This also repairs older databases where the table predates
     // tenant hardening.
