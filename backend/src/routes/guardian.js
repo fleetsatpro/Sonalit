@@ -2854,7 +2854,8 @@ router.get('/enrollment-codes', authenticate, async (req, res, next) => {
        FROM enrollment_codes ec
        LEFT JOIN users u ON u.id = ec.created_by AND u.org_id = ec.org_id
        WHERE ec.org_id = $1 AND ec.used_at IS NULL AND ec.expires_at > NOW()
-       ORDER BY ec.created_at DESC`
+       ORDER BY ec.created_at DESC`,
+      [req.user.org_id]
     );
     res.json({ data: result.rows });
   } catch (err) {
