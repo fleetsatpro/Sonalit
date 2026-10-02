@@ -35,7 +35,7 @@ export async function getEntity(
   orgId: string,
   now: number = Date.now(),
 ): Promise<Fresh<Record<string, unknown>> | null> {
-  const row = await db.entities.get(`${entityType}:${entityId}`);
+  const row = await db.entities.get(`${orgId}:${entityType}:${entityId}`);
   if (!row || row.orgId !== orgId) return null;
   return wrap(row, now);
 }
@@ -85,9 +85,10 @@ export async function findEntityBy(
 export async function applyLocalChange(
   entityType: string,
   entityId: string,
+  orgId: string,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  const key = `${entityType}:${entityId}`;
+  const key = `${orgId}:${entityType}:${entityId}`;
   const row = await db.entities.get(key);
   if (!row) return;
   await db.entities.update(key, {
