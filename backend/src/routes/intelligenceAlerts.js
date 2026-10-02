@@ -1,9 +1,6 @@
 const router = require('express').Router();
-const { authenticate } = require('../middleware/auth');
-const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 
-router.use(authenticate, attachOrgDb);
 
 const EAST_AFRICA_CODES = ['KE','TZ','UG','RW','BI','SS','ET','SO','CD','SD'];
 

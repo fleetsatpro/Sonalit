@@ -183,6 +183,18 @@ function singleWorldPoint(liveMembers: GlobeMember[], zones: RiskZone[], worldEn
   return null;
 }
 
+function globalCameraEntities(worldEntities: SpatialWorldEntity[]) {
+  // Orbital/modelled entities must never determine the initial ground-world fit.
+  // Their altitude can be orders of magnitude above the Earth surface and a
+  // low fixed camera range can push Cesium into the globe, appearing blank.
+  return worldEntities.filter(entity => {
+    const type = String(entity.entityType || '').toLowerCase();
+    if (type === 'satellite') return false;
+    const altitude = externalAltitude(entity);
+    return altitude == null || altitude <= 50_000;
+  });
+}
+
 
 export default function CorridorWorldScene({
   route,
@@ -644,33 +656,25 @@ export default function CorridorWorldScene({
     fittedRouteSignatureRef.current = routeSignature;
   }, [route, routeSignature, liveMembers, trail, zones, worldEntities, corridorKm]);
 
+  // GEV starts from a true global view. Refine only when there are at least
+  // two safe ground/low-altitude anchors; never fit the camera to orbital
+  // geometry and never auto-zoom to a lone local point.
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !globalView || route.length >= 2) return;
     if (initialGlobalFitDoneRef.current) return;
 
-    const points = fitPoints([], liveMembers, trail, zones, worldEntities);
-    if (!points.length) return;
-
-    if (points.length === 1) {
-      const only = singleWorldPoint(liveMembers, zones, worldEntities);
-      if (!only) return;
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(
-          only.lng,
-          only.lat,
-          Math.max(2200, only.altitudeM + 2200),
-        ),
-        duration: 0.9,
-      });
-    } else {
-      viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
-        duration: 1.15,
-        offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), 2400),
-      });
-    }
-
+    const cameraEntities = globalCameraEntities(worldEntities);
+    const points = fitPoints([], liveMembers, trail, zones, cameraEntities);
     initialGlobalFitDoneRef.current = true;
+    if (points.length < 2) return;
+
+    const sphere = Cesium.BoundingSphere.fromPoints(points);
+    const safeRange = Math.min(14_000_000, Math.max(3_500_000, sphere.radius * 3.2));
+    viewer.camera.flyToBoundingSphere(sphere, {
+      duration: 1.15,
+      offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), safeRange),
+    });
   }, [globalView, route.length, liveMembers, trail, zones, worldEntities]);
 
   // XD Live can be opened before a corridor has geometry. Still present a
