@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const Joi = require('joi');
 const { query, globalQuery, pool } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 
