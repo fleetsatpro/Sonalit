@@ -443,12 +443,19 @@ async function runOsintSweep() {
     if (!zones.length) return { zonesChecked: 0 };
 
     const zonesByOrg = new Map();
-    for (const z of zones) { if (!zonesByOrg.has(z.org_id)) zonesByOrg.set(z.org_id, []); zonesByOrg.get(z.org_id).push(z); }
+    for (const z of zones) {
+      // Shared/global risk zones are readable for route intelligence but are not
+      // tenant write targets. Tenant event persistence requires an owning org.
+      if (!z.org_id) continue;
+      if (!zonesByOrg.has(z.org_id)) zonesByOrg.set(z.org_id, []);
+      zonesByOrg.get(z.org_id).push(z);
+    }
+    const tenantZones = [...zonesByOrg.values()].flat();
 
     const claudeEnabled = process.env.RISK_INTEL_ENABLE_CLAUDE === 'true';
     let claudeByZone = {};
     if (claudeEnabled && aiClient.hasAnthropic()) {
-      try { claudeByZone = await fetchClaudeForZones(zones); }
+      try { claudeByZone = await fetchClaudeForZones(tenantZones); }
       catch (e) { logger.warn(`Risk Intel OSINT: Claude web search sweep failed: ${e.message}`); }
     }
 
@@ -530,8 +537,8 @@ async function runOsintSweep() {
 
     for (const orgId of orgsTouched) await publish(`risk:updates:${orgId}`, { type: 'event_added', org_id: orgId }).catch(() => {});
     const zonesChanged = await recomputeZoneLevels(zones);
-    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdelt=${Date.now() < gdeltCooldownUntil ? 'cooldown' : 'available'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramProcessed ? `used (${telegramProcessed} placed, ${telegramZonesCreated} zones auto-created)` : 'fallback/none'}, mtproto=${telegramMtproto.isConfigured() ? 'on' : 'fallback'}, claude=${claudeEnabled && aiClient.hasAnthropic() ? 'used' : 'skipped'}`);
-    return { zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged, acledUsed: !!acledToken, telegramUsed: telegramProcessed > 0, telegramZonesCreated, claudeUsed: claudeEnabled && aiClient.hasAnthropic() };
+    logger.info(`Risk Intel OSINT sweep complete: ${tenantZones.length} tenant zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdelt=${Date.now() < gdeltCooldownUntil ? 'cooldown' : 'available'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramProcessed ? `used (${telegramProcessed} placed, ${telegramZonesCreated} zones auto-created)` : 'fallback/none'}, mtproto=${telegramMtproto.isConfigured() ? 'on' : 'fallback'}, claude=${claudeEnabled && aiClient.hasAnthropic() ? 'used' : 'skipped'}`);
+    return { zonesChecked: tenantZones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged, acledUsed: !!acledToken, telegramUsed: telegramProcessed > 0, telegramZonesCreated, claudeUsed: claudeEnabled && aiClient.hasAnthropic() };
   } finally {
     sweeping = false;
     await telegramMtproto.disconnect();
