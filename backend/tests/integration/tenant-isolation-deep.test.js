@@ -11,8 +11,8 @@ const { withOrg } = require('../../src/utils/orgScopedDb');
 const { runWithOrgContext } = require('../../src/utils/tenantContext');
 const { query } = require('../../src/config/database');
 
-const ORG_A = 'aaaaaaaa-0000-0000-0000-000000000011';
-const ORG_B = 'bbbbbbbb-0000-0000-0000-000000000011';
+const ORG_A = 'aaaaaaaa-1111-4111-8111-000000000011';
+const ORG_B = 'bbbbbbbb-1111-4111-8112-000000000011';
 const VEH_A = 'aaaaaaaa-0000-0000-0011-000000000001';
 const VEH_B = 'bbbbbbbb-0000-0000-0011-000000000001';
 const CONVOY_A = 'aaaaaaaa-0000-0000-0022-000000000001';
