@@ -16,7 +16,12 @@ async function withOrg(orgId, fn) {
   const normalized = normalizeOrgId(orgId);
   if (!normalized) throw new Error('invalid_org_id');
   const currentOrg = require('./tenantContext').getOrgId();
+  const currentClient = require('./tenantContext').getTenantDbClient();
   if (currentOrg && currentOrg !== normalized) throw new Error('tenant_context_switch_forbidden');
+  // Nested same-tenant scopes reuse the already-authorized client/transaction.
+  // This prevents a safe nested helper from accidentally opening a second DB
+  // context while preserving the no-cross-tenant-switch invariant.
+  if (currentClient) return fn(currentClient);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
