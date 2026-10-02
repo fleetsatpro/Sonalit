@@ -587,7 +587,8 @@ async function runDmsMonitorJob() {
         created_at: row.created_at,
         triggered_at: row.created_at,
       };
-      if (dev.org_id) publish(`org#${dev.org_id}`, payload); else publish('device:panic', payload);
+      if (!dev.org_id) { logger.error(`DMS timeout skipped: device=${dev.id} has no tenant scope`); continue; }
+      publish(`org#${dev.org_id}`, payload);
       logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id ?? 'unknown'}`);
       // Queue a burst too — a missed check-in is exactly when eyes on the scene
       // matter most. No fcm_token on this partial row, so it rides the device's
