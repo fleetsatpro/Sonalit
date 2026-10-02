@@ -24,12 +24,12 @@ async function migrate(): Promise<void> {
       ALTER TABLE ai_decisions FORCE ROW LEVEL SECURITY;
       DROP POLICY IF EXISTS tenant_isolation_service ON ai_decisions;
       CREATE POLICY tenant_isolation_service ON ai_decisions AS RESTRICTIVE FOR ALL
-        USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
-        WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid);
+        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid)
+        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid);
       DROP POLICY IF EXISTS tenant_base_service ON ai_decisions;
       CREATE POLICY tenant_base_service ON ai_decisions AS PERMISSIVE FOR ALL
-        USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
-        WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid);
+        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid)
+        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid);
     `);
     process.stdout.write('ai-copilot-svc migrations complete\n');
   } finally {
