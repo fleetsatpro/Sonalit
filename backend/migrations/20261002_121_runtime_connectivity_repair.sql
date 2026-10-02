@@ -10,6 +10,24 @@ ALTER TABLE IF EXISTS public.guardian_devices
 ALTER TABLE IF EXISTS public.panic_events
   ADD COLUMN IF NOT EXISTS org_id UUID;
 
+ALTER TABLE IF EXISTS public.panic_events
+  ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
+
+ALTER TABLE IF EXISTS public.panic_events
+  ADD COLUMN IF NOT EXISTS acknowledged_by UUID;
+
+ALTER TABLE IF EXISTS public.panic_events
+  ADD COLUMN IF NOT EXISTS resolution_note TEXT;
+
+ALTER TABLE IF EXISTS public.panic_events
+  ADD COLUMN IF NOT EXISTS reason_code TEXT;
+
+ALTER TABLE IF EXISTS public.panic_events
+  ADD COLUMN IF NOT EXISTS escalation_level INT DEFAULT 0;
+
+ALTER TABLE IF EXISTS public.panic_events
+  ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
+
 UPDATE public.panic_events p
 SET org_id = d.org_id
 FROM public.guardian_devices d
