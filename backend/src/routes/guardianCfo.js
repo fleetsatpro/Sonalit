@@ -480,14 +480,15 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
     // ── Brute-force check (per-device only) ──────────────────────────────────
     if (rateLimitKey) {
       await query(`
-        INSERT INTO cfo_login_attempts (device_id, attempts, window_start)
-        VALUES ($1, 0, NOW())
+        
+INSERT INTO cfo_login_attempts (device_id, org_id, attempts, window_start)
+        VALUES ($1, $2, 0, NOW())
         ON CONFLICT (device_id) DO NOTHING
-      `, [rateLimitKey]).catch(() => {});
+      `, [rateLimitKey, req.device?.org_id || null]).catch(() => {});
 
       const attemptRow = await query(
-        `SELECT attempts, locked_until, window_start FROM cfo_login_attempts WHERE device_id = $1`,
-        [rateLimitKey]
+        `SELECT attempts, locked_until, window_start FROM cfo_login_attempts WHERE device_id = $1 AND org_id = $2`,
+        [rateLimitKey, req.device.org_id]
       );
       if (attemptRow.rows.length) {
         const row = attemptRow.rows[0];
@@ -496,7 +497,7 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
           return res.status(423).json({ error: 'Account locked due to too many failed attempts', code: 'account_locked' });
         }
         if (new Date(row.window_start) < new Date(Date.now() - 15 * 60 * 1000)) {
-          await query(`UPDATE cfo_login_attempts SET attempts=0, window_start=NOW(), locked_until=NULL WHERE device_id=$1`, [rateLimitKey]).catch(() => {});
+          await query(`UPDATE cfo_login_attempts SET attempts=0, window_start=NOW(), locked_until=NULL WHERE device_id=$1 AND org_id=$2`, [rateLimitKey, req.device.org_id]).catch(() => {});
         }
       }
     }
@@ -533,7 +534,7 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
       return res.status(403).json({ error: 'Account is not active' });
     }
 
-    await query(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1`, [rateLimitKey]).catch(() => {});
+    await query(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1 AND org_id=$2`, [rateLimitKey, req.device?.org_id || user.org_id]).catch(() => {});
 
     // Auto-provision a device record for CFO-only users without enrollment
     let deviceId = req.device?.id;
