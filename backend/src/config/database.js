@@ -86,4 +86,17 @@ async function healthCheck() {
   return result.rows[0].now;
 }
 
-module.exports = { pool, query, healthCheck };
+async function globalQuery(text, params) {
+  const start = Date.now();
+  try {
+    const result = await pool.query(text, params);
+    const duration = Date.now() - start;
+    if (duration > 1000) logger.warn(`Slow global query detected (${duration}ms): ${text.substring(0, 100)}`);
+    return result;
+  } catch (err) {
+    logger.error(`Global database query error: ${err.message}\nQuery: ${text}`);
+    throw err;
+  }
+}
+
+module.exports = { pool, query, globalQuery, healthCheck };
