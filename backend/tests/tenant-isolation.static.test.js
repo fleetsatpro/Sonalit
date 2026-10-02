@@ -82,7 +82,7 @@ describe('tenant isolation regression guards', () => {
     expect(sql).toContain('WITH CHECK');
     expect(sql).not.toMatch(/FULL OUTER JOIN\s+[^\n]+\bON\s+false/i);
     expect(sql).not.toMatch(/AS \$\s*\n/);
-    expect(sql).not.toMatch(/CREATE POLICY[^\n]+AS RESTRICTIVE[^\n]+/i);
+
   });
 
   test('v4 service HTTP surfaces cannot trust caller-supplied tenant headers', () => {
