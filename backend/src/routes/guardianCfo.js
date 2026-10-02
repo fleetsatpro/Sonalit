@@ -520,8 +520,8 @@ INSERT INTO cfo_login_attempts (device_id, org_id, attempts, window_start)
             locked_until = CASE WHEN attempts + 1 >= 5
               THEN NOW() + INTERVAL '15 minutes' * POWER(2, GREATEST(0, attempts - 4))
               ELSE locked_until END
-        WHERE device_id = $1
-      `, [rateLimitKey]).catch(() => {});
+        WHERE device_id = $1 AND org_id = $2
+      `, [rateLimitKey, req.device?.org_id || null]).catch(() => {});
       gAudit(rateLimitKey, 'cfo_login_failed', null, null, { email: emailClean }, req.ip);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
