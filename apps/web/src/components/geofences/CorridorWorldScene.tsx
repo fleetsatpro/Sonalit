@@ -225,7 +225,11 @@ export default function CorridorWorldScene({
   const externalSelectRef = useRef(onExternalSelect);
   const onViewportChangeRef = useRef(onViewportChange);
   const fittedRouteSignatureRef = useRef<string | null>(null);
-  const globalFitSignatureRef = useRef<string | null>(null);
+  // Data refreshes must never steal the operator's camera. GEV performs one
+  // initial fit after the first usable world state, then only explicit
+  // recenter/fit controls may move the camera.
+  const initialGlobalFitDoneRef = useRef(false);
+  const initialLocalFitDoneRef = useRef(false);
   const [mode, setMode] = useState<MapMode>('dark');
   const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
   const [terrainReady, setTerrainReady] = useState(false);
@@ -313,9 +317,11 @@ export default function CorridorWorldScene({
     viewer.scene.skyAtmosphere.saturationShift = 0.04;
     viewer.scene.skyAtmosphere.hueShift = -0.01;
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#02050a');
-    viewer.scene.screenSpaceCameraController.inertiaSpin = 0.86;
-    viewer.scene.screenSpaceCameraController.inertiaTranslate = 0.86;
-    viewer.scene.screenSpaceCameraController.inertiaZoom = 0.86;
+    viewer.scene.screenSpaceCameraController.inertiaSpin = 0.72;
+    viewer.scene.screenSpaceCameraController.inertiaTranslate = 0.72;
+    // Keep pinch/wheel input responsive without the prolonged inertial zoom
+    // that can feel like the camera is continuing to move on its own.
+    viewer.scene.screenSpaceCameraController.inertiaZoom = 0.12;
     if (!compactSurface) {
       const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
       bloom.uniforms.brightness = -0.18;
@@ -423,6 +429,8 @@ export default function CorridorWorldScene({
       targetRef.current.clear();
       headingRef.current.clear();
       fittedRouteSignatureRef.current = null;
+      initialGlobalFitDoneRef.current = false;
+      initialLocalFitDoneRef.current = false;
       if (!viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
@@ -619,28 +627,62 @@ export default function CorridorWorldScene({
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !globalView || route.length >= 2) return;
+    if (initialGlobalFitDoneRef.current) return;
+
     const points = fitPoints([], liveMembers, trail, zones, worldEntities);
-    if (!points.length) {
-      globalFitSignatureRef.current = null;
-      return;
-    }
-    const globalSignature = [
-      liveMembers.map(m => m.id).sort().join(','),
-      zones.map(z => z.zone_id ?? '').sort().join(','),
-      worldEntities.map(e => e.id).sort().join(','),
-    ].join('|');
-    if (globalFitSignatureRef.current === globalSignature) return;
+    if (!points.length) return;
+
     if (points.length === 1) {
       const only = singleWorldPoint(liveMembers, zones, worldEntities);
-      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.9 });
+      if (!only) return;
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(
+          only.lng,
+          only.lat,
+          Math.max(2200, only.altitudeM + 2200),
+        ),
+        duration: 0.9,
+      });
     } else {
       viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
         duration: 1.15,
         offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), 2400),
       });
     }
-    globalFitSignatureRef.current = globalSignature;
+
+    initialGlobalFitDoneRef.current = true;
   }, [globalView, route.length, liveMembers, trail, zones, worldEntities]);
+
+  // XD Live can be opened before a corridor has geometry. Still present a
+  // useful live surface by fitting once to the first available live context.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || globalView || route.length >= 2) return;
+    if (initialLocalFitDoneRef.current) return;
+
+    const points = fitPoints([], liveMembers, trail, zones, worldEntities);
+    if (!points.length) return;
+
+    if (points.length === 1) {
+      const only = singleWorldPoint(liveMembers, zones, worldEntities);
+      if (!only) return;
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(
+          only.lng,
+          only.lat,
+          Math.max(2200, only.altitudeM + 2200),
+        ),
+        duration: 0.9,
+      });
+    } else {
+      viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
+        duration: 1.0,
+        offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)),
+      });
+    }
+
+    initialLocalFitDoneRef.current = true;
+  }, [globalView, route.length, liveMembers, trail, zones, worldEntities, corridorKm]);
 
   const recenter = () => {
     const viewer = viewerRef.current;
