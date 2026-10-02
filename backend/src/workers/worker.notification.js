@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const logger = require('../utils/logger');
-const { pool, query } = require('../config/database');
+const { pool, globalQuery } = require('../config/database');
 const { createQueues } = require('../config/queue');
 const { startNotificationWorker } = require('./notificationWorker');
 const { startResendEmailWorker } = require('./resendEmailWorker');
@@ -46,7 +46,7 @@ async function runScheduledClientPulse(now = new Date()) {
   logger.info(`CDS Client Pulse scheduled dispatch starting: slot=${slotKey} snapshot=${snapshotAt.toISOString()}`);
 
   try {
-    const orgs = await query(`
+    const orgs = await globalQuery(`
       SELECT DISTINCT org_id
       FROM users
       WHERE org_id IS NOT NULL
