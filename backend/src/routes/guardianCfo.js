@@ -636,7 +636,8 @@ router.post('/photo-upload-url', deviceAuth, photoUploadLimiter, async (req, res
     }
 
     const sealSuffix = seal_position ? `_${seal_position}` : '';
-    const key = `cfo/${convoy_id}/${report_date}/${convoy_truck_id}/${session}/${photo_type}${sealSuffix}_${uuidv4()}.jpg`;
+    const orgId = req.device.org_id;
+    const key = `orgs/${orgId}/cfo/${convoy_id}/${report_date}/${convoy_truck_id}/${session}/${photo_type}${sealSuffix}_${uuidv4()}.jpg`;
     const s3 = new S3Client({
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -676,6 +677,10 @@ router.post('/photos', deviceAuth, async (req, res, next) => {
 
     // T5.2: validate photo URL — content-type, size, EXIF GPS
     if (photo_url && !photo_url.startsWith('data:')) {
+      const publicBase = String(process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+      if (!publicBase || !photo_url.startsWith(publicBase + '/orgs/' + req.device.org_id + '/')) {
+        return res.status(422).json({ error: 'photo_url_not_in_tenant_storage_namespace' });
+      }
       const photoErr = await validatePhotoUrl(photo_url, lat ?? null, lng ?? null);
       if (photoErr) return res.status(422).json({ error: photoErr.error });
 
@@ -830,7 +835,8 @@ router.post('/handover-upload-url', deviceAuth, photoUploadLimiter, async (req, 
     }
 
     const ext = isPdf ? 'pdf' : 'jpg';
-    const key = `cfo/${convoy_id}/handover/handover_${uuidv4()}.${ext}`;
+    const orgId = req.device.org_id;
+    const key = `orgs/${orgId}/cfo/${convoy_id}/handover/handover_${uuidv4()}.${ext}`;
     const s3 = new S3Client({
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -862,6 +868,9 @@ router.post('/handover', deviceAuth, async (req, res, next) => {
 
     const cfoUserId = await resolveCfoUserId(req.device, convoy_id);
     if (!cfoUserId) return res.status(403).json({ error: 'device_not_authorised_for_this_convoy' });
+    if (!form_key.startsWith(`orgs/${req.device.org_id}/cfo/${convoy_id}/handover/`)) {
+      return res.status(422).json({ error: 'form_key_not_in_tenant_storage_namespace' });
+    }
 
     const convoyResult = await query(
       `SELECT org_id, status, local_consignment FROM convoys WHERE id = $1 AND deleted_at IS NULL`,
