@@ -2,7 +2,8 @@
 const aiClient=require('./aiClient');
 const {translateItems}=require('./intelligenceTranslation');
 const {runPublicationEditorialBoard,AGENT_ROLES}=require('./intelligencePublicationEditorialBoard');
-const {query}=require('../config/database');
+const {query,globalQuery}=require('../config/database');
+const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
@@ -139,5 +140,5 @@ async function publishDue(orgId){const results=[];for(const country of DAILY_COU
  const d=new Date();if(d.getUTCDay()===1){for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'weekly')});}catch(error){results.push({country,status:'failed',error:error.message});}}}
  if(d.getUTCDate()===1){for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'monthly')});}catch(error){results.push({country,status:'failed',error:error.message});}}}
  return{processed:results.length,results};}
-async function runIntelligenceAgents(){const {rows:orgs}=await query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const output=[];for(const {org_id} of orgs){try{const translation=await translateQueue(org_id);const synthesis=await synthesizeEvents(org_id);const publications=await publishDue(org_id);output.push({org_id,translation,synthesis,publications});}catch(error){output.push({org_id,error:error.message});logger.warn(`Intelligence agents org=${org_id} failed: ${error.message}`);}}return output;}
+async function runIntelligenceAgents(){const {rows:orgs}=await globalQuery(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const output=[];for(const {org_id} of orgs){try{const result=await runWithOrgContext(org_id,async()=>{const translation=await translateQueue(org_id);const synthesis=await synthesizeEvents(org_id);const publications=await publishDue(org_id);return{translation,synthesis,publications};});output.push({org_id,...result});}catch(error){output.push({org_id,error:error.message});logger.warn(`Intelligence agents org=${org_id} failed: ${error.message}`);}}return output;}
 module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,evidenceDerivedSynthesis};
