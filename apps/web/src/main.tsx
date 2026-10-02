@@ -105,7 +105,10 @@ async function mount() {
     try {
       await restoreAccessToken();
     } catch {
-      useAuthStore.getState().clearAuth();
+      // A persisted profile is still useful to the router when the refresh
+      // cookie is unavailable (for example, a seeded E2E session). Protected
+      // requests will use the shared 401 refresh path and clear auth only if
+      // that authenticated session genuinely cannot be restored.
     }
   }
 
