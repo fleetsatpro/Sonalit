@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { getQueues } = require('../config/queue');
 const { withOrg } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
@@ -184,7 +184,7 @@ async function processAlert(job) {
   // Resolve tenant ownership from authoritative fleet data before any
   // tenant-bearing read/write. A queue payload may carry an org hint, but it
   // never gets to select the tenant.
-  const owner = await query(
+  const owner = await globalQuery(
     `SELECT v.org_id AS vehicle_org_id,
             c.org_id AS convoy_org_id,
             c.id AS active_convoy_id
@@ -202,7 +202,7 @@ async function processAlert(job) {
     throw new Error('Alert job tenant mismatch');
   }
   if (convoy_id) {
-    const convoyCheck = await query(
+    const convoyCheck = await globalQuery(
       'SELECT org_id FROM convoys WHERE id=$1 AND deleted_at IS NULL',
       [convoy_id],
     );
