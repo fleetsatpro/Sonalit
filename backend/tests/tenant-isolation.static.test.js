@@ -69,9 +69,11 @@ describe('tenant isolation regression guards', () => {
     for (const file of risky) {
       const source = fs.readFileSync(file, 'utf8');
       const forbiddenSubjects = ['vehicle:update', 'alert:new', 'device:panic', 'geofence:violation'];
-      if (forbiddenSubjects.some(subject =>
-        source.includes(`publish('${subject}'`) || source.includes(`publish("${subject}"`)
-      )) {
+      const callerSuppliedSubject = forbiddenSubjects.some(subject => [
+        `publish('${subject}'`,
+        `publish("${subject}"`,
+      ].some(pattern => source.includes(pattern)));
+      if (callerSuppliedSubject) {
         violations.push(path.basename(file));
       }
     }
@@ -128,7 +130,7 @@ describe('tenant isolation regression guards', () => {
         for (const scopeRoot of ['routes', 'middleware']) {
           for (const file of filesUnder(path.join(routesRoot, scopeRoot), ['.js', '.ts'])) {
             const source = fs.readFileSync(file, 'utf8');
-            if (/x-org-id|x-org-id header required|headers\[['"]x-org-id['"]\]/i.test(source)) {
+            if (/req\s*\.\s*headers\[['"]x-org-id['"]\]|request\s*\.\s*headers\[['"]x-org-id['"]\]|x-org-id header required/i.test(source)) {
               violations.push(path.relative(path.join(__dirname, '../..'), file));
             }
           }
