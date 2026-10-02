@@ -26,7 +26,7 @@ const DIMENSION_COPY:Record<XdDimension,{title:string;body:string}>={
 };
 function context(member?:GlobeMember|null){const m=member as (GlobeMember&{convoy_name?:string|null;client_name?:string|null})|undefined;return{convoy:m?.convoy_name??null,client:m?.client_name??null};}
 
-export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,onExternalSelect,selectedExternalId=null,worldEntities=[],onViewportChange,fill=false,surface='corridor',fixedView,showChrome=true,showMapControls=false}:Props){
+export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,onExternalSelect,selectedExternalId=null,worldEntities=[],onViewportChange,fill=false,surface='corridor',fixedView,showChrome=true,showMapControls=true}:Props){
  const[view,setView]=useState<View>(fixedView ?? '2D'),[dimension,setDimension]=useState<XdDimension>('SPACE'),[agentsOpen,setAgentsOpen]=useState(false),[entityOpen,setEntityOpen]=useState(true);
  const activeView=fixedView ?? view;
  const isGev=surface==='gev';
