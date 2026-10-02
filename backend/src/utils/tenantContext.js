@@ -21,7 +21,8 @@ function getOrgId() {
 }
 
 function getTenantDbClient() {
-  return storage.getStore()?.dbClient ?? null;
+  const client = storage.getStore()?.dbClient ?? null;
+  return client && !client.__sonalitReleased ? client : null;
 }
 
 function runWithOrgContext(orgId, fn, dbClient = null) {
