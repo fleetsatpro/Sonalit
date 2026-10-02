@@ -81,8 +81,8 @@ app.use(helmet({
       // server.arcgisonline.com (Esri street + satellite tiles) and
       // demotiles.maplibre.org (glyphs) were missing from connect-src, which
       // silently blocked the map from ever rendering.
-      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io", "https://*.openstreetmap.org", "https://server.arcgisonline.com", "https://demotiles.maplibre.org"],
-      imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org", "https://*.openstreetmap.org", "https://server.arcgisonline.com"],
+      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io", "https://*.openstreetmap.org", "https://server.arcgisonline.com", "https://services.arcgisonline.com", "https://demotiles.maplibre.org", "https://tiles.openfreemap.org"],
+      imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org", "https://*.openstreetmap.org", "https://server.arcgisonline.com", "https://services.arcgisonline.com", "https://tiles.openfreemap.org"],
       // Guardian voice notes play back from a blob: URL (fetched audio bytes
       // wrapped in URL.createObjectURL) — without this, mediaSrc falls back
       // to defaultSrc ('self'), which doesn't cover blob:, and playback fails

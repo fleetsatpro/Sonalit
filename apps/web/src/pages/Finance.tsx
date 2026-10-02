@@ -180,10 +180,10 @@ export default function Finance() {
                   ))}
                 </Pie>
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }}
+                  contentStyle={{ backgroundColor: 'var(--d-surf)', border: '1px solid var(--d-rim2)' }}
                   formatter={(v: number) => formatCurrency(v)}
                 />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
+                <Legend wrapperStyle={{ fontSize: 12, color: 'var(--d-t2)' }} />
               </PieChart>
             </ResponsiveContainer>
           ) : (

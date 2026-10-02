@@ -48,6 +48,7 @@ const STATUS_COLOR: Record<string, string> = {
   ahead: '#22d3ee',
   on_track: '#10b981',
   no_fix: '#737373',
+  no_route: '#a78bfa',
 };
 const RISK_COLOR: Record<string, string> = {
   no_go: '#dc2626',
@@ -198,6 +199,7 @@ export default function CorridorWorldScene({
   onViewportChange,
   fill = false,
   globalView = false,
+  showMapControls = true,
 }: {
   route: LatLng[];
   corridorKm: number;
@@ -213,6 +215,7 @@ export default function CorridorWorldScene({
   onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number }) => void;
   fill?: boolean;
   globalView?: boolean;
+  showMapControls?: boolean;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
@@ -225,8 +228,13 @@ export default function CorridorWorldScene({
   const externalSelectRef = useRef(onExternalSelect);
   const onViewportChangeRef = useRef(onViewportChange);
   const fittedRouteSignatureRef = useRef<string | null>(null);
-  const globalFitSignatureRef = useRef<string | null>(null);
-  const [mode, setMode] = useState<MapMode>('dark');
+  // Data refreshes must never steal the operator's camera. GEV performs one
+  // initial fit after the first usable world state, then only explicit
+  // recenter/fit controls may move the camera.
+  const initialGlobalFitDoneRef = useRef(false);
+  const initialLocalFitDoneRef = useRef(false);
+  const renderRecoveryRef = useRef(0);
+  const [mode, setMode] = useState<MapMode>(globalView ? 'satellite' : 'dark');
   const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
   const [terrainReady, setTerrainReady] = useState(false);
   const [initFailed, setInitFailed] = useState(false);
@@ -272,7 +280,7 @@ export default function CorridorWorldScene({
         requestRenderMode: true,
         maximumRenderTimeChange: Infinity,
         scene3DOnly: true,
-        contextOptions: { webgl: { alpha: true, antialias: true } },
+        contextOptions: { webgl: { alpha: true, antialias: true, failIfMajorPerformanceCaveat: false } },
       });
     } catch {
       setInitFailed(true);
@@ -280,6 +288,17 @@ export default function CorridorWorldScene({
     }
 
     viewerRef.current = viewer;
+    // Cesium stops its default render loop after a render exception. Keep GEV
+    // self-healing for transient shader/texture/tile faults instead of leaving
+    // the operator with a permanently frozen or blank globe.
+    const renderErrorHandler = () => {
+      setMapStatus('3D RENDER RECOVERING · ESRI SURFACE ACTIVE');
+      if (renderRecoveryRef.current >= 3 || viewer.isDestroyed()) return;
+      renderRecoveryRef.current += 1;
+      viewer.useDefaultRenderLoop = true;
+      viewer.scene.requestRender();
+    };
+    viewer.scene.renderError.addEventListener(renderErrorHandler);
     if (globalView) {
       viewer.camera.setView({
         destination: Cesium.Cartesian3.fromDegrees(20, 0, 13000000),
@@ -293,7 +312,7 @@ export default function CorridorWorldScene({
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
     viewer.scene.fog.enabled = true;
-    viewer.scene.fog.density = 0.00002;
+    viewer.scene.fog.density = 0.000009;
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
     viewer.scene.globe.tileCacheSize = highFidelity ? 1200 : 500;
@@ -304,22 +323,27 @@ export default function CorridorWorldScene({
     viewer.resolutionScale = compactSurface
       ? Math.min(Math.max(highDpi, 1.25), 2)
       : Math.min(Math.max(highDpi, 1.35), 3);
-    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 1.75 : 1.0;
+    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 1.35 : 0.72;
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#06101a');
     viewer.scene.globe.dynamicAtmosphereLighting = true;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
     viewer.scene.skyAtmosphere.show = true;
-    viewer.scene.skyAtmosphere.brightnessShift = -0.18;
+    viewer.scene.skyAtmosphere.brightnessShift = -0.06;
     viewer.scene.skyAtmosphere.saturationShift = 0.04;
     viewer.scene.skyAtmosphere.hueShift = -0.01;
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#02050a');
-    viewer.scene.screenSpaceCameraController.inertiaSpin = 0.86;
-    viewer.scene.screenSpaceCameraController.inertiaTranslate = 0.86;
-    viewer.scene.screenSpaceCameraController.inertiaZoom = 0.86;
+    viewer.scene.screenSpaceCameraController.inertiaSpin = 0.72;
+    viewer.scene.screenSpaceCameraController.inertiaTranslate = 0.72;
+    // Keep pinch/wheel input responsive without the prolonged inertial zoom
+    // that can feel like the camera is continuing to move on its own.
+    viewer.scene.screenSpaceCameraController.inertiaZoom = 0.12;
+    viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
+    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 90;
+    viewer.scene.screenSpaceCameraController.maximumZoomDistance = 30000000;
     if (!compactSurface) {
       const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
-      bloom.uniforms.brightness = -0.18;
-      bloom.uniforms.contrast = 128;
+      bloom.uniforms.brightness = -0.10;
+      bloom.uniforms.contrast = 92;
       bloom.uniforms.glowOnly = false;
       viewer.scene.postProcessStages.add(bloom);
     }
@@ -416,13 +440,17 @@ export default function CorridorWorldScene({
       observer.disconnect();
       handler.destroy();
       viewer.scene.preRender.removeEventListener(preRender);
+      viewer.scene.renderError.removeEventListener(renderErrorHandler);
       viewer.camera.moveEnd.removeEventListener(syncViewport);
+      renderRecoveryRef.current = 0;
       entityMapRef.current.clear();
       externalEntityMapRef.current.clear();
       currentRef.current.clear();
       targetRef.current.clear();
       headingRef.current.clear();
       fittedRouteSignatureRef.current = null;
+      initialGlobalFitDoneRef.current = false;
+      initialLocalFitDoneRef.current = false;
       if (!viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
@@ -619,28 +647,62 @@ export default function CorridorWorldScene({
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !globalView || route.length >= 2) return;
+    if (initialGlobalFitDoneRef.current) return;
+
     const points = fitPoints([], liveMembers, trail, zones, worldEntities);
-    if (!points.length) {
-      globalFitSignatureRef.current = null;
-      return;
-    }
-    const globalSignature = [
-      liveMembers.map(m => m.id).sort().join(','),
-      zones.map(z => z.zone_id ?? '').sort().join(','),
-      worldEntities.map(e => e.id).sort().join(','),
-    ].join('|');
-    if (globalFitSignatureRef.current === globalSignature) return;
+    if (!points.length) return;
+
     if (points.length === 1) {
       const only = singleWorldPoint(liveMembers, zones, worldEntities);
-      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.9 });
+      if (!only) return;
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(
+          only.lng,
+          only.lat,
+          Math.max(2200, only.altitudeM + 2200),
+        ),
+        duration: 0.9,
+      });
     } else {
       viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
         duration: 1.15,
         offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), 2400),
       });
     }
-    globalFitSignatureRef.current = globalSignature;
+
+    initialGlobalFitDoneRef.current = true;
   }, [globalView, route.length, liveMembers, trail, zones, worldEntities]);
+
+  // XD Live can be opened before a corridor has geometry. Still present a
+  // useful live surface by fitting once to the first available live context.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || globalView || route.length >= 2) return;
+    if (initialLocalFitDoneRef.current) return;
+
+    const points = fitPoints([], liveMembers, trail, zones, worldEntities);
+    if (!points.length) return;
+
+    if (points.length === 1) {
+      const only = singleWorldPoint(liveMembers, zones, worldEntities);
+      if (!only) return;
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(
+          only.lng,
+          only.lat,
+          Math.max(2200, only.altitudeM + 2200),
+        ),
+        duration: 0.9,
+      });
+    } else {
+      viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
+        duration: 1.0,
+        offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)),
+      });
+    }
+
+    initialLocalFitDoneRef.current = true;
+  }, [globalView, route.length, liveMembers, trail, zones, worldEntities, corridorKm]);
 
   const recenter = () => {
     const viewer = viewerRef.current;
@@ -762,7 +824,8 @@ export default function CorridorWorldScene({
   return (
     <div data-spatial-surface="cesium-world" className={`spatial-surface ${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#080b12]`}>
       <div ref={boxRef} className="absolute inset-0" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
+      {showMapControls && (
+      <div className={`gev-map-controls pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3 ${globalView ? 'gev-map-controls--global' : ''}`}>
         <div className="spatial-control-rail pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map" aria-pressed={mode === 'dark'}><MapIcon size={15} /></button>
           <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map" aria-pressed={mode === 'satellite'}><Satellite size={15} /></button>
@@ -775,6 +838,7 @@ export default function CorridorWorldScene({
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
+      )}
       <div className="spatial-cesium-chrome pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
         {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-bold font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}

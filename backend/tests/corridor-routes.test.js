@@ -165,10 +165,40 @@ describe('GET /api/v1/convoys/:id/corridor', () => {
     expect(res.body.data.config.corridor_km).toBe(2); // default when nothing is stored
   });
 
-  test('422s only when there is neither a corridor nor two waypoints', async () => {
-    stubQueries({ corridor: [], waypoints: [] });
+  test('returns live device state when no corridor is planned', async () => {
+    stubQueries({
+      corridor: [],
+      waypoints: [],
+      members: [{
+        id: 'device-1',
+        name: 'LK001',
+        officer_name: 'Officer One',
+        history_lat: -1.29,
+        history_lng: 36.82,
+        live_heading: 90,
+        live_speed: 42,
+        live_accuracy: 12,
+        live_ts: new Date().toISOString(),
+        prev_lat: null,
+        prev_lng: null,
+        prev_heading: null,
+        prev_speed: null,
+        prev_ts: null,
+        cache_lat: null,
+        cache_lng: null,
+        cache_speed: null,
+        cache_fix_at: null,
+        cache_seen: null,
+      }],
+    });
+
     const res = await request(buildApp()).get(`/api/v1/convoys/${CONVOY}/corridor`);
-    expect(res.status).toBe(422);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.route).toEqual([]);
+    expect(res.body.data.members).toHaveLength(1);
+    expect(res.body.data.members[0].status).toBe('no_route');
+    expect(res.body.data.members[0].position_reason).toMatch(/route corridor analysis/i);
   });
 
   test('survives a corridor row whose route_line is unusable', async () => {

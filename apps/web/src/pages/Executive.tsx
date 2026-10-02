@@ -199,18 +199,18 @@ export default function Executive() {
         ) : (
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--d-rim2)" />
+              <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'var(--d-t2)' }} />
+              <YAxis tick={{ fontSize: 11, fill: 'var(--d-t2)' }} allowDecimals={false} />
               <Tooltip
-                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6 }}
-                labelStyle={{ color: '#e2e8f0' }}
+                contentStyle={{ backgroundColor: 'var(--d-surf)', border: '1px solid var(--d-rim2)', borderRadius: 6 }}
+                labelStyle={{ color: 'var(--d-t1)' }}
               />
-              <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
-              <Line type="monotone" dataKey="completed" stroke="#6366f1" strokeWidth={2} dot={false} name="Completed" />
-              <Line type="monotone" dataKey="on_time" stroke="#22c55e" strokeWidth={2} dot={false} name="On Time" />
-              <Line type="monotone" dataKey="delayed" stroke="#f59e0b" strokeWidth={2} dot={false} name="Delayed" />
-              <Line type="monotone" dataKey="aborted" stroke="#ef4444" strokeWidth={2} dot={false} name="Aborted" />
+              <Legend wrapperStyle={{ fontSize: 12, color: 'var(--d-t2)' }} />
+              <Line type="monotone" dataKey="completed" stroke="var(--d-orange)" strokeWidth={2} dot={false} name="Completed" />
+              <Line type="monotone" dataKey="on_time" stroke="var(--d-sig)" strokeWidth={2} dot={false} name="On Time" />
+              <Line type="monotone" dataKey="delayed" stroke="var(--d-warn)" strokeWidth={2} dot={false} name="Delayed" />
+              <Line type="monotone" dataKey="aborted" stroke="var(--d-fire)" strokeWidth={2} dot={false} name="Aborted" />
             </LineChart>
           </ResponsiveContainer>
         )}

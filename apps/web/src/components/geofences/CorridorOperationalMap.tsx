@@ -3,14 +3,12 @@ import Map, { AttributionControl, Layer, Marker, ScaleControl, Source, type MapR
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Crosshair, Minus, Plus, ShieldAlert, Target, Truck } from 'lucide-react';
-import { SAT_STYLE } from '../../lib/mapStyles.js';
+import { SAT_STYLE, STREET_STYLE } from '../../lib/mapStyles.js';
 import type { GlobeMember, LatLng, RiskZone } from './CorridorWorldScene.js';
 import '../../styles/spatial-command.css';
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js';
 
 const CENTER = { longitude: 36.8219, latitude: -1.2921, zoom: 5.5 };
-const XD_VECTOR_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
-
 type Props = {
   route: LatLng[];
   members: GlobeMember[];
@@ -21,7 +19,7 @@ type Props = {
 };
 
 function styleFor(mode: Props['mapMode']): StyleSpecification | string {
-  return mode === 'satellite' || mode === 'hybrid' ? SAT_STYLE : XD_VECTOR_STYLE;
+  return mode === 'satellite' || mode === 'hybrid' ? SAT_STYLE : STREET_STYLE;
 }
 
 function bounds(route: LatLng[], members: GlobeMember[]) {

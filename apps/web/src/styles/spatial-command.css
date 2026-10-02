@@ -68,7 +68,8 @@
 .spatial-command > *,
 .spatial-surface > *,
 .spatial-map-surface > * {
-  position: relative;
+  /* Set stacking without overriding component layout primitives such as
+   * Tailwind's `absolute inset-0` Cesium host. */
   z-index: 1;
 }
 
@@ -533,4 +534,31 @@
 @media (prefers-reduced-motion: reduce) {
   .spatial-surface canvas,
   .spatial-map-surface canvas { filter: none; }
+}
+
+
+/* ── Active Sonalit theme overlay ───────────────────────────────────────── */
+:root[data-theme] .spatial-surface {
+  background: var(--d-void) !important;
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .spatial-surface .spatial-panel,
+:root[data-theme] .spatial-surface .spatial-cesium-chrome,
+:root[data-theme] .spatial-surface .spatial-control-rail {
+  border-color: var(--d-rim2) !important;
+  background: color-mix(in srgb, var(--d-well) 93%, transparent) !important;
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .spatial-surface [class*="text-white"],
+:root[data-theme] .spatial-surface [class*="text-neutral-100"],
+:root[data-theme] .spatial-surface [class*="text-neutral-200"] {
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .spatial-surface [class*="text-neutral-300"],
+:root[data-theme] .spatial-surface [class*="text-neutral-400"] {
+  color: var(--d-t2) !important;
+}
+:root[data-theme] .spatial-surface [class*="text-neutral-500"],
+:root[data-theme] .spatial-surface [class*="text-neutral-600"] {
+  color: var(--d-t3) !important;
 }

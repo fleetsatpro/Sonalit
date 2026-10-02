@@ -1603,3 +1603,615 @@
   .gev-ribbon-action,
   .gev-bottom-ribbon { transition: none; }
 }
+
+
+/* ── Active Sonalit theme overlay ───────────────────────────────────────── */
+:root[data-theme] .gev-shell {
+  background: var(--d-void) !important;
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .gev-shell .gev-topbar,
+:root[data-theme] .gev-shell .gev-panel,
+:root[data-theme] .gev-shell .gev-rail,
+:root[data-theme] .gev-shell .gev-ribbon {
+  background: color-mix(in srgb, var(--d-well) 93%, transparent) !important;
+  border-color: var(--d-rim2) !important;
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .gev-shell .gev-stage {
+  background: var(--d-deep) !important;
+}
+:root[data-theme] .gev-shell .gev-stat,
+:root[data-theme] .gev-shell .gev-layer,
+:root[data-theme] .gev-shell .gev-mini,
+:root[data-theme] .gev-shell .gev-external-row,
+:root[data-theme] .gev-shell .gev-entity-hero {
+  background: color-mix(in srgb, var(--d-surf) 88%, transparent) !important;
+  border-color: var(--d-rim2) !important;
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .gev-shell :is(.gev-title,.gev-panel-title,.gev-entity-title,.gev-stat-value,.gev-layer span:last-child,.gev-mini-value,.gev-external-name) {
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .gev-shell :is(.gev-subtitle,.gev-panel-meta,.gev-stat-label,.gev-footnote,.gev-external-meta,.gev-detail-note) {
+  color: var(--d-t2) !important;
+}
+:root[data-theme] .gev-shell .gev-segment[aria-pressed="true"],
+:root[data-theme] .gev-shell .gev-rail-button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--d-orange) 11%, var(--d-well)) !important;
+  border-color: color-mix(in srgb, var(--d-orange) 38%, transparent) !important;
+  color: var(--d-orange) !important;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   GEV IMMERSIVE COMMAND OVERHAUL
+   Purpose: make the world canvas the product, not a backdrop behind cards.
+   ───────────────────────────────────────────────────────────────────────── */
+.gev-shell {
+  --gev-panel-radius: 18px;
+  --gev-glass-deep: color-mix(in srgb, var(--gev-bg) 74%, transparent);
+  --gev-grid: color-mix(in srgb, var(--gev-cyan) 7%, transparent);
+  --gev-accent-glow: color-mix(in srgb, var(--gev-violet) 22%, transparent);
+  background:
+    radial-gradient(900px 700px at 50% 55%, color-mix(in srgb, var(--gev-violet) 8%, transparent), transparent 64%),
+    radial-gradient(700px 480px at 84% 14%, color-mix(in srgb, var(--gev-cyan) 6%, transparent), transparent 70%),
+    var(--gev-bg);
+}
+
+.gev-shell .gev-topbar {
+  grid-template-columns: minmax(330px, 1fr) auto minmax(300px, 1fr);
+  height: 78px;
+  flex-basis: 78px;
+  padding-inline: 22px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--gev-bg) 96%, transparent), color-mix(in srgb, var(--gev-bg) 82%, transparent)),
+    radial-gradient(520px 140px at 18% 0%, var(--gev-accent-glow), transparent 72%);
+  box-shadow: 0 18px 58px rgba(0,0,0,.30), inset 0 -1px 0 rgba(255,255,255,.035);
+}
+
+.gev-shell .gev-workspace { height: calc(100% - 78px); }
+
+.gev-shell .gev-stage {
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 34%, rgba(0,0,0,.05) 62%, rgba(0,0,0,.46) 100%),
+    #02050a;
+}
+
+.gev-shell .gev-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 0 49.96%, var(--gev-grid) 50%, transparent 50.04%),
+    linear-gradient(180deg, transparent 0 49.96%, var(--gev-grid) 50%, transparent 50.04%),
+    radial-gradient(circle at 50% 50%, transparent 0 29%, rgba(0,0,0,.06) 47%, rgba(0,0,0,.24) 100%);
+  opacity: .45;
+  mix-blend-mode: screen;
+}
+
+.gev-shell .gev-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 110px rgba(0,0,0,.44),
+    inset 0 0 22px rgba(184,166,255,.045);
+  background: linear-gradient(180deg, transparent 0 78%, rgba(2,5,10,.24) 100%);
+}
+
+.gev-scene-readout {
+  position: absolute;
+  z-index: 18;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(860px, calc(100vw - 560px));
+  padding: 6px 8px;
+  border: 1px solid var(--gev-edge);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--gev-bg) 64%, transparent);
+  box-shadow: 0 18px 50px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter: blur(22px) saturate(150%);
+  pointer-events: auto;
+}
+
+.gev-scene-readout-primary,
+.gev-scene-readout-secondary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.gev-scene-readout-secondary {
+  padding-left: 7px;
+  border-left: 1px solid rgba(255,255,255,.08);
+  font: 700 8px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .06em;
+  color: var(--gev-copy);
+}
+
+.gev-scene-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 25px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.025);
+  color: var(--gev-copy);
+  font: 800 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .11em;
+}
+
+.gev-scene-chip--live {
+  color: var(--gev-green);
+  border-color: color-mix(in srgb, var(--gev-green) 22%, transparent);
+  background: color-mix(in srgb, var(--gev-green) 6%, transparent);
+}
+
+.gev-scene-live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 12px currentColor;
+}
+
+.gev-readout-divider {
+  width: 1px;
+  height: 11px;
+  background: rgba(255,255,255,.10);
+}
+
+.gev-external-toggle {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--gev-copy);
+  font: inherit;
+  cursor: pointer;
+}
+
+.gev-external-toggle:hover { color: var(--gev-text); }
+
+.gev-left-rail {
+  left: 16px;
+  top: 16px;
+  bottom: 16px;
+  width: 62px;
+  transition: width .2s ease;
+}
+
+.gev-left-rail[data-open="false"] { width: 48px; }
+
+.gev-rail {
+  border-radius: 19px;
+  padding: 7px;
+  background:
+    linear-gradient(180deg, rgba(11,17,28,.80), rgba(3,7,13,.68)),
+    radial-gradient(180px 260px at 50% 0%, var(--gev-accent-glow), transparent 74%);
+}
+
+.gev-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  padding: 3px 3px 7px 5px;
+}
+
+.gev-rail-title {
+  font: 800 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+  color: var(--gev-muted);
+  letter-spacing: .16em;
+}
+
+.gev-rail-toggle {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 7px;
+  background: rgba(255,255,255,.025);
+  color: var(--gev-muted);
+  cursor: pointer;
+}
+
+.gev-rail-toggle:hover {
+  color: var(--gev-text);
+  border-color: var(--gev-edge-hi);
+  background: rgba(255,255,255,.05);
+}
+
+.gev-rail-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,.055);
+}
+
+.gev-rail-actions button {
+  min-height: 23px;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 7px;
+  background: rgba(255,255,255,.02);
+  color: var(--gev-muted);
+  font: 800 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+
+.gev-rail-actions button:hover {
+  color: var(--gev-text);
+  background: color-mix(in srgb, var(--gev-violet) 7%, transparent);
+}
+
+.gev-right-panel,
+.gev-overview-panel {
+  border-radius: var(--gev-panel-radius);
+}
+
+.gev-overview-panel {
+  left: 94px;
+  top: 16px;
+  width: min(465px, calc(100vw - 580px));
+  min-width: 350px;
+}
+
+.gev-right-panel {
+  right: 16px;
+  top: 16px;
+  bottom: 16px;
+  width: 375px;
+}
+
+.gev-panel,
+.gev-rail,
+.gev-ribbon {
+  border-color: rgba(226,235,247,.13);
+  background:
+    linear-gradient(180deg, rgba(10,16,26,.74), rgba(4,8,14,.62)),
+    radial-gradient(220px 120px at 100% 0%, color-mix(in srgb, var(--gev-violet) 7%, transparent), transparent 75%);
+  box-shadow:
+    0 30px 100px rgba(0,0,0,.42),
+    0 0 0 1px rgba(255,255,255,.012),
+    inset 0 1px 0 rgba(255,255,255,.065);
+}
+
+.gev-panel-head {
+  padding: 15px 15px 13px;
+}
+
+.gev-panel-eyebrow {
+  color: var(--gev-violet);
+  font-size: 7px;
+  letter-spacing: .20em;
+}
+
+.gev-panel-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+
+.gev-panel-meta {
+  color: var(--gev-muted);
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.gev-stat-grid { gap: 7px; padding: 11px 12px 12px; }
+
+.gev-stat {
+  min-height: 58px;
+  padding: 10px;
+  border-color: rgba(255,255,255,.07);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.038), rgba(255,255,255,.016)),
+    radial-gradient(100px 50px at 100% 0%, color-mix(in srgb, var(--gev-violet) 5%, transparent), transparent 80%);
+}
+
+.gev-stat-value {
+  margin-top: 8px;
+  font-size: 16px;
+}
+
+.gev-layer-grid { gap: 5px; }
+
+.gev-layer {
+  min-height: 31px;
+  border-color: rgba(255,255,255,.055);
+}
+
+.gev-right-body {
+  padding: 11px;
+  scrollbar-width: thin;
+}
+
+.gev-entity-hero {
+  padding: 14px;
+  border-color: rgba(255,255,255,.08);
+  background:
+    radial-gradient(180px 120px at 100% 0%, color-mix(in srgb, var(--gev-violet) 11%, transparent), transparent 78%),
+    linear-gradient(180deg, rgba(255,255,255,.028), rgba(255,255,255,.012));
+}
+
+.gev-entity-title {
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: .01em;
+}
+
+.gev-external-row {
+  min-height: 48px;
+  border-color: rgba(255,255,255,.06);
+  border-radius: 11px;
+  background: rgba(255,255,255,.016);
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.gev-external-row:hover {
+  transform: translateX(2px);
+  border-color: var(--gev-edge-hi);
+  background: rgba(255,255,255,.035);
+  box-shadow: 0 10px 28px rgba(0,0,0,.18);
+}
+
+.gev-bottom-ribbon {
+  left: 94px;
+  right: 407px;
+  bottom: 16px;
+}
+
+.gev-ribbon {
+  min-height: 38px;
+  border-radius: 12px;
+  padding-inline: 13px;
+}
+
+.gev-ribbon-item {
+  font-weight: 800;
+  color: var(--gev-muted);
+}
+
+.gev-ribbon-item strong { color: var(--gev-text); }
+
+.gev-ribbon-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025);
+  color: var(--gev-copy);
+  font: 800 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  cursor: pointer;
+}
+
+.gev-ribbon-action:hover {
+  color: var(--gev-text);
+  border-color: var(--gev-edge-hi);
+  background: color-mix(in srgb, var(--gev-violet) 7%, transparent);
+}
+
+.gev-shell[data-overview-collapsed="true"] .gev-overview-panel {
+  width: 255px;
+  min-width: 0;
+}
+
+.gev-shell[data-overview-collapsed="true"] .gev-overview-panel .gev-panel-head {
+  border-bottom-color: transparent;
+}
+
+.gev-shell[data-overview-collapsed="true"] .gev-overview-panel .gev-panel-title {
+  font-size: 12px;
+}
+
+.gev-shell[data-intelligence-collapsed="true"] .gev-right-panel {
+  width: 46px;
+}
+
+.gev-shell[data-intelligence-collapsed="true"] .gev-right-panel .gev-panel-head {
+  padding-inline: 8px;
+}
+
+.gev-shell[data-intelligence-collapsed="true"] .gev-right-panel .gev-panel-heading-copy,
+.gev-shell[data-intelligence-collapsed="true"] .gev-right-panel .gev-close {
+  display: none;
+}
+
+.gev-shell[data-intelligence-collapsed="true"] .gev-right-panel .gev-panel-head {
+  justify-content: center;
+}
+
+.gev-shell .gev-stage .spatial-surface {
+  background: transparent !important;
+}
+
+.gev-shell .gev-stage .spatial-surface > div:first-child {
+  background: transparent !important;
+}
+
+@media (hover:hover) and (pointer:fine) {
+  .gev-scene-readout { transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+  .gev-scene-readout:hover {
+    border-color: var(--gev-edge-hi);
+    box-shadow: 0 20px 62px rgba(0,0,0,.28), 0 0 30px color-mix(in srgb, var(--gev-violet) 7%, transparent);
+  }
+}
+
+@media (max-width: 1180px) {
+  .gev-scene-readout { max-width: calc(100vw - 430px); }
+  .gev-overview-panel {
+    width: min(410px, calc(100vw - 455px));
+    min-width: 320px;
+  }
+  .gev-right-panel { width: 330px; }
+  .gev-bottom-ribbon { right: 360px; }
+}
+
+@media (max-width: 860px) {
+  .gev-shell .gev-topbar {
+    height: 66px;
+    flex-basis: 66px;
+    grid-template-columns: 1fr auto;
+    padding-inline: 12px;
+  }
+  .gev-shell .gev-workspace { height: calc(100% - 66px); }
+  .gev-scene-readout {
+    left: 12px;
+    right: 12px;
+    top: 10px;
+    transform: none;
+    max-width: none;
+    justify-content: space-between;
+  }
+  .gev-scene-readout-secondary { display: none; }
+  .gev-left-rail { top: 52px; left: 10px; bottom: auto; }
+  .gev-left-rail[data-open="false"] { width: 48px; }
+  .gev-overview-panel {
+    left: 10px;
+    right: 10px;
+    top: 105px;
+    width: auto;
+    min-width: 0;
+  }
+  .gev-shell[data-overview-collapsed="true"] .gev-overview-panel { width: auto; }
+  .gev-right-panel {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: 10px;
+    width: auto;
+    height: min(39vh, 335px);
+  }
+  .gev-shell[data-intelligence-collapsed="true"] .gev-right-panel { width: auto; height: 48px; }
+  .gev-bottom-ribbon { display: none; }
+}
+
+@media (max-width: 560px) {
+  .gev-scene-readout-primary {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .gev-scene-chip {
+    min-height: 24px;
+    padding-inline: 6px;
+    font-size: 6.5px;
+  }
+  .gev-left-rail { top: 52px; }
+  .gev-overview-panel { top: 100px; }
+  .gev-stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+
+.gev-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 30px;
+  margin-right: 4px;
+  padding: 0 8px 0 5px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 9px;
+  background: rgba(255,255,255,.018);
+  color: var(--gev-muted);
+  font: 800 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .10em;
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.gev-exit:hover {
+  color: var(--gev-text);
+  border-color: var(--gev-edge-hi);
+  background: color-mix(in srgb, var(--gev-violet) 7%, transparent);
+  transform: translateX(-1px);
+}
+.gev-brand-copy { flex: 1 1 auto; }
+
+@media (max-width: 860px) {
+  .gev-exit span { display: none; }
+  .gev-exit { width: 30px; justify-content: center; padding: 0; }
+}
+
+
+/* Context-aware Cesium controls: keep them clear of GEV chrome and touch-safe. */
+.gev-shell .gev-map-controls--global {
+  z-index: 18;
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: 62px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 0;
+  transform: translateX(-50%);
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1180px) {
+  .gev-shell .gev-map-controls--global .spatial-control-rail > span {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .gev-shell .gev-map-controls--global {
+    left: 50%;
+    right: auto;
+    top: auto;
+    bottom: calc(min(39vh, 335px) + 18px);
+    max-width: calc(100vw - 20px);
+    gap: 5px;
+  }
+
+  .gev-shell .gev-map-controls--global .spatial-control-rail > span {
+    display: none;
+  }
+
+  .gev-shell .gev-left-rail {
+    max-width: calc(100vw - 20px);
+    overflow: hidden;
+  }
+
+  .gev-shell .gev-left-rail .gev-rail {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .gev-shell .gev-left-rail .gev-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .gev-shell .gev-overview-panel {
+    top: 122px;
+  }
+}
+
+@media (max-width: 560px) {
+  .gev-shell .gev-overview-panel {
+    top: 118px;
+  }
+}

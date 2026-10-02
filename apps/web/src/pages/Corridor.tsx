@@ -46,9 +46,10 @@ const STATUS: Record<string, { label: string; ring: string; text: string; bg: st
   behind: { label: 'Behind schedule', ring: 'border-amber-500/50', text: 'text-amber-400', bg: 'bg-amber-500', glow: 'shadow-[0_0_12px_-2px_rgba(245,158,11,0.6)]' },
   ahead: { label: 'Ahead of escort', ring: 'border-cyan-500/50', text: 'text-cyan-400', bg: 'bg-cyan-500', glow: 'shadow-[0_0_12px_-2px_rgba(34,211,238,0.6)]' },
   on_track: { label: 'On track', ring: 'border-emerald-500/40', text: 'text-emerald-400', bg: 'bg-emerald-500', glow: '' },
+  no_route: { label: 'Route not planned', ring: 'border-violet-500/30', text: 'text-violet-300', bg: 'bg-violet-500', glow: '' },
   no_fix: { label: 'No GPS fix', ring: 'border-white/10', text: 'text-neutral-500', bg: 'bg-neutral-600', glow: '' },
 };
-const RANK: Record<string, number> = { off_route: 0, behind: 1, ahead: 2, no_fix: 3, on_track: 4 };
+const RANK: Record<string, number> = { off_route: 0, behind: 1, ahead: 2, no_route: 3, no_fix: 4, on_track: 5 };
 const RISK_CHIP: Record<string, string> = {
   no_go: 'border-red-500/40 bg-red-500/10 text-red-300', critical: 'border-red-500/40 bg-red-500/10 text-red-300', high: 'border-orange-500/40 bg-orange-500/10 text-orange-300', medium: 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300', low: 'border-lime-500/40 bg-lime-500/10 text-lime-300',
 };
@@ -57,6 +58,7 @@ const CHIPS = [
   { key: 'behind', label: 'Behind', cls: 'text-amber-400' },
   { key: 'ahead', label: 'Ahead', cls: 'text-cyan-400' },
   { key: 'on_track', label: 'On track', cls: 'text-emerald-400' },
+  { key: 'no_route', label: 'No route', cls: 'text-violet-300' },
   { key: 'no_fix', label: 'No fix', cls: 'text-neutral-500' },
 ];
 function schedText(min?: number | null): string { if (min == null || min === 0) return 'on schedule'; const a = Math.abs(min); const t = a >= 60 ? `${Math.floor(a / 60)}h ${a % 60}m` : `${a} min`; return min < 0 ? `${t} behind` : `${t} ahead`; }
@@ -88,6 +90,7 @@ export default function Corridor() {
   const routeKm = data?.members?.[0]?.route_len_km ?? 0;
   const flagged = shown.filter(m => m.status === 'off_route' || m.status === 'behind').length;
   const hasCorridor = !!data && route.length >= 2;
+  const canRenderLiveSurface = !!data;
   const showPlanner = !!convoyId && (planning || (!!error && !data));
 
   return (<div className={`flex flex-col ${expanded ? 'fixed inset-0 z-50 bg-[#080a0f]' : 'h-full'}`}>
@@ -102,7 +105,7 @@ export default function Corridor() {
 
     <div className="grid min-h-0 flex-1 grid-rows-[minmax(320px,58vh)_auto] lg:grid-cols-[1fr_minmax(320px,380px)] lg:grid-rows-1">
       <section className="relative flex min-h-0 flex-col border-b border-white/10 lg:border-b-0 lg:border-r">
-        {!convoyId ? <Empty Icon={Radar} text="Pick a convoy to open XD Live Surveillance." /> : showPlanner ? <div className="min-h-0 flex-1 overflow-y-auto p-4"><div className="mx-auto max-w-xl space-y-3"><AutoPlanPanel convoyId={convoyId} origin={convoyDetail?.route_origin ?? null} destination={convoyDetail?.route_destination ?? null} widthKm={data?.config.corridor_km ?? 2} onPlanned={afterPlan} /><details className="group rounded-xl border border-white/10 bg-black/30"><summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-neutral-400 hover:text-white"><span className="inline-flex items-center gap-2"><MapPinned size={14} /> Or set the endpoints by hand <ChevronDown size={14} className="transition-transform group-open:rotate-180" /></span></summary><div className="border-t border-white/[0.07] p-1"><CorridorPlanner convoyId={convoyId} onSaved={afterPlan} /></div></details></div></div> : hasCorridor ? <><div className="min-h-0 flex-1"><CorridorGlobe convoyId={convoyId} fill route={route} corridorKm={corridorKm} members={shown} zones={data?.risk?.zones ?? []} focusId={focusId} trail={trail} onSelect={setFocusId} /></div><CorridorTimeline convoyId={convoyId} live={live} onFrame={onFrame} /></> : <Empty Icon={Loader2} text="Loading XD world state…" spin />}
+        {!convoyId ? <Empty Icon={Radar} text="Pick a convoy to open XD Live Surveillance." /> : showPlanner ? <div className="min-h-0 flex-1 overflow-y-auto p-4"><div className="mx-auto max-w-xl space-y-3"><AutoPlanPanel convoyId={convoyId} origin={convoyDetail?.route_origin ?? null} destination={convoyDetail?.route_destination ?? null} widthKm={data?.config.corridor_km ?? 2} onPlanned={afterPlan} /><details className="group rounded-xl border border-white/10 bg-black/30"><summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-neutral-400 hover:text-white"><span className="inline-flex items-center gap-2"><MapPinned size={14} /> Or set the endpoints by hand <ChevronDown size={14} className="transition-transform group-open:rotate-180" /></span></summary><div className="border-t border-white/[0.07] p-1"><CorridorPlanner convoyId={convoyId} onSaved={afterPlan} /></div></details></div></div> : canRenderLiveSurface ? <><div className="min-h-0 flex-1"><CorridorGlobe convoyId={convoyId} fill route={route} corridorKm={corridorKm} members={shown} zones={data?.risk?.zones ?? []} focusId={focusId} trail={trail} onSelect={setFocusId} /></div>{hasCorridor && <CorridorTimeline convoyId={convoyId} live={live} onFrame={onFrame} />}</> : <Empty Icon={Loader2} text="Loading XD world state…" spin />}
       </section>
 
       <aside className="min-h-0 overflow-y-auto bg-black/20">{data && <div className="space-y-3 p-3">
