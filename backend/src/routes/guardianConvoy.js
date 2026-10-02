@@ -337,7 +337,7 @@ router.post('/photos/commit', jwtAuth, async (req, res, next) => {
 
     const { R2_PUBLIC_URL } = process.env;
     if (!R2_PUBLIC_URL) return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured on this server' });
-    const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photo_id}.jpg`;
+    const key = `orgs/${req.cfo.org_id}/convoy-app/${convoy_id}/${phase}/${photo_type}_${photo_id}.jpg`;
     const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
     const result = await query(
