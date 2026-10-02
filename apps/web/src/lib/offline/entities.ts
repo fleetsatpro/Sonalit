@@ -32,18 +32,21 @@ function wrap(row: LocalEntity, now: number): Fresh<Record<string, unknown>> {
 export async function getEntity(
   entityType: string,
   entityId: string,
+  orgId: string,
   now: number = Date.now(),
 ): Promise<Fresh<Record<string, unknown>> | null> {
-  const row = await db.entities.get(`${entityType}:${entityId}`);
-  return row ? wrap(row, now) : null;
+  const row = await db.entities.get(`${orgId}:${entityType}:${entityId}`);
+  if (!row || row.orgId !== orgId) return null;
+  return wrap(row, now);
 }
 
 export async function listEntities(
   entityType: string,
+  orgId: string,
   now: number = Date.now(),
 ): Promise<Fresh<Record<string, unknown>>[]> {
   const rows = await db.entities.where('entityType').equals(entityType).toArray();
-  return rows.map(r => wrap(r, now));
+  return rows.filter(r => r.orgId === orgId).map(r => wrap(r, now));
 }
 
 /**
@@ -59,11 +62,15 @@ export async function findEntityBy(
   entityType: string,
   field: string,
   value: string,
+  orgId: string,
   now: number = Date.now(),
 ): Promise<Fresh<Record<string, unknown>> | null> {
   const target = value.trim().toUpperCase();
   const rows = await db.entities.where('entityType').equals(entityType).toArray();
-  const hit = rows.find(r => String(r.data[field] ?? '').trim().toUpperCase() === target);
+  const hit = rows.find(r =>
+    r.orgId === orgId &&
+    String(r.data[field] ?? '').trim().toUpperCase() === target
+  );
   return hit ? wrap(hit, now) : null;
 }
 
@@ -78,9 +85,10 @@ export async function findEntityBy(
 export async function applyLocalChange(
   entityType: string,
   entityId: string,
+  orgId: string,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  const key = `${entityType}:${entityId}`;
+  const key = `${orgId}:${entityType}:${entityId}`;
   const row = await db.entities.get(key);
   if (!row) return;
   await db.entities.update(key, {

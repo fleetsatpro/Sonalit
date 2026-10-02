@@ -8,7 +8,7 @@ const { buildWorldContext } = require('../services/spatial/worldContextService')
 const { providerCapabilities } = require('../utils/aiClient');
 const { withOrg } = require('../utils/orgScopedDb');
 const { publish } = require('../realtime/centrifugo');
-const { query, pool } = require('../config/database');
+const { query, globalQuery, pool } = require('../config/database');
 const { withAdvisoryLock, startAdvisoryLeader } = require('../utils/workerExecutionGuard');
 const logger = require('../utils/logger');
 
@@ -38,17 +38,17 @@ async function evaluateSpatialEyeUnsafe(reason = 'scheduled') {
     const baseSql = "SELECT id, org_id FROM convoys " +
       "WHERE org_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL ";
     const page = cursor
-      ? await query(
+      ? await globalQuery(
           baseSql +
           "AND (org_id > $1 OR (org_id = $1 AND id > $2)) ORDER BY org_id, id LIMIT $3",
           [cursor.orgId, cursor.convoyId, spatialMaxConvoys]
         )
-      : await query(baseSql + "ORDER BY org_id, id LIMIT $1", [spatialMaxConvoys]);
+      : await globalQuery(baseSql + "ORDER BY org_id, id LIMIT $1", [spatialMaxConvoys]);
 
     let rows = page.rows || [];
     if (!rows.length && cursor) {
       spatialCursor = { orgId: null, convoyId: null };
-      const wrapped = await query(baseSql + "ORDER BY org_id, id LIMIT $1", [spatialMaxConvoys]);
+      const wrapped = await globalQuery(baseSql + "ORDER BY org_id, id LIMIT $1", [spatialMaxConvoys]);
       rows = wrapped.rows || [];
     }
     if (!rows.length) return { evaluated: 0, eventCount: 0, skipped: false };
@@ -221,7 +221,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
   logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; spatial cadence=${spatialIntervalMs / 1000}s; news mesh + synthesis agents enabled`);
   logger.info(`Intelligence AI provider readiness: ${JSON.stringify(providerCapabilities())}`);
   try {
-    const context = await query(`SELECT current_user, session_user, current_setting('app.current_org_id', true) AS rls_org, (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS visible_users`);
+    const context = await globalQuery(`SELECT current_user, session_user, current_setting('app.current_org_id', true) AS rls_org, (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS visible_users`);
     logger.info(`Intelligence worker DB context: current_user=${context.rows[0]?.current_user} session_user=${context.rows[0]?.session_user} rls_org=${context.rows[0]?.rls_org || 'unset'} visible_users=${context.rows[0]?.visible_users ?? 0}`);
   } catch (error) {
     logger.warn(`Intelligence worker DB context probe failed: ${error.message}`);

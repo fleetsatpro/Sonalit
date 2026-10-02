@@ -43,7 +43,7 @@ class SonalitDB extends Dexie {
   gps_fixes!: EntityTable<LegacyGpsFix, 'id'>;
   pending_uploads!: EntityTable<LegacyPendingUpload, 'id'>;
 
-  /** Replicated server state. Primary key is `${entityType}:${entityId}`. */
+  /** Replicated server state. Primary key is tenant-qualified. */
   entities!: EntityTable<LocalEntity, 'key'>;
   /** Durable queue of local operations awaiting server confirmation. */
   outbox!: EntityTable<OutboxEntry, 'id'>;
@@ -79,6 +79,26 @@ class SonalitDB extends Dexie {
       gps_buffer: 'id, vehicleId, sequence, deviceTime, ownerUserId',
       conflicts: 'id, entityType, detectedAt, ownerUserId',
       sync_meta: 'key',
+    });
+
+    this.version(3).stores({
+      gps_fixes: 'id, device_id, ts',
+      pending_uploads: 'id, kind, created_at',
+      entities: 'key, entityType, [entityType+entityId], orgId, ownerLookup, lastSyncedAt',
+      outbox: 'id, status, priority, nextAttemptAt, localSequence, ownerUserId, ownerOrgId, [status+nextAttemptAt]',
+      gps_buffer: 'id, vehicleId, sequence, deviceTime, ownerUserId, ownerOrgId',
+      conflicts: 'id, entityType, detectedAt, ownerUserId',
+      sync_meta: 'key',
+    }).upgrade(async tx => {
+      const store = tx.table('entities');
+      const rows = await store.toCollection().toArray();
+      for (const row of rows) {
+        const nextKey = row.orgId + ':' + row.entityType + ':' + row.entityId;
+        if (row.key !== nextKey) {
+          await store.delete(row.key);
+          await store.put({ ...row, key: nextKey });
+        }
+      }
     });
   }
 }

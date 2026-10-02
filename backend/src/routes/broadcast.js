@@ -1,8 +1,8 @@
 const router = require('express').Router();
 const Joi = require('joi');
 const { authenticate, authorize } = require('../middleware/auth');
-const { attachOrgDb } = require('../utils/orgScopedDb');
-const { query } = require('../config/database');
+const { attachOrgDb, withOrg } = require('../utils/orgScopedDb');
+const { globalQuery } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
 const { sendWhatsAppMessage, verifyWebhookSignature } = require('../utils/whatsapp');
 const { asyncHandler } = require('../middleware/error');
@@ -13,7 +13,54 @@ const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require(
 const { generateAndQueueSuperAdminClientPulse } = require('../services/email/clientPulseDispatch.service');
 
 router.get('/guardian/whatsapp/webhook', (req, res) => { const mode=req.query['hub.mode']; const token=req.query['hub.verify_token']; const challenge=req.query['hub.challenge']; if(mode==='subscribe'&&token===process.env.WHATSAPP_VERIFY_TOKEN)return res.status(200).send(challenge); res.status(403).json({error:'Verification failed'}); });
-router.post('/guardian/whatsapp/webhook', asyncHandler(async(req,res)=>{const sig=req.headers['x-hub-signature-256']||'';const appSecret=process.env.WHATSAPP_APP_SECRET;if(!appSecret)return res.status(503).json({error:'Webhook not configured'});if(!req.rawBody||!verifyWebhookSignature(req.rawBody,sig,appSecret))return res.status(401).json({error:'Invalid webhook signature'});const body=req.body;if(body?.entry)for(const entry of body.entry)for(const change of(entry.changes??[])){const value=change.value??{};const messages=value.messages??[];if(!messages.length)continue;const phoneNumberId=value.metadata?.phone_number_id??null;let orgId=null;if(phoneNumberId)try{const r=await query(`SELECT org_id FROM whatsapp_config WHERE phone_number_id=$1 ORDER BY active DESC LIMIT 1`,[phoneNumberId]);orgId=r.rows[0]?.org_id??null;}catch(err){logger.warn(`WhatsApp org resolution failed: ${err.message}`);}for(const msg of messages){const bodyText=msg.text?.body??msg.button?.text??null;try{const ins=await query(`INSERT INTO whatsapp_inbound_messages (org_id,wa_message_id,phone_number_id,from_number,msg_type,body,raw) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (wa_message_id) DO NOTHING RETURNING id,received_at`,[orgId,msg.id??null,phoneNumberId,msg.from??null,msg.type??null,bodyText,JSON.stringify(msg)]);if(ins.rows.length&&orgId)publish(`org#${orgId}`,{type:'whatsapp_inbound',id:ins.rows[0].id,from:msg.from??null,msg_type:msg.type??null,body:bodyText,received_at:ins.rows[0].received_at});}catch(err){logger.error(`WhatsApp inbound persist failed: ${err.message}`);}}}res.json({ok:true});}));
+router.post('/guardian/whatsapp/webhook', asyncHandler(async(req,res)=>{
+  const sig=req.headers['x-hub-signature-256']||'';
+  const appSecret=process.env.WHATSAPP_APP_SECRET;
+  if(!appSecret)return res.status(503).json({error:'Webhook not configured'});
+  if(!req.rawBody||!verifyWebhookSignature(req.rawBody,sig,appSecret))return res.status(401).json({error:'Invalid webhook signature'});
+  const body=req.body;
+  if(body?.entry) for(const entry of body.entry) for(const change of(entry.changes??[])){
+    const value=change.value??{};
+    const messages=value.messages??[];
+    if(!messages.length)continue;
+    const phoneNumberId=value.metadata?.phone_number_id??null;
+    let orgId=null;
+    if(phoneNumberId) try{
+      const r=await globalQuery(
+        `SELECT org_id FROM whatsapp_config WHERE phone_number_id=$1 ORDER BY active DESC LIMIT 1`,
+        [phoneNumberId]
+      );
+      orgId=r.rows[0]?.org_id??null;
+    } catch(err){
+      logger.warn(`WhatsApp org resolution failed: ${err.message}`);
+    }
+
+    // A signed webhook may establish tenant identity only through our stored
+    // phone-number mapping. Do not insert an unscoped inbound event when the
+    // mapping is missing; that would create a tenantless record that later
+    // routing code could misinterpret.
+    if(!orgId){
+      logger.warn(`WhatsApp inbound dropped: no tenant mapping for phone_number_id=${phoneNumberId??'missing'}`);
+      continue;
+    }
+
+    for(const msg of messages){
+      const bodyText=msg.text?.body??msg.button?.text??null;
+      try{
+        const ins=await withOrg(orgId, client => client.query(
+          `INSERT INTO whatsapp_inbound_messages (org_id,wa_message_id,phone_number_id,from_number,msg_type,body,raw)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (wa_message_id) DO NOTHING RETURNING id,received_at`,
+          [orgId,msg.id??null,phoneNumberId,msg.from??null,msg.type??null,bodyText,JSON.stringify(msg)]
+        ));
+        if(ins.rows.length) publish(`org#${orgId}`,{type:'whatsapp_inbound',id:ins.rows[0].id,from:msg.from??null,msg_type:msg.type??null,body:bodyText,received_at:ins.rows[0].received_at});
+      }catch(err){
+        logger.error(`WhatsApp inbound persist failed: ${err.message}`);
+      }
+    }
+  }
+  res.json({ok:true});
+}));
 
 router.use(authenticate, attachOrgDb);
 const broadcastSchema=Joi.object({message:Joi.string().min(1).max(4000).required(),channel:Joi.string().valid('app','whatsapp','sms','email').default('app'),canned_message_id:Joi.string().uuid()});

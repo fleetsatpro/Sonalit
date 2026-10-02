@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { pool, query } from '../db.js';
+import { pool } from '../db.js';
 import { verifyToken, signAccessToken, signRefreshToken } from '../lib/jwt.js';
 import { publishAudit } from '../lib/audit.js';
 import { tokenRefreshCounter } from '../lib/metrics.js';
 import { AuthError, ValidationError } from '../lib/errors.js';
 import { createHash } from 'node:crypto';
 import { config } from '../config.js';
+import { tenantContext } from '../db.js';
 
 const RefreshSchema = z.object({
   refresh_token: z.string().min(1),
@@ -64,14 +65,17 @@ export async function refreshRoutes(app: FastifyInstance): Promise<void> {
     const incomingHash = createHash('sha256').update(refresh_token).digest('hex');
 
     // Atomic rotation: lock the family row, verify hash, issue new tokens, update hash — all in one transaction.
+    tenantContext.enterWith(orgId);
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
+      await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [orgId]);
 
       const familyResult = await client.query<TokenFamilyRow>(
         `SELECT id, user_id, org_id, last_refresh_token_hash, refresh_count, revoked_at
-         FROM token_families WHERE id = $1 FOR UPDATE`,
-        [familyId],
+         FROM token_families WHERE id = $1 AND org_id = $2 FOR UPDATE`,
+        [familyId, orgId],
       );
       const family = familyResult.rows[0];
 
@@ -111,10 +115,10 @@ export async function refreshRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(err.statusCode).send({ code: 'TOKEN_REUSE', message: err.message });
       }
 
-      const users = await query<UserRow>(
-        `SELECT role FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
-        [userId],
-      );
+      const users = await client.query<UserRow>(
+        `SELECT role FROM users WHERE id = $1 AND org_id = $2 AND status='active' AND deleted_at IS NULL LIMIT 1`,
+        [userId, orgId],
+      ).then(r => r.rows);
       const role = users[0]?.role ?? 'operator';
 
       const newAccessToken = await signAccessToken({ sub: userId, org_id: orgId, role });

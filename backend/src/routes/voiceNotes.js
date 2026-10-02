@@ -66,6 +66,10 @@ router.post('/commit', asyncHandler(async (req, res) => {
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
+  if (!value.storage_key.startsWith(`voice-notes/${req.user.org_id}/`)) {
+    return res.status(422).json({ error: 'storage_key_not_in_tenant_namespace' });
+  }
+
   const result = await req.db(
     `INSERT INTO voice_notes
        (id, org_id, parent_type, parent_id, uploaded_by, storage_key, duration_sec, file_size_bytes, mime_type)

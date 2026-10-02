@@ -117,6 +117,8 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE sonalit_app');
+    await client.query("SELECT set_config('app.current_org_id', $1, true)", [req.user.org_id]);
 
     const cfoIds = [...new Set(value.cfos.map((c) => c.cfo_user_id))];
     const cfoCheck = await client.query(
@@ -336,6 +338,8 @@ const setRouteWaypoints = asyncHandler(async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE sonalit_app');
+    await client.query("SELECT set_config('app.current_org_id', $1, true)", [req.user.org_id]);
     await client.query('DELETE FROM convoy_route_waypoints WHERE convoy_id = $1', [req.params.id]);
     for (let i = 0; i < value.waypoints.length; i++) {
       const wp = value.waypoints[i];

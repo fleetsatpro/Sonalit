@@ -22,7 +22,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { router } from './router.js';
 import { initOtel } from './lib/otel.js';
 import { initSentry, Sentry } from './lib/sentry.js';
-import { useAuthStore } from './stores/auth.js';
+import { getAccessToken, setAccessToken, useAuthStore } from './stores/auth.js';
 import OfflineGuard from './components/OfflineGuard.js';
 import UpdateAvailableToast from './components/UpdateAvailableToast.js';
 
@@ -70,6 +70,18 @@ const queryClient = new QueryClient({
     queries: { staleTime: 30_000, retry: 2 },
     mutations: { retry: 0 },
   },
+});
+
+let lastTenantId = useAuthStore.getState().user?.org_id ?? null;
+
+// Tenant boundary is also a browser-cache boundary. Clear all TanStack Query
+// state when authentication changes organization so data fetched under tenant A
+// can never remain visible while tenant B is mounted, even briefly.
+useAuthStore.subscribe((state) => {
+  const nextTenantId = state.user?.org_id ?? null;
+  if (nextTenantId === lastTenantId) return;
+  lastTenantId = nextTenantId;
+  queryClient.clear();
 });
 
 const rootEl = document.getElementById('root');

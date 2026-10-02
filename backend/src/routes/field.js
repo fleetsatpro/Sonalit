@@ -417,6 +417,8 @@ router.post('/admin/workers', authorize('admin'), asyncHandler(async (req, res) 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE sonalit_app');
+    await client.query("SELECT set_config('app.current_org_id', $1, true)", [req.user.org_id]);
     const userResult = await client.query(
       `INSERT INTO users (name, email, password_hash, role, status, org_id)
        VALUES ($1, $2, $3, $4, 'active', $5)

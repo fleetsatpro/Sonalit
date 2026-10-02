@@ -42,8 +42,8 @@ export const NATS_SUBJECTS = {
   audit_pattern: 'audit.*',
 
   // Outbound notifications (fan-out to FCM/APNS/email/etc.)
-  notifications: (channel: string) => `notifications.${channel}` as const,
-  notifications_pattern: 'notifications.*',
+  notifications: (orgId: string, channel: string) => `notifications.${orgId}.${channel}` as const,
+  notifications_pattern: 'notifications.*.*',
 
   // Convoy updates — published by Convoy service on any mutation
   convoy_updated: (orgId: string) => `convoy.updated.${orgId}` as const,
@@ -95,11 +95,12 @@ export const MediaCommittedEventSchema = CfoPhotoSchema;
 export type MediaCommittedEvent = z.infer<typeof MediaCommittedEventSchema>;
 
 // ---------------------------------------------------------------------------
-// Notification envelope — notifications.<channel>
+// Notification envelope — notifications.<org_id>.<channel>
 // ---------------------------------------------------------------------------
 
 export const NotificationEnvelopeSchema = z.object({
   id: UuidSchema,
+  org_id: UuidSchema,
   channel: OutboxChannelSchema,
   recipient: z.string().min(1).describe('FCM token, APNS token, email address, or phone'),
   title: z.string().max(256).nullable(),

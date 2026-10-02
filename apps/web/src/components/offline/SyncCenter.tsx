@@ -16,6 +16,7 @@ import {
   AlertTriangle, Check, CloudOff, Loader2, RefreshCw, Trash2, Wifi, WifiOff,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { useAuthStore } from '../../stores/auth.js';
 
 import {
   dismissEntry, getOfflineStatus, listForUser, retryEntry,
@@ -121,14 +122,15 @@ export function ConnectivityChip({ onClick }: { onClick?: () => void }) {
 // ── Full panel ───────────────────────────────────────────────────────────────
 
 export default function SyncCenter({ userId }: { userId: string }) {
+  const orgId = useAuthStore(state => state.user?.org_id ?? '');
   const [status, setStatus] = useState<OfflineStatus | null>(null);
   const [entries, setEntries] = useState<OutboxEntry[]>([]);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(() => {
     void getOfflineStatus().then(setStatus);
-    void listForUser(userId).then(setEntries);
-  }, [userId]);
+    void (orgId ? listForUser(userId, orgId) : Promise.resolve([])).then(setEntries);
+  }, [userId, orgId]);
 
   useEffect(() => {
     refresh();

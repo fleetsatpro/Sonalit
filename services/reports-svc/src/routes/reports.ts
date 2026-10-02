@@ -2,9 +2,10 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { query } from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
 import { getJs } from '../nats.js';
 import { StringCodec } from 'nats';
-import { NotFoundError } from '../lib/errors.js';
+import { NotFoundError, AuthError } from '../lib/errors.js';
 
 const CreateReportSchema = z.object({
   type: z.enum(['convoy', 'fleet', 'driver']),
@@ -20,8 +21,9 @@ const ListSchema = z.object({
 });
 
 export const reportsRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('preHandler', requireAuth);
   app.get('/v4/reports', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string) ?? '';
+    const org_id = req.user!.org_id;
     const q = ListSchema.parse(req.query);
     const rows = await query(
       'SELECT * FROM reports WHERE org_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
@@ -31,7 +33,7 @@ export const reportsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/v4/reports', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string) ?? '';
+    const org_id = req.user!.org_id;
     const body = CreateReportSchema.parse(req.body);
     const id = randomUUID();
     const [report] = await query(
@@ -46,7 +48,7 @@ export const reportsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/v4/reports/:id', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string) ?? '';
+    const org_id = req.user!.org_id;
     const { id } = req.params as { id: string };
     const [row] = await query('SELECT * FROM reports WHERE id=$1 AND org_id=$2', [id, org_id]);
     if (!row) throw new NotFoundError('Report not found');

@@ -144,6 +144,65 @@ async function migrate(): Promise<void> {
         deleted_at TIMESTAMPTZ
       );
     `);
+    await client.query(`
+      ALTER TABLE thread_participants ADD COLUMN IF NOT EXISTS org_id UUID;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS org_id UUID;
+
+      UPDATE thread_participants tp SET org_id=mt.org_id
+      FROM message_threads mt
+      WHERE mt.id=tp.thread_id AND tp.org_id IS NULL;
+
+      UPDATE messages m SET org_id=mt.org_id
+      FROM message_threads mt
+      WHERE mt.id=m.thread_id AND m.org_id IS NULL;
+
+      CREATE OR REPLACE FUNCTION tenant_fleet_thread_participant() RETURNS trigger LANGUAGE plpgsql AS $
+      DECLARE parent_org UUID;
+      BEGIN
+        SELECT org_id INTO parent_org FROM message_threads WHERE id=NEW.thread_id;
+        IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_thread'; END IF;
+        IF NEW.org_id IS NOT NULL AND NEW.org_id<>parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+        NEW.org_id:=parent_org; RETURN NEW;
+      END $;
+
+      CREATE OR REPLACE FUNCTION tenant_fleet_message() RETURNS trigger LANGUAGE plpgsql AS $
+      DECLARE parent_org UUID;
+      BEGIN
+        SELECT org_id INTO parent_org FROM message_threads WHERE id=NEW.thread_id;
+        IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_thread'; END IF;
+        IF NEW.org_id IS NOT NULL AND NEW.org_id<>parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+        NEW.org_id:=parent_org; RETURN NEW;
+      END $;
+
+      DROP TRIGGER IF EXISTS tenant_fleet_thread_participant ON thread_participants;
+      CREATE TRIGGER tenant_fleet_thread_participant BEFORE INSERT OR UPDATE ON thread_participants
+        FOR EACH ROW EXECUTE FUNCTION tenant_fleet_thread_participant();
+
+      DROP TRIGGER IF EXISTS tenant_fleet_message ON messages;
+      CREATE TRIGGER tenant_fleet_message BEFORE INSERT OR UPDATE ON messages
+        FOR EACH ROW EXECUTE FUNCTION tenant_fleet_message();
+
+      DO $
+      DECLARE t text;
+      BEGIN
+        FOREACH t IN ARRAY ARRAY[
+          'vehicles','drivers','geofences','maintenance_records','shipments',
+          'message_threads','thread_participants','messages','risk_zones',
+          'field_officers','finance_records'
+        ] LOOP
+          EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+          EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+          EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_service ON %I', t);
+          EXECUTE format('CREATE POLICY tenant_isolation_service ON %I AS RESTRICTIVE FOR ALL
+            USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
+            WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)', t);
+          EXECUTE format('DROP POLICY IF EXISTS tenant_base_service ON %I', t);
+          EXECUTE format('CREATE POLICY tenant_base_service ON %I AS PERMISSIVE FOR ALL
+            USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
+            WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)', t);
+        END LOOP;
+      END $;
+    `);
     await client.query('COMMIT');
     process.stdout.write('fleet-svc migrations complete\n');
   } catch (err) {

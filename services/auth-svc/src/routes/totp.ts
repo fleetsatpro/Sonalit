@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as OTPAuth from 'otpauth';
-import { query } from '../db.js';
+import { query, globalQuery, withOrgContext } from '../db.js';
 import { verifyPassword } from '../lib/password.js';
 import { requireAuth } from '../middleware/auth.js';
 import { publishAudit } from '../lib/audit.js';
@@ -186,7 +186,7 @@ export async function totpRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(401).send({ code: 'CHALLENGE_EXPIRED', message: 'TOTP challenge expired or invalid' });
     }
 
-    const users = await query<UserRow>(
+    const users = await globalQuery<UserRow>(
       `SELECT id, org_id, role, totp_enabled, totp_secret_enc FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
       [userId],
     );
@@ -211,11 +211,11 @@ export async function totpRoutes(app: FastifyInstance): Promise<void> {
     const refreshToken = await signRefreshToken(familyId, user.id, user.org_id);
     const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
 
-    await query(
+    await withOrgContext(user.org_id, () => query(
       `INSERT INTO token_families (id, user_id, org_id, last_refresh_token_hash)
        VALUES ($1, $2, $3, $4)`,
       [familyId, user.id, user.org_id, refreshHash],
-    );
+    ));
 
     return reply.status(200).send({
       access_token: accessToken,

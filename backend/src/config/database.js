@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Pool, types } = require('pg');
 const logger = require('../utils/logger');
+const { getOrgId, getTenantDbClient } = require('../utils/tenantContext');
 
 // pg returns NUMERIC/DECIMAL columns (type OID 1700) as strings to preserve
 // arbitrary precision. This app treats those columns (speed, fuel_level,
@@ -39,10 +40,37 @@ pool.on('connect', () => {
   logger.info(`New PostgreSQL client connected${process.env.INTEL_ORG_ID ? `; RLS org=${process.env.INTEL_ORG_ID}` : ''}`);
 });
 
+async function tenantQuery(orgId, text, params) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE sonalit_app');
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_org_id', orgId]);
+    const result = await client.query(text, params);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function query(text, params) {
   const start = Date.now();
+  const orgId = getOrgId();
+  const activeClient = getTenantDbClient();
+  if (!orgId) {
+    throw new Error('tenant_scope_required: use globalQuery() only for explicit global/bootstrap operations');
+  }
   try {
-    const result = await pool.query(text, params);
+    // If already inside withOrg(), reuse that transaction instead of opening a
+    // second connection. This preserves transaction atomicity and prevents a
+    // nested legacy helper from observing pre-commit state on another client.
+    const result = activeClient
+      ? await activeClient.query(text, params)
+      : await tenantQuery(orgId, text, params);
     const duration = Date.now() - start;
     if (duration > 1000) {
       logger.warn(`Slow query detected (${duration}ms): ${text.substring(0, 100)}`);
@@ -55,8 +83,22 @@ async function query(text, params) {
 }
 
 async function healthCheck() {
-  const result = await query('SELECT NOW() AS now');
+  const result = await globalQuery('SELECT NOW() AS now');
   return result.rows[0].now;
 }
 
-module.exports = { pool, query, healthCheck };
+async function globalQuery(text, params) {
+  if (getOrgId()) throw new Error('global_query_forbidden_inside_tenant_context');
+  const start = Date.now();
+  try {
+    const result = await pool.query(text, params);
+    const duration = Date.now() - start;
+    if (duration > 1000) logger.warn(`Slow global query detected (${duration}ms): ${text.substring(0, 100)}`);
+    return result;
+  } catch (err) {
+    logger.error(`Global database query error: ${err.message}\nQuery: ${text}`);
+    throw err;
+  }
+}
+
+module.exports = { pool, query, globalQuery, healthCheck };

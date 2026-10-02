@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
 const logger = require('../utils/logger');
@@ -12,6 +12,8 @@ const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
 const captureVision = require('../utils/captureVision');
+const { getOrgId } = require('../utils/tenantContext');
+const { runWithOrgContext } = require('../utils/tenantContext');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
@@ -112,9 +114,9 @@ async function resolveOrgOfficer(deviceId, badgeName) {
   let orgId = null;
   let officerId = null;
   try {
-    const devRow = await query(`SELECT org_id FROM guardian_devices WHERE id = $1`, [deviceId]);
+    const devRow = await globalQuery(`SELECT org_id FROM guardian_devices WHERE id = $1`, [deviceId]);
     orgId = devRow.rows[0]?.org_id ?? null;
-    const offRow = await query(
+    const offRow = await globalQuery(
       `SELECT id FROM field_officers
        WHERE (device_id = $1 OR badge_number = $2)
        ORDER BY (device_id = $1) DESC LIMIT 1`,
@@ -131,7 +133,7 @@ async function resolveOrgOfficer(deviceId, badgeName) {
 
 async function ensureTables() {
   try {
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS guardian_devices (
         id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         token           UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
@@ -156,7 +158,7 @@ async function ensureTables() {
       )
     `);
 
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS device_locations (
         id        BIGSERIAL PRIMARY KEY,
         device_id UUID NOT NULL REFERENCES guardian_devices(id) ON DELETE CASCADE,
@@ -170,7 +172,7 @@ async function ensureTables() {
       )
     `);
 
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS device_health (
         id               BIGSERIAL PRIMARY KEY,
         device_id        UUID NOT NULL REFERENCES guardian_devices(id) ON DELETE CASCADE,
@@ -185,7 +187,7 @@ async function ensureTables() {
       )
     `);
 
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS panic_events (
         id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         device_id   UUID NOT NULL REFERENCES guardian_devices(id),
@@ -199,7 +201,7 @@ async function ensureTables() {
       )
     `);
 
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS device_commands (
         id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         device_id    UUID NOT NULL REFERENCES guardian_devices(id),
@@ -213,7 +215,7 @@ async function ensureTables() {
       )
     `);
 
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS field_reports (
         id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         device_id   UUID NOT NULL REFERENCES guardian_devices(id),
@@ -227,7 +229,7 @@ async function ensureTables() {
       )
     `);
 
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS guardian_crash_reports (
         id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         device_id       UUID REFERENCES guardian_devices(id) ON DELETE CASCADE,
@@ -245,19 +247,19 @@ async function ensureTables() {
     `);
 
     // v2 columns — safe to run repeatedly
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS org_id UUID`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS convoy_code TEXT`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS last_checkin_at TIMESTAMPTZ`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS android_id TEXT`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS manufacturer TEXT`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS imei_hash TEXT`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`).catch(() => {}); // also added below
-    await query(`
+    await globalQuery(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS org_id UUID`);
+    await globalQuery(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS convoy_code TEXT`);
+    await globalQuery(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS last_checkin_at TIMESTAMPTZ`);
+    await globalQuery(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS android_id TEXT`);
+    await globalQuery(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS manufacturer TEXT`);
+    await globalQuery(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS imei_hash TEXT`);
+    await globalQuery(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`).catch(() => {}); // also added below
+    await globalQuery(`
       CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_devices_imei_hash
         ON guardian_devices(imei_hash)
         WHERE imei_hash IS NOT NULL AND deleted_at IS NULL
     `);
-    await query(`
+    await globalQuery(`
       CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_devices_android_id
         ON guardian_devices(android_id)
         WHERE android_id IS NOT NULL AND android_id <> 'unknown' AND deleted_at IS NULL
@@ -265,7 +267,7 @@ async function ensureTables() {
 
     // One-time cleanup: soft-delete PENDING records where an ACTIVE record exists
     // for the same name + model (catches duplicates created before hardware-ID dedup was added).
-    await query(`
+    await globalQuery(`
       UPDATE guardian_devices SET deleted_at = NOW()
       WHERE status = 'pending' AND deleted_at IS NULL
         AND EXISTS (
@@ -279,7 +281,7 @@ async function ensureTables() {
     `);
 
     // p1t1 — server-side config table (feature flags, version enforcement)
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS guardian_config (
         key         TEXT PRIMARY KEY,
         value_int   INT,
@@ -288,7 +290,7 @@ async function ensureTables() {
         updated_at  TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-    await query(`
+    await globalQuery(`
       INSERT INTO guardian_config (key, value_int, description)
       VALUES ('min_apk_version_code', 5,
               'Heartbeat rejects APKs below this versionCode with HTTP 426')
@@ -298,31 +300,32 @@ async function ensureTables() {
     `);
 
     // Remove deprecated flags replaced by unconditional enforcement (Task E)
-    await query(`
+    await globalQuery(`
       DELETE FROM guardian_config
       WHERE key IN ('command_signing_enabled', 'cert_pinning_enabled')
     `);
 
     // Audit log archive flag (default off — must be explicitly enabled)
-    await query(`
+    await globalQuery(`
       INSERT INTO guardian_config (key, value_int, description)
       VALUES ('audit_log_archive_enabled', 0, 'Archive audit log rows to R2 before GDPR deletion (0=off,1=on)')
       ON CONFLICT (key) DO NOTHING
     `);
 
     // Indexes for performance
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_device_id ON device_locations(device_id)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_timestamp ON device_locations(timestamp DESC)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_health_device_id ON device_health(device_id)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_commands_device_status ON device_commands(device_id, status)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_panic_events_device_id ON panic_events(device_id)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_panic_events_resolved ON panic_events(resolved_at)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_field_reports_device_id ON field_reports(device_id)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_device_locations_device_id ON device_locations(device_id)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_device_locations_timestamp ON device_locations(timestamp DESC)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_device_health_device_id ON device_health(device_id)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_device_commands_device_status ON device_commands(device_id, status)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_panic_events_device_id ON panic_events(device_id)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_panic_events_resolved ON panic_events(resolved_at)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_field_reports_device_id ON field_reports(device_id)`);
 
     // p2t5 — audit log table
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS guardian_audit_log (
         id          BIGSERIAL PRIMARY KEY,
+        org_id      UUID,
         actor_type  TEXT NOT NULL CHECK (actor_type IN ('admin','device','system')),
         actor_id    UUID,
         action      TEXT NOT NULL,
@@ -333,12 +336,12 @@ async function ensureTables() {
         created_at  TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-    await query(`CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON guardian_audit_log(actor_id, created_at DESC)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_audit_log_target ON guardian_audit_log(target_type, target_id, created_at DESC)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_audit_log_action ON guardian_audit_log(action, created_at DESC)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON guardian_audit_log(actor_id, created_at DESC)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_audit_log_target ON guardian_audit_log(target_type, target_id, created_at DESC)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_audit_log_action ON guardian_audit_log(action, created_at DESC)`);
 
     // p3t1 — enrollment codes
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS enrollment_codes (
         id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         org_id     UUID,
@@ -351,20 +354,20 @@ async function ensureTables() {
     `);
 
     // p3t5 — DMS server-side config seed rows
-    await query(`
+    await globalQuery(`
       INSERT INTO guardian_config (key, value_int, description) VALUES
         ('dms_default_interval_minutes', 60, 'Default dead-man switch interval in minutes'),
         ('dms_max_interval_minutes', 120, 'Maximum allowed DMS interval (hard ceiling)')
       ON CONFLICT (key) DO NOTHING
     `);
     // Cap any existing dms_max_interval_minutes above the new 120-minute ceiling
-    await query(`
+    await globalQuery(`
       UPDATE guardian_config SET value_int = 120, updated_at = NOW()
       WHERE key = 'dms_max_interval_minutes' AND value_int > 120
     `);
 
     // p3t6 — convoy codes
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS convoy_codes (
         code        TEXT PRIMARY KEY,
         created_by  UUID REFERENCES users(id),
@@ -377,51 +380,52 @@ async function ensureTables() {
     `);
 
     // p3t7 — command signing: signature column
-    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS signature TEXT`);
+    await globalQuery(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS signature TEXT`);
 
     // p1t3 — command delivery timestamps
-    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
+    await globalQuery(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
 
     // p2t3 — command expiry
-    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
+    await globalQuery(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
 
     // panic revamp — acknowledge/escalation/resolution-reason workflow
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_by UUID`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS resolution_note TEXT`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS reason_code TEXT`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalation_level INT DEFAULT 0`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ`);
-    await query(`
+    await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ`);
+    await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_by UUID`);
+    await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS resolution_note TEXT`);
+    await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS reason_code TEXT`);
+    await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalation_level INT DEFAULT 0`);
+    await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ`);
+    await globalQuery(`
       CREATE INDEX IF NOT EXISTS idx_panic_events_open_unacked
         ON panic_events(org_id, created_at)
         WHERE resolved_at IS NULL AND acknowledged_at IS NULL
     `);
 
     // p1t5 — idempotency UUIDs for panic events and field reports
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS event_uuid UUID`);
-    await query(`
+    await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS event_uuid UUID`);
+    await globalQuery(`
       CREATE UNIQUE INDEX IF NOT EXISTS uq_panic_events_event_uuid
         ON panic_events(event_uuid)
         WHERE event_uuid IS NOT NULL
     `);
-    await query(`ALTER TABLE field_reports ADD COLUMN IF NOT EXISTS event_uuid UUID`);
-    await query(`
+    await globalQuery(`ALTER TABLE field_reports ADD COLUMN IF NOT EXISTS event_uuid UUID`);
+    await globalQuery(`
       CREATE UNIQUE INDEX IF NOT EXISTS uq_field_reports_event_uuid
         ON field_reports(event_uuid)
         WHERE event_uuid IS NOT NULL
     `);
 
     // p4t1 — FCM push token on device
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`);
+    await globalQuery(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`);
 
     // p5t1 — nonce column for command replay protection
-    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS nonce TEXT`);
+    await globalQuery(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS nonce TEXT`);
 
     // p5t2 — nonce deduplication table (PRIMARY KEY enforces uniqueness per device)
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS guardian_command_nonces (
         device_id UUID NOT NULL REFERENCES guardian_devices(id),
+        org_id    UUID,
         nonce     TEXT NOT NULL,
         seen_at   TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (device_id, nonce)
@@ -429,20 +433,47 @@ async function ensureTables() {
     `);
 
     // p5t3 — command lifecycle event log
-    await query(`
+    await globalQuery(`
       CREATE TABLE IF NOT EXISTS device_command_events (
         id         BIGSERIAL PRIMARY KEY,
+        org_id     UUID,
         command_id UUID NOT NULL,
         status     TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_command_events_command ON device_command_events(command_id)`);
+    await globalQuery(`CREATE INDEX IF NOT EXISTS idx_device_command_events_command ON device_command_events(command_id)`);
 
+    await ensureGuardianTenantControlSecurity();
     logger.info('Guardian tables initialised');
   } catch (err) {
     logger.error(`Guardian ensureTables error: ${err.message}`);
   }
+}
+
+async function ensureGuardianTenantControlSecurity() {
+  const tables = [
+    'guardian_audit_log',
+    'enrollment_codes',
+    'convoy_codes',
+    'guardian_command_nonces',
+    'device_command_events',
+  ];
+  for (const table of tables) {
+    await globalQuery('ALTER TABLE public.' + table + ' ENABLE ROW LEVEL SECURITY');
+    if (table !== 'enrollment_codes' && table !== 'convoy_codes') {
+      await globalQuery('ALTER TABLE public.' + table + ' FORCE ROW LEVEL SECURITY');
+    }
+    await globalQuery('DROP POLICY IF EXISTS guardian_tenant_isolation ON public.' + table);
+    await globalQuery(
+      "CREATE POLICY guardian_tenant_isolation ON public." + table +
+      " USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)" +
+      " WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)"
+    );
+    await globalQuery('GRANT SELECT, INSERT, UPDATE, DELETE ON public.' + table + ' TO sonalit_app');
+  }
+  await globalQuery('GRANT USAGE, SELECT ON SEQUENCE public.guardian_audit_log_id_seq TO sonalit_app');
+  await globalQuery('GRANT USAGE, SELECT ON SEQUENCE public.device_command_events_id_seq TO sonalit_app');
 }
 
 // ─── Audit Log Helper ─────────────────────────────────────────────────────────
@@ -450,12 +481,15 @@ async function ensureTables() {
 /**
  * Fire-and-forget audit log insert. Never throws — errors are caught and logged.
  */
-function auditLog(actor_type, actor_id, action, target_type, target_id, payload, ip) {
+function auditLog(actor_type, actor_id, action, target_type, target_id, payload, ip, explicitOrgId = null) {
+  const orgId = explicitOrgId || getOrgId();
+  if (!orgId) return;
   query(
     `INSERT INTO guardian_audit_log
-       (actor_type, actor_id, action, target_type, target_id, payload, ip_address)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       (org_id, actor_type, actor_id, action, target_type, target_id, payload, ip_address)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
+      orgId,
       actor_type,
       actor_id || null,
       action,
@@ -471,7 +505,7 @@ function auditLog(actor_type, actor_id, action, target_type, target_id, payload,
 
 async function runCommandExpiryJob() {
   try {
-    const result = await query(
+    const result = await globalQuery(
       `UPDATE device_commands
        SET status = 'expired'
        WHERE status IN ('pending', 'sent') AND expires_at < NOW()`
@@ -488,7 +522,7 @@ async function runCommandExpiryJob() {
   // invoked, so guardian_command_nonces grew unbounded. Guarded separately so a
   // failure here never blocks command expiry above.
   try {
-    await query('SELECT cleanup_command_nonces()');
+    await globalQuery('SELECT cleanup_command_nonces()');
   } catch (err) {
     logger.error(`Nonce cleanup job error: ${err.message}`);
   }
@@ -507,7 +541,7 @@ async function runDmsMonitorJob() {
     // once since it was enabled (last_checkin_at NULL = no baseline, never
     // fire blindly), (c) aren't temporarily suspended, and (d) are past their
     // window. A NULL dms_timeout_minutes yields NULL here and is skipped.
-    const due = await query(
+    const due = await globalQuery(
       `SELECT id, org_id, name, last_lat, last_lng
          FROM guardian_devices
         WHERE dms_enabled = true
@@ -522,7 +556,7 @@ async function runDmsMonitorJob() {
       // Claim the device atomically: flip dms_enabled off (operator re-enables
       // after resolving) and mark panic_active. The WHERE dms_enabled = true
       // guard means only one monitor tick can win, so we never double-fire.
-      const claim = await query(
+      const claim = await globalQuery(
         `UPDATE guardian_devices
             SET dms_enabled = false, panic_active = true, updated_at = NOW()
           WHERE id = $1 AND dms_enabled = true
@@ -532,7 +566,7 @@ async function runDmsMonitorJob() {
       if (!claim.rows.length) continue;
 
       const eventUuid = uuidv4();
-      const ins = await query(
+      const ins = await globalQuery(
         `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
          VALUES ($1, $2, $3, 'silent', $4, $5, $6, NOW())
          RETURNING id, created_at`,
@@ -556,7 +590,8 @@ async function runDmsMonitorJob() {
         created_at: row.created_at,
         triggered_at: row.created_at,
       };
-      if (dev.org_id) publish(`org#${dev.org_id}`, payload); else publish('device:panic', payload);
+      if (!dev.org_id) { logger.error(`DMS timeout skipped: device=${dev.id} has no tenant scope`); continue; }
+      publish(`org#${dev.org_id}`, payload);
       logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id ?? 'unknown'}`);
       // Queue a burst too — a missed check-in is exactly when eyes on the scene
       // matter most. No fcm_token on this partial row, so it rides the device's
@@ -577,7 +612,7 @@ const MAX_ESCALATION_LEVEL = 3;
 
 async function runPanicEscalationJob() {
   try {
-    const due = await query(
+    const due = await globalQuery(
       `SELECT pe.id, pe.org_id, pe.device_id, pe.mode, pe.escalation_level, pe.created_at,
               gd.name AS device_name
        FROM panic_events pe
@@ -594,7 +629,7 @@ async function runPanicEscalationJob() {
 
     for (const row of due.rows) {
       const nextLevel = row.escalation_level + 1;
-      await query(
+      await globalQuery(
         `UPDATE panic_events SET escalation_level = $2, escalated_at = NOW() WHERE id = $1`,
         [row.id, nextLevel]
       );
@@ -609,12 +644,12 @@ async function runPanicEscalationJob() {
         escalated_at: new Date().toISOString(),
       });
 
-      auditLog('system', null, 'panic_escalated', 'panic_event', row.id, { escalation_level: nextLevel }, null);
+      auditLog('system', null, 'panic_escalated', 'panic_event', row.id, { escalation_level: nextLevel }, null, row.org_id);
       logger.warn(`PANIC escalated: id=${row.id} device=${row.device_name} level=${nextLevel}`);
 
       // Notify org admins/dispatchers with a phone number on file, fire-and-forget.
       try {
-        const contacts = await query(
+        const contacts = await globalQuery(
           `SELECT phone FROM users WHERE org_id = $1 AND role IN ('admin', 'dispatcher') AND phone IS NOT NULL`,
           [row.org_id]
         );
@@ -655,7 +690,7 @@ async function deviceAuth(req, res, next) {
       return res.status(401).json({ error: 'Missing X-Device-Token header' });
     }
 
-    const result = await query(
+    const result = await globalQuery(
       `SELECT * FROM guardian_devices
        WHERE token = $1 AND deleted_at IS NULL`,
       [token]
@@ -670,8 +705,12 @@ async function deviceAuth(req, res, next) {
       return res.status(403).json({ error: `Device is ${device.status}` });
     }
 
+    if (!device.org_id) {
+      return res.status(403).json({ error: 'device_tenant_scope_required' });
+    }
+
     req.device = device;
-    next();
+    return runWithOrgContext(device.org_id, next);
   } catch (err) {
     logger.error(`deviceAuth error: ${err.message}`);
     next(err);
@@ -689,18 +728,30 @@ async function deviceAuth(req, res, next) {
  * the same officer in every device list.
  */
 async function linkOfficerDevice(officer, deviceId) {
+  const orgId = officer.org_id;
+  if (!orgId) throw new Error('officer_tenant_scope_required');
+  const device = await globalQuery(
+    'SELECT id, org_id FROM guardian_devices WHERE id=$1 AND deleted_at IS NULL',
+    [deviceId],
+  );
+  if (!device.rows.length || !device.rows[0].org_id || String(device.rows[0].org_id) !== String(orgId)) {
+    throw new Error('device_tenant_mismatch');
+  }
+
   if (officer.device_id && officer.device_id !== deviceId) {
-    await query(
-      `UPDATE guardian_devices SET status = 'revoked', deleted_at = NOW(), updated_at = NOW()
-       WHERE id = $1 AND deleted_at IS NULL`,
-      [officer.device_id]
+    await globalQuery(
+      `UPDATE guardian_devices
+          SET status = 'revoked', deleted_at = NOW(), updated_at = NOW()
+        WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      [officer.device_id, orgId],
     );
-    logger.info(`Retired stale device ${officer.device_id} for officer ${officer.id} (now ${deviceId})`);
+    logger.info(`Retired stale device ${officer.device_id} for officer ${officer.id} (now ${deviceId}) org=${orgId}`);
   }
   if (officer.device_id !== deviceId) {
-    await query(
-      `UPDATE field_officers SET device_id = $1, updated_at = NOW() WHERE id = $2`,
-      [deviceId, officer.id]
+    await globalQuery(
+      `UPDATE field_officers SET device_id = $1, updated_at = NOW()
+       WHERE id = $2 AND org_id = $3`,
+      [deviceId, officer.id, orgId],
     );
   }
 }
@@ -717,33 +768,55 @@ async function linkOfficerDevice(officer, deviceId) {
  */
 router.post('/recover', enrollLimiter, async (req, res, next) => {
   try {
-    const { device_id } = req.body; // ANDROID_ID, same value enroll sends
-    if (!device_id) {
+    const { device_id, operator_code } = req.body || {};
+    if (!device_id || typeof device_id !== 'string') {
       return res.status(400).json({ error: 'device_id is required' });
     }
-    const result = await query(
-      `SELECT id, token, status, org_id FROM guardian_devices
-       WHERE android_id = $1 AND deleted_at IS NULL
-       ORDER BY enrolled_at DESC LIMIT 1`,
-      [device_id]
+    if (!operator_code || typeof operator_code !== 'string') {
+      return res.status(400).json({ error: 'operator_code is required for recovery' });
+    }
+
+    // Android ID is not a secret. It is therefore never sufficient to recover
+    // a device token on its own. The operator badge provides the tenant context,
+    // and the device must currently belong to that exact officer.
+    const officerResult = await globalQuery(
+      `SELECT id, org_id, device_id
+         FROM field_officers
+        WHERE badge_number = $1
+        LIMIT 1`,
+      [operator_code.trim()],
+    );
+    const officer = officerResult.rows[0];
+    if (!officer?.org_id || !officer.device_id) {
+      return res.status(404).json({ error: 'unknown_device' });
+    }
+
+    const result = await globalQuery(
+      `SELECT id, token, status, org_id, enrolled_at
+         FROM guardian_devices
+        WHERE id = $1
+          AND android_id = $2
+          AND org_id = $3
+          AND deleted_at IS NULL
+        LIMIT 1`,
+      [officer.device_id, device_id, officer.org_id],
     );
     const dev = result.rows[0];
     if (!dev) return res.status(404).json({ error: 'unknown_device' });
     if (dev.status === 'revoked' || dev.status === 'suspended') {
       return res.status(403).json({ error: `Device is ${dev.status}` });
     }
-    const officer = await query(
-      `SELECT id FROM field_officers WHERE device_id = $1 LIMIT 1`,
-      [dev.id]
-    );
+
     const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
-    auditLog('device', dev.id, 'identity_recovered', 'device', dev.id, {}, req.ip);
+    runWithOrgContext(dev.org_id, () => {
+      auditLog('device', dev.id, 'identity_recovered', 'device', dev.id, {}, req.ip);
+    });
     res.json({
       status: mappedStatus,
       device_uuid: dev.id,
       device_token: dev.token,
-      org_id: dev.org_id ?? null,
-      officer_id: officer.rows[0]?.id ?? null,
+      org_id: dev.org_id,
+      officer_id: officer.id,
       command_signing_secret: COMMAND_SIGNING_SECRET,
     });
   } catch (err) {
@@ -769,7 +842,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
 
       // Find org via field officer badge number
       // (field_officers has no soft-delete column — a delete is a hard DELETE, see field-officers.js)
-      const officerRes = await query(
+      const officerRes = await globalQuery(
         `SELECT id, org_id, device_id FROM field_officers WHERE badge_number = $1 LIMIT 1`,
         [operator_code]
       );
@@ -785,11 +858,11 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       const orgId = officerRes.rows[0].org_id;
 
       // Dedup: return existing if already enrolled with this android device id
-      const existing = await query(
-        `SELECT id, token, status FROM guardian_devices
-         WHERE android_id = $1 AND deleted_at IS NULL
+      const existing = await globalQuery(
+        `SELECT id, token, status, org_id FROM guardian_devices
+         WHERE android_id = $1 AND org_id = $2 AND deleted_at IS NULL
          ORDER BY enrolled_at DESC LIMIT 1`,
-        [device_id]
+        [device_id, orgId]
       );
       if (existing.rows[0]) {
         const dev = existing.rows[0];
@@ -820,15 +893,15 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       // which silently discarded the device's entire position history and
       // flipped the officer to "NO FIX YET" until the fork caught up.
       if (officerRes.rows[0].device_id) {
-        const adopt = await query(
+        const adopt = await globalQuery(
           `UPDATE guardian_devices
               SET android_id = $2,
                   fcm_token = COALESCE($3, fcm_token),
                   app_version = COALESCE($4, app_version),
                   updated_at = NOW()
-            WHERE id = $1 AND deleted_at IS NULL
-            RETURNING id, token, status`,
-          [officerRes.rows[0].device_id, device_id, fcm_token ?? null, app_version ?? null]
+            WHERE id = $1 AND org_id = $5 AND deleted_at IS NULL
+            RETURNING id, token, status, org_id`,
+          [officerRes.rows[0].device_id, device_id, fcm_token ?? null, app_version ?? null, orgId]
         );
         if (adopt.rows[0]) {
           const dev = adopt.rows[0];
@@ -848,13 +921,13 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       // New enrollment — omit org_id when null so the column DEFAULT fires
       // rather than explicitly passing NULL against a NOT NULL constraint.
       const enrollParams = [operator_code, device_id, fcm_token ?? null, app_version ?? null];
-      const enrollSql = orgId !== null
-        ? `INSERT INTO guardian_devices (name, android_id, fcm_token, app_version, org_id, status)
-           VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id, token`
-        : `INSERT INTO guardian_devices (name, android_id, fcm_token, app_version, status)
-           VALUES ($1, $2, $3, $4, 'pending') RETURNING id, token`;
-      if (orgId !== null) enrollParams.push(orgId);
-      const { rows } = await query(enrollSql, enrollParams);
+      if (!orgId) {
+        return res.status(403).json({ error: 'operator_code_tenant_scope_missing' });
+      }
+      const enrollSql = `INSERT INTO guardian_devices (name, android_id, fcm_token, app_version, org_id, status)
+           VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id, token, org_id`;
+      enrollParams.push(orgId);
+      const { rows } = await globalQuery(enrollSql, enrollParams);
 
       // Auto-link device to field officer (see linkOfficerDevice — retires
       // any previous device this officer had so it doesn't linger as an
@@ -890,6 +963,25 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       return res.status(403).json({ error: 'Invalid organisation token' });
     }
 
+    if (!enrollment_code || typeof enrollment_code !== 'string' || !enrollment_code.trim()) {
+      return res.status(400).json({ error: 'enrollment_code is required for tenant-scoped enrollment' });
+    }
+
+    const codeClaim = await globalQuery(
+      `UPDATE enrollment_codes
+          SET used_at = NOW()
+        WHERE code = $1
+          AND used_at IS NULL
+          AND expires_at > NOW()
+          AND org_id IS NOT NULL
+        RETURNING id, org_id`,
+      [enrollment_code.trim().toUpperCase()],
+    );
+    if (!codeClaim.rows.length) {
+      return res.status(403).json({ error: 'Invalid or expired enrollment code' });
+    }
+    const orgId = codeClaim.rows[0].org_id;
+
     // Deduplication: if this hardware is already enrolled return its existing token.
     // T5.5: hash IMEI with PEPPER — never store raw IMEI in persistent storage
     const IMEI_PEPPER = process.env.IMEI_PEPPER || 'guardian-imei-pepper-dev';
@@ -902,16 +994,17 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
     let existingDev = null;
 
     if (safeImei || safeAndroidId) {
-      const r = await query(
+      const r = await globalQuery(
         `SELECT id, token, status, enrolled_at FROM guardian_devices
          WHERE deleted_at IS NULL
+           AND org_id = $3
            AND (
              ($1::TEXT IS NOT NULL AND imei_hash = $1)
              OR ($2::TEXT IS NOT NULL AND android_id = $2)
            )
          ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, enrolled_at DESC
          LIMIT 1`,
-        [safeImei, safeAndroidId]
+        [safeImei, safeAndroidId, orgId]
       );
       if (r.rows.length) existingDev = r.rows[0];
     }
@@ -919,20 +1012,20 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
     // Legacy fallback: records enrolled before android_id tracking have both hardware IDs null,
     // OR when a device reports unknown hardware IDs. Match by name + model.
     if (!existingDev) {
-      const r = await query(
+      const r = await globalQuery(
         `SELECT id, token, status, enrolled_at FROM guardian_devices
-         WHERE deleted_at IS NULL AND android_id IS NULL AND imei IS NULL
+         WHERE deleted_at IS NULL AND org_id = $3 AND android_id IS NULL AND imei IS NULL
            AND name = $1 AND (model = $2 OR $2 IS NULL)
          ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, enrolled_at DESC
          LIMIT 1`,
-        [name, model || null]
+        [name, model || null, orgId]
       );
       if (r.rows.length) {
         existingDev = r.rows[0];
         // Backfill hardware IDs so the fast path works on every subsequent enrollment
-        await query(
-          `UPDATE guardian_devices SET android_id = $1, imei_hash = $2, manufacturer = $3 WHERE id = $4`,
-          [safeAndroidId, safeImei, manufacturer || null, existingDev.id]
+        await globalQuery(
+          `UPDATE guardian_devices SET android_id = $1, imei_hash = $2, manufacturer = $3 WHERE id = $4 AND org_id = $5`,
+          [safeAndroidId, safeImei, manufacturer || null, existingDev.id, orgId]
         );
         logger.info(`Guardian legacy device backfilled android_id: ${existingDev.id}`);
       }
@@ -944,24 +1037,24 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
         return res.status(403).json({ error: `Device is ${dev.status} — contact your administrator` });
       }
       // Re-enrollment: refresh metadata, keep token
-      await query(
+      await globalQuery(
         `UPDATE guardian_devices
          SET name = $1, os_version = $2, app_version = $3,
              manufacturer = $4, model = $5, updated_at = NOW()
-         WHERE id = $6`,
-        [name, os_version || null, app_version || null, manufacturer || null, model || null, dev.id]
+         WHERE id = $6 AND org_id = $7`,
+        [name, os_version || null, app_version || null, manufacturer || null, model || null, dev.id, orgId]
       );
       // Soft-delete any other PENDING records for the same physical device
-      await query(
+      await globalQuery(
         `UPDATE guardian_devices SET deleted_at = NOW()
-         WHERE id <> $1 AND status = 'pending' AND deleted_at IS NULL
+         WHERE id <> $1 AND org_id = $6 AND status = 'pending' AND deleted_at IS NULL
            AND (
              ($2::TEXT IS NOT NULL AND imei_hash = $2)
              OR ($3::TEXT IS NOT NULL AND android_id = $3)
              OR (android_id IS NULL AND imei_hash IS NULL AND name = $4
                  AND (model = $5 OR $5 IS NULL))
            )`,
-        [dev.id, safeImei, safeAndroidId, name, model || null]
+        [dev.id, safeImei, safeAndroidId, name, model || null, orgId]
       );
       logger.info(`Guardian re-enrollment: device ${dev.id}`);
       auditLog('device', dev.id, 're_enroll', 'device', dev.id, { name }, req.ip);
@@ -978,39 +1071,18 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       });
     }
 
-    // Optional enrollment code validation (backward compat: skip if not provided)
-    let enrollmentCodeId = null;
-    if (enrollment_code && enrollment_code.trim()) {
-      const codeRow = await query(
-        `SELECT id FROM enrollment_codes
-         WHERE code = $1 AND used_at IS NULL AND expires_at > NOW()`,
-        [enrollment_code.trim().toUpperCase()]
-      );
-      if (!codeRow.rows.length) {
-        return res.status(403).json({ error: 'Invalid or expired enrollment code' });
-      }
-      enrollmentCodeId = codeRow.rows[0].id;
-    }
-
-    const result = await query(
+    const result = await globalQuery(
       `INSERT INTO guardian_devices
-         (name, imei_hash, android_id, manufacturer, model, os_version, app_version, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
-       RETURNING id, token, enrolled_at`,
-      [name, safeImei, safeAndroidId, manufacturer || null, model || null, os_version || null, app_version || null]
+         (org_id, name, imei_hash, android_id, manufacturer, model, os_version, app_version, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+       RETURNING id, token, enrolled_at, org_id`,
+      [orgId, name, safeImei, safeAndroidId, manufacturer || null, model || null, os_version || null, app_version || null]
     );
 
     const device = result.rows[0];
 
-    if (enrollmentCodeId) {
-      await query(
-        `UPDATE enrollment_codes SET used_at = NOW() WHERE id = $1`,
-        [enrollmentCodeId]
-      );
-    }
-
     logger.info(`Guardian device enrolled: ${device.id} name="${name}"`);
-    auditLog('device', null, 'enroll', 'device', device.id, { name, android_id }, req.ip);
+    auditLog('device', null, 'enroll', 'device', device.id, { name, android_id }, req.ip, orgId);
 
     const certPin = process.env.GUARDIAN_CERT_PIN || null;
     const { orgId: newOrgId, officerId: newOfficerId } = await resolveOrgOfficer(device.id, name);
@@ -1143,7 +1215,8 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
     // T5.3: mark commands as delivered
     if (commands.rows.length) {
       for (const cmd of commands.rows) {
-        query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'delivered')`, [cmd.id]).catch(() => {});
+        query(`INSERT INTO device_command_events (org_id, command_id, status)
+         SELECT org_id, id, 'delivered' FROM device_commands WHERE id = $1`, [cmd.id]).catch(() => {});
       }
     }
 
@@ -1504,10 +1577,10 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
       );
 
       const panicPublishPayload = { type: 'panic', ...payload };
-      if (orgId) {
-        publish(`org#${orgId}`, panicPublishPayload);
+      if (!orgId) {
+        logger.error(`PANIC publish blocked: device=${deviceId} has no tenant scope`);
       } else {
-        publish('device:panic', panicPublishPayload);
+        publish(`org#${orgId}`, panicPublishPayload);
       }
       logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode} org=${orgId ?? 'unknown'}`);
       // FCM ack to device confirming SOS was received (Task 4.1, fire-and-forget)
@@ -1707,7 +1780,8 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
 
     // T5.3: record acked/applied/failed event
     const evtStatus = status === 'executed' ? 'applied' : 'failed';
-    query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, $2)`, [command_id, evtStatus]).catch(() => {});
+    query(`INSERT INTO device_command_events (org_id, command_id, status)
+         SELECT org_id, id, $2 FROM device_commands WHERE id = $1`, [command_id, evtStatus]).catch(() => {});
 
     res.json({ ok: true });
   } catch (err) {
@@ -1763,10 +1837,10 @@ router.post('/panic/cancel', deviceAuth, async (req, res, next) => {
       cancelled: resolved.rows.map(r => r.id),
       cancelled_at: new Date().toISOString(),
     };
-    if (req.device.org_id) {
-      publish(`org#${req.device.org_id}`, cancelPayload);
+    if (!req.device.org_id) {
+      logger.error(`PANIC cancel publish blocked: device=${deviceId} has no tenant scope`);
     } else {
-      publish('device:panic', cancelPayload);
+      publish(`org#${req.device.org_id}`, cancelPayload);
     }
 
     logger.warn(`PANIC cancelled by device=${deviceId} count=${resolved.rows.length}`);
@@ -2104,7 +2178,8 @@ router.post('/devices/:id/command', authenticate, requireIdempotencyKey, command
     // ── Deduplicate nonce (INSERT will fail on PK violation) ─────────────────
     try {
       await query(
-        `INSERT INTO guardian_command_nonces (device_id, nonce, seen_at) VALUES ($1, $2, NOW())`,
+        `INSERT INTO guardian_command_nonces (device_id, org_id, nonce, seen_at)
+         SELECT id, org_id, $2, NOW() FROM guardian_devices WHERE id = $1`,
         [device.id, nonce]
       );
     } catch (nonceErr) {
@@ -2673,7 +2748,7 @@ router.post('/convoy/join', deviceAuth, async (req, res, next) => {
     // Check convoy_codes table for managed codes (backward compat: legacy codes not in table are allowed)
     const codeRow = await query(
       `SELECT code, max_members, active, expires_at FROM convoy_codes WHERE code = $1`,
-      [code]
+      [code, req.device.org_id]
     );
 
     if (codeRow.rows.length > 0) {
@@ -2699,7 +2774,7 @@ router.post('/convoy/join', deviceAuth, async (req, res, next) => {
     const members = await query(
       `SELECT id, name, last_lat, last_lng, last_speed, last_seen, status
        FROM guardian_devices
-       WHERE convoy_code = $1 AND deleted_at IS NULL
+       WHERE convoy_code = $1 AND org_id = $2 AND deleted_at IS NULL
        ORDER BY name`,
       [code]
     );
@@ -2768,9 +2843,9 @@ router.get('/convoys', authenticate, async (req, res, next) => {
                 'status', status
               ) ORDER BY name)                  AS members
        FROM guardian_devices
-       WHERE convoy_code IS NOT NULL AND deleted_at IS NULL
+       WHERE convoy_code IS NOT NULL AND org_id = $1 AND deleted_at IS NULL
        GROUP BY convoy_code
-       ORDER BY last_active DESC`
+       ORDER BY last_active DESC`, [req.user.org_id]
     );
     res.json({ convoys: result.rows });
   } catch (err) {
@@ -2793,10 +2868,10 @@ router.post('/enrollment-codes', authenticate, async (req, res, next) => {
     const code = bytes.toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12).padEnd(12, 'A');
 
     const result = await query(
-      `INSERT INTO enrollment_codes (code, expires_at, created_by)
-       VALUES ($1, NOW() + ($2 || ' minutes')::INTERVAL, $3)
+      `INSERT INTO enrollment_codes (org_id, code, expires_at, created_by)
+       VALUES ($1, $2, NOW() + ($3 || ' minutes')::INTERVAL, $4)
        RETURNING id, code, expires_at`,
-      [code, expiresInMinutes, req.user.id]
+      [req.user.org_id, code, expiresInMinutes, req.user.id]
     );
 
     const row = result.rows[0];
@@ -2820,8 +2895,8 @@ router.get('/enrollment-codes', authenticate, async (req, res, next) => {
               u.name AS created_by_name
        FROM enrollment_codes ec
        LEFT JOIN users u ON u.id = ec.created_by
-       WHERE ec.used_at IS NULL AND ec.expires_at > NOW()
-       ORDER BY ec.created_at DESC`
+       WHERE ec.org_id = $1 AND ec.used_at IS NULL AND ec.expires_at > NOW()
+       ORDER BY ec.created_at DESC`, [req.user.org_id]
     );
     res.json({ data: result.rows });
   } catch (err) {
@@ -2908,10 +2983,10 @@ router.post('/convoy-codes', authenticate, async (req, res, next) => {
     const code = bytes.toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 6).padEnd(6, 'A');
 
     const result = await query(
-      `INSERT INTO convoy_codes (code, created_by, max_members, expires_at)
-       VALUES ($1, $2, $3, NOW() + ($4 || ' hours')::INTERVAL)
+      `INSERT INTO convoy_codes (code, created_by, max_members, expires_at, org_id)
+       VALUES ($1, $2, $3, NOW() + ($4 || ' hours')::INTERVAL, $5)
        RETURNING code, expires_at`,
-      [code, req.user.id, maxMembers, expiresInHours]
+      [code, req.user.id, maxMembers, expiresInHours, req.user.org_id]
     );
 
     const row = result.rows[0];
@@ -2939,7 +3014,7 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
        LEFT JOIN guardian_devices gd ON gd.convoy_code = cc.code AND gd.deleted_at IS NULL
        WHERE (cc.expires_at IS NULL OR cc.expires_at > NOW()) AND cc.active = true
        GROUP BY cc.code, cc.max_members, cc.expires_at, cc.active, cc.created_at, u.name
-       ORDER BY cc.created_at DESC`
+       ORDER BY cc.created_at DESC`, [req.user.org_id]
     );
     res.json({ data: result.rows });
   } catch (err) {

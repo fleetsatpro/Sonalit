@@ -4,6 +4,7 @@ process.env.JWT_SECRET = 'test-jwt-secret';
 process.env.DATABASE_URL = 'postgresql://localhost/test_placeholder';
 
 jest.mock('../src/config/database', () => ({
+  globalQuery: jest.fn().mockResolvedValue({ rows: [] }),
   query: jest.fn().mockResolvedValue({ rows: [] }),
   pool: {
     connect: jest.fn().mockResolvedValue({
@@ -52,7 +53,10 @@ const CONVOY_ID  = 'conv-1';
 
 function mockClientSequence(...results) {
   const clientQuery = jest.fn();
-  results.forEach((r, i) => clientQuery.mockResolvedValueOnce(r));
+  clientQuery.mockResolvedValueOnce({ rows: [] }); // BEGIN
+  clientQuery.mockResolvedValueOnce({ rows: [] }); // SET LOCAL ROLE
+  clientQuery.mockResolvedValueOnce({ rows: [] }); // set_config(app.current_org_id)
+  results.forEach((r) => clientQuery.mockResolvedValueOnce(r));
   clientQuery.mockResolvedValue({ rows: [] });
   db.pool.connect.mockResolvedValueOnce({ query: clientQuery, release: jest.fn() });
   return clientQuery;
@@ -124,8 +128,6 @@ describe('Field Officers', () => {
     it('returns 404 when convoy belongs to a different org', async () => {
       // Route: BEGIN → SET LOCAL → SELECT convoy WHERE org_id = 'org-a' → returns nothing
       mockClientSequence(
-        {},                  // BEGIN
-        {},                  // SET LOCAL
         { rows: [] }         // convoy lookup: WHERE org_id = 'org-a' finds nothing (different org owns it)
       );
 
@@ -142,8 +144,6 @@ describe('Field Officers', () => {
       const updatedOfficer = { id: OFFICER_ID, org_id: 'org-a', current_convoy_id: CONVOY_ID, status: 'on_mission' };
 
       mockClientSequence(
-        {},                                        // BEGIN
-        {},                                        // SET LOCAL
         { rows: [{ id: CONVOY_ID }] },             // convoy found (same org)
         { rows: [updatedOfficer] },                // UPDATE officer
         { rows: [] },                              // INSERT activity event

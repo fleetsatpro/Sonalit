@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { query } = require('../config/database');
+const { globalQuery } = require('../config/database');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
@@ -37,7 +37,7 @@ async function authenticate(req, res, next) {
     }
 
     // Include org_id so req.db can scope queries correctly (T1.1)
-    const result = await query(
+    const result = await globalQuery(
       'SELECT id, email, name, role, status, org_id FROM users WHERE id = $1 AND deleted_at IS NULL',
       [decoded.id]
     );

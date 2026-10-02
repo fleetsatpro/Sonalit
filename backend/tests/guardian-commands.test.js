@@ -9,6 +9,7 @@ const mockClient = {
 };
 
 jest.mock('../src/config/database', () => ({
+  globalQuery: jest.fn().mockResolvedValue({ rows: [] }),
   query: jest.fn().mockResolvedValue({ rows: [] }),
   pool: { connect: jest.fn().mockResolvedValue(mockClient) },
   healthCheck: jest.fn().mockResolvedValue(true),
@@ -53,7 +54,8 @@ const CMD_ID    = 'cccccccc-0000-0000-0000-000000000001';
 function resetClientMocks(...responses) {
   mockClient.query.mockReset();
   mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
-  mockClient.query.mockResolvedValueOnce({ rows: [] }); // SET LOCAL
+  mockClient.query.mockResolvedValueOnce({ rows: [] }); // SET LOCAL ROLE
+  mockClient.query.mockResolvedValueOnce({ rows: [] }); // set_config(app.current_org_id)
   responses.forEach(r => mockClient.query.mockResolvedValueOnce(r));
   mockClient.query.mockResolvedValue({ rows: [] }); // COMMIT + fallback
 }

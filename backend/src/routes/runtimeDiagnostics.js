@@ -10,12 +10,20 @@ function adminOnly(req, res, next) {
 
 router.use(adminOnly);
 
+function tenantScope(req, res) {
+  const orgId = req.user?.org_id;
+  if (!orgId) { res.status(403).json({ error: 'tenant_scope_required' }); return null; }
+  return orgId;
+}
+
 router.get('/summary', async (req, res, next) => {
   try {
+    const orgId = tenantScope(req, res);
+    if (!orgId) return;
     const [recent, levels, events] = await Promise.all([
-      query(`SELECT COUNT(*)::int AS n FROM runtime_diagnostics WHERE occurred_at > NOW() - INTERVAL '24 hours'`),
-      query(`SELECT level, COUNT(*)::int AS n FROM runtime_diagnostics WHERE occurred_at > NOW() - INTERVAL '24 hours' GROUP BY level ORDER BY level`),
-      query(`SELECT event, COUNT(*)::int AS n, MAX(occurred_at) AS last_seen FROM runtime_diagnostics WHERE occurred_at > NOW() - INTERVAL '24 hours' GROUP BY event ORDER BY n DESC, last_seen DESC LIMIT 20`),
+      query(`SELECT COUNT(*)::int AS n FROM runtime_diagnostics WHERE org_id = $1 AND occurred_at > NOW() - INTERVAL '24 hours'`, [orgId]),
+      query(`SELECT level, COUNT(*)::int AS n FROM runtime_diagnostics WHERE org_id = $1 AND occurred_at > NOW() - INTERVAL '24 hours' GROUP BY level ORDER BY level`, [orgId]),
+      query(`SELECT event, COUNT(*)::int AS n, MAX(occurred_at) AS last_seen FROM runtime_diagnostics WHERE org_id = $1 AND occurred_at > NOW() - INTERVAL '24 hours' GROUP BY event ORDER BY n DESC, last_seen DESC LIMIT 20`, [orgId]),
     ]);
     res.json({
       window: '24h',
@@ -29,17 +37,20 @@ router.get('/summary', async (req, res, next) => {
 
 router.get('/recent', async (req, res, next) => {
   try {
+    const orgId = tenantScope(req, res);
+    if (!orgId) return;
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 100, 500));
     const level = req.query.level ? String(req.query.level) : null;
     const event = req.query.event ? String(req.query.event) : null;
     const { rows } = await query(
       `SELECT id, service, environment, level, event, message, metadata, request_id, org_id, occurred_at
          FROM runtime_diagnostics
-        WHERE ($1::text IS NULL OR level = $1)
+        WHERE org_id = $3
+          AND ($1::text IS NULL OR level = $1)
           AND ($2::text IS NULL OR event = $2)
         ORDER BY occurred_at DESC
-        LIMIT $3`,
-      [level, event, limit]
+        LIMIT $4`,
+      [level, event, orgId, limit]
     );
     res.json({ items: rows, count: rows.length });
   } catch (err) { next(err); }
@@ -47,6 +58,8 @@ router.get('/recent', async (req, res, next) => {
 
 router.get('/health', async (req, res, next) => {
   try {
+    const orgId = tenantScope(req, res);
+    if (!orgId) return;
     const { rows } = await query(`
       SELECT
         MAX(occurred_at) AS last_event_at,
@@ -54,7 +67,8 @@ router.get('/health', async (req, res, next) => {
         COUNT(*) FILTER (WHERE level IN ('error','fatal') AND occurred_at > NOW() - INTERVAL '1 hour')::int AS failures_1h,
         COUNT(*) FILTER (WHERE level = 'warn' AND occurred_at > NOW() - INTERVAL '1 hour')::int AS warnings_1h
       FROM runtime_diagnostics
-    `);
+      WHERE org_id = $1
+    `, [orgId]);
     const row = rows[0] || {};
     res.json({
       status: Number(row.failures_1h || 0) > 0 ? 'degraded' : 'healthy',

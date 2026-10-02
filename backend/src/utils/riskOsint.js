@@ -7,7 +7,8 @@ const telegramMtproto = require('./telegramMtproto');
 const aiClient = require('./aiClient');
 const { geocodePlace } = require('./geocode');
 const { continentForCountry } = require('./countryContinent');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
+const { runWithOrgContext: withOrg } = require('./tenantContext');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('./logger');
 
@@ -438,99 +439,148 @@ async function runOsintSweep() {
   if (sweeping) return { skipped: true };
   sweeping = true;
   try {
-    const { rows: zones } = await query(`SELECT id, org_id, name, region, continent, level, confidence, velocity, level_source, lat, lng FROM risk_zones WHERE is_active = true`);
-    if (!zones.length) return { zonesChecked: 0 };
-
-    const zonesByOrg = new Map();
-    for (const z of zones) { if (!zonesByOrg.has(z.org_id)) zonesByOrg.set(z.org_id, []); zonesByOrg.get(z.org_id).push(z); }
-
-    const claudeEnabled = process.env.RISK_INTEL_ENABLE_CLAUDE === 'true';
-    let claudeByZone = {};
-    if (claudeEnabled && aiClient.hasAnthropic()) {
-      try { claudeByZone = await fetchClaudeForZones(zones); }
-      catch (e) { logger.warn(`Risk Intel OSINT: Claude web search sweep failed: ${e.message}`); }
-    }
-
-    let acledToken = null;
-    try { acledToken = await getAcledToken(); }
-    catch (e) { logger.warn(`Risk Intel OSINT: ACLED auth failed: ${e.message}`); }
+    const { rows: orgRows } = await globalQuery(
+      `SELECT DISTINCT org_id FROM risk_zones WHERE is_active = true AND org_id IS NOT NULL`
+    );
+    if (!orgRows.length) return { zonesChecked: 0 };
 
     let gdacsFeatures = [];
     try { gdacsFeatures = await fetchGdacsEvents(); }
     catch (e) { logger.warn(`Risk Intel OSINT: GDACS sweep failed: ${e.message}`); }
 
     const extraRssFeeds = loadExtraRssFeeds();
-    const orgsTouched = new Set();
-    let totalInserted = 0;
 
     const telegramChannels = loadTelegramChannels();
     let telegramCandidates = [];
     try { telegramCandidates = await fetchAllTelegramMessages(telegramChannels); }
     catch (e) { logger.warn(`Risk Intel OSINT: Telegram fetch failed: ${e.message}`); }
 
-    let telegramProcessed = 0;
-    let telegramZonesCreated = 0;
-    const telegramAIAvailable = aiClient.hasAnthropic() || aiClient.hasGroqFallback();
+    const telegramAIAvailable = aiClient.hasAnyProvider();
+    let telegramLocated = [];
     if (telegramCandidates.length && telegramAIAvailable) {
-      try {
-        const located = await rewriteAndLocateTelegramMessages(telegramCandidates);
-        for (const item of located) {
+      try { telegramLocated = await rewriteAndLocateTelegramMessages(telegramCandidates); }
+      catch (e) { logger.warn(`Risk Intel OSINT: Telegram rewrite/geolocation sweep failed: ${e.message}`); }
+    }
+
+    let acledToken = null;
+    try { acledToken = await getAcledToken(); }
+    catch (e) { logger.warn(`Risk Intel OSINT: ACLED auth failed: ${e.message}`); }
+
+    const touchedOrgs = new Set();
+    let totalInserted = 0;
+    let totalZones = 0;
+    let totalZonesCreated = 0;
+    let totalTelegramProcessed = 0;
+    let totalZonesChanged = 0;
+
+    // Tenant ids are the only global metadata enumerated. All customer data
+    // reads/writes remain inside that customer's AsyncLocalStorage + RLS context.
+    for (const { org_id: orgId } of orgRows) {
+      await withOrg(orgId, async () => {
+        const { rows: zones } = await query(
+          `SELECT id, org_id, name, region, continent, level, confidence, velocity, level_source, lat, lng
+             FROM risk_zones
+            WHERE is_active = true AND org_id = $1`,
+          [orgId]
+        );
+        if (!zones.length) return;
+        totalZones += zones.length;
+
+        const zonesForOrg = zones.slice();
+
+        const claudeEnabled = process.env.RISK_INTEL_ENABLE_CLAUDE === 'true';
+        const claudeByZone = {};
+        if (claudeEnabled && aiClient.hasAnthropic()) {
+          try {
+            Object.assign(claudeByZone, await fetchClaudeForZones(zonesForOrg));
+          } catch (e) {
+            logger.warn(`Risk Intel OSINT: Claude web search sweep failed for org=${orgId}: ${e.message}`);
+          }
+        }
+
+        let telegramProcessedForOrg = 0;
+        for (const item of telegramLocated) {
           if (!item.place) continue;
           const geo = await geocodePlace(item.place);
           if (!geo) continue;
           const continent = continentForCountry(geo.country);
           if (!continent) continue;
-          for (const [orgId, orgZones] of zonesByOrg) {
-            const before = orgZones.length;
-            const zone = await resolveOrCreateZoneForLocation(orgId, orgZones, { lat: geo.lat, lng: geo.lng, country: geo.country, continent, place: item.place, level: item.level });
-            if (!zone) continue;
-            if (orgZones.length > before) { zones.push(zone); telegramZonesCreated++; }
-            const inserted = await insertEvents(zone, [{ description: item.formalText, level: item.level, source: 'osint:telegram', source_url: item.source_url, external_id: item.external_id }]);
-            if (inserted) { orgsTouched.add(orgId); totalInserted += inserted; telegramProcessed++; }
+          const before = zonesForOrg.length;
+          const zone = await resolveOrCreateZoneForLocation(orgId, zonesForOrg, {
+            lat: geo.lat, lng: geo.lng, country: geo.country, continent,
+            place: item.place, level: item.level
+          });
+          if (!zone) continue;
+          if (zonesForOrg.length > before) totalZonesCreated++;
+          const inserted = await insertEvents(zone, [{
+            description: item.formalText,
+            level: item.level,
+            source: 'osint:telegram',
+            source_url: item.source_url,
+            external_id: item.external_id
+          }]);
+          if (inserted) {
+            totalInserted += inserted;
+            telegramProcessedForOrg++;
+            touchedOrgs.add(orgId);
           }
         }
-      } catch (e) { logger.warn(`Risk Intel OSINT: Telegram rewrite/geolocation sweep failed: ${e.message}`); }
+        totalTelegramProcessed += telegramProcessedForOrg;
+
+        for (const zone of zonesForOrg) {
+          const found = [];
+          try { found.push(...await fetchGdeltForZone(zone)); }
+          catch (e) {
+            if (Date.now() >= gdeltCooldownUntil) logger.warn(`Risk Intel OSINT: GDELT failed for "${zone.name}": ${e.message}`);
+          }
+          try { found.push(...await fetchReliefWebForZone(zone)); }
+          catch (e) { logger.warn(`Risk Intel OSINT: ReliefWeb failed for "${zone.name}": ${e.message}`); }
+          found.push(...matchGdacsToZone(zone, gdacsFeatures));
+          if (acledToken) {
+            try { found.push(...await fetchAcledForZone(zone, acledToken)); }
+            catch (e) { logger.warn(`Risk Intel OSINT: ACLED failed for "${zone.name}": ${e.message}`); }
+          }
+          try { found.push(...await fetchAllAfricaForZone(zone)); }
+          catch (e) { logger.warn(`Risk Intel OSINT: AllAfrica failed for "${zone.name}": ${e.message}`); }
+          if (extraRssFeeds.length) {
+            try { found.push(...await fetchExtraRssForZone(zone, extraRssFeeds)); }
+            catch (e) { logger.warn(`Risk Intel OSINT: extra RSS failed for "${zone.name}": ${e.message}`); }
+          }
+          found.push(...(claudeByZone[zone.id] || []).map(it => ({ ...it, source: 'osint:claude' })));
+          if (found.length) {
+            const inserted = await insertEvents(zone, found);
+            if (inserted) {
+              touchedOrgs.add(orgId);
+              totalInserted += inserted;
+            }
+          }
+          await sleep(500);
+        }
+
+        totalZonesChanged += await recomputeZoneLevels(zonesForOrg);
+      });
     }
 
-    for (const zone of zones) {
-      const found = [];
-      try {
-        const gdelt = await fetchGdeltForZone(zone);
-        found.push(...gdelt);
-      } catch (e) {
-        if (Date.now() >= gdeltCooldownUntil) logger.warn(`Risk Intel OSINT: GDELT failed for "${zone.name}": ${e.message}`);
-      }
-      try { found.push(...await fetchReliefWebForZone(zone)); }
-      catch (e) { logger.warn(`Risk Intel OSINT: ReliefWeb failed for "${zone.name}": ${e.message}`); }
-      found.push(...matchGdacsToZone(zone, gdacsFeatures));
-      if (acledToken) {
-        try { found.push(...await fetchAcledForZone(zone, acledToken)); }
-        catch (e) { logger.warn(`Risk Intel OSINT: ACLED failed for "${zone.name}": ${e.message}`); }
-      }
-      try { found.push(...await fetchAllAfricaForZone(zone)); }
-      catch (e) { logger.warn(`Risk Intel OSINT: AllAfrica failed for "${zone.name}": ${e.message}`); }
-      if (extraRssFeeds.length) {
-        try { found.push(...await fetchExtraRssForZone(zone, extraRssFeeds)); }
-        catch (e) { logger.warn(`Risk Intel OSINT: extra RSS failed for "${zone.name}": ${e.message}`); }
-      }
-      found.push(...(claudeByZone[zone.id] || []).map(it => ({ ...it, source: 'osint:claude' })));
-      if (found.length) {
-        const inserted = await insertEvents(zone, found);
-        if (inserted) { orgsTouched.add(zone.org_id); totalInserted += inserted; }
-      }
-      await sleep(500);
+    for (const orgId of touchedOrgs) {
+      await publish(`risk:updates:${orgId}`, { type: 'event_added', org_id: orgId }).catch(() => {});
     }
 
-    for (const orgId of orgsTouched) await publish(`risk:updates:${orgId}`, { type: 'event_added', org_id: orgId }).catch(() => {});
-    const zonesChanged = await recomputeZoneLevels(zones);
-    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdelt=${Date.now() < gdeltCooldownUntil ? 'cooldown' : 'available'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramProcessed ? `used (${telegramProcessed} placed, ${telegramZonesCreated} zones auto-created)` : 'fallback/none'}, mtproto=${telegramMtproto.isConfigured() ? 'on' : 'fallback'}, claude=${claudeEnabled && aiClient.hasAnthropic() ? 'used' : 'skipped'}`);
-    return { zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged, acledUsed: !!acledToken, telegramUsed: telegramProcessed > 0, telegramZonesCreated, claudeUsed: claudeEnabled && aiClient.hasAnthropic() };
+    logger.info(`Risk Intel OSINT sweep complete: ${totalZones} zones checked, ${totalInserted} new events, ${touchedOrgs.size} orgs updated, ${totalZonesChanged} zone levels recomputed, gdelt=${Date.now() < gdeltCooldownUntil ? 'cooldown' : 'available'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${totalTelegramProcessed ? `used (${totalTelegramProcessed} placed, ${totalZonesCreated} zones auto-created)` : 'fallback/none'}, mtproto=${telegramMtproto.isConfigured() ? 'on' : 'fallback'}, claude=${process.env.RISK_INTEL_ENABLE_CLAUDE === 'true' && aiClient.hasAnthropic() ? 'used' : 'skipped'}`);
+    return {
+      zonesChecked: totalZones,
+      totalInserted,
+      orgsUpdated: touchedOrgs.size,
+      zonesChanged: totalZonesChanged,
+      acledUsed: !!acledToken,
+      telegramUsed: totalTelegramProcessed > 0,
+      telegramZonesCreated: totalZonesCreated,
+      claudeUsed: process.env.RISK_INTEL_ENABLE_CLAUDE === 'true' && aiClient.hasAnthropic()
+    };
   } finally {
     sweeping = false;
     await telegramMtproto.disconnect();
   }
 }
-
 function computeZoneRisk(events) {
   const weight = lvl => (lvl === 'high' ? 3 : lvl === 'medium' ? 2 : 1);
   const hoursAgo = e => (Date.now() - new Date(e.occurred_at).getTime()) / 3600000;

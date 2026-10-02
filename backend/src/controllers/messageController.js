@@ -23,7 +23,7 @@ const Joi = require('joi');
 const { asyncHandler } = require('../middleware/error');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('../utils/logger');
-const { pool } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -113,9 +113,7 @@ function publishCommsEvent(orgId, channelId, type, payload) {
 // Direct pool query — the audit_logs table has its own hash-chain rules and
 // runs outside the request's withOrg transaction on purpose.
 async function writeAuditRow(orgId, userId, action, targetId, before) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
+  return withOrg(orgId, async (client) => {
     const prev = await client.query(
       `SELECT hash FROM audit_logs WHERE org_id = $1 ORDER BY id DESC LIMIT 1 FOR UPDATE`,
       [orgId],
@@ -130,15 +128,8 @@ async function writeAuditRow(orgId, userId, action, targetId, before) {
       ['channels', targetId, action, before ? JSON.stringify(before) : null,
        userId, orgId, newHash, prevHash],
     );
-    await client.query('COMMIT');
-  } catch (err) {
-    try { await client.query('ROLLBACK'); } catch (_) {}
-    // Audit write failure should abort the operation the caller was about to do —
-    // let the exception surface.
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
+
 }
 
 // ─── Org directory ───────────────────────────────────────────────────────────

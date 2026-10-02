@@ -14,8 +14,9 @@ router.use(dualAuthenticate);
 router.post('/token', (req, res) => {
   const secret = process.env.CENTRIFUGO_TOKEN_HMAC_SECRET;
   if (!secret) return res.status(503).json({ error: 'Realtime not configured' });
+  if (!req.user?.org_id) return res.status(403).json({ error: 'tenant_scope_required' });
   const token = jwt.sign(
-    { sub: String(req.user.org_id ?? req.user.id) },
+    { sub: String(req.user.org_id) },
     secret,
     { expiresIn: '1h', algorithm: 'HS256' }
   );
@@ -31,7 +32,8 @@ router.post('/subscription-token', (req, res) => {
     return res.status(400).json({ error: 'channel required' });
   }
 
-  const orgId = String(req.user.org_id ?? req.user.id);
+  if (!req.user?.org_id) return res.status(403).json({ error: 'tenant_scope_required' });
+  const orgId = String(req.user.org_id);
   const allowedChannels = new Set([
     `org#${orgId}`,
     `risk:updates:${orgId}`,

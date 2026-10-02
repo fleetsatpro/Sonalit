@@ -1,5 +1,8 @@
 import { Pool, type PoolClient } from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from './config.js';
+
+export const tenantContext = new AsyncLocalStorage<string>();
 
 export const pool = new Pool({
   connectionString: config.DATABASE_URL,
@@ -12,27 +15,50 @@ export async function withOrgContext<T>(
   orgId: string,
   fn: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
+  const currentOrg = tenantContext.getStore();
+  if (currentOrg && currentOrg !== orgId) throw new Error('tenant_context_switch_forbidden');
+
+  return tenantContext.run(orgId, async () => {
   const client = await pool.connect();
   try {
-    await client.query(`SET LOCAL app.org_id = $1`, [orgId]);
-    return await fn(client);
+    await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE sonalit_app');
+    await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [orgId]);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw err;
   } finally {
     client.release();
   }
+  });
 }
 
 export async function query<T extends object = object>(
   text: string,
   values?: unknown[],
 ): Promise<T[]> {
-  const res = await pool.query<T>(text, values);
-  return res.rows;
+  const orgId = tenantContext.getStore();
+  if (orgId) return withOrgContext(orgId, client => client.query<T>(text, values)).then(r => r.rows);
+  throw new Error('tenant_scope_required: use globalQuery() only for explicit bootstrap/system operations');
 }
 
 export async function queryOne<T extends object = object>(
   text: string,
   values?: unknown[],
 ): Promise<T | null> {
-  const res = await pool.query<T>(text, values);
-  return res.rows[0] ?? null;
+  const rows = await query<T>(text, values);
+  return rows[0] ?? null;
+}
+
+
+export async function globalQuery<T extends object = object>(
+  text: string,
+  values?: unknown[],
+): Promise<T[]> {
+  if (tenantContext.getStore()) throw new Error('global_query_forbidden_inside_tenant_context');
+  const result = await pool.query<T>(text, values);
+  return result.rows;
 }

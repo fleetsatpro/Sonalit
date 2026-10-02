@@ -1,7 +1,8 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { getQueues } = require('../config/queue');
+const { withOrg } = require('../utils/orgScopedDb');
 const { distanceToSegment } = require('../utils/haversine');
 const logger = require('../utils/logger');
 
@@ -12,25 +13,27 @@ const GEOFENCE_KM = parseFloat(process.env.GEOFENCE_RADIUS_KM) || 5;
 const _prevFixCache = new Map(); // vehicleId → { lat, lng, speed, heading, timestamp }
 
 // ── Corridor geofence cache (refreshed every 5 min) ───────────────────────
-let _corridorCache = null;
-let _corridorCacheTime = 0;
+const _corridorCache = new Map();
 
-async function getCorridorGeofences() {
-  if (_corridorCache && Date.now() - _corridorCacheTime < 300_000) return _corridorCache;
+async function getCorridorGeofences(orgId) {
+  const cached = _corridorCache.get(orgId);
+  if (cached && Date.now() - cached.time < 300_000) return cached.rows;
   try {
     const r = await query(
       `SELECT id, name, coordinates FROM geofences WHERE type = 'corridor' AND COALESCE(active, true) = true`
     );
-    _corridorCache = r.rows.flatMap(f => {
+    const rows = r.rows.flatMap(f => {
       try {
         const c = typeof f.coordinates === 'string' ? JSON.parse(f.coordinates) : f.coordinates;
         if (!Array.isArray(c?.path) || c.path.length < 2) return [];
         return [{ id: f.id, name: f.name, path: c.path, buffer_km: (c.buffer_m || 300) / 1000 }];
       } catch (_) { return []; }
     });
-    _corridorCacheTime = Date.now();
-  } catch (_) { _corridorCache = _corridorCache || []; }
-  return _corridorCache;
+    _corridorCache.set(orgId, { time: Date.now(), rows });
+    return rows;
+  } catch (_) {
+    return cached?.rows || [];
+  }
 }
 
 // Minimum distance from point to a multi-segment path, in km
@@ -58,44 +61,53 @@ function getRedisConnection() {
 
 async function processGPS(job) {
   const { vehicle_id, lat, lng, speed, heading, timestamp } = job.data;
-  const currentFix = { lat, lng, speed: speed ?? 0, heading: heading ?? null, timestamp: timestamp ?? new Date().toISOString() };
-  const prevFix = _prevFixCache.get(vehicle_id) ?? null;
-  _prevFixCache.set(vehicle_id, currentFix);
+  if (!vehicle_id) throw new Error('GPS job missing vehicle_id');
 
-  // 1. Store GPS log
-  await query(
-    'INSERT INTO gps_logs (vehicle_id, lat, lng, speed, timestamp) VALUES ($1,$2,$3,$4,$5)',
-    [vehicle_id, lat, lng, speed, timestamp]
+  // Resolve tenant ownership before any tenant-bearing operation. Queue payloads
+  // are not authoritative for tenant selection.
+  const ownership = await globalQuery(
+    'SELECT org_id FROM vehicles WHERE id = $1 AND deleted_at IS NULL',
+    [vehicle_id],
   );
+  const orgId = ownership.rows[0]?.org_id;
+  if (!orgId) throw new Error(`GPS vehicle has no tenant scope: ${vehicle_id}`);
+
+  return withOrg(orgId, async () => {
+    const currentFix = { lat, lng, speed: speed ?? 0, heading: heading ?? null, timestamp: timestamp ?? new Date().toISOString() };
+    const cacheKey = `${orgId}:${vehicle_id}`;
+    const prevFix = _prevFixCache.get(cacheKey) ?? null;
+    _prevFixCache.set(cacheKey, currentFix);
+
+    // 1. Store GPS log
+    await query(
+      'INSERT INTO gps_logs (vehicle_id, lat, lng, speed, timestamp, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [vehicle_id, lat, lng, speed, timestamp, orgId]
+    );
 
   // 2. Update vehicle position and get org_id via active convoy. RETURNING
   // registration so alert messages can name the vehicle like an operator
   // would ("KEN-001"), not by its raw UUID.
-  const posRes = await query(
-    'UPDATE vehicles SET latitude=$1, longitude=$2, last_ping=$3, updated_at=NOW() WHERE id=$4 RETURNING registration',
-    [lat, lng, new Date(timestamp), vehicle_id]
-  );
+    const posRes = await query(
+      'UPDATE vehicles SET latitude=$1, longitude=$2, last_ping=$3, updated_at=NOW() WHERE id=$4 AND org_id=$5 RETURNING registration',
+      [lat, lng, new Date(timestamp), vehicle_id, orgId]
+    );
   const vehicleLabel = posRes.rows[0]?.registration || String(vehicle_id).slice(0, 8);
 
   // 3. Broadcast live position on org channel for real-time GPS page
-  const orgRes = await query(
-    `SELECT c.org_id, c.id AS convoy_id FROM convoys c
+    const orgRes = await query(
+      `SELECT c.org_id, c.id AS convoy_id FROM convoys c
      JOIN convoy_trucks ct ON ct.convoy_id = c.id
      WHERE ct.vehicle_id = $1 AND c.status = 'active' AND c.deleted_at IS NULL
-     LIMIT 1`,
-    [vehicle_id]
-  );
-  const orgId = orgRes.rows[0]?.org_id ?? null;
-  const gpsPayload = { type: 'location', device_id: vehicle_id, vehicle_id, lat, lng, speed };
-  if (orgId) {
+       LIMIT 1`,
+      [vehicle_id]
+    );
+    const activeConvoyId = orgRes.rows[0]?.convoy_id ?? null;
+    const gpsPayload = { type: 'location', device_id: vehicle_id, vehicle_id, lat, lng, speed };
     publish(`org#${orgId}`, gpsPayload);
-  } else {
-    publish('vehicle:update', { vehicleId: vehicle_id, lat, lng, speed });
-  }
 
-  // Also publish to portal channel so cargo owners see live updates
-  const convoyId = orgRes.rows[0]?.convoy_id ?? null;
-  if (convoyId) {
+    // Also publish to portal channel so cargo owners see live updates
+    const convoyId = activeConvoyId;
+    if (convoyId) {
     publish(`portal#${convoyId}`, {
       type: 'position',
       location: { lat, lng },
@@ -109,7 +121,7 @@ async function processGPS(job) {
   // 4. Speed check
   if (speed > SPEED_THRESHOLD && alertQueue) {
     await alertQueue.add('speed-alert', {
-      vehicle_id, type: 'speed', severity: speed > 150 ? 'critical' : 'high',
+      vehicle_id, org_id: orgId, type: 'speed', severity: speed > 150 ? 'critical' : 'high',
       message: `Vehicle ${vehicleLabel} travelling at ${speed} km/h — threshold is ${SPEED_THRESHOLD} km/h`,
     });
     logger.warn(`Speed alert queued for vehicle ${vehicle_id}: ${speed} km/h`);
@@ -142,7 +154,7 @@ async function processGPS(job) {
       const deviation = distanceToSegment(lat, lng, origin[0], origin[1], dest[0], dest[1]);
       if (deviation > GEOFENCE_KM) {
         await alertQueue.add('geofence-alert', {
-          vehicle_id, convoy_id: convoy.convoy_id, type: 'geofence',
+          vehicle_id, org_id: orgId, convoy_id: convoy.convoy_id, type: 'geofence',
           severity: deviation > GEOFENCE_KM * 2 ? 'critical' : 'high',
           message: `Vehicle ${vehicleLabel} is ${deviation.toFixed(1)} km from convoy route (limit: ${GEOFENCE_KM} km)`,
         });
@@ -154,7 +166,7 @@ async function processGPS(job) {
   // 6. Corridor geofence deviation check
   if (alertQueue) {
     try {
-      const corridors = await getCorridorGeofences();
+      const corridors = await getCorridorGeofences(orgId);
       for (const fence of corridors) {
         const distKm = minDistToPathKm(lat, lng, fence.path);
         if (distKm > fence.buffer_km) {
@@ -169,6 +181,7 @@ async function processGPS(job) {
             const limitM = Math.round(fence.buffer_km * 1000);
             await alertQueue.add('geofence-alert', {
               vehicle_id,
+              org_id: orgId,
               geofence_id: fence.id,
               type: 'route_deviation',
               severity: distKm > fence.buffer_km * 4 ? 'critical' : 'high',
@@ -183,14 +196,11 @@ async function processGPS(job) {
     }
   }
 
-  // 7. Smart geofence + corridor evaluation (RULE C: withOrg inside evaluateVehiclePosition)
-  if (orgId) {
+  // 7. Smart geofence + corridor evaluation (already inside tenant scope)
     evaluateVehiclePosition(orgId, vehicle_id, null, convoyResult.rows[0]?.convoy_id ?? null, { lat, lng, speed })
       .catch(err => logger.warn(`geofenceEngine error: ${err.message}`));
-  }
 
   // 8. Driver behaviour scoring
-  if (orgId) {
     const driverRes = await query(
       `SELECT assigned_driver_id FROM vehicles WHERE id = $1`, [vehicle_id],
     ).catch(() => ({ rows: [] }));
@@ -198,9 +208,9 @@ async function processGPS(job) {
     detectBehaviourEvents(orgId, driverId, vehicle_id, currentFix, prevFix)
       .then(events => storeBehaviourEvents(orgId, events))
       .catch(err => logger.warn(`behaviourDetector error: ${err.message}`));
-  }
 
-  logger.info(`GPS processed: vehicle=${vehicle_id} lat=${lat} lng=${lng} speed=${speed}`);
+    logger.info(`GPS processed: vehicle=${vehicle_id} org=${orgId} lat=${lat} lng=${lng} speed=${speed}`);
+  });
 }
 
 function startGPSWorker() {

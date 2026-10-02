@@ -9,8 +9,8 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 const { Pool } = require('pg');
 const { withOrg } = require('../../src/utils/orgScopedDb');
 
-const ORG_A = 'aaaaaaaa-0000-0000-0000-000000000001';
-const ORG_B = 'bbbbbbbb-0000-0000-0000-000000000001';
+const ORG_A = 'aaaaaaaa-1111-4111-8111-000000000001';
+const ORG_B = 'bbbbbbbb-1111-4111-8112-000000000001';
 
 let pool;
 
@@ -68,6 +68,39 @@ test('org B sees only its own vehicle', async () => {
 // org_isolation policy. Assert it via the catalog (schema-independent — no seed
 // row needed, so this doesn't depend on the drivers DDL which lives outside the
 // tracked migrations).
+test('every tenant-bearing base table is FORCE-RLS protected', async () => {
+  if (skip()) return;
+  const { rows } = await pool.query(`
+    SELECT c.relname AS table_name,
+           c.relforcerowsecurity,
+           EXISTS (
+             SELECT 1 FROM pg_policies p
+             WHERE p.schemaname='public'
+               AND p.tablename=c.relname
+               AND p.policyname='tenant_isolation_hardening'
+               AND p.permissive='RESTRICTIVE'
+           ) AS has_restrictive_tenant_policy
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid=c.relnamespace
+     WHERE n.nspname='public'
+       AND c.relkind='r'
+       AND c.relname <> 'runtime_diagnostics'
+       AND c.relname NOT IN (
+         'users','guardian_devices','portal_tokens','cargo_clients',
+         'client_magic_links','telemetry_ingest_keys','tracking_qr_codes',
+         'tracking_sessions','field_devices','field_sessions','field_agent_pins',
+         'enrollment_codes','convoy_codes','cfo_login_attempts','guardian_command_nonces'
+       )
+       AND EXISTS (
+         SELECT 1 FROM pg_attribute a
+         WHERE a.attrelid=c.oid AND a.attname='org_id' AND NOT a.attisdropped
+       )
+     ORDER BY c.relname
+  `);
+  const failures = rows.filter(r => !r.relforcerowsecurity || !r.has_restrictive_tenant_policy);
+  expect(failures).toEqual([]);
+});
+
 test('drivers table has RLS enabled with an org_isolation policy', async () => {
   if (skip()) return;
   const rls = await pool.query(
@@ -80,6 +113,28 @@ test('drivers table has RLS enabled with an org_isolation policy', async () => {
     `SELECT 1 FROM pg_policies WHERE tablename = 'drivers' AND policyname = 'org_isolation'`
   );
   expect(policy.rows).toHaveLength(1);
+});
+
+
+test('bootstrap credential tables retain RLS but are allowed unforced lookup', async () => {
+  if (skip()) return;
+  const { rows } = await pool.query(`
+    SELECT c.relname AS table_name, c.relrowsecurity
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid=c.relnamespace
+     WHERE n.nspname='public'
+       AND c.relname = ANY($1::text[])
+       AND EXISTS (
+         SELECT 1 FROM pg_attribute a
+         WHERE a.attrelid=c.oid AND a.attname='org_id' AND NOT a.attisdropped
+       )
+  `, [[
+    'users','guardian_devices','portal_tokens','cargo_clients',
+    'client_magic_links','telemetry_ingest_keys','tracking_qr_codes',
+    'tracking_sessions','field_devices','field_sessions','field_agent_pins',
+    'enrollment_codes','convoy_codes','cfo_login_attempts','guardian_command_nonces',
+  ]]);
+  expect(rows.every(r => r.relrowsecurity)).toBe(true);
 });
 
 // Migration 063 retrofits org_id + FORCEd RLS onto the finance/maintenance

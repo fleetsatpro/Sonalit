@@ -10,17 +10,28 @@
  */
 const { pool } = require('../config/database');
 const logger = require('./logger');
+const { normalizeOrgId, runWithOrgContext } = require('./tenantContext');
 
 async function withOrg(orgId, fn) {
+  const normalized = normalizeOrgId(orgId);
+  if (!normalized) throw new Error('invalid_org_id');
+  const currentOrg = require('./tenantContext').getOrgId();
+  const currentClient = require('./tenantContext').getTenantDbClient();
+  if (currentOrg && currentOrg !== normalized) throw new Error('tenant_context_switch_forbidden');
+  // Nested same-tenant scopes reuse the already-authorized client/transaction.
+  // This prevents a safe nested helper from accidentally opening a second DB
+  // context while preserving the no-cross-tenant-switch invariant.
+  if (currentClient) return fn(currentClient);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     // Switch to non-superuser role so RLS org_isolation policies are enforced
-    // even when the session connects as a PostgreSQL superuser.
+    // even when the pool's underlying session user is privileged.
     await client.query('SET LOCAL ROLE sonalit_app');
-    // SET LOCAL applies only within this transaction — safe with connection pooling
-    await client.query('SELECT set_config($1, $2, true)', ['app.current_org_id', orgId]);
-    const result = await fn(client);
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_org_id', normalized]);
+    // Carry both tenant and client so nested legacy query() calls reuse this
+    // transaction instead of opening an unscoped secondary connection.
+    const result = await runWithOrgContext(normalized, () => fn(client), client);
     await client.query('COMMIT');
     return result;
   } catch (err) {
@@ -36,16 +47,20 @@ async function withOrg(orgId, fn) {
  * Call this after authenticate() in the middleware chain.
  */
 function attachOrgDb(req, _res, next) {
-  const orgId = req.user && req.user.org_id;
-  if (!orgId) { next(); return; }
+  const orgId = normalizeOrgId(req.user && req.user.org_id);
+  if (!orgId) {
+    logger.warn(`Tenant scope missing for authenticated request: ${req.method} ${req.originalUrl || req.url}`);
+    return _res.status(403).json({ error: 'tenant_scope_required' });
+  }
 
-  // Single-query helper
+  // Single-query helper. The ambient context additionally protects legacy
+  // helpers that still call config/database.query() after authentication.
   req.db = (text, params) => withOrg(orgId, client => client.query(text, params));
 
   // Multi-query transaction helper
   req.dbTx = (fn) => withOrg(orgId, fn);
 
-  next();
+  return runWithOrgContext(orgId, next);
 }
 
 module.exports = { withOrg, attachOrgDb };

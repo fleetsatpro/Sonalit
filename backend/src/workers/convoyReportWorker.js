@@ -12,8 +12,9 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 const path = require('path');
 const fs = require('fs');
 const { Worker } = require('bullmq');
-const { pool, query } = require('../config/database');
+const { pool, query, globalQuery } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
+const { withOrg } = require('../utils/orgScopedDb');
 const { generateDailyReport, generateArchiveReport } = require('../utils/convoyPdfGenerator');
 const logger = require('../utils/logger');
 
@@ -24,6 +25,17 @@ function getRedisConnection() {
     port: parseInt(url.port) || 6379,
     password: url.password || process.env.REDIS_PASSWORD || undefined,
   };
+}
+
+async function withConvoyOrg(convoyId, fn) {
+  if (!convoyId) throw new Error('convoy_id is required');
+  const owner = await globalQuery(
+    'SELECT org_id FROM convoys WHERE id = $1 AND deleted_at IS NULL',
+    [convoyId],
+  );
+  const orgId = owner.rows[0]?.org_id;
+  if (!orgId) throw new Error(`Convoy ${convoyId} has no tenant scope`);
+  return withOrg(orgId, () => fn(orgId));
 }
 
 // ─── R2 Upload Helper ─────────────────────────────────────────────────────────
@@ -197,20 +209,22 @@ async function recountPhotos(convoy_id, report_date) {
 // ─── Job Handlers ─────────────────────────────────────────────────────────────
 
 async function handleCheckProgress({ convoy_id, report_date }) {
-  const counts = await recountPhotos(convoy_id, report_date);
-  if (counts?.status === 'complete') {
-    logger.info(`[convoyReport] ${convoy_id} ${report_date} complete — queuing generateReport`);
-    // Re-enqueue self as generateReport so it flows to PDF generation
-    const { getQueues } = require('../config/queue');
-    const { convoyReportQueue } = getQueues();
-    if (convoyReportQueue) {
-      await convoyReportQueue.add('generateReport', { convoy_id, report_date });
+  return withConvoyOrg(convoy_id, async () => {
+    const counts = await recountPhotos(convoy_id, report_date);
+    if (counts?.status === 'complete') {
+      logger.info(`[convoyReport] ${convoy_id} ${report_date} complete — queuing generateReport`);
+      const { getQueues } = require('../config/queue');
+      const { convoyReportQueue } = getQueues();
+      if (convoyReportQueue) {
+        await convoyReportQueue.add('generateReport', { convoy_id, report_date });
+      }
     }
-  }
+  });
 }
 
 async function handleGenerateReport({ convoy_id, report_date, force }) {
-  const { convoy, trucks, cfos, photos, report, cfoPhotos, waypoints, namedWaypoints, handovers } = await fetchReportData(convoy_id, report_date);
+  return withConvoyOrg(convoy_id, async (orgId) => {
+    const { convoy, trucks, cfos, photos, report, cfoPhotos, waypoints, namedWaypoints, handovers } = await fetchReportData(convoy_id, report_date);
   if (!convoy) throw new Error(`Convoy ${convoy_id} not found`);
   if (!report) {
     logger.warn(`[convoyReport] No daily report row for ${convoy_id} ${report_date} — running recount`);
@@ -232,7 +246,7 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
   // the key means a genuinely new PDF always gets a URL that could never
   // have been cached before, independent of any CDN behavior.
   const contentHash = require('crypto').createHash('sha256').update(pdfBuffer).digest('hex');
-  const key = `reports/daily/${convoy_id}/${report_date}-${contentHash.slice(0, 12)}.pdf`;
+  const key = `orgs/${orgId}/reports/daily/${convoy_id}/${report_date}-${contentHash.slice(0, 12)}.pdf`;
 
   let pdfUrl = null;
   let generationError = null;
@@ -242,7 +256,7 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
   } catch (uploadErr) {
     logger.warn(`[convoyReport] R2 unavailable (${uploadErr.message}) — storing PDF locally`);
     try {
-      const reportsDir = path.resolve(__dirname, '../../data/reports', convoy_id);
+      const reportsDir = path.resolve(__dirname, '../../data/reports', orgId, convoy_id);
       fs.mkdirSync(reportsDir, { recursive: true });
       fs.writeFileSync(path.join(reportsDir, `${report_date}.pdf`), pdfBuffer);
       logger.info(`[convoyReport] PDF saved locally for ${convoy_id}/${report_date}`);
@@ -251,9 +265,6 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
       logger.error(`[convoyReport] local PDF save also failed: ${fsErr.message}`);
     }
   }
-
-  const orgRow = await query(`SELECT org_id FROM convoys WHERE id = $1`, [convoy_id]);
-  const orgId = orgRow.rows[0]?.org_id || convoy_id;
 
   try {
     await query(
@@ -287,10 +298,12 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
 
   publish(`convoy.report.ready.${orgId}`, { convoy_id, report_date, pdf_url: pdfUrl });
   logger.info(`[convoyReport] report marked generated for ${convoy_id}/${report_date}`);
+  });
 }
 
 async function handleGenerateArchive({ convoy_id }) {
-  const convoy = (await query(
+  return withConvoyOrg(convoy_id, async (orgId) => {
+    const convoy = (await query(
     `SELECT c.*, cl.name AS client_name, cl.company AS client_company
      FROM convoys c LEFT JOIN cargo_clients cl ON cl.id = c.client_id
      WHERE c.id = $1`,
@@ -333,7 +346,7 @@ async function handleGenerateArchive({ convoy_id }) {
   // cached copy forever regardless of how many times the R2 origin object
   // is overwritten.
   const archiveHash = require('crypto').createHash('sha256').update(pdfBuffer).digest('hex');
-  const key = `reports/archive/${convoy_id}/archive-${archiveHash.slice(0, 12)}.pdf`;
+  const key = `orgs/${orgId}/reports/archive/${convoy_id}/archive-${archiveHash.slice(0, 12)}.pdf`;
 
   let pdfUrl = null;
   try {
@@ -342,7 +355,7 @@ async function handleGenerateArchive({ convoy_id }) {
   } catch (uploadErr) {
     logger.warn(`[convoyArchive] R2 unavailable (${uploadErr.message}) — saving locally`);
     try {
-      const archiveDir = path.resolve(__dirname, '../../data/reports', convoy_id);
+      const archiveDir = path.resolve(__dirname, '../../data/reports', orgId, convoy_id);
       fs.mkdirSync(archiveDir, { recursive: true });
       fs.writeFileSync(path.join(archiveDir, 'archive.pdf'), pdfBuffer);
     } catch (fsErr) {
@@ -350,24 +363,27 @@ async function handleGenerateArchive({ convoy_id }) {
     }
   }
 
-  await query(
-    `UPDATE convoys SET archive_pdf_url = $1, updated_at = NOW() WHERE id = $2`,
-    [pdfUrl, convoy_id]
-  );
-  logger.info(`[convoyArchive] Archive report processed for ${convoy_id}`);
+    await query(
+      `UPDATE convoys SET archive_pdf_url = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
+      [pdfUrl, convoy_id, orgId]
+    );
+    logger.info(`[convoyArchive] Archive report processed for ${convoy_id} org=${orgId}`);
+  });
 }
 
 async function handleScheduledRecount() {
-  const active = await query(
-    `SELECT DISTINCT cdr.convoy_id, cdr.report_date
+  const active = await globalQuery(
+    `SELECT DISTINCT cdr.convoy_id, cdr.report_date, c.org_id
      FROM convoy_daily_reports cdr
      JOIN convoys c ON c.id = cdr.convoy_id
      WHERE c.status = 'active' AND cdr.status IN ('pending','partial')
-       AND cdr.report_date >= CURRENT_DATE - INTERVAL '3 days'`,
-    []
+       AND cdr.report_date >= CURRENT_DATE - INTERVAL '3 days'
+       AND c.org_id IS NOT NULL`,
   );
   logger.info(`[convoyReport] scheduledRecount: ${active.rows.length} reports to recheck`);
-  await Promise.allSettled(active.rows.map(r => recountPhotos(r.convoy_id, String(r.report_date).slice(0, 10))));
+  await Promise.allSettled(active.rows.map(r =>
+    withOrg(r.org_id, () => recountPhotos(r.convoy_id, String(r.report_date).slice(0, 10)))
+  ));
 }
 
 // ─── Worker Startup ───────────────────────────────────────────────────────────

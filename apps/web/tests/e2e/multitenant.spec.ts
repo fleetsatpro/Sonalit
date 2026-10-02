@@ -254,11 +254,11 @@ test.describe('Multi-tenant isolation — Centrifugo connection JWT', () => {
     await mockRoutes(page);
   });
 
-  test('connection token sub claim matches Org A user, not Org B', async ({ page }) => {
+  test('connection token sub claim is the Org A tenant, not Org B', async ({ page }) => {
     let capturedToken: string | null = null;
 
     await page.route(url => url.toString().includes('/api/v1/realtime/token'), async route => {
-      const payload = btoa(JSON.stringify({ sub: USER_A.id, exp: 9999999999 })).replace(/=/g, '');
+      const payload = btoa(JSON.stringify({ sub: ORG_A, exp: 9999999999 })).replace(/=/g, '');
       const token = `eyJhbGciOiJIUzI1NiJ9.${payload}.fake`;
       capturedToken = token;
       await route.fulfill({
@@ -270,10 +270,10 @@ test.describe('Multi-tenant isolation — Centrifugo connection JWT', () => {
     await page.goto('/dashboard');
     await page.waitForTimeout(500);
 
-    // The token sub must be the Org A user's ID
+    // The connection token subject is the tenant ID; user identity is carried separately by the authenticated request
     if (capturedToken) {
       const decoded = jwtDecode<{ sub: string }>(capturedToken);
-      expect(decoded.sub).toBe(USER_A.id);
+      expect(decoded.sub).toBe(ORG_A);
       expect(decoded.sub).not.toBe(ORG_B);
     }
   });

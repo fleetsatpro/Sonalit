@@ -1,7 +1,8 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { getQueues } = require('../config/queue');
+const { withOrg } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
 const { publish } = require('../realtime/centrifugo');
@@ -62,13 +63,9 @@ async function fireGeofenceActions(job, alert, type, severity, vehicle_id, messa
           .replace(/\{severity\}/g,  severity);
 
         if (action.action_type === 'map_alert') {
-          // geofence_actions don't have org_id; use alert's channel derived from convoy
-          const geoOrgRes = await query(
-            `SELECT c.org_id FROM alerts a JOIN convoys c ON c.id = a.convoy_id WHERE a.id = $1 LIMIT 1`,
-            [alert.id]
-          );
-          const geoOrgId = geoOrgRes.rows[0]?.org_id ?? null;
-          publish(geoOrgId ? `org#${geoOrgId}` : 'geofence:violation', {
+          const geoOrgId = alert.org_id;
+          if (!geoOrgId) throw new Error('geofence action alert missing tenant scope');
+          publish(`org#${geoOrgId}`, {
             type: 'alert.new',
             alertId:      alert.id,
             geofenceName: resolvedName,
@@ -182,8 +179,41 @@ async function fireGeofenceActions(job, alert, type, severity, vehicle_id, messa
 
 async function processAlert(job) {
   const { vehicle_id, convoy_id, type, severity, message } = job.data;
+  if (!vehicle_id) throw new Error('Alert job missing vehicle_id');
 
-  // Deduplication: skip if same type for same vehicle within cooldown window
+  // Resolve tenant ownership from authoritative fleet data before any
+  // tenant-bearing read/write. A queue payload may carry an org hint, but it
+  // never gets to select the tenant.
+  const owner = await globalQuery(
+    `SELECT v.org_id AS vehicle_org_id,
+            c.org_id AS convoy_org_id,
+            c.id AS active_convoy_id
+       FROM vehicles v
+       LEFT JOIN convoys c
+         ON c.id = v.assigned_convoy_id AND c.deleted_at IS NULL
+      WHERE v.id = $1 AND v.deleted_at IS NULL`,
+    [vehicle_id],
+  );
+  if (!owner.rows.length || !owner.rows[0].vehicle_org_id) {
+    throw new Error(`Alert vehicle has no tenant scope: ${vehicle_id}`);
+  }
+  const orgId = owner.rows[0].vehicle_org_id;
+  if (job.data.org_id && String(job.data.org_id) !== String(orgId)) {
+    throw new Error('Alert job tenant mismatch');
+  }
+  if (convoy_id) {
+    const convoyCheck = await globalQuery(
+      'SELECT org_id FROM convoys WHERE id=$1 AND deleted_at IS NULL',
+      [convoy_id],
+    );
+    const convoyOrg = convoyCheck.rows[0]?.org_id;
+    if (!convoyOrg || String(convoyOrg) !== String(orgId)) {
+      throw new Error('Alert job convoy tenant mismatch');
+    }
+  }
+
+  return withOrg(orgId, async () => {
+    // Deduplication: skip if same type for same vehicle within cooldown window
   const dupe = await query(
     `SELECT id FROM alerts
      WHERE vehicle_id = $1 AND type = $2 AND resolved_at IS NULL
@@ -198,32 +228,26 @@ async function processAlert(job) {
     return;
   }
 
-  const result = await query(
-    `INSERT INTO alerts (vehicle_id, convoy_id, type, severity, message, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,NOW(),NOW()) RETURNING *`,
-    [vehicle_id, convoy_id || null, type, severity, message]
-  );
+    const result = await query(
+      `INSERT INTO alerts (org_id, vehicle_id, convoy_id, type, severity, message, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW()) RETURNING *`,
+      [orgId, vehicle_id, convoy_id || null, type, severity, message]
+    );
 
   const alert = result.rows[0];
 
-  // Look up org_id via convoy so we can publish on the org channel
-  const orgRes = await query(
-    `SELECT org_id FROM convoys WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
-    [convoy_id || '00000000-0000-0000-0000-000000000000']
-  );
-  const orgId = orgRes.rows[0]?.org_id ?? null;
-  const alertChannel = orgId ? `org#${orgId}` : 'alert:new';
-  publish(alertChannel, { type: 'alert.new', alertId: alert.id, vehicleId: vehicle_id, alertType: type, severity, message });
+    publish(`org#${orgId}`, { type: 'alert.new', alertId: alert.id, vehicleId: vehicle_id, alertType: type, severity, message });
 
   const { notificationQueue } = getQueues();
   if (notificationQueue && (severity === 'high' || severity === 'critical')) {
-    await notificationQueue.add('notify', { alertId: alert.id, severity });
+    await notificationQueue.add('notify', { alertId: alert.id, severity, org_id: orgId });
   }
 
   logger.info(`Alert created: id=${alert.id} type=${type} severity=${severity}`);
 
   // Fire configured geofence actions for geofence/corridor alerts
   await fireGeofenceActions(job, alert, type, severity, vehicle_id, message);
+  });
 }
 
 function startAlertWorker() {

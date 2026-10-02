@@ -13,6 +13,7 @@ const mockClient = {
 };
 
 jest.mock('../src/config/database', () => ({
+  globalQuery: jest.fn().mockResolvedValue({ rows: [] }),
   query: jest.fn().mockResolvedValue({ rows: [] }),
   pool: { connect: jest.fn().mockResolvedValue(mockClient) },
   healthCheck: jest.fn().mockResolvedValue(true),
@@ -67,6 +68,8 @@ const SESSION_ID = 'ssssssss-0000-0000-0000-000000000001';
 function resetClientMocks(...responses) {
   mockClient.query.mockReset();
   mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
+  mockClient.query.mockResolvedValueOnce({ rows: [] }); // SET LOCAL ROLE
+  mockClient.query.mockResolvedValueOnce({ rows: [] }); // set_config(app.current_org_id)
   responses.forEach(r => mockClient.query.mockResolvedValueOnce(r));
   mockClient.query.mockResolvedValue({ rows: [] }); // COMMIT + fallback
 }
@@ -79,7 +82,6 @@ describe('Knox Remote Sessions', () => {
   describe('POST /api/v1/guardian/devices/:id/remote-session/start', () => {
     it('returns 400 NOT_DEVICE_OWNER when knox_do_enrolled is false', async () => {
       resetClientMocks(
-        { rows: [] },                                                              // SET LOCAL
         { rows: [{ id: DEVICE_ID, org_id: 'org-a', knox_do_enrolled: false }] }, // device lookup
       );
       const res = await request(app)
@@ -92,7 +94,6 @@ describe('Knox Remote Sessions', () => {
 
     it('returns 409 SESSION_ACTIVE when a live session exists', async () => {
       resetClientMocks(
-        { rows: [] },                                                              // SET LOCAL
         { rows: [{ id: DEVICE_ID, org_id: 'org-a', knox_do_enrolled: true }] },  // device found + enrolled
         { rows: [{ id: SESSION_ID, status: 'live' }] },                          // existing active session
       );
@@ -107,7 +108,6 @@ describe('Knox Remote Sessions', () => {
 
     it('returns 200 with session_id and centrifugo_channel on success', async () => {
       resetClientMocks(
-        { rows: [] },                                                              // SET LOCAL
         { rows: [{ id: DEVICE_ID, org_id: 'org-a', knox_do_enrolled: true }] },  // device found + enrolled
         { rows: [] },                                                              // no existing session
         { rows: [{ id: SESSION_ID }] },                                           // INSERT session
@@ -131,7 +131,6 @@ describe('Knox Remote Sessions', () => {
       // The route queries WHERE id=$1 AND org_id=$2 using the requesting user's org_id (org-a).
       // A session owned by org-b will not be found, resulting in 404 — not 403.
       resetClientMocks(
-        { rows: [] },  // SET LOCAL
         { rows: [] },  // session not found (org-b session invisible to org-a query)
       );
       const res = await request(app)
@@ -144,7 +143,6 @@ describe('Knox Remote Sessions', () => {
 
     it('returns 200 ok when session is live and org matches', async () => {
       resetClientMocks(
-        { rows: [] },                                                           // SET LOCAL
         { rows: [{ id: SESSION_ID, status: 'live' }] },                        // session found (same org)
         { rows: [] },                                                           // event_log update
       );
@@ -162,7 +160,6 @@ describe('Knox Remote Sessions', () => {
   describe('POST /api/v1/guardian/devices/:id/remote-session/end', () => {
     it('clears guardian_devices.active_session_id (verifies UPDATE with active_session_id = NULL)', async () => {
       resetClientMocks(
-        { rows: [] },                                                                               // SET LOCAL
         { rows: [{ id: SESSION_ID, duration_secs: 42, recording_key: null }] },                   // UPDATE session → ended
         { rows: [] },                                                                               // UPDATE guardian_devices active_session_id = NULL
       );
@@ -195,7 +192,6 @@ describe('Knox Remote Sessions', () => {
 
     it('returns 404 when session is not found', async () => {
       resetClientMocks(
-        { rows: [] },  // SET LOCAL
         { rows: [] },  // UPDATE session → no rows (not found)
       );
       const res = await request(app)

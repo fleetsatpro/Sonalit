@@ -188,7 +188,7 @@ async function applyChanges(
 
   await db.transaction('rw', db.entities, async () => {
     for (const c of changes) {
-      const key = `${c.entity_type}:${c.entity_id}`;
+      const key = `${orgId}:${c.entity_type}:${c.entity_id}`;
 
       if (c.operation === 'delete') {
         await db.entities.delete(key);
@@ -445,16 +445,16 @@ async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary): Promise<
  */
 async function clearLocalModification(entry: OutboxEntry): Promise<void> {
   if (!entry.entityId) return;
-  const key = `${entry.entityType}:${entry.entityId}`;
+  const key = `${orgId}:${entry.entityType}:${entry.entityId}`;
   const row = await db.entities.get(key);
   if (row?.locallyModified) {
     await db.entities.update(key, { locallyModified: false });
   }
 }
 
-export async function push(userId: string): Promise<PushSummary> {
+export async function push(userId: string, orgId: string): Promise<PushSummary> {
   const summary: PushSummary = { ...EMPTY_PUSH };
-  const due = await dueEntries(userId);
+  const due = await dueEntries(userId, orgId);
   if (due.length === 0) return summary;
 
   // Already sorted by priority then sequence. Slice the highest-priority window
@@ -524,7 +524,7 @@ export async function runSync(userId: string, orgId: string): Promise<SyncRunSum
     await registerDevice();
 
     // 2. Field work up before state comes down.
-    result.push = await push(userId);
+    result.push = await push(userId, orgId);
 
     // 3. Reconcile.
     result.pull = await pull(userId, orgId);
@@ -545,8 +545,8 @@ export async function runSync(userId: string, orgId: string): Promise<SyncRunSum
   return result;
 }
 
-export async function queueDepth(userId: string): Promise<number> {
-  const c = await counts(userId);
+export async function queueDepth(userId: string, orgId: string): Promise<number> {
+  const c = await counts(userId, orgId);
   return c.pending + c.syncing + c.failedRetryable;
 }
 

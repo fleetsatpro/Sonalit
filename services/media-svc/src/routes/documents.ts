@@ -2,33 +2,38 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { query } from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
 import { NotFoundError } from '../lib/errors.js';
 
 const CreateDocSchema = z.object({
   name: z.string().min(1).max(255),
   kind: z.string().min(1).max(50),
-  r2_key: z.string().min(1),
+  r2_key: z.string().regex(/^orgs\/[0-9a-f-]{36}\/documents\/[A-Za-z0-9._-]+$/, 'r2_key must be in the authenticated organization namespace'),
   size_bytes: z.number().int().nonnegative().optional(),
 });
 
 const ListSchema = z.object({ page: z.coerce.number().int().min(1).default(1), limit: z.coerce.number().int().min(1).max(100).default(20) });
 
 export const documentsRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('preHandler', requireAuth);
   app.get('/v4/documents', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string) ?? '';
+    const org_id = req.user?.org_id;
     const q = ListSchema.parse(req.query);
     const rows = await query('SELECT * FROM media_assets WHERE org_id=$1 AND kind!=\'photo\' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT $2 OFFSET $3', [org_id, q.limit, (q.page - 1) * q.limit]);
     return reply.send({ data: rows });
   });
   app.post('/v4/documents', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string) ?? '';
+    const org_id = req.user?.org_id;
     const body = CreateDocSchema.parse(req.body);
+    if (!body.r2_key.startsWith(`orgs/${org_id}/documents/`) || body.r2_key.includes('..')) {
+      throw new Error('r2_key_not_in_tenant_namespace');
+    }
     const [row] = await query('INSERT INTO media_assets (id, org_id, kind, status, r2_key, size_bytes, name) VALUES ($1,$2,$3,\'committed\',$4,$5,$6) RETURNING *',
       [randomUUID(), org_id, body.kind, body.r2_key, body.size_bytes ?? null, body.name]);
     return reply.code(201).send(row);
   });
   app.delete('/v4/documents/:id', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string) ?? '';
+    const org_id = req.user?.org_id;
     const { id } = req.params as { id: string };
     const [row] = await query('UPDATE media_assets SET deleted_at=NOW() WHERE id=$1 AND org_id=$2 RETURNING id', [id, org_id]);
     if (!row) throw new NotFoundError('Document not found');

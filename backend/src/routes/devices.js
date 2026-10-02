@@ -1,17 +1,18 @@
 const router = require('express').Router();
 const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
-router.use(authenticate);
+const { attachOrgDb } = require('../utils/orgScopedDb');
+router.use(authenticate, attachOrgDb);
 router.get('/', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     const { rows } = await db(`SELECT * FROM devices WHERE deleted_at IS NULL ORDER BY created_at DESC`);
     res.json({ data: rows });
   } catch (err) { next(err); }
 });
 router.post('/', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     const { name, imei, sim_number, phone_number, status = 'inactive' } = req.body;
     if (!name) return res.status(400).json({ error: 'Device name is required' });
     const { rows } = await db(
@@ -23,7 +24,7 @@ router.post('/', async (req, res, next) => {
 });
 router.put('/:id', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     const { name, imei, sim_number, phone_number, status } = req.body;
     const { rows } = await db(
       `UPDATE devices SET name=COALESCE($1,name), imei=COALESCE($2,imei), sim_number=COALESCE($3,sim_number), phone_number=COALESCE($4,phone_number), status=COALESCE($5,status), updated_at=NOW() WHERE id=$6 AND deleted_at IS NULL RETURNING *`,
@@ -35,7 +36,7 @@ router.put('/:id', async (req, res, next) => {
 });
 router.get('/:id/health', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     const { rows } = await db(`SELECT * FROM devices WHERE id=$1 AND deleted_at IS NULL`, [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Device not found' });
     res.json({ data: { ...rows[0], battery: rows[0].battery ?? 100, signal: rows[0].signal ?? 'good' } });

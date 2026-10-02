@@ -25,6 +25,7 @@ const { requireFreshIntegrity } = require('../../src/middleware/requireFreshInte
 function makeDevice(overrides = {}) {
   return {
     id: 'device-uuid-001',
+    org_id: '99999999-1111-4111-8112-999999999999',
     last_integrity_verdict: 'MEETS_DEVICE_INTEGRITY',
     last_integrity_verdict_at: new Date().toISOString(),
     ...overrides,
@@ -96,7 +97,7 @@ describe('requireFreshIntegrity middleware', () => {
     await requireFreshIntegrity(MAX_AGE)(req, res, jest.fn());
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('REQUEST_INTEGRITY'),
-      [makeDevice().id]
+      [makeDevice().org_id, makeDevice().id]
     );
   });
 });

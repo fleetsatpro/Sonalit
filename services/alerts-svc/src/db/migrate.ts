@@ -92,6 +92,37 @@ export async function migrate(): Promise<void> {
         ON incident_actions (incident_id)
     `);
 
+    await client.query(`
+      ALTER TABLE incident_actions ADD COLUMN IF NOT EXISTS org_id UUID;
+      UPDATE incident_actions ia SET org_id=i.org_id FROM incidents i WHERE i.id=ia.incident_id AND ia.org_id IS NULL;
+      CREATE OR REPLACE FUNCTION tenant_alert_incident_action() RETURNS trigger LANGUAGE plpgsql AS $
+      DECLARE parent_org UUID;
+      BEGIN
+        SELECT org_id INTO parent_org FROM incidents WHERE id=NEW.incident_id;
+        IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_incident'; END IF;
+        IF NEW.org_id IS NOT NULL AND NEW.org_id<>parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+        NEW.org_id:=parent_org; RETURN NEW;
+      END $;
+      DROP TRIGGER IF EXISTS tenant_alert_incident_action ON incident_actions;
+      CREATE TRIGGER tenant_alert_incident_action BEFORE INSERT OR UPDATE ON incident_actions
+        FOR EACH ROW EXECUTE FUNCTION tenant_alert_incident_action();
+      DO $
+      DECLARE t text;
+      BEGIN
+        FOREACH t IN ARRAY ARRAY['rules','alerts','incidents','incident_actions'] LOOP
+          EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+          EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+          EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_service ON %I', t);
+          EXECUTE format('CREATE POLICY tenant_isolation_service ON %I AS RESTRICTIVE FOR ALL
+            USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
+            WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)', t);
+          EXECUTE format('DROP POLICY IF EXISTS tenant_base_service ON %I', t);
+          EXECUTE format('CREATE POLICY tenant_base_service ON %I AS PERMISSIVE FOR ALL
+            USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
+            WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)', t);
+        END LOOP;
+      END $;
+    `);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

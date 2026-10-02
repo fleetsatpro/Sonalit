@@ -2,10 +2,10 @@
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'portal-auth-test-secret';
 
-jest.mock('../src/config/database', () => ({ query: jest.fn() }));
+jest.mock('../src/config/database', () => ({ globalQuery: jest.fn() }));
 jest.mock('../src/middleware/clientAuth', () => ({ clientAuth: (req, _res, next) => next() }));
 
-const { query } = require('../src/config/database');
+const { globalQuery: query } = require('../src/config/database');
 const request = require('supertest');
 const express = require('express');
 const portalAuth = require('../src/routes/portalAuth');

@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const logger = require('../utils/logger');
-const { pool, query } = require('../config/database');
+const { pool, globalQuery } = require('../config/database');
 const { createQueues } = require('../config/queue');
 const { startNotificationWorker } = require('./notificationWorker');
 const { startResendEmailWorker } = require('./resendEmailWorker');
@@ -42,17 +42,36 @@ async function runScheduledClientPulse(now = new Date(), { recovery = false } = 
 
   const snapshotAt = new Date(now);
   snapshotAt.setUTCSeconds(0, 0);
-  const slotHour = recovery ? [...PULSE_HOURS_EAT].reverse().find(h => h <= hour) ?? 20 : hour;
-  let slotDate = date;
-  if (recovery && slotHour > hour) {
-    const previousDay = new Date(`${date}T00:00:00+03:00`);
-    previousDay.setUTCDate(previousDay.getUTCDate() - 1);
-    slotDate = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Africa/Nairobi',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).format(previousDay);
+  logger.info(`CDS Client Pulse scheduled dispatch starting: slot=${slotKey} snapshot=${snapshotAt.toISOString()}`);
+
+  try {
+    const orgs = await globalQuery(`
+      SELECT DISTINCT org_id
+      FROM users
+      WHERE org_id IS NOT NULL
+        AND deleted_at IS NULL
+    `);
+    let queued = 0, skipped = 0, failed = 0;
+
+    for (const row of orgs.rows) {
+      try {
+        const result = await dispatchClientPulse(row.org_id, { snapshotAt, reason: 'scheduled' });
+        queued += Number(result?.queued || 0);
+        skipped += Number(result?.skipped || 0);
+        failed += Number(result?.failed || 0);
+        logger.info(`CDS Client Pulse scheduled org complete: slot=${slotKey} org=${row.org_id} queued=${result?.queued || 0} skipped=${result?.skipped || 0} failed=${result?.failed || 0}`);
+      } catch (error) {
+        failed += 1;
+        logger.error(`CDS Client Pulse scheduled org failed: slot=${slotKey} org=${row.org_id} error=${error.message}`);
+      }
+    }
+
+    logger.info(`CDS Client Pulse scheduled dispatch complete: slot=${slotKey} organizations=${orgs.rows.length} queued=${queued} skipped=${skipped} failed=${failed}`);
+    return { slotKey, organizations: orgs.rows.length, queued, skipped, failed };
+  } catch (error) {
+    lastPulseSlot = null;
+    logger.error(`CDS Client Pulse scheduler failed: slot=${slotKey} error=${error.message}`);
+    throw error;
   }
   if (recovery) {
     snapshotAt.setTime(new Date(`${slotDate}T${String(slotHour).padStart(2, '0')}:00:00+03:00`).getTime());

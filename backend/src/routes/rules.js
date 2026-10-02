@@ -1,6 +1,5 @@
 const express = require('express');
 const crypto = require('crypto');
-const { query } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 
@@ -9,7 +8,7 @@ router.use(authenticate);
 
 // The legacy monolith remains the production /api/v1 compatibility surface.
 // Keep it feature-complete with the v4 Rules contract until the gateway cutover.
-function db(req) { return req.db || query; }
+function db(req) { if (!req.db) throw new Error('tenant_scope_required'); return req.db; }
 function orgId(req) { return req.user?.org_id || null; }
 
 function normalizeConditions(input) {

@@ -10,7 +10,8 @@
  */
 require('dotenv').config();
 const crypto = require('crypto');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
+const { withOrg } = require('./../utils/orgScopedDb');
 const logger = require('./logger');
 
 const TIMEOUT_MS = Math.max(5000, Number(process.env.INTEL_AGENT_TIMEOUT_MS || 15000));
@@ -152,6 +153,7 @@ async function fetchAuthorizedWhatsapp(channel) {
 }
 
 async function sweepOrg(orgId) {
+  return withOrg(orgId, async () => {
   const agentQueries = AGENTS.map(a => `(${a.terms.map(t=>`\"${t.replace(/\"/g,'')}\"`).join(' OR ')})`).join(' OR ');
   const tasks=[];
   for(const src of DIRECT_SOURCES) tasks.push(async()=>{const items=await fetchDirectSource(src);const source=await ensureSource(orgId,{name:src.name,provider:'web',endpoint:src.url,reliability:src.reliability,metadata:{agents:AGENTS.filter(a=>a.terms.some(t=>src.keywords.includes(t))).map(a=>a.id),cadence:'5m'}});const p=await persist(orgId,source,items,'WEB-MESH');return{name:src.name,seen:items.length,...p};});
@@ -160,10 +162,11 @@ async function sweepOrg(orgId) {
   const results=await runWithLimit(tasks,MAX_PARALLEL);
   const ok=results.filter(r=>r.status==='fulfilled').map(r=>r.value), failed=results.filter(r=>r.status==='rejected');
   return { agents:AGENT_COUNT, collectors:DIRECT_SOURCES.length+AGENTS.length+defaultWhatsappChannels().length, parallelism:MAX_PARALLEL, configured_whatsapp_channels:defaultWhatsappChannels().length, successful_collectors:ok.length, failed_collectors:failed.length, seen:ok.reduce((n,r)=>n+Number(r.seen||0),0), inserted:ok.reduce((n,r)=>n+Number(r.inserted||0),0), duplicates:ok.reduce((n,r)=>n+Number(r.duplicate||0),0), results:ok.slice(0,80), generated_at:new Date().toISOString() };
+  });
 }
 
 async function runAggressiveMesh() {
-  const {rows:orgs}=await query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);
+  const {rows:orgs}=await globalQuery(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);
   const output=[];
   for(const {org_id} of orgs){ try{output.push({org_id,...await sweepOrg(org_id)});}catch(error){logger.warn(`Aggressive Intelligence Mesh org=${org_id} failed: ${error.message}`);output.push({org_id,status:'failed',error:error.message});} }
   return output;

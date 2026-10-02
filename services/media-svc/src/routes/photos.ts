@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { query } from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
 import { config } from '../config.js';
 import { AuthError, NotFoundError } from '../lib/errors.js';
 
@@ -41,9 +42,10 @@ async function buildPresignedUploadUrl(r2Key: string): Promise<{ upload_url: str
 const CommitSchema = z.object({ asset_id: z.string().uuid() });
 
 export const photosRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('preHandler', requireAuth);
   app.post('/v4/media/photo-upload-url', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const assetId = randomUUID();
     const r2Key = `orgs/${org_id}/photos/${assetId}`;
     await query(
@@ -55,8 +57,8 @@ export const photosRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/v4/media/photos/commit', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const { asset_id } = CommitSchema.parse(req.body);
     const [asset] = await query<{ id: string; r2_key: string; status: string }>(
       'SELECT id, r2_key, status FROM media_assets WHERE id=$1 AND org_id=$2',
@@ -72,8 +74,8 @@ export const photosRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/v4/media/photos/:id', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const { id } = req.params as { id: string };
     const [row] = await query(
       'SELECT * FROM media_assets WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',

@@ -2,7 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const Joi = require('joi');
-const { query, pool } = require('../config/database');
+const { query, globalQuery, pool } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 
@@ -28,14 +29,15 @@ function issueRefreshToken() {
   return crypto.randomBytes(40).toString('hex');
 }
 
-async function setRefreshCookie(res, userId, reuseToken, req) {
+async function setRefreshCookie(res, userId, reuseToken, req, orgId) {
   const raw = reuseToken || issueRefreshToken();
   const hash = hashToken(raw);
-  await query(
+  if (!orgId) throw new Error('tenant_scope_required');
+  await withOrg(orgId, () => query(
     `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, ip_address, user_agent, last_seen_at)
      VALUES ($1, $2, NOW() + INTERVAL '${REFRESH_TTL_DAYS} days', $3, $4, NOW())`,
     [userId, hash, req ? (req.ip || null) : null, req ? (String(req.headers['user-agent'] || '').slice(0, 1000) || null) : null]
-  );
+  ));
   res.cookie(RT_COOKIE, raw, COOKIE_OPTS);
   return raw;
 }
@@ -55,7 +57,7 @@ const login = asyncHandler(async (req, res) => {
   const { email, password } = value;
   await ensureRefreshTable();
 
-  const result = await query(
+  const result = await globalQuery(
     'SELECT id, email, name, role, status, org_id, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL',
     [email]
   );
@@ -78,7 +80,7 @@ const login = asyncHandler(async (req, res) => {
     { expiresIn: '2h' }
   );
 
-  await setRefreshCookie(res, user.id, undefined, req);
+  await setRefreshCookie(res, user.id, undefined, req, user.org_id);
 
   logger.info(`Login: ${user.email} (${user.role})`);
   res.json({

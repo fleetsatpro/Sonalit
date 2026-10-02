@@ -4,7 +4,8 @@
  * Every data endpoint enforces convoy_id ∈ req.client.convoy_ids.
  */
 const jwt = require('jsonwebtoken');
-const { query } = require('../config/database');
+const { globalQuery } = require('../config/database');
+const { runWithOrgContext } = require('../utils/tenantContext');
 
 async function clientAuth(req, res, next) {
   try {
@@ -27,7 +28,7 @@ async function clientAuth(req, res, next) {
     // Resolve the current client/convoy relationship instead of trusting the
     // snapshot embedded in the JWT. This makes newly-created or repaired
     // convoy links available immediately without re-login.
-    const access = await query(
+    const access = await globalQuery(
       `SELECT cc.id AS client_id, cc.org_id,
               ARRAY(
                 SELECT DISTINCT ccl.convoy_id
@@ -54,7 +55,7 @@ async function clientAuth(req, res, next) {
       org_id: access.rows[0].org_id,
       convoy_ids: Array.isArray(access.rows[0].convoy_ids) ? access.rows[0].convoy_ids : [],
     };
-    next();
+    return runWithOrgContext(req.client.org_id, next);
   } catch {
     return res.status(401).json({ error: 'Invalid or expired session' });
   }

@@ -1,4 +1,5 @@
 require("dotenv").config();
+const crypto = require("crypto");
 const Sentry = require("./instrument");
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
@@ -53,7 +54,7 @@ const logger = require("./utils/logger");
 const { errorHandler } = require("./middleware/error");
 const responseEnvelope = require("./middleware/responseEnvelope");
 const { createQueues } = require("./config/queue");
-const { healthCheck: dbHealth, query: dbQuery } = require("./config/database");
+const { healthCheck: dbHealth, globalQuery: dbQuery } = require("./config/database");
 const { healthCheck: redisHealth } = require("./config/redis");
 const requestId = require("./middleware/requestId");
 const csrf = require("./middleware/csrf");
@@ -176,7 +177,22 @@ app.get("/health", async (req, res) => {
   } catch (e) { res.status(503).json({ status: "error", error: e.message }); }
 });
 
-app.get("/metrics", async (req, res) => {
+function requireMetricsAuth(req, res, next) {
+  const configured = String(process.env.METRICS_TOKEN || '');
+  if (!configured) {
+    return res.status(503).json({ error: 'metrics_auth_not_configured' });
+  }
+  const header = String(req.headers.authorization || '');
+  const supplied = header.startsWith('Bearer ') ? header.slice(7) : '';
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(configured);
+  if (!a.length || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: 'metrics_auth_required' });
+  }
+  next();
+}
+
+app.get("/metrics", requireMetricsAuth, async (req, res) => {
   try {
     const mem = process.memoryUsage();
     const uptime = Math.floor(process.uptime());
@@ -683,7 +699,7 @@ if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test') {
   });
 }
 
-if (!process.env.GENERATE_OPENAPI && isFenceActive())
+if (!process.env.GENERATE_OPENAPI && isFenceActive() && typeof dbQuery === 'function')
   dbQuery(
     `INSERT INTO guardian_config (key, value_int, updated_at) VALUES ('cfo_module_enabled', 1, NOW())
      ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`

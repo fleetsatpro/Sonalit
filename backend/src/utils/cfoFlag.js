@@ -1,4 +1,5 @@
-const { query } = require('../config/database');
+const { globalQuery, query } = require('../config/database');
+const { getOrgId } = require('./tenantContext');
 const logger = require('./logger');
 
 let cachedEnabled = null;
@@ -12,7 +13,8 @@ async function isCfoModuleEnabled() {
 
   if (Date.now() < cacheExpiry && cachedEnabled !== null) return cachedEnabled;
   try {
-    const result = await query(
+    const dbQuery = getOrgId() ? query : globalQuery;
+    const result = await dbQuery(
       "SELECT value_int FROM guardian_config WHERE key = 'cfo_module_enabled'",
       []
     );

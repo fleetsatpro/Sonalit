@@ -1,6 +1,6 @@
 import { StringCodec } from 'nats';
 import { getJs } from '../nats.js';
-import { query } from '../db.js';
+import { query, withOrgContext } from '../db.js';
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
 import { evaluateRule, renderTemplate, type RuleAction, type RuleInput } from '../rules/engine.js';
@@ -92,6 +92,7 @@ async function emitNotification(orgId: string, rule: RuleRow, action: RuleAction
 
   const envelope = {
     id,
+    org_id: orgId,
     channel: action.channel,
     recipient: action.recipient,
     title: `SONALIT RULE — ${rule.name}`,
@@ -109,7 +110,7 @@ async function emitNotification(orgId: string, rule: RuleRow, action: RuleAction
   };
 
   const sc = StringCodec();
-  getJs().publish(`notifications.${action.channel}`, sc.encode(JSON.stringify(envelope)));
+  getJs().publish(`notifications.${orgId}.${action.channel}`, sc.encode(JSON.stringify(envelope)));
 
   await query(
     `INSERT INTO rule_action_deliveries
@@ -207,6 +208,8 @@ async function executeActions(rule: RuleRow, fix: GpsFix, executionId: string, a
 }
 
 async function evaluateRules(fix: GpsFix): Promise<void> {
+  if (!fix.org_id) throw new Error('telemetry event missing tenant scope');
+  await withOrgContext(fix.org_id, async () => {
   const rules = await query<RuleRow>(
     `SELECT * FROM rules
      WHERE org_id=$1 AND enabled=true AND deleted_at IS NULL
@@ -226,8 +229,8 @@ async function evaluateRules(fix: GpsFix): Promise<void> {
 
     if ((rule.condition_type === 'geofence_enter' || rule.condition_type === 'geofence_exit') && rule.geofence_id) {
       const [geofence] = await query<Geofence>(
-        `SELECT id,min_lat,max_lat,min_lon,max_lon FROM geofences WHERE id=$1 AND deleted_at IS NULL`,
-        [rule.geofence_id],
+        `SELECT id,min_lat,max_lat,min_lon,max_lon FROM geofences WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,
+        [rule.geofence_id, fix.org_id],
       );
       legacyInside = geofence ? isInsideBoundingBox(fix.lat, fix.lon, geofence) : undefined;
       data = { ...baseData, geofence: { id: rule.geofence_id, inside: legacyInside } };
@@ -298,6 +301,7 @@ async function evaluateRules(fix: GpsFix): Promise<void> {
       [rule.id, rule.org_id],
     );
   }
+  });
 }
 
 export async function startGpsConsumer(): Promise<void> {

@@ -1,5 +1,6 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 const { queueAlertEmail } = require('../services/email/email.service');
 
@@ -9,7 +10,7 @@ const GLOBAL_SECURITY_ROLES=['super_admin','org_admin','admin','dispatcher'];
 async function resolveFleetOwnership(alert,orgId){
   let vehicleClientId=alert.vehicle_client_id||null,deviceClientId=null;
   if(!vehicleClientId&&alert.vehicle_id){const r=await query(`SELECT client_id FROM vehicles WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`,[alert.vehicle_id,orgId]);vehicleClientId=r.rows[0]?.client_id||null;}
-  if(alert.device_id){const r=await query(`SELECT client_id,assignment_type,assignment_id FROM guardian_devices WHERE id=$1 AND (org_id=$2 OR org_id IS NULL) AND deleted_at IS NULL LIMIT 1`,[alert.device_id,orgId]);deviceClientId=r.rows[0]?.client_id||null;if(!deviceClientId&&r.rows[0]?.assignment_type==='vehicle'&&r.rows[0]?.assignment_id){const v=await query(`SELECT client_id FROM vehicles WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`,[r.rows[0].assignment_id,orgId]);deviceClientId=v.rows[0]?.client_id||null;}}
+  if(alert.device_id){const r=await query(`SELECT client_id,assignment_type,assignment_id FROM guardian_devices WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`,[alert.device_id,orgId]);deviceClientId=r.rows[0]?.client_id||null;if(!deviceClientId&&r.rows[0]?.assignment_type==='vehicle'&&r.rows[0]?.assignment_id){const v=await query(`SELECT client_id FROM vehicles WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`,[r.rows[0].assignment_id,orgId]);deviceClientId=v.rows[0]?.client_id||null;}}
   return {clientId:vehicleClientId||deviceClientId||null,ownership:vehicleClientId||deviceClientId?'client':'admin'};
 }
 
@@ -19,14 +20,37 @@ async function resolveGlobalFleetRecipients(orgId){
 }
 
 async function processNotification(job){
-  const {alertId,severity}=job.data||{}; if(!alertId)throw new Error('notification job missing alertId');
-  const alertResult=await query(`SELECT a.*,v.registration,v.region,v.client_id AS vehicle_client_id,c.name AS convoy_name,c.org_id AS convoy_org_id FROM alerts a LEFT JOIN vehicles v ON v.id=a.vehicle_id LEFT JOIN convoys c ON c.id=a.convoy_id WHERE a.id=$1 LIMIT 1`,[alertId]);
-  if(!alertResult.rows.length){logger.warn(`Notification: alert ${alertId} not found`);return;}
-  const alert=alertResult.rows[0]; const orgId=alert.convoy_org_id||alert.org_id||(await query(`SELECT org_id FROM vehicles WHERE id=$1 AND deleted_at IS NULL LIMIT 1`,[alert.vehicle_id])).rows[0]?.org_id;
-  if(!orgId)throw new Error(`Alert ${alertId} has no organization scope`);
-  const type=String(alert.type||'').toLowerCase(); const routeSecurity=alert.security_event===true||type==='security'||CRITICAL_SECURITY_EVENTS.includes(type); const eventType=routeSecurity?'fleet.security':'fleet.operational'; const ownership=await resolveFleetOwnership(alert,orgId);
-  const internal=await resolveGlobalFleetRecipients(orgId);
-  let external={rows:[]};
+  const {alertId,severity,org_id:claimedOrgId}=job.data||{};
+  if(!alertId) throw new Error('notification job missing alertId');
+
+  // Resolve tenant from the authoritative alert row before loading any joined
+  // customer/fleet metadata. A queue payload never selects the tenant.
+  const owner = await globalQuery('SELECT org_id FROM alerts WHERE id=$1 AND deleted_at IS NULL LIMIT 1',[alertId]);
+  const orgId = owner.rows[0]?.org_id;
+  if(!orgId) throw new Error(`Alert ${alertId} has no organization scope`);
+  if(claimedOrgId && String(claimedOrgId) !== String(orgId)) {
+    throw new Error(`Notification tenant mismatch: job=${claimedOrgId} alert=${orgId}`);
+  }
+
+  return withOrg(orgId, async () => {
+    const alertResult=await query(
+      `SELECT a.*,v.registration,v.region,v.client_id AS vehicle_client_id,
+              c.name AS convoy_name,c.org_id AS convoy_org_id
+         FROM alerts a
+         LEFT JOIN vehicles v ON v.id=a.vehicle_id AND v.org_id=a.org_id
+         LEFT JOIN convoys c ON c.id=a.convoy_id AND c.org_id=a.org_id
+        WHERE a.id=$1 AND a.org_id=$2 LIMIT 1`,
+      [alertId, orgId],
+    );
+    if(!alertResult.rows.length){logger.warn(`Notification: alert ${alertId} not found`);return;}
+
+    const alert=alertResult.rows[0];
+    const type=String(alert.type||'').toLowerCase();
+    const routeSecurity=alert.security_event===true||type==='security'||CRITICAL_SECURITY_EVENTS.includes(type);
+    const eventType=routeSecurity?'fleet.security':'fleet.operational';
+    const ownership=await resolveFleetOwnership(alert,orgId);
+    const internal=await resolveGlobalFleetRecipients(orgId);
+    let external={rows:[]};
   if(ownership.clientId){
     const legacyFlag=routeSecurity?'r.sonalit_security':'r.sonalit_operational';
     external=await query(`SELECT DISTINCT r.email,r.name FROM client_email_recipients r WHERE r.org_id=$1 AND r.client_id=$2 AND r.enabled=true AND r.deleted_at IS NULL AND ${legacyFlag}=true AND EXISTS (SELECT 1 FROM communication_enrollments e JOIN communication_subscriptions s ON s.enrollment_id=e.id WHERE e.org_id=$1 AND e.recipient_id=r.id AND e.domain='fleet' AND e.client_id=$2 AND e.status IN ('verified','active') AND s.org_id=$1 AND s.event_type=$3 AND s.channel='email' AND s.enabled=true)`,[orgId,ownership.clientId,eventType]);
@@ -35,7 +59,8 @@ async function processNotification(job){
   const recipients=[...internal,...external.rows].filter((r,i,arr)=>r.email&&arr.findIndex(x=>x.email.toLowerCase()===r.email.toLowerCase())===i);
   if(!recipients.length){logger.error(`CRITICAL notification routing failure: alert=${alertId} event=${eventType} ownership=${ownership.ownership} client=${ownership.clientId||'ADMIN'} recipients=0`);return;}
   await queueAlertEmail({orgId,recipients,alert:{...alert,severity:severity||alert.severity,notification_ownership:ownership.ownership,notification_client_id:ownership.clientId},correlationId:job.id?`notification:${job.id}`:`alert:${alertId}`,ctaUrl:process.env.FRONTEND_URL?`${process.env.FRONTEND_URL}/alerts/${alertId}`:undefined});
-  logger.info(`Notification fan-out queued: alert=${alertId} org=${orgId} event=${eventType} ownership=${ownership.ownership} client=${ownership.clientId||'ADMIN'} recipients=${recipients.length}`);
+    logger.info(`Notification fan-out queued: alert=${alertId} org=${orgId} event=${eventType} ownership=${ownership.ownership} client=${ownership.clientId||'ADMIN'} recipients=${recipients.length}`);
+  });
 }
 
 function startNotificationWorker(){const {Worker}=require('bullmq');const url=new URL(process.env.REDIS_URL||'redis://127.0.0.1:6379');const connection={host:url.hostname,port:Number(url.port)||6379,password:url.password||process.env.REDIS_PASSWORD||undefined};const worker=new Worker('notification',async job=>{if(job.name!=='notify')return;return processNotification(job);},{connection,concurrency:Number(process.env.NOTIFICATION_FANOUT_CONCURRENCY)||3});worker.on('completed',job=>logger.info(`Notification fan-out job ${job.id} completed`));worker.on('failed',(job,err)=>logger.error(`Notification fan-out job ${job?.id} failed: ${err.message}`));worker.on('error',err=>logger.error(`Notification worker error: ${err.message}`));logger.info('Notification fan-out worker started');return worker;}

@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const sharp = require('sharp');
-const { query } = require('../config/database');
+const { globalQuery } = require('../config/database');
 
 const MAP_WIDTH = 1200;
 const MAP_HEIGHT = 720;
@@ -115,13 +115,13 @@ async function renderWithMapbox({ incident, trail }) {
   return sharp(image).png().toBuffer();
 }
 async function getIncidentContext(panicId) {
-  const panic = await query(`SELECT p.id, p.device_id, p.latitude, p.longitude, p.created_at, p.message,
+  const panic = await globalQuery(`SELECT p.id, p.device_id, p.latitude, p.longitude, p.created_at, p.message,
       d.name AS device_name, d.client_id, v.plate AS vehicle_plate
     FROM panic_alerts p LEFT JOIN devices d ON d.id=p.device_id LEFT JOIN vehicles v ON v.id=d.vehicle_id
     WHERE p.id=$1 LIMIT 1`, [panicId]);
   if (!panic.rows[0]) throw new Error('Panic incident not found');
   const p = panic.rows[0];
-  const trail = await query(`SELECT latitude, longitude, heading, recorded_at FROM device_locations
+  const trail = await globalQuery(`SELECT latitude, longitude, heading, recorded_at FROM device_locations
     WHERE device_id=$1 AND recorded_at BETWEEN $2 AND $3 AND latitude IS NOT NULL AND longitude IS NOT NULL
     ORDER BY recorded_at ASC LIMIT $4`, [p.device_id, new Date(new Date(p.created_at).getTime() - TRAIL_MINUTES * 60000), new Date(p.created_at), TRAIL_LIMIT]);
   return { panic: p, trail: trail.rows.map(normalizePoint).filter(Boolean) };

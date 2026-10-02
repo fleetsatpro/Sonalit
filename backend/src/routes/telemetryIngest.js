@@ -33,7 +33,7 @@
 
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
-const { query } = require('../config/database');
+const { globalQuery } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 const T = require('../utils/trackingEngine');
@@ -64,7 +64,7 @@ const ingestLimiter = rateLimit({
  */
 const ingestAuth = asyncHandler(async (req, res, next) => {
   const raw = req.get('X-Telemetry-Key');
-  const key = await F.resolveIngestKey(query, raw);
+  const key = await F.resolveIngestKey(globalQuery, raw);
   if (!key) return res.status(401).json({ error: 'unauthorized' });
 
   const source = req.params.source;
@@ -240,7 +240,7 @@ router.post('/:source/positions', ingestLimiter, ingestAuth, asyncHandler(async 
     clockOffsetMs: driftCount ? Math.round(driftSum / driftCount) : null,
   });
 
-  await query(
+  await req.db(
     `UPDATE telemetry_ingest_keys
         SET last_used_at=NOW(), events_accepted=events_accepted+$2,
             events_rejected=events_rejected+$3, updated_at=NOW()

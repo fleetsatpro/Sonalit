@@ -4,8 +4,9 @@
  * Also attaches req.db via withOrg so portal routes can query with RLS.
  */
 const crypto = require('crypto');
-const { query } = require('../config/database');
+const { globalQuery } = require('../config/database');
 const { withOrg } = require('../utils/orgScopedDb');
+const { runWithOrgContext } = require('../utils/tenantContext');
 const logger = require('../utils/logger');
 
 async function portalAuth(req, res, next) {
@@ -18,7 +19,7 @@ async function portalAuth(req, res, next) {
     const rawToken = authHeader.slice(7);
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-    const result = await query(
+    const result = await globalQuery(
       `SELECT id, org_id, convoy_id, cargo_owner_ref, expires_at, revoked_at
          FROM portal_tokens
         WHERE token_hash = $1`,
@@ -96,7 +97,7 @@ async function portalAuth(req, res, next) {
       };
     }
 
-    next();
+    return runWithOrgContext(row.org_id, next);
   } catch (err) {
     logger.error(`portalAuth middleware error: ${err.message}`);
     next(err);

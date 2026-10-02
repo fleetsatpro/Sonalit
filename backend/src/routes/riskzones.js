@@ -1,12 +1,12 @@
 const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
-const { query } = require('../config/database');
+const { attachOrgDb } = require('../utils/orgScopedDb');
 
-router.use(authenticate);
+router.use(authenticate, attachOrgDb);
 
 router.get('/', async (req, res, next) => {
   try {
-    const result = await query(
+    const result = await req.db(
       `SELECT
          id::text        AS h3_index,
          name,
@@ -23,14 +23,13 @@ router.get('/', async (req, res, next) => {
          active,
          created_at
        FROM risk_zones
-       WHERE active = true
+       WHERE active = true AND (org_id = $1 OR org_id IS NULL)
        ORDER BY CASE risk_level
          WHEN 'critical' THEN 1 WHEN 'no_go' THEN 1
          WHEN 'high'     THEN 2
          WHEN 'medium'   THEN 3
          ELSE 4
-       END`
-    );
+       END`, [req.user.org_id]);
     res.json({ data: result.rows });
   } catch (err) { next(err); }
 });
@@ -39,9 +38,9 @@ router.post('/', async (req, res, next) => {
   try {
     const { name, description, risk_level = 'medium', zone_type = 'general', lat, lng, radius_km = 5 } = req.body;
     if (!name || !lat || !lng) return res.status(400).json({ error: 'name, lat, lng required' });
-    const result = await query(
-      'INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-      [name, description, risk_level, zone_type, lat, lng, radius_km, req.user.id]
+    const result = await req.db(
+      'INSERT INTO risk_zones (org_id, name, description, risk_level, zone_type, lat, lng, radius_km, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
+      [req.user.org_id, name, description, risk_level, zone_type, lat, lng, radius_km, req.user.id]
     );
     res.status(201).json({ data: result.rows[0] });
   } catch (err) { next(err); }
@@ -49,7 +48,8 @@ router.post('/', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    await query('UPDATE risk_zones SET active=false WHERE id=$1', [req.params.id]);
+    const result = await req.db('UPDATE risk_zones SET active=false WHERE id=$1 AND org_id=$2 RETURNING id', [req.params.id, req.user.org_id]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Risk zone not found' });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

@@ -7,7 +7,7 @@ import {
   type VerifiedRegistrationResponse,
 } from '@simplewebauthn/server';
 import { z } from 'zod';
-import { query } from '../db.js';
+import { query, globalQuery, withOrgContext } from '../db.js';
 import { redis } from '../redis.js';
 import { signAccessToken, signRefreshToken } from '../lib/jwt.js';
 import { publishAudit } from '../lib/audit.js';
@@ -191,7 +191,7 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
     const authResp = parsed.data.authentication_response;
     const credentialId = typeof authResp['id'] === 'string' ? authResp['id'] : '';
 
-    const passkeys = await query<PasskeyRow>(
+    const passkeys = await globalQuery<PasskeyRow>(
       `SELECT id, user_id, credential_id, public_key, counter, transports
        FROM user_passkeys WHERE credential_id = $1 LIMIT 1`,
       [credentialId],
@@ -234,13 +234,7 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(401).send({ code: 'VERIFICATION_FAILED', message: 'Passkey authentication failed' });
     }
 
-    await query(
-      `UPDATE user_passkeys SET counter = $1 WHERE id = $2`,
-      [verification.authenticationInfo.newCounter, passkey.id],
-    );
-    await redis.del(`webauthn_auth:${rawChallenge}`);
-
-    const users = await query<UserRow>(
+    const users = await globalQuery<UserRow>(
       `SELECT id, org_id, email, name, role FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
       [passkey.user_id],
     );
@@ -250,16 +244,22 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(err.statusCode).send({ code: err.code, message: err.message });
     }
 
+    await withOrgContext(user.org_id, () => query(
+      `UPDATE user_passkeys SET counter = $1 WHERE id = $2`,
+      [verification.authenticationInfo.newCounter, passkey.id],
+    ));
+    await redis.del(`webauthn_auth:${rawChallenge}`);
+
     const familyId = randomUUID();
     const accessToken = await signAccessToken({ sub: user.id, org_id: user.org_id, role: user.role });
     const refreshToken = await signRefreshToken(familyId, user.id, user.org_id);
     const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
 
-    await query(
+    await withOrgContext(user.org_id, () => query(
       `INSERT INTO token_families (id, user_id, org_id, last_refresh_token_hash)
        VALUES ($1, $2, $3, $4)`,
       [familyId, user.id, user.org_id, refreshHash],
-    );
+    ));
 
     loginCounter.inc({ result: 'passkey_success' });
     await publishAudit({

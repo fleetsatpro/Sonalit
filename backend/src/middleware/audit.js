@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { pool } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
 /**
@@ -26,11 +26,9 @@ function auditLog(tableName) {
         });
 
         (async () => {
-          const client = await pool.connect();
-          try {
-            await client.query('BEGIN');
-
-            // Lock the latest row for this org to prevent concurrent chain splits (T1.6)
+          await withOrg(orgId, async (client) => {
+            // The tenant transaction is deliberately separate from the
+            // business transaction so the audit chain remains serialized.
             const prev = await client.query(
               `SELECT id, hash FROM audit_logs WHERE org_id = $1 ORDER BY id DESC LIMIT 1 FOR UPDATE`,
               [orgId]
@@ -56,13 +54,7 @@ function auditLog(tableName) {
                 prevHash,
               ]
             );
-            await client.query('COMMIT');
-          } catch (err) {
-            try { await client.query('ROLLBACK'); } catch (_) {}
-            logger.error(`Audit log write failed: ${err.message}`);
-          } finally {
-            client.release();
-          }
+          });
         })();
       }
 

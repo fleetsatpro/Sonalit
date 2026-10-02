@@ -154,9 +154,10 @@ export async function getEntry(id: string): Promise<OutboxEntry | undefined> {
   return db.outbox.get(id);
 }
 
-export async function listForUser(userId: string): Promise<OutboxEntry[]> {
+export async function listForUser(userId: string, orgId: string): Promise<OutboxEntry[]> {
   const rows = await db.outbox.where('ownerUserId').equals(userId).toArray();
-  return rows.sort(compareForDrain);
+  const scoped = rows.filter(e => e.ownerOrgId === orgId);
+  return scoped.sort(compareForDrain);
 }
 
 /** Priority band first, then the device's own ordering. */
@@ -175,8 +176,8 @@ export function compareForDrain(a: OutboxEntry, b: OutboxEntry): number {
  *  - every dependency must already be ACKNOWLEDGED — a photo cannot upload
  *    before the incident it hangs off exists server-side
  */
-export async function dueEntries(userId: string, now: number = Date.now()): Promise<OutboxEntry[]> {
-  const all = await db.outbox.where('ownerUserId').equals(userId).toArray();
+export async function dueEntries(userId: string, orgId: string, now: number = Date.now()): Promise<OutboxEntry[]> {
+  const all = (await db.outbox.where('ownerUserId').equals(userId).toArray()).filter(e => e.ownerOrgId === orgId);
 
   const acknowledged = new Set(all.filter(e => e.status === 'ACKNOWLEDGED').map(e => e.id));
   // A dependency that no longer exists (pruned after acknowledgement) is
@@ -202,8 +203,8 @@ export interface OutboxCounts {
   oldestPendingAgeMs: number | null;
 }
 
-export async function counts(userId: string, now: number = Date.now()): Promise<OutboxCounts> {
-  const all = await db.outbox.where('ownerUserId').equals(userId).toArray();
+export async function counts(userId: string, orgId?: string, now: number = Date.now()): Promise<OutboxCounts> {
+  const all = (await db.outbox.where('ownerUserId').equals(userId).toArray()).filter(e => !orgId || e.ownerOrgId === orgId);
   const by = (s: OutboxStatus) => all.filter(e => e.status === s).length;
 
   const unresolved = all.filter(

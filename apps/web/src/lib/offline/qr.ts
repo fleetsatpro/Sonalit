@@ -90,6 +90,7 @@ const STALE_WARN_MS = 60 * 60 * 1000;
  */
 export async function resolveScan(
   raw: string,
+  orgId: string,
   now: number = Date.now(),
 ): Promise<ScanResolution> {
   const scan = decodeScan(raw);
@@ -108,15 +109,15 @@ export async function resolveScan(
 
   // A container plate carries its ISO number, not its Sonalit id, so try the
   // id first and fall back to the natural key.
-  let entity = UUID_RE.test(scan.value) ? await getEntity(entityType, scan.value, now) : null;
+  let entity = UUID_RE.test(scan.value) ? await getEntity(entityType, scan.value, orgId, now) : null;
   let entityId = entity ? scan.value : null;
 
   if (!entity && scan.kind === 'container') {
-    entity = await findEntityBy(entityType, 'number', scan.value, now);
+    entity = await findEntityBy(entityType, 'number', scan.value, orgId, now);
     entityId = entity ? String(entity.data['id'] ?? '') : null;
   }
   if (!entity && scan.kind === 'booking') {
-    entity = await findEntityBy(entityType, 'booking_number', scan.value, now);
+    entity = await findEntityBy(entityType, 'booking_number', scan.value, orgId, now);
     entityId = entity ? String(entity.data['id'] ?? '') : null;
   }
 

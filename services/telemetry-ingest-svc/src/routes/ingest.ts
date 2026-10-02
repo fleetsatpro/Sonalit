@@ -5,6 +5,8 @@ import { getJs } from '../nats.js';
 import { dedupFixes, type GpsFix } from '../lib/dedup.js';
 import { enqueueMessage } from '../lib/ringBuffer.js';
 import { config } from '../config.js';
+import { deviceAuth } from '../middleware/deviceAuth.js';
+import { withOrgContext } from '../db.js';
 
 const GpsFixSchema = z.object({
   seq_no: z.number().int().nonnegative(),
@@ -50,7 +52,7 @@ async function publishFix(
 export async function ingestRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: BatchBody }>(
     '/v4/telemetry/batch',
-    {
+    { preHandler: deviceAuth,
       config: { rateLimit: { max: 1000, timeWindow: '1 minute', keyGenerator: (req: FastifyRequest) => req.headers['x-device-token'] as string ?? req.ip } },
       schema: {
         body: {
@@ -78,8 +80,13 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const { device_id, org_id, fixes } = parseResult.data;
+      const { device_id, fixes } = parseResult.data;
+      const authenticatedDevice = request.telemetryDevice;
+      if (!authenticatedDevice) return reply.status(401).send({ code: 'AUTH_REQUIRED', message: 'Device authentication required' });
+      if (device_id !== authenticatedDevice.id) return reply.status(403).send({ code: 'DEVICE_SCOPE_MISMATCH', message: 'device_id does not match authenticated device' });
+      const org_id = authenticatedDevice.org_id;
 
+      return withOrgContext(org_id, async () => {
       const { accepted, duplicateCount } = await dedupFixes(
         device_id,
         fixes as (GpsFixInput & GpsFix)[],
@@ -92,6 +99,7 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(202).send({
         accepted: accepted.length,
         duplicate: duplicateCount,
+      });
       });
     },
   );

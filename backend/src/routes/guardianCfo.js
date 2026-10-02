@@ -7,10 +7,11 @@ const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { isCfoModuleEnabled } = require('../utils/cfoFlag');
 const { haversine } = require('../utils/haversine');
 const logger = require('../utils/logger');
+const { getOrgId, runWithOrgContext } = require('../utils/tenantContext');
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8 MB
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/webp'];
@@ -131,7 +132,7 @@ async function deviceAuth(req, res, next) {
     const token = req.headers['x-device-token'];
     if (!token) return res.status(401).json({ error: 'Missing X-Device-Token header' });
 
-    const result = await query(
+    const result = await globalQuery(
       `SELECT * FROM guardian_devices WHERE token = $1 AND deleted_at IS NULL`,
       [token]
     );
@@ -141,8 +142,9 @@ async function deviceAuth(req, res, next) {
     if (device.status === 'revoked' || device.status === 'suspended') {
       return res.status(403).json({ error: `Device is ${device.status}` });
     }
+    if (!device.org_id) return res.status(403).json({ error: 'device_tenant_scope_required' });
     req.device = device;
-    next();
+    return runWithOrgContext(device.org_id, next);
   } catch (err) {
     logger.error(`deviceAuth (cfo) error: ${err.message}`);
     next(err);
@@ -158,7 +160,10 @@ async function optionalDeviceAuth(req, _res, next) {
         [token]
       );
       if (result.rows.length && !['revoked','suspended'].includes(result.rows[0].status)) {
-        req.device = result.rows[0];
+        const device = result.rows[0];
+        if (!device.org_id) return next();
+        req.device = device;
+        return runWithOrgContext(device.org_id, next);
       }
     }
     next();
@@ -223,12 +228,14 @@ function buildAvailableDates(startDate, endDate, today) {
   return dates.length ? dates.reverse() : [today];
 }
 
-function gAudit(actor_id, action, target_type, target_id, payload, ip) {
+function gAudit(actor_id, action, target_type, target_id, payload, ip, explicitOrgId = null) {
+  const orgId = explicitOrgId || getOrgId();
+  if (!orgId) return;
   query(
     `INSERT INTO guardian_audit_log
-       (actor_type, actor_id, action, target_type, target_id, payload, ip_address)
-     VALUES ('device',$1,$2,$3,$4,$5,$6)`,
-    [actor_id || null, action, target_type || null, target_id || null,
+       (org_id, actor_type, actor_id, action, target_type, target_id, payload, ip_address)
+     VALUES ($1,'device',$2,$3,$4,$5,$6,$7)`,
+    [orgId, actor_id || null, action, target_type || null, target_id || null,
       payload ? JSON.stringify(payload) : null, ip || null]
   ).catch((err) => logger.error(`gAudit (cfo) error: ${err.message}`));
 }
@@ -463,6 +470,10 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
     }
 
     const emailClean = email.trim().toLowerCase();
+    // Before the CFO identity is known there may be no tenant context. Use the
+    // explicit bootstrap query only for this pre-auth flow; once a device/org
+    // is established, ordinary tenant queries remain RLS-bound.
+    const cfoQuery = req.device?.org_id ? query : globalQuery;
     // cfo_login_attempts.device_id is UUID — only req.device?.id qualifies.
     // req.ip (e.g. "::ffff:100.64.0.2") is not a valid fallback key: passing it
     // here throws "invalid input syntax for type uuid", which isn't caught on
@@ -475,14 +486,15 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
     // ── Brute-force check (per-device only) ──────────────────────────────────
     if (rateLimitKey) {
       await query(`
-        INSERT INTO cfo_login_attempts (device_id, attempts, window_start)
-        VALUES ($1, 0, NOW())
+        
+INSERT INTO cfo_login_attempts (device_id, org_id, attempts, window_start)
+        VALUES ($1, $2, 0, NOW())
         ON CONFLICT (device_id) DO NOTHING
-      `, [rateLimitKey]).catch(() => {});
+      `, [rateLimitKey, req.device?.org_id || null]).catch(() => {});
 
       const attemptRow = await query(
-        `SELECT attempts, locked_until, window_start FROM cfo_login_attempts WHERE device_id = $1`,
-        [rateLimitKey]
+        `SELECT attempts, locked_until, window_start FROM cfo_login_attempts WHERE device_id = $1 AND org_id = $2`,
+        [rateLimitKey, req.device.org_id]
       );
       if (attemptRow.rows.length) {
         const row = attemptRow.rows[0];
@@ -491,13 +503,13 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
           return res.status(423).json({ error: 'Account locked due to too many failed attempts', code: 'account_locked' });
         }
         if (new Date(row.window_start) < new Date(Date.now() - 15 * 60 * 1000)) {
-          await query(`UPDATE cfo_login_attempts SET attempts=0, window_start=NOW(), locked_until=NULL WHERE device_id=$1`, [rateLimitKey]).catch(() => {});
+          await query(`UPDATE cfo_login_attempts SET attempts=0, window_start=NOW(), locked_until=NULL WHERE device_id=$1 AND org_id=$2`, [rateLimitKey, req.device.org_id]).catch(() => {});
         }
       }
     }
 
-    const userResult = await query(
-      `SELECT id, name, email, role, status, password_hash
+    const userResult = await cfoQuery(
+      `SELECT id, name, email, role, status, org_id, password_hash
        FROM users WHERE LOWER(email) = $1 AND role = 'cfo' AND deleted_at IS NULL
        ORDER BY created_at DESC LIMIT 1`,
       [emailClean]
@@ -514,55 +526,69 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
             locked_until = CASE WHEN attempts + 1 >= 5
               THEN NOW() + INTERVAL '15 minutes' * POWER(2, GREATEST(0, attempts - 4))
               ELSE locked_until END
-        WHERE device_id = $1
-      `, [rateLimitKey]).catch(() => {});
+        WHERE device_id = $1 AND org_id = $2
+      `, [rateLimitKey, req.device?.org_id || null]).catch(() => {});
       gAudit(rateLimitKey, 'cfo_login_failed', null, null, { email: emailClean }, req.ip);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const user = userResult.rows[0];
+    if (req.device?.org_id && user.org_id && String(req.device.org_id) !== String(user.org_id)) {
+      return res.status(403).json({ error: 'Device and CFO belong to different organizations' });
+    }
     if (user.status !== 'active') {
       return res.status(403).json({ error: 'Account is not active' });
     }
 
-    await query(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1`, [rateLimitKey]).catch(() => {});
+    const tenantResult = await runWithOrgContext(user.org_id, async () => {
+      await query(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1 AND org_id=$2`, [rateLimitKey, user.org_id]).catch(() => {});
 
-    // Auto-provision a device record for CFO-only users without enrollment
-    let deviceId = req.device?.id;
-    let deviceToken = req.headers['x-device-token'] || null;
+      // Auto-provision a device record for CFO-only users without enrollment.
+      let deviceId = req.device?.id;
+      let deviceToken = req.headers['x-device-token'] || null;
 
-    if (!deviceId) {
-      const newDevice = await query(
-        `INSERT INTO guardian_devices (name, status, assignment_type, assignment_id)
-         VALUES ($1, 'active', 'user', $2)
-         RETURNING id, token`,
-        [`CFO-${user.name}`, user.id]
-      );
-      deviceId = newDevice.rows[0].id;
-      deviceToken = newDevice.rows[0].token;
-    } else {
+      if (!deviceId) {
+        const newDevice = await query(
+          `INSERT INTO guardian_devices (name, status, assignment_type, assignment_id, org_id)
+           VALUES ($1, 'active', 'user', $2, $3)
+           RETURNING id, token`,
+          [`CFO-${user.name}`, user.id, user.org_id]
+        );
+        deviceId = newDevice.rows[0].id;
+        deviceToken = newDevice.rows[0].token;
+      } else {
+        await query(
+          `UPDATE guardian_devices
+             SET assignment_id = $1, assignment_type = 'user', org_id = $3, updated_at = NOW()
+           WHERE id = $2 AND org_id = $3`,
+          [user.id, deviceId, user.org_id]
+        );
+      }
+
       await query(
-        `UPDATE guardian_devices SET assignment_id = $1, assignment_type = 'user', updated_at = NOW() WHERE id = $2`,
-        [user.id, deviceId]
+        `UPDATE convoy_cfos SET guardian_device_id = $1
+         WHERE cfo_user_id = $2 AND org_id = $3
+           AND convoy_id IN (
+             SELECT id FROM convoys
+              WHERE status IN ('planned','active') AND org_id = $3 AND deleted_at IS NULL
+           )
+           AND (guardian_device_id IS NULL OR guardian_device_id = $1
+             OR NOT EXISTS (
+               SELECT 1 FROM guardian_devices gd
+                WHERE gd.id = guardian_device_id AND gd.org_id = $3
+                  AND gd.deleted_at IS NULL AND gd.status NOT IN ('revoked','suspended')
+             ))`,
+        [deviceId, user.id, user.org_id]
       );
-    }
 
-    await query(
-      `UPDATE convoy_cfos SET guardian_device_id = $1
-       WHERE cfo_user_id = $2
-         AND convoy_id IN (SELECT id FROM convoys WHERE status IN ('planned','active') AND deleted_at IS NULL)
-         AND (guardian_device_id IS NULL OR guardian_device_id = $1
-           OR NOT EXISTS (SELECT 1 FROM guardian_devices gd WHERE gd.id = convoy_cfos.guardian_device_id
-             AND gd.deleted_at IS NULL AND gd.status NOT IN ('revoked','suspended')))`,
-      [deviceId, user.id]
-    );
-
-    gAudit(deviceId, 'cfo_login', 'user', user.id, { email: emailClean }, req.ip);
-    logger.info(`CFO login: device=${deviceId} user=${user.id} email=${emailClean}`);
+      gAudit(deviceId, 'cfo_login', 'user', user.id, { email: emailClean }, req.ip, user.org_id);
+      logger.info(`CFO login: device=${deviceId} user=${user.id} email=${emailClean} org=${user.org_id}`);
+      return { deviceId, deviceToken };
+    });
 
     return res.json({
       user_id: user.id, name: user.name, email: user.email, role: user.role,
-      device_token: deviceToken,
+      device_token: tenantResult.deviceToken,
     });
   } catch (err) {
     next(err);
@@ -626,7 +652,8 @@ router.post('/photo-upload-url', deviceAuth, photoUploadLimiter, async (req, res
     }
 
     const sealSuffix = seal_position ? `_${seal_position}` : '';
-    const key = `cfo/${convoy_id}/${report_date}/${convoy_truck_id}/${session}/${photo_type}${sealSuffix}_${uuidv4()}.jpg`;
+    const orgId = req.device.org_id;
+    const key = `orgs/${orgId}/cfo/${convoy_id}/${report_date}/${convoy_truck_id}/${session}/${photo_type}${sealSuffix}_${uuidv4()}.jpg`;
     const s3 = new S3Client({
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -666,6 +693,10 @@ router.post('/photos', deviceAuth, async (req, res, next) => {
 
     // T5.2: validate photo URL — content-type, size, EXIF GPS
     if (photo_url && !photo_url.startsWith('data:')) {
+      const publicBase = String(process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+      if (!publicBase || !photo_url.startsWith(publicBase + '/orgs/' + req.device.org_id + '/')) {
+        return res.status(422).json({ error: 'photo_url_not_in_tenant_storage_namespace' });
+      }
       const photoErr = await validatePhotoUrl(photo_url, lat ?? null, lng ?? null);
       if (photoErr) return res.status(422).json({ error: photoErr.error });
 
@@ -820,7 +851,8 @@ router.post('/handover-upload-url', deviceAuth, photoUploadLimiter, async (req, 
     }
 
     const ext = isPdf ? 'pdf' : 'jpg';
-    const key = `cfo/${convoy_id}/handover/handover_${uuidv4()}.${ext}`;
+    const orgId = req.device.org_id;
+    const key = `orgs/${orgId}/cfo/${convoy_id}/handover/handover_${uuidv4()}.${ext}`;
     const s3 = new S3Client({
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -852,6 +884,9 @@ router.post('/handover', deviceAuth, async (req, res, next) => {
 
     const cfoUserId = await resolveCfoUserId(req.device, convoy_id);
     if (!cfoUserId) return res.status(403).json({ error: 'device_not_authorised_for_this_convoy' });
+    if (!form_key.startsWith(`orgs/${req.device.org_id}/cfo/${convoy_id}/handover/`)) {
+      return res.status(422).json({ error: 'form_key_not_in_tenant_storage_namespace' });
+    }
 
     const convoyResult = await query(
       `SELECT org_id, status, local_consignment FROM convoys WHERE id = $1 AND deleted_at IS NULL`,

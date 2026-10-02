@@ -45,6 +45,9 @@ const createDocument = asyncHandler(async (req, res) => {
     'SELECT id FROM vehicles WHERE id = $1 AND deleted_at IS NULL',
     [vehicleId]
   );
+  if (!value.file_key.startsWith(`orgs/${req.user.org_id}/vehicles/${vehicleId}/`)) {
+    return res.status(422).json({ error: 'file_key_not_in_tenant_namespace' });
+  }
   if (!vehicle.rows.length) {
     return res.status(404).json({ error: 'Vehicle not found' });
   }

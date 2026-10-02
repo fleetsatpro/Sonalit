@@ -56,7 +56,7 @@ const baseBody = {
 function makeReqRes(body = baseBody) {
   const req = {
     body,
-    user: { id: 'admin-user-uuid', role: 'admin', org_id: 'org-001' },
+    user: { id: 'admin-user-uuid', role: 'admin', org_id: '99999999-1111-4111-8111-999999999999' },
     ip: '127.0.0.1',
   };
   const res = {
@@ -73,6 +73,8 @@ describe('createConvoyCfo transaction rollback', () => {
     // CFO lookup returns no rows → controller calls ROLLBACK
     mockClient.query
       .mockResolvedValueOnce(undefined)               // BEGIN
+      .mockResolvedValueOnce(undefined)               // SET LOCAL ROLE
+      .mockResolvedValueOnce({ rows: [] })             // set_config(app.current_org_id)
       .mockResolvedValueOnce({ rows: [] });            // user lookup — CFO not found → triggers ROLLBACK
 
     // The controller calls ROLLBACK inline before returning 422
@@ -82,8 +84,10 @@ describe('createConvoyCfo transaction rollback', () => {
 
     const calls = mockClient.query.mock.calls.map(c => c[0]);
     expect(calls[0]).toMatch(/BEGIN/i);
-    expect(calls[1]).toContain('SELECT id, role FROM users');
-    expect(calls[2]).toMatch(/ROLLBACK/i);
+    expect(calls[1]).toMatch(/SET LOCAL ROLE/i);
+    expect(calls[2]).toMatch(/set_config.*app.current_org_id/i);
+    expect(calls[3]).toContain('SELECT id, role FROM users');
+    expect(calls[4]).toMatch(/ROLLBACK/i);
 
     expect(res.status).toHaveBeenCalledWith(422);
     expect(res.json).toHaveBeenCalledWith(
@@ -95,6 +99,8 @@ describe('createConvoyCfo transaction rollback', () => {
   test('rolls back when CFO user has wrong role', async () => {
     mockClient.query
       .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce(undefined) // SET LOCAL ROLE
+      .mockResolvedValueOnce({ rows: [] }) // set_config(app.current_org_id)
       .mockResolvedValueOnce({ rows: [{ id: CFO_UUID, role: 'driver' }] }) // CFO found but wrong role
       .mockResolvedValueOnce(undefined); // ROLLBACK
 
@@ -114,6 +120,8 @@ describe('createConvoyCfo transaction rollback', () => {
   test('rolls back and re-throws on unexpected DB error', async () => {
     mockClient.query
       .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce(undefined) // SET LOCAL ROLE
+      .mockResolvedValueOnce({ rows: [] }) // set_config(app.current_org_id)
       .mockRejectedValueOnce(new Error('deadlock detected')); // user lookup throws
 
     const { req, res, next } = makeReqRes();
@@ -130,6 +138,8 @@ describe('createConvoyCfo transaction rollback', () => {
     const fakeConvoy = { id: 'convoy-uuid-001', name: 'Test Convoy' };
     mockClient.query
       .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce(undefined) // SET LOCAL ROLE
+      .mockResolvedValueOnce({ rows: [] }) // set_config(app.current_org_id)
       .mockResolvedValueOnce({ rows: [{ id: CFO_UUID, role: 'cfo' }] }) // user lookup
       .mockResolvedValueOnce({ rows: [fakeConvoy] }) // INSERT convoys
       .mockResolvedValueOnce({ rows: [{ id: 'truck-uuid-001', position: 1 }] }) // INSERT convoy_trucks

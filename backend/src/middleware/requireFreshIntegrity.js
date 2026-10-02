@@ -25,9 +25,9 @@ function requireFreshIntegrity(maxAgeMinutes) {
       // Enqueue a force-attestation command so the device re-attests
       try {
         await query(
-          `INSERT INTO device_commands (device_id, command_type, payload, status)
-           VALUES ($1, 'REQUEST_INTEGRITY', '{}', 'pending')`,
-          [device.id]
+          `INSERT INTO device_commands (org_id, device_id, command_type, payload, status)
+           VALUES ($1, $2, 'REQUEST_INTEGRITY', '{}', 'pending')`,
+          [device.org_id, device.id]
         );
       } catch (err) {
         logger.error(`Failed to enqueue REQUEST_INTEGRITY: ${err.message}`);

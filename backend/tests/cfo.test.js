@@ -27,7 +27,7 @@ jest.mock('../src/config/queue', () => ({
 
 jest.mock('../src/middleware/auth', () => ({
   authenticate: jest.fn((req, _res, next) => {
-    req.user = { id: 'admin-id', email: 'admin@test.com', role: 'admin', status: 'active' };
+    req.user = { id: 'admin-id', email: 'admin@test.com', role: 'admin', status: 'active', org_id: '44444444-4444-4444-8444-444444444444' };
     next();
   }),
   authorize: jest.fn(() => (_req, _res, next) => next()),
@@ -175,6 +175,8 @@ describe('Create CFO convoy', () => {
     // Transaction: BEGIN, users check, INSERT convoy, 2× truck, 1× cfo, 2× assignment, COMMIT
     mockCQ
       .mockResolvedValueOnce({})                                          // BEGIN
+      .mockResolvedValueOnce({})                                          // SET LOCAL ROLE
+      .mockResolvedValueOnce({ rows: [] })                                // set_config
       .mockResolvedValueOnce({ rows: [{ id: CFOID, role: 'cfo' }] })    // SELECT users
       .mockResolvedValueOnce({ rows: [convoyRow] })                       // INSERT convoy
       .mockResolvedValueOnce({ rows: [{ id: 'tr1', position: 1 }] })     // INSERT truck 1
@@ -193,6 +195,8 @@ describe('Create CFO convoy', () => {
   test('422 when CFO user exists but has wrong role', async () => {
     mockCQ
       .mockResolvedValueOnce({})                                                  // BEGIN
+      .mockResolvedValueOnce({})                                                  // SET LOCAL ROLE
+      .mockResolvedValueOnce({ rows: [] })                                        // set_config
       .mockResolvedValueOnce({ rows: [{ id: CFOID, role: 'dispatcher' }] })     // SELECT users
       .mockResolvedValueOnce({});                                                 // ROLLBACK
 
@@ -205,6 +209,8 @@ describe('Create CFO convoy', () => {
     const convoyRow = { id: CID, name: validBody.name, status: 'planned' };
     mockCQ
       .mockResolvedValueOnce({})                                          // BEGIN
+      .mockResolvedValueOnce({})                                          // SET LOCAL ROLE
+      .mockResolvedValueOnce({ rows: [] })                                // set_config
       .mockResolvedValueOnce({ rows: [{ id: CFOID, role: 'cfo' }] })    // SELECT users
       .mockResolvedValueOnce({ rows: [convoyRow] })                       // INSERT convoy
       .mockResolvedValueOnce({ rows: [{ id: 'tr1', position: 1 }] })     // INSERT truck 1
@@ -224,8 +230,11 @@ describe('Create CFO convoy', () => {
     const res = await request(app).post('/api/v1/convoys').send(body);
     expect(res.status).toBe(201);
     // Verify empty string was coerced to null before the DB call
-    const truckInsertArgs = mockCQ.mock.calls[3][1]; // 4th query = first truck INSERT
-    expect(truckInsertArgs[1]).toBeNull();
+    const truckInsertCall = mockCQ.mock.calls.find(call =>
+      typeof call[0] === 'string' && call[0].includes('INSERT INTO convoy_trucks')
+    );
+    expect(truckInsertCall).toBeDefined();
+    expect(truckInsertCall[1][1]).toBeNull();
   });
 
   test('422 when cfo_truck_limit trigger fires during convoy creation', async () => {
@@ -233,6 +242,8 @@ describe('Create CFO convoy', () => {
     const convoyRow = { id: CID, name: validBody.name, status: 'planned' };
     mockCQ
       .mockResolvedValueOnce({})                                          // BEGIN
+      .mockResolvedValueOnce({})                                          // SET LOCAL ROLE
+      .mockResolvedValueOnce({ rows: [] })                                // set_config
       .mockResolvedValueOnce({ rows: [{ id: CFOID, role: 'cfo' }] })    // SELECT users
       .mockResolvedValueOnce({ rows: [convoyRow] })                       // INSERT convoy
       .mockResolvedValueOnce({ rows: [{ id: 'tr1', position: 1 }] })     // INSERT truck 1

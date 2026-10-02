@@ -139,7 +139,7 @@ export interface OutboxEntry {
  * last change" versus "when did we last hear anything at all".
  */
 export interface LocalEntity {
-  /** `${entityType}:${entityId}` — Dexie primary key. */
+  /** `${orgId}:${entityType}:${entityId}` — Dexie primary key. */
   key: string;
   entityType: string;
   entityId: string;

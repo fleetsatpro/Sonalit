@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const crypto = require('crypto');
-const { query } = require('../config/database');
+const { globalQuery, withOrg } = require('../config/database');
 const logger = require('../utils/logger');
 const rateLimit = require('express-rate-limit');
 const { verifySecurityMapToken, renderSecurityMap } = require('../services/securityIncidentMap');
@@ -61,13 +61,13 @@ router.post('/', async (req, res) => {
   if (!status) return res.status(202).json({ accepted: true, ignored: true });
 
   try {
-    const inserted = await query(
+    const inserted = await globalQuery(
       `INSERT INTO resend_webhook_events (event_id, provider_email_id, event_type) VALUES ($1,$2,$3)
        ON CONFLICT (event_id) DO NOTHING RETURNING event_id`, [eventId, providerEmailId, type]
     );
     if (!inserted.rows.length) return res.status(200).json({ received: true, duplicate: true });
 
-    const current = await query(`SELECT id, org_id, status, correlation_id FROM email_notifications WHERE provider_email_id=$1 LIMIT 1`, [providerEmailId]);
+    const current = await globalQuery(`SELECT id, org_id, status, correlation_id FROM email_notifications WHERE provider_email_id=$1 LIMIT 1`, [providerEmailId]);
     if (!current.rows.length) {
       logger.warn(`Resend webhook received before local email record: provider=${providerEmailId} type=${type}`);
       return res.status(200).json({ received: true, unmatched: true });
@@ -81,18 +81,18 @@ router.post('/', async (req, res) => {
       : !TERMINAL.has(row.status) && nextRank > currentRank;
 
     if (shouldAdvance) {
-      await query(
+      await withOrg(row.org_id, client => client.query(
         `UPDATE email_notifications SET status=$1, provider_event_id=COALESCE(provider_event_id,$2),
           delivered_at=CASE WHEN $1='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,
           failed_at=CASE WHEN $1 IN ('failed','bounced','suppressed','complained') THEN COALESCE(failed_at,NOW()) ELSE failed_at END,
           updated_at=NOW() WHERE id=$3`, [status, eventId, row.id]
-      );
+      ));
     }
 
     // Provider lifecycle is mirrored into the Communications audit ledger.
     // The ledger is append-only at the event level, while email_notifications
     // remains the current-state projection used by operational screens.
-    await query(
+    await withOrg(row.org_id, client => client.query(
       `INSERT INTO communication_delivery_events
         (org_id,event_type,channel,status,provider_message_id,provider_event_id,correlation_id,metadata,sent_at,delivered_at,failed_at)
        VALUES ($1,$2,'email',$3,$4,$5,$6,$7::jsonb,
@@ -100,7 +100,7 @@ router.post('/', async (req, res) => {
          CASE WHEN $3 IN ('delivered','opened','clicked') THEN NOW() ELSE NULL END,
          CASE WHEN $3 IN ('failed','bounced','suppressed','complained') THEN NOW() ELSE NULL END)`,
       [row.org_id, type, status, providerEmailId, eventId, row.correlation_id || null, JSON.stringify({ provider: 'resend', raw_type: type })]
-    );
+    ));
 
     logger.info(`Resend webhook processed: type=${type} provider=${providerEmailId} advanced=${shouldAdvance}`);
     return res.status(200).json({ received: true, advanced: shouldAdvance });

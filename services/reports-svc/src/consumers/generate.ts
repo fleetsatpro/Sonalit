@@ -1,6 +1,6 @@
 import { StringCodec } from 'nats';
 import { getJs } from '../nats.js';
-import { query } from '../db.js';
+import { query, withOrgContext } from '../db.js';
 import pino from 'pino';
 
 const log = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
@@ -47,13 +47,20 @@ export async function startGenerateConsumer(): Promise<void> {
     let job: GenerateJob | undefined;
     try {
       job = JSON.parse(sc.decode(msg.data)) as GenerateJob;
-      const url = await generateReport(job);
-      await query(`UPDATE reports SET status='ready', url=$1, completed_at=NOW() WHERE id=$2`, [url, job.report_id]);
+      if (!job?.org_id) throw new Error('report job missing org_id');
+      const url = await withOrgContext(job.org_id, () => generateReport(job));
+      await withOrgContext(job.org_id, () =>
+        query(`UPDATE reports SET status='ready', url=$1, completed_at=NOW() WHERE id=$2 AND org_id=$3`, [url, job.report_id, job.org_id])
+      );
       msg.ack();
     } catch (err) {
       log.error({ err }, 'Generate consumer error');
       if (job?.report_id) {
-        await query(`UPDATE reports SET status='failed' WHERE id=$1`, [job.report_id]).catch(() => {});
+        if (job.org_id) {
+          await withOrgContext(job.org_id, () =>
+            query(`UPDATE reports SET status='failed' WHERE id=$1 AND org_id=$2`, [job.report_id, job.org_id])
+          ).catch(() => {});
+        }
       }
       msg.nak();
     }

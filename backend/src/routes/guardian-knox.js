@@ -32,6 +32,7 @@ router.post('/devices/:id/remote-session/start', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const deviceRes = await client.query(
         `SELECT id, knox_do_enrolled FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
@@ -90,6 +91,7 @@ router.post('/devices/:id/remote-session/webrtc-signal', async (req, res, next) 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       if (type === 'offer') {
         await client.query(
@@ -130,6 +132,7 @@ router.post('/devices/:id/remote-session/end', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `UPDATE knox_remote_sessions
@@ -186,6 +189,7 @@ router.post('/devices/:id/remote-session/screenshot', async (req, res, next) => 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       await client.query(
         `UPDATE knox_remote_sessions
@@ -208,6 +212,7 @@ router.get('/devices/:id/remote-session/recordings', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT * FROM knox_remote_sessions
@@ -242,6 +247,7 @@ router.post('/devices/:id/remote-session/inject-touch', async (req, res, next) =
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const sessionRes = await client.query(
         `SELECT id, status FROM knox_remote_sessions WHERE id = $1 AND org_id = $2`,
@@ -306,6 +312,7 @@ router.post('/devices/:id/remote-session/mdm-action', async (req, res, next) => 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `INSERT INTO device_commands (org_id, device_id, command, status, issued_by, expires_at)

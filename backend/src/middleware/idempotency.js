@@ -4,7 +4,8 @@ function requireIdempotencyKey(req, res, next) {
   const key = req.headers['x-idempotency-key'];
   if (!key) return next();
 
-  const orgId = (req.user && req.user.org_id) || 'anonymous';
+  const orgId = req.user?.org_id;
+  if (!orgId) return res.status(403).json({ error: 'tenant_scope_required' });
 
   (async () => {
     try {

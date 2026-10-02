@@ -1,3 +1,4 @@
+import { requireAuth } from '../middleware/auth.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
@@ -108,6 +109,7 @@ function snapshot(row: RuleRow): Record<string, unknown> {
 }
 
 export async function rulesRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook('preHandler', requireAuth);
   app.get('/v4/rules', async (request, reply) => {
     const orgId = requireOrgId(request, reply);
     if (!orgId) return;

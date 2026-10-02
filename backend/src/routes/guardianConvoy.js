@@ -7,9 +7,10 @@ const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('../utils/logger');
+const { normalizeOrgId, runWithOrgContext } = require('../utils/tenantContext');
 
 async function jwtAuth(req, res, next) {
   try {
@@ -24,8 +25,49 @@ async function jwtAuth(req, res, next) {
     } catch {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
-    req.cfo = { id: payload.id, org_id: payload.org_id, name: payload.name, convoy_id: payload.convoy_id };
-    next();
+
+    const orgId = normalizeOrgId(payload.org_id);
+    const userId = typeof payload.id === 'string' ? payload.id : '';
+    const convoyId = typeof payload.convoy_id === 'string' ? payload.convoy_id : '';
+    if (!orgId || !userId || !convoyId) {
+      return res.status(401).json({ error: 'Invalid CFO session claims' });
+    }
+    const [userResult, convoyResult] = await Promise.all([
+      globalQuery(
+        `SELECT u.id, u.name, u.email, u.org_id, u.status
+           FROM users u
+          WHERE u.id = $1
+            AND u.org_id = $2
+            AND u.role = 'cfo'
+            AND u.status = 'active'
+            AND u.deleted_at IS NULL
+            AND EXISTS (
+              SELECT 1 FROM convoy_cfos cc
+               WHERE cc.cfo_user_id = u.id
+                 AND cc.convoy_id = $3
+                 AND cc.org_id = $2
+            )`,
+        [userId, orgId, convoyId],
+      ),
+      globalQuery(
+        `SELECT id, org_id, status
+           FROM convoys
+          WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+        [convoyId, orgId],
+      ),
+    ]);
+
+    if (!userResult.rows.length || !convoyResult.rows.length) {
+      return res.status(401).json({ error: 'CFO session is not valid for this convoy' });
+    }
+
+    req.cfo = {
+      id: userResult.rows[0].id,
+      org_id: userResult.rows[0].org_id,
+      name: userResult.rows[0].name,
+      convoy_id: convoyResult.rows[0].id,
+    };
+    return runWithOrgContext(orgId, next);
   } catch (err) {
     next(err);
   }
@@ -34,6 +76,14 @@ async function jwtAuth(req, res, next) {
 // Best-effort insert of a single GPS point into convoy_waypoints (used to
 // anchor the route with the SOD/EOD positions). Never throws — a failed anchor
 // must not fail the report submission.
+function assertCfoConvoy(req, res, convoyId) {
+  if (!convoyId || String(convoyId) !== String(req.cfo.convoy_id)) {
+    res.status(404).json({ error: 'Convoy not found' });
+    return false;
+  }
+  return true;
+}
+
 async function persistConvoyPoint(convoyId, gps, at) {
   if (!convoyId || !gps || gps.lat == null || gps.lng == null) return;
   const lat = parseFloat(gps.lat), lng = parseFloat(gps.lng);
@@ -72,56 +122,62 @@ router.post('/login', async (req, res, next) => {
     if (!convoy_id || typeof convoy_id !== 'string' || !convoy_id.trim())
       return res.status(400).json({ error: 'convoy_id is required' });
 
-    // Resolve convoy by UUID or name (case-insensitive)
-    const convoyResult = await query(
-      `SELECT id, name, status, route_origin, route_destination, org_id
-       FROM convoys
-       WHERE (id::text = $1 OR LOWER(name) = LOWER($1))
-         AND deleted_at IS NULL
-       LIMIT 1`,
-      [convoy_id.trim()]
-    );
-    if (!convoyResult.rows.length)
-      return res.status(200).json({ success: false, error: 'Convoy not found' });
-
-    const convoy = convoyResult.rows[0];
-
-    const userResult = await query(
-      `SELECT u.id, u.name, u.email, u.org_id, u.status, u.password_hash
-       FROM users u
-       WHERE LOWER(u.email) = LOWER($1)
-         AND EXISTS (
-           SELECT 1 FROM convoy_cfos cc WHERE cc.cfo_user_id = u.id AND cc.convoy_id = $2
-         )
-         AND u.deleted_at IS NULL
-       LIMIT 1`,
-      [cfo_id.trim(), convoy.id]
+    // Resolve the CFO + convoy relationship as one credential check.
+    // Do not reveal whether either identifier exists. The join requires the CFO,
+    // convoy, membership, and organization to agree before any convoy metadata
+    // is returned or a session token can be minted.
+    const authResult = await globalQuery(
+      `SELECT u.id, u.name, u.email, u.org_id, u.status, u.password_hash,
+              c.id AS convoy_id, c.name AS convoy_name, c.route_origin, c.route_destination,
+              c.status AS convoy_status
+         FROM users u
+         JOIN convoy_cfos cc
+           ON cc.cfo_user_id = u.id
+          AND cc.org_id = u.org_id
+         JOIN convoys c
+           ON c.id = cc.convoy_id
+          AND c.org_id = u.org_id
+        WHERE LOWER(u.email) = LOWER($1)
+          AND (c.id::text = $2 OR LOWER(c.name) = LOWER($2))
+          AND u.deleted_at IS NULL
+          AND c.deleted_at IS NULL
+        LIMIT 1`,
+      [cfo_id.trim(), convoy_id.trim()]
     );
 
     const dummyHash = '$2a$10$dummyhashtopreventtimingattacks00000000000';
-    const hashToCompare = userResult.rows[0]?.password_hash || dummyHash;
-    const valid = userResult.rows.length > 0 && await bcrypt.compare(pin, hashToCompare);
+    const hashToCompare = authResult.rows[0]?.password_hash || dummyHash;
+    const valid = authResult.rows.length > 0 && await bcrypt.compare(pin, hashToCompare);
 
     if (!valid) return res.status(200).json({ success: false, error: 'Invalid credentials' });
 
-    const user = userResult.rows[0];
+    const user = authResult.rows[0];
+    const convoy = {
+      id: user.convoy_id,
+      name: user.convoy_name,
+      status: user.convoy_status,
+      route_origin: user.route_origin,
+      route_destination: user.route_destination,
+      org_id: user.org_id,
+    };
     if (user.status !== 'active')
       return res.status(200).json({ success: false, error: 'Account is not active' });
 
     const [trucksResult, sealsResult] = await Promise.all([
-      query(
+      globalQuery(
         `SELECT ct.id, ct.position, ct.driver_name, ct.driver_phone,
                 v.registration, v.make, v.model, v.color
-         FROM convoy_trucks ct LEFT JOIN vehicles v ON v.id = ct.vehicle_id
-         WHERE ct.convoy_id = $1 ORDER BY ct.position`,
-        [convoy.id]
+         FROM convoy_trucks ct LEFT JOIN vehicles v ON v.id = ct.vehicle_id AND v.org_id = $2
+         WHERE ct.convoy_id = $1 AND ct.org_id = $2 ORDER BY ct.position`,
+        [convoy.id, convoy.org_id]
       ),
-      query(
+      globalQuery(
         `SELECT cs.id, cs.convoy_truck_id, cs.seal_position, cs.rfid_code, cs.session, cs.status
-         FROM convoy_seals cs JOIN convoy_trucks ct ON ct.id = cs.convoy_truck_id
-         WHERE ct.convoy_id = $1 AND cs.report_date = CURRENT_DATE
+         FROM convoy_seals cs
+         JOIN convoy_trucks ct ON ct.id = cs.convoy_truck_id AND ct.org_id = $2
+         WHERE ct.convoy_id = $1 AND cs.org_id = $2 AND cs.report_date = CURRENT_DATE
          ORDER BY cs.convoy_truck_id, cs.seal_position`,
-        [convoy.id]
+        [convoy.id, convoy.org_id]
       ),
     ]);
 
@@ -131,7 +187,7 @@ router.post('/login', async (req, res, next) => {
       : (user.name || '?').slice(0, 2).toUpperCase();
 
     const token = jwt.sign(
-      { id: user.id, org_id: user.org_id || convoy.org_id, name: user.name, convoy_id: convoy.id },
+      { id: user.id, org_id: user.org_id, name: user.name, convoy_id: convoy.id },
       process.env.JWT_SECRET,
       { expiresIn: '12h' }
     );
@@ -161,6 +217,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { photo_type, convoy_id, phase, plate_number, lat, lng, accuracy } = req.query;
+      if (!assertCfoConvoy(req, res, convoy_id)) return;
       if (!photo_type || typeof photo_type !== 'string')
         return res.status(400).json({ error: 'photo_type is required' });
       if (!convoy_id || typeof convoy_id !== 'string')
@@ -188,7 +245,7 @@ router.post(
       if (!s3) return res.status(501).json({ error: 'Photo storage credentials not configured' });
 
       const photoId = uuidv4();
-      const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
+      const key = `orgs/${req.cfo.org_id}/convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
       await s3.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: key,
@@ -224,6 +281,7 @@ router.post(
 router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
   try {
     const { photo_type, convoy_id, phase, plate_number } = req.body;
+    if (!assertCfoConvoy(req, res, convoy_id)) return;
     if (!photo_type || typeof photo_type !== 'string')
       return res.status(400).json({ error: 'photo_type is required' });
     if (!convoy_id || typeof convoy_id !== 'string')
@@ -247,7 +305,7 @@ router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
     if (!s3) return res.status(501).json({ error: 'Photo storage not configured on this server' });
 
     const photoId = uuidv4();
-    const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
+    const key = `orgs/${req.cfo.org_id}/convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
     const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/jpeg' });
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
     const r2Url = `${R2_PUBLIC_URL}/${key}`;
@@ -262,6 +320,7 @@ router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
 router.post('/photos/commit', jwtAuth, async (req, res, next) => {
   try {
     const { photo_id, photo_type, convoy_id, phase, lat, lng, accuracy, plate_number, timestamp } = req.body;
+    if (!assertCfoConvoy(req, res, convoy_id)) return;
     if (!photo_id || typeof photo_id !== 'string')
       return res.status(400).json({ error: 'photo_id is required' });
     if (!photo_type || typeof photo_type !== 'string')
@@ -273,7 +332,7 @@ router.post('/photos/commit', jwtAuth, async (req, res, next) => {
 
     const { R2_PUBLIC_URL } = process.env;
     if (!R2_PUBLIC_URL) return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured on this server' });
-    const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photo_id}.jpg`;
+    const key = `orgs/${req.cfo.org_id}/convoy-app/${convoy_id}/${phase}/${photo_type}_${photo_id}.jpg`;
     const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
     const result = await query(
@@ -305,6 +364,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { convoy_id, report_id } = req.query;
+      if (!assertCfoConvoy(req, res, convoy_id)) return;
       if (!convoy_id || typeof convoy_id !== 'string')
         return res.status(400).json({ error: 'convoy_id is required' });
       if (!report_id || typeof report_id !== 'string')
@@ -328,7 +388,7 @@ router.post(
 
       const isPdf = req.headers['content-type']?.includes('pdf');
       const ext = isPdf ? 'pdf' : 'jpg';
-      const key = `convoy-app/${convoy_id}/handover/handover_${report_id}.${ext}`;
+      const key = `orgs/${req.cfo.org_id}/convoy-app/${convoy_id}/handover/handover_${report_id}.${ext}`;
       await s3.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: key,
@@ -380,6 +440,7 @@ router.get('/convoys/:id/position', jwtAuth, async (req, res, next) => {
 router.post('/track', jwtAuth, async (req, res, next) => {
   try {
     const { convoy_id, points } = req.body;
+    if (!assertCfoConvoy(req, res, convoy_id)) return;
     if (!convoy_id) return res.status(400).json({ error: 'convoy_id is required' });
     if (!Array.isArray(points) || points.length === 0) {
       return res.status(400).json({ error: 'points must be a non-empty array' });
@@ -423,6 +484,7 @@ router.post('/track', jwtAuth, async (req, res, next) => {
 router.get('/convoy-reports/:convoy_id', jwtAuth, async (req, res, next) => {
   try {
     const { convoy_id } = req.params;
+    if (!assertCfoConvoy(req, res, convoy_id)) return;
     await query(
       `INSERT INTO convoy_reports (org_id, convoy_id, cfo_id, date, status)
        VALUES ($1,$2,$3,CURRENT_DATE,'in_progress')
@@ -494,7 +556,7 @@ router.post('/convoy-reports/:id/sod', jwtAuth, async (req, res, next) => {
     // point even when live tracking didn't run.
     await persistConvoyPoint(report.convoy_id, gps, submitted_at);
 
-    publish(`convoy:${report.convoy_id}:report`, {
+    publish(`org:${req.cfo.org_id}:convoy:${report.convoy_id}:report`, {
       event: 'sod_submitted', report_id: report.id, convoy_id: report.convoy_id,
       cfo_id: report.cfo_id, status: report.status, sod_submitted_at: report.sod_submitted_at,
     }).catch((err) => logger.warn(`Centrifugo publish failed (sod): ${err.message}`));
@@ -542,7 +604,7 @@ router.post('/convoy-reports/:id/eod', jwtAuth, async (req, res, next) => {
       logger.warn(`Queue unavailable for EOD PDF job: ${err.message}`);
     }
 
-    publish(`convoy:${report.convoy_id}:report`, {
+    publish(`org:${req.cfo.org_id}:convoy:${report.convoy_id}:report`, {
       event: 'eod_submitted', report_id: report.id, convoy_id: report.convoy_id,
       cfo_id: report.cfo_id, status: report.status, eod_submitted_at: report.eod_submitted_at,
     }).catch((err) => logger.warn(`Centrifugo publish failed (eod): ${err.message}`));
@@ -557,6 +619,7 @@ router.post('/convoy-reports/:id/eod', jwtAuth, async (req, res, next) => {
 router.post('/seal-verifications', jwtAuth, async (req, res, next) => {
   try {
     const { seal_id, convoy_id, phase, photo_id, status, lat, lng, vehicle_plate, position } = req.body;
+    if (!assertCfoConvoy(req, res, convoy_id)) return;
     if (!seal_id || typeof seal_id !== 'string')
       return res.status(400).json({ error: 'seal_id is required' });
     if (!convoy_id || typeof convoy_id !== 'string')
@@ -602,7 +665,8 @@ router.post('/seal-verifications', jwtAuth, async (req, res, next) => {
 // POST /sos-events — fire SOS panic event
 router.post('/sos-events', jwtAuth, async (req, res, next) => {
   try {
-    const { convoy_id, cfo_id, incident_type, lat, lng, accuracy, timestamp } = req.body;
+    const { convoy_id, incident_type, lat, lng, accuracy, timestamp } = req.body;
+    if (!assertCfoConvoy(req, res, convoy_id)) return;
     if (!convoy_id || typeof convoy_id !== 'string')
       return res.status(400).json({ error: 'convoy_id is required' });
 
@@ -611,7 +675,7 @@ router.post('/sos-events', jwtAuth, async (req, res, next) => {
          (org_id, convoy_id, cfo_id, incident_type, lat, lng, accuracy_m, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
-        req.cfo.org_id, convoy_id, cfo_id || req.cfo.id,
+        req.cfo.org_id, convoy_id, req.cfo.id,
         incident_type || 'unspecified',
         lat != null ? lat : null, lng != null ? lng : null,
         accuracy != null ? parseInt(accuracy) : null,

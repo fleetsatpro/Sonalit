@@ -90,17 +90,17 @@ describe('requireIdempotencyKey middleware', () => {
     expect(res.json).not.toBe(origJson);
   });
 
-  test('uses anonymous org_id when req.user is not set', async () => {
+  test('fails closed when req.user has no tenant identity', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
     const req = { headers: { 'x-idempotency-key': 'idem-key-3' } };
-    const res = { statusCode: 200, json: jest.fn() };
+    const res = { status: jest.fn().mockReturnThis(), statusCode: 200, json: jest.fn() };
     const next = jest.fn();
     requireIdempotencyKey(req, res, next);
     await new Promise(r => setTimeout(r, 20));
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('WHERE key = $1'),
-      ['idem-key-3', 'anonymous']
-    );
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ error: 'tenant_scope_required' });
+    expect(next).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 

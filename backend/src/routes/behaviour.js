@@ -30,7 +30,7 @@ router.get('/drivers/:id/events', asyncHandler(async (req, res) => {
 router.get('/drivers/:id/score', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   // RULE B: direct pool query with WHERE org_id = $1 (matview bypasses RLS)
-  const result = await pool.query(
+  const result = await req.db(
     `SELECT * FROM driver_scores_30d WHERE org_id = $1 AND driver_id = $2`,
     [orgId, req.params.id],
   );
@@ -43,7 +43,7 @@ router.get('/leaderboard', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   const limit = Math.min(50, parseInt(req.query.limit) || 20);
   // RULE B: matview read with explicit org_id filter
-  const result = await pool.query(
+  const result = await req.db(
     `SELECT s.*, u.name AS driver_name
        FROM driver_scores_30d s
        LEFT JOIN users u ON u.id = s.driver_id

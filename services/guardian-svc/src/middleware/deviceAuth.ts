@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { verify } from '@node-rs/argon2';
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { query } from '../db.js';
+import { globalQuery } from '../db.js';
 import { config } from '../config.js';
+import { tenantContext } from '../db.js';
 
 export interface DeviceContext {
   id: string;
@@ -43,7 +44,7 @@ export async function deviceAuthHook(
   // O(1) indexed lookup via SHA-256 fast hash — avoids scanning all devices.
   const lookupHash = createHash('sha256').update(token).digest('hex');
 
-  const devices = await query<GuardianDeviceRow>(
+  const devices = await globalQuery<GuardianDeviceRow>(
     `SELECT id, org_id, status, assignment_type, assignment_id, token_hash, integrity_checked_at
      FROM guardian_devices
      WHERE token_lookup_hash = $1 AND deleted_at IS NULL
@@ -81,6 +82,8 @@ export async function deviceAuthHook(
   const integrityAgeSeconds = candidate.integrity_checked_at
     ? (Date.now() - new Date(candidate.integrity_checked_at).getTime()) / 1000
     : Infinity;
+
+  tenantContext.enterWith(candidate.org_id);
 
   request.device = {
     id: candidate.id,
