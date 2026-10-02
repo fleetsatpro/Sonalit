@@ -27,7 +27,11 @@ function getTenantDbClient() {
 function runWithOrgContext(orgId, fn, dbClient = null) {
   const normalized = normalizeOrgId(orgId);
   if (!normalized) throw new Error('invalid_org_id');
-  return storage.run({ orgId: normalized, dbClient }, fn);
+  const current = getOrgId();
+  if (current && current !== normalized) throw new Error('tenant_context_switch_forbidden');
+  const currentClient = getTenantDbClient();
+  if (currentClient && dbClient && currentClient !== dbClient) throw new Error('tenant_db_client_switch_forbidden');
+  return storage.run({ orgId: normalized, dbClient: dbClient || currentClient }, fn);
 }
 
 module.exports = { normalizeOrgId, getOrgId, getTenantDbClient, runWithOrgContext };
