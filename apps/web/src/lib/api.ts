@@ -16,7 +16,17 @@ api.interceptors.request.use((config) => {
   return config;
 });
 let refreshPromise:Promise<string>|null=null;
-async function refreshAccessToken():Promise<string>{const csrf=getCsrfToken();const{data}=await axios.post<{token:string;user:AuthUser}>(`${API_BASE}/auth/refresh`,{},{withCredentials:true,headers:csrf?{'X-CSRF-Token':csrf}:{}});setAccessToken(data.token);useAuthStore.getState().setAuth(data.token,data.user);return data.token;}
+export async function restoreAccessToken(): Promise<string> {
+  const csrf=getCsrfToken();
+  const{data}=await axios.post<{token:string;user:AuthUser}>(`${API_BASE}/auth/refresh`,{},{withCredentials:true,headers:csrf?{'X-CSRF-Token':csrf}:{}});
+  setAccessToken(data.token);
+  useAuthStore.getState().setAuth(data.token,data.user);
+  return data.token;
+}
+async function refreshAccessToken():Promise<string>{
+  if (!refreshPromise) refreshPromise=restoreAccessToken().finally(()=>{refreshPromise=null});
+  return refreshPromise;
+}
 export function attachRefreshInterceptor(instance:typeof api,{redirectOnFailure=true}:{redirectOnFailure?:boolean}={}):void{instance.interceptors.response.use((res)=>res,async(err)=>{const original=err.config as typeof err.config&{_retry?:boolean};if(err.response?.status===401&&original&&!original._retry){original._retry=true;try{if(!refreshPromise)refreshPromise=refreshAccessToken().finally(()=>{refreshPromise=null});const token=await refreshPromise;original.headers['Authorization']=`Bearer ${token}`;return instance(original)}catch{if(redirectOnFailure){useAuthStore.getState().clearAuth();window.location.href='/login'}throw err}}throw err})}
 export function attachConnectivityReporter(instance:typeof api):void{instance.interceptors.request.use((config)=>{(config as typeof config&{_startedAt?:number})._startedAt=Date.now();return config});instance.interceptors.response.use((res)=>{const started=(res.config as typeof res.config&{_startedAt?:number})._startedAt;reportRequestOutcome(true,started?Date.now()-started:undefined);return res},(err)=>{const status=err?.response?.status as number|undefined;const started=(err?.config as{_startedAt?:number}|undefined)?._startedAt;reportRequestOutcome(status!=null&&status<500,status!=null&&started?Date.now()-started:undefined);throw err})}
 const validMapPoint=(p:unknown)=>{if(!p||typeof p!=='object')return false;const x=p as{lat?:unknown;lng?:unknown};const lat=Number(x.lat),lng=Number(x.lng);return Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180&&!(Math.abs(lat)<0.000001&&Math.abs(lng)<0.000001)};
