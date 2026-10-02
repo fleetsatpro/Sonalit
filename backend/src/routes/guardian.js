@@ -333,6 +333,7 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS guardian_audit_log (
         id          BIGSERIAL PRIMARY KEY,
+        org_id      UUID,
         actor_type  TEXT NOT NULL CHECK (actor_type IN ('admin','device','system')),
         actor_id    UUID,
         action      TEXT NOT NULL,
@@ -432,6 +433,7 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS guardian_command_nonces (
         device_id UUID NOT NULL REFERENCES guardian_devices(id),
+        org_id    UUID,
         nonce     TEXT NOT NULL,
         seen_at   TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (device_id, nonce)
@@ -442,6 +444,7 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS device_command_events (
         id         BIGSERIAL PRIMARY KEY,
+        org_id     UUID,
         command_id UUID NOT NULL,
         status     TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
