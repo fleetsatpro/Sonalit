@@ -18,7 +18,7 @@
  */
 const crypto = require('crypto');
 const { query } = require('../config/database');
-const { attachOrgDb } = require('../utils/orgScopedDb');
+const { attachOrgDb, withOrg } = require('../utils/orgScopedDb');
 const { authenticate } = require('./auth');
 const logger = require('../utils/logger');
 const { runWithOrgContext } = require('../utils/tenantContext');
@@ -127,7 +127,7 @@ async function fieldAuthenticate(req, res, next) {
     const device = await resolveDevice(req);
     if (!device) return res.status(401).json({ error: 'device_not_paired' });
 
-    const result = await query(
+    const result = await withOrg(device.org_id, client => client.query(
       `SELECT s.id AS session_id, s.expires_at, s.last_seen_at,
               u.id, u.email, u.name, u.role, u.status, u.org_id
          FROM field_sessions s
@@ -136,9 +136,10 @@ async function fieldAuthenticate(req, res, next) {
           AND s.device_id = $2
           AND s.revoked_at IS NULL
           AND s.expires_at > NOW()
-          AND u.deleted_at IS NULL`,
-      [sha256(token), device.id]
-    );
+          AND u.deleted_at IS NULL
+          AND u.org_id = $3`,
+      [sha256(token), device.id, device.org_id]
+    ));
 
     if (!result.rows.length) {
       return res.status(401).json({ error: 'field_session_expired' });
