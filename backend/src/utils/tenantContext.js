@@ -9,11 +9,15 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 
 const storage = new AsyncLocalStorage();
 
-const ORG_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ORG_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function normalizeOrgId(value) {
   const orgId = String(value ?? '').trim();
-  return ORG_ID_RE.test(orgId) ? orgId : null;
+  // PostgreSQL accepts UUIDs that do not carry RFC 4122 version/variant bits.
+  // Sonalit already uses the legacy sentinel tenant
+  // 00000000-0000-0000-0000-000000000001, so validation must enforce UUID
+  // syntax without rejecting valid database identifiers.
+  return ORG_ID_RE.test(orgId) ? orgId.toLowerCase() : null;
 }
 
 function getOrgId() {
