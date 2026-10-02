@@ -16,7 +16,7 @@
  * far longer than any plausible offline stretch, and unresolved conflicts are
  * never pruned at all.
  */
-const { query } = require('../config/database');
+const { globalQuery } = require('../config/database');
 const logger = require('../utils/logger');
 
 /**
@@ -44,7 +44,7 @@ const CHUNK = 10_000;
 async function pruneChangeLog(days = CHANGE_LOG_DAYS) {
   let removed = 0;
   for (;;) {
-    const res = await query(
+    const res = await globalQuery(
       `DELETE FROM sync_change_log
         WHERE seq IN (
           SELECT seq FROM sync_change_log
@@ -62,7 +62,7 @@ async function pruneChangeLog(days = CHANGE_LOG_DAYS) {
 async function pruneOperations(days = OPERATION_DAYS) {
   let removed = 0;
   for (;;) {
-    const res = await query(
+    const res = await globalQuery(
       `DELETE FROM sync_operations
         WHERE ctid IN (
           SELECT ctid FROM sync_operations
