@@ -461,6 +461,9 @@ async function ensureGuardianTenantControlSecurity() {
   ];
   for (const table of tables) {
     await globalQuery('ALTER TABLE public.' + table + ' ENABLE ROW LEVEL SECURITY');
+    if (table !== 'enrollment_codes' && table !== 'convoy_codes') {
+      await globalQuery('ALTER TABLE public.' + table + ' FORCE ROW LEVEL SECURITY');
+    }
     await globalQuery('DROP POLICY IF EXISTS guardian_tenant_isolation ON public.' + table);
     await globalQuery(
       "CREATE POLICY guardian_tenant_isolation ON public." + table +
