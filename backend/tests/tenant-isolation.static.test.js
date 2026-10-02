@@ -165,6 +165,11 @@ describe('tenant isolation regression guards', () => {
   });
 
 
+  test('Guardian Convoy report realtime channel is tenant-qualified', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../src/routes/guardianConvoy.js'), 'utf8');
+    expect(source).not.toContain('publish(`convoy:${report.convoy_id}:report`');
+    expect(source).toContain('org:${req.cfo.org_id}:convoy:${report.convoy_id}:report');
+  });
   test('realtime authorization never falls back from tenant to user identity', () => {
     const realtime = fs.readFileSync(path.join(__dirname, '../src/routes/realtime.js'), 'utf8');
     expect(realtime).toContain("if (!req.user?.org_id)");
