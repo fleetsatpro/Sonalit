@@ -228,9 +228,6 @@ html[data-theme] .hover\\:bg-orange-700:hover { background-color: var(--son-them
 
 
 /* ── Cross-surface theme bridge ─────────────────────────────────────────── */
-:root[data-theme] [class*="bg-black/"] {
-  background-color: color-mix(in srgb, var(--d-well) 92%, transparent) !important;
-}
 :root[data-theme] [class*="bg-[#05070b]"],
 :root[data-theme] [class*="bg-[#05070c]"],
 :root[data-theme] [class*="bg-[#070a10]"],
