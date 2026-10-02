@@ -87,6 +87,7 @@ async function healthCheck() {
 }
 
 async function globalQuery(text, params) {
+  if (getOrgId()) throw new Error('global_query_forbidden_inside_tenant_context');
   const start = Date.now();
   try {
     const result = await pool.query(text, params);
