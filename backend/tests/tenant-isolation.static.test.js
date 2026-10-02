@@ -68,7 +68,10 @@ describe('tenant isolation regression guards', () => {
     const violations = [];
     for (const file of risky) {
       const source = fs.readFileSync(file, 'utf8');
-      if (/publish\\(['"](vehicle:update|alert:new|device:panic|geofence:violation)['"]/.test(source)) {
+      const forbiddenSubjects = ['vehicle:update', 'alert:new', 'device:panic', 'geofence:violation'];
+      if (forbiddenSubjects.some(subject =>
+        source.includes(`publish('${subject}'`) || source.includes(`publish("${subject}"`)
+      )) {
         violations.push(path.basename(file));
       }
     }
