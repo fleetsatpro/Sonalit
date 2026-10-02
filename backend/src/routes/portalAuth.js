@@ -11,7 +11,7 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
-const { query } = require('../config/database');
+const { globalQuery } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const { clientAuth } = require('../middleware/clientAuth');
 const logger = require('../utils/logger');
@@ -71,7 +71,7 @@ router.post('/request-link', requestLinkLimiter, asyncHandler(async (req, res) =
   if (!email) return res.status(400).json({ error: 'email required' });
 
   // Always return 200 — no account enumeration
-  const clientResult = await query(
+  const clientResult = await globalQuery(
     `SELECT id, org_id FROM cargo_clients WHERE email = $1 AND deleted_at IS NULL LIMIT 1`,
     [email],
   );
@@ -83,7 +83,7 @@ router.post('/request-link', requestLinkLimiter, asyncHandler(async (req, res) =
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-    await query(
+    await globalQuery(
       `INSERT INTO client_magic_links (org_id, client_id, token_hash, expires_at)
        VALUES ($1, $2, $3, $4)`,
       [org_id, client_id, tokenHash, expiresAt],
@@ -132,7 +132,7 @@ router.post('/verify', asyncHandler(async (req, res) => {
   // Consume the credential atomically. A SELECT followed by UPDATE is raceable:
   // two concurrent verifications could both observe an unused token. The single
   // conditional UPDATE makes the magic link genuinely one-time.
-  const linkResult = await query(
+  const linkResult = await globalQuery(
     `UPDATE client_magic_links
         SET used_at = NOW()
       WHERE token_hash = $1
@@ -149,7 +149,7 @@ router.post('/verify', asyncHandler(async (req, res) => {
   const link = linkResult.rows[0];
 
   // Load linked convoy_ids
-  const linksResult = await query(
+  const linksResult = await globalQuery(
     `SELECT ccl.convoy_id
        FROM cargo_client_links ccl
        JOIN convoys c ON c.id = ccl.convoy_id
@@ -188,7 +188,7 @@ router.post('/verify', asyncHandler(async (req, res) => {
   });
 
   // Update last_login_at (best-effort)
-  query(
+  globalQuery(
     `UPDATE cargo_clients SET last_login_at = NOW() WHERE id = $1`,
     [link.client_id],
   ).catch(() => {});
