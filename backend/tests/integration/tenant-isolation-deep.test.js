@@ -26,7 +26,6 @@ const BOOTSTRAP_TABLES = new Set([
   'users', 'guardian_devices', 'portal_tokens', 'cargo_clients', 'client_magic_links',
   'telemetry_ingest_keys', 'tracking_qr_codes', 'tracking_sessions', 'field_devices',
   'field_sessions', 'field_agent_pins', 'enrollment_codes', 'convoy_codes',
-  'cfo_login_attempts', 'guardian_command_nonces',
 ]);
 
 let pool;
