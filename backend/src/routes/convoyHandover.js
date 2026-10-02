@@ -112,7 +112,7 @@ router.post('/:convoyId/upload-url', canHandover, asyncHandler(async (req, res) 
   }
 
   const ext = isPdf ? 'pdf' : 'jpg';
-  const key = `handover-officer/${convoyId}/${truck_id || 'convoy'}/handover_${uuidv4()}.${ext}`;
+  const key = `orgs/${req.user.org_id}/handover-officer/${convoyId}/${truck_id || 'convoy'}/handover_${uuidv4()}.${ext}`;
   const s3 = new S3Client({
     region: 'auto',
     endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -156,7 +156,7 @@ router.post('/:convoyId/selfie-url', canHandover, asyncHandler(async (req, res) 
     return res.status(501).json({ error: 'Storage SDK not installed' });
   }
 
-  const key = `handover-officer/${convoyId}/${truck_id || 'convoy'}/selfie_${uuidv4()}.jpg`;
+  const key = `orgs/${req.user.org_id}/handover-officer/${convoyId}/${truck_id || 'convoy'}/selfie_${uuidv4()}.jpg`;
   const s3 = new S3Client({
     region: 'auto',
     endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -177,6 +177,14 @@ router.post('/:convoyId/commit', canHandover, asyncHandler(async (req, res) => {
   if (!form_key || !form_url) return res.status(400).json({ error: 'form_key, form_url required' });
   if (!selfie_key || !selfie_url) return res.status(400).json({ error: 'selfie_key, selfie_url required' });
   const truckId = typeof truck_id === 'string' && truck_id ? truck_id : null;
+  const storageBase = `orgs/${req.user.org_id}/handover-officer/${convoyId}/`;
+  if (!form_key.startsWith(storageBase) || !selfie_key.startsWith(storageBase)) {
+    return res.status(422).json({ error: 'handover_storage_key_not_in_tenant_namespace' });
+  }
+  const publicBase = String(process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+  if (!publicBase || !form_url.startsWith(publicBase + '/' + storageBase) || !selfie_url.startsWith(publicBase + '/' + storageBase)) {
+    return res.status(422).json({ error: 'handover_storage_url_not_in_tenant_namespace' });
+  }
 
   const convoyResult = await req.db(
     `SELECT id, org_id, status, local_consignment FROM convoys WHERE id = $1 AND deleted_at IS NULL`,
