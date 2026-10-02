@@ -7,7 +7,8 @@ const telegramMtproto = require('./telegramMtproto');
 const aiClient = require('./aiClient');
 const { geocodePlace } = require('./geocode');
 const { continentForCountry } = require('./countryContinent');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
+const { withOrg } = require('./orgScopedDb');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('./logger');
 
@@ -438,7 +439,7 @@ async function runOsintSweep() {
   if (sweeping) return { skipped: true };
   sweeping = true;
   try {
-    const { rows: zones } = await query(`SELECT id, org_id, name, region, continent, level, confidence, velocity, level_source, lat, lng FROM risk_zones WHERE is_active = true`);
+    const { rows: zones } = await globalQuery(`SELECT id, org_id, name, region, continent, level, confidence, velocity, level_source, lat, lng FROM risk_zones WHERE is_active = true`);
     if (!zones.length) return { zonesChecked: 0 };
 
     const zonesByOrg = new Map();
@@ -481,19 +482,23 @@ async function runOsintSweep() {
           const continent = continentForCountry(geo.country);
           if (!continent) continue;
           for (const [orgId, orgZones] of zonesByOrg) {
-            const before = orgZones.length;
-            const zone = await resolveOrCreateZoneForLocation(orgId, orgZones, { lat: geo.lat, lng: geo.lng, country: geo.country, continent, place: item.place, level: item.level });
-            if (!zone) continue;
-            if (orgZones.length > before) { zones.push(zone); telegramZonesCreated++; }
-            const inserted = await insertEvents(zone, [{ description: item.formalText, level: item.level, source: 'osint:telegram', source_url: item.source_url, external_id: item.external_id }]);
-            if (inserted) { orgsTouched.add(orgId); totalInserted += inserted; telegramProcessed++; }
+            await withOrg(orgId, async () => {
+              const before = orgZones.length;
+              const zone = await resolveOrCreateZoneForLocation(orgId, orgZones, { lat: geo.lat, lng: geo.lng, country: geo.country, continent, place: item.place, level: item.level });
+              if (!zone) return;
+              if (orgZones.length > before) { zones.push(zone); telegramZonesCreated++; }
+              const inserted = await insertEvents(zone, [{ description: item.formalText, level: item.level, source: 'osint:telegram', source_url: item.source_url, external_id: item.external_id }]);
+              if (inserted) { orgsTouched.add(orgId); totalInserted += inserted; telegramProcessed++; }
+            });
           }
         }
       } catch (e) { logger.warn(`Risk Intel OSINT: Telegram rewrite/geolocation sweep failed: ${e.message}`); }
     }
 
-    for (const zone of zones) {
-      const found = [];
+    for (const [orgId, orgZones] of zonesByOrg) {
+      await withOrg(orgId, async () => {
+        for (const zone of orgZones) {
+          const found = [];
       try {
         const gdelt = await fetchGdeltForZone(zone);
         found.push(...gdelt);
@@ -518,7 +523,9 @@ async function runOsintSweep() {
         const inserted = await insertEvents(zone, found);
         if (inserted) { orgsTouched.add(zone.org_id); totalInserted += inserted; }
       }
-      await sleep(500);
+          await sleep(500);
+        }
+      });
     }
 
     for (const orgId of orgsTouched) await publish(`risk:updates:${orgId}`, { type: 'event_added', org_id: orgId }).catch(() => {});
@@ -551,23 +558,51 @@ function computeZoneRisk(events) {
 }
 const LEVEL_RANK = { low: 1, medium: 2, high: 3 };
 async function recomputeZoneLevels(zones) {
-  const zoneIds = zones.map(z => z.id);
-  if (!zoneIds.length) return 0;
-  const { rows } = await query(`SELECT zone_id, level, occurred_at FROM risk_events WHERE zone_id = ANY($1::uuid[]) AND occurred_at >= now() - interval '7 days'`, [zoneIds]);
-  const byZone = new Map();
-  for (const r of rows) { if (!byZone.has(r.zone_id)) byZone.set(r.zone_id, []); byZone.get(r.zone_id).push(r); }
-  const orgsTouched = new Set();
-  let changed = 0;
+  const byOrg = new Map();
   for (const zone of zones) {
-    const computed = computeZoneRisk(byZone.get(zone.id) || []);
-    let levelSource = zone.level_source;
-    if (zone.level_source === 'manual' && LEVEL_RANK[computed.level] < LEVEL_RANK[zone.level]) computed.level = zone.level;
-    else if (LEVEL_RANK[computed.level] > LEVEL_RANK[zone.level]) levelSource = 'auto';
-    if (computed.level === zone.level && computed.confidence === zone.confidence && computed.velocity === zone.velocity && levelSource === zone.level_source) continue;
-    await query(`UPDATE risk_zones SET level=$1, confidence=$2, velocity=$3, level_source=$4, updated_at=NOW() WHERE id=$5`, [computed.level, computed.confidence, computed.velocity, levelSource, zone.id]);
-    orgsTouched.add(zone.org_id); changed++;
+    if (!zone?.org_id) continue;
+    if (!byOrg.has(zone.org_id)) byOrg.set(zone.org_id, []);
+    byOrg.get(zone.org_id).push(zone);
   }
-  for (const orgId of orgsTouched) await publish(`risk:updates:${orgId}`, { type: 'zone_updated', org_id: orgId }).catch(() => {});
+  let changed = 0;
+  const orgsTouched = new Set();
+  for (const [orgId, orgZones] of byOrg) {
+    await withOrg(orgId, async () => {
+      const zoneIds = orgZones.map(z => z.id);
+      if (!zoneIds.length) return;
+      const { rows } = await query(
+        `SELECT zone_id, level, occurred_at
+           FROM risk_events
+          WHERE zone_id = ANY($1::uuid[])
+            AND org_id = $2
+            AND occurred_at >= now() - interval '7 days'`,
+        [zoneIds, orgId]
+      );
+      const byZone = new Map();
+      for (const r of rows) {
+        if (!byZone.has(r.zone_id)) byZone.set(r.zone_id, []);
+        byZone.get(r.zone_id).push(r);
+      }
+      for (const zone of orgZones) {
+        const computed = computeZoneRisk(byZone.get(zone.id) || []);
+        let levelSource = zone.level_source;
+        if (zone.level_source === 'manual' && LEVEL_RANK[computed.level] < LEVEL_RANK[zone.level]) computed.level = zone.level;
+        else if (LEVEL_RANK[computed.level] > LEVEL_RANK[zone.level]) levelSource = 'auto';
+        if (computed.level === zone.level && computed.confidence === zone.confidence && computed.velocity === zone.velocity && levelSource === zone.level_source) continue;
+        await query(
+          `UPDATE risk_zones
+              SET level=$1, confidence=$2, velocity=$3, level_source=$4, updated_at=NOW()
+            WHERE id=$5 AND org_id=$6`,
+          [computed.level, computed.confidence, computed.velocity, levelSource, zone.id, orgId]
+        );
+        orgsTouched.add(orgId);
+        changed++;
+      }
+    });
+  }
+  for (const orgId of orgsTouched) {
+    await publish(`risk:updates:${orgId}`, { type: 'zone_updated', org_id: orgId }).catch(() => {});
+  }
   return changed;
 }
 
