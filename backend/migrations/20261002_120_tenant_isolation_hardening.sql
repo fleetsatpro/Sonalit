@@ -537,7 +537,7 @@ DO $tenant$
 DECLARE
   r RECORD;
   p RECORD;
-  bootstrap CONSTANT TEXT[] := ARRAY['users','guardian_devices','portal_tokens','cargo_clients','client_magic_links','telemetry_ingest_keys','tracking_qr_codes','tracking_sessions','field_devices','field_sessions','field_agent_pins','enrollment_codes','convoy_codes','cfo_login_attempts','guardian_command_nonces'];
+  bootstrap CONSTANT TEXT[] := ARRAY['users','guardian_devices','portal_tokens','cargo_clients','client_magic_links','telemetry_ingest_keys','tracking_qr_codes','tracking_sessions','field_devices','field_sessions','field_agent_pins','enrollment_codes','convoy_codes'];
 BEGIN
   FOR r IN
     SELECT n.nspname AS schema_name, c.relname AS table_name, c.relkind
