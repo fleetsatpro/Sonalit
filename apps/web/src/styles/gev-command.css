@@ -2120,3 +2120,33 @@
   .gev-overview-panel { top: 100px; }
   .gev-stat-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+
+.gev-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 30px;
+  margin-right: 4px;
+  padding: 0 8px 0 5px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 9px;
+  background: rgba(255,255,255,.018);
+  color: var(--gev-muted);
+  font: 800 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .10em;
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.gev-exit:hover {
+  color: var(--gev-text);
+  border-color: var(--gev-edge-hi);
+  background: color-mix(in srgb, var(--gev-violet) 7%, transparent);
+  transform: translateX(-1px);
+}
+.gev-brand-copy { flex: 1 1 auto; }
+
+@media (max-width: 860px) {
+  .gev-exit span { display: none; }
+  .gev-exit { width: 30px; justify-content: center; padding: 0; }
+}
