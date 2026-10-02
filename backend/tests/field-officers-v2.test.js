@@ -4,6 +4,7 @@ process.env.JWT_SECRET = 'test-jwt-secret';
 process.env.DATABASE_URL = 'postgresql://localhost/test_placeholder';
 
 jest.mock('../src/config/database', () => ({
+  globalQuery: jest.fn().mockResolvedValue({ rows: [] }),
   query: jest.fn().mockResolvedValue({ rows: [] }),
   pool: {
     connect: jest.fn().mockResolvedValue({
