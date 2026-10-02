@@ -11,6 +11,7 @@
 const aiClient = require('./aiClient');
 const logger = require('./logger');
 const { query } = require('../config/database');
+const { withOrg } = require('./orgScopedDb');
 const { publish } = require('../realtime/centrifugo');
 
 // Structured-outputs models only (Opus 4.8 supports vision + json_schema; the
@@ -88,14 +89,15 @@ async function analyzeCaptureAndStore(captureId, orgId, url) {
   try {
     const tags = await analyzeCapture(url);
     if (!tags) return null;
-    await query(
+    if (!orgId) throw new Error('tenant_scope_required');
+    await withOrg(orgId, client => client.query(
       `UPDATE guardian_captures
           SET ai_summary = $2, ai_labels = $3, ai_person_count = $4, ai_has_weapon = $5,
               ai_plates = $6, ai_vehicles = $7, ai_threat_level = $8, ai_analyzed_at = NOW()
-        WHERE id = $1`,
+        WHERE id = $1 AND org_id = $9`,
       [captureId, tags.summary, tags.labels, tags.person_count, tags.has_weapon,
-        tags.plates, tags.vehicles, tags.threat_level]
-    );
+        tags.plates, tags.vehicles, tags.threat_level, orgId]
+    ));
     if (orgId) {
       publish(`org#${orgId}`, {
         type: 'guardian_capture_analyzed',
