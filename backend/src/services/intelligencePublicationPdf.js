@@ -3,6 +3,7 @@ const sharp = require('sharp');
 const { PutObjectCommand, GetObjectCommand, S3Client } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { query } = require('../config/database');
+const { runWithOrgContext } = require('../utils/tenantContext');
 const logger = require('../utils/logger');
 
 const COUNTRY_NAMES = { KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania', RW:'Rwanda', BI:'Burundi', SS:'South Sudan', DJ:'Djibouti', ER:'Eritrea', SD:'Sudan', CD:'DR Congo' };
@@ -61,7 +62,7 @@ async function buildPdf(publication, events, images){
 async function getR2Client(){const {R2_ACCOUNT_ID,R2_ACCESS_KEY,R2_SECRET_KEY}=process.env;if(!(R2_ACCOUNT_ID&&R2_ACCESS_KEY&&R2_SECRET_KEY))return null;return new S3Client({region:'auto',endpoint:`https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,credentials:{accessKeyId:R2_ACCESS_KEY,secretAccessKey:R2_SECRET_KEY}})}
 async function fetchImages(rows){const out=[];for(const row of rows){const url=row.raw_metadata?.image_url||row.raw_metadata?.imageUrl||row.raw_metadata?.thumbnail_url||row.raw_metadata?.thumbnailUrl;if(!url||!/^https?:\/\//i.test(url))continue;try{const r=await fetch(url,{redirect:'follow'});if(!r.ok)continue;const b=Buffer.from(await r.arrayBuffer());if(!b.length||b.length>5*1024*1024)continue;out.push({buffer:b,label:row.title||'Source image',source_url:row.url||url});if(out.length>=4)break;}catch(error){logger.warn(`Image fetch failed: ${error.message}`)}}return out;}
 
-async function renderAndStorePublicationPdf(orgId, publicationId){
+async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
   const {rows:[publication]}=await query('SELECT * FROM intel_publications WHERE id=$1 AND org_id=$2 LIMIT 1',[publicationId,orgId]);
   if(!publication)throw new Error('Publication not found');
   if(publication.status!=='published')return{status:'skipped',reason:'publication_not_published'};
@@ -80,7 +81,7 @@ async function renderAndStorePublicationPdf(orgId, publicationId){
   }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3 WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
 }
 
-async function getPublicationPdfAccessUrl(orgId,publicationId){
+async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId){
   const {rows:[row]}=await query('SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2 AND status=\'published\' AND pdf_status=\'ready\' LIMIT 1',[publicationId,orgId]);
   if(!row?.pdf_key)throw new Error('Publication PDF is not ready');
   const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured');
@@ -89,4 +90,13 @@ async function getPublicationPdfAccessUrl(orgId,publicationId){
 }
 
 async function generateMissingPublicationPdfs(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes')) ORDER BY published_at DESC NULLS LAST LIMIT $2",[orgId,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdf(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
+async function renderAndStorePublicationPdf(orgId, publicationId){
+  return runWithOrgContext(orgId, () => renderAndStorePublicationPdfUnsafe(orgId, publicationId));
+}
+
+async function getPublicationPdfAccessUrl(orgId, publicationId){
+  return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId));
+}
+
 module.exports={renderAndStorePublicationPdf,generateMissingPublicationPdfs,getPublicationPdfAccessUrl};
+
