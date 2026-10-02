@@ -65,7 +65,7 @@ function providerCapabilities() {
     gpt_oss_120b: hasGroqFallback(),
     openai_direct: hasOpenAI(),
     anthropic_last_resort: hasAnthropic(),
-    order: [...OPEN_SOURCE_SLOTS.map(s=>s.label),'gpt-oss-120b-groq','gpt-oss-20b-groq','anthropic-last-resort'],
+    order: [...OPEN_SOURCE_SLOTS.map(s=>s.label),'gpt-oss-120b-groq','gpt-oss-20b-groq','openai-direct','anthropic-last-resort'],
   };
 }
 
