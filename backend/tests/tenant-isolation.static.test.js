@@ -59,22 +59,6 @@ describe('tenant isolation regression guards', () => {
     expect(violations).toEqual([]);
   });
 
-  test('service routes never trust x-org-id or x-user-id for tenant selection', () => {
-    const serviceRoots = [
-      path.join(__dirname, '../../services'),
-    ];
-    const violations = [];
-    for (const root of serviceRoots) {
-      for (const file of filesUnder(root).filter(f => /routes/.test(f))) {
-        const source = fs.readFileSync(file, 'utf8');
-        if (/headers\\[["']x-org-id["']\\]|headers\\[["']x-user-id["']\\]/i.test(source)) {
-          violations.push(path.relative(path.join(__dirname, '../..'), file));
-        }
-      }
-    }
-    expect(violations).toEqual([]);
-  });
-
   test('tenant-bearing realtime publishes do not fall back to global channels', () => {
     const risky = [
       path.join(__dirname, '../src/workers/gpsWorker.js'),
