@@ -3,7 +3,6 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const Joi = require('joi');
 const { query, globalQuery, pool } = require('../config/database');
-const { withOrg } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 
@@ -29,15 +28,17 @@ function issueRefreshToken() {
   return crypto.randomBytes(40).toString('hex');
 }
 
-async function setRefreshCookie(res, userId, reuseToken, req, orgId) {
+async function setRefreshCookie(res, userId, reuseToken, req) {
   const raw = reuseToken || issueRefreshToken();
   const hash = hashToken(raw);
-  if (!orgId) throw new Error('tenant_scope_required');
-  await withOrg(orgId, () => query(
+  // refresh_tokens is a bootstrap/authentication table keyed by the user; it has no org_id column.
+  // Login is the point where tenant context is established, so forcing a tenant UUID here
+  // creates a circular dependency and can turn a valid credential check into a 500.
+  await globalQuery(
     `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, ip_address, user_agent, last_seen_at)
      VALUES ($1, $2, NOW() + INTERVAL '${REFRESH_TTL_DAYS} days', $3, $4, NOW())`,
     [userId, hash, req ? (req.ip || null) : null, req ? (String(req.headers['user-agent'] || '').slice(0, 1000) || null) : null]
-  ));
+  );
   res.cookie(RT_COOKIE, raw, COOKIE_OPTS);
   return raw;
 }
@@ -80,7 +81,7 @@ const login = asyncHandler(async (req, res) => {
     { expiresIn: '2h' }
   );
 
-  await setRefreshCookie(res, user.id, undefined, req, user.org_id);
+  await setRefreshCookie(res, user.id, undefined, req);
 
   logger.info(`Login: ${user.email} (${user.role})`);
   res.json({
