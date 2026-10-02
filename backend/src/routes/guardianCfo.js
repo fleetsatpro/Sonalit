@@ -132,7 +132,7 @@ async function deviceAuth(req, res, next) {
     const token = req.headers['x-device-token'];
     if (!token) return res.status(401).json({ error: 'Missing X-Device-Token header' });
 
-    const result = await query(
+    const result = await globalQuery(
       `SELECT * FROM guardian_devices WHERE token = $1 AND deleted_at IS NULL`,
       [token]
     );
