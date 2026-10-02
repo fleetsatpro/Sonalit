@@ -576,12 +576,20 @@ BEGIN
         EXECUTE format('CREATE POLICY tenant_base_fallback ON %I.%I AS PERMISSIVE FOR ALL USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid) WITH CHECK (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
       END IF;
     END IF;
-    BEGIN
-      IF pg_get_serial_sequence(format('%I.%I',r.schema_name,r.table_name),'id') IS NOT NULL THEN
-        EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE %s TO sonalit_app', pg_get_serial_sequence(format('%I.%I',r.schema_name,r.table_name),'id'));
-      END IF;
-    EXCEPTION WHEN undefined_object OR invalid_parameter_value THEN NULL;
-    END;
+    IF EXISTS (
+      SELECT 1
+        FROM information_schema.columns
+       WHERE table_schema = r.schema_name
+         AND table_name = r.table_name
+         AND column_name = 'id'
+    ) THEN
+      BEGIN
+        IF pg_get_serial_sequence(format('%I.%I',r.schema_name,r.table_name),'id') IS NOT NULL THEN
+          EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE %s TO sonalit_app', pg_get_serial_sequence(format('%I.%I',r.schema_name,r.table_name),'id'));
+        END IF;
+      EXCEPTION WHEN undefined_object OR invalid_parameter_value THEN NULL;
+      END;
+    END IF;
   END LOOP;
 END $tenant$;
 
