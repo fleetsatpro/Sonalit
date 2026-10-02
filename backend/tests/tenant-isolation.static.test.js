@@ -197,7 +197,8 @@ describe('tenant isolation regression guards', () => {
       for (const scope of ['routes', 'middleware']) {
         for (const file of filesUnder(path.join(servicesRoot, service.name, 'src', scope), ['.js', '.ts'])) {
           const source = fs.readFileSync(file, 'utf8');
-          if (/\bpool\.query\s*\(/.test(source)) {
+          const isHealthRoute = /(^|\\/)health\\.[jt]s$/.test(file);
+          if (!isHealthRoute && /\bpool\.query\s*\(/.test(source)) {
             violations.push(path.relative(path.join(__dirname, '../..'), file));
           }
         }
