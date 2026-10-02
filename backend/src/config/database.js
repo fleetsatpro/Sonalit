@@ -61,15 +61,16 @@ async function query(text, params) {
   const start = Date.now();
   const orgId = getOrgId();
   const activeClient = getTenantDbClient();
+  if (!orgId) {
+    throw new Error('tenant_scope_required: use globalQuery() only for explicit global/bootstrap operations');
+  }
   try {
     // If already inside withOrg(), reuse that transaction instead of opening a
     // second connection. This preserves transaction atomicity and prevents a
     // nested legacy helper from observing pre-commit state on another client.
-    const result = activeClient && orgId
+    const result = activeClient
       ? await activeClient.query(text, params)
-      : orgId
-        ? await tenantQuery(orgId, text, params)
-        : await pool.query(text, params);
+      : await tenantQuery(orgId, text, params);
     const duration = Date.now() - start;
     if (duration > 1000) {
       logger.warn(`Slow query detected (${duration}ms): ${text.substring(0, 100)}`);
@@ -82,7 +83,7 @@ async function query(text, params) {
 }
 
 async function healthCheck() {
-  const result = await query('SELECT NOW() AS now');
+  const result = await globalQuery('SELECT NOW() AS now');
   return result.rows[0].now;
 }
 
