@@ -6,6 +6,7 @@ const ROOTS = [
   path.join(__dirname, '../src/controllers'),
   path.join(__dirname, '../src/workers'),
 ];
+const SERVICE_ROOT = path.join(__dirname, '../../services');
 
 function filesUnder(root, extensions = ['.js']) {
   const out = [];
@@ -59,6 +60,21 @@ describe('tenant isolation regression guards', () => {
     expect(database).toMatch(/app\.current_org_id/);
   });
 
+  test('v4 HTTP routes never trust x-org-id or x-user-id headers as tenant identity', () => {
+    const violations = [];
+    for (const service of fs.existsSync(SERVICE_ROOT) ? fs.readdirSync(SERVICE_ROOT, { withFileTypes: true }) : []) {
+      if (!service.isDirectory()) continue;
+      const routesRoot = path.join(SERVICE_ROOT, service.name, 'src', 'routes');
+      for (const file of filesUnder(routesRoot).map(f => f.replace(/\\/g, '/'))) {
+        const source = fs.readFileSync(file, 'utf8');
+        if (/headers\[['"]x-org-id['"]\]|headers\[['"]x-user-id['"]\]/i.test(source)) {
+          violations.push(path.relative(path.join(__dirname, '../..'), file));
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   test('tenant hardening migration is structurally fail-closed', () => {
     const sql = fs.readFileSync(path.join(__dirname, '../migrations/20261002_120_tenant_isolation_hardening.sql'), 'utf8');
     expect(sql).toContain('FORCE ROW LEVEL SECURITY');
@@ -66,6 +82,7 @@ describe('tenant isolation regression guards', () => {
     expect(sql).toContain('WITH CHECK');
     expect(sql).not.toMatch(/FULL OUTER JOIN\s+[^\n]+\bON\s+false/i);
     expect(sql).not.toMatch(/AS \$\s*\n/);
+    expect(sql).not.toMatch(/CREATE POLICY[^\n]+AS RESTRICTIVE[^\n]+/i);
   });
 
   test('v4 service HTTP surfaces cannot trust caller-supplied tenant headers', () => {
