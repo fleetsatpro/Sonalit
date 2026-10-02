@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
@@ -68,6 +69,7 @@ function formatUtcClock(date: Date) {
 }
 
 export default function GodsEyeView() {
+  const navigate = useNavigate()
   const { groups, counts } = useLiveFleet()
   const [view, setView] = useState<View>('3D')
   const [selected, setSelected] = useState<LiveVehicle | null>(null)
@@ -186,6 +188,10 @@ export default function GodsEyeView() {
     >
       <header className="gev-topbar">
         <div className="gev-brand">
+          <button type="button" className="gev-exit" onClick={() => void navigate({ to: '/command' })} aria-label="Return to Command Centre" title="Return to Command Centre">
+            <ChevronLeft size={15} />
+            <span>COMMAND</span>
+          </button>
           <div className="gev-brand-mark" aria-hidden="true"><Globe2 size={18} /></div>
           <div className="gev-brand-copy">
             <div className="gev-kicker">SONALIT · SPATIAL COMMAND</div>
