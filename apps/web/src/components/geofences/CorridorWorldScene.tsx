@@ -233,6 +233,7 @@ export default function CorridorWorldScene({
   // recenter/fit controls may move the camera.
   const initialGlobalFitDoneRef = useRef(false);
   const initialLocalFitDoneRef = useRef(false);
+  const renderRecoveryRef = useRef(0);
   const [mode, setMode] = useState<MapMode>(globalView ? 'satellite' : 'dark');
   const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
   const [terrainReady, setTerrainReady] = useState(false);
@@ -279,7 +280,7 @@ export default function CorridorWorldScene({
         requestRenderMode: true,
         maximumRenderTimeChange: Infinity,
         scene3DOnly: true,
-        contextOptions: { webgl: { alpha: true, antialias: true } },
+        contextOptions: { webgl: { alpha: true, antialias: true, failIfMajorPerformanceCaveat: false } },
       });
     } catch {
       setInitFailed(true);
@@ -287,6 +288,17 @@ export default function CorridorWorldScene({
     }
 
     viewerRef.current = viewer;
+    // Cesium stops its default render loop after a render exception. Keep GEV
+    // self-healing for transient shader/texture/tile faults instead of leaving
+    // the operator with a permanently frozen or blank globe.
+    const renderErrorHandler = () => {
+      setMapStatus('3D RENDER RECOVERING · ESRI SURFACE ACTIVE');
+      if (renderRecoveryRef.current >= 3 || viewer.isDestroyed()) return;
+      renderRecoveryRef.current += 1;
+      viewer.useDefaultRenderLoop = true;
+      viewer.scene.requestRender();
+    };
+    viewer.scene.renderError.addEventListener(renderErrorHandler);
     if (globalView) {
       viewer.camera.setView({
         destination: Cesium.Cartesian3.fromDegrees(20, 0, 13000000),
@@ -428,7 +440,9 @@ export default function CorridorWorldScene({
       observer.disconnect();
       handler.destroy();
       viewer.scene.preRender.removeEventListener(preRender);
+      viewer.scene.renderError.removeEventListener(renderErrorHandler);
       viewer.camera.moveEnd.removeEventListener(syncViewport);
+      renderRecoveryRef.current = 0;
       entityMapRef.current.clear();
       externalEntityMapRef.current.clear();
       currentRef.current.clear();
