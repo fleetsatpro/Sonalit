@@ -8,7 +8,7 @@ import { NotFoundError } from '../lib/errors.js';
 const CreateDocSchema = z.object({
   name: z.string().min(1).max(255),
   kind: z.string().min(1).max(50),
-  r2_key: z.string().min(1),
+  r2_key: z.string().regex(/^orgs\/[0-9a-f-]{36}\/documents\/[A-Za-z0-9._-]+$/, 'r2_key must be in the authenticated organization namespace'),
   size_bytes: z.number().int().nonnegative().optional(),
 });
 
@@ -25,6 +25,9 @@ export const documentsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/v4/documents', async (req, reply) => {
     const org_id = req.user?.org_id;
     const body = CreateDocSchema.parse(req.body);
+    if (!body.r2_key.startsWith(`orgs/${org_id}/documents/`) || body.r2_key.includes('..')) {
+      throw new Error('r2_key_not_in_tenant_namespace');
+    }
     const [row] = await query('INSERT INTO media_assets (id, org_id, kind, status, r2_key, size_bytes, name) VALUES ($1,$2,$3,\'committed\',$4,$5,$6) RETURNING *',
       [randomUUID(), org_id, body.kind, body.r2_key, body.size_bytes ?? null, body.name]);
     return reply.code(201).send(row);
