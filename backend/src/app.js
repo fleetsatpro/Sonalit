@@ -699,7 +699,7 @@ if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test') {
   });
 }
 
-if (!process.env.GENERATE_OPENAPI && isFenceActive())
+if (!process.env.GENERATE_OPENAPI && isFenceActive() && typeof dbQuery === 'function')
   dbQuery(
     `INSERT INTO guardian_config (key, value_int, updated_at) VALUES ('cfo_module_enabled', 1, NOW())
      ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`
