@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
-const { query, pool } = require('../config/database');
+const { globalQuery, pool } = require('../config/database');
 const logger = require('../utils/logger');
 
 function getRedisConnection() {
@@ -13,7 +13,7 @@ function getRedisConnection() {
 }
 
 async function processRiskStatsRefresh(job) {
-  await query('REFRESH MATERIALIZED VIEW CONCURRENTLY risk_zone_stats');
+  await globalQuery('REFRESH MATERIALIZED VIEW CONCURRENTLY risk_zone_stats');
   logger.info('risk_zone_stats materialized view refreshed');
   return { refreshed: true };
 }
