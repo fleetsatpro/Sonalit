@@ -68,4 +68,14 @@ describe('Client Pulse workbook generation', () => {
     expect(names).toContain('xl/styles.xml');
     expect(names).toContain('[Content_Types].xml');
   });
+
+  test('produces a valid heartbeat workbook when the active booking set is empty', async () => {
+    const workbook = await buildManifestWorkbook([], new Date('2026-10-02T09:00:00.000Z'));
+    expect(Buffer.isBuffer(workbook)).toBe(true);
+    expect(workbook.length).toBeGreaterThan(1000);
+    const names = zipEntries(workbook);
+    expect(names).toContain('xl/workbook.xml');
+    expect(names).toContain('xl/worksheets/sheet1.xml');
+    expect(names).toContain('xl/worksheets/sheet2.xml');
+  });
 });
