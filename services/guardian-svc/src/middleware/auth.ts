@@ -29,11 +29,20 @@ export async function requireAuth(request: FastifyRequest, _reply: FastifyReply)
     );
     if (payload.type !== 'access') throw new AuthError('Invalid token type');
     const sub = typeof payload.sub === 'string' ? payload.sub : '';
-    const org_id = typeof payload.org_id === 'string' ? payload.org_id : '';
-    const role = typeof payload.role === 'string' ? payload.role : '';
-    if (!sub || !org_id || !role) throw new AuthError('Token missing required claims');
-    request.user = { sub, org_id, role };
-    tenantContext.enterWith(org_id);
+    const claimedOrgId = typeof payload.org_id === 'string' ? payload.org_id : '';
+    if (!sub || !claimedOrgId) throw new AuthError('Token missing required claims');
+
+    const live = await query<{ id: string; org_id: string; role: string; status: string }>(
+      'SELECT id, org_id, role, status FROM users WHERE id=$1 AND deleted_at IS NULL',
+      [sub],
+    );
+    const user = live[0];
+    if (!user || user.status !== 'active' || user.org_id !== claimedOrgId) {
+      throw new AuthError('Token tenant/session is no longer active');
+    }
+
+    request.user = { sub: user.id, org_id: user.org_id, role: user.role };
+    tenantContext.enterWith(user.org_id);
   } catch (err) {
     if (err instanceof AuthError) throw err;
     throw new AuthError('Token invalid or expired');
