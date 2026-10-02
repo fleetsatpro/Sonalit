@@ -10,7 +10,7 @@ import type maplibregl from 'maplibre-gl';
 export const STREET_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-  sources: { street: { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: '© Esri, HERE, Garmin, USGS, NGA, EPA, USDA' } },
+  sources: { street: { type: 'raster', tiles: ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19, attribution: '© OpenStreetMap contributors © CARTO' } },
   layers: [{ id: 'street-tiles', type: 'raster', source: 'street' as const, paint: { 'raster-opacity': 1 } }],
 };
 
