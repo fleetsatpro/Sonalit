@@ -1044,7 +1044,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       // Soft-delete any other PENDING records for the same physical device
       await globalQuery(
         `UPDATE guardian_devices SET deleted_at = NOW()
-         WHERE id <> $1 AND org_id = $5 AND status = 'pending' AND deleted_at IS NULL
+         WHERE id <> $1 AND org_id = $6 AND status = 'pending' AND deleted_at IS NULL
            AND (
              ($2::TEXT IS NOT NULL AND imei_hash = $2)
              OR ($3::TEXT IS NOT NULL AND android_id = $3)
