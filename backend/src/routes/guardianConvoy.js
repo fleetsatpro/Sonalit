@@ -7,7 +7,7 @@ const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('../utils/logger');
 const { normalizeOrgId, runWithOrgContext } = require('../utils/tenantContext');
@@ -126,7 +126,7 @@ router.post('/login', async (req, res, next) => {
     // Do not reveal whether either identifier exists. The join requires the CFO,
     // convoy, membership, and organization to agree before any convoy metadata
     // is returned or a session token can be minted.
-    const authResult = await query(
+    const authResult = await globalQuery(
       `SELECT u.id, u.name, u.email, u.org_id, u.status, u.password_hash,
               c.id AS convoy_id, c.name AS convoy_name, c.route_origin, c.route_destination,
               c.status AS convoy_status
@@ -164,14 +164,14 @@ router.post('/login', async (req, res, next) => {
       return res.status(200).json({ success: false, error: 'Account is not active' });
 
     const [trucksResult, sealsResult] = await Promise.all([
-      query(
+      globalQuery(
         `SELECT ct.id, ct.position, ct.driver_name, ct.driver_phone,
                 v.registration, v.make, v.model, v.color
          FROM convoy_trucks ct LEFT JOIN vehicles v ON v.id = ct.vehicle_id AND v.org_id = $2
          WHERE ct.convoy_id = $1 AND ct.org_id = $2 ORDER BY ct.position`,
         [convoy.id, convoy.org_id]
       ),
-      query(
+      globalQuery(
         `SELECT cs.id, cs.convoy_truck_id, cs.seal_position, cs.rfid_code, cs.session, cs.status
          FROM convoy_seals cs
          JOIN convoy_trucks ct ON ct.id = cs.convoy_truck_id AND ct.org_id = $2
