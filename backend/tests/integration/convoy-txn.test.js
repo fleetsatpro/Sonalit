@@ -84,8 +84,10 @@ describe('createConvoyCfo transaction rollback', () => {
 
     const calls = mockClient.query.mock.calls.map(c => c[0]);
     expect(calls[0]).toMatch(/BEGIN/i);
-    expect(calls[1]).toContain('SELECT id, role FROM users');
-    expect(calls[2]).toMatch(/ROLLBACK/i);
+    expect(calls[1]).toMatch(/SET LOCAL ROLE/i);
+    expect(calls[2]).toMatch(/set_config.*app.current_org_id/i);
+    expect(calls[3]).toContain('SELECT id, role FROM users');
+    expect(calls[4]).toMatch(/ROLLBACK/i);
 
     expect(res.status).toHaveBeenCalledWith(422);
     expect(res.json).toHaveBeenCalledWith(
