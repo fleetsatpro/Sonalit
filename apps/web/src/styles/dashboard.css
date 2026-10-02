@@ -111,6 +111,21 @@ html, body, #root, * {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Legibility contract ────────────────────────────────────────────────
+   Strong, scannable typography across every themed application surface. */
+html[data-theme] body,
+html[data-theme] body #root,
+html[data-theme] body #root * {
+  font-weight: 600 !important;
+  font-synthesis: none;
+}
+html[data-theme] body #root :is(h1,h2,h3,h4,h5,h6,strong,b,th,.font-extrabold,.font-bold,.font-semibold) {
+  font-weight: 800 !important;
+}
+html[data-theme] body #root :is(input,select,textarea,button,[role="button"]) {
+  font-weight: 700 !important;
+}
+
 /* ── Rail (side nav) bold font ──────────────────────────────────────────
    The blanket `* { font-family: var(--d-font) !important }` above wins
    over any inline font-family Rail.tsx sets on its own, since !important
