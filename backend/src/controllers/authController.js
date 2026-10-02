@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const Joi = require('joi');
-const { query, pool } = require('../config/database');
+const { query, globalQuery, pool } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 
@@ -55,7 +55,7 @@ const login = asyncHandler(async (req, res) => {
   const { email, password } = value;
   await ensureRefreshTable();
 
-  const result = await query(
+  const result = await globalQuery(
     'SELECT id, email, name, role, status, org_id, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL',
     [email]
   );
