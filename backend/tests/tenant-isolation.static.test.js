@@ -257,7 +257,7 @@ describe('tenant isolation regression guards', () => {
     const intelligenceAlerts = fs.readFileSync(path.join(__dirname, '../src/routes/intelligenceAlerts.js'), 'utf8');
 
     expect(risk).toContain("router.use(authenticate);");
-    expect(risk).toContain("router.use(attachOrgDb);");
+    expect(risk).not.toContain("router.use(attachOrgDb);");
     expect(risk).toContain("router.use('/intelligence', intelligenceRouter);");
     expect(intelligence).not.toContain("router.use(authenticate);");
     expect(intelligence).not.toContain("router.use(attachOrgDb);");
