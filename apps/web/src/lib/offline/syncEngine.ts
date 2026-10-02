@@ -188,7 +188,7 @@ async function applyChanges(
 
   await db.transaction('rw', db.entities, async () => {
     for (const c of changes) {
-      const key = `${c.entity_type}:${c.entity_id}`;
+      const key = `${orgId}:${c.entity_type}:${c.entity_id}`;
 
       if (c.operation === 'delete') {
         await db.entities.delete(key);
@@ -445,7 +445,7 @@ async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary): Promise<
  */
 async function clearLocalModification(entry: OutboxEntry): Promise<void> {
   if (!entry.entityId) return;
-  const key = `${entry.entityType}:${entry.entityId}`;
+  const key = `${orgId}:${entry.entityType}:${entry.entityId}`;
   const row = await db.entities.get(key);
   if (row?.locallyModified) {
     await db.entities.update(key, { locallyModified: false });
