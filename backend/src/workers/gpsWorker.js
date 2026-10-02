@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 const { Worker } = require('bullmq');
 const { query } = require('../config/database');
 const { getQueues } = require('../config/queue');
+const { globalQuery } = require('../config/database');
 const { withOrg } = require('../utils/orgScopedDb');
 const { distanceToSegment } = require('../utils/haversine');
 const logger = require('../utils/logger');
@@ -65,7 +66,7 @@ async function processGPS(job) {
 
   // Resolve tenant ownership before any tenant-bearing operation. Queue payloads
   // are not authoritative for tenant selection.
-  const ownership = await query(
+  const ownership = await globalQuery(
     'SELECT org_id FROM vehicles WHERE id = $1 AND deleted_at IS NULL',
     [vehicle_id],
   );
