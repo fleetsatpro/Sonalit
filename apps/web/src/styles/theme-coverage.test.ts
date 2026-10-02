@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { SONALIT_THEMES } from './themes.js';
 
 const coverageCss = readFileSync(new URL('./theme-coverage.css', import.meta.url), 'utf8');
+const themeSystemCss = readFileSync(new URL('./theme-system.css', import.meta.url), 'utf8');
+const mainTsx = readFileSync(new URL('../main.tsx', import.meta.url), 'utf8');
 
 describe('Sonalit theme coverage layer', () => {
   it('declares browser chrome behaviour for every production theme', () => {
@@ -33,6 +35,13 @@ describe('Sonalit theme coverage layer', () => {
     ]) {
       expect(coverageCss).toContain(root);
     }
+  });
+
+  it('loads the coverage layer after feature styles and leaves intentional overlays alone', () => {
+    expect(mainTsx.indexOf(`import './styles/theme-coverage.css';`)).toBeGreaterThan(
+      mainTsx.indexOf(`import './styles/marketing.css';`),
+    );
+    expect(themeSystemCss).not.toContain('[class*="bg-black/"]');
   });
 
   it('covers legacy presentation-neutral utility families without remapping status colours', () => {
