@@ -325,6 +325,7 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS guardian_audit_log (
         id          BIGSERIAL PRIMARY KEY,
+        org_id      UUID,
         actor_type  TEXT NOT NULL CHECK (actor_type IN ('admin','device','system')),
         actor_id    UUID,
         action      TEXT NOT NULL,
@@ -424,6 +425,7 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS guardian_command_nonces (
         device_id UUID NOT NULL REFERENCES guardian_devices(id),
+        org_id    UUID,
         nonce     TEXT NOT NULL,
         seen_at   TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (device_id, nonce)
@@ -434,478 +436,41 @@ async function ensureTables() {
     await query(`
       CREATE TABLE IF NOT EXISTS device_command_events (
         id         BIGSERIAL PRIMARY KEY,
+        org_id     UUID,
         command_id UUID NOT NULL,
         status     TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
     await query(`CREATE INDEX IF NOT EXISTS idx_device_command_events_command ON device_command_events(command_id)`);
-    // Lazy Guardian control tables are created here in some environments, so
-    // secure them immediately rather than relying on a later migration.
-    await query(`DO $guardian_tenant$
-DECLARE t TEXT;
-BEGIN
-  FOREACH t IN ARRAY ARRAY[
-    'guardian_audit_log','enrollment_codes','convoy_codes',
-    'guardian_command_nonces','device_command_events'
-  ] LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
-    EXECUTE format('DROP POLICY IF EXISTS guardian_tenant_isolation ON public.%I', t);
-    EXECUTE format(
-      'CREATE POLICY guardian_tenant_isolation ON public.%I
-         USING (org_id = NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)
-         WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)',
-      t
-    );
-    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO sonalit_app', t);
-  END LOOP;
-END $guardian_tenantconst router = require('express').Router();
-const { query } = require('../config/database');
-const { authenticate, authorize } = require('../middleware/auth');
-const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
-const logger = require('../utils/logger');
-const { v4: uuidv4 } = require('uuid');
-const crypto = require('crypto');
-const rateLimit = require('express-rate-limit');
-const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
-const { sendWhatsAppMessage } = require('../utils/whatsapp');
-const { publish } = require('../realtime/centrifugo');
-const requireIdempotencyKey = require('../middleware/idempotency');
-const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
-const captureVision = require('../utils/captureVision');
-const { getOrgId } = require('../utils/tenantContext');
-const { runWithOrgContext } = require('../utils/tenantContext');
 
-// ─── Integrity age thresholds per command type (T1.4) ────────────────────────
-const INTEGRITY_MAX_AGE = {
-  WIPE: 5,
-  LOCKDOWN: 15,
-  UPDATE_PINS: 15,
-  // All other commands default to 60 min (checked inline)
-};
-
-// ─── Config cache (60-second TTL) ────────────────────────────────────────────
-let _minApkVersionCode = 0;
-let _minApkVersionCodeExpiry = 0;
-
-async function getMinApkVersionCode() {
-  const now = Date.now();
-  if (now < _minApkVersionCodeExpiry) return _minApkVersionCode;
-  const row = await query(`SELECT value_int FROM guardian_config WHERE key = 'min_apk_version_code'`);
-  _minApkVersionCode = row.rows[0]?.value_int ?? 0;
-  _minApkVersionCodeExpiry = now + 60_000;
-  return _minApkVersionCode;
-}
-
-// ─── Rate Limiters ────────────────────────────────────────────────────────────
-
-const enrollLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
-});
-
-// T5.1: rate-limit keys are device_id (set by deviceAuth) with IP as fallback
-const panicLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
-  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
-});
-
-const heartbeatLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 6,
-  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
-  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
-});
-
-const locationLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
-  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
-});
-
-const reportLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
-  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
-});
-
-const voiceMessageLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
-  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
-});
-
-// Per-admin-per-target-device: 10 commands/min per (admin, device) pair
-const commandLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  keyGenerator: (req) => `${(req.user && req.user.id) ? req.user.id : req.ip}:${req.params.id || ''}`,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
-});
-
-// Resolve a device's org_id (from guardian_devices) and its linked field-officer id
-// (by device link or badge/name). Additive: used to backfill enrollment responses so
-// the agent can subscribe to the correct realtime channel (org#<org_id>).
-async function resolveOrgOfficer(deviceId, badgeName) {
-  let orgId = null;
-  let officerId = null;
-  try {
-    const devRow = await query(`SELECT org_id FROM guardian_devices WHERE id = $1`, [deviceId]);
-    orgId = devRow.rows[0]?.org_id ?? null;
-    const offRow = await query(
-      `SELECT id FROM field_officers
-       WHERE (device_id = $1 OR badge_number = $2)
-       ORDER BY (device_id = $1) DESC LIMIT 1`,
-      [deviceId, badgeName || null]
-    );
-    officerId = offRow.rows[0]?.id ?? null;
-  } catch (e) {
-    logger.warn(`resolveOrgOfficer failed for ${deviceId}: ${e.message}`);
-  }
-  return { orgId, officerId };
-}
-
-// ─── Table Initialisation ────────────────────────────────────────────────────
-
-async function ensureTables() {
-  try {
-    await query(`
-      CREATE TABLE IF NOT EXISTS guardian_devices (
-        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        token           UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
-        name            TEXT NOT NULL,
-        imei            TEXT,
-        imei_hash       TEXT,
-        model           TEXT,
-        os_version      TEXT,
-        app_version     TEXT,
-        status          TEXT DEFAULT 'pending',
-        assignment_type TEXT,
-        assignment_id   UUID,
-        panic_active    BOOLEAN DEFAULT false,
-        last_seen       TIMESTAMPTZ,
-        last_lat        DECIMAL(10,7),
-        last_lng        DECIMAL(10,7),
-        last_speed      DECIMAL(6,2),
-        enrolled_at     TIMESTAMPTZ DEFAULT NOW(),
-        deleted_at      TIMESTAMPTZ,
-        created_at      TIMESTAMPTZ DEFAULT NOW(),
-        updated_at      TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS device_locations (
-        id        BIGSERIAL PRIMARY KEY,
-        device_id UUID NOT NULL REFERENCES guardian_devices(id) ON DELETE CASCADE,
-        lat       DECIMAL(10,7) NOT NULL,
-        lng       DECIMAL(10,7) NOT NULL,
-        altitude  DECIMAL(8,2),
-        heading   DECIMAL(6,2),
-        speed     DECIMAL(6,2),
-        accuracy  DECIMAL(8,2),
-        timestamp TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS device_health (
-        id               BIGSERIAL PRIMARY KEY,
-        device_id        UUID NOT NULL REFERENCES guardian_devices(id) ON DELETE CASCADE,
-        battery_level    INT,
-        battery_charging BOOLEAN,
-        signal_strength  INT,
-        network_type     TEXT,
-        storage_free_mb  INT,
-        ram_free_mb      INT,
-        app_version      TEXT,
-        recorded_at      TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS panic_events (
-        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        device_id   UUID NOT NULL REFERENCES guardian_devices(id),
-        mode        TEXT NOT NULL,
-        lat         DECIMAL(10,7),
-        lng         DECIMAL(10,7),
-        message     TEXT,
-        resolved_at TIMESTAMPTZ,
-        resolved_by UUID,
-        created_at  TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS device_commands (
-        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        device_id    UUID NOT NULL REFERENCES guardian_devices(id),
-        command_type TEXT NOT NULL,
-        payload      JSONB,
-        status       TEXT DEFAULT 'pending',
-        result       TEXT,
-        issued_by    UUID,
-        issued_at    TIMESTAMPTZ DEFAULT NOW(),
-        executed_at  TIMESTAMPTZ
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS field_reports (
-        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        device_id   UUID NOT NULL REFERENCES guardian_devices(id),
-        category    TEXT NOT NULL,
-        severity    TEXT DEFAULT 'medium',
-        description TEXT,
-        lat         DECIMAL(10,7),
-        lng         DECIMAL(10,7),
-        photo_url   TEXT,
-        created_at  TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS guardian_crash_reports (
-        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        device_id       UUID REFERENCES guardian_devices(id) ON DELETE CASCADE,
-        org_id          UUID,
-        app_version     TEXT,
-        app_build       BIGINT,
-        android_version TEXT,
-        sdk_int         INT,
-        device_model    TEXT,
-        thread          TEXT,
-        stack_trace     TEXT,
-        occurred_at     TIMESTAMPTZ,
-        created_at      TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    // v2 columns — safe to run repeatedly
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS org_id UUID`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS convoy_code TEXT`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS last_checkin_at TIMESTAMPTZ`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS android_id TEXT`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS manufacturer TEXT`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS imei_hash TEXT`);
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`).catch(() => {}); // also added below
-    await query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_devices_imei_hash
-        ON guardian_devices(imei_hash)
-        WHERE imei_hash IS NOT NULL AND deleted_at IS NULL
-    `);
-    await query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_devices_android_id
-        ON guardian_devices(android_id)
-        WHERE android_id IS NOT NULL AND android_id <> 'unknown' AND deleted_at IS NULL
-    `);
-
-    // One-time cleanup: soft-delete PENDING records where an ACTIVE record exists
-    // for the same name + model (catches duplicates created before hardware-ID dedup was added).
-    await query(`
-      UPDATE guardian_devices SET deleted_at = NOW()
-      WHERE status = 'pending' AND deleted_at IS NULL
-        AND EXISTS (
-          SELECT 1 FROM guardian_devices active
-          WHERE active.deleted_at IS NULL
-            AND active.status = 'active'
-            AND active.name = guardian_devices.name
-            AND (active.model = guardian_devices.model OR active.model IS NULL OR guardian_devices.model IS NULL)
-            AND active.id <> guardian_devices.id
-        )
-    `);
-
-    // p1t1 — server-side config table (feature flags, version enforcement)
-    await query(`
-      CREATE TABLE IF NOT EXISTS guardian_config (
-        key         TEXT PRIMARY KEY,
-        value_int   INT,
-        value_text  TEXT,
-        description TEXT,
-        updated_at  TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await query(`
-      INSERT INTO guardian_config (key, value_int, description)
-      VALUES ('min_apk_version_code', 5,
-              'Heartbeat rejects APKs below this versionCode with HTTP 426')
-      ON CONFLICT (key) DO UPDATE
-        SET value_int = GREATEST(guardian_config.value_int, EXCLUDED.value_int),
-            updated_at = NOW()
-    `);
-
-    // Remove deprecated flags replaced by unconditional enforcement (Task E)
-    await query(`
-      DELETE FROM guardian_config
-      WHERE key IN ('command_signing_enabled', 'cert_pinning_enabled')
-    `);
-
-    // Audit log archive flag (default off — must be explicitly enabled)
-    await query(`
-      INSERT INTO guardian_config (key, value_int, description)
-      VALUES ('audit_log_archive_enabled', 0, 'Archive audit log rows to R2 before GDPR deletion (0=off,1=on)')
-      ON CONFLICT (key) DO NOTHING
-    `);
-
-    // Indexes for performance
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_device_id ON device_locations(device_id)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_timestamp ON device_locations(timestamp DESC)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_health_device_id ON device_health(device_id)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_device_commands_device_status ON device_commands(device_id, status)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_panic_events_device_id ON panic_events(device_id)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_panic_events_resolved ON panic_events(resolved_at)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_field_reports_device_id ON field_reports(device_id)`);
-
-    // p2t5 — audit log table
-    await query(`
-      CREATE TABLE IF NOT EXISTS guardian_audit_log (
-        id          BIGSERIAL PRIMARY KEY,
-        actor_type  TEXT NOT NULL CHECK (actor_type IN ('admin','device','system')),
-        actor_id    UUID,
-        action      TEXT NOT NULL,
-        target_type TEXT,
-        target_id   UUID,
-        payload     JSONB,
-        ip_address  TEXT,
-        created_at  TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await query(`CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON guardian_audit_log(actor_id, created_at DESC)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_audit_log_target ON guardian_audit_log(target_type, target_id, created_at DESC)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_audit_log_action ON guardian_audit_log(action, created_at DESC)`);
-
-    // p3t1 — enrollment codes
-    await query(`
-      CREATE TABLE IF NOT EXISTS enrollment_codes (
-        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        org_id     UUID,
-        code       TEXT NOT NULL UNIQUE,
-        used_at    TIMESTAMPTZ,
-        expires_at TIMESTAMPTZ NOT NULL,
-        created_by UUID,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    // p3t5 — DMS server-side config seed rows
-    await query(`
-      INSERT INTO guardian_config (key, value_int, description) VALUES
-        ('dms_default_interval_minutes', 60, 'Default dead-man switch interval in minutes'),
-        ('dms_max_interval_minutes', 120, 'Maximum allowed DMS interval (hard ceiling)')
-      ON CONFLICT (key) DO NOTHING
-    `);
-    // Cap any existing dms_max_interval_minutes above the new 120-minute ceiling
-    await query(`
-      UPDATE guardian_config SET value_int = 120, updated_at = NOW()
-      WHERE key = 'dms_max_interval_minutes' AND value_int > 120
-    `);
-
-    // p3t6 — convoy codes
-    await query(`
-      CREATE TABLE IF NOT EXISTS convoy_codes (
-        code        TEXT PRIMARY KEY,
-        created_by  UUID REFERENCES users(id),
-        org_id      UUID,
-        max_members INT DEFAULT 50,
-        expires_at  TIMESTAMPTZ,
-        active      BOOLEAN DEFAULT true,
-        created_at  TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    // p3t7 — command signing: signature column
-    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS signature TEXT`);
-
-    // p1t3 — command delivery timestamps
-    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
-
-    // p2t3 — command expiry
-    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
-
-    // panic revamp — acknowledge/escalation/resolution-reason workflow
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_by UUID`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS resolution_note TEXT`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS reason_code TEXT`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalation_level INT DEFAULT 0`);
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ`);
-    await query(`
-      CREATE INDEX IF NOT EXISTS idx_panic_events_open_unacked
-        ON panic_events(org_id, created_at)
-        WHERE resolved_at IS NULL AND acknowledged_at IS NULL
-    `);
-
-    // p1t5 — idempotency UUIDs for panic events and field reports
-    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS event_uuid UUID`);
-    await query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_panic_events_event_uuid
-        ON panic_events(event_uuid)
-        WHERE event_uuid IS NOT NULL
-    `);
-    await query(`ALTER TABLE field_reports ADD COLUMN IF NOT EXISTS event_uuid UUID`);
-    await query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_field_reports_event_uuid
-        ON field_reports(event_uuid)
-        WHERE event_uuid IS NOT NULL
-    `);
-
-    // p4t1 — FCM push token on device
-    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`);
-
-    // p5t1 — nonce column for command replay protection
-    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS nonce TEXT`);
-
-    // p5t2 — nonce deduplication table (PRIMARY KEY enforces uniqueness per device)
-    await query(`
-      CREATE TABLE IF NOT EXISTS guardian_command_nonces (
-        device_id UUID NOT NULL REFERENCES guardian_devices(id),
-        nonce     TEXT NOT NULL,
-        seen_at   TIMESTAMPTZ DEFAULT NOW(),
-        PRIMARY KEY (device_id, nonce)
-      )
-    `);
-
-    // p5t3 — command lifecycle event log
-    await query(`
-      CREATE TABLE IF NOT EXISTS device_command_events (
-        id         BIGSERIAL PRIMARY KEY,
-        command_id UUID NOT NULL,
-        status     TEXT NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-);
-
+    await ensureGuardianTenantControlSecurity();
     logger.info('Guardian tables initialised');
   } catch (err) {
     logger.error(`Guardian ensureTables error: ${err.message}`);
   }
+}
+
+async function ensureGuardianTenantControlSecurity() {
+  const tables = [
+    'guardian_audit_log',
+    'enrollment_codes',
+    'convoy_codes',
+    'guardian_command_nonces',
+    'device_command_events',
+  ];
+  for (const table of tables) {
+    await query('ALTER TABLE public.' + table + ' ENABLE ROW LEVEL SECURITY');
+    await query('DROP POLICY IF EXISTS guardian_tenant_isolation ON public.' + table);
+    await query(
+      "CREATE POLICY guardian_tenant_isolation ON public." + table +
+      " USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)" +
+      " WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)"
+    );
+    await query('GRANT SELECT, INSERT, UPDATE, DELETE ON public.' + table + ' TO sonalit_app');
+  }
+  await query('GRANT USAGE, SELECT ON SEQUENCE public.guardian_audit_log_id_seq TO sonalit_app');
+  await query('GRANT USAGE, SELECT ON SEQUENCE public.device_command_events_id_seq TO sonalit_app');
 }
 
 // ─── Audit Log Helper ─────────────────────────────────────────────────────────
@@ -1613,7 +1178,8 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
     // T5.3: mark commands as delivered
     if (commands.rows.length) {
       for (const cmd of commands.rows) {
-        query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'delivered')`, [cmd.id]).catch(() => {});
+        query(`INSERT INTO device_command_events (org_id, command_id, status)
+         SELECT org_id, id, 'delivered' FROM device_commands WHERE id = $1`, [cmd.id]).catch(() => {});
       }
     }
 
@@ -2177,7 +1743,8 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
 
     // T5.3: record acked/applied/failed event
     const evtStatus = status === 'executed' ? 'applied' : 'failed';
-    query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, $2)`, [command_id, evtStatus]).catch(() => {});
+    query(`INSERT INTO device_command_events (org_id, command_id, status)
+         SELECT org_id, id, $2 FROM device_commands WHERE id = $1`, [command_id, evtStatus]).catch(() => {});
 
     res.json({ ok: true });
   } catch (err) {
@@ -2574,7 +2141,8 @@ router.post('/devices/:id/command', authenticate, requireIdempotencyKey, command
     // ── Deduplicate nonce (INSERT will fail on PK violation) ─────────────────
     try {
       await query(
-        `INSERT INTO guardian_command_nonces (device_id, nonce, seen_at) VALUES ($1, $2, NOW())`,
+        `INSERT INTO guardian_command_nonces (device_id, org_id, nonce, seen_at)
+         SELECT id, org_id, $2, NOW() FROM guardian_devices WHERE id = $1`,
         [device.id, nonce]
       );
     } catch (nonceErr) {
@@ -2980,7 +2548,7 @@ router.post('/capture-photo-url', deviceAuth, async (req, res, next) => {
     } catch {
       return res.status(501).json({ error: 'Photo storage SDK not installed' });
     }
-    const key = `orgs/${req.device.org_id}/captures/${req.device.id}/${uuidv4()}.jpg`;
+    const key = `captures/${req.device.id}/${uuidv4()}.jpg`;
     const s3 = new S3Client({
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -3005,14 +2573,6 @@ router.post('/capture-photo', deviceAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'public_url is required' });
     }
     const orgId = req.device.org_id || null;
-    const publicBase = String(process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
-    if (!orgId || !publicBase) return res.status(422).json({ error: 'capture_storage_namespace_unavailable' });
-    if (key && !key.startsWith(`orgs/${orgId}/captures/${req.device.id}/`)) {
-      return res.status(422).json({ error: 'capture_key_not_in_tenant_storage_namespace' });
-    }
-    if (!public_url.startsWith(publicBase + '/orgs/' + orgId + '/captures/')) {
-      return res.status(422).json({ error: 'capture_url_not_in_tenant_storage_namespace' });
-    }
     // Which lens this shot came from — a capture_photo command fires both, so
     // this is what lets dispatch tell the rear (scene) frame from the front
     // (selfie) one. Anything unexpected is stored as NULL rather than trusted.
@@ -3151,7 +2711,7 @@ router.post('/convoy/join', deviceAuth, async (req, res, next) => {
     // Check convoy_codes table for managed codes (backward compat: legacy codes not in table are allowed)
     const codeRow = await query(
       `SELECT code, max_members, active, expires_at FROM convoy_codes WHERE code = $1`,
-      [code]
+      [code, req.device.org_id]
     );
 
     if (codeRow.rows.length > 0) {
@@ -3177,7 +2737,7 @@ router.post('/convoy/join', deviceAuth, async (req, res, next) => {
     const members = await query(
       `SELECT id, name, last_lat, last_lng, last_speed, last_seen, status
        FROM guardian_devices
-       WHERE convoy_code = $1 AND deleted_at IS NULL
+       WHERE convoy_code = $1 AND org_id = $2 AND deleted_at IS NULL
        ORDER BY name`,
       [code]
     );
@@ -3246,9 +2806,9 @@ router.get('/convoys', authenticate, async (req, res, next) => {
                 'status', status
               ) ORDER BY name)                  AS members
        FROM guardian_devices
-       WHERE convoy_code IS NOT NULL AND deleted_at IS NULL
+       WHERE convoy_code IS NOT NULL AND org_id = $1 AND deleted_at IS NULL
        GROUP BY convoy_code
-       ORDER BY last_active DESC`
+       ORDER BY last_active DESC`, [req.user.org_id]
     );
     res.json({ convoys: result.rows });
   } catch (err) {
@@ -3298,8 +2858,8 @@ router.get('/enrollment-codes', authenticate, async (req, res, next) => {
               u.name AS created_by_name
        FROM enrollment_codes ec
        LEFT JOIN users u ON u.id = ec.created_by
-       WHERE ec.used_at IS NULL AND ec.expires_at > NOW()
-       ORDER BY ec.created_at DESC`
+       WHERE ec.org_id = $1 AND ec.used_at IS NULL AND ec.expires_at > NOW()
+       ORDER BY ec.created_at DESC`, [req.user.org_id]
     );
     res.json({ data: result.rows });
   } catch (err) {
