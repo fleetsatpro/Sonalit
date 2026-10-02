@@ -26,7 +26,7 @@ const DIMENSION_COPY:Record<XdDimension,{title:string;body:string}>={
 };
 function context(member?:GlobeMember|null){const m=member as (GlobeMember&{convoy_name?:string|null;client_name?:string|null})|undefined;return{convoy:m?.convoy_name??null,client:m?.client_name??null};}
 
-export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,onExternalSelect,selectedExternalId=null,worldEntities=[],onViewportChange,fill=false,surface='corridor',fixedView,showChrome=true}:Props){
+export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,onExternalSelect,selectedExternalId=null,worldEntities=[],onViewportChange,fill=false,surface='corridor',fixedView,showChrome=true,showMapControls=true}:Props){
  const[view,setView]=useState<View>(fixedView ?? '2D'),[dimension,setDimension]=useState<XdDimension>('SPACE'),[agentsOpen,setAgentsOpen]=useState(false),[entityOpen,setEntityOpen]=useState(true);
  const activeView=fixedView ?? view;
  const isGev=surface==='gev';
@@ -42,7 +42,7 @@ export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[
  const toggleSwarm=()=>{if(agentsOpen){setAgentsOpen(false);return;}setAgentsOpen(true);if(convoyId)void swarm.refetch();};
  const dimensionCopy=DIMENSION_COPY[dimension];
  return <div data-spatial-surface={surface} className={`spatial-surface ${fill?'h-full':'h-[520px]'} relative overflow-hidden bg-[#05070b] text-white font-sans antialiased`}>
-  {activeView==='2D'?<CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark"/>:<CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} onExternalSelect={onExternalSelect} selectedExternalId={selectedExternalId} worldEntities={worldEntities} onViewportChange={onViewportChange} fill globalView={isGev}/>}
+  {activeView==='2D'?<CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark"/>:<CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} onExternalSelect={onExternalSelect} selectedExternalId={selectedExternalId} worldEntities={worldEntities} onViewportChange={onViewportChange} fill globalView={isGev} showMapControls={showMapControls}/>}
 
   {showChrome && (
   <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-3"><div className="pointer-events-auto flex flex-wrap items-start justify-between gap-2">
