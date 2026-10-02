@@ -29,7 +29,7 @@ async function generateAndQueueSuperAdminClientPulse(orgId, { snapshotAt = new D
       `SELECT id,status FROM cds_client_pulse_runs WHERE org_id=$1 AND idempotency_key=$2 FOR UPDATE`,
       [orgId, idempotencyKey]
     );
-    if (!existing.rows.length || existing.rows[0].status !== 'failed') return { id: null, reclaimed: false, duplicate: true };
+    if (!existing.rows.length || (existing.rows[0].status !== 'failed' && !(reason === 'scheduled_recovery' && existing.rows[0].status === 'skipped'))) return { id: null, reclaimed: false, duplicate: true };
     await client.query(
       `UPDATE cds_client_pulse_runs SET status='generating',error=NULL,updated_at=NOW() WHERE id=$1`,
       [existing.rows[0].id]
