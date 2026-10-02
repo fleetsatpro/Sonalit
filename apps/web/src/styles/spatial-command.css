@@ -68,7 +68,8 @@
 .spatial-command > *,
 .spatial-surface > *,
 .spatial-map-surface > * {
-  position: relative;
+  /* Set stacking without overriding component layout primitives such as
+   * Tailwind's `absolute inset-0` Cesium host. */
   z-index: 1;
 }
 
