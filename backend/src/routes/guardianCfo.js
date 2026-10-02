@@ -7,7 +7,7 @@ const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { isCfoModuleEnabled } = require('../utils/cfoFlag');
 const { haversine } = require('../utils/haversine');
 const logger = require('../utils/logger');
@@ -468,6 +468,10 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
     }
 
     const emailClean = email.trim().toLowerCase();
+    // Before the CFO identity is known there may be no tenant context. Use the
+    // explicit bootstrap query only for this pre-auth flow; once a device/org
+    // is established, ordinary tenant queries remain RLS-bound.
+    const cfoQuery = req.device?.org_id ? query : globalQuery;
     // cfo_login_attempts.device_id is UUID — only req.device?.id qualifies.
     // req.ip (e.g. "::ffff:100.64.0.2") is not a valid fallback key: passing it
     // here throws "invalid input syntax for type uuid", which isn't caught on
@@ -502,7 +506,7 @@ INSERT INTO cfo_login_attempts (device_id, org_id, attempts, window_start)
       }
     }
 
-    const userResult = await query(
+    const userResult = await cfoQuery(
       `SELECT id, name, email, role, status, org_id, password_hash
        FROM users WHERE LOWER(email) = $1 AND role = 'cfo' AND deleted_at IS NULL
        ORDER BY created_at DESC LIMIT 1`,
@@ -534,7 +538,7 @@ INSERT INTO cfo_login_attempts (device_id, org_id, attempts, window_start)
       return res.status(403).json({ error: 'Account is not active' });
     }
 
-    await query(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1 AND org_id=$2`, [rateLimitKey, req.device?.org_id || user.org_id]).catch(() => {});
+    await cfoQuery(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1 AND org_id=$2`, [rateLimitKey, req.device?.org_id || user.org_id]).catch(() => {});
 
     // Auto-provision a device record for CFO-only users without enrollment
     let deviceId = req.device?.id;
@@ -558,14 +562,20 @@ INSERT INTO cfo_login_attempts (device_id, org_id, attempts, window_start)
       );
     }
 
-    await query(
+    await cfoQuery(
       `UPDATE convoy_cfos SET guardian_device_id = $1
-       WHERE cfo_user_id = $2
-         AND convoy_id IN (SELECT id FROM convoys WHERE status IN ('planned','active') AND deleted_at IS NULL)
+       WHERE cfo_user_id = $2 AND org_id = $3
+         AND convoy_id IN (
+           SELECT id FROM convoys
+            WHERE status IN ('planned','active') AND org_id = $3 AND deleted_at IS NULL
+         )
          AND (guardian_device_id IS NULL OR guardian_device_id = $1
-           OR NOT EXISTS (SELECT 1 FROM guardian_devices gd WHERE gd.id = convoy_cfos.guardian_device_id
-             AND gd.deleted_at IS NULL AND gd.status NOT IN ('revoked','suspended')))`,
-      [deviceId, user.id]
+           OR NOT EXISTS (
+             SELECT 1 FROM guardian_devices gd
+              WHERE gd.id = guardian_device_id AND gd.org_id = $3
+                AND gd.deleted_at IS NULL AND gd.status NOT IN ('revoked','suspended')
+           ))`,
+      [deviceId, user.id, user.org_id]
     );
 
     gAudit(deviceId, 'cfo_login', 'user', user.id, { email: emailClean }, req.ip);
