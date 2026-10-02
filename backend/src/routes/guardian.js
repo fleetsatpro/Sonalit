@@ -2980,7 +2980,7 @@ router.post('/capture-photo-url', deviceAuth, async (req, res, next) => {
     } catch {
       return res.status(501).json({ error: 'Photo storage SDK not installed' });
     }
-    const key = `captures/${req.device.id}/${uuidv4()}.jpg`;
+    const key = `orgs/${req.device.org_id}/captures/${req.device.id}/${uuidv4()}.jpg`;
     const s3 = new S3Client({
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -3005,6 +3005,14 @@ router.post('/capture-photo', deviceAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'public_url is required' });
     }
     const orgId = req.device.org_id || null;
+    const publicBase = String(process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+    if (!orgId || !publicBase) return res.status(422).json({ error: 'capture_storage_namespace_unavailable' });
+    if (key && !key.startsWith(`orgs/${orgId}/captures/${req.device.id}/`)) {
+      return res.status(422).json({ error: 'capture_key_not_in_tenant_storage_namespace' });
+    }
+    if (!public_url.startsWith(publicBase + '/orgs/' + orgId + '/captures/')) {
+      return res.status(422).json({ error: 'capture_url_not_in_tenant_storage_namespace' });
+    }
     // Which lens this shot came from — a capture_photo command fires both, so
     // this is what lets dispatch tell the rear (scene) frame from the front
     // (selfie) one. Anything unexpected is stored as NULL rather than trusted.
