@@ -20,6 +20,16 @@ function filesUnder(root, extensions = ['.js']) {
 }
 
 describe('tenant isolation regression guards', () => {
+  test('query() fails closed without tenant context and globalQuery() cannot run inside one', async () => {
+    const { query, globalQuery } = require('../src/config/database');
+    const { runWithOrgContext } = require('../src/utils/tenantContext');
+    await expect(query('SELECT 1')).rejects.toThrow('tenant_scope_required');
+    await expect(
+      runWithOrgContext('11111111-1111-4111-8111-111111111111', () => globalQuery('SELECT 1'))
+    ).rejects.toThrow('global_query_forbidden_inside_tenant_context');
+  });
+
+
   test('no request path has a fail-open req.db fallback', () => {
     const violations = [];
     for (const root of ROOTS) {
