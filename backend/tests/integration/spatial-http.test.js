@@ -18,11 +18,11 @@ jest.mock('../../src/services/spatial/openskyGateway', () => {
   return { ...actual };
 });
 
-const ORG_A = 'eeeeeeee-0000-0000-0001-000000000001';
-const ORG_B = 'eeeeeeee-0000-0000-0002-000000000002';
-const USER_A = 'eeeeeeee-0000-0000-0011-000000000011';
-const CONVOY_A = 'eeeeeeee-0000-0000-0021-000000000021';
-const CONVOY_B = 'eeeeeeee-0000-0000-0022-000000000022';
+const ORG_A = 'eeeeeeee-1111-4111-8111-000000000001';
+const ORG_B = 'eeeeeeee-1111-4111-8112-000000000002';
+const USER_A = 'eeeeeeee-1111-4111-8113-000000000011';
+const CONVOY_A = 'eeeeeeee-1111-4111-8114-000000000021';
+const CONVOY_B = 'eeeeeeee-1111-4111-8115-000000000022';
 
 let pool;
 let token;
