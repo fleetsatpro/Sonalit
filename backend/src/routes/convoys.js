@@ -56,7 +56,11 @@ router.get('/:id/corridor', async (req, res, next) => {
       const rw = await query(`SELECT seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id=$1 AND lat IS NOT NULL AND lng IS NOT NULL ORDER BY seq ASC`, [convoyId]);
       route = rw.rows.map(r => ({ lat: Number(r.lat), lng: Number(r.lng), name: r.name, seq: r.seq }));
     }
-    if (route.length < 2) return res.status(422).json({ error: 'Convoy has no planned route yet — plan one from an origin and destination, or add at least two route waypoints.' });
+    // Live Fleet / XD Live must not disappear merely because route planning
+    // is incomplete. Return the canonical convoy/device world state and mark
+    // corridor analysis unavailable instead of converting a valid live session
+    // into an HTTP error.
+    const routeReady = route.length >= 2;
 
     const mem = await query(`
       SELECT d.id, d.name, fo.name AS officer_name,
@@ -81,7 +85,19 @@ router.get('/:id/corridor', async (req, res, next) => {
       const observedLat = num(hasHistory ? m.history_lat : m.cache_lat), observedLng = num(hasHistory ? m.history_lng : m.cache_lng);
       const observedAt = hasHistory ? (m.live_ts || m.cache_fix_at || m.cache_seen) : (m.cache_fix_at || m.cache_seen);
       const base = { id: m.id, name: m.name, officer_name: m.officer_name ?? null, convoy_name: convoy.name, client_name: convoy.client_name ?? null, lat: observedLat, lng: observedLng, last_fix_at: observedAt || null, heading: num(m.live_heading), speed_kph: num(hasHistory ? m.live_speed : m.cache_speed), position_source: hasHistory ? 'device_locations' : observedLat != null ? 'guardian_cache' : 'none' };
-      if (observedLat == null || observedLng == null) return { ...base, status: 'no_fix', severity: 'low', position_state: 'no_confident_estimate', position_confidence: 0, position_reason: 'No coordinate is available for this convoy device.' };
+      if (observedLat == null || observedLng == null) return { ...base, status: routeReady ? 'no_fix' : 'no_route', severity: 'low', position_state: 'no_confident_estimate', position_confidence: 0, position_reason: routeReady ? 'No coordinate is available for this convoy device.' : 'No route is configured; corridor status cannot be evaluated.' };
+      if (!routeReady) return {
+        ...base,
+        status: 'no_route',
+        severity: 'low',
+        position_state: hasHistory ? 'observed' : 'stale',
+        position_confidence: hasHistory ? 1 : 0.5,
+        position_uncertainty_m: hasHistory ? num(m.live_accuracy) : null,
+        position_reason: 'Live position is available; route corridor analysis is awaiting route planning.',
+        observed_lat: observedLat,
+        observed_lng: observedLng,
+        observed_at: observedAt || null,
+      };
       if (!hasHistory) {
         const verdict = evaluateCorridor({ route, lat: observedLat, lng: observedLng, elapsedMs, avgSpeedKmh: cfg.avg_speed_kmh, corridorKm: cfg.corridor_km, scheduleTolKm: cfg.schedule_tol_km });
         // The cached coordinate is not a fresh GPS fix, but it is still the
@@ -105,6 +121,9 @@ router.get('/:id/corridor', async (req, res, next) => {
       risk = { zones: scored.exposures.map(e => { const z = byId.get(String(e.zone_id)); return { ...e, lat: Number(z.lat), lng: Number(z.lng), radius_km: Number(z.radius_km) }; }), exposed_km: scored.exposed_km, worst: scored.worst, blocked: scored.blocked };
     } catch (e) { logger.warn(`corridor risk overlay unavailable: ${e.message}`); }
     const summary = members.reduce((a, m) => { a[m.status] = (a[m.status] || 0) + 1; return a; }, {});
+    if (!routeReady) {
+      risk = { zones: [], exposed_km: 0, worst: null, blocked: false };
+    }
     res.json({ data: { convoy: { id: convoy.id, name: convoy.name, status: convoy.status, departure_time: convoy.departure_time, route_origin: convoy.route_origin ?? null, route_destination: convoy.route_destination ?? null, client_name: convoy.client_name ?? null }, config: { ...cfg, started_at: startedAt && !isNaN(startedAt.getTime()) ? startedAt.toISOString() : null, schedule_known: elapsedMs > 0 }, route, members, summary, risk, evaluated_at: new Date(now).toISOString() } });
   } catch (err) { next(err); }
 });
