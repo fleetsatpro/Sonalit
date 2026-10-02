@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
 const logger = require('../utils/logger');
@@ -668,7 +668,7 @@ async function deviceAuth(req, res, next) {
       return res.status(401).json({ error: 'Missing X-Device-Token header' });
     }
 
-    const result = await query(
+    const result = await globalQuery(
       `SELECT * FROM guardian_devices
        WHERE token = $1 AND deleted_at IS NULL`,
       [token]
