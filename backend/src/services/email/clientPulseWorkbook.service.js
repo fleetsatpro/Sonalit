@@ -1,3 +1,4 @@
+const logger = require('../../utils/logger');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -298,6 +299,105 @@ function buildOverviewSheet(templateXml, rows, snapshotAt) {
   return xml;
 }
 
+
+function compatibleTemplateEntries() {
+  const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const worksheet = (dimension) =>
+    xml + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheetViews><sheetView workbookViewId="0"/></sheetViews>' +
+    '<sheetFormatPr defaultRowHeight="15"/>' +
+    `<dimension ref="${dimension}"/>` +
+    '<sheetData></sheetData><cols></cols><autoFilter ref="A1:T1"/><mergeCells count="0"></mergeCells>' +
+    '<pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>' +
+    '</worksheet>';
+
+  const fonts = [
+    '<font><sz val="10"/><name val="Arial"/></font>',
+    '<font><b/><sz val="10"/><name val="Arial"/></font>',
+    '<font><b/><sz val="14"/><name val="Arial"/></font>',
+  ].join('');
+  const fills = [
+    '<fill><patternFill patternType="none"/></fill>',
+    '<fill><patternFill patternType="gray125"/></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="0F172A"/><bgColor indexed="64"/></patternFill></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="E2E8F0"/><bgColor indexed="64"/></patternFill></fill>',
+  ].join('');
+  const borders = [
+    '<border><left/><right/><top/><bottom/><diagonal/></border>',
+    '<border><left/><right/><top/><bottom style="thin"><color rgb="CBD5E1"/></bottom><diagonal/></border>',
+  ].join('');
+  const xfs = Array.from({ length: 68 }, (_, index) => {
+    const fontId = index === 2 || index === 50 ? 2 : (index >= 9 ? 1 : 0);
+    const fillId = index === 2 || index === 50 ? 2 : (index >= 9 ? 3 : 0);
+    const borderId = index === 0 ? 0 : 1;
+    return `<xf numFmtId="0" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0"><alignment vertical="center"/></xf>`;
+  }).join('');
+  const styles =
+    xml +
+    `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<fonts count="3">${fonts}</fonts><fills count="4">${fills}</fills><borders count="2">${borders}</borders>` +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    `<cellXfs count="68">${xfs}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
+    '</styleSheet>';
+
+  const workbook =
+    xml +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheets>' +
+    '<sheet name="COMMAND CENTER" sheetId="1" r:id="rId1"/>' +
+    '<sheet name="ACTIVE BOOKINGS" sheetId="2" r:id="rId2"/>' +
+    '</sheets>' +
+    '</workbook>';
+
+  const workbookRels =
+    xml +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>' +
+    '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+    '</Relationships>';
+
+  const rootRels =
+    xml +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
+    '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/package/2006/relationships/extended-properties" Target="docProps/app.xml"/>' +
+    '</Relationships>';
+
+  const contentTypes =
+    xml +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+    '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
+    '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>' +
+    '</Types>';
+
+  const core =
+    xml +
+    '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">' +
+    '<dc:creator>Sonalit</dc:creator><dc:title>CDS Client Pulse</dc:title><dc:subject>Active Booking Dispatch</dc:subject>' +
+    '</cp:coreProperties>';
+  const app = xml + '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Sonalit</Application><AppVersion>1.0</AppVersion></Properties>';
+
+  return [
+    { name: '[Content_Types].xml', data: contentTypes },
+    { name: '_rels/.rels', data: rootRels },
+    { name: 'xl/workbook.xml', data: workbook },
+    { name: 'xl/_rels/workbook.xml.rels', data: workbookRels },
+    { name: 'xl/styles.xml', data: styles },
+    { name: 'xl/worksheets/sheet1.xml', data: worksheet('A1:M49') },
+    { name: 'xl/worksheets/sheet2.xml', data: worksheet('A1:T1') },
+    { name: 'docProps/core.xml', data: core },
+    { name: 'docProps/app.xml', data: app },
+  ];
+}
+
 function readZip(buffer) {
   let eocd = -1;
   for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 65557); i -= 1) {
@@ -382,7 +482,13 @@ async function buildManifestWorkbook(rows, snapshotAt = new Date()) {
   const snapshot = snapshotAt instanceof Date ? snapshotAt : new Date(snapshotAt);
   if (Number.isNaN(snapshot.getTime())) throw new Error('Invalid Client Pulse snapshot time');
   const normalized = normalizeRows(rows || []);
-  const entries = readZip(fs.readFileSync(TEMPLATE_PATH));
+  let entries;
+  try {
+    entries = readZip(fs.readFileSync(TEMPLATE_PATH));
+  } catch (templateError) {
+    logger.warn(`CDS Client Pulse template unreadable; using generated compatibility workbook: ${templateError.message}`);
+    entries = compatibleTemplateEntries();
+  }
   const sheet1 = entries.find(e => e.name === 'xl/worksheets/sheet1.xml');
   const sheet2 = entries.find(e => e.name === 'xl/worksheets/sheet2.xml');
   const workbook = entries.find(e => e.name === 'xl/workbook.xml');

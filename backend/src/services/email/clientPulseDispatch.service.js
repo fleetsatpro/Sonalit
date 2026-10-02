@@ -9,7 +9,7 @@ const logger = require('../../utils/logger');
 
 async function generateAndQueueSuperAdminClientPulse(orgId, { snapshotAt = new Date(), reason = 'scheduled' } = {}) {
   const snapshot = snapshotAt instanceof Date ? snapshotAt : new Date(snapshotAt);
-  const scheduled = reason === 'scheduled';
+  const scheduled = reason === 'scheduled' || reason === 'scheduled_recovery';
   const recipients = await withOrg(orgId, client => client.query(`
     SELECT DISTINCT email, name
     FROM client_email_recipients
@@ -18,12 +18,26 @@ async function generateAndQueueSuperAdminClientPulse(orgId, { snapshotAt = new D
   `, [orgId]));
   if (!recipients.rows.length) return { skipped: true, reason: 'no_super_admin_recipients', queued: 0 };
   const idempotencyKey = scheduled ? `cds-client-pulse:super-admin:${snapshot.toISOString().slice(0, 13)}` : `cds-client-pulse:super-admin:manual:${snapshot.toISOString()}:${crypto.randomUUID()}`;
-  const claim = await withOrg(orgId, client => client.query(`
-    INSERT INTO cds_client_pulse_runs (org_id,snapshot_at,status,idempotency_key)
-    VALUES ($1,$2,'generating',$3) ON CONFLICT (org_id,idempotency_key) DO NOTHING RETURNING id
-  `, [orgId, snapshot, idempotencyKey]));
-  if (!claim.rows.length) return { skipped: true, reason: 'duplicate_snapshot', queued: 0 };
-  const runId = claim.rows[0].id;
+  const claim = await withOrg(orgId, async client => {
+    const inserted = await client.query(`
+      INSERT INTO cds_client_pulse_runs (org_id,snapshot_at,status,idempotency_key)
+      VALUES ($1,$2,'generating',$3) ON CONFLICT (org_id,idempotency_key) DO NOTHING RETURNING id
+    `, [orgId, snapshot, idempotencyKey]);
+    if (inserted.rows.length) return { id: inserted.rows[0].id, reclaimed: false, duplicate: false };
+    if (!scheduled) return { id: null, reclaimed: false, duplicate: true };
+    const existing = await client.query(
+      `SELECT id,status FROM cds_client_pulse_runs WHERE org_id=$1 AND idempotency_key=$2 FOR UPDATE`,
+      [orgId, idempotencyKey]
+    );
+    if (!existing.rows.length || existing.rows[0].status !== 'failed') return { id: null, reclaimed: false, duplicate: true };
+    await client.query(
+      `UPDATE cds_client_pulse_runs SET status='generating',error=NULL,updated_at=NOW() WHERE id=$1`,
+      [existing.rows[0].id]
+    );
+    return { id: existing.rows[0].id, reclaimed: true, duplicate: false };
+  });
+  if (claim.duplicate || !claim.id) return { skipped: true, reason: 'duplicate_snapshot', queued: 0 };
+  const runId = claim.id;
   try {
     const { rows } = await withOrg(orgId, client => client.query(`
       SELECT bc.id,bc.booking_id,bc.container_number,bc.seal_number,bc.seal_number_2,bc.packing_list_no,bc.iso_type,
