@@ -1577,10 +1577,10 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
       );
 
       const panicPublishPayload = { type: 'panic', ...payload };
-      if (orgId) {
-        publish(`org#${orgId}`, panicPublishPayload);
+      if (!orgId) {
+        logger.error(`PANIC publish blocked: device=${deviceId} has no tenant scope`);
       } else {
-        publish('device:panic', panicPublishPayload);
+        publish(`org#${orgId}`, panicPublishPayload);
       }
       logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode} org=${orgId ?? 'unknown'}`);
       // FCM ack to device confirming SOS was received (Task 4.1, fire-and-forget)
@@ -1837,10 +1837,10 @@ router.post('/panic/cancel', deviceAuth, async (req, res, next) => {
       cancelled: resolved.rows.map(r => r.id),
       cancelled_at: new Date().toISOString(),
     };
-    if (req.device.org_id) {
-      publish(`org#${req.device.org_id}`, cancelPayload);
+    if (!req.device.org_id) {
+      logger.error(`PANIC cancel publish blocked: device=${deviceId} has no tenant scope`);
     } else {
-      publish('device:panic', cancelPayload);
+      publish(`org#${req.device.org_id}`, cancelPayload);
     }
 
     logger.warn(`PANIC cancelled by device=${deviceId} count=${resolved.rows.length}`);
