@@ -15,6 +15,8 @@ const { normalizeOrgId, runWithOrgContext } = require('./tenantContext');
 async function withOrg(orgId, fn) {
   const normalized = normalizeOrgId(orgId);
   if (!normalized) throw new Error('invalid_org_id');
+  const currentOrg = require('./tenantContext').getOrgId();
+  if (currentOrg && currentOrg !== normalized) throw new Error('tenant_context_switch_forbidden');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
