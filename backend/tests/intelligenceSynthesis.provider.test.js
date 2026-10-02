@@ -54,9 +54,10 @@ describe('intelligence synthesis provider contract', () => {
       });
       next();
     });
+    app.use('/risk/intelligence/synthesis', router);
     app.use((err, _req, res, _next) => res.status(500).json({ error: err.message }));
 
-    const res = await request(app).get('/stories?scope_type=global&scope_key=global');
+    const res = await request(app).get('/risk/intelligence/synthesis/stories?scope_type=global&scope_key=global');
     expect(res.status).toBe(200);
     expect(res.body.engine.ai_used).toBe(true);
     expect(res.body.engine.mode).toBe('AI_SYNTHESIS');
