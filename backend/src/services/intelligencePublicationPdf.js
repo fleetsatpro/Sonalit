@@ -89,7 +89,11 @@ async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId){
   return getSignedUrl(r2,new GetObjectCommand({Bucket:bucket,Key:row.pdf_key}),{expiresIn:300});
 }
 
-async function generateMissingPublicationPdfs(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes')) ORDER BY published_at DESC NULLS LAST LIMIT $2",[orgId,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdf(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
+async function generateMissingPublicationPdfsUnsafe(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes')) ORDER BY published_at DESC NULLS LAST LIMIT $2",[orgId,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdfUnsafe(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
+async function generateMissingPublicationPdfs(orgId,limit=3){
+  return runWithOrgContext(orgId, () => generateMissingPublicationPdfsUnsafe(orgId, limit));
+}
+
 async function renderAndStorePublicationPdf(orgId, publicationId){
   return runWithOrgContext(orgId, () => renderAndStorePublicationPdfUnsafe(orgId, publicationId));
 }

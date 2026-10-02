@@ -240,6 +240,12 @@ describe('tenant isolation regression guards', () => {
     expect(source).toContain('return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId));');
   });
 
+  test('publication PDF batch discovery establishes tenant context before its first DB query', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../src/services/intelligencePublicationPdf.js'), 'utf8');
+    expect(source).toContain('async function generateMissingPublicationPdfsUnsafe');
+    expect(source).toContain('return runWithOrgContext(orgId, () => generateMissingPublicationPdfsUnsafe(orgId, limit));');
+  });
+
   test('Intelligence worker discovery establishes tenant context before tenant work', () => {
     const news = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceNewsMesh.js'), 'utf8');
     const agents = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceAgents.js'), 'utf8');
