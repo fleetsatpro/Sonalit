@@ -1,4 +1,5 @@
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../../lib/spatialRendering.js'
+import { STREET_STYLE } from '../../../lib/mapStyles.js'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
@@ -11,8 +12,6 @@ import {
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 import '../../../styles/spatial-command.css'
 import { externalWorldFeatures, fetchWorldContext, WORLD_CONTEXT_LAYERS } from '../../../lib/spatialClient.js'
-
-const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
 const SATELLITE_STYLE: maplibregl.StyleSpecification = {
   version: 8,
@@ -232,7 +231,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   // init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
+    const m = new maplibregl.Map({ container: containerRef.current, style: STREET_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
     m.on('style.load', () => {
       setMapReady(true)
       syncWorldViewport()
@@ -260,7 +259,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     const next = mapMode === 'dark' ? 'satellite' : mapMode === 'satellite' ? 'earth' : 'dark'
     setMapReady(false)
     setMapMode(next)
-    map.setStyle(next === 'dark' ? DARK_STYLE : next === 'satellite' ? SATELLITE_STYLE : EARTH_OBSERVATION_STYLE)
+    map.setStyle(next === 'dark' ? STREET_STYLE : next === 'satellite' ? SATELLITE_STYLE : EARTH_OBSERVATION_STYLE)
   }
 
   // geofence overlay — polygon zones + corridor/linear routes
