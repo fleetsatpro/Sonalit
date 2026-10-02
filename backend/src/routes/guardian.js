@@ -12,8 +12,8 @@ const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
 const captureVision = require('../utils/captureVision');
-const { getOrgId } = require('../utils/tenantContext');
-const { runWithOrgContext } = require('../utils/tenantContext');
+const { getOrgId, runWithOrgContext } = require('../utils/tenantContext');
+const { withOrg } = require('../utils/orgScopedDb');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
