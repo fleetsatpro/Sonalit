@@ -41,7 +41,15 @@ export async function query<T extends object = object>(
   values?: unknown[]
 ): Promise<T[]> {
   const orgId = tenantContext.getStore();
-  if (orgId) return withOrgContext(orgId, client => client.query<T>(text, values)).then(r => r.rows);
-  const res = await pool.query<T>(text, values);
-  return res.rows;
+  if (!orgId) throw new Error('tenant_scope_required: use globalQuery() only for explicit bootstrap/system operations');
+  return withOrgContext(orgId, client => client.query<T>(text, values)).then(r => r.rows);
+}
+
+export async function globalQuery<T extends object = object>(
+  text: string,
+  values?: unknown[]
+): Promise<T[]> {
+  if (tenantContext.getStore()) throw new Error('global_query_forbidden_inside_tenant_context');
+  const result = await pool.query<T>(text, values);
+  return result.rows;
 }
