@@ -171,3 +171,27 @@ describe('tenant isolation regression guards', () => {
   });
 
 });
+
+test('v4 service source does not trust caller-supplied tenant identity headers', () => {
+  const roots = [path.join(__dirname, '../../services')];
+  const violations = [];
+  for (const root of roots) {
+    for (const file of filesUnder(root)) {
+      const source = fs.readFileSync(file, 'utf8');
+      if (/headers\s*\[['"]x-org-id['"]\]/i.test(source) ||
+          /headers\s*\[['"]x-user-id['"]\]/i.test(source) ||
+          /headers\[[^\]]*x-org-id/i.test(source) ||
+          /headers\[[^\]]*x-user-id/i.test(source)) {
+        violations.push(path.relative(path.join(__dirname, '../..'), file));
+      }
+    }
+  }
+  expect(violations).toEqual([]);
+});
+
+test('tenant-visible report/media object keys are explicitly namespaced', () => {
+  const reportWorker = fs.readFileSync(path.join(__dirname, '../src/workers/convoyReportWorker.js'), 'utf8');
+  const mediaDocs = fs.readFileSync(path.join(__dirname, '../../services/media-svc/src/routes/documents.ts'), 'utf8');
+  expect(reportWorker).toContain('orgs/${orgId}/reports/');
+  expect(mediaDocs).toContain('orgs\\/\\[0-9a-f-\\]\\{36\\\\/documents');
+});
