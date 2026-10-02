@@ -1,6 +1,4 @@
 const router = require('express').Router();
-const { authenticate } = require('../middleware/auth');
-const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { buildAssessment } = require('../utils/intelligenceEngine');
 const { translatePayload } = require('../utils/intelligenceTranslation');
@@ -8,8 +6,6 @@ const operationsRouter = require('./intelligenceOperations');
 const { normaliseScope, countryClause, scopedObjectClause } = require('../utils/intelligenceScope');
 const synthesisRouter = require('./intelligenceSynthesis');
 
-router.use(authenticate);
-router.use(attachOrgDb);
 function adminWrite(req,res,next){if(!['admin','super_admin'].includes(req.user.role))return res.status(403).json({error:'Administrator role required for this action'});next();}
 
 router.use((req,res,next)=>{

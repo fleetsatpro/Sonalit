@@ -251,6 +251,31 @@ describe('tenant isolation regression guards', () => {
     }
   });
 
+  test('nested Intelligence routers do not re-authenticate inside a tenant scope', () => {
+    const risk = fs.readFileSync(path.join(__dirname, '../src/routes/risk.js'), 'utf8');
+    const intelligence = fs.readFileSync(path.join(__dirname, '../src/routes/intelligence.js'), 'utf8');
+    const intelligenceAlerts = fs.readFileSync(path.join(__dirname, '../src/routes/intelligenceAlerts.js'), 'utf8');
+
+    expect(risk).toContain("router.use(authenticate);");
+    expect(risk).not.toContain("router.use(attachOrgDb);");
+    expect(risk).toContain("router.use('/intelligence', intelligenceRouter);");
+    expect(intelligence).not.toContain("router.use(authenticate);");
+    expect(intelligence).not.toContain("router.use(attachOrgDb);");
+    expect(intelligenceAlerts).not.toContain("router.use(authenticate, attachOrgDb);");
+  });
+
+  test('GEV global camera fitting ignores orbital geometry and uses a safe camera range', () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '../../apps/web/src/components/geofences/CorridorWorldScene.tsx'),
+      'utf8'
+    );
+    expect(source).toContain('function globalCameraEntities(worldEntities: SpatialWorldEntity[])');
+    expect(source).toContain("if (type === 'satellite') return false;");
+    expect(source).toContain('altitude <= 50_000');
+    expect(source).toContain('points.length < 2');
+    expect(source).toContain('Math.max(3_500_000, sphere.radius * 3.2)');
+  });
+
   test('Guardian bootstrap retrofits legacy enrollment and convoy tenant columns', () => {
     const migration = fs.readFileSync(
       path.join(__dirname, '../migrations/20261002_122_guardian_bootstrap_tenant_schema.sql'),

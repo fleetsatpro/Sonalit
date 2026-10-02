@@ -1,6 +1,5 @@
 const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
-const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { publish } = require('../realtime/centrifugo');
 const { runOsintSweep, isSweeping } = require('../utils/riskOsint');
@@ -11,7 +10,6 @@ const intelligenceAlertsRouter = require('./intelligenceAlerts');
 const runtimeDiagnosticsRouter = require('./runtimeDiagnostics');
 
 router.use(authenticate);
-router.use(attachOrgDb);
 router.use('/intelligence/alerts', intelligenceAlertsRouter);
 router.use('/intelligence', intelligenceRouter);
 router.use('/diagnostics', runtimeDiagnosticsRouter);
