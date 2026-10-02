@@ -487,7 +487,7 @@ function auditLog(actor_type, actor_id, action, target_type, target_id, payload,
 
 async function runCommandExpiryJob() {
   try {
-    const result = await query(
+    const result = await globalQuery(
       `UPDATE device_commands
        SET status = 'expired'
        WHERE status IN ('pending', 'sent') AND expires_at < NOW()`
@@ -504,7 +504,7 @@ async function runCommandExpiryJob() {
   // invoked, so guardian_command_nonces grew unbounded. Guarded separately so a
   // failure here never blocks command expiry above.
   try {
-    await query('SELECT cleanup_command_nonces()');
+    await globalQuery('SELECT cleanup_command_nonces()');
   } catch (err) {
     logger.error(`Nonce cleanup job error: ${err.message}`);
   }
@@ -523,7 +523,7 @@ async function runDmsMonitorJob() {
     // once since it was enabled (last_checkin_at NULL = no baseline, never
     // fire blindly), (c) aren't temporarily suspended, and (d) are past their
     // window. A NULL dms_timeout_minutes yields NULL here and is skipped.
-    const due = await query(
+    const due = await globalQuery(
       `SELECT id, org_id, name, last_lat, last_lng
          FROM guardian_devices
         WHERE dms_enabled = true
@@ -535,27 +535,28 @@ async function runDmsMonitorJob() {
     );
 
     for (const dev of due.rows) {
-      // Claim the device atomically: flip dms_enabled off (operator re-enables
-      // after resolving) and mark panic_active. The WHERE dms_enabled = true
-      // guard means only one monitor tick can win, so we never double-fire.
-      const claim = await query(
-        `UPDATE guardian_devices
-            SET dms_enabled = false, panic_active = true, updated_at = NOW()
-          WHERE id = $1 AND dms_enabled = true
-          RETURNING id`,
-        [dev.id]
-      );
-      if (!claim.rows.length) continue;
+      if (!dev.org_id) continue;
+      await withOrg(dev.org_id, async () => {
+        // Claim the device atomically. The tenant context is established before
+        // touching the FORCE-RLS tables.
+        const claim = await query(
+          `UPDATE guardian_devices
+              SET dms_enabled = false, panic_active = true, updated_at = NOW()
+            WHERE id = $1 AND org_id = $2 AND dms_enabled = true
+            RETURNING id`,
+          [dev.id, dev.org_id]
+        );
+        if (!claim.rows.length) return;
 
-      const eventUuid = uuidv4();
-      const ins = await query(
-        `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
-         VALUES ($1, $2, $3, 'silent', $4, $5, $6, NOW())
-         RETURNING id, created_at`,
-        [eventUuid, dev.id, dev.org_id ?? null, dev.last_lat ?? null, dev.last_lng ?? null,
-         "Dead Man's Switch: missed check-in"]
-      );
-      const row = ins.rows[0];
+        const eventUuid = uuidv4();
+        const ins = await query(
+          `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
+           VALUES ($1, $2, $3, 'silent', $4, $5, $6, NOW())
+           RETURNING id, created_at`,
+          [eventUuid, dev.id, dev.org_id, dev.last_lat ?? null, dev.last_lng ?? null,
+           "Dead Man's Switch: missed check-in"]
+        );
+        const row = ins.rows[0];
 
       // Same payload shape the POST /panic handler publishes, so the dashboard's
       // existing 'panic' realtime handler renders it identically.
@@ -572,12 +573,10 @@ async function runDmsMonitorJob() {
         created_at: row.created_at,
         triggered_at: row.created_at,
       };
-      if (dev.org_id) publish(`org#${dev.org_id}`, payload); else publish('device:panic', payload);
-      logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id ?? 'unknown'}`);
-      // Queue a burst too — a missed check-in is exactly when eyes on the scene
-      // matter most. No fcm_token on this partial row, so it rides the device's
-      // next heartbeat/poll claim (6h TTL covers a late reconnect).
-      autoBurstOnPanic(dev, dev.org_id ?? null).catch(e => logger.warn(`autoBurstOnPanic (DMS) error: ${e.message}`));
+        publish(`org#${dev.org_id}`, payload);
+        logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id}`);
+        autoBurstOnPanic(dev, dev.org_id).catch(e => logger.warn(`autoBurstOnPanic (DMS) error: ${e.message}`));
+      });
     }
   } catch (err) {
     logger.error(`DMS monitor job error: ${err.message}`);
@@ -593,7 +592,7 @@ const MAX_ESCALATION_LEVEL = 3;
 
 async function runPanicEscalationJob() {
   try {
-    const due = await query(
+    const due = await globalQuery(
       `SELECT pe.id, pe.org_id, pe.device_id, pe.mode, pe.escalation_level, pe.created_at,
               gd.name AS device_name
        FROM panic_events pe
@@ -609,11 +608,13 @@ async function runPanicEscalationJob() {
     );
 
     for (const row of due.rows) {
-      const nextLevel = row.escalation_level + 1;
-      await query(
-        `UPDATE panic_events SET escalation_level = $2, escalated_at = NOW() WHERE id = $1`,
-        [row.id, nextLevel]
-      );
+      if (!row.org_id) continue;
+      await withOrg(row.org_id, async () => {
+        const nextLevel = row.escalation_level + 1;
+        await query(
+          `UPDATE panic_events SET escalation_level = $2, escalated_at = NOW() WHERE id = $1 AND org_id = $3`,
+          [row.id, nextLevel, row.org_id]
+        );
 
       publish(`org#${row.org_id}`, {
         type: 'panic_escalated',
@@ -639,9 +640,10 @@ async function runPanicEscalationJob() {
         for (const c of contacts.rows) {
           sendWhatsAppMessage(row.org_id, c.phone, text).catch(() => {});
         }
-      } catch (notifyErr) {
-        logger.error(`panic escalation notify error: ${notifyErr.message}`);
-      }
+        } catch (notifyErr) {
+          logger.error(`panic escalation notify error: ${notifyErr.message}`);
+        }
+      });
     }
   } catch (err) {
     logger.error(`Panic escalation job error: ${err.message}`);
