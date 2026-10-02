@@ -11,7 +11,7 @@ const { query, globalQuery } = require('../config/database');
 const { isCfoModuleEnabled } = require('../utils/cfoFlag');
 const { haversine } = require('../utils/haversine');
 const logger = require('../utils/logger');
-const { runWithOrgContext } = require('../utils/tenantContext');
+const { getOrgId, runWithOrgContext } = require('../utils/tenantContext');
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8 MB
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/webp'];
@@ -228,12 +228,14 @@ function buildAvailableDates(startDate, endDate, today) {
   return dates.length ? dates.reverse() : [today];
 }
 
-function gAudit(actor_id, action, target_type, target_id, payload, ip) {
+function gAudit(actor_id, action, target_type, target_id, payload, ip, explicitOrgId = null) {
+  const orgId = explicitOrgId || getOrgId();
+  if (!orgId) return;
   query(
     `INSERT INTO guardian_audit_log
-       (actor_type, actor_id, action, target_type, target_id, payload, ip_address)
-     VALUES ('device',$1,$2,$3,$4,$5,$6)`,
-    [actor_id || null, action, target_type || null, target_id || null,
+       (org_id, actor_type, actor_id, action, target_type, target_id, payload, ip_address)
+     VALUES ($1,'device',$2,$3,$4,$5,$6,$7)`,
+    [orgId, actor_id || null, action, target_type || null, target_id || null,
       payload ? JSON.stringify(payload) : null, ip || null]
   ).catch((err) => logger.error(`gAudit (cfo) error: ${err.message}`));
 }
@@ -538,52 +540,55 @@ INSERT INTO cfo_login_attempts (device_id, org_id, attempts, window_start)
       return res.status(403).json({ error: 'Account is not active' });
     }
 
-    await cfoQuery(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1 AND org_id=$2`, [rateLimitKey, req.device?.org_id || user.org_id]).catch(() => {});
+    const tenantResult = await runWithOrgContext(user.org_id, async () => {
+      await query(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1 AND org_id=$2`, [rateLimitKey, user.org_id]).catch(() => {});
 
-    // Auto-provision a device record for CFO-only users without enrollment
-    let deviceId = req.device?.id;
-    let deviceToken = req.headers['x-device-token'] || null;
+      // Auto-provision a device record for CFO-only users without enrollment.
+      let deviceId = req.device?.id;
+      let deviceToken = req.headers['x-device-token'] || null;
 
-    if (!deviceId) {
-      const newDevice = await query(
-        `INSERT INTO guardian_devices (name, status, assignment_type, assignment_id, org_id)
-         VALUES ($1, 'active', 'user', $2, $3)
-         RETURNING id, token`,
-        [`CFO-${user.name}`, user.id, user.org_id]
-      );
-      deviceId = newDevice.rows[0].id;
-      deviceToken = newDevice.rows[0].token;
-    } else {
+      if (!deviceId) {
+        const newDevice = await query(
+          `INSERT INTO guardian_devices (name, status, assignment_type, assignment_id, org_id)
+           VALUES ($1, 'active', 'user', $2, $3)
+           RETURNING id, token`,
+          [`CFO-${user.name}`, user.id, user.org_id]
+        );
+        deviceId = newDevice.rows[0].id;
+        deviceToken = newDevice.rows[0].token;
+      } else {
+        await query(
+          `UPDATE guardian_devices
+             SET assignment_id = $1, assignment_type = 'user', org_id = $3, updated_at = NOW()
+           WHERE id = $2 AND org_id = $3`,
+          [user.id, deviceId, user.org_id]
+        );
+      }
+
       await query(
-        `UPDATE guardian_devices
-           SET assignment_id = $1, assignment_type = 'user', org_id = $3, updated_at = NOW()
-         WHERE id = $2 AND org_id = $3`,
-        [user.id, deviceId, user.org_id]
+        `UPDATE convoy_cfos SET guardian_device_id = $1
+         WHERE cfo_user_id = $2 AND org_id = $3
+           AND convoy_id IN (
+             SELECT id FROM convoys
+              WHERE status IN ('planned','active') AND org_id = $3 AND deleted_at IS NULL
+           )
+           AND (guardian_device_id IS NULL OR guardian_device_id = $1
+             OR NOT EXISTS (
+               SELECT 1 FROM guardian_devices gd
+                WHERE gd.id = guardian_device_id AND gd.org_id = $3
+                  AND gd.deleted_at IS NULL AND gd.status NOT IN ('revoked','suspended')
+             ))`,
+        [deviceId, user.id, user.org_id]
       );
-    }
 
-    await cfoQuery(
-      `UPDATE convoy_cfos SET guardian_device_id = $1
-       WHERE cfo_user_id = $2 AND org_id = $3
-         AND convoy_id IN (
-           SELECT id FROM convoys
-            WHERE status IN ('planned','active') AND org_id = $3 AND deleted_at IS NULL
-         )
-         AND (guardian_device_id IS NULL OR guardian_device_id = $1
-           OR NOT EXISTS (
-             SELECT 1 FROM guardian_devices gd
-              WHERE gd.id = guardian_device_id AND gd.org_id = $3
-                AND gd.deleted_at IS NULL AND gd.status NOT IN ('revoked','suspended')
-           ))`,
-      [deviceId, user.id, user.org_id]
-    );
-
-    gAudit(deviceId, 'cfo_login', 'user', user.id, { email: emailClean }, req.ip);
-    logger.info(`CFO login: device=${deviceId} user=${user.id} email=${emailClean}`);
+      gAudit(deviceId, 'cfo_login', 'user', user.id, { email: emailClean }, req.ip, user.org_id);
+      logger.info(`CFO login: device=${deviceId} user=${user.id} email=${emailClean} org=${user.org_id}`);
+      return { deviceId, deviceToken };
+    });
 
     return res.json({
       user_id: user.id, name: user.name, email: user.email, role: user.role,
-      device_token: deviceToken,
+      device_token: tenantResult.deviceToken,
     });
   } catch (err) {
     next(err);
