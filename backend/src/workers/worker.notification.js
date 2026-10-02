@@ -145,6 +145,16 @@ process.on('SIGTERM', shutdown);
     retryMs: 15000,
     logger,
     onAcquire: async () => {
+      try {
+        const now = new Date();
+        const { hour, minute } = getEatSlot(now);
+        const recentSlotAgeMinutes = minute + ((hour % 4) * 60);
+        if (recentSlotAgeMinutes <= 150) {
+          await runScheduledClientPulse(now, { recovery: true });
+        }
+      } catch (error) {
+        logger.error(`CDS Client Pulse recovery-on-leader-acquisition failed: ${error.message}`);
+      }
       scheduleClientPulse();
       logger.info('Notification worker client-pulse leader active');
     },
