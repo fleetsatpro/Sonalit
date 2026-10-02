@@ -246,7 +246,7 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
   // the key means a genuinely new PDF always gets a URL that could never
   // have been cached before, independent of any CDN behavior.
   const contentHash = require('crypto').createHash('sha256').update(pdfBuffer).digest('hex');
-  const key = `reports/daily/${convoy_id}/${report_date}-${contentHash.slice(0, 12)}.pdf`;
+  const key = `orgs/${orgId}/reports/daily/${convoy_id}/${report_date}-${contentHash.slice(0, 12)}.pdf`;
 
   let pdfUrl = null;
   let generationError = null;
@@ -256,7 +256,7 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
   } catch (uploadErr) {
     logger.warn(`[convoyReport] R2 unavailable (${uploadErr.message}) — storing PDF locally`);
     try {
-      const reportsDir = path.resolve(__dirname, '../../data/reports', convoy_id);
+      const reportsDir = path.resolve(__dirname, '../../data/reports', orgId, convoy_id);
       fs.mkdirSync(reportsDir, { recursive: true });
       fs.writeFileSync(path.join(reportsDir, `${report_date}.pdf`), pdfBuffer);
       logger.info(`[convoyReport] PDF saved locally for ${convoy_id}/${report_date}`);
@@ -346,7 +346,7 @@ async function handleGenerateArchive({ convoy_id }) {
   // cached copy forever regardless of how many times the R2 origin object
   // is overwritten.
   const archiveHash = require('crypto').createHash('sha256').update(pdfBuffer).digest('hex');
-  const key = `reports/archive/${convoy_id}/archive-${archiveHash.slice(0, 12)}.pdf`;
+  const key = `orgs/${orgId}/reports/archive/${convoy_id}/archive-${archiveHash.slice(0, 12)}.pdf`;
 
   let pdfUrl = null;
   try {
@@ -355,7 +355,7 @@ async function handleGenerateArchive({ convoy_id }) {
   } catch (uploadErr) {
     logger.warn(`[convoyArchive] R2 unavailable (${uploadErr.message}) — saving locally`);
     try {
-      const archiveDir = path.resolve(__dirname, '../../data/reports', convoy_id);
+      const archiveDir = path.resolve(__dirname, '../../data/reports', orgId, convoy_id);
       fs.mkdirSync(archiveDir, { recursive: true });
       fs.writeFileSync(path.join(archiveDir, 'archive.pdf'), pdfBuffer);
     } catch (fsErr) {
