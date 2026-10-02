@@ -388,7 +388,10 @@ async function ensureTables() {
     // p2t3 — command expiry
     await globalQuery(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
 
-    // panic revamp — acknowledge/escalation/resolution-reason workflow
+    // panic revamp — establish the tenant column before any index/policy can
+    // reference it. This also repairs older databases where the table predates
+    // tenant hardening.
+    await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS org_id UUID`);
     await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ`);
     await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_by UUID`);
     await globalQuery(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS resolution_note TEXT`);

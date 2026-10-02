@@ -81,6 +81,22 @@ describe('tenant isolation regression guards', () => {
   });
 
 
+  test('tenant UUID validation accepts PostgreSQL UUIDs without RFC version bits', () => {
+    const { normalizeOrgId } = require('../src/utils/tenantContext');
+    expect(normalizeOrgId('00000000-0000-0000-0000-000000000001')).toBe('00000000-0000-0000-0000-000000000001');
+    expect(normalizeOrgId('aaaaaaaa-0000-4000-a000-000000000001')).toBe('aaaaaaaa-0000-4000-a000-000000000001');
+    expect(normalizeOrgId('not-a-uuid')).toBeNull();
+    expect(normalizeOrgId('aaaaaaaa-0000-0000-0000-00000000000')).toBeNull();
+  });
+
+  test('background intelligence establishes tenant context before tenant queries', () => {
+    const collection = fs.readFileSync(path.join(__dirname, '../src/utils/collectionFabric.js'), 'utf8');
+    const regional = fs.readFileSync(path.join(__dirname, '../src/utils/regionalIncidentFabric.js'), 'utf8');
+    expect(collection).toContain('runWithOrgContext(org_id');
+    expect(regional).toContain('globalQuery(`SELECT DISTINCT org_id FROM users');
+    expect(regional).toContain('runWithOrgContext(orgId');
+  });
+
   test('tenant DB helper is fail-closed and RLS-aware', () => {
     const scoped = fs.readFileSync(path.join(__dirname, '../src/utils/orgScopedDb.js'), 'utf8');
     const database = fs.readFileSync(path.join(__dirname, '../src/config/database.js'), 'utf8');
