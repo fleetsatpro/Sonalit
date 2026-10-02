@@ -23,6 +23,7 @@ const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const GROQ_MODEL_2 = process.env.GROQ_MODEL_2 || 'openai/gpt-oss-20b';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-6.1-sol';
+const MISTRAL_MODEL = process.env.MISTRAL_MODEL || 'mistral-large-latest';
 
 const OPEN_SOURCE_SLOTS = [
   { slot:1, key:'OPEN_SOURCE_API_KEY_1', base:'OPEN_SOURCE_BASE_URL_1', modelKey:'OPEN_SOURCE_MODEL_1', model:'Qwen/Qwen3.5-397B-A17B', label:'qwen3.5-397b-primary' },
@@ -38,6 +39,7 @@ const states = Object.fromEntries([
   ['gpt-oss-120b-groq',{downUntil:0}],
   ['gpt-oss-20b-groq',{downUntil:0}],
   ['openai-direct',{downUntil:0}],
+  ['mistral-rescue',{downUntil:0}],
   ['anthropic-last-resort',{downUntil:0}],
 ]);
 const clients = {};
@@ -46,6 +48,7 @@ function keyOk(k) { return !!(k && String(k).length >= 10); }
 function hasAnthropic() { return keyOk(process.env.ANTHROPIC_API_KEY); }
 function hasGroqFallback() { return keyOk(process.env.GROQ_API_KEY); }
 function hasOpenAI() { return keyOk(process.env.OPENAI_API_KEY); }
+function hasMistral() { return keyOk(process.env.MISTRAL_API_KEY); }
 function openSourceReady(key, baseUrl) {
   return !!baseUrl && (keyOk(key) || process.env.OPEN_SOURCE_ALLOW_UNAUTH === 'true');
 }
@@ -55,7 +58,7 @@ function hasOpenSourceSlot(slotDef) {
 function hasOpenSourcePrimary() { return hasOpenSourceSlot(OPEN_SOURCE_SLOTS[0]); }
 function hasOpenSourceSecondary() { return hasOpenSourceSlot(OPEN_SOURCE_SLOTS[1]); }
 function hasAnyProvider() {
-  return OPEN_SOURCE_SLOTS.some(hasOpenSourceSlot) || hasGroqFallback() || hasOpenAI() || hasAnthropic();
+  return OPEN_SOURCE_SLOTS.some(hasOpenSourceSlot) || hasGroqFallback() || hasOpenAI() || hasMistral() || hasAnthropic();
 }
 function providerCapabilities() {
   return {
@@ -64,8 +67,9 @@ function providerCapabilities() {
     })),
     gpt_oss_120b: hasGroqFallback(),
     openai_direct: hasOpenAI(),
+    mistral_rescue: hasMistral(),
     anthropic_last_resort: hasAnthropic(),
-    order: [...OPEN_SOURCE_SLOTS.map(s=>s.label),'gpt-oss-120b-groq','gpt-oss-20b-groq','openai-direct','anthropic-last-resort'],
+    order: [...OPEN_SOURCE_SLOTS.map(s=>s.label),'gpt-oss-120b-groq','gpt-oss-20b-groq','openai-direct','mistral-rescue','anthropic-last-resort'],
   };
 }
 
@@ -80,6 +84,10 @@ function getGroqClient() {
 function getDirectOpenAIClient() {
   if (!clients.openai) clients.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   return clients.openai;
+}
+function getMistralClient() {
+  if (!clients.mistral) clients.mistral = new OpenAI({ apiKey: process.env.MISTRAL_API_KEY, baseURL: 'https://api.mistral.ai/v1' });
+  return clients.mistral;
 }
 function getOpenAICompatClient(slotDef) {
   const key=slotDef.label;
@@ -160,6 +168,15 @@ async function callOpenAI(params) {
   });
   return openAIResponseToAnthropicShape(completion);
 }
+async function callMistral(params) {
+  const completion = await getMistralClient().chat.completions.create({
+    model: MISTRAL_MODEL,
+    messages: [...(params.system ? [{role:'system',content:systemToOpenAI(params.system)}] : []), ...messagesToOpenAI(params.messages)],
+    ...(params.tools?.length ? {tools:toolsToOpenAI(params.tools),tool_choice:'auto'} : {}),
+    max_tokens: Math.min(Number(params.max_tokens)||2048,8192),
+  });
+  return openAIResponseToAnthropicShape(completion);
+}
 async function callGroq(params,model) {
   const completion=await getGroqClient().chat.completions.create({
     model, messages:[...(params.system?[{role:'system',content:systemToOpenAI(params.system)}]:[]),...messagesToOpenAI(params.messages)],
@@ -182,6 +199,7 @@ async function createMessage(params) {
     providers.push({name:'gpt-oss-20b-groq',fn:()=>callGroq(params,GROQ_MODEL_2)});
   }
   if(hasOpenAI())providers.push({name:'openai-direct',fn:()=>callOpenAI(params)});
+  if(hasMistral())providers.push({name:'mistral-rescue',fn:()=>callMistral(params)});
   if(hasAnthropic())providers.push({name:'anthropic-last-resort',fn:()=>callAnthropic(params)});
   if(!providers.length)throw new Error('AI client: no configured provider');
 
@@ -192,4 +210,4 @@ async function createMessage(params) {
   }
   throw lastErr||new Error('AI client: all providers failed');
 }
-module.exports={hasAnthropic,hasGroqFallback,hasOpenAI,hasOpenSourcePrimary,hasOpenSourceSecondary,hasAnyProvider,providerCapabilities,createMessage};
+module.exports={hasAnthropic,hasGroqFallback,hasOpenAI,hasMistral,hasOpenSourcePrimary,hasOpenSourceSecondary,hasAnyProvider,providerCapabilities,createMessage};
