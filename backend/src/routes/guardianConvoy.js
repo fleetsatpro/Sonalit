@@ -33,6 +33,11 @@ async function jwtAuth(req, res, next) {
       return res.status(401).json({ error: 'Invalid CFO session claims' });
     }
 
+    // The signed token is the only safe tenant selector available before the
+    // live relationship lookup. Enter it first; the database then confirms the
+    // user, convoy, membership, status and tenant all still agree.
+    runWithOrgContext(orgId, () => undefined);
+
     const [userResult, convoyResult] = await Promise.all([
       query(
         `SELECT u.id, u.name, u.email, u.org_id, u.status
@@ -245,7 +250,7 @@ router.post(
       if (!s3) return res.status(501).json({ error: 'Photo storage credentials not configured' });
 
       const photoId = uuidv4();
-      const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
+      const key = `orgs/${req.cfo.org_id}/convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
       await s3.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: key,
@@ -305,7 +310,7 @@ router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
     if (!s3) return res.status(501).json({ error: 'Photo storage not configured on this server' });
 
     const photoId = uuidv4();
-    const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
+    const key = `orgs/${req.cfo.org_id}/convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
     const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/jpeg' });
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
     const r2Url = `${R2_PUBLIC_URL}/${key}`;
@@ -388,7 +393,7 @@ router.post(
 
       const isPdf = req.headers['content-type']?.includes('pdf');
       const ext = isPdf ? 'pdf' : 'jpg';
-      const key = `convoy-app/${convoy_id}/handover/handover_${report_id}.${ext}`;
+      const key = `orgs/${req.cfo.org_id}/convoy-app/${convoy_id}/handover/handover_${report_id}.${ext}`;
       await s3.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: key,
