@@ -113,6 +113,7 @@ export default function GodsEyeView() {
 
   const [worldViewport, setWorldViewport] = useState({ ...initialWorldCenter, radiusM: 100000 })
   const worldViewportRef = useRef(worldViewport)
+  const worldViewportSeededRef = useRef(false)
   worldViewportRef.current = worldViewport
   const positionedVehicles = useMemo(() => allVehicles.filter(v => v.lat != null && v.lng != null), [allVehicles])
 
@@ -150,11 +151,9 @@ export default function GodsEyeView() {
   )
 
   useEffect(() => {
-    if (view !== '3D' || positionedVehicles.length === 0) return
-    const current = worldViewportRef.current
-    if (current.latitude === 35.5 && current.longitude === 1.2) {
-      setWorldViewport({ ...initialWorldCenter, radiusM: 100000 })
-    }
+    if (view !== '3D' || positionedVehicles.length === 0 || worldViewportSeededRef.current) return
+    worldViewportSeededRef.current = true
+    setWorldViewport({ ...initialWorldCenter, radiusM: 100000 })
   }, [view, positionedVehicles.length, initialWorldCenter])
 
   const layerCounts = useMemo(() => {
