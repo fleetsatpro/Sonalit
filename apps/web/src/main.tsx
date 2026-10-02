@@ -23,6 +23,7 @@ import { router } from './router.js';
 import { initOtel } from './lib/otel.js';
 import { initSentry, Sentry } from './lib/sentry.js';
 import { getAccessToken, setAccessToken, useAuthStore } from './stores/auth.js';
+import { restoreAccessToken } from './lib/api.js';
 import OfflineGuard from './components/OfflineGuard.js';
 import UpdateAvailableToast from './components/UpdateAvailableToast.js';
 
@@ -95,6 +96,18 @@ async function mount() {
     });
     if (useAuthStore.persist.hasHydrated()) resolve();
   });
+
+  // The profile is persisted while the access token is memory-only. Restore the
+  // session before routing so authenticated deep-links never start with a
+  // persisted profile and an empty Authorization header.
+  const persistedUser = useAuthStore.getState().user;
+  if (persistedUser && !getAccessToken()) {
+    try {
+      await restoreAccessToken();
+    } catch {
+      useAuthStore.getState().clearAuth();
+    }
+  }
 
   ReactDOM.createRoot(rootEl!).render(
     <React.StrictMode>
