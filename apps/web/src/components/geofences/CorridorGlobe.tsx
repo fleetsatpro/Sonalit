@@ -10,7 +10,7 @@ import '../../styles/spatial-command.css';
 
 export type { LatLng, GlobeMember, RiskZone };
 type Surface = 'corridor' | 'gev';
-type Props = { convoyId?: string; route: LatLng[]; corridorKm: number; members: GlobeMember[]; zones?: RiskZone[]; ceilingM?: number; focusId?: string | null; trail?: LatLng[]; onSelect?: (id: string | null) => void; onExternalSelect?: (id: string | null) => void; selectedExternalId?: string | null; worldEntities?: SpatialWorldEntity[]; onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number }) => void; fill?: boolean; surface?: Surface; fixedView?: View; showChrome?: boolean };
+type Props = { convoyId?: string; route: LatLng[]; corridorKm: number; members: GlobeMember[]; zones?: RiskZone[]; ceilingM?: number; focusId?: string | null; trail?: LatLng[]; onSelect?: (id: string | null) => void; onExternalSelect?: (id: string | null) => void; selectedExternalId?: string | null; worldEntities?: SpatialWorldEntity[]; onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number }) => void; fill?: boolean; surface?: Surface; fixedView?: View; showChrome?: boolean; showMapControls?: boolean };
 type View = '2D' | '3D';
 type SwarmResponse = { version:string; generated_at:string; provider_fabric:{ open_source:Array<{slot:number;label:string;model:string;configured:boolean}>; gpt_oss_120b:boolean; anthropic_last_resort:boolean; order:string[] }; agents:Array<{id:string;dimension:string;name:string;provider:string;status:string;finding:string;confidence:number;risks?:unknown[];evidence_gaps?:string[]}>; arbiter:{posture:string;summary:string;material_findings?:string[];material_gaps?:string[];confidence:number;next_review:string;dissent?:string[];provider:string} };
 const DIMENSIONS:{key:XdDimension;icon:typeof Crosshair}[]=[{key:'SPACE',icon:Crosshair},{key:'TIME',icon:Timer},{key:'IDENTITY',icon:Truck},{key:'MOTION',icon:Gauge},{key:'INTEGRITY',icon:ShieldCheck},{key:'SECURITY',icon:Eye},{key:'EVIDENCE',icon:DatabaseZap},{key:'FUTURE',icon:Waypoints}];
@@ -26,7 +26,7 @@ const DIMENSION_COPY:Record<XdDimension,{title:string;body:string}>={
 };
 function context(member?:GlobeMember|null){const m=member as (GlobeMember&{convoy_name?:string|null;client_name?:string|null})|undefined;return{convoy:m?.convoy_name??null,client:m?.client_name??null};}
 
-export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,onExternalSelect,selectedExternalId=null,worldEntities=[],onViewportChange,fill=false,surface='corridor',fixedView,showChrome=true}:Props){
+export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,onExternalSelect,selectedExternalId=null,worldEntities=[],onViewportChange,fill=false,surface='corridor',fixedView,showChrome=true,showMapControls=true}:Props){
  const[view,setView]=useState<View>(fixedView ?? '2D'),[dimension,setDimension]=useState<XdDimension>('SPACE'),[agentsOpen,setAgentsOpen]=useState(false),[entityOpen,setEntityOpen]=useState(true);
  const activeView=fixedView ?? view;
  const isGev=surface==='gev';
@@ -42,7 +42,7 @@ export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[
  const toggleSwarm=()=>{if(agentsOpen){setAgentsOpen(false);return;}setAgentsOpen(true);if(convoyId)void swarm.refetch();};
  const dimensionCopy=DIMENSION_COPY[dimension];
  return <div data-spatial-surface={surface} className={`spatial-surface ${fill?'h-full':'h-[520px]'} relative overflow-hidden bg-[#05070b] text-white font-sans antialiased`}>
-  {activeView==='2D'?<CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark"/>:<CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} onExternalSelect={onExternalSelect} selectedExternalId={selectedExternalId} worldEntities={worldEntities} onViewportChange={onViewportChange} fill globalView={isGev}/>}
+  {activeView==='2D'?<CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark"/>:<CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} onExternalSelect={onExternalSelect} selectedExternalId={selectedExternalId} worldEntities={worldEntities} onViewportChange={onViewportChange} fill globalView={isGev} showMapControls={showMapControls}/>}
 
   {showChrome && (
   <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-3"><div className="pointer-events-auto flex flex-wrap items-start justify-between gap-2">
