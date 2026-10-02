@@ -9,8 +9,8 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 const { Pool } = require('pg');
 const { withOrg } = require('../../src/utils/orgScopedDb');
 
-const ORG_A = 'aaaaaaaa-0000-0000-0000-000000000001';
-const ORG_B = 'bbbbbbbb-0000-0000-0000-000000000001';
+const ORG_A = 'aaaaaaaa-1111-4111-8111-000000000001';
+const ORG_B = 'bbbbbbbb-1111-4111-8112-000000000001';
 
 let pool;
 
