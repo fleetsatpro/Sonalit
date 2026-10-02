@@ -33,7 +33,7 @@ async function jwtAuth(req, res, next) {
       return res.status(401).json({ error: 'Invalid CFO session claims' });
     }
     const [userResult, convoyResult] = await Promise.all([
-      query(
+      globalQuery(
         `SELECT u.id, u.name, u.email, u.org_id, u.status
            FROM users u
           WHERE u.id = $1
@@ -49,7 +49,7 @@ async function jwtAuth(req, res, next) {
             )`,
         [userId, orgId, convoyId],
       ),
-      query(
+      globalQuery(
         `SELECT id, org_id, status
            FROM convoys
           WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
