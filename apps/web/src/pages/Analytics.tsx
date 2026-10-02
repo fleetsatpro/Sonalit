@@ -49,15 +49,15 @@ interface StatCardProps {
 
 function StatCard({ label, value, icon, sub }: StatCardProps) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl bg-gray-800 flex items-center justify-center text-orange-400 flex-shrink-0">
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
+      <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-orange-400 flex-shrink-0">
         {icon}
       </div>
       <div>
-        <p className="text-xs text-gray-400">{label}</p>
-        <p className="text-xl font-bold text-white">
+        <p className="text-xs text-slate-400">{label}</p>
+        <p className="text-xl font-bold text-slate-100">
           {value}
-          {sub && <span className="text-sm font-normal text-gray-400 ml-1">{sub}</span>}
+          {sub && <span className="text-sm font-normal text-slate-400 ml-1">{sub}</span>}
         </p>
       </div>
     </div>
@@ -98,7 +98,7 @@ export default function Analytics() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <BarChart2 size={20} className="text-orange-400" />
-        <h1 className="text-xl font-bold text-white">Analytics</h1>
+        <h1 className="text-xl font-bold text-slate-100">Analytics</h1>
       </div>
 
       {/* Summary stats */}
@@ -134,22 +134,22 @@ export default function Analytics() {
       </div>
 
       {/* Convoy performance over last 30 days */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-        <h2 className="text-sm font-semibold text-white mb-4">Convoy Performance (Last 30 Days)</h2>
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-slate-100 mb-4">Convoy Performance (Last 30 Days)</h2>
         {convoyLoading ? (
-          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+          <div className="h-48 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={(convoyMetrics ?? []).map((d) => ({ ...d, day: fmtDay(d.day) }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#6b7280' }} interval={4} />
-              <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} allowDecimals={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--d-rim2)" />
+              <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--d-t2)' }} interval={4} />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--d-t2)' }} allowDecimals={false} />
               <Tooltip
-                contentStyle={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: 6 }}
-                labelStyle={{ color: '#e5e7eb' }}
+                contentStyle={{ backgroundColor: 'var(--d-surf)', border: '1px solid var(--d-rim2)', borderRadius: 6 }}
+                labelStyle={{ color: 'var(--d-t1)' }}
               />
-              <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-              <Line type="monotone" dataKey="completed" stroke="#6366f1" strokeWidth={2} dot={false} name="Completed" />
+              <Legend wrapperStyle={{ fontSize: 12, color: 'var(--d-t2)' }} />
+              <Line type="monotone" dataKey="completed" stroke="var(--d-orange)" strokeWidth={2} dot={false} name="Completed" />
               <Line type="monotone" dataKey="on_time" stroke="#22c55e" strokeWidth={2} dot={false} name="On Time" />
               <Line type="monotone" dataKey="delayed" stroke="#f59e0b" strokeWidth={2} dot={false} name="Delayed" />
               <Line type="monotone" dataKey="aborted" stroke="#ef4444" strokeWidth={2} dot={false} name="Aborted" />
@@ -159,22 +159,22 @@ export default function Analytics() {
       </div>
 
       {/* Fleet utilization by region */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-        <h2 className="text-sm font-semibold text-white mb-4">Fleet Utilization by Region</h2>
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-slate-100 mb-4">Fleet Utilization by Region</h2>
         {fleetLoading ? (
-          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+          <div className="h-48 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={(fleetRegions ?? []).map((r) => ({ ...r, region: r.region ?? 'Unknown' }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="region" tick={{ fontSize: 10, fill: '#6b7280' }} />
-              <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} allowDecimals={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--d-rim2)" />
+              <XAxis dataKey="region" tick={{ fontSize: 10, fill: 'var(--d-t2)' }} />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--d-t2)' }} allowDecimals={false} />
               <Tooltip
-                contentStyle={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: 6 }}
-                labelStyle={{ color: '#e5e7eb' }}
+                contentStyle={{ backgroundColor: 'var(--d-surf)', border: '1px solid var(--d-rim2)', borderRadius: 6 }}
+                labelStyle={{ color: 'var(--d-t1)' }}
               />
-              <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-              <Bar dataKey="active" fill="#6366f1" name="Active" radius={[2, 2, 0, 0]} />
+              <Legend wrapperStyle={{ fontSize: 12, color: 'var(--d-t2)' }} />
+              <Bar dataKey="active" fill="var(--d-orange)" name="Active" radius={[2, 2, 0, 0]} />
               <Bar dataKey="idle" fill="#f59e0b" name="Idle" radius={[2, 2, 0, 0]} />
               <Bar dataKey="maintenance" fill="#ef4444" name="Maintenance" radius={[2, 2, 0, 0]} />
               <Bar dataKey="offline" fill="#374151" name="Offline" radius={[2, 2, 0, 0]} />

@@ -354,3 +354,27 @@ html[data-theme] .hover\\:bg-orange-700:hover { background-color: var(--son-them
 @media (prefers-reduced-motion: reduce) {
   .son-theme-option, .son-theme-check { transition:none; }
 }
+
+
+/* ── Application surface gray bridge ───────────────────────────────────── */
+html[data-theme] .d-main-col .bg-gray-950,
+html[data-theme] .d-main-col .bg-gray-900 { background-color: var(--d-well) !important; }
+html[data-theme] .d-main-col .bg-gray-800 { background-color: var(--d-surf) !important; }
+html[data-theme] .d-main-col .bg-gray-700 { background-color: var(--d-lift) !important; }
+html[data-theme] .d-main-col .border-gray-900,
+html[data-theme] .d-main-col .border-gray-800,
+html[data-theme] .d-main-col .border-gray-700,
+html[data-theme] .d-main-col .border-gray-600 { border-color: var(--d-rim2) !important; }
+html[data-theme] .d-main-col .text-gray-100,
+html[data-theme] .d-main-col .text-gray-200 { color: var(--d-t1) !important; }
+html[data-theme] .d-main-col .text-gray-300,
+html[data-theme] .d-main-col .text-gray-400 { color: var(--d-t2) !important; }
+html[data-theme] .d-main-col .text-gray-500,
+html[data-theme] .d-main-col .text-gray-600 { color: var(--d-t3) !important; }
+
+html[data-theme] .d-main-col [class*="bg-white/"] {
+  background-color: color-mix(in srgb, var(--d-t1) 5%, var(--d-well)) !important;
+}
+html[data-theme] .d-main-col [class*="border-white/"] {
+  border-color: var(--d-rim2) !important;
+}

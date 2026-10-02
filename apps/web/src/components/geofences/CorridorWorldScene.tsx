@@ -48,6 +48,7 @@ const STATUS_COLOR: Record<string, string> = {
   ahead: '#22d3ee',
   on_track: '#10b981',
   no_fix: '#737373',
+  no_route: '#a78bfa',
 };
 const RISK_COLOR: Record<string, string> = {
   no_go: '#dc2626',
