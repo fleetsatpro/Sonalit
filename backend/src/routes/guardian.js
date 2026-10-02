@@ -800,8 +800,7 @@ router.post('/recover', enrollLimiter, async (req, res, next) => {
         WHERE id = $1
           AND android_id = $2
           AND org_id = $3
-          AND deleted_at IS NULL
-        LIMIT 1`,
+          AND deleted_at IS NULL        LIMIT 1`,
       [officer.device_id, device_id, officer.org_id],
     );
     const dev = result.rows[0];
@@ -1600,7 +1599,6 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
     next(err);
   }
 });
-
 /**
  * POST /api/v1/guardian/report
  * Field incident report from device.
@@ -2001,3 +1999,403 @@ router.get('/devices', authenticate, async (req, res, next) => {
  */
 router.get('/devices/:id', authenticate, async (req, res, next) => {
   try {
+    const result = await query(
+      `SELECT * FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    const device = result.rows[0];
+
+    const [healthResult, locResult, cmdResult] = await Promise.all([
+      query(
+        `SELECT * FROM device_health WHERE device_id = $1 ORDER BY recorded_at DESC LIMIT 1`,
+        [device.id]
+      ),
+      query(
+        `SELECT lat, lng, altitude, heading, speed, accuracy, timestamp
+         FROM device_locations WHERE device_id = $1 ORDER BY timestamp DESC LIMIT 20`,
+        [device.id]
+      ),
+      query(
+        `SELECT id, command_type, payload, status, result, issued_at, executed_at
+         FROM device_commands WHERE device_id = $1 ORDER BY issued_at DESC LIMIT 20`,
+        [device.id]
+      ),
+    ]);
+
+    res.json({
+      data: {
+        ...device,
+        health: healthResult.rows[0] || null,
+        recent_locations: locResult.rows,
+        recent_commands: cmdResult.rows,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/v1/guardian/devices/:id
+ * Update device assignment, status, or name.
+ */
+router.patch('/devices/:id', authenticate, async (req, res, next) => {
+  try {
+    const { assignment_type, assignment_id, status, name } = req.body;
+
+    const validAssignmentTypes = ['driver', 'officer', 'convoy', 'vehicle', 'asset', 'user'];
+    if (assignment_type && !validAssignmentTypes.includes(assignment_type)) {
+      return res.status(400).json({
+        error: `assignment_type must be one of: ${validAssignmentTypes.join(', ')}`,
+      });
+    }
+
+    // When assigning to an officer, verify the officer exists in the same org
+    if (assignment_type === 'officer' && assignment_id) {
+      const officerCheck = await query(
+        `SELECT id FROM field_officers WHERE id = $1 AND (org_id = $2 OR org_id IS NULL)`,
+        [assignment_id, req.user.org_id || null]
+      );
+      if (!officerCheck.rows.length) {
+        return res.status(404).json({ error: 'Field officer not found' });
+      }
+    }
+
+    // Detect explicit clear: assignment_type is present in body but falsy (null/empty)
+    const clearAssignment = 'assignment_type' in req.body && !assignment_type;
+
+    const result = await query(
+      `UPDATE guardian_devices
+       SET name            = COALESCE($1, name),
+           status          = COALESCE($2, status),
+           assignment_type = CASE WHEN $6 THEN NULL ELSE COALESCE($3, assignment_type) END,
+           assignment_id   = CASE WHEN $6 THEN NULL ELSE COALESCE($4::UUID, assignment_id) END,
+           org_id          = COALESCE(org_id, $7::UUID),
+           updated_at      = NOW()
+       WHERE id = $5 AND deleted_at IS NULL
+       RETURNING *`,
+      [name || null, status || null, assignment_type || null, assignment_id || null, req.params.id, clearAssignment, req.user.org_id || null]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    auditLog('admin', req.user.id, 'device_updated', 'device', req.params.id, req.body, req.ip);
+
+    res.json({ data: result.rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * DELETE /api/v1/guardian/devices/:id
+ * Soft delete device.
+ */
+router.delete('/devices/:id', authenticate, async (req, res, next) => {
+  try {
+    const result = await query(
+      `UPDATE guardian_devices
+       SET deleted_at = NOW(), status = 'revoked', updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id`,
+      [req.params.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    auditLog('admin', req.user.id, 'device_deleted', 'device', req.params.id, {}, req.ip);
+    logger.info(`Guardian device soft-deleted: ${req.params.id} by user ${req.user.id}`);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/guardian/devices/:id/command
+ * Send a remote command to a device.
+ */
+router.post('/devices/:id/command', authenticate, requireIdempotencyKey, commandLimiter, async (req, res, next) => {
+  try {
+    const { command_type, payload, nonce, issued_at: clientIssuedAt } = req.body;
+
+    const validCommandTypes = [
+      'force_sync', 'start_live_tracking', 'stop_live_tracking',
+      'lock_screen', 'trigger_siren', 'stop_siren', 'push_message',
+      'restart_agent', 'request_location', 'enable_lost_mode',
+      'WIPE', 'LOCKDOWN', 'UPDATE_PINS', 'CHANGE_MODE', 'SEND_MESSAGE', 'TAKE_PHOTO',
+    ];
+    if (!command_type || !validCommandTypes.includes(command_type)) {
+      return res.status(400).json({
+        error: `command_type must be one of: ${validCommandTypes.join(', ')}`,
+      });
+    }
+
+    // ── Replay protection (T1.3) ──────────────────────────────────────────────
+    if (!nonce || typeof nonce !== 'string' || nonce.length < 8) {
+      return res.status(400).json({ error: 'nonce is required (min 8 chars)' });
+    }
+    if (clientIssuedAt) {
+      const diff = Math.abs(Date.now() - new Date(clientIssuedAt).getTime());
+      if (diff > 5 * 60 * 1000) {
+        return res.status(400).json({ error: 'issued_at is outside 5-minute window', code: 'clock_skew' });
+      }
+    }
+
+    // Try device exists + get integrity state in one query
+    const deviceCheck = await query(
+      `SELECT id, fcm_token, last_integrity_verdict, last_integrity_verdict_at
+       FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (!deviceCheck.rows.length) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+    const device = deviceCheck.rows[0];
+
+    // ── Play Integrity gating (T1.4) ─────────────────────────────────────────
+    const destructiveMaxAge = INTEGRITY_MAX_AGE[command_type];
+    if (destructiveMaxAge !== undefined) {
+      const staleCutoff = new Date(Date.now() - destructiveMaxAge * 60 * 1000);
+      const isStale = !device.last_integrity_verdict_at || new Date(device.last_integrity_verdict_at) < staleCutoff;
+      const isBad = !device.last_integrity_verdict || device.last_integrity_verdict !== 'MEETS_DEVICE_INTEGRITY';
+      if (isStale || isBad) {
+        await query(
+          `INSERT INTO device_commands (device_id, command_type, payload, status) VALUES ($1, 'REQUEST_INTEGRITY', '{}', 'pending')`,
+          [device.id]
+        ).catch(() => {});
+        return res.status(412).json({ error: 'Device integrity verification required', code: 'integrity_required' });
+      }
+    }
+
+    // ── Deduplicate nonce (INSERT will fail on PK violation) ─────────────────
+    try {
+      await query(
+        `INSERT INTO guardian_command_nonces (device_id, org_id, nonce, seen_at)
+         SELECT id, org_id, $2, NOW() FROM guardian_devices WHERE id = $1`,
+        [device.id, nonce]
+      );
+    } catch (nonceErr) {
+      if (nonceErr.code === '23505') {
+        return res.status(409).json({ error: 'Duplicate command — nonce already seen', code: 'replay_detected' });
+      }
+      throw nonceErr;
+    }
+
+    const insertResult = await query(
+      `INSERT INTO device_commands (device_id, command_type, payload, issued_by, nonce, issued_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW()), NOW() + INTERVAL '24 hours')
+       RETURNING id, issued_at, expires_at`,
+      [req.params.id, command_type, payload ? JSON.stringify(payload) : null, req.user.id, nonce, clientIssuedAt || null]
+    );
+
+    const cmd = insertResult.rows[0];
+    const signature = signCommand(cmd.id, command_type, payload || null, cmd.issued_at, cmd.expires_at);
+
+    await query(`UPDATE device_commands SET signature = $1 WHERE id = $2`, [signature, cmd.id]);
+
+    auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload, nonce }, req.ip);
+
+    // expires_at MUST be included so the device can reconstruct the signed message
+    // (signCommand binds expires_at) and verify the signature over the WS path.
+    publish(`org#${req.user.org_id}`, { type: 'device.command', device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, expires_at: cmd.expires_at, signature });
+
+    // T5.3: record issued event
+    query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'issued')`, [cmd.id]).catch(() => {});
+
+    logger.info(`Command issued: ${command_type} → device=${req.params.id} by user=${req.user.id}`);
+
+    if (device.fcm_token) {
+      sendCommandPush(device.fcm_token, command_type, cmd.id).catch(() => {});
+    }
+
+    res.status(201).json({ command_id: cmd.id, signature });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/guardian/devices/:id/commands
+ * Recent command log for a device (newest first).
+ */
+router.get('/devices/:id/commands', authenticate, async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+
+    const deviceCheck = await query(
+      `SELECT id FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (!deviceCheck.rows.length) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    const result = await query(
+      `SELECT dc.id, dc.command_type, dc.payload, dc.status,
+              dc.result, dc.issued_at, dc.executed_at,
+              u.name AS issued_by_name
+       FROM device_commands dc
+       LEFT JOIN users u ON u.id = dc.issued_by
+       WHERE dc.device_id = $1
+       ORDER BY dc.issued_at DESC
+       LIMIT $2`,
+      [req.params.id, limit]
+    );
+
+    res.json({ commands: result.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/guardian/commands/:id/events
+ * Lifecycle event log for a specific command (admin). T5.3
+ */
+router.get('/commands/:id/events', authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT id, status, occurred_at, detail FROM device_command_events
+       WHERE command_id = $1 ORDER BY occurred_at ASC`,
+      [req.params.id]
+    );
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+});
+
+/**
+ * GET /api/v1/guardian/devices/:id/history
+ * Recent GPS trail (last 500 points, default 24 hours).
+ */
+router.get('/devices/:id/history', authenticate, async (req, res, next) => {
+  try {
+    const hours = Math.min(parseInt(req.query.hours) || 24, 168); // cap at 7 days
+
+    const deviceCheck = await query(
+      `SELECT id, name FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (!deviceCheck.rows.length) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    const result = await query(
+      `SELECT lat, lng, altitude, heading, speed, accuracy, timestamp
+       FROM device_locations
+       WHERE device_id = $1 AND timestamp >= NOW() - ($2 || ' hours')::INTERVAL
+       ORDER BY timestamp DESC
+       LIMIT 500`,
+      [req.params.id, hours]
+    );
+
+    res.json({
+      device_id: req.params.id,
+      device_name: deviceCheck.rows[0].name,
+      hours,
+      count: result.rows.length,
+      data: result.rows,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/guardian/panic
+ * List panic events, newest first. Optional ?active_only=true
+ */
+router.get('/panic', authenticate, async (req, res, next) => {
+  try {
+    const { active_only, device_id, after, limit = 50, offset = 0 } = req.query;
+
+    const filters = [];
+    const params = [];
+
+    // Org scoping: prefer pe.org_id; fall back to device's org_id for older rows
+    params.push(req.user.org_id);
+    filters.push(`(pe.org_id = $${params.length} OR gd.org_id = $${params.length})`);
+
+    if (active_only === 'true') {
+      filters.push('pe.resolved_at IS NULL');
+    }
+    if (device_id) {
+      params.push(device_id);
+      filters.push(`pe.device_id = $${params.length}`);
+    }
+    if (after) {
+      params.push(after);
+      filters.push(`pe.created_at < $${params.length}`);
+    }
+
+    params.push(parseInt(limit), parseInt(offset));
+    const limitIdx = params.length - 1;
+    const offsetIdx = params.length;
+
+    const whereClause = `WHERE ${filters.join(' AND ')}`;
+
+    const result = await query(
+      `SELECT pe.*, gd.name AS device_name, gd.model AS device_model
+       FROM panic_events pe
+       JOIN guardian_devices gd ON gd.id = pe.device_id
+       ${whereClause}
+       ORDER BY pe.created_at DESC
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      params
+    );
+
+    const total = await query(
+      `SELECT COUNT(*) FROM panic_events pe JOIN guardian_devices gd ON gd.id = pe.device_id ${whereClause}`,
+      params.slice(0, -2)
+    );
+
+    const panicRows = result.rows;
+    const panicLimit = parseInt(limit);
+    const next_cursor =
+      panicRows.length < panicLimit
+        ? null
+        : panicRows[panicRows.length - 1].created_at instanceof Date
+        ? panicRows[panicRows.length - 1].created_at.toISOString()
+        : panicRows[panicRows.length - 1].created_at;
+
+    res.json({ data: panicRows, total: parseInt(total.rows[0].count), next_cursor });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/v1/guardian/panic/:id/ack
+ * Admin acknowledges an active panic — signals "someone is on it" without
+ * resolving it, so other dashboards stop treating it as unattended and the
+ * escalation job stops paging further contacts.
+ */
+router.patch('/panic/:id/ack', authenticate, async (req, res, next) => {
+  try {
+    const result = await query(
+      `UPDATE panic_events
+       SET acknowledged_at = NOW(), acknowledged_by = $2
+       WHERE id = $1 AND resolved_at IS NULL AND acknowledged_at IS NULL
+       RETURNING id, device_id, org_id, mode, acknowledged_at`,
+      [req.params.id, req.user.id]
+    );
+
+    if (!result.rows.length) {
+      const existing = await query(`SELECT id, acknowledged_at, resolved_at FROM panic_events WHERE id = $1`, [req.params.id]);
+      if (!existing.rows.length) return res.status(404).json({ error: 'Panic event not found' });
+      if (existing.rows[0].resolved_at) return res.status(409).json({ error: 'Panic event already resolved' });
+      return res.json({ data: existing.rows[0] }); // already acknowledged — idempotent
+    }
+
+    const panicEvent = result.rows[0];
+    const acker = await query(`SELECT name FROM users WHERE id = $1`, [req.user.id]);
+
+    const ackPayload = {
