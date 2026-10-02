@@ -11,7 +11,6 @@
  */
 const router = require('express').Router({ mergeParams: true });
 const Joi = require('joi');
-const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { planRoute, planRouteAlternatives } = require('../services/geo/routePlan');
@@ -21,7 +20,8 @@ const { reconcileWorldState } = require('../services/geofence/worldStateSwarm');
 const { geocode } = require('../services/geo/geocode');
 const geoEnv = require('../services/geo/providerEnv');
 
-router.use(authenticate, attachOrgDb);
+// Mounted after routes/convoys.js, which already authenticates and establishes tenant context.
+router.use(attachOrgDb);
 
 const pt = Joi.object({ lat: Joi.number().required(), lng: Joi.number().required() });
 const corridorSchema = Joi.object({
