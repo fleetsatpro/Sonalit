@@ -553,12 +553,12 @@ BEGIN
       EXECUTE format('ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY', r.schema_name, r.table_name);
     END IF;
     IF r.table_name='risk_zones' THEN
-      EXECUTE format('CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR SELECT USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid OR org_id IS NULL)', r.schema_name,r.table_name);
-      EXECUTE format('CREATE POLICY tenant_isolation_hardening_insert ON %I.%I AS RESTRICTIVE FOR INSERT WITH CHECK (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
-      EXECUTE format('CREATE POLICY tenant_isolation_hardening_update ON %I.%I AS RESTRICTIVE FOR UPDATE USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid) WITH CHECK (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
-      EXECUTE format('CREATE POLICY tenant_isolation_hardening_delete ON %I.%I AS RESTRICTIVE FOR DELETE USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
+      EXECUTE format('CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR SELECT USING (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),'''') OR org_id IS NULL)', r.schema_name,r.table_name);
+      EXECUTE format('CREATE POLICY tenant_isolation_hardening_insert ON %I.%I AS RESTRICTIVE FOR INSERT WITH CHECK (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),''''))', r.schema_name,r.table_name);
+      EXECUTE format('CREATE POLICY tenant_isolation_hardening_update ON %I.%I AS RESTRICTIVE FOR UPDATE USING (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),'''')) WITH CHECK (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),''''))', r.schema_name,r.table_name);
+      EXECUTE format('CREATE POLICY tenant_isolation_hardening_delete ON %I.%I AS RESTRICTIVE FOR DELETE USING (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),''''))', r.schema_name,r.table_name);
     ELSE
-      EXECUTE format('CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR ALL USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid) WITH CHECK (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
+      EXECUTE format('CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR ALL USING (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),'''')) WITH CHECK (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),''''))', r.schema_name,r.table_name);
     END IF;
 
     -- A restrictive policy cannot grant access on its own. Only add a broad
@@ -571,9 +571,9 @@ BEGIN
          AND permissive='PERMISSIVE'
     ) THEN
       IF r.table_name='risk_zones' THEN
-        EXECUTE format('CREATE POLICY tenant_base_fallback ON %I.%I AS PERMISSIVE FOR ALL USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid OR org_id IS NULL) WITH CHECK (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
+        EXECUTE format('CREATE POLICY tenant_base_fallback ON %I.%I AS PERMISSIVE FOR ALL USING (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),'''') OR org_id IS NULL) WITH CHECK (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),''''))', r.schema_name,r.table_name);
       ELSE
-        EXECUTE format('CREATE POLICY tenant_base_fallback ON %I.%I AS PERMISSIVE FOR ALL USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid) WITH CHECK (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
+        EXECUTE format('CREATE POLICY tenant_base_fallback ON %I.%I AS PERMISSIVE FOR ALL USING (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),'''')) WITH CHECK (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),''''))', r.schema_name,r.table_name);
       END IF;
     END IF;
     IF EXISTS (
