@@ -46,9 +46,10 @@ const STATUS: Record<string, { label: string; ring: string; text: string; bg: st
   behind: { label: 'Behind schedule', ring: 'border-amber-500/50', text: 'text-amber-400', bg: 'bg-amber-500', glow: 'shadow-[0_0_12px_-2px_rgba(245,158,11,0.6)]' },
   ahead: { label: 'Ahead of escort', ring: 'border-cyan-500/50', text: 'text-cyan-400', bg: 'bg-cyan-500', glow: 'shadow-[0_0_12px_-2px_rgba(34,211,238,0.6)]' },
   on_track: { label: 'On track', ring: 'border-emerald-500/40', text: 'text-emerald-400', bg: 'bg-emerald-500', glow: '' },
+  no_route: { label: 'Route not planned', ring: 'border-violet-500/30', text: 'text-violet-300', bg: 'bg-violet-500', glow: '' },
   no_fix: { label: 'No GPS fix', ring: 'border-white/10', text: 'text-neutral-500', bg: 'bg-neutral-600', glow: '' },
 };
-const RANK: Record<string, number> = { off_route: 0, behind: 1, ahead: 2, no_fix: 3, on_track: 4 };
+const RANK: Record<string, number> = { off_route: 0, behind: 1, ahead: 2, no_route: 3, no_fix: 4, on_track: 5 };
 const RISK_CHIP: Record<string, string> = {
   no_go: 'border-red-500/40 bg-red-500/10 text-red-300', critical: 'border-red-500/40 bg-red-500/10 text-red-300', high: 'border-orange-500/40 bg-orange-500/10 text-orange-300', medium: 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300', low: 'border-lime-500/40 bg-lime-500/10 text-lime-300',
 };
@@ -57,6 +58,7 @@ const CHIPS = [
   { key: 'behind', label: 'Behind', cls: 'text-amber-400' },
   { key: 'ahead', label: 'Ahead', cls: 'text-cyan-400' },
   { key: 'on_track', label: 'On track', cls: 'text-emerald-400' },
+  { key: 'no_route', label: 'No route', cls: 'text-violet-300' },
   { key: 'no_fix', label: 'No fix', cls: 'text-neutral-500' },
 ];
 function schedText(min?: number | null): string { if (min == null || min === 0) return 'on schedule'; const a = Math.abs(min); const t = a >= 60 ? `${Math.floor(a / 60)}h ${a % 60}m` : `${a} min`; return min < 0 ? `${t} behind` : `${t} ahead`; }
