@@ -230,6 +230,18 @@ describe('tenant isolation regression guards', () => {
   });
 
 
+
+  test('Intelligence worker discovery establishes tenant context before tenant work', () => {
+    const news = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceNewsMesh.js'), 'utf8');
+    const agents = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceAgents.js'), 'utf8');
+
+    for (const source of [news, agents]) {
+      expect(source).toContain('globalQuery');
+      expect(source).toContain('runWithOrgContext');
+      expect(source).not.toMatch(/const \{rows:orgs\}=await query\(/);
+    }
+  });
+
   test('Guardian bootstrap retrofits legacy enrollment and convoy tenant columns', () => {
     const migration = fs.readFileSync(
       path.join(__dirname, '../migrations/20261002_122_guardian_bootstrap_tenant_schema.sql'),
