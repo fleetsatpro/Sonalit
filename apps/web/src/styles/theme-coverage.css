@@ -548,4 +548,48 @@ html[data-theme] #root {
 
 /* ── CDS utility palette bridge ─────────────────────────────────────────── */
 :root[data-theme] :where(
-  [class~="bg-ink-0"] {0}) {}
+  [class~="bg-ink-0"], [class~="bg-ink-1"], [class~="bg-ink-2"],
+  [class~="bg-ink-3"], [class~="bg-ink-4"]
+) {
+  background-color: var(--d-well) !important;
+}
+
+:root[data-theme] [class~="bg-ink-0"] { background-color: var(--d-void) !important; }
+:root[data-theme] [class~="bg-ink-1"] { background-color: var(--d-carbon) !important; }
+:root[data-theme] [class~="bg-ink-2"] { background-color: var(--d-deep) !important; }
+:root[data-theme] [class~="bg-ink-3"] { background-color: var(--d-well) !important; }
+:root[data-theme] [class~="bg-ink-4"] { background-color: var(--d-surf) !important; }
+
+:root[data-theme] [class~="text-0"] { color: var(--d-t1) !important; }
+:root[data-theme] [class~="text-1"] { color: var(--d-t2) !important; }
+:root[data-theme] [class~="text-2"] { color: var(--d-t3) !important; }
+
+/* The CDS orange token is a product accent, not a semantic incident state. */
+:root[data-theme] [class~="bg-cds-orange"] { background-color: var(--d-orange) !important; }
+:root[data-theme] [class~="text-cds-orange"] { color: var(--d-orange) !important; }
+:root[data-theme] [class~="border-cds-orange"] {
+  border-color: color-mix(in srgb, var(--d-orange) 55%, transparent) !important;
+}
+
+/* ── Shared interaction polish ─────────────────────────────────────────── */
+:root[data-theme] :where(button, [role="button"], input, select, textarea) {
+  accent-color: var(--d-sig);
+  color-scheme: inherit;
+}
+
+:root[data-theme] :where(input::placeholder, textarea::placeholder) {
+  color: var(--d-t3);
+}
+
+:root[data-theme] ::selection {
+  background: color-mix(in srgb, var(--d-sig) 28%, transparent);
+  color: var(--d-t1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme] *,
+  :root[data-theme] *::before,
+  :root[data-theme] *::after {
+    transition-duration: .01ms !important;
+  }
+}
