@@ -1603,3 +1603,42 @@
   .gev-ribbon-action,
   .gev-bottom-ribbon { transition: none; }
 }
+
+
+/* ── Active Sonalit theme overlay ───────────────────────────────────────── */
+:root[data-theme] .gev-shell {
+  background: var(--d-void) !important;
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .gev-shell .gev-topbar,
+:root[data-theme] .gev-shell .gev-panel,
+:root[data-theme] .gev-shell .gev-rail,
+:root[data-theme] .gev-shell .gev-ribbon {
+  background: color-mix(in srgb, var(--d-well) 93%, transparent) !important;
+  border-color: var(--d-rim2) !important;
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .gev-shell .gev-stage {
+  background: var(--d-deep) !important;
+}
+:root[data-theme] .gev-shell .gev-stat,
+:root[data-theme] .gev-shell .gev-layer,
+:root[data-theme] .gev-shell .gev-mini,
+:root[data-theme] .gev-shell .gev-external-row,
+:root[data-theme] .gev-shell .gev-entity-hero {
+  background: color-mix(in srgb, var(--d-surf) 88%, transparent) !important;
+  border-color: var(--d-rim2) !important;
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .gev-shell :is(.gev-title,.gev-panel-title,.gev-entity-title,.gev-stat-value,.gev-layer span:last-child,.gev-mini-value,.gev-external-name) {
+  color: var(--d-t1) !important;
+}
+:root[data-theme] .gev-shell :is(.gev-subtitle,.gev-panel-meta,.gev-stat-label,.gev-footnote,.gev-external-meta,.gev-detail-note) {
+  color: var(--d-t2) !important;
+}
+:root[data-theme] .gev-shell .gev-segment[aria-pressed="true"],
+:root[data-theme] .gev-shell .gev-rail-button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--d-orange) 11%, var(--d-well)) !important;
+  border-color: color-mix(in srgb, var(--d-orange) 38%, transparent) !important;
+  color: var(--d-orange) !important;
+}
