@@ -40,9 +40,31 @@ async function runScheduledClientPulse(now = new Date(), { recovery = false } = 
     return { skipped: true, reason: 'not_pulse_slot' };
   }
 
-  const snapshotAt = new Date(now);
+  // A recovery run replays the most recent four-hour slot. Scheduled runs use
+  // the exact current slot. The slot key is calculated before any log/dispatch
+  // references so a leader acquisition can never fail on an uninitialised value.
+  let slotHour = hour;
+  let slotDate = date;
+  if (recovery && !PULSE_HOURS_EAT.includes(slotHour)) {
+    slotHour = PULSE_HOURS_EAT.reduce((latest, candidate) =>
+      candidate <= hour ? candidate : latest, 0
+    );
+  }
+  if (recovery && slotHour > hour) {
+    slotHour = 0;
+  }
+
+  const slotKey = `${slotDate}:${String(slotHour).padStart(2, '0')}:00 EAT`;
+  if (slotKey === lastPulseSlot) {
+    return { skipped: true, reason: 'slot_already_processed', slotKey };
+  }
+
+  const snapshotAt = recovery
+    ? new Date(`${slotDate}T${String(slotHour).padStart(2, '0')}:00:00+03:00`)
+    : new Date(now);
   snapshotAt.setUTCSeconds(0, 0);
-  logger.info(`CDS Client Pulse scheduled dispatch starting: slot=${slotKey} snapshot=${snapshotAt.toISOString()}`);
+
+  logger.info(`CDS Client Pulse ${recovery ? 'recovery' : 'scheduled'} dispatch starting: slot=${slotKey} snapshot=${snapshotAt.toISOString()}`);
 
   try {
     const orgs = await globalQuery(`
@@ -51,62 +73,53 @@ async function runScheduledClientPulse(now = new Date(), { recovery = false } = 
       WHERE org_id IS NOT NULL
         AND deleted_at IS NULL
     `);
-    let queued = 0, skipped = 0, failed = 0;
 
+    let queued = 0, skipped = 0, failed = 0;
     for (const row of orgs.rows) {
       try {
-        const result = await dispatchClientPulse(row.org_id, { snapshotAt, reason: 'scheduled' });
+        const result = await dispatchClientPulse(row.org_id, {
+          snapshotAt,
+          reason: recovery ? 'scheduled_recovery' : 'scheduled',
+        });
         queued += Number(result?.queued || 0);
         skipped += Number(result?.skipped || 0);
         failed += Number(result?.failed || 0);
-        logger.info(`CDS Client Pulse scheduled org complete: slot=${slotKey} org=${row.org_id} queued=${result?.queued || 0} skipped=${result?.skipped || 0} failed=${result?.failed || 0}`);
+        logger.info(
+          `CDS Client Pulse ${recovery ? 'recovery' : 'scheduled'} org complete: ` +
+          `slot=${slotKey} org=${row.org_id} queued=${result?.queued || 0} ` +
+          `skipped=${result?.skipped || 0} failed=${result?.failed || 0}`
+        );
       } catch (error) {
         failed += 1;
-        logger.error(`CDS Client Pulse scheduled org failed: slot=${slotKey} org=${row.org_id} error=${error.message}`);
+        logger.error(
+          `CDS Client Pulse ${recovery ? 'recovery' : 'scheduled'} org failed: ` +
+          `slot=${slotKey} org=${row.org_id} error=${error.message}`
+        );
       }
     }
 
-    logger.info(`CDS Client Pulse scheduled dispatch complete: slot=${slotKey} organizations=${orgs.rows.length} queued=${queued} skipped=${skipped} failed=${failed}`);
-    return { slotKey, organizations: orgs.rows.length, queued, skipped, failed };
+    if (failed === 0) lastPulseSlot = slotKey;
+    else lastPulseSlot = null;
+
+    const result = {
+      slotKey,
+      organizations: orgs.rows.length,
+      queued,
+      skipped,
+      failed,
+      recovery,
+    };
+    logger.info(
+      `CDS Client Pulse ${recovery ? 'recovery' : 'scheduled'} dispatch complete: ` +
+      `slot=${slotKey} organizations=${orgs.rows.length} queued=${queued} ` +
+      `skipped=${skipped} failed=${failed}`
+    );
+    return result;
   } catch (error) {
     lastPulseSlot = null;
     logger.error(`CDS Client Pulse scheduler failed: slot=${slotKey} error=${error.message}`);
     throw error;
   }
-  if (recovery) {
-    snapshotAt.setTime(new Date(`${slotDate}T${String(slotHour).padStart(2, '0')}:00:00+03:00`).getTime());
-  }
-
-  const slotKey = `${slotDate}:${String(slotHour).padStart(2, '0')}:00 EAT`;
-  if (slotKey === lastPulseSlot) return { skipped: true, reason: 'slot_already_processed', slotKey };
-
-  logger.info(`CDS Client Pulse ${recovery ? 'recovery' : 'scheduled'} dispatch starting: slot=${slotKey} snapshot=${snapshotAt.toISOString()}`);
-  const orgs = await query(`
-    SELECT DISTINCT org_id
-    FROM users
-    WHERE org_id IS NOT NULL
-      AND deleted_at IS NULL
-  `);
-  let queued = 0, skipped = 0, failed = 0;
-
-  for (const row of orgs.rows) {
-    try {
-      const result = await dispatchClientPulse(row.org_id, { snapshotAt, reason: recovery ? 'scheduled_recovery' : 'scheduled' });
-      queued += Number(result?.queued || 0);
-      skipped += Number(result?.skipped || 0);
-      failed += Number(result?.failed || 0);
-      logger.info(`CDS Client Pulse ${recovery ? 'recovery' : 'scheduled'} org complete: slot=${slotKey} org=${row.org_id} queued=${result?.queued || 0} skipped=${result?.skipped || 0} failed=${result?.failed || 0}`);
-    } catch (error) {
-      failed += 1;
-      logger.error(`CDS Client Pulse ${recovery ? 'recovery' : 'scheduled'} org failed: slot=${slotKey} org=${row.org_id} error=${error.message}`);
-    }
-  }
-
-  const result = { slotKey, organizations: orgs.rows.length, queued, skipped, failed, recovery };
-  if (failed === 0) lastPulseSlot = slotKey;
-  else lastPulseSlot = null;
-  logger.info(`CDS Client Pulse ${recovery ? 'recovery' : 'scheduled'} dispatch complete: slot=${slotKey} organizations=${orgs.rows.length} queued=${queued} skipped=${skipped} failed=${failed}`);
-  return result;
 }
 
 function scheduleClientPulse() {
