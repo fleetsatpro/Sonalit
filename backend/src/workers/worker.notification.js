@@ -149,7 +149,7 @@ process.on('SIGTERM', shutdown);
         const now = new Date();
         const { hour, minute } = getEatSlot(now);
         const recentSlotAgeMinutes = minute + ((hour % 4) * 60);
-        if (recentSlotAgeMinutes <= 150) {
+        // Four-hour pulse cadence: allow recovery through 30 minutes before the next slot.\n        if (recentSlotAgeMinutes <= 210) {
           await runScheduledClientPulse(now, { recovery: true });
         }
       } catch (error) {
