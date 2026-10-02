@@ -128,6 +128,18 @@ html[data-theme] #root {
 }
 
 :root[data-theme] .icx-root {
+  --ic-bg: var(--d-void);
+  --ic-surface: var(--d-carbon);
+  --ic-surface2: var(--d-well);
+  --ic-line: var(--d-rim2);
+  --ic-line2: var(--d-rim3);
+  --ic-text: var(--d-t1);
+  --ic-muted: var(--d-t2);
+  --ic-faint: var(--d-t3);
+  --ic-accent: var(--d-sig);
+  --ic-accent2: var(--d-orange);
+  --ic-warn: var(--d-warn, var(--son-theme-warning));
+  --ic-danger: var(--d-fire, var(--son-theme-danger));
   color: var(--d-t1);
   background:
     radial-gradient(circle at 72% -18%, color-mix(in srgb, var(--d-sig) 8%, transparent), transparent 34%),
@@ -195,6 +207,18 @@ html[data-theme] #root {
 
 :root[data-theme] .intelligence-live,
 :root[data-theme] .ia-page {
+  --ic-bg: var(--d-void);
+  --ic-surface: var(--d-carbon);
+  --ic-surface2: var(--d-well);
+  --ic-line: var(--d-rim2);
+  --ic-line2: var(--d-rim3);
+  --ic-text: var(--d-t1);
+  --ic-muted: var(--d-t2);
+  --ic-faint: var(--d-t3);
+  --ic-accent: var(--d-sig);
+  --ic-accent2: var(--d-orange);
+  --ic-warn: var(--d-warn, var(--son-theme-warning));
+  --ic-danger: var(--d-fire, var(--son-theme-danger));
   color: var(--d-t1);
   background: transparent;
 }
