@@ -556,7 +556,7 @@ router.post('/convoy-reports/:id/sod', jwtAuth, async (req, res, next) => {
     // point even when live tracking didn't run.
     await persistConvoyPoint(report.convoy_id, gps, submitted_at);
 
-    publish(`convoy:${report.convoy_id}:report`, {
+    publish(`org:${req.cfo.org_id}:convoy:${report.convoy_id}:report`, {
       event: 'sod_submitted', report_id: report.id, convoy_id: report.convoy_id,
       cfo_id: report.cfo_id, status: report.status, sod_submitted_at: report.sod_submitted_at,
     }).catch((err) => logger.warn(`Centrifugo publish failed (sod): ${err.message}`));
@@ -604,7 +604,7 @@ router.post('/convoy-reports/:id/eod', jwtAuth, async (req, res, next) => {
       logger.warn(`Queue unavailable for EOD PDF job: ${err.message}`);
     }
 
-    publish(`convoy:${report.convoy_id}:report`, {
+    publish(`org:${req.cfo.org_id}:convoy:${report.convoy_id}:report`, {
       event: 'eod_submitted', report_id: report.id, convoy_id: report.convoy_id,
       cfo_id: report.cfo_id, status: report.status, eod_submitted_at: report.eod_submitted_at,
     }).catch((err) => logger.warn(`Centrifugo publish failed (eod): ${err.message}`));
