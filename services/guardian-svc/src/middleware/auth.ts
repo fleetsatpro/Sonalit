@@ -31,6 +31,8 @@ export async function requireAuth(request: FastifyRequest, _reply: FastifyReply)
     const sub = typeof payload.sub === 'string' ? payload.sub : '';
     const claimedOrgId = typeof payload.org_id === 'string' ? payload.org_id : '';
     if (!sub || !claimedOrgId) throw new AuthError('Token missing required claims');
+    // Use the verified JWT tenant only to scope the live-user lookup; the DB row remains authoritative.
+    tenantContext.enterWith(claimedOrgId);
 
     const live = await query<{ id: string; org_id: string; role: string; status: string }>(
       'SELECT id, org_id, role, status FROM users WHERE id=$1 AND deleted_at IS NULL',
