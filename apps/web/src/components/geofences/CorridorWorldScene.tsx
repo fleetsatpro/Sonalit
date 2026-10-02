@@ -811,7 +811,7 @@ export default function CorridorWorldScene({
     <div data-spatial-surface="cesium-world" className={`spatial-surface ${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#080b12]`}>
       <div ref={boxRef} className="absolute inset-0" />
       {showMapControls && (
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
+      <div className={`gev-map-controls pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3 ${globalView ? 'gev-map-controls--global' : ''}`}>
         <div className="spatial-control-rail pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map" aria-pressed={mode === 'dark'}><MapIcon size={15} /></button>
           <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map" aria-pressed={mode === 'satellite'}><Satellite size={15} /></button>
