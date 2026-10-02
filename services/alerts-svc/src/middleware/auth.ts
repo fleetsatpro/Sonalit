@@ -51,6 +51,10 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
     const claimedOrgId = typeof payload.org_id === 'string' ? payload.org_id : null;
     if (!sub || !claimedOrgId) throw new Error('missing required claims');
 
+    // The verified JWT tenant is trusted only as the selector for this
+    // pre-auth RLS lookup; the live users row must still match it exactly.
+    tenantContext.enterWith(claimedOrgId);
+
     // JWT identity is necessary but not sufficient: org and role remain
     // authoritative in the current users row so a stale token cannot retain
     // access to a tenant or role after an administrative change.
