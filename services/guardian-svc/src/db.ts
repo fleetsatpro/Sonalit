@@ -15,6 +15,9 @@ export async function withOrgContext<T>(
   orgId: string,
   fn: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
+  const currentOrg = tenantContext.getStore();
+  if (currentOrg && currentOrg !== orgId) throw new Error('tenant_context_switch_forbidden');
+
   return tenantContext.run(orgId, async () => {
   const client = await pool.connect();
   try {
