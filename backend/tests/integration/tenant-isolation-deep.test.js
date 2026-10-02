@@ -25,7 +25,8 @@ const DEV_B = 'bbbbbbbb-0000-0000-0044-000000000001';
 const BOOTSTRAP_TABLES = new Set([
   'users', 'guardian_devices', 'portal_tokens', 'cargo_clients', 'client_magic_links',
   'telemetry_ingest_keys', 'tracking_qr_codes', 'tracking_sessions', 'field_devices',
-  'field_sessions', 'field_agent_pins', 'cfo_login_attempts', 'guardian_command_nonces',
+  'field_sessions', 'field_agent_pins', 'enrollment_codes', 'convoy_codes',
+  'cfo_login_attempts', 'guardian_command_nonces',
 ]);
 
 let pool;
@@ -106,6 +107,18 @@ test('all current tenant-bearing public tables are RLS protected', async () => {
     expect(row.hardening_policy).toBe(true);
     if (!BOOTSTRAP_TABLES.has(row.table_name)) expect(row.relforcerowsecurity).toBe(true);
   }
+});
+
+test('sonalit_app is non-superuser and NOBYPASSRLS', async () => {
+  if (skip()) return;
+  const { rows } = await pool.query(
+    `SELECT rolsuper, rolbypassrls
+       FROM pg_roles
+      WHERE rolname='sonalit_app'`
+  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0].rolsuper).toBe(false);
+  expect(rows[0].rolbypassrls).toBe(false);
 });
 
 test('raw legacy query inherits tenant context', async () => {
