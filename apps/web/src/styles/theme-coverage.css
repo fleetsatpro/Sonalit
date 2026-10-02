@@ -353,6 +353,84 @@ html[data-theme] #root {
   color: var(--d-t1);
 }
 
+/* ── Spatial high-visibility seams ─────────────────────────────────────── */
+:root[data-theme] :where(
+  .spatial-header, .spatial-panel, .spatial-metric,
+  .spatial-view-switch, .spatial-view-button, .spatial-control
+) {
+  border-color: var(--d-rim2) !important;
+}
+
+:root[data-theme] :where(.spatial-header, .spatial-panel) {
+  background: color-mix(in srgb, var(--d-carbon) 94%, transparent) !important;
+}
+
+:root[data-theme] .spatial-metric,
+:root[data-theme] .spatial-view-switch {
+  background: color-mix(in srgb, var(--d-well) 88%, transparent) !important;
+}
+
+:root[data-theme] .spatial-brand-mark {
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--d-t1) 10%, transparent), transparent 38%),
+    linear-gradient(145deg, color-mix(in srgb, var(--d-orange) 20%, transparent), color-mix(in srgb, var(--d-sig) 8%, transparent)) !important;
+  border-color: color-mix(in srgb, var(--d-orange) 42%, var(--d-rim2)) !important;
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] :where(
+  .spatial-brand-kicker, .spatial-panel-header, .spatial-panel-subtitle
+) {
+  color: var(--d-t2) !important;
+}
+
+:root[data-theme] :where(
+  .spatial-brand-title, .spatial-panel-title
+) {
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] .spatial-live-indicator {
+  color: var(--d-ok, var(--son-theme-positive)) !important;
+  border-color: color-mix(in srgb, var(--d-ok, var(--son-theme-positive)) 24%, var(--d-rim2)) !important;
+  background: color-mix(in srgb, var(--d-ok, var(--son-theme-positive)) 8%, transparent) !important;
+}
+
+:root[data-theme] .spatial-view-button {
+  color: var(--d-t2) !important;
+}
+
+:root[data-theme] .spatial-view-button:hover {
+  color: var(--d-t1) !important;
+  background: color-mix(in srgb, var(--d-t1) 5%, var(--d-well)) !important;
+}
+
+:root[data-theme] .spatial-view-button[data-active='true'] {
+  color: var(--d-t1) !important;
+  background: color-mix(in srgb, var(--d-sig) 12%, var(--d-well)) !important;
+  border-color: color-mix(in srgb, var(--d-sig) 34%, var(--d-rim2)) !important;
+}
+
+/* Intelligence deep keeps four diagnostic rails; retain their meaning while
+   allowing the hue family to follow the selected theme. */
+:root[data-theme] .icd-row:nth-child(4n+1) .index,
+:root[data-theme] .icd-country:nth-child(4n+1) { color: var(--d-sig) !important; }
+:root[data-theme] .icd-row:nth-child(4n+2) .index,
+:root[data-theme] .icd-country:nth-child(4n+2) { color: var(--d-warn, var(--son-theme-warning)) !important; }
+:root[data-theme] .icd-row:nth-child(4n+3) .index,
+:root[data-theme] .icd-country:nth-child(4n+3) { color: var(--d-orange) !important; }
+:root[data-theme] .icd-row:nth-child(4n) .index,
+:root[data-theme] .icd-country:nth-child(4n) { color: var(--d-ok, var(--son-theme-positive)) !important; }
+
+:root[data-theme] .icd-country:nth-child(4n+1),
+:root[data-theme] .icd-panel:nth-child(4n+1)>header { border-top-color: var(--d-sig) !important; }
+:root[data-theme] .icd-country:nth-child(4n+2),
+:root[data-theme] .icd-panel:nth-child(4n+2)>header { border-top-color: var(--d-warn, var(--son-theme-warning)) !important; }
+:root[data-theme] .icd-country:nth-child(4n+3),
+:root[data-theme] .icd-panel:nth-child(4n+3)>header { border-top-color: var(--d-orange) !important; }
+:root[data-theme] .icd-country:nth-child(4n),
+:root[data-theme] .icd-panel:nth-child(4n)>header { border-top-color: var(--d-ok, var(--son-theme-positive)) !important; }
+
 /* ── Replay / Orbit token bridges ───────────────────────────────────────── */
 :root[data-theme] .rp {
   --void: var(--d-void);
