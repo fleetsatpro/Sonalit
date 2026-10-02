@@ -1,7 +1,7 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
 const { query, globalQuery } = require('../config/database');
-const { getQueues = require('../config/queue');
+const { getQueues } = require('../config/queue');
 const { withOrg } = require('../utils/orgScopedDb');
 const { distanceToSegment } = require('../utils/haversine');
 const logger = require('../utils/logger');
