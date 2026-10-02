@@ -32,12 +32,6 @@ async function jwtAuth(req, res, next) {
     if (!orgId || !userId || !convoyId) {
       return res.status(401).json({ error: 'Invalid CFO session claims' });
     }
-
-    // The signed token is the only safe tenant selector available before the
-    // live relationship lookup. Enter it first; the database then confirms the
-    // user, convoy, membership, status and tenant all still agree.
-    runWithOrgContext(orgId, () => undefined);
-
     const [userResult, convoyResult] = await Promise.all([
       query(
         `SELECT u.id, u.name, u.email, u.org_id, u.status
@@ -173,16 +167,17 @@ router.post('/login', async (req, res, next) => {
       query(
         `SELECT ct.id, ct.position, ct.driver_name, ct.driver_phone,
                 v.registration, v.make, v.model, v.color
-         FROM convoy_trucks ct LEFT JOIN vehicles v ON v.id = ct.vehicle_id
-         WHERE ct.convoy_id = $1 ORDER BY ct.position`,
-        [convoy.id]
+         FROM convoy_trucks ct LEFT JOIN vehicles v ON v.id = ct.vehicle_id AND v.org_id = $2
+         WHERE ct.convoy_id = $1 AND ct.org_id = $2 ORDER BY ct.position`,
+        [convoy.id, convoy.org_id]
       ),
       query(
         `SELECT cs.id, cs.convoy_truck_id, cs.seal_position, cs.rfid_code, cs.session, cs.status
-         FROM convoy_seals cs JOIN convoy_trucks ct ON ct.id = cs.convoy_truck_id
-         WHERE ct.convoy_id = $1 AND cs.report_date = CURRENT_DATE
+         FROM convoy_seals cs
+         JOIN convoy_trucks ct ON ct.id = cs.convoy_truck_id AND ct.org_id = $2
+         WHERE ct.convoy_id = $1 AND cs.org_id = $2 AND cs.report_date = CURRENT_DATE
          ORDER BY cs.convoy_truck_id, cs.seal_position`,
-        [convoy.id]
+        [convoy.id, convoy.org_id]
       ),
     ]);
 
