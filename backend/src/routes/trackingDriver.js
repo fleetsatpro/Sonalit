@@ -24,7 +24,7 @@
  */
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
-const { query } = require('../config/database');
+const { globalQuery } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 const T = require('../utils/trackingEngine');
@@ -65,7 +65,7 @@ const pingLimiter = rateLimit({
  */
 async function resolveQr(token) {
   if (!token || typeof token !== 'string' || token.length < 32) return null;
-  const result = await query(
+  const result = await globalQuery(
     `SELECT * FROM tracking_qr_codes WHERE token_hash = $1 AND deleted_at IS NULL`,
     [T.sha256(token)]
   );
@@ -81,7 +81,7 @@ async function resolveSession(req) {
   const token = req.headers['x-tracking-session']
     || (req.body && typeof req.body.session === 'string' ? req.body.session : null);
   if (!token || typeof token !== 'string') return null;
-  const result = await query(
+  const result = await globalQuery(
     `SELECT * FROM tracking_sessions WHERE session_token_hash = $1 AND deleted_at IS NULL`,
     [T.sha256(token)]
   );
