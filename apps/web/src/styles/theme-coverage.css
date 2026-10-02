@@ -1,0 +1,734 @@
+/*
+ * Sonalit theme coverage layer.
+ *
+ * This file is intentionally imported LAST from main.tsx.
+ * Feature styles may keep their local class names and visual structure, but
+ * their presentation tokens are bridged to the one active application theme.
+ *
+ * Theme changes remain presentation-only:
+ * - operational status colours stay semantic
+ * - data/provenance meaning is untouched
+ * - maps/imagery keep their deliberate visualization treatment
+ *
+ * Why this exists:
+ * The web app historically accumulated several isolated design systems
+ * (dashboard, portal, intelligence, spatial, replay, orbit, field/CDS).
+ * A small number of class bridges in theme-system.css cannot override local
+ * tokens declared later in feature CSS. This layer is the final cascade
+ * boundary and gives every application surface one coherent palette.
+ */
+
+/* ── Browser chrome + global application substrate ──────────────────────── */
+html[data-theme="obsidian"],
+html[data-theme="graphite"],
+html[data-theme="copper"],
+html[data-theme="signal"] {
+  color-scheme: dark;
+}
+
+html[data-theme="arctic"],
+html[data-theme="daylight"] {
+  color-scheme: light;
+}
+
+html[data-theme] body,
+html[data-theme] #root {
+  background: var(--son-theme-bg);
+  color: var(--son-theme-text);
+}
+
+/* ── Portal token bridge ────────────────────────────────────────────────── */
+:root[data-theme] .portal-root {
+  --p-bg: var(--son-theme-bg);
+  --p-surface: var(--son-theme-surface);
+  --p-surface2: var(--son-theme-surface-2);
+  --p-border: var(--son-theme-border);
+  --p-orange: var(--son-theme-accent);
+  --p-orange2: var(--son-theme-accent-2);
+  --p-text: var(--son-theme-text);
+  --p-muted: var(--son-theme-muted);
+}
+
+:root[data-theme] .portal-root,
+:root[data-theme] .portal-root .bg-white\/\[0\.03\],
+:root[data-theme] .portal-root .bg-white\/\[0\.04\],
+:root[data-theme] .portal-root .bg-white\/\[0\.05\],
+:root[data-theme] .portal-root .bg-white\/\[0\.06\] {
+  color: var(--p-text);
+}
+
+/* ── Intelligence Centre token bridges ─────────────────────────────────── */
+:root[data-theme] .sonalit-intelligence-shell {
+  --ic-bg: var(--d-void);
+  --ic-surface: var(--d-carbon);
+  --ic-surface2: var(--d-well);
+  --ic-line: color-mix(in srgb, var(--d-rim2) 100%, transparent);
+  --ic-line2: var(--d-rim3);
+  --ic-text: var(--d-t1);
+  --ic-muted: var(--d-t2);
+  --ic-faint: var(--d-t3);
+  --ic-accent: var(--d-sig);
+  --ic-accent2: var(--d-orange);
+  --ic-warn: var(--d-warn, var(--son-theme-warning));
+  --ic-danger: var(--d-fire, var(--son-theme-danger));
+  --ic-shadow: 0 26px 80px color-mix(in srgb, var(--d-void) 45%, transparent);
+}
+
+:root[data-theme] .intelligence-centre {
+  --ic-bg: var(--d-void);
+  --ic-panel: var(--d-well);
+  --ic-panel2: var(--d-carbon);
+  --ic-line: var(--d-rim2);
+  --ic-text: var(--d-t1);
+  --ic-muted: var(--d-t2);
+  --ic-dim: var(--d-t3);
+  --ic-accent: var(--d-sig);
+  --ic-cyan: var(--d-orange);
+  --ic-red: var(--d-fire, var(--son-theme-danger));
+  background:
+    radial-gradient(circle at 70% -20%, color-mix(in srgb, var(--d-sig) 7%, transparent), transparent 35%),
+    var(--d-void) !important;
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] .ics-root {
+  --bg: var(--d-void);
+  --surface: var(--d-carbon);
+  --surface2: var(--d-well);
+  --surface3: var(--d-surf);
+  --line: var(--d-rim2);
+  --line2: var(--d-rim3);
+  --text: var(--d-t1);
+  --muted: var(--d-t2);
+  --dim: var(--d-t3);
+  --cyan: var(--d-sig);
+  --amber: var(--d-warn, var(--son-theme-warning));
+  --orange: var(--d-fire, var(--son-theme-danger));
+  --violet: var(--d-orange);
+  --blue: var(--d-orange);
+  background: var(--d-void) !important;
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] .ic2-root {
+  --ic-bg: var(--d-void);
+  --ic-surface: var(--d-carbon);
+  --ic-surface2: var(--d-well);
+  --ic-line: var(--d-rim2);
+  --ic-line2: var(--d-rim3);
+  --ic-text: var(--d-t1);
+  --ic-muted: var(--d-t2);
+  --ic-dim: var(--d-t3);
+  --ic-cyan: var(--d-sig);
+  --ic-amber: var(--d-warn, var(--son-theme-warning));
+  --ic-red: var(--d-fire, var(--son-theme-danger));
+  --ic-violet: var(--d-orange);
+  background: var(--d-void) !important;
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] .icx-root {
+  --ic-bg: var(--d-void);
+  --ic-surface: var(--d-carbon);
+  --ic-surface2: var(--d-well);
+  --ic-line: var(--d-rim2);
+  --ic-line2: var(--d-rim3);
+  --ic-text: var(--d-t1);
+  --ic-muted: var(--d-t2);
+  --ic-faint: var(--d-t3);
+  --ic-accent: var(--d-sig);
+  --ic-accent2: var(--d-orange);
+  --ic-warn: var(--d-warn, var(--son-theme-warning));
+  --ic-danger: var(--d-fire, var(--son-theme-danger));
+  color: var(--d-t1);
+  background:
+    radial-gradient(circle at 72% -18%, color-mix(in srgb, var(--d-sig) 8%, transparent), transparent 34%),
+    var(--d-void) !important;
+}
+
+:root[data-theme] .icd-root,
+:root[data-theme] .ipd-root {
+  background: var(--d-void) !important;
+  color: var(--d-t1) !important;
+}
+
+/* Intelligence: structural surfaces for modules whose original CSS had no
+   reusable local variables. Text/status colour semantics remain separate. */
+:root[data-theme] :where(
+  .icd-top, .icd-theatre, .icd-nav, .icd-panel, .icd-hero,
+  .icd-kpi, .icd-row, .icd-country, .icd-drawer,
+  .icd-evidence, .icd-field-grid, .icd-viewhead,
+  .ipd-coverage, .ipd-card, .ipd-empty, .ipd-modal article,
+  .ipd-sections > div
+) {
+  border-color: var(--d-rim2) !important;
+}
+
+:root[data-theme] :where(
+  .icd-top, .icd-theatre, .icd-panel, .icd-hero,
+  .icd-kpi, .icd-drawer, .icd-evidence,
+  .ipd-coverage, .ipd-card, .ipd-modal article, .ipd-sections > div
+) {
+  background: var(--d-carbon) !important;
+}
+
+:root[data-theme] :where(
+  .icd-row, .icd-country, .icd-nav, .icd-field-grid,
+  .ipd-empty
+) {
+  background: var(--d-well) !important;
+}
+
+:root[data-theme] :where(
+  .icd-top h1, .icd-viewhead h2, .icd-panel > header b,
+  .icd-row > div b, .icd-country strong, .icd-drawer h3,
+  .ipd-head h1, .ipd-card h2, .ipd-modal h2
+) {
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] :where(
+  .icd-top p, .icd-viewhead p, .icd-row > div span,
+  .icd-row aside small, .icd-country small, .icd-country em,
+  .icd-panel > header span, .icd-panel > header small,
+  .ipd-head p, .ipd-card p, .ipd-meta,
+  .ipd-coverage span, .ipd-coverage small,
+  .ipd-empty span
+) {
+  color: var(--d-t2) !important;
+}
+
+:root[data-theme] :where(
+  .icd-top .icd-kicker, .icd-top-readout strong,
+  .ipd-head > div:first-child > span, .ipd-coverage b
+) {
+  color: var(--d-sig) !important;
+}
+
+:root[data-theme] .intelligence-live,
+:root[data-theme] .ia-page {
+  --ic-bg: var(--d-void);
+  --ic-surface: var(--d-carbon);
+  --ic-surface2: var(--d-well);
+  --ic-line: var(--d-rim2);
+  --ic-line2: var(--d-rim3);
+  --ic-text: var(--d-t1);
+  --ic-muted: var(--d-t2);
+  --ic-faint: var(--d-t3);
+  --ic-accent: var(--d-sig);
+  --ic-accent2: var(--d-orange);
+  --ic-warn: var(--d-warn, var(--son-theme-warning));
+  --ic-danger: var(--d-fire, var(--son-theme-danger));
+  color: var(--d-t1);
+  background: transparent;
+}
+
+:root[data-theme] :where(
+  .in-head, .ia-head, .in-search, .in-controls button,
+  .in-section, .in-card, .in-event, .ia-scope-control,
+  .ia-cat-control, .ia-feed, .ia-side, .ia-alert,
+  .ic-evidence-drawer, .ia-drawer, .ic-evidence-overlay,
+  .ia-detail
+) {
+  border-color: var(--d-rim2) !important;
+}
+
+:root[data-theme] :where(
+  .in-search, .in-controls button, .in-section,
+  .in-card, .in-event, .ia-scope-control, .ia-cat-control,
+  .ia-feed, .ia-side, .ia-alert, .ic-evidence-drawer, .ia-drawer
+) {
+  background: var(--d-well) !important;
+}
+
+:root[data-theme] :where(
+  .in-search input, .in-card, .in-event, .ia-alert,
+  .in-section-head b, .in-card h3, .in-event b, .ia-alert h3,
+  .ia-side h3
+) {
+  color: var(--d-t1);
+}
+
+:root[data-theme] :where(
+  .in-search input::placeholder, .in-card-meta, .in-card-foot,
+  .in-event small, .in-event span, .in-principle span,
+  .in-system-line span, .ia-head p, .ia-side p, .ia-alert p,
+  .ia-meta, .ia-empty span
+) {
+  color: var(--d-t2);
+}
+
+:root[data-theme] .in-live i.ok,
+:root[data-theme] .ic-command-eyebrow,
+:root[data-theme] .ic-kicker,
+:root[data-theme] .ic-module.active .ic-module-index {
+  color: var(--d-sig) !important;
+}
+
+:root[data-theme] .in-live i.ok,
+:root[data-theme] .ic-module.active .ic-module-index {
+  background-color: var(--d-sig) !important;
+}
+
+/* Common intelligence3d command surfaces use the local --ic contract above. */
+:root[data-theme] :where(
+  .ic-commandbar, .ic-modulebar, .ic-module,
+  .icx-top, .icx-scope, .icx-nav, .icx-refresh,
+  .icx-search, .icx-panel, .icx-metric-rail > div,
+  .icx-atlas-grid button, .icx-drawer,
+  .icx-drawer-status, .icx-head-counter
+) {
+  border-color: var(--d-rim2) !important;
+}
+
+:root[data-theme] :where(
+  .ic-commandbar, .ic-modulebar, .icx-top,
+  .icx-scope, .icx-nav, .icx-panel,
+  .icx-metric-rail > div, .icx-atlas-grid button,
+  .icx-drawer, .icx-refresh, .icx-search
+) {
+  background: var(--d-carbon) !important;
+}
+
+:root[data-theme] :where(
+  .ic-module, .icx-signal-row, .icx-row
+) {
+  background: var(--d-well) !important;
+}
+
+:root[data-theme] :where(
+  .ic-commandbar, .ic-modulebar, .icx-top,
+  .icx-scope, .icx-panel, .icx-drawer,
+  .ic-module, .icx-row, .icx-signal-row,
+  .icx-atlas-grid button, .icx-search input
+) {
+  color: var(--d-t1);
+}
+
+:root[data-theme] :where(
+  .ic-command-brand small, .ic-module-copy em,
+  .ic-module-current, .icx-system-readout,
+  .icx-top-status, .icx-scope-identity > span:last-child,
+  .icx-panel-meta, .icx-row-main span, .icx-row-age,
+  .icx-signal-row div > span, .icx-kicker
+) {
+  color: var(--d-t2) !important;
+}
+
+:root[data-theme] :where(
+  .ic-module.active, .icx-nav button.active
+) {
+  color: var(--d-t1) !important;
+  background: color-mix(in srgb, var(--d-sig) 11%, var(--d-well)) !important;
+  border-color: color-mix(in srgb, var(--d-sig) 42%, var(--d-rim2)) !important;
+}
+
+:root[data-theme] .ic-command-mark,
+:root[data-theme] .icx-refresh:hover,
+:root[data-theme] .icx-atlas-grid button:hover {
+  border-color: color-mix(in srgb, var(--d-sig) 46%, var(--d-rim2)) !important;
+}
+
+/* ── Spatial command token bridge ───────────────────────────────────────── */
+:root[data-theme] :where(
+  .spatial-command, .spatial-surface, .spatial-map-surface
+) {
+  --sp-bg: var(--d-void);
+  --sp-surface: color-mix(in srgb, var(--d-carbon) 88%, transparent);
+  --sp-surface-strong: color-mix(in srgb, var(--d-well) 94%, transparent);
+  --sp-line: var(--d-rim2);
+  --sp-line-strong: color-mix(in srgb, var(--d-orange) 38%, transparent);
+  --sp-text: var(--d-t1);
+  --sp-muted: var(--d-t2);
+  --sp-dim: var(--d-t3);
+  --sp-violet: var(--d-orange);
+  --sp-cyan: var(--d-sig);
+  --sp-green: var(--d-ok, var(--son-theme-positive));
+  --sp-amber: var(--d-warn, var(--son-theme-warning));
+  --sp-red: var(--d-fire, var(--son-theme-danger));
+  --sp-shadow: 0 24px 80px color-mix(in srgb, var(--d-void) 52%, transparent);
+  --sp-hairline: linear-gradient(90deg, transparent, color-mix(in srgb, var(--d-orange) 42%, transparent), transparent);
+  --sp-glass: color-mix(in srgb, var(--d-well) 70%, transparent);
+  --sp-edge-hi: color-mix(in srgb, var(--d-t1) 14%, transparent);
+  color: var(--d-t1);
+}
+
+/* ── Spatial high-visibility seams ─────────────────────────────────────── */
+:root[data-theme] :where(
+  .spatial-header, .spatial-panel, .spatial-metric,
+  .spatial-view-switch, .spatial-view-button, .spatial-control
+) {
+  border-color: var(--d-rim2) !important;
+}
+
+:root[data-theme] :where(.spatial-header, .spatial-panel) {
+  background: color-mix(in srgb, var(--d-carbon) 94%, transparent) !important;
+}
+
+:root[data-theme] .spatial-metric,
+:root[data-theme] .spatial-view-switch {
+  background: color-mix(in srgb, var(--d-well) 88%, transparent) !important;
+}
+
+:root[data-theme] .spatial-brand-mark {
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--d-t1) 10%, transparent), transparent 38%),
+    linear-gradient(145deg, color-mix(in srgb, var(--d-orange) 20%, transparent), color-mix(in srgb, var(--d-sig) 8%, transparent)) !important;
+  border-color: color-mix(in srgb, var(--d-orange) 42%, var(--d-rim2)) !important;
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] :where(
+  .spatial-brand-kicker, .spatial-panel-header, .spatial-panel-subtitle
+) {
+  color: var(--d-t2) !important;
+}
+
+:root[data-theme] :where(
+  .spatial-brand-title, .spatial-panel-title
+) {
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] .spatial-live-indicator {
+  color: var(--d-ok, var(--son-theme-positive)) !important;
+  border-color: color-mix(in srgb, var(--d-ok, var(--son-theme-positive)) 24%, var(--d-rim2)) !important;
+  background: color-mix(in srgb, var(--d-ok, var(--son-theme-positive)) 8%, transparent) !important;
+}
+
+:root[data-theme] .spatial-view-button {
+  color: var(--d-t2) !important;
+}
+
+:root[data-theme] .spatial-view-button:hover {
+  color: var(--d-t1) !important;
+  background: color-mix(in srgb, var(--d-t1) 5%, var(--d-well)) !important;
+}
+
+:root[data-theme] .spatial-view-button[data-active='true'] {
+  color: var(--d-t1) !important;
+  background: color-mix(in srgb, var(--d-sig) 12%, var(--d-well)) !important;
+  border-color: color-mix(in srgb, var(--d-sig) 34%, var(--d-rim2)) !important;
+}
+
+/* Intelligence deep keeps four diagnostic rails; retain their meaning while
+   allowing the hue family to follow the selected theme. */
+:root[data-theme] .icd-row:nth-child(4n+1) .index { color: var(--d-sig) !important; }
+:root[data-theme] .icd-row:nth-child(4n+2) .index { color: var(--d-warn, var(--son-theme-warning)) !important; }
+:root[data-theme] .icd-row:nth-child(4n+3) .index { color: var(--d-orange) !important; }
+:root[data-theme] .icd-row:nth-child(4n) .index { color: var(--d-ok, var(--son-theme-positive)) !important; }
+
+:root[data-theme] .icd-country:nth-child(4n+1),
+:root[data-theme] .icd-panel:nth-child(4n+1)>header { border-top-color: var(--d-sig) !important; }
+:root[data-theme] .icd-country:nth-child(4n+2),
+:root[data-theme] .icd-panel:nth-child(4n+2)>header { border-top-color: var(--d-warn, var(--son-theme-warning)) !important; }
+:root[data-theme] .icd-country:nth-child(4n+3),
+:root[data-theme] .icd-panel:nth-child(4n+3)>header { border-top-color: var(--d-orange) !important; }
+:root[data-theme] .icd-country:nth-child(4n),
+:root[data-theme] .icd-panel:nth-child(4n)>header { border-top-color: var(--d-ok, var(--son-theme-positive)) !important; }
+
+/* ── Replay / Orbit token bridges ───────────────────────────────────────── */
+:root[data-theme] .rp {
+  --void: var(--d-void);
+  --panel: color-mix(in srgb, var(--d-carbon) 82%, transparent);
+  --panel2: color-mix(in srgb, var(--d-well) 94%, transparent);
+  --rim: var(--d-rim2);
+  --rim2: var(--d-rim3);
+  --ink: var(--d-t1);
+  --ink2: var(--d-t2);
+  --ink3: var(--d-t3);
+  --cyan: var(--d-sig);
+  --green: var(--d-ok, var(--son-theme-positive));
+  --amber: var(--d-warn, var(--son-theme-warning));
+  --violet: var(--d-orange);
+  --red: var(--d-fire, var(--son-theme-danger));
+  --mono: var(--d-font-mono);
+  --sans: var(--d-font);
+}
+
+:root[data-theme] .meridian {
+  --m-void: var(--d-void);
+  --m-s1: var(--d-carbon);
+  --m-s2: var(--d-well);
+  --m-s3: var(--d-surf);
+  --m-rim: var(--d-rim2);
+  --m-rim2: var(--d-rim3);
+  --m-chalk: var(--d-t1);
+  --m-chalk2: var(--d-t2);
+  --m-chalk3: var(--d-t3);
+  --m-chalk4: var(--d-t4);
+  --m-crimson: var(--d-fire, var(--son-theme-danger));
+  --m-crimson-std: color-mix(in srgb, var(--d-fire, var(--son-theme-danger)) 55%, transparent);
+  --m-crimson-dim: color-mix(in srgb, var(--d-fire, var(--son-theme-danger)) 12%, transparent);
+  --m-teal: var(--d-ok, var(--son-theme-positive));
+  --m-teal-std: color-mix(in srgb, var(--d-ok, var(--son-theme-positive)) 55%, transparent);
+  --m-teal-dim: color-mix(in srgb, var(--d-ok, var(--son-theme-positive)) 12%, transparent);
+  --m-amber: var(--d-warn, var(--son-theme-warning));
+  --m-amber-std: color-mix(in srgb, var(--d-warn, var(--son-theme-warning)) 55%, transparent);
+  --m-amber-dim: color-mix(in srgb, var(--d-warn, var(--son-theme-warning)) 12%, transparent);
+  --m-display: var(--d-font-display);
+  --m-body: var(--d-font);
+  --o-void: var(--d-void);
+  --o-glass: color-mix(in srgb, var(--d-well) 58%, transparent);
+  --o-glass2: color-mix(in srgb, var(--d-well) 86%, transparent);
+  --o-rim: var(--d-rim2);
+  --o-rim2: var(--d-rim3);
+  --o-amber: var(--d-warn, var(--son-theme-warning));
+  --o-cyan: var(--d-sig);
+  --o-red: var(--d-fire, var(--son-theme-danger));
+  --o-green: var(--d-ok, var(--son-theme-positive));
+  --o-violet: var(--d-orange);
+  --o-t1: var(--d-t1);
+  --o-t2: var(--d-t2);
+  --o-t3: var(--d-t3);
+  --o-mono: var(--d-font-mono);
+  --o-sans: var(--d-font);
+}
+
+/* ── Login + gallery token bridges ──────────────────────────────────────── */
+:root[data-theme] .sonalit-login-root {
+  --bg: var(--d-void);
+  --bg-2: var(--d-carbon);
+  --panel: var(--d-deep);
+  --panel-2: var(--d-well);
+  --elevated: var(--d-surf);
+  --elevated-2: var(--d-lift);
+  --border: var(--d-rim2);
+  --border-mid: var(--d-rim3);
+  --border-strong: color-mix(in srgb, var(--d-orange) 45%, transparent);
+  --gold: var(--d-sig);
+  --gold-hot: var(--d-orange);
+  --gold-dim: color-mix(in srgb, var(--d-sig) 12%, transparent);
+  --gold-line: color-mix(in srgb, var(--d-sig) 28%, transparent);
+  --text: var(--d-t1);
+  --text-dim: var(--d-t2);
+  --text-faint: var(--d-t3);
+  --text-ghost: var(--d-t4);
+  --danger: var(--d-fire, var(--son-theme-danger));
+  --danger-dim: color-mix(in srgb, var(--d-fire, var(--son-theme-danger)) 12%, transparent);
+  --warn: var(--d-warn, var(--son-theme-warning));
+  --success: var(--d-ok, var(--son-theme-positive));
+  --focus: var(--d-sig);
+  --air: var(--d-orange);
+  --sea: var(--d-sig);
+  --chain: var(--d-ok, var(--son-theme-positive));
+}
+
+:root[data-theme] .accordion-gallery {
+  --ag-accent: var(--d-sig);
+  --ag-overlay: var(--d-void);
+  --ag-text: var(--d-t1);
+}
+
+:root[data-theme] .ag-panel {
+  background: var(--d-carbon) !important;
+}
+
+/* ── Tailwind legacy neutral bridge ──────────────────────────────────────
+   These are presentation neutrals. Explicit status families (red/amber/
+   green) are intentionally left semantic and are not remapped here. */
+:root[data-theme] :where(
+  [class~="bg-slate-950"], [class~="bg-gray-950"], [class~="bg-neutral-950"],
+  [class~="bg-ink-0"]
+) { background-color: var(--d-void) !important; }
+
+:root[data-theme] :where(
+  [class~="bg-slate-900"], [class~="bg-gray-900"], [class~="bg-neutral-900"],
+  [class~="bg-ink-1"]
+) { background-color: var(--d-carbon) !important; }
+
+:root[data-theme] :where(
+  [class~="bg-slate-800"], [class~="bg-gray-800"], [class~="bg-neutral-800"],
+  [class~="bg-ink-2"]
+) { background-color: var(--d-well) !important; }
+
+:root[data-theme] :where(
+  [class~="bg-slate-700"], [class~="bg-gray-700"], [class~="bg-neutral-700"],
+  [class~="bg-ink-3"]
+) { background-color: var(--d-surf) !important; }
+
+:root[data-theme] :where(
+  [class~="bg-slate-600"], [class~="bg-gray-600"], [class~="bg-neutral-600"],
+  [class~="bg-slate-500"], [class~="bg-gray-500"], [class~="bg-neutral-500"],
+  [class~="bg-ink-4"]
+) { background-color: var(--d-lift) !important; }
+
+:root[data-theme] :where(
+  [class~="text-slate-100"], [class~="text-gray-100"], [class~="text-neutral-100"],
+  [class~="text-0"], [class~="text-white"]
+) { color: var(--d-t1) !important; }
+
+:root[data-theme] :where(
+  [class~="text-slate-200"], [class~="text-gray-200"], [class~="text-neutral-200"],
+  [class~="text-1"]
+) { color: var(--d-t2) !important; }
+
+:root[data-theme] :where(
+  [class~="text-slate-300"], [class~="text-slate-400"], [class~="text-slate-500"],
+  [class~="text-gray-300"], [class~="text-gray-400"], [class~="text-gray-500"],
+  [class~="text-neutral-300"], [class~="text-neutral-400"], [class~="text-neutral-500"],
+  [class~="text-2"]
+) { color: var(--d-t2) !important; }
+
+:root[data-theme] :where(
+  [class~="text-slate-600"], [class~="text-gray-600"], [class~="text-neutral-600"],
+  [class~="text-slate-700"], [class~="text-gray-700"], [class~="text-neutral-700"],
+  [class~="text-slate-800"], [class~="text-gray-800"], [class~="text-neutral-800"]
+) { color: var(--d-t3) !important; }
+
+:root[data-theme] :where(
+  [class~="border-slate-800"], [class~="border-gray-800"], [class~="border-neutral-800"],
+  [class~="border-slate-700"], [class~="border-slate-600"], [class~="border-slate-500"],
+  [class~="border-gray-900"], [class~="border-gray-800"], [class~="border-gray-700"], [class~="border-gray-600"],
+  [class~="border-neutral-700"], [class~="border-neutral-600"],
+  [class~="border-white"]
+) { border-color: var(--d-rim2) !important; }
+
+:root[data-theme] :where(
+  [class~="hover:bg-slate-900"], [class~="hover:bg-gray-900"], [class~="hover:bg-neutral-900"]
+):hover { background-color: var(--d-carbon) !important; }
+
+:root[data-theme] :where(
+  [class~="hover:bg-slate-800"], [class~="hover:bg-gray-800"], [class~="hover:bg-neutral-800"]
+):hover { background-color: var(--d-well) !important; }
+
+:root[data-theme] :where(
+  [class~="hover:bg-slate-700"], [class~="hover:bg-gray-700"], [class~="hover:bg-neutral-700"]
+):hover { background-color: var(--d-surf) !important; }
+
+:root[data-theme] :where(
+  [class~="hover:bg-slate-600"], [class~="hover:bg-gray-600"], [class~="hover:bg-neutral-600"]
+):hover { background-color: var(--d-lift) !important; }
+
+/* Opacity neutral backgrounds are subtle UI glass, not pure white. */
+:root[data-theme] :where(
+  [class~="bg-white/2"], [class~="bg-white/5"], [class~="bg-white/10"],
+  [class~="bg-white/20"], [class~="bg-white/[0.02]"], [class~="bg-white/[0.03]"],
+  [class~="bg-white/[0.04]"], [class~="bg-white/[0.05]"], [class~="bg-white/[0.06]"],
+  [class~="bg-white/[0.07]"], [class~="bg-white/[0.08]"]
+) {
+  background-color: color-mix(in srgb, var(--d-t1) 5%, var(--d-well)) !important;
+}
+
+:root[data-theme] :where(
+  [class~="border-white/5"], [class~="border-white/10"], [class~="border-white/20"],
+  [class~="border-white/[0.04]"], [class~="border-white/[0.06]"], [class~="border-white/[0.08]"],
+  [class~="border-white/[0.10]"]
+) {
+  border-color: var(--d-rim2) !important;
+}
+
+/* ── Brand accent utilities ─────────────────────────────────────────────── */
+:root[data-theme] :where(
+  [class~="bg-orange-500"], [class~="bg-orange-600"], [class~="bg-orange-700"],
+  [class~="bg-violet-500"], [class~="bg-violet-600"], [class~="bg-violet-700"],
+  [class~="bg-purple-500"], [class~="bg-purple-600"], [class~="bg-indigo-500"], [class~="bg-indigo-600"]
+) {
+  background-color: var(--d-orange) !important;
+}
+
+:root[data-theme] :where(
+  [class~="text-orange-300"], [class~="text-orange-400"], [class~="text-orange-500"],
+  [class~="text-violet-200"], [class~="text-violet-300"], [class~="text-violet-400"], [class~="text-violet-500"],
+  [class~="text-purple-300"], [class~="text-purple-400"], [class~="text-indigo-300"], [class~="text-indigo-400"]
+) {
+  color: var(--d-orange) !important;
+}
+
+:root[data-theme] :where(
+  [class~="border-orange-500"], [class~="border-orange-600"],
+  [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"],
+  [class~="border-indigo-500"], [class~="border-purple-500"]
+) {
+  border-color: color-mix(in srgb, var(--d-orange) 55%, transparent) !important;
+}
+
+:root[data-theme] :where(
+  [class~="bg-blue-500"], [class~="bg-blue-600"], [class~="bg-blue-700"],
+  [class~="bg-cyan-500"], [class~="bg-cyan-600"], [class~="bg-cyan-700"]
+) {
+  background-color: var(--d-sig) !important;
+}
+
+:root[data-theme] :where(
+  [class~="text-blue-200"], [class~="text-blue-300"], [class~="text-blue-400"], [class~="text-blue-500"],
+  [class~="text-cyan-200"], [class~="text-cyan-300"], [class~="text-cyan-400"], [class~="text-cyan-500"]
+) {
+  color: var(--d-sig) !important;
+}
+
+/* Common disabled / hover states keep their theme relationship. */
+:root[data-theme] [class~="hover:bg-orange-700"]:hover,
+:root[data-theme] [class~="hover:bg-orange-500"]:hover,
+:root[data-theme] [class~="hover:bg-violet-500"]:hover,
+:root[data-theme] [class~="hover:bg-violet-600"]:hover {
+  background-color: color-mix(in srgb, var(--d-orange) 88%, var(--d-void)) !important;
+}
+
+:root[data-theme] [class~="hover:text-white"]:hover {
+  color: var(--d-t1) !important;
+}
+
+/* Pure white is usually a legacy light-surface utility in the app. Keep
+   actual media assets (img/canvas/svg) white where that is functional, while
+   ordinary UI boxes follow the active theme. */
+:root[data-theme] [class~="bg-white"]:not(img):not(canvas):not(svg) {
+  background-color: var(--d-surf) !important;
+  color: var(--d-t1) !important;
+}
+
+:root[data-theme] [class~="hover:bg-white"]:not(img):not(canvas):not(svg):hover {
+  background-color: var(--d-lift) !important;
+}
+
+:root[data-theme] [class~="text-black"] {
+  color: var(--d-t1) !important;
+}
+
+/* ── CDS utility palette bridge ─────────────────────────────────────────── */
+:root[data-theme] :where(
+  [class~="bg-ink-0"], [class~="bg-ink-1"], [class~="bg-ink-2"],
+  [class~="bg-ink-3"], [class~="bg-ink-4"]
+) {
+  background-color: var(--d-well) !important;
+}
+
+:root[data-theme] [class~="bg-ink-0"] { background-color: var(--d-void) !important; }
+:root[data-theme] [class~="bg-ink-1"] { background-color: var(--d-carbon) !important; }
+:root[data-theme] [class~="bg-ink-2"] { background-color: var(--d-deep) !important; }
+:root[data-theme] [class~="bg-ink-3"] { background-color: var(--d-well) !important; }
+:root[data-theme] [class~="bg-ink-4"] { background-color: var(--d-surf) !important; }
+
+:root[data-theme] [class~="text-0"] { color: var(--d-t1) !important; }
+:root[data-theme] [class~="text-1"] { color: var(--d-t2) !important; }
+:root[data-theme] [class~="text-2"] { color: var(--d-t3) !important; }
+
+/* The CDS orange token is a product accent, not a semantic incident state. */
+:root[data-theme] [class~="bg-cds-orange"] { background-color: var(--d-orange) !important; }
+:root[data-theme] [class~="text-cds-orange"] { color: var(--d-orange) !important; }
+:root[data-theme] [class~="border-cds-orange"] {
+  border-color: color-mix(in srgb, var(--d-orange) 55%, transparent) !important;
+}
+
+/* ── Shared interaction polish ─────────────────────────────────────────── */
+:root[data-theme] :where(button, [role="button"], input, select, textarea) {
+  accent-color: var(--d-sig);
+  color-scheme: inherit;
+}
+
+:root[data-theme] :where(input::placeholder, textarea::placeholder) {
+  color: var(--d-t3);
+}
+
+:root[data-theme] ::selection {
+  background: color-mix(in srgb, var(--d-sig) 28%, transparent);
+  color: var(--d-t1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme] *,
+  :root[data-theme] *::before,
+  :root[data-theme] *::after {
+    transition-duration: .01ms !important;
+  }
+}
