@@ -305,6 +305,7 @@ BEGIN
     CREATE TRIGGER tenant_scope_guardian_command_nonces BEFORE INSERT OR UPDATE ON guardian_command_nonces FOR EACH ROW EXECUTE FUNCTION tenant_harden_from_device();
   END IF;
   IF to_regclass('public.device_command_events') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS tenant_scope_device_command_events ON device_command_events;
     CREATE TRIGGER tenant_scope_device_command_events BEFORE INSERT OR UPDATE ON device_command_events FOR EACH ROW EXECUTE FUNCTION tenant_harden_from_command_event();
   END IF;
   IF to_regclass('public.notifications') IS NOT NULL THEN
@@ -341,6 +342,22 @@ BEGIN
       EXECUTE format('CREATE POLICY tenant_isolation_hardening_delete ON %I.%I AS RESTRICTIVE FOR DELETE USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
     ELSE
       EXECUTE format('CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR ALL USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid) WITH CHECK (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
+    END IF;
+
+    -- A restrictive policy cannot grant access on its own. Only add a broad
+    -- tenant-scoped permissive base when the table has no existing permissive
+    -- policy, so established role/resource policies are preserved exactly.
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policies
+       WHERE schemaname=r.schema_name
+         AND tablename=r.table_name
+         AND permissive='PERMISSIVE'
+    ) THEN
+      IF r.table_name='risk_zones' THEN
+        EXECUTE format('CREATE POLICY tenant_base_fallback ON %I.%I AS PERMISSIVE FOR ALL USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid OR org_id IS NULL) WITH CHECK (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
+      ELSE
+        EXECUTE format('CREATE POLICY tenant_base_fallback ON %I.%I AS PERMISSIVE FOR ALL USING (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid) WITH CHECK (org_id=NULLIF(current_setting(''app.current_org_id'',true),'''')::uuid)', r.schema_name,r.table_name);
+      END IF;
     END IF;
     BEGIN
       IF pg_get_serial_sequence(format('%I.%I',r.schema_name,r.table_name),'id') IS NOT NULL THEN
