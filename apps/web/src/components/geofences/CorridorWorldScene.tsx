@@ -199,6 +199,7 @@ export default function CorridorWorldScene({
   onViewportChange,
   fill = false,
   globalView = false,
+  showMapControls = true,
 }: {
   route: LatLng[];
   corridorKm: number;
@@ -214,6 +215,7 @@ export default function CorridorWorldScene({
   onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number }) => void;
   fill?: boolean;
   globalView?: boolean;
+  showMapControls?: boolean;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
@@ -231,7 +233,7 @@ export default function CorridorWorldScene({
   // recenter/fit controls may move the camera.
   const initialGlobalFitDoneRef = useRef(false);
   const initialLocalFitDoneRef = useRef(false);
-  const [mode, setMode] = useState<MapMode>('dark');
+  const [mode, setMode] = useState<MapMode>(globalView ? 'satellite' : 'dark');
   const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
   const [terrainReady, setTerrainReady] = useState(false);
   const [initFailed, setInitFailed] = useState(false);
@@ -298,7 +300,7 @@ export default function CorridorWorldScene({
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
     viewer.scene.fog.enabled = true;
-    viewer.scene.fog.density = 0.00002;
+    viewer.scene.fog.density = 0.000009;
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
     viewer.scene.globe.tileCacheSize = highFidelity ? 1200 : 500;
@@ -309,12 +311,12 @@ export default function CorridorWorldScene({
     viewer.resolutionScale = compactSurface
       ? Math.min(Math.max(highDpi, 1.25), 2)
       : Math.min(Math.max(highDpi, 1.35), 3);
-    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 1.75 : 1.0;
+    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 1.35 : 0.72;
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#06101a');
     viewer.scene.globe.dynamicAtmosphereLighting = true;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
     viewer.scene.skyAtmosphere.show = true;
-    viewer.scene.skyAtmosphere.brightnessShift = -0.18;
+    viewer.scene.skyAtmosphere.brightnessShift = -0.06;
     viewer.scene.skyAtmosphere.saturationShift = 0.04;
     viewer.scene.skyAtmosphere.hueShift = -0.01;
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#02050a');
@@ -323,10 +325,13 @@ export default function CorridorWorldScene({
     // Keep pinch/wheel input responsive without the prolonged inertial zoom
     // that can feel like the camera is continuing to move on its own.
     viewer.scene.screenSpaceCameraController.inertiaZoom = 0.12;
+    viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
+    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 90;
+    viewer.scene.screenSpaceCameraController.maximumZoomDistance = 30000000;
     if (!compactSurface) {
       const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
-      bloom.uniforms.brightness = -0.18;
-      bloom.uniforms.contrast = 128;
+      bloom.uniforms.brightness = -0.10;
+      bloom.uniforms.contrast = 92;
       bloom.uniforms.glowOnly = false;
       viewer.scene.postProcessStages.add(bloom);
     }
@@ -805,6 +810,7 @@ export default function CorridorWorldScene({
   return (
     <div data-spatial-surface="cesium-world" className={`spatial-surface ${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#080b12]`}>
       <div ref={boxRef} className="absolute inset-0" />
+      {showMapControls && (
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
         <div className="spatial-control-rail pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map" aria-pressed={mode === 'dark'}><MapIcon size={15} /></button>
@@ -818,6 +824,7 @@ export default function CorridorWorldScene({
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
+      )}
       <div className="spatial-cesium-chrome pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
         {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-bold font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}
