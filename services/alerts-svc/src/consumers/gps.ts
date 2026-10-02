@@ -92,6 +92,7 @@ async function emitNotification(orgId: string, rule: RuleRow, action: RuleAction
 
   const envelope = {
     id,
+    org_id: orgId,
     channel: action.channel,
     recipient: action.recipient,
     title: `SONALIT RULE — ${rule.name}`,
@@ -109,7 +110,7 @@ async function emitNotification(orgId: string, rule: RuleRow, action: RuleAction
   };
 
   const sc = StringCodec();
-  getJs().publish(`notifications.${action.channel}`, sc.encode(JSON.stringify(envelope)));
+  getJs().publish(`notifications.${orgId}.${action.channel}`, sc.encode(JSON.stringify(envelope)));
 
   await query(
     `INSERT INTO rule_action_deliveries
