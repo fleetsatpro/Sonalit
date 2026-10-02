@@ -1,4 +1,3 @@
--- @sonalit-reconcile-always
 -- Final tenant-RLS reconciliation for columns added by late migrations.
 -- This deliberately runs after the 120/121/122 schema changes so any table that
 -- becomes tenant-bearing later in the migration chain cannot be left unprotected.
