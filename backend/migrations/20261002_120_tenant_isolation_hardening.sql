@@ -314,6 +314,221 @@ BEGIN
   END IF;
 END $tenant$;
 
+-- 4. Cross-tenant parent relationship guard.
+-- RLS answers "which rows may this tenant see?" This layer answers the
+-- complementary question "may this tenant row point at this parent?" A row with
+-- org=A and a foreign key to a parent with org=B is a mixed-tenant record even
+-- though both rows are individually protected. Reject it at the database edge.
+CREATE OR REPLACE FUNCTION tenant_assert_parent_org(
+  parent_table TEXT,
+  parent_id UUID,
+  expected_org UUID
+) RETURNS VOID
+LANGUAGE plpgsql AS $tenant_parent$
+DECLARE
+  actual_org UUID;
+BEGIN
+  IF parent_id IS NULL THEN RETURN; END IF;
+  EXECUTE format('SELECT org_id FROM public.%I WHERE id=$1', parent_table)
+    INTO actual_org
+    USING parent_id;
+  IF actual_org IS NULL OR expected_org IS NULL OR actual_org <> expected_org THEN
+    RAISE EXCEPTION 'tenant_scope_parent_mismatch';
+  END IF;
+END $tenant_parent$;
+
+CREATE OR REPLACE FUNCTION tenant_relationship_guard() RETURNS trigger
+LANGUAGE plpgsql AS $tenant_rel$
+DECLARE
+  org UUID := NULLIF(to_jsonb(NEW)->>'org_id','')::uuid;
+  id UUID;
+BEGIN
+  IF org IS NULL THEN
+    RAISE EXCEPTION 'tenant_scope_missing';
+  END IF;
+
+  IF TG_TABLE_NAME='convoy_assignments' THEN
+    id := NULLIF(to_jsonb(NEW)->>'vehicle_id','')::uuid;
+    PERFORM tenant_assert_parent_org('vehicles', id, org);
+
+  ELSIF TG_TABLE_NAME='shipments' THEN
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'vehicle_id','')::uuid;
+    PERFORM tenant_assert_parent_org('vehicles', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'driver_id','')::uuid;
+    PERFORM tenant_assert_parent_org('drivers', id, org);
+
+  ELSIF TG_TABLE_NAME='checkpoints' THEN
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'shipment_id','')::uuid;
+    PERFORM tenant_assert_parent_org('shipments', id, org);
+
+  ELSIF TG_TABLE_NAME='trips' THEN
+    id := NULLIF(to_jsonb(NEW)->>'vehicle_id','')::uuid;
+    PERFORM tenant_assert_parent_org('vehicles', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'driver_id','')::uuid;
+    PERFORM tenant_assert_parent_org('drivers', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'shipment_id','')::uuid;
+    PERFORM tenant_assert_parent_org('shipments', id, org);
+
+  ELSIF TG_TABLE_NAME='invoices' THEN
+    id := NULLIF(to_jsonb(NEW)->>'shipment_id','')::uuid;
+    PERFORM tenant_assert_parent_org('shipments', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'trip_id','')::uuid;
+    PERFORM tenant_assert_parent_org('trips', id, org);
+
+  ELSIF TG_TABLE_NAME='expenses' THEN
+    id := NULLIF(to_jsonb(NEW)->>'trip_id','')::uuid;
+    PERFORM tenant_assert_parent_org('trips', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'vehicle_id','')::uuid;
+    PERFORM tenant_assert_parent_org('vehicles', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'driver_id','')::uuid;
+    PERFORM tenant_assert_parent_org('drivers', id, org);
+
+  ELSIF TG_TABLE_NAME='driver_events' THEN
+    id := NULLIF(to_jsonb(NEW)->>'driver_id','')::uuid;
+    PERFORM tenant_assert_parent_org('drivers', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'vehicle_id','')::uuid;
+    PERFORM tenant_assert_parent_org('vehicles', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'trip_id','')::uuid;
+    PERFORM tenant_assert_parent_org('trips', id, org);
+
+  ELSIF TG_TABLE_NAME='messages' THEN
+    id := NULLIF(to_jsonb(NEW)->>'channel_id','')::uuid;
+    PERFORM tenant_assert_parent_org('channels', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'sender_id','')::uuid;
+    PERFORM tenant_assert_parent_org('users', id, org);
+
+  ELSIF TG_TABLE_NAME='channel_members' THEN
+    id := NULLIF(to_jsonb(NEW)->>'channel_id','')::uuid;
+    PERFORM tenant_assert_parent_org('channels', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'user_id','')::uuid;
+    PERFORM tenant_assert_parent_org('users', id, org);
+
+  ELSIF TG_TABLE_NAME='message_attachments' THEN
+    id := NULLIF(to_jsonb(NEW)->>'message_id','')::uuid;
+    PERFORM tenant_assert_parent_org('messages', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'uploader_id','')::uuid;
+    PERFORM tenant_assert_parent_org('users', id, org);
+
+  ELSIF TG_TABLE_NAME='message_reactions' THEN
+    id := NULLIF(to_jsonb(NEW)->>'message_id','')::uuid;
+    PERFORM tenant_assert_parent_org('messages', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'user_id','')::uuid;
+    PERFORM tenant_assert_parent_org('users', id, org);
+
+  ELSIF TG_TABLE_NAME='pinned_messages' THEN
+    id := NULLIF(to_jsonb(NEW)->>'channel_id','')::uuid;
+    PERFORM tenant_assert_parent_org('channels', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'message_id','')::uuid;
+    PERFORM tenant_assert_parent_org('messages', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'pinned_by','')::uuid;
+    PERFORM tenant_assert_parent_org('users', id, org);
+
+  ELSIF TG_TABLE_NAME='cargo_client_links' THEN
+    id := NULLIF(to_jsonb(NEW)->>'client_id','')::uuid;
+    PERFORM tenant_assert_parent_org('cargo_clients', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'shipment_id','')::uuid;
+    PERFORM tenant_assert_parent_org('shipments', id, org);
+
+  ELSIF TG_TABLE_NAME='client_notification_prefs' THEN
+    id := NULLIF(to_jsonb(NEW)->>'client_id','')::uuid;
+    PERFORM tenant_assert_parent_org('cargo_clients', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+
+  ELSIF TG_TABLE_NAME='convoy_cfos' THEN
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'cfo_user_id','')::uuid;
+    PERFORM tenant_assert_parent_org('users', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'guardian_device_id','')::uuid;
+    PERFORM tenant_assert_parent_org('guardian_devices', id, org);
+
+  ELSIF TG_TABLE_NAME='convoy_cfo_truck_assignments' THEN
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'cfo_user_id','')::uuid;
+    PERFORM tenant_assert_parent_org('users', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'convoy_truck_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoy_trucks', id, org);
+
+  ELSIF TG_TABLE_NAME='convoy_truck_photos' THEN
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'convoy_truck_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoy_trucks', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'cfo_user_id','')::uuid;
+    PERFORM tenant_assert_parent_org('users', id, org);
+
+  ELSIF TG_TABLE_NAME='convoy_handovers' OR TG_TABLE_NAME='route_analyses' THEN
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+
+  ELSIF TG_TABLE_NAME='officer_activity_events' THEN
+    id := NULLIF(to_jsonb(NEW)->>'officer_id','')::uuid;
+    PERFORM tenant_assert_parent_org('field_officers', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'convoy_id','')::uuid;
+    PERFORM tenant_assert_parent_org('convoys', id, org);
+
+  ELSIF TG_TABLE_NAME='knox_remote_sessions' THEN
+    id := NULLIF(to_jsonb(NEW)->>'device_id','')::uuid;
+    PERFORM tenant_assert_parent_org('guardian_devices', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'operator_id','')::uuid;
+    PERFORM tenant_assert_parent_org('users', id, org);
+    id := NULLIF(to_jsonb(NEW)->>'officer_id','')::uuid;
+    PERFORM tenant_assert_parent_org('field_officers', id, org);
+
+  ELSIF TG_TABLE_NAME='panic_events' OR TG_TABLE_NAME='device_commands'
+        OR TG_TABLE_NAME='field_reports' OR TG_TABLE_NAME='guardian_captures'
+        OR TG_TABLE_NAME='guardian_voice_messages' THEN
+    id := NULLIF(to_jsonb(NEW)->>'device_id','')::uuid;
+    PERFORM tenant_assert_parent_org('guardian_devices', id, org);
+
+  ELSIF TG_TABLE_NAME='device_command_events' THEN
+    id := NULLIF(to_jsonb(NEW)->>'command_id','')::uuid;
+    PERFORM tenant_assert_parent_org('device_commands', id, org);
+
+  END IF;
+
+  RETURN NEW;
+END $tenant_rel$;
+
+DO $tenant_attach$
+DECLARE
+  t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'convoy_assignments','shipments','checkpoints','trips','invoices','expenses','driver_events',
+    'messages','channel_members','message_attachments','message_reactions','pinned_messages',
+    'cargo_client_links','client_notification_prefs','convoy_cfos','convoy_cfo_truck_assignments',
+    'convoy_truck_photos','convoy_handovers','route_analyses','officer_activity_events',
+    'knox_remote_sessions','panic_events','device_commands','field_reports','guardian_captures',
+    'guardian_voice_messages','device_command_events'
+  ] LOOP
+    IF to_regclass('public.' || t) IS NOT NULL
+       AND EXISTS (
+         SELECT 1 FROM information_schema.columns
+          WHERE table_schema='public' AND table_name=t AND column_name='org_id'
+       ) THEN
+      EXECUTE format('DROP TRIGGER IF EXISTS tenant_relationship_guard ON public.%I', t);
+      EXECUTE format(
+        'CREATE CONSTRAINT TRIGGER tenant_relationship_guard
+         AFTER INSERT OR UPDATE ON public.%I
+         DEFERRABLE INITIALLY IMMEDIATE
+         FOR EACH ROW EXECUTE FUNCTION tenant_relationship_guard()',
+        t
+      );
+    END IF;
+  END LOOP;
+END $tenant_attach$;
+
 -- 4. Shared/global intelligence: risk_zones NULL-org rows remain readable
 -- but tenant sessions cannot modify or delete those global rows.
 -- 4. Shared/global intelligence: risk_zones NULL org rows remain readable,
