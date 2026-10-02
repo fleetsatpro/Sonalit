@@ -42,10 +42,19 @@ export async function query<T extends object = object>(
 ): Promise<T[]> {
   const orgId = tenantContext.getStore();
   if (orgId) return withOrgContext(orgId, client => client.query<T>(text, values)).then(r => r.rows);
-  const res = await pool.query<T>(text, values);
-  return res.rows;
+  throw new Error('tenant_scope_required: use globalQuery() only for explicit bootstrap/system operations');
 }
 
 // Tables managed by fleet-svc:
 // vehicles, drivers, sensors, geofences, maintenance_records,
 // shipments, messages, message_threads, finance_records, risk_zones, field_officers
+
+
+export async function globalQuery<T extends object = object>(
+  text: string,
+  values?: unknown[],
+): Promise<T[]> {
+  if (tenantContext.getStore()) throw new Error('global_query_forbidden_inside_tenant_context');
+  const result = await pool.query<T>(text, values);
+  return result.rows;
+}
