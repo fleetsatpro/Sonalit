@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
-const { pool, query } = require('../config/database');
+const { pool, query, globalQuery } = require('../config/database');
 const logger = require('../utils/logger');
 const { withOrg } = require('../utils/orgScopedDb');
 const { sendEmail, isRetryableError } = require('../services/email/resend');
@@ -9,7 +9,7 @@ const { FROM, REPLY_TO, queueAlertEmail } = require('../services/email/email.ser
 function redisConnection() { const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379'); return { host: url.hostname, port: Number(url.port) || 6379, password: url.password || process.env.REDIS_PASSWORD || undefined }; }
 async function processEmail(job) {
   const id = job.data?.emailNotificationId; if (!id) throw new Error('email.send job missing emailNotificationId');
-  const owner = await query('SELECT org_id FROM email_notifications WHERE id = $1', [id]);
+  const owner = await globalQuery('SELECT org_id FROM email_notifications WHERE id = $1', [id]);
   const orgId = owner.rows[0]?.org_id;
   if (!orgId) throw new Error('email notification missing tenant scope');
   return withOrg(orgId, async () => {
@@ -29,7 +29,7 @@ async function processEmail(job) {
 
 async function resolvePanicContext(panicId) {
   // Resolve event tenant first; subsequent relationship lookups are constrained to it.
-  const result = await query(`
+  const result = await globalQuery(`
     SELECT
       p.id, p.org_id AS panic_org_id, p.device_id, p.lat, p.lng, p.message, p.created_at,
       d.name AS device_name, d.org_id AS device_org_id, d.client_id AS device_client_id,
@@ -78,7 +78,7 @@ async function resolvePanicContext(panicId) {
   const event = result.rows[0];
 
   if (!event.convoy_id && event.vehicle_id) {
-    const assignment = await query(`
+    const assignment = await globalQuery(`
       SELECT c.id, c.name, c.region, c.status, c.route_origin, c.route_destination, c.client_id
       FROM convoy_assignments ca
       JOIN convoys c ON c.id=ca.convoy_id
@@ -130,7 +130,7 @@ async function dispatchPanicEmail(panicId) {
   logger.warn(`Panic email dispatched: event=${panicId} queued=${result.queued} duplicate=${result.duplicate} recipients=${recipients.rows.length} client=${event.client_id || 'unassigned'} convoy=${event.convoy_id || event.convoy_code || 'none'} region=${event.region}`); return result;
   });
 }
-async function backfillRecentPanics() { const recent = await query(`SELECT p.id FROM panic_events p WHERE p.created_at >= NOW() - INTERVAL '24 hours' AND NOT EXISTS (SELECT 1 FROM email_notifications e WHERE e.entity_id=p.id AND e.notification_type='security_incident') ORDER BY p.created_at DESC LIMIT 50`); for (const row of recent.rows) { try { await dispatchPanicEmail(row.id); } catch (err) { logger.error(`Panic email backfill failed: event=${row.id} error=${err.message}`); } } if (recent.rows.length) logger.warn(`Panic email backfill processed ${recent.rows.length} recent event(s)`); }
+async function backfillRecentPanics() { const recent = await globalQuery(`SELECT p.id FROM panic_events p WHERE p.created_at >= NOW() - INTERVAL '24 hours' AND NOT EXISTS (SELECT 1 FROM email_notifications e WHERE e.entity_id=p.id AND e.notification_type='security_incident') ORDER BY p.created_at DESC LIMIT 50`); for (const row of recent.rows) { try { await dispatchPanicEmail(row.id); } catch (err) { logger.error(`Panic email backfill failed: event=${row.id} error=${err.message}`); } } if (recent.rows.length) logger.warn(`Panic email backfill processed ${recent.rows.length} recent event(s)`); }
 async function startPanicEmailBridge() { const client = await pool.connect(); await client.query('LISTEN sonalit_panic'); logger.info('Panic email bridge ready: LISTEN sonalit_panic'); client.on('notification', async (msg) => { if (msg.channel !== 'sonalit_panic') return; try { const payload = JSON.parse(msg.payload || '{}'); if (!payload.id) return; await dispatchPanicEmail(payload.id); } catch (err) { logger.error(`Panic email bridge failed: ${err.message}`); } }); client.on('error', (err) => logger.error(`Panic email bridge PostgreSQL error: ${err.message}`)); await backfillRecentPanics(); }
 function startResendEmailWorker() { const concurrency = Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5; const worker = new Worker('email', processEmail, { connection: redisConnection(), concurrency }); logger.info(`Resend email worker starting: queue=email concurrency=${concurrency} from=${FROM}`); worker.on('ready', () => logger.info('Resend email worker ready: Redis connection established')); worker.on('completed', job => logger.info(`Resend email job ${job.id} completed`)); worker.on('failed', (job, err) => logger.error(`Resend email job ${job?.id} failed: ${err.message}`)); worker.on('error', err => logger.error(`Resend email worker error: ${err.message}`)); startPanicEmailBridge().catch(err => logger.error(`Panic email bridge startup failed: ${err.message}`)); return worker; }
 module.exports = { startResendEmailWorker, processEmail, dispatchPanicEmail, resolvePanicContext };
