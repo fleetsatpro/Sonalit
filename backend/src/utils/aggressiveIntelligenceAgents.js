@@ -10,7 +10,7 @@
  */
 require('dotenv').config();
 const crypto = require('crypto');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const logger = require('./logger');
 
 const TIMEOUT_MS = Math.max(5000, Number(process.env.INTEL_AGENT_TIMEOUT_MS || 15000));
@@ -163,7 +163,7 @@ async function sweepOrg(orgId) {
 }
 
 async function runAggressiveMesh() {
-  const {rows:orgs}=await query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);
+  const {rows:orgs}=await globalQuery(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);
   const output=[];
   for(const {org_id} of orgs){ try{output.push({org_id,...await sweepOrg(org_id)});}catch(error){logger.warn(`Aggressive Intelligence Mesh org=${org_id} failed: ${error.message}`);output.push({org_id,status:'failed',error:error.message});} }
   return output;
