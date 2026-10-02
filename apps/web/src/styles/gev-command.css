@@ -2150,3 +2150,68 @@
   .gev-exit span { display: none; }
   .gev-exit { width: 30px; justify-content: center; padding: 0; }
 }
+
+
+/* Context-aware Cesium controls: keep them clear of GEV chrome and touch-safe. */
+.gev-shell .gev-map-controls--global {
+  z-index: 18;
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: 62px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 0;
+  transform: translateX(-50%);
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1180px) {
+  .gev-shell .gev-map-controls--global .spatial-control-rail > span {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .gev-shell .gev-map-controls--global {
+    left: 50%;
+    right: auto;
+    top: auto;
+    bottom: calc(min(39vh, 335px) + 18px);
+    max-width: calc(100vw - 20px);
+    gap: 5px;
+  }
+
+  .gev-shell .gev-map-controls--global .spatial-control-rail > span {
+    display: none;
+  }
+
+  .gev-shell .gev-left-rail {
+    max-width: calc(100vw - 20px);
+    overflow: hidden;
+  }
+
+  .gev-shell .gev-left-rail .gev-rail {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .gev-shell .gev-left-rail .gev-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .gev-shell .gev-overview-panel {
+    top: 122px;
+  }
+}
+
+@media (max-width: 560px) {
+  .gev-shell .gev-overview-panel {
+    top: 118px;
+  }
+}
