@@ -5,7 +5,8 @@ const { auditLog } = require('../middleware/audit');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
 router.post('/login', login);
@@ -157,7 +158,7 @@ router.post('/refresh', async (req, res) => {
     const raw = req.cookies && req.cookies[RT_COOKIE];
     if (!raw) return res.status(401).json({ error: 'No refresh token' });
     const hash = hashToken(raw);
-    const result = await query(
+    const result = await globalQuery(
       `SELECT rt.*, u.id AS uid, u.email, u.name, u.role, u.org_id, u.status
        FROM refresh_tokens rt
        JOIN users u ON u.id = rt.user_id
@@ -175,14 +176,16 @@ router.post('/refresh', async (req, res) => {
       res.clearCookie(RT_COOKIE, { ...COOKIE_OPTS, maxAge: 0 });
       return res.status(403).json({ error: 'field_account' });
     }
-    await query('UPDATE refresh_tokens SET used_at = NOW(), last_seen_at = NOW() WHERE id = $1', [row.id]);
     const newRaw = crypto.randomBytes(40).toString('hex');
     const newHash = hashToken(newRaw);
-    await query(
-      `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, ip_address, user_agent, last_seen_at)
-       VALUES ($1, $2, NOW() + INTERVAL '30 days', $3, $4, NOW())`,
-      [row.uid, newHash, req.ip || null, String(req.headers['user-agent'] || '').slice(0, 1000) || null]
-    );
+    await withOrg(row.org_id, async () => {
+      await query('UPDATE refresh_tokens SET used_at = NOW(), last_seen_at = NOW() WHERE id = $1', [row.id]);
+      await query(
+        `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, ip_address, user_agent, last_seen_at)
+         VALUES ($1, $2, NOW() + INTERVAL '30 days', $3, $4, NOW())`,
+        [row.uid, newHash, req.ip || null, String(req.headers['user-agent'] || '').slice(0, 1000) || null]
+      );
+    });
     res.cookie(RT_COOKIE, newRaw, COOKIE_OPTS);
     const accessToken = jwt.sign({ id: row.uid, email: row.email, role: row.role }, process.env.JWT_SECRET, { expiresIn: '2h' });
     res.json({ token: accessToken, user: { id: row.uid, email: row.email, name: row.name, role: row.role, org_id: row.org_id } });
