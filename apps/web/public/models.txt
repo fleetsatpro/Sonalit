@@ -1,0 +1,26 @@
+Sonalit Imagery AI
+==================
+
+Runtime: ONNX Runtime Web 1.30.0 (MIT)
+Engine:
+https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/
+
+Enhancement model: Real-ESRGAN x4plus
+Upstream: xinntao/Real-ESRGAN
+Browser package/provenance: SkillSafe AI browser-ready ONNX conversion
+License: BSD-3-Clause
+Pinned commit: 107475e49b7d46412cc966481efccc3500955801
+SHA-256: 4851ec156207d271f5328605d0582eeb851e656227da8aca093ced9e60789291
+
+Enhancement model: Real-ESRGAN x2plus
+Upstream: xinntao/Real-ESRGAN
+Browser package/provenance: SkillSafe AI browser-ready ONNX conversion
+License: BSD-3-Clause
+Pinned commit: 8166b63ed4baafea3c2867a01050c6af919527d7
+SHA-256: 7eb5e9eb507df603c0c04b49b23c86a362e0a01575bfbbac891d970f9c331888
+
+Important semantic rule:
+AI UHD enhancement is a visual reconstruction layer. It does not create verified new physical facts.
+Original imagery remains the authoritative source. Enhanced output must be labelled
+source-preserved and must never be used to infer identity, plate text, facial identity,
+precise object dimensions, or other operational facts that are absent from the source.
