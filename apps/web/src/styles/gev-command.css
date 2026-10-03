@@ -2215,3 +2215,74 @@
     top: 118px;
   }
 }
+
+
+/* Final responsive guard: the ultra-premium desktop pass above must never
+ * override the operational mobile/tablet layout. Keep these rules last. */
+@media (max-width: 860px) {
+  .gev-topbar {
+    height: 64px;
+    flex-basis: 64px;
+    grid-template-columns: 1fr auto;
+    padding: 0 12px;
+  }
+  .gev-workspace { height: calc(100% - 64px); }
+  .gev-subtitle { display: none; }
+  .gev-title { font-size: 18px; }
+  .gev-topcenter { display: none; }
+  .gev-left-rail {
+    left: 10px;
+    top: 10px;
+    bottom: auto;
+    width: auto;
+  }
+  .gev-rail {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 5px;
+  }
+  .gev-layer-label { display: none; }
+  .gev-rail-button { width: 37px; height: 37px; }
+  .gev-status-orbit { display: none; }
+  .gev-overview-panel {
+    left: 10px;
+    right: 10px;
+    top: 63px;
+    width: auto;
+    min-width: 0;
+  }
+  .gev-right-panel {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: 10px;
+    width: auto;
+    height: min(43vh, 330px);
+    max-width: none;
+  }
+  .gev-bottom-ribbon { display: none; }
+  .gev-detail {
+    left: 10px;
+    right: 10px;
+    bottom: calc(min(43vh, 330px) + 18px);
+    width: auto;
+  }
+  .gev-stat-grid { grid-template-columns: repeat(4,1fr); }
+}
+
+@media (max-width: 560px) {
+  .gev-brand-mark { width: 32px; height: 32px; flex-basis: 32px; border-radius: 9px; }
+  .gev-title { font-size: 16px; }
+  .gev-kicker { font-size: 7px; }
+  .gev-health { display: none; }
+  .gev-overview-panel { top: 58px; }
+  .gev-panel-head { padding: 11px 12px 9px; }
+  .gev-stat-grid { gap: 4px; padding: 8px 9px 9px; }
+  .gev-stat { padding: 7px; }
+  .gev-stat-value { font-size: 12px; }
+  .gev-layer-grid { grid-template-columns: repeat(2,1fr); }
+  .gev-right-panel { height: 39vh; }
+  .gev-detail { bottom: calc(39vh + 18px); }
+  .gev-mini-grid { grid-template-columns: repeat(2,1fr); }
+}
