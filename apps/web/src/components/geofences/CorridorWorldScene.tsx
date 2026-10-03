@@ -447,11 +447,14 @@ export default function CorridorWorldScene({
       // Google's current Cesium guidance.
       if (GOOGLE_KEY) {
         try {
-          (Cesium as unknown as { GoogleMaps: { defaultApiKey: string } }).GoogleMaps.defaultApiKey = GOOGLE_KEY;
+          // Use the raw Google 3D Tiles root endpoint. This keeps the GEV
+          // chrome free of a geocoder while following Google's documented
+          // CesiumJS renderer pattern.
           Cesium.RequestScheduler.requestsByServer['tile.googleapis.com:443'] = 18;
-          const tileset = await Cesium.createGooglePhotorealistic3DTileset(undefined, {
-            showCreditsOnScreen: true,
-          });
+          const tileset = await Cesium.Cesium3DTileset.fromUrl(
+            `https://tile.googleapis.com/v1/3dtiles/root.json?key=${encodeURIComponent(GOOGLE_KEY)}`,
+            { showCreditsOnScreen: true },
+          );
           if (!alive()) return;
           photoTilesetRef.current = viewer.scene.primitives.add(tileset);
           applyPhotorealisticQuality(tileset, highFidelity);
