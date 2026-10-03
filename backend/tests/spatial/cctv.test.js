@@ -141,6 +141,28 @@ describe('spatial CCTV capability', () => {
     );
   });
 
+  test('falls back to OpenEye map index when the enriched catalog request fails', async () => {
+    clearOpenEyeCache();
+    process.env.CCTV_ENABLE_OPENEYE = '1';
+    let call = 0;
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+      call += 1;
+      if (call === 1) return { ok:false, status:503, json:async()=>({}) };
+      return { ok:true, json:async()=>({ mode:'items', total:2, free:2, items:[
+        { id:'map-ke-failure-1', handle:'nairobi-failure-1', title:'Nairobi fallback camera', lat:-1.2864, lon:36.8172, category:'traffic', is_free:true },
+        { id:'map-ke-failure-2', handle:'mombasa-failure-1', title:'Mombasa fallback camera', lat:-4.0435, lon:39.6682, category:'traffic', is_free:true }
+      ] }) };
+    });
+    const rows = await loadOpenEyeCatalog({ bbox:[36,-5,40,1], maxRecords:20 });
+    expect(rows).toHaveLength(2);
+    expect(rows.every(row => row.entityType === 'camera')).toBe(true);
+    expect(rows.every(row => row.media.direct === false)).toBe(true);
+    expect(getCameraCatalogHealth().openeye.status).toBe('DEGRADED');
+    expect(getCameraCatalogHealth().openeye.recordCount).toBe(2);
+    expect(getCameraCatalogHealth().openeye.error).toContain('503');
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('https://api.openeye.cam/v1/catalog/map?'), expect.objectContaining({ headers:{Accept:'application/json'} }));
+  });
+
   test('falls back to OpenEye map index when enriched catalog has no renderable rows', async () => {
     clearOpenEyeCache();
     process.env.CCTV_ENABLE_OPENEYE = '1';

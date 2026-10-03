@@ -158,7 +158,7 @@ export default function CctvViewerPanel({
   const [synthetic, setSynthetic] = useState(false)
   const [aiEnhanced, setAiEnhanced] = useState(false)
   const [aiRevision, setAiRevision] = useState(0)
-  const aiCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const dockedAiCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const expandedAiCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const aiBitmapRef = useRef<ImageBitmap | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
@@ -291,7 +291,7 @@ export default function CctvViewerPanel({
 
   useEffect(() => {
     const bitmap = aiBitmapRef.current
-    const canvases = [aiCanvasRef.current, expandedAiCanvasRef.current].filter(Boolean) as HTMLCanvasElement[]
+    const canvases = [dockedAiCanvasRef.current, expandedAiCanvasRef.current].filter(Boolean) as HTMLCanvasElement[]
     if (!bitmap || !canvases.length || !aiEnhanced) return
     for (const canvas of canvases) {
       canvas.width = bitmap.width
@@ -358,7 +358,7 @@ export default function CctvViewerPanel({
   const source = activeCamera ? cameraSource(activeCamera) : 'CCTV'
   const age = activeCamera ? frameAge(activeCamera) : null
   const mode = activeCamera ? sourceMode(activeCamera) : 'synthetic'
-  const configuredStream = Boolean(activeCamera && ['video','mjpeg'].includes(kind) && media.url)
+  const configuredStream = Boolean(activeCamera && direct && ['video','mjpeg'].includes(kind) && media.url)
   const operational = Boolean(
     activeCamera && (
       record(activeCamera.attributes).operational === true ||
@@ -460,7 +460,7 @@ export default function CctvViewerPanel({
                 ) : frameUrl ? (
                   <>
                     <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} decoding="async" style={{ opacity: aiEnhanced ? 0 : 1, transform: `scale(${zoom})` }} onError={() => setFrameState('error')} />
-                    <canvas ref={expandedAiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:aiEnhanced ? 'block' : 'none', transform:`scale(${zoom})` }} />
+                    <canvas ref={dockedAiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:aiEnhanced ? 'block' : 'none', transform:`scale(${zoom})` }} />
                   </>
                 ) : mode === 'source' ? (
                   <>
@@ -576,11 +576,11 @@ export default function CctvViewerPanel({
                 <div className="gev-cctv-focus-media">
                   {configuredStream && streamUrl ? (
                     kind === 'mjpeg'
-                      ? <img src={streamUrl} alt={`${cameraName(activeCamera)} live MJPEG stream`} />
-                      : <video src={streamUrl} autoPlay muted playsInline controls preload="metadata" />
+                      ? <img src={streamUrl} alt={`${cameraName(activeCamera)} live MJPEG stream`} onError={() => setFrameState('error')} />
+                      : <video src={streamUrl} autoPlay muted playsInline controls preload="metadata" onError={() => setFrameState('error')} />
                   ) : frameUrl ? (
                     <>
-                      <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} style={{ opacity:aiEnhanced ? 0 : 1, transform:`scale(${zoom})` }} />
+                      <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} style={{ opacity:aiEnhanced ? 0 : 1, transform:`scale(${zoom})` }} onError={() => setFrameState('error')} />
                       <canvas ref={expandedAiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:aiEnhanced ? 'block' : 'none', transform:`scale(${zoom})` }} />
                     </>
                   ) : sourceCard(activeCamera)} 
