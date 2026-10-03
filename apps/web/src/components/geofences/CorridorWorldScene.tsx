@@ -441,8 +441,6 @@ export default function CorridorWorldScene({
 
     (async () => {
       const alive = () => !viewer.isDestroyed();
-      const canUsePhotorealistic = Boolean(GOOGLE_KEY || TOKEN);
-
       // First choice when explicitly configured: Google's live Photorealistic
       // 3D Tiles service. The existing Drive Replay integration establishes the
       // same credential contract, and 18 concurrent tile requests follows
@@ -941,9 +939,9 @@ export default function CorridorWorldScene({
       {showMapControls && (
       <div className={`gev-map-controls pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3 ${globalView ? 'gev-map-controls--global' : ''}`}>
         <div className="spatial-control-rail pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
-          <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map" aria-pressed={mode === 'dark'}><MapIcon size={15} /></button>
-          <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map" aria-pressed={mode === 'satellite'}><Satellite size={15} /></button>
-          <button type="button" onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Hybrid map" aria-pressed={mode === 'hybrid'}><Layers size={15} /></button>
+          <button type="button" disabled={surfaceQuality === 'photorealistic'} onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-40`} aria-label="Dark map" aria-pressed={mode === 'dark'} title={surfaceQuality === 'photorealistic' ? 'Photorealistic 3D surface is active' : 'Dark base imagery'}><MapIcon size={15} /></button>
+          <button type="button" disabled={surfaceQuality === 'photorealistic'} onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-40`} aria-label="Satellite map" aria-pressed={mode === 'satellite'} title={surfaceQuality === 'photorealistic' ? 'Photorealistic 3D surface is active' : 'Satellite base imagery'}><Satellite size={15} /></button>
+          <button type="button" disabled={surfaceQuality === 'photorealistic'} onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-40`} aria-label="Hybrid map" aria-pressed={mode === 'hybrid'} title={surfaceQuality === 'photorealistic' ? 'Photorealistic 3D surface is active' : 'Hybrid base imagery'}><Layers size={15} /></button>
           <span className="ml-1 max-w-[280px] truncate border-l border-white/10 pl-2 pr-2 text-[10px] font-bold font-mono text-neutral-400">{mapStatus}</span>
         </div>
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
