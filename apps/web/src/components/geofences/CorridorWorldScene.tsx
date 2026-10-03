@@ -37,6 +37,7 @@ type MapMode = 'dark' | 'satellite' | 'hybrid';
 
 const TOKEN = (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined)?.trim() ?? '';
 const GOOGLE_KEY = (import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] as string | undefined)?.trim() ?? '';
+const PHOTOREALISTIC_ION_ASSET_ID = 2275207;
 const STREET_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
 const SATELLITE_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const ROADS_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
@@ -102,6 +103,17 @@ function externalAltitude(item: SpatialWorldEntity) {
   const type = String(item.entityType || '').toLowerCase();
   const value = Number(item.altitudeM ?? item.attributes?.altitudeM);
   return ABSOLUTE_ALTITUDE_TYPES.has(type) && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function applyPhotorealisticQuality(tileset: Cesium.Cesium3DTileset, highFidelity: boolean) {
+  tileset.maximumScreenSpaceError = highFidelity ? 3 : 7;
+  tileset.cacheBytes = highFidelity ? 1024 * 1024 * 1024 : 384 * 1024 * 1024;
+  tileset.maximumCacheOverflowBytes = highFidelity ? 512 * 1024 * 1024 : 128 * 1024 * 1024;
+  tileset.dynamicScreenSpaceError = !highFidelity;
+  tileset.foveatedScreenSpaceError = true;
+  tileset.foveatedTimeDelay = highFidelity ? 0.15 : 0.25;
+  tileset.enableCollision = true;
+  tileset.shadows = Cesium.ShadowMode.ENABLED;
 }
 
 function externalCaption(item: SpatialWorldEntity) {
@@ -361,13 +373,8 @@ export default function CorridorWorldScene({
     viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
     viewer.scene.screenSpaceCameraController.minimumZoomDistance = 90;
     viewer.scene.screenSpaceCameraController.maximumZoomDistance = 30000000;
-    if (!compactSurface) {
-      const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
-      bloom.uniforms.brightness = -0.10;
-      bloom.uniforms.contrast = 92;
-      bloom.uniforms.glowOnly = false;
-      viewer.scene.postProcessStages.add(bloom);
-    }
+    // Avoid blur-producing bloom on the photographic surface. GEV prioritizes
+    // source texture fidelity and crisp building edges over decorative glow.
     setSurfaceQuality('loading');
     setMapStatus('HIGH-FIDELITY 3D SURFACE LOADING');
 
@@ -436,25 +443,48 @@ export default function CorridorWorldScene({
       const alive = () => !viewer.isDestroyed();
       const canUsePhotorealistic = Boolean(GOOGLE_KEY || TOKEN);
 
-      // First choice: Google's photorealistic global 3D tiles. This replaces
-      // the flat raster-only globe with streamed, textured 3D geometry where
-      // coverage is available. The same Google key already used by Drive
-      // Replay is reused here; no new secret is invented.
-      if (canUsePhotorealistic) {
+      // First choice when explicitly configured: Google's live Photorealistic
+      // 3D Tiles service. The existing Drive Replay integration establishes the
+      // same credential contract, and 18 concurrent tile requests follows
+      // Google's current Cesium guidance.
+      if (GOOGLE_KEY) {
         try {
-          if (GOOGLE_KEY) {
-            (Cesium as unknown as { GoogleMaps: { defaultApiKey: string } }).GoogleMaps.defaultApiKey = GOOGLE_KEY;
-          }
+          (Cesium as unknown as { GoogleMaps: { defaultApiKey: string } }).GoogleMaps.defaultApiKey = GOOGLE_KEY;
           Cesium.RequestScheduler.requestsByServer['tile.googleapis.com:443'] = 18;
           const tileset = await Cesium.createGooglePhotorealistic3DTileset(undefined, {
             showCreditsOnScreen: true,
           });
           if (!alive()) return;
           photoTilesetRef.current = viewer.scene.primitives.add(tileset);
-          viewer.scene.globe.show = false;
+          applyPhotorealisticQuality(tileset, highFidelity);
+          viewer.scene.globe.show = true;
+          viewer.scene.fog.enabled = false;
           surfaceQualityRef.current = 'photorealistic';
           setSurfaceQuality('photorealistic');
           setMapStatus('GOOGLE PHOTOREALISTIC 3D · STREAMING');
+          viewer.scene.requestRender();
+          return;
+        } catch {
+          // Use the Ion-hosted Photorealistic asset before dropping to terrain.
+        }
+      }
+
+      // Guaranteed high-fidelity route when a Cesium Ion token is available:
+      // Cesium ion distributes Google's Photorealistic 3D Tiles as a reusable
+      // global 3D asset. This avoids requiring an additional Google key for GEV.
+      if (TOKEN) {
+        try {
+          const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(PHOTOREALISTIC_ION_ASSET_ID, {
+            showCreditsOnScreen: true,
+          });
+          if (!alive()) return;
+          photoTilesetRef.current = viewer.scene.primitives.add(tileset);
+          applyPhotorealisticQuality(tileset, highFidelity);
+          viewer.scene.globe.show = true;
+          viewer.scene.fog.enabled = false;
+          surfaceQualityRef.current = 'photorealistic';
+          setSurfaceQuality('photorealistic');
+          setMapStatus('CESIUM ION · PHOTOREALISTIC 3D');
           viewer.scene.requestRender();
           return;
         } catch {
@@ -462,9 +492,9 @@ export default function CorridorWorldScene({
         }
       }
 
-      // Second choice: Cesium World Terrain + high-resolution global aerial
-      // imagery + OSM buildings. This retains true relief and 3D structures
-      // even when Google's photorealistic layer is unavailable.
+      // Final high-quality fallback: Cesium World Terrain + high-resolution
+      // global aerial imagery + OSM buildings. This retains true relief and
+      // 3D structures when photorealistic coverage/credentials are unavailable.
       if (TOKEN) {
         let imageryLoaded = false;
         try {
@@ -537,7 +567,7 @@ export default function CorridorWorldScene({
     if (!viewer || viewer.isDestroyed()) return;
     modeRef.current = mode;
     if (surfaceQualityRef.current === 'photorealistic') {
-      setMapStatus('GOOGLE PHOTOREALISTIC 3D · STREAMING');
+      setMapStatus(GOOGLE_KEY ? 'GOOGLE PHOTOREALISTIC 3D · STREAMING' : 'CESIUM ION · PHOTOREALISTIC 3D');
       return;
     }
     if (surfaceQualityRef.current === 'terrain' && TOKEN) {
