@@ -31,6 +31,21 @@ function cameraSource(camera: SpatialWorldEntity) {
   return String(camera.source ?? record(camera.provenance).sourceName ?? 'CCTV')
 }
 
+function cameraMediaAttribution(camera: SpatialWorldEntity) {
+  const media = cameraMedia(camera)
+  const provenance = record(camera.provenance)
+  return {
+    name: String(media.attributionName ?? provenance.attribution ?? 'Public camera source'),
+    url: String(media.attributionUrl ?? provenance.attributionUrl ?? provenance.sourceUrl ?? '').trim(),
+  }
+}
+
+function cameraRefreshMs(camera: SpatialWorldEntity) {
+  const media = cameraMedia(camera)
+  const refresh = Number(media.refreshIntervalMs)
+  return Number.isFinite(refresh) ? Math.max(15_000, refresh) : FRAME_REFRESH_MS
+}
+
 export default function CctvViewerPanel({
   cameras,
   selectedCameraId,
@@ -92,41 +107,66 @@ export default function CctvViewerPanel({
       controller = new AbortController()
       setFrameState('loading')
       clearAiBitmap()
+      const media = cameraMedia(activeCamera)
+      const directPreviewUrl = String(media.previewUrl ?? media.url ?? '').trim()
+      const directRenderable = Boolean(media.direct) && String(media.kind ?? '').toLowerCase() === 'image' && Boolean(directPreviewUrl)
       try {
-        const response = await api.get<Blob>(`/cctv/${encodeURIComponent(activeId)}/frame`, {
-          responseType: 'blob',
-          signal: controller.signal,
-        })
-        if (disposed) return
-        const nextUrl = URL.createObjectURL(response.data)
-        if (objectUrl) URL.revokeObjectURL(objectUrl)
-        objectUrl = nextUrl
-        const isSyntheticFrame = String(response.headers?.['x-sonalit-cctv-synthetic'] ?? '').toLowerCase() === 'true'
-        setFrameUrl(nextUrl)
-        setSynthetic(isSyntheticFrame)
-        setFrameState('ready')
-
-        // Never delay the source frame for model download/GPU compilation.
-        // The enhanced bitmap replaces it only after inference succeeds.
-        if (!isSyntheticFrame && isImageryAiEnabled()) {
-          try {
-            const sourceBitmap = await createImageBitmap(response.data)
-            const enhanced = await enhanceImageBitmap(sourceBitmap, preferredImageryAiScale(), IMAGERY_AI_CCTV_MAX_INPUT_EDGE)
-            if (!disposed && enhanced) {
-              aiBitmapRef.current?.close()
-              aiBitmapRef.current = enhanced
-              setAiEnhanced(true)
-              setAiRevision(v => v + 1)
+        if (directRenderable) {
+          setFrameUrl(directPreviewUrl)
+          setSynthetic(false)
+          setFrameState('ready')
+          if (!disposed && isImageryAiEnabled() && media.direct === true) {
+            try {
+              const response = await fetch(directPreviewUrl, { signal: controller.signal, credentials: 'omit' })
+              if (!response.ok) throw new Error('Preview fetch failed: ' + response.status)
+              const sourceBitmap = await createImageBitmap(await response.blob())
+              const enhanced = await enhanceImageBitmap(sourceBitmap, preferredImageryAiScale(), IMAGERY_AI_CCTV_MAX_INPUT_EDGE)
+              if (!disposed && enhanced) {
+                aiBitmapRef.current?.close()
+                aiBitmapRef.current = enhanced
+                setAiEnhanced(true)
+                setAiRevision(v => v + 1)
+              }
+              sourceBitmap.close()
+            } catch {
+              // Direct public preview remains authoritative when AI/CORS/model inference fails.
             }
-            sourceBitmap.close()
-          } catch {
-            // Source frame remains authoritative on any AI failure.
+        } else {
+          const response = await api.get<Blob>(`/cctv/${encodeURIComponent(activeId)}/frame`, {
+            responseType: 'blob',
+            signal: controller.signal,
+          })
+          if (disposed) return
+          const nextUrl = URL.createObjectURL(response.data)
+          if (objectUrl) URL.revokeObjectURL(objectUrl)
+          objectUrl = nextUrl
+          const isSyntheticFrame = String(response.headers?.['x-sonalit-cctv-synthetic'] ?? '').toLowerCase() === 'true'
+          setFrameUrl(nextUrl)
+          setSynthetic(isSyntheticFrame)
+          setFrameState('ready')
+
+          // Never delay the source frame for model download/GPU compilation.
+          // The enhanced bitmap replaces it only after inference succeeds.
+          if (!isSyntheticFrame && isImageryAiEnabled()) {
+            try {
+              const sourceBitmap = await createImageBitmap(response.data)
+              const enhanced = await enhanceImageBitmap(sourceBitmap, preferredImageryAiScale(), IMAGERY_AI_CCTV_MAX_INPUT_EDGE)
+              if (!disposed && enhanced) {
+                aiBitmapRef.current?.close()
+                aiBitmapRef.current = enhanced
+                setAiEnhanced(true)
+                setAiRevision(v => v + 1)
+              }
+              sourceBitmap.close()
+            } catch {
+              // Source frame remains authoritative on any AI failure.
+            }
           }
         }
       } catch {
         if (!disposed) setFrameState('error')
       } finally {
-        if (!disposed) timer = window.setTimeout(() => void loadFrame(), FRAME_REFRESH_MS)
+        if (!disposed) timer = window.setTimeout(() => void loadFrame(), cameraRefreshMs(activeCamera))
       }
     }
 
@@ -158,6 +198,9 @@ export default function CctvViewerPanel({
   const media = activeCamera ? cameraMedia(activeCamera) : {}
   const mediaKind = String(media.kind ?? 'synthetic').toLowerCase()
   const hasConfiguredStream = ['video', 'mjpeg'].includes(mediaKind) && Boolean(media.url)
+  const directPreview = String(media.previewUrl ?? media.url ?? '').trim()
+  const directRenderable = Boolean(media.direct) && mediaKind === 'image' && Boolean(directPreview)
+  const attribution = activeCamera ? cameraMediaAttribution(activeCamera) : { name:'Public camera source', url:'' }
   const source = activeCamera ? cameraSource(activeCamera) : 'CCTV'
   const nestedCamera = record(record(activeCamera?.attributes).camera)
   const nestedAttributes = record(nestedCamera.attributes)
@@ -168,9 +211,9 @@ export default function CctvViewerPanel({
     <aside className="gev-cctv-panel" aria-label="CCTV camera viewer">
       <div className="gev-cctv-head">
         <div className="gev-cctv-heading">
-          <span className="gev-cctv-kicker"><Camera size={12} /> LIVE SURVEILLANCE</span>
+          <span className="gev-cctv-kicker"><Camera size={12} /> PUBLIC CAMERA NETWORK</span>
           <strong>CCTV / CAMERA WALL</strong>
-          <span>{cameras.length} camera{cameras.length === 1 ? '' : 's'} · approved media gateway</span>
+          <span>{cameras.length} public camera{cameras.length === 1 ? '' : 's'} in current viewport · verified embeddable previews</span>
         </div>
         <div className="gev-cctv-head-actions">
           <button type="button" className="gev-cctv-icon" onClick={() => setRefreshTick(t => t + 1)} aria-label="Refresh selected camera" title="Refresh selected camera"><RefreshCw size={13} /></button>
@@ -208,7 +251,14 @@ export default function CctvViewerPanel({
               <strong>{cameraName(activeCamera)}</strong>
               <span>{source} · {Number(activeCamera.latitude).toFixed(5)}° · {Number(activeCamera.longitude).toFixed(5)}°</span>
             </div>
-            <span className="gev-cctv-auto"><span /> {hasConfiguredStream ? 'STREAM CONFIGURED' : `AUTO ${FRAME_REFRESH_MS / 1000}s`}</span>
+            <span className="gev-cctv-auto"><span /> {hasConfiguredStream ? 'STREAM CONFIGURED' : `AUTO ${Math.round(cameraRefreshMs(activeCamera) / 1000)}s`}</span>
+          </div>
+
+          <div className="gev-cctv-attribution">
+            SOURCE: {attribution.url
+              ? <a href={attribution.url} target="_blank" rel="noreferrer noopener">{attribution.name}</a>
+              : attribution.name}
+            {directRenderable && <span> · PUBLIC PREVIEW</span>}
           </div>
 
           <div className="gev-cctv-list" role="listbox" aria-label="Available CCTV cameras">
