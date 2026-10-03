@@ -411,6 +411,7 @@ export default function GodsEyeView() {
           {cctvOpen && view === '3D' && (
             <CctvViewerPanel
               cameras={cctvEntities}
+              publicTotal={cctvPublicTotal}
               selectedCameraId={selectedExternal?.entityType === 'camera' || selectedExternal?.entityType === 'spatial_camera' ? selectedExternal.id : null}
               loading={cctvFetching}
               error={cctvError}
