@@ -127,9 +127,12 @@ describe('spatial CCTV capability', () => {
     expect(rows[0].attributes.category).toBe('traffic');
     expect(rows[1].media.direct).toBe(false);
     expect(rows[1].media.sourcePageUrl).toBe('https://publisher.example.test/camera/restricted');
+    expect(rows[1].media.sourceMediaUrl).toBe('https://example.test/restricted.jpg');
+    expect(rows[1].media.sourceMediaType).toBe('image');
     expect(rows[1].provenance.attribution).toBe('Restricted Source');
     expect(rows[2].media.direct).toBe(false);
     expect(rows[2].media.sourcePageUrl).toBe('https://publisher.example.test/camera/public-view');
+    expect(rows[2].media.sourceMediaUrl).toBe(null);
     expect(rows[2].provenance.attribution).toBe('Publisher Camera Network');
     expect(rows[3].media.direct).toBe(false);
     expect(rows[3].media.sourcePageUrl).toBe('https://publisher.example.test/camera/no-preview');
@@ -139,6 +142,34 @@ describe('spatial CCTV capability', () => {
       expect.stringContaining('https://api.openeye.cam/v1/catalog?'),
       expect.objectContaining({ headers:{Accept:'application/json'} }),
     );
+  });
+
+  test('does not turn OpenEye preview_url into a direct publisher-media handoff', async () => {
+    clearOpenEyeCache();
+    process.env.CCTV_ENABLE_OPENEYE = '1';
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok:true,
+      json:async()=>({
+        total:1,
+        free:1,
+        items:[{
+          id:'preview-only',
+          handle:'preview-only',
+          title:'Preview-only source',
+          lat:-1.28,
+          lon:36.81,
+          is_free:true,
+          live:true,
+          view:{ render:'image', url_type:'image', hosted:'source' },
+          preview_url:'https://api.openeye.cam/v1/streams/preview-only/preview.webp',
+          redistribution:{ preview_embed:false, frame_reuse:'fetch-from-source', attribution:{ name:'Publisher', url:'https://publisher.example.test', required:true } }
+        }]
+      })
+    });
+    const rows = await loadOpenEyeCatalog({ center:{latitude:-1.28,longitude:36.81}, radiusM:25000, maxRecords:10 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].media.sourceMediaUrl).toBe(null);
+    expect(rows[0].media.sourcePageUrl).toBe('https://openeye.cam/cam/preview-only');
   });
 
   test('falls back to OpenEye map index when the enriched catalog request fails', async () => {
