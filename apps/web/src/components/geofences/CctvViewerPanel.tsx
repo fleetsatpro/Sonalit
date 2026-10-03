@@ -91,7 +91,7 @@ function sourceMode(camera: SpatialWorldEntity) {
 }
 
 function streamUrlFor(camera: SpatialWorldEntity) {
-  const base = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1').replace(//+$/, '')
+  const base = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1').replace(/\/+$/, '')
   return base + '/cctv/' + encodeURIComponent(camera.id) + '/media'
 }
 
