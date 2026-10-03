@@ -19,7 +19,8 @@ describe('GEV CCTV wall contract', () => {
     expect(source).toContain('onPointerUp')
     expect(source).toContain('ZoomIn')
     expect(source).toContain('OPEN PUBLISHER')
-    expect(source).toContain('OPEN LIVE VIEW')
+    expect(source).toContain('OPEN LIVE FOOTAGE')
+    expect(source).toContain('OPEN LATEST FRAME')
     expect(source).toContain('sourceMediaUrl')
   })
 
