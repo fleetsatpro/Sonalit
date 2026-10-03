@@ -174,7 +174,6 @@ export default function CctvViewerPanel({
     const kind = mediaKind(activeCamera)
     const direct = cameraMedia(activeCamera).direct === true
     const directUrl = mediaDirectUrl(activeCamera)
-    const sourceUrl = sourceViewerUrl(activeCamera)
     const mode = sourceMode(activeCamera)
 
     const loadFrame = async () => {
@@ -208,6 +207,7 @@ export default function CctvViewerPanel({
             } catch {
               // Direct preview remains authoritative if AI/CORS/model inference fails.
             }
+          }
         } else if (mode === 'source') {
           setFrameUrl(null)
           setSynthetic(false)
