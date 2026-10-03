@@ -78,7 +78,7 @@ function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: number)
   return r * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h)));
 }
 
-function cameraViewport(viewer: Cesium.Viewer) {
+function cameraViewport(viewer: Cesium.Viewer): { latitude:number; longitude:number; radiusM:number; bbox?:[number,number,number,number] } | null {
   const rectangle = viewer.camera.computeViewRectangle(viewer.scene.globe.ellipsoid);
   if (rectangle) {
     const center = Cesium.Rectangle.center(rectangle);
@@ -86,7 +86,28 @@ function cameraViewport(viewer: Cesium.Viewer) {
     const centerLat = Cesium.Math.toDegrees(center.latitude);
     const centerLng = Cesium.Math.toDegrees(center.longitude);
     const radius = Math.max(...corners.map(([lat, lng]) => haversineMeters(centerLat, centerLng, Cesium.Math.toDegrees(lat), Cesium.Math.toDegrees(lng)))) * 1.2;
-    return { latitude: centerLat, longitude: centerLng, radiusM: Math.min(100000, Math.max(10000, Number.isFinite(radius) ? radius : 25000)) };
+    let west = Cesium.Math.toDegrees(rectangle.west);
+    let east = Cesium.Math.toDegrees(rectangle.east);
+    const south = Cesium.Math.toDegrees(rectangle.south);
+    const north = Cesium.Math.toDegrees(rectangle.north);
+    if (east <= west) {
+      // A dateline-crossing view cannot be represented by one OpenEye bbox.
+      // Widen to the full longitudinal span rather than silently returning
+      // zero cameras for the visible half-world.
+      west = -180;
+      east = 180;
+    }
+    return {
+      latitude: centerLat,
+      longitude: centerLng,
+      radiusM: Math.min(100000, Math.max(10000, Number.isFinite(radius) ? radius : 25000)),
+      bbox: [
+        Math.max(-180, west),
+        Math.max(-90, south),
+        Math.min(180, east),
+        Math.min(90, north),
+      ],
+    };
   }
   const cartographic = viewer.camera.positionCartographic;
   if (!cartographic) return null;
