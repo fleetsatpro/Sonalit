@@ -30,6 +30,7 @@ const SAMPLE_CAMERAS = [
 const OPENEYE_BASE_URL = 'https://api.openeye.cam/v1';
 const OPENEYE_CACHE_TTL_MS = 45_000;
 const OPENEYE_MAX_LIMIT = 250;
+const OPENEYE_MAP_PATH = '/catalog/map';
 
 const providerHealth = {
   openeye: { enabled: true, status:'UNKNOWN', lastSuccessAt:null, lastAttemptAt:null, recordCount:0, total:null, free:null, error:null },
@@ -115,6 +116,31 @@ function openEyeMedia(row) {
       ? Math.max(15000, Number(row.frame_interval_s) * 1000)
       : 60000
   };
+}
+
+async function loadOpenEyeMapFallback(options = {}) {
+  const bbox = normalizeBbox(options.bbox) || bboxFromCenter(options.center, options.radiusM);
+  if (!bbox) return [];
+  const limit = Math.max(1, Math.min(OPENEYE_MAX_LIMIT, Number(options.maxRecords) || 100));
+  const params = new URLSearchParams({ bbox:bbox.join(','), limit:String(limit), zoom:'12', cluster:'none', is_free:'1' });
+  try {
+    const response = await fetch(OPENEYE_BASE_URL + OPENEYE_MAP_PATH + '?' + params.toString(), { headers:{ Accept:'application/json' } });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload?.cameras) ? payload.cameras : [];
+    return rows.map((row, index) => {
+      const id = String(row?.id || row?.handle || 'map-' + index);
+      const latitude = Number(row?.lat), longitude = Number(row?.lon);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+      return normalizeRecord({ id:'openeye:' + id, name:row?.title || row?.handle || id, latitude, longitude,
+        source:'openeye-public', sourceReference:String(row?.handle || row?.id || index), pose:{ confidence:'unknown' }, viewshed:{ horizontalFovDeg:90, maxRangeM:5000 },
+        media:{ kind:'synthetic', url:null, frameUrl:null, previewUrl:null, sourcePageUrl:'https://openeye.cam/cam/' + encodeURIComponent(id), direct:false, publicSource:true },
+        health:{ status:'UNKNOWN', reason:'OpenEye map index record; detailed camera health is resolved when opened.' },
+        provenance:{ sourceName:'OpenEye public camera directory', sourceUrl:'https://openeye.cam/', attribution:'OpenEye public camera directory', attributionUrl:'https://openeye.cam/', observationType:'public_camera_directory', sourceReference:String(row?.handle || row?.id || index) },
+        attributes:{ provider:'OpenEye', providerCameraId:row?.id || null, handle:row?.handle || null, category:row?.category || 'other', catalogClass:'public-camera-map-index', sourcePageUrl:'https://openeye.cam/cam/' + encodeURIComponent(id) }
+      }, index);
+    }).filter(Boolean);
+  } catch (_) { return []; }
 }
 
 async function loadOpenEyeCatalog(options = {}) {
@@ -245,8 +271,11 @@ async function loadOpenEyeCatalog(options = {}) {
       free:Number.isFinite(Number(payload.free)) ? Number(payload.free) : null,
       error:null
     };
-    openEyeCache.set(key, { rows:normalized, expiresAt:Date.now() + OPENEYE_CACHE_TTL_MS });
-    return normalized;
+    const resolved = normalized.length ? normalized : await loadOpenEyeMapFallback(options);
+    providerHealth.openeye.recordCount = resolved.length;
+    providerHealth.openeye.free = Number.isFinite(Number(payload.free)) ? Number(payload.free) : resolved.length;
+    openEyeCache.set(key, { rows:resolved, expiresAt:Date.now() + OPENEYE_CACHE_TTL_MS });
+    return resolved;
   } catch (error) {
     providerHealth.openeye = {
       ...providerHealth.openeye,
