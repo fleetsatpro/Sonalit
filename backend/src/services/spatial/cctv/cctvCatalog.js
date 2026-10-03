@@ -38,6 +38,12 @@ const providerHealth = {
 };
 const openEyeCache = new Map();
 
+function clearOpenEyeCache() {
+  openEyeCache.clear();
+}
+
+
+
 function asRecord(value) {
   return value && typeof value === 'object' ? value : {};
 }
@@ -208,8 +214,12 @@ async function loadOpenEyeCatalog(options = {}) {
         }
       }, index);
       if (!normalized) return null;
-      // We only emit records whose imagery may legally be embedded by Sonalit.
-      if (!media.direct && !media.sourcePageUrl) return null;
+      // Only renderable stills or explicit public viewer pages may enter the
+      // operator-facing set. A source image that forbids preview embedding but
+      // does not expose a public viewer URL must be omitted rather than guessed.
+      const renderMode = String(row.view?.render || '').toLowerCase();
+      const viewerOnly = renderMode === 'link' && Boolean(media.sourcePageUrl);
+      if (!media.direct && !viewerOnly) return null;
       return normalized;
     }).filter(Boolean);
 
@@ -467,4 +477,4 @@ function getCameraCatalogHealth() {
   };
 }
 
-module.exports = { SAMPLE_CAMERAS, normalizeRecord, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, getCameraById, getCameraCatalog, getCameraCatalogHealth };
+module.exports = { SAMPLE_CAMERAS, normalizeRecord, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, getCameraById, getCameraCatalog, getCameraCatalogHealth, clearOpenEyeCache };
