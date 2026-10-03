@@ -82,7 +82,7 @@ function openEyeMedia(row) {
   ).trim() || null;
   const publicViewer = sourcePageUrl || viewUrl;
   return {
-    kind: renderableImage ? 'image' : publicViewer ? 'synthetic' : 'synthetic',
+    kind: renderableImage ? 'image' : 'synthetic',
     url: renderableImage ? viewUrl : null,
     frameUrl: renderableImage ? viewUrl : null,
     previewUrl: renderableImage ? viewUrl : null,
