@@ -36,6 +36,8 @@ export interface RiskZone {
 type MapMode = 'dark' | 'satellite' | 'hybrid';
 
 const TOKEN = (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined)?.trim() ?? '';
+const GOOGLE_KEY = (import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] as string | undefined)?.trim() ?? '';
+const PHOTOREALISTIC_ION_ASSET_ID = 2275207;
 const STREET_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
 const SATELLITE_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const ROADS_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
@@ -101,6 +103,17 @@ function externalAltitude(item: SpatialWorldEntity) {
   const type = String(item.entityType || '').toLowerCase();
   const value = Number(item.altitudeM ?? item.attributes?.altitudeM);
   return ABSOLUTE_ALTITUDE_TYPES.has(type) && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function applyPhotorealisticQuality(tileset: Cesium.Cesium3DTileset, highFidelity: boolean) {
+  tileset.maximumScreenSpaceError = highFidelity ? 3 : 7;
+  tileset.cacheBytes = highFidelity ? 1024 * 1024 * 1024 : 384 * 1024 * 1024;
+  tileset.maximumCacheOverflowBytes = highFidelity ? 512 * 1024 * 1024 : 128 * 1024 * 1024;
+  tileset.dynamicScreenSpaceError = !highFidelity;
+  tileset.foveatedScreenSpaceError = true;
+  tileset.foveatedTimeDelay = highFidelity ? 0.15 : 0.25;
+  tileset.enableCollision = true;
+  tileset.shadows = Cesium.ShadowMode.ENABLED;
 }
 
 function externalCaption(item: SpatialWorldEntity) {
@@ -246,8 +259,12 @@ export default function CorridorWorldScene({
   const initialGlobalFitDoneRef = useRef(false);
   const initialLocalFitDoneRef = useRef(false);
   const renderRecoveryRef = useRef(0);
+  const photoTilesetRef = useRef<Cesium.Cesium3DTileset | null>(null);
+  const modeRef = useRef<MapMode>(globalView ? 'satellite' : 'dark');
+  const surfaceQualityRef = useRef<'loading' | 'photorealistic' | 'terrain' | 'fallback'>('loading');
   const [mode, setMode] = useState<MapMode>(globalView ? 'satellite' : 'dark');
-  const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
+  const [surfaceQuality, setSurfaceQuality] = useState<'loading' | 'photorealistic' | 'terrain' | 'fallback'>('loading');
+  const [mapStatus, setMapStatus] = useState('HIGH-FIDELITY 3D SURFACE LOADING');
   const [terrainReady, setTerrainReady] = useState(false);
   const [initFailed, setInitFailed] = useState(false);
   const [creditsOpen, setCreditsOpen] = useState(false);
@@ -255,6 +272,8 @@ export default function CorridorWorldScene({
   selectRef.current = onSelect;
   externalSelectRef.current = onExternalSelect;
   onViewportChangeRef.current = onViewportChange;
+  modeRef.current = mode;
+  surfaceQualityRef.current = surfaceQuality;
 
   const height = Math.max(200, ceilingM || Math.min(1800, Math.max(700, corridorKm * 500)));
   const liveMembers = useMemo(() => members.filter(m => m.lat != null && m.lng != null), [members]);
@@ -327,7 +346,9 @@ export default function CorridorWorldScene({
     viewer.scene.fog.density = 0.000009;
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
-    viewer.scene.globe.tileCacheSize = highFidelity ? 1200 : 500;
+    viewer.scene.globe.tileCacheSize = highFidelity ? 1600 : 650;
+    viewer.scene.globe.preloadAncestors = true;
+    viewer.scene.globe.preloadSiblings = true;
     viewer.scene.msaaSamples = viewer.scene.msaaSupported ? (highFidelity ? 8 : 2) : 1;
     // GEV is a presentation-grade spatial surface: preserve high-DPI raster
     // density while keeping mobile GPU pressure bounded.
@@ -352,14 +373,10 @@ export default function CorridorWorldScene({
     viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
     viewer.scene.screenSpaceCameraController.minimumZoomDistance = 90;
     viewer.scene.screenSpaceCameraController.maximumZoomDistance = 30000000;
-    if (!compactSurface) {
-      const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
-      bloom.uniforms.brightness = -0.10;
-      bloom.uniforms.contrast = 92;
-      bloom.uniforms.glowOnly = false;
-      viewer.scene.postProcessStages.add(bloom);
-    }
-    setMapStatus(TOKEN ? 'CESIUM + ESRI · LIVE' : 'ESRI FALLBACK · ION TOKEN NOT EXPOSED');
+    // Avoid blur-producing bloom on the photographic surface. GEV prioritizes
+    // source texture fidelity and crisp building edges over decorative glow.
+    setSurfaceQuality('loading');
+    setMapStatus('HIGH-FIDELITY 3D SURFACE LOADING');
 
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
@@ -423,29 +440,105 @@ export default function CorridorWorldScene({
     resize();
 
     (async () => {
-      if (!TOKEN || viewer.isDestroyed()) return;
-      try {
-        const terrain = await Cesium.createWorldTerrainAsync();
-        if (viewer.isDestroyed()) return;
-        viewer.terrainProvider = terrain;
-        setTerrainReady(true);
-        viewer.scene.requestRender();
-      } catch {
-        setMapStatus('ESRI SURFACE · TERRAIN DEGRADED');
-      }
-    })();
-
-    (async () => {
-      if (!TOKEN || viewer.isDestroyed()) return;
-      try {
-        const buildings = await Cesium.createOsmBuildingsAsync();
-        if (!viewer.isDestroyed()) {
-          viewer.scene.primitives.add(buildings);
+      const alive = () => !viewer.isDestroyed();
+      // First choice when explicitly configured: Google's live Photorealistic
+      // 3D Tiles service. The existing Drive Replay integration establishes the
+      // same credential contract, and 18 concurrent tile requests follows
+      // Google's current Cesium guidance.
+      if (GOOGLE_KEY) {
+        try {
+          // Use the raw Google 3D Tiles root endpoint. This keeps the GEV
+          // chrome free of a geocoder while following Google's documented
+          // CesiumJS renderer pattern.
+          Cesium.RequestScheduler.requestsByServer['tile.googleapis.com:443'] = 18;
+          const tileset = await Cesium.Cesium3DTileset.fromUrl(
+            `https://tile.googleapis.com/v1/3dtiles/root.json?key=${encodeURIComponent(GOOGLE_KEY)}`,
+            { showCreditsOnScreen: true },
+          );
+          if (!alive()) return;
+          photoTilesetRef.current = viewer.scene.primitives.add(tileset);
+          applyPhotorealisticQuality(tileset, highFidelity);
+          viewer.scene.globe.show = false;
+          viewer.scene.globe.showGroundAtmosphere = false;
+          viewer.scene.fog.enabled = false;
+          surfaceQualityRef.current = 'photorealistic';
+          setSurfaceQuality('photorealistic');
+          setMapStatus('GOOGLE PHOTOREALISTIC 3D · STREAMING');
           viewer.scene.requestRender();
+          return;
+        } catch {
+          // Use the Ion-hosted Photorealistic asset before dropping to terrain.
         }
-      } catch {
-        // Buildings are an enhancement, never a dependency for the operational map.
       }
+
+      // Guaranteed high-fidelity route when a Cesium Ion token is available:
+      // Cesium ion distributes Google's Photorealistic 3D Tiles as a reusable
+      // global 3D asset. This avoids requiring an additional Google key for GEV.
+      if (TOKEN) {
+        try {
+          const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(PHOTOREALISTIC_ION_ASSET_ID, {
+            showCreditsOnScreen: true,
+          });
+          if (!alive()) return;
+          photoTilesetRef.current = viewer.scene.primitives.add(tileset);
+          applyPhotorealisticQuality(tileset, highFidelity);
+          viewer.scene.globe.show = false;
+          viewer.scene.globe.showGroundAtmosphere = false;
+          viewer.scene.fog.enabled = false;
+          surfaceQualityRef.current = 'photorealistic';
+          setSurfaceQuality('photorealistic');
+          setMapStatus('CESIUM ION · PHOTOREALISTIC 3D');
+          viewer.scene.requestRender();
+          return;
+        } catch {
+          // Fall through to the Cesium World Terrain surface below.
+        }
+      }
+
+      // Final high-quality fallback: Cesium World Terrain + high-resolution
+      // global aerial imagery + OSM buildings. This retains true relief and
+      // 3D structures when photorealistic coverage/credentials are unavailable.
+      if (TOKEN) {
+        let imageryLoaded = false;
+        try {
+          const imagery = await Cesium.createWorldImageryAsync({
+            style: modeRef.current === 'hybrid'
+              ? Cesium.IonWorldImageryStyle.AERIAL_WITH_LABELS
+              : Cesium.IonWorldImageryStyle.AERIAL,
+          });
+          if (!alive()) return;
+          viewer.imageryLayers.removeAll();
+          viewer.imageryLayers.addImageryProvider(imagery);
+          imageryLoaded = true;
+        } catch {
+          // Keep the immediate Esri fallback layer.
+        }
+        try {
+          const terrain = await Cesium.createWorldTerrainAsync({ requestVertexNormals: true, requestWaterMask: true });
+          if (!alive()) return;
+          viewer.terrainProvider = terrain;
+          setTerrainReady(true);
+        } catch {
+          // Ellipsoid terrain remains available.
+        }
+        try {
+          const buildings = await Cesium.createOsmBuildingsAsync();
+          if (!alive()) return;
+          viewer.scene.primitives.add(buildings);
+        } catch {
+          // Buildings are an enhancement, never a dependency for the world surface.
+        }
+        surfaceQualityRef.current = 'terrain';
+        setSurfaceQuality('terrain');
+        setMapStatus(imageryLoaded ? 'CESIUM WORLD TERRAIN · 3D BUILDINGS' : 'CESIUM TERRAIN · ESRI IMAGERY FALLBACK');
+        viewer.scene.requestRender();
+        return;
+      }
+
+      surfaceQualityRef.current = 'fallback';
+      setSurfaceQuality('fallback');
+      setMapStatus('ESRI 3D FALLBACK · NO HIGH-FIDELITY TOKEN');
+      viewer.scene.requestRender();
     })();
 
     return () => {
@@ -455,6 +548,10 @@ export default function CorridorWorldScene({
       viewer.scene.renderError.removeEventListener(renderErrorHandler);
       viewer.camera.moveEnd.removeEventListener(syncViewport);
       renderRecoveryRef.current = 0;
+      if (photoTilesetRef.current) {
+        try { viewer.scene.primitives.remove(photoTilesetRef.current); } catch { /* viewer teardown */ }
+        photoTilesetRef.current = null;
+      }
       entityMapRef.current.clear();
       externalEntityMapRef.current.clear();
       currentRef.current.clear();
@@ -471,6 +568,22 @@ export default function CorridorWorldScene({
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
+    modeRef.current = mode;
+    if (surfaceQualityRef.current === 'photorealistic') {
+      setMapStatus(GOOGLE_KEY ? 'GOOGLE PHOTOREALISTIC 3D · STREAMING' : 'CESIUM ION · PHOTOREALISTIC 3D');
+      return;
+    }
+    if (surfaceQualityRef.current === 'terrain' && TOKEN) {
+      void Cesium.createWorldImageryAsync({
+        style: mode === 'hybrid' ? Cesium.IonWorldImageryStyle.AERIAL_WITH_LABELS : Cesium.IonWorldImageryStyle.AERIAL,
+      }).then(provider => {
+        if (viewer.isDestroyed() || surfaceQualityRef.current !== 'terrain') return;
+        viewer.imageryLayers.removeAll();
+        viewer.imageryLayers.addImageryProvider(provider);
+        viewer.scene.requestRender();
+      }).catch(() => { /* preserve the current imagery surface */ });
+      return;
+    }
     addImagery(viewer, mode, message => setMapStatus(message));
     viewer.scene.requestRender();
   }, [mode]);
@@ -574,7 +687,7 @@ export default function CorridorWorldScene({
     });
 
     for (const member of liveMembers) {
-      const target = Cesium.Cartesian3.fromDegrees(member.lng!, member.lat!, 6);
+      const target = Cesium.Cartesian3.fromDegrees(member.lng!, member.lat!, 0);
       targetRef.current.set(member.id, target);
       if (!currentRef.current.has(member.id)) currentRef.current.set(member.id, target.clone());
       const heading = Number(member.heading);
@@ -586,7 +699,7 @@ export default function CorridorWorldScene({
       const label = statusLabel(member);
       if (existing) {
         existing.position = new Cesium.ConstantPositionProperty(position);
-        existing.point = new Cesium.PointGraphics({ pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, disableDepthTestDistance: Number.POSITIVE_INFINITY });
+        existing.point = new Cesium.PointGraphics({ pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY });
         if (existing.label?.text) (existing.label.text as Cesium.ConstantProperty).setValue(label);
         if (existing.billboard?.image) (existing.billboard.image as Cesium.ConstantProperty).setValue(vehicleSvg(color, selected));
         continue;
@@ -596,11 +709,11 @@ export default function CorridorWorldScene({
         id: `dev:${member.id}`,
         position: new Cesium.ConstantPositionProperty(position),
         orientation: Number.isFinite(heading) ? new Cesium.ConstantProperty(Cesium.Transforms.headingPitchRollQuaternion(position, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0))) : undefined,
-        point: { pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, disableDepthTestDistance: Number.POSITIVE_INFINITY },
-        billboard: { image: vehicleSvg(color, selected), width: selected ? 42 : 34, height: selected ? 28 : 23, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, disableDepthTestDistance: Number.POSITIVE_INFINITY, alignedAxis: Cesium.Cartesian3.ZERO, scaleByDistance: new Cesium.NearFarScalar(250, 1.18, 300000, 0.62) },
-        label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -34), disableDepthTestDistance: Number.POSITIVE_INFINITY, showBackground: true, backgroundColor: css('#06090f', 0.76), backgroundPadding: new Cesium.Cartesian2(7, 4), scaleByDistance: new Cesium.NearFarScalar(300, 1.08, 180000, 0.72), translucencyByDistance: new Cesium.NearFarScalar(35000, 1, 240000, 0) },
+        point: { pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+        billboard: { image: vehicleSvg(color, selected), width: selected ? 42 : 34, height: selected ? 28 : 23, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, alignedAxis: Cesium.Cartesian3.ZERO, scaleByDistance: new Cesium.NearFarScalar(250, 1.18, 300000, 0.62) },
+        label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -34), heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, showBackground: true, backgroundColor: css('#06090f', 0.76), backgroundPadding: new Cesium.Cartesian2(7, 4), scaleByDistance: new Cesium.NearFarScalar(300, 1.08, 180000, 0.72), translucencyByDistance: new Cesium.NearFarScalar(35000, 1, 240000, 0) },
         ellipse: { semiMajorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), semiMinorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), height: 4, material: css(color, 0.06), outline: true, outlineColor: css(color, 0.45), outlineWidth: 1 },
-        ...(member.vehicle_model_url || MODEL_URL ? { model: new Cesium.ModelGraphics({ uri: new Cesium.ConstantProperty(member.vehicle_model_url || MODEL_URL), minimumPixelSize: 34, maximumScale: 220, runAnimations: true, shadows: Cesium.ShadowMode.ENABLED }) } : {}),
+        ...(member.vehicle_model_url || MODEL_URL ? { model: new Cesium.ModelGraphics({ uri: new Cesium.ConstantProperty(member.vehicle_model_url || MODEL_URL), minimumPixelSize: 34, maximumScale: 220, runAnimations: true, shadows: Cesium.ShadowMode.ENABLED, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND }) } : {}),
       });
       entityMapRef.current.set(member.id, entity);
     }
@@ -716,7 +829,8 @@ export default function CorridorWorldScene({
       viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(member.lng, member.lat, 2200), orientation: { heading: Cesium.Math.toRadians(Number(member.heading) || 0), pitch: Cesium.Math.toRadians(-62), roll: 0 }, duration: 0.8 });
       return;
     }
-    const points = fitPoints(route, liveMembers, trail, zones, worldEntities);
+    const cameraEntities = globalView ? globalCameraEntities(worldEntities) : worldEntities;
+    const points = fitPoints(route, liveMembers, trail, zones, cameraEntities);
     if (points.length === 1) {
       const only = singleWorldPoint(liveMembers, zones, worldEntities);
       if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 });
@@ -831,27 +945,27 @@ export default function CorridorWorldScene({
       {showMapControls && (
       <div className={`gev-map-controls pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3 ${globalView ? 'gev-map-controls--global' : ''}`}>
         <div className="spatial-control-rail pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
-          <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map" aria-pressed={mode === 'dark'}><MapIcon size={15} /></button>
-          <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map" aria-pressed={mode === 'satellite'}><Satellite size={15} /></button>
-          <button type="button" onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Hybrid map" aria-pressed={mode === 'hybrid'}><Layers size={15} /></button>
+          <button type="button" disabled={surfaceQuality === 'photorealistic'} onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-40`} aria-label="Dark map" aria-pressed={mode === 'dark'} title={surfaceQuality === 'photorealistic' ? 'Photorealistic 3D surface is active' : 'Dark base imagery'}><MapIcon size={15} /></button>
+          <button type="button" disabled={surfaceQuality === 'photorealistic'} onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-40`} aria-label="Satellite map" aria-pressed={mode === 'satellite'} title={surfaceQuality === 'photorealistic' ? 'Photorealistic 3D surface is active' : 'Satellite base imagery'}><Satellite size={15} /></button>
+          <button type="button" disabled={surfaceQuality === 'photorealistic'} onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-40`} aria-label="Hybrid map" aria-pressed={mode === 'hybrid'} title={surfaceQuality === 'photorealistic' ? 'Photorealistic 3D surface is active' : 'Hybrid base imagery'}><Layers size={15} /></button>
           <span className="ml-1 max-w-[280px] truncate border-l border-white/10 pl-2 pr-2 text-[10px] font-bold font-mono text-neutral-400">{mapStatus}</span>
         </div>
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={recenter} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Recenter world"><Crosshair size={15} /></button>
-          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail, zones, worldEntities); if (points.length === 1) { const only = singleWorldPoint(liveMembers, zones, worldEntities); if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
+          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const cameraEntities = globalView ? globalCameraEntities(worldEntities) : worldEntities; const points = fitPoints(route, liveMembers, trail, zones, cameraEntities); if (points.length === 1) { const only = singleWorldPoint(liveMembers, zones, worldEntities); if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
       )}
       <div className="spatial-cesium-chrome pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
-        {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-bold font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}
+        <span className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold font-mono backdrop-blur-xl ${surfaceQuality === 'photorealistic' ? 'border-cyan-400/25 bg-cyan-400/[0.09] text-cyan-200' : terrainReady ? 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-300' : surfaceQuality === 'loading' ? 'border-amber-400/20 bg-amber-400/[0.07] text-amber-200' : 'border-red-400/20 bg-red-400/[0.07] text-red-200'}`}>{surfaceQuality === 'photorealistic' ? 'PHOTOREALISTIC 3D' : terrainReady ? 'WORLD TERRAIN + 3D BUILDINGS' : surfaceQuality === 'loading' ? '3D SURFACE LOADING' : 'ESRI RASTER FALLBACK'}</span>
         {focusId && <span className="rounded-lg border border-violet-500/25 bg-violet-500/[0.09] px-2.5 py-1.5 text-[10px] font-bold font-mono text-violet-300 backdrop-blur-xl">FOCUS · {liveMembers.find(m => m.id === focusId)?.name ?? focusId.slice(0, 8)}</span>}
       </div>
       {creditsOpen && (
         <div className="spatial-cesium-chrome absolute bottom-3 right-3 max-w-xs rounded-xl border border-white/10 bg-[#070a10]/92 p-3 text-[10px] leading-relaxed text-neutral-400 shadow-2xl backdrop-blur-xl">
           <p className="font-semibold text-neutral-200">World surface</p>
-          <p className="mt-1">Operational map tiles: Esri / OpenStreetMap contributors. Cesium terrain and buildings are enabled when the configured Ion token permits them.</p>
+          <p className="mt-1">{surfaceQuality === 'photorealistic' ? 'Photorealistic 3D surface: Google Maps Platform Photorealistic 3D Tiles rendered by CesiumJS. Google and third-party attributions remain on screen.' : terrainReady ? 'Aerial imagery and terrain are streamed through Cesium ion, with Cesium World Terrain normals/water data and OSM 3D buildings where available.' : 'Operational map surface is using the Esri fallback. No high-fidelity provider is claimed until it successfully loads.'}</p>
         </div>
       )}
       {!globalView && liveMembers.length === 0 && (
