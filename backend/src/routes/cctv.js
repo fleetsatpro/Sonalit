@@ -87,8 +87,7 @@ router.get('/:id/frame', asyncHandler(async (req,res) => {
 
 router.get('/:id', asyncHandler(async (req,res) => {
   const id = String(req.params.id);
-  const cameras = await getCameraCatalog();
-  const camera = cameras.find(item => String(item.id) === id);
+  const camera = await getCameraById(id);
   if (!camera) return res.status(404).json({ error:'Camera not found' });
   res.json({
     data: camera,
