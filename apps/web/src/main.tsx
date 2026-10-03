@@ -1,4 +1,5 @@
 import './index.css';
+import { installImageryAiMapLibreProtocol } from './lib/imageryAiMapLibre.js';
 // Design tokens (--d-void, --d-rail-w, etc.) consumed by AppShell + Rail on
 // every route. Previously only Dashboard imported this; without it, the
 // margin-left: var(--d-rail-w) rule silently collapsed to 0 on non-Dashboard
