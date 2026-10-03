@@ -3,7 +3,7 @@
 const { SAMPLE_CAMERAS, getCameraCatalog } = require('../../src/services/spatial/cctv/cctvCatalog');
 const { pointInViewshed, rankNearest } = require('../../src/services/spatial/cctv/spatialCameraGeometry');
 const { assertSafeUrl, hostMatches } = require('../../src/services/spatial/cctv/cctvAllowlist');
-const { getFrame } = require('../../src/services/spatial/cctv/cctvMediaProxy');
+const { getFrame, getMedia, syntheticFrame } = require('../../src/services/spatial/cctv/cctvMediaProxy');
 
 describe('spatial CCTV capability', () => {
   test('ships at least three explicitly-labelled Kenya sample cameras', () => {
@@ -57,5 +57,20 @@ describe('spatial CCTV capability', () => {
     expect(frame.synthetic).toBe(true);
     expect(frame.contentType).toBe('image/svg+xml');
     expect(frame.buffer.toString('utf8')).toContain('SONALIT CCTV');
+  });
+});
+
+
+describe('CCTV media delivery contract', () => {
+  test('exposes the synthetic frame contract without external I/O', () => {
+    const frame = syntheticFrame({ id:'test-camera', name:'Test camera' }, 'test');
+    expect(frame.synthetic).toBe(true);
+    expect(frame.contentType).toBe('image/svg+xml');
+    expect(Buffer.isBuffer(frame.buffer)).toBe(true);
+  });
+
+  test('does not allow a stream without an explicit video/mjpeg media kind', async () => {
+    await expect(getMedia({ id:'test-camera', name:'Test camera', media:{ kind:'image', url:'https://example.com/test.jpg' } }))
+      .rejects.toMatchObject({ failureClass:'unavailable' });
   });
 });
