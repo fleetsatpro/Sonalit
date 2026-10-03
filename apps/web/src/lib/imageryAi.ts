@@ -4,6 +4,7 @@ export const IMAGERY_AI_VERSION = 'sonalit-imagery-ai-v1'
 export const IMAGERY_AI_ENGINE_VERSION = 'onnxruntime-web@1.30.0'
 export const IMAGERY_AI_MIN_ZOOM = 14
 export const IMAGERY_AI_MAX_INPUT_EDGE = 768
+export const IMAGERY_AI_TILE_PADDING = 12
 export const IMAGERY_AI_X4_MODEL_SHA256 = '4851ec156207d271f5328605d0582eeb851e656227da8aca093ced9e60789291'
 export const IMAGERY_AI_X2_MODEL_SHA256 = '7eb5e9eb507df603c0c04b49b23c86a362e0a01575bfbbac891d970f9c331888'
 
@@ -20,6 +21,9 @@ type PendingJob = {
   pixels: ArrayBuffer
   width: number
   height: number
+  sourceWidth: number
+  sourceHeight: number
+  padding: number
   scale: ImageryAiScale
   resolve: (value: ImageBitmap | null) => void
   reject: (reason?: unknown) => void
@@ -153,19 +157,40 @@ async function prepareBitmap(bitmap: ImageBitmap) {
   const width = Math.max(1, Math.round(bitmap.width * factor))
   const height = Math.max(1, Math.round(bitmap.height * factor))
 
+  const paddedWidth = width + IMAGERY_AI_TILE_PADDING * 2
+  const paddedHeight = height + IMAGERY_AI_TILE_PADDING * 2
   const canvas = typeof OffscreenCanvas !== 'undefined'
-    ? new OffscreenCanvas(width, height)
+    ? new OffscreenCanvas(paddedWidth, paddedHeight)
     : (() => {
         const c = document.createElement('canvas')
-        c.width = width
-        c.height = height
+        c.width = paddedWidth
+        c.height = paddedHeight
         return c
       })()
 
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) throw new Error('Imagery AI canvas unavailable')
-  ctx.drawImage(bitmap, 0, 0, width, height)
-  return ctx.getImageData(0, 0, width, height)
+  ctx.imageSmoothingEnabled = false
+  const p = IMAGERY_AI_TILE_PADDING
+  ctx.drawImage(bitmap, p, p, width, height)
+
+  // Replicate edge pixels into the model context. This prevents independently
+  // processed map tiles from inventing a sharp seam at the tile boundary.
+  ctx.drawImage(canvas, p, p, width, 1, p, 0, width, p)
+  ctx.drawImage(canvas, p, p + height - 1, width, 1, p, p + height, width, p)
+  ctx.drawImage(canvas, p, p, 1, height, 0, p, p, height)
+  ctx.drawImage(canvas, p + width - 1, p, 1, height, p + width, p, p, height)
+  ctx.drawImage(canvas, p, p, 1, 1, 0, 0, p, p)
+  ctx.drawImage(canvas, p + width - 1, p, 1, 1, p + width, 0, p, p)
+  ctx.drawImage(canvas, p, p + height - 1, 1, 1, 0, p + height, p, p)
+  ctx.drawImage(canvas, p + width - 1, p + height - 1, 1, 1, p + width, p + height, p, p)
+
+  return {
+    imageData: ctx.getImageData(0, 0, paddedWidth, paddedHeight),
+    sourceWidth: width,
+    sourceHeight: height,
+    padding: p,
+  }
 }
 
 export async function enhanceImageBitmap(bitmap: ImageBitmap, scale = preferredImageryAiScale()): Promise<ImageBitmap | null> {
@@ -180,14 +205,17 @@ export async function enhanceImageBitmap(bitmap: ImageBitmap, scale = preferredI
   }
 
   const id = nextJobId++
-  const pixels = prepared.data.buffer.slice(0)
+  const pixels = prepared.imageData.data.buffer.slice(0)
 
   return new Promise<ImageBitmap | null>((resolve, reject) => {
     queue.push({
       id,
       pixels,
-      width: prepared.width,
-      height: prepared.height,
+      width: prepared.imageData.width,
+      height: prepared.imageData.height,
+      sourceWidth: prepared.sourceWidth,
+      sourceHeight: prepared.sourceHeight,
+      padding: prepared.padding,
       scale,
       resolve,
       reject,
