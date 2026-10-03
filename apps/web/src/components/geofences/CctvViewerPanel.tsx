@@ -53,11 +53,13 @@ export default function CctvViewerPanel({
   error = false,
   onSelectCamera,
   onClose,
+  publicTotal,
 }: {
   cameras: SpatialWorldEntity[]
   selectedCameraId: string | null
   loading?: boolean
   error?: boolean
+  publicTotal?: number | null
   onSelectCamera: (id: string) => void
   onClose: () => void
 }) {
@@ -213,7 +215,7 @@ export default function CctvViewerPanel({
         <div className="gev-cctv-heading">
           <span className="gev-cctv-kicker"><Camera size={12} /> PUBLIC CAMERA NETWORK</span>
           <strong>CCTV / CAMERA WALL</strong>
-          <span>{cameras.length} public camera{cameras.length === 1 ? '' : 's'} in current viewport · verified embeddable previews</span>
+          <span>{cameras.length} camera{cameras.length === 1 ? '' : 's'} currently renderable · {publicTotal != null ? `${publicTotal.toLocaleString()} public records` : 'provider search'} · embeddable sources only</span>
         </div>
         <div className="gev-cctv-head-actions">
           <button type="button" className="gev-cctv-icon" onClick={() => setRefreshTick(t => t + 1)} aria-label="Refresh selected camera" title="Refresh selected camera"><RefreshCw size={13} /></button>
