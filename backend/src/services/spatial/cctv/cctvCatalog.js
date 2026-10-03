@@ -164,7 +164,19 @@ async function loadOpenEyeCatalog(options = {}) {
         : Array.isArray(payload?.data)
           ? payload.data
           : [];
-    const normalized = rows.map((row, index) => {
+    const eligibleRows = rows.filter(row => {
+      const view = asRecord(row?.view);
+      const redistribution = asRecord(row?.redistribution);
+      const renderMode = String(view.render || '').toLowerCase();
+      const previewAllowed = redistribution.preview_embed === true;
+      const previewUrl = safeHttpsUrl(view.url || row?.preview_url);
+      const publicViewerUrl = renderMode === 'link'
+        ? safeHttpsUrl(view.url || row?.public_url || row?.url)
+        : null;
+      return (renderMode === 'image' && previewAllowed && Boolean(previewUrl)) ||
+        (renderMode === 'link' && Boolean(publicViewerUrl));
+    });
+    const normalized = eligibleRows.map((row, index) => {
       const media = openEyeMedia(row);
       const live = row.live === true;
       const age = Number(row.last_frame_age_s);
@@ -214,12 +226,6 @@ async function loadOpenEyeCatalog(options = {}) {
         }
       }, index);
       if (!normalized) return null;
-      // Only renderable stills or explicit public viewer pages may enter the
-      // operator-facing set. A source image that forbids preview embedding but
-      // does not expose a public viewer URL must be omitted rather than guessed.
-      const renderMode = String(row.view?.render || '').toLowerCase();
-      const viewerOnly = renderMode === 'link' && Boolean(media.sourcePageUrl);
-      if (!media.direct && !viewerOnly) return null;
       return normalized;
     }).filter(Boolean);
 
