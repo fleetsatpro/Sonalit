@@ -105,7 +105,7 @@ function openEyeMedia(row) {
   // This sends the operator to the source bytes in the publisher's own context;
   // Sonalit never rehosts or proxies this URL.
   const sourceMediaUrl = !previewAllowed && ['image', 'video', 'mjpeg'].includes(render)
-    ? viewUrl
+    ? safeHttpsUrl(view.url || '')
     : null;
   const sourceMediaType = sourceMediaUrl
     ? String(view.url_type || render || '').toLowerCase()
