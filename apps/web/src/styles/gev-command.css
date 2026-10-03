@@ -2368,3 +2368,28 @@
   .gev-cctv-panel { bottom:calc(39vh + 14px); max-height:min(58vh,470px); }
 }
 @media (prefers-reduced-motion:reduce) { .gev-cctv-trigger { transition:none; } }
+
+
+/* Source-preserved open-model imagery enhancement status. Intentionally static:
+   the inference worker is bounded and must never create an animation/render loop. */
+.gev-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(142,240,203,.20);
+  border-radius: 7px;
+  background: rgba(4,12,13,.72);
+  color: rgba(222,255,247,.86);
+  font: 700 9px/1 'IBM Plex Mono', monospace;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.gev-ai-badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8ef0cb;
+  box-shadow: 0 0 8px rgba(142,240,203,.7);
+}
