@@ -165,17 +165,38 @@ export default function GodsEyeView() {
     [worldContext],
   )
 
-  const { data: cctvCatalog = [], isFetching: cctvFetching, isError: cctvError } = useQuery<SpatialWorldEntity[]>({
-    queryKey: ['gev-cctv-catalog'],
+  const { data: cctvResult, isFetching: cctvFetching, isError: cctvError } = useQuery<{
+    data: SpatialWorldEntity[]
+    health?: { recordCount?: number; acceptedCount?: number; status?: string }
+    coverage?: { complete?: boolean; bounded?: boolean; queryScope?: string; providers?: Record<string, { status?: string; recordCount?: number; total?: number | null; free?: number | null }> }
+    warnings?: string[]
+  }>({
+    queryKey: ['gev-cctv-catalog', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM],
     queryFn: async () => {
-      const response = await api.get<{ data: SpatialWorldEntity[] }>('/cctv/cameras', { params: { limit: 80 } })
-      return response.data.data ?? []
+      const response = await api.get<{
+        data: SpatialWorldEntity[]
+        health?: { recordCount?: number; acceptedCount?: number; status?: string }
+        coverage?: { complete?: boolean; bounded?: boolean; queryScope?: string; providers?: Record<string, { status?: string; recordCount?: number; total?: number | null; free?: number | null }> }
+        warnings?: string[]
+      }>('/cctv/cameras', {
+        params: {
+          lat: worldViewport.latitude,
+          lng: worldViewport.longitude,
+          radiusM: Math.min(100000, worldViewport.radiusM),
+          limit: 120,
+        },
+      })
+      return response.data
     },
     enabled: view === '3D' && cctvOpen,
-    staleTime: 60_000,
+    staleTime: 45_000,
     refetchOnWindowFocus: false,
     retry: 1,
   })
+
+  const cctvCatalog = cctvResult?.data ?? []
+  const cctvCoverage = cctvResult?.coverage
+  const cctvPublicTotal = cctvCoverage?.providers?.openeye?.free ?? cctvCoverage?.providers?.openeye?.total ?? cctvCatalog.length
 
   const cctvEntities = useMemo(
     () => cctvCatalog.filter(entity => Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude)),
