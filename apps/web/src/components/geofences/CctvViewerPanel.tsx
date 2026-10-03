@@ -1,7 +1,7 @@
 import { Camera, Maximize2, RefreshCw, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api.js'
-import { enhanceImageBitmap, preferredImageryAiScale, isImageryAiEnabled } from '../../lib/imageryAi.js'
+import { enhanceImageBitmap, preferredImageryAiScale, isImageryAiEnabled, IMAGERY_AI_CCTV_MAX_INPUT_EDGE } from '../../lib/imageryAi.js'
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js'
 
 const FRAME_REFRESH_MS = 8_000
@@ -111,7 +111,7 @@ export default function CctvViewerPanel({
         if (!isSyntheticFrame && isImageryAiEnabled()) {
           try {
             const sourceBitmap = await createImageBitmap(response.data)
-            const enhanced = await enhanceImageBitmap(sourceBitmap, preferredImageryAiScale())
+            const enhanced = await enhanceImageBitmap(sourceBitmap, preferredImageryAiScale(), IMAGERY_AI_CCTV_MAX_INPUT_EDGE)
             if (!disposed && enhanced) {
               aiBitmapRef.current?.close()
               aiBitmapRef.current = enhanced
