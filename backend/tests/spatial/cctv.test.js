@@ -105,6 +105,26 @@ describe('spatial CCTV capability', () => {
     );
   });
 
+  test('falls back to OpenEye map index when enriched catalog has no renderable rows', async () => {
+    clearOpenEyeCache();
+    process.env.CCTV_ENABLE_OPENEYE = '1';
+    let call = 0;
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+      call += 1;
+      if (call === 1) return { ok:true, json:async()=>({ total:12, free:12, items:[] }) };
+      return { ok:true, json:async()=>({ mode:'items', total:2, free:2, items:[
+        { id:'map-ke-1', handle:'nairobi-map-1', title:'Nairobi public camera', lat:-1.2864, lon:36.8172, category:'traffic', is_free:true },
+        { id:'map-ke-2', handle:'mombasa-map-1', title:'Mombasa public camera', lat:-4.0435, lon:39.6682, category:'traffic', is_free:true }
+      ] }) };
+    });
+    const rows = await loadOpenEyeCatalog({ bbox:[36,-5,40,1], maxRecords:20 });
+    expect(rows).toHaveLength(2);
+    expect(rows.every(row => row.entityType === 'camera')).toBe(true);
+    expect(rows[0].attributes.catalogClass).toBe('public-camera-map-index');
+    expect(rows[0].media.sourcePageUrl).toContain('openeye.cam/cam/map-ke-1');
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('https://api.openeye.cam/v1/catalog/map?'), expect.objectContaining({ headers:{Accept:'application/json'} }));
+  });
+
   test('asserts geometry visibility only when target is inside heading/FOV/range', () => {
     const camera = SAMPLE_CAMERAS[0];
     const visible = pointInViewshed(camera, {
