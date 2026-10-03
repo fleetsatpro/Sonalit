@@ -115,7 +115,7 @@ describe('spatial CCTV capability', () => {
       json:async()=>payload
     });
     const rows = await loadOpenEyeCatalog({ center:{latitude:-1.2864,longitude:36.8172}, radiusM:25000, maxRecords:20 });
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     expect(rows.find(row => row.id === 'openeye:stream-paid')).toBeUndefined();
     expect(rows.find(row => row.id === 'openeye:stream-restricted')).toBeDefined();
     expect(rows[0].source).toBe('openeye-public');
@@ -131,6 +131,9 @@ describe('spatial CCTV capability', () => {
     expect(rows[2].media.direct).toBe(false);
     expect(rows[2].media.sourcePageUrl).toBe('https://publisher.example.test/camera/public-view');
     expect(rows[2].provenance.attribution).toBe('Publisher Camera Network');
+    expect(rows[3].media.direct).toBe(false);
+    expect(rows[3].media.sourcePageUrl).toBe('https://publisher.example.test/camera/no-preview');
+    expect(rows[3].provenance.attribution).toBe('Publisher Camera Network');
     expect(getCameraCatalogHealth().openeye.status).toBe('LIVE');
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining('https://api.openeye.cam/v1/catalog?'),
