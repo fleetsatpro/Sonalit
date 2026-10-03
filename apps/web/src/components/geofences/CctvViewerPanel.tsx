@@ -111,9 +111,15 @@ export default function CctvViewerPanel({
       clearAiBitmap()
       const media = cameraMedia(activeCamera)
       const directPreviewUrl = String(media.previewUrl ?? media.url ?? '').trim()
+      const directViewerUrl = String(media.sourcePageUrl ?? '').trim()
       const directRenderable = Boolean(media.direct) && String(media.kind ?? '').toLowerCase() === 'image' && Boolean(directPreviewUrl)
+      const viewerOnly = Boolean(directViewerUrl) && !directRenderable
       try {
-        if (directRenderable) {
+        if (viewerOnly) {
+          setFrameUrl(null)
+          setSynthetic(false)
+          setFrameState('idle')
+        } else if (directRenderable) {
           setFrameUrl(directPreviewUrl)
           setSynthetic(false)
           setFrameState('ready')
@@ -232,6 +238,13 @@ export default function CctvViewerPanel({
                 <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} decoding="async" style={{ opacity: aiEnhanced ? 0 : 1 }} />
                 <canvas ref={aiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: aiEnhanced ? 'block' : 'none' }} />
               </>
+            ) : directViewerUrl ? (
+              <div className="gev-cctv-frame-placeholder">
+                <Camera size={22} />
+                <strong>PUBLIC CAMERA VIEW</strong>
+                <span>This source does not permit an embedded frame. Open the publisher's public viewer to see the current camera.</span>
+                <a className="gev-cctv-open-source" href={directViewerUrl} target="_blank" rel="noreferrer noopener">OPEN PUBLIC VIEW</a>
+              </div>
             ) : (
               <div className="gev-cctv-frame-placeholder">
                 <Camera size={22} />
@@ -283,7 +296,7 @@ export default function CctvViewerPanel({
           <div className="gev-cctv-note">
             {error
               ? 'Camera catalog sync is degraded; the last known catalog remains visible.'
-              : 'Viewshed geometry describes possible visibility only. The viewer shows only media returned through the approved CCTV gateway; synthetic samples are explicitly labelled. Configured video/MJPEG sources remain gateway-controlled.'}
+              : 'Viewshed geometry describes possible visibility only. The wall renders only sources permitted by their public redistribution metadata; viewer-only cameras open at the publisher. Synthetic samples are explicitly labelled.'}
           </div>
         </>
       ) : (
