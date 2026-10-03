@@ -27,6 +27,7 @@ import { restoreAccessToken } from './lib/api.js';
 import OfflineGuard from './components/OfflineGuard.js';
 import UpdateAvailableToast from './components/UpdateAvailableToast.js';
 
+installImageryAiMapLibreProtocol();
 initOtel();
 initSentry();
 
