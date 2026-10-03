@@ -36,6 +36,7 @@ export interface RiskZone {
 type MapMode = 'dark' | 'satellite' | 'hybrid';
 
 const TOKEN = (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined)?.trim() ?? '';
+const GOOGLE_KEY = (import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] as string | undefined)?.trim() ?? '';
 const STREET_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
 const SATELLITE_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const ROADS_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
@@ -246,8 +247,12 @@ export default function CorridorWorldScene({
   const initialGlobalFitDoneRef = useRef(false);
   const initialLocalFitDoneRef = useRef(false);
   const renderRecoveryRef = useRef(0);
+  const photoTilesetRef = useRef<Cesium.Cesium3DTileset | null>(null);
+  const modeRef = useRef<MapMode>(globalView ? 'satellite' : 'dark');
+  const surfaceQualityRef = useRef<'loading' | 'photorealistic' | 'terrain' | 'fallback'>('loading');
   const [mode, setMode] = useState<MapMode>(globalView ? 'satellite' : 'dark');
-  const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
+  const [surfaceQuality, setSurfaceQuality] = useState<'loading' | 'photorealistic' | 'terrain' | 'fallback'>('loading');
+  const [mapStatus, setMapStatus] = useState('HIGH-FIDELITY 3D SURFACE LOADING');
   const [terrainReady, setTerrainReady] = useState(false);
   const [initFailed, setInitFailed] = useState(false);
   const [creditsOpen, setCreditsOpen] = useState(false);
@@ -255,6 +260,8 @@ export default function CorridorWorldScene({
   selectRef.current = onSelect;
   externalSelectRef.current = onExternalSelect;
   onViewportChangeRef.current = onViewportChange;
+  modeRef.current = mode;
+  surfaceQualityRef.current = surfaceQuality;
 
   const height = Math.max(200, ceilingM || Math.min(1800, Math.max(700, corridorKm * 500)));
   const liveMembers = useMemo(() => members.filter(m => m.lat != null && m.lng != null), [members]);
@@ -280,7 +287,7 @@ export default function CorridorWorldScene({
         terrainProvider: new Cesium.EllipsoidTerrainProvider(),
         animation: false,
         baseLayerPicker: false,
-        geocoder: false,
+        geocoder: TOKEN ? Cesium.IonGeocodeProviderType.GOOGLE : false,
         homeButton: false,
         infoBox: false,
         sceneModePicker: false,
@@ -327,7 +334,9 @@ export default function CorridorWorldScene({
     viewer.scene.fog.density = 0.000009;
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
-    viewer.scene.globe.tileCacheSize = highFidelity ? 1200 : 500;
+    viewer.scene.globe.tileCacheSize = highFidelity ? 1600 : 650;
+    viewer.scene.globe.preloadAncestors = true;
+    viewer.scene.globe.preloadSiblings = true;
     viewer.scene.msaaSamples = viewer.scene.msaaSupported ? (highFidelity ? 8 : 2) : 1;
     // GEV is a presentation-grade spatial surface: preserve high-DPI raster
     // density while keeping mobile GPU pressure bounded.
@@ -359,7 +368,8 @@ export default function CorridorWorldScene({
       bloom.uniforms.glowOnly = false;
       viewer.scene.postProcessStages.add(bloom);
     }
-    setMapStatus(TOKEN ? 'CESIUM + ESRI · LIVE' : 'ESRI FALLBACK · ION TOKEN NOT EXPOSED');
+    setSurfaceQuality('loading');
+    setMapStatus('HIGH-FIDELITY 3D SURFACE LOADING');
 
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
@@ -423,29 +433,79 @@ export default function CorridorWorldScene({
     resize();
 
     (async () => {
-      if (!TOKEN || viewer.isDestroyed()) return;
-      try {
-        const terrain = await Cesium.createWorldTerrainAsync();
-        if (viewer.isDestroyed()) return;
-        viewer.terrainProvider = terrain;
-        setTerrainReady(true);
-        viewer.scene.requestRender();
-      } catch {
-        setMapStatus('ESRI SURFACE · TERRAIN DEGRADED');
-      }
-    })();
+      const alive = () => !viewer.isDestroyed();
+      const canUsePhotorealistic = Boolean(GOOGLE_KEY || TOKEN);
 
-    (async () => {
-      if (!TOKEN || viewer.isDestroyed()) return;
-      try {
-        const buildings = await Cesium.createOsmBuildingsAsync();
-        if (!viewer.isDestroyed()) {
-          viewer.scene.primitives.add(buildings);
+      // First choice: Google's photorealistic global 3D tiles. This replaces
+      // the flat raster-only globe with streamed, textured 3D geometry where
+      // coverage is available. The same Google key already used by Drive
+      // Replay is reused here; no new secret is invented.
+      if (canUsePhotorealistic) {
+        try {
+          if (GOOGLE_KEY) {
+            (Cesium as unknown as { GoogleMaps: { defaultApiKey: string } }).GoogleMaps.defaultApiKey = GOOGLE_KEY;
+          }
+          Cesium.RequestScheduler.requestsByServer['tile.googleapis.com:443'] = 18;
+          const tileset = await Cesium.createGooglePhotorealistic3DTileset(undefined, {
+            showCreditsOnScreen: true,
+          });
+          if (!alive()) return;
+          photoTilesetRef.current = viewer.scene.primitives.add(tileset);
+          viewer.scene.globe.show = false;
+          surfaceQualityRef.current = 'photorealistic';
+          setSurfaceQuality('photorealistic');
+          setMapStatus('GOOGLE PHOTOREALISTIC 3D · STREAMING');
           viewer.scene.requestRender();
+          return;
+        } catch {
+          // Fall through to the Cesium World Terrain surface below.
         }
-      } catch {
-        // Buildings are an enhancement, never a dependency for the operational map.
       }
+
+      // Second choice: Cesium World Terrain + high-resolution global aerial
+      // imagery + OSM buildings. This retains true relief and 3D structures
+      // even when Google's photorealistic layer is unavailable.
+      if (TOKEN) {
+        let imageryLoaded = false;
+        try {
+          const imagery = await Cesium.createWorldImageryAsync({
+            style: modeRef.current === 'hybrid'
+              ? Cesium.IonWorldImageryStyle.AERIAL_WITH_LABELS
+              : Cesium.IonWorldImageryStyle.AERIAL,
+          });
+          if (!alive()) return;
+          viewer.imageryLayers.removeAll();
+          viewer.imageryLayers.addImageryProvider(imagery);
+          imageryLoaded = true;
+        } catch {
+          // Keep the immediate Esri fallback layer.
+        }
+        try {
+          const terrain = await Cesium.createWorldTerrainAsync({ requestVertexNormals: true, requestWaterMask: true });
+          if (!alive()) return;
+          viewer.terrainProvider = terrain;
+          setTerrainReady(true);
+        } catch {
+          // Ellipsoid terrain remains available.
+        }
+        try {
+          const buildings = await Cesium.createOsmBuildingsAsync();
+          if (!alive()) return;
+          viewer.scene.primitives.add(buildings);
+        } catch {
+          // Buildings are an enhancement, never a dependency for the world surface.
+        }
+        surfaceQualityRef.current = 'terrain';
+        setSurfaceQuality('terrain');
+        setMapStatus(imageryLoaded ? 'CESIUM WORLD TERRAIN · 3D BUILDINGS' : 'CESIUM TERRAIN · ESRI IMAGERY FALLBACK');
+        viewer.scene.requestRender();
+        return;
+      }
+
+      surfaceQualityRef.current = 'fallback';
+      setSurfaceQuality('fallback');
+      setMapStatus('ESRI 3D FALLBACK · NO HIGH-FIDELITY TOKEN');
+      viewer.scene.requestRender();
     })();
 
     return () => {
@@ -455,6 +515,10 @@ export default function CorridorWorldScene({
       viewer.scene.renderError.removeEventListener(renderErrorHandler);
       viewer.camera.moveEnd.removeEventListener(syncViewport);
       renderRecoveryRef.current = 0;
+      if (photoTilesetRef.current) {
+        try { viewer.scene.primitives.remove(photoTilesetRef.current); } catch { /* viewer teardown */ }
+        photoTilesetRef.current = null;
+      }
       entityMapRef.current.clear();
       externalEntityMapRef.current.clear();
       currentRef.current.clear();
@@ -471,6 +535,22 @@ export default function CorridorWorldScene({
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
+    modeRef.current = mode;
+    if (surfaceQualityRef.current === 'photorealistic') {
+      setMapStatus('GOOGLE PHOTOREALISTIC 3D · STREAMING');
+      return;
+    }
+    if (surfaceQualityRef.current === 'terrain' && TOKEN) {
+      void Cesium.createWorldImageryAsync({
+        style: mode === 'hybrid' ? Cesium.IonWorldImageryStyle.AERIAL_WITH_LABELS : Cesium.IonWorldImageryStyle.AERIAL,
+      }).then(provider => {
+        if (viewer.isDestroyed() || surfaceQualityRef.current !== 'terrain') return;
+        viewer.imageryLayers.removeAll();
+        viewer.imageryLayers.addImageryProvider(provider);
+        viewer.scene.requestRender();
+      }).catch(() => { /* preserve the current imagery surface */ });
+      return;
+    }
     addImagery(viewer, mode, message => setMapStatus(message));
     viewer.scene.requestRender();
   }, [mode]);
