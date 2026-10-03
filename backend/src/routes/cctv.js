@@ -6,7 +6,7 @@ const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { getCameras, getNearestCameras } = require('../services/spatial/cctvGateway');
-const { getCameraCatalog } = require('../services/spatial/cctv/cctvCatalog');
+const { getCameraById } = require('../services/spatial/cctv/cctvCatalog');
 const { getFrame, getMedia } = require('../services/spatial/cctv/cctvMediaProxy');
 const { Readable } = require('node:stream');
 
@@ -50,6 +50,7 @@ router.get('/nearest', asyncHandler(async (req,res) => {
   const result = await getNearestCameras({
     ...target,
     limit:Math.min(20, Math.max(1, numberOrNull(req.query.limit) || 5)),
+    radiusM:numberOrNull(req.query.radiusM) || 25000,
     requireVisible:String(req.query.requireVisible || '').toLowerCase() === 'true'
   });
   res.json({ data:result, meta:{ generated_at:new Date().toISOString() } });
@@ -57,8 +58,7 @@ router.get('/nearest', asyncHandler(async (req,res) => {
 
 router.get('/:id/media', asyncHandler(async (req,res) => {
   const id = String(req.params.id);
-  const cameras = await getCameraCatalog();
-  const camera = cameras.find(item => String(item.id) === id);
+  const camera = await getCameraById(id);
   if (!camera) return res.status(404).json({ error:'Camera not found' });
   const media = await getMedia(camera);
   if (media.response.body) {
@@ -75,8 +75,7 @@ router.get('/:id/media', asyncHandler(async (req,res) => {
 
 router.get('/:id/frame', asyncHandler(async (req,res) => {
   const id = String(req.params.id);
-  const cameras = await getCameraCatalog();
-  const camera = cameras.find(item => String(item.id) === id);
+  const camera = await getCameraById(id);
   if (!camera) return res.status(404).json({ error:'Camera not found' });
   const frame = await getFrame(camera);
   res.setHeader('Content-Type', frame.contentType);

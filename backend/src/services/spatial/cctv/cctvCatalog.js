@@ -27,6 +27,232 @@ const SAMPLE_CAMERAS = [
   }
 }));
 
+const OPENEYE_BASE_URL = 'https://api.openeye.cam/v1';
+const OPENEYE_CACHE_TTL_MS = 45_000;
+const OPENEYE_MAX_LIMIT = 250;
+
+const providerHealth = {
+  openeye: { enabled: true, status:'UNKNOWN', lastSuccessAt:null, lastAttemptAt:null, recordCount:0, total:null, free:null, error:null },
+  file: { enabled:false, status:'UNKNOWN', lastSuccessAt:null, recordCount:0, error:null },
+  tfl: { enabled:false, status:'UNKNOWN', lastSuccessAt:null, recordCount:0, error:null }
+};
+const openEyeCache = new Map();
+
+function clearOpenEyeCache() {
+  openEyeCache.clear();
+}
+
+
+
+function asRecord(value) {
+  return value && typeof value === 'object' ? value : {};
+}
+
+function safeHttpsUrl(value) {
+  const candidate = String(value || '').trim();
+  if (!candidate) return null;
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'https:' ? parsed.toString() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function bboxFromCenter(center, radiusM) {
+  if (!center) return null;
+  const latitude = Number(center.latitude);
+  const longitude = Number(center.longitude);
+  const radius = Math.max(1, Number(radiusM) || 25000);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  const latDelta = radius / 111320;
+  const cos = Math.max(0.2, Math.cos(latitude * Math.PI / 180));
+  const lonDelta = radius / (111320 * cos);
+  return [
+    Math.max(-180, longitude - lonDelta),
+    Math.max(-90, latitude - latDelta),
+    Math.min(180, longitude + lonDelta),
+    Math.min(90, latitude + latDelta)
+  ];
+}
+
+function normalizeBbox(value) {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  const numbers = value.map(Number);
+  if (!numbers.every(Number.isFinite)) return null;
+  const [west, south, east, north] = numbers;
+  if (west < -180 || east > 180 || south < -90 || north > 90 || west >= east || south >= north) return null;
+  return [west, south, east, north];
+}
+
+function openEyeMedia(row) {
+  const view = asRecord(row.view);
+  const redistribution = asRecord(row.redistribution);
+  const attribution = asRecord(redistribution.attribution);
+  const render = String(view.render || 'none').toLowerCase();
+  const previewAllowed = redistribution.preview_embed === true;
+  const viewUrl = safeHttpsUrl(view.url || row.preview_url);
+  const renderableImage = render === 'image' && previewAllowed && Boolean(viewUrl);
+  const sourcePageUrl = safeHttpsUrl(
+    render === 'link' ? view.url :
+    row.public_url ?? row.url ?? ''
+  );
+  const publicViewer = sourcePageUrl || viewUrl;
+  return {
+    kind: renderableImage ? 'image' : 'synthetic',
+    url: renderableImage ? viewUrl : null,
+    frameUrl: renderableImage ? viewUrl : null,
+    previewUrl: renderableImage ? viewUrl : null,
+    sourcePageUrl,
+    direct: renderableImage,
+    publicSource: true,
+    redistribution,
+    attributionName: String(attribution.name || '').trim() || null,
+    attributionUrl: String(attribution.url || '').trim() || null,
+    refreshIntervalMs: Number.isFinite(Number(row.frame_interval_s))
+      ? Math.max(15000, Number(row.frame_interval_s) * 1000)
+      : 60000
+  };
+}
+
+async function loadOpenEyeCatalog(options = {}) {
+  const enabled = String(process.env.CCTV_ENABLE_OPENEYE || '1') !== '0';
+  providerHealth.openeye.enabled = enabled;
+  if (!enabled) {
+    providerHealth.openeye.status = 'DISABLED';
+    return [];
+  }
+
+  const bbox = normalizeBbox(options.bbox) || bboxFromCenter(options.center, options.radiusM);
+  const limit = Math.max(1, Math.min(OPENEYE_MAX_LIMIT, Number(options.maxRecords) || 100));
+  const key = JSON.stringify({ bbox, center:options.center || null, radiusM:Number(options.radiusM) || null, limit });
+  const cached = openEyeCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.rows;
+
+  const params = new URLSearchParams();
+  if (options.center) {
+    const lat = Number(options.center.latitude);
+    const lon = Number(options.center.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      params.set('near', lat + ',' + lon);
+      params.set('radius_km', String(Math.max(1, (Number(options.radiusM) || 25000) / 1000)));
+    }
+  } else if (bbox) {
+    params.set('bbox', bbox.join(','));
+  }
+  params.set('embeddable', '1');
+  params.set('is_free', '1');
+  params.set('limit', String(limit));
+  params.set('sort', 'fresh');
+
+  const attempt = new Date().toISOString();
+  providerHealth.openeye.lastAttemptAt = attempt;
+  try {
+    const response = await fetch(OPENEYE_BASE_URL + '/catalog?' + params.toString(), {
+      headers:{ Accept:'application/json' }
+    });
+    if (!response.ok) {
+      throw Object.assign(new Error('OpenEye catalog request failed: ' + response.status), {
+        failureClass: response.status === 429 ? 'rate_limited' : 'http_error'
+      });
+    }
+    const payload = await response.json();
+    const rows = Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.cameras)
+        ? payload.cameras
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : [];
+    const eligibleRows = rows.filter(row => {
+      const view = asRecord(row?.view);
+      const redistribution = asRecord(row?.redistribution);
+      const renderMode = String(view.render || '').toLowerCase();
+      const previewAllowed = redistribution.preview_embed === true;
+      const previewUrl = safeHttpsUrl(view.url || row?.preview_url);
+      const publicViewerUrl = renderMode === 'link'
+        ? safeHttpsUrl(view.url || row?.public_url || row?.url)
+        : null;
+      return (renderMode === 'image' && previewAllowed && Boolean(previewUrl)) ||
+        (renderMode === 'link' && Boolean(publicViewerUrl));
+    });
+    const normalized = eligibleRows.map((row, index) => {
+      const media = openEyeMedia(row);
+      const live = row.live === true;
+      const age = Number(row.last_frame_age_s);
+      const category = String(row.category || 'other');
+      return normalizeRecord({
+        id:'openeye:' + String(row.id || row.handle || index),
+        name:row.title || row.handle || row.id || ('OpenEye camera ' + index),
+        latitude:row.lat,
+        longitude:row.lon,
+        source:'openeye-public',
+        sourceReference:String(row.handle || row.id || index),
+        headingDeg:row.heading,
+        pose:{ confidence:'unknown' },
+        viewshed:{ horizontalFovDeg:90, maxRangeM:5000 },
+        media,
+        health:{
+          status:live ? 'LIVE' : (age > 86400 ? 'STALE' : 'UNKNOWN'),
+          lastSuccessAt:row.frame_ts ? new Date(Number(row.frame_ts)).toISOString() : null,
+          reason:live ? null : 'OpenEye directory reports no current frame.'
+        },
+        provenance:{
+          sourceName:media.attributionName || 'OpenEye public camera directory',
+          sourceUrl:media.attributionUrl || 'https://openeye.cam/',
+          attribution:media.attributionName || 'OpenEye public camera directory',
+          attributionUrl:media.attributionUrl || 'https://openeye.cam/',
+          observationType:'public_camera_directory',
+          license:null,
+          sourceReference:String(row.handle || row.id || index)
+        },
+        attributes:{
+          provider:'OpenEye',
+          providerCameraId:row.id || null,
+          handle:row.handle || null,
+          category,
+          live,
+          lastFrameAgeS:Number.isFinite(age) ? age : null,
+          frameIntervalS:Number.isFinite(Number(row.frame_interval_s)) ? Number(row.frame_interval_s) : null,
+          frameTimestamp:row.frame_ts || null,
+          previewState:row.preview_refresh?.status || null,
+          viewRender:String(row.view?.render || 'none'),
+          viewHosted:String(row.view?.hosted || 'unknown'),
+          sourcePageUrl:media.sourcePageUrl,
+          attributionName:media.attributionName,
+          attributionUrl:media.attributionUrl,
+          redistribution:media.redistribution,
+          catalogClass:'public-live-directory'
+        }
+      }, index);
+      if (!normalized) return null;
+      return normalized;
+    }).filter(Boolean);
+
+    providerHealth.openeye = {
+      ...providerHealth.openeye,
+      enabled:true,
+      status:'LIVE',
+      lastSuccessAt:new Date().toISOString(),
+      lastAttemptAt:attempt,
+      recordCount:normalized.length,
+      total:Number.isFinite(Number(payload.total)) ? Number(payload.total) : null,
+      free:Number.isFinite(Number(payload.free)) ? Number(payload.free) : null,
+      error:null
+    };
+    openEyeCache.set(key, { rows:normalized, expiresAt:Date.now() + OPENEYE_CACHE_TTL_MS });
+    return normalized;
+  } catch (error) {
+    providerHealth.openeye = {
+      ...providerHealth.openeye,
+      status:'UNAVAILABLE',
+      lastAttemptAt:attempt,
+      error:String(error?.message || error)
+    };
+    return [];
+  }
+}
+
 function normalizeRecord(raw, index) {
   if (!raw || typeof raw !== 'object') return null;
   const latitude = Number(raw.latitude ?? raw.lat);
@@ -59,8 +285,15 @@ function normalizeRecord(raw, index) {
       kind: ['image','video','mjpeg','synthetic'].includes(String(raw.media?.kind || raw.mediaKind)) ? String(raw.media?.kind || raw.mediaKind) : (mediaUrl ? 'video' : 'synthetic'),
       url:mediaUrl ? String(mediaUrl) : null,
       frameUrl:raw.media?.frameUrl ? String(raw.media.frameUrl) : null,
+      previewUrl:raw.media?.previewUrl ? String(raw.media.previewUrl) : null,
+      sourcePageUrl:raw.media?.sourcePageUrl ? String(raw.media.sourcePageUrl) : null,
+      direct:Boolean(raw.media?.direct),
       available:Boolean(mediaUrl) || String(raw.media?.kind) === 'synthetic',
-      publicSource:Boolean(raw.media?.publicSource ?? raw.publicSource ?? Boolean(mediaUrl))
+      publicSource:Boolean(raw.media?.publicSource ?? raw.publicSource ?? Boolean(mediaUrl)),
+      refreshIntervalMs:Number.isFinite(Number(raw.media?.refreshIntervalMs)) ? Number(raw.media.refreshIntervalMs) : null,
+      redistribution:raw.media?.redistribution ?? null,
+      attributionName:raw.media?.attributionName ?? null,
+      attributionUrl:raw.media?.attributionUrl ?? null
     },
     health:{
       status:['LIVE','DEGRADED','STALE','UNAVAILABLE','UNKNOWN'].includes(String(raw.health?.status)) ? String(raw.health.status) : 'UNKNOWN',
@@ -73,6 +306,7 @@ function normalizeRecord(raw, index) {
       sourceUrl:raw.provenance?.sourceUrl || null,
       license:raw.provenance?.license || null,
       attribution:raw.provenance?.attribution || null,
+      attributionUrl:raw.provenance?.attributionUrl || null,
       observationType:raw.provenance?.observationType || 'public_camera',
       sourceReference:String(raw.provenance?.sourceReference || id)
     },
@@ -83,12 +317,19 @@ function normalizeRecord(raw, index) {
 
 async function loadFileCatalog() {
   const location = String(process.env.CCTV_CATALOG_FILE || '').trim();
-  if (!location) return [];
+  providerHealth.file.enabled = Boolean(location);
+  if (!location) {
+    providerHealth.file.status = 'DISABLED';
+    return [];
+  }
   try {
     const payload = JSON.parse(await fs.readFile(location, 'utf8'));
     const rows = Array.isArray(payload) ? payload : Array.isArray(payload.cameras) ? payload.cameras : [];
-    return rows.map(normalizeRecord).filter(Boolean);
-  } catch (_) {
+    const normalized = rows.map(normalizeRecord).filter(Boolean);
+    providerHealth.file = { ...providerHealth.file, enabled:true, status:'LIVE', lastSuccessAt:new Date().toISOString(), recordCount:normalized.length, error:null };
+    return normalized;
+  } catch (error) {
+    providerHealth.file = { ...providerHealth.file, status:'UNAVAILABLE', error:String(error?.message || error) };
     return [];
   }
 }
@@ -107,7 +348,11 @@ function extractTflMedia(properties) {
 }
 
 async function loadTflCatalog() {
-  if (String(process.env.CCTV_ENABLE_TFL || '') !== '1') return [];
+  providerHealth.tfl.enabled = String(process.env.CCTV_ENABLE_TFL || '') === '1';
+  if (!providerHealth.tfl.enabled) {
+    providerHealth.tfl.status = 'DISABLED';
+    return [];
+  }
   const url = new URL('https://api.tfl.gov.uk/Place/Type/JamCam');
   if (process.env.TFL_APP_ID) url.searchParams.set('app_id', process.env.TFL_APP_ID);
   if (process.env.TFL_APP_KEY) url.searchParams.set('app_key', process.env.TFL_APP_KEY);
@@ -139,12 +384,104 @@ async function loadTflCatalog() {
   }).filter(Boolean);
 }
 
-async function getCameraCatalog() {
-  const [fileRows, tflRows] = await Promise.all([loadFileCatalog(), loadTflCatalog().catch(() => [])]);
-  const all = fileRows.concat(tflRows, SAMPLE_CAMERAS);
+async function loadOpenEyeCamera(id) {
+  const enabled = String(process.env.CCTV_ENABLE_OPENEYE || '1') !== '0';
+  if (!enabled || !id) return null;
+  try {
+    const response = await fetch(OPENEYE_BASE_URL + '/catalog/' + encodeURIComponent(String(id)), {
+      headers:{ Accept:'application/json' }
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const row = payload?.item || payload?.data || payload;
+    if (!row || typeof row !== 'object') return null;
+    const media = openEyeMedia(row);
+    if (!media.direct && !media.sourcePageUrl) return null;
+    const live = row.live === true;
+    const age = Number(row.last_frame_age_s);
+    const normalized = normalizeRecord({
+      id:'openeye:' + String(row.id || id),
+      name:row.title || row.handle || row.id || id,
+      latitude:row.lat,
+      longitude:row.lon,
+      source:'openeye-public',
+      sourceReference:String(row.handle || row.id || id),
+      headingDeg:row.heading,
+      pose:{ confidence:'unknown' },
+      viewshed:{ horizontalFovDeg:90, maxRangeM:5000 },
+      media,
+      health:{
+        status:live ? 'LIVE' : (age > 86400 ? 'STALE' : 'UNKNOWN'),
+        lastSuccessAt:row.frame_ts ? new Date(Number(row.frame_ts)).toISOString() : null,
+        reason:live ? null : 'OpenEye directory reports no current frame.'
+      },
+      provenance:{
+        sourceName:media.attributionName || 'OpenEye public camera directory',
+        sourceUrl:media.attributionUrl || 'https://openeye.cam/',
+        attribution:media.attributionName || 'OpenEye public camera directory',
+        attributionUrl:media.attributionUrl || 'https://openeye.cam/',
+        observationType:'public_camera_directory',
+        license:null,
+        sourceReference:String(row.handle || row.id || id)
+      },
+      attributes:{
+        provider:'OpenEye',
+        providerCameraId:row.id || id,
+        handle:row.handle || null,
+        category:row.category || 'other',
+        live,
+        lastFrameAgeS:Number.isFinite(age) ? age : null,
+        frameIntervalS:Number.isFinite(Number(row.frame_interval_s)) ? Number(row.frame_interval_s) : null,
+        frameTimestamp:row.frame_ts || null,
+        previewState:row.preview_refresh?.status || null,
+        viewRender:String(row.view?.render || 'none'),
+        viewHosted:String(row.view?.hosted || 'unknown'),
+        sourcePageUrl:media.sourcePageUrl,
+        attributionName:media.attributionName,
+        attributionUrl:media.attributionUrl,
+        redistribution:media.redistribution,
+        catalogClass:'public-live-directory'
+      }
+    }, 0);
+    return normalized || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function getCameraById(id) {
+  const wanted = String(id || '');
+  if (!wanted) return null;
+  const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
+  const [openEyeRows, fileRows, tflRows] = await Promise.all([
+    wanted.startsWith('openeye:') ? loadOpenEyeCamera(wanted.slice('openeye:'.length)) : Promise.resolve(null),
+    loadFileCatalog(),
+    loadTflCatalog().catch(() => [])
+  ]);
+  if (openEyeRows) return openEyeRows;
+  const all = fileRows.concat(tflRows, includeSamples ? SAMPLE_CAMERAS : []);
+  return all.find(row => String(row.id) === wanted) || null;
+}
+
+async function getCameraCatalog(options = {}) {
+  const [openEyeRows, fileRows, tflRows] = await Promise.all([
+    loadOpenEyeCatalog(options),
+    loadFileCatalog(),
+    loadTflCatalog().catch(() => [])
+  ]);
+  const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
+  const all = openEyeRows.concat(fileRows, tflRows, includeSamples ? SAMPLE_CAMERAS : []);
   const unique = new Map();
   for (const row of all) unique.set(String(row.id), row);
   return Array.from(unique.values());
 }
 
-module.exports = { SAMPLE_CAMERAS, normalizeRecord, loadFileCatalog, loadTflCatalog, getCameraCatalog };
+function getCameraCatalogHealth() {
+  return {
+    openeye:{...providerHealth.openeye},
+    file:{...providerHealth.file},
+    tfl:{...providerHealth.tfl},
+  };
+}
+
+module.exports = { SAMPLE_CAMERAS, normalizeRecord, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, getCameraById, getCameraCatalog, getCameraCatalogHealth, clearOpenEyeCache };

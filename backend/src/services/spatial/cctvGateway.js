@@ -1,6 +1,6 @@
 'use strict';
 
-const { getCameraCatalog } = require('./cctv/cctvCatalog');
+const { getCameraCatalog, getCameraCatalogHealth } = require('./cctv/cctvCatalog');
 const { normaliseCamera, pointInViewshed, rankNearest, buildViewshedPolygon } = require('./cctv/spatialCameraGeometry');
 
 let health = {
@@ -25,7 +25,7 @@ async function getCameras(options = {}) {
   const now = new Date().toISOString();
   health.lastAttemptAt = now;
   try {
-    const raw = await getCameraCatalog();
+    const raw = await getCameraCatalog(options);
     const normalized = raw.map(normaliseCamera).filter(Boolean);
     const cameras = normalized
       .filter(c => inBbox(c, options.bbox))
@@ -62,16 +62,16 @@ async function getCameras(options = {}) {
         }
       })),
       health:{...health},
-      coverage:{complete:false,bounded:true,queryScope:options.bbox ? 'bbox' : 'catalog'}
+      coverage:{complete:false,bounded:true,queryScope:options.bbox ? 'bbox' : options.center ? 'radius' : 'catalog',providers:getCameraCatalogHealth()}
     };
   } catch (error) {
     health = {...health,status:'UNAVAILABLE',lastErrorClass:String(error?.failureClass || 'unknown'),lastErrorMessage:String(error?.message || error)};
-    return { observations:[], health:{...health}, coverage:{complete:false,bounded:true,queryScope:'cctv-catalog'}, warnings:['cctv_catalog_unavailable'] };
+    return { observations:[], health:{...health}, coverage:{complete:false,bounded:true,queryScope:options.bbox ? 'bbox' : options.center ? 'radius' : 'catalog',providers:getCameraCatalogHealth()}, warnings:['cctv_catalog_unavailable'] };
   }
 }
 
 async function getNearestCameras(options = {}) {
-  const catalog = await getCameraCatalog();
+  const catalog = await getCameraCatalog({ center:{ latitude:Number(options.latitude), longitude:Number(options.longitude) }, radiusM:Number(options.radiusM) || 25000, maxRecords:Math.min(250, Math.max(20, Number(options.limit) || 20)) });
   const target = { latitude:Number(options.latitude), longitude:Number(options.longitude) };
   const ranked = rankNearest(catalog.map(normaliseCamera).filter(Boolean), target, options.limit || 5, options.requireVisible === true);
   return ranked.map(x => ({
