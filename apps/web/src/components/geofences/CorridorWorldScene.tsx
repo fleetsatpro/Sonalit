@@ -210,7 +210,14 @@ function vehicleSvg(color: string, selected: boolean) {
 function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: string) => void) {
   viewer.imageryLayers.removeAll();
   const add = (url: string, credit: string, maximumLevel = 19, tune?: (layer: Cesium.ImageryLayer) => void) => {
-    const provider = createAiCesiumImageryProvider(url, credit, maximumLevel, 14);
+    const provider = url === SATELLITE_URL
+      ? createAiCesiumImageryProvider(url, credit, maximumLevel, 14)
+      : new Cesium.UrlTemplateImageryProvider({
+          url,
+          credit: new Cesium.Credit(credit, false),
+          maximumLevel,
+          enablePickFeatures: false,
+        });
     provider.errorEvent.addEventListener(() => onError('Map tiles are unavailable; the fallback world surface is still active.'));
     const layer = viewer.imageryLayers.addImageryProvider(provider);
     tune?.(layer);
@@ -713,7 +720,7 @@ export default function CorridorWorldScene({
       }).then(provider => {
         if (viewer.isDestroyed() || surfaceQualityRef.current !== 'terrain') return;
         viewer.imageryLayers.removeAll();
-        viewer.imageryLayers.addImageryProvider(provider);
+        viewer.imageryLayers.addImageryProvider(wrapCesiumImageryProvider(provider, 14));
         viewer.scene.requestRender();
       }).catch(() => { /* preserve the current imagery surface */ });
       return;
