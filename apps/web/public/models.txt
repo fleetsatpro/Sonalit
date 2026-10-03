@@ -24,3 +24,5 @@ AI UHD enhancement is a visual reconstruction layer. It does not create verified
 Original imagery remains the authoritative source. Enhanced output must be labelled
 source-preserved and must never be used to infer identity, plate text, facial identity,
 precise object dimensions, or other operational facts that are absent from the source.
+
+Deployment synchronization marker: production Git trigger verification.
