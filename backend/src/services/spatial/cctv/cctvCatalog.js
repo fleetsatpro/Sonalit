@@ -122,11 +122,20 @@ async function loadOpenEyeMapFallback(options = {}) {
   const bbox = normalizeBbox(options.bbox) || bboxFromCenter(options.center, options.radiusM);
   if (!bbox) return [];
   const limit = Math.max(1, Math.min(OPENEYE_MAX_LIMIT, Number(options.maxRecords) || 100));
-  const params = new URLSearchParams({ bbox:bbox.join(','), limit:String(limit), zoom:'12', cluster:'none', is_free:'1' });
+  const params = new URLSearchParams({ bbox:bbox.join(','), limit:String(limit), zoom:'12' });
   try {
-    const response = await fetch(OPENEYE_BASE_URL + OPENEYE_MAP_PATH + '?' + params.toString(), { headers:{ Accept:'application/json' } });
-    if (!response.ok) return [];
-    const payload = await response.json();
+    const fetchMap = async (zoom) => {
+      const request = new URLSearchParams(params);
+      request.set('zoom', String(zoom));
+      const response = await fetch(OPENEYE_BASE_URL + OPENEYE_MAP_PATH + '?' + request.toString(), {
+        headers:{ Accept:'application/json' }
+      });
+      if (!response.ok) return null;
+      return response.json();
+    };
+    let payload = await fetchMap(12);
+    if (payload?.mode === 'clusters') payload = await fetchMap(14);
+    if (!payload) return [];
     const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload?.cameras) ? payload.cameras : [];
     return rows.map((row, index) => {
       const id = String(row?.id || row?.handle || 'map-' + index);
@@ -201,7 +210,7 @@ async function loadOpenEyeCatalog(options = {}) {
       const latitude = Number(row?.lat);
       const longitude = Number(row?.lon);
       return Boolean(row?.id) &&
-        row?.is_free === true &&
+        row?.is_free !== false &&
         Number.isFinite(latitude) &&
         Number.isFinite(longitude) &&
         latitude >= -90 && latitude <= 90 &&
