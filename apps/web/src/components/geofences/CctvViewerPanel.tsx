@@ -133,6 +133,7 @@ export default function CctvViewerPanel({
             } catch {
               // Direct public preview remains authoritative when AI/CORS/model inference fails.
             }
+          }
         } else {
           const response = await api.get<Blob>(`/cctv/${encodeURIComponent(activeId)}/frame`, {
             responseType: 'blob',
