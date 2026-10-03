@@ -24,6 +24,11 @@ describe("God's Eye View interaction contract", () => {
     expect(source).toContain("setViewMode('2D')");
     expect(source).toContain("setViewMode('3D')");
     expect(source).toContain('fixedView="3D"');
+    expect(source).toContain('CctvViewerPanel');
+    expect(source).toContain('gev-cctv-trigger');
+    expect(source).toContain("queryKey: ['gev-cctv-catalog']");
+    expect(source).toContain("'/cctv/cameras'");
+    expect(source).toContain('MAX_RENDER_MARKERS = 180');
   });
 
   it('exposes world visibility, layer, panel and entity selection controls', () => {
