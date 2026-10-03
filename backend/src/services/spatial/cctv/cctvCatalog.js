@@ -286,13 +286,19 @@ async function loadOpenEyeCatalog(options = {}) {
     openEyeCache.set(key, { rows:resolved, expiresAt:Date.now() + OPENEYE_CACHE_TTL_MS });
     return resolved;
   } catch (error) {
+    const fallbackRows = await loadOpenEyeMapFallback(options);
     providerHealth.openeye = {
       ...providerHealth.openeye,
-      status:'UNAVAILABLE',
+      status:fallbackRows.length ? 'DEGRADED' : 'UNAVAILABLE',
       lastAttemptAt:attempt,
+      recordCount:fallbackRows.length,
+      free:fallbackRows.length,
       error:String(error?.message || error)
     };
-    return [];
+    if (fallbackRows.length) {
+      openEyeCache.set(key, { rows:fallbackRows, expiresAt:Date.now() + OPENEYE_CACHE_TTL_MS });
+    }
+    return fallbackRows;
   }
 }
 
