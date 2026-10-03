@@ -40,7 +40,7 @@ type OrtSession = {
 declare const self: DedicatedWorkerGlobalScope
 
 let ortPromise: Promise<OrtModule> | null = null
-const sessionByScale = new Map<ImageryAiScale, Promise<OrtSession>>()
+const sessionByScale = new Map<string, Promise<OrtSession>>()
 
 async function loadOrt() {
   if (!ortPromise) {
@@ -53,13 +53,14 @@ async function loadOrt() {
   return ortPromise
 }
 
-async function loadSession(scale: ImageryAiScale) {
-  const existing = sessionByScale.get(scale)
+async function loadSession(scale: ImageryAiScale, wasmOnly = false) {
+  const key = `${scale}:${wasmOnly ? 'wasm' : 'preferred'}`
+  const existing = sessionByScale.get(key)
   if (existing) return existing
 
   const promise = loadOrt().then(async ort => {
     const executionProviders =
-      typeof navigator !== 'undefined' && 'gpu' in navigator
+      !wasmOnly && typeof navigator !== 'undefined' && 'gpu' in navigator
         ? ['webgpu', 'wasm']
         : ['wasm']
 
@@ -73,7 +74,7 @@ async function loadSession(scale: ImageryAiScale) {
     )
   })
 
-  sessionByScale.set(scale, promise)
+  sessionByScale.set(key, promise)
   return promise
 }
 
@@ -119,7 +120,16 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     }
 
     const tensor = new ort.Tensor('float32', input, [1, 3, message.height, message.width])
-    const result = await session.run({ input: tensor })
+    let result: Record<string, OrtTensor>
+    try {
+      result = await session.run({ input: tensor })
+    } catch {
+      // Some WebGPU implementations expose the device but lack an operator
+      // required by a particular ONNX graph. Retry the exact same model on WASM
+      // before abandoning the enhancement for this tile/frame.
+      const wasmSession = await loadSession(message.scale, true)
+      result = await wasmSession.run({ input: tensor })
+    }
     const output = result.output ?? result['output']
     if (!output) throw new Error('Real-ESRGAN output tensor missing')
 
