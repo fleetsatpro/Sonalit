@@ -180,7 +180,7 @@ export default function CctvViewerPanel({
       if (objectUrl) URL.revokeObjectURL(objectUrl)
       clearAiBitmap()
     }
-  }, [activeId, refreshTick, clearAiBitmap])
+  }, [activeId, activeCamera, refreshTick, clearAiBitmap])
 
   useEffect(() => {
     const bitmap = aiBitmapRef.current
