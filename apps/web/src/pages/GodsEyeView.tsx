@@ -27,6 +27,7 @@ import type { WorldContextLayer } from '../lib/spatialClient.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import FleetMap from '../features/live-fleet/components/FleetMap.js'
 import CorridorGlobe from '../components/geofences/CorridorGlobe.js'
+import CctvViewerPanel from '../components/geofences/CctvViewerPanel.js'
 import type { GlobeMember, RiskZone } from '../components/geofences/CorridorWorldScene.js'
 import type { LiveVehicle } from '../features/live-fleet/types/fleet.js'
 import '../styles/gev-command.css'
@@ -79,6 +80,7 @@ export default function GodsEyeView() {
   const [intelligenceOpen, setIntelligenceOpen] = useState(true)
   const [layersOpen, setLayersOpen] = useState(true)
   const [externalVisible, setExternalVisible] = useState(true)
+  const [cctvOpen, setCctvOpen] = useState(false)
   const [clock, setClock] = useState(() => new Date())
 
   const chromeExpanded = overviewOpen || intelligenceOpen
@@ -92,6 +94,17 @@ export default function GodsEyeView() {
     setView(nextView)
     if (nextView === '2D') setSelectedExternalId(null)
   }
+
+  const openCctv = () => {
+    setView('3D')
+    setCctvOpen(true)
+    setExternalVisible(true)
+    setVisibleLayers(current => current.has('cameras') ? current : new Set([...current, 'cameras']))
+    setOverviewOpen(false)
+    setIntelligenceOpen(false)
+  }
+
+  const toggleCctv = () => setCctvOpen(open => !open)
 
   const toggleExternal = () => {
     const nextVisible = !externalVisible
@@ -128,7 +141,7 @@ export default function GodsEyeView() {
       center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
       radiusM: Math.min(100000, worldViewport.radiusM),
       layers: [...WORLD_CONTEXT_LAYERS],
-      maxEntitiesPerLayer: 75,
+      maxEntitiesPerLayer: 30,
       signal,
     }),
     enabled: view === '3D',
@@ -141,14 +154,55 @@ export default function GodsEyeView() {
     () => worldContextEntities(worldContext).filter(entity => !['vehicle', 'guardian_device'].includes(entity.entityType)),
     [worldContext],
   )
-  const renderableExternalEntities = useMemo(
-    () => externalVisible ? externalEntities.filter(entity => {
+
+  const { data: cctvCatalog = [], isFetching: cctvFetching, isError: cctvError } = useQuery<SpatialWorldEntity[]>({
+    queryKey: ['gev-cctv-catalog'],
+    queryFn: async () => {
+      const response = await api.get<{ data: SpatialWorldEntity[] }>('/cctv/cameras', { params: { limit: 80 } })
+      return response.data.data ?? []
+    },
+    enabled: view === '3D' && cctvOpen,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  })
+
+  const cctvEntities = useMemo(
+    () => cctvCatalog.filter(entity => Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude)),
+    [cctvCatalog],
+  )
+
+  const allExternalEntities = useMemo(() => {
+    if (!cctvOpen) return externalEntities
+    const byId = new Map<string, SpatialWorldEntity>()
+    for (const entity of externalEntities) byId.set(entity.id, entity)
+    for (const entity of cctvEntities) byId.set(entity.id, entity)
+    return Array.from(byId.values())
+  }, [externalEntities, cctvEntities, cctvOpen])
+  const renderableExternalEntities = useMemo(() => {
+    if (!externalVisible) return []
+    const filtered = allExternalEntities.filter(entity => {
       if (!Number.isFinite(entity.latitude) || !Number.isFinite(entity.longitude)) return false
       const layer = spatialEntityLayer(entity)
       return layer ? visibleLayers.has(layer) : false
-    }) : [],
-    [externalEntities, visibleLayers, externalVisible],
-  )
+    })
+    const MAX_RENDER_MARKERS = 180
+    if (filtered.length <= MAX_RENDER_MARKERS) return filtered
+    const selectedEntity = selectedExternalId ? filtered.find(entity => entity.id === selectedExternalId) : null
+    const cameras = filtered.filter(entity => entity.entityType === 'camera' || entity.entityType === 'spatial_camera')
+    const priorityLayers: WorldContextLayer[] = ['hazards', 'alerts', 'security', 'incidents', 'traffic', 'aircraft', 'maritime', 'satellites', 'infrastructure', 'weather']
+    const ordered = [
+      ...(selectedEntity ? [selectedEntity] : []),
+      ...cameras,
+      ...priorityLayers.flatMap(layer => filtered.filter(entity => spatialEntityLayer(entity) === layer)),
+    ]
+    const seen = new Set<string>()
+    return ordered.filter(entity => {
+      if (seen.has(entity.id)) return false
+      seen.add(entity.id)
+      return true
+    }).slice(0, MAX_RENDER_MARKERS)
+  }, [allExternalEntities, visibleLayers, externalVisible, selectedExternalId])
 
   useEffect(() => {
     if (view !== '3D' || positionedVehicles.length === 0 || worldViewportSeededRef.current) return
@@ -166,8 +220,8 @@ export default function GodsEyeView() {
   }, [externalEntities])
 
   const selectedExternal = useMemo(
-    () => externalEntities.find(entity => entity.id === selectedExternalId) ?? null,
-    [externalEntities, selectedExternalId],
+    () => allExternalEntities.find(entity => entity.id === selectedExternalId) ?? null,
+    [allExternalEntities, selectedExternalId],
   )
 
   const { data: zones = [] } = useQuery<RiskZone[]>({
@@ -216,6 +270,9 @@ export default function GodsEyeView() {
           </button>
           <button type="button" className="gev-segment" aria-pressed={view === '3D'} onClick={() => setViewMode('3D')}>
             <Orbit size={13} /> Immersive 3D
+          </button>
+          <button type="button" className="gev-cctv-trigger" aria-pressed={cctvOpen} onClick={toggleCctv} title="Open CCTV camera viewer">
+            <Camera size={13} /> CCTV <span>{cctvEntities.length || layerCounts.cameras || '—'}</span>
           </button>
         </div>
 
@@ -283,16 +340,22 @@ export default function GodsEyeView() {
                     aria-pressed={view === '3D' && visibleLayers.has(layer)}
                     aria-disabled={view !== '3D'}
                     disabled={view !== '3D'}
-                    onClick={() => setVisibleLayers(current => {
-                      const next = new Set(current)
-                      if (next.has(layer)) {
-                        next.delete(layer)
-                        if (selectedExternal && spatialEntityLayer(selectedExternal) === layer) setSelectedExternalId(null)
-                      } else {
-                        next.add(layer)
+                    onClick={() => {
+                      if (layer === 'cameras') {
+                        openCctv()
+                        return
                       }
-                      return next
-                    })}
+                      setVisibleLayers(current => {
+                        const next = new Set(current)
+                        if (next.has(layer)) {
+                          next.delete(layer)
+                          if (selectedExternal && spatialEntityLayer(selectedExternal) === layer) setSelectedExternalId(null)
+                        } else {
+                          next.add(layer)
+                        }
+                        return next
+                      })
+                    }}
                   >
                     <Icon size={15} />
                     <span className="gev-rail-tag">{layerCounts[layer] > 99 ? '99+' : layerCounts[layer]}</span>
@@ -309,6 +372,17 @@ export default function GodsEyeView() {
             </div>
             <div className="gev-status-orbit" title={worldError ? 'World context degraded' : 'World context available'}><span /></div>
           </aside>
+
+          {cctvOpen && view === '3D' && (
+            <CctvViewerPanel
+              cameras={cctvEntities}
+              selectedCameraId={selectedExternal?.entityType === 'camera' || selectedExternal?.entityType === 'spatial_camera' ? selectedExternal.id : null}
+              loading={cctvFetching}
+              error={cctvError}
+              onSelectCamera={id => setSelectedExternalId(id)}
+              onClose={() => setCctvOpen(false)}
+            />
+          )}
 
           <section
             className="gev-panel gev-overview-panel"
@@ -366,7 +440,7 @@ export default function GodsEyeView() {
             <div className="gev-panel-head">
               <div className="gev-panel-heading-copy">
                 <div className="gev-panel-eyebrow">Entity intelligence</div>
-                <div className="gev-panel-title">{selectedExternal ? 'Selected external signal' : selected ? 'Selected operational entity' : 'World signal index'}</div>
+                <div className="gev-panel-title">{selectedExternal?.entityType === 'camera' || selectedExternal?.entityType === 'spatial_camera' ? 'Selected CCTV camera' : selectedExternal ? 'Selected external signal' : selected ? 'Selected operational entity' : 'World signal index'}</div>
                 <div className="gev-panel-meta">{view === '3D' ? 'Pick a signal on the globe to inspect provenance and freshness.' : 'Select a vehicle to inspect live operational state.'}</div>
               </div>
               <div className="gev-panel-head-actions">
@@ -399,8 +473,11 @@ export default function GodsEyeView() {
                     <div className="gev-mini"><div className="gev-mini-label">Confidence</div><span className="gev-mini-value">{selectedExternal.observationConfidence != null ? Math.round(selectedExternal.observationConfidence * 100) + '%' : '—'}</span></div>
                   </div>
                   <div className="gev-detail-callout" style={{ marginTop: 9, border: '1px solid rgba(184,166,255,.10)', borderRadius: 10 }}>
-                    <div className="gev-detail-label">{selectedExternal.entityType === 'satellite' ? 'Modelled orbital position' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Camera geometry' : selectedExternal.telemetryLive === true ? 'Live external telemetry' : 'External observation'}</div>
-                    <div className="gev-detail-note">{selectedExternal.entityType === 'satellite' ? 'Not live telemetry · not an imaging or tasking claim.' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Geometry only · no person-tracking claim.' : 'Source and quality controls remain visible to the operator.'}</div>
+                    <div className="gev-detail-label">{selectedExternal.entityType === 'satellite' ? 'Modelled orbital position' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Camera observation' : selectedExternal.telemetryLive === true ? 'Live external telemetry' : 'External observation'}</div>
+                    <div className="gev-detail-note">{selectedExternal.entityType === 'satellite' ? 'Not live telemetry · not an imaging or tasking claim.' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Geometry indicates possible visibility only. Approved camera media is opened in the CCTV viewer.' : 'Source and quality controls remain visible to the operator.'}</div>
+                    {(selectedExternal.entityType === 'camera' || selectedExternal.entityType === 'spatial_camera') && (
+                      <button type="button" className="gev-cctv-inline-action" onClick={openCctv}><Camera size={12} /> OPEN CCTV VIEWER</button>
+                    )}
                   </div>
                 </div>
               ) : selected ? (
