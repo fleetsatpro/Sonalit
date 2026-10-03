@@ -6437,6 +6437,76 @@
           }
         }
       }
+    },
+    "/api/v1/convoy-resilience/scenarios": {
+      "get": {
+        "operationId": "get_api_v1_convoy_resilience_scenarios",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-resilience/{convoyId}/state": {
+      "get": {
+        "operationId": "get_api_v1_convoy_resilience_convoyId_state",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-resilience/{convoyId}/evaluate": {
+      "post": {
+        "operationId": "post_api_v1_convoy_resilience_convoyId_evaluate",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-resilience/{convoyId}/signals": {
+      "post": {
+        "operationId": "post_api_v1_convoy_resilience_convoyId_signals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-resilience/{convoyId}/exceptions/{exceptionId}": {
+      "patch": {
+        "operationId": "patch_api_v1_convoy_resilience_convoyId_exceptions_exceptionId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-resilience/{convoyId}/coverage/reassign": {
+      "post": {
+        "operationId": "post_api_v1_convoy_resilience_convoyId_coverage_reassign",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-resilience/{convoyId}/exceptions/{exceptionId}/dispatch": {
+      "post": {
+        "operationId": "post_api_v1_convoy_resilience_convoyId_exceptions_exceptionId_dispatch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
