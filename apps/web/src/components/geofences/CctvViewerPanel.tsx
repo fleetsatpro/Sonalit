@@ -1,6 +1,7 @@
 import { Camera, Maximize2, RefreshCw, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api.js'
+import { enhanceImageBitmap, preferredImageryAiScale, isImageryAiEnabled } from '../../lib/imageryAi.js'
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js'
 
 const FRAME_REFRESH_MS = 8_000
@@ -55,16 +56,30 @@ export default function CctvViewerPanel({
   const [frameUrl, setFrameUrl] = useState<string | null>(null)
   const [frameState, setFrameState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [synthetic, setSynthetic] = useState(false)
+  const [aiEnhanced, setAiEnhanced] = useState(false)
+  const [aiRevision, setAiRevision] = useState(0)
+  const aiCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const aiBitmapRef = useRef<ImageBitmap | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
 
   useEffect(() => {
     if (activeId && activeId !== selectedCameraId) onSelectCamera(activeId)
   }, [activeId, onSelectCamera, selectedCameraId])
 
+  const clearAiBitmap = () => {
+    if (aiBitmapRef.current) {
+      try { aiBitmapRef.current.close() } catch { /* best effort */ }
+      aiBitmapRef.current = null
+    }
+    setAiEnhanced(false)
+    setAiRevision(v => v + 1)
+  }
+
   useEffect(() => {
     if (!activeId) {
       setFrameUrl(null)
       setFrameState('idle')
+      clearAiBitmap()
       return
     }
 
@@ -76,6 +91,7 @@ export default function CctvViewerPanel({
     const loadFrame = async () => {
       controller = new AbortController()
       setFrameState('loading')
+      clearAiBitmap()
       try {
         const response = await api.get<Blob>(`/cctv/${encodeURIComponent(activeId)}/frame`, {
           responseType: 'blob',
@@ -85,9 +101,28 @@ export default function CctvViewerPanel({
         const nextUrl = URL.createObjectURL(response.data)
         if (objectUrl) URL.revokeObjectURL(objectUrl)
         objectUrl = nextUrl
+        const isSyntheticFrame = String(response.headers?.['x-sonalit-cctv-synthetic'] ?? '').toLowerCase() === 'true'
         setFrameUrl(nextUrl)
-        setSynthetic(String(response.headers?.['x-sonalit-cctv-synthetic'] ?? '').toLowerCase() === 'true')
+        setSynthetic(isSyntheticFrame)
         setFrameState('ready')
+
+        // Never delay the source frame for model download/GPU compilation.
+        // The enhanced bitmap replaces it only after inference succeeds.
+        if (!isSyntheticFrame && isImageryAiEnabled()) {
+          try {
+            const sourceBitmap = await createImageBitmap(response.data)
+            const enhanced = await enhanceImageBitmap(sourceBitmap, preferredImageryAiScale())
+            if (!disposed && enhanced) {
+              aiBitmapRef.current?.close()
+              aiBitmapRef.current = enhanced
+              setAiEnhanced(true)
+              setAiRevision(v => v + 1)
+            }
+            sourceBitmap.close()
+          } catch {
+            // Source frame remains authoritative on any AI failure.
+          }
+        }
       } catch {
         if (!disposed) setFrameState('error')
       } finally {
@@ -101,8 +136,23 @@ export default function CctvViewerPanel({
       controller?.abort()
       if (timer != null) window.clearTimeout(timer)
       if (objectUrl) URL.revokeObjectURL(objectUrl)
+      clearAiBitmap()
     }
   }, [activeId, refreshTick])
+
+  useEffect(() => {
+    const bitmap = aiBitmapRef.current
+    const canvas = aiCanvasRef.current
+    if (!bitmap || !canvas || !aiEnhanced) return
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const context = canvas.getContext('2d')
+    if (!context) return
+    context.imageSmoothingEnabled = true
+    context.imageSmoothingQuality = 'high'
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(bitmap, 0, 0)
+  }, [aiEnhanced, aiRevision])
 
   const health = activeCamera ? cameraHealth(activeCamera) : 'UNKNOWN'
   const media = activeCamera ? cameraMedia(activeCamera) : {}
@@ -132,7 +182,10 @@ export default function CctvViewerPanel({
         <>
           <div className="gev-cctv-frame">
             {frameUrl ? (
-              <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} decoding="async" />
+              <>
+                <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} decoding="async" style={{ opacity: aiEnhanced ? 0 : 1 }} />
+                <canvas ref={aiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: aiEnhanced ? 'block' : 'none' }} />
+              </>
             ) : (
               <div className="gev-cctv-frame-placeholder">
                 <Camera size={22} />
@@ -144,6 +197,7 @@ export default function CctvViewerPanel({
               <span data-state={health}>{health}</span>
               <span>{label}</span>
               <span>{hasConfiguredStream ? mediaKind.toUpperCase() + ' SOURCE' : 'FRAME'}</span>
+              {aiEnhanced && <span>AI UHD ×{preferredImageryAiScale()}</span>}
             </div>
             <div className="gev-cctv-frame-corner gev-cctv-frame-corner--tl" />
             <div className="gev-cctv-frame-corner gev-cctv-frame-corner--br" />
