@@ -25,7 +25,8 @@ describe('Sonalit imagery AI UHD contract', () => {
 
   it('keeps GPU inference preferred and CPU fallback available', () => {
     expect(worker).toContain("['webgpu', 'wasm']")
-    expect(worker).toContain("['wasm']")
+    expect(worker).toContain("executionProviders: ['wasm']")
+    expect(worker).toContain('Retry the exact same model on WASM')
     expect(worker).toContain("graphOptimizationLevel: 'all'")
     expect(worker).toContain("executionMode: 'parallel'")
     expect(worker).toContain("new ort.Tensor('float32', input, [1, 3, message.height, message.width])")
