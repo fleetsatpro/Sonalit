@@ -67,6 +67,16 @@ function sourceViewerUrl(camera: SpatialWorldEntity) {
   return String(media.sourcePageUrl ?? '').trim()
 }
 
+function sourceMediaUrl(camera: SpatialWorldEntity) {
+  const media = cameraMedia(camera)
+  return String(media.sourceMediaUrl ?? '').trim()
+}
+
+function sourceMediaType(camera: SpatialWorldEntity) {
+  const media = cameraMedia(camera)
+  return String(media.sourceMediaType ?? '').toLowerCase().trim()
+}
+
 function frameAge(camera: SpatialWorldEntity) {
   const attrs = record(camera.attributes)
   const age = Number(attrs.lastFrameAgeS)
@@ -395,6 +405,8 @@ export default function CctvViewerPanel({
   const sourceCard = (camera: SpatialWorldEntity, compact = false) => {
     const camMode = sourceMode(camera)
     const camViewer = sourceViewerUrl(camera)
+    const camSourceMedia = sourceMediaUrl(camera)
+    const camSourceMediaType = sourceMediaType(camera)
     const camMedia = cameraMedia(camera)
     const canPreview = camMedia.direct === true && Boolean(mediaDirectUrl(camera)) && ['image'].includes(mediaKind(camera)) && !previewFailures.has(camera.id)
     if (canPreview) {
@@ -410,11 +422,24 @@ export default function CctvViewerPanel({
         <Camera size={compact ? 16 : 22} />
         <strong>{camMode === 'source' ? 'PUBLISHER VIEW' : camMode === 'synthetic' ? 'NO LIVE IMAGE' : 'PREVIEW UNAVAILABLE'}</strong>
         <span>{camMode === 'source' ? 'This camera must be opened at its publisher.' : camMode === 'synthetic' ? 'The source did not authorize a renderable preview.' : 'The approved media gateway has no current frame.'}</span>
-        {camViewer && (
-          <a className="gev-cctv-open-source" href={camViewer} target="_blank" rel="noreferrer noopener">
-            <ExternalLink size={11} /> OPEN SOURCE
-          </a>
-        )}
+        <div className="gev-cctv-source-actions">
+          {camSourceMedia && (
+            <a
+              className="gev-cctv-open-source gev-cctv-open-source--primary"
+              href={camSourceMedia}
+              target="_blank"
+              rel="noopener"
+            >
+              <ExternalLink size={11} />
+              {camSourceMediaType === 'html' ? 'OPEN LIVE VIEW' : camSourceMediaType === 'image' ? 'OPEN SOURCE FRAME' : 'OPEN SOURCE MEDIA'}
+            </a>
+          )}
+          {camViewer && camViewer !== camSourceMedia && (
+            <a className="gev-cctv-open-source" href={camViewer} target="_blank" rel="noopener">
+              <ExternalLink size={11} /> OPEN PUBLISHER
+            </a>
+          )}
+        </div>
       </div>
     )
   }
