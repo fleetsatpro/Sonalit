@@ -36,12 +36,12 @@ describe('spatial CCTV capability', () => {
     expect(developmentRows.every(c => c.source === 'sonalit-cctv-sample' ? c.media?.kind === 'synthetic' : true)).toBe(true);
   });
 
-  test('normalizes only OpenEye previews explicitly permitted for embedding', async () => {
+  test('keeps public camera observations even when media is source-only or non-embeddable', async () => {
     clearOpenEyeCache();
     process.env.CCTV_ENABLE_OPENEYE = '1';
     const payload = {
-      total:2,
-      free:2,
+      total:4,
+      free:3,
       items:[
         {
           id:'stream-kenya-1',
@@ -64,7 +64,11 @@ describe('spatial CCTV capability', () => {
           title:'Not embeddable',
           lat:-1.2,
           lon:36.8,
+          category:'traffic',
+          is_free:true,
+          live:true,
           view:{ render:'image', url:'https://example.test/restricted.jpg', url_type:'image', hosted:'source' },
+          public_url:'https://publisher.example.test/camera/restricted',
           redistribution:{ preview_embed:false, attribution:{ name:'Restricted Source', url:'https://example.test' } }
         },
         {
@@ -78,6 +82,31 @@ describe('spatial CCTV capability', () => {
           live:true,
           view:{ render:'link', url:'https://publisher.example.test/camera/public-view', url_type:'html', hosted:'source' },
           redistribution:{ preview_embed:false, frame_reuse:'fetch-from-source', attribution:{ name:'Publisher Camera Network', url:'https://publisher.example.test', required:true } }
+        },
+        {
+          id:'stream-no-preview',
+          handle:'no-preview',
+          title:'Source-only no preview',
+          lat:-1.22,
+          lon:36.82,
+          category:'city',
+          is_free:true,
+          live:false,
+          view:{ render:'none', hosted:'source' },
+          public_url:'https://publisher.example.test/camera/no-preview',
+          redistribution:{ preview_embed:false, frame_reuse:'fetch-from-source', attribution:{ name:'Publisher Camera Network', url:'https://publisher.example.test', required:true } }
+        },
+        {
+          id:'stream-paid',
+          handle:'paid-only',
+          title:'Paid camera',
+          lat:-1.23,
+          lon:36.83,
+          category:'traffic',
+          is_free:false,
+          live:true,
+          view:{ render:'image', url:'https://example.test/paid.jpg', url_type:'image', hosted:'source' },
+          redistribution:{ preview_embed:true, attribution:{ name:'Paid Network', url:'https://example.test' } }
         }
       ]
     };
@@ -86,8 +115,9 @@ describe('spatial CCTV capability', () => {
       json:async()=>payload
     });
     const rows = await loadOpenEyeCatalog({ center:{latitude:-1.2864,longitude:36.8172}, radiusM:25000, maxRecords:20 });
-    expect(rows).toHaveLength(2);
-    expect(rows.find(row => row.id === 'openeye:stream-restricted')).toBeUndefined();
+    expect(rows).toHaveLength(3);
+    expect(rows.find(row => row.id === 'openeye:stream-paid')).toBeUndefined();
+    expect(rows.find(row => row.id === 'openeye:stream-restricted')).toBeDefined();
     expect(rows[0].source).toBe('openeye-public');
     expect(rows[0].media.kind).toBe('image');
     expect(rows[0].media.direct).toBe(true);
@@ -96,8 +126,11 @@ describe('spatial CCTV capability', () => {
     expect(rows[0].provenance.attributionUrl).toBe('https://example.test/cctv');
     expect(rows[0].attributes.category).toBe('traffic');
     expect(rows[1].media.direct).toBe(false);
-    expect(rows[1].media.sourcePageUrl).toBe('https://publisher.example.test/camera/public-view');
-    expect(rows[1].provenance.attribution).toBe('Publisher Camera Network');
+    expect(rows[1].media.sourcePageUrl).toBe('https://publisher.example.test/camera/restricted');
+    expect(rows[1].provenance.attribution).toBe('Restricted Source');
+    expect(rows[2].media.direct).toBe(false);
+    expect(rows[2].media.sourcePageUrl).toBe('https://publisher.example.test/camera/public-view');
+    expect(rows[2].provenance.attribution).toBe('Publisher Camera Network');
     expect(getCameraCatalogHealth().openeye.status).toBe('LIVE');
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining('https://api.openeye.cam/v1/catalog?'),
