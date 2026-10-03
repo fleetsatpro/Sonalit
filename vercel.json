@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "env NODE_OPTIONS= sh scripts/vercel-build.sh",
   "outputDirectory": "apps/web/dist",
-  "installCommand": "env NODE_OPTIONS= pnpm install --frozen-lockfile",
+  "installCommand": "env NODE_OPTIONS= pnpm install --frozen-lockfile --prod=false",
   "framework": "vite",
   "trailingSlash": false,
   "rewrites": [
