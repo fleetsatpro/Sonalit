@@ -141,6 +141,9 @@ function pump() {
       pixels: job.pixels,
       width: job.width,
       height: job.height,
+      sourceWidth: job.sourceWidth,
+      sourceHeight: job.sourceHeight,
+      padding: job.padding,
       scale: job.scale,
     }, [job.pixels])
   } catch (error) {
@@ -197,7 +200,7 @@ export async function enhanceImageBitmap(bitmap: ImageBitmap, scale = preferredI
   if (!isImageryAiEnabled() || !imageryAiSupported()) return null
   if (queue.length >= MAX_QUEUE) return null
 
-  let prepared: ImageData
+  let prepared: Awaited<ReturnType<typeof prepareBitmap>>
   try {
     prepared = await prepareBitmap(bitmap)
   } catch {
