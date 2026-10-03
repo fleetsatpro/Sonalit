@@ -60,7 +60,8 @@ export function installImageryAiMapLibreProtocol() {
     if (!response.ok) throw new Error(`Imagery source returned ${response.status}`)
 
     const blob = await response.blob()
-    if (!isImageryAiEnabled() || !shouldEnhanceRasterZoom(parsed.z)) {
+    const aiMinZoom = parsed.kind === 'earth' ? 7 : 14
+    if (!isImageryAiEnabled() || parsed.z < aiMinZoom) {
       return { data: await blob.arrayBuffer() }
     }
 
