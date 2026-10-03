@@ -3,7 +3,8 @@ export type ImageryAiScale = 2 | 4
 export const IMAGERY_AI_VERSION = 'sonalit-imagery-ai-v1'
 export const IMAGERY_AI_ENGINE_VERSION = 'onnxruntime-web@1.30.0'
 export const IMAGERY_AI_MIN_ZOOM = 14
-export const IMAGERY_AI_MAX_INPUT_EDGE = 768
+export const IMAGERY_AI_MAX_INPUT_EDGE = 512
+export const IMAGERY_AI_CCTV_MAX_INPUT_EDGE = 640
 export const IMAGERY_AI_TILE_PADDING = 12
 export const IMAGERY_AI_X4_MODEL_SHA256 = '4851ec156207d271f5328605d0582eeb851e656227da8aca093ced9e60789291'
 export const IMAGERY_AI_X2_MODEL_SHA256 = '7eb5e9eb507df603c0c04b49b23c86a362e0a01575bfbbac891d970f9c331888'
@@ -154,9 +155,9 @@ function pump() {
   }
 }
 
-async function prepareBitmap(bitmap: ImageBitmap) {
+async function prepareBitmap(bitmap: ImageBitmap, maxInputEdge = IMAGERY_AI_MAX_INPUT_EDGE) {
   const longest = Math.max(bitmap.width, bitmap.height)
-  const factor = longest > IMAGERY_AI_MAX_INPUT_EDGE ? IMAGERY_AI_MAX_INPUT_EDGE / longest : 1
+  const factor = longest > maxInputEdge ? maxInputEdge / longest : 1
   const width = Math.max(1, Math.round(bitmap.width * factor))
   const height = Math.max(1, Math.round(bitmap.height * factor))
 
@@ -196,13 +197,17 @@ async function prepareBitmap(bitmap: ImageBitmap) {
   }
 }
 
-export async function enhanceImageBitmap(bitmap: ImageBitmap, scale = preferredImageryAiScale()): Promise<ImageBitmap | null> {
+export async function enhanceImageBitmap(
+  bitmap: ImageBitmap,
+  scale = preferredImageryAiScale(),
+  maxInputEdge = IMAGERY_AI_MAX_INPUT_EDGE,
+): Promise<ImageBitmap | null> {
   if (!isImageryAiEnabled() || !imageryAiSupported()) return null
   if (queue.length >= MAX_QUEUE) return null
 
   let prepared: Awaited<ReturnType<typeof prepareBitmap>>
   try {
-    prepared = await prepareBitmap(bitmap)
+    prepared = await prepareBitmap(bitmap, maxInputEdge)
   } catch {
     return null
   }
