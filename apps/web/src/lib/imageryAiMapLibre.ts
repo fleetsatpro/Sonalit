@@ -48,12 +48,12 @@ export function installImageryAiMapLibreProtocol() {
   if (installed) return
   installed = true
 
-  maplibregl.addProtocol(AI_PROTOCOL, async params => {
+  maplibregl.addProtocol(AI_PROTOCOL, async (params, abortController) => {
     const parsed = parseProtocol(params.url)
     if (!parsed) throw new Error('Invalid Sonalit imagery AI tile URL')
 
     const response = await fetch(sourceUrl(parsed.kind, parsed.z, parsed.x, parsed.y), {
-      signal: params.abortController?.signal,
+      signal: abortController?.signal,
       cache: 'force-cache',
       credentials: 'omit',
     })
