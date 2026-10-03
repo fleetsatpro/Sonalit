@@ -92,7 +92,10 @@ export default function GodsEyeView() {
 
   const setViewMode = (nextView: View) => {
     setView(nextView)
-    if (nextView === '2D') setSelectedExternalId(null)
+    if (nextView === '2D') {
+      setSelectedExternalId(null)
+      setCctvOpen(false)
+    }
   }
 
   const openCctv = () => {
@@ -104,7 +107,13 @@ export default function GodsEyeView() {
     setIntelligenceOpen(false)
   }
 
-  const toggleCctv = () => setCctvOpen(open => !open)
+  const toggleCctv = () => {
+    if (cctvOpen) {
+      setCctvOpen(false)
+      return
+    }
+    openCctv()
+  }
 
   const toggleExternal = () => {
     const nextVisible = !externalVisible
