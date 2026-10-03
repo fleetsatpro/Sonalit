@@ -2,6 +2,7 @@ const Joi = require('joi');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const { publish } = require('../realtime/centrifugo');
+const { evaluateConvoyOperationalState } = require('../services/convoyOperationalResilience');
 
 const VALID_TRANSITIONS = {
   planned: ['active', 'cancelled'],
@@ -210,6 +211,19 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
   if (!VALID_TRANSITIONS[currentStatus]?.includes(value.status)) {
     return res.status(422).json({
       error: `Invalid status transition: ${currentStatus} → ${value.status}. Allowed: ${VALID_TRANSITIONS[currentStatus].join(', ') || 'none'}`,
+    });
+  }
+
+  // Material operational exceptions block completion; a pure telemetry gap
+  // remains informational so GPS silence does not prevent documented handover.
+  if (value.status === 'completed') {
+    const resilience = await evaluateConvoyOperationalState(query, req.user.org_id, req.params.id);
+    const blockers = resilience.evaluation.exceptions.filter(e => ['critical','high'].includes(e.severity) && e.exception_type !== 'telemetry_gap');
+    if (blockers.length) return res.status(422).json({
+      error:'operational_exceptions_open',
+      detail:'Resolve or explicitly waive material convoy operational exceptions before completion.',
+      posture:resilience.evaluation.posture,
+      exceptions:blockers.map(e => ({type:e.exception_type,severity:e.severity,truck_id:e.convoy_truck_id,fingerprint:e.fingerprint})),
     });
   }
 

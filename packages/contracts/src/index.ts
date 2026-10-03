@@ -31,6 +31,7 @@ export * from './schemas/shipment.js';
 export * from './schemas/route.js';
 export * from './schemas/portal.js';
 export * from './schemas/response-crew.js';
+export * from './schemas/convoy-resilience.js';
 
 // Events
 export * from './events/subjects.js';

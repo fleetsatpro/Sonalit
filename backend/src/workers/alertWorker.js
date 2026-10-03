@@ -6,6 +6,7 @@ const { withOrg } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
 const { publish } = require('../realtime/centrifugo');
+const { evaluateConvoyOperationalState } = require('../services/convoyOperationalResilience');
 
 const COOLDOWN_MINUTES = parseInt(process.env.ALERT_COOLDOWN_MINUTES) || 10;
 
@@ -247,6 +248,7 @@ async function processAlert(job) {
 
   // Fire configured geofence actions for geofence/corridor alerts
   await fireGeofenceActions(job, alert, type, severity, vehicle_id, message);
+  if (convoy_id) await evaluateConvoyOperationalState(query, orgId, convoy_id).catch(err => logger.warn(`convoy resilience alert reconciliation failed: ${err.message}`));
   });
 }
 

@@ -1,0 +1,10 @@
+import { z } from 'zod';
+import { UuidSchema,IsoDateTimeSchema } from './common.js';
+export const ConvoyOperationalPostureSchema=z.enum(['secure','watch','elevated','critical']);
+export const ConvoyOperationalExceptionTypeSchema=z.enum(['departure_readiness','truck_lagging','convoy_separation','truck_ahead','vehicle_breakdown','extended_stop','telemetry_gap','cfo_coverage_gap','route_deviation','checkpoint_delay','road_blockage','security_event','resource_conflict']);
+export const ConvoyOperationalExceptionStatusSchema=z.enum(['open','acknowledged','mitigating','resolved','waived']);
+export const ConvoyOperationalActionTypeSchema=z.enum(['hold_departure','contact_driver','verify_comms','do_not_assume_breakdown','reassign_backup_cfo','dispatch_mobile_response','dispatch_recovery','deploy_static_guard','regroup_convoy','hold_or_regroup','hold_affected_vehicle','verify_escort_coverage','escalate_operator']);
+export const ConvoyOperationalExceptionSchema=z.object({id:UuidSchema.optional(),org_id:UuidSchema.optional(),convoy_id:UuidSchema,convoy_truck_id:UuidSchema.nullable(),vehicle_id:UuidSchema.nullable(),cfo_user_id:UuidSchema.nullable(),exception_type:ConvoyOperationalExceptionTypeSchema,severity:z.enum(['low','medium','high','critical']),status:ConvoyOperationalExceptionStatusSchema,source:z.enum(['derived','explicit','operator']),fingerprint:z.string().min(1).max(180),title:z.string().min(1).max(255),detail:z.string().min(1).max(4000),context:z.record(z.unknown()),recommended_actions:z.array(z.record(z.unknown())),first_seen_at:IsoDateTimeSchema.optional(),last_seen_at:IsoDateTimeSchema.optional()});
+export type ConvoyOperationalException=z.infer<typeof ConvoyOperationalExceptionSchema>;
+export const ConvoyOperationalStateSchema=z.object({convoy_id:UuidSchema,posture:ConvoyOperationalPostureSchema,summary:z.record(z.unknown()),version:z.number().int().positive(),evaluated_at:IsoDateTimeSchema});
+export type ConvoyOperationalState=z.infer<typeof ConvoyOperationalStateSchema>;
