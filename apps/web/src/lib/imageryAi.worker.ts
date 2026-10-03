@@ -12,6 +12,9 @@ type WorkerMessage = {
   pixels: ArrayBuffer
   width: number
   height: number
+  sourceWidth: number
+  sourceHeight: number
+  padding: number
   scale: ImageryAiScale
 }
 
@@ -121,11 +124,20 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     if (!output) throw new Error('Real-ESRGAN output tensor missing')
 
     const rendered = tensorToRgba(output, message.width, message.height, message.scale)
-    const canvas = new OffscreenCanvas(rendered.width, rendered.height)
-    const context = canvas.getContext('2d', { alpha: false })
-    if (!context) throw new Error('OffscreenCanvas unavailable')
-    context.putImageData(new ImageData(rendered.rgba, rendered.width, rendered.height), 0, 0)
-    const bitmap = canvas.transferToImageBitmap()
+    const cropX = message.padding * message.scale
+    const cropY = message.padding * message.scale
+    const cropWidth = message.sourceWidth * message.scale
+    const cropHeight = message.sourceHeight * message.scale
+    const cropped = new Uint8ClampedArray(cropWidth * cropHeight * 4)
+    const cropRowBytes = cropWidth * 4
+
+    for (let row = 0; row < cropHeight; row += 1) {
+      const srcStart = ((cropY + row) * rendered.width + cropX) * 4
+      const dstStart = row * cropRowBytes
+      cropped.set(rendered.rgba.subarray(srcStart, srcStart + cropRowBytes), dstStart)
+    }
+
+    const bitmap = await createImageBitmap(new ImageData(cropped, cropWidth, cropHeight))
 
     self.postMessage({
       type: 'result',
