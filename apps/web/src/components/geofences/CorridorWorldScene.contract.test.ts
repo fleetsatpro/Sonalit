@@ -11,9 +11,9 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('applyPhotorealisticQuality(tileset, highFidelity)');
     expect(source).toContain("Cesium.RequestScheduler.requestsByServer['tile.googleapis.com:443'] = 18");
     expect(source).toContain('showCreditsOnScreen: true');
-    expect(source).toContain('tileset.maximumScreenSpaceError = highFidelity ? 1.5 : 2.5');
-    expect(source).toContain('tileset.cacheBytes = highFidelity ? 768 * 1024 * 1024 : 384 * 1024 * 1024');
-    expect(source).toContain('tileset.foveatedScreenSpaceError = !highFidelity');
+    expect(source).toContain('tileset.maximumScreenSpaceError = highFidelity ? 1.5 : 2.25');
+    expect(source).toContain('tileset.cacheBytes = highFidelity ? 384 * 1024 * 1024 : 192 * 1024 * 1024');
+    expect(source).toContain('tileset.foveatedScreenSpaceError = true');
     expect(source).toContain('tileset.enableCollision = true');
     expect(source).toContain('viewer.scene.globe.show = false');
     expect(source).toContain('createWorldImageryAsync');
@@ -30,6 +30,12 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('webgl1CompatibilityMode ? 2 : (contextSafeMode ? Math.min(4, msaaTarget) : msaaTarget)');
     expect(source).toContain("powerPreference: 'high-performance'");
     expect(source).toContain('const pixelBudget = compactSurface');
+    expect(source).toContain('const resolutionScale = Math.min(1, Math.sqrt(pixelBudget / Math.max(1, nativePixels)))');
+    expect(source).toContain('vehicleRenderPulseTimerRef');
+    expect(source).toContain('startVehicleRenderPulseRef');
+    expect(source).toContain('runAnimations: selected');
+    expect(source).toContain('const isCamera');
+    expect(source).toContain('cameraSvg(color, selected)');
     expect(source).toContain('Math.sqrt(pixelBudget / Math.max(1, nativePixels))');
     expect(source).toContain('viewer.resolutionScale = resolutionScale');
     expect(source).toContain("surfaceQualityRef.current === 'loading'");
@@ -38,15 +44,16 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('if (!imageryLoaded)');
     expect(source).toContain('CESIUM WORLD TERRAIN · ESRI AERIAL FALLBACK + 3D BUILDINGS');
 
-    expect(source).toContain('tileset.skipLevelOfDetail = false');
-    expect(source).toContain('tileset.cullRequestsWhileMoving = !highFidelity');
-    expect(source).toContain('tileset.preferLeaves = highFidelity');
+    expect(source).toContain('tileset.cullRequestsWhileMoving = true');
+    expect(source).toContain('tileset.preferLeaves = false');
 
     expect(source).toContain('contextSafeMode = true');
     expect(source).toContain('createWorldViewer(boxRef.current, false, false)');
-    expect(source).toContain('tileset.preloadFlightDestinations = true');
     expect(source).toContain('tileset.preloadAncestors = true');
-    expect(source).toContain('tileset.preloadSiblings = true');
+    expect(source).toContain('tileset.preloadSiblings = false');
+    expect(source).toContain('tileset.preloadFlightDestinations = false');
+    expect(source).toContain('tileset.skipLevelOfDetail = true');
+    expect(source).toContain('tileset.skipScreenSpaceErrorFactor = 16');
   });
 
   it('keeps a non-Ion Esri surface and recovers Cesium after render exceptions', () => {
@@ -55,7 +62,7 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('failIfMajorPerformanceCaveat: false');
     expect(source).toContain('showRenderLoopErrors: false');
     expect(source).toContain('viewer.scene.renderError.addEventListener(renderErrorHandler)');
-    expect(source).toContain('viewer.useDefaultRenderLoop = true');
+    expect(source).not.toContain('viewer.useDefaultRenderLoop = true');
     expect(source).toContain('viewer.scene.renderError.removeEventListener(renderErrorHandler)');
   });
 });

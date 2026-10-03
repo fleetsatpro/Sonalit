@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { api } from '../lib/api.js';
+import { createAiCesiumImageryProvider, wrapCesiumImageryProvider } from '../lib/imageryAiCesium.js';
 import { Film, ChevronDown, Play, Pause, Loader2, User, Bike, Car, Truck, Sparkles,
   SkipBack, SkipForward, Rewind, FastForward, Video, Map as MapIcon, Move } from 'lucide-react';
 import { dominantMode, iconAt, type TravelMode, type PhysicalMode } from '../lib/travelMode.js';
@@ -54,11 +55,12 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     const token = (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined) ?? '';
     Cesium.Ion.defaultAccessToken = token;
 
-    const esri = new Cesium.UrlTemplateImageryProvider({
-      url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      credit: new Cesium.Credit('Esri, Maxar, Earthstar Geographics', false),
-      maximumLevel: 19,
-    });
+    const esri = createAiCesiumImageryProvider(
+      'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      'Esri, Maxar, Earthstar Geographics',
+      19,
+      14,
+    );
     const viewer = new Cesium.Viewer(containerRef.current, {
       baseLayer: new Cesium.ImageryLayer(esri),
       terrainProvider: new Cesium.EllipsoidTerrainProvider(),
@@ -90,7 +92,7 @@ function CesiumDrive({ points, snapped, provider, confidence }:
       }
       if (token) {
         try {
-          const bing = await Cesium.createWorldImageryAsync();
+          const bing = wrapCesiumImageryProvider(await Cesium.createWorldImageryAsync(), 14);
           if (!alive()) return;
           viewer.imageryLayers.removeAll();
           viewer.imageryLayers.addImageryProvider(bing);

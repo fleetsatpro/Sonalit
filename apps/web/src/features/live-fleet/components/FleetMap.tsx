@@ -18,7 +18,7 @@ const SATELLITE_STYLE: maplibregl.StyleSpecification = {
   sources: {
     sat: {
       type: 'raster',
-      tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tiles: ['sonalit-ai://satellite/{z}/{y}/{x}'],
       tileSize: 256,
       attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics',
     },
@@ -39,7 +39,7 @@ const EARTH_OBSERVATION_STYLE: maplibregl.StyleSpecification = {
   sources: {
     earth: {
       type: 'raster',
-      tiles: ['https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/' + new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10) + '/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg'],
+      tiles: ['sonalit-ai://earth/{z}/{y}/{x}'],
       tileSize: 256,
       maxzoom: 9,
       attribution: 'NASA EOSDIS GIBS',

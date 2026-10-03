@@ -6507,6 +6507,16 @@
           }
         }
       }
+    },
+    "/api/v1/cctv/{id}/media": {
+      "get": {
+        "operationId": "get_api_v1_cctv_id_media",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
