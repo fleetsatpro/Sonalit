@@ -96,11 +96,24 @@ router.post('/dispatch', authorize('admin', 'dispatcher', 'operator'), async (re
   }
   try {
     const teamR = await req.db(
-      `SELECT id, name, callsign, type FROM response_teams WHERE id = $1 AND org_id = $2 AND active = true`,
+      `SELECT id, name, callsign, type, status FROM response_teams WHERE id = $1 AND org_id = $2 AND active = true`,
       [team_id, req.user.org_id]
     );
     if (!teamR.rows.length) return res.status(404).json({ error: 'Team not found' });
     const team = teamR.rows[0];
+    if (team.status !== 'standby') return res.status(409).json({ error: 'response_team_not_standby' });
+    if (convoy_id) {
+      const convoyR = await req.db(`SELECT id FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,[convoy_id,req.user.org_id]);
+      if (!convoyR.rows.length) return res.status(404).json({ error:'Convoy not found' });
+    }
+    if (vehicle_id) {
+      const vehicleR = await req.db(`SELECT id FROM vehicles WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,[vehicle_id,req.user.org_id]);
+      if (!vehicleR.rows.length) return res.status(404).json({ error:'Vehicle not found' });
+      if (convoy_id) {
+        const membershipR = await req.db(`SELECT id FROM convoy_trucks WHERE convoy_id=$1 AND vehicle_id=$2 AND org_id=$3`,[convoy_id,vehicle_id,req.user.org_id]);
+        if (!membershipR.rows.length) return res.status(422).json({ error:'vehicle_not_attached_to_convoy' });
+      }
+    }
 
     const r = await req.db(
       `INSERT INTO intercept_dispatches
@@ -149,6 +162,18 @@ router.patch('/dispatches/:id/status', authorize('admin', 'dispatcher', 'operato
   }
 
   try {
+    const owner = await req.db(
+      `SELECT d.team_id FROM intercept_dispatches d WHERE d.id=$1 AND d.org_id=$2`,
+      [id,req.user.org_id]
+    );
+    if (!owner.rows.length) return res.status(404).json({ error:'Dispatch not found' });
+    if (req.user.role === 'response_crew') {
+      const member = await req.db(
+        `SELECT 1 FROM response_crew_members WHERE team_id=$1 AND user_id=$2 AND org_id=$3 AND active=true`,
+        [owner.rows[0].team_id,req.user.id,req.user.org_id]
+      );
+      if (!member.rows.length) return res.status(403).json({ error:'response_crew_not_assigned_to_team' });
+    }
     const tsCol = status === 'acknowledged' ? 'acknowledged_at'
       : status === 'resolved' || status === 'cancelled' ? 'resolved_at'
       : status === 'on_scene' ? 'arrived_at' : null;
@@ -172,12 +197,12 @@ router.patch('/dispatches/:id/status', authorize('admin', 'dispatcher', 'operato
 
     if (status === 'resolved' || status === 'cancelled') {
       await req.db(
-        `UPDATE response_teams SET status = 'standby', updated_at = now() WHERE id = $1`,
-        [dispatch.team_id]
+        `UPDATE response_teams SET status = 'standby', updated_at = now() WHERE id = $1 AND org_id = $2`,
+        [dispatch.team_id, req.user.org_id]
       );
     }
 
-    const teamR = await req.db(`SELECT name, callsign FROM response_teams WHERE id = $1`, [dispatch.team_id]);
+    const teamR = await req.db(`SELECT name, callsign FROM response_teams WHERE id = $1 AND org_id = $2`, [dispatch.team_id,req.user.org_id]);
 
     publish(`org#${req.user.org_id}`, {
       type: 'crew.status_update',
