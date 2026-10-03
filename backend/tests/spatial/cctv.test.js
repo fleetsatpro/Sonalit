@@ -144,6 +144,34 @@ describe('spatial CCTV capability', () => {
     );
   });
 
+  test('does not turn OpenEye preview_url into a direct publisher-media handoff', async () => {
+    clearOpenEyeCache();
+    process.env.CCTV_ENABLE_OPENEYE = '1';
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok:true,
+      json:async()=>({
+        total:1,
+        free:1,
+        items:[{
+          id:'preview-only',
+          handle:'preview-only',
+          title:'Preview-only source',
+          lat:-1.28,
+          lon:36.81,
+          is_free:true,
+          live:true,
+          view:{ render:'image', url_type:'image', hosted:'source' },
+          preview_url:'https://api.openeye.cam/v1/streams/preview-only/preview.webp',
+          redistribution:{ preview_embed:false, frame_reuse:'fetch-from-source', attribution:{ name:'Publisher', url:'https://publisher.example.test', required:true } }
+        }]
+      })
+    });
+    const rows = await loadOpenEyeCatalog({ center:{latitude:-1.28,longitude:36.81}, radiusM:25000, maxRecords:10 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].media.sourceMediaUrl).toBe(null);
+    expect(rows[0].media.sourcePageUrl).toBe('https://openeye.cam/cam/preview-only');
+  });
+
   test('falls back to OpenEye map index when the enriched catalog request fails', async () => {
     clearOpenEyeCache();
     process.env.CCTV_ENABLE_OPENEYE = '1';
