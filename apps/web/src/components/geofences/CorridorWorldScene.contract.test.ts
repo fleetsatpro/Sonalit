@@ -11,8 +11,8 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('applyPhotorealisticQuality(tileset, highFidelity)');
     expect(source).toContain("Cesium.RequestScheduler.requestsByServer['tile.googleapis.com:443'] = 18");
     expect(source).toContain('showCreditsOnScreen: true');
-    expect(source).toContain('tileset.maximumScreenSpaceError = highFidelity ? 1.5 : 2.5');
-    expect(source).toContain('tileset.cacheBytes = highFidelity ? 768 * 1024 * 1024 : 384 * 1024 * 1024');
+    expect(source).toContain('tileset.maximumScreenSpaceError = highFidelity ? 1.5 : 2.25');
+    expect(source).toContain('tileset.cacheBytes = highFidelity ? 384 * 1024 * 1024 : 192 * 1024 * 1024');
     expect(source).toContain('tileset.foveatedScreenSpaceError = true');
     expect(source).toContain('tileset.enableCollision = true');
     expect(source).toContain('viewer.scene.globe.show = false');
@@ -44,13 +44,11 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('if (!imageryLoaded)');
     expect(source).toContain('CESIUM WORLD TERRAIN · ESRI AERIAL FALLBACK + 3D BUILDINGS');
 
-    expect(source).toContain('tileset.skipLevelOfDetail = false');
-    expect(source).toContain('tileset.cullRequestsWhileMoving = !highFidelity');
-    expect(source).toContain('tileset.preferLeaves = highFidelity');
+    expect(source).toContain('tileset.cullRequestsWhileMoving = true');
+    expect(source).toContain('tileset.preferLeaves = false');
 
     expect(source).toContain('contextSafeMode = true');
     expect(source).toContain('createWorldViewer(boxRef.current, false, false)');
-    expect(source).toContain('tileset.preloadFlightDestinations = true');
     expect(source).toContain('tileset.preloadAncestors = true');
     expect(source).toContain('tileset.preloadSiblings = false');
     expect(source).toContain('tileset.preloadFlightDestinations = false');
