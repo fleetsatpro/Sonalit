@@ -4,6 +4,7 @@ import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { Crosshair, Layers, Map as MapIcon, Satellite, Signal, Target, TriangleAlert } from 'lucide-react';
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js';
 import { spatialEntityLayer } from '../../lib/spatialClient.js';
+import { createAiCesiumImageryProvider, wrapCesiumImageryProvider } from '../../lib/imageryAiCesium.js';
 import '../../styles/spatial-command.css';
 
 export interface LatLng { lat: number; lng: number }
@@ -209,12 +210,7 @@ function vehicleSvg(color: string, selected: boolean) {
 function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: string) => void) {
   viewer.imageryLayers.removeAll();
   const add = (url: string, credit: string, maximumLevel = 19, tune?: (layer: Cesium.ImageryLayer) => void) => {
-    const provider = new Cesium.UrlTemplateImageryProvider({
-      url,
-      credit: new Cesium.Credit(credit, false),
-      maximumLevel,
-      enablePickFeatures: false,
-    });
+    const provider = createAiCesiumImageryProvider(url, credit, maximumLevel, 14);
     provider.errorEvent.addEventListener(() => onError('Map tiles are unavailable; the fallback world surface is still active.'));
     const layer = viewer.imageryLayers.addImageryProvider(provider);
     tune?.(layer);
@@ -616,11 +612,11 @@ export default function CorridorWorldScene({
         let imageryLoaded = false;
         try {
           setMapStatus('CESIUM WORLD AERIAL · CONNECTING');
-          const imagery = await Cesium.createWorldImageryAsync({
+          const imagery = wrapCesiumImageryProvider(await Cesium.createWorldImageryAsync({
             style: modeRef.current === 'hybrid'
               ? Cesium.IonWorldImageryStyle.AERIAL_WITH_LABELS
               : Cesium.IonWorldImageryStyle.AERIAL,
-          });
+          }), 14);
           if (!alive()) return;
           viewer.imageryLayers.removeAll();
           viewer.imageryLayers.addImageryProvider(imagery);
