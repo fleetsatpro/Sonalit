@@ -1,5 +1,5 @@
 import { Camera, Maximize2, RefreshCw, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api.js'
 import { enhanceImageBitmap, preferredImageryAiScale, isImageryAiEnabled } from '../../lib/imageryAi.js'
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js'
@@ -66,14 +66,14 @@ export default function CctvViewerPanel({
     if (activeId && activeId !== selectedCameraId) onSelectCamera(activeId)
   }, [activeId, onSelectCamera, selectedCameraId])
 
-  const clearAiBitmap = () => {
+  const clearAiBitmap = useCallback(() => {
     if (aiBitmapRef.current) {
       try { aiBitmapRef.current.close() } catch { /* best effort */ }
       aiBitmapRef.current = null
     }
     setAiEnhanced(false)
     setAiRevision(v => v + 1)
-  }
+  }, [])
 
   useEffect(() => {
     if (!activeId) {
@@ -138,7 +138,7 @@ export default function CctvViewerPanel({
       if (objectUrl) URL.revokeObjectURL(objectUrl)
       clearAiBitmap()
     }
-  }, [activeId, refreshTick])
+  }, [activeId, refreshTick, clearAiBitmap])
 
   useEffect(() => {
     const bitmap = aiBitmapRef.current
