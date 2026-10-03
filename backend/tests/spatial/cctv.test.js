@@ -37,6 +37,7 @@ describe('spatial CCTV capability', () => {
   });
 
   test('normalizes only OpenEye previews explicitly permitted for embedding', async () => {
+    clearOpenEyeCache();
     process.env.CCTV_ENABLE_OPENEYE = '1';
     const payload = {
       total:2,
@@ -86,6 +87,7 @@ describe('spatial CCTV capability', () => {
     });
     const rows = await loadOpenEyeCatalog({ center:{latitude:-1.2864,longitude:36.8172}, radiusM:25000, maxRecords:20 });
     expect(rows).toHaveLength(2);
+    expect(rows.find(row => row.id === 'openeye:stream-restricted')).toBeUndefined();
     expect(rows[0].source).toBe('openeye-public');
     expect(rows[0].media.kind).toBe('image');
     expect(rows[0].media.direct).toBe(true);
