@@ -14,20 +14,24 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 function cameraName(camera: SpatialWorldEntity) {
+  const root = record(camera)
   const attrs = record(camera.attributes)
-  return String(attrs.name ?? attrs.callsign ?? attrs.title ?? camera.id)
+  return String(root.name ?? attrs.name ?? attrs.callsign ?? attrs.title ?? camera.id)
 }
 
 function cameraMedia(camera: SpatialWorldEntity) {
+  const root = record(camera)
   const attrs = record(camera.attributes)
   const nested = record(attrs.camera)
-  return record(attrs.media ?? nested.media)
+  return record(root.media ?? attrs.media ?? nested.media)
 }
 
 function cameraHealth(camera: SpatialWorldEntity) {
+  const root = record(camera)
   const attrs = record(camera.attributes)
   const nestedHealth = record(record(attrs.camera).health)
-  return String(attrs.status ?? nestedHealth.status ?? camera.status ?? 'UNKNOWN').toUpperCase()
+  const directHealth = record(root.health)
+  return String(directHealth.status ?? attrs.status ?? nestedHealth.status ?? camera.status ?? 'UNKNOWN').toUpperCase()
 }
 
 function cameraSource(camera: SpatialWorldEntity) {
@@ -118,7 +122,35 @@ export default function CctvViewerPanel({
       : cameras[0]?.id ?? null,
     [cameras, selectedCameraId],
   )
-  const activeCamera = useMemo(() => cameras.find(camera => camera.id === activeId) ?? null, [cameras, activeId])
+  const activeCameraBase = useMemo(() => cameras.find(camera => camera.id === activeId) ?? null, [cameras, activeId])
+  const [resolvedCamera, setResolvedCamera] = useState<SpatialWorldEntity | null>(null)
+
+  useEffect(() => {
+    if (!activeId) {
+      setResolvedCamera(null)
+      return
+    }
+    let disposed = false
+    const controller = new AbortController()
+    setResolvedCamera(null)
+    void api.get<{ data: SpatialWorldEntity }>(`/cctv/${encodeURIComponent(activeId)}`, { signal: controller.signal })
+      .then(response => {
+        if (!disposed) setResolvedCamera(response.data.data)
+      })
+      .catch(() => {
+        // The viewport catalog remains usable when detail enrichment is unavailable.
+      })
+    return () => {
+      disposed = true
+      controller.abort()
+    }
+  }, [activeId])
+
+  const activeCamera = useMemo(() => {
+    if (!activeCameraBase) return null
+    if (!resolvedCamera || resolvedCamera.id !== activeCameraBase.id) return activeCameraBase
+    return { ...activeCameraBase, ...resolvedCamera }
+  }, [activeCameraBase, resolvedCamera])
   const activeIndex = useMemo(() => Math.max(0, cameras.findIndex(camera => camera.id === activeId)), [cameras, activeId])
   const [frameUrl, setFrameUrl] = useState<string | null>(null)
   const [streamUrl, setStreamUrl] = useState<string | null>(null)
