@@ -10,6 +10,7 @@ import {
   RenderGovernor,
   EntityRegistry,
 } from '@sonalit/spatial-intelligence';
+import { createAiCesiumImageryProvider } from '../lib/imageryAiCesium.js';
 
 export interface DeviceLocation {
   device_id: string;
@@ -219,19 +220,21 @@ export default function CesiumLiveMap({
       );
     } else if (mapMode === 'earth') {
       viewer.imageryLayers.addImageryProvider(
-        new Cesium.UrlTemplateImageryProvider({
-          url: GIBS_TRUE_COLOR_URL,
-          credit: new Cesium.Credit('NASA EOSDIS GIBS', false),
-          maximumLevel: 9,
-        }),
+        createAiCesiumImageryProvider(
+          GIBS_TRUE_COLOR_URL,
+          'NASA EOSDIS GIBS',
+          9,
+          7,
+        ),
       );
     } else {
       viewer.imageryLayers.addImageryProvider(
-        new Cesium.UrlTemplateImageryProvider({
-          url: SAT_URL,
-          credit: new Cesium.Credit('© Esri, Maxar, Earthstar Geographics', false),
-          maximumLevel: 23,
-        }),
+        createAiCesiumImageryProvider(
+          SAT_URL,
+          '© Esri, Maxar, Earthstar Geographics',
+          23,
+          14,
+        ),
       );
       if (mapMode === 'hybrid') {
         viewer.imageryLayers.addImageryProvider(
