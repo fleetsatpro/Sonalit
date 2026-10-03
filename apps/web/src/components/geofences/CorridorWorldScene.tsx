@@ -925,13 +925,13 @@ export default function CorridorWorldScene({
       )}
       <div className="spatial-cesium-chrome pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
-        {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-bold font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}
+        <span className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold font-mono backdrop-blur-xl ${surfaceQuality === 'photorealistic' ? 'border-cyan-400/25 bg-cyan-400/[0.09] text-cyan-200' : terrainReady ? 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-300' : surfaceQuality === 'loading' ? 'border-amber-400/20 bg-amber-400/[0.07] text-amber-200' : 'border-red-400/20 bg-red-400/[0.07] text-red-200'}`}>{surfaceQuality === 'photorealistic' ? 'PHOTOREALISTIC 3D' : terrainReady ? 'WORLD TERRAIN + 3D BUILDINGS' : surfaceQuality === 'loading' ? '3D SURFACE LOADING' : 'ESRI RASTER FALLBACK'}</span>
         {focusId && <span className="rounded-lg border border-violet-500/25 bg-violet-500/[0.09] px-2.5 py-1.5 text-[10px] font-bold font-mono text-violet-300 backdrop-blur-xl">FOCUS · {liveMembers.find(m => m.id === focusId)?.name ?? focusId.slice(0, 8)}</span>}
       </div>
       {creditsOpen && (
         <div className="spatial-cesium-chrome absolute bottom-3 right-3 max-w-xs rounded-xl border border-white/10 bg-[#070a10]/92 p-3 text-[10px] leading-relaxed text-neutral-400 shadow-2xl backdrop-blur-xl">
           <p className="font-semibold text-neutral-200">World surface</p>
-          <p className="mt-1">Operational map tiles: Esri / OpenStreetMap contributors. Cesium terrain and buildings are enabled when the configured Ion token permits them.</p>
+          <p className="mt-1">{surfaceQuality === 'photorealistic' ? 'Photorealistic 3D surface: Google Maps Platform Photorealistic 3D Tiles rendered by CesiumJS. Google and third-party attributions remain on screen.' : terrainReady ? 'Aerial imagery and terrain are streamed through Cesium ion, with Cesium World Terrain normals/water data and OSM 3D buildings where available.' : 'Operational map surface is using the Esri fallback. No high-fidelity provider is claimed until it successfully loads.'}</p>
         </div>
       )}
       {!globalView && liveMembers.length === 0 && (
