@@ -446,13 +446,14 @@ async function loadOpenEyeCamera(id) {
 async function getCameraById(id) {
   const wanted = String(id || '');
   if (!wanted) return null;
+  const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
   const [openEyeRows, fileRows, tflRows] = await Promise.all([
     wanted.startsWith('openeye:') ? loadOpenEyeCamera(wanted.slice('openeye:'.length)) : Promise.resolve(null),
     loadFileCatalog(),
     loadTflCatalog().catch(() => [])
   ]);
   if (openEyeRows) return openEyeRows;
-  const all = fileRows.concat(tflRows);
+  const all = fileRows.concat(tflRows, includeSamples ? SAMPLE_CAMERAS : []);
   return all.find(row => String(row.id) === wanted) || null;
 }
 
