@@ -127,9 +127,12 @@ describe('spatial CCTV capability', () => {
     expect(rows[0].attributes.category).toBe('traffic');
     expect(rows[1].media.direct).toBe(false);
     expect(rows[1].media.sourcePageUrl).toBe('https://publisher.example.test/camera/restricted');
+    expect(rows[1].media.sourceMediaUrl).toBe('https://example.test/restricted.jpg');
+    expect(rows[1].media.sourceMediaType).toBe('image');
     expect(rows[1].provenance.attribution).toBe('Restricted Source');
     expect(rows[2].media.direct).toBe(false);
     expect(rows[2].media.sourcePageUrl).toBe('https://publisher.example.test/camera/public-view');
+    expect(rows[2].media.sourceMediaUrl).toBe(null);
     expect(rows[2].provenance.attribution).toBe('Publisher Camera Network');
     expect(rows[3].media.direct).toBe(false);
     expect(rows[3].media.sourcePageUrl).toBe('https://publisher.example.test/camera/no-preview');
