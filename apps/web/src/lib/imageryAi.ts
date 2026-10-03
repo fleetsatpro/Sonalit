@@ -71,8 +71,8 @@ export function preferredImageryAiScale(): ImageryAiScale {
 }
 
 export function preferredImageryAiScaleForZoom(level: number): ImageryAiScale {
-  const preferred = preferredImageryAiScale()
-  return preferred === 4 && level >= 16 ? 4 : 2
+  if (!shouldEnhanceRasterZoom(level)) return 2
+  return preferredImageryAiScale()
 }
 
 export function shouldEnhanceRasterZoom(level: number) {
