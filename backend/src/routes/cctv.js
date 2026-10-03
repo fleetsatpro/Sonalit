@@ -6,7 +6,7 @@ const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { getCameras, getNearestCameras } = require('../services/spatial/cctvGateway');
-const { getCameraCatalog, getCameraById } = require('../services/spatial/cctv/cctvCatalog');
+const { getCameraById } = require('../services/spatial/cctv/cctvCatalog');
 const { getFrame, getMedia } = require('../services/spatial/cctv/cctvMediaProxy');
 const { Readable } = require('node:stream');
 
