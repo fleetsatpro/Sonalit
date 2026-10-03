@@ -49,10 +49,27 @@ const AGENTS = [
 ].map(([id,name,terms]) => ({ id, name, terms }));
 
 const DIRECT_SOURCES = [
-  { id:'tuko', name:'TUKO.co.ke', url:'https://www.tuko.co.ke/', reliability:70, keywords:['Kenya','crime','security','police','traffic','weather','breaking','world'] },
-  { id:'citizen-digital', name:'Citizen Digital', url:'https://citizen.digital/', reliability:78, keywords:['Kenya','security','crime','police','traffic','weather','breaking','world'] },
-  { id:'mutembei', name:'Mutembei TV', url:'https://mutembeitv.com/', reliability:52, keywords:['Kenya','security','crime','politics','county','breaking'] },
-  { id:'sga', name:'SGA Security', url:'https://www.sgasecurity.co.ke/news', reliability:62, keywords:['security','Kenya','East Africa','crime','threat'] }
+  { id:'tuko', source_type:'news', name:'TUKO.co.ke', url:'https://www.tuko.co.ke/', reliability:70, keywords:['Kenya','crime','security','police','traffic','weather','breaking','world'] },
+  { id:'citizen-digital', source_type:'news', name:'Citizen Digital', url:'https://citizen.digital/', reliability:78, keywords:['Kenya','security','crime','police','traffic','weather','breaking','world'] },
+  { id:'mutembei', source_type:'news', name:'Mutembei TV', url:'https://mutembeitv.com/', reliability:52, keywords:['Kenya','security','crime','politics','county','breaking'] },
+  { id:'sga', source_type:'news', name:'SGA Security', url:'https://www.sgasecurity.co.ke/news', reliability:62, keywords:['security','Kenya','East Africa','crime','threat'] }
+];
+
+const REGISTERED_SOURCES = [
+  {
+    id:'newsnow',
+    name:'NewsNow',
+    source_type:'news',
+    provider:'newsnow',
+    endpoint:'https://www.newsnow.co.uk/h/',
+    reliability:60,
+    metadata:{
+      role:'discovery',
+      collection_mode:'link_out',
+      observation_ingestion:false,
+      note:'NewsNow is registered as a discovery/link-out source. Do not scrape or treat the aggregator page as direct evidence without an approved feed or API contract.',
+    },
+  },
 ];
 
 function clean(v, n = 6000) { return String(v || '').replace(/\s+/g,' ').trim().slice(0,n); }
@@ -107,9 +124,10 @@ async function fetchDirectSource(src) {
 }
 
 async function ensureSource(orgId, spec) {
-  const { rows } = await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,'other',$3,$4,$5,$6::jsonb,NOW()) ON CONFLICT (org_id,provider,endpoint) WHERE provider IS NOT NULL AND endpoint IS NOT NULL DO UPDATE SET name=EXCLUDED.name,reliability=EXCLUDED.reliability,metadata=EXCLUDED.metadata,last_seen_at=NOW(),updated_at=NOW() RETURNING *`, [orgId,spec.name,spec.provider,spec.endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
+  const { rows } = await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) ON CONFLICT (org_id,provider,endpoint) WHERE provider IS NOT NULL AND endpoint IS NOT NULL DO UPDATE SET name=EXCLUDED.name,source_type=EXCLUDED.source_type,reliability=EXCLUDED.reliability,metadata=EXCLUDED.metadata,last_seen_at=NOW(),updated_at=NOW() RETURNING *`, [orgId,spec.name,spec.source_type||'other',spec.provider,spec.endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
   return rows[0];
 }
+
 async function persist(orgId, source, items, agentId) {
   let inserted=0, duplicate=0;
   for (const item of items.slice(0,MAX_ITEMS_PER_SOURCE)) {
@@ -156,12 +174,13 @@ async function sweepOrg(orgId) {
   return runWithOrgContext(orgId, async () => {
   const agentQueries = AGENTS.map(a => `(${a.terms.map(t=>`\"${t.replace(/\"/g,'')}\"`).join(' OR ')})`).join(' OR ');
   const tasks=[];
-  for(const src of DIRECT_SOURCES) tasks.push(async()=>{const items=await fetchDirectSource(src);const source=await ensureSource(orgId,{name:src.name,provider:'web',endpoint:src.url,reliability:src.reliability,metadata:{agents:AGENTS.filter(a=>a.terms.some(t=>src.keywords.includes(t))).map(a=>a.id),cadence:'5m'}});const p=await persist(orgId,source,items,'WEB-MESH');return{name:src.name,seen:items.length,...p};});
-  for(const agent of AGENTS) tasks.push(async()=>{const q=agent.terms.map(t=>`\"${t.replace(/\"/g,'')}\"`).join(' OR ');const items=await fetchGdelt(q);const source=await ensureSource(orgId,{name:`GDELT · ${agent.name}`,provider:'gdelt',endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',reliability:68,metadata:{agent_id:agent.id,query:q}});const p=await persist(orgId,source,items,agent.id);return{name:agent.name,agent_id:agent.id,seen:items.length,...p};});
-  for(const channel of defaultWhatsappChannels()) tasks.push(async()=>{const items=await fetchAuthorizedWhatsapp(channel);const source=await ensureSource(orgId,{name:channel.name||`WhatsApp Channel ${channel.channel_id||''}`,provider:'whatsapp',endpoint:channel.endpoint,reliability:Number(channel.reliability)||55,metadata:{channel_id:channel.channel_id,authorized:true}});const p=await persist(orgId,source,items,`WA-${channel.channel_id||'CHANNEL'}`);return{name:source.name,seen:items.length,...p};});
+  for(const registered of REGISTERED_SOURCES) tasks.push(async()=>{const source=await ensureSource(orgId,registered);return{name:source.name,registered:true,observation_ingestion:Boolean(registered.metadata?.observation_ingestion),seen:0,inserted:0,duplicate:0};});
+  for(const src of DIRECT_SOURCES) tasks.push(async()=>{const items=await fetchDirectSource(src);const source=await ensureSource(orgId,{name:src.name,source_type:src.source_type,provider:'web',endpoint:src.url,reliability:src.reliability,metadata:{agents:AGENTS.filter(a=>a.terms.some(t=>src.keywords.includes(t))).map(a=>a.id),cadence:'5m'}});const p=await persist(orgId,source,items,'WEB-MESH');return{name:src.name,seen:items.length,...p};});
+  for(const agent of AGENTS) tasks.push(async()=>{const q=agent.terms.map(t=>`"${t.replace(/"/g,'')}"`).join(' OR ');const items=await fetchGdelt(q);const source=await ensureSource(orgId,{name:`GDELT · ${agent.name}`,source_type:'news',provider:'gdelt',endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',reliability:68,metadata:{agent_id:agent.id,query:q}});const p=await persist(orgId,source,items,agent.id);return{name:agent.name,agent_id:agent.id,seen:items.length,...p};});
+  for(const channel of defaultWhatsappChannels()) tasks.push(async()=>{const items=await fetchAuthorizedWhatsapp(channel);const source=await ensureSource(orgId,{name:channel.name||`WhatsApp Channel ${channel.channel_id||''}`,source_type:'social',provider:'whatsapp',endpoint:channel.endpoint,reliability:Number(channel.reliability)||55,metadata:{channel_id:channel.channel_id,authorized:true}});const p=await persist(orgId,source,items,`WA-${channel.channel_id||'CHANNEL'}`);return{name:source.name,seen:items.length,...p};});
   const results=await runWithLimit(tasks,MAX_PARALLEL);
   const ok=results.filter(r=>r.status==='fulfilled').map(r=>r.value), failed=results.filter(r=>r.status==='rejected');
-  return { agents:AGENT_COUNT, collectors:DIRECT_SOURCES.length+AGENTS.length+defaultWhatsappChannels().length, parallelism:MAX_PARALLEL, configured_whatsapp_channels:defaultWhatsappChannels().length, successful_collectors:ok.length, failed_collectors:failed.length, seen:ok.reduce((n,r)=>n+Number(r.seen||0),0), inserted:ok.reduce((n,r)=>n+Number(r.inserted||0),0), duplicates:ok.reduce((n,r)=>n+Number(r.duplicate||0),0), results:ok.slice(0,80), generated_at:new Date().toISOString() };
+  return { agents:AGENT_COUNT, collectors:DIRECT_SOURCES.length+AGENTS.length+defaultWhatsappChannels().length+REGISTERED_SOURCES.length, parallelism:MAX_PARALLEL, configured_whatsapp_channels:defaultWhatsappChannels().length, successful_collectors:ok.length, failed_collectors:failed.length, seen:ok.reduce((n,r)=>n+Number(r.seen||0),0), inserted:ok.reduce((n,r)=>n+Number(r.inserted||0),0), duplicates:ok.reduce((n,r)=>n+Number(r.duplicate||0),0), results:ok.slice(0,80), generated_at:new Date().toISOString() };
   });
 }
 
