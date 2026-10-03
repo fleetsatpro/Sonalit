@@ -190,6 +190,7 @@ export default function GodsEyeView() {
     },
     enabled: view === '3D' && cctvOpen,
     staleTime: 45_000,
+    refetchInterval: 60_000,
     refetchOnWindowFocus: false,
     retry: 1,
   })
