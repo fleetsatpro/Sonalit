@@ -208,6 +208,7 @@ export default function CctvViewerPanel({
   const mediaKind = String(media.kind ?? 'synthetic').toLowerCase()
   const hasConfiguredStream = ['video', 'mjpeg'].includes(mediaKind) && Boolean(media.url)
   const directPreview = String(media.previewUrl ?? media.url ?? '').trim()
+  const directViewerUrl = String(media.sourcePageUrl ?? '').trim()
   const directRenderable = Boolean(media.direct) && mediaKind === 'image' && Boolean(directPreview)
   const attribution = activeCamera ? cameraMediaAttribution(activeCamera) : { name:'Public camera source', url:'' }
   const source = activeCamera ? cameraSource(activeCamera) : 'CCTV'
