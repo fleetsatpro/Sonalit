@@ -93,10 +93,12 @@ function openEyeMedia(row) {
   const previewAllowed = redistribution.preview_embed === true;
   const viewUrl = safeHttpsUrl(view.url || row.preview_url);
   const renderableImage = render === 'image' && previewAllowed && Boolean(viewUrl);
-  const sourcePageUrl = safeHttpsUrl(
-    render === 'link' ? view.url :
-    row.public_url ?? row.url ?? ''
-  );
+  const directoryPageUrl = safeHttpsUrl(
+    row.public_url || ''
+  ) || 'https://openeye.cam/cam/' + encodeURIComponent(String(row.id || ''));
+  const sourcePageUrl = render === 'link'
+    ? (safeHttpsUrl(view.url) || directoryPageUrl)
+    : directoryPageUrl;
   const publicViewer = sourcePageUrl || viewUrl;
   return {
     kind: renderableImage ? 'image' : 'synthetic',
@@ -140,7 +142,8 @@ async function loadOpenEyeCatalog(options = {}) {
   } else if (bbox) {
     params.set('bbox', bbox.join(','));
   }
-  params.set('embeddable', '1');
+  // Do not request embeddable-only rows: source-only public observations
+  // are still legitimate camera pins, with their media handoff kept separate.
   params.set('is_free', '1');
   params.set('limit', String(limit));
   params.set('sort', 'fresh');
@@ -164,17 +167,19 @@ async function loadOpenEyeCatalog(options = {}) {
         : Array.isArray(payload?.data)
           ? payload.data
           : [];
+    // A camera observation and a camera image are separate capabilities.
+    // OpenEye documents source-only cameras as valid map/catalog records even
+    // when the imagery cannot be embedded. Keep free public camera geometry in
+    // the observation layer; media redistribution is enforced by openEyeMedia().
     const eligibleRows = rows.filter(row => {
-      const view = asRecord(row?.view);
-      const redistribution = asRecord(row?.redistribution);
-      const renderMode = String(view.render || '').toLowerCase();
-      const previewAllowed = redistribution.preview_embed === true;
-      const previewUrl = safeHttpsUrl(view.url || row?.preview_url);
-      const publicViewerUrl = renderMode === 'link'
-        ? safeHttpsUrl(view.url || row?.public_url || row?.url)
-        : null;
-      return (renderMode === 'image' && previewAllowed && Boolean(previewUrl)) ||
-        (renderMode === 'link' && Boolean(publicViewerUrl));
+      const latitude = Number(row?.lat);
+      const longitude = Number(row?.lon);
+      return Boolean(row?.id) &&
+        row?.is_free === true &&
+        Number.isFinite(latitude) &&
+        Number.isFinite(longitude) &&
+        latitude >= -90 && latitude <= 90 &&
+        longitude >= -180 && longitude <= 180;
     });
     const normalized = eligibleRows.map((row, index) => {
       const media = openEyeMedia(row);
