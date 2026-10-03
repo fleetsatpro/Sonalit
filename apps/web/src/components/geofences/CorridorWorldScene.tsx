@@ -287,7 +287,7 @@ export default function CorridorWorldScene({
         terrainProvider: new Cesium.EllipsoidTerrainProvider(),
         animation: false,
         baseLayerPicker: false,
-        geocoder: TOKEN ? Cesium.IonGeocodeProviderType.GOOGLE : false,
+        geocoder: false,
         homeButton: false,
         infoBox: false,
         sceneModePicker: false,
