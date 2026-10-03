@@ -1,6 +1,6 @@
 'use strict';
 
-const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, getCameraCatalogHealth } = require('../../src/services/spatial/cctv/cctvCatalog');
+const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, getCameraCatalogHealth, clearOpenEyeCache } = require('../../src/services/spatial/cctv/cctvCatalog');
 const { pointInViewshed, rankNearest } = require('../../src/services/spatial/cctv/spatialCameraGeometry');
 const { assertSafeUrl, hostMatches } = require('../../src/services/spatial/cctv/cctvAllowlist');
 const { getFrame, getMedia, syntheticFrame } = require('../../src/services/spatial/cctv/cctvMediaProxy');
@@ -13,6 +13,7 @@ afterEach(() => {
   else process.env.CCTV_ENABLE_OPENEYE = originalCctvEnv;
   if (originalSamplesEnv == null) delete process.env.CCTV_INCLUDE_SAMPLES;
   else process.env.CCTV_INCLUDE_SAMPLES = originalSamplesEnv;
+  clearOpenEyeCache();
   jest.restoreAllMocks();
 });
 
