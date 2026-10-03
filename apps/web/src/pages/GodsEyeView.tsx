@@ -233,32 +233,6 @@ export default function GodsEyeView() {
 
       <main className="gev-workspace">
         <section className="gev-stage" aria-label="Sonalit God’s Eye View map">
-          <div className="gev-scene-readout" aria-live="polite">
-            <div className="gev-scene-readout-primary">
-              <span className="gev-scene-chip gev-scene-chip--live"><span className="gev-scene-live-dot" /> LIVE WORLD</span>
-              <span className="gev-scene-chip">{view === '3D' ? <Orbit size={11} /> : <Layers3 size={11} />} {view === '3D' ? '3D IMMERSIVE' : '2D OPERATIONAL'}</span>
-              {view === '3D' && <span className="gev-scene-chip"><Focus size={11} /> {Math.round(worldViewport.radiusM / 1000)} KM VIEW</span>}
-            </div>
-            <div className="gev-scene-readout-secondary">
-              {view === '3D' ? (
-                <>
-                  <span>{worldViewport.latitude.toFixed(3)}° {worldViewport.longitude.toFixed(3)}°</span>
-                  <span className="gev-readout-divider" />
-                </>
-              ) : (
-                <span>OPERATIONAL SCAN</span>
-              )}
-              <span>{positionedVehicles.length} POSITIONED</span>
-              {view === '3D' && (
-                <>
-                  <span className="gev-readout-divider" />
-                  <button type="button" className="gev-external-toggle" onClick={toggleExternal} aria-pressed={externalVisible}>
-                    {externalVisible ? 'EXTERNAL ON' : 'EXTERNAL OFF'} · {externalEntities.length}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
           {view === '2D' ? (
             <FleetMap
               vehicles={allVehicles}
