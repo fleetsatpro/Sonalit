@@ -1,9 +1,20 @@
 'use strict';
 
-const { SAMPLE_CAMERAS, getCameraCatalog } = require('../../src/services/spatial/cctv/cctvCatalog');
+const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, getCameraCatalogHealth } = require('../../src/services/spatial/cctv/cctvCatalog');
 const { pointInViewshed, rankNearest } = require('../../src/services/spatial/cctv/spatialCameraGeometry');
 const { assertSafeUrl, hostMatches } = require('../../src/services/spatial/cctv/cctvAllowlist');
 const { getFrame, getMedia, syntheticFrame } = require('../../src/services/spatial/cctv/cctvMediaProxy');
+
+const originalCctvEnv = process.env.CCTV_ENABLE_OPENEYE;
+const originalSamplesEnv = process.env.CCTV_INCLUDE_SAMPLES;
+
+afterEach(() => {
+  if (originalCctvEnv == null) delete process.env.CCTV_ENABLE_OPENEYE;
+  else process.env.CCTV_ENABLE_OPENEYE = originalCctvEnv;
+  if (originalSamplesEnv == null) delete process.env.CCTV_INCLUDE_SAMPLES;
+  else process.env.CCTV_INCLUDE_SAMPLES = originalSamplesEnv;
+  jest.restoreAllMocks();
+});
 
 describe('spatial CCTV capability', () => {
   test('ships at least three explicitly-labelled Kenya sample cameras', () => {
@@ -12,11 +23,68 @@ describe('spatial CCTV capability', () => {
     expect(SAMPLE_CAMERAS.every(c => c.attributes?.operational === false)).toBe(true);
   });
 
-  test('loads the deterministic sample catalog without claiming live media', async () => {
-    const rows = await getCameraCatalog();
-    expect(rows.length).toBeGreaterThanOrEqual(5);
-    expect(rows.filter(c => c.source === 'sonalit-cctv-sample')).toHaveLength(5);
-    expect(rows.some(c => c.media?.kind === 'synthetic')).toBe(true);
+  test('keeps development samples opt-in and never mixes them into production catalog results', async () => {
+    process.env.CCTV_ENABLE_OPENEYE = '0';
+    delete process.env.CCTV_INCLUDE_SAMPLES;
+    const productionRows = await getCameraCatalog();
+    expect(productionRows.filter(c => c.source === 'sonalit-cctv-sample')).toHaveLength(0);
+
+    process.env.CCTV_INCLUDE_SAMPLES = '1';
+    const developmentRows = await getCameraCatalog();
+    expect(developmentRows.filter(c => c.source === 'sonalit-cctv-sample')).toHaveLength(5);
+    expect(developmentRows.every(c => c.source === 'sonalit-cctv-sample' ? c.media?.kind === 'synthetic' : true)).toBe(true);
+  });
+
+  test('normalizes only OpenEye previews explicitly permitted for embedding', async () => {
+    process.env.CCTV_ENABLE_OPENEYE = '1';
+    const payload = {
+      total:2,
+      free:2,
+      items:[
+        {
+          id:'stream-kenya-1',
+          handle:'nairobi-live-1',
+          title:'Nairobi public camera',
+          lat:-1.2864,
+          lon:36.8172,
+          category:'traffic',
+          is_free:true,
+          live:true,
+          last_frame_age_s:18,
+          frame_interval_s:30,
+          frame_ts:1791010000000,
+          view:{ render:'image', url:'https://api.openeye.cam/v1/streams/stream-kenya-1/preview.webp', url_type:'image', hosted:'openeye' },
+          redistribution:{ preview_embed:true, frame_reuse:'personal-cache', attribution:{ name:'Example Traffic Authority', url:'https://example.test/cctv', required:true } }
+        },
+        {
+          id:'stream-restricted',
+          handle:'restricted',
+          title:'Not embeddable',
+          lat:-1.2,
+          lon:36.8,
+          view:{ render:'image', url:'https://example.test/restricted.jpg', url_type:'image', hosted:'source' },
+          redistribution:{ preview_embed:false, attribution:{ name:'Restricted Source', url:'https://example.test' } }
+        }
+      ]
+    };
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok:true,
+      json:async()=>payload
+    });
+    const rows = await loadOpenEyeCatalog({ center:{latitude:-1.2864,longitude:36.8172}, radiusM:25000, maxRecords:20 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source).toBe('openeye-public');
+    expect(rows[0].media.kind).toBe('image');
+    expect(rows[0].media.direct).toBe(true);
+    expect(rows[0].media.previewUrl).toContain('preview.webp');
+    expect(rows[0].provenance.attribution).toBe('Example Traffic Authority');
+    expect(rows[0].provenance.attributionUrl).toBe('https://example.test/cctv');
+    expect(rows[0].attributes.category).toBe('traffic');
+    expect(getCameraCatalogHealth().openeye.status).toBe('LIVE');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.openeye.cam/v1/catalog?'),
+      expect.objectContaining({ headers:{Accept:'application/json'} }),
+    );
   });
 
   test('asserts geometry visibility only when target is inside heading/FOV/range', () => {
