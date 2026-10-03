@@ -32,6 +32,7 @@ import CctvViewerPanel from '../components/geofences/CctvViewerPanel.js'
 import type { GlobeMember, RiskZone } from '../components/geofences/CorridorWorldScene.js'
 import type { LiveVehicle } from '../features/live-fleet/types/fleet.js'
 import '../styles/gev-command.css'
+import '../styles/cctv-wall.css'
 
 type View = '2D' | '3D'
 

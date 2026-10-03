@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api.js'
 import { enhanceImageBitmap, preferredImageryAiScale, isImageryAiEnabled, IMAGERY_AI_CCTV_MAX_INPUT_EDGE } from '../../lib/imageryAi.js'
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js'
-import '../../styles/cctv-wall.css'
 
 const FRAME_REFRESH_MS = 8_000
 
