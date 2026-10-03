@@ -298,6 +298,7 @@ export default function GodsEyeView() {
                 <div className="gev-rail-actions">
                   <button type="button" onClick={() => setVisibleLayers(new Set(WORLD_CONTEXT_LAYERS))}>ALL</button>
                   <button type="button" onClick={() => setVisibleLayers(new Set())}>NONE</button>
+                  <button type="button" aria-pressed={externalVisible} onClick={toggleExternal}>{externalVisible ? 'WORLD' : 'HIDDEN'}</button>
                 </div>
               )}
             </div>
