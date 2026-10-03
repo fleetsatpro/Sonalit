@@ -32,6 +32,7 @@ import CctvViewerPanel from '../components/geofences/CctvViewerPanel.js'
 import type { GlobeMember, RiskZone } from '../components/geofences/CorridorWorldScene.js'
 import type { LiveVehicle } from '../features/live-fleet/types/fleet.js'
 import '../styles/gev-command.css'
+import '../styles/cctv-wall.css'
 
 type View = '2D' | '3D'
 
@@ -346,7 +347,12 @@ export default function GodsEyeView() {
               showMapControls
               worldEntities={renderableExternalEntities}
               selectedExternalId={selectedExternalId}
-              onExternalSelect={id => { setSelectedExternalId(id); setSelected(null) }}
+              onExternalSelect={id => {
+                setSelectedExternalId(id)
+                setSelected(null)
+                const entity = allExternalEntities.find(candidate => candidate.id === id)
+                if (entity?.entityType === 'camera' || entity?.entityType === 'spatial_camera') setCctvOpen(true)
+              }}
               onSelect={id => { setSelectedExternalId(null); setSelected(id ? allVehicles.find(v => v.id === id) ?? null : null) }}
               onViewportChange={setWorldViewport}
             />
