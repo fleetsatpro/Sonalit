@@ -50,6 +50,7 @@ router.get('/nearest', asyncHandler(async (req,res) => {
   const result = await getNearestCameras({
     ...target,
     limit:Math.min(20, Math.max(1, numberOrNull(req.query.limit) || 5)),
+    radiusM:numberOrNull(req.query.radiusM) || 25000,
     requireVisible:String(req.query.requireVisible || '').toLowerCase() === 'true'
   });
   res.json({ data:result, meta:{ generated_at:new Date().toISOString() } });
