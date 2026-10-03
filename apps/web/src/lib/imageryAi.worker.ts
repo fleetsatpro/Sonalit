@@ -59,19 +59,22 @@ async function loadSession(scale: ImageryAiScale, wasmOnly = false) {
   if (existing) return existing
 
   const promise = loadOrt().then(async ort => {
-    const executionProviders =
-      !wasmOnly && typeof navigator !== 'undefined' && 'gpu' in navigator
-        ? ['webgpu', 'wasm']
-        : ['wasm']
+    const model = scale === 4 ? IMAGERY_AI_X4_MODEL_URL : IMAGERY_AI_X2_MODEL_URL
+    const options = {
+      graphOptimizationLevel: 'all',
+      executionMode: 'parallel',
+    }
 
-    return ort.InferenceSession.create(
-      scale === 4 ? IMAGERY_AI_X4_MODEL_URL : IMAGERY_AI_X2_MODEL_URL,
-      {
-        executionProviders,
-        graphOptimizationLevel: 'all',
-        executionMode: 'parallel',
-      },
-    )
+    try {
+      const executionProviders =
+        !wasmOnly && typeof navigator !== 'undefined' && 'gpu' in navigator
+          ? ['webgpu', 'wasm']
+          : ['wasm']
+      return await ort.InferenceSession.create(model, { ...options, executionProviders })
+    } catch (error) {
+      if (wasmOnly) throw error
+      return ort.InferenceSession.create(model, { ...options, executionProviders: ['wasm'] })
+    }
   })
 
   sessionByScale.set(key, promise)
