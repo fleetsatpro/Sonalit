@@ -22,7 +22,7 @@ const EAST_AFRICA_CODES=['BI','DJ','ER','ET','KE','KM','MG','MU','MW','MZ','RW',
 
 function list(data:any,key:string):Row[]{if(Array.isArray(data))return data;if(Array.isArray(data?.[key]))return data[key];if(Array.isArray(data?.items))return data.items;return[]}
 function titleOf(x:Row){return x.title||x.headline||x.name||x.reference||x.scenario||'INTELLIGENCE OBJECT'}
-function textOf(x:Row){return x.summary||x.description||x.judgement||x.assessment||x.headline||x.status||'No analytical synopsis supplied.'}
+function textOf(x:Row){if(x.source_type||x.provider){const role=String(x.metadata?.role||'').toLowerCase()==='discovery'?' · DISCOVERY / LINK-OUT':'';return String(x.source_type||'SOURCE').toUpperCase()+' · '+String(x.provider||'PROVIDER').toUpperCase()+role;}return x.summary||x.description||x.judgement||x.assessment||x.headline||x.status||'No analytical synopsis supplied.'}
 function age(v?:string){if(!v)return'—';const m=Math.max(0,Math.floor((Date.now()-new Date(v).getTime())/60000));if(m<1)return'NOW';if(m<60)return`${m}M`;if(m<1440)return`${Math.floor(m/60)}H`;return`${Math.floor(m/1440)}D`}
 function sev(v:any){const k=String(v||'informational').toLowerCase();return <span className={`icd-sev ${k}`}><i/>{k.toUpperCase()}</span>}
 function scopeMatches(x:Row,s:Scope){if(s.type==='global')return true;const c=String(x.country_code||x.country||x.countryCode||'').toUpperCase();if(s.type==='country')return c===s.key;if(s.type==='region')return Boolean(REGIONS[s.key]?.includes(c))||String(x.scope_key||'').toLowerCase()===s.key;return AFRICA.includes(c)||String(x.scope_key||'').toLowerCase()===s.key}
@@ -70,7 +70,7 @@ export default function IntelligenceCentreDeep(){
  const watch=filtered(list(watchQ.data,'watchlists').filter(x=>scopeMatches(x,scope)));
  const entities=filtered(list(entitiesQ.data,'entities').filter(x=>scopeMatches(x,scope)));
  const observations=filtered(list(observationsQ.data,'observations').filter(x=>scopeMatches(x,scope)));
- const sources=list(sourcesQ.data,'sources').filter(x=>scope.type==='global'||observations.some(o=>String(o.source_id)===String(x.id)));
+ const sources=list(sourcesQ.data,'sources').filter(x=>scope.type==='global'||String(x.metadata?.role||'').toLowerCase()==='discovery'||observations.some(o=>String(o.source_id)===String(x.id)));
  const countries=list(countriesQ.data,'countries').filter(x=>scopeMatches(x,scope));
  const trajectories=list(trajectoriesQ.data,'trajectories');
  const exposures=list(exposuresQ.data,'exposures');
