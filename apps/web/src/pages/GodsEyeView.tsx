@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '../lib/api.js'
+import { imageryAiBadge, imageryAiSupported } from '../lib/imageryAi.js'
 import { fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
 import type { WorldContextLayer } from '../lib/spatialClient.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
@@ -286,6 +287,10 @@ export default function GodsEyeView() {
         </div>
 
         <div className="gev-topright">
+          <div className="gev-ai-badge" title="Open-source Real-ESRGAN enhancement is applied to deep-zoom photographic imagery when the device can run it safely. Source imagery remains authoritative.">
+            <span className="gev-ai-badge-dot" />
+            {imageryAiSupported() ? imageryAiBadge() : 'SOURCE IMAGE'}
+          </div>
           <div className="gev-health">
             <span className="gev-health-dot" />
             <span className="gev-health-label">Operational link</span>
