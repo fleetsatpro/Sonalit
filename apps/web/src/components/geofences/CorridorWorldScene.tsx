@@ -106,14 +106,63 @@ function externalAltitude(item: SpatialWorldEntity) {
 }
 
 function applyPhotorealisticQuality(tileset: Cesium.Cesium3DTileset, highFidelity: boolean) {
-  tileset.maximumScreenSpaceError = highFidelity ? 3 : 7;
-  tileset.cacheBytes = highFidelity ? 1024 * 1024 * 1024 : 384 * 1024 * 1024;
-  tileset.maximumCacheOverflowBytes = highFidelity ? 512 * 1024 * 1024 : 128 * 1024 * 1024;
-  tileset.dynamicScreenSpaceError = !highFidelity;
-  tileset.foveatedScreenSpaceError = true;
-  tileset.foveatedTimeDelay = highFidelity ? 0.15 : 0.25;
+  // Lower screen-space error forces earlier refinement. Keep the renderer quality-biased
+  // even when we have to use the context-safe initialization path.
+  tileset.maximumScreenSpaceError = highFidelity ? 1.5 : 2.5;
+  tileset.cacheBytes = highFidelity ? 768 * 1024 * 1024 : 384 * 1024 * 1024;
+  tileset.maximumCacheOverflowBytes = highFidelity ? 512 * 1024 * 1024 : 256 * 1024 * 1024;
+  tileset.dynamicScreenSpaceError = false;
+  // Desktop GEV favors uniform detail across the viewport rather than
+  // intentionally deferring peripheral tiles. Compact devices retain
+  // foveated loading to protect thermals while keeping native pixel density.
+  tileset.foveatedScreenSpaceError = !highFidelity;
+  tileset.foveatedTimeDelay = highFidelity ? 0 : 0.1;
+  tileset.preloadFlightDestinations = true;
+  tileset.preloadAncestors = true;
+  tileset.preloadSiblings = true;
+  tileset.skipLevelOfDetail = false;
+  tileset.cullRequestsWhileMoving = !highFidelity;
+  tileset.preferLeaves = highFidelity;
   tileset.enableCollision = true;
   tileset.shadows = Cesium.ShadowMode.ENABLED;
+}
+
+function createWorldViewer(container: HTMLDivElement, antialias: boolean, requestWebgl1 = false) {
+  // Do not bootstrap a low-quality raster layer just to get the widget alive.
+  // The first rendered surface should be the photorealistic world, with Esri
+  // added only as an explicit last-resort fallback after provider failures.
+  return new Cesium.Viewer(container, {
+    baseLayer: false,
+    baseLayerPicker: false,
+    geocoder: false,
+    showRenderLoopErrors: false,
+    homeButton: false,
+    infoBox: false,
+    sceneModePicker: false,
+    selectionIndicator: false,
+    timeline: false,
+    animation: false,
+    navigationHelpButton: false,
+    navigationInstructionsInitiallyVisible: false,
+    fullscreenButton: false,
+    terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+    requestRenderMode: true,
+    maximumRenderTimeChange: Infinity,
+    scene3DOnly: true,
+    contextOptions: {
+      requestWebgl1,
+      allowTextureFilterAnisotropic: true,
+      webgl: {
+        // The canvas is opaque and the command chrome is HTML above it, so
+        // alpha compositing is unnecessary and can reduce context reliability.
+        alpha: false,
+        antialias,
+        powerPreference: 'high-performance',
+        preserveDrawingBuffer: false,
+        failIfMajorPerformanceCaveat: false,
+      },
+    },
+  });
 }
 
 function externalCaption(item: SpatialWorldEntity) {
@@ -133,7 +182,7 @@ function css(hex: string, alpha = 1) {
 function fitPoints(route: LatLng[], members: GlobeMember[], trail?: LatLng[], zones: RiskZone[] = [], worldEntities: SpatialWorldEntity[] = []) {
   return [
     ...route,
-    ...members.filter(m => m.lat != null && m.lng != null).map(m => ({ lat: m.lat!, lng: m.lng! })),
+    ...members.filter(m => m.lat != null && m.lng != null).map(m => ({ lat: m.lat!, lng: m.lng!, altitudeM: 0 })),
     ...(trail ?? []),
     ...zones.map(z => ({ lat: z.lat, lng: z.lng, altitudeM: 0 })),
     ...worldEntities.filter(e => Number.isFinite(e.latitude) && Number.isFinite(e.longitude)).map(e => ({
@@ -188,7 +237,7 @@ function statusLabel(member: GlobeMember) {
 
 function singleWorldPoint(liveMembers: GlobeMember[], zones: RiskZone[], worldEntities: SpatialWorldEntity[]) {
   const member = liveMembers.find(m => m.lat != null && m.lng != null);
-  if (member) return { lat: member.lat!, lng: member.lng!, altitudeM: 6 };
+  if (member) return { lat: member.lat!, lng: member.lng!, altitudeM: 0 };
   const zone = zones[0];
   if (zone) return { lat: zone.lat, lng: zone.lng, altitudeM: 0 };
   const external = worldEntities.find(e => Number.isFinite(e.latitude) && Number.isFinite(e.longitude));
@@ -286,36 +335,30 @@ export default function CorridorWorldScene({
   useEffect(() => {
     if (!boxRef.current) return;
     let viewer: Cesium.Viewer;
+    let contextSafeMode = false;
+    let webgl1CompatibilityMode = false;
     try {
       Cesium.Ion.defaultAccessToken = TOKEN;
-      const initialProvider = new Cesium.UrlTemplateImageryProvider({
-        url: STREET_URL,
-        credit: new Cesium.Credit('Esri, HERE, Garmin, © OpenStreetMap contributors', false),
-        maximumLevel: 19,
-        enablePickFeatures: false,
-      });
-      viewer = new Cesium.Viewer(boxRef.current, {
-        baseLayer: new Cesium.ImageryLayer(initialProvider),
-        terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-        animation: false,
-        baseLayerPicker: false,
-        geocoder: false,
-        homeButton: false,
-        infoBox: false,
-        sceneModePicker: false,
-        selectionIndicator: false,
-        timeline: false,
-        navigationHelpButton: false,
-        navigationInstructionsInitiallyVisible: false,
-        fullscreenButton: false,
-        requestRenderMode: true,
-        maximumRenderTimeChange: Infinity,
-        scene3DOnly: true,
-        contextOptions: { webgl: { alpha: true, antialias: true, failIfMajorPerformanceCaveat: false } },
-      });
+      viewer = createWorldViewer(boxRef.current, true, false);
     } catch {
-      setInitFailed(true);
-      return;
+      // A subset of mobile/driver combinations reject an antialiased WebGL context.
+      // Retry the exact same high-fidelity scene with a context-safe WebGL2 setup.
+      contextSafeMode = true;
+      try {
+        while (boxRef.current.firstChild) boxRef.current.removeChild(boxRef.current.firstChild);
+        viewer = createWorldViewer(boxRef.current, false, false);
+      } catch {
+        // Cesium supports an explicit WebGL1 compatibility path. Keep this as the
+        // final renderer-tier fallback instead of replacing the 3D world with 2D.
+        webgl1CompatibilityMode = true;
+        try {
+          while (boxRef.current.firstChild) boxRef.current.removeChild(boxRef.current.firstChild);
+          viewer = createWorldViewer(boxRef.current, false, true);
+        } catch {
+          setInitFailed(true);
+          return;
+        }
+      }
     }
 
     viewerRef.current = viewer;
@@ -323,7 +366,7 @@ export default function CorridorWorldScene({
     // self-healing for transient shader/texture/tile faults instead of leaving
     // the operator with a permanently frozen or blank globe.
     const renderErrorHandler = () => {
-      setMapStatus('3D RENDER RECOVERING · ESRI SURFACE ACTIVE');
+      setMapStatus('3D RENDER RECOVERING · PRESERVING ACTIVE SURFACE');
       if (renderRecoveryRef.current >= 3 || viewer.isDestroyed()) return;
       renderRecoveryRef.current += 1;
       viewer.useDefaultRenderLoop = true;
@@ -337,27 +380,50 @@ export default function CorridorWorldScene({
       });
     }
     const compactSurface = window.matchMedia?.('(max-width: 900px)').matches ?? false;
-    const highDpi = Math.max(1, window.devicePixelRatio || 1);
-    const highFidelity = !compactSurface;
+    const devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
+    const cssWidth = Math.max(320, boxRef.current.clientWidth || 1280);
+    const cssHeight = Math.max(240, boxRef.current.clientHeight || 720);
+    const nativePixels = cssWidth * cssHeight * devicePixelRatio * devicePixelRatio;
+    const deviceMemoryGiB = Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8);
+    const highFidelity = !compactSurface || deviceMemoryGiB >= 6;
+    // Resolution is budgeted in actual framebuffer pixels. devicePixelRatio is
+    // already part of native resolution; resolutionScale must never multiply
+    // the DPR a second time on high-density phones.
+    const pixelBudget = compactSurface
+      ? Math.max(4_500_000, Math.min(6_000_000, cssWidth * cssHeight * 8))
+      : Math.max(10_000_000, Math.min(14_000_000, cssWidth * cssHeight * 6));
+    const resolutionScale = Math.max(0.9, Math.min(1.35, Math.sqrt(pixelBudget / Math.max(1, nativePixels))));
+    const msaaTarget = compactSurface ? 4 : (nativePixels > 7_000_000 ? 4 : (highFidelity ? 8 : 2));
+
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
-    viewer.scene.fog.enabled = true;
-    viewer.scene.fog.density = 0.000009;
-    viewer.scene.highDynamicRange = true;
+    viewer.scene.fog.enabled = false;
+    viewer.scene.highDynamicRange = viewer.scene.highDynamicRangeSupported;
     viewer.scene.postProcessStages.fxaa.enabled = true;
-    viewer.scene.globe.tileCacheSize = highFidelity ? 1600 : 650;
+    // Logarithmic depth improves precision across global-to-street camera ranges.
+    try {
+      viewer.scene.logarithmicDepthBuffer = true;
+    } catch {
+      // Preserve normal depth buffering on legacy contexts.
+    }
+    viewer.scene.globe.tileCacheSize = highFidelity ? 1800 : 750;
     viewer.scene.globe.preloadAncestors = true;
     viewer.scene.globe.preloadSiblings = true;
-    viewer.scene.msaaSamples = viewer.scene.msaaSupported ? (highFidelity ? 8 : 2) : 1;
-    // GEV is a presentation-grade spatial surface: preserve high-DPI raster
-    // density while keeping mobile GPU pressure bounded.
+    // Prefer 8x MSAA, but keep 4x on the context-safe path. Combined with
+    // high-DPI rendering and FXAA this preserves crisp geometry without risking
+    // another context initialization failure on constrained GPUs.
+    viewer.scene.msaaSamples = viewer.scene.msaaSupported
+      ? (webgl1CompatibilityMode ? 2 : (contextSafeMode ? Math.min(4, msaaTarget) : msaaTarget))
+      : 1;
+    // Render at native device density first, then allow bounded supersampling
+    // on genuinely large displays. This avoids the old DPR × resolutionScale
+    // multiplication that could request enormous mobile framebuffers.
     viewer.useBrowserRecommendedResolution = false;
-    viewer.resolutionScale = compactSurface
-      ? Math.min(Math.max(highDpi, 1.25), 2)
-      : Math.min(Math.max(highDpi, 1.35), 3);
-    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 1.35 : 0.72;
+    viewer.resolutionScale = resolutionScale;
+    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 1.0 : 0.5;
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#06101a');
+    viewer.scene.globe.undergroundColor = Cesium.Color.fromCssColorString('#02050a');
     viewer.scene.globe.dynamicAtmosphereLighting = true;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
     viewer.scene.skyAtmosphere.show = true;
@@ -375,6 +441,8 @@ export default function CorridorWorldScene({
     viewer.scene.screenSpaceCameraController.maximumZoomDistance = 30000000;
     // Avoid blur-producing bloom on the photographic surface. GEV prioritizes
     // source texture fidelity and crisp building edges over decorative glow.
+    // Do not let the low-detail ellipsoid flash underneath the photorealistic world.
+    viewer.scene.globe.show = !(GOOGLE_KEY || TOKEN);
     setSurfaceQuality('loading');
     setMapStatus('HIGH-FIDELITY 3D SURFACE LOADING');
 
@@ -450,11 +518,17 @@ export default function CorridorWorldScene({
           // Use the raw Google 3D Tiles root endpoint. This keeps the GEV
           // chrome free of a geocoder while following Google's documented
           // CesiumJS renderer pattern.
+          setMapStatus('GOOGLE PHOTOREALISTIC 3D · CONNECTING');
           Cesium.RequestScheduler.requestsByServer['tile.googleapis.com:443'] = 18;
           const tileset = await Cesium.Cesium3DTileset.fromUrl(
             `https://tile.googleapis.com/v1/3dtiles/root.json?key=${encodeURIComponent(GOOGLE_KEY)}`,
             { showCreditsOnScreen: true },
           );
+          tileset.initialTilesLoaded.addEventListener(() => {
+            if (!viewer.isDestroyed() && photoTilesetRef.current === tileset) {
+              setMapStatus('GOOGLE PHOTOREALISTIC 3D · FULL DETAIL');
+            }
+          });
           if (!alive()) return;
           photoTilesetRef.current = viewer.scene.primitives.add(tileset);
           applyPhotorealisticQuality(tileset, highFidelity);
@@ -467,6 +541,7 @@ export default function CorridorWorldScene({
           viewer.scene.requestRender();
           return;
         } catch {
+          setMapStatus('GOOGLE 3D UNAVAILABLE · SWITCHING TO ION PHOTOREALISTIC');
           // Use the Ion-hosted Photorealistic asset before dropping to terrain.
         }
       }
@@ -476,8 +551,14 @@ export default function CorridorWorldScene({
       // global 3D asset. This avoids requiring an additional Google key for GEV.
       if (TOKEN) {
         try {
+          setMapStatus('CESIUM ION · PHOTOREALISTIC 3D · CONNECTING');
           const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(PHOTOREALISTIC_ION_ASSET_ID, {
             showCreditsOnScreen: true,
+          });
+          tileset.initialTilesLoaded.addEventListener(() => {
+            if (!viewer.isDestroyed() && photoTilesetRef.current === tileset) {
+              setMapStatus('CESIUM ION · PHOTOREALISTIC 3D · FULL DETAIL');
+            }
           });
           if (!alive()) return;
           photoTilesetRef.current = viewer.scene.primitives.add(tileset);
@@ -491,6 +572,7 @@ export default function CorridorWorldScene({
           viewer.scene.requestRender();
           return;
         } catch {
+          setMapStatus('ION PHOTOREALISTIC UNAVAILABLE · SWITCHING TO 3D TERRAIN');
           // Fall through to the Cesium World Terrain surface below.
         }
       }
@@ -499,8 +581,10 @@ export default function CorridorWorldScene({
       // global aerial imagery + OSM buildings. This retains true relief and
       // 3D structures when photorealistic coverage/credentials are unavailable.
       if (TOKEN) {
+        viewer.scene.globe.show = true;
         let imageryLoaded = false;
         try {
+          setMapStatus('CESIUM WORLD AERIAL · CONNECTING');
           const imagery = await Cesium.createWorldImageryAsync({
             style: modeRef.current === 'hybrid'
               ? Cesium.IonWorldImageryStyle.AERIAL_WITH_LABELS
@@ -511,33 +595,51 @@ export default function CorridorWorldScene({
           viewer.imageryLayers.addImageryProvider(imagery);
           imageryLoaded = true;
         } catch {
-          // Keep the immediate Esri fallback layer.
+          setMapStatus('CESIUM WORLD AERIAL UNAVAILABLE · RETAINING BEST SURFACE');
+          // Keep the existing no-imagery globe until terrain can be attached.
         }
+        let terrainLoaded = false;
         try {
+          setMapStatus('CESIUM WORLD TERRAIN · CONNECTING');
           const terrain = await Cesium.createWorldTerrainAsync({ requestVertexNormals: true, requestWaterMask: true });
           if (!alive()) return;
           viewer.terrainProvider = terrain;
           setTerrainReady(true);
+          terrainLoaded = true;
         } catch {
           // Ellipsoid terrain remains available.
         }
+        let buildingsLoaded = false;
         try {
           const buildings = await Cesium.createOsmBuildingsAsync();
           if (!alive()) return;
           viewer.scene.primitives.add(buildings);
+          buildingsLoaded = true;
         } catch {
           // Buildings are an enhancement, never a dependency for the world surface.
         }
+        if (!imageryLoaded) {
+          addImagery(viewer, modeRef.current, message => setMapStatus(message));
+        }
         surfaceQualityRef.current = 'terrain';
         setSurfaceQuality('terrain');
-        setMapStatus(imageryLoaded ? 'CESIUM WORLD TERRAIN · 3D BUILDINGS' : 'CESIUM TERRAIN · ESRI IMAGERY FALLBACK');
+        setMapStatus(
+          terrainLoaded
+            ? (imageryLoaded
+              ? (buildingsLoaded ? 'CESIUM WORLD TERRAIN · 3D BUILDINGS' : 'CESIUM WORLD TERRAIN · AERIAL')
+              : (buildingsLoaded ? 'CESIUM WORLD TERRAIN · ESRI AERIAL FALLBACK + 3D BUILDINGS' : 'CESIUM WORLD TERRAIN · ESRI AERIAL FALLBACK'))
+            : 'CESIUM ELLIPSOID · ESRI AERIAL FALLBACK',
+        );
         viewer.scene.requestRender();
         return;
       }
 
+      // No high-fidelity credentials: deliberately make the raster surface
+      // an explicit last resort. It is never used to mask provider failures.
+      addImagery(viewer, modeRef.current, message => setMapStatus(message));
       surfaceQualityRef.current = 'fallback';
       setSurfaceQuality('fallback');
-      setMapStatus('ESRI 3D FALLBACK · NO HIGH-FIDELITY TOKEN');
+      setMapStatus('ESRI RASTER FALLBACK · NO HIGH-FIDELITY CREDENTIAL');
       viewer.scene.requestRender();
     })();
 
@@ -569,8 +671,13 @@ export default function CorridorWorldScene({
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     modeRef.current = mode;
+    if (surfaceQualityRef.current === 'loading') {
+      // Provider initialization owns the surface while it is negotiating.
+      // Never introduce a raster replacement just because a display mode changed.
+      return;
+    }
     if (surfaceQualityRef.current === 'photorealistic') {
-      setMapStatus(GOOGLE_KEY ? 'GOOGLE PHOTOREALISTIC 3D · STREAMING' : 'CESIUM ION · PHOTOREALISTIC 3D');
+      setMapStatus(GOOGLE_KEY ? 'GOOGLE PHOTOREALISTIC 3D · FULL DETAIL' : 'CESIUM ION · PHOTOREALISTIC 3D · FULL DETAIL');
       return;
     }
     if (surfaceQualityRef.current === 'terrain' && TOKEN) {
@@ -603,7 +710,9 @@ export default function CorridorWorldScene({
         positions,
         width: widthM,
         height: 0,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
         extrudedHeight: height,
+        extrudedHeightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
         material: css('#8b5cf6', 0.12),
         outline: true,
         outlineColor: css('#b59cff', 0.52),
@@ -631,7 +740,7 @@ export default function CorridorWorldScene({
       id,
       position: Cesium.Cartesian3.fromDegrees(p.lng, p.lat),
       point: { pixelSize: 12, color: css(color), outlineColor: Cesium.Color.WHITE, outlineWidth: 2, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
-      label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -22), disableDepthTestDistance: Number.POSITIVE_INFINITY },
+      label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -22), disableDepthTestDistance: Number.POSITIVE_INFINITY },
     });
     pin('corridor:origin', route[0]!, '#10b981', 'ORIGIN');
     pin('corridor:destination', route[route.length - 1]!, '#fb7185', 'DESTINATION');
@@ -649,6 +758,7 @@ export default function CorridorWorldScene({
         position: Cesium.Cartesian3.fromDegrees(zone.lng, zone.lat, height / 2),
         cylinder: {
           length: height,
+          heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
           topRadius: Math.max(50, zone.radius_km * 1000),
           bottomRadius: Math.max(50, zone.radius_km * 1000),
           material: css(color, 0.13),
@@ -664,6 +774,7 @@ export default function CorridorWorldScene({
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           pixelOffset: new Cesium.Cartesian2(0, -12),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
           distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 750000),
         },
       });
@@ -779,8 +890,8 @@ export default function CorridorWorldScene({
 
     const cameraEntities = globalCameraEntities(worldEntities);
     const points = fitPoints([], liveMembers, trail, zones, cameraEntities);
-    initialGlobalFitDoneRef.current = true;
     if (points.length < 2) return;
+    initialGlobalFitDoneRef.current = true;
 
     const sphere = Cesium.BoundingSphere.fromPoints(points);
     const safeRange = Math.min(14_000_000, Math.max(3_500_000, sphere.radius * 3.2));
@@ -878,6 +989,7 @@ export default function CorridorWorldScene({
       const labelGraphic = new Cesium.LabelGraphics({
         text: label,
         font: selected ? '700 12px sans-serif' : '600 10px sans-serif',
+        heightReference: altitude == null ? Cesium.HeightReference.CLAMP_TO_GROUND : Cesium.HeightReference.NONE,
         fillColor: css(color, 0.98),
         outlineColor: Cesium.Color.BLACK,
         outlineWidth: 3,
@@ -932,8 +1044,9 @@ export default function CorridorWorldScene({
       <div className={`${fill ? 'h-full' : 'h-[520px]'} grid place-items-center bg-[#080b12] text-center`}>
         <div className="max-w-sm px-6">
           <TriangleAlert className="mx-auto mb-3 text-amber-400" size={26} />
-          <p className="text-sm font-semibold text-white">3D world renderer failed to initialize</p>
-          <p className="mt-1 text-xs text-neutral-500">The operational corridor data is intact. Reopen the map after the browser finishes loading its WebGL context.</p>
+          <p className="text-sm font-semibold text-white">3D world renderer could not create a WebGL context</p>
+          <p className="mt-1 text-xs text-neutral-500">Sonalit will not substitute a degraded surface for this failure. Reinitialize the renderer after GPU/WebGL availability is restored.</p>
+          <button type="button" onClick={() => window.location.reload()} className="mt-4 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.07] px-3 py-2 text-[10px] font-bold font-mono tracking-[0.12em] text-cyan-200 hover:bg-cyan-400/[0.12]">REINITIALIZE 3D</button>
         </div>
       </div>
     );

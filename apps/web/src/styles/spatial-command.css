@@ -520,7 +520,18 @@
   box-shadow: 0 16px 42px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.04);
 }
 
-.spatial-surface canvas,
+/* Photographic 3D tiles must remain source-faithful. Do not run the Cesium
+ * framebuffer through a CSS color filter or HUD scanline layer; refinement,
+ * lighting and antialiasing are handled in the renderer itself. */
+.spatial-surface[data-spatial-surface='cesium-world']::before {
+  opacity: 0;
+}
+
+.spatial-surface[data-spatial-surface='cesium-world'] canvas {
+  image-rendering: auto;
+  filter: none !important;
+}
+
 .spatial-map-surface canvas {
   image-rendering: auto;
   filter: saturate(1.035) contrast(1.012);
