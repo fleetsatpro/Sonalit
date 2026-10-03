@@ -245,6 +245,7 @@ export default function GodsEyeView() {
               corridorKm={1}
               members={members}
               zones={zones}
+              focusId={selected?.id ?? null}
               fill
               surface="gev"
               fixedView="3D"
@@ -284,8 +285,12 @@ export default function GodsEyeView() {
                     disabled={view !== '3D'}
                     onClick={() => setVisibleLayers(current => {
                       const next = new Set(current)
-                      if (next.has(layer)) next.delete(layer)
-                      else next.add(layer)
+                      if (next.has(layer)) {
+                        next.delete(layer)
+                        if (selectedExternal && spatialEntityLayer(selectedExternal) === layer) setSelectedExternalId(null)
+                      } else {
+                        next.add(layer)
+                      }
                       return next
                     })}
                   >
