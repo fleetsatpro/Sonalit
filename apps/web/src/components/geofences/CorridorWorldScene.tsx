@@ -684,7 +684,7 @@ export default function CorridorWorldScene({
     });
 
     for (const member of liveMembers) {
-      const target = Cesium.Cartesian3.fromDegrees(member.lng!, member.lat!, 6);
+      const target = Cesium.Cartesian3.fromDegrees(member.lng!, member.lat!, 0);
       targetRef.current.set(member.id, target);
       if (!currentRef.current.has(member.id)) currentRef.current.set(member.id, target.clone());
       const heading = Number(member.heading);
@@ -696,7 +696,7 @@ export default function CorridorWorldScene({
       const label = statusLabel(member);
       if (existing) {
         existing.position = new Cesium.ConstantPositionProperty(position);
-        existing.point = new Cesium.PointGraphics({ pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, disableDepthTestDistance: Number.POSITIVE_INFINITY });
+        existing.point = new Cesium.PointGraphics({ pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY });
         if (existing.label?.text) (existing.label.text as Cesium.ConstantProperty).setValue(label);
         if (existing.billboard?.image) (existing.billboard.image as Cesium.ConstantProperty).setValue(vehicleSvg(color, selected));
         continue;
@@ -706,11 +706,11 @@ export default function CorridorWorldScene({
         id: `dev:${member.id}`,
         position: new Cesium.ConstantPositionProperty(position),
         orientation: Number.isFinite(heading) ? new Cesium.ConstantProperty(Cesium.Transforms.headingPitchRollQuaternion(position, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0))) : undefined,
-        point: { pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, disableDepthTestDistance: Number.POSITIVE_INFINITY },
-        billboard: { image: vehicleSvg(color, selected), width: selected ? 42 : 34, height: selected ? 28 : 23, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, disableDepthTestDistance: Number.POSITIVE_INFINITY, alignedAxis: Cesium.Cartesian3.ZERO, scaleByDistance: new Cesium.NearFarScalar(250, 1.18, 300000, 0.62) },
-        label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -34), disableDepthTestDistance: Number.POSITIVE_INFINITY, showBackground: true, backgroundColor: css('#06090f', 0.76), backgroundPadding: new Cesium.Cartesian2(7, 4), scaleByDistance: new Cesium.NearFarScalar(300, 1.08, 180000, 0.72), translucencyByDistance: new Cesium.NearFarScalar(35000, 1, 240000, 0) },
+        point: { pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+        billboard: { image: vehicleSvg(color, selected), width: selected ? 42 : 34, height: selected ? 28 : 23, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, alignedAxis: Cesium.Cartesian3.ZERO, scaleByDistance: new Cesium.NearFarScalar(250, 1.18, 300000, 0.62) },
+        label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -34), heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, showBackground: true, backgroundColor: css('#06090f', 0.76), backgroundPadding: new Cesium.Cartesian2(7, 4), scaleByDistance: new Cesium.NearFarScalar(300, 1.08, 180000, 0.72), translucencyByDistance: new Cesium.NearFarScalar(35000, 1, 240000, 0) },
         ellipse: { semiMajorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), semiMinorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), height: 4, material: css(color, 0.06), outline: true, outlineColor: css(color, 0.45), outlineWidth: 1 },
-        ...(member.vehicle_model_url || MODEL_URL ? { model: new Cesium.ModelGraphics({ uri: new Cesium.ConstantProperty(member.vehicle_model_url || MODEL_URL), minimumPixelSize: 34, maximumScale: 220, runAnimations: true, shadows: Cesium.ShadowMode.ENABLED }) } : {}),
+        ...(member.vehicle_model_url || MODEL_URL ? { model: new Cesium.ModelGraphics({ uri: new Cesium.ConstantProperty(member.vehicle_model_url || MODEL_URL), minimumPixelSize: 34, maximumScale: 220, runAnimations: true, shadows: Cesium.ShadowMode.ENABLED, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND }) } : {}),
       });
       entityMapRef.current.set(member.id, entity);
     }
