@@ -421,7 +421,13 @@ export default function CctvViewerPanel({
       <div className={compact ? 'gev-cctv-wall-thumb gev-cctv-wall-thumb--source' : 'gev-cctv-tile-media gev-cctv-tile-media--source'}>
         <Camera size={compact ? 16 : 22} />
         <strong>{camMode === 'source' ? 'PUBLISHER VIEW' : camMode === 'synthetic' ? 'NO LIVE IMAGE' : 'PREVIEW UNAVAILABLE'}</strong>
-        <span>{camMode === 'source' ? 'This camera must be opened at its publisher.' : camMode === 'synthetic' ? 'The source did not authorize a renderable preview.' : 'The approved media gateway has no current frame.'}</span>
+        <span>{camMode === 'source'
+          ? camSourceMedia
+            ? 'Embedded playback is not permitted. Open the publisher-provided footage/frame directly in a new tab.'
+            : 'This publisher requires top-level viewing. Open the publisher in a new tab to access the live view.'
+          : camMode === 'synthetic'
+            ? 'The source did not authorize a renderable preview.'
+            : 'The approved media gateway has no current frame.'}</span>
         <div className="gev-cctv-source-actions">
           {camSourceMedia && (
             <a
@@ -431,7 +437,11 @@ export default function CctvViewerPanel({
               rel="noopener"
             >
               <ExternalLink size={11} />
-              {camSourceMediaType === 'html' ? 'OPEN LIVE VIEW' : camSourceMediaType === 'image' ? 'OPEN SOURCE FRAME' : 'OPEN SOURCE MEDIA'}
+              {camSourceMediaType === 'video' || camSourceMediaType === 'mjpeg'
+                ? 'OPEN LIVE FOOTAGE'
+                : camSourceMediaType === 'image'
+                  ? 'OPEN LATEST FRAME'
+                  : 'OPEN SOURCE MEDIA'}
             </a>
           )}
           {camViewer && camViewer !== camSourceMedia && (
