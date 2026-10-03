@@ -64,6 +64,18 @@ describe('spatial CCTV capability', () => {
           lon:36.8,
           view:{ render:'image', url:'https://example.test/restricted.jpg', url_type:'image', hosted:'source' },
           redistribution:{ preview_embed:false, attribution:{ name:'Restricted Source', url:'https://example.test' } }
+        },
+        {
+          id:'stream-public-view',
+          handle:'public-view',
+          title:'Public viewer camera',
+          lat:-1.21,
+          lon:36.81,
+          category:'traffic',
+          is_free:true,
+          live:true,
+          view:{ render:'link', url:'https://publisher.example.test/camera/public-view', url_type:'html', hosted:'source' },
+          redistribution:{ preview_embed:false, frame_reuse:'fetch-from-source', attribution:{ name:'Publisher Camera Network', url:'https://publisher.example.test', required:true } }
         }
       ]
     };
@@ -72,7 +84,7 @@ describe('spatial CCTV capability', () => {
       json:async()=>payload
     });
     const rows = await loadOpenEyeCatalog({ center:{latitude:-1.2864,longitude:36.8172}, radiusM:25000, maxRecords:20 });
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
     expect(rows[0].source).toBe('openeye-public');
     expect(rows[0].media.kind).toBe('image');
     expect(rows[0].media.direct).toBe(true);
@@ -80,6 +92,9 @@ describe('spatial CCTV capability', () => {
     expect(rows[0].provenance.attribution).toBe('Example Traffic Authority');
     expect(rows[0].provenance.attributionUrl).toBe('https://example.test/cctv');
     expect(rows[0].attributes.category).toBe('traffic');
+    expect(rows[1].media.direct).toBe(false);
+    expect(rows[1].media.sourcePageUrl).toBe('https://publisher.example.test/camera/public-view');
+    expect(rows[1].provenance.attribution).toBe('Publisher Camera Network');
     expect(getCameraCatalogHealth().openeye.status).toBe('LIVE');
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining('https://api.openeye.cam/v1/catalog?'),
