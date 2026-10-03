@@ -455,7 +455,8 @@ export default function CorridorWorldScene({
           if (!alive()) return;
           photoTilesetRef.current = viewer.scene.primitives.add(tileset);
           applyPhotorealisticQuality(tileset, highFidelity);
-          viewer.scene.globe.show = true;
+          viewer.scene.globe.show = false;
+          viewer.scene.globe.showGroundAtmosphere = false;
           viewer.scene.fog.enabled = false;
           surfaceQualityRef.current = 'photorealistic';
           setSurfaceQuality('photorealistic');
@@ -478,7 +479,8 @@ export default function CorridorWorldScene({
           if (!alive()) return;
           photoTilesetRef.current = viewer.scene.primitives.add(tileset);
           applyPhotorealisticQuality(tileset, highFidelity);
-          viewer.scene.globe.show = true;
+          viewer.scene.globe.show = false;
+          viewer.scene.globe.showGroundAtmosphere = false;
           viewer.scene.fog.enabled = false;
           surfaceQualityRef.current = 'photorealistic';
           setSurfaceQuality('photorealistic');
@@ -824,7 +826,8 @@ export default function CorridorWorldScene({
       viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(member.lng, member.lat, 2200), orientation: { heading: Cesium.Math.toRadians(Number(member.heading) || 0), pitch: Cesium.Math.toRadians(-62), roll: 0 }, duration: 0.8 });
       return;
     }
-    const points = fitPoints(route, liveMembers, trail, zones, worldEntities);
+    const cameraEntities = globalView ? globalCameraEntities(worldEntities) : worldEntities;
+    const points = fitPoints(route, liveMembers, trail, zones, cameraEntities);
     if (points.length === 1) {
       const only = singleWorldPoint(liveMembers, zones, worldEntities);
       if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 });
@@ -946,7 +949,7 @@ export default function CorridorWorldScene({
         </div>
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={recenter} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Recenter world"><Crosshair size={15} /></button>
-          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail, zones, worldEntities); if (points.length === 1) { const only = singleWorldPoint(liveMembers, zones, worldEntities); if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
+          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const cameraEntities = globalView ? globalCameraEntities(worldEntities) : worldEntities; const points = fitPoints(route, liveMembers, trail, zones, cameraEntities); if (points.length === 1) { const only = singleWorldPoint(liveMembers, zones, worldEntities); if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
