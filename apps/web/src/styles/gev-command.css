@@ -2351,6 +2351,14 @@
 }
 .gev-cctv-attribution a { color:#78cfc0; text-decoration:none; }
 .gev-cctv-attribution a:hover { color:#c5fff6; text-decoration:underline; }
+.gev-cctv-open-source {
+  display:inline-flex; align-items:center; min-height:24px; padding:0 7px;
+  border:1px solid rgba(94,234,212,.16); border-radius:7px; background:rgba(94,234,212,.05);
+  color:#9debe0; font:800 7px/1 'IBM Plex Mono',ui-monospace,monospace; letter-spacing:.08em;
+  text-decoration:none;
+}
+.gev-cctv-open-source:hover { color:#ddfff9; border-color:rgba(94,234,212,.34); background:rgba(94,234,212,.09); }
+
 .gev-cctv-attribution span { color:#6b7b77; }
 .gev-cctv-list { display:grid; gap:4px; padding:6px 9px 8px; overflow:auto; scrollbar-width:thin; }
 .gev-cctv-camera { display:grid; grid-template-columns:26px minmax(0,1fr) 14px; align-items:center; gap:8px; min-height:42px; padding:5px 7px; border:1px solid rgba(255,255,255,.055); border-radius:9px; background:rgba(255,255,255,.017); color:#81918e; text-align:left; cursor:pointer; }
