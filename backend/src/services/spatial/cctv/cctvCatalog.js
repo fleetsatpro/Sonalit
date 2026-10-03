@@ -80,8 +80,9 @@ function openEyeMedia(row) {
     render === 'link' ? view.url :
     row.public_url ?? row.url ?? ''
   ).trim() || null;
+  const publicViewer = sourcePageUrl || viewUrl;
   return {
-    kind: renderableImage ? 'image' : 'synthetic',
+    kind: renderableImage ? 'image' : publicViewer ? 'synthetic' : 'synthetic',
     url: renderableImage ? viewUrl : null,
     frameUrl: renderableImage ? viewUrl : null,
     previewUrl: renderableImage ? viewUrl : null,
@@ -197,7 +198,7 @@ async function loadOpenEyeCatalog(options = {}) {
       }, index);
       if (!normalized) return null;
       // We only emit records whose imagery may legally be embedded by Sonalit.
-      if (!media.direct || !media.previewUrl) return null;
+      if (!media.direct && !media.sourcePageUrl) return null;
       return normalized;
     }).filter(Boolean);
 
