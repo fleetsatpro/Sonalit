@@ -106,23 +106,24 @@ function externalAltitude(item: SpatialWorldEntity) {
 }
 
 function applyPhotorealisticQuality(tileset: Cesium.Cesium3DTileset, highFidelity: boolean) {
-  // Lower screen-space error forces earlier refinement. Keep the renderer quality-biased
-  // even when we have to use the context-safe initialization path.
-  tileset.maximumScreenSpaceError = highFidelity ? 1.5 : 2.5;
-  tileset.cacheBytes = highFidelity ? 768 * 1024 * 1024 : 384 * 1024 * 1024;
-  tileset.maximumCacheOverflowBytes = highFidelity ? 512 * 1024 * 1024 : 256 * 1024 * 1024;
-  tileset.dynamicScreenSpaceError = false;
-  // Desktop GEV favors uniform detail across the viewport rather than
-  // intentionally deferring peripheral tiles. Compact devices retain
-  // foveated loading to protect thermals while keeping native pixel density.
-  tileset.foveatedScreenSpaceError = !highFidelity;
-  tileset.foveatedTimeDelay = highFidelity ? 0 : 0.1;
-  tileset.preloadFlightDestinations = true;
+  // Preserve high visible fidelity while avoiding whole-world over-refinement.
+  // The desired-view SSE remains strict; invisible siblings/flight destinations
+  // are no longer prefetched just because the operator moved the camera.
+  tileset.maximumScreenSpaceError = highFidelity ? 1.5 : 2.25;
+  tileset.cacheBytes = highFidelity ? 384 * 1024 * 1024 : 192 * 1024 * 1024;
+  tileset.maximumCacheOverflowBytes = highFidelity ? 192 * 1024 * 1024 : 96 * 1024 * 1024;
+  tileset.dynamicScreenSpaceError = true;
+  tileset.foveatedScreenSpaceError = true;
+  tileset.foveatedTimeDelay = highFidelity ? 0.12 : 0.18;
+  tileset.preloadFlightDestinations = false;
   tileset.preloadAncestors = true;
-  tileset.preloadSiblings = true;
-  tileset.skipLevelOfDetail = false;
-  tileset.cullRequestsWhileMoving = !highFidelity;
-  tileset.preferLeaves = highFidelity;
+  tileset.preloadSiblings = false;
+  tileset.skipLevelOfDetail = true;
+  tileset.skipScreenSpaceErrorFactor = 16;
+  tileset.skipLevels = 1;
+  tileset.immediatelyLoadDesiredLevelOfDetail = false;
+  tileset.cullRequestsWhileMoving = true;
+  tileset.preferLeaves = false;
   tileset.enableCollision = true;
   tileset.shadows = Cesium.ShadowMode.ENABLED;
 }
@@ -191,6 +192,12 @@ function fitPoints(route: LatLng[], members: GlobeMember[], trail?: LatLng[], zo
       altitudeM: externalAltitude(e) ?? 0,
     })),
   ].map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.altitudeM));
+}
+
+function cameraSvg(color: string, selected: boolean) {
+  const stroke = selected ? '#ffffff' : color;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="25" fill="#061014" fill-opacity=".94" stroke="${stroke}" stroke-width="3"/><path d="M18 25h22l6-6h5v26h-5l-6-6H18z" fill="${color}" fill-opacity=".30" stroke="${color}" stroke-width="2"/><circle cx="28" cy="32" r="7" fill="#04080c" stroke="${stroke}" stroke-width="2.5"/><circle cx="28" cy="32" r="3" fill="${color}"/></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 function vehicleSvg(color: string, selected: boolean) {
@@ -298,6 +305,9 @@ export default function CorridorWorldScene({
   const currentRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
   const targetRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
   const headingRef = useRef<Map<string, number>>(new globalThis.Map());
+  const vehicleRenderPulseTimerRef = useRef<number | null>(null);
+  const renderPulseMsRef = useRef(33);
+  const startVehicleRenderPulseRef = useRef<(() => void) | null>(null);
   const selectRef = useRef(onSelect);
   const externalSelectRef = useRef(onExternalSelect);
   const onViewportChangeRef = useRef(onViewportChange);
@@ -369,7 +379,8 @@ export default function CorridorWorldScene({
       setMapStatus('3D RENDER RECOVERING · PRESERVING ACTIVE SURFACE');
       if (renderRecoveryRef.current >= 3 || viewer.isDestroyed()) return;
       renderRecoveryRef.current += 1;
-      viewer.useDefaultRenderLoop = true;
+      // Stay in requestRenderMode during recovery. Re-enabling Cesium's
+      // continuous loop here would recreate the browser-lag failure mode.
       viewer.scene.requestRender();
     };
     viewer.scene.renderError.addEventListener(renderErrorHandler);
@@ -385,21 +396,23 @@ export default function CorridorWorldScene({
     const cssHeight = Math.max(240, boxRef.current.clientHeight || 720);
     const nativePixels = cssWidth * cssHeight * devicePixelRatio * devicePixelRatio;
     const deviceMemoryGiB = Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8);
-    const highFidelity = !compactSurface || deviceMemoryGiB >= 6;
-    // Resolution is budgeted in actual framebuffer pixels. devicePixelRatio is
-    // already part of native resolution; resolutionScale must never multiply
-    // the DPR a second time on high-density phones.
+    const hardwareThreads = Number(navigator.hardwareConcurrency || 4);
+    const highFidelity = !compactSurface || (deviceMemoryGiB >= 6 && hardwareThreads >= 6);
+    // Budget the framebuffer in actual pixels. Never supersample a dense mobile
+    // canvas above its native device resolution: the old 1.35 ceiling could
+    // multiply an already-large DPR framebuffer into a browser-melting surface.
     const pixelBudget = compactSurface
-      ? Math.max(4_500_000, Math.min(6_000_000, cssWidth * cssHeight * 8))
-      : Math.max(10_000_000, Math.min(14_000_000, cssWidth * cssHeight * 6));
-    const resolutionScale = Math.max(0.9, Math.min(1.35, Math.sqrt(pixelBudget / Math.max(1, nativePixels))));
-    const msaaTarget = compactSurface ? 4 : (nativePixels > 7_000_000 ? 4 : (highFidelity ? 8 : 2));
+      ? (deviceMemoryGiB >= 8 && hardwareThreads >= 8 ? 5_500_000 : 4_200_000)
+      : (deviceMemoryGiB >= 12 && hardwareThreads >= 8 ? 10_000_000 : 8_500_000);
+    const resolutionScale = Math.min(1, Math.sqrt(pixelBudget / Math.max(1, nativePixels)));
+    const msaaTarget = compactSurface ? 2 : 4;
+    renderPulseMsRef.current = compactSurface ? 55 : 35;
 
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
     viewer.scene.fog.enabled = false;
-    viewer.scene.highDynamicRange = viewer.scene.highDynamicRangeSupported;
+    viewer.scene.highDynamicRange = !compactSurface && viewer.scene.highDynamicRangeSupported;
     viewer.scene.postProcessStages.fxaa.enabled = true;
     // Logarithmic depth improves precision across global-to-street camera ranges.
     try {
@@ -407,9 +420,9 @@ export default function CorridorWorldScene({
     } catch {
       // Preserve normal depth buffering on legacy contexts.
     }
-    viewer.scene.globe.tileCacheSize = highFidelity ? 1800 : 750;
+    viewer.scene.globe.tileCacheSize = highFidelity ? 1100 : 500;
     viewer.scene.globe.preloadAncestors = true;
-    viewer.scene.globe.preloadSiblings = true;
+    viewer.scene.globe.preloadSiblings = false;
     // Prefer 8x MSAA, but keep 4x on the context-safe path. Combined with
     // high-DPI rendering and FXAA this preserves crisp geometry without risking
     // another context initialization failure on constrained GPUs.
@@ -463,8 +476,10 @@ export default function CorridorWorldScene({
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     const preRender = () => {
-      const alpha = 0.16;
-      let changed = false;
+      // Interpolation work only matters while a vehicle is actually moving.
+      // requestRenderMode ensures this callback is not a permanent 60 FPS loop.
+      const alpha = compactSurface ? 0.24 : 0.20;
+      let moving = false;
       currentRef.current.forEach((current, id) => {
         const target = targetRef.current.get(id);
         const entity = entityMapRef.current.get(id);
@@ -473,7 +488,6 @@ export default function CorridorWorldScene({
           if (!Cesium.Cartesian3.equals(current, target)) {
             currentRef.current.set(id, target.clone());
             entity.position = new Cesium.ConstantPositionProperty(target);
-            changed = true;
           }
           return;
         }
@@ -486,11 +500,28 @@ export default function CorridorWorldScene({
             Cesium.Transforms.headingPitchRollQuaternion(next, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0)),
           );
         }
-        changed = true;
+        moving = true;
       });
-      if (changed) viewer.scene.requestRender();
+      return moving;
     };
     viewer.scene.preRender.addEventListener(preRender);
+
+    const startVehicleRenderPulse = () => {
+      if (vehicleRenderPulseTimerRef.current != null) return;
+      const pulse = () => {
+        vehicleRenderPulseTimerRef.current = null;
+        if (viewer.isDestroyed()) return;
+        const moving = Array.from(currentRef.current.entries()).some(([id, current]) => {
+          const target = targetRef.current.get(id);
+          return Boolean(target && Cesium.Cartesian3.distance(current, target) > 0.75);
+        });
+        if (!moving) return;
+        viewer.scene.requestRender();
+        vehicleRenderPulseTimerRef.current = window.setTimeout(pulse, renderPulseMsRef.current);
+      };
+      pulse();
+    };
+    startVehicleRenderPulseRef.current = startVehicleRenderPulse;
     const syncViewport = () => {
       if (viewer.isDestroyed()) return;
       const viewport = cameraViewport(viewer);
@@ -809,10 +840,17 @@ export default function CorridorWorldScene({
       const existing = entityMapRef.current.get(member.id);
       const label = statusLabel(member);
       if (existing) {
-        existing.position = new Cesium.ConstantPositionProperty(position);
+        const moved = Cesium.Cartesian3.distance(currentRef.current.get(member.id) ?? position, target) > 0.75;
+        targetRef.current.set(member.id, target);
         existing.point = new Cesium.PointGraphics({ pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY });
         if (existing.label?.text) (existing.label.text as Cesium.ConstantProperty).setValue(label);
         if (existing.billboard?.image) (existing.billboard.image as Cesium.ConstantProperty).setValue(vehicleSvg(color, selected));
+        if (Number.isFinite(heading)) {
+          existing.orientation = new Cesium.ConstantProperty(
+            Cesium.Transforms.headingPitchRollQuaternion(currentRef.current.get(member.id) ?? target, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0)),
+          );
+        }
+        if (moved) startVehicleRenderPulseRef.current?.();
         continue;
       }
 
@@ -824,7 +862,7 @@ export default function CorridorWorldScene({
         billboard: { image: vehicleSvg(color, selected), width: selected ? 42 : 34, height: selected ? 28 : 23, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, alignedAxis: Cesium.Cartesian3.ZERO, scaleByDistance: new Cesium.NearFarScalar(250, 1.18, 300000, 0.62) },
         label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -34), heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, showBackground: true, backgroundColor: css('#06090f', 0.76), backgroundPadding: new Cesium.Cartesian2(7, 4), scaleByDistance: new Cesium.NearFarScalar(300, 1.08, 180000, 0.72), translucencyByDistance: new Cesium.NearFarScalar(35000, 1, 240000, 0) },
         ellipse: { semiMajorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), semiMinorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), height: 4, material: css(color, 0.06), outline: true, outlineColor: css(color, 0.45), outlineWidth: 1 },
-        ...(member.vehicle_model_url || MODEL_URL ? { model: new Cesium.ModelGraphics({ uri: new Cesium.ConstantProperty(member.vehicle_model_url || MODEL_URL), minimumPixelSize: 34, maximumScale: 220, runAnimations: true, shadows: Cesium.ShadowMode.ENABLED, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND }) } : {}),
+        ...(member.vehicle_model_url || MODEL_URL ? { model: new Cesium.ModelGraphics({ uri: new Cesium.ConstantProperty(member.vehicle_model_url || MODEL_URL), minimumPixelSize: 34, maximumScale: 220, runAnimations: selected, shadows: selected ? Cesium.ShadowMode.ENABLED : Cesium.ShadowMode.DISABLED, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND }) } : {}),
       });
       entityMapRef.current.set(member.id, entity);
     }
@@ -975,8 +1013,9 @@ export default function CorridorWorldScene({
       const ground = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, 0);
       const label = externalLabel(item);
       const existing = externalEntityMapRef.current.get(item.id);
-      const pointSize = selected ? 16 : (type === 'satellite' || type === 'aircraft' ? 10 : 8);
-      const maxLabelDistance = type === 'satellite' ? 30000000 : 3500000;
+      const isCamera = type === 'camera' || type === 'spatial_camera';
+      const pointSize = selected ? 16 : (type === 'satellite' || type === 'aircraft' ? 10 : isCamera ? 11 : 8);
+      const maxLabelDistance = type === 'satellite' ? 30000000 : isCamera ? 750000 : 3500000;
       const point = new Cesium.PointGraphics({
         pixelSize: pointSize,
         color: css(color, item.quality?.freshnessClass === 'MODELLED' ? 0.58 : 0.92),
@@ -986,7 +1025,7 @@ export default function CorridorWorldScene({
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
         scaleByDistance: new Cesium.NearFarScalar(1000, 1.25, 20000000, 0.72),
       });
-      const labelGraphic = new Cesium.LabelGraphics({
+      const labelGraphic = (selected || isCamera) ? new Cesium.LabelGraphics({
         text: label,
         font: selected ? '700 12px sans-serif' : '600 10px sans-serif',
         heightReference: altitude == null ? Cesium.HeightReference.CLAMP_TO_GROUND : Cesium.HeightReference.NONE,
@@ -1002,12 +1041,20 @@ export default function CorridorWorldScene({
         showBackground: true,
         backgroundColor: css('#05070d', 0.82),
         backgroundPadding: new Cesium.Cartesian2(6, 3),
-      });
+      }) : undefined;
       const visuals: Cesium.Entity.ConstructorOptions = {
         id,
         position: new Cesium.ConstantPositionProperty(position),
         point,
         label: labelGraphic,
+        billboard: isCamera ? {
+          image: cameraSvg(color, selected),
+          width: selected ? 42 : 34,
+          height: selected ? 42 : 34,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(250, selected ? 1.15 : 1, 750000, 0.68),
+        } : undefined,
         properties: new Cesium.PropertyBag({
           entityId: item.id, layer, entityType: item.entityType, source: item.source ?? 'unknown',
           freshness: item.quality?.freshnessClass ?? 'UNKNOWN', observedAt: item.observedAt ?? null,
@@ -1028,6 +1075,7 @@ export default function CorridorWorldScene({
         existing.position = visuals.position;
         existing.point = point;
         existing.label = labelGraphic;
+        existing.billboard = visuals.billboard;
         existing.properties = visuals.properties;
         existing.polyline = visuals.polyline;
         existing.ellipse = visuals.ellipse;
