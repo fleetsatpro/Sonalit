@@ -7,7 +7,8 @@ const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { getCameras, getNearestCameras } = require('../services/spatial/cctvGateway');
 const { getCameraCatalog } = require('../services/spatial/cctv/cctvCatalog');
-const { getFrame } = require('../services/spatial/cctv/cctvMediaProxy');
+const { getFrame, getMedia } = require('../services/spatial/cctv/cctvMediaProxy');
+const { Readable } = require('node:stream');
 
 router.use(authenticate, attachOrgDb);
 
@@ -52,6 +53,24 @@ router.get('/nearest', asyncHandler(async (req,res) => {
     requireVisible:String(req.query.requireVisible || '').toLowerCase() === 'true'
   });
   res.json({ data:result, meta:{ generated_at:new Date().toISOString() } });
+}));
+
+router.get('/:id/media', asyncHandler(async (req,res) => {
+  const id = String(req.params.id);
+  const cameras = await getCameraCatalog();
+  const camera = cameras.find(item => String(item.id) === id);
+  if (!camera) return res.status(404).json({ error:'Camera not found' });
+  const media = await getMedia(camera);
+  if (media.response.body) {
+    res.status(media.response.status);
+    res.setHeader('Content-Type', media.contentType);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Sonalit-Source', camera.provenance?.sourceName || camera.source || 'cctv');
+    const length = media.response.headers.get('content-length');
+    if (length) res.setHeader('Content-Length', length);
+    return Readable.fromWeb(media.response.body).pipe(res);
+  }
+  return res.status(502).json({ error:'CCTV stream body unavailable' });
 }));
 
 router.get('/:id/frame', asyncHandler(async (req,res) => {
