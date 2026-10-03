@@ -134,7 +134,7 @@ export default function GodsEyeView() {
     return { latitude: total.latitude / positioned.length, longitude: total.longitude / positioned.length }
   }, [allVehicles])
 
-  const [worldViewport, setWorldViewport] = useState({ ...initialWorldCenter, radiusM: 100000 })
+  const [worldViewport, setWorldViewport] = useState<{ latitude:number; longitude:number; radiusM:number; bbox?:[number,number,number,number] }>({ ...initialWorldCenter, radiusM: 100000 })
   const worldViewportRef = useRef(worldViewport)
   const worldViewportSeededRef = useRef(false)
   worldViewportRef.current = worldViewport
@@ -171,7 +171,7 @@ export default function GodsEyeView() {
     coverage?: { complete?: boolean; bounded?: boolean; queryScope?: string; providers?: Record<string, { status?: string; recordCount?: number; total?: number | null; free?: number | null }> }
     warnings?: string[]
   }>({
-    queryKey: ['gev-cctv-catalog', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM],
+    queryKey: ['gev-cctv-catalog', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox?.join(',')],
     queryFn: async () => {
       const response = await api.get<{
         data: SpatialWorldEntity[]
@@ -180,10 +180,10 @@ export default function GodsEyeView() {
         warnings?: string[]
       }>('/cctv/cameras', {
         params: {
-          lat: worldViewport.latitude,
-          lng: worldViewport.longitude,
-          radiusM: Math.min(100000, worldViewport.radiusM),
-          limit: 120,
+          ...(worldViewport.bbox
+            ? { bbox: worldViewport.bbox.join(',') }
+            : { lat: worldViewport.latitude, lng: worldViewport.longitude, radiusM: Math.min(100000, worldViewport.radiusM) }),
+          limit: 180,
         },
       })
       return response.data
