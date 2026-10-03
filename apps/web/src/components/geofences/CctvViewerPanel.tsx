@@ -128,6 +128,7 @@ export default function CctvViewerPanel({
   const [aiEnhanced, setAiEnhanced] = useState(false)
   const [aiRevision, setAiRevision] = useState(0)
   const aiCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const expandedAiCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const aiBitmapRef = useRef<ImageBitmap | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
   const [expanded, setExpanded] = useState(false)
@@ -259,16 +260,18 @@ export default function CctvViewerPanel({
 
   useEffect(() => {
     const bitmap = aiBitmapRef.current
-    const canvas = aiCanvasRef.current
-    if (!bitmap || !canvas || !aiEnhanced) return
-    canvas.width = bitmap.width
-    canvas.height = bitmap.height
-    const context = canvas.getContext('2d')
-    if (!context) return
-    context.imageSmoothingEnabled = true
-    context.imageSmoothingQuality = 'high'
-    context.clearRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(bitmap, 0, 0)
+    const canvases = [aiCanvasRef.current, expandedAiCanvasRef.current].filter(Boolean) as HTMLCanvasElement[]
+    if (!bitmap || !canvases.length || !aiEnhanced) return
+    for (const canvas of canvases) {
+      canvas.width = bitmap.width
+      canvas.height = bitmap.height
+      const context = canvas.getContext('2d')
+      if (!context) continue
+      context.imageSmoothingEnabled = true
+      context.imageSmoothingQuality = 'high'
+      context.clearRect(0, 0, canvas.width, canvas.height)
+      context.drawImage(bitmap, 0, 0)
+    }
   }, [aiEnhanced, aiRevision])
 
   useEffect(() => {
@@ -426,7 +429,7 @@ export default function CctvViewerPanel({
                 ) : frameUrl ? (
                   <>
                     <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} decoding="async" style={{ opacity: aiEnhanced ? 0 : 1, transform: `scale(${zoom})` }} onError={() => setFrameState('error')} />
-                    <canvas ref={aiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:aiEnhanced ? 'block' : 'none', transform:`scale(${zoom})` }} />
+                    <canvas ref={expandedAiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:aiEnhanced ? 'block' : 'none', transform:`scale(${zoom})` }} />
                   </>
                 ) : mode === 'source' ? (
                   <>
@@ -547,7 +550,7 @@ export default function CctvViewerPanel({
                   ) : frameUrl ? (
                     <>
                       <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} style={{ opacity:aiEnhanced ? 0 : 1, transform:`scale(${zoom})` }} />
-                      <canvas ref={aiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:aiEnhanced ? 'block' : 'none', transform:`scale(${zoom})` }} />
+                      <canvas ref={expandedAiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:aiEnhanced ? 'block' : 'none', transform:`scale(${zoom})` }} />
                     </>
                   ) : sourceCard(activeCamera)} 
                 </div>
