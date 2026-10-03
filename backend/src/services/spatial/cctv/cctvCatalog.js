@@ -100,13 +100,24 @@ function openEyeMedia(row) {
   const sourcePageUrl = render === 'link'
     ? (safeHttpsUrl(view.url) || directoryPageUrl)
     : directoryPageUrl;
-  const publicViewer = sourcePageUrl || viewUrl;
+  // When a publisher exposes source media but does not grant Sonalit
+  // redistribution/embedding rights, retain only a top-level navigation target.
+  // This sends the operator to the source bytes in the publisher's own context;
+  // Sonalit never rehosts or proxies this URL.
+  const sourceMediaUrl = !previewAllowed && ['image', 'video', 'mjpeg'].includes(render)
+    ? viewUrl
+    : null;
+  const sourceMediaType = sourceMediaUrl
+    ? String(view.url_type || render || '').toLowerCase()
+    : null;
   return {
     kind: renderableImage ? 'image' : 'synthetic',
     url: renderableImage ? viewUrl : null,
     frameUrl: renderableImage ? viewUrl : null,
     previewUrl: renderableImage ? viewUrl : null,
     sourcePageUrl,
+    sourceMediaUrl,
+    sourceMediaType,
     direct: renderableImage,
     publicSource: true,
     redistribution,
@@ -336,6 +347,8 @@ function normalizeRecord(raw, index) {
       frameUrl:raw.media?.frameUrl ? String(raw.media.frameUrl) : null,
       previewUrl:raw.media?.previewUrl ? String(raw.media.previewUrl) : null,
       sourcePageUrl:raw.media?.sourcePageUrl ? String(raw.media.sourcePageUrl) : null,
+      sourceMediaUrl:raw.media?.sourceMediaUrl ? String(raw.media.sourceMediaUrl) : null,
+      sourceMediaType:raw.media?.sourceMediaType ? String(raw.media.sourceMediaType) : null,
       direct:Boolean(raw.media?.direct),
       available:Boolean(mediaUrl) || String(raw.media?.kind) === 'synthetic',
       publicSource:Boolean(raw.media?.publicSource ?? raw.publicSource ?? Boolean(mediaUrl)),
