@@ -66,7 +66,7 @@ export function preferredImageryAiScale(): ImageryAiScale {
   if (!imageryAiSupported()) return 2
   const memory = deviceMemoryGiB()
   const threads = hardwareThreads()
-  const webgpu = typeof navigator.gpu !== 'undefined'
+  const webgpu = 'gpu' in navigator
   return webgpu && memory >= 12 && threads >= 8 ? 4 : 2
 }
 
