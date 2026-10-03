@@ -109,7 +109,9 @@ export default function CctvViewerPanel({
   const mediaKind = String(media.kind ?? 'synthetic').toLowerCase()
   const hasConfiguredStream = ['video', 'mjpeg'].includes(mediaKind) && Boolean(media.url)
   const source = activeCamera ? cameraSource(activeCamera) : 'CCTV'
-  const operational = record(activeCamera?.attributes).operational === true || health === 'LIVE'
+  const nestedCamera = record(record(activeCamera?.attributes).camera)
+  const nestedAttributes = record(nestedCamera.attributes)
+  const operational = nestedAttributes.operational === true || record(activeCamera?.attributes).operational === true || health === 'LIVE' || (frameState === 'ready' && !synthetic)
   const label = operational ? 'LIVE / APPROVED SOURCE' : synthetic ? 'SYNTHETIC SAMPLE' : 'CATALOG / FALLBACK'
 
   return (
