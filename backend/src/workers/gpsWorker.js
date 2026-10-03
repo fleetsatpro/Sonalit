@@ -49,6 +49,20 @@ function minDistToPathKm(lat, lng, path) {
 const { publish } = require('../realtime/centrifugo');
 const { evaluateVehiclePosition } = require('../utils/geofenceEngine');
 const { detectBehaviourEvents, storeBehaviourEvents } = require('../utils/behaviourDetector');
+const { evaluateConvoyOperationalState } = require('../services/convoyOperationalResilience');
+
+const _resilienceTimers = new Map();
+function scheduleConvoyResilience(orgId, convoyId) {
+  if (!convoyId) return;
+  const key = `${orgId}:${convoyId}`;
+  if (_resilienceTimers.has(key)) return;
+  const timer = setTimeout(() => {
+    _resilienceTimers.delete(key);
+    withOrg(orgId, client => evaluateConvoyOperationalState((sql, params) => client.query(sql, params), orgId, convoyId))
+      .catch(err => logger.warn(`convoy resilience evaluation failed: ${err.message}`));
+  }, 5000);
+  _resilienceTimers.set(key, timer);
+}
 
 function getRedisConnection() {
   const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
@@ -108,6 +122,7 @@ async function processGPS(job) {
     // Also publish to portal channel so cargo owners see live updates
     const convoyId = activeConvoyId;
     if (convoyId) {
+      scheduleConvoyResilience(orgId, convoyId);
     publish(`portal#${convoyId}`, {
       type: 'position',
       location: { lat, lng },
@@ -183,7 +198,7 @@ async function processGPS(job) {
               vehicle_id,
               org_id: orgId,
               geofence_id: fence.id,
-              type: 'route_deviation',
+              type: 'geofence',
               severity: distKm > fence.buffer_km * 4 ? 'critical' : 'high',
               message: `Vehicle ${vehicleLabel} is ${distM}m off corridor "${fence.name}" (limit: ${limitM}m)`,
             });
