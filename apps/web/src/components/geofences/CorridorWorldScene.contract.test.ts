@@ -67,3 +67,11 @@ describe('GEV 3D render resilience contract', () => {
   });
 });
 
+
+
+test('exposes the visible camera bounding box for global CCTV coverage', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, 'CorridorWorldScene.tsx'), 'utf8');
+  expect(source).toContain('function cameraViewport(viewer: Cesium.Viewer)');
+  expect(source).toContain('bbox: [');
+  expect(source).toContain('if (east <= west)');
+});

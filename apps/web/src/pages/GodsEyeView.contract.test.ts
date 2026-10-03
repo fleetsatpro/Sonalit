@@ -30,6 +30,9 @@ describe("God's Eye View interaction contract", () => {
     expect(source).toContain("'/cctv/cameras'");
     expect(source).toContain('publicTotal={cctvPublicTotal}');
     expect(source).toContain('radiusM: Math.min(100000, worldViewport.radiusM)');
+    expect(source).toContain('worldViewport.bbox?.join(\',\')');
+    expect(source).toContain('{ bbox: worldViewport.bbox.join(\',\') }');
+    expect(source).toContain('limit: 180');
     expect(source).toContain('MAX_RENDER_MARKERS = 180');
   });
 
