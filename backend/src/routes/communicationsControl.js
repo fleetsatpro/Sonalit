@@ -51,7 +51,7 @@ router.get('/publications', async (req, res, next) => {
       values,
     ));
     const counts = await withOrg(req.user.org_id, c => c.query(
-      `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='published')::int AS published, COUNT(*) FILTER (WHERE status='published' AND pdf_status='ready')::int AS pdf_ready, COUNT(*) FILTER (WHERE status='published' AND pdf_status='failed')::int AS pdf_failed FROM intel_publications WHERE org_id=$1`,
+      `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='published')::int AS published, COUNT(*) FILTER (WHERE status='draft')::int AS drafts, COUNT(*) FILTER (WHERE status='review')::int AS review, COUNT(*) FILTER (WHERE status='published' AND pdf_status='ready')::int AS pdf_ready, COUNT(*) FILTER (WHERE status='published' AND pdf_status='failed')::int AS pdf_failed FROM intel_publications WHERE org_id=$1`,
       [req.user.org_id],
     ));
     res.json({ data: { publications: rows.rows, summary: counts.rows[0] } });
@@ -70,8 +70,15 @@ router.post('/publications/generate', async (req, res, next) => {
           const created = await publicationForCountry(req.user.org_id, country, type);
           const publicationId = created.publication_id || created.id;
           let pdf = null;
-          if (publicationId) pdf = await renderAndStorePublicationPdf(req.user.org_id, publicationId);
-          results.push({ country, type, publication: created, pdf });
+          let pdfError = null;
+          if (publicationId && created.publication_status === 'published') {
+            try {
+              pdf = await renderAndStorePublicationPdf(req.user.org_id, publicationId);
+            } catch (pdfErr) {
+              pdfError = String(pdfErr.message || pdfErr).slice(0, 1200);
+            }
+          }
+          results.push({ country, type, publication: created, pdf, pdfError });
         } catch (err) {
           results.push({ country, type, status: 'failed', error: String(err.message || err).slice(0, 1200) });
         }
