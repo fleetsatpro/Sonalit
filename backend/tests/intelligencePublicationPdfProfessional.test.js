@@ -1,4 +1,3 @@
-const path=require('path');
 const fs=require('fs');
 const os=require('os');
 const pathModule=require('path');
@@ -88,16 +87,22 @@ describe('professional intelligence publication PDF renderer',()=>{
           methodology:'Indicators use only fields available to the publication run.'
         },
         threat_posture:{level:'HIGH',trajectory:'RISING'},
-        emerging_trends:[{theme:'SECURITY',count:1,share_percent:100,assessment:'One recorded security event is present; no broader trend is inferred from a single observation.'}],
+        assessment_highlights:[{
+          id:'evt-1',
+          headline:'Road closure reported after armed attack',
+          judgement:'The evidence supports a short-term access risk, but does not justify a broader deterioration judgement.',
+          confidence:82
+        }],
+        emerging_trends:[{theme:'SECURITY',count:1,share_percent:100,basis:'CURRENT_PERIOD_CONCENTRATION',assessment:'One recorded security event is present; this is a current-period concentration, not a time-series trend.'}],
         key_drivers:[{driver:'Severity pressure',evidence:'One recorded event is assessed at high severity.'}],
         intelligence_gaps:['The duration and geographic extent remain uncertain.'],
         outlook:['Maintain monitoring pending corroboration and evidence of persistence or spread.'],
         pmesi:[
-          {domain:'POLITICAL',status:'NO MATERIAL UPDATE RECORDED',update:'No political event object mapped.'},
+          {domain:'POLITICAL',status:'NO MATERIAL UPDATE',update:null},
           {domain:'MILITARY',status:'HIGH',update:'A high-severity security event was recorded.'},
-          {domain:'ECONOMY',status:'NO MATERIAL UPDATE RECORDED',update:'No economic event object mapped.'},
-          {domain:'SOCIAL',status:'NO MATERIAL UPDATE RECORDED',update:'No social event object mapped.'},
-          {domain:'INFORMATION & MEDIA',status:'NO MATERIAL UPDATE RECORDED',update:'No information/media event object mapped.'}
+          {domain:'ECONOMY',status:'NO MATERIAL UPDATE',update:null},
+          {domain:'SOCIAL',status:'NO MATERIAL UPDATE',update:null},
+          {domain:'INFORMATION & MEDIA',status:'NO MATERIAL UPDATE',update:null}
         ],
         incident_dossiers:[{
           event_id:'evt-1',
@@ -149,7 +154,7 @@ describe('professional intelligence publication PDF renderer',()=>{
     const parsed=JSON.parse(stdout);
     expect(parsed.pages).toBeLessThanOrEqual(16);
     expect(parsed.pages).toBeGreaterThanOrEqual(9);
-    expect(PDF_RENDERER_VERSION).toBe('2.1.0');
+    expect(PDF_RENDERER_VERSION).toBe('2.2.0');
     expect(parsed.text).not.toContain('[object Object]');
     expect(parsed.text).not.toContain('Comprehensive up-to-date news coverage, aggregated from sources all over the world by Google News');
     expect(parsed.text).not.toContain('Evidence-derived event record retained; automated analytical synthesis is unavailable.');
@@ -182,8 +187,8 @@ test('renders a real boundary map and filters implausible coordinates',async()=>
 });
 
 
-test('executive key judgements do not replay full dossier prose',()=>{
-  const source=fs.readFileSync(path.join(__dirname,'../src/services/intelligencePublicationPdfProfessional.js'),'utf8');
-  expect(source).toContain("return (i+1)+'. '+m.headline;");
+test('executive judgements use structured assessment cards rather than concatenated dossier prose',()=>{
+  const source=fs.readFileSync(pathModule.join(__dirname,'../src/services/intelligencePublicationPdfProfessional.js'),'utf8');
+  expect(source).toContain('const highlights=Array.isArray(body.assessment_highlights)');
   expect(source).not.toContain("return (i+1)+'. '+m.headline+' - '+why;");
 });

@@ -17,7 +17,7 @@ describe('on-demand publication report flow',()=>{
     const s=fs.readFileSync(path.join(__dirname,'../../apps/web/src/pages/IntelligencePublicationDesk.tsx'),'utf8');
     expect(s).toContain('/generate-report');
     expect(s).toContain('GENERATE REPORT');
-    expect(s).toContain('incidents_web_researched??dr.incidents_researched');
+    expect(s).toContain('dr.incidents_researched??dr.incidents_web_researched');
     expect(s).toContain('researchCoverage(x)>0');
     expect(s).toContain('REGENERATE REPORT');
     expect(s).toContain('incidents_researched');

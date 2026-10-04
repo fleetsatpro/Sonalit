@@ -9,7 +9,7 @@ const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 const { buildEvidencePublication } = require('./intelligencePublicationBuilder');
 const { researchPublicationIncidents } = require('./intelligenceIncidentResearch');
-const { auditPublicationContent, isAggregatorDomain, normalizeDomain, sourceIsSubstantive } = require('./publicationQuality');
+const { auditPublicationContent, isAggregatorDomain, normalizeDomain, sourceIsSubstantive, isRepetitiveTemplateText } = require('./publicationQuality');
 const { PDF_RENDERER_VERSION } = require('../services/intelligencePublicationPdfProfessional');
 
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
@@ -42,12 +42,11 @@ function evidenceDerivedSynthesis(event){
     return `${source}: ${title}`;
   });
   const headline=clean(event.title||'INTELLIGENCE EVENT',180);
-  const region=clean(event.region||event.location||'the reported area',120);
   const whyByType={
     SECURITY:'Monitor whether '+headline+' persists, expands geographically or is independently corroborated.',
     POLITICAL:'Monitor whether '+headline+' develops into sustained political disruption or wider mobilisation.',
     LOGISTICS:'Monitor whether '+headline+' creates sustained delay, diversion or access constraints.',
-    NATURAL_HAZARD:'Monitor whether '+headline+' persists or expands into wider access, infrastructure or population impacts.',
+    NATURAL_HAZARD:'Monitor whether '+headline+' persists or expands into wider access, infrastructure, population or service impacts.',
     HEALTH:'Monitor whether '+headline+' persists, spreads or creates material continuity consequences.',
     ECONOMIC:'Monitor whether '+headline+' creates sustained pressure on commerce, supply or operating costs.',
     BORDER:'Monitor whether '+headline+' produces recurring crossing, customs or access disruption.',
@@ -121,8 +120,8 @@ async function synthesizeEvents(orgId){
     await query(`UPDATE intel_events SET canonical_headline=$2,executive_brief=$3,intelligence_type=$4,key_facts=$5::jsonb,why_it_matters=$6::jsonb,caveats=$7::jsonb,synthesis_confidence=$8,synthesized_at=NOW(),synthesis_provider=$9,updated_at=NOW() WHERE id=$1 AND org_id=$10`,[
       x.id,clean(x.headline,180)||evidence.title,clean(x.brief,1600)||evidence.summary||evidence.title,x.intelligence_type||'OTHER',
       JSON.stringify(Array.isArray(x.key_facts)?x.key_facts.slice(0,6):[]),
-      JSON.stringify(Array.isArray(x.why_it_matters)?x.why_it_matters.slice(0,5):[]),
-      JSON.stringify(Array.isArray(x.caveats)?x.caveats.slice(0,5):[]),
+      JSON.stringify(Array.isArray(x.why_it_matters)?x.why_it_matters.map(v=>clean(v,800)).filter(v=>v&&!isRepetitiveTemplateText(v)).slice(0,5):[]),
+      JSON.stringify(Array.isArray(x.caveats)?x.caveats.map(v=>clean(v,800)).filter(v=>v&&!/^evidence coverage is limited to the sources linked to this event in sonalit\./i.test(v)).slice(0,5):[]),
       Math.max(0,Math.min(100,Number(x.confidence)||Number(evidence.confidence)||50)),provider,orgId
     ]);
     count++;

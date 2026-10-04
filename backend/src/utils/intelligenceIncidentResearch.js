@@ -5,6 +5,7 @@ const aiClient = require('./aiClient');
 const logger = require('./logger');
 const {
   cleanPublicationText,
+  dedupeSentences,
   dedupeSources,
   sourceIsSubstantive,
   isAggregatorDomain,
@@ -212,19 +213,22 @@ function packetNarrative(event,packet){
   const eventSummary=clean(event?.brief||event?.summary||'',1400);
   const facts=uniqueStrings(Array.isArray(event?.key_facts)?event.key_facts:[],4);
   const caveats=uniqueStrings(Array.isArray(event?.caveats)?event.caveats:[],3);
-  const insights=uniqueStrings(
-    pages.map(p=>clean([p.description,p.text].filter(Boolean).join(' '),1100))
-      .map(v=>cleanPublicationText(v,900))
-      .filter(v=>v&&!/comprehensive up-to-date news coverage, aggregated from sources all over the world by google news/i.test(v)),
-    2
+  const sourceNames=uniqueStrings(
+    pages.map(p=>p.domain||p.source||'retrieved source').filter(Boolean),
+    3
   );
   const paragraphs=[];
   if(eventSummary)paragraphs.push(eventSummary);
   else paragraphs.push(headline+' is retained as the clearest label for the recorded development.');
-  if(insights.length)paragraphs.push(insights.join(' '));
-  if(facts.length)paragraphs.push('Key supported facts: '+facts.join(' '));
-  if(caveats.length)paragraphs.push('Material uncertainty: '+caveats.join(' '));
-  return cleanPublicationText(paragraphs.join(' '),2600);
+  if(sourceNames.length){
+    paragraphs.push(
+      'Independent web material was retrieved from '+sourceNames.join(', ')+
+      '. The retrieved material is retained in the source register and is not presented here as a second incident narrative.'
+    );
+  }
+  if(facts.length)paragraphs.push('The structured evidence record identifies '+facts.length+' supported fact(s) for analyst review.');
+  if(caveats.length)paragraphs.push('The unresolved elements remain material: '+caveats.join(' '));
+  return cleanPublicationText(dedupeSentences(paragraphs.join(' '),new Set(),2200),2200);
 }
 function fallbackResearch(event,packet){
   const sources=dedupeSources(
@@ -310,10 +314,14 @@ async function researchBatch(events,{country,region}={}){
       );
       const narrative=cleanPublicationText(source?.narrative||'',2600);
       const repeated=repetitionRatio(narrative)>0.18;
-      if(!source||narrative.length<260||normalizedSources.length===0||repeated){
+      const sourceDomains=new Set(normalizedSources.map(x=>normalizeDomain(x?.domain||x?.url)).filter(Boolean));
+      const substantive=Boolean(source&&narrative.length>=260&&normalizedSources.length>=1);
+      const corroborated=sourceDomains.size>=2;
+      if(!substantive||repeated){
         return{packet,agent:fallbackResearch(events[i],packet),error:'research result failed substantive/source validation',webSearchRequests};
       }
-      return{packet,agent:{...source,status:'researched',provider:response&&response._provider||'unknown',sources:normalizedSources},webSearchRequests};
+      const status=corroborated?'researched':'researched_limited';
+      return{packet,agent:{...source,status,provider:response&&response._provider||'unknown',sources:normalizedSources,research_quality:corroborated?'CORROBORATED':'LIMITED_SOURCE_BASE'},webSearchRequests};
     });
   }catch(error){
     logger.warn('Incident research batch agent failed: '+error.message);
@@ -344,11 +352,12 @@ async function researchPublicationIncidents(events,{country,region}={}){
   await Promise.all(Array.from({length:Math.min(concurrency,Math.ceil(events.length/batchSize))},worker));
   const values=Object.values(out);
   const researched=values.filter(x=>x&&x.agent&&x.agent.status==='researched').length;
+  const researchedLimited=values.filter(x=>x&&x.agent&&x.agent.status==='researched_limited').length;
   const fallback=values.filter(x=>x&&x.agent&&x.agent.status==='fallback').length;
   const researchedPacket=values.filter(x=>x?.agent?.research_method==='live_web_packet').length;
   const webSearchRequests=values.reduce((n,x)=>n+Number(x?.webSearchRequests||0),0);
   const webSourcesRetrieved=values.reduce((n,x)=>n+Number(x?.agent?.web_sources_retrieved||x?.packet?.fetched_pages?.length||0),0);
-  return {byEvent:out,summary:{requested:events.length,researched,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved}};
+  return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved}};
 }
 
 module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket};

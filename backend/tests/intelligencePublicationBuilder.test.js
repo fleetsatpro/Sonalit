@@ -35,6 +35,8 @@ describe('evidence-first intelligence publication builder',()=>{
     expect(body.title).toMatch(/Kenya Weekly Insight/);
     expect(body.executive_assessment).toContain('Kenya recorded 2');
     expect(body.key_developments.length).toBe(2);
+    expect(body.assessment_highlights[0]).toHaveProperty('judgement');
+    expect(body.assessment_highlights[0].judgement).toContain('disruption could increase exposure');
     expect(body.regional_news[0].region).toBe('NAIROBI');
     expect(body.pmesi).toHaveLength(5);
     expect(body.incident_map.points.length).toBe(2);
@@ -45,6 +47,9 @@ describe('evidence-first intelligence publication builder',()=>{
     expect(body.collection_coverage.evidence_contract_met).toBe(true);
     expect(body.public_safety_security_overview.indicators).toHaveLength(4);
     expect(body.emerging_trends.length).toBeGreaterThan(0);
+    expect(body.emerging_trends[0].basis).toBe('CURRENT_PERIOD_CONCENTRATION');
+    expect(body.emerging_trends[0].assessment).toContain('not a time-series trend');
+    expect(body.pmesi.find(x=>x.domain==='INFORMATION & MEDIA').update).toBeNull();
     expect(body.key_drivers.length).toBeGreaterThan(0);
     expect(body.key_findings_assessment.findings.length).toBe(2);
   });

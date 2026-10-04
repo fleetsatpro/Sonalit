@@ -18,6 +18,14 @@ const GENERIC_PATTERNS = [
   /details that cannot be established from the source base are not presented as fact/ig
 ];
 
+const REPETITIVE_TEMPLATE_PATTERNS = [
+  /the (?:main|key|principal) operational (?:watchpoint|concern) is whether\b/ig,
+  /\bmonitor whether .*? persists\b/ig,
+  /\bmonitor .*? for persistence, spread or material operational consequence\b/ig,
+  /\bmaintain routine monitoring .*? watch for corroboration or deterioration\b/ig,
+  /\bthe current evidence set .*? decision-support input rather than a complete picture\b/ig
+];
+
 const AGGREGATOR_DOMAINS = new Set([
   'news.google.com',
   'google.com',
@@ -72,6 +80,32 @@ function cleanPublicationText(value, max=5000, {removeGeneric=true}={}) {
     out = normalizeWhitespace(out);
   }
   return out.slice(0, max);
+}
+
+function isRepetitiveTemplateText(value) {
+  const cleaned=normalizeWhitespace(value);
+  if(!cleaned)return false;
+  return REPETITIVE_TEMPLATE_PATTERNS.some(pattern=>{
+    const hit=pattern.test(cleaned);
+    pattern.lastIndex=0;
+    return hit;
+  });
+}
+
+function tokenSet(value) {
+  return new Set(
+    normalizeForComparison(value)
+      .split(' ')
+      .map(x => x.trim())
+      .filter(x => x.length >= 3)
+  );
+}
+function tokenJaccard(a,b) {
+  const A=tokenSet(a), B=tokenSet(b);
+  if(!A.size||!B.size)return 0;
+  let intersection=0;
+  for(const token of A)if(B.has(token))intersection++;
+  return intersection/(A.size+B.size-intersection);
 }
 
 function sentenceParts(value) {
@@ -178,46 +212,97 @@ function sourceIsSubstantive(source) {
 
 function auditPublicationContent(incidents){
   const seen=new Map();
-  const duplicateSentences=[];
+  const allSentences=[];
+  const crossIncidentDuplicates=[];
+  const intraIncidentRepeats=[];
+  const nearDuplicates=[];
   let boilerplateHits=0;
+  let repetitiveTemplateHits=0;
+  const templateIncidents=new Map();
+
   for(const incident of Array.isArray(incidents)?incidents:[]){
+    const incidentId=String(incident?.event_id);
     for(const field of ['what_happened','context','assessment']){
       const value=String(incident?.[field]||'');
       for(const pattern of GENERIC_PATTERNS){
         if(pattern.test(value))boilerplateHits++;
         pattern.lastIndex=0;
       }
+      REPETITIVE_TEMPLATE_PATTERNS.forEach((pattern,index)=>{
+        if(pattern.test(value)){
+          repetitiveTemplateHits++;
+          if(!templateIncidents.has(index))templateIncidents.set(index,new Set());
+          templateIncidents.get(index).add(incidentId);
+        }
+        pattern.lastIndex=0;
+      });
       for(const sentence of sentenceParts(value)){
         const key=normalizeForComparison(sentence);
         if(key.length<30)continue;
+        const current={incidentId,field,sentence,key,tokens:key.split(' ').length};
+        allSentences.push(current);
         const prior=seen.get(key);
         if(prior){
-          duplicateSentences.push({
+          const item={
             sentence,
             first_incident:prior.incidentId,
             first_field:prior.field,
-            duplicate_incident:String(incident?.event_id),
-            duplicate_field:field
-          });
+            duplicate_incident:incidentId,
+            duplicate_field:field,
+            scope:prior.incidentId===incidentId?'intra_incident':'cross_incident'
+          };
+          if(prior.incidentId===incidentId)intraIncidentRepeats.push(item);
+          else crossIncidentDuplicates.push(item);
         }else{
-          seen.set(key,{incidentId:String(incident?.event_id),field});
+          seen.set(key,current);
         }
       }
     }
   }
-  const uniqueDuplicates=[];
-  const dupKeys=new Set();
-  for(const item of duplicateSentences){
-    const key=normalizeForComparison(item.sentence);
-    if(dupKeys.has(key))continue;
-    dupKeys.add(key);
-    uniqueDuplicates.push(item);
+
+  // Conservative near-duplicate detection. This catches lightly rephrased copy
+  // across different incident dossiers without treating ordinary analytic language
+  // as a blocker. Only long, information-bearing sentences are considered.
+  for(let i=0;i<allSentences.length;i++){
+    const a=allSentences[i];
+    if(a.tokens<10)continue;
+    for(let j=i+1;j<allSentences.length;j++){
+      const b=allSentences[j];
+      if(a.incidentId===b.incidentId||b.tokens<12)continue;
+      if(Math.abs(a.tokens-b.tokens)>8)continue;
+      const similarity=tokenJaccard(a.sentence,b.sentence);
+      if(similarity<0.90)continue;
+      nearDuplicates.push({
+        first_incident:a.incidentId,
+        first_field:a.field,
+        first_sentence:a.sentence,
+        duplicate_incident:b.incidentId,
+        duplicate_field:b.field,
+        duplicate_sentence:b.sentence,
+        similarity:Number(similarity.toFixed(3))
+      });
+      if(nearDuplicates.length>=20)break;
+    }
+    if(nearDuplicates.length>=20)break;
   }
+
+  const repeatedTemplateCount=Array.from(templateIncidents.values()).filter(set=>set.size>1).length;
+  const uniqueByKey=(items,keyFn)=>Array.from(new Map(items.map(item=>[keyFn(item),item])).values());
+  const exactCrossIncident=uniqueByKey(crossIncidentDuplicates,x=>normalizeForComparison(x.sentence));
+  const intra=uniqueByKey(intraIncidentRepeats,x=>String(x.incidentId)+'|'+normalizeForComparison(x.sentence));
+  const near=uniqueByKey(nearDuplicates,x=>String(x.first_incident)+'|'+String(x.duplicate_incident)+'|'+normalizeForComparison(x.first_sentence));
+
   return {
-    passed:boilerplateHits===0&&uniqueDuplicates.length===0,
+    passed:boilerplateHits===0&&exactCrossIncident.length===0&&near.length===0&&repeatedTemplateCount===0,
     boilerplate_hits:boilerplateHits,
-    duplicate_sentence_count:uniqueDuplicates.length,
-    duplicate_sentences:uniqueDuplicates.slice(0,10)
+    duplicate_sentence_count:exactCrossIncident.length,
+    duplicate_sentences:exactCrossIncident.slice(0,10),
+    intra_incident_repeat_count:intra.length,
+    intra_incident_repeats:intra.slice(0,10),
+    near_duplicate_sentence_count:near.length,
+    near_duplicate_sentences:near.slice(0,10),
+    repetitive_template_hits:repetitiveTemplateHits,
+    repeated_template_count:repeatedTemplateCount
   };
 }
 
@@ -231,6 +316,7 @@ function repetitionRatio(value) {
 
 module.exports = {
   GENERIC_PATTERNS,
+  REPETITIVE_TEMPLATE_PATTERNS,
   AGGREGATOR_DOMAINS,
   cleanPublicationText,
   dedupeSentences,
@@ -242,5 +328,7 @@ module.exports = {
   dedupeSources,
   sourceIsSubstantive,
   repetitionRatio,
-  auditPublicationContent
+  auditPublicationContent,
+  tokenJaccard,
+  isRepetitiveTemplateText
 };
