@@ -5,7 +5,7 @@ describe('publication generation deduplication hardening',()=>{
   test('publication generation runs inside one tenant transaction with a PostgreSQL advisory lock',()=>{
     const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
     expect(source).toContain('async function publicationForCountryUnsafe');
-    expect(source).toContain('async function publicationForCountry(orgId,country,type=\'daily\')');
+    expect(source).toContain('function publicationForCountry(orgId,country,type=\'daily\')');
     expect(source).toContain('pg_advisory_xact_lock');
     expect(source).toContain('return withOrg(orgId, async client => {');
   });
@@ -45,7 +45,7 @@ test('AI editorial board is optional resilience enrichment, not a publication bl
 
 test('publication agent imports the editorial quality audit before invoking it',()=>{
   const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
-  expect(source).toContain("const { auditPublicationContent } = require('./publicationQuality');");
+  expect(source).toContain("const { auditPublicationContent, isAggregatorDomain, normalizeDomain, sourceIsSubstantive } = require('./publicationQuality');");
   expect(source).toContain('const finalQuality=auditPublicationContent(');
 });
 
@@ -61,7 +61,7 @@ test('AI provider clients have bounded request time and no nested SDK retries',(
 test('publication evidence policy accepts only defensible direct non-aggregator research',()=>{
   const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
   expect(source).toContain("const PUBLICATION_EVIDENCE_VERSION='1.1';");
-  expect(source).toContain("basis:'DIRECT_WEB_RESEARCH'");
+  expect(source).toContain("basis:researchContract?'DIRECT_WEB_RESEARCH':'INSUFFICIENT_EVIDENCE'");
   expect(source).toContain('uniqueUrls.size>=2 && uniqueDomains.size>=2');
   expect(source).toContain('!isAggregatorDomain(domain)');
   expect(source).toContain('const verifiedPages=Array.isArray(packet?.packet?.fetched_pages)');
