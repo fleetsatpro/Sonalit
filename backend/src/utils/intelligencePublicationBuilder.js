@@ -68,20 +68,31 @@ function posture(events, confidence) {
   };
 }
 function eventNarrative(e) {
-  const brief = clean(e.brief || e.summary || e.headline || e.title || 'Evidence record available.', 1800);
+  const brief = clean(e.brief || e.summary || e.headline || e.title || 'Evidence record available.', 2200);
   const severity = String(e.severity || 'moderate').toUpperCase();
   const type = eventType(e);
   const region = clean(e.region || 'Location not specified', 160);
   const evidence = Number(e.observation_count || (Array.isArray(e.evidence) ? e.evidence.length : 0));
   const sources = Number(e.source_count || new Set((Array.isArray(e.evidence) ? e.evidence : []).map(x => x.source_id).filter(Boolean)).size);
+  const keyFacts = Array.isArray(e.key_facts) ? e.key_facts.map(x => clean(x,500)).filter(Boolean).slice(0,6) : [];
+  const why = Array.isArray(e.why_it_matters) ? e.why_it_matters.map(x => clean(x,700)).filter(Boolean).slice(0,5) : [];
+  const caveats = Array.isArray(e.caveats) ? e.caveats.map(x => clean(x,700)).filter(Boolean).slice(0,5) : [];
+  const assessment = e.assessment && typeof e.assessment === 'object' ? e.assessment : {};
+  const judgement = clean(assessment.judgement || assessment.headline || '', 1200);
+  const upgradeTriggers = Array.isArray(assessment.upgrade_triggers) ? assessment.upgrade_triggers.map(x => clean(x,500)).filter(Boolean).slice(0,5) : [];
+  const downgradeTriggers = Array.isArray(assessment.downgrade_triggers) ? assessment.downgrade_triggers.map(x => clean(x,500)).filter(Boolean).slice(0,5) : [];
   return {
     event_id: e.id,
     headline: clean(e.headline || e.title || 'Security development', 220),
     what_happened: brief,
-    assessment: severity + ' ' + type + ' signal recorded in ' + region + '.',
-    why_it_matters: severity === 'CRITICAL' || severity === 'HIGH'
+    key_facts: keyFacts,
+    assessment: judgement || (severity + ' ' + type + ' signal recorded in ' + region + '.'),
+    why_it_matters: why.length ? why : [severity === 'CRITICAL' || severity === 'HIGH'
       ? 'The development warrants priority monitoring and review of exposure in the affected area.'
-      : 'The development warrants continued monitoring for corroboration, persistence or escalation.',
+      : 'The development warrants continued monitoring for corroboration, persistence or escalation.'],
+    caveats,
+    outlook_triggers: { upgrade: upgradeTriggers, downgrade: downgradeTriggers },
+    synthesis: { confidence: Number(e.synthesis_confidence || e.confidence || 0) || 0, provider: e.synthesis_provider || null },
     severity,
     confidence: Math.round(Number(e.confidence || 0) || 0),
     evidence_count: evidence,
