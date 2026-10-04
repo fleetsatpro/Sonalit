@@ -96,7 +96,6 @@ jobs:
         env:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: ""
-
       - name: Run DB migrations (CI)
         run: node scripts/db-migrate.js
         working-directory: backend

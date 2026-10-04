@@ -5,7 +5,7 @@ describe('publication deep-research runtime ordering',()=>{
   const source=()=>fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
   test('defines the publication incident set before invoking research',()=>{
     const s=source();
-    const subset=s.indexOf('const publicationEvents=selectPublicationResearchEvents(events,10);');
+    const subset=s.indexOf('const publicationEvents=selectPublicationResearchEvents(events,8);');
     const research=s.indexOf('researchPublicationIncidents(publicationEvents',{});
     expect(subset).toBeGreaterThan(-1);
     expect(research).toBeGreaterThan(subset);

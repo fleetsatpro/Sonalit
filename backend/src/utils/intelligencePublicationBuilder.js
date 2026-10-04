@@ -1,9 +1,11 @@
+const { cleanPublicationText, dedupeSentences, uniqueStrings, dedupeSources: dedupeQualitySources, auditPublicationContent } = require('./publicationQuality');
+
 const COUNTRY_NAMES = { KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania', RW:'Rwanda', BI:'Burundi', SS:'South Sudan', DJ:'Djibouti', ER:'Eritrea', SD:'Sudan', CD:'DR Congo' };
 const SEVERITIES = ['critical','high','moderate','low','informational'];
 const DOMAINS = ['POLITICAL','MILITARY','ECONOMY','SOCIAL','INFORMATION & MEDIA'];
 
 function clean(v, n=1200) {
-  return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
+  return cleanPublicationText(v, n);
 }
 function severityScore(v) {
   return { critical:4, high:3, moderate:2, low:1, informational:0 }[String(v || '').toLowerCase()] == null
@@ -12,6 +14,16 @@ function severityScore(v) {
 }
 function eventType(e) {
   return String(e && e.intelligence_type || 'OTHER').toUpperCase();
+}
+
+function fallbackContext(e,type,region){
+  const headline=clean(e?.headline||e?.title||'the recorded development',180);
+  if(type==='LOGISTICS')return 'Operational context: '+headline+' is recorded in '+region+'. The key question is whether the disruption affects continuity, routing or delivery performance beyond the reported location.';
+  if(type==='POLITICAL')return 'Political context: '+headline+' is recorded in '+region+'. The key question is whether the activity remains localized or develops into sustained disruption, institutional friction or wider mobilisation.';
+  if(type==='NATURAL_HAZARD')return 'Hazard context: '+headline+' is recorded in '+region+'. The key question is whether conditions persist or expand into access, infrastructure, population or service impacts.';
+  if(type==='ECONOMIC')return 'Economic context: '+headline+' is recorded in '+region+'. The key question is whether the reported development creates sustained pressure on commerce, supply, access or operating costs.';
+  if(type==='HEALTH')return 'Health context: '+headline+' is recorded in '+region+'. The key question is whether the reported condition persists, spreads or creates material access and continuity consequences.';
+  return 'Security context: '+headline+' is recorded in '+region+'. The key question is whether the signal remains isolated or is corroborated by recurrence, wider geographic reach or a material change in operating conditions.';
 }
 function domainFor(e) {
   const t = eventType(e);
@@ -85,21 +97,25 @@ function eventNarrative(e) {
   return {
     event_id: e.id,
     headline: clean(e.headline || e.title || 'Security development', 220),
-    what_happened: brief,
-    key_facts: keyFacts,
-    assessment: judgement || (severity + ' ' + type + ' signal recorded in ' + region + '.'),
-    why_it_matters: why.length ? why : [severity === 'CRITICAL' || severity === 'HIGH'
-      ? 'The development warrants priority monitoring and review of exposure in the affected area.'
-      : 'The development warrants continued monitoring for corroboration, persistence or escalation.'],
-    caveats,
-    context: clean(research.context || '', 1800),
-    reported_or_disputed: Array.isArray(research.reported_or_disputed) ? research.reported_or_disputed.slice(0,5).map(x=>clean(x,900)) : [],
-    chronology: Array.isArray(research.chronology) ? research.chronology.slice(0,8).map(x=>({time:clean(x?.time,120),event:clean(x?.event,700)})) : [],
+    what_happened: dedupeSentences(brief, new Set(), 2400),
+    key_facts: uniqueStrings(keyFacts, 5),
+    assessment: dedupeSentences(judgement || (severity + ' ' + type + ' signal: ' + clean(e.headline || e.title || 'recorded development', 180) + ' in ' + region + '; confidence is ' + Math.round(Number(e.confidence || 0) || 0) + '%. Additional corroboration is required before treating the signal as evidence of broader deterioration.'), new Set(), 1000),
+    why_it_matters: why.length ? uniqueStrings(why, 4) : [
+      type === 'LOGISTICS' ? 'The principal operational concern is disruption, delay or diversion affecting movement in ' + region + '.' :
+      type === 'POLITICAL' ? 'The key watchpoint is whether activity in ' + region + ' broadens into sustained disruption or wider political tension.' :
+      type === 'NATURAL_HAZARD' ? 'The immediate concern is whether the hazard persists or expands into wider access, infrastructure or population impacts.' :
+      type === 'ECONOMIC' ? 'The operational concern is whether the reported development creates sustained pressure on commerce, supply or access.' :
+      'The main operational watchpoint is whether ' + clean(e.headline || e.title || 'the reported signal', 180) + ' recurs or spreads beyond ' + region + '.'
+    ],
+    caveats: uniqueStrings(caveats, 4),
+    context: dedupeSentences(clean(research.context || fallbackContext(e,type,region), 1800), new Set(), 1200),
+    reported_or_disputed: Array.isArray(research.reported_or_disputed) ? uniqueStrings(research.reported_or_disputed.map(x=>clean(x,900)), 4) : [],
+    chronology: Array.isArray(research.chronology) ? research.chronology.slice(0,8).map(x=>({time:clean(x?.time,120),event:clean(x?.event,700)})).filter(x=>x.time||x.event) : [],
     research_status: research.status || null,
     research_provider: research.provider || null,
     research_method: research.research_method || null,
     web_sources_retrieved: Number(research.web_sources_retrieved || 0) || 0,
-    research_sources: Array.isArray(research.sources) ? research.sources.slice(0,10).map(src => ({
+    research_sources: Array.isArray(research.sources) ? dedupeQualitySources(research.sources.map(src => ({
       ...src,
       image_url: (() => {
         const hit = Array.isArray(e?.research?.packet?.fetched_pages)
@@ -107,7 +123,7 @@ function eventNarrative(e) {
           : null;
         return hit?.image_url || null;
       })()
-    })) : [],
+    })), 8) : [],
     search_notes: clean(research.search_notes || '', 1200),
     outlook_triggers: { upgrade: upgradeTriggers, downgrade: downgradeTriggers },
     synthesis: { confidence: Number(e.synthesis_confidence || e.confidence || 0) || 0, provider: e.synthesis_provider || null },
@@ -131,7 +147,7 @@ function pmesi(events) {
     return {
       domain,
       status: String(top.severity || 'moderate').toUpperCase(),
-      update: clean(top.brief || top.summary || top.headline || top.title, 1000),
+      update: candidates.length + ' recorded event(s); highest severity ' + String(top.severity || 'moderate').toUpperCase() + '. Key signal: ' + clean(top.headline || top.title || 'Unspecified development', 220) + '.',
       event_ids: candidates.slice(0,8).map(e => e.id),
       confidence: Number(top.confidence || 0) || null
     };
@@ -193,32 +209,42 @@ function publicSafetyOverview(events, postureState, confidence) {
 }
 function regionalNews(events) {
   const groups = new Map();
-  for (const e of events) {
+  const ordered = topEvents(events, events.length);
+  for (const e of ordered) {
     const region = clean(e.region || 'NATIONAL / UNALLOCATED', 120).toUpperCase();
     if (!groups.has(region)) groups.set(region, []);
-    groups.get(region).push(eventNarrative(e));
+    const items = groups.get(region);
+    if (items.length >= 5) continue;
+    items.push({
+      event_id:e.id,
+      headline:clean(e.headline || e.title || 'Development', 240),
+      severity:String(e.severity || 'moderate').toUpperCase(),
+      confidence:Number(e.confidence || 0) || null,
+      evidence_count:Number(e.observation_count || (Array.isArray(e.evidence)?e.evidence.length:0)) || 0,
+      source_count:Number(e.source_count || 0) || 0
+    });
   }
   return Array.from(groups.entries())
-    .sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
-    .map(([region, items]) => ({ region, items: items.slice(0,8) }));
+    .sort((a,b)=>b[1].length-a[1].length || a[0].localeCompare(b[0]))
+    .map(([region,items])=>({
+      region,
+      event_count:items.length,
+      highest_severity:items.slice().sort((a,b)=>severityScore(b.severity)-severityScore(a.severity))[0]?.severity || 'INFORMATIONAL',
+      items
+    }));
 }
+
 function references(events) {
   const out = [];
-  const seen = new Set();
+  const candidates = [];
   for (const e of events) {
     for (const ref of sourceRefs(e)) {
-      const key = String(ref.url || '') + '|' + String(ref.source || '') + '|' + String(ref.title || '');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ ...ref, event_id:e.id, source_layer:'original_evidence' });
+      candidates.push({ ...ref, event_id:e.id, source_layer:'original_evidence' });
     }
     const research = e?.research?.agent || e?.research || {};
     for (const ref of Array.isArray(research.sources) ? research.sources : []) {
       if (!ref?.url) continue;
-      const key = String(ref.url) + '|' + String(ref.title || '');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
+      candidates.push({
         observation_id:null,
         source_id:null,
         source:clean(ref.domain || ref.source_type || 'Web research', 140),
@@ -232,8 +258,11 @@ function references(events) {
       });
     }
   }
-  return out.slice(0,120);
+  const unique = dedupeQualitySources(candidates, 120);
+  for (const ref of unique) out.push(ref);
+  return out;
 }
+
 function buildEvidencePublication({ country, type, start, end, events, evidenceCount, sourceCount, evidenceContract }) {
   const name = COUNTRY_NAMES[country] || country;
   const ordered = topEvents(events, Math.max(events.length, 1));
@@ -248,8 +277,11 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
     typeCounts[t] = (typeCounts[t] || 0) + 1;
   }
   const topTypes = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]).join(', ') || 'no classified threat type';
-  const keyEvents = ordered.slice(0,10).map(eventNarrative);
+  const keyEvents = ordered.slice(0,8).map(eventNarrative);
   const top = keyEvents[0];
+  const qualityControl=auditPublicationContent(keyEvents.map(e=>({event_id:e.event_id,what_happened:e.what_happened,context:e.context,assessment:e.assessment})));
+  const qualityGateNote=qualityControl.passed?'PASS':'HOLD - duplicate or boilerplate content detected; publication requires editorial correction.';
+
   let executive;
   if (!events.length) {
     executive = 'No security-relevant event objects were recorded by the Sonalit evidence and fusion ledger for ' + name + ' during the reporting period. This is a collection statement, not a claim that no incidents occurred. Collection coverage and unresolved gaps should therefore be reviewed before operational decisions are made.';
@@ -275,15 +307,19 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
         'Maintain routine monitoring of current reporting and watch for corroboration or deterioration.',
         'Use the current evidence set as a decision-support input rather than a complete picture of all incidents.'
       ];
+  const watchRegions = Array.from(new Set(events.map(e=>clean(e.region||'',80).toUpperCase()).filter(Boolean))).slice(0,3);
+  const operatingSummary = events.length
+    ? 'The recorded operating picture contains ' + events.length + ' event object(s), including ' + high + ' high/critical signal(s)' + (watchRegions.length ? ' concentrated across ' + watchRegions.join(', ') + '.' : '.')
+    : 'No event objects were recorded in the current collection window; this does not establish an absence of incidents.';
   const outlook = [
-    'Near-term posture should remain centred on the conditions currently represented in the evidence ledger.',
-    'An upgrade trigger is new corroborated critical/high reporting, clear geographic expansion, or a sustained increase in risk velocity.',
-    'A downgrade should be considered only when material threats show sustained de-escalation and the absence of new corroborated reporting is itself supported by adequate collection coverage.'
+    watchRegions.length ? 'Primary watch areas: ' + watchRegions.join(', ') + '. Focus collection on recurrence, geographic spread and any change in severity.' : 'Focus collection on recurrence, geographic spread and any change in severity across the recorded event set.',
+    high ? 'Escalation would become more credible if additional independent reporting confirms the high/critical signals or shows persistence across the next reporting cycle.' : 'A stronger deterioration judgement is not warranted without new corroborated evidence or a demonstrable change in the event pattern.',
+    'A downgrade requires sustained de-escalation supported by adequate collection coverage; absence of reporting alone should not be treated as evidence of absence.'
   ];
   return {
     title: name + (type === 'weekly' ? ' Weekly Insight' : type === 'monthly' ? ' Monthly Security Intelligence' : ' Daily Intelligence'),
     subtitle: 'Evidence-governed intelligence · ' + formatPeriod(start, end),
-    executive_assessment: executive,
+    executive_assessment: dedupeSentences(executive, new Set(), 1500),
     assessment_highlights: keyEvents.slice(0,4).map(x => x.headline),
     threat_posture: p,
     change_analysis: {
@@ -291,10 +327,19 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
       summary: 'The publication records ' + events.length + ' event object(s) in the current period. A directly comparable prior-period baseline is not stored in the publication record, so no numerical trend claim is made.',
       trajectory: p.trajectory,
     },
-    key_developments: keyEvents,
+    key_developments: keyEvents.slice(0,6).map(x => ({
+      event_id:x.event_id,
+      headline:x.headline,
+      severity:x.severity,
+      region:x.region,
+      confidence:x.confidence,
+      assessment:dedupeSentences(x.assessment, new Set(), 700),
+      significance:x.why_it_matters?.[0] || null
+    })),
     incident_dossiers: keyEvents,
+    publication_quality: {...qualityControl,gate:qualityGateNote},
     security_environment: {
-      summary: executive,
+      summary: operatingSummary,
       highest_priority: top ? top.headline : 'No material event recorded.',
       severity_distribution: p.counts,
     },

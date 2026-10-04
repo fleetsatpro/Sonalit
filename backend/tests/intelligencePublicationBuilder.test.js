@@ -38,6 +38,9 @@ describe('evidence-first intelligence publication builder',()=>{
     expect(body.regional_news[0].region).toBe('NAIROBI');
     expect(body.pmesi).toHaveLength(5);
     expect(body.incident_map.points.length).toBe(2);
+    expect(body.regional_news[0].items[0].brief).toBeUndefined();
+    expect(body.regional_news[0].items[0].what_happened).toBeUndefined();
+    expect(body.pmesi[0].update).not.toContain(base.brief);
     expect(body.references).toHaveLength(2);
     expect(body.collection_coverage.evidence_contract_met).toBe(true);
     expect(body.public_safety_security_overview.indicators).toHaveLength(4);
@@ -67,10 +70,12 @@ describe('evidence-first intelligence publication builder',()=>{
       }
     };
     const body=buildEvidencePublication({country:'KE',type:'daily',start,end,events:[researched],evidenceCount:2,sourceCount:2,evidenceContract:true});
-    expect(body.key_developments[0].research_status).toBe('researched');
-    expect(body.key_developments[0].what_happened).toContain('The disruption began after armed actors');
-    expect(body.key_developments[0].context).toContain('affected corridor');
-    expect(body.key_developments[0].research_sources[0].domain).toBe('bbc.com');
+    expect(body.key_developments[0].assessment).toContain('short-term access risk');
+    expect(body.key_developments[0].significance).toContain('delay and exposure');
+    expect(body.incident_dossiers[0].research_status).toBe('researched');
+    expect(body.incident_dossiers[0].what_happened).toContain('The disruption began after armed actors');
+    expect(body.incident_dossiers[0].context).toContain('affected corridor');
+    expect(body.incident_dossiers[0].research_sources[0].domain).toBe('bbc.com');
     expect(body.incident_dossiers[0].chronology[0].time).toContain('01 Oct 2026');
   });
   test('explicitly states when there is no event evidence rather than inventing incidents',()=>{

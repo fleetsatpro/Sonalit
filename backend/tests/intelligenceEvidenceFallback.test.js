@@ -22,7 +22,8 @@ describe('Intelligence evidence fallback',()=>{
       'BBC World: Road closure reported after attack',
       'UN News: Regional transport disruption'
     ]);
-    expect(result.caveats).toEqual(['Automated AI synthesis unavailable; no unsupported inference added.']);
-    expect(result.why_it_matters).toEqual(['Evidence-derived event record retained; automated analytical synthesis is unavailable.']);
+    expect(result.caveats[0]).toContain('Evidence coverage is limited to the sources linked to this event in Sonalit.');
+    expect(result.caveats[0]).not.toContain('Automated AI synthesis unavailable');
+    expect(result.why_it_matters[0]).toContain('Road closure reported after armed attack');
   });
 });

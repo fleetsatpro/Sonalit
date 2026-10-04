@@ -2,6 +2,9 @@
 
 const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
+const { cleanPublicationText, dedupeSources: dedupePublicationSources, uniqueStrings } = require('../utils/publicationQuality');
+
+const PDF_RENDERER_VERSION = '2.1.0';
 
 const COUNTRY_NAMES = {
   KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania',
@@ -39,23 +42,7 @@ const BOTTOM = 784;
 const boundaryCache = new Map();
 
 function text(v, max=5000) {
-  return String(v == null ? '' : v)
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&#x27;/gi, "'")
-    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
-    .replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')
-    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
-    .replace(/\u00A0/g, ' ')
-    .replace(/\uFFFD/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max);
+  return cleanPublicationText(v, max);
 }
 
 function upper(v) {
@@ -125,7 +112,7 @@ function mergeIncident(event, publicationBody) {
       (Array.isArray(dossier.research_sources) ? dossier.research_sources : [])
         .concat(Array.isArray(dossier.source_refs) ? dossier.source_refs : [])
         .concat(Array.isArray(event.evidence) ? event.evidence : []),
-      6
+      8
     ),
     researchStatus: upper(dossier.research_status || ''),
     researchProvider: text(dossier.research_provider || '', 100),
@@ -133,7 +120,7 @@ function mergeIncident(event, publicationBody) {
   };
 }
 
-function priorityEvents(events, max=10) {
+function priorityEvents(events, max=6) {
   const ordered = (Array.isArray(events) ? events : [])
     .map(e => ({ e, score: severityScore(e.severity) * 1000 + Number(e.confidence || 0) * 2 + Number(e.source_count || 0) * 10 }))
     .sort((a,b) => b.score - a.score || new Date(b.e.last_seen_at || 0) - new Date(a.e.last_seen_at || 0))
@@ -304,19 +291,34 @@ function geometryFeatures(geo) {
   return [];
 }
 
+function geometryBounds(geo) {
+  const points=geometryFeatures(geo).flatMap(f=>geometryCoordinates(f.geometry));
+  return projectBounds(points,null);
+}
+
 function projectBounds(points, geo) {
-  const all = points.concat(geometryFeatures(geo).flatMap(f => geometryCoordinates(f.geometry)));
-  const finite = all.filter(p => Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])));
-  if (!finite.length) return [0,0,1,1];
+  const all=(Array.isArray(points)?points:[]).concat(
+    geometryFeatures(geo).flatMap(f=>geometryCoordinates(f.geometry))
+  );
+  const finite=all.filter(p=>Number.isFinite(Number(p[0]))&&Number.isFinite(Number(p[1])));
+  if(!finite.length)return [0,0,1,1];
   let minLon=Math.min(...finite.map(p=>p[0]));
   let maxLon=Math.max(...finite.map(p=>p[0]));
   let minLat=Math.min(...finite.map(p=>p[1]));
   let maxLat=Math.max(...finite.map(p=>p[1]));
-  if (maxLon - minLon < 1) { minLon-=0.5; maxLon+=0.5; }
-  if (maxLat - minLat < 1) { minLat-=0.5; maxLat+=0.5; }
+  if(maxLon-minLon<1){minLon-=0.5;maxLon+=0.5;}
+  if(maxLat-minLat<1){minLat-=0.5;maxLat+=0.5;}
   const lonPad=(maxLon-minLon)*0.08;
   const latPad=(maxLat-minLat)*0.08;
   return [minLon-lonPad,minLat-latPad,maxLon+lonPad,maxLat+latPad];
+}
+
+function pointInsideBounds(point,bounds,pad=0.15){
+  const [minLon,minLat,maxLon,maxLat]=bounds;
+  const lonSpan=Math.max(maxLon-minLon,0.1);
+  const latSpan=Math.max(maxLat-minLat,0.1);
+  return point[0]>=minLon-lonSpan*pad&&point[0]<=maxLon+lonSpan*pad&&
+    point[1]>=minLat-latSpan*pad&&point[1]<=maxLat+latSpan*pad;
 }
 
 function svgPathForGeometry(geometry, bounds, box) {
@@ -350,59 +352,73 @@ function svgPathForGeometry(geometry, bounds, box) {
 }
 
 async function buildIncidentMap(country, events) {
-  const points = (Array.isArray(events) ? events : [])
-    .filter(e => Number.isFinite(Number(e.latitude)) && Number.isFinite(Number(e.longitude)))
-    .map((e,i) => ({
+  const allPoints=(Array.isArray(events)?events:[])
+    .filter(e=>Number.isFinite(Number(e.latitude))&&Number.isFinite(Number(e.longitude)))
+    .map((e,i)=>({
       n:i+1,
       lon:Number(e.longitude),
       lat:Number(e.latitude),
-      headline:text(e.headline || e.title || ('Event ' + (i+1)), 90),
-      severity:e.severity || 'moderate'
-    }))
-    .slice(0,50);
+      headline:text(e.headline||e.title||('Event '+(i+1)),90),
+      severity:e.severity||'moderate'
+    }));
 
-  const geo = await countryGeometry(country);
-  const pointsLonLat = points.map(p => [p.lon,p.lat]);
-  const bounds = projectBounds(pointsLonLat, geo);
-  const W=2000,H=1050;
-  const pad=110;
-  const mapBox=[pad,150,W-pad*2,H-250];
+  const points=allPoints
+    .slice()
+    .sort((a,b)=>severityScore(b.severity)-severityScore(a.severity)||a.n-b.n)
+    .slice(0,24)
+    .map((p,i)=>({...p,n:i+1}));
+
+  const geo=await countryGeometry(country);
+  const countryBounds=geo?geometryBounds(geo):null;
+  const plotPoints=countryBounds
+    ? points.filter(p=>pointInsideBounds([p.lon,p.lat],countryBounds,0.12))
+    : points;
+  const excludedPoints=points.length-plotPoints.length;
+  const pointsLonLat=plotPoints.map(p=>[p.lon,p.lat]);
+  const bounds=countryBounds||projectBounds(pointsLonLat,null);
+  const W=2000,H=1050,pad=110,mapBox=[pad,150,W-pad*2,H-260];
   const [minLon,minLat,maxLon,maxLat]=bounds;
   const proj=p=>[
     mapBox[0]+((p.lon-minLon)/(maxLon-minLon))*mapBox[2],
     mapBox[1]+mapBox[3]-((p.lat-minLat)/(maxLat-minLat))*mapBox[3]
   ];
   const paths=[];
-  for (const feature of geometryFeatures(geo)) {
+  for(const feature of geometryFeatures(geo)){
     const d=svgPathForGeometry(feature.geometry,bounds,mapBox);
-    if(d) paths.push('<path d="' + d + '" fill="#e2e8f0" stroke="#94a3b8" stroke-width="4" fill-rule="evenodd"/>');
+    if(d)paths.push('<path d="'+d+'" fill="#e7edf2" stroke="#93a4b5" stroke-width="3" fill-rule="evenodd"/>');
   }
   const graticule=[];
-  for(let i=0;i<=6;i++){
-    const y=mapBox[1]+(mapBox[3]*i/6);
-    graticule.push('<line x1="' + mapBox[0] + '" y1="' + y + '" x2="' + (mapBox[0]+mapBox[2]) + '" y2="' + y + '" stroke="#cbd5e1" stroke-width="2" opacity=".6"/>');
+  for(let i=1;i<4;i++){
+    const gy=mapBox[1]+mapBox[3]*i/4;
+    const gx=mapBox[0]+mapBox[2]*i/4;
+    graticule.push('<line x1="'+mapBox[0]+'" y1="'+gy+'" x2="'+(mapBox[0]+mapBox[2])+'" y2="'+gy+'" stroke="#cbd5e1" stroke-width="2" opacity=".45"/>');
+    graticule.push('<line x1="'+gx+'" y1="'+mapBox[1]+'" x2="'+gx+'" y2="'+(mapBox[1]+mapBox[3])+'" stroke="#cbd5e1" stroke-width="2" opacity=".45"/>');
   }
-  for(let i=0;i<=6;i++){
-    const x=mapBox[0]+(mapBox[2]*i/6);
-    graticule.push('<line x1="' + x + '" y1="' + mapBox[1] + '" x2="' + x + '" y2="' + (mapBox[1]+mapBox[3]) + '" stroke="#cbd5e1" stroke-width="2" opacity=".6"/>');
-  }
-  const markers=points.map(p=>{
-    const [x,y]=proj(p);
-    const c=severityColor(p.severity);
-    return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (10 + severityScore(p.severity)*2) + '" fill="' + c + '" stroke="#fff" stroke-width="4"/>' +
-      '<text x="' + (x+14).toFixed(1) + '" y="' + (y-10).toFixed(1) + '" fill="#0f172a" font-family="Arial" font-size="22" font-weight="700">' + p.n + '</text>';
+  const markers=plotPoints.map(p=>{
+    const [x,y]=proj(p),c=severityColor(p.severity),r=8+severityScore(p.severity)*2;
+    return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r+'" fill="'+c+'" stroke="#fff" stroke-width="4"/>'+
+      '<text x="'+(x+13).toFixed(1)+'" y="'+(y-9).toFixed(1)+'" fill="#0f172a" font-family="Arial" font-size="22" font-weight="700">'+p.n+'</text>';
   }).join('');
   const escXml=v=>text(v,220).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
-    '<rect width="100%" height="100%" fill="#ffffff"/>' +
-    '<text x="' + pad + '" y="64" font-family="Arial" font-size="52" font-weight="700" fill="#0f172a">' + escXml(COUNTRY_NAMES[country] || country) + ' - INCIDENT GEOGRAPHY</text>' +
-    '<text x="' + pad + '" y="105" font-family="Arial" font-size="25" fill="#64748b">Observed event coordinates from the Sonalit evidence ledger; numbering matches the incident register.</text>' +
-    graticule.join('') + paths.join('') + markers +
-    '<g transform="translate(' + (W-220) + ' 56)"><text x="0" y="0" font-family="Arial" font-size="24" font-weight="700" fill="#0f172a">N</text><path d="M12 10 L0 58 L24 58 Z" fill="#0f172a"/></g>' +
-    '<text x="' + pad + '" y="' + (H-80) + '" font-family="Arial" font-size="20" fill="#64748b">Extent: ' + minLon.toFixed(2) + ' to ' + maxLon.toFixed(2) + ' longitude | ' + minLat.toFixed(2) + ' to ' + maxLat.toFixed(2) + ' latitude</text>' +
-    '<text x="' + pad + '" y="' + (H-48) + '" font-family="Arial" font-size="19" fill="#64748b">' + (geo ? 'Boundary source: world.geo.json (country boundary) | Event source: Sonalit evidence ledger' : 'Boundary source unavailable at render time; coordinate grid retained and no geographic outline was fabricated') + '</text>' +
+  const label=geo ? (COUNTRY_NAMES[country]||country)+' - INCIDENT GEOGRAPHY' : 'COORDINATE PLOT - GEOGRAPHIC COVERAGE';
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+
+    '<rect width="100%" height="100%" fill="#f8fafc"/>'+
+    '<rect x="55" y="30" width="'+(W-110)+'" height="'+(H-60)+'" rx="18" fill="#ffffff" stroke="#e2e8f0"/>'+
+    '<text x="'+pad+'" y="64" font-family="Arial" font-size="48" font-weight="700" fill="#0f172a">'+escXml(label)+'</text>'+
+    '<text x="'+pad+'" y="104" font-family="Arial" font-size="23" fill="#64748b">'+
+      escXml(geo?'Recorded event coordinates; marker numbers correspond to the spatial register.':'Usable event coordinates plotted without inventing a geographic boundary.')+'</text>'+
+    graticule.join('')+paths.join('')+markers+
+    '<text x="'+pad+'" y="'+(H-78)+'" font-family="Arial" font-size="19" fill="#64748b">Extent: '+minLon.toFixed(2)+' to '+maxLon.toFixed(2)+' longitude | '+minLat.toFixed(2)+' to '+maxLat.toFixed(2)+' latitude</text>'+
+    '<text x="'+pad+'" y="'+(H-46)+'" font-family="Arial" font-size="18" fill="#64748b">'+
+      escXml(geo?'Boundary source: country GeoJSON | Event source: Sonalit evidence ledger':'Boundary source unavailable; this is a coordinate plot, not a country map.')+'</text>'+
     '</svg>';
-  return { image:await sharp(Buffer.from(svg)).png().toBuffer(), points, source:geo ? 'world.geo.json country boundary' : 'coordinate grid fallback' };
+  return {
+    image:await sharp(Buffer.from(svg)).png().toBuffer(),
+    points:plotPoints,
+    excludedPoints,
+    totalPoints:allPoints.length,
+    source:geo?'country GeoJSON boundary':'coordinate plot fallback'
+  };
 }
 
 function sectionIndex(doc, y, rows) {
@@ -429,7 +445,8 @@ function sourceTitle(source) {
 async function buildProfessionalPdf(publication, events, images=[]) {
   const body = publication.body || {};
   const mergedEvents = (Array.isArray(events) ? events : []).map(e => mergeIncident(e, body));
-  const priorities = priorityEvents(mergedEvents, 10);
+  const maxDossiers = body.publication_type === 'weekly' ? 7 : body.publication_type === 'monthly' ? 7 : 5;
+  const priorities = priorityEvents(mergedEvents, maxDossiers);
   const priorityMerged = priorities.map(e => mergeIncident(e, body));
   const confidence = mergedEvents.length
     ? Math.round(mergedEvents.reduce((n,e)=>n+Number(e.confidence||0),0)/mergedEvents.length)
@@ -531,11 +548,14 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   y+=8;
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(10.5).text('WHAT WOULD CHANGE THIS JUDGEMENT',MARGIN,y);
   y+=20;
-  const triggers=[
-    'A second credible source confirms a material increase in severity, scale or geographic spread.',
-    'The event pattern persists across consecutive reporting periods rather than remaining isolated.',
-    'Authoritative reporting materially contradicts the present assessment or changes the confidence basis.'
-  ];
+  const triggerCandidates=[];
+  for(const e of priorityMerged.slice(0,3)){
+    const m=mergeIncident(e,body);
+    const headline=m.headline;
+    triggerCandidates.push('Independent corroboration of '+headline+' would strengthen the judgement; contradictory authoritative reporting would weaken it.');
+    triggerCandidates.push('Persistence of '+headline+' in '+(m.region||'the reported area')+' across another reporting cycle would increase concern for sustained exposure.');
+  }
+  const triggers=uniqueStrings(triggerCandidates,3);
   y=bullets(doc,y,triggers,{size:8.2});
   y+=4;
   doc.fillColor(MUTED).font('Helvetica').fontSize(7.4).text('Assessment discipline: probability language should describe the likelihood of a development; confidence describes the strength of the information and reasoning supporting the judgement.',MARGIN,y,{width:CONTENT_W,lineGap:2.5});
@@ -638,15 +658,15 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     const colStart=y;
     card(doc,leftX,colStart,colW,215);
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('CONTEXT',leftX+12,colStart+12);
-    paragraph(doc,colStart+31,m.contextText || 'Context was not established by the available evidence. The absence of context is retained as an intelligence gap rather than filled with assumption.',{x:leftX+12,width:colW-24,size:7.7,color:INK,max:650,lineGap:2.8});
+    paragraph(doc,colStart+31,m.contextText || ('Context remains limited for '+m.headline+'. The present record supports monitoring of persistence, geographic reach and operational consequence rather than a wider inference.'),{x:leftX+12,width:colW-24,size:7.7,color:INK,max:520,lineGap:2.8});
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('ANALYTICAL ASSESSMENT',leftX+12,colStart+99);
-    paragraph(doc,colStart+118,m.assessmentText || 'No additional analytical judgement was established beyond the current evidence record.',{x:leftX+12,width:colW-24,size:7.7,color:INK,max:500,lineGap:2.8});
+    paragraph(doc,colStart+118,m.assessmentText || ('No additional judgement is established beyond the '+String(m.severity||'moderate').toLowerCase()+' signal recorded for '+m.headline+'.'),{x:leftX+12,width:colW-24,size:7.7,color:INK,max:430,lineGap:2.8});
     
     card(doc,rightX,colStart,colW,215);
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('WHY IT MATTERS',rightX+12,colStart+12);
-    let ry=bullets(doc,colStart+31,m.whyText.length?m.whyText:['Continued monitoring is warranted to determine persistence, spread or corroboration.'],{x:rightX+12,width:colW-24,size:7.5,gap:3});
+    let ry=bullets(doc,colStart+31,m.whyText.length?m.whyText:['Monitor '+m.headline+' for persistence, spread or material operational consequence.'],{x:rightX+12,width:colW-24,size:7.5,gap:3});
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('UNCERTAINTY',rightX+12,Math.max(ry+4,colStart+99));
-    bullets(doc,Math.max(ry+18,colStart+118),m.uncertainty.length?m.uncertainty.concat(m.disputed):['The present evidence base does not establish all material details.'],{x:rightX+12,width:colW-24,size:7.5,gap:3,color:MUTED});
+    bullets(doc,Math.max(ry+18,colStart+118),m.uncertainty.length?m.uncertainty.concat(m.disputed):['Confidence is '+String(Math.round(Number(m.confidence||0)))+'%; no additional material unresolved issue was recorded.'],{x:rightX+12,width:colW-24,size:7.5,gap:3,color:MUTED});
     y=colStart+229;
 
     if(m.chronology.length){
@@ -683,32 +703,36 @@ async function buildProfessionalPdf(publication, events, images=[]) {
 
   // REGIONAL PICTURE
   y=addPage(doc);
-  y=sectionHeading(doc,y,'Regional picture','Geographic roll-up of all recorded events. Priority incidents are not rewritten at full length here.');
+  y=sectionHeading(doc,y,'Regional picture','A compact geographic ledger showing breadth of activity without rewriting priority dossiers.');
   const regions=Array.isArray(body.regional_news)?body.regional_news:[];
   if(regions.length){
     let regionRows=0;
     for(const group of regions){
-      if(regionRows>=25) break;
+      if(regionRows>=30)break;
       const items=Array.isArray(group.items)?group.items:[];
-      y=ensure(doc,y,32);
-      doc.fillColor(INK).font('Helvetica-Bold').fontSize(10.5).text(upper(group.region || 'REGION'),MARGIN,y);
+      y=ensure(doc,y,48);
+      doc.fillColor(INK).font('Helvetica-Bold').fontSize(10.5).text(upper(group.region||'REGION'),MARGIN,y);
+      doc.fillColor(MUTED).font('Helvetica').fontSize(7.2).text(
+        String(group.event_count||items.length)+' event(s) | highest severity '+upper(group.highest_severity||'INFORMATIONAL'),
+        MARGIN+330,y,{width:181,align:'right'}
+      );
       drawRule(doc,y+15,MARGIN,CONTENT_W,LINE);
       y+=24;
-      for(const item of items.slice(0,6)){
-        const headline=text(item.headline || 'Development',240);
-        const brief=text(item.what_happened || item.brief || '',500);
-        const hh=blockHeight(doc,headline+' - '+brief,CONTENT_W-20,'Helvetica',7.8,2.4)+12;
-        y=ensure(doc,y,hh);
+      for(const item of items.slice(0,5)){
+        y=ensure(doc,y,30);
         doc.fillColor(severityColor(item.severity)).font('Helvetica-Bold').fontSize(6.7).text(upper(item.severity||'moderate'),MARGIN,y,{width:70});
-        doc.fillColor(INK).font('Helvetica-Bold').fontSize(7.8).text(headline,MARGIN+78,y,{width:CONTENT_W-78});
-        y+=12;
-        y=paragraph(doc,y,brief,{x:MARGIN+78,width:CONTENT_W-78,size:7.2,color:MUTED,max:500,lineGap:2.3});
-        y+=7;
+        doc.fillColor(INK).font('Helvetica-Bold').fontSize(7.8).text(text(item.headline||'Development',240),MARGIN+78,y,{width:CONTENT_W-78});
+        y+=13;
+        doc.fillColor(MUTED).font('Helvetica').fontSize(6.7).text(
+          String(item.source_count||0)+' source(s) | '+String(item.evidence_count||0)+' evidence observation(s) | '+String(item.confidence??'—')+'% confidence',
+          MARGIN+78,y,{width:CONTENT_W-78}
+        );
+        y+=18;
         regionRows++;
       }
-      y+=7;
+      y+=8;
     }
-  } else {
+  }else{
     y=paragraph(doc,y,'No regional roll-up was available for this reporting period.',{size:8.6,color:MUTED});
   }
 
@@ -751,6 +775,10 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   doc.image(mapResult.image,MARGIN+8,y+8,{width:CONTENT_W-16,height:370,fit:[CONTENT_W-16,370]});
   y+=398;
   const mapPoints=mapResult.points || [];
+  if(mapResult.excludedPoints){
+    y=paragraph(doc,y,'Excluded '+String(mapResult.excludedPoints)+' coordinate(s) outside the selected country boundary or map margin; these records remain in the evidence ledger.',{size:7.2,color:MUTED,max:500});
+    y+=8;
+  }
   if(mapPoints.length){
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(9).text('MAP REGISTER',MARGIN,y);
     y+=17;
@@ -804,20 +832,20 @@ async function buildProfessionalPdf(publication, events, images=[]) {
 
   // SOURCES
   y=addPage(doc);
-  y=sectionHeading(doc,y,'Source register','Deduplicated source trail across original evidence and incident research. Each source is a lead into the underlying record, not a substitute for it.');
-  const allSources=[];
+  y=sectionHeading(doc,y,'Source register','Deduplicated provenance across original evidence and direct incident research; aggregator pages are excluded.');
+  const sourceCandidates=[];
   for(const e of mergedEvents){
     const dossier=researchForEvent(body,e)||{};
-    for(const s of (Array.isArray(dossier.research_sources)?dossier.research_sources:[]).concat(Array.isArray(dossier.source_refs)?dossier.source_refs:[]).concat(Array.isArray(e.evidence)?e.evidence:[])){
-      allSources.push({...s,event_id:e.id,event_headline:e.headline});
+    for(const s of (Array.isArray(dossier.research_sources)?dossier.research_sources:[])
+      .concat(Array.isArray(dossier.source_refs)?dossier.source_refs:[])
+      .concat(Array.isArray(e.evidence)?e.evidence:[])){
+      sourceCandidates.push({...s,event_id:e.id,event_headline:e.headline});
     }
   }
-  const sources=dedupeSources(allSources,120);
+  const sources=dedupePublicationSources(sourceCandidates,120);
   let refNo=1;
-  for(const s of sources){
-    const titleText=sourceTitle(s);
-    const sourceText=sourceLabel(s);
-    const url=text(s.url || '',260);
+  for(const src of sources){
+    const titleText=sourceTitle(src),sourceText=sourceLabel(src),url=text(src.url||'',260);
     const h=20+(url?10:0);
     y=ensure(doc,y,h+4);
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(6.9).text('['+refNo+'] '+sourceText,MARGIN,y,{width:145});
@@ -826,7 +854,10 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     if(url){doc.fillColor(MUTED).font('Helvetica').fontSize(5.9).text(url,MARGIN+152,y,{width:CONTENT_W-152});y+=10;}
     y+=5;
     refNo++;
-    if(refNo>160) break;
+    if(refNo>160)break;
+  }
+  if(!sources.length){
+    y=paragraph(doc,y,'No direct attributable source records were available for the publication.',{size:8.6,color:MUTED});
   }
 
   // CONTROLS
@@ -835,6 +866,7 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   card(doc,MARGIN,y,CONTENT_W,208);
   const controls=[
     ['GENERATOR','SONALIT PROFESSIONAL INTELLIGENCE PUBLICATION RENDERER'],
+    ['RENDERER VERSION',PDF_RENDERER_VERSION],
     ['MODE',text(body.generator && body.generator.mode || 'EVIDENCE_FIRST',80)],
     ['RESEARCH',''+String(body.deep_research && body.deep_research.incidents_researched || 0)+' researched incident(s); '+String(body.deep_research && body.deep_research.web_sources_discovered || 0)+' research source(s) recorded'],
     ['STATUS',text(publication.status || 'published',50).toUpperCase()],
@@ -871,4 +903,4 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   return done;
 }
 
-module.exports={ buildProfessionalPdf, priorityEvents, mergeIncident, periodLabel, buildIncidentMap };
+module.exports={ buildProfessionalPdf, priorityEvents, mergeIncident, periodLabel, buildIncidentMap, PDF_RENDERER_VERSION };

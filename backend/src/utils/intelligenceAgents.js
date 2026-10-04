@@ -38,14 +38,28 @@ function evidenceDerivedSynthesis(event){
     const title=clean(item?.title||item?.body||'Evidence record',420);
     return `${source}: ${title}`;
   });
+  const headline=clean(event.title||'INTELLIGENCE EVENT',180);
+  const region=clean(event.region||event.location||'the reported area',120);
+  const whyByType={
+    SECURITY:'Monitor whether '+headline+' persists, expands geographically or is independently corroborated.',
+    POLITICAL:'Monitor whether '+headline+' develops into sustained political disruption or wider mobilisation.',
+    LOGISTICS:'Monitor whether '+headline+' creates sustained delay, diversion or access constraints.',
+    NATURAL_HAZARD:'Monitor whether '+headline+' persists or expands into wider access, infrastructure or population impacts.',
+    HEALTH:'Monitor whether '+headline+' persists, spreads or creates material continuity consequences.',
+    ECONOMIC:'Monitor whether '+headline+' creates sustained pressure on commerce, supply or operating costs.',
+    BORDER:'Monitor whether '+headline+' produces recurring crossing, customs or access disruption.',
+    MARITIME:'Monitor whether '+headline+' affects vessel movement, route risk or port continuity.',
+    CRIME:'Monitor whether '+headline+' recurs or expands beyond the reported area.',
+    OTHER:'Monitor whether '+headline+' recurs, spreads or gains independent corroboration.'
+  };
   return {
     id:String(event.id),
-    headline:clean(event.title||'INTELLIGENCE EVENT',180),
-    brief:clean(event.summary||event.title||'Evidence record available.',1600),
+    headline,
+    brief:clean(event.summary||headline||'Evidence record available.',1600),
     intelligence_type,
     key_facts,
-    why_it_matters:['Evidence-derived event record retained; automated analytical synthesis is unavailable.'],
-    caveats:['Automated AI synthesis unavailable; no unsupported inference added.'],
+    why_it_matters:[whyByType[intelligence_type]||whyByType.OTHER],
+    caveats:[clean('Evidence coverage is limited to the sources linked to this event in Sonalit. Unresolved details are retained as intelligence gaps rather than filled with assumption.',420)],
     confidence:Math.max(0,Math.min(100,Number(event.confidence)||50)),
   };
 }
@@ -208,20 +222,22 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const priorResearch=existing[0]?.body?.deep_research||{};
   const fingerprint=publicationFingerprint(country,type,start,end,events);
   // Research exactly the bounded incident set exposed by the publication.
-  const publicationEvents=selectPublicationResearchEvents(events,10);
+  const publicationEvents=selectPublicationResearchEvents(events,8);
   const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
   const expectedResearchCount=publicationEvents.length;
   const previousResearchCount=Number(priorResearch.incidents_web_researched||0)+Number(priorResearch.incidents_fallback||0);
   const researchVersionMismatch=String(priorResearch.research_version||'')!==DEEP_RESEARCH_VERSION;
+  const pdfRendererMismatch=String(existing[0]?.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION;
   const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(previousResearchCount<expectedResearchCount||researchVersionMismatch);
   const unchanged=existing.length
     && String(priorCoverage.fingerprint||'')===fingerprint
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
     && Number(priorCoverage.source_count||-1)===sourceCount
-    && !needsDeepResearch;
+    && !needsDeepResearch
+    && !pdfRendererMismatch;
   if(existing.length&&unchanged)return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 
-  const refreshPdf=Boolean(existing.length&&(String(priorCoverage.fingerprint||'')!==fingerprint||needsDeepResearch));
+  const refreshPdf=Boolean(existing.length&&(String(priorCoverage.fingerprint||'')!==fingerprint||needsDeepResearch||pdfRendererMismatch));
 
   let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0,web_search_requests:0}};
   if(deepResearchEnabled&&expectedResearchCount>0){
@@ -253,7 +269,13 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
 
   const boardPublishable=board?.publishable===true;
   const aiRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD||'').toLowerCase()==='true';
-  const status=(evidenceContract&&(!aiRequired||boardPublishable))?'published':'draft';
+  const finalQuality=auditPublicationContent(
+    Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:
+    (Array.isArray(deterministic.incident_dossiers)?deterministic.incident_dossiers:[])
+  );
+  finalBody.publication_quality=finalQuality;
+  const qualityGate=finalQuality.passed===true;
+  const status=(evidenceContract&&qualityGate&&(!aiRequired||boardPublishable))?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
     ...finalBody,title,subtitle,executive_assessment:executive,key_events:events,
@@ -262,8 +284,11 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       name:'SONALIT EVIDENCE-FIRST PUBLICATION FABRIC',
       provider,
       mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
-      evidence_contract:evidenceContract
+      pdf_renderer_version:PDF_RENDERER_VERSION,
+      evidence_contract:evidenceContract,
+      publication_quality:deterministic.publication_quality||null
     },
+    publication_quality:deterministic.publication_quality||null,
     deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_version:DEEP_RESEARCH_VERSION,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
     version
   };

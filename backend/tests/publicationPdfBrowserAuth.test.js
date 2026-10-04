@@ -43,7 +43,7 @@ describe('browser-native publication PDF compatibility', () => {
 
   test('publication PDF transport remains tenant-scoped and does not expose an R2 redirect', () => {
     const s = fs.readFileSync(path.join(__dirname, '../src/services/intelligencePublicationPdf.js'), 'utf8');
-    expect(s).toContain('SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2');
+    expect(s).toContain('SELECT pdf_key,body FROM intel_publications WHERE id=$1 AND org_id=$2');
     expect(s).toContain('streamPublicationPdf');
     expect(s).toContain("Content-Disposition");
     expect(s).not.toContain('res.redirect(302');
