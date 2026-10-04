@@ -15,7 +15,7 @@ describe('publication generation deduplication hardening',()=>{
     expect(source).toContain('headline:e.headline,brief:e.brief');
     expect(source).not.toContain('id:e.id,updated_at:e.updated_at,last_seen_at:e.last_seen_at');
     expect(source).toContain('fingerprint');
-    expect(source).toContain("String(priorCoverage.fingerprint||'')===fingerprint");
+    expect(source).toContain("const evidenceChanged=String(priorCoverage.fingerprint||'')!==fingerprint;");
   });
   test('database schema retains historical duplicates but enforces one active publication per period',()=>{
     const files=fs.readdirSync(path.join(__dirname,'../migrations')).filter(name=>name.includes('intelligence_publication_dedupe'));
