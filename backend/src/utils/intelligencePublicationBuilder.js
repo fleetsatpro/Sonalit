@@ -68,17 +68,18 @@ function posture(events, confidence) {
   };
 }
 function eventNarrative(e) {
-  const brief = clean(e.brief || e.summary || e.headline || e.title || 'Evidence record available.', 2200);
+  const research = e && e.research && e.research.agent ? e.research.agent : (e && e.research ? e.research : {});
+  const brief = clean(research.narrative || e.brief || e.summary || e.headline || e.title || 'Evidence record available.', 4200);
   const severity = String(e.severity || 'moderate').toUpperCase();
   const type = eventType(e);
   const region = clean(e.region || 'Location not specified', 160);
   const evidence = Number(e.observation_count || (Array.isArray(e.evidence) ? e.evidence.length : 0));
   const sources = Number(e.source_count || new Set((Array.isArray(e.evidence) ? e.evidence : []).map(x => x.source_id).filter(Boolean)).size);
-  const keyFacts = Array.isArray(e.key_facts) ? e.key_facts.map(x => clean(x,500)).filter(Boolean).slice(0,6) : [];
-  const why = Array.isArray(e.why_it_matters) ? e.why_it_matters.map(x => clean(x,700)).filter(Boolean).slice(0,5) : [];
-  const caveats = Array.isArray(e.caveats) ? e.caveats.map(x => clean(x,700)).filter(Boolean).slice(0,5) : [];
+  const keyFacts = Array.isArray(research.confirmed_facts) && research.confirmed_facts.length ? research.confirmed_facts.map(x => clean(x,650)).filter(Boolean).slice(0,6) : (Array.isArray(e.key_facts) ? e.key_facts.map(x => clean(x,500)).filter(Boolean).slice(0,6) : []);
+  const why = Array.isArray(research.why_it_matters) && research.why_it_matters.length ? research.why_it_matters.map(x => clean(x,800)).filter(Boolean).slice(0,5) : (Array.isArray(e.why_it_matters) ? e.why_it_matters.map(x => clean(x,700)).filter(Boolean).slice(0,5) : []);
+  const caveats = Array.isArray(research.uncertainty) && research.uncertainty.length ? research.uncertainty.map(x => clean(x,800)).filter(Boolean).slice(0,5) : (Array.isArray(e.caveats) ? e.caveats.map(x => clean(x,700)).filter(Boolean).slice(0,5) : []);
   const assessment = e.assessment && typeof e.assessment === 'object' ? e.assessment : {};
-  const judgement = clean(assessment.judgement || assessment.headline || '', 1200);
+  const judgement = clean(research.analytical_assessment || assessment.judgement || assessment.headline || '', 1800);
   const upgradeTriggers = Array.isArray(assessment.upgrade_triggers) ? assessment.upgrade_triggers.map(x => clean(x,500)).filter(Boolean).slice(0,5) : [];
   const downgradeTriggers = Array.isArray(assessment.downgrade_triggers) ? assessment.downgrade_triggers.map(x => clean(x,500)).filter(Boolean).slice(0,5) : [];
   return {
@@ -91,6 +92,13 @@ function eventNarrative(e) {
       ? 'The development warrants priority monitoring and review of exposure in the affected area.'
       : 'The development warrants continued monitoring for corroboration, persistence or escalation.'],
     caveats,
+    context: clean(research.context || '', 1800),
+    reported_or_disputed: Array.isArray(research.reported_or_disputed) ? research.reported_or_disputed.slice(0,5).map(x=>clean(x,900)) : [],
+    chronology: Array.isArray(research.chronology) ? research.chronology.slice(0,8).map(x=>({time:clean(x?.time,120),event:clean(x?.event,700)})) : [],
+    research_status: research.status || null,
+    research_provider: research.provider || null,
+    research_sources: Array.isArray(research.sources) ? research.sources.slice(0,10) : [],
+    search_notes: clean(research.search_notes || '', 1200),
     outlook_triggers: { upgrade: upgradeTriggers, downgrade: downgradeTriggers },
     synthesis: { confidence: Number(e.synthesis_confidence || e.confidence || 0) || 0, provider: e.synthesis_provider || null },
     severity,
@@ -255,6 +263,7 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
       trajectory: p.trajectory,
     },
     key_developments: keyEvents,
+    incident_dossiers: keyEvents,
     security_environment: {
       summary: executive,
       highest_priority: top ? top.headline : 'No material event recorded.',
@@ -283,6 +292,13 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
       }))
     },
     references: references(events),
+    deep_research: {
+      enabled: events.some(e=>Boolean(e&&e.research)),
+      incidents_requested: events.length,
+      incidents_researched: events.filter(e=>e&&e.research&&e.research.agent&&e.research.agent.status==='researched').length,
+      incidents_fallback: events.filter(e=>e&&e.research&&e.research.agent&&e.research.agent.status==='fallback').length,
+      web_sources_discovered: events.reduce((n,e)=>n+Number(e?.research?.packet?.discovered_sources?.length||0),0)
+    },
     collection_coverage: {
       event_count: events.length,
       evidence_count: evidenceCount,
