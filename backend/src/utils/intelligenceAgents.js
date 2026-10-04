@@ -15,6 +15,7 @@ const { PDF_RENDERER_VERSION } = require('../services/intelligencePublicationPdf
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
 const DAILY_COUNTRIES=(process.env.INTEL_PUBLICATION_COUNTRIES||Object.keys(COUNTRY_NAMES).join(',')).split(',').map(x=>x.trim().toUpperCase()).filter(x=>COUNTRY_NAMES[x]);
 const DEEP_RESEARCH_VERSION='2.0';
+const PUBLICATION_EVIDENCE_VERSION='1.1';
 const MAX_TRANSLATE=24;
 const MAX_SYNTHESIS=10;
 function clean(v,n=5000){return String(v||'').replace(/\s+/g,' ').trim().slice(0,n);}
@@ -175,6 +176,48 @@ function selectPublicationResearchEvents(events,limit=10){
   return out.slice(0,limit);
 }
 
+function publicationEvidenceBasis(originalEvidenceContract, research, publicationEvents){
+  if(originalEvidenceContract){
+    return {
+      publishable:true,
+      basis:'ORIGINAL_EVIDENCE',
+      reportEvents:Array.isArray(publicationEvents)?publicationEvents:[],
+      researchBackedIncidents:0,
+      researchSourceCount:0,
+      researchSourceDomains:0,
+      excludedEventCount:0
+    };
+  }
+
+  const backed=[];
+  const sources=[];
+  for(const event of Array.isArray(publicationEvents)?publicationEvents:[]){
+    const packet=research?.byEvent?.[String(event?.id)]||{};
+    const agent=packet?.agent||packet||{};
+    const direct=Array.isArray(agent.sources)
+      ? agent.sources.filter(src=>src?.url && String(src.url).trim())
+      : [];
+    if(direct.length)backed.push(event);
+    for(const src of direct)sources.push(src);
+  }
+
+  const uniqueUrls=new Set(sources.map(src=>String(src.url).trim()).filter(Boolean));
+  const uniqueDomains=new Set(
+    sources.map(src=>String(src.domain||'').trim().toLowerCase()).filter(Boolean)
+  );
+  const researchContract=backed.length>0 && uniqueUrls.size>=2 && uniqueDomains.size>=2;
+
+  return {
+    publishable:researchContract,
+    basis:researchContract?'DIRECT_WEB_RESEARCH':'INSUFFICIENT_EVIDENCE',
+    reportEvents:researchContract?backed:[],
+    researchBackedIncidents:backed.length,
+    researchSourceCount:uniqueUrls.size,
+    researchSourceDomains:uniqueDomains.size,
+    excludedEventCount:Math.max(0,(Array.isArray(publicationEvents)?publicationEvents.length:0)-backed.length)
+  };
+}
+
 async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const now=new Date();
   let start,end;
@@ -230,13 +273,15 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const previousResearchCount=Number(priorResearch.incidents_web_researched||0)+Number(priorResearch.incidents_fallback||0);
   const researchVersionMismatch=String(priorResearch.research_version||'')!==DEEP_RESEARCH_VERSION;
   const pdfRendererMismatch=String(existing[0]?.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION;
+  const publicationPolicyMismatch=String(existing[0]?.body?.collection_basis?.version||'')!==PUBLICATION_EVIDENCE_VERSION;
   const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(previousResearchCount<expectedResearchCount||researchVersionMismatch);
   const unchanged=existing.length
     && String(priorCoverage.fingerprint||'')===fingerprint
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
     && Number(priorCoverage.source_count||-1)===sourceCount
     && !needsDeepResearch
-    && !pdfRendererMismatch;
+    && !pdfRendererMismatch
+    && !publicationPolicyMismatch;
   if(existing.length&&unchanged)return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 
   const refreshPdf=Boolean(existing.length&&(String(priorCoverage.fingerprint||'')!==fingerprint||needsDeepResearch||pdfRendererMismatch));
@@ -251,7 +296,31 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     }
   }
   const enrichedEvents=events.map(e=>({...e,research:incidentResearch.byEvent[String(e.id)]||null}));
-  const deterministic=buildEvidencePublication({country,type,start,end,events:enrichedEvents,evidenceCount,sourceCount,evidenceContract});
+  const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents);
+  const reportEvents=publicationBasis.reportEvents;
+  const reportEvidenceCount=evidenceContract
+    ? evidenceCount
+    : reportEvents.reduce((n,e)=>n+Number(e.observation_count||0),0);
+  const reportSourceIds=new Set();
+  for(const e of reportEvents){
+    for(const obs of Array.isArray(e.evidence)?e.evidence:[]){
+      if(obs?.source_id)reportSourceIds.add(String(obs.source_id));
+    }
+  }
+  const reportSourceCount=evidenceContract
+    ? sourceCount
+    : Math.max(publicationBasis.researchSourceDomains,reportSourceIds.size);
+  const publicationEvidenceContract=evidenceContract||publicationBasis.publishable;
+  const deterministic=buildEvidencePublication({
+    country,
+    type,
+    start,
+    end,
+    events:reportEvents,
+    evidenceCount:reportEvidenceCount,
+    sourceCount:reportSourceCount,
+    evidenceContract:publicationEvidenceContract
+  });
   let finalBody=deterministic;
   let title=deterministic.title;
   let subtitle=deterministic.subtitle;
@@ -284,17 +353,19 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   finalBody.publication_quality=finalQuality;
   const qualityGate=finalQuality.passed===true;
   const aiBoardGate=aiBoardRequired ? boardPublishable : true;
-  const status=(evidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';
+  const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
-    ...finalBody,title,subtitle,executive_assessment:executive,key_events:events,
+    ...finalBody,title,subtitle,executive_assessment:executive,key_events:reportEvents,
+    collection_basis:{version:PUBLICATION_EVIDENCE_VERSION,original_evidence_contract_met:evidenceContract,publication_evidence_contract_met:publicationEvidenceContract,basis:publicationBasis.basis,research_backed_incidents:publicationBasis.researchBackedIncidents,research_source_count:publicationBasis.researchSourceCount,research_source_domains:publicationBasis.researchSourceDomains,excluded_event_count:publicationBasis.excludedEventCount},
     editorial_board:{agents:AGENT_ROLES.map(a=>a.id),board,visual_plan:visual,graphics_plan:graphics,provider},
     generator:{
       name:'SONALIT EVIDENCE-FIRST PUBLICATION FABRIC',
       provider,
       mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
       pdf_renderer_version:PDF_RENDERER_VERSION,
-      evidence_contract:evidenceContract,
+      evidence_contract:publicationEvidenceContract,
+      original_evidence_contract:evidenceContract,
       publication_quality:deterministic.publication_quality||null,
       ai_board:{enabled:aiBoardEnabled,required:aiBoardRequired,status:aiBoardStatus,hold_reason:aiBoardHoldReason}
     },
@@ -309,8 +380,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       `UPDATE intel_publications
        SET title=$3,subtitle=$4,status=$5,period_start=$6,period_end=$7,executive_assessment=$8,body=$9::jsonb,evidence=$10::jsonb,confidence=$11,version=$12,published_at=CASE WHEN $5='published' THEN COALESCE(published_at,NOW()) ELSE NULL END,updated_at=NOW()
        WHERE id=$1 AND org_id=$2 RETURNING id,status,version`,
-      [existing[0].id,orgId,title,subtitle,status,start,end,executive,JSON.stringify(body),JSON.stringify(events.map(e=>e.id)),
-       events.length?Math.round(events.reduce((n,e)=>n+Number(e.confidence||0),0)/events.length):0,version]
+      [existing[0].id,orgId,title,subtitle,status,start,end,executive,JSON.stringify(body),JSON.stringify(reportEvents.map(e=>e.id)),
+       reportEvents.length?Math.round(reportEvents.reduce((n,e)=>n+Number(e.confidence||0),0)/reportEvents.length):0,version]
     );
     publicationId=updated.rows[0]?.id||existing[0].id;
     if(refreshPdf && status==='published'){
@@ -325,14 +396,14 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
        (org_id,country_code,publication_type,title,subtitle,status,period_start,period_end,executive_assessment,body,evidence,confidence,published_at,version)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13,$14)
        RETURNING id,status,version`,
-      [orgId,country,type,title,subtitle,status,start,end,executive,JSON.stringify(body),JSON.stringify(events.map(e=>e.id)),
-       events.length?Math.round(events.reduce((n,e)=>n+Number(e.confidence||0),0)/events.length):0,status==='published'?new Date():null,version]
+      [orgId,country,type,title,subtitle,status,start,end,executive,JSON.stringify(body),JSON.stringify(reportEvents.map(e=>e.id)),
+       reportEvents.length?Math.round(reportEvents.reduce((n,e)=>n+Number(e.confidence||0),0)/reportEvents.length):0,status==='published'?new Date():null,version]
     );
     publicationId=inserted.rows[0]?.id||null;
   }
   return{
     status:'created',publication_id:publicationId,publication_status:status,
-    evidence_contract:evidenceContract,evidence_count:evidenceCount,source_count:sourceCount,
+    evidence_contract:publicationEvidenceContract,evidence_count:reportEvidenceCount,source_count:reportSourceCount,
     editorial_agents:AGENT_ROLES.length,generator_mode:body.generator.mode,version
   };
 }
