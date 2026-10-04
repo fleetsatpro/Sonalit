@@ -213,7 +213,7 @@ function packetNarrative(event,packet){
   const facts=uniqueStrings(Array.isArray(event?.key_facts)?event.key_facts:[],4);
   const caveats=uniqueStrings(Array.isArray(event?.caveats)?event.caveats:[],3);
   const insights=uniqueStrings(
-    pages.map(p=>clean(p.description||p.text||'',900))
+    pages.map(p=>clean([p.description,p.text].filter(Boolean).join(' '),1100))
       .map(v=>cleanPublicationText(v,900))
       .filter(v=>v&&!/comprehensive up-to-date news coverage, aggregated from sources all over the world by google news/i.test(v)),
     2
