@@ -66,5 +66,7 @@ test('publication evidence policy accepts only defensible direct non-aggregator 
   expect(source).toContain('!isAggregatorDomain(domain)');
   expect(source).toContain('const verifiedPages=Array.isArray(packet?.packet?.fetched_pages)');
   expect(source).toContain('filter(sourceIsSubstantive)');
+  const builder=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationBuilder.js'),'utf8');
+  expect(builder).toContain("Publication basis satisfies the configured evidence-source threshold.");
   expect(source).toContain("const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';");
 });
