@@ -1,7 +1,7 @@
 'use strict';
 
 const GENERIC_PATTERNS = [
-  /comprehensive up-to-date news coverage, aggregated from sources all over the world by google news/ig,
+  /comprehensive up-to-date news coverage, aggregated from sources all over the world by google news[.!?]?/ig,
   /the current evidence does not justify filling those gaps with assumption/ig,
   /the event remains bounded by the evidence recorded in sonalit/ig,
   /evidence-derived event record retained; automated analytical synthesis is unavailable/ig,
