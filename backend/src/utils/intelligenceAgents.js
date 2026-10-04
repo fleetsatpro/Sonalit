@@ -144,6 +144,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     `SELECT
       e.id,COALESCE(e.canonical_headline,e.title) AS headline,
       COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,
+      e.assessment,e.key_facts,e.why_it_matters,e.caveats,e.synthesis_confidence,e.synthesis_provider,
       e.latitude,e.longitude,e.region,e.risk_velocity,e.occurred_from,e.occurred_to,e.last_seen_at,e.updated_at,
       COUNT(DISTINCT eo.observation_id)::int AS observation_count,
       COUNT(DISTINCT o.source_id)::int AS source_count,
