@@ -107,7 +107,7 @@ function isRetryable(err) {
 function normalizeAnthropicParams(input) {
   const params = { ...input, model: input.model || ANTHROPIC_MODEL };
   if (Array.isArray(params.tools)) params.tools = params.tools.map(t => {
-    if (t?.type && String(t.type).startsWith('web_search')) return { ...t, allowed_callers:undefined };
+    if (t?.type && String(t.type).startsWith('web_search')) return { ...t };
     return t;
   });
   return params;
