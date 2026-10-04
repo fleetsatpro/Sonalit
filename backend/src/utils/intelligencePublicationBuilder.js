@@ -1,4 +1,4 @@
-const { cleanPublicationText, dedupeSentences, uniqueStrings, dedupeSources: dedupeQualitySources } = require('./publicationQuality');
+const { cleanPublicationText, dedupeSentences, uniqueStrings, dedupeSources: dedupeQualitySources, auditPublicationContent } = require('./publicationQuality');
 
 const COUNTRY_NAMES = { KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania', RW:'Rwanda', BI:'Burundi', SS:'South Sudan', DJ:'Djibouti', ER:'Eritrea', SD:'Sudan', CD:'DR Congo' };
 const SEVERITIES = ['critical','high','moderate','low','informational'];
@@ -97,9 +97,9 @@ function eventNarrative(e) {
   return {
     event_id: e.id,
     headline: clean(e.headline || e.title || 'Security development', 220),
-    what_happened: brief,
+    what_happened: dedupeSentences(brief, new Set(), 2400),
     key_facts: uniqueStrings(keyFacts, 5),
-    assessment: judgement || (severity + ' ' + type + ' signal: ' + clean(e.headline || e.title || 'recorded development', 180) + ' in ' + region + '; confidence is ' + Math.round(Number(e.confidence || 0) || 0) + '%. Additional corroboration is required before treating the signal as evidence of broader deterioration.'),
+    assessment: dedupeSentences(judgement || (severity + ' ' + type + ' signal: ' + clean(e.headline || e.title || 'recorded development', 180) + ' in ' + region + '; confidence is ' + Math.round(Number(e.confidence || 0) || 0) + '%. Additional corroboration is required before treating the signal as evidence of broader deterioration.'), new Set(), 1000),
     why_it_matters: why.length ? uniqueStrings(why, 4) : [
       type === 'LOGISTICS' ? 'The principal operational concern is disruption, delay or diversion affecting movement in ' + region + '.' :
       type === 'POLITICAL' ? 'The key watchpoint is whether activity in ' + region + ' broadens into sustained disruption or wider political tension.' :
@@ -108,7 +108,7 @@ function eventNarrative(e) {
       'The main operational watchpoint is whether ' + clean(e.headline || e.title || 'the reported signal', 180) + ' recurs or spreads beyond ' + region + '.'
     ],
     caveats: uniqueStrings(caveats, 4),
-    context: clean(research.context || fallbackContext(e,type,region), 1800),
+    context: dedupeSentences(clean(research.context || fallbackContext(e,type,region), 1800), new Set(), 1200),
     reported_or_disputed: Array.isArray(research.reported_or_disputed) ? uniqueStrings(research.reported_or_disputed.map(x=>clean(x,900)), 4) : [],
     chronology: Array.isArray(research.chronology) ? research.chronology.slice(0,8).map(x=>({time:clean(x?.time,120),event:clean(x?.event,700)})).filter(x=>x.time||x.event) : [],
     research_status: research.status || null,
@@ -279,6 +279,8 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
   const topTypes = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]).join(', ') || 'no classified threat type';
   const keyEvents = ordered.slice(0,8).map(eventNarrative);
   const top = keyEvents[0];
+  const qualityControl=auditPublicationContent(keyEvents.map(e=>({event_id:e.event_id,what_happened:e.what_happened,context:e.context,assessment:e.assessment})));
+  const qualityGateNote=qualityControl.passed?'PASS':'HOLD - duplicate or boilerplate content detected; publication requires editorial correction.';
 
   let executive;
   if (!events.length) {
@@ -317,7 +319,7 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
   return {
     title: name + (type === 'weekly' ? ' Weekly Insight' : type === 'monthly' ? ' Monthly Security Intelligence' : ' Daily Intelligence'),
     subtitle: 'Evidence-governed intelligence · ' + formatPeriod(start, end),
-    executive_assessment: executive,
+    executive_assessment: dedupeSentences(executive, new Set(), 1500),
     assessment_highlights: keyEvents.slice(0,4).map(x => x.headline),
     threat_posture: p,
     change_analysis: {
@@ -335,6 +337,7 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
       significance:x.why_it_matters?.[0] || null
     })),
     incident_dossiers: keyEvents,
+    publication_quality: {...qualityControl,gate:qualityGateNote},
     security_environment: {
       summary: operatingSummary,
       highest_priority: top ? top.headline : 'No material event recorded.',
