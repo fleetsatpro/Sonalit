@@ -201,7 +201,7 @@ function fallbackResearch(event,packet){
     sources,
     provider:hasWebEvidence?'web-research-packet-synthesis':'evidence-fallback-research',
     research_method:hasWebEvidence?'live_web_packet':'evidence_only',
-    agent_status:'fallback',
+    agent_status:hasWebEvidence?'fallback_web_packet':'fallback',
     web_sources_retrieved:sources.length,
     research_method:hasWebEvidence?'live_web_packet':'evidence_only'
   };
@@ -269,7 +269,8 @@ async function researchIncident(event,{country,region}={}){
 
 async function researchPublicationIncidents(events,{country,region}={}){
   const out={};
-  // Research incidents independently so each case receives a clean evidence context and full web-search budget.\n  const batchSize=1;\n  let cursor=0;
+  // Research incidents independently so each case receives a clean evidence context and full web-search budget.
+  const batchSize=1;\n  let cursor=0;
   const concurrency=Math.max(1,Math.min(2,Number(process.env.INTEL_PUBLICATION_RESEARCH_CONCURRENCY)||2));
   async function worker(){
     while(true){
