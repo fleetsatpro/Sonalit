@@ -8,6 +8,7 @@ const {withOrg}=require('./orgScopedDb');
 const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 const { buildEvidencePublication } = require('./intelligencePublicationBuilder');
+const { researchPublicationIncidents } = require('./intelligenceIncidentResearch');
 
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
 const DAILY_COUNTRIES=(process.env.INTEL_PUBLICATION_COUNTRIES||Object.keys(COUNTRY_NAMES).join(',')).split(',').map(x=>x.trim().toUpperCase()).filter(x=>COUNTRY_NAMES[x]);
@@ -186,7 +187,22 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
 
   const refreshPdf=Boolean(existing.length && String(priorCoverage.fingerprint||'')!==fingerprint);
 
-  const deterministic=buildEvidencePublication({country,type,start,end,events,evidenceCount,sourceCount,evidenceContract});
+  const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
+  let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0}};
+  if(deepResearchEnabled && events.length){
+    try{
+      incidentResearch=await researchPublicationIncidents(publicationEvents,{country});
+      logger.info(`Intelligence publication research ${country}/${type}: requested=${incidentResearch.summary.requested} researched=${incidentResearch.summary.researched} fallback=${incidentResearch.summary.fallback} failed=${incidentResearch.summary.failed}`);
+    }catch(error){
+      logger.warn(`Intelligence publication research failed ${country}/${type}: ${error.message}`);
+    }
+  }
+  // Research the same bounded incident set that the publication actually exposes.
+  // This guarantees every published incident is researched without expanding the
+  // web-research swarm to the entire raw event query window.
+  const publicationEvents=events.slice(0,8);
+  const enrichedEvents=events.map(e=>({...e,research:incidentResearch.byEvent[String(e.id)]||null}));
+  const deterministic=buildEvidencePublication({country,type,start,end,events:enrichedEvents,evidenceCount,sourceCount,evidenceContract});
   let finalBody=deterministic;
   let title=deterministic.title;
   let subtitle=deterministic.subtitle;
@@ -196,10 +212,10 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
 
   if(String(process.env.INTEL_PUBLICATION_AI_BOARD||'').toLowerCase()==='true' && aiClient.hasAnyProvider() && events.length){
     try{
-      const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events,baseBody:deterministic,evidenceContract});
+      const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events:enrichedEvents,baseBody:deterministic,evidenceContract,precomputedResearch:incidentResearch});
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
       const final=result.final;
-      if(final){title=final.title||title;subtitle=final.subtitle||subtitle;executive=final.executive_assessment||executive;finalBody={...deterministic,...final};}
+      if(final){title=final.title||title;subtitle=final.subtitle||subtitle;executive=final.executive_assessment||executive;finalBody={...final,...deterministic,title:final.title||deterministic.title,subtitle:final.subtitle||deterministic.subtitle,executive_assessment:final.executive_assessment||deterministic.executive_assessment};}
       if(!result.publishable) logger.warn(`Publication editorial board held ${country}/${type}: evidence=${evidenceContract} qa=${result.qa?.publishable===true} blocking=${(result.qa?.blocking_issues||[]).length}`);
     }catch(error){logger.warn(`Publication editorial board unavailable ${country}/${type}; deterministic evidence product retained: ${error.message}`);}
   }
@@ -214,9 +230,10 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     generator:{
       name:'SONALIT EVIDENCE-FIRST PUBLICATION FABRIC',
       provider,
-      mode:provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED',
+      mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
       evidence_contract:evidenceContract
     },
+    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary},
     version
   };
   let publicationId=null;

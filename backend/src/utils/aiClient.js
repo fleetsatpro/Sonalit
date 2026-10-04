@@ -107,7 +107,7 @@ function isRetryable(err) {
 function normalizeAnthropicParams(input) {
   const params = { ...input, model: input.model || ANTHROPIC_MODEL };
   if (Array.isArray(params.tools)) params.tools = params.tools.map(t => {
-    if (t?.type && String(t.type).startsWith('web_search')) return { ...t, type:'web_search_20250305', allowed_callers:undefined };
+    if (t?.type && String(t.type).startsWith('web_search')) return { ...t };
     return t;
   });
   return params;
@@ -191,6 +191,33 @@ async function attempt(label,fn){
   try{const result=await fn();state.downUntil=0;return result;}
   catch(err){if(isRetryable(err))state.downUntil=Date.now()+COOLDOWN_MS;throw err;}
 }
+async function createResearchMessage(params) {
+  // Web-grounded incident research is deliberately Anthropic-first because the
+  // built-in web-search tool is executed by the model provider itself. When
+  // Anthropic is unavailable, the caller can fall back to its pre-fetched
+  // research packet through the normal provider fabric.
+  if(hasAnthropic()){
+    try{
+      return {
+        ...await attempt('anthropic-last-resort',()=>callAnthropic({
+          ...params,
+          tools:[...(params.tools||[]),{
+            type:'web_search_20260318',
+            name:'web_search',
+            max_uses:Number(params.max_web_searches||6),
+            allowed_callers:['direct'],
+            response_inclusion:'excluded'
+          }]
+        })),
+        _provider:'anthropic-web-search'
+      };
+    }catch(err){
+      logger.warn('AI research web-search provider failed: '+(err?.status||err?.message||'unknown')+'; falling back to provider fabric');
+    }
+  }
+  return createMessage(params);
+}
+
 async function createMessage(params) {
   const providers=[];
   for(const s of OPEN_SOURCE_SLOTS) if(hasOpenSourceSlot(s)) providers.push({name:s.label,fn:()=>callOpenAICompat(s,params)});
@@ -210,4 +237,4 @@ async function createMessage(params) {
   }
   throw lastErr||new Error('AI client: all providers failed');
 }
-module.exports={hasAnthropic,hasGroqFallback,hasOpenAI,hasMistral,hasOpenSourcePrimary,hasOpenSourceSecondary,hasAnyProvider,providerCapabilities,createMessage};
+module.exports={hasAnthropic,hasGroqFallback,hasOpenAI,hasMistral,hasOpenSourcePrimary,hasOpenSourceSecondary,hasAnyProvider,providerCapabilities,createMessage,createResearchMessage};

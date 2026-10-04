@@ -15,7 +15,7 @@ function esc(v){return String(v ?? '').replace(/[&<>\"]/g, s=>({'&':'&amp;','<':
 function severityScore(v){return ({critical:4,high:3,moderate:2,low:1,informational:0}[String(v||'').toLowerCase()] ?? 2);}
 function svgMap(country, events){
   const [minLon,minLat,maxLon,maxLat]=BOUNDS[country]||[20,-20,55,20];
-  const W=1200,H=720,pad=70;
+  const W=2400,H=1440,pad=140;
   const x=lon=>pad+((lon-minLon)/(maxLon-minLon))*(W-pad*2);
   const y=lat=>H-pad-((lat-minLat)/(maxLat-minLat))*(H-pad*2);
   const dots=events.filter(e=>Number.isFinite(Number(e.longitude))&&Number.isFinite(Number(e.latitude))).slice(0,80).map(e=>{
@@ -24,7 +24,7 @@ function svgMap(country, events){
   }).join('');
   const graticule=[]; for(let i=0;i<=6;i++){const yy=pad+i*((H-pad*2)/6);graticule.push(`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#334155" stroke-width="1" opacity=".5"/>`)}
   for(let i=0;i<=8;i++){const xx=pad+i*((W-pad*2)/8);graticule.push(`<line x1="${xx}" y1="${pad}" x2="${xx}" y2="${H-pad}" stroke="#334155" stroke-width="1" opacity=".5"/>`)}
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0b1220"/><rect x="${pad}" y="${pad}" width="${W-pad*2}" height="${H-pad*2}" rx="18" fill="#0f172a" stroke="#475569" stroke-width="2"/>${graticule.join('')}<text x="${pad}" y="38" fill="#f8fafc" font-family="Arial" font-size="26" font-weight="700">${esc(COUNTRY_NAMES[country]||country)} SECURITY EVENT MAP</text><text x="${pad}" y="62" fill="#94a3b8" font-family="Arial" font-size="14">Geospatial intelligence plot · event coordinates from Sonalit evidence ledger</text>${dots}</svg>`);
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#0b1220"/><rect x="${pad}" y="${pad}" width="${W-pad*2}" height="${H-pad*2}" rx="26" fill="#0f172a" stroke="#475569" stroke-width="3"/>${graticule.join('')}<text x="${pad}" y="78" fill="#f8fafc" font-family="Arial" font-size="54" font-weight="700">${esc(COUNTRY_NAMES[country]||country)} SECURITY EVENT MAP</text><text x="${pad}" y="118" fill="#94a3b8" font-family="Arial" font-size="28">Geospatial intelligence plot · event coordinates from Sonalit evidence ledger</text><text x="${W-230}" y="78" fill="#cbd5e1" font-family="Arial" font-size="28" font-weight="700">N</text><path d="M${W-220} 96 L${W-200} 150 L${W-180} 96 Z" fill="#cbd5e1"/><line x1="${W-360}" y1="${H-100}" x2="${W-160}" y2="${H-100}" stroke="#cbd5e1" stroke-width="5"/><line x1="${W-360}" y1="${H-112}" x2="${W-360}" y2="${H-88}" stroke="#cbd5e1" stroke-width="5"/><line x1="${W-160}" y1="${H-112}" x2="${W-160}" y2="${H-88}" stroke="#cbd5e1" stroke-width="5"/><text x="${W-360}" y="${H-65}" fill="#94a3b8" font-family="Arial" font-size="20">RELATIVE MAP SCALE</text>${dots}</svg>`);
 }
 
 async function buildPdf(publication, events, images){
@@ -102,6 +102,59 @@ async function buildPdf(publication, events, images){
     doc.fillColor(muted).font('Helvetica').fontSize(7.2).text(t,{width:460,indent:12});
     if(url) doc.fillColor('#475569').fontSize(6.7).text(url,{width:460,indent:12});
   }
+  function sectionLabel(text,x=42,y=118){
+    doc.fillColor(orange).font('Helvetica-Bold').fontSize(7).text(upper(text),x,y,{characterSpacing:1.15});
+    doc.moveTo(x,y+12).lineTo(553,y+12).strokeColor(line).stroke();
+  }
+  function researchChain(x,y,w){
+    const labels=['EVIDENCE','WEB RESEARCH','CORROBORATION','ANALYST WRITING','QA'];
+    const widths=[w*.16,w*.19,w*.19,w*.23,w*.15];
+    let cx=x;
+    labels.forEach((label,i)=>{
+      const bw=widths[i];
+      doc.roundedRect(cx,y,bw-7,42,7).fill(i===3?orange:soft);
+      doc.roundedRect(cx,y,bw-7,42,7).lineWidth(.5).strokeColor(line).stroke();
+      doc.fillColor(i===3?'#fff':ink).font('Helvetica-Bold').fontSize(6.1).text(label,cx+6,y+16,{width:bw-19,align:'center'});
+      if(i<labels.length-1){
+        doc.moveTo(cx+bw-5,y+21).lineTo(cx+bw+1,y+21).lineWidth(1.3).strokeColor(orange).stroke();
+      }
+      cx+=bw;
+    });
+  }
+  function postureGauge(x,y,w,level,confidence){
+    const states=['LOW','MODERATE','HIGH','CRITICAL'];
+    const active=Math.max(0,Math.min(3,states.indexOf(upper(level))));
+    const gap=4,bw=(w-gap*3)/4;
+    states.forEach((state,i)=>{
+      const xx=x+i*(bw+gap);
+      doc.roundedRect(xx,y,bw,14,5).fill(i===active?orange:'#e8edf3');
+      doc.fillColor(i===active?'#fff':muted).font('Helvetica-Bold').fontSize(5.8).text(state,xx+4,y+4,{width:bw-8,align:'center'});
+    });
+    doc.fillColor(muted).font('Helvetica').fontSize(7).text('Confidence '+String(confidence||0)+'%',x,y+22,{width:w});
+  }
+  function chartBar(label,value,max,x,y,w,accent=orange){
+    const v=Math.max(0,Number(value)||0), pct=Math.min(1,v/Math.max(1,max));
+    doc.fillColor(muted).font('Helvetica-Bold').fontSize(6.3).text(upper(label),x,y,{width:82});
+    doc.roundedRect(x+88,y-2,w-120,8,4).fill('#e8edf3');
+    if(pct>0)doc.roundedRect(x+88,y-2,(w-120)*pct,8,4).fill(accent);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(6.4).text(String(v),x+w-25,y,{width:25,align:'right'});
+  }
+  function timeline(items,x,y,w,h){
+    const xs=Array.isArray(items)?items.slice(0,4):[];
+    if(!xs.length){
+      doc.fillColor(muted).font('Helvetica').fontSize(7.4).text('No event chronology was established by the research agent.',x,y,{width:w});
+      return;
+    }
+    const lineX=x+10;
+    doc.moveTo(lineX,y+5).lineTo(lineX,y+h-5).lineWidth(1.5).strokeColor('#cbd5e1').stroke();
+    const rowH=(h-10)/xs.length;
+    xs.forEach((item,i)=>{
+      const yy=y+5+i*rowH;
+      doc.circle(lineX,yy,3.4).fill(orange);
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(6.8).text(safe(item.time||'TIME NOT ESTABLISHED'),x+22,yy-5,{width:105});
+      doc.fillColor(muted).font('Helvetica').fontSize(7).text(safe(item.event||''),x+132,yy-6,{width:w-140,lineGap:2});
+    });
+  }
 
   // Cover — styled as a controlled intelligence product, not a generic report.
   header();
@@ -122,6 +175,32 @@ async function buildPdf(publication, events, images){
     .text('Generated by the Sonalit evidence → verification → fusion → assessment → forecast → dissemination fabric.',64,351,{width:430});
   footer();
 
+  // Editorial contents / navigation page.
+  doc.addPage(); header(); title('CONTENTS','Sonalit 3I · research edition · controlled intelligence publication');
+  const contentsItems=[
+    ['01','Executive assessment','Senior decision view, posture and severity distribution'],
+    ['02','Public safety & security overview','Observed environment and collection framing'],
+    ['03','Emerging trends & key drivers','Evidence-derived concentrations and drivers'],
+    ['04','Key findings & assessment','Priority findings and operational meaning'],
+    ['05','Incident research dossiers','One researched case file per publication incident'],
+    ['06','Regional updates','Geographic roll-up across the reporting period'],
+    ['07','PMESI status','Political, Military, Economic, Social, Information & Media'],
+    ['08','Major incidents map','High-resolution geospatial event plot'],
+    ['09','Outlook & collection control','Forecast, triggers, intelligence gaps and evidence contract'],
+    ['10','References & publication controls','Source provenance, generation record and controlled use']
+  ];
+  let cy=128;
+  for(const [num,name,desc] of contentsItems){
+    doc.roundedRect(42,cy,511,46,8).fill(soft).lineWidth(.5).strokeColor(line).stroke();
+    doc.fillColor(orange).font('Helvetica-Bold').fontSize(8).text(num,57,cy+17,{width:24});
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(9).text(name,94,cy+12,{width:180});
+    doc.fillColor(muted).font('Helvetica').fontSize(7.2).text(desc,276,cy+12,{width:255,lineGap:2});
+    cy+=55;
+  }
+  doc.fillColor(muted).font('Helvetica').fontSize(7.2).text('Each incident dossier carries its own research status, uncertainty statement and source trail. Web research is treated as untrusted input and does not override Sonalit evidence controls.',42,690,{width:511,lineGap:3});
+  researchChain(42,735,511);
+  footer();
+
   // Executive assessment + posture.
   doc.addPage(); header(); title('EXECUTIVE ASSESSMENT','Senior decision view · source-grounded summary');
   card(42,118,511,139);
@@ -140,16 +219,17 @@ async function buildPdf(publication, events, images){
     doc.fillColor(muted).font('Helvetica-Bold').fontSize(6.8).text(m[0],x+10,291);
     doc.fillColor(ink).font('Helvetica-Bold').fontSize(17).text(m[1],x+10,308,{width:96});
   });
-  doc.fillColor(ink).font('Helvetica-Bold').fontSize(12).text('KEY JUDGEMENTS',42,378);
+  postureGauge(42,357,511,p.level,publication.confidence!=null?Math.round(Number(publication.confidence)):0);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(12).text('KEY JUDGEMENTS',42,395);
   (Array.isArray(body.assessment_highlights)?body.assessment_highlights:[]).slice(0,4).forEach(x=>{doc.y+=5;bullet(x,54,485);});
-  doc.fillColor(ink).font('Helvetica-Bold').fontSize(12).text('CHANGE ANALYSIS',42,500);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(12).text('CHANGE ANALYSIS',42,517);
   paragraph(body.change_analysis?.summary||'No change analysis was supplied.',42,511,9.2,4);
   doc.y+=8;
-  doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text('SEVERITY DISTRIBUTION',42,575);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text('SEVERITY DISTRIBUTION',42,592);
   const dist=p.counts||{};
   const distRows=['critical','high','moderate','low','informational'];
   distRows.forEach((s,i)=>{
-    const y=598+i*25;
+    const y=615+i*25;
     doc.fillColor(muted).font('Helvetica-Bold').fontSize(7).text(upper(s),42,y);
     doc.roundedRect(115,y-2,320,10,4).fill('#eef2f7');
     const w=Math.min(320,(Number(dist[s]||0)/Math.max(1,events.length))*320);
@@ -234,65 +314,140 @@ async function buildPdf(publication, events, images){
   }
   footer();
 
-  // Key developments, each grounded to event evidence.
-  const key=Array.isArray(body.key_developments)?body.key_developments:events.slice(0,8);
-  let idx=0;
-  while(idx<key.length){
-    doc.addPage(); header(); title('KEY DEVELOPMENTS', 'Priority reporting and evidence-linked assessment');
-    for(let slot=0;slot<2 && idx<key.length;slot++,idx++){
-      const e=key[idx]||{};
-      const top=doc.y;
-      const h=slot===0?304:304;
-      card(42,top,511,h);
-      const sev=upper(e.severity||'moderate');
-      tag(sev,58,top+16,94,sev==='CRITICAL'?critical:sev==='HIGH'?high:moderate);
-      doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text(safe(e.headline||e.title||'Development'),164,top+17,{width:370});
-      doc.fillColor(muted).font('Helvetica').fontSize(7.4).text(
-        upper(e.region||'Location not specified')+'  ·  '+upper(e.confidence!=null?String(e.confidence)+'%':'CONFIDENCE —')+'  ·  '+String(e.evidence_count||0)+' EVIDENCE  ·  '+String(e.source_count||0)+' SOURCES',
-        58,top+42,{width:466}
-      );
-      doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('WHAT HAPPENED',58,top+72);
-      doc.fillColor(ink).font('Helvetica').fontSize(8.8).text(safe(e.what_happened||e.brief||e.summary),58,top+88,{width:466,lineGap:3.5});
-      doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('ASSESSMENT',58,top+166);
-      doc.fillColor(ink).font('Helvetica').fontSize(8.5).text(safe(e.assessment||'Evidence-derived assessment.'),58,top+181,{width:466,lineGap:3.5});
-      doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('WHY IT MATTERS',58,top+230);
-      const why=Array.isArray(e.why_it_matters)?e.why_it_matters.join(' '):safe(e.why_it_matters||'Continued monitoring is warranted.');
-      doc.fillColor(ink).font('Helvetica').fontSize(8.3).text(why,58,top+245,{width:466,lineGap:3.2});
-      const facts=Array.isArray(e.key_facts)?e.key_facts:[];
-      if(facts.length){
-        doc.fillColor(ink).font('Helvetica-Bold').fontSize(7).text('KEY FACTS',58,top+282);
-        doc.fillColor(muted).font('Helvetica').fontSize(7.1).text(facts.slice(0,2).map(x=>'• '+safe(x)).join('  '),110,top+281,{width:405,lineGap:2.4});
-      }
-      const refs=Array.isArray(e.source_refs)?e.source_refs:[];
-      if(refs.length){
-        doc.fillColor(muted).font('Helvetica-Bold').fontSize(6.8).text('SOURCES',58,top+305);
-        doc.fillColor(muted).font('Helvetica').fontSize(6.8).text(refs.slice(0,2).map(r=>safe(r.source||'Source')).join(' · '),110,top+304,{width:412});
-      }
-      const caveats=Array.isArray(e.caveats)?e.caveats:[];
-      if(caveats.length && slot===1){
-        doc.fillColor(muted).font('Helvetica').fontSize(6.6).text('CAVEATS: '+caveats.slice(0,2).join(' '),58,top+318,{width:466,lineGap:2});
-      }
-      doc.y=top+h+18;
-    }
+  // Research and corroboration control — makes the research effort visible.
+  doc.addPage(); header(); title('RESEARCH & CORROBORATION','Per-incident web research · provenance · uncertainty control');
+  const dr=body.deep_research||{};
+  card(42,118,511,118);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(9).text('RESEARCH COVERAGE',58,136);
+  const coverage=[
+    ['INCIDENTS REQUESTED',String(dr.incidents_requested??events.length)],
+    ['AGENT-RESEARCHED',String(dr.incidents_researched??0)],
+    ['FALLBACK DOSSIERS',String(dr.incidents_fallback??0)],
+    ['WEB SOURCES FOUND',String(dr.web_sources_discovered??0)]
+  ];
+  coverage.forEach((m,i)=>{
+    const x=58+i*121;
+    doc.fillColor(muted).font('Helvetica-Bold').fontSize(6).text(m[0],x,162,{width:105});
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(17).text(m[1],x,176,{width:105});
+  });
+  doc.fillColor(muted).font('Helvetica').fontSize(7).text('Every incident is given an independent research attempt when deep research is enabled. A fallback dossier is explicitly marked rather than presented as researched fact.',58,208,{width:468,lineGap:3});
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(10).text('RESEARCH PIPELINE',42,270);
+  researchChain(42,292,511);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(10).text('INCIDENT RESEARCH STATUS',42,370);
+  let ry=398;
+  const researchEvents=Array.isArray(body.incident_dossiers)?body.incident_dossiers:((Array.isArray(body.key_developments)?body.key_developments:[]));
+  researchEvents.slice(0,8).forEach((e,i)=>{
+    const status=upper(e.research_status||'NOT RECORDED');
+    const c=status==='RESEARCHED'?orange:'#94a3b8';
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text(String(i+1).padStart(2,'0')+'  '+safe(e.headline||'Incident'),42,ry,{width:370});
+    tag(status,430,ry-4,123,c);
+    ry+=28;
+  });
+  if(!researchEvents.length)paragraph('No incident research records are attached to this publication.',42,511,8.5,3);
+  footer();
+
+  // Incident research dossiers — intentionally long-form; each incident owns two pages.
+  const key=Array.isArray(body.incident_dossiers)?body.incident_dossiers:(Array.isArray(body.key_developments)?body.key_developments:events.slice(0,8));
+  for(let idx=0;idx<key.length;idx++){
+    const e=key[idx]||{};
+    const sev=upper(e.severity||'moderate');
+    const sevColor=sev==='CRITICAL'?critical:sev==='HIGH'?high:moderate;
+    const incidentNo=String(idx+1).padStart(2,'0');
+
+    // Page 1: long-form narrative and contextual explanation. No fixed card height.
+    doc.addPage(); header(); title('INCIDENT RESEARCH DOSSIER','Incident '+incidentNo+' of '+String(key.length)+' · narrative & context');
+    tag(sev,42,118,96,sevColor);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(14).text(safe(e.headline||e.title||'Incident'),152,118,{width:401});
+    doc.fillColor(muted).font('Helvetica').fontSize(7.2).text(
+      upper(e.region||'LOCATION NOT SPECIFIED')+'  ·  '+String(e.confidence??'—')+'% CONFIDENCE  ·  '+String(e.evidence_count||0)+' EVIDENCE  ·  '+String(e.source_count||0)+' SOURCES',
+      42,145,{width:511}
+    );
+    sectionLabel('What happened',42,174);
+    const narrative=safe(e.what_happened||e.brief||e.summary||'Evidence record available.');
+    doc.fillColor(ink).font('Helvetica').fontSize(8.55).text(narrative,42,192,{width:511,lineGap:3.25});
+    let p1y=192+doc.heightOfString(narrative,{width:511,font:'Helvetica',fontSize:8.55,lineGap:3.25})+22;
+    if(p1y>650)p1y=650;
+    sectionLabel('Context',42,p1y);
+    const context=safe(e.context||'No additional context was established by the research agent.');
+    doc.fillColor(ink).font('Helvetica').fontSize(8).text(context,42,p1y+18,{width:511,lineGap:3});
+    const contextHeight=doc.heightOfString(context,{width:511,font:'Helvetica',fontSize:8,lineGap:3});
+    const caveatY=Math.min(p1y+18+contextHeight+25,730);
+    doc.fillColor(muted).font('Helvetica').fontSize(6.8).text(
+      'RESEARCH STATUS  ·  '+upper(e.research_status||'NOT RECORDED')+
+      '   |   PROVIDER  ·  '+safe(e.research_provider||'evidence-fallback-research')+
+      '   |   RESEARCH SOURCES  ·  '+String(Array.isArray(e.research_sources)?e.research_sources.length:0),
+      42,caveatY,{width:511}
+    );
+    doc.fillColor(muted).font('Helvetica').fontSize(6.8).text(
+      'The narrative is an original synthesis of retrieved reporting and Sonalit evidence. It is not a reproduction of source copy.',
+      42,caveatY+16,{width:511,lineGap:2.2}
+    );
     footer();
-  }
-  if(!key.length){
-    doc.addPage(); header(); title('KEY DEVELOPMENTS');
-    paragraph('No material event object was available for this reporting period. This is a collection statement and should be read together with the collection-gap note.');
+
+    // Page 2: structured fact/assessment/provenance control surface.
+    doc.addPage(); header(); title('INCIDENT RESEARCH DOSSIER','Incident '+incidentNo+' · facts, assessment & provenance');
+    card(42,118,511,116);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(9).text('ANALYTICAL ASSESSMENT',58,135);
+    doc.fillColor(ink).font('Helvetica').fontSize(8.35).text(safe(e.assessment||'No additional analytical judgement supplied.'),58,152,{width:468,lineGap:3});
+    const why=Array.isArray(e.why_it_matters)?e.why_it_matters.join(' '):safe(e.why_it_matters||'No explicit operational implication was established.');
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('WHY IT MATTERS',58,194);
+    doc.fillColor(muted).font('Helvetica').fontSize(7.35).text(why,142,193,{width:383,lineGap:2.7});
+
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('CONFIRMED FACTS',42,264);
+    const facts=Array.isArray(e.key_facts)?e.key_facts:[];
+    let fy=281;
+    facts.slice(0,5).forEach(x=>{
+      const text='• '+safe(x);
+      doc.fillColor(ink).font('Helvetica').fontSize(7.15).text(text,42,fy,{width:511,lineGap:2.2});
+      fy+=Math.min(29,doc.heightOfString(text,{width:511,font:'Helvetica',fontSize:7.15,lineGap:2.2}))+5;
+    });
+    if(!facts.length)doc.fillColor(muted).font('Helvetica').fontSize(7).text('No additional structured facts were returned.',42,fy);
+
+    const disputed=Array.isArray(e.reported_or_disputed)?e.reported_or_disputed:[];
+    const dy=Math.min(fy+13,475);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('REPORTED / DISPUTED',42,dy);
+    let dyy=dy+16;
+    disputed.slice(0,4).forEach(x=>{
+      const text='• '+safe(x);
+      doc.fillColor(muted).font('Helvetica').fontSize(7.1).text(text,42,dyy,{width:511,lineGap:2.2});
+      dyy+=Math.min(28,doc.heightOfString(text,{width:511,font:'Helvetica',fontSize:7.1,lineGap:2.2}))+4;
+    });
+    if(!disputed.length)doc.fillColor(muted).font('Helvetica').fontSize(7).text('No material disagreement recorded.',42,dyy);
+
+    sectionLabel('Chronology',42,575);
+    timeline(e.chronology||[],42,597,511,78);
+
+    sectionLabel('Source trail',42,705);
+    const sourceRefs=Array.isArray(e.source_refs)?e.source_refs:[];
+    const researchSources=Array.isArray(e.research_sources)?e.research_sources:[];
+    const sources=researchSources.length?researchSources:sourceRefs;
+    let sy=727;
+    if(sources.length){
+      sources.slice(0,4).forEach((r,i)=>{
+        if(sy>785)return;
+        doc.fillColor(ink).font('Helvetica-Bold').fontSize(6.5).text(String(i+1)+'. '+safe(r.title||r.source||'Source'),42,sy,{width:511});
+        sy+=9;
+        doc.fillColor(muted).font('Helvetica').fontSize(5.9).text(safe(r.domain||r.source||r.url||''),42,sy,{width:511});
+        sy+=13;
+      });
+    }else{
+      doc.fillColor(muted).font('Helvetica').fontSize(6.6).text('No source trail was attached to this incident.',42,sy,{width:511});
+    }
     footer();
   }
 
   // Regional roll-up, matching the sample product architecture.
+  // Regional roll-up, matching the sample product architecture.
   const regions=Array.isArray(body.regional_news)?body.regional_news:[];
-  doc.addPage(); header(); title('REGIONAL NEWS','Geographic roll-up of evidence-backed event reporting');
+  doc.addPage(); header(); title('REGIONAL UPDATES','Geographic roll-up of evidence-backed event reporting');
   if(regions.length){
     for(const group of regions){
-      if(doc.y>705){footer();doc.addPage();header();title('REGIONAL NEWS','Continued');}
+      if(doc.y>705){footer();doc.addPage();header();title('REGIONAL UPDATES','Continued');}
       doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text(upper(group.region||'REGION'),42,doc.y);
       doc.moveTo(42,doc.y+15).lineTo(553,doc.y+15).strokeColor(line).stroke();
       doc.y+=24;
       for(const item of Array.isArray(group.items)?group.items:[]){
-        if(doc.y>748){footer();doc.addPage();header();title('REGIONAL NEWS','Continued');}
+        if(doc.y>748){footer();doc.addPage();header();title('REGIONAL UPDATES','Continued');}
         const sev=upper(item.severity||'moderate');
         doc.fillColor(sev==='CRITICAL'?critical:sev==='HIGH'?high:ink).font('Helvetica-Bold').fontSize(8.2)
           .text(safe(item.headline||'Development'),42,doc.y,{width:350});
@@ -323,6 +478,21 @@ async function buildPdf(publication, events, images){
   }
   if(!pm.length) paragraph('PMESI status was not populated because no domain-level event mapping was available.');
   footer();
+
+  // Visual intelligence board — actual source imagery with provenance.
+  if(images.length){
+    doc.addPage(); header(); title('VISUAL INTELLIGENCE','Source imagery embedded from evidence-linked or researched sources');
+    const slots=images.slice(0,4);
+    slots.forEach((img,i)=>{
+      const col=i%2,row=Math.floor(i/2),x=42+col*260,y=118+row*280,w=245,h=218;
+      card(x,y,w,h+34);
+      try{doc.image(img.buffer,x+9,y+9,{fit:[w-18,h-18],align:'center',valign:'center'});}catch(error){logger.warn('PDF image placement failed: '+error.message)}
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(6.8).text(safe(img.label||'Source image'),x+10,y+h+4,{width:w-20});
+      doc.fillColor(muted).font('Helvetica').fontSize(5.8).text(safe(img.source_url||''),x+10,y+h+17,{width:w-20});
+    });
+    doc.fillColor(muted).font('Helvetica').fontSize(6.8).text('Images are illustrative source material and do not, by themselves, establish the claims made elsewhere in the report. Provenance is retained with the publication record.',42,698,{width:511,lineGap:3});
+    footer();
+  }
 
   // Coordinate incident plot.
   doc.addPage(); header(); title('MAJOR INCIDENTS MAP','Coordinate plot of Sonalit event objects with usable latitude/longitude');
@@ -398,7 +568,29 @@ async function buildPdf(publication, events, images){
 }
 
 async function getR2Client(){const {R2_ACCOUNT_ID,R2_ACCESS_KEY,R2_SECRET_KEY}=process.env;if(!(R2_ACCOUNT_ID&&R2_ACCESS_KEY&&R2_SECRET_KEY))return null;return new S3Client({region:'auto',endpoint:`https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,credentials:{accessKeyId:R2_ACCESS_KEY,secretAccessKey:R2_SECRET_KEY}})}
-async function fetchImages(rows){const out=[];for(const row of rows){const url=row.raw_metadata?.image_url||row.raw_metadata?.imageUrl||row.raw_metadata?.thumbnail_url||row.raw_metadata?.thumbnailUrl;if(!url||!/^https?:\/\//i.test(url))continue;try{const r=await fetch(url,{redirect:'follow'});if(!r.ok)continue;const b=Buffer.from(await r.arrayBuffer());if(!b.length||b.length>5*1024*1024)continue;out.push({buffer:b,label:row.title||'Source image',source_url:row.url||url});if(out.length>=4)break;}catch(error){logger.warn(`Image fetch failed: ${error.message}`)}}return out;}
+async function fetchImages(rows,researchSources=[]){
+  const candidates=[];
+  for(const row of rows||[]){
+    const url=row.raw_metadata?.image_url||row.raw_metadata?.imageUrl||row.raw_metadata?.thumbnail_url||row.raw_metadata?.thumbnailUrl;
+    if(url)candidates.push({image_url:url,label:row.title||'Source image',source_url:row.url||url});
+  }
+  for(const src of researchSources||[])if(src?.image_url)candidates.push({image_url:src.image_url,label:src.title||'Research source image',source_url:src.url||src.image_url});
+  const seen=new Set(),out=[];
+  for(const candidate of candidates){
+    const url=candidate.image_url;
+    if(!/^https?:\/\//i.test(url)||seen.has(url))continue;
+    seen.add(url);
+    try{
+      const r=await fetch(url,{redirect:'follow',headers:{'User-Agent':'Sonalit-Publication-Renderer/1.0'}});
+      if(!r.ok)continue;
+      const b=Buffer.from(await r.arrayBuffer());
+      if(!b.length||b.length>8*1024*1024)continue;
+      out.push({buffer:b,label:candidate.label,source_url:candidate.source_url});
+      if(out.length>=6)break;
+    }catch(error){logger.warn('Image fetch failed: '+error.message)}
+  }
+  return out;
+}
 
 async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
   const {rows:[publication]}=await query('SELECT * FROM intel_publications WHERE id=$1 AND org_id=$2 LIMIT 1',[publicationId,orgId]);
@@ -408,7 +600,8 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
   try{
     const {rows:events}=await query(`SELECT e.id,COALESCE(e.canonical_headline,e.title) AS headline,COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,e.latitude,e.longitude,e.last_seen_at,COUNT(DISTINCT eo.observation_id)::int AS observation_count,COUNT(DISTINCT o.source_id)::int AS source_count,array_agg(DISTINCT o.source_id) FILTER (WHERE o.source_id IS NOT NULL) AS source_ids,array_agg(DISTINCT jsonb_build_object('id',o.id,'title',o.title,'url',o.url,'raw_metadata',o.raw_metadata)) FILTER (WHERE o.id IS NOT NULL) AS observations FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4 GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 120`,[orgId,publication.country_code,publication.period_start,publication.period_end]);
     const observationRows=[];for(const e of events){for(const o of e.observations||[])observationRows.push(o)}
-    const images=await fetchImages(observationRows); const pdf=await buildPdf(publication,events,images);
+    const researchSources=(Array.isArray(publication.body?.incident_dossiers)?publication.body.incident_dossiers:[]).flatMap(e=>Array.isArray(e?.research_sources)?e.research_sources:[]);
+    const images=await fetchImages(observationRows,researchSources); const pdf=await buildPdf(publication,events,images);
     const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured'); const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
     const safe=`${publication.country_code}-${publication.publication_type}-${new Date(publication.period_start).toISOString().slice(0,10)}`.replace(/[^A-Z0-9._-]/gi,'-');const key=`intelligence-publications/${orgId}/${safe}-v${publication.pdf_version||1}.pdf`;
     await r2.send(new PutObjectCommand({Bucket:bucket,Key:key,Body:pdf,ContentType:'application/pdf',CacheControl:'private, max-age=0'}));
@@ -419,12 +612,13 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
   }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3 WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
 }
 
-async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId){
+async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId,{download=false}={}){
   const {rows:[row]}=await query('SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2 AND status=\'published\' AND pdf_status=\'ready\' LIMIT 1',[publicationId,orgId]);
   if(!row?.pdf_key)throw new Error('Publication PDF is not ready');
   const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured');
   const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
-  return getSignedUrl(r2,new GetObjectCommand({Bucket:bucket,Key:row.pdf_key}),{expiresIn:300});
+  const filename=('sonalit-'+String(publicationId)+'.pdf').replace(/[^A-Za-z0-9._-]/g,'-');
+  return getSignedUrl(r2,new GetObjectCommand({Bucket:bucket,Key:row.pdf_key,...(download?{ResponseContentType:'application/pdf',ResponseContentDisposition:`attachment; filename="${filename}"`}: {})}),{expiresIn:300});
 }
 
 async function generateMissingPublicationPdfsUnsafe(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes')) ORDER BY published_at DESC NULLS LAST LIMIT $2",[orgId,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdfUnsafe(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
@@ -436,8 +630,8 @@ async function renderAndStorePublicationPdf(orgId, publicationId){
   return runWithOrgContext(orgId, () => renderAndStorePublicationPdfUnsafe(orgId, publicationId));
 }
 
-async function getPublicationPdfAccessUrl(orgId, publicationId){
-  return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId));
+async function getPublicationPdfAccessUrl(orgId, publicationId, options={}){
+  return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId, options));
 }
 
 module.exports={renderAndStorePublicationPdf,generateMissingPublicationPdfs,getPublicationPdfAccessUrl};
