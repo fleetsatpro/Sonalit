@@ -255,7 +255,12 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
 
   const boardPublishable=board?.publishable===true;
   const aiRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD||'').toLowerCase()==='true';
-  const qualityGate=deterministic.publication_quality?.passed===true;
+  const finalQuality=auditPublicationContent(
+    Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:
+    (Array.isArray(deterministic.incident_dossiers)?deterministic.incident_dossiers:[])
+  );
+  finalBody.publication_quality=finalQuality;
+  const qualityGate=finalQuality.passed===true;
   const status=(evidenceContract&&qualityGate&&(!aiRequired||boardPublishable))?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
