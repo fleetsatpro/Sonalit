@@ -15,8 +15,7 @@ describe('browser-native publication PDF compatibility', () => {
     expect(s).toContain("expiresIn: '10m'");
     expect(s).toContain("httpOnly: true");
     expect(s).toContain("sameSite: 'strict'");
-    expect(s).toContain("role === 'admin'");
-    expect(s).toContain("role === 'super_admin'");
+    expect(s).toContain("['admin', 'super_admin'].includes(user.role)");
     expect(s).toContain("u.org_id = $2");
   });
 
