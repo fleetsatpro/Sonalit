@@ -23,7 +23,7 @@
   const publicationEvents=events.slice(0,8);
   const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
   const expectedResearchCount=publicationEvents.length;
-  const previousResearchCount=Number(priorResearch.incidents_researched||0)+Number(priorResearch.incidents_fallback||0);
+  const previousResearchCount=Number(priorResearch.incidents_researched||0);
   const researchCooldownMinutes=Math.max(5,Math.min(24*60,Number(process.env.INTEL_PUBLICATION_RESEARCH_RETRY_MINUTES)||60));
   const lastResearchAttemptAt=priorResearch.last_attempt_at?new Date(priorResearch.last_attempt_at):null;
   const researchAttemptRecent=Boolean(lastResearchAttemptAt&&!Number.isNaN(lastResearchAttemptAt.getTime())&&(now.getTime()-lastResearchAttemptAt.getTime())<researchCooldownMinutes*60*1000);
