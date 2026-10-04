@@ -385,7 +385,6 @@ async function buildPdf(publication, events, images){
 
     // Page 2: structured fact/assessment/provenance control surface.
     doc.addPage(); header(); title('INCIDENT RESEARCH DOSSIER','Incident '+incidentNo+' · facts, assessment & provenance');
-    const box=bodyBox=>bodyBox;
     card(42,118,511,116);
     doc.fillColor(ink).font('Helvetica-Bold').fontSize(9).text('ANALYTICAL ASSESSMENT',58,135);
     doc.fillColor(ink).font('Helvetica').fontSize(8.35).text(safe(e.assessment||'No additional analytical judgement supplied.'),58,152,{width:468,lineGap:3});
