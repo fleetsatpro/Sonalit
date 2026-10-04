@@ -12,7 +12,8 @@ describe('publication generation deduplication hardening',()=>{
   test('publication change detection is content-based rather than count-only',()=>{
     const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
     expect(source).toContain('function publicationFingerprint(country,type,start,end,events)');
-    expect(source).toContain('e.updated_at');
+    expect(source).toContain('headline:e.headline,brief:e.brief');
+    expect(source).not.toContain('id:e.id,updated_at:e.updated_at,last_seen_at:e.last_seen_at');
     expect(source).toContain('fingerprint');
     expect(source).toContain("String(priorCoverage.fingerprint||'')===fingerprint");
   });
