@@ -541,10 +541,11 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   y+=20;
   const highlights = priorities.slice(0,5).map((e,i)=>{
     const m=mergeIncident(e,body);
-    const why=m.assessmentText || m.brief;
-    return (i+1)+'. '+m.headline+' - '+why;
+    return (i+1)+'. '+m.headline;
   });
   y=bullets(doc,y,highlights,{size:8.2});
+  y+=3;
+  paragraph(doc,y,'Detailed evidence, context, analytical judgement, uncertainty and provenance are contained in the corresponding priority dossier; this page does not duplicate those narratives.',{size:6.9,color:MUTED,max:900,lineGap:2});
   y+=8;
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(10.5).text('WHAT WOULD CHANGE THIS JUDGEMENT',MARGIN,y);
   y+=20;
