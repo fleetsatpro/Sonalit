@@ -61,7 +61,7 @@ async function buildPdf(publication, events, images){
 
   function header(){
     doc.font('Helvetica-Bold').fontSize(8).fillColor(muted)
-      .text('SONALIT  /  3I INTELLIGENCE & SECURITY OPERATIONS',42,24,{characterSpacing:1.1});
+      .text('SONALIT  /  INTELLIGENCE & SECURITY OPERATIONS',42,24,{characterSpacing:1.1});
     doc.moveTo(42,36).lineTo(553,36).strokeColor(line).stroke();
   }
   function footer(){
@@ -160,7 +160,7 @@ async function buildPdf(publication, events, images){
   header();
   doc.rect(42,58,511,245).fill(navy);
   doc.fillColor('#fff').font('Helvetica-Bold').fontSize(10)
-    .text('SONALIT 3I',64,80,{characterSpacing:1.6});
+    .text('SONALIT',64,80,{characterSpacing:1.6});
   doc.fillColor('#fff').font('Helvetica-Bold').fontSize(28)
     .text(upper(publication.country_code||'REGIONAL'),64,116,{width:430});
   doc.fillColor('#dbe4f0').font('Helvetica').fontSize(15)
@@ -176,7 +176,7 @@ async function buildPdf(publication, events, images){
   footer();
 
   // Editorial contents / navigation page.
-  doc.addPage(); header(); title('CONTENTS','Sonalit 3I · research edition · controlled intelligence publication');
+  doc.addPage(); header(); title('CONTENTS','Sonalit · research edition · controlled intelligence publication');
   const contentsItems=[
     ['01','Executive assessment','Senior decision view, posture and severity distribution'],
     ['02','Public safety & security overview','Observed environment and collection framing'],
@@ -560,7 +560,7 @@ async function buildPdf(publication, events, images){
     58,479,8.6,4
   );
   doc.y+=22;
-  doc.fillColor(muted).font('Helvetica-Bold').fontSize(7.5).text('SONALIT 3I · CONFIDENTIAL · CONTROLLED DISTRIBUTION',58,doc.y,{characterSpacing:0.8});
+  doc.fillColor(muted).font('Helvetica-Bold').fontSize(7.5).text('SONALIT · CONFIDENTIAL · CONTROLLED DISTRIBUTION',58,doc.y,{characterSpacing:0.8});
   footer();
 
   doc.end();
