@@ -7,9 +7,11 @@
  */
 const aiClient = require('./aiClient');
 const logger = require('./logger');
+const { researchPublicationIncidents } = require('./intelligenceIncidentResearch');
 
 const AGENT_ROLES = [
   { id:'evidence-curator', lane:'research', purpose:'Build the evidence ledger and identify corroboration, gaps and provenance.' },
+  { id:'incident-researcher', lane:'research', purpose:'Research each incident independently, seek corroboration, explain context and write a natural humanized incident narrative without copying sources.' },
   { id:'security-analyst', lane:'writer', purpose:'Assess the overall security environment and threat posture.' },
   { id:'crime-analyst', lane:'writer', purpose:'Analyze crime, public safety and violent-incident developments.' },
   { id:'political-analyst', lane:'writer', purpose:'Analyze political, governance and civil-unrest developments.' },
@@ -62,7 +64,14 @@ function evidencePackage(country, period, events){
 }
 
 async function runPublicationEditorialBoard({country, period, events, baseBody, evidenceContract}){
-  const evidence=evidencePackage(country,period,events);
+  const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
+  let research={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0}};
+  if(deepResearchEnabled && events.length){
+    try{ research=await researchPublicationIncidents(events,{country}); }
+    catch(error){ logger.warn(`Publication incident-research stage failed: ${error.message}`); }
+  }
+  const enrichedEvents=events.map(e=>({...e,research:research.byEvent[String(e.id)]||null}));
+  const evidence=evidencePackage(country,period,enrichedEvents);
   const board={version:'1.0', agents:AGENT_ROLES.map(r=>({...r,status:'pending'})), evidence_contract:evidenceContract, started_at:new Date().toISOString()};
   if(!events.length){ board.agents=board.agents.map(a=>({...a,status:'no_data'})); board.publishable=false; return {board,final:null,visual:null,graphics:null,publishable:false}; }
 
@@ -71,7 +80,7 @@ async function runPublicationEditorialBoard({country, period, events, baseBody, 
   for(const result of writerResults){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
   const writerOutputs=writerResults.filter(x=>x?.output).map(x=>({agent:x.role,output:x.output}));
 
-  const reviewPayload={evidence,writer_outputs:writerOutputs,base_report:baseBody};
+  const reviewPayload={evidence,research_summary:research.summary,research_packets:enrichedEvents.map(e=>({incident_id:String(e.id),research:e.research})),writer_outputs:writerOutputs,base_report:baseBody};
   const reviewRoles=AGENT_ROLES.filter(r=>r.lane==='review');
   const reviewResults=await runLimited(reviewRoles.map(role=>()=>callAgent(role,{assignment:role.purpose,...reviewPayload})),4);
   for(const result of reviewResults){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
@@ -80,7 +89,7 @@ async function runPublicationEditorialBoard({country, period, events, baseBody, 
   const graphics=await callAgent(AGENT_ROLES.find(r=>r.id==='data-graphics-designer'),{assignment:'Return JSON graphics plan with metric cards and chart specifications based only on the evidence.',evidence});
   for(const result of [visual,graphics]){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
 
-  const editorialPayload={evidence,writer_outputs:writerOutputs,reviews:reviewResults.filter(x=>x?.output).map(x=>({agent:x.role,output:x.output})),base_report:baseBody,visual_plan:visual.output||null,graphics_plan:graphics.output||null};
+  const editorialPayload={evidence,research_summary:research.summary,incident_dossiers:enrichedEvents.map(e=>({incident_id:String(e.id),research:e.research})),writer_outputs:writerOutputs,reviews:reviewResults.filter(x=>x?.output).map(x=>({agent:x.role,output:x.output})),base_report:baseBody,visual_plan:visual.output||null,graphics_plan:graphics.output||null};
   const copy=await callAgent(AGENT_ROLES.find(r=>r.id==='copy-editor'),{assignment:'Create a clean editorial draft preserving every supported fact and clearly separating assessment from reporting.',...editorialPayload});
   const senior=await callAgent(AGENT_ROLES.find(r=>r.id==='senior-editor'),{assignment:'Resolve reviewer findings and return the complete authoritative report JSON. Required keys: title,subtitle,executive_assessment,sections,outlook.',...editorialPayload,copy_edit:copy.output||null});
   for(const result of [copy,senior]){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
@@ -92,6 +101,6 @@ async function runPublicationEditorialBoard({country, period, events, baseBody, 
   const final=senior.output||copy.output||null;
   const publishable=Boolean(evidenceContract&&final&&qa.output?.publishable===true&&!(qa.output?.blocking_issues||[]).length);
   board.publishable=publishable;
-  return {board,final,visual:visual.output||null,graphics:graphics.output||null,qa:qa.output||null,publishable};
+  return {board,final,visual:visual.output||null,graphics:graphics.output||null,qa:qa.output||null,publishable,research};
 }
 module.exports={AGENT_ROLES,runPublicationEditorialBoard};
