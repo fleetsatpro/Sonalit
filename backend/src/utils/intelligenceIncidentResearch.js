@@ -140,45 +140,45 @@ function packetNarrative(event,packet){
   const discoveries=Array.isArray(packet?.discovered_sources)?packet.discovered_sources.slice(0,6):[];
   const usable=uniqueByUrl(pages.concat(discoveries));
   const place=clean(event?.region||'the reported area',160);
-  const headline=clean(event?.headline||event?.title||'the incident',260);
+  const headline=clean(event?.headline||event?.title||'The reported incident',260);
   const eventSummary=clean(event?.brief||event?.summary||'',1200);
   const facts=Array.isArray(event?.key_facts)?event.key_facts.map(x=>clean(x,520)).filter(Boolean).slice(0,4):[];
   const caveats=Array.isArray(event?.caveats)?event.caveats.map(x=>clean(x,620)).filter(Boolean).slice(0,3):[];
   const sourceNames=usable.map(x=>clean(x?.source||x?.domain||'',120)).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).slice(0,4);
   const rawSnippets=pages.map(p=>clean(p.description||p.text||'',900))
     .concat(discoveries.map(x=>clean(x.snippet||'',900)));
-  const sourceSnippets=rawSnippets
-    .filter(Boolean)
+  const sourceSnippets=rawSnippets.filter(Boolean)
     .filter(v=>!/comprehensive up-to-date news coverage, aggregated from sources/i.test(v))
     .slice(0,3);
+  const observedDate=event?.occurred_from?clean(new Date(event.occurred_from).toISOString().slice(0,10),20):'';
   const paragraphs=[];
   paragraphs.push(
-    headline+' was reported in '+place+'. '+
-    (eventSummary ? 'The Sonalit record identifies the core development as follows: '+eventSummary+' ' : '')+
-    'Available external material was reviewed for corroboration and context, but the retrieved evidence remains limited where source pages could not be independently established.'
+    headline+' was reported'+(observedDate?' on '+observedDate:'')+' in '+place+'. '+
+    (eventSummary ? eventSummary+' ' : '')+
+    'The available record supports a bounded account of the development; details that cannot be established from the source base are not presented as fact.'
   );
   if(sourceSnippets.length){
     paragraphs.push(
-      'The accessible reporting adds the following context: '+sourceSnippets.join(' ')+
-      (sourceNames.length ? ' The material was associated with '+sourceNames.join(', ')+'.' : '')
+      'Additional reporting indicates: '+sourceSnippets.join(' ')+
+      (sourceNames.length ? ' Relevant reporting is associated with '+sourceNames.join(', ')+'.' : '')
     );
   } else if(usable.length){
     paragraphs.push(
-      'The research process identified '+usable.length+' external reference record(s), but did not retrieve a sufficiently substantive source page to support a stronger independent account.'
+      'External reference material was identified, but the available material was not sufficiently substantive or independently attributable to support a stronger corroborated narrative.'
     );
   } else {
     paragraphs.push(
-      'No substantive external source page was retrieved during this run, so the account remains bounded by the originating evidence rather than implying facts that have not been established.'
+      'No substantive external source page was established during this run. The account therefore remains bounded by the originating evidence.'
     );
   }
   if(facts.length){
-    paragraphs.push('The strongest points already supported by the event record are: '+facts.join(' '));
+    paragraphs.push('The best-supported facts are: '+facts.join(' '));
   }
   paragraphs.push(
-    'Analytically, the significance should be judged by the persistence, scale and geographic reach of the reported conditions, and by whether additional credible reporting confirms or materially contradicts the present account.'
+    'The operational significance turns on persistence, geographic reach, recurrence and independent corroboration. These indicators should drive the next assessment rather than headline volume alone.'
   );
   if(caveats.length){
-    paragraphs.push('The principal unresolved issues are: '+caveats.join(' '));
+    paragraphs.push('Unresolved issues include: '+caveats.join(' '));
   }
   return clean(paragraphs.join(' '),4200);
 }
