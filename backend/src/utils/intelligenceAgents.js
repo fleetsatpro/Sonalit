@@ -128,13 +128,6 @@ async function publicationForCountry(orgId,country,type='daily'){
       WHERE org_id=$1 AND country_code=$2 AND publication_type=$3 AND period_start=$4 AND period_end=$5
       ORDER BY version DESC LIMIT 1\`,[orgId,country,type,start,end]
   );
-  const periodClosed=end.getTime()<=now.getTime();
-  const priorCoverage=existing[0]?.body?.collection_coverage||{};
-  const unchanged=existing.length && existing[0].status==='published'
-    && Number(priorCoverage.evidence_count||-1)===evidenceCount
-    && Number(priorCoverage.source_count||-1)===sourceCount;
-  if(existing.length && existing[0].status==='published' && (periodClosed || unchanged)) return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:'published',version:existing[0].version||1};
-
   const {rows:events}=await query(
     \`SELECT
       e.id,COALESCE(e.canonical_headline,e.title) AS headline,
@@ -164,6 +157,12 @@ async function publicationForCountry(orgId,country,type='daily'){
   for(const e of events) for(const obs of Array.isArray(e.evidence)?e.evidence:[]) if(obs&&obs.source_id) sourceIds.add(String(obs.source_id));
   const sourceCount=sourceIds.size;
   const evidenceContract=evidenceCount>=3&&sourceCount>=2;
+  const periodClosed=end.getTime()<=now.getTime();
+  const priorCoverage=existing[0]?.body?.collection_coverage||{};
+  const unchanged=existing.length && existing[0].status==='published'
+    && Number(priorCoverage.evidence_count||-1)===evidenceCount
+    && Number(priorCoverage.source_count||-1)===sourceCount;
+  if(existing.length && existing[0].status==='published' && (periodClosed || unchanged)) return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:'published',version:existing[0].version||1};
 
   const refreshPdf=Boolean(existing.length && (Number(priorCoverage.evidence_count||-1)!==evidenceCount || Number(priorCoverage.source_count||-1)!==sourceCount));
 
