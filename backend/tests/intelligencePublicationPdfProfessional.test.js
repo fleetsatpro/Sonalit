@@ -4,7 +4,7 @@ const pathModule=require('path');
 const {execFile}=require('child_process');
 const {promisify}=require('util');
 const execFileAsync=promisify(execFile);
-const {buildProfessionalPdf,PDF_RENDERER_VERSION}=require('../src/services/intelligencePublicationPdfProfessional');
+const {buildProfessionalPdf,PDF_RENDERER_VERSION,buildIncidentMap}=require('../src/services/intelligencePublicationPdfProfessional');
 
 describe('professional intelligence publication PDF renderer',()=>{
   const baseEvent={
@@ -162,4 +162,21 @@ describe('professional intelligence publication PDF renderer',()=>{
     expect(parsed.text).toContain('MAP REGISTER');
     expect(parsed.text).toContain('Boundary source: country GeoJSON');
   });
+});
+
+
+test('renders a real boundary map and filters implausible coordinates',async()=>{
+  const {image,points,excludedPoints,totalPoints}=await buildIncidentMap('KE',[
+    {id:'inside',headline:'Nairobi event',severity:'high',latitude:-1.28,longitude:36.82},
+    {id:'outside',headline:'Outlier event',severity:'moderate',latitude:40.0,longitude:120.0}
+  ]);
+  const meta=await require('sharp')(image).metadata();
+  expect(meta.format).toBe('png');
+  expect(meta.width).toBe(2000);
+  expect(meta.height).toBe(1050);
+  expect(totalPoints).toBe(2);
+  expect(points).toHaveLength(1);
+  expect(excludedPoints).toBe(1);
+  expect(points[0].headline).toBe('Nairobi event');
+  expect(points[0].n).toBe(1);
 });
