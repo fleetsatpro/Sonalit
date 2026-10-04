@@ -133,6 +133,32 @@ function publicationFingerprint(country,type,start,end,events){
   return crypto.createHash('sha256').update(JSON.stringify({country,type,start:start.toISOString(),end:end.toISOString(),events:stableEvents})).digest('hex');
 }
 
+function selectPublicationResearchEvents(events,limit=10){
+  const ordered=(Array.isArray(events)?events:[]).slice().sort((a,b)=>{
+    const sev=v=>({critical:4,high:3,moderate:2,low:1,informational:0}[String(v||'').toLowerCase()]??2);
+    const sa=sev(a.severity), sb=sev(b.severity);
+    if(sb!==sa)return sb-sa;
+    const ca=Number(a.confidence||0), cb=Number(b.confidence||0);
+    if(cb!==ca)return cb-ca;
+    const oa=Number(a.observation_count||0), ob=Number(b.observation_count||0);
+    if(ob!==oa)return ob-oa;
+    return new Date(b.last_seen_at||0)-new Date(a.last_seen_at||0);
+  });
+  const out=[]; const covered=new Set();
+  for(const e of ordered){
+    const type=String(e.intelligence_type||'OTHER').toUpperCase();
+    if(out.length>=limit)break;
+    if(!covered.has(type) || String(e.severity||'').toLowerCase()==='critical'){
+      out.push(e); covered.add(type);
+    }
+  }
+  for(const e of ordered){
+    if(out.length>=limit)break;
+    if(!out.some(x=>String(x.id)===String(e.id)))out.push(e);
+  }
+  return out.slice(0,limit);
+}
+
 async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const now=new Date();
   let start,end;
@@ -182,7 +208,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const priorResearch=existing[0]?.body?.deep_research||{};
   const fingerprint=publicationFingerprint(country,type,start,end,events);
   // Research exactly the bounded incident set exposed by the publication.
-  const publicationEvents=events.slice(0,8);
+  const publicationEvents=selectPublicationResearchEvents(events,10);
   const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
   const expectedResearchCount=publicationEvents.length;
   const previousResearchCount=Number(priorResearch.incidents_web_researched||0)+Number(priorResearch.incidents_fallback||0);

@@ -97,6 +97,8 @@ function eventNarrative(e) {
     chronology: Array.isArray(research.chronology) ? research.chronology.slice(0,8).map(x=>({time:clean(x?.time,120),event:clean(x?.event,700)})) : [],
     research_status: research.status || null,
     research_provider: research.provider || null,
+    research_method: research.research_method || null,
+    web_sources_retrieved: Number(research.web_sources_retrieved || 0) || 0,
     research_sources: Array.isArray(research.sources) ? research.sources.slice(0,10).map(src => ({
       ...src,
       image_url: (() => {
@@ -246,7 +248,7 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
     typeCounts[t] = (typeCounts[t] || 0) + 1;
   }
   const topTypes = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]).join(', ') || 'no classified threat type';
-  const keyEvents = ordered.slice(0,8).map(eventNarrative);
+  const keyEvents = ordered.slice(0,10).map(eventNarrative);
   const top = keyEvents[0];
   let executive;
   if (!events.length) {
