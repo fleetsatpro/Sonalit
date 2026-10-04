@@ -48,3 +48,12 @@ test('publication agent imports the editorial quality audit before invoking it',
   expect(source).toContain("const { auditPublicationContent } = require('./publicationQuality');");
   expect(source).toContain('const finalQuality=auditPublicationContent(');
 });
+
+
+test('publication evidence policy supports direct-web research when original observation coverage is sparse',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  expect(source).toContain("const PUBLICATION_EVIDENCE_VERSION='1.1';");
+  expect(source).toContain('publicationPolicyMismatch');
+  expect(source).toContain("basis:'DIRECT_WEB_RESEARCH'");
+  expect(source).toContain('uniqueUrls.size>=2 && uniqueDomains.size>=2');
+});
