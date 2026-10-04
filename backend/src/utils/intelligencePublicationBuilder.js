@@ -334,7 +334,7 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
       contract: 'At least 3 evidence observations from at least 2 distinct sources.'
     },
     disclaimer: 'This product is evidence-governed decision support. It does not guarantee completeness or accuracy and should not replace appropriate operational or professional judgement.',
-    reporting_standard: 'SONALIT 3i · evidence → verification → fusion → assessment → forecast → dissemination',
+    reporting_standard: 'SONALIT · evidence → verification → fusion → assessment → forecast → dissemination',
     period_start: start.toISOString(),
     period_end: end.toISOString(),
     country_code: country,

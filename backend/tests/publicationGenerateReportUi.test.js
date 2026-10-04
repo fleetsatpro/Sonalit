@@ -13,7 +13,7 @@ describe('on-demand publication report flow',()=>{
     expect(s).toContain('Regenerate report');
     expect(s).toContain('/generate-report');
   });
-  test('3I newsroom exposes on-demand report generation and research signals',()=>{
+  test('intelligence newsroom exposes on-demand report generation and research signals',()=>{
     const s=fs.readFileSync(path.join(__dirname,'../../apps/web/src/pages/IntelligencePublicationDesk.tsx'),'utf8');
     expect(s).toContain('/generate-report');
     expect(s).toContain('GENERATE REPORT');
