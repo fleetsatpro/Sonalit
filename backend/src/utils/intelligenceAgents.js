@@ -124,12 +124,12 @@ async function publicationForCountry(orgId,country,type='daily'){
     start=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1));end=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+1,1));
   }
   const {rows:existing}=await query(
-    \`SELECT id,status,version,body,pdf_status,pdf_version FROM intel_publications
+    `SELECT id,status,version,body,pdf_status,pdf_version FROM intel_publications
       WHERE org_id=$1 AND country_code=$2 AND publication_type=$3 AND period_start=$4 AND period_end=$5
-      ORDER BY version DESC LIMIT 1\`,[orgId,country,type,start,end]
+      ORDER BY version DESC LIMIT 1`,[orgId,country,type,start,end]
   );
   const {rows:events}=await query(
-    \`SELECT
+    `SELECT
       e.id,COALESCE(e.canonical_headline,e.title) AS headline,
       COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,
       e.latitude,e.longitude,e.region,e.risk_velocity,e.occurred_from,e.occurred_to,e.last_seen_at,
@@ -149,7 +149,7 @@ async function publicationForCountry(orgId,country,type='daily'){
       WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4
       GROUP BY e.id
       ORDER BY CASE e.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'moderate' THEN 2 ELSE 1 END DESC,e.last_seen_at DESC
-      LIMIT 80\`,[orgId,country,start,end]
+      LIMIT 80`,[orgId,country,start,end]
   );
 
   const evidenceCount=events.reduce((n,e)=>n+Number(e.observation_count||0),0);
@@ -180,8 +180,8 @@ async function publicationForCountry(orgId,country,type='daily'){
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
       const final=result.final;
       if(final){title=final.title||title;subtitle=final.subtitle||subtitle;executive=final.executive_assessment||executive;finalBody={...deterministic,...final};}
-      if(!result.publishable) logger.warn(\`Publication editorial board held \${country}/\${type}: evidence=\${evidenceContract} qa=\${result.qa?.publishable===true} blocking=\${(result.qa?.blocking_issues||[]).length}\`);
-    }catch(error){logger.warn(\`Publication editorial board unavailable \${country}/\${type}; deterministic evidence product retained: \${error.message}\`);}
+      if(!result.publishable) logger.warn(`Publication editorial board held \${country}/\${type}: evidence=\${evidenceContract} qa=\${result.qa?.publishable===true} blocking=\${(result.qa?.blocking_issues||[]).length}`);
+    }catch(error){logger.warn(`Publication editorial board unavailable \${country}/\${type}; deterministic evidence product retained: \${error.message}`);}
   }
 
   const boardPublishable=board?.publishable===true;
@@ -202,9 +202,9 @@ async function publicationForCountry(orgId,country,type='daily'){
   let publicationId=null;
   if(existing.length){
     const updated=await query(
-      \`UPDATE intel_publications
+      `UPDATE intel_publications
        SET title=$3,subtitle=$4,status=$5,period_start=$6,period_end=$7,executive_assessment=$8,body=$9::jsonb,evidence=$10::jsonb,confidence=$11,version=$12,published_at=CASE WHEN $5='published' THEN COALESCE(published_at,NOW()) ELSE NULL END,updated_at=NOW()
-       WHERE id=$1 AND org_id=$2 RETURNING id,status,version\`,
+       WHERE id=$1 AND org_id=$2 RETURNING id,status,version`,
       [existing[0].id,orgId,title,subtitle,status,start,end,executive,JSON.stringify(body),JSON.stringify(events.map(e=>e.id)),
        events.length?Math.round(events.reduce((n,e)=>n+Number(e.confidence||0),0)/events.length):0,version]
     );
@@ -217,10 +217,10 @@ async function publicationForCountry(orgId,country,type='daily'){
     }
   } else {
     const inserted=await query(
-      \`INSERT INTO intel_publications
+      `INSERT INTO intel_publications
        (org_id,country_code,publication_type,title,subtitle,status,period_start,period_end,executive_assessment,body,evidence,confidence,published_at,version)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13,$14)
-       RETURNING id,status,version\`,
+       RETURNING id,status,version`,
       [orgId,country,type,title,subtitle,status,start,end,executive,JSON.stringify(body),JSON.stringify(events.map(e=>e.id)),
        events.length?Math.round(events.reduce((n,e)=>n+Number(e.confidence||0),0)/events.length):0,status==='published'?new Date():null,version]
     );
