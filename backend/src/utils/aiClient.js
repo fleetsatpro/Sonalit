@@ -107,7 +107,7 @@ function isRetryable(err) {
 function normalizeAnthropicParams(input) {
   const params = { ...input, model: input.model || ANTHROPIC_MODEL };
   if (Array.isArray(params.tools)) params.tools = params.tools.map(t => {
-    if (t?.type && String(t.type).startsWith('web_search')) return { ...t, type:'web_search_20250305', allowed_callers:undefined };
+    if (t?.type && String(t.type).startsWith('web_search')) return { ...t, allowed_callers:undefined };
     return t;
   });
   return params;
@@ -202,9 +202,10 @@ async function createResearchMessage(params) {
         ...await attempt('anthropic-last-resort',()=>callAnthropic({
           ...params,
           tools:[...(params.tools||[]),{
-            type:'web_search_20250305',
+            type:'web_search_20260318',
             name:'web_search',
-            max_uses:Number(params.max_web_searches||6)
+            max_uses:Number(params.max_web_searches||6),
+            response_inclusion:'excluded'
           }]
         })),
         _provider:'anthropic-web-search'
