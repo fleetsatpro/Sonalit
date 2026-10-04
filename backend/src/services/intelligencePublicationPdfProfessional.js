@@ -823,11 +823,13 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   y+=6;
   card(doc,MARGIN,y,CONTENT_W,95);
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(7.5).text('EVIDENCE CONTRACT',MARGIN+14,y+14);
-  paragraph(doc,y+32,
-    String(body.collection_coverage && body.collection_coverage.evidence_contract_met ? 'MET' : 'NOT MET')+
-    ' | '+String(body.collection_coverage && body.collection_coverage.evidence_count || 0)+' evidence observations | '+
-    String(body.collection_coverage && body.collection_coverage.source_count || 0)+' distinct sources. '+
-    'Collection completeness is not equivalent to incident absence.',
+  const coverageBasis=body.collection_basis?.basis||'ORIGINAL_EVIDENCE';
+  const coverageText=coverageBasis==='DIRECT_WEB_RESEARCH'
+    ? 'DIRECT WEB RESEARCH BASIS | '+String(body.collection_basis?.research_source_count||0)+' attributable research source(s) across '+String(body.collection_basis?.research_source_domains||0)+' domain(s) | original observation contract not met.'
+    : String(body.collection_coverage && body.collection_coverage.evidence_contract_met ? 'ORIGINAL EVIDENCE BASIS · MET' : 'ORIGINAL EVIDENCE BASIS · NOT MET')+
+      ' | '+String(body.collection_coverage && body.collection_coverage.evidence_count || 0)+' evidence observations | '+
+      String(body.collection_coverage && body.collection_coverage.source_count || 0)+' distinct sources.';
+  paragraph(doc,y+32,coverageText+' Collection completeness is not equivalent to incident absence.',
     {x:MARGIN+14,width:CONTENT_W-28,size:7.6,max:550,lineGap:2.4,color:MUTED});
 
   // SOURCES
