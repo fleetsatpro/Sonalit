@@ -131,42 +131,46 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
 
 function packetNarrative(event,packet){
   const pages=Array.isArray(packet?.fetched_pages)?packet.fetched_pages.slice(0,4):[];
-  const discoveries=Array.isArray(packet?.discovered_sources)?packet.discovered_sources.slice(0,5):[];
-  const allSources=uniqueByUrl(pages.concat(discoveries));
-  const domains=Array.from(new Set(allSources.map(x=>domain(x.url)).filter(Boolean)));
+  const discoveries=Array.isArray(packet?.discovered_sources)?packet.discovered_sources.slice(0,6):[];
+  const usable=uniqueByUrl(pages.concat(discoveries));
   const place=clean(event?.region||'the reported area',160);
   const headline=clean(event?.headline||event?.title||'the incident',260);
-  const eventSummary=clean(event?.brief||event?.summary||'',1100);
-  const snippets=pages.map(p=>clean(p.description||p.text||'',750)).filter(Boolean);
-  const sourceTitles=allSources.map(x=>clean(x.title||'Untitled source',180)).filter(Boolean);
-  const facts=Array.isArray(event?.key_facts)?event.key_facts.map(x=>clean(x,500)).filter(Boolean).slice(0,4):[];
-  const caveats=Array.isArray(event?.caveats)?event.caveats.map(x=>clean(x,500)).filter(Boolean).slice(0,3):[];
-  const pieces=[];
-  pieces.push(
-    'The reporting record for '+headline+' points to an incident in '+place+'. '+
-    (eventSummary ? 'Sonalit records the core development as follows: '+eventSummary+' ' : '')+
-    'A live research pass was then run against current web reporting rather than relying only on the original event record.'
+  const eventSummary=clean(event?.brief||event?.summary||'',1200);
+  const facts=Array.isArray(event?.key_facts)?event.key_facts.map(x=>clean(x,520)).filter(Boolean).slice(0,4):[];
+  const caveats=Array.isArray(event?.caveats)?event.caveats.map(x=>clean(x,620)).filter(Boolean).slice(0,3):[];
+  const sourceNames=usable.map(x=>clean(x?.source||x?.domain||'',120)).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).slice(0,4);
+  const sourceSnippets=pages.map(p=>clean(p.description||p.text||'',700)).filter(Boolean).slice(0,2);
+  const paragraphs=[];
+  paragraphs.push(
+    headline+' was reported in '+place+'. '+
+    (eventSummary ? 'The Sonalit record identifies the core development as follows: '+eventSummary+' ' : '')+
+    'Available external material was reviewed for corroboration and context, but the retrieved evidence remains limited where source pages could not be independently established.'
   );
-  if(allSources.length){
-    pieces.push(
-      'That research pass located '+allSources.length+' usable source record(s) across '+Math.max(domains.length,1)+' web domain(s). '+
-      'The retrieved material broadly frames the incident through '+sourceTitles.slice(0,3).join('; ')+(sourceTitles.length>3?' and additional reporting.':' .')+
-      (snippets.length ? ' The source material describes: '+snippets.slice(0,2).join(' ') : '')
+  if(sourceSnippets.length){
+    paragraphs.push(
+      'The accessible reporting adds the following context: '+sourceSnippets.join(' ')+
+      (sourceNames.length ? ' The material was associated with '+sourceNames.join(', ')+'.' : '')
     );
-  }else{
-    pieces.push('The research pass did not retrieve a usable external page, so the narrative remains bounded by the original Sonalit evidence.');
+  } else if(usable.length){
+    paragraphs.push(
+      'The research process identified '+usable.length+' external reference record(s), but did not retrieve a sufficiently substantive source page to support a stronger independent account.'
+    );
+  } else {
+    paragraphs.push(
+      'No substantive external source page was retrieved during this run, so the account remains bounded by the originating evidence rather than implying facts that have not been established.'
+    );
   }
   if(facts.length){
-    pieces.push('The clearest points already established in the event record are: '+facts.join(' ') );
+    paragraphs.push('The strongest points already supported by the event record are: '+facts.join(' '));
   }
-  pieces.push(
-    'From an operational perspective, the significance depends less on the headline itself than on whether the reported conditions persist, spread geographically, recur along the same corridor, or are corroborated by additional reporting. '+
-    'The current evidence does not justify filling those gaps with assumption.'
+  paragraphs.push(
+    'Analytically, the significance should be judged by the persistence, scale and geographic reach of the reported conditions, and by whether additional credible reporting confirms or materially contradicts the present account.'
   );
-  if(caveats.length)pieces.push('Outstanding uncertainty remains: '+caveats.join(' '));
-  return clean(pieces.join(' '),4200);
+  if(caveats.length){
+    paragraphs.push('The principal unresolved issues are: '+caveats.join(' '));
+  }
+  return clean(paragraphs.join(' '),4200);
 }
-
 function fallbackResearch(event,packet){
   const sources=uniqueByUrl(
     (packet?.fetched_pages||[]).map(p=>({title:p.title,url:p.url,domain:p.domain,source_type:'retrieved_web_page'}))
