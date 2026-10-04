@@ -174,7 +174,7 @@ function fallbackResearch(event,packet){
   ).slice(0,10);
   const hasWebEvidence=Boolean(sources.length);
   return {
-    status:hasWebEvidence?'researched_packet':'fallback',
+    status:'fallback',
     narrative:hasWebEvidence?packetNarrative(event,packet):clean(event&&event.brief||event&&event.summary||event&&event.headline||event&&event.title||'No detailed narrative available.',3000),
     context:(packet?.discovered_sources||[]).slice(0,4).map(x=>clean(x.snippet||x.title,700)).filter(Boolean).join(' ')||'No corroborative web narrative was retrieved during this publication run.',
     confirmed_facts:Array.isArray(event&&event.key_facts)?event.key_facts.slice(0,6):[],
@@ -268,10 +268,10 @@ async function researchPublicationIncidents(events,{country,region}={}){
   const values=Object.values(out);
   const researched=values.filter(x=>x&&x.agent&&x.agent.status==='researched').length;
   const fallback=values.filter(x=>x&&x.agent&&x.agent.status==='fallback').length;
-  const researchedPacket=values.filter(x=>x?.agent?.status==='researched_packet').length;
+  const researchedPacket=values.filter(x=>x?.agent?.research_method==='live_web_packet').length;
   const webSearchRequests=values.reduce((n,x)=>n+Number(x?.webSearchRequests||0),0);
   const webSourcesRetrieved=values.reduce((n,x)=>n+Number(x?.agent?.web_sources_retrieved||x?.packet?.fetched_pages?.length||0),0);
-  return {byEvent:out,summary:{requested:events.length,researched,fallback,researched_packet:researchedPacket,failed:events.length-researched-fallback-researchedPacket,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved}};
+  return {byEvent:out,summary:{requested:events.length,researched,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved}};
 }
 
 module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket};
