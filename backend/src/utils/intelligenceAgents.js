@@ -1,8 +1,10 @@
 // Background intelligence agents: translation, event synthesis, and evidence-governed multi-agent publishing.
 const aiClient=require('./aiClient');
+const crypto=require('crypto');
 const {translateItems}=require('./intelligenceTranslation');
 const {runPublicationEditorialBoard,AGENT_ROLES}=require('./intelligencePublicationEditorialBoard');
 const {query,globalQuery}=require('../config/database');
+const {withOrg}=require('./orgScopedDb');
 const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 const { buildEvidencePublication } = require('./intelligencePublicationBuilder');
@@ -114,7 +116,17 @@ async function synthesizeEvents(orgId){
   return{queued:rows.length,synthesized:count,provider};
 }
 
-async function publicationForCountry(orgId,country,type='daily'){
+function publicationFingerprint(country,type,start,end,events){
+  const stableEvents=events.map(e=>({
+    id:e.id,updated_at:e.updated_at,last_seen_at:e.last_seen_at,severity:e.severity,confidence:e.confidence,
+    observation_count:e.observation_count,source_count:e.source_count,
+    evidence:(Array.isArray(e.evidence)?e.evidence:[]).map(o=>({id:o.id,source_id:o.source_id,observed_at:o.observed_at,published_at:o.published_at,credibility:o.credibility,title:o.title,url:o.url}))
+      .sort((a,b)=>String(a.id).localeCompare(String(b.id)))
+  })).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  return crypto.createHash('sha256').update(JSON.stringify({country,type,start:start.toISOString(),end:end.toISOString(),events:stableEvents})).digest('hex');
+}
+
+async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const now=new Date();
   let start,end;
   if(type==='daily'){({start,end}=dayBounds(now));}
@@ -132,7 +144,7 @@ async function publicationForCountry(orgId,country,type='daily'){
     `SELECT
       e.id,COALESCE(e.canonical_headline,e.title) AS headline,
       COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,
-      e.latitude,e.longitude,e.region,e.risk_velocity,e.occurred_from,e.occurred_to,e.last_seen_at,
+      e.latitude,e.longitude,e.region,e.risk_velocity,e.occurred_from,e.occurred_to,e.last_seen_at,e.updated_at,
       COUNT(DISTINCT eo.observation_id)::int AS observation_count,
       COUNT(DISTINCT o.source_id)::int AS source_count,
       COALESCE(
@@ -159,12 +171,14 @@ async function publicationForCountry(orgId,country,type='daily'){
   const evidenceContract=evidenceCount>=3&&sourceCount>=2;
   const periodClosed=end.getTime()<=now.getTime();
   const priorCoverage=existing[0]?.body?.collection_coverage||{};
-  const unchanged=existing.length && existing[0].status==='published'
+  const fingerprint=publicationFingerprint(country,type,start,end,events);
+  const unchanged=existing.length
+    && String(priorCoverage.fingerprint||'')===fingerprint
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
     && Number(priorCoverage.source_count||-1)===sourceCount;
-  if(existing.length && existing[0].status==='published' && (periodClosed || unchanged)) return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:'published',version:existing[0].version||1};
+  if(existing.length && unchanged && (existing[0].status!=='published' || periodClosed || existing[0].status==='published')) return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 
-  const refreshPdf=Boolean(existing.length && (Number(priorCoverage.evidence_count||-1)!==evidenceCount || Number(priorCoverage.source_count||-1)!==sourceCount));
+  const refreshPdf=Boolean(existing.length && String(priorCoverage.fingerprint||'')!==fingerprint);
 
   const deterministic=buildEvidencePublication({country,type,start,end,events,evidenceCount,sourceCount,evidenceContract});
   let finalBody=deterministic;
@@ -232,6 +246,13 @@ async function publicationForCountry(orgId,country,type='daily'){
     editorial_agents:AGENT_ROLES.length,generator_mode:body.generator.mode,version
   };
 }
+async function publicationForCountry(orgId,country,type='daily'){
+  return withOrg(orgId, async client => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`sonalit:intelligence:publication:${orgId}:${country}:${type}`]);
+    return publicationForCountryUnsafe(orgId,country,type);
+  });
+}
+
 async function publishDue(orgId){const results=[];for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'daily')});}catch(error){results.push({country,status:'failed',error:error.message});}}
  const d=new Date();if(d.getUTCDay()===1){for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'weekly')});}catch(error){results.push({country,status:'failed',error:error.message});}}}
  if(d.getUTCDate()===1){for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'monthly')});}catch(error){results.push({country,status:'failed',error:error.message});}}}
