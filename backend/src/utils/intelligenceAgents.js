@@ -9,6 +9,7 @@ const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 const { buildEvidencePublication } = require('./intelligencePublicationBuilder');
 const { researchPublicationIncidents } = require('./intelligenceIncidentResearch');
+const { PDF_RENDERER_VERSION } = require('../services/intelligencePublicationPdfProfessional');
 
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
 const DAILY_COUNTRIES=(process.env.INTEL_PUBLICATION_COUNTRIES||Object.keys(COUNTRY_NAMES).join(',')).split(',').map(x=>x.trim().toUpperCase()).filter(x=>COUNTRY_NAMES[x]);
