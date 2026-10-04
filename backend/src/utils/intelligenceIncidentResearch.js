@@ -200,7 +200,6 @@ function fallbackResearch(event,packet){
     chronology:[],
     sources,
     provider:hasWebEvidence?'web-research-packet-synthesis':'evidence-fallback-research',
-    research_method:hasWebEvidence?'live_web_packet':'evidence_only',
     agent_status:'provider_unavailable',
     web_sources_retrieved:sources.length,
     research_method:hasWebEvidence?'live_web_packet':'evidence_only'
