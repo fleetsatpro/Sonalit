@@ -38,28 +38,30 @@ function decodeEntities(value) {
 
 function stripMarkup(value) {
   return decodeEntities(value)
-    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')
-    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
     .replace(/<[^>]+>/g, ' ');
 }
 
 function normalizeWhitespace(value) {
   return String(value == null ? '' : value)
-    .replace(/[\\u0000-\\u001F\\u007F-\\u009F]/g, ' ')
-    .replace(/[\\u2010\\u2011\\u2012\\u2013\\u2014]/g, '-')
-    .replace(/[\\u2018\\u2019\\u201A\\u201B]/g, "'")
-    .replace(/[\\u201C\\u201D\\u201E\\u201F]/g, '"')
-    .replace(/\\s+/g, ' ')
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
 function normalizeForComparison(value) {
   return normalizeWhitespace(stripMarkup(value))
     .toLowerCase()
-    .replace(/https?:\\/\\/\\S+/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
     .replace(/[^a-z0-9%]+/g, ' ')
-    .replace(/\\b(the|a|an|and|or|of|to|in|on|for|with|from|by|is|are|was|were|reported|reports|according|said|says|this|that|during|amid|after|before)\\b/g, ' ')
-    .replace(/\\s+/g, ' ')
+    .replace(/\b(the|a|an|and|or|of|to|in|on|for|with|from|by|is|are|was|were|reported|reports|according|said|says|this|that|during|amid|after|before)\b/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -76,7 +78,7 @@ function sentenceParts(value) {
   const cleaned = cleanPublicationText(value, 20000);
   if (!cleaned) return [];
   return cleaned
-    .split(/(?<=[.!?])\\s+(?=[A-Z0-9])/)
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
     .map(s => normalizeWhitespace(s))
     .filter(Boolean);
 }
@@ -111,10 +113,10 @@ function normalizeDomain(urlOrDomain) {
   try {
     const raw = String(urlOrDomain || '').trim();
     if (!raw) return '';
-    const url = /^https?:\\/\\//i.test(raw) ? new URL(raw) : new URL('https://' + raw);
-    return url.hostname.replace(/^www\\./i, '').toLowerCase();
+    const url = /^https?:\/\//i.test(raw) ? new URL(raw) : new URL('https://' + raw);
+    return url.hostname.replace(/^www\./i, '').toLowerCase();
   } catch (_) {
-    return String(urlOrDomain || '').trim().toLowerCase().replace(/^www\\./, '');
+    return String(urlOrDomain || '').trim().toLowerCase().replace(/^www\./, '');
   }
 }
 
@@ -124,8 +126,8 @@ function isAggregatorDomain(domain) {
 
 function sourceTitleKey(title) {
   return normalizeForComparison(title)
-    .replace(/\\b(source|report|update|breaking|latest)\\b/g, '')
-    .replace(/\\s+/g, ' ')
+    .replace(/\b(source|report|update|breaking|latest)\b/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -141,7 +143,7 @@ function dedupeSources(items, max=120) {
     const title = cleanPublicationText(item?.title || 'Source record', 400);
     const story = sourceTitleKey(title);
     if (!url || isAggregatorDomain(domain)) continue;
-    const normalizedUrl = url.replace(/\\/+$/, '');
+    const normalizedUrl = url.replace(/\/+$/, '');
     if (seenUrl.has(normalizedUrl)) continue;
     const storyKey = domain + '|' + story;
     if (story && seenStory.has(storyKey)) continue;
@@ -171,7 +173,7 @@ function sourceIsSubstantive(source) {
   const desc = cleanPublicationText(source.description || source.snippet || '', 1200);
   if (/comprehensive up-to-date news coverage, aggregated from sources all over the world/i.test(desc)) return false;
   if (source.kind === 'corroborative_discovery' && !title) return false;
-  return Boolean(title || desc);
+  return Boolean(title || desc || cleanPublicationText(source.text || '', 600));
 }
 
 function repetitionRatio(value) {
