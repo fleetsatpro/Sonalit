@@ -179,6 +179,7 @@ function sourceIsSubstantive(source) {
 function auditPublicationContent(incidents){
   const seen=new Map();
   const duplicateSentences=[];
+  const intraIncidentRepeats=[];
   let boilerplateHits=0;
   for(const incident of Array.isArray(incidents)?incidents:[]){
     for(const field of ['what_happened','context','assessment']){
@@ -192,13 +193,22 @@ function auditPublicationContent(incidents){
         if(key.length<30)continue;
         const prior=seen.get(key);
         if(prior){
-          duplicateSentences.push({
-            sentence,
-            first_incident:prior.incidentId,
-            first_field:prior.field,
-            duplicate_incident:String(incident?.event_id),
-            duplicate_field:field
-          });
+          if(prior.incidentId===String(incident?.event_id)){
+            intraIncidentRepeats.push({
+              sentence,
+              first_field:prior.field,
+              duplicate_field:field,
+              incident_id:String(incident?.event_id)
+            });
+          }else{
+            duplicateSentences.push({
+              sentence,
+              first_incident:prior.incidentId,
+              first_field:prior.field,
+              duplicate_incident:String(incident?.event_id),
+              duplicate_field:field
+            });
+          }
         }else{
           seen.set(key,{incidentId:String(incident?.event_id),field});
         }
@@ -217,9 +227,12 @@ function auditPublicationContent(incidents){
     passed:boilerplateHits===0&&uniqueDuplicates.length===0,
     boilerplate_hits:boilerplateHits,
     duplicate_sentence_count:uniqueDuplicates.length,
-    duplicate_sentences:uniqueDuplicates.slice(0,10)
+    duplicate_sentences:uniqueDuplicates.slice(0,10),
+    intra_incident_repeat_count:intraIncidentRepeats.length,
+    intra_incident_repeats:intraIncidentRepeats.slice(0,10)
   };
 }
+
 
 function repetitionRatio(value) {
   const sentences = sentenceParts(value);
