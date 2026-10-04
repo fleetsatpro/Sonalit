@@ -63,10 +63,10 @@ function evidencePackage(country, period, events){
     events:events.map(e=>({id:String(e.id),headline:clean(e.headline||e.title,500),brief:clean(e.brief||e.summary,900),severity:e.severity,confidence:e.confidence,intelligence_type:e.intelligence_type,last_seen_at:e.last_seen_at,observation_count:e.observation_count,source_count:e.source_count,latitude:e.latitude,longitude:e.longitude})) };
 }
 
-async function runPublicationEditorialBoard({country, period, events, baseBody, evidenceContract}){
+async function runPublicationEditorialBoard({country, period, events, baseBody, evidenceContract, precomputedResearch=null}){
   const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
-  let research={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0}};
-  if(deepResearchEnabled && events.length){
+  let research=precomputedResearch||{byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0}};
+  if(!precomputedResearch && deepResearchEnabled && events.length){
     try{ research=await researchPublicationIncidents(events,{country}); }
     catch(error){ logger.warn(`Publication incident-research stage failed: ${error.message}`); }
   }
