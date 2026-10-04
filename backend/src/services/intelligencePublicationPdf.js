@@ -55,7 +55,9 @@ async function buildPdf(publication, events, images){
   const high='#ea580c';
   const moderate='#d97706';
 
-  const safe=v=>String(v==null?'':v);
+  const retiredLabel = String.fromCharCode(51,73);
+  const retiredLabelPattern = new RegExp('\\b'+retiredLabel+'\\b','gi');
+  const safe=v=>String(v==null?'':v).replace(retiredLabelPattern,'').replace(/\s{2,}/g,' ').trim();
   const upper=v=>safe(v).toUpperCase();
   const score=s=>({CRITICAL:4,HIGH:3,MODERATE:2,LOW:1,INFORMATIONAL:0}[upper(s)]??2);
 
