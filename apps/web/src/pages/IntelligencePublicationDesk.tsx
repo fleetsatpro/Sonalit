@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileText, ShieldCheck, CalendarDays, ChevronRight, X, MapPinned, Radar, BookOpen, Download, ExternalLink } from 'lucide-react'
+import { FileText, ShieldCheck, CalendarDays, ChevronRight, X, MapPinned, Radar, BookOpen, Download, ExternalLink, Sparkles } from 'lucide-react'
 import { api } from '../lib/api.js'
 import '../styles/intelligence-publication-desk.css'
 
