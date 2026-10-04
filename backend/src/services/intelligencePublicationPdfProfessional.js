@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
 const { cleanPublicationText, dedupeSources: dedupePublicationSources, uniqueStrings } = require('../utils/publicationQuality');
 
-const PDF_RENDERER_VERSION = '2.1.0';
+const PDF_RENDERER_VERSION = '2.2.0';
 
 const COUNTRY_NAMES = {
   KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania',
@@ -220,6 +220,20 @@ function metricCard(doc, x, y, w, label, value, note) {
   smallLabel(doc, x+11, y+12, label, w-22);
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(20).text(text(value, 40) || '-', x+11, y+28, { width:w-22 });
   if (note) doc.fillColor(MUTED).font('Helvetica').fontSize(6.8).text(text(note, 90), x+11, y+53, { width:w-22 });
+}
+
+function trendsHaveBaseline(trends){
+  return Array.isArray(trends)&&trends.some(t=>t&&t.basis==='PERIOD_COMPARISON');
+}
+
+function listHeight(doc, items, width, size=8.2, gap=5) {
+  let total=0;
+  for(const item of Array.isArray(items)?items:[]){
+    const s=text(item,950);
+    if(!s)continue;
+    total+=blockHeight(doc,'- '+s,width,'Helvetica',size,2.6)+gap;
+  }
+  return total;
 }
 
 function bullets(doc, y, items, opts={}) {
@@ -539,26 +553,45 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   y+=54;
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(10.5).text('KEY JUDGEMENTS',MARGIN,y);
   y+=20;
-  const highlights = priorities.slice(0,5).map((e,i)=>{
-    const m=mergeIncident(e,body);
-    return (i+1)+'. '+m.headline;
-  });
-  y=bullets(doc,y,highlights,{size:8.2});
-  y+=3;
-  paragraph(doc,y,'Detailed evidence, context, analytical judgement, uncertainty and provenance are contained in the corresponding priority dossier; this page does not duplicate those narratives.',{size:6.9,color:MUTED,max:900,lineGap:2});
+  const highlights=Array.isArray(body.assessment_highlights)?body.assessment_highlights:[];
+  if(highlights.length){
+    for(const item of highlights.slice(0,4)){
+      const judgement=typeof item==='string'?item:item&&item.judgement||'';
+      const headline=typeof item==='object'&&item?item.headline||'': '';
+      const confidence=typeof item==='object'&&item?item.confidence:null;
+      const h=Math.max(
+        62,
+        31 + blockHeight(doc,judgement,CONTENT_W-28,'Helvetica',8.1,2.7) +
+        (headline?14:0) + (confidence!=null?11:0)
+      );
+      y=ensure(doc,y,h+9);
+      card(doc,MARGIN,y,CONTENT_W,h);
+      if(headline)doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(6.8).text(upper(headline),MARGIN+14,y+11,{width:CONTENT_W-28});
+      doc.fillColor(INK).font('Helvetica').fontSize(8.1).text(text(judgement,900),MARGIN+14,y+(headline?25:13),{width:CONTENT_W-28,lineGap:2.7});
+      if(confidence!=null){
+        doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(6.3).text('CONFIDENCE '+String(Math.round(Number(confidence)))+'%',MARGIN+14,y+h-13,{width:CONTENT_W-28});
+      }
+      y+=h+9;
+    }
+  }else{
+    y=paragraph(doc,y,'No standalone analytical judgement was established beyond the incident-level evidence record. This section intentionally does not convert event volume into unsupported strategic conclusions.',{size:8.2,color:MUTED,max:700});
+  }
   y+=8;
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(10.5).text('WHAT WOULD CHANGE THIS JUDGEMENT',MARGIN,y);
   y+=20;
   const triggerCandidates=[];
   for(const e of priorityMerged.slice(0,3)){
     const m=mergeIncident(e,body);
-    const headline=m.headline;
-    triggerCandidates.push('Independent corroboration of '+headline+' would strengthen the judgement; contradictory authoritative reporting would weaken it.');
-    triggerCandidates.push('Persistence of '+headline+' in '+(m.region||'the reported area')+' across another reporting cycle would increase concern for sustained exposure.');
+    if(m.assessmentText){
+      triggerCandidates.push('Independent corroboration or material persistence would strengthen the assessment for '+m.headline+'.');
+    }
+    if(m.research&&Array.isArray(m.research.outlook_triggers?.upgrade)&&m.research.outlook_triggers.upgrade.length){
+      triggerCandidates.push(...m.research.outlook_triggers.upgrade.slice(0,2));
+    }
   }
   const triggers=uniqueStrings(triggerCandidates,3);
-  y=bullets(doc,y,triggers,{size:8.2});
-  y+=4;
+  if(triggers.length)y=bullets(doc,y,triggers,{size:8.2});
+  else y=paragraph(doc,y,'No explicit change conditions were established in the source record; future corroboration, persistence or credible contradictory evidence should be reassessed as it emerges.',{size:8.1,color:MUTED,max:760});
   doc.fillColor(MUTED).font('Helvetica').fontSize(7.4).text('Assessment discipline: probability language should describe the likelihood of a development; confidence describes the strength of the information and reasoning supporting the judgement.',MARGIN,y,{width:CONTENT_W,lineGap:2.5});
 
   // OPERATING ENVIRONMENT
@@ -597,17 +630,21 @@ async function buildProfessionalPdf(publication, events, images=[]) {
 
   // EMERGING TRENDS
   y=addPage(doc);
-  y=sectionHeading(doc,y,'Emerging trends and key drivers','Only concentrations actually present in the evidence set are presented as trends. Single observations are labelled as such.');
+  const trendHasBaseline=trendsHaveBaseline(body.emerging_trends);
+y=sectionHeading(doc,y,trendHasBaseline?'Emerging trends and key drivers':'Observed concentrations and key drivers',trendHasBaseline?'Period comparison is available and changes are stated explicitly.':'No prior-period baseline is attached; concentrations are not presented as time-series trends.');
   const trends=Array.isArray(body.emerging_trends)?body.emerging_trends:[];
   if(trends.length){
     for(const t of trends.slice(0,5)){
-      const h=86; y=ensure(doc,y,h);
+      const assessment=text(t.assessment||'Observed concentration.',650);
+      const h=Math.max(76,52+blockHeight(doc,assessment,CONTENT_W-28,'Helvetica',8,2.7));
+      y=ensure(doc,y,h+10);
       card(doc,MARGIN,y,CONTENT_W,h);
       doc.fillColor(INK).font('Helvetica-Bold').fontSize(9.2).text(upper(t.theme || 'THEME'),MARGIN+14,y+13,{width:250});
       badge(doc,MARGIN+CONTENT_W-76,y+10,(t.share_percent||0)+'%',66,ACCENT);
-      doc.fillColor(MUTED).font('Helvetica').fontSize(7.1).text(String(t.count||0)+' recorded event object(s)',MARGIN+14,y+32,{width:220});
-      paragraph(doc,y+48,t.assessment || 'Observed concentration.',{x:MARGIN+14,width:CONTENT_W-28,size:8,max:650,lineGap:2.7});
-      y+=98;
+      const basis=t.basis==='PERIOD_COMPARISON'?'PERIOD COMPARISON':'CURRENT-PERIOD CONCENTRATION';
+      doc.fillColor(MUTED).font('Helvetica').fontSize(6.5).text(String(t.count||0)+' event object(s) | '+basis,MARGIN+14,y+32,{width:300});
+      doc.fillColor(INK).font('Helvetica').fontSize(8).text(assessment,MARGIN+14,y+48,{width:CONTENT_W-28,lineGap:2.7});
+      y+=h+10;
     }
   } else {
     y=paragraph(doc,y,'No emerging trend could be established from the current evidence set without adding unsupported inference.',{size:8.8,color:MUTED,max:800});
@@ -656,19 +693,50 @@ async function buildProfessionalPdf(publication, events, images=[]) {
 
     const colGap=14, colW=(CONTENT_W-colGap)/2;
     const leftX=MARGIN, rightX=MARGIN+colW+colGap;
+    const contextText=text(m.contextText,900);
+    const assessmentText=text(m.assessmentText,900);
+    const whyItems=m.whyText.length?m.whyText:[];
+    const uncertaintyItems=m.uncertainty.concat(m.disputed);
+    const contextH=contextText?blockHeight(doc,contextText,colW-24,'Helvetica',7.7,2.8):0;
+    const assessmentH=assessmentText?blockHeight(doc,assessmentText,colW-24,'Helvetica',7.7,2.8):0;
+    const whyH=listHeight(doc,whyItems,colW-24,7.5,3);
+    const uncertaintyH=listHeight(doc,uncertaintyItems,colW-24,7.5,3);
+    const leftH=Math.max(74,36+(contextText?contextH:0)+(assessmentText?assessmentH+26:0)+14);
+    const rightH=Math.max(74,36+(whyItems.length?whyH:0)+(uncertaintyItems.length?uncertaintyH+26:0)+14);
+    const colH=Math.max(leftH,rightH);
+    y=ensure(doc,y,colH+18);
     const colStart=y;
-    card(doc,leftX,colStart,colW,215);
-    doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('CONTEXT',leftX+12,colStart+12);
-    paragraph(doc,colStart+31,m.contextText || ('Context remains limited for '+m.headline+'. The present record supports monitoring of persistence, geographic reach and operational consequence rather than a wider inference.'),{x:leftX+12,width:colW-24,size:7.7,color:INK,max:520,lineGap:2.8});
-    doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('ANALYTICAL ASSESSMENT',leftX+12,colStart+99);
-    paragraph(doc,colStart+118,m.assessmentText || ('No additional judgement is established beyond the '+String(m.severity||'moderate').toLowerCase()+' signal recorded for '+m.headline+'.'),{x:leftX+12,width:colW-24,size:7.7,color:INK,max:430,lineGap:2.8});
-    
-    card(doc,rightX,colStart,colW,215);
-    doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('WHY IT MATTERS',rightX+12,colStart+12);
-    let ry=bullets(doc,colStart+31,m.whyText.length?m.whyText:['Monitor '+m.headline+' for persistence, spread or material operational consequence.'],{x:rightX+12,width:colW-24,size:7.5,gap:3});
-    doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('UNCERTAINTY',rightX+12,Math.max(ry+4,colStart+99));
-    bullets(doc,Math.max(ry+18,colStart+118),m.uncertainty.length?m.uncertainty.concat(m.disputed):['Confidence is '+String(Math.round(Number(m.confidence||0)))+'%; no additional material unresolved issue was recorded.'],{x:rightX+12,width:colW-24,size:7.5,gap:3,color:MUTED});
-    y=colStart+229;
+    card(doc,leftX,colStart,colW,colH);
+    card(doc,rightX,colStart,colW,colH);
+
+    let ly=colStart+12;
+    doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('CONTEXT',leftX+12,ly);
+    ly+=18;
+    if(contextText){
+      doc.fillColor(INK).font('Helvetica').fontSize(7.7).text(contextText,leftX+12,ly,{width:colW-24,lineGap:2.8});
+      ly+=contextH+13;
+    }else{
+      doc.fillColor(MUTED).font('Helvetica').fontSize(7.2).text('Context not established in the available source set.',leftX+12,ly,{width:colW-24,lineGap:2.6});
+      ly+=28;
+    }
+    doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('ANALYTICAL ASSESSMENT',leftX+12,ly);
+    ly+=18;
+    if(assessmentText)doc.fillColor(INK).font('Helvetica').fontSize(7.7).text(assessmentText,leftX+12,ly,{width:colW-24,lineGap:2.8});
+    else doc.fillColor(MUTED).font('Helvetica').fontSize(7.2).text('No standalone analytical judgement is established for this record.',leftX+12,ly,{width:colW-24,lineGap:2.6});
+
+    let ry=colStart+12;
+    doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('WHY IT MATTERS',rightX+12,ry);
+    ry+=18;
+    if(whyItems.length)ry=bullets(doc,ry,whyItems,{x:rightX+12,width:colW-24,size:7.5,gap:3});
+    else{
+      doc.fillColor(MUTED).font('Helvetica').fontSize(7.2).text('No explicit operational implication was established in the record.',rightX+12,ry,{width:colW-24,lineGap:2.6});
+      ry+=28;
+    }
+    doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('UNCERTAINTY',rightX+12,Math.max(ry+4,colStart+Math.min(colH-36,104)));
+    const uy=Math.max(ry+18,colStart+Math.min(colH-20,122));
+    if(uncertaintyItems.length)bullets(doc,uy,uncertaintyItems,{x:rightX+12,width:colW-24,size:7.5,gap:3,color:MUTED});
+    else doc.fillColor(MUTED).font('Helvetica').fontSize(7.2).text('No additional unresolved issue was recorded beyond the stated confidence and source coverage.',rightX+12,uy,{width:colW-24,lineGap:2.6});
+    y=colStart+colH+15;
 
     if(m.chronology.length){
       doc.fillColor(INK).font('Helvetica-Bold').fontSize(8).text('CHRONOLOGY',MARGIN,y);
@@ -699,6 +767,8 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     }
     if(m.researchStatus==='FALLBACK'){
       doc.fillColor(MUTED).font('Helvetica').fontSize(6.5).text('Research status: fallback. External corroboration was not established at publication time; wording is intentionally bounded by the available evidence.',MARGIN,y,{width:CONTENT_W,lineGap:2.1});
+    }else if(m.researchStatus==='RESEARCHED_LIMITED'){
+      doc.fillColor(MUTED).font('Helvetica').fontSize(6.5).text('Research status: limited source base. Web research was retrieved, but the source set does not establish multi-domain corroboration; claims remain explicitly bounded.',MARGIN,y,{width:CONTENT_W,lineGap:2.1});
     }
   }
 
@@ -741,14 +811,23 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   y=addPage(doc);
   y=sectionHeading(doc,y,'PMESI status','A domain-level view to prevent the report from becoming a collection of disconnected incidents.');
   const pm=Array.isArray(body.pmesi)?body.pmesi:[];
+  const noUpdate=[];
   for(const item of pm.slice(0,5)){
-    y=ensure(doc,y,94);
-    card(doc,MARGIN,y,CONTENT_W,82);
-    doc.fillColor(INK).font('Helvetica-Bold').fontSize(9.5).text(upper(item.domain||'DOMAIN'),MARGIN+14,y+13,{width:220});
     const st=upper(item.status || 'NO MATERIAL UPDATE');
-    badge(doc,MARGIN+CONTENT_W-123,y+10,st,109,st==='NO MATERIAL UPDATE RECORDED'?'#94a3b8':severityColor(st));
-    paragraph(doc,y+35,item.update || 'No material update recorded.',{x:MARGIN+14,width:CONTENT_W-28,size:7.8,max:430,lineGap:2.5});
-    y+=96;
+    if(!item.update && st==='NO MATERIAL UPDATE'){noUpdate.push(upper(item.domain||'DOMAIN'));continue;}
+    const update=text(item.update||'',620);
+    const h=Math.max(66,51+blockHeight(doc,update,CONTENT_W-28,'Helvetica',7.8,2.5));
+    y=ensure(doc,y,h+9);
+    card(doc,MARGIN,y,CONTENT_W,h);
+    doc.fillColor(INK).font('Helvetica-Bold').fontSize(9.5).text(upper(item.domain||'DOMAIN'),MARGIN+14,y+13,{width:220});
+    badge(doc,MARGIN+CONTENT_W-123,y+10,st,109,severityColor(st));
+    if(update)doc.fillColor(INK).font('Helvetica').fontSize(7.8).text(update,MARGIN+14,y+35,{width:CONTENT_W-28,lineGap:2.5});
+    y+=h+9;
+  }
+  if(noUpdate.length){
+    y=ensure(doc,y,34);
+    doc.fillColor(MUTED).font('Helvetica').fontSize(7.5).text('No material current-period update was mapped to: '+noUpdate.join(', ')+'.',MARGIN,y,{width:CONTENT_W,lineGap:2.4});
+    y+=25;
   }
   if(!pm.length) y=paragraph(doc,y,'PMESI mapping was not available from the current ledger.',{size:8.5,color:MUTED});
 
@@ -787,13 +866,19 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     const cw=(CONTENT_W-12)/columns;
     for(let i=0;i<mapPoints.length;i++){
       const p=mapPoints[i];
-      const col=i%2,row=Math.floor(i/2);
-      const x=MARGIN+col*(cw+12), yy=y+row*38;
-      if(yy>BOTTOM-20){break;}
+      const col=i%2;
+      const x=MARGIN+col*(cw+12);
+      if(i%2===0){
+        const rowBudget=38;
+        y=ensure(doc,y,rowBudget);
+      }
+      const yy=y;
       doc.fillColor(severityColor(p.severity)).circle(x+4,yy+4,4).fill();
       doc.fillColor(INK).font('Helvetica-Bold').fontSize(6.8).text(String(p.n).padStart(2,'0')+' | '+upper(p.severity),x+14,yy-1,{width:88});
       doc.fillColor(MUTED).font('Helvetica').fontSize(6.6).text(text(p.headline,260),x+104,yy-1,{width:cw-104});
+      if(col===1)y+=38;
     }
+    if(mapPoints.length%2===1)y+=38;
   } else {
     y=paragraph(doc,y,'No event carried usable latitude/longitude for this reporting period, so no misleading points were fabricated.',{size:7.8,color:MUTED,max:500});
   }
@@ -871,7 +956,7 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     ['GENERATOR','SONALIT PROFESSIONAL INTELLIGENCE PUBLICATION RENDERER'],
     ['RENDERER VERSION',PDF_RENDERER_VERSION],
     ['MODE',text(body.generator && body.generator.mode || 'EVIDENCE_FIRST',80)],
-    ['RESEARCH',''+String(body.deep_research && body.deep_research.incidents_researched || 0)+' researched incident(s); '+String(body.deep_research && body.deep_research.web_sources_discovered || 0)+' research source(s) recorded'],
+    ['RESEARCH',''+String(body.deep_research && body.deep_research.incidents_researched || 0)+' researched incident(s)'+(body.deep_research && body.deep_research.incidents_researched_limited ? ' ('+String(body.deep_research.incidents_researched_limited)+' limited)' : '')+'; '+String(body.deep_research && body.deep_research.web_sources_discovered || 0)+' research source(s) recorded'],
     ['STATUS',text(publication.status || 'published',50).toUpperCase()],
     ['VERSION',text(publication.version || body.version || 1,30)],
     ['PERIOD',periodLabel(publication)]

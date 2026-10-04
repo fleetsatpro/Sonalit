@@ -1,4 +1,4 @@
-const { cleanPublicationText, dedupeSentences, uniqueStrings, dedupeSources: dedupeQualitySources, auditPublicationContent } = require('./publicationQuality');
+const { cleanPublicationText, dedupeSentences, uniqueStrings, dedupeSources: dedupeQualitySources, auditPublicationContent, isRepetitiveTemplateText } = require('./publicationQuality');
 
 const COUNTRY_NAMES = { KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania', RW:'Rwanda', BI:'Burundi', SS:'South Sudan', DJ:'Djibouti', ER:'Eritrea', SD:'Sudan', CD:'DR Congo' };
 const SEVERITIES = ['critical','high','moderate','low','informational'];
@@ -88,8 +88,14 @@ function eventNarrative(e) {
   const evidence = Number(e.observation_count || (Array.isArray(e.evidence) ? e.evidence.length : 0));
   const sources = Number(e.source_count || new Set((Array.isArray(e.evidence) ? e.evidence : []).map(x => x.source_id).filter(Boolean)).size);
   const keyFacts = Array.isArray(research.confirmed_facts) && research.confirmed_facts.length ? research.confirmed_facts.map(x => clean(x,650)).filter(Boolean).slice(0,6) : (Array.isArray(e.key_facts) ? e.key_facts.map(x => clean(x,500)).filter(Boolean).slice(0,6) : []);
-  const why = Array.isArray(research.why_it_matters) && research.why_it_matters.length ? research.why_it_matters.map(x => clean(x,800)).filter(Boolean).slice(0,5) : (Array.isArray(e.why_it_matters) ? e.why_it_matters.map(x => clean(x,700)).filter(Boolean).slice(0,5) : []);
-  const caveats = Array.isArray(research.uncertainty) && research.uncertainty.length ? research.uncertainty.map(x => clean(x,800)).filter(Boolean).slice(0,5) : (Array.isArray(e.caveats) ? e.caveats.map(x => clean(x,700)).filter(Boolean).slice(0,5) : []);
+  const rawWhy = Array.isArray(research.why_it_matters) && research.why_it_matters.length
+    ? research.why_it_matters.map(x => clean(x,800)).filter(Boolean)
+    : (Array.isArray(e.why_it_matters) ? e.why_it_matters.map(x => clean(x,700)).filter(Boolean) : []);
+  const why = rawWhy.filter(x => !isRepetitiveTemplateText(x)).slice(0,5);
+  const rawCaveats = Array.isArray(research.uncertainty) && research.uncertainty.length
+    ? research.uncertainty.map(x => clean(x,800)).filter(Boolean)
+    : (Array.isArray(e.caveats) ? e.caveats.map(x => clean(x,700)).filter(Boolean) : []);
+  const caveats = rawCaveats.filter(x => !/^evidence coverage is limited to the sources linked to this event in sonalit\./i.test(x)).slice(0,5);
   const assessment = e.assessment && typeof e.assessment === 'object' ? e.assessment : {};
   const judgement = clean(research.analytical_assessment || assessment.judgement || assessment.headline || '', 1800);
   const upgradeTriggers = Array.isArray(assessment.upgrade_triggers) ? assessment.upgrade_triggers.map(x => clean(x,500)).filter(Boolean).slice(0,5) : [];
@@ -99,16 +105,10 @@ function eventNarrative(e) {
     headline: clean(e.headline || e.title || 'Security development', 220),
     what_happened: dedupeSentences(brief, new Set(), 2400),
     key_facts: uniqueStrings(keyFacts, 5),
-    assessment: dedupeSentences(judgement || (severity + ' ' + type + ' signal: ' + clean(e.headline || e.title || 'recorded development', 180) + ' in ' + region + '; confidence is ' + Math.round(Number(e.confidence || 0) || 0) + '%. Additional corroboration is required before treating the signal as evidence of broader deterioration.'), new Set(), 1000),
-    why_it_matters: why.length ? uniqueStrings(why, 4) : [
-      type === 'LOGISTICS' ? 'The principal operational concern is disruption, delay or diversion affecting movement in ' + region + '.' :
-      type === 'POLITICAL' ? 'The key watchpoint is whether activity in ' + region + ' broadens into sustained disruption or wider political tension.' :
-      type === 'NATURAL_HAZARD' ? 'The immediate concern is whether the hazard persists or expands into wider access, infrastructure or population impacts.' :
-      type === 'ECONOMIC' ? 'The operational concern is whether the reported development creates sustained pressure on commerce, supply or access.' :
-      'The main operational watchpoint is whether ' + clean(e.headline || e.title || 'the reported signal', 180) + ' recurs or spreads beyond ' + region + '.'
-    ],
+    assessment: judgement ? dedupeSentences(judgement, new Set(), 1000) : '',
+    why_it_matters: why.length ? uniqueStrings(why, 4) : [],
     caveats: uniqueStrings(caveats, 4),
-    context: dedupeSentences(clean(research.context || fallbackContext(e,type,region), 1800), new Set(), 1200),
+    context: research.context ? dedupeSentences(clean(research.context, 1800), new Set(), 1200) : '',
     reported_or_disputed: Array.isArray(research.reported_or_disputed) ? uniqueStrings(research.reported_or_disputed.map(x=>clean(x,900)), 4) : [],
     chronology: Array.isArray(research.chronology) ? research.chronology.slice(0,8).map(x=>({time:clean(x?.time,120),event:clean(x?.event,700)})).filter(x=>x.time||x.event) : [],
     research_status: research.status || null,
@@ -143,7 +143,7 @@ function pmesi(events) {
   return DOMAINS.map(domain => {
     const candidates = events.filter(e => domainFor(e) === domain);
     const top = topEvents(candidates, 1)[0];
-    if (!top) return { domain, status:'NO MATERIAL UPDATE RECORDED', update:'No event object in the current evidence ledger maps to this domain during the reporting period.', event_ids:[], confidence:null };
+    if (!top) return { domain, status:'NO MATERIAL UPDATE', update:null, event_ids:[], confidence:null };
     return {
       domain,
       status: String(top.severity || 'moderate').toUpperCase(),
@@ -154,24 +154,38 @@ function pmesi(events) {
   });
 }
 
-function emergingTrends(events) {
+function emergingTrends(events, baselineEvents=[]) {
   const counts = new Map();
   for (const e of events) {
     const key = eventType(e);
     counts.set(key, (counts.get(key) || 0) + 1);
   }
   const total = Math.max(events.length, 1);
+  const baseline = new Map();
+  for (const e of Array.isArray(baselineEvents)?baselineEvents:[]) {
+    const key = eventType(e);
+    baseline.set(key,(baseline.get(key)||0)+1);
+  }
+  const hasBaseline=baseline.size>0;
   return Array.from(counts.entries())
     .sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]))
     .slice(0,5)
-    .map(([theme,count]) => ({
-      theme,
-      count,
-      share_percent: Math.round((count/total)*100),
-      assessment: count > 1
-        ? `Observed concentration: ${theme} accounts for ${count} of ${events.length} recorded event objects.`
-        : `Observed signal: ${theme} is represented by one recorded event object.`
-    }));
+    .map(([theme,count]) => {
+      const share=Math.round((count/total)*100);
+      const previous=baseline.get(theme)||0;
+      const delta=hasBaseline ? count-previous : null;
+      return {
+        theme,
+        count,
+        share_percent:share,
+        previous_count:previous,
+        change_delta:delta,
+        basis:hasBaseline?'PERIOD_COMPARISON':'CURRENT_PERIOD_CONCENTRATION',
+        assessment:hasBaseline
+          ? `${theme} accounts for ${count} of ${events.length} recorded event objects, compared with ${previous} in the available baseline period (change: ${delta>=0?'+':''}${delta}).`
+          : `${theme} accounts for ${count} of ${events.length} recorded event objects. This is a current-period concentration, not a time-series trend.`
+      };
+    });
 }
 function keyDrivers(events) {
   const drivers = [];
@@ -279,6 +293,17 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
   const topTypes = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]).join(', ') || 'no classified threat type';
   const keyEvents = ordered.slice(0,8).map(eventNarrative);
   const top = keyEvents[0];
+  const assessmentHighlights=uniqueStrings(
+    keyEvents
+      .map(e=>e.assessment)
+      .filter(Boolean),
+    4
+  ).map((judgement,i)=>({
+    id:keyEvents.find(e=>e.assessment===judgement)?.event_id || String(i+1),
+    judgement,
+    confidence:keyEvents.find(e=>e.assessment===judgement)?.confidence ?? null,
+    headline:keyEvents.find(e=>e.assessment===judgement)?.headline || null
+  }));
   const qualityControl=auditPublicationContent(keyEvents.map(e=>({event_id:e.event_id,what_happened:e.what_happened,context:e.context,assessment:e.assessment})));
   const qualityGateNote=qualityControl.passed?'PASS':'HOLD - duplicate or boilerplate content detected; publication requires editorial correction.';
 
@@ -312,15 +337,21 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
     ? 'The recorded operating picture contains ' + events.length + ' event object(s), including ' + high + ' high/critical signal(s)' + (watchRegions.length ? ' concentrated across ' + watchRegions.join(', ') + '.' : '.')
     : 'No event objects were recorded in the current collection window; this does not establish an absence of incidents.';
   const outlook = [
-    watchRegions.length ? 'Primary watch areas: ' + watchRegions.join(', ') + '. Focus collection on recurrence, geographic spread and any change in severity.' : 'Focus collection on recurrence, geographic spread and any change in severity across the recorded event set.',
-    high ? 'Escalation would become more credible if additional independent reporting confirms the high/critical signals or shows persistence across the next reporting cycle.' : 'A stronger deterioration judgement is not warranted without new corroborated evidence or a demonstrable change in the event pattern.',
-    'A downgrade requires sustained de-escalation supported by adequate collection coverage; absence of reporting alone should not be treated as evidence of absence.'
+    watchRegions.length
+      ? 'Primary watch areas: ' + watchRegions.join(', ') + '. The next collection cycle should test recurrence, geographic spread and any change in severity.'
+      : 'No geographic concentration was established beyond the recorded event set; the next collection cycle should test for recurrence, spread and severity change.',
+    top
+      ? 'Escalation indicator: new independent reporting that confirms or materially expands ' + top.headline + '.'
+      : 'Escalation indicator: a new corroborated material event or a clear increase in severity within the next collection cycle.',
+    high
+      ? 'Downgrade indicator: sustained reduction in high/critical reporting with adequate collection coverage; absence of reporting alone is insufficient.'
+      : 'Downgrade indicator: sustained de-escalation supported by adequate collection coverage rather than a single quiet reporting interval.'
   ];
   return {
     title: name + (type === 'weekly' ? ' Weekly Insight' : type === 'monthly' ? ' Monthly Security Intelligence' : ' Daily Intelligence'),
     subtitle: 'Evidence-governed intelligence · ' + formatPeriod(start, end),
     executive_assessment: dedupeSentences(executive, new Set(), 1500),
-    assessment_highlights: keyEvents.slice(0,4).map(x => x.headline),
+    assessment_highlights: assessmentHighlights,
     threat_posture: p,
     change_analysis: {
       headline: 'CURRENT PERIOD CHANGE',
@@ -369,9 +400,10 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
     deep_research: {
       enabled: keyEvents.some(e=>Boolean(e&&e.research_status)),
       incidents_requested: keyEvents.length,
-      incidents_researched: keyEvents.filter(e=>e&&e.research_status==='researched').length,
+      incidents_researched: keyEvents.filter(e=>e&&['researched','researched_limited'].includes(e.research_status)).length,
+      incidents_researched_limited: keyEvents.filter(e=>e&&e.research_status==='researched_limited').length,
       incidents_web_researched: keyEvents.filter(e=>e&&['ai_web_search','live_web_packet'].includes(e.research_method)).length,
-      incidents_agent_researched: keyEvents.filter(e=>e&&e.research_status==='researched').length,
+      incidents_agent_researched: keyEvents.filter(e=>e&&['researched','researched_limited'].includes(e.research_status)).length,
       incidents_packet_synthesized: keyEvents.filter(e=>e&&e.research_method==='live_web_packet').length,
       incidents_fallback: keyEvents.filter(e=>e&&e.research_status==='fallback').length,
       web_sources_discovered: keyEvents.reduce((n,e)=>n+Number(e?.research_sources?.length||0),0)

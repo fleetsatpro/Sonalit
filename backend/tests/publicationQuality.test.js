@@ -53,13 +53,43 @@ describe('publication content quality controls',()=>{
 });
 
 
-test('fails the publication gate when an incident repeats prose across fields',()=>{
+test('treats intra-incident sentence reuse as an editorial diagnostic rather than a false blocking failure',()=>{
   const audit=auditPublicationContent([{
     event_id:'1',
     what_happened:'Authorities closed the corridor after an armed attack.',
     context:'Authorities closed the corridor after an armed attack.',
     assessment:'The closure may persist.'
   }]);
+  expect(audit.passed).toBe(true);
+  expect(audit.duplicate_sentence_count).toBe(0);
+  expect(audit.intra_incident_repeat_count).toBe(1);
+});
+
+test('blocks exact sentence reuse across separate incident dossiers',()=>{
+  const repeated='Authorities closed the corridor after an armed attack while emergency services responded.';
+  const audit=auditPublicationContent([
+    {event_id:'1',what_happened:repeated,context:'The incident affected access.',assessment:'Exposure increased temporarily.'},
+    {event_id:'2',what_happened:repeated,context:'The second location remained open.',assessment:'No wider impact was established.'}
+  ]);
   expect(audit.passed).toBe(false);
   expect(audit.duplicate_sentence_count).toBe(1);
+});
+
+test('flags lightly rephrased cross-incident copy when similarity is exceptionally high',()=>{
+  const audit=auditPublicationContent([
+    {event_id:'1',what_happened:'Authorities closed the affected corridor after an armed attack disrupted movement for commercial vehicles and emergency services during the morning response.',context:'The closure lasted through the morning.',assessment:'The evidence supports a short-term access risk.'},
+    {event_id:'2',what_happened:'Authorities closed the affected corridor after an armed attack disrupted movement for commercial vehicles and emergency services during the morning response temporarily.',context:'The second location remained open.',assessment:'A different assessment is required.'}
+  ]);
+  expect(audit.near_duplicate_sentence_count).toBeGreaterThan(0);
+  expect(audit.passed).toBe(false);
+});
+
+test('blocks repeated watchpoint templates across separate incidents',()=>{
+  const template='Monitor whether this incident persists or spreads beyond the reported area.';
+  const audit=auditPublicationContent([
+    {event_id:'1',what_happened:'A new development was reported in area one.',context:template,assessment:'The evidence remains limited.'},
+    {event_id:'2',what_happened:'A separate development was reported in area two.',context:template,assessment:'The evidence remains limited.'}
+  ]);
+  expect(audit.repeated_template_count).toBeGreaterThan(0);
+  expect(audit.passed).toBe(false);
 });

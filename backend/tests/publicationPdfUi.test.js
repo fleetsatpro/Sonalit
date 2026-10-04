@@ -33,4 +33,10 @@ describe('publication PDF UI controls',()=>{
     expect(service).toContain('body.pipe(res)');
     expect(service).not.toContain('res.redirect(302, url)');
   });
+  test('newsroom preview does not render null PMESI values or mislabel current-period concentrations as trends',()=>{
+    const s=fs.readFileSync(path.join(__dirname,'../../apps/web/src/pages/IntelligencePublicationDesk.tsx'),'utf8');
+    expect(s).toContain('OBSERVED CONCENTRATIONS');
+    expect(s).toContain('No material current-period update:');
+    expect(s).not.toContain('`${x.domain}: ${x.status} — ${x.update}`');
+  });
 });
