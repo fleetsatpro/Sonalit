@@ -30,6 +30,12 @@ describe('browser-native publication PDF compatibility', () => {
     expect(s).toContain('streamPublicationPdf');
   });
 
+  test('publication PDF stream handler is exported for both admin routes', () => {
+    const service = require('../src/services/intelligencePublicationPdf');
+    expect(typeof service.streamPublicationPdf).toBe('function');
+    expect(typeof service.getPublicationPdfObject).toBe('function');
+  });
+
   test('publication PDF transport remains tenant-scoped and does not expose an R2 redirect', () => {
     const s = fs.readFileSync(path.join(__dirname, '../src/services/intelligencePublicationPdf.js'), 'utf8');
     expect(s).toContain('SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2');
