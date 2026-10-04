@@ -1,4 +1,9 @@
-const {PDFParse}=require('pdf-parse');
+const fs=require('fs');
+const os=require('os');
+const pathModule=require('path');
+const {execFile}=require('child_process');
+const {promisify}=require('util');
+const execFileAsync=promisify(execFile);
 const {buildProfessionalPdf}=require('../src/services/intelligencePublicationPdfProfessional');
 
 describe('professional intelligence publication PDF renderer',()=>{
@@ -121,11 +126,28 @@ describe('professional intelligence publication PDF renderer',()=>{
     };
     const pdf=await buildProfessionalPdf(publication,[baseEvent],[]);
     expect(Buffer.isBuffer(pdf)).toBe(true);
-    const parser=new PDFParse({data:pdf});
-    const parsed=await parser.getText();
-    await parser.destroy();
-    expect(parsed.numpages).toBeLessThanOrEqual(16);
-    expect(parsed.numpages).toBeGreaterThanOrEqual(9);
+    const tmpDir=fs.mkdtempSync(pathModule.join(os.tmpdir(),'sonalit-pdf-test-'));
+    const pdfPath=pathModule.join(tmpDir,'publication.pdf');
+    fs.writeFileSync(pdfPath,pdf);
+    const script=String.raw`
+      const fs=require('fs');
+      const {PDFParse}=require('pdf-parse');
+      (async()=>{
+        const parser=new PDFParse({data:fs.readFileSync(process.argv[1])});
+        try{
+          const info=await parser.getInfo();
+          const parsed=await parser.getText();
+          process.stdout.write(JSON.stringify({pages:info.total,text:parsed.text}));
+        }finally{
+          await parser.destroy();
+        }
+      })().catch(error=>{console.error(error);process.exit(1);});
+    `;
+    const {stdout}=await execFileAsync(process.execPath,['--experimental-vm-modules','-e',script,pdfPath],{maxBuffer:8*1024*1024});
+    fs.rmSync(tmpDir,{recursive:true,force:true});
+    const parsed=JSON.parse(stdout);
+    expect(parsed.pages).toBeLessThanOrEqual(16);
+    expect(parsed.pages).toBeGreaterThanOrEqual(9);
     expect(parsed.text).not.toContain('[object Object]');
     expect(parsed.text).not.toContain('\uFFFD');
     expect(parsed.text).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/);
