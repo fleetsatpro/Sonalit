@@ -208,20 +208,22 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const priorResearch=existing[0]?.body?.deep_research||{};
   const fingerprint=publicationFingerprint(country,type,start,end,events);
   // Research exactly the bounded incident set exposed by the publication.
-  const publicationEvents=selectPublicationResearchEvents(events,10);
+  const publicationEvents=selectPublicationResearchEvents(events,8);
   const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
   const expectedResearchCount=publicationEvents.length;
   const previousResearchCount=Number(priorResearch.incidents_web_researched||0)+Number(priorResearch.incidents_fallback||0);
   const researchVersionMismatch=String(priorResearch.research_version||'')!==DEEP_RESEARCH_VERSION;
+  const pdfRendererMismatch=String(existing[0]?.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION;
   const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(previousResearchCount<expectedResearchCount||researchVersionMismatch);
   const unchanged=existing.length
     && String(priorCoverage.fingerprint||'')===fingerprint
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
     && Number(priorCoverage.source_count||-1)===sourceCount
-    && !needsDeepResearch;
+    && !needsDeepResearch
+    && !pdfRendererMismatch;
   if(existing.length&&unchanged)return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 
-  const refreshPdf=Boolean(existing.length&&(String(priorCoverage.fingerprint||'')!==fingerprint||needsDeepResearch));
+  const refreshPdf=Boolean(existing.length&&(String(priorCoverage.fingerprint||'')!==fingerprint||needsDeepResearch||pdfRendererMismatch));
 
   let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0,web_search_requests:0}};
   if(deepResearchEnabled&&expectedResearchCount>0){
@@ -262,6 +264,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       name:'SONALIT EVIDENCE-FIRST PUBLICATION FABRIC',
       provider,
       mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
+      pdf_renderer_version:PDF_RENDERER_VERSION,
       evidence_contract:evidenceContract
     },
     deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_version:DEEP_RESEARCH_VERSION,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
