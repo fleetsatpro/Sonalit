@@ -387,7 +387,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     editorial_agents:AGENT_ROLES.length,generator_mode:body.generator.mode,version
   };
 }
-async function publicationEvidenceBasis(originalEvidenceContract, research, publicationEvents){
+function publicationEvidenceBasis(originalEvidenceContract, research, publicationEvents){
   if(originalEvidenceContract){
     return {publishable:true,basis:'ORIGINAL_EVIDENCE',reportEvents:Array.isArray(publicationEvents)?publicationEvents:[],researchBackedIncidents:0,researchSourceCount:0,researchSourceDomains:0,excludedEventCount:0};
   }

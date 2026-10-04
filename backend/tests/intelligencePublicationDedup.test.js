@@ -70,3 +70,10 @@ test('publication evidence policy accepts only defensible direct non-aggregator 
   expect(builder).toContain("Publication basis satisfies the configured evidence-source threshold.");
   expect(source).toContain("const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';");
 });
+
+
+test('publication evidence basis is synchronous because it is consumed without await',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  expect(source).toContain('function publicationEvidenceBasis(originalEvidenceContract, research, publicationEvents){');
+  expect(source).not.toContain('async function publicationEvidenceBasis(originalEvidenceContract, research, publicationEvents){');
+});
