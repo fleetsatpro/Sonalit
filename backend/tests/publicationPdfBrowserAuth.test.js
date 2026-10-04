@@ -16,7 +16,7 @@ describe('browser-native publication PDF compatibility', () => {
     expect(s).toContain("httpOnly: true");
     expect(s).toContain("sameSite: 'strict'");
     expect(s).toContain("['admin', 'super_admin'].includes(user.role)");
-    expect(s).toContain("u.org_id = $2");
+    expect(s).toContain("AND org_id = $2");
   });
 
   test('admin compatibility route runs before the global bearer-only admin gate', () => {
