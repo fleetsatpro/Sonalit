@@ -256,11 +256,21 @@ async function buildPdf(publication, events, images){
       doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('ASSESSMENT',58,top+166);
       doc.fillColor(ink).font('Helvetica').fontSize(8.5).text(safe(e.assessment||'Evidence-derived assessment.'),58,top+181,{width:466,lineGap:3.5});
       doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('WHY IT MATTERS',58,top+230);
-      doc.fillColor(ink).font('Helvetica').fontSize(8.5).text(safe(e.why_it_matters||'Continued monitoring is warranted.'),58,top+245,{width:466,lineGap:3.5});
+      const why=Array.isArray(e.why_it_matters)?e.why_it_matters.join(' '):safe(e.why_it_matters||'Continued monitoring is warranted.');
+      doc.fillColor(ink).font('Helvetica').fontSize(8.3).text(why,58,top+245,{width:466,lineGap:3.2});
+      const facts=Array.isArray(e.key_facts)?e.key_facts:[];
+      if(facts.length){
+        doc.fillColor(ink).font('Helvetica-Bold').fontSize(7).text('KEY FACTS',58,top+282);
+        doc.fillColor(muted).font('Helvetica').fontSize(7.1).text(facts.slice(0,2).map(x=>'• '+safe(x)).join('  '),110,top+281,{width:405,lineGap:2.4});
+      }
       const refs=Array.isArray(e.source_refs)?e.source_refs:[];
       if(refs.length){
-        doc.fillColor(muted).font('Helvetica-Bold').fontSize(6.8).text('SOURCES',58,top+278);
-        doc.fillColor(muted).font('Helvetica').fontSize(6.8).text(refs.slice(0,2).map(r=>safe(r.source||'Source')).join(' · '),110,top+278,{width:412});
+        doc.fillColor(muted).font('Helvetica-Bold').fontSize(6.8).text('SOURCES',58,top+305);
+        doc.fillColor(muted).font('Helvetica').fontSize(6.8).text(refs.slice(0,2).map(r=>safe(r.source||'Source')).join(' · '),110,top+304,{width:412});
+      }
+      const caveats=Array.isArray(e.caveats)?e.caveats:[];
+      if(caveats.length && slot===1){
+        doc.fillColor(muted).font('Helvetica').fontSize(6.6).text('CAVEATS: '+caveats.slice(0,2).join(' '),58,top+318,{width:466,lineGap:2});
       }
       doc.y=top+h+18;
     }
