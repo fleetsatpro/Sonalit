@@ -655,15 +655,15 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     const colStart=y;
     card(doc,leftX,colStart,colW,215);
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('CONTEXT',leftX+12,colStart+12);
-    paragraph(doc,colStart+31,m.contextText || 'Context was not established by the available evidence. The absence of context is retained as an intelligence gap rather than filled with assumption.',{x:leftX+12,width:colW-24,size:7.7,color:INK,max:650,lineGap:2.8});
+    paragraph(doc,colStart+31,m.contextText || ('Context remains limited for '+m.headline+'. The present record supports monitoring of persistence, geographic reach and operational consequence rather than a wider inference.'),{x:leftX+12,width:colW-24,size:7.7,color:INK,max:520,lineGap:2.8});
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('ANALYTICAL ASSESSMENT',leftX+12,colStart+99);
-    paragraph(doc,colStart+118,m.assessmentText || 'No additional analytical judgement was established beyond the current evidence record.',{x:leftX+12,width:colW-24,size:7.7,color:INK,max:500,lineGap:2.8});
+    paragraph(doc,colStart+118,m.assessmentText || ('No additional judgement is established beyond the '+String(m.severity||'moderate').toLowerCase()+' signal recorded for '+m.headline+'.'),{x:leftX+12,width:colW-24,size:7.7,color:INK,max:430,lineGap:2.8});
     
     card(doc,rightX,colStart,colW,215);
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('WHY IT MATTERS',rightX+12,colStart+12);
-    let ry=bullets(doc,colStart+31,m.whyText.length?m.whyText:['Continued monitoring is warranted to determine persistence, spread or corroboration.'],{x:rightX+12,width:colW-24,size:7.5,gap:3});
+    let ry=bullets(doc,colStart+31,m.whyText.length?m.whyText:['Monitor '+m.headline+' for persistence, spread or material operational consequence.'],{x:rightX+12,width:colW-24,size:7.5,gap:3});
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('UNCERTAINTY',rightX+12,Math.max(ry+4,colStart+99));
-    bullets(doc,Math.max(ry+18,colStart+118),m.uncertainty.length?m.uncertainty.concat(m.disputed):['The present evidence base does not establish all material details.'],{x:rightX+12,width:colW-24,size:7.5,gap:3,color:MUTED});
+    bullets(doc,Math.max(ry+18,colStart+118),m.uncertainty.length?m.uncertainty.concat(m.disputed):['Confidence is '+String(Math.round(Number(m.confidence||0)))+'%; no additional material unresolved issue was recorded.'],{x:rightX+12,width:colW-24,size:7.5,gap:3,color:MUTED});
     y=colStart+229;
 
     if(m.chronology.length){
