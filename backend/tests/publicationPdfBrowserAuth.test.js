@@ -19,6 +19,12 @@ describe('browser-native publication PDF compatibility', () => {
     expect(s).toContain("AND org_id = $2");
   });
 
+  test('Intelligence publication feed mints the PDF capability used by the legacy browser links', () => {
+    const s = fs.readFileSync(path.join(__dirname, '../src/routes/intelligenceOperations.js'), 'utf8');
+    expect(s).toContain("router.get('/publications'");
+    expect(s).toContain('issuePublicationPdfCapability(res,req.user)');
+  });
+
   test('admin compatibility route runs before the global bearer-only admin gate', () => {
     const s = fs.readFileSync(path.join(__dirname, '../src/routes/admin.js'), 'utf8');
     const route = s.indexOf("router.get('/communications/publications/:id/pdf'");
