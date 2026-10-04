@@ -41,3 +41,10 @@ test('AI editorial board is optional resilience enrichment, not a publication bl
   expect(source).toContain('const aiBoardGate=aiBoardRequired ? boardPublishable : true;');
   expect(source).toContain('deterministic evidence product remains eligible');
 });
+
+
+test('publication agent imports the editorial quality audit before invoking it',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  expect(source).toContain("const { auditPublicationContent } = require('./publicationQuality');");
+  expect(source).toContain('const finalQuality=auditPublicationContent(');
+});
