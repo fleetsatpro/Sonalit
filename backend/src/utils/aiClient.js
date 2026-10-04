@@ -19,6 +19,12 @@ const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
 const logger = require('./logger');
 
+// Keep one bounded timeout across every provider. The intelligence scheduler
+// owns retries/circuit breaking, so SDK-level retries are disabled to avoid
+// turning one degraded provider into multi-minute publication stalls.
+const AI_REQUEST_TIMEOUT_MS = Math.max(5000, Math.min(120000, Number(process.env.AI_REQUEST_TIMEOUT_MS || 30000)));
+const AI_SDK_OPTIONS = { timeout: AI_REQUEST_TIMEOUT_MS, maxRetries: 0 };
+
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const GROQ_MODEL_2 = process.env.GROQ_MODEL_2 || 'openai/gpt-oss-20b';
@@ -75,19 +81,19 @@ function providerCapabilities() {
 }
 
 function getAnthropicClient() {
-  if (!clients.anthropic) clients.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if (!clients.anthropic) clients.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, ...AI_SDK_OPTIONS });
   return clients.anthropic;
 }
 function getGroqClient() {
-  if (!clients.groq) clients.groq = new OpenAI({ apiKey:process.env.GROQ_API_KEY, baseURL:'https://api.groq.com/openai/v1' });
+  if (!clients.groq) clients.groq = new OpenAI({ apiKey:process.env.GROQ_API_KEY, baseURL:'https://api.groq.com/openai/v1', ...AI_SDK_OPTIONS });
   return clients.groq;
 }
 function getDirectOpenAIClient() {
-  if (!clients.openai) clients.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  if (!clients.openai) clients.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, ...AI_SDK_OPTIONS });
   return clients.openai;
 }
 function getMistralClient() {
-  if (!clients.mistral) clients.mistral = new OpenAI({ apiKey: process.env.MISTRAL_API_KEY, baseURL: 'https://api.mistral.ai/v1' });
+  if (!clients.mistral) clients.mistral = new OpenAI({ apiKey: process.env.MISTRAL_API_KEY, baseURL: 'https://api.mistral.ai/v1', ...AI_SDK_OPTIONS });
   return clients.mistral;
 }
 function getOpenAICompatClient(slotDef) {
@@ -95,6 +101,7 @@ function getOpenAICompatClient(slotDef) {
   if (!clients[key]) clients[key] = new OpenAI({
     apiKey: process.env[slotDef.key],
     baseURL: process.env[slotDef.base],
+    ...AI_SDK_OPTIONS,
   });
   return clients[key];
 }

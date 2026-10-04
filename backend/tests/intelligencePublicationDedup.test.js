@@ -48,3 +48,11 @@ test('publication agent imports the editorial quality audit before invoking it',
   expect(source).toContain("const { auditPublicationContent } = require('./publicationQuality');");
   expect(source).toContain('const finalQuality=auditPublicationContent(');
 });
+
+
+test('AI provider clients have bounded request time and no nested SDK retries',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
+  expect(source).toContain('AI_REQUEST_TIMEOUT_MS');
+  expect(source).toContain('maxRetries: 0');
+  expect(source).toContain('timeout: AI_REQUEST_TIMEOUT_MS');
+});
