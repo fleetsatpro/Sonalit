@@ -226,7 +226,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     generator:{
       name:'SONALIT EVIDENCE-FIRST PUBLICATION FABRIC',
       provider,
-      mode:provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED',
+      mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
       evidence_contract:evidenceContract
     },
     deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary},
