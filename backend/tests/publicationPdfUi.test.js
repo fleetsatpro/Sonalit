@@ -2,15 +2,26 @@ const fs=require('fs');
 const path=require('path');
 
 describe('publication PDF UI controls',()=>{
-  test('communications publication dossier exposes preview and download actions',()=>{
+  test('communications publication dossier retrieves PDFs through the authenticated API client',()=>{
     const s=fs.readFileSync(path.join(__dirname,'../../apps/web/src/pages/CommunicationsPublications.jsx'),'utf8');
-    expect(s).toContain('pdfDownload');
+    expect(s).toContain('openPublicationPdf');
+    expect(s).toContain('Preview PDF');
     expect(s).toContain('Download PDF');
-    expect(s).toContain('download=1');
+    expect(s).not.toContain('href={pdfPreview}');
+    expect(s).not.toContain('href={pdfDownload}');
   });
-  test('intelligence desk exposes preview and download actions',()=>{
+  test('intelligence desk retrieves PDFs through the authenticated API client',()=>{
     const s=fs.readFileSync(path.join(__dirname,'../../apps/web/src/pages/IntelligencePublicationDesk.tsx'),'utf8');
+    expect(s).toContain('openPublicationPdf');
+    expect(s).toContain('PREVIEW PDF');
     expect(s).toContain('DOWNLOAD PDF');
-    expect(s).toContain('download=1');
+    expect(s).not.toContain('href={apiBase');
+  });
+  test('shared publication PDF client uses an authenticated blob request',()=>{
+    const s=fs.readFileSync(path.join(__dirname,'../../apps/web/src/lib/publicationPdf.ts'),'utf8');
+    expect(s).toContain("api.get(");
+    expect(s).toContain("responseType: 'blob'");
+    expect(s).toContain("/admin/communications/publications/");
+    expect(s).toContain('URL.createObjectURL');
   });
 });
