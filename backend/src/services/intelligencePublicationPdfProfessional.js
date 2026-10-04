@@ -40,7 +40,7 @@ const boundaryCache = new Map();
 
 function text(v, max=5000) {
   return String(v == null ? '' : v)
-    .replace(/\u0000-\u0008|\u000B|\u000C|\u000E-\u001F|\u007F-\u009F/g, ' ')
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
     .replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')
     .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
     .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
