@@ -191,12 +191,16 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0}};
   if(deepResearchEnabled && events.length){
     try{
-      incidentResearch=await researchPublicationIncidents(events,{country});
+      incidentResearch=await researchPublicationIncidents(publicationEvents,{country});
       logger.info(`Intelligence publication research ${country}/${type}: requested=${incidentResearch.summary.requested} researched=${incidentResearch.summary.researched} fallback=${incidentResearch.summary.fallback} failed=${incidentResearch.summary.failed}`);
     }catch(error){
       logger.warn(`Intelligence publication research failed ${country}/${type}: ${error.message}`);
     }
   }
+  // Research the same bounded incident set that the publication actually exposes.
+  // This guarantees every published incident is researched without expanding the
+  // web-research swarm to the entire raw event query window.
+  const publicationEvents=events.slice(0,8);
   const enrichedEvents=events.map(e=>({...e,research:incidentResearch.byEvent[String(e.id)]||null}));
   const deterministic=buildEvidencePublication({country,type,start,end,events:enrichedEvents,evidenceCount,sourceCount,evidenceContract});
   let finalBody=deterministic;
