@@ -862,8 +862,9 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     doc.switchToPage(range.start+i);
     doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(6.6).text('SONALIT  /  INTELLIGENCE & SECURITY OPERATIONS',MARGIN,25,{width:340,characterSpacing:.8});
     drawRule(doc,37,MARGIN,CONTENT_W,LINE);
-    doc.fillColor(MUTED).font('Helvetica').fontSize(6.4).text('Evidence-governed decision support | Confidential / controlled distribution',MARGIN,PAGE_H-36,{width:350});
-    doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(6.4).text(String(i+1).padStart(2,'0'),PAGE_W-MARGIN-28,PAGE_H-36,{width:28,align:'right'});
+    const footerY=PAGE_H-MARGIN-10;
+    doc.fillColor(MUTED).font('Helvetica').fontSize(6.4).text('Evidence-governed decision support | Confidential / controlled distribution',MARGIN,footerY,{width:350});
+    doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(6.4).text(String(i+1).padStart(2,'0'),PAGE_W-MARGIN-28,footerY,{width:28,align:'right'});
   }
 
   doc.end();
