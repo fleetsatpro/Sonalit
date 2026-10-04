@@ -236,7 +236,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
       evidence_contract:evidenceContract
     },
-    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.researched_packet>0?'live_web_packet':'evidence_only')},
+    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
     version
   };
   let publicationId=null;
