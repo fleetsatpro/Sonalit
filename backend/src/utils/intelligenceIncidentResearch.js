@@ -175,7 +175,8 @@ async function researchBatch(events,{country,region}={}){
       system:'You are a multi-incident web-grounded research agent. Produce publication-safe JSON array only.',
       messages:[{role:'user',content:prompt}]
     });
-    const raw=Array.isArray(response&&response.content)?response.content.filter(x=>x&&x.type==='text').map(x=>x.text).join('\n'):'';
+    const content=Array.isArray(response&&response.content)?response.content:[];
+    const raw=content.filter(x=>x&&x.type==='text').map(x=>x.text).join('\n');
     let parsed=null;
     try{parsed=JSON.parse(raw)}catch(_){
       const a=raw.indexOf('['),b=raw.lastIndexOf(']');
