@@ -554,12 +554,13 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
   }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3 WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
 }
 
-async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId){
+async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId,{download=false}={}){
   const {rows:[row]}=await query('SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2 AND status=\'published\' AND pdf_status=\'ready\' LIMIT 1',[publicationId,orgId]);
   if(!row?.pdf_key)throw new Error('Publication PDF is not ready');
   const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured');
   const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
-  return getSignedUrl(r2,new GetObjectCommand({Bucket:bucket,Key:row.pdf_key}),{expiresIn:300});
+  const filename=('sonalit-'+String(publicationId)+'.pdf').replace(/[^A-Za-z0-9._-]/g,'-');
+  return getSignedUrl(r2,new GetObjectCommand({Bucket:bucket,Key:row.pdf_key,...(download?{ResponseContentType:'application/pdf',ResponseContentDisposition:`attachment; filename="${filename}"`}: {})}),{expiresIn:300});
 }
 
 async function generateMissingPublicationPdfsUnsafe(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes')) ORDER BY published_at DESC NULLS LAST LIMIT $2",[orgId,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdfUnsafe(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
@@ -571,8 +572,8 @@ async function renderAndStorePublicationPdf(orgId, publicationId){
   return runWithOrgContext(orgId, () => renderAndStorePublicationPdfUnsafe(orgId, publicationId));
 }
 
-async function getPublicationPdfAccessUrl(orgId, publicationId){
-  return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId));
+async function getPublicationPdfAccessUrl(orgId, publicationId, options={}){
+  return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId, options));
 }
 
 module.exports={renderAndStorePublicationPdf,generateMissingPublicationPdfs,getPublicationPdfAccessUrl};
