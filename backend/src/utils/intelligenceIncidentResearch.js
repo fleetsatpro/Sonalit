@@ -186,8 +186,12 @@ async function researchBatch(events,{country,region}={}){
     if(!Array.isArray(parsed))throw new Error('research batch agent returned invalid JSON array');
     return packets.map((packet,i)=>{
       const source=parsed.find(x=>String(x&&x.incident_id)===String(events[i].id));
-      if(!source)return{packet,agent:fallbackResearch(events[i],packet),error:'missing incident research result'};
-      return{packet,agent:{...source,status:'researched',provider:response&&response._provider||'unknown',sources:Array.isArray(source.sources)?source.sources.slice(0,10):[]},webSearchRequests};
+      const normalizedSources=Array.isArray(source?.sources)?source.sources.filter(x=>safeUrl(x?.url)).slice(0,10):[];
+      const narrative=clean(source?.narrative||'',3000);
+      if(!source||narrative.length<220||normalizedSources.length===0){
+        return{packet,agent:fallbackResearch(events[i],packet),error:'research result failed substantive/source validation',webSearchRequests};
+      }
+      return{packet,agent:{...source,status:'researched',provider:response&&response._provider||'unknown',sources:normalizedSources},webSearchRequests};
     });
   }catch(error){
     logger.warn('Incident research batch agent failed: '+error.message);
