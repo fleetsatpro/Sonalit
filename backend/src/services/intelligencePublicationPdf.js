@@ -5,7 +5,7 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { query } = require('../config/database');
 const { runWithOrgContext } = require('../utils/tenantContext');
 const logger = require('../utils/logger');
-const { buildProfessionalPdf } = require('./intelligencePublicationPdfProfessional');
+const { buildProfessionalPdf, PDF_RENDERER_VERSION } = require('./intelligencePublicationPdfProfessional');
 
 const COUNTRY_NAMES = { KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania', RW:'Rwanda', BI:'Burundi', SS:'South Sudan', DJ:'Djibouti', ER:'Eritrea', SD:'Sudan', CD:'DR Congo' };
 const BOUNDS = {
@@ -606,7 +606,7 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
     const researchSources=(Array.isArray(publication.body?.incident_dossiers)?publication.body.incident_dossiers:[]).flatMap(e=>Array.isArray(e?.research_sources)?e.research_sources:[]);
     const images=await fetchImages(observationRows,researchSources); const pdf=await buildProfessionalPdf(publication,events,images);
     const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured'); const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
-    const safe=`${publication.country_code}-${publication.publication_type}-${new Date(publication.period_start).toISOString().slice(0,10)}`.replace(/[^A-Z0-9._-]/gi,'-');const key=`intelligence-publications/${orgId}/${safe}-v${publication.pdf_version||1}.pdf`;
+    const safe=`${publication.country_code}-${publication.publication_type}-${new Date(publication.period_start).toISOString().slice(0,10)}`.replace(/[^A-Z0-9._-]/gi,'-');const key=`intelligence-publications/${orgId}/${safe}-r${PDF_RENDERER_VERSION}-v${publication.pdf_version||1}.pdf`;
     await r2.send(new PutObjectCommand({Bucket:bucket,Key:key,Body:pdf,ContentType:'application/pdf',CacheControl:'private, max-age=0'}));
     const publicBase=(process.env.R2_PUBLIC_URL||'').replace(/\/$/,''); const pdfUrl=publicBase?`${publicBase}/${key}`:null;
     await query("UPDATE intel_publications SET pdf_status='ready',pdf_key=$3,pdf_url=$4,pdf_generated_at=NOW(),pdf_error=NULL,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,key,pdfUrl]);
@@ -616,15 +616,16 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
 }
 
 async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId,{download=false}={}){
-  const {rows:[row]}=await query('SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2 AND status=\'published\' AND pdf_status=\'ready\' LIMIT 1',[publicationId,orgId]);
+  const {rows:[row]}=await query('SELECT pdf_key,body FROM intel_publications WHERE id=$1 AND org_id=$2 AND status=\'published\' AND pdf_status=\'ready\' LIMIT 1',[publicationId,orgId]);
   if(!row?.pdf_key)throw new Error('Publication PDF is not ready');
+  if(String(row.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION)throw Object.assign(new Error('Publication PDF is stale and awaiting regeneration'),{code:'publication_pdf_stale'});
   const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured');
   const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
   const filename=('sonalit-'+String(publicationId)+'.pdf').replace(/[^A-Za-z0-9._-]/g,'-');
   return getSignedUrl(r2,new GetObjectCommand({Bucket:bucket,Key:row.pdf_key,...(download?{ResponseContentType:'application/pdf',ResponseContentDisposition:`attachment; filename="${filename}"`}: {})}),{expiresIn:300});
 }
 
-async function generateMissingPublicationPdfsUnsafe(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes')) ORDER BY published_at DESC NULLS LAST LIMIT $2",[orgId,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdfUnsafe(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
+async function generateMissingPublicationPdfsUnsafe(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes') OR (pdf_status='ready' AND COALESCE(body->'generator'->>'pdf_renderer_version','') <> $2)) ORDER BY published_at DESC NULLS LAST LIMIT $3",[orgId,PDF_RENDERER_VERSION,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdfUnsafe(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
 async function generateMissingPublicationPdfs(orgId,limit=3){
   return runWithOrgContext(orgId, () => generateMissingPublicationPdfsUnsafe(orgId, limit));
 }
@@ -660,8 +661,9 @@ async function streamPublicationPdf(orgId, publicationId, req, res){
 }
 
 async function getPublicationPdfObjectUnsafe(orgId,publicationId){
-  const {rows:[row]}=await query("SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2 AND status='published' AND pdf_status='ready' LIMIT 1",[publicationId,orgId]);
+  const {rows:[row]}=await query("SELECT pdf_key,body FROM intel_publications WHERE id=$1 AND org_id=$2 AND status='published' AND pdf_status='ready' LIMIT 1",[publicationId,orgId]);
   if(!row?.pdf_key)throw new Error('Publication PDF is not ready');
+  if(String(row.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION)throw Object.assign(new Error('Publication PDF is stale and awaiting regeneration'),{code:'publication_pdf_stale'});
   const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured');
   const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
   try{
