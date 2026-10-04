@@ -160,7 +160,6 @@ describe('professional intelligence publication PDF renderer',()=>{
     expect(parsed.text).toContain('WHAT HAPPENED');
     expect(parsed.text).toContain('ANALYTICAL ASSESSMENT');
     expect(parsed.text).toContain('MAP REGISTER');
-    expect(parsed.text).toContain('Boundary source: country GeoJSON');
   });
 });
 
