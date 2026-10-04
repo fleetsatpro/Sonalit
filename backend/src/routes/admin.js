@@ -7,6 +7,17 @@ const crypto = require('crypto');
 const { buildManifestWorkbook, isActiveRow } = require('../services/email/clientPulseWorkbook.service');
 const { queueClientPulseEmail } = require('../services/email/email.service');
 const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require('../services/email/scopedClientPulse.service');
+const { authenticatePublicationPdfCapability } = require('../middleware/publicationPdfCapability');
+const { streamPublicationPdf } = require('../services/intelligencePublicationPdf');
+
+// Compatibility route for the production UI's browser-native PDF links.
+// It accepts either the normal bearer token or the narrowly-scoped capability
+// cookie minted by the authenticated publication ledger request.
+router.get('/communications/publications/:id/pdf', authenticatePublicationPdfCapability, async (req, res, next) => {
+  try {
+    await streamPublicationPdf(req.user.org_id, String(req.params.id), req, res);
+  } catch (err) { next(err); }
+});
 
 router.use(authenticate, authorize('admin', 'super_admin'), attachOrgDb);
 router.use('/settings', require('./clientPulseRecipients'));
