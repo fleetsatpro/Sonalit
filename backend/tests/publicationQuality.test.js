@@ -4,7 +4,8 @@ const {
   uniqueStrings,
   dedupeSources,
   isAggregatorDomain,
-  repetitionRatio
+  repetitionRatio,
+  auditPublicationContent
 }=require('../src/utils/publicationQuality');
 
 describe('publication content quality controls',()=>{
@@ -48,4 +49,16 @@ describe('publication content quality controls',()=>{
       'The affected corridor supports commercial movement.'
     ])).toEqual(['The affected corridor supports commercial movement.']);
   });
+});
+
+
+test('fails the publication gate when an incident repeats prose across fields',()=>{
+  const audit=auditPublicationContent([{
+    event_id:'1',
+    what_happened:'Authorities closed the corridor after an armed attack.',
+    context:'Authorities closed the corridor after an armed attack.',
+    assessment:'The closure may persist.'
+  }]);
+  expect(audit.passed).toBe(false);
+  expect(audit.duplicate_sentence_count).toBe(1);
 });
