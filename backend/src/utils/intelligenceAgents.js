@@ -118,8 +118,13 @@ async function synthesizeEvents(orgId){
 
 function publicationFingerprint(country,type,start,end,events){
   const stableEvents=events.map(e=>({
-    id:e.id,updated_at:e.updated_at,last_seen_at:e.last_seen_at,severity:e.severity,confidence:e.confidence,
-    observation_count:e.observation_count,source_count:e.source_count,
+    id:e.id,
+    headline:e.headline,brief:e.brief,severity:e.severity,confidence:e.confidence,
+    intelligence_type:e.intelligence_type,region:e.region,risk_velocity:e.risk_velocity,
+    occurred_from:e.occurred_from,occurred_to:e.occurred_to,
+    key_facts:e.key_facts||[],why_it_matters:e.why_it_matters||[],caveats:e.caveats||[],
+    assessment:e.assessment||{},
+    synthesis_confidence:e.synthesis_confidence,
     evidence:(Array.isArray(e.evidence)?e.evidence:[]).map(o=>({id:o.id,source_id:o.source_id,observed_at:o.observed_at,published_at:o.published_at,credibility:o.credibility,title:o.title,url:o.url}))
       .sort((a,b)=>String(a.id).localeCompare(String(b.id)))
   })).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
