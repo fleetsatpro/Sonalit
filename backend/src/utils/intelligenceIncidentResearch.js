@@ -145,7 +145,12 @@ function packetNarrative(event,packet){
   const facts=Array.isArray(event?.key_facts)?event.key_facts.map(x=>clean(x,520)).filter(Boolean).slice(0,4):[];
   const caveats=Array.isArray(event?.caveats)?event.caveats.map(x=>clean(x,620)).filter(Boolean).slice(0,3):[];
   const sourceNames=usable.map(x=>clean(x?.source||x?.domain||'',120)).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).slice(0,4);
-  const sourceSnippets=pages.map(p=>clean(p.description||p.text||'',700)).filter(Boolean).slice(0,2);
+  const rawSnippets=pages.map(p=>clean(p.description||p.text||'',900))
+    .concat(discoveries.map(x=>clean(x.snippet||'',900)));
+  const sourceSnippets=rawSnippets
+    .filter(Boolean)
+    .filter(v=>!/comprehensive up-to-date news coverage, aggregated from sources/i.test(v))
+    .slice(0,3);
   const paragraphs=[];
   paragraphs.push(
     headline+' was reported in '+place+'. '+
