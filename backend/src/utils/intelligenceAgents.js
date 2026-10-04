@@ -124,11 +124,16 @@ async function publicationForCountry(orgId,country,type='daily'){
     start=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1));end=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+1,1));
   }
   const {rows:existing}=await query(
-    \`SELECT id,status,version FROM intel_publications
+    \`SELECT id,status,version,body,pdf_status,pdf_version FROM intel_publications
       WHERE org_id=$1 AND country_code=$2 AND publication_type=$3 AND period_start=$4 AND period_end=$5
       ORDER BY version DESC LIMIT 1\`,[orgId,country,type,start,end]
   );
-  if(existing.length && existing[0].status==='published') return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:'published',version:existing[0].version||1};
+  const periodClosed=end.getTime()<=now.getTime();
+  const priorCoverage=existing[0]?.body?.collection_coverage||{};
+  const unchanged=existing.length && existing[0].status==='published'
+    && Number(priorCoverage.evidence_count||-1)===evidenceCount
+    && Number(priorCoverage.source_count||-1)===sourceCount;
+  if(existing.length && existing[0].status==='published' && (periodClosed || unchanged)) return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:'published',version:existing[0].version||1};
 
   const {rows:events}=await query(
     \`SELECT
@@ -159,6 +164,8 @@ async function publicationForCountry(orgId,country,type='daily'){
   for(const e of events) for(const obs of Array.isArray(e.evidence)?e.evidence:[]) if(obs&&obs.source_id) sourceIds.add(String(obs.source_id));
   const sourceCount=sourceIds.size;
   const evidenceContract=evidenceCount>=3&&sourceCount>=2;
+
+  const refreshPdf=Boolean(existing.length && (Number(priorCoverage.evidence_count||-1)!==evidenceCount || Number(priorCoverage.source_count||-1)!==sourceCount));
 
   const deterministic=buildEvidencePublication({country,type,start,end,events,evidenceCount,sourceCount,evidenceContract});
   let finalBody=deterministic;
@@ -203,6 +210,12 @@ async function publicationForCountry(orgId,country,type='daily'){
        events.length?Math.round(events.reduce((n,e)=>n+Number(e.confidence||0),0)/events.length):0,version]
     );
     publicationId=updated.rows[0]?.id||existing[0].id;
+    if(refreshPdf && status==='published'){
+      await query(
+        "UPDATE intel_publications SET pdf_status='not_requested',pdf_key=NULL,pdf_url=NULL,pdf_generated_at=NULL,pdf_error=NULL,pdf_version=COALESCE(pdf_version,1)+1,updated_at=NOW() WHERE id=$1 AND org_id=$2",
+        [publicationId,orgId]
+      );
+    }
   } else {
     const inserted=await query(
       \`INSERT INTO intel_publications
