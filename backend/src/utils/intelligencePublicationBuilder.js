@@ -113,7 +113,7 @@ function eventNarrative(e) {
           : null;
         return hit?.image_url || null;
       })()
-    })) : [],
+    })), 8) : [],
     search_notes: clean(research.search_notes || '', 1200),
     outlook_triggers: { upgrade: upgradeTriggers, downgrade: downgradeTriggers },
     synthesis: { confidence: Number(e.synthesis_confidence || e.confidence || 0) || 0, provider: e.synthesis_provider || null },
@@ -296,6 +296,9 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
         'Use the current evidence set as a decision-support input rather than a complete picture of all incidents.'
       ];
   const watchRegions = Array.from(new Set(events.map(e=>clean(e.region||'',80).toUpperCase()).filter(Boolean))).slice(0,3);
+  const operatingSummary = events.length
+    ? 'The recorded operating picture contains ' + events.length + ' event object(s), including ' + high + ' high/critical signal(s)' + (watchRegions.length ? ' concentrated across ' + watchRegions.join(', ') + '.' : '.')
+    : 'No event objects were recorded in the current collection window; this does not establish an absence of incidents.';
   const outlook = [
     watchRegions.length ? 'Primary watch areas: ' + watchRegions.join(', ') + '. Focus collection on recurrence, geographic spread and any change in severity.' : 'Focus collection on recurrence, geographic spread and any change in severity across the recorded event set.',
     high ? 'Escalation would become more credible if additional independent reporting confirms the high/critical signals or shows persistence across the next reporting cycle.' : 'A stronger deterioration judgement is not warranted without new corroborated evidence or a demonstrable change in the event pattern.',
@@ -323,7 +326,7 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
     })),
     incident_dossiers: keyEvents,
     security_environment: {
-      summary: executive,
+      summary: operatingSummary,
       highest_priority: top ? top.headline : 'No material event recorded.',
       severity_distribution: p.counts,
     },
