@@ -3,7 +3,7 @@ const SEVERITIES = ['critical','high','moderate','low','informational'];
 const DOMAINS = ['POLITICAL','MILITARY','ECONOMY','SOCIAL','INFORMATION & MEDIA'];
 
 function clean(v, n=1200) {
-  return String(v == null ? '' : v).replace(/\\s+/g, ' ').trim().slice(0, n);
+  return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
 }
 function severityScore(v) {
   return { critical:4, high:3, moderate:2, low:1, informational:0 }[String(v || '').toLowerCase()] == null
