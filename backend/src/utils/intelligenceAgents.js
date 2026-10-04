@@ -230,3 +230,60 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const status=(evidenceContract&&(!aiRequired||boardPublishable))?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
+    ...finalBody,title,subtitle,executive_assessment:executive,key_events:events,
+    editorial_board:{agents:AGENT_ROLES.map(a=>a.id),board,visual_plan:visual,graphics_plan:graphics,provider},
+    generator:{
+      name:'SONALIT EVIDENCE-FIRST PUBLICATION FABRIC',
+      provider,
+      mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
+      evidence_contract:evidenceContract
+    },
+    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_version:DEEP_RESEARCH_VERSION,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
+    version
+  };
+  let publicationId=null;
+  if(existing.length){
+    const updated=await query(
+      `UPDATE intel_publications
+       SET title=$3,subtitle=$4,status=$5,period_start=$6,period_end=$7,executive_assessment=$8,body=$9::jsonb,evidence=$10::jsonb,confidence=$11,version=$12,published_at=CASE WHEN $5='published' THEN COALESCE(published_at,NOW()) ELSE NULL END,updated_at=NOW()
+       WHERE id=$1 AND org_id=$2 RETURNING id,status,version`,
+      [existing[0].id,orgId,title,subtitle,status,start,end,executive,JSON.stringify(body),JSON.stringify(events.map(e=>e.id)),
+       events.length?Math.round(events.reduce((n,e)=>n+Number(e.confidence||0),0)/events.length):0,version]
+    );
+    publicationId=updated.rows[0]?.id||existing[0].id;
+    if(refreshPdf && status==='published'){
+      await query(
+        "UPDATE intel_publications SET pdf_status='not_requested',pdf_key=NULL,pdf_url=NULL,pdf_generated_at=NULL,pdf_error=NULL,pdf_version=COALESCE(pdf_version,1)+1,updated_at=NOW() WHERE id=$1 AND org_id=$2",
+        [publicationId,orgId]
+      );
+    }
+  } else {
+    const inserted=await query(
+      `INSERT INTO intel_publications
+       (org_id,country_code,publication_type,title,subtitle,status,period_start,period_end,executive_assessment,body,evidence,confidence,published_at,version)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13,$14)
+       RETURNING id,status,version`,
+      [orgId,country,type,title,subtitle,status,start,end,executive,JSON.stringify(body),JSON.stringify(events.map(e=>e.id)),
+       events.length?Math.round(events.reduce((n,e)=>n+Number(e.confidence||0),0)/events.length):0,status==='published'?new Date():null,version]
+    );
+    publicationId=inserted.rows[0]?.id||null;
+  }
+  return{
+    status:'created',publication_id:publicationId,publication_status:status,
+    evidence_contract:evidenceContract,evidence_count:evidenceCount,source_count:sourceCount,
+    editorial_agents:AGENT_ROLES.length,generator_mode:body.generator.mode,version
+  };
+}
+async function publicationForCountry(orgId,country,type='daily'){
+  return withOrg(orgId, async client => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`sonalit:intelligence:publication:${orgId}:${country}:${type}`]);
+    return publicationForCountryUnsafe(orgId,country,type);
+  });
+}
+
+async function publishDue(orgId){const results=[];for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'daily')});}catch(error){results.push({country,status:'failed',error:error.message});}}
+ const d=new Date();if(d.getUTCDay()===1){for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'weekly')});}catch(error){results.push({country,status:'failed',error:error.message});}}}
+ if(d.getUTCDate()===1){for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'monthly')});}catch(error){results.push({country,status:'failed',error:error.message});}}}
+ return{processed:results.length,results};}
+async function runIntelligenceAgents(){const {rows:orgs}=await globalQuery(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const output=[];for(const {org_id} of orgs){try{const result=await runWithOrgContext(org_id,async()=>{const translation=await translateQueue(org_id);const synthesis=await synthesizeEvents(org_id);const publications=await publishDue(org_id);return{translation,synthesis,publications};});output.push({org_id,...result});}catch(error){output.push({org_id,error:error.message});logger.warn(`Intelligence agents org=${org_id} failed: ${error.message}`);}}return output;}
+module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,evidenceDerivedSynthesis};
