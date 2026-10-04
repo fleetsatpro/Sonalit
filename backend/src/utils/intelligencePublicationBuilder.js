@@ -15,6 +15,16 @@ function severityScore(v) {
 function eventType(e) {
   return String(e && e.intelligence_type || 'OTHER').toUpperCase();
 }
+
+function fallbackContext(e,type,region){
+  const headline=clean(e?.headline||e?.title||'the recorded development',180);
+  if(type==='LOGISTICS')return 'Operational context: '+headline+' is recorded in '+region+'. The key question is whether the disruption affects continuity, routing or delivery performance beyond the reported location.';
+  if(type==='POLITICAL')return 'Political context: '+headline+' is recorded in '+region+'. The key question is whether the activity remains localized or develops into sustained disruption, institutional friction or wider mobilisation.';
+  if(type==='NATURAL_HAZARD')return 'Hazard context: '+headline+' is recorded in '+region+'. The key question is whether conditions persist or expand into access, infrastructure, population or service impacts.';
+  if(type==='ECONOMIC')return 'Economic context: '+headline+' is recorded in '+region+'. The key question is whether the reported development creates sustained pressure on commerce, supply, access or operating costs.';
+  if(type==='HEALTH')return 'Health context: '+headline+' is recorded in '+region+'. The key question is whether the reported condition persists, spreads or creates material access and continuity consequences.';
+  return 'Security context: '+headline+' is recorded in '+region+'. The key question is whether the signal remains isolated or is corroborated by recurrence, wider geographic reach or a material change in operating conditions.';
+}
 function domainFor(e) {
   const t = eventType(e);
   if (t === 'POLITICAL') return 'POLITICAL';
@@ -89,16 +99,16 @@ function eventNarrative(e) {
     headline: clean(e.headline || e.title || 'Security development', 220),
     what_happened: brief,
     key_facts: uniqueStrings(keyFacts, 5),
-    assessment: judgement || (severity + ' ' + type + ' signal in ' + region + '; confidence is ' + Math.round(Number(e.confidence || 0) || 0) + '%. Additional corroboration is required before treating the signal as evidence of broader deterioration.'),
+    assessment: judgement || (severity + ' ' + type + ' signal: ' + clean(e.headline || e.title || 'recorded development', 180) + ' in ' + region + '; confidence is ' + Math.round(Number(e.confidence || 0) || 0) + '%. Additional corroboration is required before treating the signal as evidence of broader deterioration.'),
     why_it_matters: why.length ? uniqueStrings(why, 4) : [
       type === 'LOGISTICS' ? 'The principal operational concern is disruption, delay or diversion affecting movement in ' + region + '.' :
       type === 'POLITICAL' ? 'The key watchpoint is whether activity in ' + region + ' broadens into sustained disruption or wider political tension.' :
       type === 'NATURAL_HAZARD' ? 'The immediate concern is whether the hazard persists or expands into wider access, infrastructure or population impacts.' :
       type === 'ECONOMIC' ? 'The operational concern is whether the reported development creates sustained pressure on commerce, supply or access.' :
-      'The main operational watchpoint is recurrence or geographic spread of the reported security signal in ' + region + '.'
+      'The main operational watchpoint is whether ' + clean(e.headline || e.title || 'the reported signal', 180) + ' recurs or spreads beyond ' + region + '.'
     ],
     caveats: uniqueStrings(caveats, 4),
-    context: clean(research.context || '', 1800),
+    context: clean(research.context || fallbackContext(e,type,region), 1800),
     reported_or_disputed: Array.isArray(research.reported_or_disputed) ? uniqueStrings(research.reported_or_disputed.map(x=>clean(x,900)), 4) : [],
     chronology: Array.isArray(research.chronology) ? research.chronology.slice(0,8).map(x=>({time:clean(x?.time,120),event:clean(x?.event,700)})).filter(x=>x.time||x.event) : [],
     research_status: research.status || null,
