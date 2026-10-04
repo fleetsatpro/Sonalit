@@ -257,14 +257,21 @@ async function countryGeometry(country) {
   const iso3 = COUNTRY_ISO3[country];
   if (!iso3) return null;
   const url = 'https://raw.githubusercontent.com/johan/world.geo.json/master/countries/' + iso3 + '.geo.json';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
   try {
-    const response = await fetch(url, { headers:{ 'User-Agent':'Sonalit-Professional-Publication/1.0' } });
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers:{ 'User-Agent':'Sonalit-Professional-Publication/1.0' }
+    });
     if (!response.ok) return null;
     const data = await response.json();
     boundaryCache.set(country, data);
     return data;
   } catch (_) {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
