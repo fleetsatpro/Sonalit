@@ -40,6 +40,13 @@ const boundaryCache = new Map();
 
 function text(v, max=5000) {
   return String(v == null ? '' : v)
+    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')
+    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&#x27;/gi, "'")
     .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
     .replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')
     .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
