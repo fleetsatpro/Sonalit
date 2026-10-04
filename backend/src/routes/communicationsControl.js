@@ -97,7 +97,8 @@ router.post('/publications/:id/render', async (req, res, next) => {
 
 router.get('/publications/:id/pdf', async (req, res, next) => {
   try {
-    const url = await getPublicationPdfAccessUrl(req.user.org_id, String(req.params.id));
+    const download=String(req.query.download||'').toLowerCase()==='1'||String(req.query.download||'').toLowerCase()==='true';
+    const url = await getPublicationPdfAccessUrl(req.user.org_id, String(req.params.id), {download});
     res.redirect(302, url);
   } catch (err) { next(err); }
 });
