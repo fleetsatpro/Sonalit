@@ -32,3 +32,12 @@ describe('publication generation deduplication hardening',()=>{
     expect(source).toContain('status=\'superseded\'');
   });
 });
+
+
+test('AI editorial board is optional resilience enrichment, not a publication blocker by default',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  expect(source).toContain("const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'').toLowerCase()==='true';");
+  expect(source).toContain("const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'').toLowerCase()==='true';");
+  expect(source).toContain('const aiBoardGate=aiBoardRequired ? boardPublishable : true;');
+  expect(source).toContain('deterministic evidence product remains eligible');
+});
