@@ -175,6 +175,42 @@ function selectPublicationResearchEvents(events,limit=10){
   return out.slice(0,limit);
 }
 
+function publicationEvidenceBasis(originalEvidenceContract, research, publicationEvents){
+  if(originalEvidenceContract){
+    return {
+      publishable:true,
+      basis:'ORIGINAL_EVIDENCE',
+      reportEvents:Array.isArray(publicationEvents)?publicationEvents:[],
+      researchBackedIncidents:0,
+      researchSourceCount:0,
+      researchSourceDomains:0,
+      excludedEventCount:0
+    };
+  }
+  const backed=[];
+  const sources=[];
+  const events=Array.isArray(publicationEvents)?publicationEvents:[];
+  for(const event of events){
+    const packet=research?.byEvent?.[String(event?.id)]||{};
+    const agent=packet?.agent||packet||{};
+    const direct=Array.isArray(agent.sources)?agent.sources.filter(src=>src?.url):[];
+    if(direct.length) backed.push(event);
+    for(const src of direct)sources.push(src);
+  }
+  const uniqueUrls=new Set(sources.map(src=>String(src.url).trim()).filter(Boolean));
+  const uniqueDomains=new Set(sources.map(src=>String(src.domain||'').trim().toLowerCase()).filter(Boolean));
+  const researchContract=backed.length>0 && uniqueUrls.size>=2 && uniqueDomains.size>=2;
+  return {
+    publishable:researchContract,
+    basis:researchContract?'DIRECT_WEB_RESEARCH':'INSUFFICIENT_EVIDENCE',
+    reportEvents:researchContract?backed:[],
+    researchBackedIncidents:backed.length,
+    researchSourceCount:uniqueUrls.size,
+    researchSourceDomains:uniqueDomains.size,
+    excludedEventCount:Math.max(0,events.length-(researchContract?backed.length:0))
+  };
+}
+
 async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const now=new Date();
   let start,end;
@@ -251,7 +287,29 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     }
   }
   const enrichedEvents=events.map(e=>({...e,research:incidentResearch.byEvent[String(e.id)]||null}));
-  const deterministic=buildEvidencePublication({country,type,start,end,events:enrichedEvents,evidenceCount,sourceCount,evidenceContract});
+  const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents);
+  const reportEvents=publicationBasis.reportEvents;
+  const reportEvidenceCount=evidenceContract
+    ? evidenceCount
+    : reportEvents.reduce((n,e)=>n+Number(e.observation_count||0),0);
+  const reportSourceIds=new Set();
+  for(const e of reportEvents){
+    for(const obs of Array.isArray(e.evidence)?e.evidence:[])if(obs?.source_id)reportSourceIds.add(String(obs.source_id));
+    const agent=e?.research?.agent||e?.research||{};
+    for(const src of Array.isArray(agent.sources)?agent.sources:[])if(src?.url)reportSourceIds.add(String(src.url));
+  }
+  const reportSourceCount=evidenceContract?sourceCount:Math.max(publicationBasis.researchSourceDomains,reportSourceIds.size);
+  const publicationEvidenceContract=evidenceContract||publicationBasis.publishable;
+  const deterministic=buildEvidencePublication({
+    country,
+    type,
+    start,
+    end,
+    events:reportEvents,
+    evidenceCount:reportEvidenceCount,
+    sourceCount:reportSourceCount,
+    evidenceContract:publicationEvidenceContract
+  });
   let finalBody=deterministic;
   let title=deterministic.title;
   let subtitle=deterministic.subtitle;
@@ -284,17 +342,19 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   finalBody.publication_quality=finalQuality;
   const qualityGate=finalQuality.passed===true;
   const aiBoardGate=aiBoardRequired ? boardPublishable : true;
-  const status=(evidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';
+  const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
-    ...finalBody,title,subtitle,executive_assessment:executive,key_events:events,
+    ...finalBody,title,subtitle,executive_assessment:executive,key_events:reportEvents,
+    collection_basis:{original_evidence_contract_met:evidenceContract,publication_evidence_contract_met:publicationEvidenceContract,basis:publicationBasis.basis,research_backed_incidents:publicationBasis.researchBackedIncidents,research_source_count:publicationBasis.researchSourceCount,research_source_domains:publicationBasis.researchSourceDomains,excluded_event_count:publicationBasis.excludedEventCount},
     editorial_board:{agents:AGENT_ROLES.map(a=>a.id),board,visual_plan:visual,graphics_plan:graphics,provider},
     generator:{
       name:'SONALIT EVIDENCE-FIRST PUBLICATION FABRIC',
       provider,
       mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
       pdf_renderer_version:PDF_RENDERER_VERSION,
-      evidence_contract:evidenceContract,
+      evidence_contract:publicationEvidenceContract,
+      original_evidence_contract:evidenceContract,
       publication_quality:deterministic.publication_quality||null,
       ai_board:{enabled:aiBoardEnabled,required:aiBoardRequired,status:aiBoardStatus,hold_reason:aiBoardHoldReason}
     },
@@ -332,7 +392,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   }
   return{
     status:'created',publication_id:publicationId,publication_status:status,
-    evidence_contract:evidenceContract,evidence_count:evidenceCount,source_count:sourceCount,
+    evidence_contract:publicationEvidenceContract,evidence_count:reportEvidenceCount,source_count:reportSourceCount,
     editorial_agents:AGENT_ROLES.length,generator_mode:body.generator.mode,version
   };
 }
