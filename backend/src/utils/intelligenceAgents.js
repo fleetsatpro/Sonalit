@@ -294,7 +294,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   finalBody.publication_quality=finalQuality;
   const qualityGate=finalQuality.passed===true;
   const aiBoardGate=aiBoardRequired ? boardPublishable : true;
-  const status=(evidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';
+  const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
     ...finalBody,title,subtitle,executive_assessment:executive,key_events:reportEvents,
