@@ -313,8 +313,110 @@ async function buildPdf(publication, events, images){
   }
   footer();
 
-  // Key developments, each grounded to event evidence.
-  const key=Array.isArray(body.key_developments)?body.key_developments:events.slice(0,8);
+  // Research and corroboration control — makes the research effort visible.
+  doc.addPage(); header(); title('RESEARCH & CORROBORATION','Per-incident web research · provenance · uncertainty control');
+  const dr=body.deep_research||{};
+  card(42,118,511,118);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(9).text('RESEARCH COVERAGE',58,136);
+  const coverage=[
+    ['INCIDENTS REQUESTED',String(dr.incidents_requested??events.length)],
+    ['AGENT-RESEARCHED',String(dr.incidents_researched??0)],
+    ['FALLBACK DOSSIERS',String(dr.incidents_fallback??0)],
+    ['WEB SOURCES FOUND',String(dr.web_sources_discovered??0)]
+  ];
+  coverage.forEach((m,i)=>{
+    const x=58+i*121;
+    doc.fillColor(muted).font('Helvetica-Bold').fontSize(6).text(m[0],x,162,{width:105});
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(17).text(m[1],x,176,{width:105});
+  });
+  doc.fillColor(muted).font('Helvetica').fontSize(7).text('Every incident is given an independent research attempt when deep research is enabled. A fallback dossier is explicitly marked rather than presented as researched fact.',58,208,{width:468,lineGap:3});
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(10).text('RESEARCH PIPELINE',42,270);
+  researchChain(42,292,511);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(10).text('INCIDENT RESEARCH STATUS',42,370);
+  let ry=398;
+  const researchEvents=Array.isArray(body.incident_dossiers)?body.incident_dossiers:((Array.isArray(body.key_developments)?body.key_developments:[]));
+  researchEvents.slice(0,8).forEach((e,i)=>{
+    const status=upper(e.research_status||'NOT RECORDED');
+    const c=status==='RESEARCHED'?orange:'#94a3b8';
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text(String(i+1).padStart(2,'0')+'  '+safe(e.headline||'Incident'),42,ry,{width:370});
+    tag(status,430,ry-4,123,c);
+    ry+=28;
+  });
+  if(!researchEvents.length)paragraph('No incident research records are attached to this publication.',42,511,8.5,3);
+  footer();
+
+  // Incident research dossiers — one dedicated publication page per incident.
+  const key=Array.isArray(body.incident_dossiers)?body.incident_dossiers:(Array.isArray(body.key_developments)?body.key_developments:events.slice(0,8));
+  for(let idx=0;idx<key.length;idx++){
+    const e=key[idx]||{};
+    doc.addPage(); header();
+    title('INCIDENT RESEARCH DOSSIER', 'Incident '+String(idx+1).padStart(2,'0')+' of '+String(key.length));
+    const sev=upper(e.severity||'moderate');
+    tag(sev,42,118,96,sev==='CRITICAL'?critical:sev==='HIGH'?high:moderate);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(14).text(safe(e.headline||e.title||'Incident'),152,118,{width:401});
+    doc.fillColor(muted).font('Helvetica').fontSize(7.2).text(
+      upper(e.region||'LOCATION NOT SPECIFIED')+'  ·  '+String(e.confidence??'—')+'% CONFIDENCE  ·  '+String(e.evidence_count||0)+' EVIDENCE  ·  '+String(e.source_count||0)+' SOURCES',
+      42,145,{width:511}
+    );
+
+    sectionLabel('What happened',42,174);
+    const narrative=safe(e.what_happened||e.brief||e.summary||'Evidence record available.');
+    doc.fillColor(ink).font('Helvetica').fontSize(8.35).text(narrative,42,192,{width:511,lineGap:3.2});
+
+    let iy=192+Math.min(155,doc.heightOfString(narrative,{width:511,font:'Helvetica',fontSize:8.35,lineGap:3.2}))+18;
+    if(iy>390)iy=390;
+    sectionLabel('Context',42,iy);
+    const context=safe(e.context||'No additional context was established by the research agent.');
+    doc.fillColor(ink).font('Helvetica').fontSize(7.9).text(context,42,iy+18,{width:511,lineGap:3});
+    iy+=18+Math.min(76,doc.heightOfString(context,{width:511,font:'Helvetica',fontSize:7.9,lineGap:3}))+16;
+
+    const left=42,right=303;
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('CONFIRMED FACTS',left,iy);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('REPORTED / DISPUTED',right,iy);
+    const facts=Array.isArray(e.key_facts)?e.key_facts:[];
+    const disputed=Array.isArray(e.reported_or_disputed)?e.reported_or_disputed:[];
+    let fy=iy+16;
+    facts.slice(0,4).forEach(x=>{doc.fillColor(ink).font('Helvetica').fontSize(7.1).text('• '+safe(x),left,fy,{width:235,lineGap:2.2});fy+=Math.min(31,doc.heightOfString('• '+safe(x),{width:235,font:'Helvetica',fontSize:7.1,lineGap:2.2}))+5;});
+    if(!facts.length)doc.fillColor(muted).fontSize(7).text('No additional structured facts.',left,fy,{width:235});
+    let dy=iy+16;
+    disputed.slice(0,4).forEach(x=>{doc.fillColor(muted).font('Helvetica').fontSize(7.1).text('• '+safe(x),right,dy,{width:250,lineGap:2.2});dy+=Math.min(31,doc.heightOfString('• '+safe(x),{width:250,font:'Helvetica',fontSize:7.1,lineGap:2.2}))+5;});
+    if(!disputed.length)doc.fillColor(muted).fontSize(7).text('No material disagreement recorded.',right,dy,{width:250});
+
+    const boxY=Math.max(fy,dy)+12;
+    card(42,boxY,511,76);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('ANALYTICAL ASSESSMENT',56,boxY+12);
+    doc.fillColor(ink).font('Helvetica').fontSize(8).text(safe(e.assessment||'No additional analytical judgement supplied.'),56,boxY+27,{width:468,lineGap:3});
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('WHY IT MATTERS',56,boxY+51);
+    const why=Array.isArray(e.why_it_matters)?e.why_it_matters.join(' '):safe(e.why_it_matters||'');
+    doc.fillColor(muted).font('Helvetica').fontSize(7.2).text(why||'No explicit operational implication was established.',142,boxY+50,{width:382,lineGap:2.5});
+
+    const lowerY=boxY+92;
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('CHRONOLOGY',42,lowerY);
+    timeline(e.chronology||[],42,lowerY+16,511,70);
+    const sources=Array.isArray(e.research_sources)&&e.research_sources.length?e.research_sources:(Array.isArray(e.source_refs)?e.source_refs:[]);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('RESEARCH SOURCES',42,lowerY+104);
+    let sy=lowerY+122;
+    if(sources.length){
+      sources.slice(0,4).forEach((r,i)=>{
+        doc.fillColor(ink).font('Helvetica-Bold').fontSize(6.7).text(String(i+1)+'. '+safe(r.title||r.source||'Source'),42,sy,{width:511});
+        sy+=10;
+        doc.fillColor(muted).font('Helvetica').fontSize(6.2).text(safe(r.domain||r.url||''),42,sy,{width:511});
+        sy+=13;
+      });
+    }else{
+      doc.fillColor(muted).font('Helvetica').fontSize(6.8).text('No additional web source was recorded.',42,sy,{width:511});
+      sy+=15;
+    }
+    const uncertainty=Array.isArray(e.caveats)?e.caveats:[];
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('UNCERTAINTY',42,sy+2);
+    doc.fillColor(muted).font('Helvetica').fontSize(6.9).text(
+      uncertainty.length?uncertainty.slice(0,3).join(' '):'No additional uncertainty statement was returned; normal collection limitations still apply.',
+      110,sy+1,{width:443,lineGap:2.3}
+    );
+    footer();
+  }
+
+  // Regional roll-up, matching the sample product architecture.
   let idx=0;
   while(idx<key.length){
     doc.addPage(); header(); title('KEY DEVELOPMENTS', 'Priority reporting and evidence-linked assessment');
@@ -363,10 +465,10 @@ async function buildPdf(publication, events, images){
 
   // Regional roll-up, matching the sample product architecture.
   const regions=Array.isArray(body.regional_news)?body.regional_news:[];
-  doc.addPage(); header(); title('REGIONAL NEWS','Geographic roll-up of evidence-backed event reporting');
+  doc.addPage(); header(); title('REGIONAL UPDATES','Geographic roll-up of evidence-backed event reporting');
   if(regions.length){
     for(const group of regions){
-      if(doc.y>705){footer();doc.addPage();header();title('REGIONAL NEWS','Continued');}
+      if(doc.y>705){footer();doc.addPage();header();title('REGIONAL UPDATES','Continued');}
       doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text(upper(group.region||'REGION'),42,doc.y);
       doc.moveTo(42,doc.y+15).lineTo(553,doc.y+15).strokeColor(line).stroke();
       doc.y+=24;
