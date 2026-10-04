@@ -1,3 +1,4 @@
+// Regression suite: publication prose must remain non-repetitive and source-traceable.
 const {
   cleanPublicationText,
   dedupeSentences,
