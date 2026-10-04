@@ -208,10 +208,29 @@ function references(events) {
       const key = String(ref.url || '') + '|' + String(ref.source || '') + '|' + String(ref.title || '');
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ ...ref, event_id:e.id });
+      out.push({ ...ref, event_id:e.id, source_layer:'original_evidence' });
+    }
+    const research = e?.research?.agent || e?.research || {};
+    for (const ref of Array.isArray(research.sources) ? research.sources : []) {
+      if (!ref?.url) continue;
+      const key = String(ref.url) + '|' + String(ref.title || '');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        observation_id:null,
+        source_id:null,
+        source:clean(ref.domain || ref.source_type || 'Web research', 140),
+        title:clean(ref.title || 'Research source', 240),
+        url:ref.url,
+        observed_at:null,
+        published_at:null,
+        credibility:null,
+        event_id:e.id,
+        source_layer:'incident_research'
+      });
     }
   }
-  return out.slice(0,80);
+  return out.slice(0,120);
 }
 function buildEvidencePublication({ country, type, start, end, events, evidenceCount, sourceCount, evidenceContract }) {
   const name = COUNTRY_NAMES[country] || country;
