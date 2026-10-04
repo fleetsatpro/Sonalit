@@ -34,6 +34,10 @@ describe('evidence-first intelligence publication builder',()=>{
     expect(body.incident_map.points.length).toBe(2);
     expect(body.references).toHaveLength(2);
     expect(body.collection_coverage.evidence_contract_met).toBe(true);
+    expect(body.public_safety_security_overview.indicators).toHaveLength(4);
+    expect(body.emerging_trends.length).toBeGreaterThan(0);
+    expect(body.key_drivers.length).toBeGreaterThan(0);
+    expect(body.key_findings_assessment.findings.length).toBe(2);
   });
   test('explicitly states when there is no event evidence rather than inventing incidents',()=>{
     const body=buildEvidencePublication({
