@@ -45,6 +45,34 @@ describe('evidence-first intelligence publication builder',()=>{
     expect(body.key_drivers.length).toBeGreaterThan(0);
     expect(body.key_findings_assessment.findings.length).toBe(2);
   });
+  test('uses detailed humanized incident research when attached',()=>{
+    const start=new Date('2026-10-01T00:00:00.000Z');
+    const end=new Date('2026-10-02T00:00:00.000Z');
+    const researched={
+      ...base,
+      research:{
+        agent:{
+          status:'researched',
+          narrative:'The disruption began after armed actors were reported near the corridor. Local reporting and the linked source record describe a temporary break in road movement, while the available evidence does not establish how long the interruption lasted or whether the threat moved beyond the immediate area.',
+          context:'The incident matters because the affected corridor supports routine road movement and any prolonged closure can create knock-on delays for commercial traffic.',
+          confirmed_facts:['Movement was disrupted on the reported road section.','Two independent source records are linked to the event.'],
+          reported_or_disputed:['The duration of the disruption remains unclear.'],
+          analytical_assessment:'The evidence supports a short-term access risk, but does not yet justify a broader deterioration judgement.',
+          why_it_matters:['The event could increase delay and exposure for vehicles using the corridor.'],
+          uncertainty:['The available reporting does not establish the full duration or geographic extent of the disruption.'],
+          chronology:[{time:'01 Oct 2026 09:00 UTC',event:'Initial disruption reported.'}],
+          sources:[{title:'BBC report',url:'https://example.com/bbc',domain:'bbc.com'}],
+          provider:'anthropic-web-search'
+        }
+      }
+    };
+    const body=buildEvidencePublication({country:'KE',type:'daily',start,end,events:[researched],evidenceCount:2,sourceCount:2,evidenceContract:true});
+    expect(body.key_developments[0].research_status).toBe('researched');
+    expect(body.key_developments[0].what_happened).toContain('The disruption began after armed actors');
+    expect(body.key_developments[0].context).toContain('affected corridor');
+    expect(body.key_developments[0].research_sources[0].domain).toBe('bbc.com');
+    expect(body.incident_dossiers[0].chronology[0].time).toContain('01 Oct 2026');
+  });
   test('explicitly states when there is no event evidence rather than inventing incidents',()=>{
     const body=buildEvidencePublication({
       country:'SO',type:'daily',start:new Date('2026-10-04T00:00:00.000Z'),end:new Date('2026-10-05T00:00:00.000Z'),
