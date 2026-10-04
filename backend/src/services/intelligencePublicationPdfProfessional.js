@@ -365,7 +365,8 @@ async function buildIncidentMap(country, events) {
   const points=allPoints
     .slice()
     .sort((a,b)=>severityScore(b.severity)-severityScore(a.severity)||a.n-b.n)
-    .slice(0,24);
+    .slice(0,24)
+    .map((p,i)=>({...p,n:i+1}));
 
   const geo=await countryGeometry(country);
   const countryBounds=geo?geometryBounds(geo):null;
@@ -771,6 +772,10 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   doc.image(mapResult.image,MARGIN+8,y+8,{width:CONTENT_W-16,height:370,fit:[CONTENT_W-16,370]});
   y+=398;
   const mapPoints=mapResult.points || [];
+  if(mapResult.excludedPoints){
+    y=paragraph(doc,y,'Excluded '+String(mapResult.excludedPoints)+' coordinate(s) outside the selected country boundary or map margin; these records remain in the evidence ledger.',{size:7.2,color:MUTED,max:500});
+    y+=8;
+  }
   if(mapPoints.length){
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(9).text('MAP REGISTER',MARGIN,y);
     y+=17;
