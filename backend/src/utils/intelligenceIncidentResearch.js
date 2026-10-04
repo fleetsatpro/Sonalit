@@ -91,11 +91,17 @@ async function fetchSourcePage(item){
     const contentType=String(res.headers.get('content-type')||'').toLowerCase();
     if(!contentType.includes('text/html') && !contentType.includes('application/xhtml+xml'))return null;
     const html=await res.text();
+    const canonical=safeUrl(meta(html,'og:url')||meta(html,'twitter:url')||((html.match(/<link[^>]+rel=[\"']canonical[\"'][^>]+href=[\"']([^\"']+)[\"']/i)||[])[1]||res.url||item.url));
+    const resolvedUrl=canonical||safeUrl(res.url)||item.url;
     const title=clean(meta(html,'og:title')||meta(html,'twitter:title')||((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)||[])[1]||item.title),500);
     const description=clean(meta(html,'og:description')||meta(html,'description')||item.snippet,1200);
     const imageUrl=safeUrl(meta(html,'og:image')||meta(html,'twitter:image'));
-    const text=stripHtml(html).slice(0,MAX_PAGE_CHARS);
-    return {url:item.url,domain:domain(item.url),title,description,text,image_url:imageUrl,retrieved_at:new Date().toISOString()};
+    const pageText=stripHtml(html).slice(0,MAX_PAGE_CHARS);
+    const resolvedDomain=domain(resolvedUrl);
+    if(resolvedDomain==='news.google.com' && domain(item.url)==='news.google.com'){
+      logger.warn('Incident research source remained a news aggregator: '+item.url);
+    }
+    return {url:resolvedUrl,domain:resolvedDomain,title,description,text:pageText,image_url:imageUrl,retrieved_at:new Date().toISOString()};
   }catch(error){
     logger.warn('Incident research source fetch failed '+item.url+': '+error.message);
     return null;
