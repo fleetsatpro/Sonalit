@@ -4,7 +4,7 @@ const { listCustomerPulseTargets, generateAndQueueScopedClientPulse } = require(
 const { generateAndQueueSuperAdminClientPulse } = require('../services/email/clientPulseDispatch.service');
 const { withOrg } = require('../utils/orgScopedDb');
 const { publicationForCountry } = require('../utils/intelligenceAgents');
-const { renderAndStorePublicationPdf, getPublicationPdfAccessUrl } = require('../services/intelligencePublicationPdf');
+const { renderAndStorePublicationPdf, getPublicationPdfAccessUrl, getPublicationPdfObject } = require('../services/intelligencePublicationPdf');
 
 // Mounted below /admin, whose parent router already enforces admin/super_admin.
 router.get('/health', async (req, res, next) => {
@@ -105,9 +105,32 @@ router.post('/publications/:id/generate-report', async (req, res, next) => {
 
 router.get('/publications/:id/pdf', async (req, res, next) => {
   try {
-    const download=String(req.query.download||'').toLowerCase()==='1'||String(req.query.download||'').toLowerCase()==='true';
-    const url = await getPublicationPdfAccessUrl(req.user.org_id, String(req.params.id), {download});
-    res.redirect(302, url);
+    const publicationId = String(req.params.id);
+    const download = String(req.query.download||'').toLowerCase()==='1'||String(req.query.download||'').toLowerCase()==='true';
+    const pdf = await getPublicationPdfObject(req.user.org_id, publicationId);
+
+    const filename = ('sonalit-' + publicationId + '.pdf').replace(/[^A-Za-z0-9._-]/g,'-');
+    res.status(200);
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition', (download ? 'attachment' : 'inline') + '; filename="' + filename + '"');
+    res.setHeader('Cache-Control','private, no-store, max-age=0, must-revalidate');
+    res.setHeader('X-Content-Type-Options','nosniff');
+    if(Number.isFinite(Number(pdf.contentLength)))res.setHeader('Content-Length',String(pdf.contentLength));
+    if(pdf.etag)res.setHeader('ETag',String(pdf.etag));
+    if(pdf.lastModified)res.setHeader('Last-Modified',new Date(pdf.lastModified).toUTCString());
+
+    const body=pdf.body;
+    if(body && typeof body.pipe==='function'){
+      body.once('error',error=>res.headersSent?res.destroy(error):next(error));
+      body.pipe(res);
+      return;
+    }
+    try{
+      for await(const chunk of body)res.write(chunk);
+      res.end();
+    }catch(error){
+      if(res.headersSent)res.destroy(error); else next(error);
+    }
   } catch (err) { next(err); }
 });
 
