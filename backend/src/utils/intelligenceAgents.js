@@ -228,13 +228,17 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const publicationEvents=selectPublicationResearchEvents(events,8);
   const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
   const expectedResearchCount=publicationEvents.length;
-  const previousResearchCount=Number(priorResearch.incidents_web_researched||0)+Number(priorResearch.incidents_fallback||0);
+  const previousResearchCount=Number(priorResearch.incidents_web_researched||0);
   const researchVersionMismatch=String(priorResearch.research_version||'')!==DEEP_RESEARCH_VERSION;
   const pdfRendererMismatch=String(existing[0]?.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION;
   const publicationPolicyMismatch=String(existing[0]?.body?.collection_basis?.version||'')!==PUBLICATION_EVIDENCE_VERSION;
-  const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(previousResearchCount<expectedResearchCount||researchVersionMismatch);
+  const researchCooldownMinutes=Math.max(5,Math.min(24*60,Number(process.env.INTEL_PUBLICATION_RESEARCH_RETRY_MINUTES)||60));
+  const lastResearchAttemptAt=priorResearch.last_attempt_at?new Date(priorResearch.last_attempt_at):null;
+  const researchAttemptRecent=Boolean(lastResearchAttemptAt&&!Number.isNaN(lastResearchAttemptAt.getTime())&&(now.getTime()-lastResearchAttemptAt.getTime())<researchCooldownMinutes*60*1000);
+  const evidenceChanged=String(priorCoverage.fingerprint||'')!==fingerprint;
+  const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(previousResearchCount<expectedResearchCount||researchVersionMismatch)&&(!researchAttemptRecent||evidenceChanged);
   const unchanged=existing.length
-    && String(priorCoverage.fingerprint||'')===fingerprint
+    && !evidenceChanged
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
     && Number(priorCoverage.source_count||-1)===sourceCount
     && !needsDeepResearch
@@ -242,18 +246,53 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     && !publicationPolicyMismatch;
   if(existing.length&&unchanged)return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 
-  const refreshPdf=Boolean(existing.length&&(String(priorCoverage.fingerprint||'')!==fingerprint||needsDeepResearch||pdfRendererMismatch||publicationPolicyMismatch));
+  const refreshPdf=Boolean(existing.length&&(evidenceChanged||needsDeepResearch||pdfRendererMismatch||publicationPolicyMismatch));
+
+  const priorDossiers=Array.isArray(existing[0]?.body?.incident_dossiers)?existing[0].body.incident_dossiers:[];
+  const priorResearchByEvent=Object.fromEntries(priorDossiers.map(d=>[
+    String(d.id||d.event_id||d.observation_id||''),
+    {packet:{},agent:{
+      status:d.research_status||null,
+      narrative:d.what_happened||d.brief||'',
+      context:d.context||'',
+      confirmed_facts:Array.isArray(d.key_facts)?d.key_facts:[],
+      reported_or_disputed:Array.isArray(d.reported_or_disputed)?d.reported_or_disputed:[],
+      analytical_assessment:d.assessment||'',
+      why_it_matters:Array.isArray(d.why_it_matters)?d.why_it_matters:[],
+      uncertainty:Array.isArray(d.caveats)?d.caveats:[],
+      chronology:Array.isArray(d.chronology)?d.chronology:[],
+      sources:Array.isArray(d.research_sources)?d.research_sources:[],
+      provider:d.research_provider||'prior-publication'
+    }}
+  ]).filter(([id])=>id));
 
   let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0,web_search_requests:0}};
-  if(deepResearchEnabled&&expectedResearchCount>0){
+  let researchAttempted=false;
+  if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch){
+    researchAttempted=true;
     try{
       incidentResearch=await researchPublicationIncidents(publicationEvents,{country});
       logger.info('Intelligence publication research '+country+'/'+type+': requested='+incidentResearch.summary.requested+' ai_researched='+incidentResearch.summary.researched+' web_packet_researched='+(incidentResearch.summary.web_packet_researched||0)+' fallback='+incidentResearch.summary.fallback+' failed='+incidentResearch.summary.failed+' web_search_requests='+(incidentResearch.summary.web_search_requests||0)+' web_sources_retrieved='+(incidentResearch.summary.web_sources_retrieved||0));
     }catch(error){
+      incidentResearch={byEvent:{},summary:{requested:expectedResearchCount,researched:0,fallback:expectedResearchCount,failed:0,web_search_requests:0}};
       logger.warn('Intelligence publication research failed '+country+'/'+type+': '+error.message);
     }
+  }else if(deepResearchEnabled&&expectedResearchCount>0&&researchAttemptRecent&&!evidenceChanged){
+    incidentResearch={
+      byEvent:priorResearchByEvent,
+      summary:{requested:expectedResearchCount,researched:Number(priorResearch.incidents_web_researched||0),fallback:Number(priorResearch.incidents_fallback||0),failed:0,web_search_requests:0,skipped_due_to_cooldown:true}
+    };
+    logger.info('Intelligence publication research '+country+'/'+type+': skipped due to retry cooldown='+researchCooldownMinutes+'m');
   }
-  const enrichedEvents=events.map(e=>({...e,research:incidentResearch.byEvent[String(e.id)]||null}));
+
+  const effectiveResearchByEvent={...incidentResearch.byEvent};
+  for(const e of publicationEvents){
+    const id=String(e.id);
+    const current=effectiveResearchByEvent[id],prior=priorResearchByEvent[id];
+    if(current?.agent?.status==='fallback'&&prior?.agent?.status==='researched')effectiveResearchByEvent[id]=prior;
+    else if(!current&&prior)effectiveResearchByEvent[id]=prior;
+  }
+  const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));
   const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents);
   const reportEvents=publicationBasis.reportEvents;
   const reportEvidenceCount=evidenceContract ? evidenceCount : reportEvents.reduce((n,e)=>n+Number(e.observation_count||0),0);
@@ -312,7 +351,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     },
     publication_quality:deterministic.publication_quality||null,
     ai_board:{enabled:aiBoardEnabled,required:aiBoardRequired,status:aiBoardStatus,hold_reason:aiBoardHoldReason},
-    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_version:DEEP_RESEARCH_VERSION,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
+    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_version:DEEP_RESEARCH_VERSION,last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),next_attempt_at:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?new Date(now.getTime()+researchCooldownMinutes*60*1000).toISOString():(priorResearch.next_attempt_at||null),retry_cooldown_minutes:researchCooldownMinutes,skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),last_failure_reason:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?'one or more incident research results fell back to evidence-only content':(priorResearch.last_failure_reason||null)},
+,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
     version
   };
   let publicationId=null;
