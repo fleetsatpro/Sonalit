@@ -64,5 +64,7 @@ test('publication evidence policy accepts only defensible direct non-aggregator 
   expect(source).toContain("basis:'DIRECT_WEB_RESEARCH'");
   expect(source).toContain('uniqueUrls.size>=2 && uniqueDomains.size>=2');
   expect(source).toContain('!isAggregatorDomain(domain)');
+  expect(source).toContain('const verifiedPages=Array.isArray(packet?.packet?.fetched_pages)');
+  expect(source).toContain('filter(sourceIsSubstantive)');
   expect(source).toContain("const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';");
 });
