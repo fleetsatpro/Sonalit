@@ -12,6 +12,7 @@ const { researchPublicationIncidents } = require('./intelligenceIncidentResearch
 
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
 const DAILY_COUNTRIES=(process.env.INTEL_PUBLICATION_COUNTRIES||Object.keys(COUNTRY_NAMES).join(',')).split(',').map(x=>x.trim().toUpperCase()).filter(x=>COUNTRY_NAMES[x]);
+const DEEP_RESEARCH_VERSION='2.0';
 const MAX_TRANSLATE=24;
 const MAX_SYNTHESIS=10;
 function clean(v,n=5000){return String(v||'').replace(/\s+/g,' ').trim().slice(0,n);}
@@ -184,8 +185,9 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const publicationEvents=events.slice(0,8);
   const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
   const expectedResearchCount=publicationEvents.length;
-  const previousResearchCount=Number(priorResearch.incidents_researched||0)+Number(priorResearch.incidents_fallback||0);
-  const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&previousResearchCount<expectedResearchCount;
+  const previousResearchCount=Number(priorResearch.incidents_web_researched||0)+Number(priorResearch.incidents_fallback||0);
+  const researchVersionMismatch=String(priorResearch.research_version||'')!==DEEP_RESEARCH_VERSION;
+  const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(previousResearchCount<expectedResearchCount||researchVersionMismatch);
   const unchanged=existing.length
     && String(priorCoverage.fingerprint||'')===fingerprint
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
@@ -199,7 +201,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   if(deepResearchEnabled&&expectedResearchCount>0){
     try{
       incidentResearch=await researchPublicationIncidents(publicationEvents,{country});
-      logger.info('Intelligence publication research '+country+'/'+type+': requested='+incidentResearch.summary.requested+' researched='+incidentResearch.summary.researched+' fallback='+incidentResearch.summary.fallback+' failed='+incidentResearch.summary.failed+' web_search_requests='+(incidentResearch.summary.web_search_requests||0));
+      logger.info('Intelligence publication research '+country+'/'+type+': requested='+incidentResearch.summary.requested+' ai_researched='+incidentResearch.summary.researched+' web_packet_researched='+(incidentResearch.summary.web_packet_researched||0)+' fallback='+incidentResearch.summary.fallback+' failed='+incidentResearch.summary.failed+' web_search_requests='+(incidentResearch.summary.web_search_requests||0)+' web_sources_retrieved='+(incidentResearch.summary.web_sources_retrieved||0));
     }catch(error){
       logger.warn('Intelligence publication research failed '+country+'/'+type+': '+error.message);
     }
@@ -236,7 +238,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
       evidence_contract:evidenceContract
     },
-    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
+    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_version:DEEP_RESEARCH_VERSION,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
     version
   };
   let publicationId=null;
