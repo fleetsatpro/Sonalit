@@ -632,6 +632,30 @@ async function renderAndStorePublicationPdf(orgId, publicationId){
   return runWithOrgContext(orgId, () => renderAndStorePublicationPdfUnsafe(orgId, publicationId));
 }
 
+async function getPublicationPdfObjectUnsafe(orgId,publicationId){
+  const {rows:[row]}=await query("SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2 AND status='published' AND pdf_status='ready' LIMIT 1",[publicationId,orgId]);
+  if(!row?.pdf_key)throw new Error('Publication PDF is not ready');
+  const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured');
+  const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
+  try{
+    const object=await r2.send(new GetObjectCommand({Bucket:bucket,Key:row.pdf_key}));
+    if(!object.Body)throw new Error('Publication PDF object is empty');
+    return {body:object.Body,contentLength:object.ContentLength,etag:object.ETag,lastModified:object.LastModified};
+  }catch(error){
+    const status=error?.$metadata?.httpStatusCode;
+    if(status===404||error?.name==='NoSuchKey'||error?.name==='NotFound'){
+      const wrapped=new Error('Publication PDF object not found');
+      wrapped.code='publication_pdf_object_not_found';
+      throw wrapped;
+    }
+    throw error;
+  }
+}
+
+async function getPublicationPdfObject(orgId,publicationId){
+  return runWithOrgContext(orgId,()=>getPublicationPdfObjectUnsafe(orgId,publicationId));
+}
+
 async function getPublicationPdfAccessUrl(orgId, publicationId, options={}){
   return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId, options));
 }
