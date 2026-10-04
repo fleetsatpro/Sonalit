@@ -95,6 +95,14 @@ router.post('/publications/:id/render', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Explicit analyst-facing alias: create or refresh the publication report on demand.
+router.post('/publications/:id/generate-report', async (req, res, next) => {
+  try {
+    const result = await renderAndStorePublicationPdf(req.user.org_id, String(req.params.id));
+    res.json({ data: result });
+  } catch (err) { next(err); }
+});
+
 router.get('/publications/:id/pdf', async (req, res, next) => {
   try {
     const download=String(req.query.download||'').toLowerCase()==='1'||String(req.query.download||'').toLowerCase()==='true';
