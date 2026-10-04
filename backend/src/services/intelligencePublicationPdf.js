@@ -15,7 +15,7 @@ function esc(v){return String(v ?? '').replace(/[&<>\"]/g, s=>({'&':'&amp;','<':
 function severityScore(v){return ({critical:4,high:3,moderate:2,low:1,informational:0}[String(v||'').toLowerCase()] ?? 2);}
 function svgMap(country, events){
   const [minLon,minLat,maxLon,maxLat]=BOUNDS[country]||[20,-20,55,20];
-  const W=1200,H=720,pad=70;
+  const W=2400,H=1440,pad=140;
   const x=lon=>pad+((lon-minLon)/(maxLon-minLon))*(W-pad*2);
   const y=lat=>H-pad-((lat-minLat)/(maxLat-minLat))*(H-pad*2);
   const dots=events.filter(e=>Number.isFinite(Number(e.longitude))&&Number.isFinite(Number(e.latitude))).slice(0,80).map(e=>{
