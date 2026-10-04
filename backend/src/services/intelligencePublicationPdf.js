@@ -159,6 +159,81 @@ async function buildPdf(publication, events, images){
   });
   footer();
 
+  // Public safety/security overview — reference-product executive structure.
+  doc.addPage(); header(); title('PUBLIC SAFETY & SECURITY OVERVIEW','Environment summary · observed indicators · collection framing');
+  const overview=body.public_safety_security_overview||{};
+  card(42,118,511,94);
+  paragraph(overview.summary||body.security_environment?.summary||publication.executive_assessment||'No overview available.',58,479,9.2,4);
+  doc.y=230;
+  const indicators=Array.isArray(overview.indicators)?overview.indicators:[];
+  indicators.slice(0,4).forEach((m,i)=>{
+    const x=42+i*128;
+    card(x,230,116,66);
+    doc.fillColor(muted).font('Helvetica-Bold').fontSize(6.6).text(upper(m.label||'INDICATOR'),x+9,243,{width:98});
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(18).text(safe(m.value??'—'),x+9,258,{width:98});
+  });
+  doc.fillColor(muted).font('Helvetica').fontSize(7.5).text(safe(overview.methodology||'Indicators are derived from the current evidence ledger.'),42,314,{width:511});
+  const env=body.security_environment||{};
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text('HIGHEST PRIORITY SIGNAL',42,352);
+  paragraph(env.highest_priority||'No material event recorded.',42,511,9,4);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text('COLLECTION LIMIT',42,432);
+  paragraph('Absence from the event ledger or incident plot must not be interpreted as proof of absence. Read the collection coverage and intelligence-gap sections before operational use.',42,511,8.6,4);
+  footer();
+
+  // Emerging trends and key drivers — explicitly evidence-derived, not pseudo-forecasting.
+  doc.addPage(); header(); title('EMERGING TRENDS & KEY DRIVERS','Observed concentrations in the reporting period');
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text('EMERGING TRENDS',42,118);
+  const trends=Array.isArray(body.emerging_trends)?body.emerging_trends:[];
+  if(trends.length){
+    let y=145;
+    for(const t of trends){
+      if(y>705){footer();doc.addPage();header();title('EMERGING TRENDS & KEY DRIVERS','Continued');y=118;}
+      card(42,y,511,74);
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(9).text(safe(t.theme||'Theme'),56,y+12,{width:250});
+      tag(String(t.share_percent??0)+'%',432,y+9,90,moderate);
+      doc.fillColor(muted).font('Helvetica').fontSize(7.5).text(String(t.count??0)+' recorded event object(s)',56,y+29,{width:250});
+      doc.fillColor(ink).font('Helvetica').fontSize(8.2).text(safe(t.assessment||'Observed concentration.'),56,y+46,{width:468,lineGap:3});
+      y+=88;
+    }
+  } else {
+    paragraph('No emerging trend could be identified from the recorded event set.');
+  }
+  let y2=trends.length?530:165;
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text('KEY DRIVERS',42,y2);
+  y2+=25;
+  const drivers=Array.isArray(body.key_drivers)?body.key_drivers:[];
+  if(drivers.length){
+    for(const d of drivers){
+      if(y2>720){footer();doc.addPage();header();title('EMERGING TRENDS & KEY DRIVERS','Continued');y2=118;}
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(8.7).text(safe(d.driver||'Driver'),52,y2,{width:165});
+      doc.fillColor(muted).font('Helvetica').fontSize(8.1).text(safe(d.evidence||'Evidence-linked driver.'),225,y2,{width:320,lineGap:3});
+      y2+=37;
+    }
+  } else {
+    paragraph('No structural driver could be established from the available evidence.',52,490,8.5,3);
+  }
+  footer();
+
+  // Findings/assessment page keeps facts, assessment and implications visually separated.
+  doc.addPage(); header(); title('KEY FINDINGS & ASSESSMENT','Priority findings · judgement · operational meaning');
+  const findings=Array.isArray(body.key_findings_assessment?.findings)?body.key_findings_assessment.findings:[];
+  if(findings.length){
+    let fy=118;
+    for(const f of findings){
+      if(fy>680){footer();doc.addPage();header();title('KEY FINDINGS & ASSESSMENT','Continued');fy=118;}
+      card(42,fy,511,150);
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(10).text(safe(f.headline||'Finding'),56,fy+14,{width:468});
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.4).text('ASSESSMENT',56,fy+46);
+      doc.fillColor(ink).font('Helvetica').fontSize(8.4).text(safe(f.assessment||'Evidence-derived assessment.'),56,fy+61,{width:468,lineGap:3.2});
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.4).text('WHY IT MATTERS',56,fy+97);
+      doc.fillColor(ink).font('Helvetica').fontSize(8.4).text(safe(f.why_it_matters||'Continued monitoring is warranted.'),56,fy+112,{width:468,lineGap:3.2});
+      fy+=168;
+    }
+  } else {
+    paragraph('No priority findings were generated from the current event set.',42,511,9,4);
+  }
+  footer();
+
   // Key developments, each grounded to event evidence.
   const key=Array.isArray(body.key_developments)?body.key_developments:events.slice(0,8);
   let idx=0;
