@@ -459,6 +459,21 @@ async function buildPdf(publication, events, images){
   if(!pm.length) paragraph('PMESI status was not populated because no domain-level event mapping was available.');
   footer();
 
+  // Visual intelligence board — actual source imagery with provenance.
+  if(images.length){
+    doc.addPage(); header(); title('VISUAL INTELLIGENCE','Source imagery embedded from evidence-linked or researched sources');
+    const slots=images.slice(0,4);
+    slots.forEach((img,i)=>{
+      const col=i%2,row=Math.floor(i/2),x=42+col*260,y=118+row*280,w=245,h=218;
+      card(x,y,w,h+34);
+      try{doc.image(img.buffer,x+9,y+9,{fit:[w-18,h-18],align:'center',valign:'center'});}catch(error){logger.warn('PDF image placement failed: '+error.message)}
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(6.8).text(safe(img.label||'Source image'),x+10,y+h+4,{width:w-20});
+      doc.fillColor(muted).font('Helvetica').fontSize(5.8).text(safe(img.source_url||''),x+10,y+h+17,{width:w-20});
+    });
+    doc.fillColor(muted).font('Helvetica').fontSize(6.8).text('Images are illustrative source material and do not, by themselves, establish the claims made elsewhere in the report. Provenance is retained with the publication record.',42,698,{width:511,lineGap:3});
+    footer();
+  }
+
   // Coordinate incident plot.
   doc.addPage(); header(); title('MAJOR INCIDENTS MAP','Coordinate plot of Sonalit event objects with usable latitude/longitude');
   const plotted=Array.isArray(body.incident_map?.points)&&body.incident_map.points.length
@@ -533,7 +548,29 @@ async function buildPdf(publication, events, images){
 }
 
 async function getR2Client(){const {R2_ACCOUNT_ID,R2_ACCESS_KEY,R2_SECRET_KEY}=process.env;if(!(R2_ACCOUNT_ID&&R2_ACCESS_KEY&&R2_SECRET_KEY))return null;return new S3Client({region:'auto',endpoint:`https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,credentials:{accessKeyId:R2_ACCESS_KEY,secretAccessKey:R2_SECRET_KEY}})}
-async function fetchImages(rows){const out=[];for(const row of rows){const url=row.raw_metadata?.image_url||row.raw_metadata?.imageUrl||row.raw_metadata?.thumbnail_url||row.raw_metadata?.thumbnailUrl;if(!url||!/^https?:\/\//i.test(url))continue;try{const r=await fetch(url,{redirect:'follow'});if(!r.ok)continue;const b=Buffer.from(await r.arrayBuffer());if(!b.length||b.length>5*1024*1024)continue;out.push({buffer:b,label:row.title||'Source image',source_url:row.url||url});if(out.length>=4)break;}catch(error){logger.warn(`Image fetch failed: ${error.message}`)}}return out;}
+async function fetchImages(rows,researchSources=[]){
+  const candidates=[];
+  for(const row of rows||[]){
+    const url=row.raw_metadata?.image_url||row.raw_metadata?.imageUrl||row.raw_metadata?.thumbnail_url||row.raw_metadata?.thumbnailUrl;
+    if(url)candidates.push({image_url:url,label:row.title||'Source image',source_url:row.url||url});
+  }
+  for(const src of researchSources||[])if(src?.image_url)candidates.push({image_url:src.image_url,label:src.title||'Research source image',source_url:src.url||src.image_url});
+  const seen=new Set(),out=[];
+  for(const candidate of candidates){
+    const url=candidate.image_url;
+    if(!/^https?:\/\//i.test(url)||seen.has(url))continue;
+    seen.add(url);
+    try{
+      const r=await fetch(url,{redirect:'follow',headers:{'User-Agent':'Sonalit-Publication-Renderer/1.0'}});
+      if(!r.ok)continue;
+      const b=Buffer.from(await r.arrayBuffer());
+      if(!b.length||b.length>8*1024*1024)continue;
+      out.push({buffer:b,label:candidate.label,source_url:candidate.source_url});
+      if(out.length>=6)break;
+    }catch(error){logger.warn('Image fetch failed: '+error.message)}
+  }
+  return out;
+}
 
 async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
   const {rows:[publication]}=await query('SELECT * FROM intel_publications WHERE id=$1 AND org_id=$2 LIMIT 1',[publicationId,orgId]);
@@ -543,7 +580,8 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
   try{
     const {rows:events}=await query(`SELECT e.id,COALESCE(e.canonical_headline,e.title) AS headline,COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,e.latitude,e.longitude,e.last_seen_at,COUNT(DISTINCT eo.observation_id)::int AS observation_count,COUNT(DISTINCT o.source_id)::int AS source_count,array_agg(DISTINCT o.source_id) FILTER (WHERE o.source_id IS NOT NULL) AS source_ids,array_agg(DISTINCT jsonb_build_object('id',o.id,'title',o.title,'url',o.url,'raw_metadata',o.raw_metadata)) FILTER (WHERE o.id IS NOT NULL) AS observations FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4 GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 120`,[orgId,publication.country_code,publication.period_start,publication.period_end]);
     const observationRows=[];for(const e of events){for(const o of e.observations||[])observationRows.push(o)}
-    const images=await fetchImages(observationRows); const pdf=await buildPdf(publication,events,images);
+    const researchSources=(Array.isArray(publication.body?.incident_dossiers)?publication.body.incident_dossiers:[]).flatMap(e=>Array.isArray(e?.research_sources)?e.research_sources:[]);
+    const images=await fetchImages(observationRows,researchSources); const pdf=await buildPdf(publication,events,images);
     const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured'); const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
     const safe=`${publication.country_code}-${publication.publication_type}-${new Date(publication.period_start).toISOString().slice(0,10)}`.replace(/[^A-Z0-9._-]/gi,'-');const key=`intelligence-publications/${orgId}/${safe}-v${publication.pdf_version||1}.pdf`;
     await r2.send(new PutObjectCommand({Bucket:bucket,Key:key,Body:pdf,ContentType:'application/pdf',CacheControl:'private, max-age=0'}));
