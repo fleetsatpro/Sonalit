@@ -24,4 +24,12 @@ describe('publication PDF UI controls',()=>{
     expect(s).toContain("/admin/communications/publications/");
     expect(s).toContain('URL.createObjectURL');
   });
+  test('PDF API streams the tenant-scoped object instead of redirecting to R2',()=>{
+    const s=fs.readFileSync(path.join(__dirname,'../src/routes/communicationsControl.js'),'utf8');
+    expect(s).toContain('getPublicationPdfObject');
+    expect(s).toContain("Content-Disposition");
+    expect(s).toContain("Content-Type','application/pdf'");
+    expect(s).toContain('body.pipe(res)');
+    expect(s).not.toContain('res.redirect(302, url)');
+  });
 });
