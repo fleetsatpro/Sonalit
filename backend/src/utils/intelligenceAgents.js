@@ -255,7 +255,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
 
   const boardPublishable=board?.publishable===true;
   const aiRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD||'').toLowerCase()==='true';
-  const status=(evidenceContract&&(!aiRequired||boardPublishable))?'published':'draft';
+  const qualityGate=deterministic.publication_quality?.passed===true;
+  const status=(evidenceContract&&qualityGate&&(!aiRequired||boardPublishable))?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
     ...finalBody,title,subtitle,executive_assessment:executive,key_events:events,
@@ -265,8 +266,10 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       provider,
       mode:incidentResearch.summary.researched>0?'EVIDENCE_FIRST_WITH_DEEP_RESEARCH':(provider==='evidence-first-fallback'?'DETERMINISTIC_EVIDENCE_PUBLICATION':'AI_ENHANCED'),
       pdf_renderer_version:PDF_RENDERER_VERSION,
-      evidence_contract:evidenceContract
+      evidence_contract:evidenceContract,
+      publication_quality:deterministic.publication_quality||null
     },
+    publication_quality:deterministic.publication_quality||null,
     deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_version:DEEP_RESEARCH_VERSION,research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
     version
   };
