@@ -401,12 +401,12 @@ async function buildIncidentMap(country, events) {
 function sectionIndex(doc, y, rows) {
   let cy=y;
   for (const row of rows) {
-    const h=56;
+    const h=50;
     card(doc,MARGIN,cy,CONTENT_W,h);
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(8.5).text(row[0],MARGIN+14,cy+19,{width:30});
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(9.4).text(text(row[1],120),MARGIN+58,cy+14,{width:180});
     doc.fillColor(MUTED).font('Helvetica').fontSize(7.2).text(text(row[2],260),MARGIN+250,cy+14,{width:245,lineGap:2});
-    cy+=66;
+    cy+=58;
   }
   return cy;
 }
@@ -494,9 +494,9 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     ['08','Outlook and collection','Forward indicators, gaps, confidence limits and collection priorities'],
     ['09','Source register','Corroboration, provenance and publication controls']
   ]);
-  card(doc,MARGIN,710,CONTENT_W,66);
-  doc.fillColor(INK).font('Helvetica-Bold').fontSize(7.5).text('EDITORIAL RULE',MARGIN+14,724);
-  paragraph(doc,742,'The report separates evidence from assessment, identifies material uncertainty, avoids false precision and uses visual material only where it adds decision value.',{size:7.6,color:MUTED,max:600});
+  card(doc,MARGIN,699,CONTENT_W,66);
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(7.5).text('EDITORIAL RULE',MARGIN+14,713);
+  paragraph(doc,731,'The report separates evidence from assessment, identifies material uncertainty, avoids false precision and uses visual material only where it adds decision value.',{size:7.6,color:MUTED,max:600});
 
   // EXECUTIVE ASSESSMENT
   y=addPage(doc);
@@ -629,18 +629,18 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     const colGap=14, colW=(CONTENT_W-colGap)/2;
     const leftX=MARGIN, rightX=MARGIN+colW+colGap;
     const colStart=y;
-    card(doc,leftX,colStart,colW,176);
+    card(doc,leftX,colStart,colW,215);
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('CONTEXT',leftX+12,colStart+12);
-    paragraph(doc,colStart+31,m.contextText || 'Context was not established by the available evidence. The absence of context is retained as an intelligence gap rather than filled with assumption.',{x:leftX+12,width:colW-24,size:7.7,color:INK,max:1000,lineGap:2.8});
+    paragraph(doc,colStart+31,m.contextText || 'Context was not established by the available evidence. The absence of context is retained as an intelligence gap rather than filled with assumption.',{x:leftX+12,width:colW-24,size:7.7,color:INK,max:650,lineGap:2.8});
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('ANALYTICAL ASSESSMENT',leftX+12,colStart+99);
-    paragraph(doc,colStart+118,m.assessmentText || 'No additional analytical judgement was established beyond the current evidence record.',{x:leftX+12,width:colW-24,size:7.7,color:INK,max:750,lineGap:2.8});
+    paragraph(doc,colStart+118,m.assessmentText || 'No additional analytical judgement was established beyond the current evidence record.',{x:leftX+12,width:colW-24,size:7.7,color:INK,max:500,lineGap:2.8});
     
-    card(doc,rightX,colStart,colW,176);
+    card(doc,rightX,colStart,colW,215);
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('WHY IT MATTERS',rightX+12,colStart+12);
     let ry=bullets(doc,colStart+31,m.whyText.length?m.whyText:['Continued monitoring is warranted to determine persistence, spread or corroboration.'],{x:rightX+12,width:colW-24,size:7.5,gap:3});
     doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7).text('UNCERTAINTY',rightX+12,Math.max(ry+4,colStart+99));
     bullets(doc,Math.max(ry+18,colStart+118),m.uncertainty.length?m.uncertainty.concat(m.disputed):['The present evidence base does not establish all material details.'],{x:rightX+12,width:colW-24,size:7.5,gap:3,color:MUTED});
-    y=colStart+190;
+    y=colStart+229;
 
     if(m.chronology.length){
       doc.fillColor(INK).font('Helvetica-Bold').fontSize(8).text('CHRONOLOGY',MARGIN,y);
@@ -715,7 +715,7 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(9.5).text(upper(item.domain||'DOMAIN'),MARGIN+14,y+13,{width:220});
     const st=upper(item.status || 'NO MATERIAL UPDATE');
     badge(doc,MARGIN+CONTENT_W-123,y+10,st,109,st==='NO MATERIAL UPDATE RECORDED'?'#94a3b8':severityColor(st));
-    paragraph(doc,y+35,item.update || 'No material update recorded.',{x:MARGIN+14,width:CONTENT_W-28,size:7.8,max:700,lineGap:2.5});
+    paragraph(doc,y+35,item.update || 'No material update recorded.',{x:MARGIN+14,width:CONTENT_W-28,size:7.8,max:430,lineGap:2.5});
     y+=96;
   }
   if(!pm.length) y=paragraph(doc,y,'PMESI mapping was not available from the current ledger.',{size:8.5,color:MUTED});
