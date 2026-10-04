@@ -445,7 +445,7 @@ function sourceTitle(source) {
 async function buildProfessionalPdf(publication, events, images=[]) {
   const body = publication.body || {};
   const mergedEvents = (Array.isArray(events) ? events : []).map(e => mergeIncident(e, body));
-  const maxDossiers = body.publication_type === 'weekly' ? 8 : body.publication_type === 'monthly' ? 8 : 6;
+  const maxDossiers = body.publication_type === 'weekly' ? 7 : body.publication_type === 'monthly' ? 7 : 5;
   const priorities = priorityEvents(mergedEvents, maxDossiers);
   const priorityMerged = priorities.map(e => mergeIncident(e, body));
   const confidence = mergedEvents.length
