@@ -176,6 +176,51 @@ function sourceIsSubstantive(source) {
   return Boolean(title || desc || cleanPublicationText(source.text || '', 600));
 }
 
+function auditPublicationContent(incidents){
+  const seen=new Map();
+  const duplicateSentences=[];
+  let boilerplateHits=0;
+  for(const incident of Array.isArray(incidents)?incidents:[]){
+    for(const field of ['what_happened','context','assessment']){
+      const value=String(incident?.[field]||'');
+      for(const pattern of GENERIC_PATTERNS){
+        if(pattern.test(value))boilerplateHits++;
+        pattern.lastIndex=0;
+      }
+      for(const sentence of sentenceParts(value)){
+        const key=normalizeForComparison(sentence);
+        if(key.length<30)continue;
+        const prior=seen.get(key);
+        if(prior){
+          duplicateSentences.push({
+            sentence,
+            first_incident:prior.incidentId,
+            first_field:prior.field,
+            duplicate_incident:String(incident?.event_id),
+            duplicate_field:field
+          });
+        }else{
+          seen.set(key,{incidentId:String(incident?.event_id),field});
+        }
+      }
+    }
+  }
+  const uniqueDuplicates=[];
+  const dupKeys=new Set();
+  for(const item of duplicateSentences){
+    const key=normalizeForComparison(item.sentence);
+    if(dupKeys.has(key))continue;
+    dupKeys.add(key);
+    uniqueDuplicates.push(item);
+  }
+  return {
+    passed:boilerplateHits===0&&uniqueDuplicates.length===0,
+    boilerplate_hits:boilerplateHits,
+    duplicate_sentence_count:uniqueDuplicates.length,
+    duplicate_sentences:uniqueDuplicates.slice(0,10)
+  };
+}
+
 function repetitionRatio(value) {
   const sentences = sentenceParts(value);
   if (sentences.length < 2) return 0;
