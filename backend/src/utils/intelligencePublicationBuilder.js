@@ -246,7 +246,7 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
     typeCounts[t] = (typeCounts[t] || 0) + 1;
   }
   const topTypes = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]).join(', ') || 'no classified threat type';
-  const keyEvents = ordered.slice(0,8).map(eventNarrative);
+  const keyEvents = ordered.slice(0,10).map(eventNarrative);
   const top = keyEvents[0];
   let executive;
   if (!events.length) {
