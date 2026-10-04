@@ -52,7 +52,7 @@ function stripHtml(html){
 }
 function meta(html,key){
   const escaped=String(key).replace(/[.*+?^()|[\]\\]/g,'\\$&');
-  const re=new RegExp('<meta[^>]+(?:name|property)=["\\']'+escaped+'["\\'][^>]+content=["\\']([^"\\']+)["\\']','i');
+  const re=new RegExp("<meta[^>]+(?:name|property)=[\"']"+escaped+"[\"'][^>]+content=[\"']([^\"']+)[\"']","i");
   const m=String(html||'').match(re); return m?clean(m[1],600):'';
 }
 async function fetchText(url,options={},timeoutMs=REQUEST_TIMEOUT_MS){
