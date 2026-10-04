@@ -219,16 +219,17 @@ async function buildPdf(publication, events, images){
     doc.fillColor(muted).font('Helvetica-Bold').fontSize(6.8).text(m[0],x+10,291);
     doc.fillColor(ink).font('Helvetica-Bold').fontSize(17).text(m[1],x+10,308,{width:96});
   });
-  doc.fillColor(ink).font('Helvetica-Bold').fontSize(12).text('KEY JUDGEMENTS',42,378);
+  postureGauge(42,357,511,p.level,publication.confidence!=null?Math.round(Number(publication.confidence)):0);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(12).text('KEY JUDGEMENTS',42,395);
   (Array.isArray(body.assessment_highlights)?body.assessment_highlights:[]).slice(0,4).forEach(x=>{doc.y+=5;bullet(x,54,485);});
-  doc.fillColor(ink).font('Helvetica-Bold').fontSize(12).text('CHANGE ANALYSIS',42,500);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(12).text('CHANGE ANALYSIS',42,517);
   paragraph(body.change_analysis?.summary||'No change analysis was supplied.',42,511,9.2,4);
   doc.y+=8;
-  doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text('SEVERITY DISTRIBUTION',42,575);
+  doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text('SEVERITY DISTRIBUTION',42,592);
   const dist=p.counts||{};
   const distRows=['critical','high','moderate','low','informational'];
   distRows.forEach((s,i)=>{
-    const y=598+i*25;
+    const y=615+i*25;
     doc.fillColor(muted).font('Helvetica-Bold').fontSize(7).text(upper(s),42,y);
     doc.roundedRect(115,y-2,320,10,4).fill('#eef2f7');
     const w=Math.min(320,(Number(dist[s]||0)/Math.max(1,events.length))*320);
