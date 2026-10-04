@@ -321,10 +321,10 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
     references: references(events),
     deep_research: {
       enabled: events.some(e=>Boolean(e&&e.research)),
-      incidents_requested: events.length,
-      incidents_researched: events.filter(e=>e&&e.research&&e.research.agent&&e.research.agent.status==='researched').length,
-      incidents_fallback: events.filter(e=>e&&e.research&&e.research.agent&&e.research.agent.status==='fallback').length,
-      web_sources_discovered: events.reduce((n,e)=>n+Number(e?.research?.packet?.discovered_sources?.length||0),0)
+      incidents_requested: keyEvents.length,
+      incidents_researched: keyEvents.filter(e=>e&&e.research_status==='researched').length,
+      incidents_fallback: keyEvents.filter(e=>e&&e.research_status==='fallback').length,
+      web_sources_discovered: keyEvents.reduce((n,e)=>n+Number(e?.research_sources?.length||0),0)
     },
     collection_coverage: {
       event_count: events.length,
