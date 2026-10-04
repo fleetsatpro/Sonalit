@@ -196,5 +196,6 @@ module.exports = {
   sourceTitleKey,
   dedupeSources,
   sourceIsSubstantive,
-  repetitionRatio
+  repetitionRatio,
+  auditPublicationContent
 };
