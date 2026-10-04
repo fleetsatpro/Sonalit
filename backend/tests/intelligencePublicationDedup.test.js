@@ -56,3 +56,12 @@ test('AI provider clients have bounded request time and no nested SDK retries',(
   expect(source).toContain('maxRetries: 0');
   expect(source).toContain('timeout: AI_REQUEST_TIMEOUT_MS');
 });
+
+
+test('publication evidence policy accepts only defensible direct non-aggregator research',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  expect(source).toContain("const PUBLICATION_EVIDENCE_VERSION='1.1';");
+  expect(source).toContain("basis:'DIRECT_WEB_RESEARCH'");
+  expect(source).toContain('uniqueUrls.size>=2 && uniqueDomains.size>=2');
+  expect(source).toContain('!isAggregatorDomain(domain)');
+});
