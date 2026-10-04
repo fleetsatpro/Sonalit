@@ -15,6 +15,7 @@ const { PDF_RENDERER_VERSION } = require('../services/intelligencePublicationPdf
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
 const DAILY_COUNTRIES=(process.env.INTEL_PUBLICATION_COUNTRIES||Object.keys(COUNTRY_NAMES).join(',')).split(',').map(x=>x.trim().toUpperCase()).filter(x=>COUNTRY_NAMES[x]);
 const DEEP_RESEARCH_VERSION='2.0';
+const PUBLICATION_EVIDENCE_VERSION='1.1';
 const MAX_TRANSLATE=24;
 const MAX_SYNTHESIS=10;
 function clean(v,n=5000){return String(v||'').replace(/\s+/g,' ').trim().slice(0,n);}
@@ -230,13 +231,15 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const previousResearchCount=Number(priorResearch.incidents_web_researched||0)+Number(priorResearch.incidents_fallback||0);
   const researchVersionMismatch=String(priorResearch.research_version||'')!==DEEP_RESEARCH_VERSION;
   const pdfRendererMismatch=String(existing[0]?.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION;
+  const publicationPolicyMismatch=String(existing[0]?.body?.collection_basis?.version||'')!==PUBLICATION_EVIDENCE_VERSION;
   const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(previousResearchCount<expectedResearchCount||researchVersionMismatch);
   const unchanged=existing.length
     && String(priorCoverage.fingerprint||'')===fingerprint
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
     && Number(priorCoverage.source_count||-1)===sourceCount
     && !needsDeepResearch
-    && !pdfRendererMismatch;
+    && !pdfRendererMismatch
+    && !publicationPolicyMismatch;
   if(existing.length&&unchanged)return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 
   const refreshPdf=Boolean(existing.length&&(String(priorCoverage.fingerprint||'')!==fingerprint||needsDeepResearch||pdfRendererMismatch));
