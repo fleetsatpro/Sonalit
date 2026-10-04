@@ -345,74 +345,101 @@ async function buildPdf(publication, events, images){
   if(!researchEvents.length)paragraph('No incident research records are attached to this publication.',42,511,8.5,3);
   footer();
 
-  // Incident research dossiers — one dedicated publication page per incident.
+  // Incident research dossiers — intentionally long-form; each incident owns two pages.
   const key=Array.isArray(body.incident_dossiers)?body.incident_dossiers:(Array.isArray(body.key_developments)?body.key_developments:events.slice(0,8));
   for(let idx=0;idx<key.length;idx++){
     const e=key[idx]||{};
-    doc.addPage(); header();
-    title('INCIDENT RESEARCH DOSSIER', 'Incident '+String(idx+1).padStart(2,'0')+' of '+String(key.length));
     const sev=upper(e.severity||'moderate');
-    tag(sev,42,118,96,sev==='CRITICAL'?critical:sev==='HIGH'?high:moderate);
+    const sevColor=sev==='CRITICAL'?critical:sev==='HIGH'?high:moderate;
+    const incidentNo=String(idx+1).padStart(2,'0');
+
+    doc.addPage(); header(); title('INCIDENT RESEARCH DOSSIER','Incident '+incidentNo+' of '+String(key.length)+' · narrative & context');
+    tag(sev,42,118,96,sevColor);
     doc.fillColor(ink).font('Helvetica-Bold').fontSize(14).text(safe(e.headline||e.title||'Incident'),152,118,{width:401});
     doc.fillColor(muted).font('Helvetica').fontSize(7.2).text(
       upper(e.region||'LOCATION NOT SPECIFIED')+'  ·  '+String(e.confidence??'—')+'% CONFIDENCE  ·  '+String(e.evidence_count||0)+' EVIDENCE  ·  '+String(e.source_count||0)+' SOURCES',
       42,145,{width:511}
     );
-
     sectionLabel('What happened',42,174);
     const narrative=safe(e.what_happened||e.brief||e.summary||'Evidence record available.');
-    doc.fillColor(ink).font('Helvetica').fontSize(8.35).text(narrative,42,192,{width:511,lineGap:3.2});
+    const nSize=8.55,nHeight=doc.heightOfString(narrative,{width:511,font:'Helvetica',fontSize:nSize,lineGap:3.25});
+    doc.fillColor(ink).font('Helvetica').fontSize(nSize).text(narrative,42,192,{width:511,lineGap:3.25});
 
-    let iy=192+Math.min(155,doc.heightOfString(narrative,{width:511,font:'Helvetica',fontSize:8.35,lineGap:3.2}))+18;
-    if(iy>390)iy=390;
-    sectionLabel('Context',42,iy);
+    const contextStart=Math.max(192+nHeight+16,395);
+    sectionLabel('Context',42,contextStart);
     const context=safe(e.context||'No additional context was established by the research agent.');
-    doc.fillColor(ink).font('Helvetica').fontSize(7.9).text(context,42,iy+18,{width:511,lineGap:3});
-    iy+=18+Math.min(76,doc.heightOfString(context,{width:511,font:'Helvetica',fontSize:7.9,lineGap:3}))+16;
+    doc.fillColor(ink).font('Helvetica').fontSize(8).text(context,42,contextStart+18,{width:511,lineGap:3});
+    const contextHeight=doc.heightOfString(context,{width:511,font:'Helvetica',fontSize:8,lineGap:3});
+    const factTop=Math.max(contextStart+18+contextHeight+18,480);
 
-    const left=42,right=303;
-    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('CONFIRMED FACTS',left,iy);
-    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('REPORTED / DISPUTED',right,iy);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('CONFIRMED FACTS',42,factTop);
     const facts=Array.isArray(e.key_facts)?e.key_facts:[];
+    let fy=factTop+17;
+    facts.slice(0,6).forEach(x=>{
+      doc.fillColor(ink).font('Helvetica').fontSize(7.15).text('• '+safe(x),42,fy,{width:235,lineGap:2.2});
+      fy+=Math.min(30,doc.heightOfString('• '+safe(x),{width:235,font:'Helvetica',fontSize:7.15,lineGap:2.2}))+5;
+    });
+    if(!facts.length)doc.fillColor(muted).font('Helvetica').fontSize(7).text('No additional structured facts were returned.',42,fy,{width:235});
+
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('REPORTED / DISPUTED',303,factTop);
     const disputed=Array.isArray(e.reported_or_disputed)?e.reported_or_disputed:[];
-    let fy=iy+16;
-    facts.slice(0,4).forEach(x=>{doc.fillColor(ink).font('Helvetica').fontSize(7.1).text('• '+safe(x),left,fy,{width:235,lineGap:2.2});fy+=Math.min(31,doc.heightOfString('• '+safe(x),{width:235,font:'Helvetica',fontSize:7.1,lineGap:2.2}))+5;});
-    if(!facts.length)doc.fillColor(muted).fontSize(7).text('No additional structured facts.',left,fy,{width:235});
-    let dy=iy+16;
-    disputed.slice(0,4).forEach(x=>{doc.fillColor(muted).font('Helvetica').fontSize(7.1).text('• '+safe(x),right,dy,{width:250,lineGap:2.2});dy+=Math.min(31,doc.heightOfString('• '+safe(x),{width:250,font:'Helvetica',fontSize:7.1,lineGap:2.2}))+5;});
-    if(!disputed.length)doc.fillColor(muted).fontSize(7).text('No material disagreement recorded.',right,dy,{width:250});
+    let dy=factTop+17;
+    disputed.slice(0,6).forEach(x=>{
+      doc.fillColor(muted).font('Helvetica').fontSize(7.15).text('• '+safe(x),303,dy,{width:250,lineGap:2.2});
+      dy+=Math.min(30,doc.heightOfString('• '+safe(x),{width:250,font:'Helvetica',fontSize:7.15,lineGap:2.2}))+5;
+    });
+    if(!disputed.length)doc.fillColor(muted).font('Helvetica').fontSize(7).text('No material disagreement recorded.',303,dy,{width:250});
 
-    const boxY=Math.max(fy,dy)+12;
-    card(42,boxY,511,76);
-    doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('ANALYTICAL ASSESSMENT',56,boxY+12);
-    doc.fillColor(ink).font('Helvetica').fontSize(8).text(safe(e.assessment||'No additional analytical judgement supplied.'),56,boxY+27,{width:468,lineGap:3});
-    doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('WHY IT MATTERS',56,boxY+51);
-    const why=Array.isArray(e.why_it_matters)?e.why_it_matters.join(' '):safe(e.why_it_matters||'');
-    doc.fillColor(muted).font('Helvetica').fontSize(7.2).text(why||'No explicit operational implication was established.',142,boxY+50,{width:382,lineGap:2.5});
+    const why=Array.isArray(e.why_it_matters)?e.why_it_matters.join(' '):safe(e.why_it_matters||'No explicit operational implication was established.');
+    const whyY=Math.min(Math.max(fy,dy)+16,650);
+    card(42,whyY,511,100);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('WHY IT MATTERS',56,whyY+14);
+    doc.fillColor(ink).font('Helvetica').fontSize(8.2).text(why,56,whyY+31,{width:468,lineGap:3});
+    const sourceHint=Array.isArray(e.research_sources)?e.research_sources.length:0;
+    doc.fillColor(muted).font('Helvetica').fontSize(6.8).text(
+      upper(e.research_status||'RESEARCH NOT RECORDED')+' · '+String(sourceHint)+' RESEARCH SOURCES · '+String(e.research_provider||'evidence-fallback-research'),
+      56,whyY+78,{width:468}
+    );
+    footer();
 
-    const lowerY=boxY+92;
-    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('CHRONOLOGY',42,lowerY);
-    timeline(e.chronology||[],42,lowerY+16,511,70);
-    const sources=Array.isArray(e.research_sources)&&e.research_sources.length?e.research_sources:(Array.isArray(e.source_refs)?e.source_refs:[]);
-    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('RESEARCH SOURCES',42,lowerY+104);
-    let sy=lowerY+122;
+    doc.addPage(); header(); title('INCIDENT RESEARCH DOSSIER','Incident '+incidentNo+' · assessment, chronology & provenance');
+    card(42,118,511,118);
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(9).text('ANALYTICAL ASSESSMENT',58,136);
+    doc.fillColor(ink).font('Helvetica').fontSize(8.6).text(safe(e.assessment||'No additional analytical judgement supplied.'),58,153,{width:468,lineGap:3.2});
+    const uncertainty=Array.isArray(e.caveats)?e.caveats:[];
+    doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('UNCERTAINTY',58,198);
+    doc.fillColor(muted).font('Helvetica').fontSize(7.2).text(
+      uncertainty.length?uncertainty.slice(0,5).join(' '):'No additional uncertainty statement was returned; normal collection limitations still apply.',
+      125,197,{width:401,lineGap:2.7}
+    );
+
+    sectionLabel('Chronology',42,266);
+    timeline(e.chronology||[],42,288,511,116);
+
+    sectionLabel('Corroboration & source trail',42,432);
+    const sourceRefs=Array.isArray(e.source_refs)?e.source_refs:[];
+    const researchSources=Array.isArray(e.research_sources)?e.research_sources:[];
+    const sources=researchSources.length?researchSources:sourceRefs;
+    let sy=456;
     if(sources.length){
-      sources.slice(0,4).forEach((r,i)=>{
-        doc.fillColor(ink).font('Helvetica-Bold').fontSize(6.7).text(String(i+1)+'. '+safe(r.title||r.source||'Source'),42,sy,{width:511});
+      sources.slice(0,7).forEach((r,i)=>{
+        if(sy>730){footer();doc.addPage();header();title('INCIDENT RESEARCH DOSSIER','Incident '+incidentNo+' · provenance continued');sy=118;}
+        const label=safe(r.title||r.source||'Source');
+        const domainName=safe(r.domain||r.source||'');
+        doc.fillColor(ink).font('Helvetica-Bold').fontSize(7).text(String(i+1)+'. '+label,42,sy,{width:511});
         sy+=10;
-        doc.fillColor(muted).font('Helvetica').fontSize(6.2).text(safe(r.domain||r.url||''),42,sy,{width:511});
-        sy+=13;
+        doc.fillColor(muted).font('Helvetica').fontSize(6.2).text(domainName,42,sy,{width:511});
+        sy+=15;
       });
     }else{
-      doc.fillColor(muted).font('Helvetica').fontSize(6.8).text('No additional web source was recorded.',42,sy,{width:511});
-      sy+=15;
+      doc.fillColor(muted).font('Helvetica').fontSize(6.8).text('No research-source record was attached to this incident.',42,sy,{width:511});
+      sy+=17;
     }
-    const uncertainty=Array.isArray(e.caveats)?e.caveats:[];
-    doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('UNCERTAINTY',42,sy+2);
-    doc.fillColor(muted).font('Helvetica').fontSize(6.9).text(
-      uncertainty.length?uncertainty.slice(0,3).join(' '):'No additional uncertainty statement was returned; normal collection limitations still apply.',
-      110,sy+1,{width:443,lineGap:2.3}
-    );
+    const notes=safe(e.search_notes||'');
+    if(notes){
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(8).text('RESEARCH NOTES',42,sy+6);
+      doc.fillColor(muted).font('Helvetica').fontSize(6.9).text(notes,42,sy+22,{width:511,lineGap:2.5});
+    }
     footer();
   }
 
