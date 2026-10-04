@@ -34,6 +34,7 @@ const OPEN_SOURCE_SLOTS = [
 ];
 
 const COOLDOWN_MS = 60_000;
+const PERMANENT_FAILURE_COOLDOWN_MS = 15 * 60_000;
 const states = Object.fromEntries([
   ...OPEN_SOURCE_SLOTS.map(s => [s.label, { downUntil:0 }]),
   ['gpt-oss-120b-groq',{downUntil:0}],
@@ -102,6 +103,11 @@ function isRetryable(err) {
   const s = err?.status;
   return s === 408 || s === 409 || s === 429 || s === 500 || s === 502 || s === 503 || s === 504 || s === 529 ||
     /overload|timeout|temporar|rate.?limit|quota|connection reset|econnreset/i.test(err?.message || '');
+}
+function isPermanentCredentialFailure(err) {
+  const s = err?.status;
+  return s === 401 || s === 403 ||
+    (s === 400 && /credit balance|billing|insufficient credit|invalid api key|authentication/i.test(err?.message || ''));
 }
 
 function normalizeAnthropicParams(input) {
@@ -189,7 +195,7 @@ async function attempt(label,fn){
   const state=states[label]||{downUntil:0};
   if(Date.now()<state.downUntil)throw new Error(label+' provider cooling down');
   try{const result=await fn();state.downUntil=0;return result;}
-  catch(err){if(isRetryable(err))state.downUntil=Date.now()+COOLDOWN_MS;throw err;}
+  catch(err){if(isRetryable(err))state.downUntil=Date.now()+COOLDOWN_MS;else if(isPermanentCredentialFailure(err))state.downUntil=Date.now()+PERMANENT_FAILURE_COOLDOWN_MS;throw err;}
 }
 async function createResearchMessage(params) {
   // Web-grounded incident research is deliberately Anthropic-first because the

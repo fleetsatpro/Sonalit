@@ -129,19 +129,65 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
   };
 }
 
+function packetNarrative(event,packet){
+  const pages=Array.isArray(packet?.fetched_pages)?packet.fetched_pages.slice(0,4):[];
+  const discoveries=Array.isArray(packet?.discovered_sources)?packet.discovered_sources.slice(0,5):[];
+  const allSources=uniqueByUrl(pages.concat(discoveries));
+  const domains=Array.from(new Set(allSources.map(x=>domain(x.url)).filter(Boolean)));
+  const place=clean(event?.region||'the reported area',160);
+  const headline=clean(event?.headline||event?.title||'the incident',260);
+  const eventSummary=clean(event?.brief||event?.summary||'',1100);
+  const snippets=pages.map(p=>clean(p.description||p.text||'',750)).filter(Boolean);
+  const sourceTitles=allSources.map(x=>clean(x.title||'Untitled source',180)).filter(Boolean);
+  const facts=Array.isArray(event?.key_facts)?event.key_facts.map(x=>clean(x,500)).filter(Boolean).slice(0,4):[];
+  const caveats=Array.isArray(event?.caveats)?event.caveats.map(x=>clean(x,500)).filter(Boolean).slice(0,3):[];
+  const pieces=[];
+  pieces.push(
+    'The reporting record for '+headline+' points to an incident in '+place+'. '+
+    (eventSummary ? 'Sonalit records the core development as follows: '+eventSummary+' ' : '')+
+    'A live research pass was then run against current web reporting rather than relying only on the original event record.'
+  );
+  if(allSources.length){
+    pieces.push(
+      'That research pass located '+allSources.length+' usable source record(s) across '+Math.max(domains.length,1)+' web domain(s). '+
+      'The retrieved material broadly frames the incident through '+sourceTitles.slice(0,3).join('; ')+(sourceTitles.length>3?' and additional reporting.':' .')+
+      (snippets.length ? ' The source material describes: '+snippets.slice(0,2).join(' ') : '')
+    );
+  }else{
+    pieces.push('The research pass did not retrieve a usable external page, so the narrative remains bounded by the original Sonalit evidence.');
+  }
+  if(facts.length){
+    pieces.push('The clearest points already established in the event record are: '+facts.join(' ') );
+  }
+  pieces.push(
+    'From an operational perspective, the significance depends less on the headline itself than on whether the reported conditions persist, spread geographically, recur along the same corridor, or are corroborated by additional reporting. '+
+    'The current evidence does not justify filling those gaps with assumption.'
+  );
+  if(caveats.length)pieces.push('Outstanding uncertainty remains: '+caveats.join(' '));
+  return clean(pieces.join(' '),4200);
+}
+
 function fallbackResearch(event,packet){
+  const sources=uniqueByUrl(
+    (packet?.fetched_pages||[]).map(p=>({title:p.title,url:p.url,domain:p.domain,source_type:'retrieved_web_page'}))
+      .concat((packet?.discovered_sources||[]).map(p=>({title:p.title,url:p.url,domain:domain(p.url),source_type:'web_discovery'})))
+  ).slice(0,10);
+  const hasWebEvidence=Boolean(sources.length);
   return {
     status:'fallback',
-    narrative:clean(event&&event.brief||event&&event.summary||event&&event.headline||event&&event.title||'No detailed narrative available.',3000),
-    context:(packet&&packet.discovered_sources||[]).slice(0,4).map(x=>clean(x.snippet||x.title,700)).filter(Boolean).join(' ')||'No corroborative web narrative was retrieved during this publication run.',
+    narrative:hasWebEvidence?packetNarrative(event,packet):clean(event&&event.brief||event&&event.summary||event&&event.headline||event&&event.title||'No detailed narrative available.',3000),
+    context:(packet?.discovered_sources||[]).slice(0,4).map(x=>clean(x.snippet||x.title,700)).filter(Boolean).join(' ')||'No corroborative web narrative was retrieved during this publication run.',
     confirmed_facts:Array.isArray(event&&event.key_facts)?event.key_facts.slice(0,6):[],
     reported_or_disputed:[],
-    analytical_assessment:clean(event&&event.assessment&&event.assessment.judgement||'The event remains bounded by the evidence recorded in Sonalit.',1200),
+    analytical_assessment:clean(event&&event.assessment&&event.assessment.judgement||'The event remains bounded by the evidence recorded in Sonalit.',1400),
     why_it_matters:Array.isArray(event&&event.why_it_matters)?event.why_it_matters.slice(0,4):[],
     uncertainty:Array.isArray(event&&event.caveats)?event.caveats.slice(0,4):[],
     chronology:[],
-    sources:(packet&&packet.fetched_pages||[]).slice(0,4).map(p=>({title:p.title,url:p.url,domain:p.domain})),
-    provider:'evidence-fallback-research'
+    sources,
+    provider:hasWebEvidence?'web-research-packet-synthesis':'evidence-fallback-research',
+    research_method:hasWebEvidence?'live_web_packet':'evidence_only',
+    agent_status:'provider_unavailable',
+    web_sources_retrieved:sources.length
   };
 }
 
@@ -222,8 +268,10 @@ async function researchPublicationIncidents(events,{country,region}={}){
   const values=Object.values(out);
   const researched=values.filter(x=>x&&x.agent&&x.agent.status==='researched').length;
   const fallback=values.filter(x=>x&&x.agent&&x.agent.status==='fallback').length;
+  const researchedPacket=values.filter(x=>x?.agent?.research_method==='live_web_packet').length;
   const webSearchRequests=values.reduce((n,x)=>n+Number(x?.webSearchRequests||0),0);
-  return {byEvent:out,summary:{requested:events.length,researched,fallback,failed:events.length-researched-fallback,web_search_requests:webSearchRequests}};
+  const webSourcesRetrieved=values.reduce((n,x)=>n+Number(x?.agent?.web_sources_retrieved||x?.packet?.fetched_pages?.length||0),0);
+  return {byEvent:out,summary:{requested:events.length,researched,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved}};
 }
 
 module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket};
