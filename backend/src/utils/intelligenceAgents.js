@@ -9,7 +9,7 @@ const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 const { buildEvidencePublication } = require('./intelligencePublicationBuilder');
 const { researchPublicationIncidents } = require('./intelligenceIncidentResearch');
-const { auditPublicationContent, isAggregatorDomain, normalizeDomain } = require('./publicationQuality');
+const { auditPublicationContent, isAggregatorDomain, normalizeDomain, sourceIsSubstantive } = require('./publicationQuality');
 const { PDF_RENDERER_VERSION } = require('../services/intelligencePublicationPdfProfessional');
 
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
@@ -356,14 +356,14 @@ async function publicationEvidenceBasis(originalEvidenceContract, research, publ
   const sources=[];
   for(const event of Array.isArray(publicationEvents)?publicationEvents:[]){
     const packet=research?.byEvent?.[String(event?.id)]||{};
-    const agent=packet?.agent||packet||{};
-    const direct=Array.isArray(agent.sources)
-      ? agent.sources.filter(src=>{
-          const url=String(src?.url||'').trim();
-          const domain=normalizeDomain(src?.domain||url);
-          return url && domain && !isAggregatorDomain(domain);
-        })
+    const verifiedPages=Array.isArray(packet?.packet?.fetched_pages)
+      ? packet.packet.fetched_pages.filter(sourceIsSubstantive)
       : [];
+    const direct=verifiedPages.filter(src=>{
+      const url=String(src?.url||'').trim();
+      const domain=normalizeDomain(src?.domain||url);
+      return url && domain && !isAggregatorDomain(domain);
+    });
     if(direct.length) backed.push(event);
     for(const src of direct)sources.push(src);
   }
