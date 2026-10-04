@@ -381,7 +381,7 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
       evidence_count: evidenceCount,
       source_count: sourceCount,
       evidence_contract_met: evidenceContract,
-      contract: 'At least 3 evidence observations from at least 2 distinct sources.'
+      contract: evidenceContract ? 'Publication basis satisfies the configured evidence-source threshold.' : 'At least 3 original evidence observations from at least 2 distinct sources.'
     },
     disclaimer: 'This product is evidence-governed decision support. It does not guarantee completeness or accuracy and should not replace appropriate operational or professional judgement.',
     reporting_standard: 'SONALIT · evidence → verification → fusion → assessment → forecast → dissemination',
