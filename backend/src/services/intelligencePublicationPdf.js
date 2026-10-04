@@ -632,6 +632,32 @@ async function renderAndStorePublicationPdf(orgId, publicationId){
   return runWithOrgContext(orgId, () => renderAndStorePublicationPdfUnsafe(orgId, publicationId));
 }
 
+async function streamPublicationPdf(orgId, publicationId, req, res){
+  const download = String(req.query.download||'').toLowerCase()==='1' || String(req.query.download||'').toLowerCase()==='true';
+  const pdf = await getPublicationPdfObject(orgId, publicationId);
+  const filename = ('sonalit-' + publicationId + '.pdf').replace(/[^A-Za-z0-9._-]/g,'-');
+  res.status(200);
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition',(download?'attachment':'inline')+'; filename="'+filename+'"');
+  res.setHeader('Cache-Control','private, no-store, max-age=0, must-revalidate');
+  res.setHeader('X-Content-Type-Options','nosniff');
+  if(Number.isFinite(Number(pdf.contentLength)))res.setHeader('Content-Length',String(pdf.contentLength));
+  if(pdf.etag)res.setHeader('ETag',String(pdf.etag));
+  if(pdf.lastModified)res.setHeader('Last-Modified',new Date(pdf.lastModified).toUTCString());
+  const body=pdf.body;
+  if(body && typeof body.pipe==='function'){
+    body.once('error',error=>res.headersSent?res.destroy(error):res.destroy(error));
+    body.pipe(res);
+    return;
+  }
+  try{
+    for await(const chunk of body)res.write(chunk);
+    res.end();
+  }catch(error){
+    if(res.headersSent)res.destroy(error); else throw error;
+  }
+}
+
 async function getPublicationPdfObjectUnsafe(orgId,publicationId){
   const {rows:[row]}=await query("SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2 AND status='published' AND pdf_status='ready' LIMIT 1",[publicationId,orgId]);
   if(!row?.pdf_key)throw new Error('Publication PDF is not ready');
