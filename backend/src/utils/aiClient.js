@@ -205,6 +205,7 @@ async function createResearchMessage(params) {
             type:'web_search_20260318',
             name:'web_search',
             max_uses:Number(params.max_web_searches||6),
+            allowed_callers:['direct'],
             response_inclusion:'excluded'
           }]
         })),
