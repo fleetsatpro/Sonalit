@@ -417,52 +417,6 @@ async function buildPdf(publication, events, images){
   }
 
   // Regional roll-up, matching the sample product architecture.
-  let idx=0;
-  while(idx<key.length){
-    doc.addPage(); header(); title('KEY DEVELOPMENTS', 'Priority reporting and evidence-linked assessment');
-    for(let slot=0;slot<2 && idx<key.length;slot++,idx++){
-      const e=key[idx]||{};
-      const top=doc.y;
-      const h=slot===0?304:304;
-      card(42,top,511,h);
-      const sev=upper(e.severity||'moderate');
-      tag(sev,58,top+16,94,sev==='CRITICAL'?critical:sev==='HIGH'?high:moderate);
-      doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text(safe(e.headline||e.title||'Development'),164,top+17,{width:370});
-      doc.fillColor(muted).font('Helvetica').fontSize(7.4).text(
-        upper(e.region||'Location not specified')+'  ·  '+upper(e.confidence!=null?String(e.confidence)+'%':'CONFIDENCE —')+'  ·  '+String(e.evidence_count||0)+' EVIDENCE  ·  '+String(e.source_count||0)+' SOURCES',
-        58,top+42,{width:466}
-      );
-      doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('WHAT HAPPENED',58,top+72);
-      doc.fillColor(ink).font('Helvetica').fontSize(8.8).text(safe(e.what_happened||e.brief||e.summary),58,top+88,{width:466,lineGap:3.5});
-      doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('ASSESSMENT',58,top+166);
-      doc.fillColor(ink).font('Helvetica').fontSize(8.5).text(safe(e.assessment||'Evidence-derived assessment.'),58,top+181,{width:466,lineGap:3.5});
-      doc.fillColor(ink).font('Helvetica-Bold').fontSize(7.5).text('WHY IT MATTERS',58,top+230);
-      const why=Array.isArray(e.why_it_matters)?e.why_it_matters.join(' '):safe(e.why_it_matters||'Continued monitoring is warranted.');
-      doc.fillColor(ink).font('Helvetica').fontSize(8.3).text(why,58,top+245,{width:466,lineGap:3.2});
-      const facts=Array.isArray(e.key_facts)?e.key_facts:[];
-      if(facts.length){
-        doc.fillColor(ink).font('Helvetica-Bold').fontSize(7).text('KEY FACTS',58,top+282);
-        doc.fillColor(muted).font('Helvetica').fontSize(7.1).text(facts.slice(0,2).map(x=>'• '+safe(x)).join('  '),110,top+281,{width:405,lineGap:2.4});
-      }
-      const refs=Array.isArray(e.source_refs)?e.source_refs:[];
-      if(refs.length){
-        doc.fillColor(muted).font('Helvetica-Bold').fontSize(6.8).text('SOURCES',58,top+305);
-        doc.fillColor(muted).font('Helvetica').fontSize(6.8).text(refs.slice(0,2).map(r=>safe(r.source||'Source')).join(' · '),110,top+304,{width:412});
-      }
-      const caveats=Array.isArray(e.caveats)?e.caveats:[];
-      if(caveats.length && slot===1){
-        doc.fillColor(muted).font('Helvetica').fontSize(6.6).text('CAVEATS: '+caveats.slice(0,2).join(' '),58,top+318,{width:466,lineGap:2});
-      }
-      doc.y=top+h+18;
-    }
-    footer();
-  }
-  if(!key.length){
-    doc.addPage(); header(); title('KEY DEVELOPMENTS');
-    paragraph('No material event object was available for this reporting period. This is a collection statement and should be read together with the collection-gap note.');
-    footer();
-  }
-
   // Regional roll-up, matching the sample product architecture.
   const regions=Array.isArray(body.regional_news)?body.regional_news:[];
   doc.addPage(); header(); title('REGIONAL UPDATES','Geographic roll-up of evidence-backed event reporting');
@@ -473,7 +427,7 @@ async function buildPdf(publication, events, images){
       doc.moveTo(42,doc.y+15).lineTo(553,doc.y+15).strokeColor(line).stroke();
       doc.y+=24;
       for(const item of Array.isArray(group.items)?group.items:[]){
-        if(doc.y>748){footer();doc.addPage();header();title('REGIONAL NEWS','Continued');}
+        if(doc.y>748){footer();doc.addPage();header();title('REGIONAL UPDATES','Continued');}
         const sev=upper(item.severity||'moderate');
         doc.fillColor(sev==='CRITICAL'?critical:sev==='HIGH'?high:ink).font('Helvetica-Bold').fontSize(8.2)
           .text(safe(item.headline||'Development'),42,doc.y,{width:350});
