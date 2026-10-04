@@ -92,38 +92,10 @@ jobs:
       # ~5s, then the process sits forever). Results are final before the exit,
       # so forcing it loses no signal.
       - name: Backend unit tests
-        run: |
-          set +e
-          pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage --forceExit --json --outputFile=/tmp/sonalit-jest.json
-          status=$?
-          if [ "$status" -ne 0 ] && [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${{ github.event.pull_request.number }}" ]; then
-            node <<'NODE'
-const fs=require('fs');
-const data=JSON.parse(fs.readFileSync('/tmp/sonalit-jest.json','utf8'));
-const failures=[];
-for(const file of (data.testResults||[])){
-  for(const test of (file.assertionResults||[])){
-    if(test.status==='failed') failures.push({
-      file:file.name,
-      title:(test.ancestorTitles||[]).concat(test.title||[]).join(' › '),
-      messages:test.failureMessages||[]
-    });
-  }
-}
-let body='### Backend unit-test diagnostics\\n\\n';
-body += failures.length
-  ? failures.slice(0,12).map((f,i)=>String(i+1)+'. **'+f.title+'**\\n'+f.file+'\\n\\n\\```text\\n'+f.messages.join('\\n').slice(0,7000)+'\\n\\```').join('\\n')
-  : 'Jest failed, but did not return structured assertion failures.';
-fs.writeFileSync('/tmp/sonalit-jest-comment.md',body);
-NODE
-            gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/sonalit-jest-comment.md
-          fi
-          exit "$status"
+        run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage --forceExit
         env:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: ""
-          GITHUB_TOKEN: ${{ github.token }}
-
       - name: Run DB migrations (CI)
         run: node scripts/db-migrate.js
         working-directory: backend
