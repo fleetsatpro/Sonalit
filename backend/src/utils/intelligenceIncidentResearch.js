@@ -5,6 +5,7 @@ const aiClient = require('./aiClient');
 const logger = require('./logger');
 const {
   cleanPublicationText,
+  dedupeSentences,
   dedupeSources,
   sourceIsSubstantive,
   isAggregatorDomain,

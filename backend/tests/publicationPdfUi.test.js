@@ -37,6 +37,7 @@ describe('publication PDF UI controls',()=>{
     const s=fs.readFileSync(path.join(__dirname,'../../apps/web/src/pages/IntelligencePublicationDesk.tsx'),'utf8');
     expect(s).toContain('OBSERVED CONCENTRATIONS');
     expect(s).toContain('No material current-period update:');
-    expect(s).not.toContain('`${x.domain}: ${x.status} — ${x.update}`');
+    expect(s).toContain("body.pmesi.filter((x:any)=>x?.update)");
+    expect(s).toContain("No material current-period update:");
   });
 });

@@ -42,14 +42,26 @@ function evidenceDerivedSynthesis(event){
     return `${source}: ${title}`;
   });
   const headline=clean(event.title||'INTELLIGENCE EVENT',180);
+  const whyByType={
+    SECURITY:'Monitor whether '+headline+' persists, expands geographically or is independently corroborated.',
+    POLITICAL:'Monitor whether '+headline+' develops into sustained political disruption or wider mobilisation.',
+    LOGISTICS:'Monitor whether '+headline+' creates sustained delay, diversion or access constraints.',
+    NATURAL_HAZARD:'Monitor whether '+headline+' persists or expands into wider access, infrastructure, population or service impacts.',
+    HEALTH:'Monitor whether '+headline+' persists, spreads or creates material continuity consequences.',
+    ECONOMIC:'Monitor whether '+headline+' creates sustained pressure on commerce, supply or operating costs.',
+    BORDER:'Monitor whether '+headline+' produces recurring crossing, customs or access disruption.',
+    MARITIME:'Monitor whether '+headline+' affects vessel movement, route risk or port continuity.',
+    CRIME:'Monitor whether '+headline+' recurs or expands beyond the reported area.',
+    OTHER:'Monitor whether '+headline+' recurs, spreads or gains independent corroboration.'
+  };
   return {
     id:String(event.id),
     headline,
     brief:clean(event.summary||headline||'Evidence record available.',1600),
     intelligence_type,
     key_facts,
-    why_it_matters:[],
-    caveats:[],
+    why_it_matters:[whyByType[intelligence_type]||whyByType.OTHER],
+    caveats:[clean('Evidence coverage is limited to the sources linked to this event in Sonalit. Unresolved details are retained as intelligence gaps rather than filled with assumption.',420)],
     confidence:Math.max(0,Math.min(100,Number(event.confidence)||50)),
   };
 }

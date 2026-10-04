@@ -45,7 +45,7 @@ test('AI editorial board is optional resilience enrichment, not a publication bl
 
 test('publication agent imports the editorial quality audit before invoking it',()=>{
   const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
-  expect(source).toContain("const { auditPublicationContent, isAggregatorDomain, normalizeDomain, sourceIsSubstantive } = require('./publicationQuality');");
+  expect(source).toMatch(/const \{ auditPublicationContent, isAggregatorDomain, normalizeDomain, sourceIsSubstantive(?:, isRepetitiveTemplateText)? \} = require\('\.\/publicationQuality'\);/);
   expect(source).toContain('const finalQuality=auditPublicationContent(');
 });
 
