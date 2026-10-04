@@ -237,7 +237,7 @@ describe('tenant isolation regression guards', () => {
     expect(source).toContain('renderAndStorePublicationPdfUnsafe');
     expect(source).toContain('return runWithOrgContext(orgId, () => renderAndStorePublicationPdfUnsafe(orgId, publicationId));');
     expect(source).toContain('getPublicationPdfAccessUrlUnsafe');
-    expect(source).toContain('return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId));');
+    expect(source).toContain('return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId, options));');
   });
 
   test('publication PDF batch discovery establishes tenant context before its first DB query', () => {
