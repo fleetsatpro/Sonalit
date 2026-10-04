@@ -145,7 +145,7 @@ function fallbackResearch(event,packet){
   };
 }
 
-function researchPrompt(packet,event,country,{includeSchema=true}={){
+function researchPrompt(packet,event,country,{includeSchema=true}={}){
   const jsonPacket=JSON.stringify(packet).slice(0,MAX_PACKET_CHARS);
   return 'Incident ID: '+String(event.id)+'\n'+
     'Country: '+String(COUNTRY_NAMES[country]||country)+'\n'+
