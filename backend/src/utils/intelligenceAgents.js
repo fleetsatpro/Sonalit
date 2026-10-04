@@ -341,9 +341,21 @@ async function publicationForCountry(orgId,country,type='daily'){
   });
 }
 
-async function publishDue(orgId){const results=[];for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'daily')});}catch(error){results.push({country,status:'failed',error:error.message});}}
- const d=new Date();if(d.getUTCDay()===1){for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'weekly')});}catch(error){results.push({country,status:'failed',error:error.message});}}}
- if(d.getUTCDate()===1){for(const country of DAILY_COUNTRIES){try{results.push({country,...await publicationForCountry(orgId,country,'monthly')});}catch(error){results.push({country,status:'failed',error:error.message});}}}
- return{processed:results.length,results};}
+async function publishDue(orgId){
+ const results=[];
+ const run=async(country,type)=>{
+   try{
+     results.push({country,...await publicationForCountry(orgId,country,type)});
+   }catch(error){
+     logger.error('Intelligence publication failed '+country+'/'+type+' org='+orgId+': '+error.message);
+     results.push({country,type,status:'failed',error:error.message});
+   }
+ };
+ for(const country of DAILY_COUNTRIES)await run(country,'daily');
+ const d=new Date();
+ if(d.getUTCDay()===1)for(const country of DAILY_COUNTRIES)await run(country,'weekly');
+ if(d.getUTCDate()===1)for(const country of DAILY_COUNTRIES)await run(country,'monthly');
+ return{processed:results.length,results};
+}
 async function runIntelligenceAgents(){const {rows:orgs}=await globalQuery(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const output=[];for(const {org_id} of orgs){try{const result=await runWithOrgContext(org_id,async()=>{const translation=await translateQueue(org_id);const synthesis=await synthesizeEvents(org_id);const publications=await publishDue(org_id);return{translation,synthesis,publications};});output.push({org_id,...result});}catch(error){output.push({org_id,error:error.message});logger.warn(`Intelligence agents org=${org_id} failed: ${error.message}`);}}return output;}
 module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,evidenceDerivedSynthesis};
