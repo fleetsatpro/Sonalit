@@ -1,4 +1,4 @@
-const pdfParse=require('pdf-parse');
+const {PDFParse}=require('pdf-parse');
 const {buildProfessionalPdf}=require('../src/services/intelligencePublicationPdfProfessional');
 
 describe('professional intelligence publication PDF renderer',()=>{
@@ -24,6 +24,29 @@ describe('professional intelligence publication PDF renderer',()=>{
       {id:'obs-2',source_id:'src-2',source_name:'UN News',title:'Transport disruption reported',url:'https://example.com/un'}
     ]
   };
+
+  beforeEach(()=>{
+    global.fetch=jest.fn(async(url)=>{
+      if(String(url).includes('raw.githubusercontent.com/johan/world.geo.json')){
+        return {
+          ok:true,
+          headers:{get:()=> 'application/geo+json'},
+          json:async()=>({
+            type:'Feature',
+            properties:{},
+            geometry:{
+              type:'Polygon',
+              coordinates:[[
+                [33.8,-4.7],[41.9,-4.7],[41.9,5.1],[33.8,5.1],[33.8,-4.7]
+              ]]
+            }
+          })
+        };
+      }
+      return {ok:false,status:404,headers:{get:()=> 'text/html'},text:async()=>''};
+    });
+  });
+  afterEach(()=>{delete global.fetch});
 
   test('produces a bounded, non-corrupted PDF without ghost pages',async()=>{
     const publication={
@@ -98,7 +121,9 @@ describe('professional intelligence publication PDF renderer',()=>{
     };
     const pdf=await buildProfessionalPdf(publication,[baseEvent],[]);
     expect(Buffer.isBuffer(pdf)).toBe(true);
-    const parsed=await pdfParse(pdf);
+    const parser=new PDFParse({data:pdf});
+    const parsed=await parser.getText();
+    await parser.destroy();
     expect(parsed.numpages).toBeLessThanOrEqual(16);
     expect(parsed.numpages).toBeGreaterThanOrEqual(9);
     expect(parsed.text).not.toContain('[object Object]');
