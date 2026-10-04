@@ -97,7 +97,15 @@ function eventNarrative(e) {
     chronology: Array.isArray(research.chronology) ? research.chronology.slice(0,8).map(x=>({time:clean(x?.time,120),event:clean(x?.event,700)})) : [],
     research_status: research.status || null,
     research_provider: research.provider || null,
-    research_sources: Array.isArray(research.sources) ? research.sources.slice(0,10) : [],
+    research_sources: Array.isArray(research.sources) ? research.sources.slice(0,10).map(src => ({
+      ...src,
+      image_url: (() => {
+        const hit = Array.isArray(e?.research?.packet?.fetched_pages)
+          ? e.research.packet.fetched_pages.find(p => String(p.url||'')===String(src?.url||''))
+          : null;
+        return hit?.image_url || null;
+      })()
+    })) : [],
     search_notes: clean(research.search_notes || '', 1200),
     outlook_triggers: { upgrade: upgradeTriggers, downgrade: downgradeTriggers },
     synthesis: { confidence: Number(e.synthesis_confidence || e.confidence || 0) || 0, provider: e.synthesis_provider || null },
