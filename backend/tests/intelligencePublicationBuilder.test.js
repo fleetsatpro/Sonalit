@@ -12,6 +12,12 @@ describe('evidence-first intelligence publication builder',()=>{
     longitude:36.82,
     region:'NAIROBI',
     risk_velocity:0.4,
+    assessment:{judgement:'The disruption could increase exposure on the affected corridor if persistence is confirmed.'},
+    key_facts:['A road section was reportedly disrupted after an armed attack.','Two distinct sources are linked to the event.'],
+    why_it_matters:['The disruption warrants review of route exposure and continuity measures.'],
+    caveats:['The event record does not establish completeness of reporting.'],
+    synthesis_confidence:82,
+    synthesis_provider:'evidence-fallback',
     observation_count:2,
     source_count:2,
     evidence:[
