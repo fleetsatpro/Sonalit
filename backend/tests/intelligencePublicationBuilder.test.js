@@ -12,6 +12,12 @@ describe('evidence-first intelligence publication builder',()=>{
     longitude:36.82,
     region:'NAIROBI',
     risk_velocity:0.4,
+    assessment:{judgement:'The disruption could increase exposure on the affected corridor if persistence is confirmed.'},
+    key_facts:['A road section was reportedly disrupted after an armed attack.','Two distinct sources are linked to the event.'],
+    why_it_matters:['The disruption warrants review of route exposure and continuity measures.'],
+    caveats:['The event record does not establish completeness of reporting.'],
+    synthesis_confidence:82,
+    synthesis_provider:'evidence-fallback',
     observation_count:2,
     source_count:2,
     evidence:[
@@ -34,6 +40,10 @@ describe('evidence-first intelligence publication builder',()=>{
     expect(body.incident_map.points.length).toBe(2);
     expect(body.references).toHaveLength(2);
     expect(body.collection_coverage.evidence_contract_met).toBe(true);
+    expect(body.public_safety_security_overview.indicators).toHaveLength(4);
+    expect(body.emerging_trends.length).toBeGreaterThan(0);
+    expect(body.key_drivers.length).toBeGreaterThan(0);
+    expect(body.key_findings_assessment.findings.length).toBe(2);
   });
   test('explicitly states when there is no event evidence rather than inventing incidents',()=>{
     const body=buildEvidencePublication({

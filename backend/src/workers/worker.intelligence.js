@@ -146,7 +146,13 @@ async function cycleUnsafe(reason) {
     const synth = agents.reduce((sum, x) => sum + Number(x.synthesis?.synthesized || 0), 0);
     const translated = agents.reduce((sum, x) => sum + Number(x.translation?.translated || 0), 0);
     const pdfReady = pdfs.filter(x => x.status === 'ready').length;
-    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, publication_pdfs_ready=${pdfReady}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
+    const publicationResults = agents.flatMap(x => Array.isArray(x.publications?.results) ? x.publications.results : []);
+    const publicationPublished = publicationResults.filter(x => x.publication_status === 'published').length;
+    const publicationDrafts = publicationResults.filter(x => x.publication_status === 'draft').length;
+    const publicationExisting = publicationResults.filter(x => x.publication_status && x.status === 'exists').length;
+    const publicationFailures = publicationResults.filter(x => x.status === 'failed' || x.error).length;
+    const pdfFailed = pdfs.filter(x => x.status === 'failed' || x.error).length;
+    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, publications_processed=${publicationResults.length}, publications_published=${publicationPublished}, publications_drafts=${publicationDrafts}, publications_existing=${publicationExisting}, publication_failures=${publicationFailures}, publication_pdfs_ready=${pdfReady}, publication_pdf_failures=${pdfFailed}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
   } catch (error) {
     logger.error(`Intelligence worker cycle failed (${reason}): ${error.message}`);
   }

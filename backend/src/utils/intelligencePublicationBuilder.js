@@ -68,20 +68,31 @@ function posture(events, confidence) {
   };
 }
 function eventNarrative(e) {
-  const brief = clean(e.brief || e.summary || e.headline || e.title || 'Evidence record available.', 1800);
+  const brief = clean(e.brief || e.summary || e.headline || e.title || 'Evidence record available.', 2200);
   const severity = String(e.severity || 'moderate').toUpperCase();
   const type = eventType(e);
   const region = clean(e.region || 'Location not specified', 160);
   const evidence = Number(e.observation_count || (Array.isArray(e.evidence) ? e.evidence.length : 0));
   const sources = Number(e.source_count || new Set((Array.isArray(e.evidence) ? e.evidence : []).map(x => x.source_id).filter(Boolean)).size);
+  const keyFacts = Array.isArray(e.key_facts) ? e.key_facts.map(x => clean(x,500)).filter(Boolean).slice(0,6) : [];
+  const why = Array.isArray(e.why_it_matters) ? e.why_it_matters.map(x => clean(x,700)).filter(Boolean).slice(0,5) : [];
+  const caveats = Array.isArray(e.caveats) ? e.caveats.map(x => clean(x,700)).filter(Boolean).slice(0,5) : [];
+  const assessment = e.assessment && typeof e.assessment === 'object' ? e.assessment : {};
+  const judgement = clean(assessment.judgement || assessment.headline || '', 1200);
+  const upgradeTriggers = Array.isArray(assessment.upgrade_triggers) ? assessment.upgrade_triggers.map(x => clean(x,500)).filter(Boolean).slice(0,5) : [];
+  const downgradeTriggers = Array.isArray(assessment.downgrade_triggers) ? assessment.downgrade_triggers.map(x => clean(x,500)).filter(Boolean).slice(0,5) : [];
   return {
     event_id: e.id,
     headline: clean(e.headline || e.title || 'Security development', 220),
     what_happened: brief,
-    assessment: severity + ' ' + type + ' signal recorded in ' + region + '.',
-    why_it_matters: severity === 'CRITICAL' || severity === 'HIGH'
+    key_facts: keyFacts,
+    assessment: judgement || (severity + ' ' + type + ' signal recorded in ' + region + '.'),
+    why_it_matters: why.length ? why : [severity === 'CRITICAL' || severity === 'HIGH'
       ? 'The development warrants priority monitoring and review of exposure in the affected area.'
-      : 'The development warrants continued monitoring for corroboration, persistence or escalation.',
+      : 'The development warrants continued monitoring for corroboration, persistence or escalation.'],
+    caveats,
+    outlook_triggers: { upgrade: upgradeTriggers, downgrade: downgradeTriggers },
+    synthesis: { confidence: Number(e.synthesis_confidence || e.confidence || 0) || 0, provider: e.synthesis_provider || null },
     severity,
     confidence: Math.round(Number(e.confidence || 0) || 0),
     evidence_count: evidence,
@@ -107,6 +118,60 @@ function pmesi(events) {
       confidence: Number(top.confidence || 0) || null
     };
   });
+}
+
+function emergingTrends(events) {
+  const counts = new Map();
+  for (const e of events) {
+    const key = eventType(e);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const total = Math.max(events.length, 1);
+  return Array.from(counts.entries())
+    .sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]))
+    .slice(0,5)
+    .map(([theme,count]) => ({
+      theme,
+      count,
+      share_percent: Math.round((count/total)*100),
+      assessment: count > 1
+        ? `Observed concentration: ${theme} accounts for ${count} of ${events.length} recorded event objects.`
+        : `Observed signal: ${theme} is represented by one recorded event object.`
+    }));
+}
+function keyDrivers(events) {
+  const drivers = [];
+  const regions = new Map();
+  const types = new Map();
+  for (const e of events) {
+    const region = clean(e.region || 'NATIONAL / UNALLOCATED', 100).toUpperCase();
+    regions.set(region, (regions.get(region) || 0) + 1);
+    const type = eventType(e);
+    types.set(type, (types.get(type) || 0) + 1);
+  }
+  const topRegion = Array.from(regions.entries()).sort((a,b)=>b[1]-a[1])[0];
+  const topType = Array.from(types.entries()).sort((a,b)=>b[1]-a[1])[0];
+  if (topRegion) drivers.push({ driver:'Geographic concentration', evidence: `${topRegion[0]} contains ${topRegion[1]} of ${events.length} recorded event objects.` });
+  if (topType) drivers.push({ driver:'Dominant intelligence theme', evidence: `${topType[0]} is the largest classified event category with ${topType[1]} recorded event object(s).` });
+  const high = events.filter(e => severityScore(e.severity) >= 3).length;
+  if (high) drivers.push({ driver:'Severity pressure', evidence: `${high} recorded event object(s) are assessed at high or critical severity.` });
+  const corroborated = events.filter(e => Number(e.source_count || 0) >= 2).length;
+  if (corroborated) drivers.push({ driver:'Corroboration', evidence: `${corroborated} recorded event object(s) have at least two distinct source records.` });
+  return drivers.slice(0,5);
+}
+function publicSafetyOverview(events, postureState, confidence) {
+  return {
+    summary: events.length
+      ? `${events.length} event object(s) were captured in the reporting period; the highest recorded posture is ${postureState.level}, with an average event confidence of ${Math.round(confidence || 0)}%.`
+      : 'No event objects were captured in the reporting period; this is a collection statement rather than a claim of no incidents.',
+    indicators: [
+      { label:'RECORDED EVENTS', value:events.length },
+      { label:'HIGH / CRITICAL', value:events.filter(e=>severityScore(e.severity)>=3).length },
+      { label:'CORROBORATED', value:events.filter(e=>Number(e.source_count||0)>=2).length },
+      { label:'MAPPED', value:events.filter(e=>Number.isFinite(Number(e.latitude))&&Number.isFinite(Number(e.longitude))).length }
+    ],
+    methodology:'Indicators are calculated only from the event and evidence fields available to this publication run.'
+  };
 }
 function regionalNews(events) {
   const groups = new Map();
@@ -194,6 +259,13 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
       summary: executive,
       highest_priority: top ? top.headline : 'No material event recorded.',
       severity_distribution: p.counts,
+    },
+    public_safety_security_overview: publicSafetyOverview(events, p, confidence),
+    emerging_trends: emergingTrends(events),
+    key_drivers: keyDrivers(events),
+    key_findings_assessment: {
+      findings: keyEvents.slice(0,5).map(e => ({headline:e.headline, assessment:e.assessment, why_it_matters:e.why_it_matters, event_id:e.event_id})),
+      note:'Findings are ranked from the recorded event ledger and do not imply complete collection of all incidents.'
     },
     regional_news: regionalNews(events),
     pmesi: pmesi(events),
