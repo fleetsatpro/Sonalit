@@ -91,22 +91,6 @@ jobs:
       # hanging the job indefinitely (reproducible locally — 172 tests pass in
       # ~5s, then the process sits forever). Results are final before the exit,
       # so forcing it loses no signal.
-      - name: Publication map regression diagnostic
-        run: |
-          set +e
-          pnpm --filter fleetops-backend exec jest backend/tests/intelligencePublicationPdfProfessional.test.js --runInBand --no-coverage --forceExit --json --outputFile=/tmp/map-jest.json
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            node <<'NODE'
-const fs=require('fs');
-const d=JSON.parse(fs.readFileSync('/tmp/map-jest.json','utf8'));
-const failures=[];
-for(const f of d.testResults||[]) for(const t of f.assertionResults||[]) if(t.status==='failed') failures.push((t.ancestorTitles||[]).concat(t.title||[]).join(' › ')+'\n'+(t.failureMessages||[]).join('\n'));
-fs.writeFileSync('/tmp/map-jest-comment.md','### Publication map diagnostic\n\n'+(failures.length?failures.join('\n\n'):'Jest failed without structured assertion details.'));
-NODE
-            gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/map-jest-comment.md || true
-          fi
-          exit "$status"
       - name: Backend unit tests
         run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage --forceExit
         env:
