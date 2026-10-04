@@ -548,11 +548,14 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   y+=8;
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(10.5).text('WHAT WOULD CHANGE THIS JUDGEMENT',MARGIN,y);
   y+=20;
-  const triggers=[
-    'A second credible source confirms a material increase in severity, scale or geographic spread.',
-    'The event pattern persists across consecutive reporting periods rather than remaining isolated.',
-    'Authoritative reporting materially contradicts the present assessment or changes the confidence basis.'
-  ];
+  const triggerCandidates=[];
+  for(const e of priorityMerged.slice(0,3)){
+    const m=mergeIncident(e,body);
+    const headline=m.headline;
+    triggerCandidates.push('Independent corroboration of '+headline+' would strengthen the judgement; contradictory authoritative reporting would weaken it.');
+    triggerCandidates.push('Persistence of '+headline+' in '+(m.region||'the reported area')+' across another reporting cycle would increase concern for sustained exposure.');
+  }
+  const triggers=uniqueStrings(triggerCandidates,3);
   y=bullets(doc,y,triggers,{size:8.2});
   y+=4;
   doc.fillColor(MUTED).font('Helvetica').fontSize(7.4).text('Assessment discipline: probability language should describe the likelihood of a development; confidence describes the strength of the information and reasoning supporting the judgement.',MARGIN,y,{width:CONTENT_W,lineGap:2.5});
