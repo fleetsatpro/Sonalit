@@ -1,3 +1,4 @@
+const path=require('path');
 const fs=require('fs');
 const os=require('os');
 const pathModule=require('path');
@@ -178,4 +179,11 @@ test('renders a real boundary map and filters implausible coordinates',async()=>
   expect(excludedPoints).toBe(1);
   expect(points[0].headline).toBe('Nairobi event');
   expect(points[0].n).toBe(1);
+});
+
+
+test('executive key judgements do not replay full dossier prose',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../src/services/intelligencePublicationPdfProfessional.js'),'utf8');
+  expect(source).toContain("return (i+1)+'. '+m.headline;");
+  expect(source).not.toContain("return (i+1)+'. '+m.headline+' - '+why;");
 });
