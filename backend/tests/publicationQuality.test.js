@@ -53,13 +53,24 @@ describe('publication content quality controls',()=>{
 });
 
 
-test('fails the publication gate when an incident repeats prose across fields',()=>{
+test('does not block when one incident reuses a sentence across its own fields',()=>{
   const audit=auditPublicationContent([{
     event_id:'1',
     what_happened:'Authorities closed the corridor after an armed attack.',
     context:'Authorities closed the corridor after an armed attack.',
     assessment:'The closure may persist.'
   }]);
+  expect(audit.passed).toBe(true);
+  expect(audit.duplicate_sentence_count).toBe(0);
+  expect(audit.intra_incident_repeat_count).toBe(1);
+});
+
+test('blocks exact substantive repetition across different incidents',()=>{
+  const sentence='Authorities closed the corridor after an armed attack.';
+  const audit=auditPublicationContent([
+    {event_id:'1',what_happened:sentence,context:'Different context.',assessment:'Separate judgement.'},
+    {event_id:'2',what_happened:sentence,context:'Another context.',assessment:'Another judgement.'}
+  ]);
   expect(audit.passed).toBe(false);
   expect(audit.duplicate_sentence_count).toBe(1);
 });
