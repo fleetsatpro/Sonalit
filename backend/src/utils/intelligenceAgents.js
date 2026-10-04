@@ -137,7 +137,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   }
   const {rows:existing}=await query(
     `SELECT id,status,version,body,pdf_status,pdf_version FROM intel_publications
-      WHERE org_id=$1 AND country_code=$2 AND publication_type=$3 AND period_start=$4 AND period_end=$5
+      WHERE org_id=$1 AND country_code=$2 AND publication_type=$3 AND period_start=$4 AND period_end=$5 AND status IN ('draft','review','published')
       ORDER BY version DESC LIMIT 1`,[orgId,country,type,start,end]
   );
   const {rows:events}=await query(
@@ -194,8 +194,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
       const final=result.final;
       if(final){title=final.title||title;subtitle=final.subtitle||subtitle;executive=final.executive_assessment||executive;finalBody={...deterministic,...final};}
-      if(!result.publishable) logger.warn(`Publication editorial board held \${country}/\${type}: evidence=\${evidenceContract} qa=\${result.qa?.publishable===true} blocking=\${(result.qa?.blocking_issues||[]).length}`);
-    }catch(error){logger.warn(`Publication editorial board unavailable \${country}/\${type}; deterministic evidence product retained: \${error.message}`);}
+      if(!result.publishable) logger.warn(`Publication editorial board held ${country}/${type}: evidence=${evidenceContract} qa=${result.qa?.publishable===true} blocking=${(result.qa?.blocking_issues||[]).length}`);
+    }catch(error){logger.warn(`Publication editorial board unavailable ${country}/${type}; deterministic evidence product retained: ${error.message}`);}
   }
 
   const boardPublishable=board?.publishable===true;
