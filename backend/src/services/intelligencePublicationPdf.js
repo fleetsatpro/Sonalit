@@ -686,5 +686,5 @@ async function getPublicationPdfAccessUrl(orgId, publicationId, options={}){
   return runWithOrgContext(orgId, () => getPublicationPdfAccessUrlUnsafe(orgId, publicationId, options));
 }
 
-module.exports={renderAndStorePublicationPdf,generateMissingPublicationPdfs,getPublicationPdfAccessUrl};
+module.exports={renderAndStorePublicationPdf,generateMissingPublicationPdfs,getPublicationPdfAccessUrl,getPublicationPdfObject,streamPublicationPdf};
 

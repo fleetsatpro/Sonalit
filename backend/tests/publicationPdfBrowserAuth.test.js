@@ -15,9 +15,8 @@ describe('browser-native publication PDF compatibility', () => {
     expect(s).toContain("expiresIn: '10m'");
     expect(s).toContain("httpOnly: true");
     expect(s).toContain("sameSite: 'strict'");
-    expect(s).toContain("role === 'admin'");
-    expect(s).toContain("role === 'super_admin'");
-    expect(s).toContain("u.org_id = $2");
+    expect(s).toContain("['admin', 'super_admin'].includes(user.role)");
+    expect(s).toContain("AND org_id = $2");
   });
 
   test('admin compatibility route runs before the global bearer-only admin gate', () => {
@@ -28,6 +27,12 @@ describe('browser-native publication PDF compatibility', () => {
     expect(gate).toBeGreaterThan(route);
     expect(s).toContain('authenticatePublicationPdfCapability');
     expect(s).toContain('streamPublicationPdf');
+  });
+
+  test('publication PDF stream handler is exported for both admin routes', () => {
+    const service = require('../src/services/intelligencePublicationPdf');
+    expect(typeof service.streamPublicationPdf).toBe('function');
+    expect(typeof service.getPublicationPdfObject).toBe('function');
   });
 
   test('publication PDF transport remains tenant-scoped and does not expose an R2 redirect', () => {
