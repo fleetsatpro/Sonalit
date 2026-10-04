@@ -4,7 +4,7 @@ const pathModule=require('path');
 const {execFile}=require('child_process');
 const {promisify}=require('util');
 const execFileAsync=promisify(execFile);
-const {buildProfessionalPdf}=require('../src/services/intelligencePublicationPdfProfessional');
+const {buildProfessionalPdf,PDF_RENDERER_VERSION}=require('../src/services/intelligencePublicationPdfProfessional');
 
 describe('professional intelligence publication PDF renderer',()=>{
   const baseEvent={
@@ -148,12 +148,18 @@ describe('professional intelligence publication PDF renderer',()=>{
     const parsed=JSON.parse(stdout);
     expect(parsed.pages).toBeLessThanOrEqual(16);
     expect(parsed.pages).toBeGreaterThanOrEqual(9);
+    expect(PDF_RENDERER_VERSION).toBe('2.1.0');
     expect(parsed.text).not.toContain('[object Object]');
+    expect(parsed.text).not.toContain('Comprehensive up-to-date news coverage, aggregated from sources all over the world by Google News');
+    expect(parsed.text).not.toContain('Evidence-derived event record retained; automated analytical synthesis is unavailable.');
+    expect(parsed.text).not.toContain('The current evidence does not justify filling those gaps with assumption.');
     expect(parsed.text).not.toContain('\uFFFD');
     expect(parsed.text).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/);
     expect(parsed.text).toContain('PRIORITY INCIDENT DOSSIER');
     expect(parsed.text).toContain('INCIDENT GEOGRAPHY');
     expect(parsed.text).toContain('WHAT HAPPENED');
     expect(parsed.text).toContain('ANALYTICAL ASSESSMENT');
+    expect(parsed.text).toContain('MAP REGISTER');
+    expect(parsed.text).toContain('Boundary source: country GeoJSON');
   });
 });
