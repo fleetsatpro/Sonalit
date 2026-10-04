@@ -3,6 +3,15 @@
 const { XMLParser } = require('fast-xml-parser');
 const aiClient = require('./aiClient');
 const logger = require('./logger');
+const {
+  cleanPublicationText,
+  dedupeSources,
+  sourceIsSubstantive,
+  isAggregatorDomain,
+  normalizeDomain,
+  uniqueStrings,
+  repetitionRatio
+} = require('./publicationQuality');
 
 const XML = new XMLParser({ ignoreAttributes:false, attributeNamePrefix:'@_' });
 const COUNTRY_NAMES = {
@@ -17,7 +26,7 @@ const MAX_PACKET_CHARS = 26000;
 const REQUEST_TIMEOUT_MS = 10000;
 
 function clean(v,n=1200){
-  return String(v==null?'':v).replace(/\s+/g,' ').trim().slice(0,n);
+  return cleanPublicationText(v,n);
 }
 function domain(url){
   try{return new URL(url).hostname.replace(/^www\./i,'').toLowerCase()}catch(_){return '';}
@@ -26,11 +35,14 @@ function safeUrl(url){
   try{const u=new URL(String(url));if(!/^https?:$/.test(u.protocol))return null;return u.toString()}catch(_){return null;}
 }
 function uniqueByUrl(items){
-  const seen=new Set(); const out=[];
-  for(const item of items){
+  const seen=new Set();
+  const out=[];
+  for(const item of Array.isArray(items)?items:[]){
     const url=safeUrl(item&&item.url);
-    if(!url||seen.has(url))continue;
-    seen.add(url);
+    if(!url) continue;
+    const normalized=url.replace(/\/+$/,'');
+    if(seen.has(normalized)) continue;
+    seen.add(normalized);
     out.push({...item,url});
   }
   return out;
@@ -83,6 +95,43 @@ async function googleNewsSearch({headline,country,region}){
   })).filter(x=>x.url);
 }
 
+async function gdeltSearch({headline,country,region}){
+  const q=[clean(headline,220),COUNTRY_NAMES[country]||country,region].filter(Boolean).join(' ');
+  const u=new URL('https://api.gdeltproject.org/api/v2/doc/doc');
+  u.searchParams.set('query',q);
+  u.searchParams.set('mode','ArtList');
+  u.searchParams.set('maxrecords',String(MAX_SEARCH_RESULTS));
+  u.searchParams.set('sort','HybridRel');
+  u.searchParams.set('format','json');
+  try{
+    const res=await fetchText(u.toString(),{},REQUEST_TIMEOUT_MS);
+    if(!res.ok)throw new Error('GDELT HTTP '+res.status);
+    const parsed=await res.json();
+    const articles=Array.isArray(parsed?.articles)?parsed.articles:Array.isArray(parsed?.results)?parsed.results:[];
+    return articles.map(a=>({
+      title:clean(a?.title,500),
+      url:safeUrl(a?.url),
+      published_at:parseGdeltDate(a?.seendate||a?.published_at),
+      source:clean(a?.domain||a?.sourcecountry||'',180),
+      domain:normalizeDomain(a?.domain||a?.url||''),
+      snippet:'',
+      kind:'gdelt_discovery'
+    })).filter(a=>a.url&&!isAggregatorDomain(a.domain));
+  }catch(error){
+    logger.warn('Incident research GDELT unavailable: '+error.message);
+    return [];
+  }
+}
+
+function parseGdeltDate(value){
+  const raw=String(value||'').trim();
+  if(!raw)return null;
+  const m=raw.match(/^(\d{4})(\d{2})(\d{2})T?(\d{2})?(\d{2})?/);
+  if(!m)return null;
+  const d=new Date(m[1]+'-'+m[2]+'-'+m[3]+'T'+(m[4]||'00')+':'+(m[5]||'00')+':00Z');
+  return Number.isNaN(d.getTime())?null:d.toISOString();
+}
+
 async function fetchSourcePage(item){
   if(!item||!item.url)return null;
   try{
@@ -91,17 +140,34 @@ async function fetchSourcePage(item){
     const contentType=String(res.headers.get('content-type')||'').toLowerCase();
     if(!contentType.includes('text/html') && !contentType.includes('application/xhtml+xml'))return null;
     const html=await res.text();
-    const canonical=safeUrl(meta(html,'og:url')||meta(html,'twitter:url')||((html.match(/<link[^>]+rel=[\"']canonical[\"'][^>]+href=[\"']([^\"']+)[\"']/i)||[])[1]||res.url||item.url));
-    const resolvedUrl=canonical||safeUrl(res.url)||item.url;
+    const canonical=safeUrl(meta(html,'og:url')||meta(html,'twitter:url')||((html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)||[])[1]||''));
+    const resolvedUrl=canonical&&!isAggregatorDomain(normalizeDomain(canonical))
+      ? canonical
+      : (safeUrl(res.url)||item.url);
     const title=clean(meta(html,'og:title')||meta(html,'twitter:title')||((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)||[])[1]||item.title),500);
     const description=clean(meta(html,'og:description')||meta(html,'description')||item.snippet,1200);
     const imageUrl=safeUrl(meta(html,'og:image')||meta(html,'twitter:image'));
-    const pageText=stripHtml(html).slice(0,MAX_PAGE_CHARS);
-    const resolvedDomain=domain(resolvedUrl);
-    if(resolvedDomain==='news.google.com' && domain(item.url)==='news.google.com'){
-      logger.warn('Incident research source remained a news aggregator: '+item.url);
-    }
-    return {url:resolvedUrl,domain:resolvedDomain,title,description,text:pageText,image_url:imageUrl,retrieved_at:new Date().toISOString()};
+
+    const articleMatch=html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+    const mainMatch=html.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+    const bodyHtml=articleMatch?.[1]||mainMatch?.[1]||html;
+    const paragraphs=[...String(bodyHtml).matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)]
+      .map(m=>clean(stripHtml(m[1]),900))
+      .filter(v=>v.length>=55);
+    const pageText=uniqueStrings(paragraphs,10).join(' ').slice(0,MAX_PAGE_CHARS);
+    const resolvedDomain=normalizeDomain(resolvedUrl);
+    if(isAggregatorDomain(resolvedDomain))return null;
+    if(!title&&!description&&!pageText)return null;
+    return {
+      url:resolvedUrl,
+      domain:resolvedDomain,
+      title,
+      description,
+      text:pageText,
+      image_url:imageUrl,
+      retrieved_at:new Date().toISOString(),
+      source:item.source||item.domain||resolvedDomain
+    };
   }catch(error){
     logger.warn('Incident research source fetch failed '+item.url+': '+error.message);
     return null;
@@ -114,92 +180,82 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
     url:o.url,title:o.title,source:o.source_name||o.source,published_at:o.published_at,
     credibility:o.credibility,kind:'original_evidence'
   })));
+
   let search=[];
   try{
     search=await googleNewsSearch({headline:event.headline||event.title,country,region:event.region||region});
   }catch(error){
     logger.warn('Incident research Google News unavailable: '+error.message);
   }
-  const candidates=uniqueByUrl(primary.concat(search.map(x=>({...x,kind:'corroborative_discovery'})))).slice(0,MAX_SOURCE_PAGES);
-  const pages=(await Promise.all(candidates.map(fetchSourcePage))).filter(Boolean);
+  const gdelt=await gdeltSearch({headline:event.headline||event.title,country,region:event.region||region});
+  const discovered=uniqueByUrl(search.concat(gdelt))
+    .filter(x=>!isAggregatorDomain(normalizeDomain(x.url)))
+    .slice(0,MAX_SEARCH_RESULTS);
+  const candidates=dedupeSources(primary.concat(discovered),MAX_SOURCE_PAGES);
+  const pages=(await Promise.all(candidates.map(fetchSourcePage))).filter(Boolean).filter(sourceIsSubstantive);
   return {
-    version:'1.0',
+    version:'2.0',
     incident_id:String(event.id),
     query:[clean(event.headline||event.title,220),COUNTRY_NAMES[country]||country,event.region||region].filter(Boolean).join(' '),
-    discovered_sources:uniqueByUrl(search).slice(0,MAX_SEARCH_RESULTS).map(x=>({
-      title:x.title,url:x.url,source:x.source,published_at:x.published_at,snippet:x.snippet
+    discovered_sources:discovered.slice(0,MAX_SEARCH_RESULTS).map(x=>({
+      title:x.title,url:x.url,source:x.source,domain:normalizeDomain(x.domain||x.url),published_at:x.published_at,snippet:clean(x.snippet||'',700)
     })),
-    fetched_pages:pages,
-    source_domains:Array.from(new Set(primary.concat(search).map(x=>domain(x.url)).filter(Boolean))).slice(0,12),
+    fetched_pages:pages.slice(0,MAX_SOURCE_PAGES),
+    source_domains:Array.from(new Set(pages.map(x=>normalizeDomain(x.domain||x.url)).filter(Boolean))).slice(0,12),
     retrieved_at:new Date().toISOString()
   };
 }
 
 function packetNarrative(event,packet){
-  const pages=Array.isArray(packet?.fetched_pages)?packet.fetched_pages.slice(0,4):[];
-  const discoveries=Array.isArray(packet?.discovered_sources)?packet.discovered_sources.slice(0,6):[];
-  const usable=uniqueByUrl(pages.concat(discoveries));
-  const place=clean(event?.region||'the reported area',160);
+  const pages=(Array.isArray(packet?.fetched_pages)?packet.fetched_pages:[]).filter(sourceIsSubstantive).slice(0,4);
   const headline=clean(event?.headline||event?.title||'The reported incident',260);
-  const eventSummary=clean(event?.brief||event?.summary||'',1200);
-  const facts=Array.isArray(event?.key_facts)?event.key_facts.map(x=>clean(x,520)).filter(Boolean).slice(0,4):[];
-  const caveats=Array.isArray(event?.caveats)?event.caveats.map(x=>clean(x,620)).filter(Boolean).slice(0,3):[];
-  const sourceNames=usable.map(x=>clean(x?.source||x?.domain||'',120)).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).slice(0,4);
-  const rawSnippets=pages.map(p=>clean(p.description||p.text||'',900))
-    .concat(discoveries.map(x=>clean(x.snippet||'',900)));
-  const sourceSnippets=rawSnippets.filter(Boolean)
-    .filter(v=>!/comprehensive up-to-date news coverage, aggregated from sources/i.test(v))
-    .slice(0,3);
-  const observedDate=event?.occurred_from?clean(new Date(event.occurred_from).toISOString().slice(0,10),20):'';
+  const eventSummary=clean(event?.brief||event?.summary||'',1400);
+  const facts=uniqueStrings(Array.isArray(event?.key_facts)?event.key_facts:[],4);
+  const caveats=uniqueStrings(Array.isArray(event?.caveats)?event.caveats:[],3);
+  const insights=uniqueStrings(
+    pages.map(p=>clean(p.description||p.text||'',900))
+      .map(v=>cleanPublicationText(v,900))
+      .filter(v=>v&&!/comprehensive up-to-date news coverage, aggregated from sources all over the world by google news/i.test(v)),
+    2
+  );
   const paragraphs=[];
-  paragraphs.push(
-    headline+' was reported'+(observedDate?' on '+observedDate:'')+' in '+place+'. '+
-    (eventSummary ? eventSummary+' ' : '')+
-    'The available record supports a bounded account of the development; details that cannot be established from the source base are not presented as fact.'
-  );
-  if(sourceSnippets.length){
-    paragraphs.push(
-      'Additional reporting indicates: '+sourceSnippets.join(' ')+
-      (sourceNames.length ? ' Relevant reporting is associated with '+sourceNames.join(', ')+'.' : '')
-    );
-  } else if(usable.length){
-    paragraphs.push(
-      'External reference material was identified, but the available material was not sufficiently substantive or independently attributable to support a stronger corroborated narrative.'
-    );
-  } else {
-    paragraphs.push(
-      'No substantive external source page was established during this run. The account therefore remains bounded by the originating evidence.'
-    );
-  }
-  if(facts.length){
-    paragraphs.push('The best-supported facts are: '+facts.join(' '));
-  }
-  paragraphs.push(
-    'The operational significance turns on persistence, geographic reach, recurrence and independent corroboration. These indicators should drive the next assessment rather than headline volume alone.'
-  );
-  if(caveats.length){
-    paragraphs.push('Unresolved issues include: '+caveats.join(' '));
-  }
-  return clean(paragraphs.join(' '),4200);
+  if(eventSummary)paragraphs.push(eventSummary);
+  else paragraphs.push(headline+' is retained as the clearest label for the recorded development.');
+  if(insights.length)paragraphs.push(insights.join(' '));
+  if(facts.length)paragraphs.push('Key supported facts: '+facts.join(' '));
+  if(caveats.length)paragraphs.push('Material uncertainty: '+caveats.join(' '));
+  return cleanPublicationText(paragraphs.join(' '),2600);
 }
 function fallbackResearch(event,packet){
-  const sources=uniqueByUrl(
-    (packet?.fetched_pages||[]).map(p=>({title:p.title,url:p.url,domain:p.domain,source_type:'retrieved_web_page'}))
-      .concat((packet?.discovered_sources||[]).map(p=>({title:p.title,url:p.url,domain:domain(p.url),source_type:'web_discovery'})))
-  ).slice(0,10);
+  const sources=dedupeSources(
+    (packet?.fetched_pages||[])
+      .filter(sourceIsSubstantive)
+      .map(p=>({title:p.title,url:p.url,domain:p.domain,source_type:'retrieved_web_page',description:p.description})),
+    8
+  );
   const hasWebEvidence=Boolean(sources.length);
+  const narrative=hasWebEvidence
+    ? packetNarrative(event,packet)
+    : cleanPublicationText(event&&event.brief||event&&event.summary||event&&event.headline||event&&event.title||'Evidence record available.',2600);
+  const eventAssessment=cleanPublicationText(event&&event.assessment&&event.assessment.judgement||'',1000);
+  const eventWhy=uniqueStrings(Array.isArray(event&&event.why_it_matters)?event.why_it_matters:[],4);
+  const eventCaveats=uniqueStrings(Array.isArray(event&&event.caveats)?event.caveats:[],4);
+  const derivedAssessment=eventAssessment || (
+    'Assessment remains limited to the recorded ' + String(event?.intelligence_type||'intelligence').toLowerCase() +
+    ' signal; no broader deterioration is inferred without corroboration.'
+  );
   return {
     status:'fallback',
-    narrative:hasWebEvidence?packetNarrative(event,packet):clean(event&&event.brief||event&&event.summary||event&&event.headline||event&&event.title||'No detailed narrative available.',3000),
-    context:(packet?.discovered_sources||[]).slice(0,4).map(x=>clean(x.snippet||x.title,700)).filter(Boolean).join(' ')||'No corroborative web narrative was retrieved during this publication run.',
-    confirmed_facts:Array.isArray(event&&event.key_facts)?event.key_facts.slice(0,6):[],
+    narrative,
+    context:hasWebEvidence?uniqueStrings((packet?.fetched_pages||[]).map(p=>p.description||'').filter(Boolean),1).join(' '):'',
+    confirmed_facts:uniqueStrings(Array.isArray(event&&event.key_facts)?event.key_facts:[],5),
     reported_or_disputed:[],
-    analytical_assessment:clean(event&&event.assessment&&event.assessment.judgement||'The event remains bounded by the evidence recorded in Sonalit.',1400),
-    why_it_matters:Array.isArray(event&&event.why_it_matters)?event.why_it_matters.slice(0,4):[],
-    uncertainty:Array.isArray(event&&event.caveats)?event.caveats.slice(0,4):[],
+    analytical_assessment:derivedAssessment,
+    why_it_matters:eventWhy,
+    uncertainty:eventCaveats,
     chronology:[],
     sources,
-    provider:hasWebEvidence?'web-research-packet-synthesis':'evidence-fallback-research',
+    provider:hasWebEvidence?'live-web-packet':'evidence-only',
     agent_status:'provider_unavailable',
     web_sources_retrieved:sources.length,
     research_method:hasWebEvidence?'live_web_packet':'evidence_only'
@@ -248,9 +304,13 @@ async function researchBatch(events,{country,region}={}){
     if(!Array.isArray(parsed))throw new Error('research batch agent returned invalid JSON array');
     return packets.map((packet,i)=>{
       const source=parsed.find(x=>String(x&&x.incident_id)===String(events[i].id));
-      const normalizedSources=Array.isArray(source?.sources)?source.sources.filter(x=>safeUrl(x?.url)).slice(0,10):[];
-      const narrative=clean(source?.narrative||'',3000);
-      if(!source||narrative.length<220||normalizedSources.length===0){
+      const normalizedSources=dedupeSources(
+        Array.isArray(source?.sources)?source.sources.filter(x=>safeUrl(x?.url)):[],
+        8
+      );
+      const narrative=cleanPublicationText(source?.narrative||'',2600);
+      const repeated=repetitionRatio(narrative)>0.18;
+      if(!source||narrative.length<260||normalizedSources.length===0||repeated){
         return{packet,agent:fallbackResearch(events[i],packet),error:'research result failed substantive/source validation',webSearchRequests};
       }
       return{packet,agent:{...source,status:'researched',provider:response&&response._provider||'unknown',sources:normalizedSources},webSearchRequests};
