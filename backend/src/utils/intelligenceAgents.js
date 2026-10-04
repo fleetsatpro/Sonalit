@@ -284,7 +284,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     && !publicationPolicyMismatch;
   if(existing.length&&unchanged)return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 
-  const refreshPdf=Boolean(existing.length&&(String(priorCoverage.fingerprint||'')!==fingerprint||needsDeepResearch||pdfRendererMismatch));
+  const refreshPdf=Boolean(existing.length&&(String(priorCoverage.fingerprint||'')!==fingerprint||needsDeepResearch||pdfRendererMismatch||publicationPolicyMismatch));
 
   let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0,web_search_requests:0}};
   if(deepResearchEnabled&&expectedResearchCount>0){
@@ -334,7 +334,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
 
   if(aiBoardEnabled && aiClient.hasAnyProvider() && events.length){
     try{
-      const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events:enrichedEvents,baseBody:deterministic,evidenceContract,precomputedResearch:incidentResearch});
+      const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events:reportEvents,baseBody:deterministic,evidenceContract:publicationEvidenceContract,precomputedResearch:incidentResearch});
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
       aiBoardStatus=result.publishable?'passed':'held';
       aiBoardHoldReason=result.publishable?null:JSON.stringify({qa:result.qa?.publishable===true,blocking:(result.qa?.blocking_issues||[]).length});
