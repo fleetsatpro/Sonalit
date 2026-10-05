@@ -901,14 +901,24 @@ async function loadOpenEyeCamera(id) {
 async function getCameraById(id) {
   const wanted = String(id || '');
   if (!wanted) return null;
+
   if (wanted.startsWith('opencctv:')) {
     const cached = openCctvDetailCache.get(wanted);
     if (cached && cached.expiresAt > Date.now()) return cached.camera;
+    // OpenCCTV's catalog endpoint is the authoritative lookup surface exposed
+    // to us; resolve the requested camera from that bounded provider catalog
+    // rather than silently falling back to an unrelated provider.
+    const rows = await loadOpenCctvCatalog({ maxRecords:OPENCCTV_MAX_LIMIT });
+    return rows.find(row => String(row.id) === wanted) || null;
   }
+
   if (wanted.startsWith('caltrans:')) {
     const cached = caltransDetailCache.get(wanted);
     if (cached && cached.expiresAt > Date.now()) return cached.camera;
+    const rows = await loadCaltransCatalog({ bbox:CALTRANS_BBOX, maxRecords:CALTRANS_MAX_LIMIT });
+    return rows.find(row => String(row.id) === wanted) || null;
   }
+
   const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
   const [openEyeRows, fileRows, tflRows] = await Promise.all([
     wanted.startsWith('openeye:') ? loadOpenEyeCamera(wanted.slice('openeye:'.length)) : Promise.resolve(null),
