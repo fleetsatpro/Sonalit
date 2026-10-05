@@ -162,7 +162,7 @@ export default function SurveillanceCameraWall() {
       <section className="surveillance-camera-wall-page-summary" aria-label="Camera wall status">
         <span><strong>{cameras.length}</strong> verified live visuals in {selectedCountry.name}</span>
         <span><strong>{playableVideoCount}</strong> continuous video feeds</span>
-        <span><strong>{refreshingSnapshotCount}</strong> refreshing snapshots
+        <span><strong>{refreshingSnapshotCount}</strong> refreshing snapshots</span>
         <span><strong>{publicTotal.toLocaleString()}</strong> public records</span>
         <span><ShieldCheck size={12} /> Source attribution enforced</span>
         <span>No person / face / plate tracking</span>
