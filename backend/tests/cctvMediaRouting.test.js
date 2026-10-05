@@ -99,7 +99,7 @@ describe('CCTV media routing', () => {
       });
     };
     try {
-      const result = await fetchPublicSnapshot('http://203.0.113.20:8080/snapshot.jpg?COUNTER=2');
+      const result = await fetchPublicSnapshot('http://93.184.216.34:8080/snapshot.jpg?COUNTER=2');
       expect(result.synthetic).toBe(false);
       expect(result.contentType).toBe('image/jpeg');
       expect(Buffer.isBuffer(result.buffer)).toBe(true);
