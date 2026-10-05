@@ -35,14 +35,26 @@ function hasInlineVideo(camera) {
 function hasLiveVisual(camera) {
   const media = camera?.media || {};
   const kind = String(media.kind || '').toLowerCase();
-  if (String(camera?.health?.status || '').toUpperCase() !== 'LIVE') return false;
   if (hasInlineVideo(camera)) return true;
-  // A direct current image feed is a valid wall visual. It is not mislabeled
-  // as continuous video; the UI presents it as a refreshing live snapshot.
-  return kind === 'image' && (
-    (media.direct === true && Boolean(media.frameUrl || media.previewUrl || media.url)) ||
-    media.providerFrameAvailable === true
-  );
+  if (kind !== 'image') return false;
+
+  const healthStatus = String(camera?.health?.status || '').toUpperCase();
+  const directImage = media.direct === true && Boolean(media.frameUrl || media.previewUrl || media.url);
+  const providerImage = media.providerFrameAvailable === true;
+
+  // Prefer the provider's explicit LIVE flag, but do not discard a recently
+  // refreshed image merely because a provider omits/uncertainly reports it.
+  // A recent frame is still a useful visual observation; it is never promoted
+  // to continuous video.
+  const attrs = camera?.attributes || {};
+  const ageS = Number(attrs.lastFrameAgeS ?? attrs.frameAgeS);
+  const intervalS = Number(media.refreshIntervalMs) / 1000;
+  const freshnessLimitS = Number.isFinite(intervalS) && intervalS > 0
+    ? Math.min(3600, Math.max(600, intervalS * 3))
+    : 900;
+  const recentlyRefreshed = Number.isFinite(ageS) && ageS >= 0 && ageS <= freshnessLimitS;
+
+  return (directImage || providerImage) && (healthStatus === 'LIVE' || recentlyRefreshed);
 }
 
 async function getCameras(options = {}) {
