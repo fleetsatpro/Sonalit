@@ -821,11 +821,11 @@ export default function CctvViewerPanel({
   const sourcePlayback = activeCamera ? sourceMediaPlaybackKind(activeCamera) : null
   const label = whepLiveVideo
     ? 'LIVE VIDEO / WHEP'
-    : liveVideo
-      ? 'LIVE VIDEO / PROVIDER'
-      : configuredStream
-    ? 'LIVE STREAM / GATEWAY'
-    : direct
+    : configuredStream
+      ? 'LIVE VIDEO / MULTI-SOURCE'
+      : liveVideo
+        ? 'LIVE VIDEO / PROVIDER'
+        : direct
       ? 'PUBLIC PREVIEW'
       : sourcePlayback
         ? 'LIVE VIDEO / SOURCE'
@@ -920,11 +920,7 @@ export default function CctvViewerPanel({
               OPEN PUBLISHER
             </a>
           )}
-          {camSourcePlayback === null && camSourceMedia && !sourceImage && (
-            <a className="gev-cctv-open-source" href={camSourceMedia} target="_blank" rel="noreferrer noopener">
-              <ExternalLink size={11} /> OPEN SOURCE MEDIA
-            </a>
-          )}
+
         </div>
       </div>
     )
