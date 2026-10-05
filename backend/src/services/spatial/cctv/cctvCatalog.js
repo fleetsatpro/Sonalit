@@ -144,7 +144,7 @@ function openEyeMedia(row) {
   const viewUrl = safeHttpsUrl(view.url || row.preview_url);
   const viewMediaType = classifyViewMediaType(view, view.url || row.preview_url, render);
   const feedKind = String(row.feed_kind || row.feedKind || '').toLowerCase().trim();
-  const liveVideo = feedKind === 'live_video';
+  const liveVideo = feedKind === 'live_video' && row.live === true;
   const previewAllowed = redistribution.preview_embed === true;
   const renderablePreview = previewAllowed && Boolean(viewUrl) && isRenderableMediaType(viewMediaType);
   const directoryPageUrl = safeHttpsUrl(row.public_url || '')
