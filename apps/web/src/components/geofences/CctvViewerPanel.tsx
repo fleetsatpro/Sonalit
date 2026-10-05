@@ -479,7 +479,7 @@ function InlineWhepVideo({
         controls
         preload="none"
         poster={poster}
-        aria-label={"CAMERA_LIVE_VIDEO"}
+        aria-label={cameraName(camera) + ' live video'}
       />
       {status !== 'live' && (
         <div className="gev-cctv-whep-state">
