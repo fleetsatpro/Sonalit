@@ -1,6 +1,6 @@
 'use strict';
 
-const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, loadOpenCctvCatalog, loadCaltransCatalog, getCameraCatalogHealth, clearOpenEyeCache } = require('../../src/services/spatial/cctv/cctvCatalog');
+const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, loadOpenCctvCatalog, loadCaltransCatalog, getCameraCatalogHealth, getCameraById, clearOpenEyeCache } = require('../../src/services/spatial/cctv/cctvCatalog');
 const { pointInViewshed, rankNearest } = require('../../src/services/spatial/cctv/spatialCameraGeometry');
 const { assertSafeUrl, hostMatches } = require('../../src/services/spatial/cctv/cctvAllowlist');
 const { getFrame, getMedia, syntheticFrame } = require('../../src/services/spatial/cctv/cctvMediaProxy');
@@ -144,6 +144,30 @@ describe('spatial CCTV capability', () => {
     expect(live.media.liveVideo).toBe(true);
     expect(live.media.feedKind).toBe('live_video');
     expect(global.fetch.mock.calls[0][0]).toContain('bounds=-34.82%2C16.34%2C-22.09%2C32.83');
+  });
+
+  test('resolves non-OpenEye live cameras for focused playback', async () => {
+    process.env.CCTV_ENABLE_OPENCCTV = '1';
+    process.env.CCTV_ENABLE_CALTRANS = '0';
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok:true,
+      json:async()=>[
+        {
+          id:'za-video-1',
+          name:'Pretoria N1 live',
+          lat:-25.7479,
+          lng:28.2293,
+          feed_type:'m3u8',
+          feed_url:'https://cdn.example.org/pretoria/live.m3u8',
+          source:'SANRAL',
+          active:1
+        }
+      ]
+    });
+    const camera = await getCameraById('opencctv:za-video-1');
+    expect(camera?.id).toBe('opencctv:za-video-1');
+    expect(camera?.media.liveVideo).toBe(true);
+    expect(camera?.media.url).toBe('https://cdn.example.org/pretoria/live.m3u8');
   });
 
   test('ingests official Caltrans streamingVideoURL records as live video', async () => {
