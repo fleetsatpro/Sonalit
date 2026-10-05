@@ -119,6 +119,85 @@
 .gev-cctv-wall-feed-media { position:relative; min-height:0; flex:1; display:grid; place-items:center; overflow:hidden; background:#020607; }
 .gev-cctv-wall-feed-media > img,.gev-cctv-wall-feed-media > video { display:block; width:100%; height:100%; object-fit:cover; background:#020607; }
 .gev-cctv-wall-feed-media > video { object-fit:contain; }
+
+.gev-cctv-tile-media--source-video {
+  position:relative;
+  width:100%;
+  height:100%;
+  min-height:0;
+  overflow:hidden;
+  display:grid;
+  place-items:center;
+  background:#020607;
+}
+.gev-cctv-tile-media--source-video img,
+.gev-cctv-tile-media--source-video video {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  background:#020607;
+}
+.gev-cctv-tile-media--source-video video { object-fit:contain; }
+.gev-cctv-source-live-badge {
+  position:absolute;
+  z-index:2;
+  left:8px;
+  bottom:8px;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:4px 6px;
+  border:1px solid rgba(118,243,223,.25);
+  border-radius:6px;
+  background:rgba(1,7,8,.72);
+  color:#8df6e4;
+  font:900 5.5px/1 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.08em;
+  pointer-events:none;
+  backdrop-filter:blur(8px);
+}
+.gev-cctv-source-live-badge i,
+.gev-cctv-wall-feed-source-badge i {
+  width:4px;
+  height:4px;
+  border-radius:50%;
+  background:currentColor;
+  box-shadow:0 0 8px currentColor;
+}
+.gev-cctv-wall-feed-media-source {
+  position:absolute;
+  inset:0;
+  overflow:hidden;
+  background:#020607;
+}
+.gev-cctv-wall-feed-media-source img,
+.gev-cctv-wall-feed-media-source video {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  background:#020607;
+}
+.gev-cctv-wall-feed-media-source video { object-fit:contain; }
+.gev-cctv-wall-feed-source-badge {
+  position:absolute;
+  z-index:2;
+  left:7px;
+  bottom:7px;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:4px 6px;
+  border:1px solid rgba(118,243,223,.24);
+  border-radius:6px;
+  background:rgba(1,7,8,.74);
+  color:#89f6e3;
+  font:900 5.5px/1 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.08em;
+  pointer-events:none;
+  backdrop-filter:blur(8px);
+}
 .gev-cctv-wall-feed-hit { position:absolute; inset:0; z-index:3; border:0; background:transparent; cursor:pointer; }
 .gev-cctv-wall-feed-hit:focus-visible { outline:2px solid rgba(118,243,223,.88); outline-offset:-2px; }
 .gev-cctv-wall-feed-top { position:absolute; z-index:4; top:7px; left:7px; right:7px; display:flex; align-items:center; gap:4px; pointer-events:none; }
