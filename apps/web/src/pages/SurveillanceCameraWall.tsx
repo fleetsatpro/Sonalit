@@ -6,6 +6,7 @@ import { api } from '../lib/api.js'
 import CctvViewerPanel from '../components/geofences/CctvViewerPanel.js'
 import type { SpatialWorldEntity } from '../lib/spatialClient.js'
 import '../styles/cctv-wall.css'
+import '../styles/surveillance-camera-wall.css'
 
 type CameraScope = 'kenya' | 'east-africa'
 
