@@ -2,7 +2,7 @@
 
 const fs = require('node:fs/promises');
 const COUNTRY_BOXES = require('./cctvCountries.json');
-const { loadInsecamCatalog, loadInsecamCamera, clearInsecamCache, getInsecamHealth } = require('./insecamCatalog');
+const { loadInsecamCatalog, loadInsecamCamera, loadInsecamCameraRecord, clearInsecamCache, getInsecamHealth } = require('./insecamCatalog');
 
 const SAMPLE_CAMERAS = [
   { id:'sample-ke-nbo-01', name:'Kenya corridor sample 01', corridor:'NBO-MSA', latitude:-1.286389, longitude:36.817223, headingDeg:110, horizontalFovDeg:80, maxRangeM:3000 },
@@ -957,12 +957,7 @@ async function getCameraById(id) {
   }
 
   if (wanted.startsWith('insecam:')) {
-    const sourceUrl = await loadInsecamCamera(wanted.slice('insecam:'.length));
-    if (!sourceUrl) return null;
-    const rows = await loadInsecamCatalog({ maxRecords: 1 });
-    const found = rows.find(row => String(row.id) === wanted);
-    if (found) return found;
-    return null;
+    return loadInsecamCameraRecord(wanted.slice('insecam:'.length), null);
   }
 
   const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
