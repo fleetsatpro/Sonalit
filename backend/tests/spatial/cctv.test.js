@@ -434,6 +434,17 @@ describe('spatial CCTV capability', () => {
     expect(hasInlineVideo({ ...base, health:{ status:'STALE' } })).toBe(false);
   });
 
+  test('admits a recently refreshed image even when the provider live flag is uncertain', () => {
+    const snapshot = {
+      id:'snapshot-fresh-uncertain',
+      media:{ kind:'image', url:'https://example.test/live/camera.jpg', direct:true, liveVideo:false, refreshIntervalMs:60_000 },
+      health:{ status:'UNKNOWN' },
+      attributes:{ lastFrameAgeS:120 }
+    };
+    expect(hasInlineVideo(snapshot)).toBe(false);
+    expect(hasLiveVisual(snapshot)).toBe(true);
+  });
+
   test('wall visual admission includes direct current snapshots without misclassifying them as video', () => {
     const snapshot = {
       id:'snapshot-live-test',
