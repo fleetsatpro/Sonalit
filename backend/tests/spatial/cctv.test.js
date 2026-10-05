@@ -143,7 +143,7 @@ describe('spatial CCTV capability', () => {
     expect(live.media.kind).toBe('video');
     expect(live.media.liveVideo).toBe(true);
     expect(live.media.feedKind).toBe('live_video');
-    expect(global.fetch.mock.calls[0][0]).toContain('bounds=-35.0%2C16.2%2C-22.1%2C32.9');
+    expect(global.fetch.mock.calls[0][0]).toContain('bounds=-34.82%2C16.34%2C-22.09%2C32.83');
   });
 
   test('ingests official Caltrans streamingVideoURL records as live video', async () => {
