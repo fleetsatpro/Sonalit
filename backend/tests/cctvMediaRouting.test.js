@@ -101,3 +101,4 @@ describe('CCTV media routing', () => {
       global.fetch = originalFetch;
     }
   });
+});
