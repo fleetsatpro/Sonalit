@@ -162,7 +162,7 @@ function extractTitle(text, city) {
 }
 
 async function loadInsecamDetail(id, expectedCountry) {
-  const cacheKey = String(id) + '|' + String(expectedCountry || '').toUpperCase();
+  const cacheKey = String(id);
   const cached = insecamRecordCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.record;
 
