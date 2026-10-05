@@ -1,5 +1,5 @@
 const { classifyViewMediaType, openEyeMedia, getCctvCountries, getCountryBbox } = require('../src/services/spatial/cctv/cctvCatalog');
-const { openEyeWhepOffer } = require('../src/services/spatial/cctv/cctvMediaProxy');
+const { openEyeWhepOffer, openEyeWhepDelete } = require('../src/services/spatial/cctv/cctvMediaProxy');
 const { fetchApprovedMedia } = require('../src/services/spatial/cctv/cctvMediaProxy');
 
 describe('CCTV media routing', () => {
@@ -108,6 +108,21 @@ describe('CCTV media routing', () => {
       global.fetch = originalFetch;
       if (originalKey == null) delete process.env.OPENEYE_KEY;
       else process.env.OPENEYE_KEY = originalKey;
+    }
+  });
+
+  test('terminates only an OpenEye WHEP session URL', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async (url, options) => {
+      expect(String(url)).toContain('https://api.openeye.cam/v1/streams/stream-live-video/whep/session/test');
+      expect(options.method).toBe('DELETE');
+      return new Response(null, { status:204 });
+    };
+    try {
+      await expect(openEyeWhepDelete('https://api.openeye.cam/v1/streams/stream-live-video/whep/session/test')).resolves.toMatchObject({ ok:true, status:204 });
+      await expect(openEyeWhepDelete('https://example.com/not-whep/test')).rejects.toMatchObject({ failureClass:'invalid_data' });
+    } finally {
+      global.fetch = originalFetch;
     }
   });
 
