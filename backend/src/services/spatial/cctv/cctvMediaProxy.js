@@ -4,6 +4,7 @@ const net = require('node:net');
 
 const { assertSafeUrl, allowedHostsFromEnv, isPrivateIp } = require('./cctvAllowlist');
 const { loadInsecamCamera } = require('./insecamCatalog');
+const { loadOpenCctvCameraFrame } = require('./cctvCatalog');
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 2;
@@ -159,18 +160,30 @@ async function fetchPublicSnapshot(rawUrl, options = {}) {
 
 async function getFrame(camera, options = {}) {
   if (!camera) return syntheticFrame(null, 'Camera not found');
-  const insecamProvider = String(camera.media?.provider || '').toLowerCase() === 'insecam' &&
-    camera.media?.providerFrameAvailable === true &&
-    String(camera.id || '').startsWith('insecam:');
-  if (insecamProvider) {
+
+  const provider = String(camera.media?.provider || '').toLowerCase();
+  const cameraId = String(camera.id || '');
+
+  if (provider === 'insecam' && camera.media?.providerFrameAvailable === true && cameraId.startsWith('insecam:')) {
     try {
-      const sourceUrl = await loadInsecamCamera(String(camera.id).slice('insecam:'.length));
+      const sourceUrl = await loadInsecamCamera(cameraId.slice('insecam:'.length));
       if (!sourceUrl) return syntheticFrame(camera, 'Insecam current frame source unavailable');
       return await fetchPublicSnapshot(sourceUrl, options);
     } catch (error) {
       return syntheticFrame(camera, 'Insecam frame unavailable: ' + String(error?.failureClass || 'unknown'));
     }
   }
+
+  if (provider === 'opencctv' && camera.media?.providerFrameAvailable === true && cameraId.startsWith('opencctv:')) {
+    try {
+      const sourceUrl = await loadOpenCctvCameraFrame(cameraId.slice('opencctv:'.length));
+      if (!sourceUrl) return syntheticFrame(camera, 'OpenCCTV current frame source unavailable');
+      return await fetchPublicSnapshot(sourceUrl, options);
+    } catch (error) {
+      return syntheticFrame(camera, 'OpenCCTV frame unavailable: ' + String(error?.failureClass || 'unknown'));
+    }
+  }
+
   const mediaUrl = camera.media?.frameUrl || (camera.media?.kind === 'image' ? camera.media?.url : null);
   if (!mediaUrl) return syntheticFrame(camera, camera.media?.publicSource ? 'Public camera frame unavailable' : 'No approved public frame source');
   try {
