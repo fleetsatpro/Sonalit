@@ -1,6 +1,7 @@
 'use strict';
 
-const { assertSafeUrl, allowedHostsFromEnv } = require('./cctvAllowlist');
+const { assertSafeUrl, allowedHostsFromEnv, isPrivateIp } = require('./cctvAllowlist');
+const { loadInsecamCamera } = require('./insecamCatalog');
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 2;
@@ -90,8 +91,84 @@ async function fetchApproved(url, options = {}) {
   throw Object.assign(new Error('CCTV media fetch failed'), { failureClass:'http_error' });
 }
 
+async function assertSafePublicImageUrl(rawUrl) {
+  let url;
+  try { url = new URL(String(rawUrl)); }
+  catch (_) { throw Object.assign(new Error('Invalid public camera frame URL'), { failureClass:'invalid_data' }); }
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw Object.assign(new Error('Public camera frame must use HTTP or HTTPS'), { failureClass:'invalid_data' });
+  }
+  if (url.username || url.password) {
+    throw Object.assign(new Error('Public camera frame credentials are forbidden'), { failureClass:'invalid_data' });
+  }
+  const host = url.hostname.toLowerCase();
+  if (isPrivateIp(host)) {
+    throw Object.assign(new Error('Private public-camera target blocked'), { failureClass:'invalid_data' });
+  }
+  if (!net.isIP(host)) {
+    const addresses = await require('node:dns').promises.lookup(host, { all:true, verbatim:true }).catch(() => []);
+    if (!addresses.length) throw Object.assign(new Error('Public camera host could not be resolved'), { failureClass:'unavailable' });
+    if (addresses.some(address => isPrivateIp(address.address))) {
+      throw Object.assign(new Error('Public camera DNS resolves to private address'), { failureClass:'invalid_data' });
+    }
+  }
+  return url;
+}
+
+async function fetchPublicSnapshot(rawUrl, options = {}) {
+  let current = await assertSafePublicImageUrl(rawUrl);
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Number(options.timeoutMs) || 10_000);
+    let response;
+    try {
+      response = await fetch(current, {
+        redirect:'manual',
+        headers:{
+          Accept:'image/avif,image/webp,image/png,image/jpeg',
+          Referer:'https://www.insecam.org/',
+          'User-Agent':'Sonalit-CCTV/1.0 (+https://sonalit.com)'
+        },
+        signal:controller.signal
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if ([301,302,303,307,308].includes(response.status)) {
+      if (hop === MAX_REDIRECTS) throw Object.assign(new Error('Public camera redirect limit exceeded'), { failureClass:'http_error' });
+      const location = response.headers.get('location');
+      if (!location) throw Object.assign(new Error('Public camera redirect missing Location'), { failureClass:'http_error' });
+      current = await assertSafePublicImageUrl(new URL(location, current).toString());
+      continue;
+    }
+    if (!response.ok) throw Object.assign(new Error('Public camera frame request failed: ' + response.status), { failureClass:response.status === 429 ? 'rate_limited' : 'http_error' });
+    const type = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+    if (!['image/jpeg','image/png','image/webp','image/avif'].includes(type)) {
+      throw Object.assign(new Error('Public camera frame content-type is not an approved image type'), { failureClass:'invalid_data' });
+    }
+    const len = Number(response.headers.get('content-length'));
+    if (Number.isFinite(len) && len > MAX_BYTES) throw Object.assign(new Error('Public camera frame exceeds size limit'), { failureClass:'invalid_data' });
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > MAX_BYTES) throw Object.assign(new Error('Public camera frame exceeds size limit'), { failureClass:'invalid_data' });
+    return { buffer:Buffer.from(bytes), contentType:type, synthetic:false, sourceUrl:null };
+  }
+  throw Object.assign(new Error('Public camera frame fetch failed'), { failureClass:'http_error' });
+}
+
 async function getFrame(camera, options = {}) {
   if (!camera) return syntheticFrame(null, 'Camera not found');
+  const insecamProvider = String(camera.media?.provider || '').toLowerCase() === 'insecam' &&
+    camera.media?.providerFrameAvailable === true &&
+    String(camera.id || '').startsWith('insecam:');
+  if (insecamProvider) {
+    try {
+      const sourceUrl = await loadInsecamCamera(String(camera.id).slice('insecam:'.length));
+      if (!sourceUrl) return syntheticFrame(camera, 'Insecam current frame source unavailable');
+      return await fetchPublicSnapshot(sourceUrl, options);
+    } catch (error) {
+      return syntheticFrame(camera, 'Insecam frame unavailable: ' + String(error?.failureClass || 'unknown'));
+    }
+  }
   const mediaUrl = camera.media?.frameUrl || (camera.media?.kind === 'image' ? camera.media?.url : null);
   if (!mediaUrl) return syntheticFrame(camera, camera.media?.publicSource ? 'Public camera frame unavailable' : 'No approved public frame source');
   try {
@@ -285,4 +362,4 @@ async function getMedia(camera, options = {}) {
   };
 }
 
-module.exports = { openEyeWhepOffer, openEyeWhepDelete, MAX_BYTES, syntheticFrame, fetchApproved, getFrame, fetchApprovedMedia, getMedia, isHlsMedia };
+module.exports = { openEyeWhepOffer, openEyeWhepDelete, MAX_BYTES, syntheticFrame, fetchApproved, getFrame, fetchApprovedMedia, getMedia, isHlsMedia, assertSafePublicImageUrl, fetchPublicSnapshot };
