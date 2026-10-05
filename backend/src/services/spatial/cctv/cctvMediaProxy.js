@@ -73,6 +73,36 @@ async function getFrame(camera, options = {}) {
   }
 }
 
+async function openEyeWhepOffer(streamId, sdp) {
+  const id = String(streamId || '').trim();
+  if (!id) throw Object.assign(new Error('OpenEye live stream id is required'), { failureClass:'invalid_data', statusCode:400 });
+  const body = typeof sdp === 'string' ? sdp : '';
+  if (!body.trim()) throw Object.assign(new Error('WHEP SDP offer is required'), { failureClass:'invalid_data', statusCode:400 });
+
+  const headers = {
+    Accept:'application/sdp',
+    'Content-Type':'application/sdp'
+  };
+  const key = String(process.env.OPENEYE_KEY || '').trim();
+  if (key) headers.Authorization = 'Bearer ' + key;
+
+  const response = await fetch('https://api.openeye.cam/v1/streams/' + encodeURIComponent(id) + '/whep/offer', {
+    method:'POST',
+    headers,
+    body
+  });
+  const answer = await response.text();
+  return {
+    response,
+    status:response.status,
+    ok:response.ok,
+    answer,
+    location:response.headers.get('location') || null,
+    paymentRequired:response.headers.get('payment-required') || null,
+    wwwAuthenticate:response.headers.get('www-authenticate') || null
+  };
+}
+
 async function fetchApprovedMedia(url, options = {}) {
   const allowed = Array.isArray(options.allowedHosts) && options.allowedHosts.length
     ? options.allowedHosts : allowedHostsFromEnv();
@@ -133,4 +163,4 @@ async function getMedia(camera, options = {}) {
   return fetchApprovedMedia(mediaUrl, options);
 }
 
-module.exports = { MAX_BYTES, syntheticFrame, fetchApproved, getFrame, fetchApprovedMedia, getMedia };
+module.exports = { openEyeWhepOffer,  MAX_BYTES, syntheticFrame, fetchApproved, getFrame, fetchApprovedMedia, getMedia };
