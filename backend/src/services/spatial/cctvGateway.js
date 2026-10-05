@@ -39,9 +39,10 @@ function hasLiveVisual(camera) {
   if (hasInlineVideo(camera)) return true;
   // A direct current image feed is a valid wall visual. It is not mislabeled
   // as continuous video; the UI presents it as a refreshing live snapshot.
-  return kind === 'image' &&
-    media.direct === true &&
-    Boolean(media.frameUrl || media.previewUrl || media.url);
+  return kind === 'image' && (
+    (media.direct === true && Boolean(media.frameUrl || media.previewUrl || media.url)) ||
+    media.providerFrameAvailable === true
+  );
 }
 
 async function getCameras(options = {}) {
