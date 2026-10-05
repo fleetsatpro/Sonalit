@@ -111,6 +111,27 @@ async function openEyeWhepOffer(streamId, sdp) {
   };
 }
 
+async function openEyeWhepDelete(sessionUrl) {
+  const candidate = String(sessionUrl || '').trim();
+  if (!candidate) throw Object.assign(new Error('WHEP session URL is required'), { failureClass:'invalid_data', statusCode:400 });
+  const parsed = new URL(candidate);
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'api.openeye.cam' || !/^\/v1\/streams\/[^/]+\/whep\/(?:session\/)?[^/]+$/i.test(parsed.pathname)) {
+    throw Object.assign(new Error('Invalid OpenEye WHEP session URL'), { failureClass:'invalid_data', statusCode:400 });
+  }
+  const headers = { Accept:'*/*' };
+  const key = String(process.env.OPENEYE_KEY || '').trim();
+  if (key) headers.Authorization = 'Bearer ' + key;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  let response;
+  try {
+    response = await fetch(parsed.toString(), { method:'DELETE', headers, signal:controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+  return { ok:response.ok || response.status === 404, status:response.status };
+}
+
 async function fetchApprovedMedia(url, options = {}) {
   const allowed = Array.isArray(options.allowedHosts) && options.allowedHosts.length
     ? options.allowedHosts : allowedHostsFromEnv();
@@ -171,4 +192,4 @@ async function getMedia(camera, options = {}) {
   return fetchApprovedMedia(mediaUrl, options);
 }
 
-module.exports = { openEyeWhepOffer,  MAX_BYTES, syntheticFrame, fetchApproved, getFrame, fetchApprovedMedia, getMedia };
+module.exports = { openEyeWhepOffer, openEyeWhepDelete, MAX_BYTES, syntheticFrame, fetchApproved, getFrame, fetchApprovedMedia, getMedia };
