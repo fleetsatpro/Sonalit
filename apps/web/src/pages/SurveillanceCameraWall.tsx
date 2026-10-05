@@ -78,7 +78,7 @@ export default function SurveillanceCameraWall() {
     cameras.length
 
   const playableVideoCount = cameras.filter(camera => {
-    const media = camera.media ?? {}
+    const media = ((camera.attributes?.media ?? {}) as Record<string, unknown>)
     const kind = String(media.kind ?? '').toLowerCase()
     return media.liveVideo === true ||
       Boolean(media.platformEmbedUrl) ||
