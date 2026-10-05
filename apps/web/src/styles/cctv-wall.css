@@ -94,44 +94,65 @@
 .gev-cctv-wall-head>div:first-child { min-width:0; display:flex; flex-direction:column; gap:4px; }
 .gev-cctv-wall-head strong { color:#effaf8; font:900 16px/1 'Barlow',system-ui,sans-serif; letter-spacing:.09em; }
 .gev-cctv-wall-head span:last-child { color:#71807d; font:700 7px/1.3 'IBM Plex Mono',ui-monospace,monospace; }
-.gev-cctv-wall-grid { min-height:0; flex:1; display:grid; grid-template-columns:minmax(0,1.55fr) minmax(320px,.85fr); gap:12px; padding:12px; overflow:hidden; }
-.gev-cctv-focus { min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(255,255,255,.075); border-radius:16px; background:rgba(255,255,255,.016); }
-.gev-cctv-focus-media { position:relative; flex:1; min-height:340px; display:grid; place-items:center; overflow:hidden; background:#010507; }
-.gev-cctv-focus-media>img,.gev-cctv-focus-media>video { width:100%; height:100%; object-fit:contain; background:#010507; }
-.gev-cctv-focus-media canvas { pointer-events:none; }
-.gev-cctv-focus-hud { position:absolute; top:10px; left:10px; right:10px; display:flex; gap:6px; flex-wrap:wrap; pointer-events:none; }
-.gev-cctv-focus-tools { position:absolute; right:10px; bottom:10px; display:flex; gap:4px; padding:5px; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(1,5,7,.72); backdrop-filter:blur(10px); }
-.gev-cctv-focus-tools button { width:31px; height:31px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.065); border-radius:8px; background:rgba(255,255,255,.035); color:#a3b6b2; cursor:pointer; }
-.gev-cctv-focus-tools button:hover { color:#effffb; border-color:rgba(94,234,212,.3); background:rgba(94,234,212,.08); }
-.gev-cctv-focus-info { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 12px; border-top:1px solid rgba(255,255,255,.06); }
-.gev-cctv-focus-info>div { min-width:0; display:flex; flex-direction:column; gap:4px; }
-.gev-cctv-focus-info strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#ecf8f5; font:800 12px/1.2 'Barlow',system-ui,sans-serif; }
-.gev-cctv-focus-info span { color:#657570; font:700 6.5px/1.25 'IBM Plex Mono',ui-monospace,monospace; }
-.gev-cctv-focus-info a { display:inline-flex; align-items:center; gap:5px; flex:0 0 auto; min-height:28px; padding:0 8px; border:1px solid rgba(94,234,212,.18); border-radius:8px; color:#9debe0; background:rgba(94,234,212,.05); font:800 7px/1 'IBM Plex Mono',ui-monospace,monospace; text-decoration:none; }
-.gev-cctv-focus-info a:hover { border-color:rgba(94,234,212,.34); background:rgba(94,234,212,.09); }
-.gev-cctv-wall-cards { min-width:0; min-height:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; gap:6px; overflow:auto; padding-right:2px; scrollbar-width:thin; }
-.gev-cctv-wall-card { position:relative; min-width:0; display:grid; grid-template-columns:96px minmax(0,1fr); gap:8px; align-items:center; min-height:74px; padding:5px; border:1px solid rgba(255,255,255,.055); border-radius:11px; background:rgba(255,255,255,.018); color:#7f918d; text-align:left; cursor:pointer; transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease; }
-.gev-cctv-wall-card:hover,.gev-cctv-wall-card[data-active='true'] { transform:translateY(-1px); border-color:rgba(94,234,212,.30); background:rgba(94,234,212,.055); box-shadow:0 12px 28px rgba(0,0,0,.24); color:#e2faf6; }
-.gev-cctv-wall-card-media { width:96px; height:58px; display:grid; place-items:center; overflow:hidden; border-radius:8px; border:1px solid rgba(255,255,255,.05); background:#03090b; color:#5c7771; }
-.gev-cctv-wall-card-media img { width:100%; height:100%; object-fit:cover; }
-.gev-cctv-wall-card-media small { font:800 6px/1 'IBM Plex Mono',ui-monospace,monospace; letter-spacing:.08em; }
-.gev-cctv-wall-card-copy { min-width:0; display:flex; flex-direction:column; gap:4px; }
-.gev-cctv-wall-card-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:inherit; font:800 7px/1.2 'IBM Plex Mono',ui-monospace,monospace; }
-.gev-cctv-wall-card-copy span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#566964; font:700 6px/1.25 'IBM Plex Mono',ui-monospace,monospace; }
-.gev-cctv-wall-live-dot { position:absolute; right:7px; top:7px; width:5px; height:5px; border-radius:50%; background:#76f3df; box-shadow:0 0 12px rgba(118,243,223,.75); }
-
-.gev-cctv-tile-media,.gev-cctv-wall-thumb { position:relative; display:grid; place-items:center; overflow:hidden; background:#03090b; color:#62817a; text-align:center; }
-.gev-cctv-tile-media--image img,.gev-cctv-wall-thumb--image img { width:100%; height:100%; object-fit:cover; }
-.gev-cctv-tile-media--source,.gev-cctv-wall-thumb--source { align-content:center; gap:8px; padding:28px; }
-.gev-cctv-tile-media--source strong,.gev-cctv-wall-thumb--source strong { color:#c1d5d0; font:800 9px/1.1 'IBM Plex Mono',ui-monospace,monospace; letter-spacing:.08em; }
-.gev-cctv-tile-media--source span,.gev-cctv-wall-thumb--source span { max-width:310px; color:#627671; font:700 7px/1.4 'IBM Plex Mono',ui-monospace,monospace; }
-.gev-cctv-tile-sheen { position:absolute; inset:0; pointer-events:none; background:linear-gradient(115deg,transparent 0%,rgba(255,255,255,.055) 42%,transparent 62%); mix-blend-mode:screen; opacity:.45; }
-.gev-cctv-wall-card:focus-visible,.gev-cctv-camera:focus-visible,.gev-cctv-icon:focus-visible,.gev-cctv-wall-actions button:focus-visible,.gev-cctv-frame-tools button:focus-visible,.gev-cctv-nav:focus-visible { outline:1px solid #76f3df; outline-offset:2px; }
+.gev-cctv-wall-head-copy { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.gev-cctv-wall-toolbar { display:flex; align-items:center; justify-content:flex-end; gap:7px; flex-wrap:wrap; }
+.gev-cctv-wall-metrics { display:flex; align-items:center; gap:8px; padding:0 2px; color:#7c8c89; font:800 6px/1 'IBM Plex Mono',ui-monospace,monospace; letter-spacing:.08em; }
+.gev-cctv-wall-metrics span { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.gev-cctv-wall-metrics i { width:5px; height:5px; border-radius:50%; display:inline-block; background:#687c77; }
+.gev-cctv-wall-metrics i[data-tone='live'] { background:#76f3df; box-shadow:0 0 9px rgba(118,243,223,.6); }
+.gev-cctv-wall-metrics i[data-tone='preview'] { background:#8dd7ff; }
+.gev-cctv-wall-metrics i[data-tone='source'] { background:#c9a46d; }
+.gev-cctv-layout-toggle { display:flex; gap:3px; padding:3px; border:1px solid rgba(255,255,255,.07); border-radius:8px; background:rgba(255,255,255,.018); }
+.gev-cctv-layout-toggle button { min-width:33px; height:25px; padding:0 7px; border:0; border-radius:6px; background:transparent; color:#73817e; font:800 6px/1 'IBM Plex Mono',ui-monospace,monospace; cursor:pointer; }
+.gev-cctv-layout-toggle button:hover { color:#d9efeb; background:rgba(94,234,212,.05); }
+.gev-cctv-layout-toggle button[aria-pressed='true'] { color:#03110e; background:#76f3df; box-shadow:0 0 18px rgba(118,243,223,.16); }
+.gev-cctv-wall-nav { width:29px; height:29px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.075); border-radius:8px; background:rgba(255,255,255,.022); color:#899b96; cursor:pointer; }
+.gev-cctv-wall-nav:hover:not(:disabled) { color:#effefa; border-color:rgba(94,234,212,.24); background:rgba(94,234,212,.055); }
+.gev-cctv-wall-nav:disabled { opacity:.28; cursor:not-allowed; }
+.gev-cctv-wall-page { min-width:28px; text-align:center; color:#7f8d89; font:800 6.5px/1 'IBM Plex Mono',ui-monospace,monospace; }
+.gev-cctv-wall-feeds { min-height:0; flex:1; display:grid; gap:8px; padding:10px; overflow:auto; align-content:stretch; grid-auto-rows:minmax(0,1fr); background:linear-gradient(180deg,rgba(255,255,255,.008),transparent 20%); }
+.gev-cctv-wall-feeds--2 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.gev-cctv-wall-feeds--3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.gev-cctv-wall-feeds--4 { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.gev-cctv-wall-feed { min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(255,255,255,.07); border-radius:12px; background:rgba(255,255,255,.016); box-shadow:0 12px 34px rgba(0,0,0,.20),inset 0 1px 0 rgba(255,255,255,.025); transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease; }
+.gev-cctv-wall-feed:hover,.gev-cctv-wall-feed[data-active='true'] { transform:translateY(-1px); border-color:rgba(118,243,223,.28); box-shadow:0 16px 40px rgba(0,0,0,.27),0 0 0 1px rgba(118,243,223,.04); }
+.gev-cctv-wall-feed-media { position:relative; min-height:0; flex:1; display:grid; place-items:center; overflow:hidden; background:#020607; }
+.gev-cctv-wall-feed-media > img,.gev-cctv-wall-feed-media > video { display:block; width:100%; height:100%; object-fit:cover; background:#020607; }
+.gev-cctv-wall-feed-media > video { object-fit:contain; }
+.gev-cctv-wall-feed-hit { position:absolute; inset:0; z-index:3; border:0; background:transparent; cursor:pointer; }
+.gev-cctv-wall-feed-hit:focus-visible { outline:2px solid rgba(118,243,223,.88); outline-offset:-2px; }
+.gev-cctv-wall-feed-top { position:absolute; z-index:4; top:7px; left:7px; right:7px; display:flex; align-items:center; gap:4px; pointer-events:none; }
+.gev-cctv-wall-feed-index,.gev-cctv-wall-feed-type,.gev-cctv-wall-feed-state-pill { min-height:20px; display:inline-flex; align-items:center; gap:4px; padding:0 6px; border:1px solid rgba(255,255,255,.08); border-radius:6px; background:rgba(1,5,7,.68); color:#a9b8b4; backdrop-filter:blur(9px); font:800 5.5px/1 'IBM Plex Mono',ui-monospace,monospace; letter-spacing:.08em; }
+.gev-cctv-wall-feed-index { color:#7f928d; }
+.gev-cctv-wall-feed-type { margin-left:auto; }
+.gev-cctv-wall-feed-state-pill[data-state='LIVE'] { color:#7ef4df; border-color:rgba(118,243,223,.23); }
+.gev-cctv-wall-feed-state-pill[data-state='LIVE'] i { width:4px; height:4px; border-radius:50%; background:currentColor; box-shadow:0 0 9px currentColor; }
+.gev-cctv-wall-feed-selected { position:absolute; z-index:4; right:7px; bottom:7px; padding:4px 6px; border:1px solid rgba(118,243,223,.24); border-radius:6px; background:rgba(1,9,8,.74); color:#7ef4df; font:900 5.5px/1 'IBM Plex Mono',ui-monospace,monospace; letter-spacing:.1em; }
+.gev-cctv-wall-feed-state { min-width:0; max-width:92%; display:grid; place-items:center; align-content:center; gap:5px; padding:20px; text-align:center; color:#52706a; }
+.gev-cctv-wall-feed-state strong { color:#b5ccc7; font:900 7px/1.1 'IBM Plex Mono',ui-monospace,monospace; letter-spacing:.09em; }
+.gev-cctv-wall-feed-state span { max-width:240px; color:#667b77; font:700 6px/1.35 'IBM Plex Mono',ui-monospace,monospace; }
+.gev-cctv-wall-feed-state--source { gap:6px; }
+.gev-cctv-wall-feed-actions { position:relative; z-index:7; display:flex; gap:4px; flex-wrap:wrap; justify-content:center; }
+.gev-cctv-wall-feed-actions a { display:inline-flex; align-items:center; gap:4px; min-height:23px; padding:0 6px; border:1px solid rgba(118,243,223,.19); border-radius:6px; background:rgba(118,243,223,.055); color:#a3eee2; font:800 5.5px/1 'IBM Plex Mono',ui-monospace,monospace; text-decoration:none; }
+.gev-cctv-wall-feed-actions a:hover { color:#e7fffb; border-color:rgba(118,243,223,.35); background:rgba(118,243,223,.09); }
+.gev-cctv-wall-feed-copy { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:9px; min-height:47px; padding:7px 9px; border-top:1px solid rgba(255,255,255,.055); background:linear-gradient(180deg,rgba(255,255,255,.018),rgba(255,255,255,.008)); }
+.gev-cctv-wall-feed-copy > div { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.gev-cctv-wall-feed-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e9f5f1; font:800 7px/1.1 'IBM Plex Mono',ui-monospace,monospace; }
+.gev-cctv-wall-feed-copy span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#62736f; font:700 5.8px/1.1 'IBM Plex Mono',ui-monospace,monospace; letter-spacing:.02em; }
+.gev-cctv-wall-feed-coords { flex:0 0 auto; max-width:42%; text-align:right; }
+.gev-cctv-wall-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:31px; padding:0 11px; border-top:1px solid rgba(255,255,255,.055); color:#5f706c; font:700 6px/1 'IBM Plex Mono',ui-monospace,monospace; }
+.gev-cctv-wall-foot strong { color:#95aaa5; letter-spacing:.08em; }
+.gev-cctv-wall-foot > span:last-child { color:#80938e; max-width:42%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 @media (max-width:1180px) {
   .gev-cctv-panel { right:360px; width:min(470px,calc(100vw - 400px)); }
   .gev-cctv-wall-grid { grid-template-columns:minmax(0,1.25fr) minmax(290px,.75fr); }
 }
+@media (max-width:1180px) {
+  .gev-cctv-wall { width:min(100%,1280px); }
+  .gev-cctv-wall-feeds--4 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+
 @media (max-width:860px) {
   .gev-cctv-panel { left:10px; right:10px; bottom:calc(min(43vh,330px) + 18px); width:auto; max-height:min(62vh,580px); }
   .gev-cctv-list { grid-template-columns:1fr; max-height:180px; }
@@ -143,6 +164,17 @@
   .gev-cctv-focus-media { min-height:300px; aspect-ratio:16/9; flex:0 0 auto; }
   .gev-cctv-wall-cards { grid-template-columns:repeat(2,minmax(0,1fr)); overflow:visible; }
 }
+@media (max-width:860px) {
+  .gev-cctv-wall-head { align-items:flex-start; }
+  .gev-cctv-wall-toolbar { gap:5px; }
+  .gev-cctv-wall-metrics { order:5; width:100%; justify-content:flex-start; padding-top:2px; }
+  .gev-cctv-wall-feeds--3,
+  .gev-cctv-wall-feeds--4 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .gev-cctv-wall-feed-copy { min-height:42px; }
+  .gev-cctv-wall-foot { min-height:36px; flex-wrap:wrap; padding:6px 9px; }
+  .gev-cctv-wall-foot > span:last-child { max-width:100%; width:100%; }
+}
+
 @media (max-width:560px) {
   .gev-cctv-heading strong { font-size:10px; }
   .gev-cctv-auto { display:none; }
@@ -154,6 +186,18 @@
   .gev-cctv-focus-media { min-height:235px; }
   .gev-cctv-wall-cards { grid-template-columns:1fr; }
   .gev-cctv-focus-info { align-items:flex-start; flex-direction:column; }
+}
+@media (max-width:560px) {
+  .gev-cctv-wall-head { flex-direction:column; gap:9px; }
+  .gev-cctv-wall-toolbar { width:100%; justify-content:space-between; }
+  .gev-cctv-wall-metrics { display:none; }
+  .gev-cctv-layout-toggle { margin-right:auto; }
+  .gev-cctv-wall-feeds--2,
+  .gev-cctv-wall-feeds--3,
+  .gev-cctv-wall-feeds--4 { grid-template-columns:1fr; grid-auto-rows:minmax(185px,1fr); }
+  .gev-cctv-wall-feed-copy { min-height:44px; }
+  .gev-cctv-wall-feed-coords { display:none; }
+  .gev-cctv-wall-foot { font-size:5.5px; }
 }
 @media (prefers-reduced-motion:reduce) {
   .gev-cctv-camera,.gev-cctv-wall-card { transition:none; }

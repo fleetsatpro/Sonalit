@@ -22,6 +22,10 @@ describe('GEV CCTV wall contract', () => {
     expect(source).toContain('OPEN LIVE FOOTAGE')
     expect(source).toContain('OPEN LATEST FRAME')
     expect(source).toContain('sourceMediaUrl')
+    expect(source).toContain('cameraDetails')
+    expect(source).toContain('wallPage')
+    expect(source).toContain('gev-cctv-wall-feeds--')
+    expect(source).toContain('FOCUSED')
   })
 
   test('does not attempt to force iframe embedding for source-only cameras', () => {
@@ -32,5 +36,6 @@ describe('GEV CCTV wall contract', () => {
     expect(source).not.toContain('<iframe')
     expect(source).toContain("mode === 'source'")
     expect(source).toContain('OPEN SOURCE')
+    expect(source).toContain('gev-cctv-wall-feed-state--source')
   })
 })

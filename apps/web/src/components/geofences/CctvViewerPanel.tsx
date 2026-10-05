@@ -117,12 +117,14 @@ export default function CctvViewerPanel({
   onSelectCamera,
   onClose,
   publicTotal,
+  standalone = false,
 }: {
   cameras: SpatialWorldEntity[]
   selectedCameraId: string | null
   loading?: boolean
   error?: boolean
   publicTotal?: number | null
+  standalone?: boolean
   onSelectCamera: (id: string) => void
   onClose: () => void
 }) {
@@ -145,7 +147,12 @@ export default function CctvViewerPanel({
     setResolvedCamera(null)
     void api.get<{ data: SpatialWorldEntity }>(`/cctv/${encodeURIComponent(activeId)}`, { signal: controller.signal })
       .then(response => {
-        if (!disposed) setResolvedCamera(response.data.data)
+        if (!disposed) {
+          const detail = response.data.data
+          cameraDetailsRef.current[activeId] = detail
+          setCameraDetails(current => ({ ...current, [activeId]: detail }))
+          setResolvedCamera(detail)
+        }
       })
       .catch(() => {
         // The viewport catalog remains usable when detail enrichment is unavailable.
@@ -172,10 +179,14 @@ export default function CctvViewerPanel({
   const expandedAiCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const aiBitmapRef = useRef<ImageBitmap | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(standalone)
   const [browserFullscreen, setBrowserFullscreen] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [previewFailures, setPreviewFailures] = useState<Set<string>>(() => new Set())
+  const [cameraDetails, setCameraDetails] = useState<Record<string, SpatialWorldEntity>>({})
+  const [wallLayout, setWallLayout] = useState<2 | 3 | 4>(3)
+  const [wallPage, setWallPage] = useState(0)
+  const cameraDetailsRef = useRef<Record<string, SpatialWorldEntity>>({})
   const wallRef = useRef<HTMLElement | null>(null)
   const pointerStartX = useRef<number | null>(null)
 
@@ -358,6 +369,47 @@ export default function CctvViewerPanel({
     setZoom(1)
   }, [activeId])
 
+  useEffect(() => {
+    if (standalone) setExpanded(true)
+  }, [standalone])
+
+  const wallPageSize = wallLayout * wallLayout
+  const wallPageCount = Math.max(1, Math.ceil(cameras.length / wallPageSize))
+  const wallCameras = useMemo(
+    () => cameras.slice(wallPage * wallPageSize, (wallPage + 1) * wallPageSize),
+    [cameras, wallPage, wallPageSize],
+  )
+
+  useEffect(() => {
+    if (!expanded || !cameras.length) return
+    let cancelled = false
+    const targets = wallCameras.filter(camera => !cameraDetailsRef.current[camera.id])
+    let cursor = 0
+    const worker = async () => {
+      while (!cancelled) {
+        const index = cursor++
+        if (index >= targets.length) return
+        const camera = targets[index]
+        try {
+          const response = await api.get<{ data: SpatialWorldEntity }>(`/cctv/${encodeURIComponent(camera.id)}`)
+          if (cancelled) return
+          const detail = response.data.data
+          cameraDetailsRef.current[camera.id] = detail
+          setCameraDetails(current => ({ ...current, [camera.id]: detail }))
+        } catch {
+          // The wall keeps the catalog card when detail enrichment is unavailable.
+        }
+      }
+    }
+    void Promise.all([worker(), worker(), worker(), worker()])
+    return () => { cancelled = true }
+  }, [expanded, cameras, wallCameras])
+
+  useEffect(() => {
+    if (!expanded) return
+    setWallPage(Math.min(wallPageCount - 1, Math.floor(activeIndex / wallPageSize)))
+  }, [activeIndex, expanded, wallPageCount, wallPageSize])
+
   const health = activeCamera ? cameraHealth(activeCamera) : 'UNKNOWN'
   const media = activeCamera ? cameraMedia(activeCamera) : {}
   const kind = activeCamera ? mediaKind(activeCamera) : 'synthetic'
@@ -456,7 +508,7 @@ export default function CctvViewerPanel({
 
   return (
     <>
-      <aside ref={node => { wallRef.current = node }} className={`gev-cctv-panel${expanded ? ' gev-cctv-panel--expanded' : ''}`} aria-label="CCTV camera viewer">
+{!standalone && (      <aside ref={node => { wallRef.current = node }} className={`gev-cctv-panel${expanded ? ' gev-cctv-panel--expanded' : ''}`} aria-label="CCTV camera viewer">
         <div className="gev-cctv-head">
           <div className="gev-cctv-heading">
             <span className="gev-cctv-kicker"><Camera size={12} /> PUBLIC CAMERA NETWORK</span>
@@ -587,97 +639,158 @@ export default function CctvViewerPanel({
           </div>
         )}
       </aside>
+      )}
 
       {expanded && activeCamera && (
-        <div className="gev-cctv-wall-overlay" role="dialog" aria-modal="true" aria-label="Expanded CCTV camera wall">
-          <div className="gev-cctv-wall-backdrop" onClick={() => setExpanded(false)} />
+        <div className={`gev-cctv-wall-overlay${standalone ? ' gev-cctv-wall-overlay--module' : ''}`} role="dialog" aria-modal="true" aria-label="CCTV Camera Wall">
+          {!standalone && <div className="gev-cctv-wall-backdrop" onClick={() => setExpanded(false)} />}
           <section className="gev-cctv-wall" ref={node => { wallRef.current = node }}>
             <header className="gev-cctv-wall-head">
-              <div>
+              <div className="gev-cctv-wall-head-copy">
                 <span className="gev-cctv-kicker"><Camera size={12} /> LIVE SPATIAL SURVEILLANCE</span>
                 <strong>CAMERA WALL</strong>
-                <span>{cameras.length} cameras · {renderableCount} directly renderable · {sourceOnlyCount} publisher handoffs</span>
+                <span>
+                  {cameras.length} cameras · page {wallPage + 1}/{wallPageCount} · {wallCameras.filter(camera => {
+                    const media = cameraMedia(camera)
+                    return media.direct === true && ['image', 'video', 'mjpeg'].includes(mediaKind(camera))
+                  }).length} renderable on this page
+                </span>
               </div>
-              <div className="gev-cctv-wall-actions">
-                <button type="button" onClick={() => selectRelative(-1)} aria-label="Previous camera"><ChevronLeft size={15} /></button>
-                <button type="button" onClick={() => selectRelative(1)} aria-label="Next camera"><ChevronRight size={15} /></button>
-                <button type="button" onClick={() => void toggleBrowserFullscreen()} aria-label={browserFullscreen ? 'Exit browser fullscreen' : 'Browser fullscreen'}>{browserFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
-                <button type="button" onClick={() => setExpanded(false)} aria-label="Close expanded camera wall"><X size={15} /></button>
+              <div className="gev-cctv-wall-toolbar">
+                <div className="gev-cctv-wall-metrics" aria-label="Camera wall metrics">
+                  <span><i data-tone="live" />{wallCameras.filter(camera => cameraHealth(camera) === 'LIVE').length} LIVE</span>
+                  <span><i data-tone="preview" />{wallCameras.filter(camera => cameraMedia(camera).direct === true).length} PREVIEW</span>
+                  <span><i data-tone="source" />{wallCameras.filter(camera => sourceMode(camera) === 'source').length} SOURCE</span>
+                </div>
+                <div className="gev-cctv-layout-toggle" aria-label="Camera wall layout">
+                  {([2, 3, 4] as const).map(layout => (
+                    <button
+                      key={layout}
+                      type="button"
+                      aria-pressed={wallLayout === layout}
+                      onClick={() => {
+                        setWallLayout(layout)
+                        setWallPage(Math.min(Math.max(0, Math.ceil(cameras.length / (layout * layout)) - 1), Math.floor(activeIndex / (layout * layout))))
+                      }}
+                      title={`${layout} by ${layout} wall`}
+                    >
+                      {layout}×{layout}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="gev-cctv-wall-nav" onClick={() => setWallPage(page => Math.max(0, page - 1))} disabled={wallPage <= 0} aria-label="Previous wall page" title="Previous wall page"><ChevronLeft size={15} /></button>
+                <span className="gev-cctv-wall-page">{wallPage + 1}/{wallPageCount}</span>
+                <button type="button" className="gev-cctv-wall-nav" onClick={() => setWallPage(page => Math.min(wallPageCount - 1, page + 1))} disabled={wallPage >= wallPageCount - 1} aria-label="Next wall page" title="Next wall page"><ChevronRight size={15} /></button>
+                <button type="button" className="gev-cctv-wall-nav" onClick={() => void toggleBrowserFullscreen()} aria-label={browserFullscreen ? 'Exit browser fullscreen' : 'Browser fullscreen'} title="Browser fullscreen">{browserFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
+                <button type="button" className="gev-cctv-wall-nav" onClick={() => setExpanded(false)} aria-label="Close expanded camera wall" title="Close"><X size={15} /></button>
               </div>
             </header>
 
-            <div className="gev-cctv-wall-grid">
-              <article className="gev-cctv-focus">
-                <div className="gev-cctv-focus-media">
-                  {configuredStream && streamUrl ? (
-                    kind === 'mjpeg'
-                      ? <img src={streamUrl} alt={`${cameraName(activeCamera)} live MJPEG stream`} onError={() => setFrameState('error')} />
-                      : <video src={streamUrl} autoPlay muted playsInline controls preload="metadata" onError={() => setFrameState('error')} />
-                  ) : frameUrl ? (
-                    <>
-                      <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} style={{ opacity:aiEnhanced ? 0 : 1, transform:`scale(${zoom})` }} onError={() => setFrameState('error')} />
-                      <canvas ref={expandedAiCanvasRef} aria-label={`${cameraName(activeCamera)} AI UHD enhanced frame`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:aiEnhanced ? 'block' : 'none', transform:`scale(${zoom})` }} />
-                    </>
-                  ) : sourceCard(activeCamera)} 
-                </div>
-                <div className="gev-cctv-focus-hud">
-                  <span data-state={health}>{health}</span>
-                  <span>{label}</span>
-                  <span>{kind.toUpperCase()}</span>
-                  {age && <span>{age}</span>}
-                </div>
-                <div className="gev-cctv-focus-tools">
-                  <button type="button" onClick={() => selectRelative(-1)} aria-label="Previous camera"><ChevronLeft size={15} /></button>
-                  <button type="button" onClick={() => setZoom(Math.max(1, Number((zoom - .25).toFixed(2))))} aria-label="Zoom out"><ZoomOut size={14} /></button>
-                  <button type="button" onClick={() => setZoom(1)} aria-label="Reset zoom"><RotateCcw size={13} /></button>
-                  <button type="button" onClick={() => setZoom(Math.min(2.5, Number((zoom + .25).toFixed(2))))} aria-label="Zoom in"><ZoomIn size={14} /></button>
-                  <button type="button" onClick={() => selectRelative(1)} aria-label="Next camera"><ChevronRight size={15} /></button>
-                </div>
-                <div className="gev-cctv-focus-info">
-                  <div>
-                    <strong>{cameraName(activeCamera)}</strong>
-                    <span>{source} · {Number(activeCamera.latitude).toFixed(5)}° · {Number(activeCamera.longitude).toFixed(5)}°{age ? ` · captured ${age}` : ''}</span>
-                  </div>
-                  {viewerUrl && (
-                    <a href={viewerUrl} target="_blank" rel="noreferrer noopener"><ExternalLink size={11} /> OPEN PUBLISHER</a>
-                  )}
-                </div>
-              </article>
-
-              <section className="gev-cctv-wall-cards" aria-label="Camera wall camera selection">
-                {cameras.slice(0, 80).map(camera => {
-                  const active = camera.id === activeId
-                  const camMode = sourceMode(camera)
-                  const previewable = cameraMedia(camera).direct === true && mediaKind(camera) === 'image' && Boolean(mediaDirectUrl(camera)) && !previewFailures.has(camera.id)
-                  return (
-                    <button
-                      key={camera.id}
-                      type="button"
-                      className="gev-cctv-wall-card"
-                      data-active={active}
-                      onClick={() => onSelectCamera(camera.id)}
-                      aria-pressed={active}
-                    >
-                      <span className="gev-cctv-wall-card-media">
-                        {previewable ? (
-                          <img src={mediaDirectUrl(camera)} alt="" loading="lazy" decoding="async" onError={() => markPreviewFailure(camera.id)} />
-                        ) : (
-                          <>
-                            <Camera size={14} />
-                            <small>{camMode === 'source' ? 'SOURCE' : camMode === 'synthetic' ? 'NO PREVIEW' : mediaKind(camera).toUpperCase()}</small>
-                          </>
-                        )}
-                      </span>
-                      <span className="gev-cctv-wall-card-copy">
-                        <strong>{cameraName(camera)}</strong>
-                        <span>{cameraSource(camera)} · {cameraHealth(camera)}</span>
-                      </span>
-                      {active && <span className="gev-cctv-wall-live-dot" />}
-                    </button>
-                  )
-                })}
-              </section>
+            <div className={`gev-cctv-wall-feeds gev-cctv-wall-feeds--${wallLayout}`} role="grid" aria-label="Simultaneous CCTV camera feeds">
+              {wallCameras.map(camera => {
+                const cam = cameraDetails[camera.id] ? { ...camera, ...cameraDetails[camera.id] } : camera
+                const camMedia = cameraMedia(cam)
+                const camKind = mediaKind(cam)
+                const camMode = sourceMode(cam)
+                const camHealth = cameraHealth(cam)
+                const camAge = frameAge(cam)
+                const camViewer = sourceViewerUrl(cam)
+                const camSourceMedia = sourceMediaUrl(cam)
+                const camSourceMediaType = sourceMediaType(cam)
+                const camDirectUrl = mediaDirectUrl(cam)
+                const camPreviewable = camMedia.direct === true && camKind === 'image' && Boolean(camDirectUrl) && !previewFailures.has(cam.id)
+                const camStream = camMedia.direct === true && ['video', 'mjpeg'].includes(camKind) && Boolean(camMedia.url)
+                const isActive = cam.id === activeId
+                return (
+                  <article
+                    key={cam.id}
+                    className="gev-cctv-wall-feed"
+                    data-active={isActive}
+                    data-state={camHealth}
+                    role="gridcell"
+                  >
+                    <div className="gev-cctv-wall-feed-media">
+                      {camPreviewable ? (
+                        <img
+                          src={camDirectUrl}
+                          alt={`${cameraName(cam)} latest camera preview`}
+                          loading="lazy"
+                          decoding="async"
+                          onError={() => markPreviewFailure(cam.id)}
+                        />
+                      ) : camStream && isActive && streamUrl ? (
+                        camKind === 'mjpeg'
+                          ? <img src={streamUrl} alt={`${cameraName(cam)} live MJPEG stream`} onError={() => setFrameState('error')} />
+                          : <video src={streamUrl} autoPlay muted playsInline controls preload="metadata" onError={() => setFrameState('error')} />
+                      ) : camStream ? (
+                        <div className="gev-cctv-wall-feed-state">
+                          <Camera size={18} />
+                          <strong>LIVE STREAM</strong>
+                          <span>Select this camera to activate its approved stream.</span>
+                        </div>
+                      ) : camMode === 'source' ? (
+                        <div className="gev-cctv-wall-feed-state gev-cctv-wall-feed-state--source">
+                          <Camera size={18} />
+                          <strong>PUBLISHER VIEW</strong>
+                          <span>{camSourceMedia ? 'Publisher footage is available only as a top-level source.' : 'Publisher requires its own viewer.'}</span>
+                          <div className="gev-cctv-wall-feed-actions">
+                            {camSourceMedia && (
+                              <a href={camSourceMedia} target="_blank" rel="noreferrer noopener">
+                                <ExternalLink size={10} />
+                                {camSourceMediaType === 'video' || camSourceMediaType === 'mjpeg' ? 'OPEN LIVE FOOTAGE' : camSourceMediaType === 'image' ? 'OPEN LATEST FRAME' : 'OPEN SOURCE'}
+                              </a>
+                            )}
+                            {camViewer && camViewer !== camSourceMedia && (
+                              <a href={camViewer} target="_blank" rel="noreferrer noopener"><ExternalLink size={10} /> OPEN PUBLISHER</a>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="gev-cctv-wall-feed-state">
+                          <Camera size={18} />
+                          <strong>{camMode === 'synthetic' ? 'NO APPROVED PREVIEW' : 'PREVIEW UNAVAILABLE'}</strong>
+                          <span>{camMode === 'synthetic' ? 'The source did not authorize a renderable camera frame.' : 'The approved media gateway has no current frame.'}</span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="gev-cctv-wall-feed-hit"
+                        onClick={() => {
+                          onSelectCamera(cam.id)
+                          setZoom(1)
+                        }}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            onSelectCamera(cam.id)
+                            setZoom(1)
+                          }
+                        }}
+                        aria-label={`Select ${cameraName(cam)}`}
+                      />
+                      <div className="gev-cctv-wall-feed-top">
+                        <span className="gev-cctv-wall-feed-index">{String(wallPage * wallPageSize + wallCameras.indexOf(camera) + 1).padStart(2, '0')}</span>
+                        <span className="gev-cctv-wall-feed-state-pill" data-state={camHealth}><i />{camHealth}</span>
+                        <span className="gev-cctv-wall-feed-type">{camKind.toUpperCase()}</span>
+                      </div>
+                      {isActive && <span className="gev-cctv-wall-feed-selected">FOCUSED</span>}
+                    </div>
+                    <div className="gev-cctv-wall-feed-copy">
+                      <div>
+                        <strong>{cameraName(cam)}</strong>
+                        <span>{cameraSource(cam)}{camAge ? ` · ${camAge}` : ''}</span>
+                      </div>
+                      <span className="gev-cctv-wall-feed-coords">{Number(cam.latitude).toFixed(4)}°, {Number(cam.longitude).toFixed(4)}°</span>
+                    </div>
+                  </article>
+                )
+              })}
             </div>
+
+            <footer className="gev-cctv-wall-foot">
+              <span><strong>WALL {wallLayout}×{wallLayout}</strong> · click a tile to focus it in GEV · ←/→ navigate cameras</span>
+              <span>{activeCamera ? cameraName(activeCamera) : 'No camera selected'}{age ? ` · selected frame ${age}` : ''}</span>
+            </footer>
           </section>
         </div>
       )}
