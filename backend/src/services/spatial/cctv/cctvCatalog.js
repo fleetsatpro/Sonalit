@@ -236,7 +236,7 @@ async function loadOpenEyeCatalog(options = {}) {
     return [];
   }
 
-  const bbox = normalizeBbox(options.bbox) || bboxFromCenter(options.center, options.radiusM);
+  const bbox = normalizeBbox(options.bbox) || getCountryBbox(options.countryCode) || bboxFromCenter(options.center, options.radiusM);
   const limit = Math.max(1, Math.min(OPENEYE_MAX_LIMIT, Number(options.maxRecords) || 100));
   const key = JSON.stringify({ bbox, countryCode:String(options.countryCode || '').toUpperCase() || null, center:options.center || null, radiusM:Number(options.radiusM) || null, limit });
   const cached = openEyeCache.get(key);
