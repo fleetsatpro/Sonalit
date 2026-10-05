@@ -56,6 +56,7 @@ describe('CCTV media routing', () => {
       id: 'stream-live-video',
       public_url: 'https://openeye.cam/cam/stream-live-video',
       feed_kind: 'live_video',
+      live: true,
       view: {
         render: 'image',
         url: 'https://api.openeye.cam/v1/streams/stream-live-video/preview.webp',
