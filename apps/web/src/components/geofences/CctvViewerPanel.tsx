@@ -66,11 +66,16 @@ function providerSnapshotCapability(camera: SpatialWorldEntity) {
     mediaKind(camera) === 'image'
 }
 
+function providerSnapshotEndpoint(camera: SpatialWorldEntity) {
+  return providerSnapshotCapability(camera)
+    ? '/cctv/' + encodeURIComponent(camera.id) + '/frame'
+    : ''
+}
+
 function providerSnapshotUrl(camera: SpatialWorldEntity) {
   const base = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1').replace(/\/+$/, '')
-  return providerSnapshotCapability(camera)
-    ? base + '/cctv/' + encodeURIComponent(camera.id) + '/frame'
-    : ''
+  const endpoint = providerSnapshotEndpoint(camera)
+  return endpoint ? base + endpoint : ''
 }
 
 function mediaDirectUrl(camera: SpatialWorldEntity) {
@@ -187,6 +192,68 @@ function cameraPlaybackMediaType(camera: SpatialWorldEntity) {
   const upstreamType = String(media.sourceMediaType ?? '').toLowerCase()
   const upstreamUrl = String(media.url ?? '')
   return isHlsUrl(upstreamUrl, upstreamType) ? 'application/vnd.apple.mpegurl' : mediaKind(camera)
+}
+
+function InlineCctvSnapshot({
+  endpoint,
+  alt,
+  refreshKey = 0,
+  onError,
+}: {
+  endpoint: string
+  alt: string
+  refreshKey?: number
+  onError?: () => void
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let disposed = false
+    let nextUrl: string | null = null
+    const load = async () => {
+      setFailed(false)
+      try {
+        const response = await api.get<Blob>(endpoint, {
+          responseType: 'blob',
+        })
+        if (disposed) return
+        nextUrl = URL.createObjectURL(response.data)
+        setObjectUrl(current => {
+          if (current) URL.revokeObjectURL(current)
+          return nextUrl
+        })
+      } catch {
+        if (disposed) return
+        setFailed(true)
+        onError?.()
+      }
+    }
+    void load()
+    return () => {
+      disposed = true
+      if (nextUrl) URL.revokeObjectURL(nextUrl)
+    }
+  }, [endpoint, refreshKey, onError])
+
+  if (failed || !objectUrl) {
+    return (
+      <div className="gev-cctv-wall-feed-state">
+        <Camera size={18} />
+        <strong>{failed ? 'LIVE SNAPSHOT UNAVAILABLE' : 'ACQUIRING LIVE FRAME'}</strong>
+        <span>{failed ? 'The authenticated Sonalit frame gateway could not reacquire the current image.' : 'Fetching the current public camera frame.'}</span>
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={objectUrl}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+    />
+  )
 }
 
 function InlineCctvVideo({
@@ -976,7 +1043,9 @@ export default function CctvViewerPanel({
     if (canPreview) {
       return (
         <div className={compact ? 'gev-cctv-wall-thumb gev-cctv-wall-thumb--image' : 'gev-cctv-tile-media gev-cctv-tile-media--image'}>
-          <img src={mediaDirectUrl(camera)} alt={`${cameraName(camera)} latest preview`} loading={compact ? 'lazy' : 'eager'} decoding="async" onError={() => markPreviewFailure(camera.id)} />
+          {providerSnapshotCapability(camera)
+            ? <InlineCctvSnapshot endpoint={providerSnapshotEndpoint(camera)} alt={`${cameraName(camera)} latest live snapshot`} onError={() => markPreviewFailure(camera.id)} />
+            : <img src={mediaDirectUrl(camera)} alt={`${cameraName(camera)} latest preview`} loading={compact ? 'lazy' : 'eager'} decoding="async" onError={() => markPreviewFailure(camera.id)} />}
           <span className="gev-cctv-tile-sheen" />
         </div>
       )
@@ -1259,13 +1328,20 @@ export default function CctvViewerPanel({
                       ) : camLiveVideo ? (
                         camPreviewable ? (
                           <div className="gev-cctv-wall-feed-media-source">
-                            <img
-                              src={camWallVisualUrl}
-                              alt={`${cameraName(cam)} latest live-video preview`}
-                              loading="lazy"
-                              decoding="async"
-                              onError={() => markPreviewFailure(cam.id)}
-                            />
+                            {providerSnapshotCapability(cam)
+                              ? <InlineCctvSnapshot
+                                  endpoint={providerSnapshotEndpoint(cam)}
+                                  alt={`${cameraName(cam)} latest live-video preview`}
+                                  refreshKey={wallVisualTick}
+                                  onError={() => markPreviewFailure(cam.id)}
+                                />
+                              : <img
+                                  src={camWallVisualUrl}
+                                  alt={`${cameraName(cam)} latest live-video preview`}
+                                  loading="lazy"
+                                  decoding="async"
+                                  onError={() => markPreviewFailure(cam.id)}
+                                />}
                             <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · SELECT TO PLAY</span>
                           </div>
                         ) : (
@@ -1276,13 +1352,20 @@ export default function CctvViewerPanel({
                           </div>
                         )
                       ) : camPreviewable ? (
-                        <img
-                          src={camWallVisualUrl}
-                          alt={`${cameraName(cam)} latest camera preview`}
-                          loading="lazy"
-                          decoding="async"
-                          onError={() => markPreviewFailure(cam.id)}
-                        />
+                        {providerSnapshotCapability(cam)
+                          ? <InlineCctvSnapshot
+                              endpoint={providerSnapshotEndpoint(cam)}
+                              alt={`${cameraName(cam)} latest camera preview`}
+                              refreshKey={wallVisualTick}
+                              onError={() => markPreviewFailure(cam.id)}
+                            />
+                          : <img
+                              src={camWallVisualUrl}
+                              alt={`${cameraName(cam)} latest camera preview`}
+                              loading="lazy"
+                              decoding="async"
+                              onError={() => markPreviewFailure(cam.id)}
+                            />}
                       ) : camStream && isActive && streamUrl ? (
                         camKind === 'mjpeg'
                           ? <img src={streamUrl} alt={`${cameraName(cam)} live MJPEG stream`} onError={() => setFrameState('error')} />
