@@ -32,6 +32,18 @@ function hasInlineVideo(camera) {
   );
 }
 
+function hasLiveVisual(camera) {
+  const media = camera?.media || {};
+  const kind = String(media.kind || '').toLowerCase();
+  if (String(camera?.health?.status || '').toUpperCase() !== 'LIVE') return false;
+  if (hasInlineVideo(camera)) return true;
+  // A direct current image feed is a valid wall visual. It is not mislabeled
+  // as continuous video; the UI presents it as a refreshing live snapshot.
+  return kind === 'image' &&
+    media.direct === true &&
+    Boolean(media.frameUrl || media.previewUrl || media.url);
+}
+
 async function getCameras(options = {}) {
   const now = new Date().toISOString();
   health.lastAttemptAt = now;
@@ -41,8 +53,14 @@ async function getCameras(options = {}) {
     const cameras = normalized
       .filter(c => inBbox(c, options.bbox))
       .filter(c => inRadius(c, options.center, options.radiusM))
-      .filter(c => options.liveOnly !== true || hasInlineVideo(c))
-      .sort((a,b) => Number(hasInlineVideo(b)) - Number(hasInlineVideo(a)))
+      .filter(c => options.liveOnly !== true || (
+        options.includeSnapshots === true ? hasLiveVisual(c) : hasInlineVideo(c)
+      ))
+      .sort((a,b) => {
+        const videoDelta = Number(hasInlineVideo(b)) - Number(hasInlineVideo(a));
+        if (videoDelta) return videoDelta;
+        return Number(hasLiveVisual(b)) - Number(hasLiveVisual(a));
+      })
       .map(c => ({
         ...c,
         geometry:{ type:'Polygon', coordinates:[buildViewshedPolygon(c)] }
@@ -99,4 +117,4 @@ async function getNearestCameras(options = {}) {
 
 function getProviderHealth() { return { cctv:{...health} }; }
 
-module.exports = { getCameras, getNearestCameras, getProviderHealth, pointInViewshed, hasInlineVideo };
+module.exports = { getCameras, getNearestCameras, getProviderHealth, pointInViewshed, hasInlineVideo, hasLiveVisual };
