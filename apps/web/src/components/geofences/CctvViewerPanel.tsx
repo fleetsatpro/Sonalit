@@ -1066,17 +1066,25 @@ export default function CctvViewerPanel({
                     role="gridcell"
                   >
                     <div className="gev-cctv-wall-feed-media">
-                      {camLiveVideo && isActive ? (
-                        <div className="gev-cctv-wall-feed-media-source">
-                          <InlineWhepVideo camera={cam} onError={() => setFrameState('error')} />
-                          <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · WHEP</span>
-                        </div>
-                      ) : camLiveVideo ? (
-                        <div className="gev-cctv-wall-feed-state">
-                          <Camera size={18} />
-                          <strong>LIVE VIDEO</strong>
-                          <span>Select this camera to open the live footage in the focused player.</span>
-                        </div>
+                      {camLiveVideo ? (
+                        camPreviewable ? (
+                          <div className="gev-cctv-wall-feed-media-source">
+                            <img
+                              src={camDirectUrl}
+                              alt={`${cameraName(cam)} latest live-video preview`}
+                              loading="lazy"
+                              decoding="async"
+                              onError={() => markPreviewFailure(cam.id)}
+                            />
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · SELECT TO PLAY</span>
+                          </div>
+                        ) : (
+                          <div className="gev-cctv-wall-feed-state">
+                            <Camera size={18} />
+                            <strong>LIVE VIDEO</strong>
+                            <span>Select this camera to open the live footage in the focused player.</span>
+                          </div>
+                        )
                       ) : camPreviewable ? (
                         <img
                           src={camDirectUrl}
