@@ -88,6 +88,15 @@ function getCountryBbox(code) {
   return row && Array.isArray(row[1]) ? row[1].slice() : null;
 }
 
+function countryNameMatchesCode(value, code) {
+  const raw = String(value || '').trim();
+  const wanted = String(code || '').trim().toUpperCase();
+  if (!raw || !wanted) return true;
+  if (raw.toUpperCase() === wanted) return true;
+  const canonical = String(COUNTRY_NAME_OVERRIDES[wanted] || COUNTRY_BOXES[wanted]?.[0] || '').trim();
+  return canonical ? raw.toLowerCase() === canonical.toLowerCase() : true;
+}
+
 
 function clearOpenEyeCache() {
   openEyeCache.clear();
@@ -793,7 +802,11 @@ async function loadOpenCctvCatalog(options = {}) {
       if (!records.length) throw primaryError;
     }
 
-    const normalized = (await Promise.all(records.map((row, index) => mapOpenCctvRecord(row, index)))).filter(Boolean);
+    const requestedCountry = String(options.countryCode || '').trim().toUpperCase() || null;
+    const countryScopedRecords = requestedCountry
+      ? records.filter(row => countryNameMatchesCode(row?.countryCode ?? row?.country, requestedCountry))
+      : records;
+    const normalized = (await Promise.all(countryScopedRecords.map((row, index) => mapOpenCctvRecord(row, index)))).filter(Boolean);
     const deduped = Array.from(new Map(normalized.map(row => [String(row.id), row])).values());
     const liveVideoCount = deduped.filter(camera => camera.media.liveVideo === true).length;
     const snapshotCount = deduped.filter(camera => camera.media.providerFrameAvailable === true).length;
