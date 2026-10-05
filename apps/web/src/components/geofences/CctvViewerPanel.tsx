@@ -77,6 +77,26 @@ function sourceMediaType(camera: SpatialWorldEntity) {
   return String(media.sourceMediaType ?? '').toLowerCase().trim()
 }
 
+function sourceMediaPlaybackKind(camera: SpatialWorldEntity): 'video' | 'mjpeg' | null {
+  const media = cameraMedia(camera)
+  const url = sourceMediaUrl(camera)
+  if (media.sourceMediaPlayable !== true || !url) return null
+  const type = sourceMediaType(camera)
+  if (type === 'mjpeg' || type.includes('multipart')) return 'mjpeg'
+  if (
+    type === 'video' ||
+    type.includes('mpegurl') ||
+    /\\.(?:m3u8|mp4|webm|mov|m4v|og[gv]|mjpg|mjpeg)(?:[?#].*)?$/i.test(url)
+  ) return 'video'
+  return null
+}
+
+function sourceMediaIsImage(camera: SpatialWorldEntity) {
+  const url = sourceMediaUrl(camera)
+  const type = sourceMediaType(camera)
+  return type === 'image' || /\\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url)
+}
+
 function frameAge(camera: SpatialWorldEntity) {
   const attrs = record(camera.attributes)
   const age = Number(attrs.lastFrameAgeS)
@@ -428,20 +448,26 @@ export default function CctvViewerPanel({
       (frameState === 'ready' && !synthetic)
     )
   )
+  const sourcePlayback = activeCamera ? sourceMediaPlaybackKind(activeCamera) : null
   const label = configuredStream
     ? 'LIVE STREAM / GATEWAY'
     : direct
       ? 'PUBLIC PREVIEW'
-      : mode === 'source'
-        ? 'SOURCE-ONLY'
-        : synthetic
-          ? 'SYNTHETIC / FALLBACK'
-          : operational
-            ? 'LIVE / APPROVED SOURCE'
-            : 'CATALOG / FALLBACK'
+      : sourcePlayback
+        ? 'LIVE VIDEO / SOURCE'
+        : mode === 'source'
+          ? 'SOURCE-ONLY'
+          : synthetic
+            ? 'SYNTHETIC / FALLBACK'
+            : operational
+              ? 'LIVE / APPROVED SOURCE'
+              : 'CATALOG / FALLBACK'
   const renderableCount = cameras.filter(camera => {
     const media = cameraMedia(camera)
-    return media.direct === true && ['image','video','mjpeg'].includes(mediaKind(camera))
+    return (
+      (media.direct === true && ['image','video','mjpeg'].includes(mediaKind(camera))) ||
+      sourceMediaPlaybackKind(camera) !== null
+    )
   }).length
   const sourceOnlyCount = cameras.filter(camera => sourceMode(camera) === 'source').length
 
@@ -459,8 +485,11 @@ export default function CctvViewerPanel({
     const camViewer = sourceViewerUrl(camera)
     const camSourceMedia = sourceMediaUrl(camera)
     const camSourceMediaType = sourceMediaType(camera)
+    const camSourcePlayback = sourceMediaPlaybackKind(camera)
     const camMedia = cameraMedia(camera)
     const canPreview = camMedia.direct === true && Boolean(mediaDirectUrl(camera)) && ['image'].includes(mediaKind(camera)) && !previewFailures.has(camera.id)
+    const sourceFailed = previewFailures.has(camera.id)
+
     if (canPreview) {
       return (
         <div className={compact ? 'gev-cctv-wall-thumb gev-cctv-wall-thumb--image' : 'gev-cctv-tile-media gev-cctv-tile-media--image'}>
@@ -469,36 +498,62 @@ export default function CctvViewerPanel({
         </div>
       )
     }
+
+    if (!sourceFailed && camSourcePlayback === 'mjpeg') {
+      return (
+        <div className={compact ? 'gev-cctv-wall-thumb gev-cctv-wall-thumb--source-video' : 'gev-cctv-tile-media gev-cctv-tile-media--source-video'}>
+          <img
+            src={camSourceMedia}
+            alt={`${cameraName(camera)} live MJPEG footage`}
+            onError={() => markPreviewFailure(camera.id)}
+          />
+          <div className="gev-cctv-source-live-badge"><i /> LIVE · SOURCE</div>
+        </div>
+      )
+    }
+
+    if (!sourceFailed && camSourcePlayback === 'video') {
+      return (
+        <div className={compact ? 'gev-cctv-wall-thumb gev-cctv-wall-thumb--source-video' : 'gev-cctv-tile-media gev-cctv-tile-media--source-video'}>
+          <video
+            src={camSourceMedia}
+            poster={typeof camMedia.previewUrl === 'string' ? camMedia.previewUrl : undefined}
+            autoPlay
+            muted
+            playsInline
+            controls
+            preload="metadata"
+            onError={() => markPreviewFailure(camera.id)}
+          />
+          <div className="gev-cctv-source-live-badge"><i /> LIVE VIDEO · SOURCE</div>
+        </div>
+      )
+    }
+
+    const sourceImage = sourceMediaIsImage(camera)
     return (
       <div className={compact ? 'gev-cctv-wall-thumb gev-cctv-wall-thumb--source' : 'gev-cctv-tile-media gev-cctv-tile-media--source'}>
         <Camera size={compact ? 16 : 22} />
-        <strong>{camMode === 'source' ? 'PUBLISHER VIEW' : camMode === 'synthetic' ? 'NO LIVE IMAGE' : 'PREVIEW UNAVAILABLE'}</strong>
+        <strong>{camMode === 'source' ? (sourceImage ? 'PUBLISHER IMAGE' : 'PUBLISHER VIEW') : camMode === 'synthetic' ? 'NO LIVE IMAGE' : 'PREVIEW UNAVAILABLE'}</strong>
         <span>{camMode === 'source'
-          ? camSourceMedia
-            ? 'Embedded playback is not permitted. Open the publisher-provided footage/frame directly in a new tab.'
-            : 'This publisher requires top-level viewing. Open the publisher in a new tab to access the live view.'
+          ? sourceImage
+            ? 'This camera exposes a current still image, not a live video feed. Open the publisher camera page for its live context.'
+            : camSourceMedia
+              ? 'The publisher exposes source media, but it is not browser-playable from this session.'
+              : 'This publisher requires top-level viewing for the live camera.'
           : camMode === 'synthetic'
             ? 'The source did not authorize a renderable preview.'
             : 'The approved media gateway has no current frame.'}</span>
         <div className="gev-cctv-source-actions">
-          {camSourceMedia && (
-            <a
-              className="gev-cctv-open-source gev-cctv-open-source--primary"
-              href={camSourceMedia}
-              target="_blank"
-              rel="noopener"
-            >
+          {camViewer && (
+            <a className="gev-cctv-open-source gev-cctv-open-source--primary" href={camViewer} target="_blank" rel="noreferrer noopener">
               <ExternalLink size={11} />
-              {camSourceMediaType === 'video' || camSourceMediaType === 'mjpeg'
-                ? 'OPEN LIVE FOOTAGE'
-                : camSourceMediaType === 'image'
-                  ? 'OPEN LATEST FRAME'
-                  : 'OPEN SOURCE MEDIA'}
+              OPEN PUBLISHER
             </a>
           )}
-          {camViewer && camViewer !== camSourceMedia && (
-            <a className="gev-cctv-open-source" href={camViewer} target="_blank" rel="noopener">
-              <ExternalLink size={11} /> OPEN PUBLISHER
+          {camSourcePlayback === null && camSourceMedia && !sourceImage && (
+            <a className="gev-cctv-open-source" href={camSourceMedia} target="_blank" rel="noreferrer noopener">
+              <ExternalLink size={11} /> OPEN SOURCE MEDIA
             </a>
           )}
         </div>
@@ -696,7 +751,6 @@ export default function CctvViewerPanel({
                 const camAge = frameAge(cam)
                 const camViewer = sourceViewerUrl(cam)
                 const camSourceMedia = sourceMediaUrl(cam)
-                const camSourceMediaType = sourceMediaType(cam)
                 const camDirectUrl = mediaDirectUrl(cam)
                 const camPreviewable = camMedia.direct === true && camKind === 'image' && Boolean(camDirectUrl) && !previewFailures.has(cam.id)
                 const camStream = camMedia.direct === true && ['video', 'mjpeg'].includes(camKind) && Boolean(camMedia.url)
@@ -729,22 +783,49 @@ export default function CctvViewerPanel({
                           <span>Select this camera to activate its approved stream.</span>
                         </div>
                       ) : camMode === 'source' ? (
-                        <div className="gev-cctv-wall-feed-state gev-cctv-wall-feed-state--source">
-                          <Camera size={18} />
-                          <strong>PUBLISHER VIEW</strong>
-                          <span>{camSourceMedia ? 'Publisher footage is available only as a top-level source.' : 'Publisher requires its own viewer.'}</span>
-                          <div className="gev-cctv-wall-feed-actions">
-                            {camSourceMedia && (
-                              <a href={camSourceMedia} target="_blank" rel="noreferrer noopener">
-                                <ExternalLink size={10} />
-                                {camSourceMediaType === 'video' || camSourceMediaType === 'mjpeg' ? 'OPEN LIVE FOOTAGE' : camSourceMediaType === 'image' ? 'OPEN LATEST FRAME' : 'OPEN SOURCE'}
-                              </a>
-                            )}
-                            {camViewer && camViewer !== camSourceMedia && (
-                              <a href={camViewer} target="_blank" rel="noreferrer noopener"><ExternalLink size={10} /> OPEN PUBLISHER</a>
-                            )}
+                        camSourcePlayback === 'mjpeg' && !previewFailures.has(cam.id) && isActive ? (
+                          <div className="gev-cctv-wall-feed-media-source">
+                            <img
+                              src={camSourceMedia}
+                              alt={`${cameraName(cam)} live MJPEG footage`}
+                              onError={() => markPreviewFailure(cam.id)}
+                            />
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE · SOURCE</span>
                           </div>
-                        </div>
+                        ) : camSourcePlayback === 'video' && !previewFailures.has(cam.id) && isActive ? (
+                          <div className="gev-cctv-wall-feed-media-source">
+                            <video
+                              src={camSourceMedia}
+                              autoPlay
+                              muted
+                              playsInline
+                              controls
+                              preload="metadata"
+                              poster={typeof camMedia.previewUrl === 'string' ? camMedia.previewUrl : undefined}
+                              onError={() => markPreviewFailure(cam.id)}
+                            />
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · SOURCE</span>
+                          </div>
+                        ) : (
+                          <div className="gev-cctv-wall-feed-state gev-cctv-wall-feed-state--source">
+                            <Camera size={18} />
+                            <strong>{sourceMediaIsImage(cam) ? 'PUBLISHER IMAGE' : camSourcePlayback ? 'LIVE VIDEO READY' : 'PUBLISHER VIEW'}</strong>
+                            <span>
+                              {sourceMediaIsImage(cam)
+                                ? 'Current source is an image, not a live video stream.'
+                                : camSourcePlayback
+                                  ? 'Select this camera to play its live source inside the wall.'
+                                  : 'Publisher requires its own viewer or the source media is not browser-playable.'}
+                            </span>
+                            <div className="gev-cctv-wall-feed-actions">
+                              {camViewer && (
+                                <a href={camViewer} target="_blank" rel="noreferrer noopener">
+                                  <ExternalLink size={10} /> OPEN PUBLISHER
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        )
                       ) : (
                         <div className="gev-cctv-wall-feed-state">
                           <Camera size={18} />
