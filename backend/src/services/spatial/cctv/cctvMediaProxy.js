@@ -86,11 +86,19 @@ async function openEyeWhepOffer(streamId, sdp) {
   const key = String(process.env.OPENEYE_KEY || '').trim();
   if (key) headers.Authorization = 'Bearer ' + key;
 
-  const response = await fetch('https://api.openeye.cam/v1/streams/' + encodeURIComponent(id) + '/whep/offer', {
-    method:'POST',
-    headers,
-    body
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  let response;
+  try {
+    response = await fetch('https://api.openeye.cam/v1/streams/' + encodeURIComponent(id) + '/whep/offer', {
+      method:'POST',
+      headers,
+      body,
+      signal:controller.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   const answer = await response.text();
   return {
     response,
