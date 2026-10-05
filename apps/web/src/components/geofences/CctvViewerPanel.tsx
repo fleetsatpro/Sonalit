@@ -99,6 +99,10 @@ function sourceMediaIsImage(camera: SpatialWorldEntity) {
 }
 
 function liveVideoCapability(camera: SpatialWorldEntity) {
+  return cameraMedia(camera).liveVideo === true
+}
+
+function whepVideoCapability(camera: SpatialWorldEntity) {
   return cameraMedia(camera).liveVideo === true && String(camera.id).startsWith('openeye:')
 }
 
@@ -805,6 +809,7 @@ export default function CctvViewerPanel({
   const age = activeCamera ? frameAge(activeCamera) : null
   const mode = activeCamera ? sourceMode(activeCamera) : 'synthetic'
   const liveVideo = Boolean(activeCamera && liveVideoCapability(activeCamera))
+  const whepLiveVideo = Boolean(activeCamera && whepVideoCapability(activeCamera))
   const configuredStream = Boolean(activeCamera && direct && ['video','mjpeg'].includes(kind) && media.url)
   const operational = Boolean(
     activeCamera && (
@@ -814,9 +819,11 @@ export default function CctvViewerPanel({
     )
   )
   const sourcePlayback = activeCamera ? sourceMediaPlaybackKind(activeCamera) : null
-  const label = liveVideo
+  const label = whepLiveVideo
     ? 'LIVE VIDEO / WHEP'
-    : configuredStream
+    : liveVideo
+      ? 'LIVE VIDEO / PROVIDER'
+      : configuredStream
     ? 'LIVE STREAM / GATEWAY'
     : direct
       ? 'PUBLIC PREVIEW'
@@ -955,7 +962,7 @@ export default function CctvViewerPanel({
               }}
             >
               <div className="gev-cctv-frame-stage">
-                {liveVideo ? (
+                {whepLiveVideo ? (
                   <InlineWhepVideo
                     camera={activeCamera}
                     onError={() => setFrameState('error')}
