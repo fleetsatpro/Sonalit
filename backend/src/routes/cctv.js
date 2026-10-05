@@ -60,7 +60,11 @@ router.post('/:id/live', asyncHandler(async (req,res) => {
   res.status(session.status || 201);
   res.setHeader('Content-Type','application/sdp');
   res.setHeader('Cache-Control','no-store');
-  if (session.location) res.setHeader('Location', session.location);
+  res.setHeader('Access-Control-Expose-Headers','Location, X-Sonalit-WHEP-Session, PAYMENT-REQUIRED, WWW-Authenticate');
+  if (session.location) {
+    res.setHeader('Location', session.location);
+    res.setHeader('X-Sonalit-WHEP-Session', session.location);
+  }
   return res.send(session.answer);
 }));
 
