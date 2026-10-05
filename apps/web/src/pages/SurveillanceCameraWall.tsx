@@ -74,9 +74,11 @@ export default function SurveillanceCameraWall() {
     [data],
   )
 
-  const publicTotal =
-    data?.coverage?.providers?.openeye?.free ??
-    data?.coverage?.providers?.openeye?.total ??
+  const publicDirectoryRecords =
+    Number(data?.coverage?.providers?.opencctv?.recordCount ?? 0) +
+    Number(data?.coverage?.providers?.openeye?.free ?? 0)
+  const publicTotal = publicDirectoryRecords ||
+    data?.coverage?.providers?.openeye?.total ||
     cameras.length
 
   const playableVideoCount = cameras.filter(camera => {
@@ -93,8 +95,8 @@ export default function SurveillanceCameraWall() {
     const kind = String(media.kind ?? '').toLowerCase()
     return camera.status === 'LIVE' &&
       kind === 'image' &&
-      media.direct === true &&
-      Boolean(media.frameUrl || media.previewUrl || media.url)
+      (media.providerFrameAvailable === true ||
+        (media.direct === true && Boolean(media.frameUrl || media.previewUrl || media.url)))
   }).length
 
   return (
@@ -163,7 +165,7 @@ export default function SurveillanceCameraWall() {
         <span><strong>{cameras.length}</strong> verified live visuals in {selectedCountry.name}</span>
         <span><strong>{playableVideoCount}</strong> continuous video feeds</span>
         <span><strong>{refreshingSnapshotCount}</strong> refreshing snapshots</span>
-        <span><strong>{publicTotal.toLocaleString()}</strong> public records</span>
+        <span><strong>{publicTotal.toLocaleString()}</strong> public directory records</span>
         <span><ShieldCheck size={12} /> Source attribution enforced</span>
         <span>No person / face / plate tracking</span>
       </section>
