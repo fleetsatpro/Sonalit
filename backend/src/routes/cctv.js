@@ -132,8 +132,17 @@ router.get('/:id/media', asyncHandler(async (req,res) => {
   const camera = await getCameraById(id);
   if (!camera) return res.status(404).json({ error:'Camera not found' });
   const range = typeof req.headers.range === 'string' ? req.headers.range : undefined;
-  const media = await getMedia(camera, { range });
-  if (media.response.body) {
+  const target = typeof req.query.target === 'string' ? req.query.target : undefined;
+  const media = await getMedia(camera, { range, target });
+  if (media.isHlsPlaylist) {
+    res.status(200);
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('X-Sonalit-Source', camera.provenance?.sourceName || camera.source || 'cctv');
+    res.setHeader('Content-Length', Buffer.byteLength(media.playlist, 'utf8'));
+    return res.send(media.playlist);
+  }
+  if (media.response?.body) {
     res.status(media.status || media.response.status);
     res.setHeader('Content-Type', media.contentType);
     res.setHeader('Cache-Control', 'no-store');

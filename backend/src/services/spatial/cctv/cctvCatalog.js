@@ -32,13 +32,27 @@ const OPENEYE_BASE_URL = 'https://api.openeye.cam/v1';
 const OPENEYE_CACHE_TTL_MS = 45_000;
 const OPENEYE_MAX_LIMIT = 250;
 const OPENEYE_MAP_PATH = '/catalog/map';
+const OPENCCTV_BASE_URL = 'https://opencctv.org';
+const OPENCCTV_CACHE_TTL_MS = 60_000;
+const OPENCCTV_MAX_LIMIT = 250;
+const CCTV_DETAIL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const CALTRANS_CCTV_URL = 'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query';
+const CALTRANS_CACHE_TTL_MS = 60_000;
+const CALTRANS_MAX_LIMIT = 250;
+const CALTRANS_BBOX = [-124.48, 32.45, -114.13, 42.10];
 
 const providerHealth = {
   openeye: { enabled: true, status:'UNKNOWN', lastSuccessAt:null, lastAttemptAt:null, recordCount:0, total:null, free:null, error:null },
+  opencctv: { enabled:true, status:'UNKNOWN', lastSuccessAt:null, lastAttemptAt:null, recordCount:0, liveVideoCount:0, error:null },
+  caltrans: { enabled:true, status:'UNKNOWN', lastSuccessAt:null, lastAttemptAt:null, recordCount:0, liveVideoCount:0, error:null },
   file: { enabled:false, status:'UNKNOWN', lastSuccessAt:null, recordCount:0, error:null },
   tfl: { enabled:false, status:'UNKNOWN', lastSuccessAt:null, recordCount:0, error:null }
 };
 const openEyeCache = new Map();
+const openCctvCache = new Map();
+const caltransCache = new Map();
+const openCctvDetailCache = new Map();
+const caltransDetailCache = new Map();
 const COUNTRY_NAME_OVERRIDES = {
   CI:"Côte d'Ivoire",
   CD:'Democratic Republic of the Congo',
@@ -68,6 +82,10 @@ function getCountryBbox(code) {
 
 function clearOpenEyeCache() {
   openEyeCache.clear();
+  openCctvCache.clear();
+  caltransCache.clear();
+  openCctvDetailCache.clear();
+  caltransDetailCache.clear();
 }
 
 
@@ -466,6 +484,287 @@ function normalizeRecord(raw, index) {
   };
 }
 
+
+function providerEnabled(name, defaultEnabled = true) {
+  const explicit = process.env['CCTV_ENABLE_' + name.toUpperCase()];
+  if (explicit != null && String(explicit).trim() !== '') return String(explicit).trim() !== '0';
+  return process.env.NODE_ENV === 'test' ? false : defaultEnabled;
+}
+
+function resolveCctvBbox(options = {}) {
+  const requestedBbox = normalizeBbox(options.bbox);
+  const countryBbox = getCountryBbox(options.countryCode);
+  if (countryBbox) {
+    return requestedBbox ? intersectBboxes(requestedBbox, countryBbox) : countryBbox;
+  }
+  return requestedBbox || bboxFromCenter(options.center, options.radiusM);
+}
+
+function openCctvFeedKind(feedType, feedUrl) {
+  const declared = String(feedType || '').toLowerCase().trim();
+  const url = String(feedUrl || '');
+  if (declared === 'm3u8' || declared === 'hls' || /\.m3u8(?:[?#].*)?$/i.test(url)) return 'video';
+  if (declared === 'mjpeg' || declared === 'mjpg' || /multipart|\.mjpeg?(?:[?#].*)?$/i.test(url)) return 'mjpeg';
+  if (declared === 'image' || /(?:jpe?g|png|webp)(?:[?#].*)?$/i.test(url)) return 'image';
+  if (declared === 'mp4' || declared === 'video') return 'video';
+  return null;
+}
+
+async function loadOpenCctvCatalog(options = {}) {
+  const enabled = providerEnabled('opencctv');
+  providerHealth.opencctv.enabled = enabled;
+  if (!enabled) {
+    providerHealth.opencctv.status = 'DISABLED';
+    return [];
+  }
+
+  const bbox = resolveCctvBbox(options);
+  if (!bbox) return [];
+  const limit = Math.max(1, Math.min(OPENCCTV_MAX_LIMIT, Number(options.maxRecords) || 100));
+  const key = JSON.stringify({ bbox, limit });
+  const cached = openCctvCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.rows;
+
+  const [west, south, east, north] = bbox;
+  const url = new URL(OPENCCTV_BASE_URL + '/api/cameras');
+  url.searchParams.set('bounds', [south, west, north, east].join(','));
+  url.searchParams.set('limit', String(limit));
+  const attempt = new Date().toISOString();
+  providerHealth.opencctv.lastAttemptAt = attempt;
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers:{
+        Accept:'application/json',
+        'User-Agent':'Sonalit-CCTV/1.0 (+https://sonalit.com)'
+      }
+    });
+    if (!response.ok) throw Object.assign(new Error('OpenCCTV catalog request failed: ' + response.status), {
+      failureClass: response.status === 429 ? 'rate_limited' : 'http_error'
+    });
+    const payload = await response.json();
+    const rows = Array.isArray(payload) ? payload
+      : Array.isArray(payload?.items) ? payload.items
+      : Array.isArray(payload?.cameras) ? payload.cameras
+      : Array.isArray(payload?.data) ? payload.data
+      : [];
+
+    const normalized = rows.map((row, index) => {
+      if (!row || row.active === 0 || !row.id) return null;
+      const feedUrl = safeHttpsUrl(row.feed_url || row.stream_url || row.video_url || '');
+      const kind = openCctvFeedKind(row.feed_type, feedUrl);
+      const latitude = Number(row.lat);
+      const longitude = Number(row.lng ?? row.lon);
+      if (!feedUrl || !kind ||
+          !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+          latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+
+      const continuousLive = (String(row.feed_type || '').toLowerCase() === 'm3u8' ||
+        String(row.feed_type || '').toLowerCase() === 'hls' ||
+        String(row.feed_type || '').toLowerCase() === 'mjpeg');
+      const live = continuousLive && row.active !== 0;
+      return normalizeRecord({
+        id:'opencctv:' + String(row.id),
+        name:row.name || row.city || ('OpenCCTV camera ' + String(row.id)),
+        latitude, longitude,
+        source:'opencctv-public',
+        sourceReference:String(row.id),
+        headingDeg:null,
+        pose:{ confidence:'unknown' },
+        viewshed:{ horizontalFovDeg:90, maxRangeM:5000 },
+        media:{
+          kind,
+          url:feedUrl,
+          frameUrl:kind === 'image' ? feedUrl : null,
+          previewUrl:kind === 'image' ? feedUrl : null,
+          sourcePageUrl:'https://opencctv.org/cameras',
+          sourceMediaUrl:feedUrl,
+          sourceMediaType:kind === 'mjpeg' ? 'mjpeg' : kind,
+          sourceMediaPlayable:kind === 'video' || kind === 'mjpeg',
+          direct:true,
+          available:true,
+          publicSource:true,
+          feedKind:continuousLive ? 'live_video' : (kind === 'image' ? 'live_snapshot' : 'video'),
+          liveVideo:live,
+          sourceMediaHost:new URL(feedUrl).hostname,
+          refreshIntervalMs:kind === 'image' ? 60000 : null,
+          redistribution:{ provider:'OpenCCTV directory; original public operator source', sourceOnly:true },
+          attributionName:'OpenCCTV',
+          attributionUrl:'https://opencctv.org/'
+        },
+        health:{
+          status:live ? 'LIVE' : kind === 'image' ? 'UNKNOWN' : 'UNKNOWN',
+          lastSuccessAt:null,
+          reason:live ? 'OpenCCTV indexes this as a continuous public feed; playback is verified by the Sonalit client.' : null
+        },
+        provenance:{
+          sourceName:row.source ? 'OpenCCTV / ' + String(row.source) : 'OpenCCTV public camera directory',
+          sourceUrl:'https://opencctv.org/',
+          attribution:'OpenCCTV public camera directory; original public camera operator',
+          attributionUrl:'https://opencctv.org/',
+          observationType:'public_camera_directory',
+          sourceReference:String(row.id)
+        },
+        attributes:{
+          provider:'OpenCCTV',
+          providerCameraId:String(row.id),
+          feedType:String(row.feed_type || ''),
+          operatorSource:row.source || null,
+          city:row.city || null,
+          country:row.country || null,
+          live,
+          catalogClass:'public-live-directory',
+          verification:'provider-indexed; browser playback required for decoded-frame confirmation'
+        }
+      }, index);
+      return normalized;
+    }).filter(Boolean);
+
+    const liveVideoCount = normalized.filter(c => c.media.liveVideo === true).length;
+    for (const camera of normalized) {
+      openCctvDetailCache.set(String(camera.id), { camera, expiresAt:Date.now() + CCTV_DETAIL_CACHE_TTL_MS });
+    }
+    providerHealth.opencctv = {
+      ...providerHealth.opencctv,
+      enabled:true, status:normalized.length ? 'LIVE' : 'EMPTY',
+      lastSuccessAt:new Date().toISOString(), lastAttemptAt:attempt,
+      recordCount:normalized.length, liveVideoCount, error:null
+    };
+    openCctvCache.set(key, { rows:normalized, expiresAt:Date.now() + CCTV_DETAIL_CACHE_TTL_MS });
+    return normalized;
+  } catch (error) {
+    providerHealth.opencctv = {
+      ...providerHealth.opencctv, enabled:true, status:'UNAVAILABLE',
+      lastAttemptAt:attempt, error:String(error?.message || error)
+    };
+    return [];
+  }
+}
+
+async function loadCaltransCatalog(options = {}) {
+  const enabled = providerEnabled('caltrans');
+  providerHealth.caltrans.enabled = enabled;
+  if (!enabled) {
+    providerHealth.caltrans.status = 'DISABLED';
+    return [];
+  }
+
+  const requestedBbox = resolveCctvBbox(options);
+  if (!requestedBbox) return [];
+  const bbox = intersectBboxes(requestedBbox, CALTRANS_BBOX);
+  if (!bbox) return [];
+
+  const key = JSON.stringify({ bbox, limit:Number(options.maxRecords) || 100 });
+  const cached = caltransCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.rows;
+
+  const [west, south, east, north] = bbox;
+  const url = new URL(CALTRANS_CCTV_URL);
+  url.searchParams.set('where', "streamingVideoURL IS NOT NULL AND streamingVideoURL <> ''");
+  url.searchParams.set('outFields', 'OBJECTID,index_,imageDescription,streamingVideoURL,currentImageURL,district,recordDate');
+  url.searchParams.set('geometry', [west, south, east, north].join(','));
+  url.searchParams.set('geometryType', 'esriGeometryEnvelope');
+  url.searchParams.set('inSR', '4326');
+  url.searchParams.set('spatialRel', 'esriSpatialRelIntersects');
+  url.searchParams.set('returnGeometry', 'true');
+  url.searchParams.set('outSR', '4326');
+  url.searchParams.set('f', 'json');
+  url.searchParams.set('resultRecordCount', String(Math.max(1, Math.min(CALTRANS_MAX_LIMIT, Number(options.maxRecords) || 100))));
+  const attempt = new Date().toISOString();
+  providerHealth.caltrans.lastAttemptAt = attempt;
+
+  try {
+    const response = await fetch(url.toString(), { headers:{Accept:'application/json'} });
+    if (!response.ok) throw Object.assign(new Error('Caltrans CCTV query failed: ' + response.status), {
+      failureClass:response.status === 429 ? 'rate_limited' : 'http_error'
+    });
+    const payload = await response.json();
+    if (payload?.error) throw Object.assign(new Error(String(payload.error.message || 'Caltrans CCTV API error')), { failureClass:'malformed' });
+    const features = Array.isArray(payload?.features) ? payload.features : [];
+    const normalized = features.map((feature, index) => {
+      const attrs = asRecord(feature?.attributes);
+      const geometry = asRecord(feature?.geometry);
+      const feedUrl = safeHttpsUrl(attrs.streamingVideoURL);
+      const currentImageUrl = safeHttpsUrl(attrs.currentImageURL);
+      const latitude = Number(geometry.y);
+      const longitude = Number(geometry.x);
+      if (!feedUrl || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+      const kind = openCctvFeedKind('', feedUrl) || 'video';
+      return normalizeRecord({
+        id:'caltrans:' + String(attrs.OBJECTID || attrs.index_ || index),
+        name:String(attrs.imageDescription || 'Caltrans CCTV'),
+        latitude, longitude,
+        source:'caltrans-public',
+        sourceReference:String(attrs.OBJECTID || attrs.index_ || index),
+        pose:{ confidence:'verified' },
+        viewshed:{ horizontalFovDeg:90, maxRangeM:5000 },
+        media:{
+          kind:kind === 'mjpeg' ? 'mjpeg' : 'video',
+          url:feedUrl,
+          frameUrl:currentImageUrl,
+          previewUrl:currentImageUrl,
+          sourcePageUrl:'https://cwwp2.dot.ca.gov/',
+          sourceMediaUrl:feedUrl,
+          sourceMediaType:kind,
+          sourceMediaPlayable:true,
+          direct:true,
+          available:true,
+          publicSource:true,
+          feedKind:'live_video',
+          liveVideo:true,
+          sourceMediaHost:new URL(feedUrl).hostname,
+          refreshIntervalMs:null,
+          redistribution:{ provider:'Caltrans public CCTV data service', originalOperator:'California Department of Transportation' },
+          attributionName:'Caltrans',
+          attributionUrl:'https://dot.ca.gov/'
+        },
+        health:{
+          status:'LIVE',
+          lastSuccessAt:null,
+          reason:'Official Caltrans CCTV layer exposes a streamingVideoURL; decoded playback is verified by the Sonalit client.'
+        },
+        provenance:{
+          sourceName:'California Department of Transportation (Caltrans)',
+          sourceUrl:'https://caltrans-gis.dot.ca.gov/',
+          attribution:'California Department of Transportation (Caltrans)',
+          attributionUrl:'https://dot.ca.gov/',
+          observationType:'official_public_traffic_camera',
+          sourceReference:String(attrs.OBJECTID || attrs.index_ || index)
+        },
+        attributes:{
+          provider:'Caltrans',
+          providerCameraId:attrs.OBJECTID || attrs.index_ || null,
+          district:attrs.district ?? null,
+          streamingVideoURL:feedUrl,
+          currentImageURL:currentImageUrl,
+          live:true,
+          catalogClass:'official-live-video',
+          verification:'official streamingVideoURL; browser playback required for decoded-frame confirmation'
+        }
+      }, index);
+      return normalized;
+    }).filter(Boolean);
+
+    const liveVideoCount = normalized.filter(c => c.media.liveVideo === true).length;
+    for (const camera of normalized) {
+      caltransDetailCache.set(String(camera.id), { camera, expiresAt:Date.now() + CCTV_DETAIL_CACHE_TTL_MS });
+    }
+    providerHealth.caltrans = {
+      ...providerHealth.caltrans, enabled:true, status:normalized.length ? 'LIVE' : 'EMPTY',
+      lastSuccessAt:new Date().toISOString(), lastAttemptAt:attempt,
+      recordCount:normalized.length, liveVideoCount, error:null
+    };
+    caltransCache.set(key, { rows:normalized, expiresAt:Date.now() + CCTV_DETAIL_CACHE_TTL_MS });
+    return normalized;
+  } catch (error) {
+    providerHealth.caltrans = {
+      ...providerHealth.caltrans, enabled:true, status:'UNAVAILABLE',
+      lastAttemptAt:attempt, error:String(error?.message || error)
+    };
+    return [];
+  }
+}
+
 async function loadFileCatalog() {
   const location = String(process.env.CCTV_CATALOG_FILE || '').trim();
   providerHealth.file.enabled = Boolean(location);
@@ -603,6 +902,24 @@ async function loadOpenEyeCamera(id) {
 async function getCameraById(id) {
   const wanted = String(id || '');
   if (!wanted) return null;
+
+  if (wanted.startsWith('opencctv:')) {
+    const cached = openCctvDetailCache.get(wanted);
+    if (cached && cached.expiresAt > Date.now()) return cached.camera;
+    // OpenCCTV's catalog endpoint is the authoritative lookup surface exposed
+    // to us; resolve the requested camera from that bounded provider catalog
+    // rather than silently falling back to an unrelated provider.
+    const rows = await loadOpenCctvCatalog({ bbox:[-180,-90,180,90], maxRecords:OPENCCTV_MAX_LIMIT });
+    return rows.find(row => String(row.id) === wanted) || null;
+  }
+
+  if (wanted.startsWith('caltrans:')) {
+    const cached = caltransDetailCache.get(wanted);
+    if (cached && cached.expiresAt > Date.now()) return cached.camera;
+    const rows = await loadCaltransCatalog({ bbox:CALTRANS_BBOX, maxRecords:CALTRANS_MAX_LIMIT });
+    return rows.find(row => String(row.id) === wanted) || null;
+  }
+
   const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
   const [openEyeRows, fileRows, tflRows] = await Promise.all([
     wanted.startsWith('openeye:') ? loadOpenEyeCamera(wanted.slice('openeye:'.length)) : Promise.resolve(null),
@@ -615,13 +932,15 @@ async function getCameraById(id) {
 }
 
 async function getCameraCatalog(options = {}) {
-  const [openEyeRows, fileRows, tflRows] = await Promise.all([
+  const [openEyeRows, openCctvRows, caltransRows, fileRows, tflRows] = await Promise.all([
     loadOpenEyeCatalog(options),
+    loadOpenCctvCatalog(options),
+    loadCaltransCatalog(options),
     loadFileCatalog(),
     loadTflCatalog().catch(() => [])
   ]);
   const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
-  const all = openEyeRows.concat(fileRows, tflRows, includeSamples ? SAMPLE_CAMERAS : []);
+  const all = openEyeRows.concat(openCctvRows, caltransRows, fileRows, tflRows, includeSamples ? SAMPLE_CAMERAS : []);
   const unique = new Map();
   for (const row of all) unique.set(String(row.id), row);
   return Array.from(unique.values());
@@ -630,9 +949,11 @@ async function getCameraCatalog(options = {}) {
 function getCameraCatalogHealth() {
   return {
     openeye:{...providerHealth.openeye},
+    opencctv:{...providerHealth.opencctv},
+    caltrans:{...providerHealth.caltrans},
     file:{...providerHealth.file},
     tfl:{...providerHealth.tfl},
   };
 }
 
-module.exports = { SAMPLE_CAMERAS, normalizeRecord, classifyViewMediaType, openEyeMedia, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, getCameraById, getCameraCatalog, getCameraCatalogHealth, getCctvCountries, getCountryBbox, clearOpenEyeCache };
+module.exports = { SAMPLE_CAMERAS, normalizeRecord, classifyViewMediaType, openEyeMedia, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, loadOpenCctvCatalog, loadCaltransCatalog, getCameraById, getCameraCatalog, getCameraCatalogHealth, getCctvCountries, getCountryBbox, clearOpenEyeCache };

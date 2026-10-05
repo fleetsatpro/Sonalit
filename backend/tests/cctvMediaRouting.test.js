@@ -1,6 +1,5 @@
 const { classifyViewMediaType, openEyeMedia, getCctvCountries, getCountryBbox } = require('../src/services/spatial/cctv/cctvCatalog');
-const { openEyeWhepOffer, openEyeWhepDelete } = require('../src/services/spatial/cctv/cctvMediaProxy');
-const { fetchApprovedMedia } = require('../src/services/spatial/cctv/cctvMediaProxy');
+const { openEyeWhepOffer, openEyeWhepDelete, fetchApprovedMedia, getMedia } = require('../src/services/spatial/cctv/cctvMediaProxy');
 
 describe('CCTV media routing', () => {
   test('never uses a JPG/media URL as the publisher-page destination', () => {
@@ -125,6 +124,57 @@ describe('CCTV media routing', () => {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+
+
+  test('rewrites HLS playlists and keeps downstream segment hosts bound to the advertised stream', async () => {
+    const originalFetch = global.fetch;
+    const calls = [];
+    global.fetch = async (url, options) => {
+      calls.push({ url:String(url), options });
+      if (String(url).includes('/live/master.m3u8')) {
+        return new Response('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment-1.ts\n', {
+          status:200,
+          headers:{'content-type':'application/vnd.apple.mpegurl'}
+        });
+      }
+      return new Response(Buffer.from('segment'), {
+        status:200,
+        headers:{'content-type':'video/mp2t'}
+      });
+    };
+
+    try {
+      const camera = {
+        id:'opencctv:123',
+        media:{
+          kind:'video',
+          url:'https://93.184.216.34/live/master.m3u8',
+        }
+      };
+      const playlist = await getMedia(camera);
+      expect(playlist.isHlsPlaylist).toBe(true);
+      expect(playlist.playlist).toContain('/api/v1/cctv/opencctv%3A123/media?target=');
+      const target = decodeURIComponent(playlist.playlist.match(/target=([^\\r\\n]+)/)?.[1] || '');
+      const segment = await getMedia(camera, { target });
+      expect(segment.isHlsPlaylist).not.toBe(true);
+      expect(String(calls[1].url)).toBe(target);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('rejects a forged HLS proxy target outside the stream host set', async () => {
+    const camera = {
+      id:'caltrans:123',
+      media:{
+        kind:'video',
+        url:'https://93.184.216.34/live/master.m3u8',
+      }
+    };
+    await expect(
+      getMedia(camera, { target:'https://198.51.100.10/private/stream.ts' })
+    ).rejects.toMatchObject({ failureClass:'invalid_data' });
   });
 
   test('allows an authorized OpenEye-hosted video preview to use the in-app gateway', () => {
