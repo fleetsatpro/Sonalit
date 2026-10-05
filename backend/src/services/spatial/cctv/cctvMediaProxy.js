@@ -100,12 +100,24 @@ async function openEyeWhepOffer(streamId, sdp) {
     clearTimeout(timer);
   }
   const answer = await response.text();
+  const rawLocation = response.headers.get('location') || null;
+  let location = null;
+  if (rawLocation) {
+    try {
+      const resolved = new URL(rawLocation, 'https://api.openeye.cam');
+      if (resolved.protocol === 'https:' && resolved.hostname === 'api.openeye.cam') {
+        location = resolved.toString();
+      }
+    } catch (_) {
+      location = null;
+    }
+  }
   return {
     response,
     status:response.status,
     ok:response.ok,
     answer,
-    location:response.headers.get('location') || null,
+    location,
     paymentRequired:response.headers.get('payment-required') || null,
     wwwAuthenticate:response.headers.get('www-authenticate') || null
   };
