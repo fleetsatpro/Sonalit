@@ -35,6 +35,8 @@ describe('GEV CCTV wall contract', () => {
     expect(source).toContain("'/live'")
     expect(source).toContain('whepUrlFor')
     expect(source).toContain('liveVideoCapability')
+    expect(source).toContain('whepVideoCapability')
+    expect(source).toContain('LIVE VIDEO / MULTI-SOURCE')
     expect(source).toContain('WHEP')
     expect((source.match(/<InlineWhepVideo/g) ?? []).length).toBe(1)
     expect(source).toContain('[cameraId, liveCapable]')
