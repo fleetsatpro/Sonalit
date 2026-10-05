@@ -5,12 +5,14 @@
 'use strict';
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { validateBbox } = require('../services/spatial/openskyGateway');
 const { spatialProviderManager } = require('../services/spatial/providerManager');
+const { getOpticalRecon, getOpticalTile } = require('../services/spatial/opticalReconGateway');
 const {
   buildWorldContext,
   getSpatialProviderHealth,
@@ -24,6 +26,23 @@ const MAX_BBOX_AREA_DEG2 = 25;
 const MAX_RADIUS_M = 250_000;
 const MAX_RESULT = 250;
 const SUBJECT_KINDS = new Set(['convoy','vehicle','location','route','corridor','incident','checkpoint','port','none']);
+const opticalReconLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user?.org_id || 'no-org') + ':' + String(req.user?.id || req.ip),
+  handler: (_req, res) => res.status(429).json({ error: 'optical_recon_rate_limit_exceeded' }),
+});
+const opticalTileLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user?.org_id || 'no-org') + ':' + String(req.user?.id || req.ip),
+  handler: (_req, res) => res.status(429).json({ error: 'optical_tile_rate_limit_exceeded' }),
+});
+
 
 function parseBbox(raw) {
   if (!raw || typeof raw !== 'string') return null;
@@ -103,6 +122,56 @@ router.get(
         generated_at: new Date().toISOString(),
       },
     });
+  }),
+);
+
+router.get(
+  '/optical-recon',
+  opticalReconLimiter,
+  asyncHandler(async (req, res) => {
+    const latitude = Number(req.query.lat);
+    const longitude = Number(req.query.lng);
+    const radiusM = Number(req.query.radiusM);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return res.status(400).json({ error: 'Valid lat and lng are required' });
+    }
+    const result = await getOpticalRecon({
+      latitude,
+      longitude,
+      radiusM: Number.isFinite(radiusM) ? radiusM : 25_000,
+      signal: req.signal,
+    });
+    res.json({
+      data: result,
+      meta: {
+        source: 'free-optical-recon',
+        generated_at: new Date().toISOString(),
+        commercial_imagery: false,
+      },
+    });
+  }),
+);
+
+router.get(
+  '/optical-recon/tile',
+  opticalTileLimiter,
+  asyncHandler(async (req, res) => {
+    const source = String(req.query.source || 'sentinel');
+    if (!['sentinel', 'oam', 'nasa'].includes(source)) {
+      return res.status(400).json({ error: 'Unsupported optical source' });
+    }
+    const result = await getOpticalTile({
+      source,
+      date: req.query.date,
+      z: req.query.z,
+      x: req.query.x,
+      y: req.query.y,
+      itemId: req.query.itemId,
+    });
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+    res.setHeader('X-Sonalit-Imagery-Source', source);
+    return res.send(result.buffer);
   }),
 );
 
@@ -218,77 +287,3 @@ router.get(
   '/world-context/vehicle/:id',
   asyncHandler(async (req, res) => {
     req.query.subject = { kind: 'vehicle', id: req.params.id };
-    return worldContextHandler(req, res, false);
-  }),
-);
-
-
-router.post(
-  '/world-events/evaluate',
-  asyncHandler(async (req, res) => {
-    const orgId = req.user?.org_id;
-    if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
-
-    const subject = parseSubject(req.body?.subject);
-    if (!subject || !['convoy', 'vehicle'].includes(subject.kind)) {
-      return res.status(400).json({ error: 'Evaluation requires a convoy or vehicle subject' });
-    }
-
-    const context = await buildWorldContext({
-      orgId,
-      userId: req.user.id,
-      db: req.db,
-      subject,
-      center: req.body?.center ? parseCenter(req.body.center) : null,
-      radiusM: boundedRadius(req.body?.radiusM),
-      bbox: req.body?.bbox ? (Array.isArray(req.body.bbox) ? validateBbox(req.body.bbox) : parseBbox(String(req.body.bbox))) : null,
-      layers: parseLayers(req.body?.layers, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']),
-      maxEntitiesPerLayer: Math.min(MAX_RESULT, Math.max(1, Number(req.body?.maxEntitiesPerLayer) || 100)),
-      requestId: req.id || req.headers['x-request-id'],
-      persistEvents: true,
-      publish,
-    });
-
-    res.json({ data: context.events || [] });
-  }),
-);
-
-router.get(
-  '/world-events',
-  asyncHandler(async (req, res) => {
-    const orgId = req.user?.org_id;
-    if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
-
-    const limit = Math.min(MAX_RESULT, Math.max(1, Number(req.query.limit) || 100));
-    const params = [orgId];
-    const where = ['se.org_id = $1'];
-
-    if (req.query.convoy_id) {
-      params.push(String(req.query.convoy_id));
-      where.push('se.convoy_id = $' + params.length);
-    }
-    if (req.query.event_type) {
-      params.push(String(req.query.event_type));
-      where.push('se.event_type = $' + params.length);
-    }
-    if (req.query.status) {
-      params.push(String(req.query.status));
-      where.push('se.status = $' + params.length);
-    }
-
-    params.push(limit);
-    const result = await req.db(
-      'SELECT se.id,se.event_key,se.event_type,se.subject_type,se.subject_id,se.convoy_id,se.previous_state,se.new_state,se.observed_at,se.detected_at,se.severity,se.confidence,se.operational_confidence,se.related_entities,se.evidence,se.source_references,se.uncertainty,se.rule_version,se.status FROM spatial_events se WHERE ' +
-      where.join(' AND ') +
-      ' ORDER BY se.detected_at DESC LIMIT $' + params.length,
-      params,
-    );
-
-    res.json({
-      data: result.rows,
-      meta: { organisation_scoped: true, generated_at: new Date().toISOString() },
-    });
-  }),
-);
-
-module.exports = router;

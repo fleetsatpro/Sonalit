@@ -4,11 +4,14 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
+import { fetchOpticalRecon, installOpticalReconMapLibreProtocol, reconStyle, type OpticalReconResult } from '../../lib/opticalRecon.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
 import {
   trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
   bboxFromMap, useTrafficIncidents, useTrafficStatus,
 } from '../../lib/trafficLayer.js';
+
+installOpticalReconMapLibreProtocol()
 
 interface MapConvoy { id: string; name: string; status: string; lat: number | null; lng: number | null; heading: number; color: string }
 interface AlertZone { lat: number; lng: number; radius_m: number; severity: string }
@@ -263,13 +266,24 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
   const selectedVehicleId = useDashboardStore((s) => s.selectedVehicleId);
   const { setSelectedVehicle } = useDashboardStore.getState();
   const [expanded, setExpanded] = useState(false);
-  const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
+  const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'latest'>('street');
+  const [reconCentre, setReconCentre] = useState({ latitude: EA_CENTER[1], longitude: EA_CENTER[0] });
+  const [reconVersion, setReconVersion] = useState(0);
   const [trafficOn, setTrafficOn] = useState(false);
   const [bbox, setBbox] = useState<string | null>(null);
   const currentDataRef = useRef<MapData | null>(null);
   const trafficOnRef = useRef(trafficOn);
   trafficOnRef.current = trafficOn;
   const trafficFCRef = useRef<GeoJSON.FeatureCollection | null>(null);
+
+  const { data: opticalRecon, isError: opticalReconError } = useQuery<OpticalReconResult>({
+    queryKey: ['tactical-map-optical-recon', reconCentre.latitude, reconCentre.longitude, reconVersion],
+    queryFn: ({ signal }) => fetchOpticalRecon(reconCentre, 35_000, signal),
+    enabled: mapStyle === 'latest',
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+    retry: 1,
+  });
 
   const { data: trafficStatus } = useTrafficStatus();
   const { data: trafficFC } = useTrafficIncidents(bbox, trafficOn);
@@ -320,11 +334,18 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
     }
   }, [mapData]);
 
-  // Switch base map style between street and satellite
+  // Base layer switch. Latest mode is an evidence-driven optical scene,
+  // selected by the free reconnaissance gateway; operational layers are rebuilt
+  // after every style load so GPS/risk/geofence context never disappears.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const style = mapStyle === 'satellite' ? SAT_STYLE : STREET_STYLE;
+    if (mapStyle === 'latest' && !opticalRecon?.render) return;
+    const style = mapStyle === 'latest'
+      ? reconStyle(opticalRecon!.render)
+      : mapStyle === 'satellite'
+        ? SAT_STYLE
+        : STREET_STYLE;
     mapReadyRef.current = false;
     map.setStyle(style);
     const onLoad = () => {
@@ -336,7 +357,17 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
     };
     map.once('style.load', onLoad);
     return () => { map.off('style.load', onLoad); };
-  }, [mapStyle]);
+  }, [mapStyle, opticalRecon?.render?.source, opticalRecon?.render?.date, opticalRecon?.render?.itemId]);
+
+  useEffect(() => {
+    if (mapStyle !== 'latest' || !mapRef.current || !opticalRecon) return;
+    const c = opticalRecon.centre;
+    mapRef.current.flyTo({ center: [c.longitude, c.latitude], duration: 450 });
+  }, [mapStyle, opticalRecon]);
+
+  useEffect(() => {
+    if (mapStyle === 'latest' && opticalReconError) setMapStyle('street');
+  }, [mapStyle, opticalReconError]);
 
   // traffic visibility toggle — instant (setLayoutProperty), no re-fetch
   useEffect(() => {
@@ -433,14 +464,33 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
             TRAFFIC
           </button>
         )}
-        {/* Layer switcher */}
+        {/* Layer switcher: normal operational map, reference satellite, or latest free optical */}
         <button
-          onClick={() => setMapStyle(s => s === 'street' ? 'satellite' : 'street')}
-          title={mapStyle === 'street' ? 'Switch to satellite view' : 'Switch to street view'}
-          style={{ background: mapStyle === 'satellite' ? 'rgba(139,107,255,.15)' : 'var(--d-lift2)', border: `1px solid ${mapStyle === 'satellite' ? 'var(--d-orange)' : 'var(--d-rim2)'}`, borderRadius: 6, color: mapStyle === 'satellite' ? 'var(--d-orange)' : 'var(--d-t2)', cursor: 'pointer', padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+          onClick={() => {
+            if (mapStyle === 'latest') { setMapStyle('street'); return; }
+            if (!mapRef.current) return;
+            const center = mapRef.current.getCenter();
+            setReconCentre({ latitude: center.lat, longitude: center.lng });
+            setReconVersion(v => v + 1);
+            setMapStyle('latest');
+          }}
+          title={mapStyle === 'latest' ? 'Return to normal map' : 'Show latest validated free satellite imagery'}
+          style={{ background: mapStyle === 'latest' ? 'rgba(94,234,212,.12)' : 'var(--d-lift2)', border: mapStyle === 'latest' ? '1px solid rgba(94,234,212,.5)' : '1px solid var(--d-rim2)', borderRadius: 6, color: mapStyle === 'latest' ? '#5eead4' : 'var(--d-t2)', cursor: 'pointer', padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
         >
-          {mapStyle === 'street' ? 'SAT' : 'STR'}
+          {mapStyle === 'latest' ? 'MAP' : 'LATEST'}
         </button>
+        <button
+          onClick={() => setMapStyle(s => s === 'satellite' ? 'street' : 'satellite')}
+          title={mapStyle === 'satellite' ? 'Switch to street view' : 'Reference satellite view'}
+          style={{ background: mapStyle === 'satellite' ? 'rgba(139,107,255,.15)' : 'var(--d-lift2)', border: mapStyle === 'satellite' ? '1px solid var(--d-orange)' : '1px solid var(--d-rim2)', borderRadius: 6, color: mapStyle === 'satellite' ? 'var(--d-orange)' : 'var(--d-t2)', cursor: 'pointer', padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+        >
+          {mapStyle === 'satellite' ? 'STR' : 'SAT'}
+        </button>
+        {mapStyle === 'latest' && opticalRecon && (
+          <span style={{ padding: '5px 7px', border: '1px solid rgba(94,234,212,.18)', background: 'rgba(94,234,212,.05)', color: '#7fddd0', borderRadius: 5, fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, letterSpacing: '.04em' }}>
+            {opticalRecon.primary.mission} · {opticalRecon.primary.nativeResolutionM ? String(opticalRecon.primary.nativeResolutionM) + 'm' : '—'} · {opticalRecon.primary.freshness}
+          </span>
+        )}
         {/* Expand / collapse button */}
         <button
           onClick={() => setExpanded(v => !v)}
