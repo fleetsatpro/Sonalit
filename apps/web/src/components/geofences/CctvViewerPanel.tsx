@@ -1069,7 +1069,7 @@ export default function CctvViewerPanel({
       return (
         <div className={compact ? 'gev-cctv-wall-thumb gev-cctv-wall-thumb--image' : 'gev-cctv-tile-media gev-cctv-tile-media--image'}>
           {providerSnapshotCapability(camera)
-            ? <InlineCctvSnapshot endpoint={providerSnapshotEndpoint(camera)} alt={`${cameraName(camera)} latest live snapshot`} onError={() => markPreviewFailure(camera.id)} />
+            ? <InlineCctvSnapshot endpoint={providerSnapshotEndpoint(camera)} alt={`${cameraName(camera)} latest live snapshot`} />
             : <img src={mediaDirectUrl(camera)} alt={`${cameraName(camera)} latest preview`} loading={compact ? 'lazy' : 'eager'} decoding="async" />}
           <span className="gev-cctv-tile-sheen" />
         </div>
