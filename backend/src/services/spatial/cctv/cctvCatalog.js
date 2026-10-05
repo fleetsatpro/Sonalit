@@ -50,6 +50,8 @@ const providerHealth = {
 const openEyeCache = new Map();
 const openCctvCache = new Map();
 const caltransCache = new Map();
+const openCctvDetailCache = new Map();
+const caltransDetailCache = new Map();
 const COUNTRY_NAME_OVERRIDES = {
   CI:"Côte d'Ivoire",
   CD:'Democratic Republic of the Congo',
@@ -81,6 +83,8 @@ function clearOpenEyeCache() {
   openEyeCache.clear();
   openCctvCache.clear();
   caltransCache.clear();
+  openCctvDetailCache.clear();
+  caltransDetailCache.clear();
 }
 
 
@@ -616,6 +620,9 @@ async function loadOpenCctvCatalog(options = {}) {
     }).filter(Boolean);
 
     const liveVideoCount = normalized.filter(c => c.media.liveVideo === true).length;
+    for (const camera of normalized) {
+      openCctvDetailCache.set(String(camera.id), { camera, expiresAt:Date.now() + OPENCCTV_CACHE_TTL_MS });
+    }
     providerHealth.opencctv = {
       ...providerHealth.opencctv,
       enabled:true, status:normalized.length ? 'LIVE' : 'EMPTY',
@@ -738,6 +745,9 @@ async function loadCaltransCatalog(options = {}) {
     }).filter(Boolean);
 
     const liveVideoCount = normalized.filter(c => c.media.liveVideo === true).length;
+    for (const camera of normalized) {
+      caltransDetailCache.set(String(camera.id), { camera, expiresAt:Date.now() + CALTRANS_CACHE_TTL_MS });
+    }
     providerHealth.caltrans = {
       ...providerHealth.caltrans, enabled:true, status:normalized.length ? 'LIVE' : 'EMPTY',
       lastSuccessAt:new Date().toISOString(), lastAttemptAt:attempt,
@@ -891,6 +901,14 @@ async function loadOpenEyeCamera(id) {
 async function getCameraById(id) {
   const wanted = String(id || '');
   if (!wanted) return null;
+  if (wanted.startsWith('opencctv:')) {
+    const cached = openCctvDetailCache.get(wanted);
+    if (cached && cached.expiresAt > Date.now()) return cached.camera;
+  }
+  if (wanted.startsWith('caltrans:')) {
+    const cached = caltransDetailCache.get(wanted);
+    if (cached && cached.expiresAt > Date.now()) return cached.camera;
+  }
   const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
   const [openEyeRows, fileRows, tflRows] = await Promise.all([
     wanted.startsWith('openeye:') ? loadOpenEyeCamera(wanted.slice('openeye:'.length)) : Promise.resolve(null),
