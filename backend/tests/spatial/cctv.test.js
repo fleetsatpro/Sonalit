@@ -230,11 +230,11 @@ describe('spatial CCTV capability', () => {
         return { ok:true, headers:{ get:() => null }, json:async()=>[{
           id:'za-image-1', name:'Pretoria snapshot', city:'Pretoria', country:'South Africa',
           lat:-25.75, lng:28.23, feed_type:'image',
-          feed_url:'https://public.example.org/cam.jpg', source:'SANRAL', active:1,
+          feed_url:'https://93.184.216.34/cam.jpg', source:'SANRAL', active:1,
           live:true, frame_interval_s:30, last_frame_age_s:10
         }] };
       }
-      if (href === 'https://public.example.org/cam.jpg') {
+      if (href === 'https://93.184.216.34/cam.jpg') {
         return {
           ok:true,
           status:200,
