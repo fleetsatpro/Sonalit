@@ -676,6 +676,7 @@ export default function CctvViewerPanel({
   const [cameraDetails, setCameraDetails] = useState<Record<string, SpatialWorldEntity>>({})
   const [wallLayout, setWallLayout] = useState<2 | 3 | 4>(3)
   const [wallPage, setWallPage] = useState(0)
+  const [wallVisualTick, setWallVisualTick] = useState(0)
   const cameraDetailsRef = useRef<Record<string, SpatialWorldEntity>>({})
   const wallRef = useRef<HTMLElement | null>(null)
   const pointerStartX = useRef<number | null>(null)
@@ -897,6 +898,12 @@ export default function CctvViewerPanel({
 
   useEffect(() => {
     if (!expanded) return
+    const timer = window.setInterval(() => setWallVisualTick(value => value + 1), 60_000)
+    return () => window.clearInterval(timer)
+  }, [expanded])
+
+  useEffect(() => {
+    if (!expanded) return
     setWallPage(Math.min(wallPageCount - 1, Math.floor(activeIndex / wallPageSize)))
   }, [activeIndex, expanded, wallPageCount, wallPageSize])
 
@@ -942,7 +949,7 @@ export default function CctvViewerPanel({
   const renderableCount = cameras.filter(camera => {
     const media = cameraMedia(camera)
     return (
-      (media.direct === true && ['image','video','mjpeg'].includes(mediaKind(camera))) ||
+      ((media.direct === true || providerSnapshotCapability(camera)) && ['image','video','mjpeg'].includes(mediaKind(camera))) ||
       sourceMediaPlaybackKind(camera) !== null
     )
   }).length
@@ -1215,6 +1222,9 @@ export default function CctvViewerPanel({
                 const camSourceMedia = sourceMediaUrl(cam)
                 const camSourcePlayback = sourceMediaPlaybackKind(cam)
                 const camDirectUrl = mediaDirectUrl(cam)
+                const camWallVisualUrl = camDirectUrl && providerSnapshotCapability(cam)
+                  ? camDirectUrl + (camDirectUrl.includes('?') ? '&' : '?') + 'wallTick=' + wallVisualTick
+                  : camDirectUrl
                 const camPreviewable = (camMedia.direct === true || providerSnapshotCapability(cam)) && camKind === 'image' && Boolean(camDirectUrl) && !previewFailures.has(cam.id)
                 const camStream = camMedia.direct === true && ['video', 'mjpeg'].includes(camKind) && Boolean(camMedia.url)
                 const camLiveVideo = liveVideoCapability(cam)
