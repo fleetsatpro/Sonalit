@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs/promises');
+const COUNTRY_BOXES = require('./cctvCountries.json');
 
 const SAMPLE_CAMERAS = [
   { id:'sample-ke-nbo-01', name:'Kenya corridor sample 01', corridor:'NBO-MSA', latitude:-1.286389, longitude:36.817223, headingDeg:110, horizontalFovDeg:80, maxRangeM:3000 },
@@ -38,6 +39,32 @@ const providerHealth = {
   tfl: { enabled:false, status:'UNKNOWN', lastSuccessAt:null, recordCount:0, error:null }
 };
 const openEyeCache = new Map();
+const COUNTRY_NAME_OVERRIDES = {
+  CI:"Côte d'Ivoire",
+  CD:'Democratic Republic of the Congo',
+  CG:'Republic of the Congo',
+  CZ:'Czechia',
+  MK:'North Macedonia',
+  SZ:'Eswatini',
+  TL:'Timor-Leste'
+};
+
+function getCctvCountries() {
+  return Object.entries(COUNTRY_BOXES)
+    .map(([code, value]) => ({
+      code,
+      name:COUNTRY_NAME_OVERRIDES[code] || value[0],
+      bbox:value[1]
+    }))
+    .sort((a,b) => a.name.localeCompare(b.name));
+}
+
+function getCountryBbox(code) {
+  const wanted = String(code || '').trim().toUpperCase();
+  const row = COUNTRY_BOXES[wanted];
+  return row && Array.isArray(row[1]) ? row[1].slice() : null;
+}
+
 
 function clearOpenEyeCache() {
   openEyeCache.clear();
@@ -116,6 +143,8 @@ function openEyeMedia(row) {
   const render = String(view.render || 'none').toLowerCase();
   const viewUrl = safeHttpsUrl(view.url || row.preview_url);
   const viewMediaType = classifyViewMediaType(view, view.url || row.preview_url, render);
+  const feedKind = String(row.feed_kind || row.feedKind || '').toLowerCase().trim();
+  const liveVideo = feedKind === 'live_video';
   const previewAllowed = redistribution.preview_embed === true;
   const renderablePreview = previewAllowed && Boolean(viewUrl) && isRenderableMediaType(viewMediaType);
   const directoryPageUrl = safeHttpsUrl(row.public_url || '')
@@ -152,6 +181,8 @@ function openEyeMedia(row) {
     sourceMediaType,
     sourceMediaPlayable,
     sourceMediaHost:sourceMediaUrl ? String(view.hosted || 'source').toLowerCase() : null,
+    feedKind,
+    liveVideo,
     direct: renderablePreview,
     publicSource:true,
     redistribution,
@@ -164,7 +195,7 @@ function openEyeMedia(row) {
 }
 
 async function loadOpenEyeMapFallback(options = {}) {
-  const bbox = normalizeBbox(options.bbox) || bboxFromCenter(options.center, options.radiusM);
+  const bbox = normalizeBbox(options.bbox) || getCountryBbox(options.countryCode) || bboxFromCenter(options.center, options.radiusM);
   if (!bbox) return [];
   const limit = Math.max(1, Math.min(OPENEYE_MAX_LIMIT, Number(options.maxRecords) || 100));
   const params = new URLSearchParams({ bbox:bbox.join(','), limit:String(limit), zoom:'12' });
@@ -188,7 +219,7 @@ async function loadOpenEyeMapFallback(options = {}) {
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
       return normalizeRecord({ id:'openeye:' + id, name:row?.title || row?.handle || id, latitude, longitude,
         source:'openeye-public', sourceReference:String(row?.handle || row?.id || index), pose:{ confidence:'unknown' }, viewshed:{ horizontalFovDeg:90, maxRangeM:5000 },
-        media:{ kind:'synthetic', url:null, frameUrl:null, previewUrl:null, sourcePageUrl:'https://openeye.cam/cam/' + encodeURIComponent(id), direct:false, publicSource:true },
+        media:{ kind:'synthetic', url:null, frameUrl:null, previewUrl:null, sourcePageUrl:'https://openeye.cam/cam/' + encodeURIComponent(id), direct:false, publicSource:true, feedKind:null, liveVideo:false },
         health:{ status:'UNKNOWN', reason:'OpenEye map index record; detailed camera health is resolved when opened.' },
         provenance:{ sourceName:'OpenEye public camera directory', sourceUrl:'https://openeye.cam/', attribution:'OpenEye public camera directory', attributionUrl:'https://openeye.cam/', observationType:'public_camera_directory', sourceReference:String(row?.handle || row?.id || index) },
         attributes:{ provider:'OpenEye', providerCameraId:row?.id || null, handle:row?.handle || null, category:row?.category || 'other', catalogClass:'public-camera-map-index', sourcePageUrl:'https://openeye.cam/cam/' + encodeURIComponent(id) }
@@ -207,7 +238,7 @@ async function loadOpenEyeCatalog(options = {}) {
 
   const bbox = normalizeBbox(options.bbox) || bboxFromCenter(options.center, options.radiusM);
   const limit = Math.max(1, Math.min(OPENEYE_MAX_LIMIT, Number(options.maxRecords) || 100));
-  const key = JSON.stringify({ bbox, center:options.center || null, radiusM:Number(options.radiusM) || null, limit });
+  const key = JSON.stringify({ bbox, countryCode:String(options.countryCode || '').toUpperCase() || null, center:options.center || null, radiusM:Number(options.radiusM) || null, limit });
   const cached = openEyeCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.rows;
 
@@ -384,6 +415,8 @@ function normalizeRecord(raw, index) {
       sourceMediaUrl:raw.media?.sourceMediaUrl ? String(raw.media.sourceMediaUrl) : null,
       sourceMediaType:raw.media?.sourceMediaType ? String(raw.media.sourceMediaType) : null,
       sourceMediaPlayable:Boolean(raw.media?.sourceMediaPlayable),
+      feedKind:raw.media?.feedKind ? String(raw.media.feedKind) : null,
+      liveVideo:Boolean(raw.media?.liveVideo),
       sourceMediaHost:raw.media?.sourceMediaHost ? String(raw.media.sourceMediaHost) : null,
       direct:Boolean(raw.media?.direct),
       available:Boolean(mediaUrl) || String(raw.media?.kind) === 'synthetic',
