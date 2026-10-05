@@ -6527,6 +6527,34 @@
           }
         }
       }
+    },
+    "/api/v1/cctv/countries": {
+      "get": {
+        "operationId": "get_api_v1_cctv_countries",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cctv/{id}/live": {
+      "post": {
+        "operationId": "post_api_v1_cctv_id_live",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_cctv_id_live",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

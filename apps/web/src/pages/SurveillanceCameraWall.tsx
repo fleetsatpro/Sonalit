@@ -8,24 +8,12 @@ import type { SpatialWorldEntity } from '../lib/spatialClient.js'
 import '../styles/cctv-wall.css'
 import '../styles/surveillance-camera-wall.css'
 
-type CameraScope = 'kenya' | 'east-africa'
-
-const SCOPES: Record<CameraScope, {
-  label: string
-  bbox: [number, number, number, number]
-  description: string
-}> = {
-  kenya: {
-    label: 'Kenya',
-    bbox: [33.8, -4.8, 42.0, 5.2],
-    description: 'National public-camera coverage',
-  },
-  'east-africa': {
-    label: 'East Africa',
-    bbox: [28, -12, 52, 16],
-    description: 'Regional public-camera coverage',
-  },
+interface CameraCountry {
+  code: string
+  name: string
 }
+
+const GLOBAL_COUNTRY = { code: 'GLOBAL', name: 'Global' }
 
 interface CctvResult {
   data: SpatialWorldEntity[]
@@ -41,17 +29,31 @@ interface CctvResult {
 
 export default function SurveillanceCameraWall() {
   const navigate = useNavigate()
-  const [scope, setScope] = useState<CameraScope>('kenya')
+  const [countryCode, setCountryCode] = useState('KE')
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
-  const selectedScope = SCOPES[scope]
+  const [liveOnly, setLiveOnly] = useState(false)
+
+  const { data: countryData } = useQuery<{ data: CameraCountry[] }>({
+    queryKey: ['surveillance-camera-countries'],
+    queryFn: async () => (await api.get<{ data: CameraCountry[] }>('/cctv/countries')).data,
+    staleTime: 86_400_000,
+  })
+
+  const countries = useMemo(
+    () => [GLOBAL_COUNTRY, ...(countryData?.data ?? [])],
+    [countryData],
+  )
+
+  const selectedCountry = countries.find(country => country.code === countryCode) ?? GLOBAL_COUNTRY
 
   const { data, isFetching, isError } = useQuery<CctvResult>({
-    queryKey: ['surveillance-camera-wall', scope, refreshKey],
+    queryKey: ['surveillance-camera-wall', countryCode, liveOnly, refreshKey],
     queryFn: async () => {
       const response = await api.get<CctvResult>('/cctv/cameras', {
         params: {
-          bbox: selectedScope.bbox.join(','),
+          ...(countryCode !== 'GLOBAL' ? { country: countryCode } : {}),
+          liveOnly,
           limit: 250,
         },
       })
@@ -95,27 +97,38 @@ export default function SurveillanceCameraWall() {
           <div>
             <div className="surveillance-camera-wall-page-kicker">SURVEILLANCE · MODULE</div>
             <h1>Camera Wall</h1>
-            <p>{selectedScope.description} · provenance preserved · publisher boundaries respected</p>
+            <p>{selectedCountry.name} · live video inside Sonalit when the provider exposes a live-video feed</p>
           </div>
         </div>
 
         <div className="surveillance-camera-wall-page-controls">
-          <div className="surveillance-camera-wall-scope" aria-label="Camera coverage scope">
-            {(Object.keys(SCOPES) as CameraScope[]).map(key => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={scope === key}
-                onClick={() => {
-                  setScope(key)
-                  setSelectedCameraId(null)
-                }}
-              >
-                <Globe2 size={12} />
-                {SCOPES[key].label}
-              </button>
-            ))}
-          </div>
+          <label className="surveillance-camera-wall-country" title="Choose a camera country">
+            <Globe2 size={12} />
+            <span>COUNTRY</span>
+            <select
+              value={countryCode}
+              onChange={event => {
+                setCountryCode(event.target.value)
+                setSelectedCameraId(null)
+              }}
+              aria-label="Camera country"
+            >
+              {countries.map(country => (
+                <option key={country.code} value={country.code}>{country.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="surveillance-camera-wall-live-only">
+            <input
+              type="checkbox"
+              checked={liveOnly}
+              onChange={event => {
+                setLiveOnly(event.target.checked)
+                setSelectedCameraId(null)
+              }}
+            />
+            LIVE VIDEO ONLY
+          </label>
           <div className="surveillance-camera-wall-health">
             <span className="surveillance-camera-wall-health-dot" />
             <span>{isError ? 'DEGRADED' : isFetching ? 'SYNCING' : 'CONNECTED'}</span>
@@ -134,7 +147,8 @@ export default function SurveillanceCameraWall() {
       </header>
 
       <section className="surveillance-camera-wall-page-summary" aria-label="Camera wall status">
-        <span><strong>{cameras.length}</strong> in scope</span>
+        <span><strong>{cameras.length}</strong> cameras in {selectedCountry.name}</span>
+        <span><strong>{cameras.filter(camera => camera.media?.liveVideo === true).length}</strong> live-video capable</span>
         <span><strong>{publicTotal.toLocaleString()}</strong> public records</span>
         <span><ShieldCheck size={12} /> Source attribution enforced</span>
         <span>No person / face / plate tracking</span>

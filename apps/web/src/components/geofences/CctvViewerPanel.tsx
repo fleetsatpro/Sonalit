@@ -98,6 +98,34 @@ function sourceMediaIsImage(camera: SpatialWorldEntity) {
   return type === 'image' || /\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url)
 }
 
+function liveVideoCapability(camera: SpatialWorldEntity) {
+  return cameraMedia(camera).liveVideo === true && String(camera.id).startsWith('openeye:')
+}
+
+function whepUrlFor(camera: SpatialWorldEntity) {
+  const base = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1').replace(/\/+$/, '')
+  return base + '/cctv/' + encodeURIComponent(camera.id) + '/live'
+}
+
+async function waitForIceGatheringComplete(peer: RTCPeerConnection, timeoutMs = 2500) {
+  if (peer.iceGatheringState === 'complete') return
+  await new Promise<void>(resolve => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      peer.removeEventListener('icegatheringstatechange', onStateChange)
+      resolve()
+    }
+    const onStateChange = () => {
+      if (peer.iceGatheringState === 'complete') finish()
+    }
+    const timer = window.setTimeout(finish, timeoutMs)
+    peer.addEventListener('icegatheringstatechange', onStateChange)
+  })
+}
+
 function frameAge(camera: SpatialWorldEntity) {
   const attrs = record(camera.attributes)
   const age = Number(attrs.lastFrameAgeS)
@@ -246,6 +274,158 @@ function InlineCctvVideo({
       controls
       preload="metadata"
     />
+  )
+}
+
+function InlineWhepVideo({
+  camera,
+  onError,
+}: {
+  camera: SpatialWorldEntity
+  onError?: (message: string) => void
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+  const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting')
+  const [statusMessage, setStatusMessage] = useState('NEGOTIATING LIVE VIDEO')
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !liveVideoCapability(camera)) return
+    setStatus('connecting')
+    setStatusMessage('NEGOTIATING LIVE VIDEO')
+
+    const peer = new RTCPeerConnection({
+      bundlePolicy: 'max-bundle',
+      iceServers: [
+        { urls: 'stun:stun.cloudflare.com:3478' },
+        { urls: 'stun:stun.l.google.com:19302' },
+      ],
+    })
+    let disposed = false
+    let sessionLocation: string | null = null
+    const localStream = new MediaStream()
+    streamRef.current = localStream
+
+    const fail = (message: string) => {
+      if (!disposed) {
+        setStatus('error')
+        setStatusMessage(message)
+        onErrorRef.current?.(message)
+      }
+    }
+
+    peer.addTransceiver('video', { direction: 'recvonly' })
+    peer.addEventListener('connectionstatechange', () => {
+      if (!disposed && peer.connectionState === 'failed') {
+        fail('LIVE VIDEO CONNECTION FAILED')
+      }
+    })
+    peer.addEventListener('track', event => {
+      if (disposed) return
+      const incoming = event.streams?.[0]
+      if (incoming) {
+        video.srcObject = incoming
+      } else {
+        localStream.addTrack(event.track)
+        video.srcObject = localStream
+      }
+      setStatus('live')
+      setStatusMessage('LIVE')
+      void video.play().catch(() => {})
+    })
+
+    const connect = async () => {
+      try {
+        const offer = await peer.createOffer()
+        await peer.setLocalDescription(offer)
+        await waitForIceGatheringComplete(peer)
+
+        const sdp = peer.localDescription?.sdp || offer.sdp
+        if (!sdp) throw new Error('Local SDP offer was empty')
+
+        const response = await api.post(whepUrlFor(camera), { sdp }, {
+          headers: {
+            Accept: 'application/sdp',
+            'Content-Type': 'application/json',
+          },
+          responseType: 'text',
+          timeout: 15_000,
+        })
+
+        const answer = typeof response.data === 'string'
+          ? response.data
+          : String((response.data as { sdp?: string } | null)?.sdp || '')
+        if (!answer.trim()) throw new Error('Live-video SDP answer was empty')
+
+        const returnedSessionLocation = typeof response.headers?.['x-sonalit-whep-session'] === 'string'
+          ? response.headers['x-sonalit-whep-session']
+          : typeof response.headers?.location === 'string'
+            ? response.headers.location
+            : typeof response.headers?.['x-whep-session'] === 'string'
+              ? response.headers['x-whep-session']
+              : null
+        sessionLocation = returnedSessionLocation
+
+        if (disposed) {
+          if (returnedSessionLocation) {
+            void api.delete(whepUrlFor(camera), { data: { location: returnedSessionLocation } }).catch(() => {})
+          }
+          return
+        }
+
+        await peer.setRemoteDescription({ type: 'answer', sdp: answer })
+      } catch (error) {
+        if (disposed) return
+        const status = (error as { response?: { status?: number } } | null)?.response?.status
+        if (status === 402) fail('LIVE VIDEO PAYMENT REQUIRED')
+        else if (status === 401 || status === 403) fail('LIVE VIDEO AUTHORIZATION REQUIRED')
+        else if (status === 409) fail('CAMERA IS NOT A LIVE VIDEO FEED')
+        else fail('LIVE VIDEO UNAVAILABLE')
+      }
+    }
+
+    void connect()
+
+    return () => {
+      disposed = true
+      video.pause()
+      video.srcObject = null
+      peer.getTransceivers().forEach(transceiver => {
+        try { transceiver.stop() } catch { /* best effort */ }
+      })
+      peer.close()
+      streamRef.current?.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+      if (sessionLocation) {
+        void api.delete(whepUrlFor(camera), { data: { location: sessionLocation } }).catch(() => {})
+      }
+    }
+  }, [camera])
+
+  return (
+    <div className="gev-cctv-whep-player" data-status={status}>
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        controls
+        preload="none"
+        poster={typeof cameraMedia(camera).previewUrl === 'string' ? cameraMedia(camera).previewUrl : undefined}
+        aria-label={`${cameraName(camera)} live video`}
+      />
+      {status !== 'live' && (
+        <div className="gev-cctv-whep-state">
+          <span className={status === 'error' ? 'gev-cctv-whep-state-icon gev-cctv-whep-state-icon--error' : 'gev-cctv-whep-state-icon'}><i /></span>
+          <strong>{status === 'connecting' ? 'CONNECTING LIVE VIDEO' : 'LIVE VIDEO UNAVAILABLE'}</strong>
+          <span>{statusMessage}</span>
+        </div>
+      )}
+      {status === 'live' && <div className="gev-cctv-whep-live-badge"><i /> LIVE · WHEP</div>}
+    </div>
   )
 }
 
@@ -560,6 +740,7 @@ export default function CctvViewerPanel({
   const source = activeCamera ? cameraSource(activeCamera) : 'CCTV'
   const age = activeCamera ? frameAge(activeCamera) : null
   const mode = activeCamera ? sourceMode(activeCamera) : 'synthetic'
+  const liveVideo = Boolean(activeCamera && liveVideoCapability(activeCamera))
   const configuredStream = Boolean(activeCamera && direct && ['video','mjpeg'].includes(kind) && media.url)
   const operational = Boolean(
     activeCamera && (
@@ -569,7 +750,9 @@ export default function CctvViewerPanel({
     )
   )
   const sourcePlayback = activeCamera ? sourceMediaPlaybackKind(activeCamera) : null
-  const label = configuredStream
+  const label = liveVideo
+    ? 'LIVE VIDEO / WHEP'
+    : configuredStream
     ? 'LIVE STREAM / GATEWAY'
     : direct
       ? 'PUBLIC PREVIEW'
@@ -683,7 +866,7 @@ export default function CctvViewerPanel({
           <div className="gev-cctv-heading">
             <span className="gev-cctv-kicker"><Camera size={12} /> PUBLIC CAMERA NETWORK</span>
             <strong>CAMERA WALL</strong>
-            <span>{cameras.length} in viewport · {renderableCount} preview/stream · {sourceOnlyCount} publisher handoff{sourceOnlyCount === 1 ? '' : 's'}{publicTotal != null ? ` · ${publicTotal.toLocaleString()} public records` : ''}</span>
+            <span>{cameras.length} cameras · {cameras.filter(camera => liveVideoCapability(camera)).length} live-video capable · {renderableCount} preview/stream · {sourceOnlyCount} publisher handoff{sourceOnlyCount === 1 ? '' : 's'}{publicTotal != null ? ` · ${publicTotal.toLocaleString()} public records` : ''}</span>
           </div>
           <div className="gev-cctv-head-actions">
             <button type="button" className="gev-cctv-icon" onClick={() => setExpanded(true)} aria-label="Expand camera wall" title="Expand camera wall"><Expand size={14} /></button>
@@ -708,7 +891,12 @@ export default function CctvViewerPanel({
               }}
             >
               <div className="gev-cctv-frame-stage">
-                {configuredStream && streamUrl ? (
+                {liveVideo ? (
+                  <InlineWhepVideo
+                    camera={activeCamera}
+                    onError={() => setFrameState('error')}
+                  />
+                ) : configuredStream && streamUrl ? (
                   kind === 'mjpeg' ? (
                     <img src={streamUrl} alt={`${cameraName(activeCamera)} live MJPEG stream`} />
                   ) : (
@@ -820,10 +1008,7 @@ export default function CctvViewerPanel({
                 <span className="gev-cctv-kicker"><Camera size={12} /> LIVE SPATIAL SURVEILLANCE</span>
                 <strong>CAMERA WALL</strong>
                 <span>
-                  {cameras.length} cameras · page {wallPage + 1}/{wallPageCount} · {wallCameras.filter(camera => {
-                    const media = cameraMedia(camera)
-                    return media.direct === true && ['image', 'video', 'mjpeg'].includes(mediaKind(camera))
-                  }).length} renderable on this page
+                  {cameras.length} cameras · page {wallPage + 1}/{wallPageCount} · {wallCameras.filter(camera => liveVideoCapability(camera)).length} live-video capable on this page
                 </span>
               </div>
               <div className="gev-cctv-wall-toolbar">
@@ -870,6 +1055,7 @@ export default function CctvViewerPanel({
                 const camDirectUrl = mediaDirectUrl(cam)
                 const camPreviewable = camMedia.direct === true && camKind === 'image' && Boolean(camDirectUrl) && !previewFailures.has(cam.id)
                 const camStream = camMedia.direct === true && ['video', 'mjpeg'].includes(camKind) && Boolean(camMedia.url)
+                const camLiveVideo = liveVideoCapability(cam)
                 const isActive = cam.id === activeId
                 return (
                   <article
@@ -880,7 +1066,18 @@ export default function CctvViewerPanel({
                     role="gridcell"
                   >
                     <div className="gev-cctv-wall-feed-media">
-                      {camPreviewable ? (
+                      {camLiveVideo && isActive ? (
+                        <div className="gev-cctv-wall-feed-media-source">
+                          <InlineWhepVideo camera={cam} onError={() => setFrameState('error')} />
+                          <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · WHEP</span>
+                        </div>
+                      ) : camLiveVideo ? (
+                        <div className="gev-cctv-wall-feed-state">
+                          <Camera size={18} />
+                          <strong>LIVE VIDEO</strong>
+                          <span>Select this camera to open the live footage in the focused player.</span>
+                        </div>
+                      ) : camPreviewable ? (
                         <img
                           src={camDirectUrl}
                           alt={`${cameraName(cam)} latest camera preview`}

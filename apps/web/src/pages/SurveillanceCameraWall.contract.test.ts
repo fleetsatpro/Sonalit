@@ -18,6 +18,12 @@ describe('Surveillance Camera Wall module contract', () => {
   test('module page owns its camera catalog and standalone wall surface', () => {
     const source = fs.readFileSync(path.resolve(__dirname, './SurveillanceCameraWall.tsx'), 'utf8')
     expect(source).toContain("'/cctv/cameras'")
+    expect(source).toContain("'/cctv/countries'")
+    expect(source).toContain('LIVE VIDEO ONLY')
+    expect(source).toContain('countryCode')
+    expect(source).toContain("params: {")
+    expect(source).toContain("country: countryCode")
+    expect(source).toContain('selectedCountry.name')
     expect(source).toContain('standalone')
     expect(source).toContain("navigate({ to: '/surveillance' })")
     expect(source).toContain('Camera Wall')

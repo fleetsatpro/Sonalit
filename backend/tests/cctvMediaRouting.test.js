@@ -1,4 +1,5 @@
-const { classifyViewMediaType, openEyeMedia } = require('../src/services/spatial/cctv/cctvCatalog');
+const { classifyViewMediaType, openEyeMedia, getCctvCountries, getCountryBbox } = require('../src/services/spatial/cctv/cctvCatalog');
+const { openEyeWhepOffer, openEyeWhepDelete } = require('../src/services/spatial/cctv/cctvMediaProxy');
 const { fetchApprovedMedia } = require('../src/services/spatial/cctv/cctvMediaProxy');
 
 describe('CCTV media routing', () => {
@@ -48,6 +49,82 @@ describe('CCTV media routing', () => {
     expect(classifyViewMediaType({ url_type:'video' }, 'https://publisher.example/live/camera.mp4', 'link')).toBe('video');
     expect(classifyViewMediaType({ url_type:'image' }, 'https://publisher.example/live/camera.jpg', 'link')).toBe('image');
     expect(classifyViewMediaType({ url_type:'video' }, 'https://publisher.example/live/camera.jpg', 'link')).toBe('image');
+  });
+
+  test('models an OpenEye live-video feed separately from a still preview', () => {
+    const media = openEyeMedia({
+      id: 'stream-live-video',
+      public_url: 'https://openeye.cam/cam/stream-live-video',
+      feed_kind: 'live_video',
+      live: true,
+      view: {
+        render: 'image',
+        url: 'https://api.openeye.cam/v1/streams/stream-live-video/preview.webp',
+        url_type: 'image',
+        hosted: 'openeye'
+      },
+      redistribution: {
+        preview_embed: true,
+        frame_reuse: 'personal-cache',
+        attribution: { name: 'OpenEye', url: 'https://openeye.cam/' }
+      }
+    });
+
+    expect(media.liveVideo).toBe(true);
+    expect(media.feedKind).toBe('live_video');
+    expect(media.kind).toBe('image');
+    expect(media.direct).toBe(true);
+  });
+
+  test('exposes global country scope metadata', () => {
+    const countries = getCctvCountries();
+    expect(countries.some(country => country.code === 'KE' && country.name === 'Kenya')).toBe(true);
+    expect(getCountryBbox('KE')).toEqual(expect.arrayContaining([33.89, -4.68, 41.86, 5.51]));
+    expect(getCountryBbox('invalid')).toBe(null);
+  });
+
+  test('relays WHEP SDP negotiation without exposing provider credentials', async () => {
+    const originalFetch = global.fetch;
+    const originalKey = process.env.OPENEYE_KEY;
+    const calls = [];
+    process.env.OPENEYE_KEY = 'test-provider-key';
+    global.fetch = async (url, options) => {
+      calls.push({ url, options });
+      return new Response('v=0\\r\\nanswer', {
+        status: 201,
+        headers: { location:'https://api.openeye.cam/v1/whep/session/test', 'content-type':'application/sdp' }
+      });
+    };
+
+    try {
+      const result = await openEyeWhepOffer('stream-live-video', 'v=0\\r\\no=- 1 1 IN IP4 0.0.0.0');
+      expect(result.ok).toBe(true);
+      expect(result.status).toBe(201);
+      expect(result.answer).toContain('v=0');
+      expect(calls[0].url).toContain('/streams/stream-live-video/whep/offer');
+      expect(calls[0].options.method).toBe('POST');
+      expect(calls[0].options.headers.Authorization).toBe('Bearer test-provider-key');
+      expect(calls[0].options.body).toContain('v=0');
+    } finally {
+      global.fetch = originalFetch;
+      if (originalKey == null) delete process.env.OPENEYE_KEY;
+      else process.env.OPENEYE_KEY = originalKey;
+    }
+  });
+
+  test('terminates only an OpenEye WHEP session URL', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async (url, options) => {
+      expect(String(url)).toContain('https://api.openeye.cam/v1/streams/stream-live-video/whep/session/test');
+      expect(options.method).toBe('DELETE');
+      return new Response(null, { status:204 });
+    };
+    try {
+      await expect(openEyeWhepDelete('https://api.openeye.cam/v1/streams/stream-live-video/whep/session/test')).resolves.toMatchObject({ ok:true, status:204 });
+      await expect(openEyeWhepDelete('https://example.com/not-whep/test')).rejects.toMatchObject({ failureClass:'invalid_data' });
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 
   test('allows an authorized OpenEye-hosted video preview to use the in-app gateway', () => {

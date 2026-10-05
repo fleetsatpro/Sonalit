@@ -30,6 +30,8 @@ async function getCameras(options = {}) {
     const cameras = normalized
       .filter(c => inBbox(c, options.bbox))
       .filter(c => inRadius(c, options.center, options.radiusM))
+      .filter(c => options.liveOnly !== true || c.media?.liveVideo === true)
+      .sort((a,b) => Number(b.media?.liveVideo === true) - Number(a.media?.liveVideo === true))
       .map(c => ({
         ...c,
         geometry:{ type:'Polygon', coordinates:[buildViewshedPolygon(c)] }
