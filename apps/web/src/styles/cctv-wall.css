@@ -281,3 +281,109 @@
 @media (prefers-reduced-motion:reduce) {
   .gev-cctv-camera,.gev-cctv-wall-card { transition:none; }
 }
+
+.gev-cctv-whep-player {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #020507;
+}
+
+.gev-cctv-whep-player > video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  background: #020507;
+}
+
+.gev-cctv-whep-state {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 18px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(2,5,7,.28), rgba(2,5,7,.9));
+  color: #d9e8e4;
+}
+
+.gev-cctv-whep-state strong {
+  font: 900 8px/1.1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing: .11em;
+}
+
+.gev-cctv-whep-state > span:last-child {
+  max-width: 360px;
+  color: #81918d;
+  font: 600 6.5px/1.45 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing: .03em;
+}
+
+.gev-cctv-whep-state-icon {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(118,243,223,.25);
+  border-radius: 50%;
+  background: rgba(118,243,223,.07);
+}
+
+.gev-cctv-whep-state-icon i,
+.gev-cctv-whep-live-badge i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #76f3df;
+  box-shadow: 0 0 10px rgba(118,243,223,.82);
+}
+
+.gev-cctv-whep-state-icon i {
+  animation: gev-cctv-whep-pulse 1.4s ease-in-out infinite;
+}
+
+.gev-cctv-whep-state-icon--error {
+  border-color: rgba(255,122,89,.3);
+  background: rgba(255,122,89,.07);
+}
+
+.gev-cctv-whep-state-icon--error i {
+  background: #ff7a59;
+  box-shadow: 0 0 10px rgba(255,122,89,.75);
+  animation: none;
+}
+
+.gev-cctv-whep-live-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 1px solid rgba(118,243,223,.18);
+  border-radius: 5px;
+  background: rgba(3,10,10,.76);
+  color: #9cefe2;
+  font: 900 5.5px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing: .08em;
+  backdrop-filter: blur(10px);
+}
+
+@keyframes gev-cctv-whep-pulse {
+  50% { opacity: .35; transform: scale(.78); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gev-cctv-whep-state-icon i {
+    animation: none;
+  }
+}
