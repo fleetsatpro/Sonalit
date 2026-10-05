@@ -379,6 +379,8 @@ function normalizeRecord(raw, index) {
       sourcePageUrl:raw.media?.sourcePageUrl ? String(raw.media.sourcePageUrl) : null,
       sourceMediaUrl:raw.media?.sourceMediaUrl ? String(raw.media.sourceMediaUrl) : null,
       sourceMediaType:raw.media?.sourceMediaType ? String(raw.media.sourceMediaType) : null,
+      sourceMediaPlayable:Boolean(raw.media?.sourceMediaPlayable),
+      sourceMediaHost:raw.media?.sourceMediaHost ? String(raw.media.sourceMediaHost) : null,
       direct:Boolean(raw.media?.direct),
       available:Boolean(mediaUrl) || String(raw.media?.kind) === 'synthetic',
       publicSource:Boolean(raw.media?.publicSource ?? raw.publicSource ?? Boolean(mediaUrl)),
