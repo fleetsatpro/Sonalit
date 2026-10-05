@@ -24,9 +24,12 @@ function inRadius(camera, center, radiusM) {
 function hasInlineVideo(camera) {
   const media = camera?.media || {};
   const kind = String(media.kind || '').toLowerCase();
-  return media.liveVideo === true ||
+  const healthStatus = String(camera?.health?.status || '').toUpperCase();
+  return healthStatus === 'LIVE' && (
+    media.liveVideo === true ||
     ['video','mjpeg','video-platform'].includes(kind) ||
-    media.sourceMediaPlayable === true;
+    media.sourceMediaPlayable === true
+  );
 }
 
 async function getCameras(options = {}) {
@@ -96,4 +99,4 @@ async function getNearestCameras(options = {}) {
 
 function getProviderHealth() { return { cctv:{...health} }; }
 
-module.exports = { getCameras, getNearestCameras, getProviderHealth, pointInViewshed };
+module.exports = { getCameras, getNearestCameras, getProviderHealth, pointInViewshed, hasInlineVideo };
