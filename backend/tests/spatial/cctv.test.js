@@ -1,16 +1,22 @@
 'use strict';
 
-const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, getCameraCatalogHealth, clearOpenEyeCache } = require('../../src/services/spatial/cctv/cctvCatalog');
+const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, loadOpenCctvCatalog, loadCaltransCatalog, getCameraCatalogHealth, clearOpenEyeCache } = require('../../src/services/spatial/cctv/cctvCatalog');
 const { pointInViewshed, rankNearest } = require('../../src/services/spatial/cctv/spatialCameraGeometry');
 const { assertSafeUrl, hostMatches } = require('../../src/services/spatial/cctv/cctvAllowlist');
 const { getFrame, getMedia, syntheticFrame } = require('../../src/services/spatial/cctv/cctvMediaProxy');
 
 const originalCctvEnv = process.env.CCTV_ENABLE_OPENEYE;
+const originalOpenCctvEnv = process.env.CCTV_ENABLE_OPENCCTV;
+const originalCaltransEnv = process.env.CCTV_ENABLE_CALTRANS;
 const originalSamplesEnv = process.env.CCTV_INCLUDE_SAMPLES;
 
 afterEach(() => {
   if (originalCctvEnv == null) delete process.env.CCTV_ENABLE_OPENEYE;
   else process.env.CCTV_ENABLE_OPENEYE = originalCctvEnv;
+  if (originalOpenCctvEnv == null) delete process.env.CCTV_ENABLE_OPENCCTV;
+  else process.env.CCTV_ENABLE_OPENCCTV = originalOpenCctvEnv;
+  if (originalCaltransEnv == null) delete process.env.CCTV_ENABLE_CALTRANS;
+  else process.env.CCTV_ENABLE_CALTRANS = originalCaltransEnv;
   if (originalSamplesEnv == null) delete process.env.CCTV_INCLUDE_SAMPLES;
   else process.env.CCTV_INCLUDE_SAMPLES = originalSamplesEnv;
   clearOpenEyeCache();
@@ -88,6 +94,85 @@ describe('spatial CCTV capability', () => {
 
     expect(rows).toHaveLength(0);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+
+  test('ingests continuous OpenCCTV feeds as playable live video and keeps country scope', async () => {
+    process.env.CCTV_ENABLE_OPENCCTV = '1';
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok:true,
+      json:async()=>[
+        {
+          id:'za-video-1',
+          name:'Pretoria N1 live',
+          city:'Pretoria',
+          country:'South Africa',
+          lat:-25.7479,
+          lng:28.2293,
+          feed_type:'m3u8',
+          feed_url:'https://cdn.example.org/pretoria/live.m3u8',
+          source:'SANRAL',
+          active:1
+        },
+        {
+          id:'za-image-1',
+          name:'Pretoria snapshot',
+          city:'Pretoria',
+          country:'South Africa',
+          lat:-25.75,
+          lng:28.23,
+          feed_type:'image',
+          feed_url:'https://cdn.example.org/pretoria/snapshot.jpg',
+          source:'SANRAL',
+          active:1
+        },
+        {
+          id:'inactive-1',
+          name:'Inactive',
+          lat:-25.75,
+          lng:28.24,
+          feed_type:'m3u8',
+          feed_url:'https://cdn.example.org/offline.m3u8',
+          active:0
+        }
+      ]
+    });
+    const rows = await loadOpenCctvCatalog({ countryCode:'ZA', maxRecords:10 });
+    expect(rows).toHaveLength(2);
+    const live = rows.find(c => c.id === 'opencctv:za-video-1');
+    expect(live.media.kind).toBe('video');
+    expect(live.media.liveVideo).toBe(true);
+    expect(live.media.feedKind).toBe('live_video');
+    expect(global.fetch.mock.calls[0][0]).toContain('bounds=-35.0%2C16.2%2C-22.1%2C32.9');
+  });
+
+  test('ingests official Caltrans streamingVideoURL records as live video', async () => {
+    process.env.CCTV_ENABLE_CALTRANS = '1';
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok:true,
+      json:async()=>({
+        features:[
+          {
+            attributes:{
+              OBJECTID:1234,
+              index_:55,
+              imageDescription:'I-5 NB at Downtown',
+              streamingVideoURL:'https://wzmedia.dot.ca.gov/D5/abc/live.m3u8',
+              currentImageURL:'https://cwwp2.dot.ca.gov/data/d5/abc.jpg',
+              district:5
+            },
+            geometry:{ x:-121.4944, y:38.5816 }
+          }
+        ]
+      })
+    });
+    const rows = await loadCaltransCatalog({ countryCode:'US', maxRecords:10 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('caltrans:1234');
+    expect(rows[0].media.kind).toBe('video');
+    expect(rows[0].media.liveVideo).toBe(true);
+    expect(rows[0].pose.confidence).toBe('verified');
+    expect(global.fetch.mock.calls[0][0]).toContain('streamingVideoURL');
   });
 
   test('keeps public camera observations even when media is source-only or non-embeddable', async () => {
