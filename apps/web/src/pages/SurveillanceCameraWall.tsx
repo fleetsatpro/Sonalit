@@ -33,6 +33,7 @@ export default function SurveillanceCameraWall() {
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const liveOnly = true
+  const includeSnapshots = true
 
   const { data: countryData } = useQuery<{ data: CameraCountry[] }>({
     queryKey: ['surveillance-camera-countries'],
@@ -54,6 +55,7 @@ export default function SurveillanceCameraWall() {
         params: {
           ...(countryCode !== 'GLOBAL' ? { country: countryCode } : {}),
           liveOnly,
+          includeSnapshots,
           limit: 250,
         },
       })
@@ -86,6 +88,15 @@ export default function SurveillanceCameraWall() {
       media.sourceMediaPlayable === true
   }).length
 
+  const refreshingSnapshotCount = cameras.filter(camera => {
+    const media = ((camera.attributes?.media ?? {}) as Record<string, unknown>)
+    const kind = String(media.kind ?? '').toLowerCase()
+    return camera.status === 'LIVE' &&
+      kind === 'image' &&
+      media.direct === true &&
+      Boolean(media.frameUrl || media.previewUrl || media.url)
+  }).length
+
   return (
     <main className="surveillance-camera-wall-page">
       <header className="surveillance-camera-wall-page-head">
@@ -106,7 +117,7 @@ export default function SurveillanceCameraWall() {
           <div>
             <div className="surveillance-camera-wall-page-kicker">SURVEILLANCE · MODULE</div>
             <h1>Camera Wall</h1>
-            <p>{selectedCountry.name} · only currently playable live video is admitted to the wall</p>
+            <p>{selectedCountry.name} · current live video and verified refreshing snapshots are admitted to the wall</p>
           </div>
         </div>
 
@@ -129,11 +140,11 @@ export default function SurveillanceCameraWall() {
           </label>
           <div className="surveillance-camera-wall-live-only" aria-label="Playback policy">
             <span className="surveillance-camera-wall-live-only-dot" />
-            VERIFIED PLAYABLE VIDEO ONLY
+            VERIFIED LIVE VISUALS
           </div>
           <div className="surveillance-camera-wall-health">
             <span className="surveillance-camera-wall-health-dot" />
-            <span>{isError ? 'DEGRADED' : isFetching ? 'SYNCING' : cameras.length ? 'LIVE SOURCES' : 'NO LIVE FEEDS'}</span>
+            <span>{isError ? 'DEGRADED' : isFetching ? 'SYNCING' : cameras.length ? 'LIVE SOURCES' : 'NO LIVE VISUALS'}</span>
           </div>
           <button
             type="button"
@@ -149,8 +160,9 @@ export default function SurveillanceCameraWall() {
       </header>
 
       <section className="surveillance-camera-wall-page-summary" aria-label="Camera wall status">
-        <span><strong>{cameras.length}</strong> verified playable cameras in {selectedCountry.name}</span>
-        <span><strong>{playableVideoCount}</strong> live video feeds</span>
+        <span><strong>{cameras.length}</strong> verified live visuals in {selectedCountry.name}</span>
+        <span><strong>{playableVideoCount}</strong> continuous video feeds</span>
+        <span><strong>{refreshingSnapshotCount}</strong> refreshing snapshots</span>
         <span><strong>{publicTotal.toLocaleString()}</strong> public records</span>
         <span><ShieldCheck size={12} /> Source attribution enforced</span>
         <span>No person / face / plate tracking</span>

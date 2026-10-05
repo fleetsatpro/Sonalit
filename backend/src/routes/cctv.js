@@ -104,6 +104,7 @@ router.get('/cameras', asyncHandler(async (req,res) => {
     radiusM:numberOrNull(req.query.radiusM) || 25000,
     countryCode:String(req.query.country || '').trim().toUpperCase() || null,
     liveOnly:String(req.query.liveOnly || '').toLowerCase() === 'true' || String(req.query.liveOnly || '') === '1',
+    includeSnapshots:String(req.query.includeSnapshots || '').toLowerCase() === 'true' || String(req.query.includeSnapshots || '') === '1',
     maxRecords:Math.min(250, Math.max(1, numberOrNull(req.query.limit) || 100))
   });
   res.json({

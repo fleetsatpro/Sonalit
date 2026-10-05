@@ -32,6 +32,31 @@ function hasInlineVideo(camera) {
   );
 }
 
+function hasLiveVisual(camera) {
+  const media = camera?.media || {};
+  const kind = String(media.kind || '').toLowerCase();
+  if (hasInlineVideo(camera)) return true;
+  if (kind !== 'image') return false;
+
+  const healthStatus = String(camera?.health?.status || '').toUpperCase();
+  const directImage = media.direct === true && Boolean(media.frameUrl || media.previewUrl || media.url);
+  const providerImage = media.providerFrameAvailable === true;
+
+  // Prefer the provider's explicit LIVE flag, but do not discard a recently
+  // refreshed image merely because a provider omits/uncertainly reports it.
+  // A recent frame is still a useful visual observation; it is never promoted
+  // to continuous video.
+  const attrs = camera?.attributes || {};
+  const ageS = Number(attrs.lastFrameAgeS ?? attrs.frameAgeS);
+  const intervalS = Number(media.refreshIntervalMs) / 1000;
+  const freshnessLimitS = Number.isFinite(intervalS) && intervalS > 0
+    ? Math.min(3600, Math.max(600, intervalS * 3))
+    : 900;
+  const recentlyRefreshed = Number.isFinite(ageS) && ageS >= 0 && ageS <= freshnessLimitS;
+
+  return (directImage || providerImage) && (healthStatus === 'LIVE' || recentlyRefreshed);
+}
+
 async function getCameras(options = {}) {
   const now = new Date().toISOString();
   health.lastAttemptAt = now;
@@ -41,8 +66,14 @@ async function getCameras(options = {}) {
     const cameras = normalized
       .filter(c => inBbox(c, options.bbox))
       .filter(c => inRadius(c, options.center, options.radiusM))
-      .filter(c => options.liveOnly !== true || hasInlineVideo(c))
-      .sort((a,b) => Number(hasInlineVideo(b)) - Number(hasInlineVideo(a)))
+      .filter(c => options.liveOnly !== true || (
+        options.includeSnapshots === true ? hasLiveVisual(c) : hasInlineVideo(c)
+      ))
+      .sort((a,b) => {
+        const videoDelta = Number(hasInlineVideo(b)) - Number(hasInlineVideo(a));
+        if (videoDelta) return videoDelta;
+        return Number(hasLiveVisual(b)) - Number(hasLiveVisual(a));
+      })
       .map(c => ({
         ...c,
         geometry:{ type:'Polygon', coordinates:[buildViewshedPolygon(c)] }
@@ -99,4 +130,4 @@ async function getNearestCameras(options = {}) {
 
 function getProviderHealth() { return { cctv:{...health} }; }
 
-module.exports = { getCameras, getNearestCameras, getProviderHealth, pointInViewshed, hasInlineVideo };
+module.exports = { getCameras, getNearestCameras, getProviderHealth, pointInViewshed, hasInlineVideo, hasLiveVisual };
