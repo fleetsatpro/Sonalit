@@ -360,11 +360,13 @@ function InlineWhepVideo({
           : String((response.data as { sdp?: string } | null)?.sdp || '')
         if (!answer.trim()) throw new Error('Live-video SDP answer was empty')
 
-        const returnedSessionLocation = typeof response.headers?.location === 'string'
-          ? response.headers.location
-          : typeof response.headers?.['x-whep-session'] === 'string'
-            ? response.headers['x-whep-session']
-            : null
+        const returnedSessionLocation = typeof response.headers?.['x-sonalit-whep-session'] === 'string'
+          ? response.headers['x-sonalit-whep-session']
+          : typeof response.headers?.location === 'string'
+            ? response.headers.location
+            : typeof response.headers?.['x-whep-session'] === 'string'
+              ? response.headers['x-whep-session']
+              : null
         sessionLocation = returnedSessionLocation
 
         if (disposed) {
