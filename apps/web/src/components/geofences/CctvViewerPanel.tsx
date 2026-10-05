@@ -198,12 +198,10 @@ function InlineCctvSnapshot({
   endpoint,
   alt,
   refreshKey = 0,
-  onError,
 }: {
   endpoint: string
   alt: string
   refreshKey?: number
-  onError?: () => void
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
@@ -212,21 +210,24 @@ function InlineCctvSnapshot({
     let disposed = false
     let nextUrl: string | null = null
     const load = async () => {
-      setFailed(false)
       try {
         const response = await api.get<Blob>(endpoint, {
           responseType: 'blob',
         })
         if (disposed) return
+        const synthetic = String(response.headers?.['x-sonalit-cctv-synthetic'] ?? '').toLowerCase() === 'true'
+        if (synthetic) throw new Error('Synthetic frame returned')
         nextUrl = URL.createObjectURL(response.data)
+        setFailed(false)
         setObjectUrl(current => {
           if (current) URL.revokeObjectURL(current)
           return nextUrl
         })
       } catch {
         if (disposed) return
+        // Preserve the last good frame during a transient provider failure.
+        // A wall tile should degrade gracefully rather than flash empty.
         setFailed(true)
-        onError?.()
       }
     }
     void load()
@@ -234,25 +235,28 @@ function InlineCctvSnapshot({
       disposed = true
       if (nextUrl) URL.revokeObjectURL(nextUrl)
     }
-  }, [endpoint, refreshKey, onError])
+  }, [endpoint, refreshKey])
 
-  if (failed || !objectUrl) {
+  if (!objectUrl) {
     return (
       <div className="gev-cctv-wall-feed-state">
         <Camera size={18} />
         <strong>{failed ? 'LIVE SNAPSHOT UNAVAILABLE' : 'ACQUIRING LIVE FRAME'}</strong>
-        <span>{failed ? 'The authenticated Sonalit frame gateway could not reacquire the current image.' : 'Fetching the current public camera frame.'}</span>
+        <span>{failed ? 'The current public camera image could not be reacquired; retrying.' : 'Fetching the current public camera frame.'}</span>
       </div>
     )
   }
 
   return (
-    <img
-      src={objectUrl}
-      alt={alt}
-      loading="lazy"
-      decoding="async"
-    />
+    <div className="gev-cctv-wall-feed-media-source">
+      <img
+        src={objectUrl}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+      />
+      {failed && <span className="gev-cctv-wall-feed-source-badge"><i /> LAST FRAME · RETRYING</span>}
+    </div>
   )
 }
 
@@ -1045,7 +1049,7 @@ export default function CctvViewerPanel({
         <div className={compact ? 'gev-cctv-wall-thumb gev-cctv-wall-thumb--image' : 'gev-cctv-tile-media gev-cctv-tile-media--image'}>
           {providerSnapshotCapability(camera)
             ? <InlineCctvSnapshot endpoint={providerSnapshotEndpoint(camera)} alt={`${cameraName(camera)} latest live snapshot`} onError={() => markPreviewFailure(camera.id)} />
-            : <img src={mediaDirectUrl(camera)} alt={`${cameraName(camera)} latest preview`} loading={compact ? 'lazy' : 'eager'} decoding="async" onError={() => markPreviewFailure(camera.id)} />}
+            : <img src={mediaDirectUrl(camera)} alt={`${cameraName(camera)} latest preview`} loading={compact ? 'lazy' : 'eager'} decoding="async" />}
           <span className="gev-cctv-tile-sheen" />
         </div>
       )
