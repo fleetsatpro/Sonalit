@@ -1,5 +1,5 @@
 const { classifyViewMediaType, openEyeMedia, getCctvCountries, getCountryBbox } = require('../src/services/spatial/cctv/cctvCatalog');
-const { openEyeWhepOffer, openEyeWhepDelete, fetchApprovedMedia, getMedia } = require('../src/services/spatial/cctv/cctvMediaProxy');
+const { openEyeWhepOffer, openEyeWhepDelete, fetchApprovedMedia, fetchPublicSnapshot, getMedia } = require('../src/services/spatial/cctv/cctvMediaProxy');
 
 describe('CCTV media routing', () => {
   test('never uses a JPG/media URL as the publisher-page destination', () => {
@@ -86,6 +86,34 @@ describe('CCTV media routing', () => {
     expect(media.kind).toBe('video-platform');
     expect(media.platformEmbedUrl).toBe('https://www.youtube-nocookie.com/embed/AbCdEf12345?autoplay=1&mute=1&playsinline=1&rel=0');
     expect(media.sourcePageUrl).toBe('https://www.youtube.com/watch?v=AbCdEf12345');
+  });
+
+  test('fetches an Insecam snapshot through the bounded public-image gateway', async () => {
+    const originalFetch = global.fetch;
+    const calls = [];
+    global.fetch = async (url, options) => {
+      calls.push({ url:String(url), options });
+      return new Response(Buffer.from('jpeg-bytes'), {
+        status:200,
+        headers:{ 'content-type':'image/jpeg', 'content-length':'10' }
+      });
+    };
+    try {
+      const result = await fetchPublicSnapshot('http://203.0.113.20:8080/snapshot.jpg?COUNTER=2');
+      expect(result.synthetic).toBe(false);
+      expect(result.contentType).toBe('image/jpeg');
+      expect(Buffer.isBuffer(result.buffer)).toBe(true);
+      expect(calls[0].options.headers.Referer).toBe('https://www.insecam.org/');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('rejects private Insecam snapshot targets', async () => {
+    await expect(fetchPublicSnapshot('http://127.0.0.1:8080/snapshot.jpg'))
+      .rejects.toMatchObject({ failureClass:'invalid_data' });
+    await expect(fetchPublicSnapshot('http://192.168.1.20:8080/snapshot.jpg'))
+      .rejects.toMatchObject({ failureClass:'invalid_data' });
   });
 
   test('exposes global country scope metadata', () => {
