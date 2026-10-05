@@ -61,7 +61,8 @@ function mediaKind(camera: SpatialWorldEntity) {
 
 function providerSnapshotCapability(camera: SpatialWorldEntity) {
   const media = cameraMedia(camera)
-  return String(media.provider ?? '').toLowerCase() === 'insecam' &&
+  const provider = String(media.provider ?? '').toLowerCase()
+  return ['insecam', 'opencctv'].includes(provider) &&
     media.providerFrameAvailable === true &&
     mediaKind(camera) === 'image'
 }
