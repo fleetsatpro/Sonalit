@@ -918,6 +918,7 @@ export default function CctvViewerPanel({
   const mode = activeCamera ? sourceMode(activeCamera) : 'synthetic'
   const liveVideo = Boolean(activeCamera && liveVideoCapability(activeCamera))
   const whepLiveVideo = Boolean(activeCamera && whepVideoCapability(activeCamera))
+  const platformVideo = Boolean(activeCamera && platformVideoCapability(activeCamera))
   const configuredStream = Boolean(activeCamera && direct && ['video','mjpeg'].includes(kind) && media.url)
   const operational = Boolean(
     activeCamera && (
@@ -1259,7 +1260,7 @@ export default function CctvViewerPanel({
                         camPreviewable ? (
                           <div className="gev-cctv-wall-feed-media-source">
                             <img
-                              src={camDirectUrl}
+                              src={camWallVisualUrl}
                               alt={`${cameraName(cam)} latest live-video preview`}
                               loading="lazy"
                               decoding="async"
@@ -1276,7 +1277,7 @@ export default function CctvViewerPanel({
                         )
                       ) : camPreviewable ? (
                         <img
-                          src={camDirectUrl}
+                          src={camWallVisualUrl}
                           alt={`${cameraName(cam)} latest camera preview`}
                           loading="lazy"
                           decoding="async"
