@@ -46,6 +46,7 @@ describe('CCTV media routing', () => {
     expect(media.sourceMediaPlayable).toBe(true);
     expect(classifyViewMediaType({ url_type:'video' }, 'https://publisher.example/live/camera.mp4', 'link')).toBe('video');
     expect(classifyViewMediaType({ url_type:'image' }, 'https://publisher.example/live/camera.jpg', 'link')).toBe('image');
+    expect(classifyViewMediaType({ url_type:'video' }, 'https://publisher.example/live/camera.jpg', 'link')).toBe('image');
   });
 
   test('allows an authorized OpenEye-hosted video preview to use the in-app gateway', () => {
