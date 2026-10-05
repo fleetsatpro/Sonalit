@@ -288,65 +288,137 @@ function InlineWhepVideo({
   const streamRef = useRef<MediaStream | null>(null)
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
+  const cameraId = String(camera.id)
+  const liveCapable = liveVideoCapability(camera)
+  const poster = typeof cameraMedia(camera).previewUrl === 'string' ? cameraMedia(camera).previewUrl : undefined
+  const liveUrl = whepUrlFor({ id: cameraId } as SpatialWorldEntity)
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting')
   const [statusMessage, setStatusMessage] = useState('NEGOTIATING LIVE VIDEO')
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !liveVideoCapability(camera)) return
-    setStatus('connecting')
-    setStatusMessage('NEGOTIATING LIVE VIDEO')
-
-    const peer = new RTCPeerConnection({
-      bundlePolicy: 'max-bundle',
-      iceServers: [
-        { urls: 'stun:stun.cloudflare.com:3478' },
-        { urls: 'stun:stun.l.google.com:19302' },
-      ],
-    })
+    if (!video || !liveCapable) return
     let disposed = false
+    let peer: RTCPeerConnection | null = null
     let sessionLocation: string | null = null
-    const localStream = new MediaStream()
-    streamRef.current = localStream
+    let retryTimer: number | null = null
+    let retryAttempt = 0
+    let connectGeneration = 0
 
-    const fail = (message: string) => {
-      if (!disposed) {
-        setStatus('error')
-        setStatusMessage(message)
-        onErrorRef.current?.(message)
+    const clearRetryTimer = () => {
+      if (retryTimer != null) {
+        window.clearTimeout(retryTimer)
+        retryTimer = null
       }
     }
 
-    peer.addTransceiver('video', { direction: 'recvonly' })
-    peer.addEventListener('connectionstatechange', () => {
-      if (!disposed && peer.connectionState === 'failed') {
-        fail('LIVE VIDEO CONNECTION FAILED')
+    const closePeer = (deleteSession = true) => {
+      const previousPeer = peer
+      const previousSession = sessionLocation
+      peer = null
+      sessionLocation = null
+      previousPeer?.getTransceivers().forEach(transceiver => {
+        try { transceiver.stop() } catch { /* best effort */ }
+      })
+      previousPeer?.close()
+      streamRef.current?.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+      video.pause()
+      video.srcObject = null
+      if (deleteSession && previousSession) {
+        void api.delete(liveUrl, { data: { location: previousSession } }).catch(() => {})
       }
-    })
-    peer.addEventListener('track', event => {
+    }
+
+    const terminalFail = (message: string) => {
       if (disposed) return
-      const incoming = event.streams?.[0]
-      if (incoming) {
-        video.srcObject = incoming
-      } else {
-        localStream.addTrack(event.track)
-        video.srcObject = localStream
-      }
-      setStatus('live')
-      setStatusMessage('LIVE')
-      void video.play().catch(() => {})
-    })
+      clearRetryTimer()
+      setStatus('error')
+      setStatusMessage(message)
+      onErrorRef.current?.(message)
+    }
+
+    const scheduleReconnect = (message = 'RECONNECTING LIVE VIDEO') => {
+      if (disposed || retryTimer != null) return
+      connectGeneration += 1
+      setStatus('connecting')
+      setStatusMessage(message)
+      const delay = Math.min(8_000, 750 * (2 ** Math.min(retryAttempt, 3)))
+      retryAttempt += 1
+      const generation = connectGeneration
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null
+        if (disposed || generation !== connectGeneration) return
+        closePeer()
+        void connect()
+      }, delay)
+    }
 
     const connect = async () => {
-      try {
-        const offer = await peer.createOffer()
-        await peer.setLocalDescription(offer)
-        await waitForIceGatheringComplete(peer)
+      if (disposed) return
+      clearRetryTimer()
+      const generation = ++connectGeneration
+      closePeer()
+      setStatus('connecting')
+      setStatusMessage(retryAttempt ? 'RECONNECTING LIVE VIDEO' : 'NEGOTIATING LIVE VIDEO')
 
-        const sdp = peer.localDescription?.sdp || offer.sdp
+      const nextPeer = new RTCPeerConnection({
+        bundlePolicy: 'max-bundle',
+        iceServers: [
+          { urls: 'stun:stun.cloudflare.com:3478' },
+          { urls: 'stun:stun.l.google.com:19302' },
+        ],
+      })
+      peer = nextPeer
+      const localStream = new MediaStream()
+      streamRef.current = localStream
+
+      const failTransient = (message: string) => {
+        if (!disposed && generation === connectGeneration) scheduleReconnect(message)
+      }
+
+      nextPeer.addTransceiver('video', { direction: 'recvonly' })
+      nextPeer.addEventListener('connectionstatechange', () => {
+        if (disposed || generation !== connectGeneration) return
+        if (nextPeer.connectionState === 'failed' || nextPeer.connectionState === 'disconnected') {
+          failTransient('LIVE VIDEO CONNECTION LOST · RECONNECTING')
+        }
+      })
+      nextPeer.addEventListener('iceconnectionstatechange', () => {
+        if (disposed || generation !== connectGeneration) return
+        if (nextPeer.iceConnectionState === 'failed' || nextPeer.iceConnectionState === 'disconnected') {
+          failTransient('LIVE VIDEO NETWORK LOST · RECONNECTING')
+        }
+      })
+      nextPeer.addEventListener('track', event => {
+        if (disposed || generation !== connectGeneration) return
+        const incoming = event.streams?.[0]
+        if (incoming) {
+          video.srcObject = incoming
+        } else {
+          localStream.addTrack(event.track)
+          video.srcObject = localStream
+        }
+        event.track.addEventListener('ended', () => {
+          if (!disposed && generation === connectGeneration) {
+            scheduleReconnect('LIVE VIDEO TRACK ENDED · RECONNECTING')
+          }
+        }, { once: true })
+        retryAttempt = 0
+        setStatus('live')
+        setStatusMessage('LIVE')
+        void video.play().catch(() => {})
+      })
+
+      try {
+        const offer = await nextPeer.createOffer()
+        await nextPeer.setLocalDescription(offer)
+        await waitForIceGatheringComplete(nextPeer)
+
+        const sdp = nextPeer.localDescription?.sdp || offer.sdp
         if (!sdp) throw new Error('Local SDP offer was empty')
 
-        const response = await api.post(whepUrlFor(camera), { sdp }, {
+        const response = await api.post(liveUrl, { sdp }, {
           headers: {
             Accept: 'application/sdp',
             'Content-Type': 'application/json',
@@ -369,21 +441,21 @@ function InlineWhepVideo({
               : null
         sessionLocation = returnedSessionLocation
 
-        if (disposed) {
+        if (disposed || generation !== connectGeneration) {
           if (returnedSessionLocation) {
-            void api.delete(whepUrlFor(camera), { data: { location: returnedSessionLocation } }).catch(() => {})
+            void api.delete(liveUrl, { data: { location: returnedSessionLocation } }).catch(() => {})
           }
           return
         }
 
-        await peer.setRemoteDescription({ type: 'answer', sdp: answer })
+        await nextPeer.setRemoteDescription({ type: 'answer', sdp: answer })
       } catch (error) {
-        if (disposed) return
-        const status = (error as { response?: { status?: number } } | null)?.response?.status
-        if (status === 402) fail('LIVE VIDEO PAYMENT REQUIRED')
-        else if (status === 401 || status === 403) fail('LIVE VIDEO AUTHORIZATION REQUIRED')
-        else if (status === 409) fail('CAMERA IS NOT A LIVE VIDEO FEED')
-        else fail('LIVE VIDEO UNAVAILABLE')
+        if (disposed || generation !== connectGeneration) return
+        const httpStatus = (error as { response?: { status?: number } } | null)?.response?.status
+        if (httpStatus === 402) terminalFail('LIVE VIDEO PAYMENT REQUIRED')
+        else if (httpStatus === 401 || httpStatus === 403) terminalFail('LIVE VIDEO AUTHORIZATION REQUIRED')
+        else if (httpStatus === 409) terminalFail('CAMERA IS NOT A LIVE VIDEO FEED')
+        else scheduleReconnect('LIVE VIDEO UNAVAILABLE · RETRYING')
       }
     }
 
@@ -391,19 +463,11 @@ function InlineWhepVideo({
 
     return () => {
       disposed = true
-      video.pause()
-      video.srcObject = null
-      peer.getTransceivers().forEach(transceiver => {
-        try { transceiver.stop() } catch { /* best effort */ }
-      })
-      peer.close()
-      streamRef.current?.getTracks().forEach(track => track.stop())
-      streamRef.current = null
-      if (sessionLocation) {
-        void api.delete(whepUrlFor(camera), { data: { location: sessionLocation } }).catch(() => {})
-      }
+      clearRetryTimer()
+      connectGeneration += 1
+      closePeer()
     }
-  }, [camera])
+  }, [cameraId, liveCapable])
 
   return (
     <div className="gev-cctv-whep-player" data-status={status}>
@@ -414,8 +478,8 @@ function InlineWhepVideo({
         playsInline
         controls
         preload="none"
-        poster={typeof cameraMedia(camera).previewUrl === 'string' ? cameraMedia(camera).previewUrl : undefined}
-        aria-label={`${cameraName(camera)} live video`}
+        poster={poster}
+        aria-label={cameraName(camera) + ' live video'}
       />
       {status !== 'live' && (
         <div className="gev-cctv-whep-state">
