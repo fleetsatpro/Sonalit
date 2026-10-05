@@ -1,5 +1,7 @@
 'use strict';
 
+const net = require('node:net');
+
 const { assertSafeUrl, allowedHostsFromEnv, isPrivateIp } = require('./cctvAllowlist');
 const { loadInsecamCamera } = require('./insecamCatalog');
 
