@@ -2,6 +2,7 @@
 
 const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, getCameraCatalogHealth, clearOpenEyeCache } = require('../../src/services/spatial/cctv/cctvCatalog');
 const { pointInViewshed, rankNearest } = require('../../src/services/spatial/cctv/spatialCameraGeometry');
+const { hasInlineVideo } = require('../../src/services/spatial/cctvGateway');
 const { assertSafeUrl, hostMatches } = require('../../src/services/spatial/cctv/cctvAllowlist');
 const { getFrame, getMedia, syntheticFrame } = require('../../src/services/spatial/cctv/cctvMediaProxy');
 
@@ -266,6 +267,16 @@ describe('spatial CCTV capability', () => {
     expect(rows[0].attributes.catalogClass).toBe('public-camera-map-index');
     expect(rows[0].media.sourcePageUrl).toContain('openeye.cam/cam/map-ke-1');
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('https://api.openeye.cam/v1/catalog/map?'), expect.objectContaining({ headers:{Accept:'application/json'} }));
+  });
+
+  test('live-only admission requires current LIVE health, not just a video-looking URL', () => {
+    const base = {
+      id:'camera-live-test',
+      media:{ kind:'video', url:'https://example.test/live/camera.m3u8', liveVideo:false }
+    };
+    expect(hasInlineVideo({ ...base, health:{ status:'LIVE' } })).toBe(true);
+    expect(hasInlineVideo({ ...base, health:{ status:'UNKNOWN' } })).toBe(false);
+    expect(hasInlineVideo({ ...base, health:{ status:'STALE' } })).toBe(false);
   });
 
   test('asserts geometry visibility only when target is inside heading/FOV/range', () => {
