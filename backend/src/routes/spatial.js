@@ -183,11 +183,11 @@ router.get(
   }),
 );
 
-async function worldContextHandler(req, res, persistEvents) {
+async function worldContextHandler(req, res, persistEvents, subjectOverride = null) {
   const orgId = req.user?.org_id;
   if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
 
-  const subject = parseSubject(req.query.subject);
+  const subject = subjectOverride || parseSubject(req.query.subject);
   if (!subject) return res.status(400).json({ error: 'Invalid subject' });
 
   const center = req.body?.center ? parseCenter(req.body.center) : parseCenter({
@@ -277,10 +277,9 @@ router.post(
 
 router.get(
   '/world-context/convoy/:id',
-  asyncHandler(async (req, res) => {
-    req.query.subject = { kind: 'convoy', id: req.params.id };
-    return worldContextHandler(req, res, false);
-  }),
+  asyncHandler(async (req, res) =>
+    worldContextHandler(req, res, false, { kind: 'convoy', id: req.params.id }),
+  ),
 );
 
 router.get(

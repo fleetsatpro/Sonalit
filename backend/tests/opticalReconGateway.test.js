@@ -24,7 +24,7 @@ describe('free optical reconnaissance gateway', () => {
 
   test('classifies observation freshness explicitly', () => {
     expect(freshnessClass(new Date().toISOString())).toBe('FRESH');
-    expect(freshnessClass(new Date(Date.now() - 3 * 86400000).toISOString())).toBe('AGING');
+    expect(freshnessClass(new Date(Date.now() - 4 * 86400000).toISOString())).toBe('AGING');
     expect(freshnessClass(new Date(Date.now() - 30 * 86400000).toISOString())).toBe('OLD');
     expect(freshnessClass('not-a-date')).toBe('UNKNOWN');
   });
@@ -86,9 +86,9 @@ describe('free optical reconnaissance gateway', () => {
     });
 
     const result = await getOpticalRecon({
-      latitude: -1.286389,
-      longitude: 36.817223,
-      radiusM: 35_000,
+      latitude: -1.287389,
+      longitude: 36.818223,
+      radiusM: 36_000,
     });
 
     expect(result.primary.provider).toBe('nasa-gibs');

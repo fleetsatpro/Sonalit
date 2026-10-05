@@ -6555,6 +6555,26 @@
           }
         }
       }
+    },
+    "/api/v1/spatial/optical-recon": {
+      "get": {
+        "operationId": "get_api_v1_spatial_optical_recon",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/spatial/optical-recon/tile": {
+      "get": {
+        "operationId": "get_api_v1_spatial_optical_recon_tile",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
