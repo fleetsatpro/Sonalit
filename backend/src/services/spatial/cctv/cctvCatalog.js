@@ -153,7 +153,7 @@ function buildPlatformEmbedUrl(url, view, hosted) {
     try {
       const parsed = new URL(url);
       let videoId = parsed.searchParams.get('v') || '';
-      if (!videoId && parsed.hostname === 'youtu.be') videoId = parsed.pathname.replace(/^\\//, '').split('/')[0] || '';
+      if (!videoId && parsed.hostname === 'youtu.be') videoId = parsed.pathname.replace(/^\//, '').split('/')[0] || '';
       if (!videoId && parsed.pathname.startsWith('/live/')) videoId = parsed.pathname.split('/').filter(Boolean)[1] || '';
       if (!videoId && parsed.pathname.startsWith('/embed/')) videoId = parsed.pathname.split('/').filter(Boolean)[1] || '';
       if (/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) return 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoId) + '?autoplay=1&mute=1&playsinline=1&rel=0';
@@ -207,7 +207,7 @@ function openEyeMedia(row) {
     )
   );
   const hosted = String(view.hosted || '').toLowerCase().trim();
-  const platformEmbedUrl = buildPlatformEmbedUrl(viewUrl, view, hosted);
+  const platformEmbedUrl = row.live === true ? buildPlatformEmbedUrl(viewUrl, view, hosted) : null;
   const kind = renderablePreview ? viewMediaType : (platformEmbedUrl ? 'video-platform' : 'synthetic');
   return {
     kind,
