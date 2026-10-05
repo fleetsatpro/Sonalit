@@ -33,6 +33,8 @@ describe('GEV CCTV wall contract', () => {
     expect(source).toContain('recvonly')
     expect(source).toContain('setRemoteDescription')
     expect(source).toContain("'/live'")
+    expect(source).toContain('whepUrlFor')
+    expect(source).toContain('liveVideoCapability')
     expect(source).toContain('WHEP')
     expect(source).toContain('cameraDetails')
     expect(source).toContain('wallPage')
