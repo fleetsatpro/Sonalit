@@ -7,7 +7,7 @@ const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { getCameras, getNearestCameras } = require('../services/spatial/cctvGateway');
 const { getCameraById, getCctvCountries } = require('../services/spatial/cctv/cctvCatalog');
-const { getFrame, getMedia, openEyeWhepOffer } = require('../services/spatial/cctv/cctvMediaProxy');
+const { getFrame, getMedia, openEyeWhepOffer, openEyeWhepDelete } = require('../services/spatial/cctv/cctvMediaProxy');
 const { Readable } = require('node:stream');
 
 router.use(authenticate, attachOrgDb);
@@ -62,6 +62,16 @@ router.post('/:id/live', asyncHandler(async (req,res) => {
   res.setHeader('Cache-Control','no-store');
   if (session.location) res.setHeader('Location', session.location);
   return res.send(session.answer);
+}));
+
+router.delete('/:id/live', asyncHandler(async (req,res) => {
+  const id = String(req.params.id);
+  const camera = await getCameraById(id);
+  if (!camera) return res.status(404).json({ error:'Camera not found' });
+  const location = typeof req.body?.location === 'string' ? req.body.location : '';
+  if (!location) return res.status(400).json({ error:'WHEP session location is required', code:'live_session_location_required' });
+  const result = await openEyeWhepDelete(location);
+  return res.status(result.ok ? 204 : result.status >= 400 ? result.status : 502).end();
 }));
 
 router.get('/cameras', asyncHandler(async (req,res) => {
