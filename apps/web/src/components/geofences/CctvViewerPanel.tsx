@@ -59,9 +59,23 @@ function mediaKind(camera: SpatialWorldEntity) {
   return String(cameraMedia(camera).kind ?? 'synthetic').toLowerCase()
 }
 
+function providerSnapshotCapability(camera: SpatialWorldEntity) {
+  const media = cameraMedia(camera)
+  return String(media.provider ?? '').toLowerCase() === 'insecam' &&
+    media.providerFrameAvailable === true &&
+    mediaKind(camera) === 'image'
+}
+
+function providerSnapshotUrl(camera: SpatialWorldEntity) {
+  const base = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1').replace(//+$/, '')
+  return providerSnapshotCapability(camera)
+    ? base + '/cctv/' + encodeURIComponent(camera.id) + '/frame'
+    : ''
+}
+
 function mediaDirectUrl(camera: SpatialWorldEntity) {
   const media = cameraMedia(camera)
-  return String(media.previewUrl ?? media.frameUrl ?? media.url ?? '').trim()
+  return providerSnapshotUrl(camera) || String(media.previewUrl ?? media.frameUrl ?? media.url ?? '').trim()
 }
 
 function sourceViewerUrl(camera: SpatialWorldEntity) {
@@ -153,6 +167,7 @@ function frameAge(camera: SpatialWorldEntity) {
 function sourceMode(camera: SpatialWorldEntity) {
   const media = cameraMedia(camera)
   if (media.direct === true && ['image', 'video', 'mjpeg'].includes(mediaKind(camera))) return 'direct'
+  if (providerSnapshotCapability(camera)) return 'gateway'
   if (sourceViewerUrl(camera)) return 'source'
   if (mediaKind(camera) === 'synthetic') return 'synthetic'
   return 'gateway'
@@ -947,7 +962,7 @@ export default function CctvViewerPanel({
     const camSourceMedia = sourceMediaUrl(camera)
     const camSourcePlayback = sourceMediaPlaybackKind(camera)
     const camMedia = cameraMedia(camera)
-    const canPreview = camMedia.direct === true && Boolean(mediaDirectUrl(camera)) && ['image'].includes(mediaKind(camera)) && !previewFailures.has(camera.id)
+    const canPreview = (camMedia.direct === true || providerSnapshotCapability(camera)) && Boolean(mediaDirectUrl(camera)) && ['image'].includes(mediaKind(camera)) && !previewFailures.has(camera.id)
     const sourceFailed = previewFailures.has(camera.id)
 
     if (canPreview) {
@@ -1200,7 +1215,7 @@ export default function CctvViewerPanel({
                 const camSourceMedia = sourceMediaUrl(cam)
                 const camSourcePlayback = sourceMediaPlaybackKind(cam)
                 const camDirectUrl = mediaDirectUrl(cam)
-                const camPreviewable = camMedia.direct === true && camKind === 'image' && Boolean(camDirectUrl) && !previewFailures.has(cam.id)
+                const camPreviewable = (camMedia.direct === true || providerSnapshotCapability(cam)) && camKind === 'image' && Boolean(camDirectUrl) && !previewFailures.has(cam.id)
                 const camStream = camMedia.direct === true && ['video', 'mjpeg'].includes(camKind) && Boolean(camMedia.url)
                 const camLiveVideo = liveVideoCapability(cam)
                 const camPlatformVideo = platformVideoCapability(cam)
