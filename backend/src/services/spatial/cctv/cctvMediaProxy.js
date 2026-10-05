@@ -14,6 +14,34 @@ const VIDEO_TYPES = new Set([
   'audio/mpegurl',
 ]);
 
+const HLS_PROXY_TTL_MS = 5 * 60 * 1000;
+const hlsProxyHosts = new Map();
+
+function isHlsMedia(contentType, sourceUrl) {
+  const type = String(contentType || '').toLowerCase();
+  return type === 'application/vnd.apple.mpegurl' || type === 'application/x-mpegurl' || type === 'audio/mpegurl' || /\.m3u8(?:[?#].*)?$/i.test(String(sourceUrl || ''));
+}
+
+function rewriteHlsPlaylist(playlist, baseUrl, proxyUrlForTarget, hosts) {
+  const replaceAbsolute = (uri) => {
+    try {
+      const absolute = new URL(uri, baseUrl).toString();
+      const hostname = new URL(absolute).hostname.toLowerCase();
+      hosts.add(hostname);
+      return proxyUrlForTarget(absolute);
+    } catch (_) {
+      return uri;
+    }
+  };
+  return String(playlist || '').split(/\r?\n/).map(line => {
+    if (!line) return line;
+    const uriAttribute = line.replace(/URI="([^"]+)"/gi, (_match, uri) => `URI="${replaceAbsolute(uri)}"`);
+    if (uriAttribute !== line) return uriAttribute;
+    if (line.startsWith('#')) return line;
+    return replaceAbsolute(line.trim());
+  }).join('\n');
+}
+
 function syntheticFrame(camera, reason) {
   const name = String(camera?.name || camera?.id || 'camera').replace(/[<&>]/g, '');
   const note = String(reason || 'No public frame source configured').replace(/[<&>]/g, '');
@@ -196,12 +224,65 @@ async function fetchApprovedMedia(url, options = {}) {
 
 async function getMedia(camera, options = {}) {
   if (!camera) throw Object.assign(new Error('Camera not found'), { failureClass:'not_found' });
-  const mediaUrl = camera.media?.url;
+  const mediaUrl = String(camera.media?.url || '');
   const kind = String(camera.media?.kind || '').toLowerCase();
   if (!mediaUrl || !['video','mjpeg'].includes(kind)) {
     throw Object.assign(new Error('Camera does not expose an approved streaming source'), { failureClass:'unavailable' });
   }
-  return fetchApprovedMedia(mediaUrl, options);
+
+  let origin;
+  try {
+    origin = new URL(mediaUrl);
+  } catch (_) {
+    throw Object.assign(new Error('Camera streaming URL is invalid'), { failureClass:'invalid_data' });
+  }
+
+  const envHosts = allowedHostsFromEnv();
+  const stateKey = String(camera.id || mediaUrl);
+  const cached = hlsProxyHosts.get(stateKey);
+  const knownHosts = new Set(
+    cached && cached.expiresAt > Date.now()
+      ? cached.hosts
+      : [...envHosts, origin.hostname.toLowerCase()]
+  );
+
+  let requestUrl = mediaUrl;
+  if (options.target) {
+    let target;
+    try { target = new URL(String(options.target)); } catch (_) {
+      throw Object.assign(new Error('Invalid HLS proxy target'), { failureClass:'invalid_data' });
+    }
+    const targetHost = target.hostname.toLowerCase();
+    if (!knownHosts.has(targetHost) && !envHosts.some(rule => targetHost === String(rule).toLowerCase().replace(/^\\*\\./,'' ) || targetHost.endsWith('.' + String(rule).toLowerCase().replace(/^\\*\\./,'')))) {
+      throw Object.assign(new Error('HLS target host was not advertised by the approved stream'), { failureClass:'invalid_data' });
+    }
+    requestUrl = target.toString();
+  }
+
+  const fetched = await fetchApprovedMedia(requestUrl, {
+    ...options,
+    allowedHosts:[...knownHosts]
+  });
+
+  if (!isHlsMedia(fetched.contentType, fetched.sourceUrl)) return fetched;
+
+  const playlist = await fetched.response.text();
+  if (Buffer.byteLength(playlist, 'utf8') > 2 * 1024 * 1024) {
+    throw Object.assign(new Error('HLS playlist exceeds size limit'), { failureClass:'invalid_data' });
+  }
+
+  const hosts = new Set(knownHosts);
+  const proxyUrlForTarget = (absoluteUrl) => '/api/v1/cctv/' +
+    encodeURIComponent(String(camera.id)) + '/media?target=' + encodeURIComponent(absoluteUrl);
+  const rewrittenPlaylist = rewriteHlsPlaylist(playlist, fetched.sourceUrl, proxyUrlForTarget, hosts);
+  hlsProxyHosts.set(stateKey, { hosts, expiresAt:Date.now() + HLS_PROXY_TTL_MS });
+
+  return {
+    ...fetched,
+    isHlsPlaylist:true,
+    playlist:rewrittenPlaylist,
+    contentType:'application/vnd.apple.mpegurl'
+  };
 }
 
-module.exports = { openEyeWhepOffer, openEyeWhepDelete, MAX_BYTES, syntheticFrame, fetchApproved, getFrame, fetchApprovedMedia, getMedia };
+module.exports = { openEyeWhepOffer, openEyeWhepDelete, MAX_BYTES, syntheticFrame, fetchApproved, getFrame, fetchApprovedMedia, getMedia, isHlsMedia };
