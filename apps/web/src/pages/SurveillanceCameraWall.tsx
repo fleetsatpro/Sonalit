@@ -133,7 +133,7 @@ export default function SurveillanceCameraWall() {
           </div>
           <div className="surveillance-camera-wall-health">
             <span className="surveillance-camera-wall-health-dot" />
-            <span>{isError ? 'DEGRADED' : isFetching ? 'SYNCING' : 'CONNECTED'}</span>
+            <span>{isError ? 'DEGRADED' : isFetching ? 'SYNCING' : cameras.length ? 'LIVE SOURCES' : 'NO LIVE FEEDS'}</span>
           </div>
           <button
             type="button"
