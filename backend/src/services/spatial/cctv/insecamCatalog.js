@@ -9,6 +9,7 @@ const INSECAM_REQUEST_TIMEOUT_MS = 10_000;
 
 const insecamCache = new Map();
 const insecamFrameSources = new Map();
+const insecamRecordCache = new Map();
 
 const providerHealth = {
   enabled: true,
@@ -21,14 +22,14 @@ const providerHealth = {
   error: null,
 };
 
-const SENSITIVE_RE = /\\b(?:bedroom|bathroom|bath|toilet|restroom|nursery|baby|child|children|kitchen|living\\s+room|home|house|apartment|flat|private|school|classroom|hospital|clinic|ward|changing\\s+room|locker|intimate|personal)\\b/i;
-const OUTDOOR_RE = /\\b(?:traffic|road|street|city|parking|beach|coast|port|harbor|harbour|airport|highway|motorway|bridge|railway|rail|train|station|square|plaza|downtown|landscape|nature|earth|mountain|ski|marina|weather|public|town|avenue|boulevard|sea|river|lake|waterfront)\\b/i;
-const IMAGE_RE = /(?:\\.(?:jpe?g|png|webp|avif|gif)(?:[?#].*)?$|(?:\\?|&)COUNTER(?:=|%3D)|(?:\\/)(?:snapshot|image|camera|webcapture|faststream|mjpg|mjpeg)(?:[/?]|$))/i;
+const SENSITIVE_RE = /\b(?:bedroom|bathroom|bath|toilet|restroom|nursery|baby|child|children|kitchen|living\s+room|home|house|apartment|flat|private|school|classroom|hospital|clinic|ward|changing\s+room|locker|intimate|personal)\b/i;
+const OUTDOOR_RE = /\b(?:traffic|road|street|city|parking|beach|coast|port|harbor|harbour|airport|highway|motorway|bridge|railway|rail|train|station|square|plaza|downtown|landscape|nature|earth|mountain|ski|marina|weather|public|town|avenue|boulevard|sea|river|lake|waterfront)\b/i;
+const IMAGE_RE = /(?:\.(?:jpe?g|png|webp|avif|gif)(?:[?#].*)?$|(?:\?|&)COUNTER(?:=|%3D)|\/(?:snapshot|image|camera|webcapture|faststream|mjpg|mjpeg)(?:[/?]|$))/i;
 
 function stripTags(value) {
   return String(value || '')
-    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')
-    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
@@ -36,14 +37,15 @@ function stripTags(value) {
     .replace(/&#39;/gi, "'")
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
-    .replace(/\\s+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
 function decodeHtml(value) {
-  return stripTags(String(value || ''))
+  return String(value || '')
+    .replace(/&(?:amp|#38);/gi, '&')
     .replace(/\\u0026/gi, '&')
-    .replace(/\\\\\//g, '/');
+    .replace(/\\\//g, '/');
 }
 
 function fetchText(url, referer) {
@@ -80,9 +82,9 @@ function safeExternalUrl(raw, baseUrl = INSECAM_BASE_URL) {
 function extractViewIds(html) {
   const ids = [];
   const seen = new Set();
-  const re = /(?:href|data-href)\\s*=\\s*["'](?:https?:\\/\\/(?:www\\.)?insecam\\.org)?\\/en\\/view\\/(\\d+)\\/?(?:["'#?])/gi;
+  const re = /(?:href|data-href)\s*=\s*["'](?:https?:\/\/(?:www\.)?insecam\.org)?\/en\/view\/(\d+)\/?(?:["'#?])/gi;
   let match;
-  while ((match = re.exec(String(html || ''))) {
+  while ((match = re.exec(String(html || '')))) {
     const id = String(match[1]);
     if (seen.has(id)) continue;
     seen.add(id);
@@ -94,10 +96,10 @@ function extractViewIds(html) {
 
 function extractAttributeUrls(html) {
   const urls = [];
-  const re = /(?:src|data-src|data-image|data-url|href)\\s*=\\s*["']([^"']+)["']/gi;
+  const re = /(?:src|data-src|data-image|data-url|href)\s*=\s*["']([^"']+)["']/gi;
   let match;
-  while ((match = re.exec(String(html || ''))) urls.push(decodeHtml(match[1]));
-  const absolute = String(html || '').match(/https?:\\/\\/[^"'\\s<>\\\\]+/gi) || [];
+  while ((match = re.exec(String(html || '')))) urls.push(decodeHtml(match[1]));
+  const absolute = String(html || '').match(/https?:\/\/[^"'\s<>\\]+/gi) || [];
   urls.push(...absolute.map(decodeHtml));
   return urls;
 }
@@ -106,12 +108,11 @@ function scoreMediaUrl(raw) {
   const url = safeExternalUrl(raw);
   if (!url) return null;
   const parsed = new URL(url);
-  const href = parsed.toString();
   const haystack = (parsed.hostname + parsed.pathname + parsed.search).toLowerCase();
   if (!IMAGE_RE.test(haystack)) return null;
-  if (/google|doubleclick|yadro|facebook|adsense|criteo|analytics|counter\\./i.test(parsed.hostname)) return null;
+  if (/google|doubleclick|yadro|facebook|adsense|criteo|analytics/i.test(parsed.hostname)) return null;
   let score = 0;
-  if (/\\.(?:jpe?g|png|webp|avif|gif)(?:[?#].*)?$/i.test(href)) score += 50;
+  if (/\.(?:jpe?g|png|webp|avif|gif)(?:[?#].*)?$/i.test(url)) score += 50;
   if (/(?:snapshot|image|camera|webcapture|faststream|mjpg|mjpeg)/i.test(haystack)) score += 30;
   if (/COUNTER/i.test(parsed.search)) score += 20;
   if (netIsLiteralPublicIp(parsed.hostname)) score += 10;
@@ -120,7 +121,7 @@ function scoreMediaUrl(raw) {
 
 function netIsLiteralPublicIp(host) {
   const octets = String(host || '').split('.');
-  if (octets.length !== 4 || !octets.every(part => /^\\d+$/.test(part))) return false;
+  if (octets.length !== 4 || !octets.every(part => /^\d+$/.test(part))) return false;
   const numbers = octets.map(Number);
   if (numbers.some(n => n < 0 || n > 255)) return false;
   const [a, b] = numbers;
@@ -143,8 +144,8 @@ function extractField(text, label) {
 }
 
 function extractCoordinates(text) {
-  const lat = Number((text.match(/Latitude:\\s*(-?\\d+(?:\\.\\d+)?)/i) || [])[1]);
-  const lon = Number((text.match(/Longitude:\\s*(-?\\d+(?:\\.\\d+)?)/i) || [])[1]);
+  const lat = Number((text.match(/Latitude:\s*(-?\d+(?:\.\d+)?)/i) || [])[1]);
+  const lon = Number((text.match(/Longitude:\s*(-?\d+(?:\.\d+)?)/i) || [])[1]);
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
   return { latitude: lat, longitude: lon };
 }
@@ -152,18 +153,19 @@ function extractCoordinates(text) {
 function isAllowedSubject(city, tags, title) {
   const combined = (city + ' ' + tags + ' ' + title).trim();
   if (SENSITIVE_RE.test(combined)) return false;
-  // Prefer public-interest camera classes. When Insecam exposes no tags,
-  // retain a city-labelled feed because the site itself classifies it as a
-  // live public camera; the sensitive deny-list remains mandatory.
   return !tags || OUTDOOR_RE.test(tags) || OUTDOOR_RE.test(title) || Boolean(city);
 }
 
 function extractTitle(text, city) {
-  const heading = text.match(/Live camera\\s+(?:in|at)\\s+(.{2,120}?)(?:\\s+Camera stream|\\s+Tags|\\s+Detailed description|$)/i);
-  return (heading?.[1] || city || 'Insecam public camera').trim().replace(/\\s+/g, ' ');
+  const heading = text.match(/Live camera\s+(?:in|at)\s+(.{2,120}?)(?:\s+Camera stream|\s+Tags|\s+Detailed description|$)/i);
+  return (heading?.[1] || city || 'Insecam public camera').trim().replace(/\s+/g, ' ');
 }
 
 async function loadInsecamDetail(id, expectedCountry) {
+  const cacheKey = String(id) + '|' + String(expectedCountry || '').toUpperCase();
+  const cached = insecamRecordCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.record;
+
   const pageUrl = INSECAM_BASE_URL + '/en/view/' + encodeURIComponent(id) + '/';
   const html = await fetchText(pageUrl, INSECAM_BASE_URL + '/en/');
   const text = stripTags(html);
@@ -176,19 +178,16 @@ async function loadInsecamDetail(id, expectedCountry) {
   if (!coords || !countryCode) return null;
   if (expectedCountry && countryCode !== String(expectedCountry).toUpperCase()) return null;
   if (!isAllowedSubject(city, tags, text.slice(0, 700))) return null;
+
   const frameUrl = extractFrameUrl(html);
   if (!frameUrl) return null;
-  const name = extractTitle(text, city);
-  insecamFrameSources.set('insecam:' + id, {
-    url: frameUrl,
-    expiresAt: Date.now() + INSECAM_CACHE_TTL_MS,
-  });
-  return {
+
+  const record = {
     id: 'insecam:' + id,
     entityType: 'camera',
     source: 'insecam-public',
     sourceReference: id,
-    name,
+    name: extractTitle(text, city),
     pose: { latitude: coords.latitude, longitude: coords.longitude, altitudeM: null, headingDeg: null, pitchDeg: null, rollDeg: null, confidence: 'estimated' },
     viewshed: { horizontalFovDeg: 90, verticalFovDeg: null, maxRangeM: 5000, minRangeM: 0 },
     media: {
@@ -209,11 +208,7 @@ async function loadInsecamDetail(id, expectedCountry) {
       providerFrameAvailable: true,
       providerRefreshIntervalMs: 60_000,
       refreshIntervalMs: 60_000,
-      redistribution: {
-        directory: 'Insecam',
-        sourceOnly: true,
-        no_rehosting_of_raw_source: true,
-      },
+      redistribution: { directory: 'Insecam', sourceOnly: true, no_rehosting_of_raw_source: true },
       attributionName: 'Insecam',
       attributionUrl: 'https://www.insecam.org/',
     },
@@ -247,6 +242,10 @@ async function loadInsecamDetail(id, expectedCountry) {
       providerRefreshIntervalMs: 60_000,
     },
   };
+
+  insecamFrameSources.set(record.id, { url: frameUrl, expiresAt: Date.now() + INSECAM_CACHE_TTL_MS });
+  insecamRecordCache.set(cacheKey, { record, expiresAt: Date.now() + INSECAM_CACHE_TTL_MS });
+  return record;
 }
 
 async function mapWithConcurrency(values, worker, limit) {
@@ -291,20 +290,18 @@ async function loadInsecamCatalog(options = {}) {
   try {
     const html = await loadIndexPage(country);
     const candidateIds = extractViewIds(html).slice(0, INSECAM_MAX_CANDIDATES);
-    const rows = await mapWithConcurrency(
-      candidateIds,
-      id => loadInsecamDetail(id, country),
-      INSECAM_DETAIL_CONCURRENCY,
-    );
+    const rows = await mapWithConcurrency(candidateIds, id => loadInsecamDetail(id, country), INSECAM_DETAIL_CONCURRENCY);
     rows.sort((a, b) => String(a.name).localeCompare(String(b.name)));
     const resolved = rows.slice(0, INSECAM_MAX_ROWS);
+
     providerHealth.status = resolved.length ? 'LIVE' : 'EMPTY';
-    providerHealth.lastAttemptAt = attempt;
     providerHealth.lastSuccessAt = new Date().toISOString();
+    providerHealth.lastAttemptAt = attempt;
     providerHealth.recordCount = resolved.length;
     providerHealth.liveSnapshotCount = resolved.length;
     providerHealth.rejectedCount = Math.max(0, candidateIds.length - resolved.length);
     providerHealth.error = null;
+
     insecamCache.set(cacheKey, { rows: resolved, expiresAt: Date.now() + INSECAM_CACHE_TTL_MS });
     return resolved;
   } catch (error) {
@@ -315,18 +312,23 @@ async function loadInsecamCatalog(options = {}) {
   }
 }
 
-async function loadInsecamCamera(id) {
+async function loadInsecamCamera(id, expectedCountry) {
   const wanted = String(id || '').trim();
   if (!wanted) return null;
-  const cached = insecamFrameSources.get('insecam:' + wanted);
-  if (cached && cached.expiresAt > Date.now()) return cached.url;
-  const row = await loadInsecamDetail(wanted, null);
-  return row ? insecamFrameSources.get('insecam:' + wanted)?.url || null : null;
+  const source = insecamFrameSources.get('insecam:' + wanted);
+  if (source && source.expiresAt > Date.now()) return source.url;
+  const record = await loadInsecamDetail(wanted, expectedCountry || null);
+  return record ? insecamFrameSources.get(record.id)?.url || null : null;
+}
+
+async function loadInsecamCameraRecord(id, expectedCountry) {
+  return loadInsecamDetail(String(id || '').trim(), expectedCountry || null);
 }
 
 function clearInsecamCache() {
   insecamCache.clear();
   insecamFrameSources.clear();
+  insecamRecordCache.clear();
 }
 
 function getInsecamHealth() {
@@ -336,6 +338,7 @@ function getInsecamHealth() {
 module.exports = {
   loadInsecamCatalog,
   loadInsecamCamera,
+  loadInsecamCameraRecord,
   clearInsecamCache,
   getInsecamHealth,
 };
