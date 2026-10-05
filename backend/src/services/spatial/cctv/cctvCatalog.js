@@ -690,7 +690,7 @@ function normalizeRecord(raw, index) {
       providerRefreshIntervalMs:Number.isFinite(Number(raw.media?.providerRefreshIntervalMs)) ? Number(raw.media.providerRefreshIntervalMs) : null,
       sourceMediaHost:raw.media?.sourceMediaHost ? String(raw.media.sourceMediaHost) : null,
       direct:Boolean(raw.media?.direct),
-      available:Boolean(mediaUrl) || ['synthetic','video-platform'].includes(String(raw.media?.kind || raw.mediaKind)),
+      available:Boolean(mediaUrl) || Boolean(raw.media?.available) || ['synthetic','video-platform'].includes(String(raw.media?.kind || raw.mediaKind)),
       publicSource:Boolean(raw.media?.publicSource ?? raw.publicSource ?? Boolean(mediaUrl)),
       refreshIntervalMs:Number.isFinite(Number(raw.media?.refreshIntervalMs)) ? Number(raw.media.refreshIntervalMs) : null,
       redistribution:raw.media?.redistribution ?? null,
