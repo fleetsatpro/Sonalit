@@ -148,7 +148,7 @@ export default function SurveillanceCameraWall() {
 
       <section className="surveillance-camera-wall-page-summary" aria-label="Camera wall status">
         <span><strong>{cameras.length}</strong> cameras in {selectedCountry.name}</span>
-        <span><strong>{cameras.filter(camera => camera.attributes?.media && typeof camera.attributes.media === 'object' && (camera.attributes.media as Record<string, unknown>).liveVideo === true).length}</strong> live-video capable</span>
+        <span><strong>{cameras.filter(camera => camera.media?.liveVideo === true).length}</strong> live-video capable</span>
         <span><strong>{publicTotal.toLocaleString()}</strong> public records</span>
         <span><ShieldCheck size={12} /> Source attribution enforced</span>
         <span>No person / face / plate tracking</span>
