@@ -183,8 +183,6 @@ function InlineCctvVideo({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
-  const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting')
-  const [statusMessage, setStatusMessage] = useState('NEGOTIATING LIVE VIDEO')
 
   useEffect(() => {
     const video = videoRef.current
@@ -290,6 +288,8 @@ function InlineWhepVideo({
   const streamRef = useRef<MediaStream | null>(null)
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
+  const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting')
+  const [statusMessage, setStatusMessage] = useState('NEGOTIATING LIVE VIDEO')
 
   useEffect(() => {
     const video = videoRef.current
