@@ -833,22 +833,24 @@ export default function CctvViewerPanel({
                           <span>{camMode === 'synthetic' ? 'The source did not authorize a renderable camera frame.' : 'The approved media gateway has no current frame.'}</span>
                         </div>
                       )}
-                      <button
-                        type="button"
-                        className="gev-cctv-wall-feed-hit"
-                        onClick={() => {
-                          onSelectCamera(cam.id)
-                          setZoom(1)
-                        }}
-                        onKeyDown={event => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault()
+                      {!((camStream || camSourcePlayback === 'video') && isActive) && (
+                        <button
+                          type="button"
+                          className="gev-cctv-wall-feed-hit"
+                          onClick={() => {
                             onSelectCamera(cam.id)
                             setZoom(1)
-                          }
-                        }}
-                        aria-label={`Select ${cameraName(cam)}`}
-                      />
+                          }}
+                          onKeyDown={event => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              onSelectCamera(cam.id)
+                              setZoom(1)
+                            }
+                          }}
+                          aria-label={`Select ${cameraName(cam)}`}
+                        />
+                      )}
                       <div className="gev-cctv-wall-feed-top">
                         <span className="gev-cctv-wall-feed-index">{String(wallPage * wallPageSize + wallCameras.indexOf(camera) + 1).padStart(2, '0')}</span>
                         <span className="gev-cctv-wall-feed-state-pill" data-state={camHealth}><i />{camHealth}</span>
