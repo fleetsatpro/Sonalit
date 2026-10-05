@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api.js'
 import { enhanceImageBitmap, preferredImageryAiScale, isImageryAiEnabled, IMAGERY_AI_CCTV_MAX_INPUT_EDGE } from '../../lib/imageryAi.js'
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js'
+import type Hls from 'hls.js'
 
 const FRAME_REFRESH_MS = 8_000
 
@@ -127,6 +128,118 @@ function sourceMode(camera: SpatialWorldEntity) {
 function streamUrlFor(camera: SpatialWorldEntity) {
   const base = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1').replace(/\/+$/, '')
   return base + '/cctv/' + encodeURIComponent(camera.id) + '/media'
+}
+
+function isHlsUrl(url: string, mediaType: string) {
+  return mediaType.includes('mpegurl') || /\.(?:m3u8)(?:[?#].*)?$/i.test(url)
+}
+
+function InlineCctvVideo({
+  src,
+  mediaType = 'video',
+  poster,
+  onError,
+}: {
+  src: string
+  mediaType?: string
+  poster?: string
+  onError?: () => void
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !src) return
+
+    let disposed = false
+    let hls: Hls | null = null
+    let fatalRecovery = 0
+    const hlsSource = isHlsUrl(src, mediaType)
+
+    const fail = () => {
+      if (!disposed) onErrorRef.current?.()
+    }
+
+    const attach = async () => {
+      if (hlsSource) {
+        try {
+          const { default: HlsRuntime } = await import('hls.js')
+          if (disposed) return
+
+          if (HlsRuntime.isSupported()) {
+            hls = new HlsRuntime({
+              enableWorker: true,
+              lowLatencyMode: true,
+              backBufferLength: 30,
+              maxLiveSyncPlaybackRate: 1.5,
+              capLevelToPlayerSize: true,
+              startLevel: -1,
+            })
+            hls.on(HlsRuntime.Events.ERROR, (_event, data) => {
+              if (!data?.fatal) return
+              if (data.type === HlsRuntime.ErrorTypes.NETWORK_ERROR && fatalRecovery < 1) {
+                fatalRecovery += 1
+                hls?.startLoad()
+                return
+              }
+              if (data.type === HlsRuntime.ErrorTypes.MEDIA_ERROR && fatalRecovery < 2) {
+                fatalRecovery += 1
+                hls?.recoverMediaError()
+                return
+              }
+              hls?.destroy()
+              hls = null
+              fail()
+            })
+            hls.attachMedia(video)
+            hls.loadSource(src)
+            return
+          }
+        } catch {
+          // Native HLS fallback below.
+        }
+
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = src
+          return
+        }
+
+        fail()
+        return
+      }
+
+      video.src = src
+    }
+
+    video.addEventListener('error', fail)
+    void attach()
+
+    return () => {
+      disposed = true
+      video.removeEventListener('error', fail)
+      if (hls) {
+        hls.destroy()
+        hls = null
+      }
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+    }
+  }, [mediaType, src])
+
+  return (
+    <video
+      ref={videoRef}
+      poster={poster}
+      autoPlay
+      muted
+      playsInline
+      controls
+      preload="metadata"
+    />
+  )
 }
 
 export default function CctvViewerPanel({
@@ -514,14 +627,10 @@ export default function CctvViewerPanel({
     if (!sourceFailed && camSourcePlayback === 'video') {
       return (
         <div className={compact ? 'gev-cctv-wall-thumb gev-cctv-wall-thumb--source-video' : 'gev-cctv-tile-media gev-cctv-tile-media--source-video'}>
-          <video
+          <InlineCctvVideo
             src={camSourceMedia}
+            mediaType={sourceMediaType(camera)}
             poster={typeof camMedia.previewUrl === 'string' ? camMedia.previewUrl : undefined}
-            autoPlay
-            muted
-            playsInline
-            controls
-            preload="metadata"
             onError={() => markPreviewFailure(camera.id)}
           />
           <div className="gev-cctv-source-live-badge"><i /> LIVE VIDEO · SOURCE</div>
@@ -596,7 +705,7 @@ export default function CctvViewerPanel({
                   kind === 'mjpeg' ? (
                     <img src={streamUrl} alt={`${cameraName(activeCamera)} live MJPEG stream`} />
                   ) : (
-                    <video src={streamUrl} autoPlay muted playsInline controls preload="metadata" onError={() => setFrameState('error')} />
+                    <InlineCctvVideo src={streamUrl} mediaType={mediaKind(activeCamera)} onError={() => setFrameState('error')} />
                   )
                 ) : frameUrl ? (
                   <>
@@ -775,7 +884,7 @@ export default function CctvViewerPanel({
                       ) : camStream && isActive && streamUrl ? (
                         camKind === 'mjpeg'
                           ? <img src={streamUrl} alt={`${cameraName(cam)} live MJPEG stream`} onError={() => setFrameState('error')} />
-                          : <video src={streamUrl} autoPlay muted playsInline controls preload="metadata" onError={() => setFrameState('error')} />
+                          : <InlineCctvVideo src={streamUrl} mediaType={camKind} onError={() => setFrameState('error')} />
                       ) : camStream ? (
                         <div className="gev-cctv-wall-feed-state">
                           <Camera size={18} />
@@ -794,13 +903,9 @@ export default function CctvViewerPanel({
                           </div>
                         ) : camSourcePlayback === 'video' && !previewFailures.has(cam.id) && isActive ? (
                           <div className="gev-cctv-wall-feed-media-source">
-                            <video
+                            <InlineCctvVideo
                               src={camSourceMedia}
-                              autoPlay
-                              muted
-                              playsInline
-                              controls
-                              preload="metadata"
+                              mediaType={sourceMediaType(cam)}
                               poster={typeof camMedia.previewUrl === 'string' ? camMedia.previewUrl : undefined}
                               onError={() => markPreviewFailure(cam.id)}
                             />
