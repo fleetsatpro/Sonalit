@@ -456,7 +456,7 @@ function normalizeRecord(raw, index) {
       minRangeM:Number(raw.viewshed?.minRangeM || 0)
     },
     media:{
-      kind: ['image','video','mjpeg','synthetic'].includes(String(raw.media?.kind || raw.mediaKind)) ? String(raw.media?.kind || raw.mediaKind) : (mediaUrl ? 'video' : 'synthetic'),
+      kind: ['image','video','mjpeg','video-platform','synthetic'].includes(String(raw.media?.kind || raw.mediaKind)) ? String(raw.media?.kind || raw.mediaKind) : (mediaUrl ? 'video' : 'synthetic'),
       url:mediaUrl ? String(mediaUrl) : null,
       frameUrl:raw.media?.frameUrl ? String(raw.media.frameUrl) : null,
       previewUrl:raw.media?.previewUrl ? String(raw.media.previewUrl) : null,
@@ -469,7 +469,7 @@ function normalizeRecord(raw, index) {
       platformEmbedUrl:raw.media?.platformEmbedUrl ? String(raw.media.platformEmbedUrl) : null,
       sourceMediaHost:raw.media?.sourceMediaHost ? String(raw.media.sourceMediaHost) : null,
       direct:Boolean(raw.media?.direct),
-      available:Boolean(mediaUrl) || String(raw.media?.kind) === 'synthetic',
+      available:Boolean(mediaUrl) || ['synthetic','video-platform'].includes(String(raw.media?.kind || raw.mediaKind)),
       publicSource:Boolean(raw.media?.publicSource ?? raw.publicSource ?? Boolean(mediaUrl)),
       refreshIntervalMs:Number.isFinite(Number(raw.media?.refreshIntervalMs)) ? Number(raw.media.refreshIntervalMs) : null,
       redistribution:raw.media?.redistribution ?? null,
