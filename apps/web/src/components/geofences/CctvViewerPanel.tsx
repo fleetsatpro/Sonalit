@@ -196,11 +196,68 @@ function InlineCctvVideo({
     let hls: Hls | null = null
     let fatalRecovery = 0
     let authRefreshAttempted = false
+    let playbackRecovery = 0
+    let stallTimer: number | null = null
+    let lastProgressAt = Date.now()
     const hlsSource = isHlsUrl(src, mediaType)
 
     const fail = () => {
       if (!disposed) onErrorRef.current?.()
     }
+
+    const clearStallTimer = () => {
+      if (stallTimer != null) {
+        window.clearTimeout(stallTimer)
+        stallTimer = null
+      }
+    }
+
+    const recoverStalledPlayback = () => {
+      if (disposed || video.paused || video.ended) return
+      if (playbackRecovery >= 3) {
+        fail()
+        return
+      }
+      playbackRecovery += 1
+      lastProgressAt = Date.now()
+      clearStallTimer()
+      if (hls) {
+        try {
+          hls.startLoad(-1)
+        } catch {
+          // Full reattach below is the fallback.
+        }
+        void video.play().catch(() => {})
+        return
+      }
+      const currentTime = video.currentTime
+      video.load()
+      if (Number.isFinite(currentTime) && currentTime > 0) {
+        try { video.currentTime = currentTime } catch { /* best effort */ }
+      }
+      void video.play().catch(() => {})
+    }
+
+    const scheduleStallRecovery = () => {
+      clearStallTimer()
+      stallTimer = window.setTimeout(() => {
+        stallTimer = null
+        const noProgressFor = Date.now() - lastProgressAt
+        if (noProgressFor >= 6000 && (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA || video.readyState < 3)) {
+          recoverStalledPlayback()
+        }
+      }, 6500)
+    }
+
+    const onProgress = () => {
+      lastProgressAt = Date.now()
+      playbackRecovery = 0
+      clearStallTimer()
+    }
+
+    const onWaiting = () => scheduleStallRecovery()
+    const onStalled = () => scheduleStallRecovery()
+    const onEnded = () => recoverStalledPlayback()
 
     const attach = async () => {
       if (hlsSource) {
@@ -271,11 +328,22 @@ function InlineCctvVideo({
     }
 
     video.addEventListener('error', fail)
+    video.addEventListener('playing', onProgress)
+    video.addEventListener('timeupdate', onProgress)
+    video.addEventListener('waiting', onWaiting)
+    video.addEventListener('stalled', onStalled)
+    video.addEventListener('ended', onEnded)
     void attach()
 
     return () => {
       disposed = true
       video.removeEventListener('error', fail)
+      video.removeEventListener('playing', onProgress)
+      video.removeEventListener('timeupdate', onProgress)
+      video.removeEventListener('waiting', onWaiting)
+      video.removeEventListener('stalled', onStalled)
+      video.removeEventListener('ended', onEnded)
+      clearStallTimer()
       if (hls) {
         hls.destroy()
         hls = null
