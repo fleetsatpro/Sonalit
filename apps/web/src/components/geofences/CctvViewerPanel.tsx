@@ -286,6 +286,8 @@ function InlineWhepVideo({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
 
   useEffect(() => {
     const video = videoRef.current
@@ -303,7 +305,7 @@ function InlineWhepVideo({
     streamRef.current = localStream
 
     const fail = (message: string) => {
-      if (!disposed) onError?.(message)
+      if (!disposed) onErrorRef.current?.(message)
     }
 
     peer.addTransceiver('video', { direction: 'recvonly' })
@@ -366,7 +368,7 @@ function InlineWhepVideo({
       streamRef.current?.getTracks().forEach(track => track.stop())
       streamRef.current = null
     }
-  }, [camera, onError])
+  }, [camera])
 
   return (
     <video
@@ -846,7 +848,7 @@ export default function CctvViewerPanel({
                 {liveVideo ? (
                   <InlineWhepVideo
                     camera={activeCamera}
-                    onError={message => setFrameState('error')}
+                    onError={() => setFrameState('error')}
                   />
                 ) : configuredStream && streamUrl ? (
                   kind === 'mjpeg' ? (
