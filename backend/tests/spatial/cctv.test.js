@@ -52,6 +52,44 @@ describe('spatial CCTV capability', () => {
     );
   });
 
+  test('intersects an explicit viewport with the selected country rather than escaping scope', async () => {
+    clearOpenEyeCache();
+    process.env.CCTV_ENABLE_OPENEYE = '1';
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok:true,
+      json:async()=>({ total:0, free:0, items:[] })
+    });
+
+    await loadOpenEyeCatalog({
+      countryCode:'KE',
+      bbox:[35.0, -2.0, 37.0, 0.0],
+      maxRecords:10,
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('bbox=35%2C-2%2C37%2C0'),
+      expect.objectContaining({ headers:{Accept:'application/json'} }),
+    );
+  });
+
+  test('does not broaden an out-of-country viewport to the full country', async () => {
+    clearOpenEyeCache();
+    process.env.CCTV_ENABLE_OPENEYE = '1';
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok:true,
+      json:async()=>({ total:0, free:0, items:[] })
+    });
+
+    const rows = await loadOpenEyeCatalog({
+      countryCode:'KE',
+      bbox:[-120.0, 30.0, -110.0, 40.0],
+      maxRecords:10,
+    });
+
+    expect(rows).toHaveLength(0);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   test('keeps public camera observations even when media is source-only or non-embeddable', async () => {
     clearOpenEyeCache();
     process.env.CCTV_ENABLE_OPENEYE = '1';
