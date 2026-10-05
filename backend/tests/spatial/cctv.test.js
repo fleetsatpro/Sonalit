@@ -1,6 +1,6 @@
 'use strict';
 
-const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, loadOpenCctvCatalog, loadCaltransCatalog, getCameraCatalogHealth, getCameraById, clearOpenEyeCache } = require('../../src/services/spatial/cctv/cctvCatalog');
+const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, loadOpenCctvCatalog, loadCaltransCatalog, loadInsecamCatalog, getCameraCatalogHealth, getCameraById, clearOpenEyeCache } = require('../../src/services/spatial/cctv/cctvCatalog');
 const { pointInViewshed, rankNearest } = require('../../src/services/spatial/cctv/spatialCameraGeometry');
 const { hasInlineVideo, hasLiveVisual } = require('../../src/services/spatial/cctvGateway');
 const { assertSafeUrl, hostMatches } = require('../../src/services/spatial/cctv/cctvAllowlist');
@@ -9,6 +9,7 @@ const { getFrame, getMedia, syntheticFrame } = require('../../src/services/spati
 const originalCctvEnv = process.env.CCTV_ENABLE_OPENEYE;
 const originalOpenCctvEnv = process.env.CCTV_ENABLE_OPENCCTV;
 const originalCaltransEnv = process.env.CCTV_ENABLE_CALTRANS;
+const originalInsecamEnv = process.env.CCTV_ENABLE_INSECAM;
 const originalSamplesEnv = process.env.CCTV_INCLUDE_SAMPLES;
 
 afterEach(() => {
@@ -18,6 +19,8 @@ afterEach(() => {
   else process.env.CCTV_ENABLE_OPENCCTV = originalOpenCctvEnv;
   if (originalCaltransEnv == null) delete process.env.CCTV_ENABLE_CALTRANS;
   else process.env.CCTV_ENABLE_CALTRANS = originalCaltransEnv;
+  if (originalInsecamEnv == null) delete process.env.CCTV_ENABLE_INSECAM;
+  else process.env.CCTV_ENABLE_INSECAM = originalInsecamEnv;
   if (originalSamplesEnv == null) delete process.env.CCTV_INCLUDE_SAMPLES;
   else process.env.CCTV_INCLUDE_SAMPLES = originalSamplesEnv;
   clearOpenEyeCache();
@@ -41,6 +44,52 @@ describe('spatial CCTV capability', () => {
     const developmentRows = await getCameraCatalog();
     expect(developmentRows.filter(c => c.source === 'sonalit-cctv-sample')).toHaveLength(5);
     expect(developmentRows.every(c => c.source === 'sonalit-cctv-sample' ? c.media?.kind === 'synthetic' : true)).toBe(true);
+  });
+
+  test('loads Insecam public snapshot cameras from its directory without probing arbitrary endpoints', async () => {
+    process.env.CCTV_ENABLE_INSECAM = '1';
+    const listHtml = '<a href="/en/view/123456/">Live camera in Nairobi</a><a href="/en/view/123457/">Live camera in Mombasa</a>';
+    const detailHtml = (id, city, lat, lon, tags='traffic road') =>
+      '<html><body><h1>Live camera in ' + city + '</h1>' +
+      '<div>Camera stream</div><div>Tags: ' + tags + '</div>' +
+      '<div>Country code: KE</div><div>Region: Nairobi County</div><div>City: ' + city + '</div>' +
+      '<div>Latitude: ' + lat + '</div><div>Longitude: ' + lon + '</div>' +
+      '<img src="http://203.0.113.20:8080/snapshot.jpg?COUNTER=1"></body></html>';
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.includes('/en/bycountry/ke/')) return { ok:true, text:async()=>listHtml };
+      if (href.includes('/en/view/123456/')) return { ok:true, text:async()=>detailHtml('123456','Nairobi',-1.2864,36.8172) };
+      if (href.includes('/en/view/123457/')) return { ok:true, text:async()=>detailHtml('123457','Mombasa',-4.0435,39.6682) };
+      throw new Error('unexpected Insecam URL: '+href);
+    });
+    const rows = await loadInsecamCatalog({ countryCode:'KE', maxRecords:20 });
+    expect(rows).toHaveLength(2);
+    expect(rows.every(row => row.id.startsWith('insecam:'))).toBe(true);
+    expect(rows.every(row => row.media.kind === 'image')).toBe(true);
+    expect(rows.every(row => row.media.feedKind === 'live_snapshot')).toBe(true);
+    expect(rows.every(row => row.media.provider === 'insecam')).toBe(true);
+    expect(rows.every(row => row.media.providerFrameAvailable === true)).toBe(true);
+    expect(rows.every(row => row.pose.confidence === 'estimated')).toBe(true);
+    expect(rows[0].media.frameUrl).toBe(null);
+    expect(rows[0].provenance.sourceUrl).toContain('/en/view/');
+  });
+
+  test('rejects sensitive Insecam locations before a frame is exposed', async () => {
+    process.env.CCTV_ENABLE_INSECAM = '1';
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.includes('/en/bycountry/ke/')) return {
+        ok:true,
+        text:async()=>'<a href="/en/view/999999/">Live camera in Nairobi</a>'
+      };
+      if (href.includes('/en/view/999999/')) return {
+        ok:true,
+        text:async()=>'<div>Live camera in bedroom</div><div>Country code: KE</div><div>City: Nairobi</div><div>Latitude: -1.28</div><div>Longitude: 36.82</div><div>Tags: bedroom</div><img src="http://203.0.113.21:8080/snapshot.jpg">'
+      };
+      throw new Error('unexpected Insecam URL');
+    });
+    const rows = await loadInsecamCatalog({ countryCode:'KE', maxRecords:20 });
+    expect(rows).toHaveLength(0);
   });
 
   test('converts a country scope into a provider bounding-box query', async () => {
