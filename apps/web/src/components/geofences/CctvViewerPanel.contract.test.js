@@ -59,6 +59,6 @@ describe('GEV CCTV wall contract', () => {
     expect(source).toContain('platformEmbedUrl')
     expect(source).toContain('camPlatformVideo')
     expect(source).toContain("mode === 'source'")
-    expect(source).toContain('mode === 'source'')
+    expect(source).toContain("mode === 'source'")
   })
 })
