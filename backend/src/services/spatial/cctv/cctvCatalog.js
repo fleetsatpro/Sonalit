@@ -2,6 +2,7 @@
 
 const fs = require('node:fs/promises');
 const COUNTRY_BOXES = require('./cctvCountries.json');
+const { loadInsecamCatalog, loadInsecamCamera, clearInsecamCache, getInsecamHealth } = require('./insecamCatalog');
 
 const SAMPLE_CAMERAS = [
   { id:'sample-ke-nbo-01', name:'Kenya corridor sample 01', corridor:'NBO-MSA', latitude:-1.286389, longitude:36.817223, headingDeg:110, horizontalFovDeg:80, maxRangeM:3000 },
@@ -44,7 +45,8 @@ const CALTRANS_BBOX = [-124.48, 32.45, -114.13, 42.10];
 const providerHealth = {
   openeye: { enabled: true, status:'UNKNOWN', lastSuccessAt:null, lastAttemptAt:null, recordCount:0, total:null, free:null, error:null },
   opencctv: { enabled:true, status:'UNKNOWN', lastSuccessAt:null, lastAttemptAt:null, recordCount:0, liveVideoCount:0, error:null },
-  caltrans: { enabled:true, status:'UNKNOWN', lastSuccessAt:null, lastAttemptAt:null, recordCount:0, liveVideoCount:0, error:null },
+  caltrans: { enabled:true, status:'UNKNOWN', lastAttemptAt:null, recordCount:0, liveVideoCount:0, error:null },
+  insecam: { enabled:true, status:'UNKNOWN', lastAttemptAt:null, lastSuccessAt:null, recordCount:0, liveSnapshotCount:0, rejectedCount:0, error:null },
   file: { enabled:false, status:'UNKNOWN', lastSuccessAt:null, recordCount:0, error:null },
   tfl: { enabled:false, status:'UNKNOWN', lastSuccessAt:null, recordCount:0, error:null }
 };
@@ -86,6 +88,7 @@ function clearOpenEyeCache() {
   caltransCache.clear();
   openCctvDetailCache.clear();
   caltransDetailCache.clear();
+  clearInsecamCache();
 }
 
 
@@ -950,6 +953,15 @@ async function getCameraById(id) {
     return rows.find(row => String(row.id) === wanted) || null;
   }
 
+  if (wanted.startsWith('insecam:')) {
+    const sourceUrl = await loadInsecamCamera(wanted.slice('insecam:'.length));
+    if (!sourceUrl) return null;
+    const rows = await loadInsecamCatalog({ maxRecords: 1 });
+    const found = rows.find(row => String(row.id) === wanted);
+    if (found) return found;
+    return null;
+  }
+
   const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
   const [openEyeRows, fileRows, tflRows] = await Promise.all([
     wanted.startsWith('openeye:') ? loadOpenEyeCamera(wanted.slice('openeye:'.length)) : Promise.resolve(null),
@@ -962,15 +974,16 @@ async function getCameraById(id) {
 }
 
 async function getCameraCatalog(options = {}) {
-  const [openEyeRows, openCctvRows, caltransRows, fileRows, tflRows] = await Promise.all([
+  const [openEyeRows, openCctvRows, caltransRows, insecamRows, fileRows, tflRows] = await Promise.all([
     loadOpenEyeCatalog(options),
     loadOpenCctvCatalog(options),
     loadCaltransCatalog(options),
+    loadInsecamCatalog(options),
     loadFileCatalog(),
     loadTflCatalog().catch(() => [])
   ]);
   const includeSamples = String(process.env.CCTV_INCLUDE_SAMPLES || '') === '1';
-  const all = openEyeRows.concat(openCctvRows, caltransRows, fileRows, tflRows, includeSamples ? SAMPLE_CAMERAS : []);
+  const all = openEyeRows.concat(openCctvRows, caltransRows, insecamRows, fileRows, tflRows, includeSamples ? SAMPLE_CAMERAS : []);
   const unique = new Map();
   for (const row of all) unique.set(String(row.id), row);
   return Array.from(unique.values());
@@ -981,9 +994,10 @@ function getCameraCatalogHealth() {
     openeye:{...providerHealth.openeye},
     opencctv:{...providerHealth.opencctv},
     caltrans:{...providerHealth.caltrans},
+    insecam:getInsecamHealth(),
     file:{...providerHealth.file},
     tfl:{...providerHealth.tfl},
   };
 }
 
-module.exports = { SAMPLE_CAMERAS, normalizeRecord, classifyViewMediaType, openEyeMedia, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, loadOpenCctvCatalog, loadCaltransCatalog, getCameraById, getCameraCatalog, getCameraCatalogHealth, getCctvCountries, getCountryBbox, clearOpenEyeCache };
+module.exports = { SAMPLE_CAMERAS, normalizeRecord, classifyViewMediaType, openEyeMedia, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, loadOpenCctvCatalog, loadCaltransCatalog, loadInsecamCatalog, getCameraById, getCameraCatalog, getCameraCatalogHealth, getCctvCountries, getCountryBbox, clearOpenEyeCache };
