@@ -104,6 +104,17 @@ function bboxFromCenter(center, radiusM) {
   ];
 }
 
+function intersectBboxes(a, b) {
+  const left = normalizeBbox(a);
+  const right = normalizeBbox(b);
+  if (!left || !right) return null;
+  const west = Math.max(left[0], right[0]);
+  const south = Math.max(left[1], right[1]);
+  const east = Math.min(left[2], right[2]);
+  const north = Math.min(left[3], right[3]);
+  return west < east && south < north ? [west, south, east, north] : null;
+}
+
 function normalizeBbox(value) {
   if (!Array.isArray(value) || value.length !== 4) return null;
   const numbers = value.map(Number);
@@ -195,7 +206,11 @@ function openEyeMedia(row) {
 }
 
 async function loadOpenEyeMapFallback(options = {}) {
-  const bbox = normalizeBbox(options.bbox) || getCountryBbox(options.countryCode) || bboxFromCenter(options.center, options.radiusM);
+  const requestedBbox = normalizeBbox(options.bbox);
+  const countryBbox = getCountryBbox(options.countryCode);
+  const bbox = countryBbox
+    ? (requestedBbox ? intersectBboxes(requestedBbox, countryBbox) : countryBbox)
+    : (requestedBbox || bboxFromCenter(options.center, options.radiusM));
   if (!bbox) return [];
   const limit = Math.max(1, Math.min(OPENEYE_MAX_LIMIT, Number(options.maxRecords) || 100));
   const params = new URLSearchParams({ bbox:bbox.join(','), limit:String(limit), zoom:'12' });
@@ -236,7 +251,12 @@ async function loadOpenEyeCatalog(options = {}) {
     return [];
   }
 
-  const bbox = normalizeBbox(options.bbox) || bboxFromCenter(options.center, options.radiusM);
+  const requestedBbox = normalizeBbox(options.bbox);
+  const countryBbox = getCountryBbox(options.countryCode);
+  const bbox = countryBbox
+    ? (requestedBbox ? intersectBboxes(requestedBbox, countryBbox) : countryBbox)
+    : (requestedBbox || bboxFromCenter(options.center, options.radiusM));
+  if (countryBbox && requestedBbox && !bbox) return [];
   const limit = Math.max(1, Math.min(OPENEYE_MAX_LIMIT, Number(options.maxRecords) || 100));
   const key = JSON.stringify({ bbox, countryCode:String(options.countryCode || '').toUpperCase() || null, center:options.center || null, radiusM:Number(options.radiusM) || null, limit });
   const cached = openEyeCache.get(key);

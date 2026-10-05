@@ -6,7 +6,7 @@ const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { getCameras, getNearestCameras } = require('../services/spatial/cctvGateway');
-const { getCameraById, getCctvCountries } = require('../services/spatial/cctv/cctvCatalog');
+const { getCameraById, getCctvCountries, getCountryBbox } = require('../services/spatial/cctv/cctvCatalog');
 const { getFrame, getMedia, openEyeWhepOffer, openEyeWhepDelete } = require('../services/spatial/cctv/cctvMediaProxy');
 const { Readable } = require('node:stream');
 
@@ -79,12 +79,27 @@ router.delete('/:id/live', asyncHandler(async (req,res) => {
 }));
 
 router.get('/cameras', asyncHandler(async (req,res) => {
+  const requestedCountry = String(req.query.country || '').trim().toUpperCase() || null;
   const bbox = String(req.query.bbox || '').split(',').map(Number);
   const safeBbox = bbox.length === 4 && bbox.every(Number.isFinite) ? bbox : null;
+  const countryBbox = requestedCountry ? getCountryBbox(requestedCountry) : null;
+  if (requestedCountry && !countryBbox) return res.status(400).json({ error:'Unsupported CCTV country code' });
+  const scopedBbox = requestedCountry && safeBbox
+    ? (() => {
+        const west = Math.max(safeBbox[0], countryBbox[0]);
+        const south = Math.max(safeBbox[1], countryBbox[1]);
+        const east = Math.min(safeBbox[2], countryBbox[2]);
+        const north = Math.min(safeBbox[3], countryBbox[3]);
+        return west < east && south < north ? [west, south, east, north] : null;
+      })()
+    : (safeBbox || countryBbox);
+  if (requestedCountry && safeBbox && !scopedBbox) {
+    return res.status(400).json({ error:'Requested CCTV bbox does not intersect the selected country' });
+  }
   const center = parseTarget(req);
   const result = await getCameras({
     orgId:req.user.org_id,
-    bbox:safeBbox,
+    bbox:scopedBbox,
     center,
     radiusM:numberOrNull(req.query.radiusM) || 25000,
     countryCode:String(req.query.country || '').trim().toUpperCase() || null,
