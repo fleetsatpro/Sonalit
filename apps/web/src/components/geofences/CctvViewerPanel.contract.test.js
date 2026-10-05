@@ -19,6 +19,7 @@ describe('GEV CCTV wall contract', () => {
     expect(source).toContain('onPointerUp')
     expect(source).toContain('ZoomIn')
     expect(source).toContain('providerSnapshotCapability')
+    expect(source).toContain("['insecam', 'opencctv'].includes(provider)")
     expect(source).toContain('providerSnapshotEndpoint')
     expect(source).toContain('InlineCctvSnapshot')
     expect(source).toContain('wallVisualTick')
