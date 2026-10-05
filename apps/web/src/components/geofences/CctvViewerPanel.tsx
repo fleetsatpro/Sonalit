@@ -183,6 +183,8 @@ function InlineCctvVideo({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
+  const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting')
+  const [statusMessage, setStatusMessage] = useState('NEGOTIATING LIVE VIDEO')
 
   useEffect(() => {
     const video = videoRef.current
@@ -292,6 +294,8 @@ function InlineWhepVideo({
   useEffect(() => {
     const video = videoRef.current
     if (!video || !liveVideoCapability(camera)) return
+    setStatus('connecting')
+    setStatusMessage('NEGOTIATING LIVE VIDEO')
 
     const peer = new RTCPeerConnection({
       bundlePolicy: 'max-bundle',
@@ -306,7 +310,11 @@ function InlineWhepVideo({
     streamRef.current = localStream
 
     const fail = (message: string) => {
-      if (!disposed) onErrorRef.current?.(message)
+      if (!disposed) {
+        setStatus('error')
+        setStatusMessage(message)
+        onErrorRef.current?.(message)
+      }
     }
 
     peer.addTransceiver('video', { direction: 'recvonly' })
@@ -319,6 +327,8 @@ function InlineWhepVideo({
         localStream.addTrack(event.track)
         video.srcObject = localStream
       }
+      setStatus('live')
+      setStatusMessage('LIVE')
       void video.play().catch(() => {})
     })
 
@@ -381,15 +391,26 @@ function InlineWhepVideo({
   }, [camera])
 
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      muted
-      playsInline
-      controls
-      preload="none"
-      aria-label={`${cameraName(camera)} live video`}
-    />
+    <div className="gev-cctv-whep-player" data-status={status}>
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        controls
+        preload="none"
+        poster={typeof cameraMedia(camera).previewUrl === 'string' ? cameraMedia(camera).previewUrl : undefined}
+        aria-label={`${cameraName(camera)} live video`}
+      />
+      {status !== 'live' && (
+        <div className="gev-cctv-whep-state">
+          <span className={status === 'error' ? 'gev-cctv-whep-state-icon gev-cctv-whep-state-icon--error' : 'gev-cctv-whep-state-icon'}><i /></span>
+          <strong>{status === 'connecting' ? 'CONNECTING LIVE VIDEO' : 'LIVE VIDEO UNAVAILABLE'}</strong>
+          <span>{statusMessage}</span>
+        </div>
+      )}
+      {status === 'live' && <div className="gev-cctv-whep-live-badge"><i /> LIVE · WHEP</div>}
+    </div>
   )
 }
 
