@@ -54,3 +54,12 @@ Not copied: GEV visual identity, media, bundled datasets, Pinokio tooling.
 - MIT license.
 - Production dependency (`satellite.js` 6.0.2) used for TLE-based SGP4/SDP4 propagation and coordinate conversion.
 - Sonalit records propagated positions as modelled orbital positions, not live satellite telemetry.
+
+
+## Insecam public camera directory
+
+- https://www.insecam.org/
+- Used only as a discovery/index source for publicly listed camera observations.
+- Sonalit does not probe ports, bypass authentication, or expose arbitrary camera control.
+- The adapter only accepts a current external image URL actually exposed by the Insecam camera page, applies public-address/redirect/size guards, and keeps the raw upstream URL out of the camera observation returned to clients.
+- Insecam coordinates are treated as approximate, and wall snapshots are labelled as snapshots rather than continuous video.
