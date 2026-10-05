@@ -128,8 +128,9 @@ function openEyeMedia(row) {
     : directoryPageUrl;
   // Source-only media remains a direct browser handoff: Sonalit does not proxy
   // or rehost these bytes. The source URL is kept separate from the publisher page.
+  const sourceMediaUrlCandidate = safeHttpsUrl(view.url);
   const sourceMediaUrl = !previewAllowed && isRenderableMediaType(viewMediaType)
-    ? viewUrl
+    ? sourceMediaUrlCandidate
     : null;
   const sourceMediaType = sourceMediaUrl ? viewMediaType : null;
   const sourceMediaPlayable = Boolean(
