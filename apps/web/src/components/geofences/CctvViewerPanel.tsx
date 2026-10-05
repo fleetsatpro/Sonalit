@@ -67,7 +67,7 @@ function providerSnapshotCapability(camera: SpatialWorldEntity) {
 }
 
 function providerSnapshotUrl(camera: SpatialWorldEntity) {
-  const base = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1').replace(//+$/, '')
+  const base = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1').replace(/\/+$/, '')
   return providerSnapshotCapability(camera)
     ? base + '/cctv/' + encodeURIComponent(camera.id) + '/frame'
     : ''
