@@ -78,6 +78,10 @@ function sourceMediaType(camera: SpatialWorldEntity) {
   return String(media.sourceMediaType ?? '').toLowerCase().trim()
 }
 
+function platformEmbedUrl(camera: SpatialWorldEntity) {
+  return String(cameraMedia(camera).platformEmbedUrl ?? '').trim()
+}
+
 function sourceMediaPlaybackKind(camera: SpatialWorldEntity): 'video' | 'mjpeg' | null {
   const media = cameraMedia(camera)
   const url = sourceMediaUrl(camera)
@@ -100,6 +104,14 @@ function sourceMediaIsImage(camera: SpatialWorldEntity) {
 
 function liveVideoCapability(camera: SpatialWorldEntity) {
   return cameraMedia(camera).liveVideo === true && String(camera.id).startsWith('openeye:')
+}
+
+function inlineVideoCapability(camera: SpatialWorldEntity) {
+  const media = cameraMedia(camera)
+  return liveVideoCapability(camera) ||
+    platformEmbedUrl(camera) !== '' ||
+    (media.direct === true && ['video', 'mjpeg'].includes(mediaKind(camera))) ||
+    sourceMediaPlaybackKind(camera) !== null
 }
 
 function whepUrlFor(camera: SpatialWorldEntity) {
@@ -167,6 +179,25 @@ function cameraPlaybackMediaType(camera: SpatialWorldEntity) {
   const upstreamType = String(media.sourceMediaType ?? '').toLowerCase()
   const upstreamUrl = String(media.url ?? '')
   return isHlsUrl(upstreamUrl, upstreamType) ? 'application/vnd.apple.mpegurl' : mediaKind(camera)
+}
+
+function InlinePlatformVideo({
+  src,
+  title,
+}: {
+  src: string
+  title: string
+}) {
+  return (
+    <iframe
+      src={src}
+      title={title}
+      loading="eager"
+      allow="autoplay; fullscreen; picture-in-picture"
+      allowFullScreen
+      referrerPolicy="strict-origin-when-cross-origin"
+    />
+  )
 }
 
 function InlineCctvVideo({
@@ -512,13 +543,17 @@ export default function CctvViewerPanel({
   onSelectCamera: (id: string) => void
   onClose: () => void
 }) {
-  const activeId = useMemo(
-    () => (selectedCameraId && cameras.some(camera => camera.id === selectedCameraId))
-      ? selectedCameraId
-      : cameras[0]?.id ?? null,
-    [cameras, selectedCameraId],
+  const navigationCameras = useMemo(
+    () => standalone ? cameras.filter(inlineVideoCapability) : cameras,
+    [cameras, standalone],
   )
-  const activeCameraBase = useMemo(() => cameras.find(camera => camera.id === activeId) ?? null, [cameras, activeId])
+  const activeId = useMemo(
+    () => (selectedCameraId && navigationCameras.some(camera => camera.id === selectedCameraId))
+      ? selectedCameraId
+      : navigationCameras[0]?.id ?? null,
+    [navigationCameras, selectedCameraId],
+  )
+  const activeCameraBase = useMemo(() => navigationCameras.find(camera => camera.id === activeId) ?? null, [navigationCameras, activeId])
   const [resolvedCamera, setResolvedCamera] = useState<SpatialWorldEntity | null>(null)
 
   useEffect(() => {
@@ -588,11 +623,11 @@ export default function CctvViewerPanel({
   }, [])
 
   const selectRelative = useCallback((delta: number) => {
-    if (!cameras.length) return
-    const next = (activeIndex + delta + cameras.length) % cameras.length
-    onSelectCamera(cameras[next].id)
+    if (!navigationCameras.length) return
+    const next = (activeIndex + delta + navigationCameras.length) % navigationCameras.length
+    onSelectCamera(navigationCameras[next].id)
     setZoom(1)
-  }, [activeIndex, cameras, onSelectCamera])
+  }, [activeIndex, navigationCameras, onSelectCamera])
 
   useEffect(() => {
     if (!activeId || !activeCamera) {
@@ -758,10 +793,10 @@ export default function CctvViewerPanel({
   }, [standalone])
 
   const wallPageSize = wallLayout * wallLayout
-  const wallPageCount = Math.max(1, Math.ceil(cameras.length / wallPageSize))
+  const wallPageCount = Math.max(1, Math.ceil(navigationCameras.length / wallPageSize))
   const wallCameras = useMemo(
-    () => cameras.slice(wallPage * wallPageSize, (wallPage + 1) * wallPageSize),
-    [cameras, wallPage, wallPageSize],
+    () => navigationCameras.slice(wallPage * wallPageSize, (wallPage + 1) * wallPageSize),
+    [navigationCameras, wallPage, wallPageSize],
   )
 
   useEffect(() => {
@@ -805,6 +840,7 @@ export default function CctvViewerPanel({
   const age = activeCamera ? frameAge(activeCamera) : null
   const mode = activeCamera ? sourceMode(activeCamera) : 'synthetic'
   const liveVideo = Boolean(activeCamera && liveVideoCapability(activeCamera))
+  const platformVideo = Boolean(activeCamera && platformEmbedUrl(activeCamera))
   const configuredStream = Boolean(activeCamera && direct && ['video','mjpeg'].includes(kind) && media.url)
   const operational = Boolean(
     activeCamera && (
@@ -816,7 +852,9 @@ export default function CctvViewerPanel({
   const sourcePlayback = activeCamera ? sourceMediaPlaybackKind(activeCamera) : null
   const label = liveVideo
     ? 'LIVE VIDEO / WHEP'
-    : configuredStream
+    : platformVideo
+      ? 'LIVE VIDEO / PLATFORM'
+      : configuredStream
     ? 'LIVE STREAM / GATEWAY'
     : direct
       ? 'PUBLIC PREVIEW'
@@ -832,11 +870,12 @@ export default function CctvViewerPanel({
   const renderableCount = cameras.filter(camera => {
     const media = cameraMedia(camera)
     return (
-      (media.direct === true && ['image','video','mjpeg'].includes(mediaKind(camera))) ||
-      sourceMediaPlaybackKind(camera) !== null
+      inlineVideoCapability(camera) ||
+      (media.direct === true && mediaKind(camera) === 'image')
     )
   }).length
   const sourceOnlyCount = cameras.filter(camera => sourceMode(camera) === 'source').length
+  const platformVideoCount = cameras.filter(camera => platformEmbedUrl(camera) !== '').length
 
   const markPreviewFailure = useCallback((id: string) => {
     setPreviewFailures(current => {
@@ -966,6 +1005,8 @@ export default function CctvViewerPanel({
                   ) : (
                     <InlineCctvVideo src={streamUrl} mediaType={cameraPlaybackMediaType(activeCamera)} onError={() => setFrameState('error')} />
                   )
+                ) : platformVideo ? (
+                  <InlinePlatformVideo src={platformEmbedUrl(activeCamera)} title={`${cameraName(activeCamera)} live video`} />
                 ) : frameUrl ? (
                   <>
                     <img src={frameUrl} alt={`${cameraName(activeCamera)} latest camera frame`} decoding="async" style={{ opacity: aiEnhanced ? 0 : 1, transform: `scale(${zoom})` }} onError={() => setFrameState('error')} />
@@ -1063,6 +1104,30 @@ export default function CctvViewerPanel({
       </aside>
       )}
 
+      {expanded && standalone && !activeCamera && (
+        <div className="gev-cctv-wall-overlay gev-cctv-wall-overlay--module" role="dialog" aria-modal="true" aria-label="CCTV Camera Wall">
+          <section className="gev-cctv-wall" ref={node => { wallRef.current = node }}>
+            <header className="gev-cctv-wall-head">
+              <div className="gev-cctv-wall-head-copy">
+                <span className="gev-cctv-kicker"><Camera size={12} /> VERIFIED LIVE SOURCES</span>
+                <strong>CAMERA WALL</strong>
+                <span>No publisher-only cameras are shown here.</span>
+              </div>
+              <div className="gev-cctv-wall-toolbar">
+                <span className="gev-cctv-wall-page">0 PLAYABLE</span>
+                <button type="button" className="gev-cctv-wall-nav" onClick={onClose} aria-label="Close camera wall" title="Close"><X size={15} /></button>
+              </div>
+            </header>
+            <div className="gev-cctv-empty">
+              <Camera size={26} />
+              <strong>NO VERIFIED LIVE VIDEO FEEDS</strong>
+              <span>The selected country currently has camera observations, but none expose a browser-playable live video stream through the approved source mesh. Publisher-only pages, stale stills and synthetic placeholders are intentionally excluded.</span>
+              <small>Switch country or disable the strict live-video filter to inspect the underlying camera catalogue.</small>
+            </div>
+          </section>
+        </div>
+      )}
+
       {expanded && activeCamera && (
         <div className={`gev-cctv-wall-overlay${standalone ? ' gev-cctv-wall-overlay--module' : ''}`} role="dialog" aria-modal="true" aria-label="CCTV Camera Wall">
           {!standalone && <div className="gev-cctv-wall-backdrop" onClick={() => setExpanded(false)} />}
@@ -1072,14 +1137,14 @@ export default function CctvViewerPanel({
                 <span className="gev-cctv-kicker"><Camera size={12} /> LIVE SPATIAL SURVEILLANCE</span>
                 <strong>CAMERA WALL</strong>
                 <span>
-                  {cameras.length} cameras · page {wallPage + 1}/{wallPageCount} · {wallCameras.filter(camera => liveVideoCapability(camera)).length} live-video capable on this page
+                  {navigationCameras.length} playable cameras · page {wallPage + 1}/{wallPageCount} · {wallCameras.length} playable live feeds on this page
                 </span>
               </div>
               <div className="gev-cctv-wall-toolbar">
                 <div className="gev-cctv-wall-metrics" aria-label="Camera wall metrics">
-                  <span><i data-tone="live" />{wallCameras.filter(camera => cameraHealth(camera) === 'LIVE').length} LIVE</span>
-                  <span><i data-tone="preview" />{wallCameras.filter(camera => cameraMedia(camera).direct === true).length} PREVIEW</span>
-                  <span><i data-tone="source" />{wallCameras.filter(camera => sourceMode(camera) === 'source').length} SOURCE</span>
+                  <span><i data-tone="live" />{wallCameras.length} PLAYABLE</span>
+                  <span><i data-tone="preview" />{wallCameras.filter(camera => cameraMedia(camera).direct === true && mediaKind(camera) === 'image').length} FRAME</span>
+                  <span><i data-tone="source" />{platformVideoCount} PLATFORM</span>
                 </div>
                 <div className="gev-cctv-layout-toggle" aria-label="Camera wall layout">
                   {([2, 3, 4] as const).map(layout => (
@@ -1120,6 +1185,7 @@ export default function CctvViewerPanel({
                 const camPreviewable = camMedia.direct === true && camKind === 'image' && Boolean(camDirectUrl) && !previewFailures.has(cam.id)
                 const camStream = camMedia.direct === true && ['video', 'mjpeg'].includes(camKind) && Boolean(camMedia.url)
                 const camLiveVideo = liveVideoCapability(cam)
+                const camPlatformVideo = Boolean(platformEmbedUrl(cam))
                 const isActive = cam.id === activeId
                 return (
                   <article
@@ -1147,6 +1213,25 @@ export default function CctvViewerPanel({
                             <Camera size={18} />
                             <strong>LIVE VIDEO</strong>
                             <span>Select this camera to open the live footage in the focused player.</span>
+                          </div>
+                        )
+                      ) : camPlatformVideo ? (
+                        camPreviewable ? (
+                          <div className="gev-cctv-wall-feed-media-source">
+                            <img
+                              src={camDirectUrl}
+                              alt={`${cameraName(cam)} latest live-video preview`}
+                              loading="lazy"
+                              decoding="async"
+                              onError={() => markPreviewFailure(cam.id)}
+                            />
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · SELECT TO PLAY</span>
+                          </div>
+                        ) : (
+                          <div className="gev-cctv-wall-feed-state">
+                            <Camera size={18} />
+                            <strong>LIVE VIDEO</strong>
+                            <span>Select this camera to open the verified live platform stream in the focused player.</span>
                           </div>
                         )
                       ) : camPreviewable ? (
@@ -1214,7 +1299,7 @@ export default function CctvViewerPanel({
                           <span>{camMode === 'synthetic' ? 'The source did not authorize a renderable camera frame.' : 'The approved media gateway has no current frame.'}</span>
                         </div>
                       )}
-                      {!((camStream || camSourcePlayback === 'video') && isActive) && (
+                      {!((camStream || camSourcePlayback === 'video' || camPlatformVideo) && isActive) && (
                         <button
                           type="button"
                           className="gev-cctv-wall-feed-hit"
@@ -1235,7 +1320,7 @@ export default function CctvViewerPanel({
                       <div className="gev-cctv-wall-feed-top">
                         <span className="gev-cctv-wall-feed-index">{String(wallPage * wallPageSize + wallCameras.indexOf(camera) + 1).padStart(2, '0')}</span>
                         <span className="gev-cctv-wall-feed-state-pill" data-state={camHealth}><i />{camHealth}</span>
-                        <span className="gev-cctv-wall-feed-type">{camKind.toUpperCase()}</span>
+                        <span className="gev-cctv-wall-feed-type">{camPlatformVideo ? 'LIVE VIDEO' : camKind.toUpperCase()}</span>
                       </div>
                       {isActive && <span className="gev-cctv-wall-feed-selected">FOCUSED</span>}
                     </div>
