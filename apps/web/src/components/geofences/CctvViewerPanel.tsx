@@ -3,7 +3,8 @@ import {
   RefreshCw, RotateCcw, ZoomIn, ZoomOut, X
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, getAccessToken, restoreAccessToken } from '../../lib/api.js'
+import { api, restoreAccessToken } from '../../lib/api.js'
+import { getAccessToken } from '../../stores/auth.js'
 import { enhanceImageBitmap, preferredImageryAiScale, isImageryAiEnabled, IMAGERY_AI_CCTV_MAX_INPUT_EDGE } from '../../lib/imageryAi.js'
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js'
 import type Hls from 'hls.js'
