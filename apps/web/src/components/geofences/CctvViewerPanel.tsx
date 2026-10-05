@@ -134,6 +134,13 @@ function isHlsUrl(url: string, mediaType: string) {
   return mediaType.includes('mpegurl') || /\.(?:m3u8)(?:[?#].*)?$/i.test(url)
 }
 
+function cameraPlaybackMediaType(camera: SpatialWorldEntity) {
+  const media = cameraMedia(camera)
+  const upstreamType = String(media.sourceMediaType ?? '').toLowerCase()
+  const upstreamUrl = String(media.url ?? '')
+  return isHlsUrl(upstreamUrl, upstreamType) ? 'application/vnd.apple.mpegurl' : mediaKind(camera)
+}
+
 function InlineCctvVideo({
   src,
   mediaType = 'video',
@@ -705,7 +712,7 @@ export default function CctvViewerPanel({
                   kind === 'mjpeg' ? (
                     <img src={streamUrl} alt={`${cameraName(activeCamera)} live MJPEG stream`} />
                   ) : (
-                    <InlineCctvVideo src={streamUrl} mediaType={mediaKind(activeCamera)} onError={() => setFrameState('error')} />
+                    <InlineCctvVideo src={streamUrl} mediaType={cameraPlaybackMediaType(activeCamera)} onError={() => setFrameState('error')} />
                   )
                 ) : frameUrl ? (
                   <>
@@ -884,7 +891,7 @@ export default function CctvViewerPanel({
                       ) : camStream && isActive && streamUrl ? (
                         camKind === 'mjpeg'
                           ? <img src={streamUrl} alt={`${cameraName(cam)} live MJPEG stream`} onError={() => setFrameState('error')} />
-                          : <InlineCctvVideo src={streamUrl} mediaType={camKind} onError={() => setFrameState('error')} />
+                          : <InlineCctvVideo src={streamUrl} mediaType={cameraPlaybackMediaType(cam)} onError={() => setFrameState('error')} />
                       ) : camStream ? (
                         <div className="gev-cctv-wall-feed-state">
                           <Camera size={18} />
