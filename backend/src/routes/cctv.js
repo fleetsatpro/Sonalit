@@ -43,7 +43,11 @@ router.post('/:id/live', asyncHandler(async (req,res) => {
   const streamId = String(id).slice('openeye:'.length);
   const sdp = typeof req.body === 'string'
     ? req.body
-    : (Buffer.isBuffer(req.body) ? req.body.toString('utf8') : (typeof req.rawBody === 'string' ? req.rawBody : ''));
+    : (Buffer.isBuffer(req.body)
+      ? req.body.toString('utf8')
+      : (typeof req.body?.sdp === 'string'
+        ? req.body.sdp
+        : (typeof req.rawBody === 'string' ? req.rawBody : '')));
   const session = await openEyeWhepOffer(streamId, sdp);
   if (session.status === 402) {
     if (session.paymentRequired) res.setHeader('PAYMENT-REQUIRED', session.paymentRequired);
@@ -70,6 +74,7 @@ router.get('/cameras', asyncHandler(async (req,res) => {
     center,
     radiusM:numberOrNull(req.query.radiusM) || 25000,
     countryCode:String(req.query.country || '').trim().toUpperCase() || null,
+    liveOnly:String(req.query.liveOnly || '').toLowerCase() === 'true' || String(req.query.liveOnly || '') === '1',
     maxRecords:Math.min(250, Math.max(1, numberOrNull(req.query.limit) || 100))
   });
   res.json({
