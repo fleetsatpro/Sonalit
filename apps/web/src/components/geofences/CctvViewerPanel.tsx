@@ -117,12 +117,14 @@ export default function CctvViewerPanel({
   onSelectCamera,
   onClose,
   publicTotal,
+  standalone = false,
 }: {
   cameras: SpatialWorldEntity[]
   selectedCameraId: string | null
   loading?: boolean
   error?: boolean
   publicTotal?: number | null
+  standalone?: boolean
   onSelectCamera: (id: string) => void
   onClose: () => void
 }) {
@@ -177,7 +179,7 @@ export default function CctvViewerPanel({
   const expandedAiCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const aiBitmapRef = useRef<ImageBitmap | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(standalone)
   const [browserFullscreen, setBrowserFullscreen] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [previewFailures, setPreviewFailures] = useState<Set<string>>(() => new Set())
@@ -367,6 +369,10 @@ export default function CctvViewerPanel({
     setZoom(1)
   }, [activeId])
 
+  useEffect(() => {
+    if (standalone) setExpanded(true)
+  }, [standalone])
+
   const wallPageSize = wallLayout * wallLayout
   const wallPageCount = Math.max(1, Math.ceil(cameras.length / wallPageSize))
   const wallCameras = useMemo(
@@ -502,7 +508,7 @@ export default function CctvViewerPanel({
 
   return (
     <>
-      <aside ref={node => { wallRef.current = node }} className={`gev-cctv-panel${expanded ? ' gev-cctv-panel--expanded' : ''}`} aria-label="CCTV camera viewer">
+{!standalone && (      <aside ref={node => { wallRef.current = node }} className={`gev-cctv-panel${expanded ? ' gev-cctv-panel--expanded' : ''}`} aria-label="CCTV camera viewer">
         <div className="gev-cctv-head">
           <div className="gev-cctv-heading">
             <span className="gev-cctv-kicker"><Camera size={12} /> PUBLIC CAMERA NETWORK</span>
@@ -633,10 +639,11 @@ export default function CctvViewerPanel({
           </div>
         )}
       </aside>
+      )}
 
       {expanded && activeCamera && (
-        <div className="gev-cctv-wall-overlay" role="dialog" aria-modal="true" aria-label="Expanded CCTV camera wall">
-          <div className="gev-cctv-wall-backdrop" onClick={() => setExpanded(false)} />
+        <div className={`gev-cctv-wall-overlay${standalone ? ' gev-cctv-wall-overlay--module' : ''}`} role="dialog" aria-modal="true" aria-label="CCTV Camera Wall">
+          {!standalone && <div className="gev-cctv-wall-backdrop" onClick={() => setExpanded(false)} />}
           <section className="gev-cctv-wall" ref={node => { wallRef.current = node }}>
             <header className="gev-cctv-wall-head">
               <div className="gev-cctv-wall-head-copy">
