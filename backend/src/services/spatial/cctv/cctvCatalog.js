@@ -35,6 +35,7 @@ const OPENEYE_MAP_PATH = '/catalog/map';
 const OPENCCTV_BASE_URL = 'https://opencctv.org';
 const OPENCCTV_CACHE_TTL_MS = 60_000;
 const OPENCCTV_MAX_LIMIT = 250;
+const CCTV_DETAIL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CALTRANS_CCTV_URL = 'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query';
 const CALTRANS_CACHE_TTL_MS = 60_000;
 const CALTRANS_MAX_LIMIT = 250;
@@ -621,7 +622,7 @@ async function loadOpenCctvCatalog(options = {}) {
 
     const liveVideoCount = normalized.filter(c => c.media.liveVideo === true).length;
     for (const camera of normalized) {
-      openCctvDetailCache.set(String(camera.id), { camera, expiresAt:Date.now() + OPENCCTV_CACHE_TTL_MS });
+      openCctvDetailCache.set(String(camera.id), { camera, expiresAt:Date.now() + CCTV_DETAIL_CACHE_TTL_MS });
     }
     providerHealth.opencctv = {
       ...providerHealth.opencctv,
@@ -629,7 +630,7 @@ async function loadOpenCctvCatalog(options = {}) {
       lastSuccessAt:new Date().toISOString(), lastAttemptAt:attempt,
       recordCount:normalized.length, liveVideoCount, error:null
     };
-    openCctvCache.set(key, { rows:normalized, expiresAt:Date.now() + OPENCCTV_CACHE_TTL_MS });
+    openCctvCache.set(key, { rows:normalized, expiresAt:Date.now() + CCTV_DETAIL_CACHE_TTL_MS });
     return normalized;
   } catch (error) {
     providerHealth.opencctv = {
@@ -746,14 +747,14 @@ async function loadCaltransCatalog(options = {}) {
 
     const liveVideoCount = normalized.filter(c => c.media.liveVideo === true).length;
     for (const camera of normalized) {
-      caltransDetailCache.set(String(camera.id), { camera, expiresAt:Date.now() + CALTRANS_CACHE_TTL_MS });
+      caltransDetailCache.set(String(camera.id), { camera, expiresAt:Date.now() + CCTV_DETAIL_CACHE_TTL_MS });
     }
     providerHealth.caltrans = {
       ...providerHealth.caltrans, enabled:true, status:normalized.length ? 'LIVE' : 'EMPTY',
       lastSuccessAt:new Date().toISOString(), lastAttemptAt:attempt,
       recordCount:normalized.length, liveVideoCount, error:null
     };
-    caltransCache.set(key, { rows:normalized, expiresAt:Date.now() + CALTRANS_CACHE_TTL_MS });
+    caltransCache.set(key, { rows:normalized, expiresAt:Date.now() + CCTV_DETAIL_CACHE_TTL_MS });
     return normalized;
   } catch (error) {
     providerHealth.caltrans = {
@@ -908,7 +909,7 @@ async function getCameraById(id) {
     // OpenCCTV's catalog endpoint is the authoritative lookup surface exposed
     // to us; resolve the requested camera from that bounded provider catalog
     // rather than silently falling back to an unrelated provider.
-    const rows = await loadOpenCctvCatalog({ maxRecords:OPENCCTV_MAX_LIMIT });
+    const rows = await loadOpenCctvCatalog({ bbox:[-180,-90,180,90], maxRecords:OPENCCTV_MAX_LIMIT });
     return rows.find(row => String(row.id) === wanted) || null;
   }
 
