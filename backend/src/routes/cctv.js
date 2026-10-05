@@ -60,14 +60,18 @@ router.get('/:id/media', asyncHandler(async (req,res) => {
   const id = String(req.params.id);
   const camera = await getCameraById(id);
   if (!camera) return res.status(404).json({ error:'Camera not found' });
-  const media = await getMedia(camera);
+  const range = typeof req.headers.range === 'string' ? req.headers.range : undefined;
+  const media = await getMedia(camera, { range });
   if (media.response.body) {
-    res.status(media.response.status);
+    res.status(media.status || media.response.status);
     res.setHeader('Content-Type', media.contentType);
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Accept-Ranges', media.acceptRanges || 'bytes');
     res.setHeader('X-Sonalit-Source', camera.provenance?.sourceName || camera.source || 'cctv');
-    const length = media.response.headers.get('content-length');
-    if (length) res.setHeader('Content-Length', length);
+    if (media.contentLength) res.setHeader('Content-Length', media.contentLength);
+    if (media.contentRange) res.setHeader('Content-Range', media.contentRange);
+    if (media.etag) res.setHeader('ETag', media.etag);
+    if (media.lastModified) res.setHeader('Last-Modified', media.lastModified);
     return Readable.fromWeb(media.response.body).pipe(res);
   }
   return res.status(502).json({ error:'CCTV stream body unavailable' });

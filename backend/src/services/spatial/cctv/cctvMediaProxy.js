@@ -9,6 +9,9 @@ const VIDEO_TYPES = new Set([
   'video/webm',
   'application/octet-stream',
   'multipart/x-mixed-replace',
+  'application/vnd.apple.mpegurl',
+  'application/x-mpegurl',
+  'audio/mpegurl',
 ]);
 
 function syntheticFrame(camera, reason) {
@@ -74,6 +77,10 @@ async function fetchApprovedMedia(url, options = {}) {
   const allowed = Array.isArray(options.allowedHosts) && options.allowedHosts.length
     ? options.allowedHosts : allowedHostsFromEnv();
   let current = await assertSafeUrl(url, allowed);
+  const requestHeaders = {
+    Accept:'video/mp4,video/webm,multipart/x-mixed-replace,application/vnd.apple.mpegurl,application/x-mpegurl,*/*;q=0.1'
+  };
+  if (options.range) requestHeaders.Range = String(options.range);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Number(options.timeoutMs) || 10000);
@@ -81,7 +88,7 @@ async function fetchApprovedMedia(url, options = {}) {
     try {
       response = await fetch(current, {
         redirect:'manual',
-        headers:{Accept:'video/mp4,video/webm,multipart/x-mixed-replace,*/*;q=0.1'},
+        headers:requestHeaders,
         signal:controller.signal
       });
     } catch (error) {
@@ -98,10 +105,20 @@ async function fetchApprovedMedia(url, options = {}) {
     }
     if (!response.ok) throw Object.assign(new Error('CCTV media request failed: ' + response.status), { failureClass: response.status === 429 ? 'rate_limited' : 'http_error' });
     const type = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
-    if (!VIDEO_TYPES.has(type) && !type.startsWith('video/')) {
+    if (!VIDEO_TYPES.has(type) && !type.startsWith('video/') && !['application/vnd.apple.mpegurl','application/x-mpegurl','audio/mpegurl'].includes(type)) {
       throw Object.assign(new Error('CCTV media content-type is not an approved stream type'), { failureClass:'invalid_data' });
     }
-    return { response, contentType:type, sourceUrl:current.toString() };
+    return {
+      response,
+      contentType:type,
+      sourceUrl:current.toString(),
+      status:response.status,
+      contentRange:response.headers.get('content-range'),
+      contentLength:response.headers.get('content-length'),
+      acceptRanges:response.headers.get('accept-ranges'),
+      etag:response.headers.get('etag'),
+      lastModified:response.headers.get('last-modified')
+    };
   }
   throw Object.assign(new Error('CCTV media fetch failed'), { failureClass:'http_error' });
 }

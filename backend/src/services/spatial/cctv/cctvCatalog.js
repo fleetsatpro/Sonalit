@@ -86,44 +86,78 @@ function normalizeBbox(value) {
   return [west, south, east, north];
 }
 
+const IMAGE_URL_RE = /\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i;
+const VIDEO_URL_RE = /\.(?:m3u8|mp4|webm|mov|m4v|og[gv]|mjpg|mjpeg)(?:[?#].*)?$/i;
+
+function classifyViewMediaType(view, url, render) {
+  const candidate = String(url || '');
+  const declared = String(view?.url_type || '').toLowerCase().trim();
+  // Obvious file extensions win over metadata: a .jpg byte URL must never be
+  // advertised or linked as live video just because upstream metadata is stale.
+  if (IMAGE_URL_RE.test(candidate)) return 'image';
+  if (VIDEO_URL_RE.test(candidate)) return 'video';
+  if (declared.includes('mjpeg') || declared.includes('multipart')) return 'mjpeg';
+  if (declared.includes('mpegurl') || declared === 'm3u8') return 'video';
+  if (declared.includes('video')) return 'video';
+  if (declared.includes('image') || /^(?:jpg|jpeg|png|webp|avif|gif)$/.test(declared)) return 'image';
+  if (render === 'video') return 'video';
+  if (render === 'image') return 'image';
+  return 'unknown';
+}
+
+function isRenderableMediaType(kind) {
+  return kind === 'image' || kind === 'video' || kind === 'mjpeg';
+}
+
 function openEyeMedia(row) {
   const view = asRecord(row.view);
   const redistribution = asRecord(row.redistribution);
   const attribution = asRecord(redistribution.attribution);
   const render = String(view.render || 'none').toLowerCase();
-  const previewAllowed = redistribution.preview_embed === true;
   const viewUrl = safeHttpsUrl(view.url || row.preview_url);
-  const renderableImage = render === 'image' && previewAllowed && Boolean(viewUrl);
-  const directoryPageUrl = safeHttpsUrl(
-    row.public_url || ''
-  ) || 'https://openeye.cam/cam/' + encodeURIComponent(String(row.id || ''));
-  const sourcePageUrl = render === 'link'
+  const viewMediaType = classifyViewMediaType(view, view.url || row.preview_url, render);
+  const previewAllowed = redistribution.preview_embed === true;
+  const renderablePreview = previewAllowed && Boolean(viewUrl) && isRenderableMediaType(viewMediaType);
+  const directoryPageUrl = safeHttpsUrl(row.public_url || '')
+    || 'https://openeye.cam/cam/' + encodeURIComponent(String(row.id || ''));
+  // A publisher page must be a page. Never promote an image/video byte URL to
+  // "OPEN PUBLISHER", even when OpenEye has classified the row as source-only.
+  const viewIsHtml = String(view.url_type || '').toLowerCase() === 'html';
+  const sourcePageUrl = viewIsHtml
     ? (safeHttpsUrl(view.url) || directoryPageUrl)
     : directoryPageUrl;
-  // When a publisher exposes source media but does not grant Sonalit
-  // redistribution/embedding rights, retain only a top-level navigation target.
-  // This sends the operator to the source bytes in the publisher's own context;
-  // Sonalit never rehosts or proxies this URL.
-  const sourceMediaUrl = !previewAllowed && ['image', 'video', 'mjpeg'].includes(render)
-    ? safeHttpsUrl(view.url || '')
+  // Source-only media remains a direct browser handoff: Sonalit does not proxy
+  // or rehost these bytes. The source URL is kept separate from the publisher page.
+  const sourceMediaUrlCandidate = safeHttpsUrl(view.url);
+  const sourceMediaUrl = !previewAllowed && isRenderableMediaType(viewMediaType)
+    ? sourceMediaUrlCandidate
     : null;
-  const sourceMediaType = sourceMediaUrl
-    ? String(view.url_type || render || '').toLowerCase()
-    : null;
+  const sourceMediaType = sourceMediaUrl ? viewMediaType : null;
+  const sourceMediaPlayable = Boolean(
+    sourceMediaUrl &&
+    (sourceMediaType === 'video' || sourceMediaType === 'mjpeg') &&
+    (
+      redistribution.frame_reuse === 'fetch-from-source' ||
+      redistribution.preview_embed === true
+    )
+  );
+  const kind = renderablePreview ? viewMediaType : 'synthetic';
   return {
-    kind: renderableImage ? 'image' : 'synthetic',
-    url: renderableImage ? viewUrl : null,
-    frameUrl: renderableImage ? viewUrl : null,
-    previewUrl: renderableImage ? viewUrl : null,
+    kind,
+    url: renderablePreview ? viewUrl : null,
+    frameUrl: renderablePreview && viewMediaType === 'image' ? viewUrl : null,
+    previewUrl: renderablePreview && viewMediaType === 'image' ? viewUrl : null,
     sourcePageUrl,
     sourceMediaUrl,
     sourceMediaType,
-    direct: renderableImage,
-    publicSource: true,
+    sourceMediaPlayable,
+    sourceMediaHost:sourceMediaUrl ? String(view.hosted || 'source').toLowerCase() : null,
+    direct: renderablePreview,
+    publicSource:true,
     redistribution,
-    attributionName: String(attribution.name || '').trim() || null,
-    attributionUrl: String(attribution.url || '').trim() || null,
-    refreshIntervalMs: Number.isFinite(Number(row.frame_interval_s))
+    attributionName:String(attribution.name || '').trim() || null,
+    attributionUrl:String(attribution.url || '').trim() || null,
+    refreshIntervalMs:Number.isFinite(Number(row.frame_interval_s))
       ? Math.max(15000, Number(row.frame_interval_s) * 1000)
       : 60000
   };
@@ -349,6 +383,8 @@ function normalizeRecord(raw, index) {
       sourcePageUrl:raw.media?.sourcePageUrl ? String(raw.media.sourcePageUrl) : null,
       sourceMediaUrl:raw.media?.sourceMediaUrl ? String(raw.media.sourceMediaUrl) : null,
       sourceMediaType:raw.media?.sourceMediaType ? String(raw.media.sourceMediaType) : null,
+      sourceMediaPlayable:Boolean(raw.media?.sourceMediaPlayable),
+      sourceMediaHost:raw.media?.sourceMediaHost ? String(raw.media.sourceMediaHost) : null,
       direct:Boolean(raw.media?.direct),
       available:Boolean(mediaUrl) || String(raw.media?.kind) === 'synthetic',
       publicSource:Boolean(raw.media?.publicSource ?? raw.publicSource ?? Boolean(mediaUrl)),
@@ -546,4 +582,4 @@ function getCameraCatalogHealth() {
   };
 }
 
-module.exports = { SAMPLE_CAMERAS, normalizeRecord, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, getCameraById, getCameraCatalog, getCameraCatalogHealth, clearOpenEyeCache };
+module.exports = { SAMPLE_CAMERAS, normalizeRecord, classifyViewMediaType, openEyeMedia, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, getCameraById, getCameraCatalog, getCameraCatalogHealth, clearOpenEyeCache };
