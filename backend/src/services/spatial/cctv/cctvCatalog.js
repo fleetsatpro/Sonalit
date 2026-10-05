@@ -2,7 +2,7 @@
 
 const fs = require('node:fs/promises');
 const COUNTRY_BOXES = require('./cctvCountries.json');
-const { loadInsecamCatalog, loadInsecamCamera, loadInsecamCameraRecord, clearInsecamCache, getInsecamHealth } = require('./insecamCatalog');
+const { loadInsecamCatalog, loadInsecamCameraRecord, clearInsecamCache, getInsecamHealth } = require('./insecamCatalog');
 
 const SAMPLE_CAMERAS = [
   { id:'sample-ke-nbo-01', name:'Kenya corridor sample 01', corridor:'NBO-MSA', latitude:-1.286389, longitude:36.817223, headingDeg:110, horizontalFovDeg:80, maxRangeM:3000 },
