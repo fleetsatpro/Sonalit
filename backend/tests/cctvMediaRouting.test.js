@@ -71,9 +71,6 @@ describe('CCTV media routing', () => {
     expect(media.direct).toBe(true);
     expect(media.url).toBe('https://media.openeye.cam/stream-preview-video.mp4');
   });
-});
-
-
   test('passes byte ranges through to the upstream media server', async () => {
     const originalFetch = global.fetch;
     const calls = [];
