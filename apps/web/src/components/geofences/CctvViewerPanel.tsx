@@ -318,6 +318,11 @@ function InlineWhepVideo({
     }
 
     peer.addTransceiver('video', { direction: 'recvonly' })
+    peer.addEventListener('connectionstatechange', () => {
+      if (!disposed && peer.connectionState === 'failed') {
+        fail('LIVE VIDEO CONNECTION FAILED')
+      }
+    })
     peer.addEventListener('track', event => {
       if (disposed) return
       const incoming = event.streams?.[0]
@@ -355,11 +360,19 @@ function InlineWhepVideo({
           : String((response.data as { sdp?: string } | null)?.sdp || '')
         if (!answer.trim()) throw new Error('Live-video SDP answer was empty')
 
-        sessionLocation = typeof response.headers?.location === 'string'
+        const returnedSessionLocation = typeof response.headers?.location === 'string'
           ? response.headers.location
           : typeof response.headers?.['x-whep-session'] === 'string'
             ? response.headers['x-whep-session']
             : null
+        sessionLocation = returnedSessionLocation
+
+        if (disposed) {
+          if (returnedSessionLocation) {
+            void api.delete(whepUrlFor(camera), { data: { location: returnedSessionLocation } }).catch(() => {})
+          }
+          return
+        }
 
         await peer.setRemoteDescription({ type: 'answer', sdp: answer })
       } catch (error) {
