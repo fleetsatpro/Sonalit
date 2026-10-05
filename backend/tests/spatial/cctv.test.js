@@ -36,6 +36,22 @@ describe('spatial CCTV capability', () => {
     expect(developmentRows.every(c => c.source === 'sonalit-cctv-sample' ? c.media?.kind === 'synthetic' : true)).toBe(true);
   });
 
+  test('converts a country scope into a provider bounding-box query', async () => {
+    clearOpenEyeCache();
+    process.env.CCTV_ENABLE_OPENEYE = '1';
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok:true,
+      json:async()=>({ total:0, free:0, items:[] })
+    });
+
+    const rows = await loadOpenEyeCatalog({ countryCode:'KE', maxRecords:10 });
+    expect(rows).toHaveLength(0);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('bbox=33.89%2C-4.68%2C41.86%2C5.51'),
+      expect.objectContaining({ headers:{Accept:'application/json'} }),
+    );
+  });
+
   test('keeps public camera observations even when media is source-only or non-embeddable', async () => {
     clearOpenEyeCache();
     process.env.CCTV_ENABLE_OPENEYE = '1';
