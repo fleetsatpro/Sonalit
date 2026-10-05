@@ -44,18 +44,22 @@ describe('GEV CCTV wall contract', () => {
     expect(source).toContain('wallPage')
     expect(source).toContain('gev-cctv-wall-feeds--')
     expect(source).toContain('FOCUSED')
+    expect(source).toContain('inlineVideoCapability')
+    expect(source).toContain('platformEmbedUrl')
+    expect(source).toContain('InlinePlatformVideo')
+    expect(source).toContain('No publisher-only cameras are shown here.')
   })
 
-  test('does not attempt to force iframe embedding for source-only cameras', () => {
+  test('only embeds explicitly sanctioned live-platform sources', () => {
     const source = fs.readFileSync(
       path.join(__dirname, 'CctvViewerPanel.tsx'),
       'utf8',
     )
-    expect(source).not.toContain('<iframe')
+    expect(source).toContain('<iframe')
+    expect(source).toContain('platformEmbedUrl')
+    expect(source).toContain('youtube-nocookie')
+    expect(source).toContain('camPlatformVideo')
     expect(source).toContain("mode === 'source'")
-    expect(source).toContain('OPEN SOURCE')
-    expect(source).toContain('gev-cctv-wall-feed-state--source')
-    expect(source).not.toContain('OPEN LATEST FRAME')
-    expect(source).not.toContain('href={camSourceMedia}')
+    expect(source).toContain('OPEN PUBLISHER')
   })
 })
