@@ -1337,7 +1337,6 @@ export default function CctvViewerPanel({
                                   endpoint={providerSnapshotEndpoint(cam)}
                                   alt={`${cameraName(cam)} latest live-video preview`}
                                   refreshKey={wallVisualTick}
-                                  onError={() => markPreviewFailure(cam.id)}
                                 />
                               : <img
                                   src={camWallVisualUrl}
@@ -1356,12 +1355,11 @@ export default function CctvViewerPanel({
                           </div>
                         )
                       ) : camPreviewable ? (
-                        {providerSnapshotCapability(cam)
+                        providerSnapshotCapability(cam)
                           ? <InlineCctvSnapshot
                               endpoint={providerSnapshotEndpoint(cam)}
                               alt={`${cameraName(cam)} latest camera preview`}
                               refreshKey={wallVisualTick}
-                              onError={() => markPreviewFailure(cam.id)}
                             />
                           : <img
                               src={camWallVisualUrl}
@@ -1369,7 +1367,7 @@ export default function CctvViewerPanel({
                               loading="lazy"
                               decoding="async"
                               onError={() => markPreviewFailure(cam.id)}
-                            />}
+                            />
                       ) : camStream && isActive && streamUrl ? (
                         camKind === 'mjpeg'
                           ? <img src={streamUrl} alt={`${cameraName(cam)} live MJPEG stream`} onError={() => setFrameState('error')} />
