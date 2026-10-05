@@ -1,4 +1,5 @@
 const { classifyViewMediaType, openEyeMedia } = require('../src/services/spatial/cctv/cctvCatalog');
+const { fetchApprovedMedia } = require('../src/services/spatial/cctv/cctvMediaProxy');
 
 describe('CCTV media routing', () => {
   test('never uses a JPG/media URL as the publisher-page destination', () => {
@@ -71,3 +72,35 @@ describe('CCTV media routing', () => {
     expect(media.url).toBe('https://media.openeye.cam/stream-preview-video.mp4');
   });
 });
+
+
+  test('passes byte ranges through to the upstream media server', async () => {
+    const originalFetch = global.fetch;
+    const calls = [];
+    global.fetch = async (_url, options) => {
+      calls.push(options);
+      return new Response(Buffer.from('x'), {
+        status: 206,
+        headers: {
+          'content-type': 'video/mp4',
+          'content-range': 'bytes 0-0/10',
+          'content-length': '1',
+          'accept-ranges': 'bytes',
+        },
+      });
+    };
+
+    try {
+      const media = await fetchApprovedMedia(
+        'https://93.184.216.34/live/camera.mp4',
+        { allowedHosts: ['93.184.216.34'], range: 'bytes=0-0' },
+      );
+      expect(calls[0].headers.Range).toBe('bytes=0-0');
+      expect(media.status).toBe(206);
+      expect(media.contentRange).toBe('bytes 0-0/10');
+      expect(media.acceptRanges).toBe('bytes');
+      expect(media.contentLength).toBe('1');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
