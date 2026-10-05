@@ -615,4 +615,4 @@ function getCameraCatalogHealth() {
   };
 }
 
-module.exports = { SAMPLE_CAMERAS, normalizeRecord, classifyViewMediaType, openEyeMedia, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, getCameraById, getCameraCatalog, getCameraCatalogHealth, clearOpenEyeCache };
+module.exports = { SAMPLE_CAMERAS, normalizeRecord, classifyViewMediaType, openEyeMedia, loadFileCatalog, loadTflCatalog, loadOpenEyeCatalog, loadOpenEyeCamera, getCameraById, getCameraCatalog, getCameraCatalogHealth, getCctvCountries, getCountryBbox, clearOpenEyeCache };
