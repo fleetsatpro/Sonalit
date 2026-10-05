@@ -301,6 +301,7 @@ function InlineWhepVideo({
       ],
     })
     let disposed = false
+    let sessionLocation: string | null = null
     const localStream = new MediaStream()
     streamRef.current = localStream
 
@@ -344,6 +345,12 @@ function InlineWhepVideo({
           : String((response.data as { sdp?: string } | null)?.sdp || '')
         if (!answer.trim()) throw new Error('Live-video SDP answer was empty')
 
+        sessionLocation = typeof response.headers?.location === 'string'
+          ? response.headers.location
+          : typeof response.headers?.['x-whep-session'] === 'string'
+            ? response.headers['x-whep-session']
+            : null
+
         await peer.setRemoteDescription({ type: 'answer', sdp: answer })
       } catch (error) {
         if (disposed) return
@@ -367,6 +374,9 @@ function InlineWhepVideo({
       peer.close()
       streamRef.current?.getTracks().forEach(track => track.stop())
       streamRef.current = null
+      if (sessionLocation) {
+        void api.delete(whepUrlFor(camera), { data: { location: sessionLocation } }).catch(() => {})
+      }
     }
   }, [camera])
 
