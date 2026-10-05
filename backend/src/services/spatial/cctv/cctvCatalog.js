@@ -86,8 +86,8 @@ function normalizeBbox(value) {
   return [west, south, east, north];
 }
 
-const IMAGE_URL_RE = /\\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i;
-const VIDEO_URL_RE = /\\.(?:m3u8|mp4|webm|mov|m4v|og[gv]|mjpg|mjpeg)(?:[?#].*)?$/i;
+const IMAGE_URL_RE = /\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i;
+const VIDEO_URL_RE = /\.(?:m3u8|mp4|webm|mov|m4v|og[gv]|mjpg|mjpeg)(?:[?#].*)?$/i;
 
 function classifyViewMediaType(view, url, render) {
   const declared = String(view?.url_type || '').toLowerCase().trim();
