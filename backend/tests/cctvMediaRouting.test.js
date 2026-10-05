@@ -133,7 +133,7 @@ describe('CCTV media routing', () => {
     global.fetch = async (url, options) => {
       calls.push({ url:String(url), options });
       if (String(url).includes('/live/master.m3u8')) {
-        return new Response('#EXTM3U\\n#EXT-X-TARGETDURATION:2\\n#EXTINF:2,\\nsegment-1.ts\\n', {
+        return new Response('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment-1.ts\n', {
           status:200,
           headers:{'content-type':'application/vnd.apple.mpegurl'}
         });
