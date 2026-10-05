@@ -90,15 +90,18 @@ const IMAGE_URL_RE = /\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i;
 const VIDEO_URL_RE = /\.(?:m3u8|mp4|webm|mov|m4v|og[gv]|mjpg|mjpeg)(?:[?#].*)?$/i;
 
 function classifyViewMediaType(view, url, render) {
+  const candidate = String(url || '');
   const declared = String(view?.url_type || '').toLowerCase().trim();
+  // Obvious file extensions win over metadata: a .jpg byte URL must never be
+  // advertised or linked as live video just because upstream metadata is stale.
+  if (IMAGE_URL_RE.test(candidate)) return 'image';
+  if (VIDEO_URL_RE.test(candidate)) return 'video';
   if (declared.includes('mjpeg') || declared.includes('multipart')) return 'mjpeg';
   if (declared.includes('mpegurl') || declared === 'm3u8') return 'video';
   if (declared.includes('video')) return 'video';
   if (declared.includes('image') || /^(?:jpg|jpeg|png|webp|avif|gif)$/.test(declared)) return 'image';
   if (render === 'video') return 'video';
   if (render === 'image') return 'image';
-  if (VIDEO_URL_RE.test(String(url || ''))) return 'video';
-  if (IMAGE_URL_RE.test(String(url || ''))) return 'image';
   return 'unknown';
 }
 
