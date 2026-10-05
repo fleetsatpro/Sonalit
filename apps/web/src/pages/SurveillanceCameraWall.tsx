@@ -32,7 +32,7 @@ export default function SurveillanceCameraWall() {
   const [countryCode, setCountryCode] = useState('KE')
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
-  const [liveOnly, setLiveOnly] = useState(false)
+  const liveOnly = true
 
   const { data: countryData } = useQuery<{ data: CameraCountry[] }>({
     queryKey: ['surveillance-camera-countries'],
@@ -48,7 +48,7 @@ export default function SurveillanceCameraWall() {
   const selectedCountry = countries.find(country => country.code === countryCode) ?? GLOBAL_COUNTRY
 
   const { data, isFetching, isError } = useQuery<CctvResult>({
-    queryKey: ['surveillance-camera-wall', countryCode, liveOnly, refreshKey],
+    queryKey: ['surveillance-camera-wall', countryCode, refreshKey],
     queryFn: async () => {
       const response = await api.get<CctvResult>('/cctv/cameras', {
         params: {
@@ -77,6 +77,15 @@ export default function SurveillanceCameraWall() {
     data?.coverage?.providers?.openeye?.total ??
     cameras.length
 
+  const playableVideoCount = cameras.filter(camera => {
+    const media = camera.media ?? {}
+    const kind = String(media.kind ?? '').toLowerCase()
+    return media.liveVideo === true ||
+      Boolean(media.platformEmbedUrl) ||
+      (media.direct === true && ['video', 'mjpeg'].includes(kind)) ||
+      media.sourceMediaPlayable === true
+  }).length
+
   return (
     <main className="surveillance-camera-wall-page">
       <header className="surveillance-camera-wall-page-head">
@@ -97,7 +106,7 @@ export default function SurveillanceCameraWall() {
           <div>
             <div className="surveillance-camera-wall-page-kicker">SURVEILLANCE · MODULE</div>
             <h1>Camera Wall</h1>
-            <p>{selectedCountry.name} · live video inside Sonalit when the provider exposes a live-video feed</p>
+            <p>{selectedCountry.name} · only currently playable live video is admitted to the wall</p>
           </div>
         </div>
 
@@ -118,17 +127,10 @@ export default function SurveillanceCameraWall() {
               ))}
             </select>
           </label>
-          <label className="surveillance-camera-wall-live-only">
-            <input
-              type="checkbox"
-              checked={liveOnly}
-              onChange={event => {
-                setLiveOnly(event.target.checked)
-                setSelectedCameraId(null)
-              }}
-            />
-            LIVE VIDEO ONLY
-          </label>
+          <div className="surveillance-camera-wall-live-only" aria-label="Playback policy">
+            <span className="surveillance-camera-wall-live-only-dot" />
+            VERIFIED PLAYABLE VIDEO ONLY
+          </div>
           <div className="surveillance-camera-wall-health">
             <span className="surveillance-camera-wall-health-dot" />
             <span>{isError ? 'DEGRADED' : isFetching ? 'SYNCING' : 'CONNECTED'}</span>
@@ -147,8 +149,8 @@ export default function SurveillanceCameraWall() {
       </header>
 
       <section className="surveillance-camera-wall-page-summary" aria-label="Camera wall status">
-        <span><strong>{cameras.length}</strong> cameras in {selectedCountry.name}</span>
-        <span><strong>{cameras.filter(camera => camera.media?.liveVideo === true).length}</strong> live-video capable</span>
+        <span><strong>{cameras.length}</strong> verified playable cameras in {selectedCountry.name}</span>
+        <span><strong>{playableVideoCount}</strong> live video feeds</span>
         <span><strong>{publicTotal.toLocaleString()}</strong> public records</span>
         <span><ShieldCheck size={12} /> Source attribution enforced</span>
         <span>No person / face / plate tracking</span>
