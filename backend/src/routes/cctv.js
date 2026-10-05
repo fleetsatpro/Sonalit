@@ -6,8 +6,8 @@ const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { getCameras, getNearestCameras } = require('../services/spatial/cctvGateway');
-const { getCameraById } = require('../services/spatial/cctv/cctvCatalog');
-const { getFrame, getMedia } = require('../services/spatial/cctv/cctvMediaProxy');
+const { getCameraById, getCctvCountries } = require('../services/spatial/cctv/cctvCatalog');
+const { getFrame, getMedia, openEyeWhepOffer } = require('../services/spatial/cctv/cctvMediaProxy');
 const { Readable } = require('node:stream');
 
 router.use(authenticate, attachOrgDb);
@@ -24,6 +24,42 @@ function parseTarget(req) {
   return { latitude, longitude };
 }
 
+
+router.get('/countries', asyncHandler(async (_req,res) => {
+  res.json({
+    data:getCctvCountries().map(country => ({ code:country.code, name:country.name })),
+    meta:{ generated_at:new Date().toISOString(), source:'Natural Earth country bounding boxes; used only to scope the public camera search' }
+  });
+}));
+
+router.post('/:id/live', asyncHandler(async (req,res) => {
+  const id = String(req.params.id);
+  const camera = await getCameraById(id);
+  if (!camera) return res.status(404).json({ error:'Camera not found' });
+  const media = camera.media || {};
+  if (media.feedKind !== 'live_video' || media.liveVideo !== true || !String(id).startsWith('openeye:')) {
+    return res.status(409).json({ error:'Camera does not expose an OpenEye live-video capability', code:'live_video_unavailable' });
+  }
+  const streamId = String(id).slice('openeye:'.length);
+  const sdp = typeof req.body === 'string'
+    ? req.body
+    : (Buffer.isBuffer(req.body) ? req.body.toString('utf8') : (typeof req.rawBody === 'string' ? req.rawBody : ''));
+  const session = await openEyeWhepOffer(streamId, sdp);
+  if (session.status === 402) {
+    if (session.paymentRequired) res.setHeader('PAYMENT-REQUIRED', session.paymentRequired);
+    if (session.wwwAuthenticate) res.setHeader('WWW-Authenticate', session.wwwAuthenticate);
+    return res.status(402).json({ error:'Live video requires provider payment', code:'live_video_payment_required' });
+  }
+  if (!session.ok) {
+    return res.status(session.status >= 400 ? session.status : 502).json({ error:'OpenEye live-video negotiation failed', code:'live_video_negotiation_failed' });
+  }
+  res.status(session.status || 201);
+  res.setHeader('Content-Type','application/sdp');
+  res.setHeader('Cache-Control','no-store');
+  if (session.location) res.setHeader('Location', session.location);
+  return res.send(session.answer);
+}));
+
 router.get('/cameras', asyncHandler(async (req,res) => {
   const bbox = String(req.query.bbox || '').split(',').map(Number);
   const safeBbox = bbox.length === 4 && bbox.every(Number.isFinite) ? bbox : null;
@@ -33,6 +69,7 @@ router.get('/cameras', asyncHandler(async (req,res) => {
     bbox:safeBbox,
     center,
     radiusM:numberOrNull(req.query.radiusM) || 25000,
+    countryCode:String(req.query.country || '').trim().toUpperCase() || null,
     maxRecords:Math.min(250, Math.max(1, numberOrNull(req.query.limit) || 100))
   });
   res.json({
