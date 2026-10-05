@@ -76,6 +76,29 @@ describe('CCTV media routing', () => {
     expect(media.direct).toBe(true);
   });
 
+  test('converts a currently-live sanctioned YouTube camera into an in-app player URL', () => {
+    const media = openEyeMedia({
+      id: 'stream-youtube-live',
+      public_url: 'https://openeye.cam/cam/stream-youtube-live',
+      live: true,
+      view: {
+        render: 'link',
+        url: 'https://www.youtube.com/watch?v=AbCdEf12345',
+        url_type: 'html',
+        hosted: 'youtube'
+      },
+      redistribution: {
+        preview_embed: false,
+        frame_reuse: 'source',
+        attribution: { name: 'Official Camera Operator', url: 'https://example.gov/cameras/one' }
+      }
+    });
+
+    expect(media.kind).toBe('video-platform');
+    expect(media.platformEmbedUrl).toBe('https://www.youtube-nocookie.com/embed/AbCdEf12345?autoplay=1&mute=1&playsinline=1&rel=0');
+    expect(media.sourcePageUrl).toBe('https://www.youtube.com/watch?v=AbCdEf12345');
+  });
+
   test('exposes global country scope metadata', () => {
     const countries = getCctvCountries();
     expect(countries.some(country => country.code === 'KE' && country.name === 'Kenya')).toBe(true);
