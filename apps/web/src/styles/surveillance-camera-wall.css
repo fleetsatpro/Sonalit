@@ -1,0 +1,329 @@
+.surveillance-camera-wall-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 520px at 50% 28%, rgba(116, 83, 255, .08), transparent 66%),
+    linear-gradient(180deg, #07090d 0%, #040608 100%);
+  color: #eef8f4;
+}
+
+.surveillance-camera-wall-page-head {
+  position: relative;
+  z-index: 4;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.075);
+  background: linear-gradient(180deg, rgba(8,11,16,.97), rgba(8,11,16,.83));
+  backdrop-filter: blur(24px) saturate(135%);
+}
+
+.surveillance-camera-wall-page-identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.surveillance-camera-wall-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 8px 0 5px;
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 8px;
+  background: rgba(255,255,255,.02);
+  color: #84958f;
+  font: 800 6.5px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+
+.surveillance-camera-wall-back:hover {
+  color: #dffbf3;
+  border-color: rgba(118,243,223,.22);
+  background: rgba(118,243,223,.05);
+}
+
+.surveillance-camera-wall-page-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  border: 1px solid rgba(118,243,223,.16);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255,255,255,.12), transparent 34%),
+    rgba(118,243,223,.05);
+  color: #76f3df;
+  box-shadow: 0 0 34px rgba(118,243,223,.08), inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+.surveillance-camera-wall-page-kicker {
+  color: #8f81d9;
+  font: 800 6.5px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing: .15em;
+}
+
+.surveillance-camera-wall-page h1 {
+  margin: 5px 0 0;
+  color: #f1faf7;
+  font: 900 23px/.95 "Barlow",system-ui,sans-serif;
+  letter-spacing: .04em;
+}
+
+.surveillance-camera-wall-page p {
+  margin: 5px 0 0;
+  color: #647470;
+  font: 600 7px/1.35 "IBM Plex Mono",ui-monospace,monospace;
+}
+
+.surveillance-camera-wall-page-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.surveillance-camera-wall-scope {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(255,255,255,.065);
+  border-radius: 9px;
+  background: rgba(255,255,255,.018);
+}
+
+.surveillance-camera-wall-scope button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #7f8f8b;
+  font: 800 6px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing: .07em;
+  cursor: pointer;
+}
+
+.surveillance-camera-wall-scope button:hover {
+  color: #dcf9f2;
+  background: rgba(118,243,223,.045);
+}
+
+.surveillance-camera-wall-scope button[aria-pressed="true"] {
+  color: #04110e;
+  background: #76f3df;
+  box-shadow: 0 0 18px rgba(118,243,223,.13);
+}
+
+.surveillance-camera-wall-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(118,243,223,.13);
+  border-radius: 8px;
+  background: rgba(118,243,223,.035);
+  color: #79d8ca;
+  font: 800 6px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing: .08em;
+}
+
+.surveillance-camera-wall-health-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #76f3df;
+  box-shadow: 0 0 9px rgba(118,243,223,.72);
+}
+
+.surveillance-camera-wall-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 8px;
+  background: rgba(255,255,255,.022);
+  color: #899a95;
+  font: 800 6px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing: .07em;
+  cursor: pointer;
+}
+
+.surveillance-camera-wall-refresh:hover {
+  color: #edfff9;
+  border-color: rgba(118,243,223,.22);
+  background: rgba(118,243,223,.045);
+}
+
+.surveillance-camera-wall-refresh .is-spinning {
+  animation: surveillance-camera-wall-spin 1s linear infinite;
+}
+
+@keyframes surveillance-camera-wall-spin {
+  to { transform: rotate(360deg); }
+}
+
+.surveillance-camera-wall-page-summary {
+  position: relative;
+  z-index: 4;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-height: 32px;
+  padding: 0 22px;
+  border-bottom: 1px solid rgba(255,255,255,.045);
+  background: rgba(5,8,11,.9);
+  color: #687874;
+  font: 700 6px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.surveillance-camera-wall-page-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.surveillance-camera-wall-page-summary strong {
+  color: #d6e7e1;
+}
+
+.surveillance-camera-wall-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.surveillance-camera-wall-stage .gev-cctv-wall-overlay--module {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  padding: 0;
+}
+
+.surveillance-camera-wall-stage .gev-cctv-wall-overlay--module .gev-cctv-wall {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background:
+    radial-gradient(820px 300px at 0% 0%, rgba(94,234,212,.065), transparent 68%),
+    linear-gradient(180deg, rgba(5,12,16,.99), rgba(2,6,10,.99));
+}
+
+.surveillance-camera-wall-stage .gev-cctv-wall-overlay--module .gev-cctv-wall-head {
+  padding-inline: 22px;
+}
+
+.surveillance-camera-wall-stage .gev-cctv-wall-overlay--module .gev-cctv-wall-feeds {
+  padding: 12px 22px;
+}
+
+@media (max-width: 900px) {
+  .surveillance-camera-wall-page-head {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 14px;
+  }
+
+  .surveillance-camera-wall-page-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .surveillance-camera-wall-page-summary {
+    padding: 0 14px;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .surveillance-camera-wall-page-identity {
+    flex-wrap: wrap;
+  }
+
+  .surveillance-camera-wall-page-icon {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+
+  .surveillance-camera-wall-page h1 {
+    font-size: 19px;
+  }
+
+  .surveillance-camera-wall-page p {
+    font-size: 6.5px;
+  }
+
+  .surveillance-camera-wall-back {
+    order: -1;
+    width: 100%;
+  }
+
+  .surveillance-camera-wall-page-controls {
+    align-items: stretch;
+  }
+
+  .surveillance-camera-wall-scope {
+    flex: 1;
+  }
+
+  .surveillance-camera-wall-scope button {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .surveillance-camera-wall-health,
+  .surveillance-camera-wall-refresh {
+    min-width: 30px;
+    justify-content: center;
+  }
+
+  .surveillance-camera-wall-refresh {
+    font-size: 0;
+  }
+
+  .surveillance-camera-wall-page-summary {
+    gap: 12px;
+  }
+
+  .surveillance-camera-wall-stage .gev-cctv-wall-overlay--module .gev-cctv-wall-head {
+    padding-inline: 10px;
+  }
+
+  .surveillance-camera-wall-stage .gev-cctv-wall-overlay--module .gev-cctv-wall-feeds {
+    padding: 8px 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surveillance-camera-wall-refresh .is-spinning {
+    animation: none;
+  }
+}
