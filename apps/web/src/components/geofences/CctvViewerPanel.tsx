@@ -3,7 +3,7 @@ import {
   RefreshCw, RotateCcw, ZoomIn, ZoomOut, X
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api } from '../../lib/api.js'
+import { api, getAccessToken, restoreAccessToken } from '../../lib/api.js'
 import { enhanceImageBitmap, preferredImageryAiScale, isImageryAiEnabled, IMAGERY_AI_CCTV_MAX_INPUT_EDGE } from '../../lib/imageryAi.js'
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js'
 import type Hls from 'hls.js'
@@ -195,6 +195,7 @@ function InlineCctvVideo({
     let disposed = false
     let hls: Hls | null = null
     let fatalRecovery = 0
+    let authRefreshAttempted = false
     const hlsSource = isHlsUrl(src, mediaType)
 
     const fail = () => {
@@ -215,9 +216,26 @@ function InlineCctvVideo({
               maxLiveSyncPlaybackRate: 1.5,
               capLevelToPlayerSize: true,
               startLevel: -1,
+              xhrSetup: (xhr: XMLHttpRequest) => {
+                const token = getAccessToken()
+                if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+                xhr.withCredentials = true
+              },
             })
-            hls.on(HlsRuntime.Events.ERROR, (_event, data) => {
+            hls.on(HlsRuntime.Events.ERROR, async (_event, data) => {
               if (!data?.fatal) return
+              const responseCode = Number(data?.response?.code)
+              if (responseCode === 401 && !authRefreshAttempted) {
+                authRefreshAttempted = true
+                try {
+                  await restoreAccessToken()
+                  fatalRecovery += 1
+                  hls?.startLoad(-1)
+                  return
+                } catch {
+                  // Fall through to the normal bounded recovery path.
+                }
+              }
               if (data.type === HlsRuntime.ErrorTypes.NETWORK_ERROR && fatalRecovery < 1) {
                 fatalRecovery += 1
                 hls?.startLoad()
