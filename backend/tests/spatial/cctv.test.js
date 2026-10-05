@@ -2,7 +2,7 @@
 
 const { SAMPLE_CAMERAS, getCameraCatalog, loadOpenEyeCatalog, loadOpenCctvCatalog, loadCaltransCatalog, getCameraCatalogHealth, getCameraById, clearOpenEyeCache } = require('../../src/services/spatial/cctv/cctvCatalog');
 const { pointInViewshed, rankNearest } = require('../../src/services/spatial/cctv/spatialCameraGeometry');
-const { hasInlineVideo } = require('../../src/services/spatial/cctvGateway');
+const { hasInlineVideo, hasLiveVisual } = require('../../src/services/spatial/cctvGateway');
 const { assertSafeUrl, hostMatches } = require('../../src/services/spatial/cctv/cctvAllowlist');
 const { getFrame, getMedia, syntheticFrame } = require('../../src/services/spatial/cctv/cctvMediaProxy');
 
@@ -378,11 +378,23 @@ describe('spatial CCTV capability', () => {
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('https://api.openeye.cam/v1/catalog/map?'), expect.objectContaining({ headers:{Accept:'application/json'} }));
   });
 
-  test('live-only admission requires current LIVE health, not just a video-looking URL', () => {
+  test('live-only video admission requires current LIVE health, not just a video-looking URL', () => {
     const base = { id:'camera-live-test', media:{ kind:'video', url:'https://example.test/live/camera.m3u8', liveVideo:false } };
     expect(hasInlineVideo({ ...base, health:{ status:'LIVE' } })).toBe(true);
     expect(hasInlineVideo({ ...base, health:{ status:'UNKNOWN' } })).toBe(false);
     expect(hasInlineVideo({ ...base, health:{ status:'STALE' } })).toBe(false);
+  });
+
+  test('wall visual admission includes direct current snapshots without misclassifying them as video', () => {
+    const snapshot = {
+      id:'snapshot-live-test',
+      media:{ kind:'image', url:'https://example.test/live/camera.jpg', frameUrl:'https://example.test/live/camera.jpg', direct:true, liveVideo:false },
+      health:{ status:'LIVE' }
+    };
+    expect(hasInlineVideo(snapshot)).toBe(false);
+    expect(hasLiveVisual(snapshot)).toBe(true);
+    expect(hasLiveVisual({ ...snapshot, health:{ status:'STALE' } })).toBe(false);
+    expect(hasLiveVisual({ ...snapshot, media:{ ...snapshot.media, direct:false } })).toBe(false);
   });
 
   test('asserts geometry visibility only when target is inside heading/FOV/range', () => {
