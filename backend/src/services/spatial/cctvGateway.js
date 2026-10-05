@@ -21,6 +21,17 @@ function inRadius(camera, center, radiusM) {
   return haversineM(camera.pose, center) <= Number(radiusM || 25000);
 }
 
+function hasInlineVideo(camera) {
+  const media = camera?.media || {};
+  const kind = String(media.kind || '').toLowerCase();
+  const healthStatus = String(camera?.health?.status || '').toUpperCase();
+  return healthStatus === 'LIVE' && (
+    media.liveVideo === true ||
+    ['video','mjpeg','video-platform'].includes(kind) ||
+    media.sourceMediaPlayable === true
+  );
+}
+
 async function getCameras(options = {}) {
   const now = new Date().toISOString();
   health.lastAttemptAt = now;
@@ -30,8 +41,8 @@ async function getCameras(options = {}) {
     const cameras = normalized
       .filter(c => inBbox(c, options.bbox))
       .filter(c => inRadius(c, options.center, options.radiusM))
-      .filter(c => options.liveOnly !== true || c.media?.liveVideo === true)
-      .sort((a,b) => Number(b.media?.liveVideo === true) - Number(a.media?.liveVideo === true))
+      .filter(c => options.liveOnly !== true || hasInlineVideo(c))
+      .sort((a,b) => Number(hasInlineVideo(b)) - Number(hasInlineVideo(a)))
       .map(c => ({
         ...c,
         geometry:{ type:'Polygon', coordinates:[buildViewshedPolygon(c)] }
@@ -88,4 +99,4 @@ async function getNearestCameras(options = {}) {
 
 function getProviderHealth() { return { cctv:{...health} }; }
 
-module.exports = { getCameras, getNearestCameras, getProviderHealth, pointInViewshed };
+module.exports = { getCameras, getNearestCameras, getProviderHealth, pointInViewshed, hasInlineVideo };

@@ -165,6 +165,31 @@ function isRenderableMediaType(kind) {
   return kind === 'image' || kind === 'video' || kind === 'mjpeg';
 }
 
+function buildPlatformEmbedUrl(url, view, hosted) {
+  if (!url || String(view?.url_type || '').toLowerCase().trim() !== 'html') return null;
+  if (hosted === 'youtube' || hosted === 'youtube.com') {
+    try {
+      const parsed = new URL(url);
+      let videoId = parsed.searchParams.get('v') || '';
+      if (!videoId && parsed.hostname === 'youtu.be') videoId = parsed.pathname.replace(/^\//, '').split('/')[0] || '';
+      if (!videoId && parsed.pathname.startsWith('/live/')) videoId = parsed.pathname.split('/').filter(Boolean)[1] || '';
+      if (!videoId && parsed.pathname.startsWith('/embed/')) videoId = parsed.pathname.split('/').filter(Boolean)[1] || '';
+      if (/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) return 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoId) + '?autoplay=1&mute=1&playsinline=1&rel=0';
+    } catch (_) {}
+  }
+  if (hosted === 'twitch' || hosted === 'twitch.tv') {
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      const channel = parts[0] || '';
+      if (/^[A-Za-z0-9_]{2,50}$/.test(channel)) {
+        return 'https://player.twitch.tv/?channel=' + encodeURIComponent(channel) + '&parent=sonalit.com&parent=www.sonalit.com&muted=true';
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
 function openEyeMedia(row) {
   const view = asRecord(row.view);
   const redistribution = asRecord(row.redistribution);
@@ -199,7 +224,9 @@ function openEyeMedia(row) {
       redistribution.preview_embed === true
     )
   );
-  const kind = renderablePreview ? viewMediaType : 'synthetic';
+  const hosted = String(view.hosted || '').toLowerCase().trim();
+  const platformEmbedUrl = row.live === true ? buildPlatformEmbedUrl(viewUrl, view, hosted) : null;
+  const kind = renderablePreview ? viewMediaType : (platformEmbedUrl ? 'video-platform' : 'synthetic');
   return {
     kind,
     url: renderablePreview ? viewUrl : null,
@@ -212,6 +239,7 @@ function openEyeMedia(row) {
     sourceMediaHost:sourceMediaUrl ? String(view.hosted || 'source').toLowerCase() : null,
     feedKind,
     liveVideo,
+    platformEmbedUrl,
     direct: renderablePreview,
     publicSource:true,
     redistribution,
@@ -294,6 +322,7 @@ async function loadOpenEyeCatalog(options = {}) {
   // Do not request embeddable-only rows: source-only public observations
   // are still legitimate camera pins, with their media handoff kept separate.
   params.set('is_free', '1');
+  params.set('embeddable', '1');
   params.set('limit', String(limit));
   params.set('sort', 'fresh');
 
@@ -445,7 +474,7 @@ function normalizeRecord(raw, index) {
       minRangeM:Number(raw.viewshed?.minRangeM || 0)
     },
     media:{
-      kind: ['image','video','mjpeg','synthetic'].includes(String(raw.media?.kind || raw.mediaKind)) ? String(raw.media?.kind || raw.mediaKind) : (mediaUrl ? 'video' : 'synthetic'),
+      kind: ['image','video','mjpeg','video-platform','synthetic'].includes(String(raw.media?.kind || raw.mediaKind)) ? String(raw.media?.kind || raw.mediaKind) : (mediaUrl ? 'video' : 'synthetic'),
       url:mediaUrl ? String(mediaUrl) : null,
       frameUrl:raw.media?.frameUrl ? String(raw.media.frameUrl) : null,
       previewUrl:raw.media?.previewUrl ? String(raw.media.previewUrl) : null,
@@ -455,9 +484,10 @@ function normalizeRecord(raw, index) {
       sourceMediaPlayable:Boolean(raw.media?.sourceMediaPlayable),
       feedKind:raw.media?.feedKind ? String(raw.media.feedKind) : null,
       liveVideo:Boolean(raw.media?.liveVideo),
+      platformEmbedUrl:raw.media?.platformEmbedUrl ? String(raw.media.platformEmbedUrl) : null,
       sourceMediaHost:raw.media?.sourceMediaHost ? String(raw.media.sourceMediaHost) : null,
       direct:Boolean(raw.media?.direct),
-      available:Boolean(mediaUrl) || String(raw.media?.kind) === 'synthetic',
+      available:Boolean(mediaUrl) || ['synthetic','video-platform'].includes(String(raw.media?.kind || raw.mediaKind)),
       publicSource:Boolean(raw.media?.publicSource ?? raw.publicSource ?? Boolean(mediaUrl)),
       refreshIntervalMs:Number.isFinite(Number(raw.media?.refreshIntervalMs)) ? Number(raw.media.refreshIntervalMs) : null,
       redistribution:raw.media?.redistribution ?? null,
