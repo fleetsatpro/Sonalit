@@ -11,7 +11,10 @@ import {
 } from '../../../lib/trafficLayer.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 import '../../../styles/spatial-command.css'
+
+installOpticalReconMapLibreProtocol()
 import { externalWorldFeatures, fetchWorldContext, WORLD_CONTEXT_LAYERS } from '../../../lib/spatialClient.js'
+import { fetchOpticalRecon, installOpticalReconMapLibreProtocol, reconStyle, type OpticalReconResult } from '../../../lib/opticalRecon.js'
 
 const SATELLITE_STYLE: maplibregl.StyleSpecification = {
   version: 8,
@@ -193,8 +196,10 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   const coordsRef = useRef<HTMLSpanElement>(null)
   const animRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
-  const [mapMode, setMapMode] = useState<'dark' | 'satellite' | 'earth'>('dark')
+  const [mapMode, setMapMode] = useState<'dark' | 'satellite' | 'earth' | 'latest'>('dark')
   const [trafficOn, setTrafficOn] = useState(false)
+  const [reconLoading, setReconLoading] = useState(false)
+  const appliedReconKeyRef = useRef('')
   const [worldSpatialOn, setWorldSpatialOn] = useState(true)
   const [bbox, setBbox] = useState<string | null>(null)
   const [worldViewport, setWorldViewport] = useState<{ latitude: number; longitude: number; radiusM: number } | null>(null)
@@ -216,6 +221,16 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     refetchInterval: 30000,
     retry: 1,
   })
+
+  useEffect(() => {
+    if (!opticalReconFetching) setReconLoading(false)
+    if (mapMode === 'latest' && opticalReconError && mapRef.current) {
+      appliedReconKeyRef.current = ''
+      setMapMode('dark')
+      setMapReady(false)
+      mapRef.current.setStyle(STREET_STYLE)
+    }
+  }, [opticalReconFetching, opticalReconError, mapMode])
 
   const { data: geofences } = useQuery<Geofence[]>({
     queryKey: ['live-fleet-geofences'],
@@ -253,14 +268,56 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     return () => { m.remove(); mapRef.current = null; setMapReady(false) }
   }, [])
 
-  // satellite toggle
+  const reconCentre = worldViewport
+    ? { latitude: worldViewport.latitude, longitude: worldViewport.longitude }
+    : null
+
+  const { data: opticalRecon, isFetching: opticalReconFetching, isError: opticalReconError } = useQuery<OpticalReconResult>({
+    queryKey: ['live-fleet-optical-recon', reconCentre?.latitude, reconCentre?.longitude],
+    queryFn: ({ signal }) => fetchOpticalRecon(
+      reconCentre!,
+      Math.min(worldViewport?.radiusM ?? 25_000, 120_000),
+      signal,
+    ),
+    enabled: mapReady && mapMode === 'latest' && !!reconCentre,
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+    retry: 1,
+  })
+
   const cycleMapMode = () => {
     const map = mapRef.current; if (!map) return
     const next = mapMode === 'dark' ? 'satellite' : mapMode === 'satellite' ? 'earth' : 'dark'
     setMapReady(false)
+    appliedReconKeyRef.current = ''
     setMapMode(next)
     map.setStyle(next === 'dark' ? STREET_STYLE : next === 'satellite' ? SATELLITE_STYLE : EARTH_OBSERVATION_STYLE)
   }
+
+  const activateLatestImagery = () => {
+    const map = mapRef.current
+    if (!map || !opticalRecon?.render) {
+      setMapMode('latest')
+      setReconLoading(true)
+      return
+    }
+    setReconLoading(false)
+    setMapReady(false)
+    appliedReconKeyRef.current = ''
+    setMapMode('latest')
+    map.setStyle(reconStyle(opticalRecon.render))
+  }
+
+  useEffect(() => {
+    if (mapMode !== 'latest' || !opticalRecon?.render || !mapRef.current) return
+    const render = opticalRecon.render
+    const key = [render.source, render.date || '', render.itemId || ''].join('|')
+    if (appliedReconKeyRef.current === key) return
+    appliedReconKeyRef.current = key
+    setReconLoading(false)
+    setMapReady(false)
+    mapRef.current.setStyle(reconStyle(render))
+  }, [mapMode, opticalRecon])
 
   // geofence overlay — polygon zones + corridor/linear routes
   useEffect(() => {
@@ -546,6 +603,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     s.textContent = `
       @keyframes lf-mping{0%{transform:scale(1);opacity:.7}100%{transform:scale(2.2);opacity:0}}
       @keyframes lf-sos-ring{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.5);opacity:.2}}
+      @keyframes lf-recon-spin{to{transform:rotate(360deg)}}
       @keyframes lf-sos-marker{0%,100%{box-shadow:0 0 12px #ef444466,0 2px 8px rgba(0,0,0,.8)}50%{box-shadow:0 0 24px #ef4444cc,0 2px 8px rgba(0,0,0,.8)}}
     `
     document.head.appendChild(s)
@@ -577,8 +635,34 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="2" width="6" height="20" rx="1"/><circle cx="12" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
           </button>
         )}
-        {/* base-layer cycle: operational map → satellite → NASA Earth observation */}
-        <button onClick={cycleMapMode} title={mapMode === 'dark' ? 'Satellite' : mapMode === 'satellite' ? 'Earth observation' : 'Dark map'} style={{ width: 34, height: 34, borderRadius: 7, background: mapMode !== 'dark' ? 'rgba(232,168,48,.18)' : 'rgba(8,11,20,.92)', border: `1px solid ${mapMode !== 'dark' ? 'rgba(232,168,48,.6)' : 'rgba(255,255,255,.11)'}`, color: mapMode !== 'dark' ? '#e8a830' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {/* dedicated latest-optical control: normal map remains one click away */}
+        <button
+          onClick={() => mapMode === 'latest' ? cycleMapMode() : activateLatestImagery()}
+          title={mapMode === 'latest' ? 'Return to normal map' : 'Latest satellite imagery — free/open sources'}
+          aria-label={mapMode === 'latest' ? 'Return to normal map' : 'Latest satellite imagery'}
+          style={{
+            width: 34, height: 34, borderRadius: 7,
+            background: mapMode === 'latest' ? 'rgba(45,212,191,.18)' : 'rgba(8,11,20,.92)',
+            border: mapMode === 'latest' ? '1px solid rgba(45,212,191,.72)' : '1px solid rgba(255,255,255,.11)',
+            color: mapMode === 'latest' ? '#5eead4' : '#7a7e8a',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
+          }}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+          {reconLoading && <span style={{ position: 'absolute', inset: 2, border: '2px solid rgba(94,234,212,.18)', borderTopColor: '#5eead4', borderRadius: '50%', animation: 'lf-recon-spin .9s linear infinite' }} />}
+        </button>
+        {/* base-layer cycle: operational map → reference satellite → NASA Earth observation */}
+        <button
+          onClick={cycleMapMode}
+          title={mapMode === 'dark' ? 'Reference satellite' : mapMode === 'satellite' ? 'Earth observation' : 'Normal map'}
+          style={{
+            width: 34, height: 34, borderRadius: 7,
+            background: mapMode !== 'dark' && mapMode !== 'latest' ? 'rgba(232,168,48,.18)' : 'rgba(8,11,20,.92)',
+            border: mapMode !== 'dark' && mapMode !== 'latest' ? '1px solid rgba(232,168,48,.6)' : '1px solid rgba(255,255,255,.11)',
+            color: mapMode !== 'dark' && mapMode !== 'latest' ? '#e8a830' : '#7a7e8a',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
         </button>
         {/* zoom in */}
