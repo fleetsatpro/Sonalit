@@ -6,8 +6,8 @@ process.env.DATABASE_URL = 'postgresql://localhost/test_placeholder';
 const express = require('express');
 const request = require('supertest');
 
-const getCameras = jest.fn();
-const getNearestCameras = jest.fn();
+const mockGetCameras = jest.fn();
+const mockGetNearestCameras = jest.fn();
 
 jest.mock('../src/middleware/auth', () => ({
   authenticate: jest.fn((req, _res, next) => {
@@ -21,8 +21,8 @@ jest.mock('../src/utils/orgScopedDb', () => ({
 }));
 
 jest.mock('../src/services/spatial/cctvGateway', () => ({
-  getCameras: (...args) => getCameras(...args),
-  getNearestCameras: (...args) => getNearestCameras(...args),
+  getCameras: (...args) => mockGetCameras(...args),
+  getNearestCameras: (...args) => mockGetNearestCameras(...args),
 }));
 
 jest.mock('../src/services/spatial/cctv/cctvCatalog', () => ({
@@ -40,9 +40,9 @@ jest.mock('../src/services/spatial/cctv/cctvMediaProxy', () => ({
 
 describe('CCTV wall route contract', () => {
   beforeEach(() => {
-    getCameras.mockReset();
-    getNearestCameras.mockReset();
-    getCameras.mockResolvedValue({
+    mockGetCameras.mockReset();
+    mockGetNearestCameras.mockReset();
+    mockGetCameras.mockResolvedValue({
       observations:[],
       health:{},
       coverage:{},
@@ -68,15 +68,15 @@ describe('CCTV wall route contract', () => {
       })
       .expect(200);
 
-    expect(getCameras).toHaveBeenCalledTimes(1);
-    expect(getCameras.mock.calls[0][0]).toMatchObject({
+    expect(mockGetCameras).toHaveBeenCalledTimes(1);
+    expect(mockGetCameras.mock.calls[0][0]).toMatchObject({
       countryCode:'KE',
       liveOnly:true,
       includeSnapshots:true,
       maxRecords:250,
     });
-    expect(getCameras.mock.calls[0][0].bbox).toEqual([33.89, -4.68, 41.86, 5.51]);
-    expect(getCameras.mock.calls[0][0].orgId).toBe('org-a');
+    expect(mockGetCameras.mock.calls[0][0].bbox).toEqual([33.89, -4.68, 41.86, 5.51]);
+    expect(mockGetCameras.mock.calls[0][0].orgId).toBe('org-a');
   });
 
   test('keeps continuous-video-only behavior available when snapshots are not requested', async () => {
@@ -85,7 +85,7 @@ describe('CCTV wall route contract', () => {
       .query({ country:'KE', liveOnly:'true' })
       .expect(200);
 
-    expect(getCameras.mock.calls[0][0].liveOnly).toBe(true);
-    expect(getCameras.mock.calls[0][0].includeSnapshots).toBe(false);
+    expect(mockGetCameras.mock.calls[0][0].liveOnly).toBe(true);
+    expect(mockGetCameras.mock.calls[0][0].includeSnapshots).toBe(false);
   });
 });
