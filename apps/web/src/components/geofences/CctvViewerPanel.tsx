@@ -126,6 +126,27 @@ function whepVideoCapability(camera: SpatialWorldEntity) {
   return cameraMedia(camera).liveVideo === true && String(camera.id).startsWith('openeye:')
 }
 
+function platformEmbedUrl(camera: SpatialWorldEntity) {
+  return String(cameraMedia(camera).platformEmbedUrl ?? '').trim()
+}
+
+function platformVideoCapability(camera: SpatialWorldEntity) {
+  return cameraHealth(camera) === 'LIVE' && Boolean(platformEmbedUrl(camera))
+}
+
+function InlinePlatformVideo({ src, title }: { src: string; title: string }) {
+  return (
+    <iframe
+      src={src}
+      title={title}
+      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+      allowFullScreen
+      referrerPolicy="strict-origin-when-cross-origin"
+      className="gev-cctv-platform-player"
+    />
+  )
+}
+
 function whepUrlFor(camera: SpatialWorldEntity) {
   const base = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1').replace(/\/+$/, '')
   return base + '/cctv/' + encodeURIComponent(camera.id) + '/live'
