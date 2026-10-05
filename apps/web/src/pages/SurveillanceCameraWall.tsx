@@ -78,7 +78,7 @@ export default function SurveillanceCameraWall() {
     Number(data?.coverage?.providers?.opencctv?.recordCount ?? 0) +
     Number(data?.coverage?.providers?.openeye?.free ?? 0)
   const publicTotal = publicDirectoryRecords ||
-    data?.coverage?.providers?.openeye?.total ??
+    data?.coverage?.providers?.openeye?.total ||
     cameras.length
 
   const playableVideoCount = cameras.filter(camera => {
