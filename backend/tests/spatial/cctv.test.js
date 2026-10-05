@@ -147,45 +147,36 @@ describe('spatial CCTV capability', () => {
   });
 
 
-  test('ingests continuous OpenCCTV feeds as playable live video and keeps country scope', async () => {
+  test('ingests current OpenCCTV marker + batch records as live video and snapshots', async () => {
     process.env.CCTV_ENABLE_OPENCCTV = '1';
-    jest.spyOn(global, 'fetch').mockResolvedValue({
-      ok:true,
-      json:async()=>[
-        {
-          id:'za-video-1',
-          name:'Pretoria N1 live',
-          city:'Pretoria',
-          country:'South Africa',
-          lat:-25.7479,
-          lng:28.2293,
-          feed_type:'m3u8',
-          feed_url:'https://cdn.example.org/pretoria/live.m3u8',
-          source:'SANRAL',
-          active:1
-        },
-        {
-          id:'za-image-1',
-          name:'Pretoria snapshot',
-          city:'Pretoria',
-          country:'South Africa',
-          lat:-25.75,
-          lng:28.23,
-          feed_type:'image',
-          feed_url:'https://cdn.example.org/pretoria/snapshot.jpg',
-          source:'SANRAL',
-          active:1
-        },
-        {
-          id:'inactive-1',
-          name:'Inactive',
-          lat:-25.75,
-          lng:28.24,
-          feed_type:'m3u8',
-          feed_url:'https://cdn.example.org/offline.m3u8',
-          active:0
-        }
-      ]
+    const records = [
+      {
+        id:'za-video-1', name:'Pretoria N1 live', city:'Pretoria', country:'South Africa',
+        lat:-25.7479, lng:28.2293, feed_type:'m3u8',
+        feed_url:'https://cdn.example.org/pretoria/live.m3u8', source:'SANRAL', active:1
+      },
+      {
+        id:'za-image-1', name:'Pretoria snapshot', city:'Pretoria', country:'South Africa',
+        lat:-25.75, lng:28.23, feed_type:'image',
+        feed_url:'http://cdn.example.org/pretoria/snapshot.jpg', source:'SANRAL', active:1,
+        live:true, last_frame_age_s:18, frame_interval_s:30, frame_ts:1791210000000
+      },
+      {
+        id:'inactive-1', name:'Inactive', lat:-25.75, lng:28.24,
+        feed_type:'m3u8', feed_url:'https://cdn.example.org/offline.m3u8', active:0
+      }
+    ];
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.includes('/api/cameras/markers')) {
+        return { ok:true, headers:{ get:() => '1024' }, json:async()=>({
+          ids:records.map(r=>r.id), lats:records.map(r=>r.lat), lngs:records.map(r=>r.lng)
+        }) };
+      }
+      if (href.includes('/api/cameras/batch')) {
+        return { ok:true, headers:{ get:() => null }, json:async()=>records };
+      }
+      throw new Error('unexpected OpenCCTV URL: ' + href);
     });
     const rows = await loadOpenCctvCatalog({ countryCode:'ZA', maxRecords:10 });
     expect(rows).toHaveLength(2);
@@ -193,31 +184,71 @@ describe('spatial CCTV capability', () => {
     expect(live.media.kind).toBe('video');
     expect(live.media.liveVideo).toBe(true);
     expect(live.media.feedKind).toBe('live_video');
-    expect(global.fetch.mock.calls[0][0]).toContain('bounds=-34.82%2C16.34%2C-22.09%2C32.83');
+    const snapshot = rows.find(c => c.id === 'opencctv:za-image-1');
+    expect(snapshot.media.kind).toBe('image');
+    expect(snapshot.media.providerFrameAvailable).toBe(true);
+    expect(snapshot.media.direct).toBe(false);
+    expect(snapshot.media.frameUrl).toBe(null);
+    expect(snapshot.health.status).toBe('LIVE');
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://opencctv.org/api/cameras/markers',
+      expect.objectContaining({ headers:expect.objectContaining({ Referer:'https://opencctv.org/' }) })
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://opencctv.org/api/cameras/batch',
+      expect.objectContaining({ method:'POST', body:JSON.stringify({ ids:['za-video-1','za-image-1','inactive-1'] }) })
+    );
   });
 
-  test('resolves non-OpenEye live cameras for focused playback', async () => {
+  test('resolves current OpenCCTV camera detail through the batch endpoint', async () => {
     process.env.CCTV_ENABLE_OPENCCTV = '1';
-    process.env.CCTV_ENABLE_CALTRANS = '0';
-    jest.spyOn(global, 'fetch').mockResolvedValue({
-      ok:true,
-      json:async()=>[
-        {
-          id:'za-video-1',
-          name:'Pretoria N1 live',
-          lat:-25.7479,
-          lng:28.2293,
-          feed_type:'m3u8',
-          feed_url:'https://cdn.example.org/pretoria/live.m3u8',
-          source:'SANRAL',
-          active:1
-        }
-      ]
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+      if (String(url).includes('/api/cameras/batch')) {
+        return {
+          ok:true,
+          headers:{ get:() => null },
+          json:async()=>[{
+            id:'za-video-1', name:'Pretoria N1 live', city:'Pretoria', country:'South Africa',
+            lat:-25.7479, lng:28.2293, feed_type:'m3u8',
+            feed_url:'https://cdn.example.org/pretoria/live.m3u8', source:'SANRAL', active:1
+          }]
+        };
+      }
+      throw new Error('unexpected OpenCCTV URL: ' + String(url));
     });
     const camera = await getCameraById('opencctv:za-video-1');
     expect(camera?.id).toBe('opencctv:za-video-1');
     expect(camera?.media.liveVideo).toBe(true);
     expect(camera?.media.url).toBe('https://cdn.example.org/pretoria/live.m3u8');
+  });
+
+  test('proxies an OpenCCTV image feed through the bounded snapshot gateway', async () => {
+    process.env.CCTV_ENABLE_OPENCCTV = '1';
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.includes('/api/cameras/batch')) {
+        return { ok:true, headers:{ get:() => null }, json:async()=>[{
+          id:'za-image-1', name:'Pretoria snapshot', city:'Pretoria', country:'South Africa',
+          lat:-25.75, lng:28.23, feed_type:'image',
+          feed_url:'https://public.example.org/cam.jpg', source:'SANRAL', active:1,
+          live:true, frame_interval_s:30, last_frame_age_s:10
+        }] };
+      }
+      if (href === 'https://public.example.org/cam.jpg') {
+        return {
+          ok:true,
+          status:200,
+          headers:{ get:(key) => key === 'content-type' ? 'image/jpeg' : '4' },
+          arrayBuffer:async()=>new Uint8Array([255,216,255,217]).buffer
+        };
+      }
+      throw new Error('unexpected OpenCCTV URL: ' + href);
+    });
+    const camera = await getCameraById('opencctv:za-image-1');
+    const frame = await getFrame(camera);
+    expect(frame.synthetic).toBe(false);
+    expect(frame.contentType).toBe('image/jpeg');
+    expect(frame.buffer.byteLength).toBe(4);
   });
 
   test('ingests official Caltrans streamingVideoURL records as live video', async () => {
