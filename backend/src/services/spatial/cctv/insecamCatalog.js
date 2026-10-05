@@ -273,7 +273,10 @@ async function loadIndexPage(countryCode) {
 }
 
 async function loadInsecamCatalog(options = {}) {
-  const enabled = String(process.env.CCTV_ENABLE_INSECAM || '1') !== '0';
+  const explicit = process.env.CCTV_ENABLE_INSECAM;
+  const enabled = explicit != null
+    ? String(explicit).trim() !== '0'
+    : process.env.NODE_ENV !== 'test';
   providerHealth.enabled = enabled;
   if (!enabled) {
     providerHealth.status = 'DISABLED';
