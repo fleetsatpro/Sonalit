@@ -86,7 +86,7 @@ function sourceMediaPlaybackKind(camera: SpatialWorldEntity): 'video' | 'mjpeg' 
   if (
     type === 'video' ||
     type.includes('mpegurl') ||
-    /\\.(?:m3u8|mp4|webm|mov|m4v|og[gv]|mjpg|mjpeg)(?:[?#].*)?$/i.test(url)
+    /\.(?:m3u8|mp4|webm|mov|m4v|og[gv]|mjpg|mjpeg)(?:[?#].*)?$/i.test(url)
   ) return 'video'
   return null
 }
@@ -94,7 +94,7 @@ function sourceMediaPlaybackKind(camera: SpatialWorldEntity): 'video' | 'mjpeg' 
 function sourceMediaIsImage(camera: SpatialWorldEntity) {
   const url = sourceMediaUrl(camera)
   const type = sourceMediaType(camera)
-  return type === 'image' || /\\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url)
+  return type === 'image' || /\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url)
 }
 
 function frameAge(camera: SpatialWorldEntity) {
