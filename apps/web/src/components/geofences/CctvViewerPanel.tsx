@@ -1064,7 +1064,7 @@ export default function CctvViewerPanel({
                 ? <a href={attribution.url} target="_blank" rel="noreferrer noopener">{attribution.name}</a>
                 : attribution.name}
               {direct && <span> · PREVIEW AUTHORIZED</span>}
-              {mode === 'source' && viewerUrl && (
+              {!standalone && mode === 'source' && viewerUrl && (
                 <a className="gev-cctv-inline-source" href={viewerUrl} target="_blank" rel="noreferrer noopener"><ExternalLink size={10} /> OPEN PUBLISHER</a>
               )}
             </div>
