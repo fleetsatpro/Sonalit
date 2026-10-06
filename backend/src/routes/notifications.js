@@ -1,17 +1,15 @@
 const express = require('express');
-const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
-const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 
 const router = express.Router();
-router.use(authenticate, attachOrgDb);
+router.use(authenticate);
 
 // Operator notification feed. Notifications are user-scoped; an organisation
 // is never inferred from client-supplied query parameters.
 router.get('/', asyncHandler(async (req, res) => {
   const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 10));
-  const { rows } = req.db(
+  const { rows } = await req.db(
     `SELECT id, type, title, body,
             CASE WHEN read_at IS NULL THEN false ELSE true END AS read,
             created_at
@@ -25,7 +23,7 @@ router.get('/', asyncHandler(async (req, res) => {
 }));
 
 router.post('/read-all', asyncHandler(async (req, res) => {
-  const result = req.db(
+  const result = await req.db(
     `UPDATE notifications
         SET read_at = COALESCE(read_at, NOW())
       WHERE user_id = $1
