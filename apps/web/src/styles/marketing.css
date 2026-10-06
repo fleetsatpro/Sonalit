@@ -1720,3 +1720,68 @@
     transform: none;
   }
 }
+
+
+/* Route-level accent choreography keeps every public page recognisable as Sonalit,
+   but gives the page a distinct editorial voice instead of recolouring everything lime. */
+.sonalit-public[data-page-tone="fleet"] { --page-accent: var(--signal); --page-accent-ink: #4f651e; }
+.sonalit-public[data-page-tone="convoy"] { --page-accent: var(--copper); --page-accent-ink: #8b5130; }
+.sonalit-public[data-page-tone="container"] { --page-accent: var(--teal); --page-accent-ink: #2f7662; }
+.sonalit-public[data-page-tone="security"] { --page-accent: var(--danger); --page-accent-ink: #8d3f43; }
+.sonalit-public[data-page-tone="neutral"] { --page-accent: var(--signal); --page-accent-ink: #4f651e; }
+
+.sonalit-public[data-page-tone="fleet"] .hero-compact > .hero-badge,
+.sonalit-public[data-page-tone="convoy"] .hero-compact > .hero-badge,
+.sonalit-public[data-page-tone="container"] .hero-compact > .hero-badge,
+.sonalit-public[data-page-tone="security"] .hero-compact > .hero-badge {
+  border-left-color: var(--page-accent);
+}
+
+.sonalit-public[data-page-tone="fleet"] .hero-compact .grad,
+.sonalit-public[data-page-tone="convoy"] .hero-compact .grad,
+.sonalit-public[data-page-tone="container"] .hero-compact .grad,
+.sonalit-public[data-page-tone="security"] .hero-compact .grad {
+  color: var(--page-accent);
+}
+
+.sonalit-public[data-page-tone="fleet"] .hero-compact > .hero-badge .hero-badge-index,
+.sonalit-public[data-page-tone="convoy"] .hero-compact > .hero-badge .hero-badge-index,
+.sonalit-public[data-page-tone="container"] .hero-compact > .hero-badge .hero-badge-index,
+.sonalit-public[data-page-tone="security"] .hero-compact > .hero-badge .hero-badge-index {
+  color: var(--page-accent);
+}
+
+.sonalit-public[data-page-tone="fleet"] .section-label { color: #91ad3b; }
+.sonalit-public[data-page-tone="convoy"] .section-label { color: var(--copper); }
+.sonalit-public[data-page-tone="container"] .section-label { color: var(--teal); }
+.sonalit-public[data-page-tone="security"] .section-label { color: #ff9999; }
+
+.sonalit-public[data-page-tone="fleet"] .feat-copy::before,
+.sonalit-public[data-page-tone="fleet"] .feat-visual::before,
+.sonalit-public[data-page-tone="fleet"] .feat-list li::before,
+.sonalit-public[data-page-tone="fleet"] .feat-visual-label {
+  --accent: var(--signal);
+}
+.sonalit-public[data-page-tone="convoy"] .feat-copy::before,
+.sonalit-public[data-page-tone="convoy"] .feat-visual::before,
+.sonalit-public[data-page-tone="convoy"] .feat-list li::before,
+.sonalit-public[data-page-tone="convoy"] .feat-visual-label {
+  --accent: var(--copper);
+}
+.sonalit-public[data-page-tone="container"] .feat-copy::before,
+.sonalit-public[data-page-tone="container"] .feat-visual::before,
+.sonalit-public[data-page-tone="container"] .feat-list li::before,
+.sonalit-public[data-page-tone="container"] .feat-visual-label {
+  --accent: var(--teal);
+}
+.sonalit-public[data-page-tone="security"] .feat-copy::before,
+.sonalit-public[data-page-tone="security"] .feat-visual::before,
+.sonalit-public[data-page-tone="security"] .feat-list li::before,
+.sonalit-public[data-page-tone="security"] .feat-visual-label {
+  --accent: var(--danger);
+}
+
+.sonalit-public[data-page-tone="fleet"] .inline-link { color: #b7db59; }
+.sonalit-public[data-page-tone="convoy"] .inline-link { color: var(--copper); }
+.sonalit-public[data-page-tone="container"] .inline-link { color: var(--teal); }
+.sonalit-public[data-page-tone="security"] .inline-link { color: #ff9d9d; }
