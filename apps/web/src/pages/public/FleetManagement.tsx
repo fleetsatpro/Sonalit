@@ -18,13 +18,11 @@ export default function FleetManagement(): React.ReactElement {
           <i aria-hidden="true" /> Fleet Management
         </div>
         <h1>
-          Fleet management built around{' '}
-          <span className="grad">live vehicle operations</span>
+          Know where every vehicle stands.
+          
         </h1>
         <p className="hero-lead">
-          Sonalit keeps vehicles, drivers, devices and journeys in one operational record. Where a
-          vehicle is, who is driving it, when it is next due for service and what it costs to run
-          are answered from the same live data set — not from three spreadsheets that disagree.
+          Sonalit puts live vehicle position, driver assignment, journey history and fleet records in one place — so the person running the operation can see what is moving, what needs attention and what happened before.
         </p>
       </header>
 
