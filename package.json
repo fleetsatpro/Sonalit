@@ -4,7 +4,7 @@
   "private": true,
   "description": "Sonalit v4 — multi-tenant fleet operations and convoy field-security platform",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=22.0.0",
     "pnpm": ">=11.28.4"
   },
   "packageManager": "pnpm@11.28.4",
