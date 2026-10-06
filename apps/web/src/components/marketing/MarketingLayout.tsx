@@ -24,8 +24,19 @@ export default function MarketingLayout({
   page: PageSeo;
   children: React.ReactNode;
 }): React.ReactElement {
+  const pageTone =
+    page.path === '/fleet-management'
+      ? 'fleet'
+      : page.path === '/convoy-management'
+        ? 'convoy'
+        : page.path === '/container-delivery'
+          ? 'container'
+          : page.path === '/security-operations'
+            ? 'security'
+            : 'neutral';
+
   return (
-    <div className="sonalit-public">
+    <div className="sonalit-public" data-page-tone={pageTone}>
       <Seo page={page} />
       <div className="bg-base" aria-hidden="true" />
       <div className="bg-glow" aria-hidden="true" />
