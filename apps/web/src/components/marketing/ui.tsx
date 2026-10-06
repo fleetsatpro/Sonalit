@@ -94,7 +94,7 @@ export function FeatureBlock({
     <div className="feat-visual">
       {visual}
       <div className="feat-visual-label">
-        <span className="live" aria-hidden="true" />
+        <span className="visual-marker" aria-hidden="true" />
         {visualLabel}
       </div>
     </div>
