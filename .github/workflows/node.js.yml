@@ -69,7 +69,17 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # One bootstrap run intentionally regenerates the lockfile with the pinned
+        # pnpm version so the env lockfile is authoritative before we restore the
+        # strict frozen-install gate.
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
+
+      - name: Capture pnpm 12 lockfile
+        uses: actions/upload-artifact@v6
+        with:
+          name: pnpm12-generated-lockfile
+          path: pnpm-lock.yaml
+          retention-days: 1
 
       - name: Backend syntax gate
         # Docker can build a broken CommonJS file because COPY/npm ci never
