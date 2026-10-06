@@ -21,7 +21,7 @@ const { query, globalQuery } = require('../config/database');
 const { attachOrgDb, withOrg } = require('../utils/orgScopedDb');
 const { authenticate } = require('./auth');
 const logger = require('../utils/logger');
-const { runWithOrgContext } = require('../utils/tenantContext');
+const { getOrgId, runWithOrgContext } = require('../utils/tenantContext');
 
 /** Roles that may hold a Field session at all. */
 const FIELD_ROLES = ['yard_agent', 'port_agent', 'response_crew'];
@@ -79,12 +79,14 @@ async function resolveDevice(req) {
   const token = req.headers['x-field-device'];
   if (!token || typeof token !== 'string') return null;
 
-  // Device resolution is a bootstrap operation: the caller's org is encoded
-  // in the device row we're trying to discover. Calling tenant-scoped query()
-  // here is impossible by definition and fails closed before the org exists.
-  // globalQuery() is the explicit bootstrap escape hatch; every operation after
-  // discovery re-enters the tenant context below.
-  const result = await globalQuery(
+  // Device resolution is bootstrap only when no tenant has been established.
+  // That is the case for /field/app/device and /field/app/me. Some Field routes
+  // deliberately run requireDevice() before fieldAuthenticate(), so a second
+  // resolution happens inside an existing tenant context; globalQuery() is
+  // forbidden there by design. Use the scoped query whenever context exists,
+  // and reserve globalQuery() strictly for the pre-tenant bootstrap boundary.
+  const lookup = getOrgId() ? query : globalQuery;
+  const result = await lookup(
     `SELECT * FROM field_devices
       WHERE token_hash = $1 AND status = 'active' AND revoked_at IS NULL`,
     [sha256(token)]
