@@ -1610,3 +1610,771 @@
     transition: none;
   }
 }
+
+
+/* ===================================================================== */
+/* EDITORIAL V3 — REAL-WORLD LOGISTICS                                  */
+/* ===================================================================== */
+
+/*
+ * This layer changes the composition, not merely the decoration:
+ * - photography becomes the visual anchor;
+ * - copy is paced like an editorial B2B site: claim → explanation → proof;
+ * - operating colours identify domains rather than colouring everything;
+ * - images carry source labels so reference imagery is never mistaken for
+ *   live telemetry.
+ */
+
+.sonalit-public {
+  --paper: #f3f0e8;
+  --ink: #111712;
+  --ink-2: #4e584f;
+  --paper-line: rgba(17,23,18,.14);
+  --orange-hot: #ff6b1a;
+  --cyan-hot: #16d8eb;
+  --amber-hot: #efbd2e;
+  --red-hot: #e74554;
+}
+
+.sonalit-public .home-hero {
+  max-width: 1440px;
+  margin: 0 auto;
+  min-height: auto;
+  padding: 9.2rem 2.5rem 5.5rem;
+  display: grid;
+  grid-template-columns: minmax(430px,.88fr) minmax(0,1.12fr);
+  gap: clamp(3rem,6vw,7rem);
+  align-items: end;
+}
+
+.sonalit-public .home-hero-copy {
+  padding-bottom: 1.6rem;
+}
+
+.sonalit-public .home-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: .65rem;
+  margin-bottom: 1.5rem;
+  color: var(--text-3);
+  font-size: .62rem !important;
+  letter-spacing: .12em;
+}
+
+.sonalit-public .home-eyebrow::before {
+  content: '';
+  width: 22px;
+  height: 2px;
+  background: var(--orange);
+}
+
+.sonalit-public .home-hero h1 {
+  max-width: 9.5ch;
+  margin-bottom: 1.6rem;
+  font-size: clamp(4.1rem,7.3vw,7.8rem);
+  line-height: .86;
+  letter-spacing: -.065em;
+}
+
+.sonalit-public .home-hero h1 span {
+  display: block;
+  color: var(--orange);
+}
+
+.sonalit-public .home-hero-lead {
+  max-width: 560px;
+  margin-bottom: 2rem;
+  color: #aeb8c8;
+  font-size: 1.04rem;
+  line-height: 1.75;
+}
+
+.sonalit-public .home-proof-line {
+  max-width: 650px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem 1.25rem;
+  align-items: center;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  color: #738198;
+  font: 500 .58rem/1.3 var(--mono);
+  letter-spacing: .08em;
+}
+
+.sonalit-public .home-proof-line span:first-child {
+  color: var(--text-2);
+}
+
+.sonalit-public .home-hero-media {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0,1.4fr) minmax(140px,.6fr);
+  gap: .7rem;
+  align-items: stretch;
+}
+
+.sonalit-public .home-hero-satellite {
+  position: relative;
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  background: #070b10;
+}
+
+.sonalit-public .home-hero-satellite .marketing-photo-frame {
+  height: 100%;
+  min-height: 520px;
+}
+
+.sonalit-public .home-hero-satellite img {
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: contrast(1.05) saturate(.86);
+}
+
+.sonalit-public .home-hero-satellite::after {
+  content: '';
+  position: absolute;
+  inset: 46% 0 0;
+  background: linear-gradient(to bottom, transparent, rgba(4,7,12,.88));
+  pointer-events: none;
+}
+
+.sonalit-public .home-hero-satellite-caption {
+  position: absolute;
+  left: 1.2rem;
+  right: 1.2rem;
+  bottom: 1.15rem;
+  z-index: 3;
+}
+
+.sonalit-public .home-hero-satellite-caption span,
+.sonalit-public .photo-note {
+  display: inline-block;
+  color: rgba(255,255,255,.68);
+  font: 500 .52rem/1.2 var(--mono) !important;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.sonalit-public .home-hero-satellite-caption strong {
+  display: block;
+  max-width: 14ch;
+  margin: .4rem 0 .25rem;
+  color: #fff;
+  font-size: clamp(1.4rem,2.2vw,2.15rem);
+  line-height: .98;
+}
+
+.sonalit-public .home-hero-satellite-caption p {
+  color: rgba(255,255,255,.67);
+  font-size: .68rem;
+}
+
+.sonalit-public .home-hero-side {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: .7rem;
+}
+
+.sonalit-public .home-hero-side-photo {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  background: var(--carbon);
+}
+
+.sonalit-public .home-hero-side-photo img {
+  height: 100%;
+  object-fit: cover;
+  opacity: .8;
+}
+
+.sonalit-public .home-hero-side-photo::after {
+  content: '';
+  position: absolute;
+  inset: 52% 0 0;
+  background: linear-gradient(to bottom, transparent, rgba(4,7,12,.72));
+  pointer-events: none;
+}
+
+.sonalit-public .home-hero-side-photo > span {
+  position: absolute;
+  z-index: 3;
+  left: .7rem;
+  bottom: .65rem;
+  color: rgba(255,255,255,.72);
+  font: 500 .5rem/1 var(--mono) !important;
+  letter-spacing: .09em;
+}
+
+.sonalit-public .marketing-photo-frame {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #090e15;
+}
+
+.sonalit-public .marketing-photo-frame img {
+  width: 100%;
+  display: block;
+}
+
+.sonalit-public .marketing-photo-frame .photo-note {
+  position: absolute;
+  z-index: 4;
+  left: .75rem;
+  top: .75rem;
+  padding: .35rem .45rem;
+  background: rgba(4,7,12,.75);
+  border-left: 2px solid var(--orange);
+  backdrop-filter: blur(2px);
+}
+
+.sonalit-public .marketing-photo-frame .photo-credit {
+  position: absolute;
+  z-index: 4;
+  right: .65rem;
+  bottom: .6rem;
+  max-width: 78%;
+  padding: .28rem .4rem;
+  background: rgba(4,7,12,.72);
+  color: rgba(255,255,255,.58);
+  font-size: .46rem !important;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.sonalit-public .marketing-photo-frame .photo-credit:hover {
+  color: #fff;
+}
+
+.sonalit-public .feat .marketing-photo-frame {
+  min-height: 440px;
+}
+
+.sonalit-public .feat .marketing-photo-frame img {
+  height: 100%;
+  min-height: 440px;
+  object-fit: cover;
+  filter: contrast(1.04) saturate(.92);
+}
+
+.sonalit-public .frame-landscape img { aspect-ratio: 16 / 10; object-fit: cover; }
+.sonalit-public .frame-portrait img { aspect-ratio: 4 / 5; object-fit: cover; }
+.sonalit-public .frame-wide img { aspect-ratio: 16 / 9; object-fit: cover; }
+
+.sonalit-public .home-intro-band {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 5.8rem 2.5rem 6.4rem;
+  display: grid;
+  grid-template-columns: .38fr 1.62fr;
+  gap: clamp(2.5rem,8vw,8rem);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.sonalit-public .home-intro-kicker {
+  padding-top: .55rem;
+  color: #737b73;
+  font-size: .58rem !important;
+  letter-spacing: .1em;
+}
+
+.sonalit-public .home-intro-band h2 {
+  max-width: 13ch;
+  margin-bottom: 1.35rem;
+  font-size: clamp(3rem,5.6vw,6.1rem);
+  line-height: .88;
+}
+
+.sonalit-public .home-intro-band h2::after {
+  content: '';
+  display: block;
+  width: 64px;
+  height: 5px;
+  margin-top: 1.5rem;
+  background: var(--orange);
+}
+
+.sonalit-public .home-intro-band p {
+  max-width: 64ch;
+  color: var(--ink-2);
+  font-size: .92rem;
+  line-height: 1.85;
+}
+
+.sonalit-public .home-platform {
+  padding-top: 8rem;
+  padding-bottom: 8.5rem;
+}
+
+.sonalit-public .home-section-intro {
+  max-width: 800px;
+  margin-bottom: 3.2rem;
+}
+
+.sonalit-public .home-section-intro h2 {
+  max-width: 15ch;
+  margin-bottom: 1rem;
+  font-size: clamp(2.8rem,5vw,5.3rem);
+  line-height: .92;
+}
+
+.sonalit-public .home-section-intro > p:last-child {
+  max-width: 62ch;
+  color: var(--text-2);
+  font-size: .86rem;
+  line-height: 1.8;
+}
+
+.sonalit-public .home-domain-list {
+  border-top: 1px solid var(--line-2);
+}
+
+.sonalit-public .home-domain-row {
+  min-height: 146px;
+  display: grid;
+  grid-template-columns: 70px minmax(220px,.85fr) minmax(260px,1.15fr) 28px;
+  gap: 1.5rem;
+  align-items: center;
+  position: relative;
+  padding: 1.4rem .9rem;
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  transition: background-color .2s ease, padding .2s ease;
+}
+
+.sonalit-public .home-domain-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--domain-accent, var(--orange));
+  opacity: .9;
+}
+
+.sonalit-public .home-domain-row.tone-fleet { --domain-accent: var(--cyan-hot); }
+.sonalit-public .home-domain-row.tone-convoy { --domain-accent: var(--amber-hot); }
+.sonalit-public .home-domain-row.tone-container { --domain-accent: var(--orange-hot); }
+.sonalit-public .home-domain-row.tone-security { --domain-accent: var(--red-hot); }
+
+.sonalit-public .home-domain-row:hover {
+  padding-left: 1.35rem;
+  background: rgba(255,255,255,.025);
+}
+
+.sonalit-public .home-domain-number {
+  color: var(--text-3);
+  font-size: .62rem !important;
+  letter-spacing: .08em;
+}
+
+.sonalit-public .home-domain-main h3 {
+  margin-bottom: .25rem;
+  font-size: 2rem;
+  line-height: .95;
+}
+
+.sonalit-public .home-domain-main strong {
+  color: var(--domain-accent, var(--orange));
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+.sonalit-public .home-domain-row > p {
+  max-width: 43ch;
+  color: var(--text-2);
+  font-size: .76rem;
+  line-height: 1.65;
+}
+
+.sonalit-public .home-domain-arrow {
+  color: var(--domain-accent, var(--orange));
+  font-size: 1.3rem;
+  transform: translateX(0);
+  transition: transform .2s ease;
+}
+
+.sonalit-public .home-domain-row:hover .home-domain-arrow {
+  transform: translateX(5px);
+}
+
+.sonalit-public .home-handoffs {
+  max-width: 1440px;
+  margin: 0 auto;
+  background: #0a0f16;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.sonalit-public .home-handoffs-inner {
+  padding-top: 7.5rem;
+  padding-bottom: 7.5rem;
+}
+
+.sonalit-public .home-handoffs .home-section-intro h2 {
+  max-width: 13ch;
+}
+
+.sonalit-public .home-handoff-grid {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  margin-top: 3rem;
+  border-top: 1px solid var(--line-2);
+  border-left: 1px solid var(--line);
+}
+
+.sonalit-public .home-handoff {
+  min-height: 310px;
+  padding: 1.35rem 1.3rem 1.6rem;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  position: relative;
+}
+
+.sonalit-public .home-handoff:nth-child(1) { --handoff-accent: var(--cyan-hot); }
+.sonalit-public .home-handoff:nth-child(2) { --handoff-accent: var(--amber-hot); }
+.sonalit-public .home-handoff:nth-child(3) { --handoff-accent: var(--orange-hot); }
+.sonalit-public .home-handoff:nth-child(4) { --handoff-accent: var(--red-hot); }
+
+.sonalit-public .home-handoff::after {
+  content: '';
+  position: absolute;
+  left: 1.3rem;
+  right: 1.3rem;
+  bottom: 0;
+  height: 3px;
+  background: var(--handoff-accent);
+}
+
+.sonalit-public .home-handoff-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4.2rem;
+}
+
+.sonalit-public .home-handoff-number {
+  color: var(--handoff-accent);
+  font-size: .62rem !important;
+}
+
+.sonalit-public .home-handoff-label {
+  color: var(--text-3);
+  font-size: .5rem !important;
+  letter-spacing: .1em;
+}
+
+.sonalit-public .home-handoff h3 {
+  max-width: 11ch;
+  margin-bottom: .75rem;
+  font-size: 1.65rem;
+  line-height: .98;
+}
+
+.sonalit-public .home-handoff p {
+  max-width: 31ch;
+  color: var(--text-2);
+  font-size: .72rem;
+  line-height: 1.7;
+}
+
+.sonalit-public .home-capabilities {
+  padding-top: 8.2rem;
+  padding-bottom: 7rem;
+}
+
+.sonalit-public .home-capabilities .section-label {
+  color: var(--orange);
+}
+
+.sonalit-public .home-capabilities .feat {
+  margin-top: 1.5rem;
+}
+
+.sonalit-public .home-capabilities .feat + .feat {
+  margin-top: 0;
+}
+
+.sonalit-public .home-close-band {
+  max-width: 1440px;
+  margin: 0 auto;
+  background: var(--orange);
+  color: #170a02;
+}
+
+.sonalit-public .home-close-inner {
+  padding-top: 6.2rem;
+  padding-bottom: 6.2rem;
+  display: grid;
+  grid-template-columns: 1.25fr .75fr;
+  gap: 4rem;
+  align-items: end;
+}
+
+.sonalit-public .home-close-inner .eyebrow {
+  color: rgba(23,10,2,.56);
+}
+
+.sonalit-public .home-close-inner h2 {
+  max-width: 14ch;
+  margin-top: .7rem;
+  font-size: clamp(3rem,5.5vw,6rem);
+  line-height: .88;
+}
+
+.sonalit-public .home-close-inner > p {
+  max-width: 40ch;
+  justify-self: end;
+  color: rgba(23,10,2,.72);
+  font-size: .86rem;
+  line-height: 1.8;
+}
+
+/* Public service pages — same editorial grammar, more specific operational copy. */
+.sonalit-public .hero-compact {
+  max-width: 1180px;
+  padding-top: 10.4rem;
+  padding-bottom: 5.7rem;
+}
+
+.sonalit-public .hero-compact .hero-badge {
+  margin-bottom: 1.4rem;
+  padding-left: .75rem;
+  border-left: 4px solid var(--page-accent,var(--orange));
+}
+
+.sonalit-public .hero-compact h1 {
+  max-width: 12ch;
+  font-size: clamp(3.4rem,6.2vw,6.4rem);
+  line-height: .88;
+}
+
+.sonalit-public .hero-compact .hero-lead {
+  max-width: 760px;
+  color: #aeb8c8;
+  font-size: 1rem;
+  line-height: 1.8;
+}
+
+.sonalit-public .feat-copy {
+  padding-left: 1.6rem;
+}
+
+.sonalit-public .feat-copy h3 {
+  max-width: 13ch;
+  font-size: clamp(2.35rem,4vw,4.7rem);
+  line-height: .9;
+}
+
+.sonalit-public .feat-copy p {
+  max-width: 55ch;
+  color: #a4afc2;
+  font-size: .86rem;
+  line-height: 1.8;
+}
+
+.sonalit-public .feat-list li {
+  color: #c5ceda;
+  font-size: .72rem;
+  line-height: 1.6;
+}
+
+.sonalit-public .feat-list li::before {
+  width: 7px;
+  height: 7px;
+  margin-top: .35rem;
+  background: var(--feat-color,var(--orange));
+  border: 0;
+  transform: rotate(45deg);
+}
+
+.sonalit-public .cap {
+  min-height: 280px;
+  padding: 1.55rem;
+  border-top-width: 4px;
+  background: #0a111c;
+}
+
+.sonalit-public .cap h3 {
+  font-size: 1.28rem;
+}
+
+.sonalit-public .cap p {
+  color: #8795aa;
+  font-size: .74rem;
+  line-height: 1.7;
+}
+
+.sonalit-public .section-desc {
+  max-width: 760px;
+  font-size: .88rem;
+  line-height: 1.8;
+}
+
+@media (max-width: 1080px) {
+  .sonalit-public .home-hero {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .sonalit-public .home-hero-copy {
+    padding-bottom: 0;
+  }
+
+  .sonalit-public .home-hero-media {
+    max-width: 980px;
+  }
+
+  .sonalit-public .home-hero-satellite,
+  .sonalit-public .home-hero-satellite .marketing-photo-frame {
+    min-height: 440px;
+  }
+}
+
+@media (max-width: 900px) {
+  .sonalit-public .home-intro-band,
+  .sonalit-public .home-close-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .sonalit-public .home-handoff-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+
+  .sonalit-public .home-domain-row {
+    grid-template-columns: 46px minmax(170px,.8fr) minmax(0,1.2fr) 24px;
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .sonalit-public .home-hero {
+    padding-top: 7.7rem;
+    padding-bottom: 4rem;
+  }
+
+  .sonalit-public .home-hero h1 {
+    max-width: 8.6ch;
+    font-size: clamp(3.5rem,15vw,5.8rem);
+  }
+
+  .sonalit-public .home-hero-media {
+    grid-template-columns: 1fr;
+  }
+
+  .sonalit-public .home-hero-satellite,
+  .sonalit-public .home-hero-satellite .marketing-photo-frame {
+    min-height: 360px;
+  }
+
+  .sonalit-public .home-hero-side {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: none;
+  }
+
+  .sonalit-public .home-hero-side-photo {
+    min-height: 210px;
+  }
+
+  .sonalit-public .home-intro-band {
+    padding-top: 4.4rem;
+    padding-bottom: 4.6rem;
+  }
+
+  .sonalit-public .home-intro-band h2,
+  .sonalit-public .home-section-intro h2 {
+    font-size: clamp(2.75rem,11vw,4.3rem);
+  }
+
+  .sonalit-public .home-domain-row {
+    min-height: 0;
+    grid-template-columns: 32px 1fr 23px;
+    gap: .8rem;
+    padding-block: 1.2rem;
+  }
+
+  .sonalit-public .home-domain-row > p {
+    grid-column: 2 / 3;
+  }
+
+  .sonalit-public .home-domain-main h3 {
+    font-size: 1.6rem;
+  }
+
+  .sonalit-public .home-handoff-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sonalit-public .home-handoff {
+    min-height: 230px;
+  }
+
+  .sonalit-public .home-capabilities,
+  .sonalit-public .home-platform,
+  .sonalit-public .home-handoffs-inner {
+    padding-top: 5.2rem;
+    padding-bottom: 5.2rem;
+  }
+
+  .sonalit-public .feat .marketing-photo-frame,
+  .sonalit-public .feat .marketing-photo-frame img {
+    min-height: 300px;
+  }
+
+  .sonalit-public .home-close-inner {
+    padding-top: 4.6rem;
+    padding-bottom: 4.8rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .sonalit-public .home-hero-side {
+    grid-template-columns: 1fr;
+  }
+
+  .sonalit-public .home-hero-side-photo {
+    min-height: 180px;
+  }
+
+  .sonalit-public .home-proof-line {
+    gap: .5rem .9rem;
+  }
+
+  .sonalit-public .home-intro-band,
+  .sonalit-public .home-hero {
+    padding-left: .9rem;
+    padding-right: .9rem;
+  }
+
+  .sonalit-public .home-domain-row {
+    grid-template-columns: 28px 1fr 18px;
+  }
+
+  .sonalit-public .home-domain-row > p {
+    font-size: .68rem;
+  }
+
+  .sonalit-public .home-domain-main strong {
+    font-size: .7rem;
+  }
+
+  .sonalit-public .marketing-photo-frame .photo-credit {
+    max-width: 90%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sonalit-public .home-domain-row,
+  .sonalit-public .home-domain-arrow {
+    transition: none;
+  }
+}
