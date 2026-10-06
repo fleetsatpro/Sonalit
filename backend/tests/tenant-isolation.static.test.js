@@ -295,4 +295,32 @@ describe('tenant isolation regression guards', () => {
       expect(guardian).toContain(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS org_id UUID`);
     }
   });
+  test('authentication re-entry becomes tenant-scoped instead of invoking globalQuery inside a tenant', () => {
+    const auth = fs.readFileSync(path.join(__dirname, '../src/middleware/auth.js'), 'utf8');
+    expect(auth).toContain("const { globalQuery, query } = require('../config/database');");
+    expect(auth).toContain("const { getOrgId } = require('../utils/tenantContext');");
+    expect(auth).toContain('const tenantOrgId = getOrgId();');
+    expect(auth).toContain("WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL");
+  });
+
+  test('notifications are mounted before root compatibility routers and do not self-mount asynchronously', () => {
+    const app = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8');
+    const rules = fs.readFileSync(path.join(__dirname, '../src/routes/rules.js'), 'utf8');
+    const notificationsAt = app.indexOf('app.use("/api/v1/notifications"');
+    const claimsAt = app.indexOf('app.use("/api/v1", require("./routes/claims"))');
+    expect(notificationsAt).toBeGreaterThan(-1);
+    expect(claimsAt).toBeGreaterThan(-1);
+    expect(notificationsAt).toBeLessThan(claimsAt);
+    expect(rules).not.toContain('__sonalitNotificationsMounted');
+    expect(rules).not.toContain('process.nextTick');
+  });
+
+  test('intelligence overview is a real tenant-scoped route contract', () => {
+    const intelligence = fs.readFileSync(path.join(__dirname, '../src/routes/intelligenceOperations.js'), 'utf8');
+    expect(intelligence).toContain("router.get('/overview'");
+    expect(intelligence).toContain('FROM intel_events e');
+    expect(intelligence).toContain('e.org_id=$1');
+    expect(intelligence).toContain('const s=scope(req);');
+  });
+
 });

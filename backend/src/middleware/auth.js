@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
-const { globalQuery } = require('../config/database');
+const { globalQuery, query } = require('../config/database');
 const { attachOrgDb } = require('../utils/orgScopedDb');
+const { getOrgId } = require('../utils/tenantContext');
 const logger = require('../utils/logger');
 
 // The office ladder only. Scoped field roles (yard_agent, port_agent,
@@ -36,11 +37,20 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ error: message });
     }
 
-    // Include org_id so req.db can scope queries correctly (T1.1)
-    const result = await globalQuery(
-      'SELECT id, email, name, role, status, org_id FROM users WHERE id = $1 AND deleted_at IS NULL',
-      [decoded.id]
-    );
+    // Authentication can be reached more than once when a legacy router
+    // falls through to another compatibility surface. Once a tenant context
+    // exists, a second user lookup MUST remain tenant-scoped; calling
+    // globalQuery() there would violate the fail-closed RLS boundary.
+    const tenantOrgId = getOrgId();
+    const result = tenantOrgId
+      ? await query(
+        'SELECT id, email, name, role, status, org_id FROM users WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL',
+        [decoded.id, tenantOrgId],
+      )
+      : await globalQuery(
+        'SELECT id, email, name, role, status, org_id FROM users WHERE id = $1 AND deleted_at IS NULL',
+        [decoded.id],
+      );
     if (!result.rows.length) {
       return res.status(401).json({ error: 'User not found' });
     }

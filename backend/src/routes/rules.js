@@ -225,16 +225,5 @@ router.delete('/:id', authorize('admin', 'dispatcher', 'operator'), asyncHandler
   res.status(204).send();
 }));
 
-// app.js predates the operator notifications router. Mount the compatibility
-// route after app.js has finished constructing/exporting the Express instance.
-process.nextTick(() => {
-  try {
-    const app = require('../app').app;
-    if (app && !app.__sonalitNotificationsMounted) {
-      app.__sonalitNotificationsMounted = true;
-      app.use('/api/v1/notifications', require('./notifications'));
-    }
-  } catch (_) {}
-});
 
 module.exports = router;

@@ -5,6 +5,78 @@ const { issuePublicationPdfCapability } = require('../middleware/publicationPdfC
 const priorityRank = `CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END`;
 const scope = req => normaliseScope(req);
 
+router.get('/overview', asyncHandler(async (req,res)=>{
+  const s=scope(req);
+  const eventsGeo=countryClause(s,'e',2);
+  const observationsGeo=countryClause(s,'o',2);
+  const warningsGeo=scopedObjectClause(s,'w',2);
+  const gapsGeo=scopedObjectClause(s,'g',2);
+
+  const [eventsR, eventSummaryR, observationsR, warningsR, gapsR] = await Promise.all([
+    req.db(
+      `SELECT e.*,
+              COUNT(DISTINCT eo.observation_id)::int AS source_count
+         FROM intel_events e
+         LEFT JOIN intel_event_observations eo ON eo.event_id=e.id
+        WHERE e.org_id=$1
+          AND ${eventsGeo.clause}
+        GROUP BY e.id
+        ORDER BY e.last_seen_at DESC
+        LIMIT 50`,
+      [req.user.org_id,...eventsGeo.params],
+    ),
+    req.db(
+      `SELECT
+          COUNT(*) FILTER (WHERE e.last_seen_at>=now()-interval '24 hours')::int AS events_24h,
+          COUNT(*) FILTER (
+            WHERE e.last_seen_at>=now()-interval '24 hours'
+              AND e.severity IN ('high','critical')
+          )::int AS high_critical_events_24h
+         FROM intel_events e
+        WHERE e.org_id=$1
+          AND ${eventsGeo.clause}`,
+      [req.user.org_id,...eventsGeo.params],
+    ),
+    req.db(
+      `SELECT COUNT(*)::int AS observations_24h
+         FROM intel_observations o
+        WHERE o.org_id=$1
+          AND o.observed_at>=now()-interval '24 hours'
+          AND ${observationsGeo.clause}`,
+      [req.user.org_id,...observationsGeo.params],
+    ),
+    req.db(
+      `SELECT COUNT(*)::int AS active_warnings
+         FROM intel_early_warnings w
+        WHERE w.org_id=$1
+          AND w.status IN ('open','review','acknowledged')
+          AND ${warningsGeo.clause}`,
+      [req.user.org_id,...warningsGeo.params],
+    ),
+    req.db(
+      `SELECT COUNT(*)::int AS open_gaps
+         FROM intel_gaps g
+        WHERE g.org_id=$1
+          AND g.status IN ('open','tasked','monitoring')
+          AND ${gapsGeo.clause}`,
+      [req.user.org_id,...gapsGeo.params],
+    ),
+  ]);
+
+  res.json({
+    events:eventsR.rows||[],
+    summary:{
+      events_24h:Number(eventSummaryR.rows?.[0]?.events_24h||0),
+      high_critical_events_24h:Number(eventSummaryR.rows?.[0]?.high_critical_events_24h||0),
+      observations_24h:Number(observationsR.rows?.[0]?.observations_24h||0),
+      active_warnings:Number(warningsR.rows?.[0]?.active_warnings||0),
+      open_gaps:Number(gapsR.rows?.[0]?.open_gaps||0),
+    },
+    scope:s,
+    generated_at:new Date().toISOString(),
+  });
+}));
+
 router.get('/gaps', asyncHandler(async (req,res)=>{const status=req.query.status||null,s=scope(req),geo=scopedObjectClause(s,'g',2);const {rows}=await req.db(`SELECT g.* FROM intel_gaps g WHERE g.org_id=$1 AND ($2::text IS NULL OR g.status=$2) AND ${geo.clause} ORDER BY ${priorityRank},g.created_at DESC LIMIT 300`,[req.user.org_id,status,...geo.params]);res.json({gaps:rows,scope:s,generated_at:new Date().toISOString()});}));
 router.post('/gaps', asyncHandler(async(req,res)=>{const {gap_type,title,description,scope_type,scope_key,priority,recommended_action,evidence,due_at}=req.body||{};if(!gap_type||!title||!scope_type)return res.status(400).json({error:'gap_type, title and scope_type are required'});const {rows}=await req.db(`INSERT INTO intel_gaps (org_id,gap_type,title,description,scope_type,scope_key,priority,recommended_action,evidence,due_at,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,[req.user.org_id,gap_type,title,description||null,scope_type,scope_key||null,priority||'medium',recommended_action||null,evidence||[],due_at||null,req.user.id]);res.status(201).json({gap:rows[0]});}));
 router.patch('/gaps/:id', asyncHandler(async(req,res)=>{const allowed=['title','description','priority','status','recommended_action','evidence','due_at'];const sets=[],vals=[];for(const f of allowed)if(Object.prototype.hasOwnProperty.call(req.body||{},f)){vals.push(req.body[f]);sets.push(`${f}=$${vals.length}`);}if(req.body?.status==='resolved'){vals.push(new Date());sets.push(`resolved_at=$${vals.length}`);vals.push(req.user.id);sets.push(`resolved_by=$${vals.length}`);}if(!sets.length)return res.status(400).json({error:'No valid fields to update'});vals.push(req.params.id,req.user.org_id);const {rows}=await req.db(`UPDATE intel_gaps SET ${sets.join(',')},updated_at=now() WHERE id=$${vals.length-1} AND org_id=$${vals.length} RETURNING *`,vals);if(!rows.length)return res.status(404).json({error:'Gap not found'});res.json({gap:rows[0]});}));
