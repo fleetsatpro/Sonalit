@@ -2378,3 +2378,42 @@
     transition: none;
   }
 }
+
+
+/* Image labels are provenance markers, not fake live-status indicators. */
+.sonalit-public .feat-visual-label {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.sonalit-public .feat-visual-label .visual-marker {
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+  flex: 0 0 auto;
+  background: var(--feat-color,var(--orange));
+  transform: rotate(45deg);
+}
+
+.sonalit-public .home-hero .photo-credit {
+  font-size: .45rem !important;
+}
+
+.sonalit-public .home-hero .photo-note {
+  border-left-color: var(--cyan-hot);
+}
+
+.sonalit-public .home-close-band + .cta-wrap {
+  padding-top: 3.7rem;
+}
+
+@media (max-width: 720px) {
+  .sonalit-public .home-hero-satellite-caption strong {
+    max-width: 12ch;
+  }
+
+  .sonalit-public .home-hero-satellite-caption p {
+    max-width: 32ch;
+  }
+}
