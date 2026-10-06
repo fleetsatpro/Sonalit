@@ -19,32 +19,32 @@ const DOMAINS = [
   {
     code: '01',
     title: 'Fleet',
-    claim: 'Know where the work is.',
-    body: 'Live vehicle position, driver assignment, journey history and fleet records in one view.',
+    claim: 'Make every move legible.',
+    body: 'Vehicle position, driver assignment, journey history and fleet records stay attached to the movement.',
     href: '/fleet-management',
     tone: 'fleet',
   },
   {
     code: '02',
     title: 'Convoy',
-    claim: 'Keep the corridor under watch.',
-    body: 'Plan the route, watch the movement and bring field reports into the same operation.',
+    claim: 'Keep the road in view.',
+    body: 'Plan the corridor, watch the movement and bring field reports into the same operational thread.',
     href: '/convoy-management',
     tone: 'convoy',
   },
   {
     code: '03',
     title: 'Container',
-    claim: 'Know who has custody.',
-    body: 'Booking, container movement, e-lock activity, handover and delivery proof stay connected.',
+    claim: 'Never lose the handoff.',
+    body: 'Booking, movement, e-lock activity, custody and delivery proof stay tied to the same record.',
     href: '/container-delivery',
     tone: 'container',
   },
   {
     code: '04',
     title: 'Security',
-    claim: 'Turn exceptions into action.',
-    body: 'Alerts, geofences, panic events and field response arrive with the context needed to act.',
+    claim: 'Catch the change early.',
+    body: 'Alerts, geofences, panic events and field reports arrive with the context needed to respond.',
     href: '/security-operations',
     tone: 'security',
   },
@@ -54,49 +54,68 @@ const HANDOFFS = [
   {
     number: '01',
     label: 'DEPART',
-    title: 'Put the movement on record.',
-    body: 'Assign the vehicle, the driver, the load and the route before the wheels turn.',
+    title: 'Start with a clean record.',
+    body: 'Assign the vehicle, driver, load and route before the movement becomes someone else’s spreadsheet.',
   },
   {
     number: '02',
     label: 'MOVE',
-    title: 'Watch what changes.',
-    body: 'Location, corridor conditions, exceptions and field updates stay attached to the journey.',
+    title: 'See the change in context.',
+    body: 'Location, corridor conditions, exceptions and field updates stay tied to the journey as it moves.',
   },
   {
     number: '03',
     label: 'TRANSFER',
-    title: 'Keep custody visible.',
-    body: 'When cargo, control or responsibility changes hands, the event stays in sequence.',
+    title: 'Make the handoff undeniable.',
+    body: 'When cargo, control or responsibility changes hands, the event stays in sequence and evidence.',
   },
   {
     number: '04',
     label: 'DELIVER',
-    title: 'Close the loop with evidence.',
-    body: 'Proof of delivery and the operational trail remain available after the movement ends.',
+    title: 'Finish with proof.',
+    body: 'Proof of delivery and the operational trail remain available after the movement is complete.',
   },
 ];
 
 function HeroMedia(): React.ReactElement {
   return (
-    <div className="home-hero-media">
+    <div className="home-hero-media" data-reveal="right">
       <div className="home-hero-satellite">
         <OpsVisual priority />
+        <div className="home-hero-signal" aria-hidden="true">
+          <div className="home-hero-signal-top">
+            <span className="mono">OPERATIONAL THREAD</span>
+            <span className="mono">01—04</span>
+          </div>
+          <div className="home-hero-signal-route">
+            <span className="signal-node signal-node-cyan" />
+            <span className="signal-node signal-node-amber" />
+            <span className="signal-node signal-node-orange" />
+            <span className="signal-node signal-node-red" />
+            <span className="signal-runner" />
+          </div>
+          <div className="home-hero-signal-stages">
+            <span>DEPART</span>
+            <span>MOVE</span>
+            <span>TRANSFER</span>
+            <span>DELIVER</span>
+          </div>
+        </div>
         <div className="home-hero-satellite-caption">
           <span className="mono">EARTH OBSERVATION</span>
-          <strong>Port activity seen from orbit.</strong>
-          <p>Reference imagery, not live telemetry.</p>
+          <strong>See the network from above.</strong>
+          <p>Reference imagery. The operational record lives inside Sonalit.</p>
         </div>
       </div>
 
       <div className="home-hero-side">
         <div className="home-hero-side-photo">
           <FleetVisual />
-          <span className="mono">ROAD FREIGHT</span>
+          <span className="mono">ROAD FREIGHT / MOVEMENT</span>
         </div>
         <div className="home-hero-side-photo">
           <ContainerVisual />
-          <span className="mono">OCEAN FREIGHT</span>
+          <span className="mono">OCEAN FREIGHT / HANDOFF</span>
         </div>
       </div>
     </div>
@@ -104,43 +123,69 @@ function HeroMedia(): React.ReactElement {
 }
 
 export default function Home(): React.ReactElement {
+  React.useEffect(() => {
+    const root = document.querySelector<HTMLElement>('.sonalit-public');
+    if (!root || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    root.classList.add('motion-enabled');
+
+    const revealItems = Array.from(root.querySelectorAll<HTMLElement>('[data-reveal]'));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const item = entry.target as HTMLElement;
+          item.classList.add('is-visible');
+          observer.unobserve(item);
+        }
+      },
+      { rootMargin: '0px 0px -10% 0px', threshold: 0.08 },
+    );
+
+    revealItems.forEach((item, index) => {
+      item.style.setProperty('--reveal-delay', `${Math.min(index, 7) * 70}ms`);
+      observer.observe(item);
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <MarketingLayout page={PAGE}>
-      <header className="home-hero">
+      <header className="home-hero" data-reveal="hero">
         <div className="home-hero-copy">
-          <p className="home-eyebrow mono">SONALIT / LOGISTICS OPERATIONS PLATFORM</p>
+          <p className="home-eyebrow mono">BEFORE IT UNFOLDS / SONALIT</p>
 
           <h1>
-            Know what&apos;s moving.
-            <span> Know what changed.</span>
+            See it
+            <span> before it unfolds.</span>
           </h1>
 
           <p className="home-hero-lead">
-            Sonalit connects fleet movement, convoy control, container custody and security response
-            in one operational record — from departure to delivery.
+            Sonalit joins vehicle movement, convoy control, container custody and security response
+            into one operational record — so teams see the change while there is still something to do about it.
           </p>
 
           <div className="hero-actions">
             <a href="/login" className="btn btn-primary">
-              Enter Sonalit <span aria-hidden="true">↗</span>
+              Open the control room <span aria-hidden="true">↗</span>
             </a>
             <a href="#platform" className="btn btn-ghost">
-              See the platform <span aria-hidden="true">↓</span>
+              Trace a movement <span aria-hidden="true">↓</span>
             </a>
           </div>
 
-          <div className="home-proof-line">
-            <span className="mono">BUILT FOR</span>
-            <span>CONTROL ROOMS</span>
-            <span>FIELD TEAMS</span>
-            <span>CARGO OPERATIONS</span>
+          <div className="home-proof-line home-proof-line-kinetic">
+            <span className="mono">ONE MOVEMENT</span>
+            <span>FOUR OPERATIONAL SURFACES</span>
+            <span>ONE RECORD</span>
           </div>
         </div>
 
         <HeroMedia />
       </header>
 
-      <section className="home-intro-band" aria-labelledby="intro-heading">
+      <section className="home-intro-band" data-reveal="rise" aria-labelledby="intro-heading">
         <div className="home-intro-kicker mono">THE OPERATING IDEA</div>
         <div>
           <h2 id="intro-heading">
@@ -156,7 +201,7 @@ export default function Home(): React.ReactElement {
         </div>
       </section>
 
-      <section className="section home-platform" id="platform" aria-labelledby="platform-heading">
+      <section className="section home-platform" id="platform" data-reveal="rise" aria-labelledby="platform-heading">
         <div className="home-section-intro">
           <p className="eyebrow mono">THE PLATFORM</p>
           <h2 id="platform-heading">Four operational surfaces. One source of truth.</h2>
@@ -186,7 +231,7 @@ export default function Home(): React.ReactElement {
         </div>
       </section>
 
-      <section className="home-handoffs" aria-labelledby="handoffs-heading">
+      <section className="home-handoffs" data-reveal="rise" aria-labelledby="handoffs-heading">
         <div className="section home-handoffs-inner">
           <div className="home-section-intro">
             <p className="eyebrow mono">FROM DEPARTURE TO DELIVERY</p>
@@ -212,7 +257,7 @@ export default function Home(): React.ReactElement {
         </div>
       </section>
 
-      <section className="section home-capabilities" aria-labelledby="capabilities-heading">
+      <section className="section home-capabilities" data-reveal="rise" aria-labelledby="capabilities-heading">
         <SectionHeading
           id="capabilities-heading"
           label="What the team gets"
@@ -275,7 +320,7 @@ export default function Home(): React.ReactElement {
         />
       </section>
 
-      <section className="home-close-band" aria-labelledby="close-heading">
+      <section className="home-close-band" data-reveal="rise" aria-labelledby="close-heading">
         <div className="section home-close-inner">
           <div>
             <p className="eyebrow mono">THE PROMISE</p>
