@@ -7,3 +7,17 @@ packages:
 
 overrides:
   form-data: 4.0.6
+
+allowBuilds:
+  '@firebase/util': true
+  '@vaadin/vaadin-usage-statistics': true
+  bufferutil: true
+  cpu-features: true
+  es5-ext: true
+  esbuild: true
+  msgpackr-extract: true
+  protobufjs: true
+  ssh2: true
+  tesseract.js: true
+  unrs-resolver: true
+  utf-8-validate: true
