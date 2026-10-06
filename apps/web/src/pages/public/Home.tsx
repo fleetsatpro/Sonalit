@@ -1,11 +1,9 @@
 import MarketingLayout from '../../components/marketing/MarketingLayout.js';
-import { PLATFORM_LINKS } from '../../components/marketing/nav.js';
 import { CtaBand, FeatureBlock, SectionHeading } from '../../components/marketing/ui.js';
 import {
   ContainerVisual,
   ConvoyVisual,
   FleetVisual,
-  OpsVisual,
 } from '../../components/marketing/visuals.js';
 import { getPageSeo } from '../../lib/seo/pages.js';
 
