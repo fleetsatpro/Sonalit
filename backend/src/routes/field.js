@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
-const { pool, query } = require('../config/database');
+const { pool, query, globalQuery } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const {
@@ -79,7 +79,10 @@ router.post('/app/pair', pairLimiter, asyncHandler(async (req, res) => {
   const { code } = req.body || {};
   if (!code) return res.status(400).json({ error: 'code is required' });
 
-  const result = await query(
+  // Pairing is also bootstrap: no tenant is known until the pairing code
+  // resolves to a device row. Keep this lookup explicitly global, then every
+  // mutation below remains tenant-safe through the device's discovered org.
+  const result = await globalQuery(
     `SELECT * FROM field_devices
       WHERE pairing_code_hash = $1
         AND status <> 'revoked'
