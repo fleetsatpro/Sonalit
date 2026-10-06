@@ -11,92 +11,138 @@ import { getPageSeo } from '../../lib/seo/pages.js';
 
 const PAGE = getPageSeo('/');
 
+const DOMAINS = [
+  {
+    index: '01',
+    name: 'Fleet',
+    detail: 'Vehicles, drivers, devices and journeys',
+    href: '/fleet-management',
+    tone: 'signal',
+  },
+  {
+    index: '02',
+    name: 'Convoy',
+    detail: 'Movement planning, corridors and field control',
+    href: '/convoy-management',
+    tone: 'copper',
+  },
+  {
+    index: '03',
+    name: 'Container',
+    detail: 'Booking, custody, e-locks and delivery proof',
+    href: '/container-delivery',
+    tone: 'teal',
+  },
+  {
+    index: '04',
+    name: 'Security',
+    detail: 'Situational awareness, alerts and response',
+    href: '/security-operations',
+    tone: 'danger',
+  },
+];
+
+const HANDOFFS = [
+  ['01', 'Departure', 'The movement starts with a known vehicle, crew, cargo and route.'],
+  ['02', 'Execution', 'The same operational record follows the work through the corridor and the field.'],
+  ['03', 'Delivery', 'Evidence, custody and incidents stay attached to the movement instead of becoming a separate report.'],
+];
+
 export default function Home(): React.ReactElement {
   return (
     <MarketingLayout page={PAGE}>
-      {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <header className="hero">
-        <div>
+        <div className="hero-copy">
           <div className="hero-badge">
-            <i aria-hidden="true" /> Enterprise Operations Platform
+            <span className="hero-badge-mark" aria-hidden="true" />
+            Sonalit / Global logistics operations
           </div>
+
+          <p className="hero-kicker">GLOBAL MOVEMENT / CONTROLLED</p>
+
           <h1>
-            Intelligent Fleet,
+            Every movement deserves
             <br />
-            <span className="grad">Convoy &amp; Logistics</span>
-            <br />
-            Operations
+            <span className="hero-title-accent">one source of truth.</span>
           </h1>
+
           <p className="hero-lead">
-            Real-time command of vehicles, convoys, containers and field security — engineered for
-            high-stakes logistics and continuous operations.
+            Sonalit brings fleet tracking, convoy command, container custody and security operations
+            into the same working system — from departure to delivery.
           </p>
+
           <div className="hero-actions">
             <a href="/login" className="btn btn-primary">
-              Access Platform
+              Enter Sonalit <span aria-hidden="true">↗</span>
             </a>
-            <a href="#capabilities" className="btn btn-ghost">
-              Explore Capabilities
+            <a href="#platform" className="btn btn-ghost">
+              See the system <span aria-hidden="true">↓</span>
             </a>
           </div>
-          <div className="hero-meta">
-            <div className="meta">
-              <strong>Real-time</strong>
-              <span>Visibility</span>
-            </div>
-            <div className="meta">
-              <strong>End-to-end</strong>
-              <span>Traceability</span>
-            </div>
-            <div className="meta">
-              <strong>Mission</strong>
-              <span>Ready</span>
-            </div>
+
+          <div className="hero-proof" aria-label="Sonalit operating principle">
+            <span>01</span>
+            <p>
+              One operational record
+              <strong>across road, yard, port and control room.</strong>
+            </p>
           </div>
         </div>
 
-        {/*
-          The command panel is a product illustration, not a telemetry feed.
-          It is labelled "Operations view" and its three tiles name what the
-          platform tracks — deliberately not invented counts of live convoys or
-          vehicles, which would be a fabricated claim on a public page.
-        */}
-        <div className="panel">
-          <div className="panel-head">
-            <div className="panel-head-left">
-              <span className="live" aria-hidden="true" /> Operations view
-            </div>
-            <div className="panel-head-right">SONALIT · OPS</div>
-          </div>
-          <div className="panel-body">
-            <div className="panel-visual">
+        <div className="hero-visual" aria-label="Sonalit product and operations visual">
+          <div className="hero-visual-frame">
+            <div className="hero-visual-image">
               <ContainerVisual priority />
             </div>
-            <div className="panel-stats">
-              <div className="pstat">
-                <strong>Convoys</strong>
-                <span>Corridor watch</span>
-              </div>
-              <div className="pstat">
-                <strong>Vehicles</strong>
-                <span>Live tracking</span>
-              </div>
-              <div className="pstat">
-                <strong>Containers</strong>
-                <span>Chain of custody</span>
-              </div>
+            <div className="hero-visual-rail" aria-hidden="true">
+              <span className="rail rail-signal" />
+              <span className="rail rail-copper" />
+              <span className="rail rail-teal" />
+              <span className="rail rail-danger" />
             </div>
+            <div className="hero-visual-caption">
+              <span className="mono">SONALIT / SYSTEM VIEW</span>
+              <span>Port → Corridor → Delivery</span>
+            </div>
+          </div>
+          <div className="hero-visual-note">
+            <span className="mono">THE WORK</span>
+            <strong>Moves through one connected chain.</strong>
           </div>
         </div>
       </header>
 
-      {/* ── CAPABILITIES ─────────────────────────────────────────────────── */}
-      <section className="section" id="capabilities" aria-labelledby="capabilities-heading">
+      <section className="domain-strip" id="platform" aria-labelledby="domain-heading">
+        <div className="domain-intro">
+          <p className="eyebrow">The platform</p>
+          <h2 id="domain-heading">Four disciplines.<br />One operating picture.</h2>
+          <p>
+            Different teams can own different work without fragmenting the movement itself.
+          </p>
+        </div>
+
+        <div className="domain-list">
+          {DOMAINS.map((domain) => (
+            <a
+              key={domain.href}
+              href={domain.href}
+              className={`domain-row domain-${domain.tone}`}
+            >
+              <span className="domain-index mono">{domain.index}</span>
+              <span className="domain-name">{domain.name}</span>
+              <span className="domain-detail">{domain.detail}</span>
+              <span className="domain-arrow" aria-hidden="true">↗</span>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="section capabilities-section" aria-labelledby="capabilities-heading">
         <SectionHeading
           id="capabilities-heading"
-          label="Capabilities"
-          title="One command layer for complex operations"
-          desc="Sonalit unifies fleet, convoy, container delivery and security into a single operational surface built for scale."
+          label="What Sonalit connects"
+          title="The system is organised around the work, not the org chart."
+          desc="A fleet manager can see the movement. A convoy controller can see the corridor. A delivery team can see custody. Security can see the same event from the same record."
         />
         <div className="cap-grid">
           {PLATFORM_LINKS.map((link) => (
@@ -105,52 +151,89 @@ export default function Home(): React.ReactElement {
         </div>
       </section>
 
-      {/* ── FEATURES ─────────────────────────────────────────────────────── */}
-      <section className="section section-tight" aria-label="How Sonalit works">
+      <section className="handoff-band" aria-labelledby="handoff-heading">
+        <div className="handoff-heading">
+          <p className="eyebrow eyebrow-light">Why the chain matters</p>
+          <h2 id="handoff-heading">
+            Most operational problems happen in the handoff.
+          </h2>
+          <p>
+            A movement changes hands many times. Sonalit keeps the context with it instead of
+            restarting the story at every department.
+          </p>
+        </div>
+
+        <div className="handoff-list">
+          {HANDOFFS.map(([index, title, body]) => (
+            <article className="handoff-row" key={index}>
+              <span className="handoff-index mono">{index}</span>
+              <h3>{title}</h3>
+              <p>{body}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="section feature-section" aria-label="Sonalit capabilities in context">
         <FeatureBlock
-          title="Fleet visibility that stays ahead of the road"
-          body="Continuous awareness of vehicle location, status and operational health, so decisions are made on what is happening rather than on what was reported afterwards."
+          title="Know where the fleet is — and what the movement means"
+          body="Tracking becomes useful when a position sits beside the vehicle, driver, journey and operating context it belongs to."
           points={[
-            'Live GPS tracking and journey replay',
-            'Vehicle, driver and device registers in one place',
-            'Maintenance and fuel recorded against the vehicle',
-            'Operational dashboards for fleet leaders',
+            'Live GPS tracking and journey history',
+            'Vehicle, driver and device registers',
+            'Journey replay and geofence events',
+            'Fleet maintenance and fuel records',
           ]}
           visual={<FleetVisual />}
-          visualLabel="Fleet Network"
+          visualLabel="Fleet / movement"
         />
 
         <FeatureBlock
           flip
-          title="Convoy &amp; security in one surface"
-          body="Coordinate complex multi-vehicle movements while holding a continuous security posture, with the control room and the officers on the road working the same record."
+          title="Coordinate the corridor without losing the field"
+          body="Convoy work needs planning, monitoring and security to remain part of the same operational picture, especially when conditions change."
           points={[
             'Convoy planning and real-time monitoring',
-            'Corridor evaluation and geofence awareness',
-            'Incident, alert and panic escalation',
-            'Field officer coordination and reporting',
+            'Corridor and geofence awareness',
+            'Incident and panic escalation',
+            'Field officer coordination',
           ]}
           visual={<ConvoyVisual />}
-          visualLabel="Convoy Corridor"
+          visualLabel="Convoy / corridor"
         />
 
         <FeatureBlock
-          title="Container delivery with full traceability"
-          body="From booking through e-lock operations, yard and port movements and digital proof of delivery — every step stays visible and auditable."
+          title="Finish with proof, not a second story"
+          body="Container delivery connects booking, custody, e-lock activity, yard and port movements and proof of delivery so the record survives the handoff."
           points={[
             'Booking and container workflows',
             'E-lock clamp and unclamp operations',
-            'Yard and port crew coordination',
-            'Proof of delivery and custody record',
+            'Port and yard coordination',
+            'Proof of delivery and custody history',
           ]}
           visual={<OpsVisual />}
-          visualLabel="CDS Workflow"
+          visualLabel="Container / custody"
         />
       </section>
 
+      <section className="closing-statement" aria-label="Sonalit closing statement">
+        <p className="eyebrow">Sonalit</p>
+        <p className="closing-line">
+          Move the cargo.
+          <br />
+          <span>Keep the context.</span>
+        </p>
+        <div className="closing-rule" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+      </section>
+
       <CtaBand
-        title="Ready to take command?"
-        body="Access the Sonalit operations platform and bring fleet, convoy, container and security under one intelligent surface."
+        title="Bring the movement into one operating picture."
+        body="Enter Sonalit and work across fleet, convoy, container delivery and security without splitting the record."
       />
     </MarketingLayout>
   );
