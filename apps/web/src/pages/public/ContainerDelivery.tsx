@@ -18,13 +18,11 @@ export default function ContainerDelivery(): React.ReactElement {
           <i aria-hidden="true" /> Container Delivery System
         </div>
         <h1>
-          Container delivery, from booking to{' '}
-          <span className="grad">proof of delivery</span>
+          Know the container from booking to
+          handover.
         </h1>
         <p className="hero-lead">
-          The Container Delivery System is Sonalit&apos;s container logistics surface. It covers the
-          work between the port, the yard and the customer: what was booked, which container moved,
-          who clamped and released the lock, and what was signed for at the door.
+          Sonalit links the booking, container, vehicle, lock events and delivery proof across the port, yard and final handover — so custody stays visible from the first instruction to the signed delivery.
         </p>
       </header>
 
