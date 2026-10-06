@@ -144,7 +144,7 @@ export function WorldFabricVisual({ compact = false }: { compact?: boolean }): R
           </pattern>
         </defs>
 
-        <rect width="500" height="420" fill="url(#world-grid-hero)" opacity=".42" />
+        <rect width="500" height="420" fill={`url(#world-grid-${compact ? "compact" : "hero"})`} opacity=".42" />
         <circle className="world-orbit world-orbit-a" cx="247" cy="202" r="154" fill="none" stroke="rgba(34,232,255,.18)" strokeWidth="1" />
         <circle className="world-orbit world-orbit-b" cx="247" cy="202" r="108" fill="none" stroke="rgba(255,201,63,.16)" strokeWidth="1" strokeDasharray="4 7" />
         <path className="world-route" d="M44 250 C112 226 123 183 181 190 C223 195 237 241 282 236 C336 230 345 156 456 126" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="2" />
