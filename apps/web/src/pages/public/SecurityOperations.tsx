@@ -18,23 +18,22 @@ export default function SecurityOperations(): React.ReactElement {
           <i aria-hidden="true" /> Security Operations
         </div>
         <h1>
-          Turn a signal into
-          a response.
+          Turn signals into an operational picture.
         </h1>
         <p className="hero-lead">
-          Sonalit brings location, geofences, device signals and field reports into one incident view — so an alert starts a response, with the movement and evidence that explain why it happened.
+          Sonalit connects alerts, location, device health, geofences, route risk, field reports and spatial context into a response fabric — giving operators the evidence and chronology needed to distinguish noise from an incident and an incident from a decision.
         </p>
       </header>
 
       <section className="section section-tight" aria-label="Security operations capabilities">
         <FeatureBlock
-          title="From signal to response, with the trail intact"
-          body="An alert, an incident and the response to it stay connected. What was raised, who acknowledged it, what was done and how it resolved are one record — which is also what makes an after-action review possible."
+          title="From detection to response, without losing the trail"
+          body="An alert becomes useful when its context survives the handoff. Sonalit links detection, acknowledgement, response activity and resolution into one chronology, so the same record can support live intervention and later reconstruction."
           points={[
-            'A single prioritised alert and incident queue',
-            'Panic escalation carrying its location and context',
-            'Response crews reporting into the same incident',
-            'Incident history retained with its full context',
+            'Prioritised alerts and incident queues',
+            'Panic escalation with movement and location context',
+            'Response crews and field reports on the same incident',
+            'Incident history retained for reconstruction and review',
           ]}
           visual={<OpsVisual />}
           visualLabel="Alert &amp; Response"
@@ -42,13 +41,13 @@ export default function SecurityOperations(): React.ReactElement {
 
         <FeatureBlock
           flip
-          title="Geography as an operational control"
-          body="Depots, checkpoints, customer sites and restricted ground are drawn once and then enforced continuously — entry, exit and corridor departure all become events with a time and an owner."
+          title="Geography, signal integrity and world context as controls"
+          body="Geofences and corridors turn geography into policy. Sonalit can evaluate entry, exit and route departure continuously, while signal health distinguishes a silent device from a normal absence and external context can be brought alongside the operational record."
           points={[
-            'Geofence definition and management per organisation',
-            'Corridor evaluation against a planned route',
-            'Route risk analysis used at planning time',
-            'Risk intelligence gathered from open sources',
+            'Organisation-scoped geofence definition and management',
+            'Time-aware corridor evaluation against the planned route',
+            'Route-risk analysis for planning and dispatch',
+            'Open-source and spatial risk context with provenance',
           ]}
           visual={<ConvoyVisual />}
           visualLabel="Geofence &amp; Corridor"
@@ -59,24 +58,24 @@ export default function SecurityOperations(): React.ReactElement {
         <SectionHeading
           id="awareness-heading"
           label="Situational awareness"
-          title="Everyone looking at the same picture"
-          desc="Control room operators, convoy field officers, yard crews and response teams each work in the surface built for their role, but all of them read and write the same underlying operational record."
+          title="Different surfaces. One operational state."
+          desc="Control-room operators, convoy officers, yard crews, response teams and clients do not need identical interfaces. They need consistent state. Sonalit gives each role the surface appropriate to its decisions while preserving the shared chronology underneath."
         />
         <div className="cap-grid cap-grid-3">
           <article className="cap">
             <div className="cap-icon" aria-hidden="true">≋</div>
-            <h3>Live operational feed</h3>
-            <p>Alerts, incidents and field activity arrive in one chronological stream, pushed to the browser as they happen.</p>
+            <h3>Realtime operational feed</h3>
+            <p>Alerts, incidents and field activity can arrive as a realtime stream, preserving chronology across the operational workspace.</p>
           </article>
           <article className="cap">
             <div className="cap-icon" aria-hidden="true">⚑</div>
-            <h3>Rule engine</h3>
-            <p>Conditions that matter to your operation are expressed as rules, and matching events raise alerts automatically.</p>
+            <h3>Rules and event logic</h3>
+            <p>Operational conditions can be expressed as rules so matching events can raise alerts without requiring someone to stare at a map all shift.</p>
           </article>
           <article className="cap">
             <div className="cap-icon" aria-hidden="true">◍</div>
-            <h3>Signal health</h3>
-            <p>Devices that stop reporting are surfaced as a problem in their own right, rather than being silently absent from the map.</p>
+            <h3>Signal integrity</h3>
+            <p>Signal analysis distinguishes comms blackout from GPS freeze, making loss of contact itself an operational observation rather than an empty space on the map.</p>
           </article>
         </div>
         <p className="prose prose-after">
@@ -88,8 +87,8 @@ export default function SecurityOperations(): React.ReactElement {
       </section>
 
       <CtaBand
-        title="Give your control room something to act on"
-        body="Sonalit turns tracking data and field reports into alerts, incidents and a response record."
+        title="Give the control room context, not just notifications"
+        body="From live telemetry and Guardian safety events to route risk, spatial context, communications and incident reconstruction, Sonalit gives security teams a working chain from signal to action to evidence."
       />
       <RelatedPages currentPath="/security-operations" />
     </MarketingLayout>
