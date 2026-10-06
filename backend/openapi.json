@@ -6575,6 +6575,46 @@
           }
         }
       }
+    },
+    "/api/v1/notifications/": {
+      "get": {
+        "operationId": "get_api_v1_notifications",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "operationId": "post_api_v1_notifications_read_all",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/intelligence/?/overview": {
+      "get": {
+        "operationId": "get_api_v1_risk_intelligence_overview",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/intelligence/ops/overview": {
+      "get": {
+        "operationId": "get_api_v1_risk_intelligence_ops_overview",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
