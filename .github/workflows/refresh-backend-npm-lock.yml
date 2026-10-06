@@ -1,0 +1,53 @@
+name: Refresh backend npm lockfile
+
+on:
+  push:
+    branches: ["fix/ci-real-dependency-audit"]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Regenerate backend npm lockfile
+        working-directory: backend
+        run: npm install --package-lock-only --omit=dev --ignore-scripts
+
+      - name: Verify clean npm production install
+        working-directory: backend
+        run: npm ci --omit=dev --ignore-scripts
+
+      - name: Verify npm production audit
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Commit lockfile and remove temporary workflow
+        env:
+          BRANCH: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/refresh-backend-npm-lock.yml
+          git add backend/package-lock.json
+          git commit -m "chore(standby): synchronize backend npm lockfile"
+          git push origin "HEAD:${BRANCH}"
+          gh workflow run node.js.yml --ref "${BRANCH}"
+          gh workflow run standby-backend.yml --ref "${BRANCH}"
