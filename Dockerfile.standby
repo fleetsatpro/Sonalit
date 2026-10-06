@@ -1,4 +1,5 @@
 FROM node:22-slim
+# Standby uses npm ci; backend/package-lock.json must remain synchronized with backend/package.json.
 WORKDIR /app
 
 COPY backend/package*.json ./backend/
