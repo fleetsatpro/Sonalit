@@ -103,7 +103,8 @@ async function mount() {
   // session before routing so authenticated deep-links never start with a
   // persisted profile and an empty Authorization header.
   const persistedUser = useAuthStore.getState().user;
-  if (persistedUser && !getAccessToken()) {
+  const e2eBoot = import.meta.env.DEV && import.meta.env['VITE_E2E_BOOT'] === '1';
+  if (persistedUser && !getAccessToken() && !e2eBoot) {
     try {
       await restoreAccessToken();
     } catch {
