@@ -85,6 +85,16 @@ jobs:
           ! grep -qx 'pnpm-lock.yaml' .dockerignore
           ! grep -qx 'pnpm-workspace.yaml' .dockerignore
 
+      - name: Production container build gate
+        # Build every backend production image without pushing. This proves the
+        # Dockerfiles consume the same pnpm lockfile as CI and catches drift in
+        # container-only dependency/runtime paths before merge.
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --file Dockerfile --tag sonalit-backend:ci .
+          docker build --file Dockerfile.notification-worker --tag sonalit-notification-worker:ci .
+
       - name: Backend syntax gate
         # Docker can build a broken CommonJS file because COPY/npm ci never
         # loads the application. Parse every backend JS source file before any
