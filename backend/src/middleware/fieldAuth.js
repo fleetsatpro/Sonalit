@@ -17,11 +17,11 @@
  * able to end, read, or escalate into the other.
  */
 const crypto = require('crypto');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { attachOrgDb, withOrg } = require('../utils/orgScopedDb');
 const { authenticate } = require('./auth');
 const logger = require('../utils/logger');
-const { runWithOrgContext } = require('../utils/tenantContext');
+const { getOrgId, runWithOrgContext } = require('../utils/tenantContext');
 
 /** Roles that may hold a Field session at all. */
 const FIELD_ROLES = ['yard_agent', 'port_agent', 'response_crew'];
@@ -79,7 +79,14 @@ async function resolveDevice(req) {
   const token = req.headers['x-field-device'];
   if (!token || typeof token !== 'string') return null;
 
-  const result = await query(
+  // Device resolution is bootstrap only when no tenant has been established.
+  // That is the case for /field/app/device and /field/app/me. Some Field routes
+  // deliberately run requireDevice() before fieldAuthenticate(), so a second
+  // resolution happens inside an existing tenant context; globalQuery() is
+  // forbidden there by design. Use the scoped query whenever context exists,
+  // and reserve globalQuery() strictly for the pre-tenant bootstrap boundary.
+  const lookup = getOrgId() ? query : globalQuery;
+  const result = await lookup(
     `SELECT * FROM field_devices
       WHERE token_hash = $1 AND status = 'active' AND revoked_at IS NULL`,
     [sha256(token)]

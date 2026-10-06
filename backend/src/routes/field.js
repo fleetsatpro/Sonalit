@@ -19,7 +19,8 @@ const crypto = require('crypto');
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
-const { pool, query } = require('../config/database');
+const { pool, query, globalQuery } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const {
@@ -79,7 +80,10 @@ router.post('/app/pair', pairLimiter, asyncHandler(async (req, res) => {
   const { code } = req.body || {};
   if (!code) return res.status(400).json({ error: 'code is required' });
 
-  const result = await query(
+  // Pairing is also bootstrap: no tenant is known until the pairing code
+  // resolves to a device row. Keep this lookup explicitly global, then every
+  // mutation below remains tenant-safe through the device's discovered org.
+  const result = await globalQuery(
     `SELECT * FROM field_devices
       WHERE pairing_code_hash = $1
         AND status <> 'revoked'
@@ -96,18 +100,23 @@ router.post('/app/pair', pairLimiter, asyncHandler(async (req, res) => {
   // Re-pairing an already-active device replaces its token, which silently
   // logs out the old handset — the intended behaviour when a tablet is
   // replaced and the admin reuses the same device record.
-  await query(
-    `UPDATE field_devices
-        SET token_hash = $1, status = 'active', paired_at = NOW(),
-            last_seen_at = NOW(), pairing_code_hash = NULL, pairing_expires_at = NULL
-      WHERE id = $2`,
-    [sha256(token), device.id]
-  );
-  await query(
-    `UPDATE field_sessions SET revoked_at = NOW()
-      WHERE device_id = $1 AND revoked_at IS NULL`,
-    [device.id]
-  );
+  // The device row has now established the tenant. Keep the state-changing
+  // portion inside the canonical RLS transaction; the pre-tenant lookup above
+  // is the only global operation in this flow.
+  await withOrg(device.org_id, async (client) => {
+    await client.query(
+      `UPDATE field_devices
+          SET token_hash = $1, status = 'active', paired_at = NOW(),
+              last_seen_at = NOW(), pairing_code_hash = NULL, pairing_expires_at = NULL
+        WHERE id = $2`,
+      [sha256(token), device.id]
+    );
+    await client.query(
+      `UPDATE field_sessions SET revoked_at = NOW()
+        WHERE device_id = $1 AND revoked_at IS NULL`,
+      [device.id]
+    );
+  });
 
   logger.info(`Field device paired: ${device.label} (${device.id})`);
   res.json({
@@ -518,11 +527,11 @@ router.post('/admin/workers/:userId/unlock', authorize('admin', 'dispatcher'), a
 const { publish } = require('../realtime/centrifugo');
 
 /** GET /api/v1/field/response-crew/dispatches — active dispatches for this crew member's team. */
-router.get('/response-crew/dispatches', requireDevice, fieldAuthenticate, asyncHandler(async (req, res) => {
-  if (req.fieldUser.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
+router.get('/response-crew/dispatches', fieldAuthenticate, asyncHandler(async (req, res) => {
+  if (req.user.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
   const memberR = await query(
     `SELECT team_id FROM response_crew_members WHERE user_id = $1 AND active = true LIMIT 1`,
-    [req.fieldUser.id]
+    [req.user.id]
   );
   const teamId = memberR.rows[0]?.team_id;
   if (!teamId) return res.json({ data: [] });
@@ -542,8 +551,8 @@ router.get('/response-crew/dispatches', requireDevice, fieldAuthenticate, asyncH
 }));
 
 /** PATCH /api/v1/field/response-crew/dispatches/:id/status — update dispatch status from field device. */
-router.patch('/response-crew/dispatches/:id/status', requireDevice, fieldAuthenticate, asyncHandler(async (req, res) => {
-  if (req.fieldUser.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
+router.patch('/response-crew/dispatches/:id/status', fieldAuthenticate, asyncHandler(async (req, res) => {
+  if (req.user.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
   const { id } = req.params;
   const { status } = req.body;
   const valid = ['acknowledged', 'en_route', 'on_scene', 'resolved'];
