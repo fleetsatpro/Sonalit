@@ -30,6 +30,14 @@ interface GpsPos {
 // event fired for it.
 interface RealtimeEvent { type?: string; device_id?: string; vehicle_id?: string }
 
+function arrayPayload<T>(payload: unknown, label: string): T[] {
+  if (Array.isArray(payload)) return payload as T[]
+  if (payload && typeof payload === 'object' && Array.isArray((payload as { data?: unknown }).data)) {
+    return (payload as { data: T[] }).data
+  }
+  throw new Error(label + ' returned an invalid payload')
+}
+
 function deriveStatus(speedKmh: number, secsAgo: number): LiveStatus {
   if (secsAgo > 1800) return 'offline'
   if (speedKmh > 5) return 'move'
@@ -50,27 +58,33 @@ export function useLiveFleet() {
   // brand-new SOS (or its cancellation) reflects on the map without a reload.
   const [panicDevices, setPanicDevices] = useState<Set<string>>(new Set())
 
-  const { data: dashVehicles } = useQuery<DashVehicle[]>({
+  const dashVehiclesQ = useQuery<DashVehicle[]>({
     queryKey: ['live-fleet-vehicles'],
     queryFn: async () => {
-      const r = await api.get<{ data: DashVehicle[] }>('/dashboard/vehicles')
-      return r.data.data ?? []
+      const r = await api.get<unknown>('/dashboard/vehicles')
+      return arrayPayload<DashVehicle>(r.data, 'Live fleet vehicle feed')
     },
     enabled: !!orgId,
     refetchInterval: 30_000,
     staleTime: 15_000,
+    retry: 2,
+    retryDelay: 1000,
   })
+  const dashVehicles = dashVehiclesQ.data
 
-  const { data: dashConvoys } = useQuery<DashConvoy[]>({
+  const dashConvoysQ = useQuery<DashConvoy[]>({
     queryKey: ['live-fleet-convoys'],
     queryFn: async () => {
-      const r = await api.get<{ data: DashConvoy[] }>('/dashboard/convoys')
-      return r.data.data ?? []
+      const r = await api.get<unknown>('/dashboard/convoys')
+      return arrayPayload<DashConvoy>(r.data, 'Live fleet convoy feed')
     },
     enabled: !!orgId,
     refetchInterval: 60_000,
     staleTime: 30_000,
+    retry: 2,
+    retryDelay: 1000,
   })
+  const dashConvoys = dashConvoysQ.data
 
   // GPS positions — always fetch; used as primary source when no vehicle
   // records. Polled every 15s as a resilience floor: realtime Centrifugo
@@ -78,24 +92,28 @@ export function useLiveFleet() {
   // (publishes fail server-side, or the browser's websocket can't connect)
   // this poll is what keeps the map moving instead of freezing until a
   // manual page reload.
-  useQuery<GpsPos[]>({
+  const gpsQ = useQuery<GpsPos[]>({
     queryKey: ['live-fleet-gps-init'],
     queryFn: async () => {
-      const r = await api.get<GpsPos[]>('/gps/track')
+      const r = await api.get<unknown>('/gps/track')
+      const payload = arrayPayload<GpsPos>(r.data, 'Primary GPS position feed')
       const next = new Map<string, GpsPos>()
       const panicking = new Set<string>()
-      for (const p of r.data) {
+      for (const p of payload) {
+        if (!p || typeof p !== 'object' || !p.device_id || !Number.isFinite(Number(p.lat)) || !Number.isFinite(Number(p.lng))) continue
         const key = p.vehicle_id ?? p.device_id
         next.set(key, p)
         if (p.panic_active) panicking.add(p.device_id)
       }
       setPositions(next)
       setPanicDevices(panicking)
-      return r.data
+      return payload
     },
     enabled: !!orgId,
     staleTime: 0,
     refetchInterval: 15_000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * (attempt + 1), 4000),
   })
 
   // Real-time GPS updates via Centrifuge
@@ -314,5 +332,33 @@ export function useLiveFleet() {
     return { groups, counts }
   }, [dashVehicles, positions, convoyMap, vehicleRegMap, panicDevices])
 
-  return { groups, counts }
+  const refresh = async () => {
+    await Promise.all([
+      gpsQ.refetch(),
+      dashVehiclesQ.refetch(),
+      dashConvoysQ.refetch(),
+    ])
+  }
+
+  const lastSyncAt = Math.max(
+    gpsQ.dataUpdatedAt || 0,
+    dashVehiclesQ.dataUpdatedAt || 0,
+    dashConvoysQ.dataUpdatedAt || 0,
+  ) || null
+
+  const gpsError = gpsQ.error instanceof Error ? gpsQ.error : gpsQ.error ? new Error('Primary GPS position feed unavailable') : null
+  const auxiliaryError = dashVehiclesQ.error || dashConvoysQ.error
+  const isInitialLoading = gpsQ.isPending && positions.size === 0
+  const isDegraded = !!gpsError || !!auxiliaryError
+
+  return {
+    groups,
+    counts,
+    refresh,
+    lastSyncAt,
+    gpsError,
+    auxiliaryError,
+    isInitialLoading,
+    isDegraded,
+  }
 }
