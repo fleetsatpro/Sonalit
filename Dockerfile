@@ -6,10 +6,19 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends fontconfig fonts-dejavu \
   && fc-cache -f \
   && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
-COPY backend/package*.json ./
-RUN npm ci --omit=dev
-COPY backend/ .
-RUN mkdir -p logs
+
+# Sonalit is a pnpm workspace. The root lockfile is the single authoritative
+# production dependency graph; do not create a second npm lock contract.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY backend/package.json backend/package.json
+
+RUN npm install --global pnpm@11.28.4 --no-audit --fund=false \
+  && pnpm install --filter fleetops-backend --prod --frozen-lockfile --ignore-scripts
+
+COPY backend/ ./backend/
+RUN mkdir -p backend/logs
+
 EXPOSE 5000
-CMD ["npm", "start"]
+CMD ["pnpm", "--filter", "fleetops-backend", "start"]

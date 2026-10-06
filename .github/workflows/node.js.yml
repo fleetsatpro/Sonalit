@@ -29,97 +29,6 @@ permissions:
   contents: read
 
 jobs:
-  # BEGIN TEMP NPM LOCK SYNC
-  sync-npm-lock:
-    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/ci-real-dependency-audit' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: write
-    steps:
-      - name: Checkout PR head
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-
-      - name: Use Node.js 22
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: Regenerate npm production lockfile
-        working-directory: backend
-        run: npm install --package-lock-only --omit=dev --ignore-scripts
-
-      - name: Verify npm production install
-        working-directory: backend
-        run: npm ci --omit=dev --ignore-scripts
-
-      - name: Verify npm production audit
-        working-directory: backend
-        run: npm audit --omit=dev --audit-level=high
-
-      - name: Persist lockfile and remove temporary sync machinery
-        env:
-          BRANCH: ${{ github.head_ref }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          node = Path(".github/workflows/node.js.yml")
-          text = node.read_text()
-          text = re.sub(
-              r'\n  # BEGIN TEMP NPM LOCK SYNC.*?\n  # END TEMP NPM LOCK SYNC\n',
-              '\n',
-              text,
-              count=1,
-              flags=re.S,
-          )
-          node.write_text(text)
-
-          standby = Path(".github/workflows/standby-backend.yml")
-          st = standby.read_text()
-          st = re.sub(
-              r'\n      # BEGIN TEMP NPM LOCK SYNC.*?\n      # END TEMP NPM LOCK SYNC\n',
-              '\n',
-              st,
-              count=1,
-              flags=re.S,
-          )
-          st = st.replace(
-              """  permissions:
-            contents: write
-            packages: write""",
-              """  permissions:
-            contents: read
-            packages: write"""
-          )
-          st = st.replace(
-              """      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          # TEMP: build from PR head so the npm lock can be synchronized in-place.
-          ref: ${{ github.head_ref || github.ref_name }}""",
-              """      - name: Checkout
-        uses: actions/checkout@v4"""
-          )
-          standby.write_text(st)
-
-          Path(".github/workflows/refresh-backend-npm-lock.yml").unlink(missing_ok=True)
-          PY
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/package-lock.json .github/workflows/node.js.yml .github/workflows/standby-backend.yml Dockerfile.standby
-          git add -u .github/workflows/refresh-backend-npm-lock.yml
-          git commit -m "chore(release): synchronize backend npm production lockfile"
-          git push origin "HEAD:${BRANCH}"
-  # END TEMP NPM LOCK SYNC
-
   build:
     runs-on: ubuntu-latest
 
@@ -161,6 +70,18 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Production dependency source guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -f backend/package-lock.json
+          ! grep -qE 'npm (ci|install).*--omit=dev' Dockerfile
+          ! grep -qE 'npm (ci|install).*--omit=dev' Dockerfile.standby
+          ! grep -q 'backend/package-lock.json' Dockerfile.notification-worker
+          grep -q 'pnpm-lock.yaml' Dockerfile
+          grep -q 'pnpm-lock.yaml' Dockerfile.standby
+          grep -q 'pnpm-lock.yaml' Dockerfile.notification-worker
 
       - name: Backend syntax gate
         # Docker can build a broken CommonJS file because COPY/npm ci never
