@@ -244,7 +244,7 @@ async function getOpticalRecon({ latitude, longitude, radiusM = 25_000, signal }
         recommendation: Number(s2.selected.cloudPct ?? 100) <= 20
           ? 'Best current optical scene: fresh + low cloud.'
           : Number(s2.selected.cloudPct ?? 100) <= 40
-            ? 'Best current optical scene within the free global backbone.'
+            ? 'Best current optical scene after freshness, cloud and resolution screening.'
             : 'Newest scene found, but cloud contamination is material.',
       } : {
         provider: 'nasa-gibs',
@@ -284,7 +284,7 @@ async function getOpticalRecon({ latitude, longitude, radiusM = 25_000, signal }
       semantics: [
         'Acquisition time is source metadata; imagery is not live telemetry.',
         'Native resolution is reported separately from any display enhancement.',
-        'No paid commercial imagery is used by this module.',
+        'Commercial tasking and live-imaging claims are outside this module's evidence contract.',
       ],
     };
 
