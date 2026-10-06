@@ -193,7 +193,7 @@
   background: var(--carbon);
   border: 1px solid var(--line-2);
   border-radius: 4px;
-  box-shadow: 3px 3px 0 var(--orange);
+  box-shadow: none;
 }
 
 .sonalit-public .logo-mark::before {
@@ -284,7 +284,7 @@
   padding: .4rem;
   background: var(--well);
   border: 1px solid var(--line-2);
-  box-shadow: 10px 12px 0 rgba(0,0,0,.18);
+  box-shadow: none;
 }
 
 .sonalit-public .nav-panel a {
@@ -332,7 +332,7 @@
   background: var(--orange);
   color: #170a02;
   border-color: var(--orange);
-  box-shadow: 0 0 0 1px rgba(249,115,22,.08);
+  box-shadow: none;
 }
 
 .sonalit-public .btn-primary:hover {
@@ -396,7 +396,7 @@
   height: 8px;
   display: inline-block;
   background: var(--orange);
-  box-shadow: 0 0 0 3px rgba(249,115,22,.08);
+  box-shadow: none;
   transform: rotate(45deg);
 }
 
@@ -1117,7 +1117,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  box-shadow: inset 0 0 0 1px rgba(226,232,240,.05);
+  box-shadow: none;
 }
 
 .sonalit-public .feat-visual img {
@@ -1304,7 +1304,7 @@
   padding-top: 1.25rem;
   border-top: 1px solid var(--line);
   color: var(--text-3);
-  font: 400 .57rem/1.4 var(--mono);
+  font: 400 .7rem/1.4 var(--mono);
 }
 
 .sonalit-public .foot-tag {
