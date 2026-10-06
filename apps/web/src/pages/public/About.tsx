@@ -27,13 +27,11 @@ export default function About(): React.ReactElement {
           <i aria-hidden="true" /> About Sonalit
         </div>
         <h1>
-          Operations technology for{' '}
-          <span className="grad">fleets, convoys and container logistics</span>
+          Software for the work between
+          pickup and proof.
         </h1>
         <p className="hero-lead">
-          Sonalit is built for organisations that move goods and have to answer for them — where the
-          vehicle, the escort, the container and the customer are all part of the same job, and the
-          tools for each are usually not.
+          Sonalit is built for operations where vehicles, cargo, field teams and security responsibilities change hands throughout the day — and the cost of losing the thread is measured in delay, risk and rework.
         </p>
       </header>
 
