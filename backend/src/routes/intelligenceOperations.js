@@ -75,7 +75,7 @@ router.get('/overview', asyncHandler(async (req,res)=>{
     scope:s,
     generated_at:new Date().toISOString(),
   });
-});
+}));
 
 router.get('/gaps', asyncHandler(async (req,res)=>{const status=req.query.status||null,s=scope(req),geo=scopedObjectClause(s,'g',2);const {rows}=await req.db(`SELECT g.* FROM intel_gaps g WHERE g.org_id=$1 AND ($2::text IS NULL OR g.status=$2) AND ${geo.clause} ORDER BY ${priorityRank},g.created_at DESC LIMIT 300`,[req.user.org_id,status,...geo.params]);res.json({gaps:rows,scope:s,generated_at:new Date().toISOString()});}));
 router.post('/gaps', asyncHandler(async(req,res)=>{const {gap_type,title,description,scope_type,scope_key,priority,recommended_action,evidence,due_at}=req.body||{};if(!gap_type||!title||!scope_type)return res.status(400).json({error:'gap_type, title and scope_type are required'});const {rows}=await req.db(`INSERT INTO intel_gaps (org_id,gap_type,title,description,scope_type,scope_key,priority,recommended_action,evidence,due_at,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,[req.user.org_id,gap_type,title,description||null,scope_type,scope_key||null,priority||'medium',recommended_action||null,evidence||[],due_at||null,req.user.id]);res.status(201).json({gap:rows[0]});}));
