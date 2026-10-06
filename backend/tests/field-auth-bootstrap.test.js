@@ -11,7 +11,7 @@ jest.mock('../src/config/database', () => ({
 }));
 
 jest.mock('../src/utils/orgScopedDb', () => ({
-  attachOrgDb: jest.fn(),
+  attachOrgDb: jest.fn((_req, _res, next) => next()),
   withOrg: jest.fn(),
 }));
 
@@ -21,12 +21,14 @@ jest.mock('../src/middleware/auth', () => ({
 }));
 
 jest.mock('../src/utils/tenantContext', () => ({
+  getOrgId: jest.fn(() => null),
   runWithOrgContext: jest.fn((_orgId, fn) => fn()),
 }));
 
 const { query: mockQuery, globalQuery: mockGlobalQuery } = require('../src/config/database');
-const { runWithOrgContext } = require('../src/utils/tenantContext');
-const { requireDevice } = require('../src/middleware/fieldAuth');
+const { getOrgId, runWithOrgContext } = require('../src/utils/tenantContext');
+const { withOrg } = require('../src/utils/orgScopedDb');
+const { requireDevice, fieldAuthenticate } = require('../src/middleware/fieldAuth');
 
 describe('Field bootstrap tenant boundary', () => {
   beforeEach(() => {
@@ -85,6 +87,52 @@ describe('Field bootstrap tenant boundary', () => {
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ error: 'device_not_paired' });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  test('uses tenant-scoped query when resolving again inside an existing tenant context', async () => {
+    const device = {
+      id: '22222222-2222-4222-8222-222222222222',
+      org_id: 'bbbbbbbb-0000-4000-8000-000000000002',
+      label: 'Response tablet',
+      status: 'active',
+    };
+    getOrgId.mockReturnValue(device.org_id);
+    mockQuery.mockResolvedValueOnce({ rows: [device] });
+    withOrg.mockImplementationOnce(async (_orgId, fn) => fn({
+      query: jest.fn().mockResolvedValueOnce({
+        rows: [{
+          session_id: '33333333-3333-4333-8333-333333333333',
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          last_seen_at: new Date().toISOString(),
+          id: '44444444-4444-4444-8444-444444444444',
+          email: 'crew@example.com',
+          name: 'Response Crew',
+          role: 'response_crew',
+          status: 'active',
+          org_id: device.org_id,
+        }],
+      }),
+    }));
+
+    const req = {
+      headers: {
+        'x-field-device': 'device-token',
+        'x-field-token': 'session-token',
+      },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    const next = jest.fn();
+
+    await fieldAuthenticate(req, res, next);
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(mockQuery.mock.calls[0][0]).toMatch(/FROM field_devices/);
+    expect(mockGlobalQuery).not.toHaveBeenCalled();
+    expect(req.user.org_id).toBe(device.org_id);
+    expect(next).toHaveBeenCalledTimes(1);
   });
 
   test('pairing route keeps its pre-tenant device lookup on globalQuery', () => {
