@@ -18,13 +18,11 @@ export default function SecurityOperations(): React.ReactElement {
           <i aria-hidden="true" /> Security Operations
         </div>
         <h1>
-          Fleet and security operations in{' '}
-          <span className="grad">one control room</span>
+          Turn a signal into
+          a response.
         </h1>
         <p className="hero-lead">
-          Monitoring is only useful if something happens when a condition is met. Sonalit turns
-          positions, geofences, device signals and field reports into alerts an operator can act on,
-          and keeps the response attached to the event that triggered it.
+          Sonalit brings location, geofences, device signals and field reports into one incident view — so an alert starts a response, with the movement and evidence that explain why it happened.
         </p>
       </header>
 
