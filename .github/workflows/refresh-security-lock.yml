@@ -1,0 +1,36 @@
+name: Refresh security lockfile
+
+on:
+  push:
+    branches: ["fix/ci-real-dependency-audit"]
+    paths:
+      - "backend/package.json"
+      - "pnpm-workspace.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: \${{ github.ref_name }}
+
+      - uses: pnpm/action-setup@v6
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Refresh lockfile
+        run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
+
+      - name: Upload refreshed lockfile
+        uses: actions/upload-artifact@v6
+        with:
+          name: refreshed-pnpm-lockfile
+          path: pnpm-lock.yaml
+          retention-days: 1
