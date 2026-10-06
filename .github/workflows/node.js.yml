@@ -58,18 +58,42 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - name: Use Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Production dependency source guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -f backend/package-lock.json
+          ! grep -qE 'npm (ci|install).*--omit=dev' Dockerfile
+          ! grep -qE 'npm (ci|install).*--omit=dev' Dockerfile.standby
+          ! grep -q 'backend/package-lock.json' Dockerfile.notification-worker
+          grep -q 'pnpm-lock.yaml' Dockerfile
+          grep -q 'pnpm-lock.yaml' Dockerfile.standby
+          grep -q 'pnpm-lock.yaml' Dockerfile.notification-worker
+          ! grep -qx 'pnpm-lock.yaml' .dockerignore
+          ! grep -qx 'pnpm-workspace.yaml' .dockerignore
+
+      - name: Production container build gate
+        # Build every backend production image without pushing. This proves the
+        # Dockerfiles consume the same pnpm lockfile as CI and catches drift in
+        # container-only dependency/runtime paths before merge.
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --file Dockerfile --tag sonalit-backend:ci .
+          docker build --file Dockerfile.notification-worker --tag sonalit-notification-worker:ci .
 
       - name: Backend syntax gate
         # Docker can build a broken CommonJS file because COPY/npm ci never
@@ -177,12 +201,14 @@ jobs:
       - name: Upload Playwright report
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report
           path: apps/web/playwright-report/
           retention-days: 7
 
-      - name: Dependency audit
-        run: pnpm --filter fleetops-backend audit --audit-level=high
-        continue-on-error: true
+      - name: Production dependency audit
+        # pnpm 12.7+ correctly applies workspace filters to audit. This keeps
+        # the gate scoped to the backend's production dependency graph instead
+        # of reporting unrelated frontend/dev workspace vulnerabilities.
+        run: pnpm --filter=fleetops-backend --prod audit --audit-level=high

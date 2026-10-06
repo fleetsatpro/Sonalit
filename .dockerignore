@@ -26,5 +26,3 @@ public
 backend/logs
 backend/src/sonalit
 **/*.zip
-pnpm-lock.yaml
-pnpm-workspace.yaml

@@ -1,5 +1,8 @@
 [phases.install]
-cmds = ["npm ci --omit=dev"]
+cmds = [
+  "npm install --global pnpm@11.28.4 --no-audit --fund=false",
+  "pnpm install --filter fleetops-backend --prod --frozen-lockfile --ignore-scripts"
+]
 
 [start]
-cmd = "node src/app.js"
+cmd = "pnpm --filter fleetops-backend start"
