@@ -157,7 +157,7 @@ describe('Field bootstrap tenant boundary', () => {
     );
     expect(source).toContain("router.get('/response-crew/dispatches', fieldAuthenticate");
     expect(source).toContain("router.patch('/response-crew/dispatches/:id/status', fieldAuthenticate");
-    expect(source).not.toContain("requireDevice, fieldAuthenticate");
+    expect(source).not.toMatch(/router\.(get|patch)\('\/response-crew\/[^']+',\s*requireDevice\b/);
     expect(source).not.toContain('req.fieldUser');
   });
 
