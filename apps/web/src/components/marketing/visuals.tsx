@@ -1,28 +1,12 @@
 /**
- * Photography for the public site.
+ * Real-world photography for the public site.
  *
- * All four images are self-hosted under /marketing rather than hot-linked to
- * images.unsplash.com. That is deliberate:
- *   - the CSP is `img-src 'self' …` and does not allow the Unsplash CDN, and
- *     widening it for decorative photography is not a trade worth making;
- *   - hot-linked stock rots (the first draft of this page shipped a URL that
- *     already 404s), and a dead hero image is not a failure mode a marketing
- *     page should have;
- *   - self-hosting means one origin, no third-party request on the public
- *     pages, and no dependency on someone else's uptime.
+ * These are deliberately external, stable source images from Wikimedia Commons
+ * and NASA Earth Observatory instead of generated/decorative pseudo-operations
+ * graphics. Every image carries its provenance in the rendered credit.
  *
- * Sourced from Unsplash under the Unsplash License (free for commercial use,
- * attribution not required). Provenance, by CDN photo id:
- *   ops-port-night      photo-1758745791998-11ea5eb5df40
- *   fleet-road-night    photo-1485575301924-6891ef935dcd
- *   convoy-corridor     photo-1629881635342-c1272d45d0fa
- *   container-terminal  photo-1590497008432-598f04441de8  (Timelab)
- *
- * Each was checked for a legible third-party haulier livery before selection —
- * a branded truck on this page reads as a customer Sonalit does not have.
- *
- * Served as WebP at 2x the largest CSS size they render at, with intrinsic
- * width/height so they reserve their box and cannot shift the layout.
+ * The public homepage must never imply that a stock or archival image is live
+ * telemetry. Satellite imagery is explicitly labelled as reference imagery.
  */
 
 interface Photo {
@@ -30,81 +14,105 @@ interface Photo {
   width: number;
   height: number;
   alt: string;
+  credit: string;
+  creditHref: string;
 }
 
 const PHOTOS = {
   ops: {
-    src: '/marketing/ops-port-night.webp',
-    width: 1200,
-    height: 600,
-    alt: 'Port cranes working under floodlights at night, reflected in the water below.',
+    src: 'https://upload.wikimedia.org/wikipedia/commons/5/50/Yokohama_by_Sentinel-2%2C_2020-10-27.jpg',
+    width: 1600,
+    height: 900,
+    alt: 'Satellite view of Yokohama and its port on Tokyo Bay, captured by Sentinel-2B.',
+    credit: 'Copernicus Sentinel-2, ESA / CC BY-SA 3.0 IGO',
+    creditHref: 'https://commons.wikimedia.org/wiki/File:Yokohama_by_Sentinel-2,_2020-10-27.jpg',
   },
   fleet: {
-    src: '/marketing/fleet-road-night.webp',
-    width: 1280,
-    height: 880,
-    alt: 'A heavy goods vehicle on a coastal road at dusk, headlights on.',
+    src: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Semi_truck_carrying_freight.jpg',
+    width: 3264,
+    height: 1836,
+    alt: 'Freight truck carrying a shipping container along a road in Cameroon.',
+    credit: 'Tontonjer / CC BY-SA 4.0',
+    creditHref: 'https://commons.wikimedia.org/wiki/File:Semi_truck_carrying_freight.jpg',
   },
   convoy: {
-    src: '/marketing/convoy-corridor.webp',
+    src: 'https://upload.wikimedia.org/wikipedia/commons/6/67/Truck_convoy-08.jpg',
     width: 1280,
-    height: 880,
-    alt: 'Freight vehicles moving through a lit road tunnel at night.',
+    height: 960,
+    alt: 'A line of freight trucks travelling together on a public road in Canberra.',
+    credit: 'A. Tsirekas / CC BY 3.0',
+    creditHref: 'https://commons.wikimedia.org/wiki/File:Truck_convoy-08.jpg',
   },
   container: {
-    src: '/marketing/container-terminal.webp',
-    width: 1280,
-    height: 880,
-    alt: 'A container terminal at dusk, stacked containers and gantry cranes under floodlights.',
+    src: 'https://upload.wikimedia.org/wikipedia/commons/8/88/Container_ship_exiting_Mombasa_port.jpg',
+    width: 1600,
+    height: 1200,
+    alt: 'Container ship leaving Mombasa Port, Kenya.',
+    credit: 'Ian Kiptoo / CC BY 4.0',
+    creditHref: 'https://commons.wikimedia.org/wiki/File:Container_ship_exiting_Mombasa_port.jpg',
   },
 } satisfies Record<string, Photo>;
 
-/**
- * `priority` marks the one image above the fold (the hero panel): it loads
- * eagerly and at high fetch priority. Everything else is lazy and async, so
- * the rest of the photography costs nothing until it is scrolled to.
- */
 function MarketingPhoto({
   photo,
   priority = false,
+  framing = 'landscape',
+  note,
 }: {
   photo: Photo;
   priority?: boolean;
+  framing?: 'landscape' | 'portrait' | 'wide';
+  note?: string | undefined;
 }): React.ReactElement {
   return (
-    <img
-      src={photo.src}
-      alt={photo.alt}
-      width={photo.width}
-      height={photo.height}
-      loading={priority ? 'eager' : 'lazy'}
-      ref={(node) => {
-        if (!node) return;
-        if (priority) node.setAttribute('fetchpriority', 'high');
-        else node.removeAttribute('fetchpriority');
-      }}
-      decoding="async"
-    />
+    <div className={`marketing-photo-frame frame-${framing}`}>
+      <img
+        src={photo.src}
+        alt={photo.alt}
+        width={photo.width}
+        height={photo.height}
+        loading={priority ? 'eager' : 'lazy'}
+        fetchPriority={priority ? 'high' : 'auto'}
+        decoding="async"
+      />
+      {note ? <span className="photo-note mono">{note}</span> : null}
+      <a
+        className="photo-credit mono"
+        href={photo.creditHref}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Image credit: ${photo.credit}`}
+      >
+        {photo.credit}
+      </a>
+    </div>
   );
 }
 
 interface VisualProps {
-  /** Set on the one visual above the fold so it is not lazy-loaded. */
   priority?: boolean;
+  note?: string;
 }
 
-export function OpsVisual({ priority = false }: VisualProps): React.ReactElement {
-  return <MarketingPhoto photo={PHOTOS.ops} priority={priority} />;
+export function OpsVisual({ priority = false, note }: VisualProps): React.ReactElement {
+  return (
+    <MarketingPhoto
+      photo={PHOTOS.ops}
+      priority={priority}
+      framing="wide"
+      note={note ?? 'REFERENCE IMAGERY · SENTINEL-2B · 27 OCT 2020'}
+    />
+  );
 }
 
-export function FleetVisual({ priority = false }: VisualProps): React.ReactElement {
-  return <MarketingPhoto photo={PHOTOS.fleet} priority={priority} />;
+export function FleetVisual({ priority = false, note }: VisualProps): React.ReactElement {
+  return <MarketingPhoto photo={PHOTOS.fleet} priority={priority} note={note} />;
 }
 
-export function ConvoyVisual({ priority = false }: VisualProps): React.ReactElement {
-  return <MarketingPhoto photo={PHOTOS.convoy} priority={priority} />;
+export function ConvoyVisual({ priority = false, note }: VisualProps): React.ReactElement {
+  return <MarketingPhoto photo={PHOTOS.convoy} priority={priority} note={note} />;
 }
 
-export function ContainerVisual({ priority = false }: VisualProps): React.ReactElement {
-  return <MarketingPhoto photo={PHOTOS.container} priority={priority} />;
+export function ContainerVisual({ priority = false, note }: VisualProps): React.ReactElement {
+  return <MarketingPhoto photo={PHOTOS.container} priority={priority} note={note} />;
 }

@@ -18,14 +18,11 @@ export default function ConvoyManagement(): React.ReactElement {
           <i aria-hidden="true" /> Convoy Management
         </div>
         <h1>
-          Convoy management and{' '}
-          <span className="grad">field security operations</span>
+          Run the road with
+          the corridor in view.
         </h1>
         <p className="hero-lead">
-          A convoy is more than a group of vehicles: it has a route, an escort, a cargo, a set of
-          checks and a reporting obligation. Sonalit treats it as one object from planning through
-          arrival, so the control room and the officers on the road are never working from
-          different versions of the same journey.
+          Plan the movement, brief the field team, watch the route and carry the whole operation into the record when conditions change. The control room and the officers on the road work from the same journey — not separate message threads.
         </p>
       </header>
 

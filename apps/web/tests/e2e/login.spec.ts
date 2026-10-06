@@ -49,7 +49,7 @@ test.describe('Login page', () => {
     test.slow();
     await page.goto('/', { waitUntil: 'commit' });
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      /control layer for movement/i,
+      /see it before it unfolds/i,
       { timeout: 60000 },
     );
     await expect(page).not.toHaveURL(/\/login/);
