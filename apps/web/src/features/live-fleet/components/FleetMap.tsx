@@ -638,7 +638,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
         {/* dedicated latest-optical control: normal map remains one click away */}
         <button
           onClick={() => mapMode === 'latest' ? cycleMapMode() : activateLatestImagery()}
-          title={mapMode === 'latest' ? 'Return to normal map' : 'Latest satellite imagery — free/open sources'}
+          title={mapMode === 'latest' ? 'Return to normal map' : 'Latest validated satellite observation'}
           aria-label={mapMode === 'latest' ? 'Return to normal map' : 'Latest satellite imagery'}
           style={{
             width: 34, height: 34, borderRadius: 7,
