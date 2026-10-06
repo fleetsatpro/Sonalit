@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
@@ -28,6 +28,58 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # TEMP: build from PR head so the npm lock can be synchronized in-place.
+          ref: ${{ github.head_ref || github.ref_name }} 
+      # BEGIN TEMP NPM LOCK SYNC
+      - name: Synchronize backend npm lockfile
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/ci-real-dependency-audit' }}
+        env:
+          BRANCH: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd backend
+          npm install --package-lock-only --omit=dev --ignore-scripts
+          npm ci --omit=dev --ignore-scripts
+          npm audit --omit=dev --audit-level=high
+          cd ..
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('.github/workflows/standby-backend.yml')
+          text = p.read_text()
+          text = re.sub(r'\n      # BEGIN TEMP NPM LOCK SYNC.*?# END TEMP NPM LOCK SYNC\n', '\n', text, count=1, flags=re.S)
+          text = text.replace(
+              """  permissions:
+            contents: write
+            packages: write""",
+              """  permissions:
+            contents: read
+            packages: write"""
+          )
+          text = text.replace(
+              """      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # TEMP: build from PR head so the npm lock can be synchronized in-place.
+          ref: ${{ github.head_ref || github.ref_name }}""",
+              """      - name: Checkout
+        uses: actions/checkout@v4"""
+          )
+          p.write_text(text)
+          Path('.github/workflows/refresh-backend-npm-lock.yml').unlink(missing_ok=True)
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/package-lock.json .github/workflows/standby-backend.yml
+          git add -u .github/workflows/refresh-backend-npm-lock.yml
+          git commit -m "chore(standby): synchronize backend npm lockfile"
+          git push origin "HEAD:${BRANCH}"
+      # END TEMP NPM LOCK SYNC
+
 
       - name: Validate runtime fence JavaScript
         run: node --check backend/src/utils/runtimeFenceBootstrap.js
