@@ -527,11 +527,11 @@ router.post('/admin/workers/:userId/unlock', authorize('admin', 'dispatcher'), a
 const { publish } = require('../realtime/centrifugo');
 
 /** GET /api/v1/field/response-crew/dispatches — active dispatches for this crew member's team. */
-router.get('/response-crew/dispatches', requireDevice, fieldAuthenticate, asyncHandler(async (req, res) => {
-  if (req.fieldUser.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
+router.get('/response-crew/dispatches', fieldAuthenticate, asyncHandler(async (req, res) => {
+  if (req.user.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
   const memberR = await query(
     `SELECT team_id FROM response_crew_members WHERE user_id = $1 AND active = true LIMIT 1`,
-    [req.fieldUser.id]
+    [req.user.id]
   );
   const teamId = memberR.rows[0]?.team_id;
   if (!teamId) return res.json({ data: [] });
@@ -551,8 +551,8 @@ router.get('/response-crew/dispatches', requireDevice, fieldAuthenticate, asyncH
 }));
 
 /** PATCH /api/v1/field/response-crew/dispatches/:id/status — update dispatch status from field device. */
-router.patch('/response-crew/dispatches/:id/status', requireDevice, fieldAuthenticate, asyncHandler(async (req, res) => {
-  if (req.fieldUser.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
+router.patch('/response-crew/dispatches/:id/status', fieldAuthenticate, asyncHandler(async (req, res) => {
+  if (req.user.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
   const { id } = req.params;
   const { status } = req.body;
   const valid = ['acknowledged', 'en_route', 'on_scene', 'resolved'];
