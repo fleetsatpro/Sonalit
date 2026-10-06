@@ -30,11 +30,10 @@ export default function Contact(): React.ReactElement {
           <i aria-hidden="true" /> Contact
         </div>
         <h1>
-          Contact <span className="grad">Sonalit</span>
+          Let&apos;s talk about how you move cargo.
         </h1>
         <p className="hero-lead">
-          Whether you are evaluating Sonalit for a fleet, a convoy operation or container delivery,
-          or you already use the platform and need help, these are the ways to reach the team.
+          Tell us what you move, where it moves and where the operation loses time or visibility. We&apos;ll show you where Sonalit fits — and what it can replace.
         </p>
       </header>
 
