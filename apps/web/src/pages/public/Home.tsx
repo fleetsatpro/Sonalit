@@ -1,3 +1,4 @@
+import * as React from 'react';
 import MarketingLayout from '../../components/marketing/MarketingLayout.js';
 import {
   CtaBand,
