@@ -20,5 +20,11 @@ RUN npm install --global pnpm@11.28.4 --no-audit --fund=false \
 COPY backend/ ./backend/
 RUN mkdir -p backend/logs
 
+# Railway carries the productionRiskIntelligencePatches preload in NODE_OPTIONS.
+# That preload is intentionally relative to the backend package root. Keep the
+# runtime CWD at /app/backend so Node resolves all package-local preloads before
+# npm/pnpm starts the application.
+WORKDIR /app/backend
+
 EXPOSE 5000
 CMD ["pnpm", "--filter", "fleetops-backend", "start"]
