@@ -3,9 +3,6 @@ name: Refresh security lockfile
 on:
   push:
     branches: ["fix/ci-real-dependency-audit"]
-    paths:
-      - "backend/package.json"
-      - "pnpm-workspace.yaml"
 
 permissions:
   contents: read
