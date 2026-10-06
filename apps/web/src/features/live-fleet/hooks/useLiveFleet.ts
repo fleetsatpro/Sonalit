@@ -59,7 +59,7 @@ export function useLiveFleet() {
   const [panicDevices, setPanicDevices] = useState<Set<string>>(new Set())
 
   const dashVehiclesQ = useQuery<DashVehicle[]>({
-    queryKey: ['live-fleet-vehicles'],
+    queryKey: ['live-fleet-vehicles', orgId],
     queryFn: async () => {
       const r = await api.get<unknown>('/dashboard/vehicles')
       return arrayPayload<DashVehicle>(r.data, 'Live fleet vehicle feed')
@@ -73,7 +73,7 @@ export function useLiveFleet() {
   const dashVehicles = dashVehiclesQ.data
 
   const dashConvoysQ = useQuery<DashConvoy[]>({
-    queryKey: ['live-fleet-convoys'],
+    queryKey: ['live-fleet-convoys', orgId],
     queryFn: async () => {
       const r = await api.get<unknown>('/dashboard/convoys')
       return arrayPayload<DashConvoy>(r.data, 'Live fleet convoy feed')
@@ -93,7 +93,7 @@ export function useLiveFleet() {
   // this poll is what keeps the map moving instead of freezing until a
   // manual page reload.
   const gpsQ = useQuery<GpsPos[]>({
-    queryKey: ['live-fleet-gps-init'],
+    queryKey: ['live-fleet-gps-init', orgId],
     queryFn: async () => {
       const r = await api.get<unknown>('/gps/track')
       const payload = arrayPayload<GpsPos>(r.data, 'Primary GPS position feed')
