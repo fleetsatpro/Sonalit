@@ -57,7 +57,7 @@ describe('live tenant route regressions', () => {
           }],
         };
       }
-      if (/COUNT\(\*\).*events_24h/i.test(sql)) return { rows: [{ events_24h: 1, high_critical_events_24h: 1 }] };
+      if (/events_24h/i.test(sql)) return { rows: [{ events_24h: 1, high_critical_events_24h: 1 }] };
       if (/FROM intel_observations/i.test(sql)) return { rows: [{ observations_24h: 7 }] };
       if (/FROM intel_early_warnings/i.test(sql)) return { rows: [{ active_warnings: 3 }] };
       if (/FROM intel_gaps/i.test(sql)) return { rows: [{ open_gaps: 2 }] };
