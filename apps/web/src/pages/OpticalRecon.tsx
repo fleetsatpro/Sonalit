@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Activity, AlertTriangle, CloudRain, Crosshair, Eye, Layers3, Map as MapIcon,
-  Maximize2, RefreshCw, Satellite, ShieldAlert, Thermometer, Wind, ZoomIn, ZoomOut,
+  Activity, AlertTriangle, CheckCircle2, ChevronRight, Clock3, Cloud,
+  CloudRain, Crosshair, Database, Eye, Layers3, LocateFixed, Map as MapIcon,
+  Maximize2, RefreshCw, Satellite, ShieldAlert, Thermometer, Wind, XCircle, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import '../styles/optical-recon.css'
 import { STREET_STYLE } from '../lib/mapStyles.js'
-import { fetchOpticalRecon, installOpticalReconMapLibreProtocol, reconStyle, type OpticalReconResult } from '../lib/opticalRecon.js'
+import { fetchOpticalRecon, installOpticalReconMapLibreProtocol, reconStyle, type OpticalReconResult, type OpticalCandidate } from '../lib/opticalRecon.js'
 import { fetchWorldContext, type SpatialWorldContext } from '../lib/spatialClient.js'
 import { spatialCanvasContextAttributes, spatialPixelRatio } from '../lib/spatialRendering.js'
 
@@ -16,18 +17,21 @@ installOpticalReconMapLibreProtocol()
 
 type MapMode = 'normal' | 'latest' | 'precision'
 
-function formatAge(value?: string | null) {
-  if (!value) return 'UNKNOWN'
+const DEFAULT_AOI = { latitude: -1.286389, longitude: 36.817223 }
+
+function ageLabel(value?: string | null) {
+  if (!value) return '—'
   const t = Date.parse(value)
-  if (!Number.isFinite(t)) return 'UNKNOWN'
-  const hours = Math.max(0, Date.now() - t) / 3600000
-  if (hours < 1) return String(Math.max(1, Math.round(hours * 60))) + 'm'
-  if (hours < 48) return String(Math.round(hours)) + 'h'
-  return String(Math.round(hours / 24)) + 'd'
+  if (!Number.isFinite(t)) return '—'
+  const mins = Math.max(0, Math.floor((Date.now() - t) / 60000))
+  if (mins < 60) return mins + 'm'
+  const hours = Math.floor(mins / 60)
+  if (hours < 48) return hours + 'h'
+  return Math.floor(hours / 24) + 'd'
 }
 
-function formatAcquired(value?: string | null) {
-  if (!value) return 'Acquisition time unavailable'
+function dateLabel(value?: string | null) {
+  if (!value) return 'Not available'
   const t = Date.parse(value)
   if (!Number.isFinite(t)) return value
   return new Date(t).toLocaleString([], {
@@ -37,29 +41,69 @@ function formatAcquired(value?: string | null) {
 }
 
 function sourceLabel(source?: string) {
-  if (source === 'sentinel') return 'Sentinel-2 / DE AFRICA'
+  if (source === 'sentinel') return 'SENTINEL-2 / DE AFRICA'
   if (source === 'oam') return 'OPENAERIALMAP'
   if (source === 'nasa') return 'NASA GIBS / MODIS'
   return 'UNKNOWN SOURCE'
 }
 
-function firstWeather(ctx?: SpatialWorldContext) {
+function missionLabel(candidate?: OpticalCandidate | null) {
+  if (!candidate) return 'No observation'
+  return candidate.mission || candidate.provider || 'Unnamed observation'
+}
+
+function normaliseWeather(ctx?: SpatialWorldContext) {
   return ctx?.environment?.find(x => x.entityType === 'weather') ?? ctx?.entities?.find(x => x.entityType === 'weather')
+}
+
+function qualityLabel(state?: string) {
+  switch (state) {
+    case 'available': return 'VALIDATED'
+    case 'available_with_provider_warnings': return 'VALIDATED / WARNINGS'
+    case 'provider_degraded_fallback': return 'FALLBACK / DEGRADED'
+    case 'fallback': return 'RAPID FALLBACK'
+    default: return 'NO CERTIFIED SCENE'
+  }
+}
+
+function qualityTone(state?: string) {
+  if (state === 'available') return 'ok'
+  if (state === 'available_with_provider_warnings') return 'warn'
+  if (state === 'fallback' || state === 'provider_degraded_fallback') return 'fallback'
+  return 'bad'
+}
+
+function scorePct(candidate?: OpticalCandidate | null) {
+  if (!candidate) return 0
+  return Math.max(0, Math.min(100, Math.round(Number(candidate.score || 0) * 100)))
+}
+
+function sourceState(recon: OpticalReconResult | undefined, source: 'sentinel' | 'oam' | 'nasa') {
+  if (!recon) return 'PENDING'
+  if (source === 'sentinel') {
+    if (recon.warnings.includes('sentinel_catalog_unavailable')) return 'DEGRADED'
+    return recon.coverage.sentinel2Scenes > 0 ? 'AVAILABLE' : 'NO SCENES'
+  }
+  if (source === 'oam') {
+    if (recon.warnings.includes('openaerialmap_catalog_unavailable')) return 'DEGRADED'
+    return recon.coverage.openAerialMapCandidates > 0 ? 'AVAILABLE' : 'NO CANDIDATES'
+  }
+  return recon.primary?.render?.source === 'nasa' ? 'ACTIVE FALLBACK' : 'STANDING BY'
 }
 
 export default function OpticalRecon() {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const clickMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const markerRef = useRef<maplibregl.Marker | null>(null)
   const [mapReady, setMapReady] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('normal')
-  const [centre, setCentre] = useState({ latitude: -1.286389, longitude: 36.817223 })
+  const [centre, setCentre] = useState(DEFAULT_AOI)
   const [aoiVersion, setAoiVersion] = useState(0)
-  const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null)
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   const opticalQ = useQuery<OpticalReconResult>({
-    queryKey: ['optical-recon-page', centre.latitude, centre.longitude, aoiVersion],
+    queryKey: ['optical-recon-workstation', centre.latitude, centre.longitude, aoiVersion],
     queryFn: ({ signal }) => fetchOpticalRecon(centre, 35_000, signal),
     enabled: mapReady,
     staleTime: 60_000,
@@ -68,50 +112,46 @@ export default function OpticalRecon() {
   })
 
   const worldQ = useQuery<SpatialWorldContext>({
-    queryKey: ['optical-recon-world-context', centre.latitude, centre.longitude],
+    queryKey: ['optical-recon-context', centre.latitude, centre.longitude],
     queryFn: ({ signal }) => fetchWorldContext({
-      center: centre, radiusM: 50_000,
+      center: centre,
+      radiusM: 50_000,
       layers: ['weather', 'hazards', 'security', 'incidents'],
-      maxEntitiesPerLayer: 50, signal,
+      maxEntitiesPerLayer: 50,
+      signal,
     }),
-    enabled: mapReady, staleTime: 30_000, refetchInterval: 120_000, retry: 1,
+    enabled: mapReady,
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+    retry: 1,
   })
-
-  useEffect(() => {
-    if (opticalQ.isError && mapMode !== 'normal') {
-      setMapMode('normal')
-      setSelectedCandidate(null)
-      if (mapRef.current) {
-        setMapReady(false)
-        mapRef.current.setStyle(STREET_STYLE)
-      }
-    }
-  }, [opticalQ.isError, mapMode])
 
   const recon = opticalQ.data
   const candidates = useMemo(
-    () => (recon?.candidates ?? []).slice().sort((a, b) => Number(b.score) - Number(a.score)),
+    () => (recon?.candidates ?? []).slice().sort((a, b) => Number(b.score || 0) - Number(a.score || 0)),
     [recon],
   )
-  const viewedCandidate = useMemo(() => {
+  const viewed = useMemo(() => {
     if (!recon) return null
-    const selected = candidates.find(candidate => candidate.id === selectedCandidate)
-    return selected ?? (mapMode === 'precision' ? recon.precisionAlternative : null) ?? recon.primary
-  }, [candidates, mapMode, recon, selectedCandidate])
+    if (selectedId) return candidates.find(candidate => candidate.id === selectedId) ?? recon.primary
+    if (mapMode === 'precision') return recon.precisionAlternative ?? recon.primary
+    return recon.primary
+  }, [candidates, mapMode, recon, selectedId])
 
-  useEffect(() => {
-    if (!opticalQ.isFetching && isRefreshing) setIsRefreshing(false)
-  }, [opticalQ.isFetching, isRefreshing])
-  const weather = firstWeather(worldQ.data)
+  const weather = normaliseWeather(worldQ.data)
   const weatherAttrs = (weather?.attributes ?? {}) as Record<string, unknown>
-  const hazardTotal = (worldQ.data?.hazards ?? []).length + (worldQ.data?.incidents ?? []).length
-  const securityTotal = (worldQ.data?.security ?? []).length + (worldQ.data?.operational?.alerts ?? []).length
+  const hazardCount = (worldQ.data?.hazards?.length ?? 0) + (worldQ.data?.incidents?.length ?? 0)
+  const securityCount = (worldQ.data?.security?.length ?? 0) + (worldQ.data?.operational?.alerts?.length ?? 0)
+  const state = qualityTone(recon?.quality.state)
+  const queryBusy = opticalQ.isFetching && !opticalQ.data
+  const degraded = opticalQ.isError || worldQ.isError || (recon?.warnings.length ?? 0) > 0
+
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: STREET_STYLE,
-      center: [centre.longitude, centre.latitude],
+      center: [DEFAULT_AOI.longitude, DEFAULT_AOI.latitude],
       zoom: 7,
       attributionControl: false,
       pixelRatio: spatialPixelRatio(),
@@ -121,15 +161,19 @@ export default function OpticalRecon() {
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: false }), 'bottom-right')
     map.on('style.load', () => setMapReady(true))
     map.on('click', event => {
-      setCentre({ latitude: event.lngLat.lat, longitude: event.lngLat.lng })
-      setAoiVersion(v => v + 1)
+      const next = { latitude: event.lngLat.lat, longitude: event.lngLat.lng }
+      setCentre(next)
+      setAoiVersion(value => value + 1)
+      setSelectedId(null)
       setMapMode('latest')
-      clickMarkerRef.current?.remove()
-      clickMarkerRef.current = new maplibregl.Marker({ color: '#5eead4', scale: 0.8 }).setLngLat(event.lngLat).addTo(map)
+      markerRef.current?.remove()
+      markerRef.current = new maplibregl.Marker({ color: '#5eead4', scale: 0.75 })
+        .setLngLat(event.lngLat)
+        .addTo(map)
     })
     mapRef.current = map
     return () => {
-      clickMarkerRef.current?.remove()
+      markerRef.current?.remove()
       map.remove()
       mapRef.current = null
       setMapReady(false)
@@ -137,29 +181,46 @@ export default function OpticalRecon() {
   }, [])
 
   useEffect(() => {
-    if (!viewedCandidate?.render || mapMode === 'normal' || !mapRef.current) return
+    if (!mapRef.current || !viewed?.render || mapMode === 'normal') return
     setMapReady(false)
-    mapRef.current.setStyle(reconStyle(viewedCandidate.render))
-  }, [mapMode, viewedCandidate?.render?.source, viewedCandidate?.render?.date, viewedCandidate?.render?.itemId])
+    mapRef.current.setStyle(reconStyle(viewed.render))
+  }, [mapMode, viewed?.render?.source, viewed?.render?.date, viewed?.render?.itemId])
 
-  const runLatestAtCentre = () => {
+  useEffect(() => {
+    if (!mapRef.current || !opticalQ.error || mapMode === 'normal') return
+    setMapMode('normal')
+    setSelectedId(null)
+    setMapReady(false)
+    mapRef.current.setStyle(STREET_STYLE)
+  }, [opticalQ.error, mapMode])
+
+  useEffect(() => {
+    if (!opticalQ.isFetching) setRefreshing(false)
+  }, [opticalQ.isFetching])
+
+  const refreshAoi = () => {
     const map = mapRef.current
     if (!map) return
     const c = map.getCenter()
     setCentre({ latitude: c.lat, longitude: c.lng })
-    setAoiVersion(v => v + 1)
-    setSelectedCandidate(null)
-    setIsRefreshing(true)
+    setAoiVersion(value => value + 1)
+    setSelectedId(null)
+    setRefreshing(true)
     setMapMode('latest')
+    markerRef.current?.remove()
+  }
+
+  const selectCandidate = (candidate: OpticalCandidate) => {
+    setSelectedId(candidate.id)
+    if (!candidate.render) return
+    setMapMode(candidate.render.source === 'oam' ? 'precision' : 'latest')
   }
 
   const returnNormal = () => {
-    setSelectedCandidate(null)
+    setSelectedId(null)
     setMapMode('normal')
-    if (mapRef.current) {
-      setMapReady(false)
-      mapRef.current.setStyle(STREET_STYLE)
-    }
+    setMapReady(false)
+    mapRef.current?.setStyle(STREET_STYLE)
   }
 
   return (
@@ -167,122 +228,231 @@ export default function OpticalRecon() {
       <header className="ore-header">
         <div className="ore-brand">
           <div className="ore-mark"><Satellite size={18} /></div>
-          <div>
-            <div className="ore-eyebrow">SONALIT / SECURITY / EARTH INTELLIGENCE</div>
-            <h1>OPTICAL RECON <span>OPEN EARTH</span></h1>
-            <p>Latest validated optical observation · open imagery sources · operational evidence, not live telemetry</p>
+          <div className="ore-title-block">
+            <div className="ore-eyebrow">SONALIT / SECURITY / EARTH OBSERVATION</div>
+            <h1>OPTICAL RECONNAISSANCE</h1>
+            <p>Scene evidence workstation · acquisition metadata · operational context · source provenance</p>
           </div>
         </div>
-        <div className="ore-header-actions">
-          <div className="ore-live-readout"><i /> FABRIC <strong>LIVE</strong></div>
-          <button className="ore-btn ore-btn-ghost" type="button" onClick={runLatestAtCentre} disabled={isRefreshing}>
-            <RefreshCw size={14} className={isRefreshing ? 'ore-spin' : ''} /> REFRESH AOI
+        <div className="ore-header-right">
+          <div className={'ore-integrity-chip ' + state}>
+            <span>{state === 'ok' ? '●' : state === 'warn' ? '●' : state === 'fallback' ? '△' : '×'}</span>
+            {qualityLabel(recon?.quality.state)}
+          </div>
+          <button type="button" className="ore-button ghost" onClick={refreshAoi} disabled={refreshing}>
+            <RefreshCw size={13} className={refreshing ? 'ore-spin' : ''} />
+            REFRESH SCENE
           </button>
         </div>
       </header>
 
-      <section className="ore-toolbar">
-        <div className="ore-mode-group">
-          <button className={mapMode === 'normal' ? 'active' : ''} onClick={returnNormal}><MapIcon size={14} /> NORMAL MAP</button>
-          <button className={mapMode === 'latest' ? 'active' : ''} onClick={() => recon ? setMapMode('latest') : runLatestAtCentre()}><Satellite size={14} /> LATEST SATELLITE</button>
-          {recon?.precisionAlternative && (
-            <button className={mapMode === 'precision' ? 'active precision' : 'precision'} onClick={() => { setSelectedCandidate(recon.precisionAlternative?.id ?? null); setMapMode('precision') }}>
-              <Maximize2 size={14} /> HIGH-DETAIL
-            </button>
-          )}
+      <div className="ore-commandbar">
+        <div className="ore-command-modes">
+          <button type="button" className={mapMode === 'normal' ? 'active' : ''} onClick={returnNormal}>
+            <MapIcon size={13} /> OPERATIONAL MAP
+          </button>
+          <button type="button" className={mapMode === 'latest' ? 'active' : ''} onClick={() => { setSelectedId(null); setMapMode('latest') }}>
+            <Satellite size={13} /> LATEST OBSERVATION
+          </button>
+          <button type="button" className={mapMode === 'precision' ? 'active precision' : 'precision'} onClick={() => {
+            if (recon?.precisionAlternative) {
+              setSelectedId(recon.precisionAlternative.id)
+              setMapMode('precision')
+            }
+          }} disabled={!recon?.precisionAlternative}>
+            <Maximize2 size={13} /> DETAIL SCENE
+          </button>
         </div>
-        <div className="ore-coordinates"><Crosshair size={13} /><span>{centre.latitude.toFixed(5)}°</span><span>{centre.longitude.toFixed(5)}°</span><b>AOI 35 KM</b></div>
-      </section>
+        <div className="ore-aoi-readout">
+          <Crosshair size={13} />
+          <span>{centre.latitude.toFixed(5)}°</span>
+          <span>{centre.longitude.toFixed(5)}°</span>
+          <b>AOI 35 KM</b>
+          <span className="ore-gesture">Click map to retarget</span>
+        </div>
+      </div>
 
-      <main className="ore-grid">
-        <section className="ore-map-wrap">
-          <div ref={containerRef} className="ore-map" />
-          <div className="ore-map-overlay ore-map-top-left">
-            <div className="ore-map-label"><span className="ore-status-dot" /> {mapMode === 'normal' ? 'OPERATIONAL MAP' : mapMode === 'precision' ? 'HIGH-DETAIL OPTICAL' : 'LATEST VALIDATED OPTICAL'}</div>
-            <div className="ore-map-meta">{viewedCandidate ? sourceLabel(viewedCandidate.render?.source) : opticalQ.isFetching ? 'SEARCHING FREE IMAGERY CATALOGS…' : 'AWAITING AOI SEARCH'}</div>
-          </div>
-          <div className="ore-map-overlay ore-map-bottom-left">
-            <div><span>OBSERVED</span> {viewedCandidate?.nativeResolutionM ? String(viewedCandidate.nativeResolutionM) + ' m native' : '—'}</div>
-            <div><span>ACQUIRED</span> {formatAcquired(viewedCandidate?.acquiredAt)}</div>
-            <div><span>FRESHNESS</span> {viewedCandidate?.freshness || '—'}</div>
-            <div><span>LICENSE</span> {viewedCandidate?.licence || '—'}</div>
-            <div><span>ATTRIBUTION</span> {sourceLabel(viewedCandidate?.render?.source)}</div>
-          </div>
-          <div className="ore-map-controls">
-            <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in"><ZoomIn size={15} /></button>
-            <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out"><ZoomOut size={15} /></button>
-          </div>
-          {opticalQ.error && (
-            <div className="ore-map-error"><AlertTriangle size={15} /><div><strong>IMAGERY SEARCH DEGRADED</strong><span>No silent stale substitution was made.</span></div><button type="button" onClick={() => opticalQ.refetch()}>RETRY</button></div>
-          )}
-        </section>
-
-        <aside className="ore-sidebar">
-          <section className="ore-card ore-hero-card">
-            <div className="ore-card-head">
-              <div><span className="ore-kicker">{selectedCandidate ? 'VIEWING OBSERVATION' : 'LATEST AVAILABLE'}</span><h2>{viewedCandidate?.mission || 'SEARCHING'}</h2></div>
-              <div className="ore-fresh-chip">{viewedCandidate?.freshness || 'PENDING'}</div>
+      <div className="ore-workspace">
+        <aside className="ore-left">
+          <section className="ore-panel ore-scene-card">
+            <div className="ore-panel-title">
+              <div><span>SCENE BRIEF</span><strong>{missionLabel(viewed)}</strong></div>
+              {viewed && <span className="ore-score">{scorePct(viewed)}%</span>}
             </div>
-            <div className="ore-big-stat"><strong>{viewedCandidate?.nativeResolutionM ? String(viewedCandidate.nativeResolutionM) + ' m' : '—'}</strong><span>NATIVE RESOLUTION</span></div>
-            <div className="ore-stat-grid">
-              <div><span>ACQUIRED</span><b>{formatAcquired(viewedCandidate?.acquiredAt)}</b></div>
-              <div><span>IMAGE AGE</span><b>{formatAge(viewedCandidate?.acquiredAt)}</b></div>
-              <div><span>CLOUD</span><b>{viewedCandidate?.cloudPct != null ? viewedCandidate.cloudPct.toFixed(1) + '%' : '—'}</b></div>
-              <div><span>SOURCE</span><b>{sourceLabel(viewedCandidate?.render?.source)}</b></div>
+            <div className="ore-scene-line">
+              <span className="ore-scene-status"><i /> {viewed?.freshness || 'AWAITING SEARCH'}</span>
+              <span>{viewed?.provider || 'catalog pending'}</span>
             </div>
-            <div className="ore-evidence-line"><Eye size={14} /><span>{viewedCandidate?.recommendation || 'Selecting the best free optical evidence for this AOI.'}</span></div>
+            <div className="ore-big-metric">
+              <strong>{viewed?.nativeResolutionM ? String(viewed.nativeResolutionM) + ' m' : '—'}</strong>
+              <span>NATIVE GROUND SAMPLE</span>
+            </div>
+            <div className="ore-metric-grid">
+              <div><span>ACQUIRED</span><b>{dateLabel(viewed?.acquiredAt)}</b></div>
+              <div><span>AGE</span><b>{ageLabel(viewed?.acquiredAt)}</b></div>
+              <div><span>CLOUD</span><b>{viewed?.cloudPct != null ? viewed.cloudPct.toFixed(1) + '%' : '—'}</b></div>
+              <div><span>SOURCE</span><b>{sourceLabel(viewed?.render?.source)}</b></div>
+            </div>
+            <div className="ore-recommendation">
+              <Eye size={13} />
+              <span>{viewed?.recommendation || 'Awaiting the validated scene selection for this AOI.'}</span>
+            </div>
           </section>
 
-          <section className="ore-mini-grid">
-            <div className="ore-card ore-mini-card"><div className="ore-mini-icon weather"><CloudRain size={15} /></div><span>WEATHER</span><strong>{String(weatherAttrs.conditions || '—').replaceAll('_', ' ')}</strong><small>{weatherAttrs.temperatureC != null ? String(weatherAttrs.temperatureC) + '°C' : 'No current value'}</small></div>
-            <div className="ore-card ore-mini-card"><div className="ore-mini-icon"><Wind size={15} /></div><span>WIND</span><strong>{weatherAttrs.windSpeedKmh != null ? String(weatherAttrs.windSpeedKmh) + ' km/h' : '—'}</strong><small>{weatherAttrs.visibilityM != null ? String(Math.round(Number(weatherAttrs.visibilityM) / 1000)) + ' km vis' : 'Visibility —'}</small></div>
-            <div className="ore-card ore-mini-card"><div className="ore-mini-icon"><ShieldAlert size={15} /></div><span>HAZARDS</span><strong>{hazardTotal}</strong><small>{hazardTotal ? 'signals nearby' : 'no nearby signals'}</small></div>
-            <div className="ore-card ore-mini-card"><div className="ore-mini-icon"><Activity size={15} /></div><span>SECURITY</span><strong>{securityTotal}</strong><small>{securityTotal ? 'security objects' : 'no active objects'}</small></div>
+          <section className="ore-panel">
+            <div className="ore-panel-title compact"><div><span>SOURCE POSTURE</span><strong>CATALOG FABRIC</strong></div><Database size={14} /></div>
+            <div className="ore-source">
+              <div className="ore-source-mark sentinel"><Satellite size={13} /></div>
+              <div className="ore-source-copy"><strong>Sentinel-2</strong><span>10 m optical backbone</span></div>
+              <em className={sourceState(recon, 'sentinel') === 'DEGRADED' ? 'warn' : 'ok'}>{sourceState(recon, 'sentinel')}</em>
+            </div>
+            <div className="ore-source">
+              <div className="ore-source-mark aerial"><LocateFixed size={13} /></div>
+              <div className="ore-source-copy"><strong>OpenAerialMap</strong><span>higher-detail aerial candidates</span></div>
+              <em className={sourceState(recon, 'oam') === 'DEGRADED' ? 'warn' : 'ok'}>{sourceState(recon, 'oam')}</em>
+            </div>
+            <div className="ore-source">
+              <div className="ore-source-mark nasa"><Cloud size={13} /></div>
+              <div className="ore-source-copy"><strong>NASA GIBS / MODIS</strong><span>rapid-observation fallback</span></div>
+              <em className={sourceState(recon, 'nasa').includes('FALLBACK') ? 'fallback' : 'muted'}>{sourceState(recon, 'nasa')}</em>
+            </div>
+            <div className="ore-coverage">
+              <div><b>{recon?.coverage.sentinel2Scenes ?? 0}</b><span>S2 SCENES</span></div>
+              <div><b>{recon?.coverage.lowCloudScenes ?? 0}</b><span>LOW CLOUD</span></div>
+              <div><b>{recon?.coverage.openAerialMapCandidates ?? 0}</b><span>AERIAL</span></div>
+            </div>
           </section>
 
-          {weather && (
-            <section className="ore-card">
-              <div className="ore-card-head compact"><div><span className="ore-kicker">MICRO WEATHER</span><h3>NOW AROUND AOI</h3></div><Thermometer size={15} /></div>
-              <div className="ore-weather-row">
-                <div><b>{weatherAttrs.temperatureC != null ? String(weatherAttrs.temperatureC) + '°C' : '—'}</b><span>TEMP</span></div>
-                <div><b>{weatherAttrs.humidityPct != null ? String(weatherAttrs.humidityPct) + '%' : '—'}</b><span>HUMIDITY</span></div>
-                <div><b>{weatherAttrs.precipitationMm != null ? String(weatherAttrs.precipitationMm) + ' mm' : '—'}</b><span>PRECIP</span></div>
-                <div><b>{weatherAttrs.visibilityM != null ? (Number(weatherAttrs.visibilityM) / 1000).toFixed(1) + ' km' : '—'}</b><span>VIS</span></div>
-              </div>
-              {Array.isArray(weatherAttrs.hazards) && weatherAttrs.hazards.length > 0 && <div className="ore-hazard-strip"><AlertTriangle size={13} /> {weatherAttrs.hazards.map(String).join(' · ')}</div>}
-            </section>
-          )}
-
-          <section className="ore-card ore-candidates">
-            <div className="ore-card-head compact"><div><span className="ore-kicker">EVIDENCE CATALOG</span><h3>AVAILABLE OBSERVATIONS</h3></div><Layers3 size={15} /></div>
-            <div className="ore-candidate-list">
-              {candidates.length === 0 && <div className="ore-empty">No qualifying observations returned for this AOI.</div>}
-              {candidates.map(candidate => (
-                <button
-                  type="button"
-                  className={'ore-candidate ' + (selectedCandidate === candidate.id ? 'selected' : '')}
-                  key={candidate.id}
-                  onClick={() => {
-                    setSelectedCandidate(candidate.id)
-                    if (candidate.render) setMapMode(candidate.render.source === 'oam' ? 'precision' : 'latest')
-                  }}
-                >
-                  <div className="ore-candidate-main"><strong>{candidate.mission}</strong><span>{candidate.provider}</span></div>
-                  <div className="ore-candidate-meta"><b>{candidate.nativeResolutionM ? String(candidate.nativeResolutionM) + ' m' : '—'}</b><span>{candidate.cloudPct != null ? candidate.cloudPct.toFixed(0) + '% cloud' : 'cloud —'}</span><span>{formatAge(candidate.acquiredAt)} old</span></div>
+          <section className="ore-panel">
+            <div className="ore-panel-title compact"><div><span>OBSERVATION LOG</span><strong>RETURNED SCENES</strong></div><Layers3 size={14} /></div>
+            <div className="ore-list">
+              {candidates.length === 0 && <div className="ore-empty"><Database size={16} /><span>{queryBusy ? 'Querying scene catalogs…' : 'No qualifying observations returned for this AOI.'}</span></div>}
+              {candidates.slice(0, 8).map(candidate => (
+                <button type="button" key={candidate.id} className={'ore-log-row ' + (selectedId === candidate.id ? 'selected' : '')} onClick={() => selectCandidate(candidate)}>
+                  <div><strong>{missionLabel(candidate)}</strong><span>{candidate.provider}</span></div>
+                  <div className="ore-log-meta"><b>{scorePct(candidate)}%</b><span>{candidate.nativeResolutionM ? String(candidate.nativeResolutionM) + 'm' : '—'}</span><ChevronRight size={12} /></div>
                 </button>
               ))}
             </div>
           </section>
-
-          <section className="ore-card ore-truth">
-            <div className="ore-card-head compact"><div><span className="ore-kicker">EVIDENCE DISCIPLINE</span><h3>WHAT SONALIT KNOWS</h3></div></div>
-            <div className="ore-truth-row"><span>OBSERVED</span><b>Acquisition metadata + image</b></div>
-            <div className="ore-truth-row"><span>DERIVED</span><b>Freshness, cloud and operational context</b></div>
-            <div className="ore-truth-row"><span>MODELLED</span><b>Never presented as telemetry</b></div>
-            <div className="ore-truth-row warning"><span>AUTHORITY</span><b>Operational GPS remains authoritative</b></div>
-          </section>
         </aside>
-      </main>
+
+        <section className="ore-map-wrap">
+          <div ref={containerRef} className="ore-map" />
+          <div className="ore-map-top">
+            <div className="ore-map-badge"><i /> {mapMode === 'normal' ? 'OPERATIONAL SURFACE' : mapMode === 'precision' ? 'DETAIL OBSERVATION' : 'LATEST VALIDATED OBSERVATION'}</div>
+            <div className="ore-map-source">{viewed ? sourceLabel(viewed.render?.source) : 'SCENE SEARCH'}</div>
+          </div>
+          <div className="ore-map-bottom">
+            <span><b>ACQ</b> {dateLabel(viewed?.acquiredAt)}</span>
+            <span><b>RES</b> {viewed?.nativeResolutionM ? String(viewed.nativeResolutionM) + ' m' : '—'}</span>
+            <span><b>CLOUD</b> {viewed?.cloudPct != null ? viewed.cloudPct.toFixed(1) + '%' : '—'}</span>
+            <span><b>LICENCE</b> {viewed?.licence || '—'}</span>
+          </div>
+          <div className="ore-map-controls">
+            <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in"><ZoomIn size={14} /></button>
+            <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out"><ZoomOut size={14} /></button>
+          </div>
+          {queryBusy && (
+            <div className="ore-map-acquire">
+              <div className="ore-acquire-ring" />
+              <div><strong>ACQUIRING SCENE EVIDENCE</strong><span>Querying current optical catalogs for the active AOI</span></div>
+            </div>
+          )}
+          {opticalQ.error && (
+            <div className="ore-map-alert critical">
+              <XCircle size={15} />
+              <div><strong>SCENE ACQUISITION FAILED</strong><span>The source gateway did not return a certified observation. No stale scene is silently substituted.</span></div>
+              <button type="button" onClick={() => opticalQ.refetch()}>RETRY</button>
+            </div>
+          )}
+          {!opticalQ.error && recon?.warnings.length ? (
+            <div className="ore-map-alert warn">
+              <AlertTriangle size={14} />
+              <div><strong>PROVIDER WARNING</strong><span>{recon.warnings.map(value => value.replaceAll('_', ' ')).join(' · ')}</span></div>
+            </div>
+          ) : null}
+        </section>
+
+        <aside className="ore-right">
+          <section className="ore-panel ore-integrity">
+            <div className="ore-panel-title">
+              <div><span>OBSERVATION INTEGRITY</span><strong>{qualityLabel(recon?.quality.state)}</strong></div>
+              {state === 'ok' ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
+            </div>
+            <div className="ore-integrity-meter">
+              <div className={'fill ' + state} style={{ width: Math.max(4, scorePct(viewed)) + '%' }} />
+            </div>
+            <div className="ore-integrity-stats">
+              <div><span>SELECTION SCORE</span><b>{scorePct(viewed)} / 100</b></div>
+              <div><span>FRESHNESS</span><b>{viewed?.freshness || '—'}</b></div>
+            </div>
+            <p>{viewed?.recommendation || 'The fabric will select the strongest eligible observation as catalog evidence becomes available.'}</p>
+          </section>
+
+          <section className="ore-context-grid">
+            <div className="ore-panel ore-context-card">
+              <div className="ore-context-icon weather"><CloudRain size={14} /></div>
+              <span>WEATHER</span>
+              <strong>{String(weatherAttrs.conditions || '—').replaceAll('_', ' ')}</strong>
+              <small>{weatherAttrs.temperatureC != null ? String(weatherAttrs.temperatureC) + '°C' : 'No current value'}</small>
+            </div>
+            <div className="ore-panel ore-context-card">
+              <div className="ore-context-icon"><Wind size={14} /></div>
+              <span>WIND</span>
+              <strong>{weatherAttrs.windSpeedKmh != null ? String(weatherAttrs.windSpeedKmh) + ' km/h' : '—'}</strong>
+              <small>{weatherAttrs.visibilityM != null ? (Number(weatherAttrs.visibilityM) / 1000).toFixed(1) + ' km visibility' : 'Visibility —'}</small>
+            </div>
+            <div className="ore-panel ore-context-card">
+              <div className="ore-context-icon hazard"><ShieldAlert size={14} /></div>
+              <span>HAZARDS</span>
+              <strong>{hazardCount}</strong>
+              <small>{hazardCount ? 'nearby operational signals' : 'no nearby signals'}</small>
+            </div>
+            <div className="ore-panel ore-context-card">
+              <div className="ore-context-icon security"><Activity size={14} /></div>
+              <span>SECURITY</span>
+              <strong>{securityCount}</strong>
+              <small>{securityCount ? 'context objects' : 'no active objects'}</small>
+            </div>
+          </section>
+
+          <section className="ore-panel">
+            <div className="ore-panel-title compact"><div><span>ACQUISITION RECORD</span><strong>PROVENANCE</strong></div><Clock3 size={14} /></div>
+            <div className="ore-record">
+              <div><span>MISSION</span><b>{missionLabel(viewed)}</b></div>
+              <div><span>PROVIDER</span><b>{viewed?.provider || '—'}</b></div>
+              <div><span>ACQUIRED UTC</span><b>{viewed?.acquiredAt || '—'}</b></div>
+              <div><span>LICENCE</span><b>{viewed?.licence || '—'}</b></div>
+              <div><span>CAPABILITIES</span><b>{viewed?.capabilities?.join(' · ') || '—'}</b></div>
+            </div>
+          </section>
+
+          <section className="ore-panel">
+            <div className="ore-panel-title compact"><div><span>TRUTH MODEL</span><strong>WHAT THIS SCREEN MEANS</strong></div></div>
+            <div className="ore-truth"><span>OBSERVED</span><b>Source image + acquisition metadata</b></div>
+            <div className="ore-truth"><span>DERIVED</span><b>Freshness, score, cloud and local context</b></div>
+            <div className="ore-truth"><span>MODELLED</span><b>Never upgraded into telemetry</b></div>
+            <div className="ore-truth emphasis"><span>AUTHORITY</span><b>Live GPS remains the operational source of truth</b></div>
+          </section>
+
+          {weather && (
+            <section className="ore-panel ore-weather">
+              <div className="ore-panel-title compact"><div><span>WEATHER DETAIL</span><strong>LOCAL ENVIRONMENT</strong></div><Thermometer size={14} /></div>
+              <div className="ore-weather-grid">
+                <div><b>{weatherAttrs.temperatureC != null ? String(weatherAttrs.temperatureC) + '°C' : '—'}</b><span>TEMP</span></div>
+                <div><b>{weatherAttrs.humidityPct != null ? String(weatherAttrs.humidityPct) + '%' : '—'}</b><span>HUMIDITY</span></div>
+                <div><b>{weatherAttrs.precipitationMm != null ? String(weatherAttrs.precipitationMm) + ' mm' : '—'}</b><span>PRECIP</span></div>
+                <div><b>{weatherAttrs.visibilityM != null ? (Number(weatherAttrs.visibilityM) / 1000).toFixed(1) + ' km' : '—'}</b><span>VISIBILITY</span></div>
+              </div>
+            </section>
+          )}
+
+          {degraded && !opticalQ.error && (
+            <div className="ore-footer-note"><AlertTriangle size={12} /> Supporting intelligence may be degraded; the imagery evidence and GPS authority remain explicitly separated.</div>
+          )}
+        </aside>
+      </div>
     </div>
   )
 }
