@@ -184,5 +184,7 @@ jobs:
           retention-days: 7
 
       - name: Production dependency audit
-        working-directory: backend
-        run: pnpm audit --prod --audit-level=high
+        # pnpm 12.7+ correctly applies workspace filters to audit. This keeps
+        # the gate scoped to the backend's production dependency graph instead
+        # of reporting unrelated frontend/dev workspace vulnerabilities.
+        run: pnpm --filter=fleetops-backend --prod audit --audit-level=high
