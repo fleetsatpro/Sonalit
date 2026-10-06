@@ -686,6 +686,32 @@
 .sonalit-public .domain-teal { --tone: var(--teal); }
 .sonalit-public .domain-danger { --tone: var(--danger); }
 
+/* ===== PAGE-SPECIFIC BRAND ACCENTS ==================================== */
+
+.sonalit-public[data-page-tone="fleet"] { --page-accent: var(--signal); }
+.sonalit-public[data-page-tone="convoy"] { --page-accent: var(--copper); }
+.sonalit-public[data-page-tone="container"] { --page-accent: var(--teal); }
+.sonalit-public[data-page-tone="security"] { --page-accent: var(--danger); }
+.sonalit-public[data-page-tone="neutral"] { --page-accent: var(--signal); }
+
+.sonalit-public .hero-compact > .hero-badge {
+  border-left: 4px solid var(--page-accent);
+  padding-left: .72rem;
+}
+
+.sonalit-public .hero-compact .grad {
+  color: var(--page-accent);
+}
+
+.sonalit-public .hero-compact .hero-badge-mark {
+  background: var(--page-accent);
+}
+
+.sonalit-public[data-page-tone="fleet"] .feat-copy::before { background: var(--signal); }
+.sonalit-public[data-page-tone="convoy"] .feat-copy::before { background: var(--copper); }
+.sonalit-public[data-page-tone="container"] .feat-copy::before { background: var(--teal); }
+.sonalit-public[data-page-tone="security"] .feat-copy::before { background: var(--danger); }
+
 /* ===== GENERIC SECTIONS / EXISTING INNER PAGES ======================== */
 
 .sonalit-public .section {
