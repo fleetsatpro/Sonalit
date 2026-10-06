@@ -1,0 +1,38 @@
+name: Generate pnpm 12 lockfile
+
+on:
+  push:
+    branches: ["fix/ci-real-dependency-audit"]
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  generate-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.13.0
+
+      - name: Regenerate lockfile with pnpm 12
+        run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
+
+      - name: Verify frozen install accepts generated lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Upload generated lockfile
+        uses: actions/upload-artifact@v6
+        with:
+          name: pnpm12-lockfile
+          path: pnpm-lock.yaml
+          retention-days: 1
