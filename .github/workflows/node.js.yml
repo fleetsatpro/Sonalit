@@ -29,6 +29,48 @@ permissions:
   contents: read
 
 jobs:
+  refresh-security-lock:
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/ci-real-dependency-audit' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.28.4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Regenerate dependency lockfile
+        run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile --force
+
+      - name: Commit regenerated lockfile and dispatch verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- pnpm-lock.yaml; then
+            echo "Lockfile already matches package manifests and overrides."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git commit -m "chore(security): regenerate dependency lockfile"
+          git push origin "HEAD:${HEAD_BRANCH}"
+          gh workflow run node.js.yml --ref "${HEAD_BRANCH}"
+
   build:
     runs-on: ubuntu-latest
 
