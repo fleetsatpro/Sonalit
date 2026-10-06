@@ -28,7 +28,15 @@ jobs:
           node-version: 22
 
       - name: Refresh lockfile
-        run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
+        run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile --force
+
+      - name: Assert patched dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          for needle in             "nodemailer@10."             "joi@17.13.7"             "sharp@0.35.4"             "websocket-driver@0.7.5"             "proxy-addr@2.0.8"             "ws@8.21.0"             "protobufjs@7.6.1"             "brace-expansion@2.1.6"             "socket.io-parser@4.2.7"             "ip-address@10.3.1"             "engine.io@6.6.10"             "@grpc/grpc-js@1.14.5"             "@fastify/busboy@3.2.1"; do
+            grep -q "$needle" pnpm-lock.yaml || { echo "Missing patched lock entry: $needle"; exit 1; }
+          done
 
       - name: Commit regenerated lockfile
         id: commit
