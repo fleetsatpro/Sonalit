@@ -20,6 +20,7 @@ const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const { pool, query, globalQuery } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const {
@@ -99,18 +100,23 @@ router.post('/app/pair', pairLimiter, asyncHandler(async (req, res) => {
   // Re-pairing an already-active device replaces its token, which silently
   // logs out the old handset — the intended behaviour when a tablet is
   // replaced and the admin reuses the same device record.
-  await query(
-    `UPDATE field_devices
-        SET token_hash = $1, status = 'active', paired_at = NOW(),
-            last_seen_at = NOW(), pairing_code_hash = NULL, pairing_expires_at = NULL
-      WHERE id = $2`,
-    [sha256(token), device.id]
-  );
-  await query(
-    `UPDATE field_sessions SET revoked_at = NOW()
-      WHERE device_id = $1 AND revoked_at IS NULL`,
-    [device.id]
-  );
+  // The device row has now established the tenant. Keep the state-changing
+  // portion inside the canonical RLS transaction; the pre-tenant lookup above
+  // is the only global operation in this flow.
+  await withOrg(device.org_id, async (client) => {
+    await client.query(
+      `UPDATE field_devices
+          SET token_hash = $1, status = 'active', paired_at = NOW(),
+              last_seen_at = NOW(), pairing_code_hash = NULL, pairing_expires_at = NULL
+        WHERE id = $2`,
+      [sha256(token), device.id]
+    );
+    await client.query(
+      `UPDATE field_sessions SET revoked_at = NOW()
+        WHERE device_id = $1 AND revoked_at IS NULL`,
+      [device.id]
+    );
+  });
 
   logger.info(`Field device paired: ${device.label} (${device.id})`);
   res.json({
