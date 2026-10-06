@@ -95,6 +95,11 @@ jobs:
           docker build --file Dockerfile --tag sonalit-backend:ci .
           docker build --file Dockerfile.notification-worker --tag sonalit-notification-worker:ci .
 
+          # Railway provides NODE_OPTIONS with a backend-relative preload. Run
+          # the exact preload contract inside the built image so a Dockerfile
+          # working-directory regression fails in CI instead of production.
+          docker run --rm             --env NODE_OPTIONS="-r ./src/utils/productionRiskIntelligencePatches.cjs"             sonalit-backend:ci             node -e "console.log('production preload resolved:', require.resolve('./src/utils/productionRiskIntelligencePatches.cjs'))"
+
       - name: Backend syntax gate
         # Docker can build a broken CommonJS file because COPY/npm ci never
         # loads the application. Parse every backend JS source file before any
