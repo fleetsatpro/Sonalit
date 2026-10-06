@@ -147,6 +147,7 @@ describe('Field bootstrap tenant boundary', () => {
 
     const block = source.slice(pairingStart, pairingEnd);
     expect(block).toContain('await globalQuery(');
+    expect(block).toContain('await withOrg(device.org_id');
     expect(block).not.toContain('await query(');
   });
 });
