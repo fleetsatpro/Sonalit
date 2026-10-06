@@ -222,16 +222,6 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     retry: 1,
   })
 
-  useEffect(() => {
-    if (!opticalReconFetching) setReconLoading(false)
-    if (mapMode === 'latest' && opticalReconError && mapRef.current) {
-      appliedReconKeyRef.current = ''
-      setMapMode('dark')
-      setMapReady(false)
-      mapRef.current.setStyle(STREET_STYLE)
-    }
-  }, [opticalReconFetching, opticalReconError, mapMode])
-
   const { data: geofences } = useQuery<Geofence[]>({
     queryKey: ['live-fleet-geofences'],
     queryFn: async () => { const r = await api.get<{ data: Geofence[] }>('/geofences'); return r.data.data ?? [] },
@@ -284,6 +274,16 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     refetchInterval: 300_000,
     retry: 1,
   })
+
+  useEffect(() => {
+    if (!opticalReconFetching) setReconLoading(false)
+    if (mapMode === 'latest' && opticalReconError && mapRef.current) {
+      appliedReconKeyRef.current = ''
+      setMapMode('dark')
+      setMapReady(false)
+      mapRef.current.setStyle(STREET_STYLE)
+    }
+  }, [opticalReconFetching, opticalReconError, mapMode])
 
   const cycleMapMode = () => {
     const map = mapRef.current; if (!map) return
