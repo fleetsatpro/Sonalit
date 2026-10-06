@@ -464,7 +464,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
             TRAFFIC
           </button>
         )}
-        {/* Layer switcher: normal operational map, reference satellite, or latest free optical */}
+        {/* Layer switcher: normal operational map, reference satellite, or latest validated optical observation */}
         <button
           onClick={() => {
             if (mapStyle === 'latest') { setMapStyle('street'); return; }
