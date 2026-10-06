@@ -20,12 +20,12 @@ interface Photo {
 
 const PHOTOS = {
   ops: {
-    src: 'https://eoimages.gsfc.nasa.gov/images/imagerecords/148000/148956/longbeach_oli_2021283_lrg.jpg',
+    src: 'https://upload.wikimedia.org/wikipedia/commons/5/50/Yokohama_by_Sentinel-2%2C_2020-10-27.jpg',
     width: 1600,
     height: 900,
-    alt: 'Satellite view of cargo ships waiting offshore near the Port of Los Angeles and Port of Long Beach.',
-    credit: 'NASA Earth Observatory / Landsat 8 OLI',
-    creditHref: 'https://earthobservatory.nasa.gov/images/148956/waiting-to-unload',
+    alt: 'Satellite view of Yokohama and its port on Tokyo Bay, captured by Sentinel-2B.',
+    credit: 'Copernicus Sentinel-2, ESA / CC BY-SA 3.0 IGO',
+    creditHref: 'https://commons.wikimedia.org/wiki/File:Yokohama_by_Sentinel-2,_2020-10-27.jpg',
   },
   fleet: {
     src: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Semi_truck_carrying_freight.jpg',
@@ -100,7 +100,7 @@ export function OpsVisual({ priority = false, note }: VisualProps): React.ReactE
       photo={PHOTOS.ops}
       priority={priority}
       framing="wide"
-      note={note ?? 'REFERENCE IMAGERY · LANDSAT 8 · 10 OCT 2021'}
+      note={note ?? 'REFERENCE IMAGERY · SENTINEL-2B · 27 OCT 2020'}
     />
   );
 }
