@@ -184,5 +184,5 @@ jobs:
           retention-days: 7
 
       - name: Dependency audit
-        run: pnpm --filter fleetops-backend audit --audit-level=high
-        continue-on-error: true
+        working-directory: backend
+        run: pnpm audit --audit-level=high
