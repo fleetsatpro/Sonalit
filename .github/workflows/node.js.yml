@@ -82,6 +82,8 @@ jobs:
           grep -q 'pnpm-lock.yaml' Dockerfile
           grep -q 'pnpm-lock.yaml' Dockerfile.standby
           grep -q 'pnpm-lock.yaml' Dockerfile.notification-worker
+          ! grep -qx 'pnpm-lock.yaml' .dockerignore
+          ! grep -qx 'pnpm-workspace.yaml' .dockerignore
 
       - name: Backend syntax gate
         # Docker can build a broken CommonJS file because COPY/npm ci never
