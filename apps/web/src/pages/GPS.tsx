@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { AlertTriangle, RefreshCw, Activity } from 'lucide-react'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import StatusStrip from '../features/live-fleet/components/StatusStrip.js'
 import VehiclePanel from '../features/live-fleet/components/VehiclePanel.js'
@@ -17,7 +18,7 @@ function useIsMobile() {
 }
 
 export default function GPS() {
-  const { groups, counts } = useLiveFleet()
+  const { groups, counts, refresh, lastSyncAt, gpsError, auxiliaryError, isInitialLoading, isDegraded } = useLiveFleet()
   const isMobile = useIsMobile()
 
   const [selected, setSelected]         = useState<LiveVehicle | null>(null)
@@ -40,6 +41,9 @@ export default function GPS() {
   const handleSelect = (v: LiveVehicle) => {
     setSelected(prev => prev?.id === v.id ? null : v)
   }
+
+  const syncLabel = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' EAT' : 'NOT YET SYNCED'
+  const issueText = gpsError ? 'Primary position feed is unavailable. Existing telemetry is retained until the next successful sync.' : 'One or more supporting fleet feeds are degraded; GPS remains authoritative.'
 
   return (
     <div style={{
@@ -98,9 +102,29 @@ export default function GPS() {
       </div>
 
       {/* ── Status strip ── */}
-      <StatusStrip counts={counts} active={statusFilter} onFilter={f => setStatusFilter(f as any)} />
+      {isDegraded && (
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', background: gpsError ? 'rgba(239,68,68,.08)' : 'rgba(245,158,11,.06)', borderBottom: '1px solid rgba(255,255,255,.07)' }}>
+          {gpsError ? <AlertTriangle size={13} color="#f87171" /> : <Activity size={13} color="#fbbf24" />}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: '700 9px/1.2 IBM Plex Mono, monospace', letterSpacing: '.08em', color: gpsError ? '#fca5a5' : '#fcd34d' }}>{gpsError ? 'GPS TELEMETRY DEGRADED' : 'SUPPORTING FEEDS DEGRADED'}</div>
+            <div style={{ marginTop: 2, font: '9px/1.3 IBM Plex Mono, monospace', color: '#77818a' }}>{issueText}</div>
+          </div>
+          <span style={{ font: '700 8px IBM Plex Mono, monospace', color: '#66717a', whiteSpace: 'nowrap' }}>LAST {syncLabel}</span>
+          <button type="button" onClick={() => { void refresh() }} style={{ height: 28, padding: '0 9px', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,.035)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 5, color: '#c5cdd3', cursor: 'pointer', font: '700 8px IBM Plex Mono, monospace', letterSpacing: '.07em' }}>
+            <RefreshCw size={12} /> RETRY
+          </button>
+        </div>
+      )}
+            <StatusStrip counts={counts} active={statusFilter} onFilter={f => setStatusFilter(f as any)} />
 
       {/* ── Main content ── */}
+      {isInitialLoading && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 2000, display: 'grid', placeItems: 'center', background: 'rgba(7,10,14,.72)', backdropFilter: 'blur(5px)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,.1)', borderRadius: 7, background: 'rgba(12,17,22,.94)', font: '700 9px IBM Plex Mono, monospace', letterSpacing: '.08em', color: '#98a4ad' }}>
+            <RefreshCw size={13} style={{ animation: 'lf-ldot 1s linear infinite' }} /> ACQUIRING LIVE GPS
+          </div>
+        </div>
+      )}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
 
         {/* left panel: always visible on desktop; on mobile only when list tab */}
