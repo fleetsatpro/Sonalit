@@ -42,7 +42,7 @@ const VEHICLES = [
 
 async function seedAuth(page: import('@playwright/test').Page) {
   await page.addInitScript(({ user }: { user: object }) => {
-    localStorage.setItem('sonalit-auth', JSON.stringify({ state: { user }, version: 0 }));
+    localStorage.setItem('sonalit-auth', JSON.stringify({ state: { user, accessToken: 'e2e-test-token' }, version: 0 }));
   }, { user: USER });
 }
 
