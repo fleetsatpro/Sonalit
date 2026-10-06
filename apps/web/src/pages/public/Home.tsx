@@ -1,256 +1,290 @@
 import MarketingLayout from '../../components/marketing/MarketingLayout.js';
-import { PLATFORM_LINKS } from '../../components/marketing/nav.js';
-import { CapCard, CtaBand, FeatureBlock, SectionHeading } from '../../components/marketing/ui.js';
+import { CtaBand, FeatureBlock, SectionHeading } from '../../components/marketing/ui.js';
 import {
   ContainerVisual,
   ConvoyVisual,
   FleetVisual,
-  OpsVisual,
 } from '../../components/marketing/visuals.js';
 import { getPageSeo } from '../../lib/seo/pages.js';
 
 const PAGE = getPageSeo('/');
 
-const LIFECYCLE = [
+const DOMAINS = [
   {
-    number: '01',
-    title: 'Plan',
-    body: 'Build the movement around its route, vehicles, cargo and operating rules before it leaves.',
-    tone: 'fleet',
+    code: '01',
+    name: 'Fleet',
+    color: '#22e8ff',
+    detail: 'Vehicles · drivers · devices · journeys',
+    href: '/fleet-management',
   },
   {
-    number: '02',
-    title: 'Move',
-    body: 'Keep vehicles, journeys and container movements tied to the operational record as work happens.',
-    tone: 'container',
+    code: '02',
+    name: 'Convoy',
+    color: '#ffc93f',
+    detail: 'Movement · corridors · field control',
+    href: '/convoy-management',
   },
   {
-    number: '03',
-    title: 'Protect',
-    body: 'Watch corridors, geofences, alerts and field activity from the same control surface.',
-    tone: 'security',
+    code: '03',
+    name: 'Container',
+    color: '#f97316',
+    detail: 'Booking · custody · e-lock · delivery',
+    href: '/container-delivery',
   },
   {
-    number: '04',
-    title: 'Prove',
-    body: 'Finish with the evidence: custody, checks, photos, delivery and incident history in sequence.',
-    tone: 'convoy',
+    code: '04',
+    name: 'Security',
+    color: '#ff3b5c',
+    detail: 'Alerts · risk · response · evidence',
+    href: '/security-operations',
   },
 ];
+
+const OPERATIONAL_CHAIN = [
+  ['01', 'Locate', 'Know the vehicle, journey and movement context.'],
+  ['02', 'Coordinate', 'Keep convoy, corridor and field teams aligned.'],
+  ['03', 'Control', 'Carry custody, e-lock and delivery events with the movement.'],
+  ['04', 'Prove', 'Leave a traceable operational record when the work is complete.'],
+];
+
+function CommandAtlas(): React.ReactElement {
+  return (
+    <div className="command-atlas">
+      <div className="atlas-head">
+        <div>
+          <span className="atlas-kicker mono">SONALIT / OPERATING PICTURE</span>
+          <strong>Movement, connected.</strong>
+        </div>
+        <span className="atlas-state mono">SYSTEM SURFACE</span>
+      </div>
+
+      <div className="atlas-canvas">
+        <svg className="atlas-route" viewBox="0 0 680 500" role="img" aria-label="Abstract Sonalit operating picture connecting fleet, convoy, container and security workflows">
+          <g className="atlas-grid" aria-hidden="true">
+            <path d="M0 80H680M0 160H680M0 240H680M0 320H680M0 400H680" />
+            <path d="M80 0V500M180 0V500M280 0V500M380 0V500M480 0V500M580 0V500" />
+          </g>
+
+          <g className="atlas-corridors" aria-hidden="true">
+            <path d="M52 384 C152 335 196 352 258 278 S372 150 452 202 544 276 628 124" />
+            <path d="M76 418 C186 372 212 398 294 330 S388 212 462 250 538 326 616 208" />
+            <path d="M142 102 C226 144 282 112 338 170 S430 300 518 270" />
+          </g>
+
+          <g className="atlas-nodes" aria-hidden="true">
+            <circle cx="52" cy="384" r="6" className="node node-fleet" />
+            <circle cx="258" cy="278" r="7" className="node node-convoy" />
+            <circle cx="452" cy="202" r="8" className="node node-container" />
+            <circle cx="628" cy="124" r="7" className="node node-security" />
+            <circle cx="338" cy="170" r="5" className="node node-fleet" />
+            <circle cx="518" cy="270" r="5" className="node node-security" />
+          </g>
+
+          <g className="atlas-labels">
+            <g transform="translate(20 338)">
+              <rect width="116" height="42" />
+              <text x="12" y="16">FLEET</text>
+              <text x="12" y="31">movement source</text>
+            </g>
+            <g transform="translate(226 224)">
+              <rect width="126" height="42" />
+              <text x="12" y="16">CONVOY</text>
+              <text x="12" y="31">corridor control</text>
+            </g>
+            <g transform="translate(415 144)">
+              <rect width="138" height="42" />
+              <text x="12" y="16">CONTAINER</text>
+              <text x="12" y="31">custody record</text>
+            </g>
+            <g transform="translate(548 70)">
+              <rect width="112" height="42" />
+              <text x="12" y="16">SECURITY</text>
+              <text x="12" y="31">response layer</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+
+      <div className="atlas-foot">
+        <span className="mono">01—04</span>
+        <span>Four operating disciplines. One connected chain.</span>
+        <span className="atlas-foot-rule" aria-hidden="true" />
+      </div>
+    </div>
+  );
+}
 
 export default function Home(): React.ReactElement {
   return (
     <MarketingLayout page={PAGE}>
-      <header className="hero">
-        <div className="hero-copy">
+      <header className="hero hero-home">
+        <div className="hero-home-copy">
           <div className="hero-badge">
-            <span className="hero-badge-index">01</span>
-            Sonalit / Operations Platform
+            <span className="hero-badge-mark" aria-hidden="true" />
+            Sonalit / Global logistics operations
           </div>
 
-          <p className="hero-kicker">CONTROL THE MOVEMENT. KEEP THE RECORD.</p>
+          <p className="hero-kicker mono">CONTROL THE MOVEMENT / KEEP THE RECORD</p>
 
           <h1>
-            Fleet. Convoy.
-            <br />
-            <span className="accent-signal">Container.</span>{' '}
-            <span className="serif-accent">One surface.</span>
+            The control layer for movement
+            <span> that cannot lose context.</span>
           </h1>
 
           <p className="hero-lead">
-            Sonalit connects vehicles, convoys, container delivery and field security into one
-            operational surface — so what happens on the road, at the yard and in the control room
-            stays connected.
+            Fleet tracking, convoy command, container delivery and security operations — connected
+            through the same operational picture from departure to delivery.
           </p>
 
           <div className="hero-actions">
             <a href="/login" className="btn btn-primary">
-              Access Platform <span aria-hidden="true">↗</span>
+              Enter Sonalit <span aria-hidden="true">↗</span>
             </a>
-            <a href="#capabilities" className="btn btn-ghost">
-              See the system <span aria-hidden="true">↓</span>
+            <a href="#platform" className="btn btn-ghost">
+              Explore the platform <span aria-hidden="true">↓</span>
             </a>
           </div>
 
-          <div className="hero-meta" aria-label="Platform principles">
-            <div className="meta meta-signal">
-              <strong>One record</strong>
-              <span>Across every surface</span>
-            </div>
-            <div className="meta meta-orange">
-              <strong>Live work</strong>
-              <span>Built around operations</span>
-            </div>
-            <div className="meta meta-cyan">
-              <strong>Traceable</strong>
-              <span>From movement to proof</span>
-            </div>
+          <div className="hero-identity">
+            <span className="hero-identity-key mono">DESIGNED FOR</span>
+            <span>CONTROL ROOMS</span>
+            <span>FIELD TEAMS</span>
+            <span>LOGISTICS OPERATORS</span>
           </div>
         </div>
 
-        <div className="hero-command" aria-label="Sonalit operations surface preview">
-          <div className="command-label command-label-top">
-            <span>LIVE PRODUCT SURFACE</span>
-            <span className="mono">SONALIT / OPS</span>
-          </div>
-
-          <div className="command-frame">
-            <div className="command-image">
-              <ContainerVisual priority />
-              <div className="command-image-wash" aria-hidden="true" />
-              <div className="command-route" aria-hidden="true">
-                <span className="route-node route-node-a" />
-                <span className="route-line" />
-                <span className="route-node route-node-b" />
-              </div>
-              <span className="command-caption">PORT → CORRIDOR → DELIVERY</span>
-            </div>
-
-            <div className="command-stack">
-              <div className="command-cell tone-fleet">
-                <span className="cell-index">01</span>
-                <span className="cell-name">Fleet</span>
-                <span className="cell-note">Vehicles / journeys</span>
-              </div>
-              <div className="command-cell tone-convoy">
-                <span className="cell-index">02</span>
-                <span className="cell-name">Convoy</span>
-                <span className="cell-note">Corridor / field</span>
-              </div>
-              <div className="command-cell tone-container">
-                <span className="cell-index">03</span>
-                <span className="cell-name">Container</span>
-                <span className="cell-note">Custody / e-lock</span>
-              </div>
-              <div className="command-cell tone-security">
-                <span className="cell-index">04</span>
-                <span className="cell-name">Security</span>
-                <span className="cell-note">Alert / response</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="command-foot">
-            <span>OPERATIONAL VISIBILITY</span>
-            <span className="command-status"><i aria-hidden="true" /> CONNECTED SURFACES</span>
-          </div>
-        </div>
+        <CommandAtlas />
       </header>
 
-      <nav className="system-ribbon" aria-label="Sonalit operating domains">
-        {PLATFORM_LINKS.map((link, index) => (
-          <a
-            key={link.href}
-            href={link.href}
-            className={`ribbon-item ribbon-${index + 1}`}
-          >
-            <span className="ribbon-number">0{index + 1}</span>
-            <span>
-              <strong>{link.label}</strong>
-              <small>{link.blurb.split('.')[0]}.</small>
-            </span>
-            <span className="ribbon-arrow" aria-hidden="true">↗</span>
-          </a>
-        ))}
-      </nav>
+      <section className="domain-index" id="platform" aria-labelledby="domain-index-heading">
+        <div className="domain-index-intro">
+          <p className="eyebrow mono">THE PLATFORM</p>
+          <h2 id="domain-index-heading">
+            One movement.
+            <br />
+            Four operating disciplines.
+          </h2>
+          <p>
+            Sonalit does not ask operations teams to move the truth from system to system. The
+            movement carries its own context.
+          </p>
+        </div>
 
-      <section className="section capability-section" id="capabilities" aria-labelledby="capabilities-heading">
-        <SectionHeading
-          id="capabilities-heading"
-          label="The operating model"
-          title="Four operating domains. One record."
-          desc="Sonalit is deliberately split by the work teams do, but not by the data they need to trust."
-        />
-
-        <div className="cap-grid">
-          {PLATFORM_LINKS.map((link) => (
-            <CapCard key={link.href} link={link} />
+        <div className="domain-index-list">
+          {DOMAINS.map((domain) => (
+            <a
+              className="domain-index-row"
+              href={domain.href}
+              key={domain.href}
+              style={{ '--domain-color': domain.color } as React.CSSProperties}
+            >
+              <span className="domain-index-code mono">{domain.code}</span>
+              <span className="domain-index-name">{domain.name}</span>
+              <span className="domain-index-detail">{domain.detail}</span>
+              <span className="domain-index-arrow" aria-hidden="true">↗</span>
+            </a>
           ))}
         </div>
       </section>
 
-      <section className="section lifecycle-section" aria-labelledby="lifecycle-heading">
-        <div className="lifecycle-intro">
-          <SectionHeading
-            id="lifecycle-heading"
-            label="The Sonalit model"
-            title="From planned movement to proven delivery."
-            desc="The system follows the operational lifecycle instead of forcing the operation to follow the software."
-          />
-          <p className="lifecycle-aside">
-            <span className="mono">CONTROL / EVIDENCE / CONTINUITY</span>
-            <br />
-            Every stage leaves context for the next.
-          </p>
+      <section className="statement-band" aria-labelledby="statement-heading">
+        <div className="statement-grid">
+          <p className="eyebrow mono">THE PRINCIPLE</p>
+          <div>
+            <h2 id="statement-heading">
+              When the work changes hands,
+              <span> the context should not.</span>
+            </h2>
+            <p>
+              A vehicle leaves a yard. A convoy enters a corridor. A container changes custody. A
+              security event interrupts the plan. Sonalit keeps those moments inside the same
+              operational story.
+            </p>
+          </div>
         </div>
+      </section>
 
-        <div className="lifecycle-grid">
-          {LIFECYCLE.map((step) => (
-            <article className={`lifecycle-card tone-${step.tone}`} key={step.number}>
-              <span className="lifecycle-number">{step.number}</span>
-              <h3>{step.title}</h3>
-              <p>{step.body}</p>
-              <span className="lifecycle-rule" aria-hidden="true" />
+      <section className="section operation-section" aria-labelledby="operation-heading">
+        <SectionHeading
+          id="operation-heading"
+          label="How the system holds together"
+          title="The operation is a chain, not a collection of screens."
+          desc="Each stage adds context to the same movement. Teams see the part they own without losing the whole."
+        />
+
+        <div className="operation-chain">
+          {OPERATIONAL_CHAIN.map(([index, title, body], i) => (
+            <article className="operation-step" key={index}>
+              <div className="operation-step-head">
+                <span className="operation-step-index mono">{index}</span>
+                <span className="operation-step-line" aria-hidden="true" />
+              </div>
+              <h3>{title}</h3>
+              <p>{body}</p>
+              {i < OPERATIONAL_CHAIN.length - 1 ? (
+                <span className="operation-step-arrow" aria-hidden="true">→</span>
+              ) : null}
             </article>
           ))}
         </div>
       </section>
 
-      <section className="statement-band" aria-label="Sonalit operating principle">
-        <p className="statement-overline mono">THE POINT IS NOT MORE SOFTWARE</p>
-        <p className="statement">
-          The point is fewer versions of the truth.
-        </p>
-        <p className="statement-note">
-          Fleet, field, cargo and security work from the same operational record.
-        </p>
-      </section>
-
-      <section className="section feature-section section-tight" aria-label="How Sonalit works">
+      <section className="section feature-section" aria-label="Sonalit capabilities">
         <FeatureBlock
-          title="Fleet visibility that stays ahead of the road"
-          body="Continuous awareness of vehicle location, status and operational health, so decisions are made on what is happening rather than on what was reported afterwards."
+          title="See the fleet as movement, not just dots on a map"
+          body="Tracking becomes operational when a position is attached to the vehicle, driver, device and journey context that explains it."
           points={[
-            'Live GPS tracking and journey replay',
-            'Vehicle, driver and device registers in one place',
-            'Maintenance and fuel recorded against the vehicle',
-            'Operational dashboards for fleet leaders',
+            'Live GPS tracking and journey history',
+            'Vehicle, driver and device registers',
+            'Journey replay and geofence events',
+            'Maintenance and fuel records',
           ]}
           visual={<FleetVisual />}
-          visualLabel="Fleet Network"
+          visualLabel="Fleet / movement"
         />
 
         <FeatureBlock
           flip
-          title="Convoy &amp; security in one surface"
-          body="Coordinate complex multi-vehicle movements while holding a continuous security posture, with the control room and the officers on the road working the same record."
+          title="Run the corridor with the field still in view"
+          body="Convoy planning, corridor awareness, escalation and field coordination belong in the same operating picture when conditions change."
           points={[
-            'Convoy planning and real-time monitoring',
-            'Corridor evaluation and geofence awareness',
-            'Incident, alert and panic escalation',
-            'Field officer coordination and reporting',
+            'Convoy planning and monitoring',
+            'Corridor and geofence awareness',
+            'Incident and panic escalation',
+            'Field officer coordination',
           ]}
           visual={<ConvoyVisual />}
-          visualLabel="Convoy Corridor"
+          visualLabel="Convoy / corridor"
         />
 
         <FeatureBlock
-          title="Container delivery with full traceability"
-          body="From booking through e-lock operations, yard and port movements and digital proof of delivery — every step stays visible and auditable."
+          title="End with evidence that survives the handoff"
+          body="Booking, custody, e-lock activity, yard and port movements and proof of delivery remain part of the operational record."
           points={[
             'Booking and container workflows',
             'E-lock clamp and unclamp operations',
-            'Yard and port crew coordination',
-            'Proof of delivery and custody record',
+            'Port and yard coordination',
+            'Proof of delivery and custody history',
           ]}
-          visual={<OpsVisual />}
-          visualLabel="CDS Workflow"
+          visual={<ContainerVisual />}
+          visualLabel="Container / custody"
         />
       </section>
 
+      <section className="proof-strip" aria-labelledby="proof-heading">
+        <div>
+          <p className="eyebrow mono">THE DIFFERENCE</p>
+          <h2 id="proof-heading">Operational truth is more valuable than operational noise.</h2>
+        </div>
+        <p>
+          Sonalit is built around the real work of moving vehicles and cargo: visibility, control,
+          escalation, custody and proof.
+        </p>
+      </section>
+
       <CtaBand
-        title="Run the operation, not the reconciliation."
-        body="Access Sonalit and bring fleet, convoy, container and security into one operational surface."
+        title="Make the movement visible from every seat in the operation."
+        body="Enter Sonalit to bring fleet, convoy, container delivery and security into one operational picture."
       />
     </MarketingLayout>
   );
