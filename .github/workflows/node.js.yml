@@ -71,6 +71,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Backend syntax gate
+        # Docker can build a broken CommonJS file because COPY/npm ci never
+        # loads the application. Parse every backend JS source file before any
+        # deploy artifact is created so a truncated route can never reach the
+        # production image again.
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find backend/src -type f -name '*.js' ! -path 'backend/src/sonalit/*' -print0)
+
+
       - name: Build contracts
         run: pnpm --filter @sonalit/contracts build
 
