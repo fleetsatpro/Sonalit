@@ -284,7 +284,7 @@ async function getOpticalRecon({ latitude, longitude, radiusM = 25_000, signal }
       semantics: [
         'Acquisition time is source metadata; imagery is not live telemetry.',
         'Native resolution is reported separately from any display enhancement.',
-        'Commercial tasking and live-imaging claims are outside this module's evidence contract.',
+        "Commercial tasking and live-imaging claims are outside this module's evidence contract.",
       ],
     };
 
