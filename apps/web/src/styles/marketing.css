@@ -1734,20 +1734,15 @@
   filter: contrast(1.05) saturate(.86);
 }
 
-.sonalit-public .home-hero-satellite::after {
-  content: '';
-  position: absolute;
-  inset: 46% 0 0;
-  background: linear-gradient(to bottom, transparent, rgba(4,7,12,.88));
-  pointer-events: none;
-}
-
 .sonalit-public .home-hero-satellite-caption {
   position: absolute;
-  left: 1.2rem;
-  right: 1.2rem;
-  bottom: 1.15rem;
+  left: .8rem;
+  right: .8rem;
+  bottom: .8rem;
   z-index: 3;
+  padding: 1rem 1rem .85rem;
+  background: rgba(4,7,12,.84);
+  border-left: 3px solid var(--cyan-hot);
 }
 
 .sonalit-public .home-hero-satellite-caption span,
@@ -1791,14 +1786,6 @@
   height: 100%;
   object-fit: cover;
   opacity: .8;
-}
-
-.sonalit-public .home-hero-side-photo::after {
-  content: '';
-  position: absolute;
-  inset: 52% 0 0;
-  background: linear-gradient(to bottom, transparent, rgba(4,7,12,.72));
-  pointer-events: none;
 }
 
 .sonalit-public .home-hero-side-photo > span {
