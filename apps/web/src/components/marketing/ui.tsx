@@ -24,9 +24,27 @@ export function SectionHeading({
 }
 
 /** One capability card in the four-up grid. */
+function toneForHref(href: string): string {
+  if (href.includes('fleet')) return 'fleet';
+  if (href.includes('convoy')) return 'convoy';
+  if (href.includes('container')) return 'container';
+  if (href.includes('security')) return 'security';
+  return 'neutral';
+}
+
+function toneForLabel(label: string): string {
+  const value = label.toLowerCase();
+  if (value.includes('fleet')) return 'fleet';
+  if (value.includes('convoy')) return 'convoy';
+  if (value.includes('container') || value.includes('cds') || value.includes('custody')) return 'container';
+  if (value.includes('security') || value.includes('alert') || value.includes('geofence')) return 'security';
+  return 'neutral';
+}
+
 export function CapCard({ link }: { link: NavLink }): React.ReactElement {
+  const tone = toneForHref(link.href);
   return (
-    <article className="cap">
+    <article className={`cap tone-${tone}`} data-tone={tone}>
       <div className="cap-icon" aria-hidden="true">
         {link.icon}
       </div>
@@ -83,7 +101,7 @@ export function FeatureBlock({
   );
 
   return (
-    <div className="feat">
+    <div className={`feat tone-${toneForLabel(visualLabel)}`}>
       {flip ? figure : copy}
       {flip ? copy : figure}
     </div>
