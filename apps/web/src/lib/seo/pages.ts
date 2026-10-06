@@ -53,7 +53,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/',
     title: 'Sonalit | Fleet, Convoy & Logistics Operations Platform',
     description:
-      'Sonalit is an operations platform for fleet, convoy and container delivery teams — live vehicle tracking, incident response and operational intelligence.',
+      'Sonalit is an operational intelligence platform for fleet, convoy, container custody and security teams — live GPS, route risk, spatial context, field coordination, incident response and evidence.',
     priority: 1.0,
     changefreq: 'weekly',
     jsonLd: [ORGANIZATION, WEBSITE],
@@ -62,7 +62,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/fleet-management',
     title: 'Fleet Management Platform | Sonalit',
     description:
-      'Track vehicles and drivers in real time, manage maintenance, fuel and shifts, and run daily fleet operations from one live dashboard with Sonalit.',
+      'Run fleet operations from live GPS and journey replay through vehicle, driver and device management, geofences, shifts, maintenance, fuel, claims and reporting.',
     breadcrumb: 'Fleet Management',
     priority: 0.9,
     changefreq: 'monthly',
@@ -71,7 +71,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/convoy-management',
     title: 'Convoy Management & Security Operations | Sonalit',
     description:
-      'Plan and monitor convoys end to end: field officer coordination, corridor and route risk, seal integrity checks, alerting and daily convoy reporting.',
+      'Plan and govern convoys with risk-ranked routes, time-aware corridor evaluation, CFO field coordination, seal integrity, evidence capture, alerts and daily operational reporting.',
     breadcrumb: 'Convoy Management',
     priority: 0.9,
     changefreq: 'monthly',
@@ -80,7 +80,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/container-delivery',
     title: 'Container Delivery System | Sonalit',
     description:
-      'Run container logistics end to end: bookings, container movements, e-lock clamp and unclamp workflows, yard and port handovers, and proof of delivery.',
+      'Run the Container Delivery System across bookings, containers, transporters, trips, e-lock events, yard and port field operations, AI-assisted intelligence, billing, analytics and proof of delivery.',
     breadcrumb: 'Container Delivery',
     priority: 0.9,
     changefreq: 'monthly',
@@ -89,7 +89,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/security-operations',
     title: 'Fleet & Security Operations | Sonalit',
     description:
-      'Monitor operations continuously: geofence and corridor alerts, panic escalation, incident response, field crew coordination and shared situational awareness.',
+      'Operate security as a response fabric: prioritised alerts, incidents, panic escalation, Guardian field safety, signal integrity, geofences, route risk, spatial intelligence, communications and reconstruction.',
     breadcrumb: 'Security Operations',
     priority: 0.9,
     changefreq: 'monthly',
@@ -98,7 +98,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/about',
     title: 'About Sonalit | Fleet & Logistics Operations Technology',
     description:
-      'Sonalit builds operations technology for fleets, convoys and container logistics — one platform for tracking, field coordination and incident response.',
+      'Sonalit connects movement, custody, security and spatial intelligence in one operational fabric, with dedicated control-room, field, Guardian, CDS and cargo-owner surfaces.',
     breadcrumb: 'About',
     priority: 0.6,
     changefreq: 'monthly',
@@ -107,7 +107,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/contact',
     title: 'Contact Sonalit | Fleet & Logistics Operations',
     description:
-      'Contact Sonalit about fleet, convoy, container delivery or security operations, or request access to the Sonalit operations platform for your organisation.',
+      'Contact Sonalit about fleet, convoy, container delivery, spatial intelligence or security operations, or request access to the operational platform.',
     breadcrumb: 'Contact',
     priority: 0.6,
     changefreq: 'monthly',
