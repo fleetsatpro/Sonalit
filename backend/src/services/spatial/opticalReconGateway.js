@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Free optical reconnaissance fabric.
+ * Optical reconnaissance evidence fabric.
  *
  * Primary:
  *   Digital Earth Africa Sentinel-2 L2A C1 STAC + public OWS
