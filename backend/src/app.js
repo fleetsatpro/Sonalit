@@ -356,6 +356,12 @@ catch (e) { logger.warn("Tracking route failed: " + e.message); }
 try { app.use("/api/v1/cds", require("./routes/cds")); logger.info("Route loaded: /api/v1/cds"); }
 catch (e) { logger.warn("CDS route failed: " + e.message); }
 
+// Notifications is a concrete API surface, not a root compatibility route.
+// Mount it before /api/v1 root routers so an unmatched root route cannot
+// establish a second tenant-authentication context first.
+try { app.use("/api/v1/notifications", require("./routes/notifications")); logger.info("Route loaded: /api/v1/notifications"); }
+catch (e) { logger.warn("Notifications route failed: " + e.message); }
+
 try { app.use("/api/v1", require("./routes/broadcast")); logger.info("Route loaded: /api/v1 (broadcast/whatsapp)"); }
 catch (e) { logger.warn("Broadcast route failed: " + e.message); }
 
