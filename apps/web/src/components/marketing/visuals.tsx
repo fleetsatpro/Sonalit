@@ -62,7 +62,7 @@ function MarketingPhoto({
   photo: Photo;
   priority?: boolean;
   framing?: 'landscape' | 'portrait' | 'wide';
-  note?: string;
+  note?: string | undefined;
 }): React.ReactElement {
   return (
     <div className={`marketing-photo-frame frame-${framing}`}>
