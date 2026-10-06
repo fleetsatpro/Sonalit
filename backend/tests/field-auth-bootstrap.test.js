@@ -150,4 +150,15 @@ describe('Field bootstrap tenant boundary', () => {
     expect(block).toContain('await withOrg(device.org_id');
     expect(block).not.toContain('await query(');
   });
+  test('response-crew field routes use the established field auth user contract once', () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '../src/routes/field.js'),
+      'utf8',
+    );
+    expect(source).toContain("router.get('/response-crew/dispatches', fieldAuthenticate");
+    expect(source).toContain("router.patch('/response-crew/dispatches/:id/status', fieldAuthenticate");
+    expect(source).not.toContain("requireDevice, fieldAuthenticate");
+    expect(source).not.toContain('req.fieldUser');
+  });
+
 });
