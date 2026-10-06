@@ -17,7 +17,7 @@
  * able to end, read, or escalate into the other.
  */
 const crypto = require('crypto');
-const { query } = require('../config/database');
+const { query, globalQuery } = require('../config/database');
 const { attachOrgDb, withOrg } = require('../utils/orgScopedDb');
 const { authenticate } = require('./auth');
 const logger = require('../utils/logger');
@@ -79,7 +79,12 @@ async function resolveDevice(req) {
   const token = req.headers['x-field-device'];
   if (!token || typeof token !== 'string') return null;
 
-  const result = await query(
+  // Device resolution is a bootstrap operation: the caller's org is encoded
+  // in the device row we're trying to discover. Calling tenant-scoped query()
+  // here is impossible by definition and fails closed before the org exists.
+  // globalQuery() is the explicit bootstrap escape hatch; every operation after
+  // discovery re-enters the tenant context below.
+  const result = await globalQuery(
     `SELECT * FROM field_devices
       WHERE token_hash = $1 AND status = 'active' AND revoked_at IS NULL`,
     [sha256(token)]
