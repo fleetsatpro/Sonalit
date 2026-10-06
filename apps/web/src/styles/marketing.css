@@ -1,564 +1,1375 @@
-/* Self-hosted faces for the public site. The app's other typefaces are loaded
-   the same way (see index.css) rather than from the Google Fonts CDN, and the
-   prerender step strips that CDN <link> from the public pages entirely — a
-   marketing page should not block its first paint on a third party. */
-@import '@fontsource/inter/400.css';
-@import '@fontsource/inter/500.css';
-@import '@fontsource/inter/600.css';
-@import '@fontsource/inter/700.css';
-@import '@fontsource/space-grotesk/500.css';
-@import '@fontsource/space-grotesk/600.css';
-@import '@fontsource/space-grotesk/700.css';
-
-/*
- * Public marketing site — design system.
+/* Sonalit public site v2.
  *
- * Every rule is scoped under .sonalit-public so none of it can reach the
- * operator application, which has its own token system in dashboard.css.
+ * Visual premise: this is a logistics company with a serious operating product,
+ * not a generic SaaS landing page. The page uses the platform's real colour
+ * language (signal, copper, teal, violet, alert) as structural markers and
+ * alternates a warm paper field with the product's deep operational navy.
  *
- * The font declarations carry !important on purpose: dashboard.css sets a
- * blanket `html, body, #root, * { font-family: var(--d-font) !important }` to
- * force one typeface across the ~60 app components that hardcode their own.
- * A plain rule here would lose to it, so these match its weight and beat it on
- * specificity (`.sonalit-public *` > `*`). Nothing else here needs !important.
+ * Typography:
+ *   Sora       — body, navigation and primary narrative
+ *   Archivo    — large display type
+ *   Michroma  — tiny system labels only
+ *   Space Mono — IDs, indices and evidence-like metadata
+ *
+ * Deliberate constraints:
+ *   - no gradient text
+ *   - no glassmorphism
+ *   - no oversized rounded cards
+ *   - no fabricated operational metrics
+ *   - colour means a domain, not decoration
  */
 
-.sonalit-public {
-  --bg: #010309;
-  --surface: rgba(10, 16, 32, 0.78);
-  --surface-solid: #0a1220;
-  --border: rgba(0, 220, 255, 0.14);
-  --border-bright: rgba(0, 220, 255, 0.32);
-  --cyan: #00dcff;
-  --cyan-dim: #00a8c4;
-  --violet: #9d6bff;
-  --violet-soft: #c4b0ff;
-  --m-text: #f1f5ff;
-  --text-2: #9aa8c0;
-  /* Lifted from the mockup's #5e6d85, which measured 3.93:1 on this
-     background — below the 4.5:1 WCAG AA floor for body text, and it is the
-     colour the whole footer and every small caption uses. #75839c keeps the
-     muted tertiary feel and clears AA on the page (5.38:1), the command panel
-     (4.89:1) and the card surfaces (4.78:1). */
-  --text-3: #75839c;
-  --green: #34d399;
-  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+@import '@fontsource/sora/400.css';
+@import '@fontsource/sora/500.css';
+@import '@fontsource/sora/600.css';
+@import '@fontsource/sora/700.css';
+@import '@fontsource/archivo/400.css';
+@import '@fontsource/archivo/500.css';
+@import '@fontsource/archivo/700.css';
+@import '@fontsource/michroma/400.css';
+@import '@fontsource/space-mono/400.css';
+@import '@fontsource/space-mono/700.css';
 
-  position: relative;
+.sonalit-public {
+  --paper: #f3f4ef;
+  --paper-warm: #e9ebe2;
+  --ink: #07101a;
+  --navy: #0c1825;
+  --navy-2: #122333;
+  --navy-3: #1a3042;
+  --white: #f7f8f4;
+  --text: #17242d;
+  --muted: #5f6e77;
+  --muted-light: #94a3ad;
+  --line: rgba(8, 22, 33, .14);
+  --line-dark: rgba(247, 248, 244, .16);
+
+  --signal: #d9ff69;
+  --copper: #f6a46a;
+  --teal: #8ef0cb;
+  --violet: #8b6bff;
+  --cyan: #22e8ff;
+  --danger: #ff7a7a;
+  --amber: #f6d365;
+
+  --sans: 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --sys: 'Michroma', system-ui, sans-serif;
+  --mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
   min-height: 100dvh;
-  background: var(--bg);
-  color: var(--m-text);
-  line-height: 1.55;
+  position: relative;
   overflow-x: clip;
+  background: var(--paper);
+  color: var(--text);
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .sonalit-public,
 .sonalit-public * {
+  box-sizing: border-box;
   font-family: var(--sans) !important;
   font-variant-numeric: normal;
 }
+
 .sonalit-public h1,
 .sonalit-public h2,
 .sonalit-public h3,
+.sonalit-public h4,
 .sonalit-public .display {
   font-family: var(--display) !important;
+  font-weight: 700;
+  letter-spacing: -.04em;
 }
 
-.sonalit-public * { margin: 0; padding: 0; box-sizing: border-box; }
+.sonalit-public .mono,
+.sonalit-public .hero-badge-mark,
+.sonalit-public .hero-kicker,
+.sonalit-public .eyebrow,
+.sonalit-public .section-label,
+.sonalit-public .domain-index,
+.sonalit-public .handoff-index,
+.sonalit-public .command-label,
+.sonalit-public .command-foot,
+.sonalit-public .cell-index,
+.sonalit-public .lifecycle-number {
+  font-family: var(--mono) !important;
+}
 
-/* Anchor jumps inside the public site glide; the app is unaffected because the
-   rule only applies while a public page is mounted. */
+.sonalit-public * { margin: 0; padding: 0; }
+
 @media (prefers-reduced-motion: no-preference) {
   html:has(.sonalit-public) { scroll-behavior: smooth; }
 }
-.sonalit-public [id] { scroll-margin-top: 84px; }
 
-/* ===== BACKGROUND ===== */
-.sonalit-public .bg-base,
-.sonalit-public .bg-glow,
-.sonalit-public .bg-grid {
-  position: fixed; inset: 0; z-index: 0; pointer-events: none;
-}
-.sonalit-public .bg-base { background: var(--bg); }
-.sonalit-public .bg-glow {
-  background:
-    radial-gradient(ellipse 100% 70% at 50% -20%, rgba(0, 220, 255, 0.14), transparent 55%),
-    radial-gradient(ellipse 55% 45% at 100% 20%, rgba(157, 107, 255, 0.09), transparent 50%),
-    radial-gradient(ellipse 45% 35% at 0% 80%, rgba(0, 168, 196, 0.06), transparent 50%);
-}
-.sonalit-public .bg-grid {
-  background-image:
-    linear-gradient(rgba(0, 220, 255, 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 220, 255, 0.028) 1px, transparent 1px);
-  background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(ellipse 85% 65% at 50% 25%, black 15%, transparent 72%);
-  mask-image: radial-gradient(ellipse 85% 65% at 50% 25%, black 15%, transparent 72%);
-}
-.sonalit-public .page { position: relative; z-index: 1; }
+.sonalit-public [id] { scroll-margin-top: 82px; }
 
-/* ===== FOCUS ===== */
 .sonalit-public a:focus-visible,
 .sonalit-public button:focus-visible,
 .sonalit-public summary:focus-visible {
-  outline: 2px solid var(--cyan);
-  outline-offset: 3px;
-  border-radius: 4px;
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
 }
-.sonalit-public .skip { position: absolute; left: -9999px; top: 0; z-index: 200; }
+
+.sonalit-public .skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 200;
+}
+
 .sonalit-public .skip:focus {
-  left: 1rem; top: 1rem;
-  padding: 0.6rem 1rem; border-radius: 8px;
-  background: var(--cyan); color: #010309;
-  font-size: 0.875rem; font-weight: 600; text-decoration: none;
+  left: 1rem;
+  top: 1rem;
+  padding: .65rem .9rem;
+  background: var(--signal);
+  color: var(--ink);
+  text-decoration: none;
+  font: 700 .78rem/1 var(--mono);
 }
 
-/* ===== NAV ===== */
-.sonalit-public .nav {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-  height: 62px;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 2.75rem;
-  background: rgba(1, 3, 9, 0.82);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  border-bottom: 1px solid var(--border);
-}
-.sonalit-public .logo {
-  display: flex; align-items: center; gap: 0.7rem;
-  text-decoration: none; color: var(--m-text);
-  font-family: var(--display) !important;
-  font-weight: 700; font-size: 1.22rem; letter-spacing: -0.03em;
-}
-.sonalit-public .logo-mark {
-  width: 30px; height: 30px; border-radius: 50%;
-  display: grid; place-items: center;
-  box-shadow: 0 0 22px rgba(0, 220, 255, 0.32);
-  position: relative; flex-shrink: 0;
-  background: #010309;
-  overflow: hidden;
-}
-.sonalit-public .logo-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.sonalit-public .logo-mark::before {
-  content: ''; position: absolute; inset: -5px; border-radius: 50%;
-  border: 1px solid rgba(0, 220, 255, 0.28);
-  animation: sl-pulse 3.2s ease-out infinite;
-}
-@keyframes sl-pulse {
-  0% { transform: scale(0.92); opacity: 0.75; }
-  100% { transform: scale(1.6); opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .sonalit-public .logo-mark::before { animation: none; opacity: 0.3; transform: none; }
-}
+/* ===== SITE CHROME ===================================================== */
 
-.sonalit-public .nav-links { display: flex; gap: 2.4rem; list-style: none; }
-.sonalit-public .nav-links a {
-  color: var(--text-2); text-decoration: none;
-  font-size: 0.875rem; font-weight: 500;
-  transition: color 0.2s;
-}
-.sonalit-public .nav-links a:hover,
-.sonalit-public .nav-links a[aria-current='page'] { color: var(--cyan); }
-.sonalit-public .nav-right { display: flex; align-items: center; gap: 0.6rem; }
-
-/* Mobile disclosure — no JavaScript, keyboard operable by default. */
-.sonalit-public .nav-menu { position: relative; display: none; }
-.sonalit-public .nav-menu > summary {
-  list-style: none; cursor: pointer;
-  width: 40px; height: 40px; border-radius: 8px;
-  display: grid; place-items: center;
-  border: 1px solid var(--border-bright); color: var(--m-text);
-}
-.sonalit-public .nav-menu > summary::-webkit-details-marker { display: none; }
-.sonalit-public .nav-panel {
-  position: absolute; right: 0; top: calc(100% + 0.55rem);
-  width: 232px; padding: 0.45rem;
-  background: var(--surface-solid);
-  border: 1px solid var(--border-bright); border-radius: 12px;
-  box-shadow: 0 24px 48px -18px rgba(0, 0, 0, 0.75);
-}
-.sonalit-public .nav-panel a {
-  display: block; padding: 0.62rem 0.75rem; border-radius: 8px;
-  color: var(--m-text); text-decoration: none;
-  font-size: 0.875rem; font-weight: 500;
-}
-.sonalit-public .nav-panel a:hover { background: rgba(0, 220, 255, 0.08); color: var(--cyan); }
-.sonalit-public .nav-panel-cta {
-  display: none; margin-top: 0.35rem;
-  text-align: center; color: #010309 !important;
-  background: linear-gradient(135deg, var(--cyan), var(--cyan-dim));
-  font-weight: 600;
-}
-.sonalit-public .nav-panel-cta:hover { background: linear-gradient(135deg, var(--cyan), var(--cyan-dim)); color: #010309 !important; }
-@media (max-width: 560px) { .sonalit-public .nav-panel-cta { display: block; } }
-
-/* ===== BUTTONS ===== */
-.sonalit-public .btn {
-  display: inline-flex; align-items: center; gap: 0.45rem;
-  height: 40px; padding: 0 1.4rem; border-radius: 8px;
-  font-size: 0.875rem; font-weight: 600;
-  text-decoration: none; transition: all 0.2s;
-  border: none; cursor: pointer; white-space: nowrap;
-}
-.sonalit-public .btn-primary {
-  background: linear-gradient(135deg, var(--cyan), var(--cyan-dim));
-  color: #010309;
-  box-shadow: 0 0 24px rgba(0, 220, 255, 0.35);
-}
-.sonalit-public .btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 32px rgba(0, 220, 255, 0.55);
-  filter: brightness(1.08);
-}
-.sonalit-public .btn-ghost {
-  background: transparent; color: var(--m-text);
-  border: 1px solid var(--border-bright);
-}
-.sonalit-public .btn-ghost:hover {
-  border-color: var(--cyan); color: var(--cyan);
-  background: rgba(0, 220, 255, 0.06);
-}
-.sonalit-public .btn-lg { height: 44px; padding: 0 1.7rem; font-size: 0.95rem; }
-@media (prefers-reduced-motion: reduce) {
-  .sonalit-public .btn:hover { transform: none; }
-}
-
-/* ===== HERO ===== */
-.sonalit-public .hero {
-  min-height: 100vh;
-  padding: 8.2rem 2.75rem 4.5rem;
-  max-width: 1320px; margin: 0 auto;
-  display: grid; grid-template-columns: 1.02fr 0.98fr;
-  gap: 3.25rem; align-items: center;
-}
-.sonalit-public .hero-compact { min-height: 0; padding-bottom: 2.5rem; display: block; }
-.sonalit-public .hero-badge {
-  display: inline-flex; align-items: center; gap: 0.5rem;
-  height: 28px; padding: 0 0.9rem; border-radius: 6px;
-  background: rgba(0, 220, 255, 0.08);
-  border: 1px solid rgba(0, 220, 255, 0.2);
-  color: var(--cyan); font-size: 0.7rem; font-weight: 600;
-  letter-spacing: 0.07em; text-transform: uppercase;
-  margin-bottom: 1.5rem;
-}
-.sonalit-public .hero-badge i {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--cyan); box-shadow: 0 0 8px var(--cyan);
-}
-.sonalit-public .hero h1 {
-  font-size: clamp(2.7rem, 4.9vw, 3.75rem);
-  font-weight: 700; line-height: 1.08;
-  letter-spacing: -0.035em; margin-bottom: 1.3rem;
-}
-.sonalit-public .hero-compact h1 { font-size: clamp(2.3rem, 4.2vw, 3.1rem); max-width: 16ch; }
-.sonalit-public .grad {
-  background: linear-gradient(125deg, var(--cyan) 5%, var(--violet-soft) 95%);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent; color: transparent;
-}
-.sonalit-public .hero-lead {
-  font-size: 1.1rem; color: var(--text-2);
-  max-width: 470px; margin-bottom: 2.2rem; line-height: 1.7;
-}
-.sonalit-public .hero-compact .hero-lead { max-width: 620px; margin-bottom: 0; }
-.sonalit-public .hero-actions { display: flex; gap: 0.9rem; margin-bottom: 2.8rem; flex-wrap: wrap; }
-.sonalit-public .hero-meta {
-  display: flex; flex-wrap: wrap; gap: 1.2rem 2.6rem;
-  padding-top: 1.6rem; border-top: 1px solid var(--border);
-}
-.sonalit-public .meta { min-width: 7.5rem; }
-.sonalit-public .meta strong {
-  display: block; font-family: var(--display) !important;
-  font-size: 1.18rem; font-weight: 600; color: var(--m-text);
-  margin-bottom: 0.12rem;
-}
-.sonalit-public .meta span {
-  font-size: 0.76rem; color: var(--text-3);
-  text-transform: uppercase; letter-spacing: 0.05em;
-}
-
-/* ===== COMMAND PANEL ===== */
-.sonalit-public .panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  box-shadow:
-    0 0 0 1px rgba(0, 220, 255, 0.05),
-    0 36px 70px -24px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  overflow: hidden; position: relative;
-}
-.sonalit-public .panel::after {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0, 220, 255, 0.4), transparent);
-}
-.sonalit-public .panel-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.9rem 1.2rem;
-  border-bottom: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.28);
-}
-.sonalit-public .panel-head-left {
-  display: flex; align-items: center; gap: 0.55rem;
-  font-size: 0.8rem; font-weight: 600; color: var(--text-2);
-}
-.sonalit-public .live {
-  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-  background: var(--green); box-shadow: 0 0 9px var(--green);
-}
-.sonalit-public .panel-head-right {
-  font-size: 0.7rem; color: var(--text-3);
-  font-family: var(--display) !important; letter-spacing: 0.04em;
-}
-.sonalit-public .panel-body { padding: 1.35rem 1.2rem 1.2rem; }
-.sonalit-public .panel-visual {
-  width: 100%; border-radius: 10px; display: block;
-  border: 1px solid rgba(0, 220, 255, 0.12);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  margin-bottom: 1.1rem; overflow: hidden;
-}
-.sonalit-public .panel-visual > img {
-  width: 100%; height: 210px; object-fit: cover; display: block;
-  filter: brightness(1.02) contrast(1.06) saturate(1.08);
-}
-.sonalit-public .panel-stats {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;
-  border-top: 1px solid var(--border); padding-top: 1rem;
-}
-.sonalit-public .pstat { text-align: center; }
-.sonalit-public .pstat strong {
-  display: block; font-family: var(--display) !important;
-  font-size: 1.02rem; font-weight: 600; color: var(--m-text);
-  letter-spacing: -0.01em;
-}
-.sonalit-public .pstat span {
-  font-size: 0.68rem; color: var(--text-3);
-  text-transform: uppercase; letter-spacing: 0.04em;
-}
-
-/* ===== SECTIONS ===== */
-.sonalit-public .section { max-width: 1320px; margin: 0 auto; padding: 5rem 2.75rem; }
-.sonalit-public .section-tight { padding-top: 1rem; }
-.sonalit-public .section-label {
-  font-size: 0.72rem; font-weight: 600; color: var(--cyan);
-  letter-spacing: 0.1em; text-transform: uppercase;
-  margin-bottom: 0.55rem;
-}
-.sonalit-public .section-title {
-  font-size: clamp(1.75rem, 3vw, 2.2rem);
-  font-weight: 700; letter-spacing: -0.03em;
-  margin-bottom: 0.7rem;
-}
-.sonalit-public .section-desc { color: var(--text-2); font-size: 1.05rem; max-width: 560px; }
-
-/* ===== CAPABILITY CARDS ===== */
-.sonalit-public .cap-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 1.1rem; margin-top: 2.6rem;
-}
-.sonalit-public .cap-grid-3 { grid-template-columns: repeat(3, 1fr); }
-.sonalit-public .cap-grid-2 { grid-template-columns: repeat(2, 1fr); }
-
-/* Two-column checklist — wider than a prose column, never so wide that the
-   items thin out into unreadable ribbons. */
-.sonalit-public .check-grid {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.85rem 2rem; margin-top: 2rem; max-width: 980px;
-}
-.sonalit-public .cap {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px; padding: 1.5rem 1.35rem;
-  transition: all 0.25s ease; position: relative; overflow: hidden;
-  display: flex; flex-direction: column;
-}
-.sonalit-public .cap::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--cyan), var(--violet));
-  opacity: 0; transition: opacity 0.25s;
-}
-.sonalit-public .cap:hover {
-  border-color: var(--border-bright);
-  background: rgba(12, 20, 40, 0.9);
-  transform: translateY(-4px);
-  box-shadow: 0 20px 44px -18px rgba(0, 0, 0, 0.55);
-}
-.sonalit-public .cap:hover::before { opacity: 1; }
-@media (prefers-reduced-motion: reduce) {
-  .sonalit-public .cap:hover { transform: none; }
-}
-.sonalit-public .cap-icon {
-  width: 38px; height: 38px; border-radius: 9px;
-  background: rgba(0, 220, 255, 0.09);
-  border: 1px solid rgba(0, 220, 255, 0.18);
-  display: grid; place-items: center;
-  margin-bottom: 1.15rem; color: var(--cyan);
-  font-size: 1.05rem; font-weight: 600;
-}
-.sonalit-public .cap h3 {
-  font-size: 1.08rem; font-weight: 600;
-  margin-bottom: 0.5rem; letter-spacing: -0.015em;
-}
-.sonalit-public .cap p {
-  color: var(--text-2); font-size: 0.9rem;
-  line-height: 1.6; margin-bottom: 1.15rem;
-}
-.sonalit-public .cap-link {
-  margin-top: auto;
-  color: var(--cyan); font-size: 0.86rem; font-weight: 600;
-  text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem;
-  transition: gap 0.2s;
-}
-.sonalit-public .cap-link:hover { gap: 0.5rem; }
-.sonalit-public .cap > .btn { margin-top: auto; align-self: flex-start; }
-
-/* ===== FEATURE BLOCKS ===== */
-.sonalit-public .feat {
-  display: grid; grid-template-columns: 1fr 1fr;
-  gap: 3.75rem; align-items: center;
-  padding: 4rem 0; border-top: 1px solid var(--border);
-}
-.sonalit-public .feat:first-child { border-top: none; padding-top: 0.5rem; }
-.sonalit-public .feat-copy h3 {
-  font-size: 1.6rem; font-weight: 700;
-  letter-spacing: -0.025em; margin-bottom: 0.9rem;
-}
-.sonalit-public .feat-copy > p {
-  color: var(--text-2); font-size: 1rem;
-  margin-bottom: 1.4rem; line-height: 1.65;
-}
-.sonalit-public .feat-list { list-style: none; display: flex; flex-direction: column; gap: 0.7rem; }
-.sonalit-public .feat-list li {
-  display: flex; align-items: flex-start; gap: 0.7rem;
-  color: var(--text-2); font-size: 0.94rem;
-}
-.sonalit-public .feat-list li::before {
-  content: ''; width: 5px; height: 5px; border-radius: 50%;
-  background: var(--cyan); margin-top: 0.5rem; flex-shrink: 0;
-  box-shadow: 0 0 7px var(--cyan);
-}
-.sonalit-public .feat-visual {
-  position: relative; border-radius: 14px; overflow: hidden;
-  border: 1px solid var(--border);
-  box-shadow: 0 24px 48px -20px rgba(0, 0, 0, 0.55);
-  aspect-ratio: 16 / 11; background: var(--surface-solid);
-}
-.sonalit-public .feat-visual > img {
-  width: 100%; height: 100%; object-fit: cover; display: block;
-  filter: brightness(0.78) contrast(1.1) saturate(1.15);
-}
-.sonalit-public .feat-visual::after {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(160deg, rgba(0, 220, 255, 0.1) 0%, transparent 45%, rgba(1, 3, 9, 0.5) 100%);
+.sonalit-public .bg-base,
+.sonalit-public .bg-glow,
+.sonalit-public .bg-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
   pointer-events: none;
 }
+
+.sonalit-public .bg-base {
+  background: var(--paper);
+}
+
+.sonalit-public .bg-glow {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(142, 240, 203, .12), transparent 20%),
+    radial-gradient(circle at 92% 2%, rgba(246, 164, 106, .10), transparent 18%);
+  opacity: .9;
+}
+
+.sonalit-public .bg-grid {
+  background-image:
+    linear-gradient(rgba(8,22,33,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(8,22,33,.035) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.55), transparent 42%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.55), transparent 42%);
+}
+
+.sonalit-public .page {
+  position: relative;
+  z-index: 1;
+}
+
+/* Header is intentionally quiet. The page, not the chrome, should make the impression. */
+.sonalit-public .nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 100;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 3.5rem;
+  background: rgba(243,244,239,.92);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.sonalit-public .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: .68rem;
+  color: var(--ink);
+  text-decoration: none;
+  font-family: var(--display) !important;
+  font-size: 1.08rem;
+  font-weight: 700;
+  letter-spacing: -.045em;
+}
+
+.sonalit-public .logo-mark {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--navy);
+  border: 1px solid rgba(8,22,33,.22);
+  border-radius: 6px;
+  box-shadow: 5px 5px 0 var(--copper);
+}
+
+.sonalit-public .logo-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sonalit-public .nav-links {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  list-style: none;
+}
+
+.sonalit-public .nav-links a {
+  position: relative;
+  color: #41515b;
+  text-decoration: none;
+  font-size: .77rem;
+  font-weight: 600;
+  letter-spacing: .005em;
+}
+
+.sonalit-public .nav-links a::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -.55rem;
+  height: 2px;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .18s ease;
+}
+
+.sonalit-public .nav-links a:hover,
+.sonalit-public .nav-links a[aria-current='page'] { color: var(--ink); }
+.sonalit-public .nav-links a:hover::after,
+.sonalit-public .nav-links a[aria-current='page']::after { transform: scaleX(1); }
+
+.sonalit-public .nav-right {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+}
+
+.sonalit-public .nav-menu { display: none; position: relative; }
+
+.sonalit-public .nav-menu > summary {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--ink);
+  list-style: none;
+  cursor: pointer;
+}
+
+.sonalit-public .nav-menu > summary::-webkit-details-marker { display: none; }
+
+.sonalit-public .nav-panel {
+  position: absolute;
+  top: calc(100% + .65rem);
+  right: 0;
+  width: 260px;
+  padding: .4rem;
+  background: var(--white);
+  border: 1px solid var(--line);
+  box-shadow: 16px 18px 0 rgba(8,22,33,.08);
+}
+
+.sonalit-public .nav-panel a {
+  display: block;
+  padding: .75rem .8rem;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: .82rem;
+  font-weight: 600;
+}
+
+.sonalit-public .nav-panel a:hover {
+  background: var(--paper-warm);
+}
+
+.sonalit-public .nav-panel-cta {
+  margin-top: .25rem;
+  background: var(--ink);
+  color: var(--white) !important;
+  text-align: center;
+}
+
+/* ===== BUTTONS ========================================================= */
+
+.sonalit-public .btn {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: 0 1.25rem;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 700;
+  transition: transform .18s ease, background-color .18s ease, color .18s ease, border-color .18s ease;
+}
+
+.sonalit-public .btn-primary {
+  background: var(--ink);
+  color: var(--white);
+  border-color: var(--ink);
+  box-shadow: 5px 5px 0 var(--copper);
+}
+
+.sonalit-public .btn-primary:hover {
+  background: var(--navy-2);
+  transform: translate(-1px, -1px);
+}
+
+.sonalit-public .btn-ghost {
+  color: var(--ink);
+  background: transparent;
+  border-color: rgba(8,22,33,.26);
+}
+
+.sonalit-public .btn-ghost:hover {
+  border-color: var(--ink);
+  background: rgba(8,22,33,.035);
+}
+
+.sonalit-public .btn-lg {
+  min-height: 52px;
+  padding-inline: 1.4rem;
+}
+
+/* ===== HERO ============================================================ */
+
+.sonalit-public .hero {
+  min-height: 100vh;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 8.5rem 3.5rem 5.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(450px, .98fr);
+  gap: clamp(3rem, 6vw, 7rem);
+  align-items: center;
+}
+
+.sonalit-public .hero-copy {
+  position: relative;
+  padding-top: 1rem;
+}
+
+.sonalit-public .hero-copy::before {
+  content: 'S O N A L I T';
+  position: absolute;
+  top: -3.5rem;
+  left: 0;
+  color: rgba(8,22,33,.055);
+  font: 700 clamp(3.1rem, 8vw, 6rem)/1 var(--display);
+  letter-spacing: .02em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.sonalit-public .hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  margin-bottom: 1.8rem;
+  color: #41515b;
+  font: 700 .66rem/1 var(--mono) !important;
+  letter-spacing: .015em;
+  text-transform: uppercase;
+}
+
+.sonalit-public .hero-badge-mark {
+  width: 9px;
+  height: 9px;
+  display: inline-block;
+  background: var(--signal);
+  border: 1px solid var(--ink);
+  transform: rotate(45deg);
+}
+
+.sonalit-public .hero-kicker {
+  margin-bottom: .75rem;
+  color: #5c6c74;
+  font: 700 .62rem/1.2 var(--mono) !important;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.sonalit-public .hero h1 {
+  max-width: 10.5ch;
+  font-size: clamp(3.7rem, 7.2vw, 7rem);
+  line-height: .91;
+  margin-bottom: 1.7rem;
+}
+
+.sonalit-public .hero-title-accent {
+  color: var(--ink);
+  display: inline-block;
+  position: relative;
+}
+
+.sonalit-public .hero-title-accent::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 13%;
+  bottom: -.22em;
+  height: .07em;
+  background: var(--signal);
+}
+
+.sonalit-public .hero-lead {
+  max-width: 620px;
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.8;
+  margin-bottom: 2.05rem;
+}
+
+.sonalit-public .hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .85rem;
+  margin-bottom: 2.8rem;
+}
+
+.sonalit-public .hero-proof {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 1rem;
+  max-width: 480px;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.sonalit-public .hero-proof > span {
+  color: var(--copper);
+  font: 700 .74rem/1 var(--mono) !important;
+  padding-top: .15rem;
+}
+
+.sonalit-public .hero-proof p {
+  color: #5e6b73;
+  font-size: .76rem;
+  line-height: 1.55;
+  text-transform: uppercase;
+  letter-spacing: .035em;
+}
+
+.sonalit-public .hero-proof strong {
+  display: block;
+  margin-top: .2rem;
+  color: var(--ink);
+  font-size: .79rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sonalit-public .hero-visual {
+  position: relative;
+  align-self: center;
+  padding-right: 1.5rem;
+}
+
+.sonalit-public .hero-visual-frame {
+  position: relative;
+  border: 1px solid rgba(8,22,33,.22);
+  background: var(--navy);
+  box-shadow: 20px 22px 0 var(--copper);
+  overflow: visible;
+}
+
+.sonalit-public .hero-visual-image {
+  aspect-ratio: 1.17 / 1;
+  overflow: hidden;
+  background: var(--navy-2);
+}
+
+.sonalit-public .hero-visual-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: contrast(1.04) saturate(.93);
+}
+
+.sonalit-public .hero-visual-rail {
+  position: absolute;
+  left: -12px;
+  top: 12%;
+  bottom: 12%;
+  width: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+
+.sonalit-public .hero-visual-rail .rail {
+  flex: 1;
+  display: block;
+}
+
+.sonalit-public .rail-signal { background: var(--signal); }
+.sonalit-public .rail-copper { background: var(--copper); }
+.sonalit-public .rail-teal { background: var(--teal); }
+.sonalit-public .rail-danger { background: var(--danger); }
+
+.sonalit-public .hero-visual-caption {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .7rem .9rem;
+  border-top: 1px solid var(--line-dark);
+  color: rgba(247,248,244,.78);
+  font-size: .66rem;
+}
+
+.sonalit-public .hero-visual-caption .mono {
+  color: var(--teal);
+  font-size: .58rem;
+}
+
+.sonalit-public .hero-visual-note {
+  position: relative;
+  margin: 1.4rem 0 0 2.5rem;
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: .8rem;
+  align-items: start;
+}
+
+.sonalit-public .hero-visual-note .mono {
+  color: #7b8b94;
+  font-size: .57rem;
+  padding-top: .15rem;
+}
+
+.sonalit-public .hero-visual-note strong {
+  max-width: 17ch;
+  color: var(--ink);
+  font-size: .9rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+/* Inner pages use the same typographic system but compress the hero. */
+.sonalit-public .hero-compact {
+  min-height: 0;
+  max-width: 1120px;
+  display: block;
+  padding-top: 9.5rem;
+  padding-bottom: 4rem;
+}
+
+.sonalit-public .hero-compact h1 {
+  max-width: 13ch;
+  font-size: clamp(3rem, 6vw, 5.4rem);
+  line-height: .96;
+}
+
+.sonalit-public .hero-compact .hero-lead {
+  max-width: 720px;
+}
+
+/* Existing inner-page class. It is now an accent, never a gradient. */
+.sonalit-public .grad {
+  color: var(--navy);
+}
+
+/* ===== PLATFORM INDEX ================================================ */
+
+.sonalit-public .domain-strip {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 6rem 3.5rem 6.5rem;
+  display: grid;
+  grid-template-columns: minmax(270px, .72fr) minmax(0, 1.28fr);
+  gap: clamp(3rem, 8vw, 9rem);
+  background: var(--white);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.sonalit-public .domain-intro {
+  align-self: start;
+  position: sticky;
+  top: 110px;
+}
+
+.sonalit-public .eyebrow {
+  color: #67757d;
+  font: 700 .6rem/1.3 var(--mono) !important;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  margin-bottom: .95rem;
+}
+
+.sonalit-public .domain-intro h2 {
+  font-size: clamp(2.1rem, 4vw, 4rem);
+  line-height: .98;
+  max-width: 9ch;
+  margin-bottom: 1rem;
+}
+
+.sonalit-public .domain-intro > p:last-child {
+  max-width: 30ch;
+  color: var(--muted);
+  font-size: .86rem;
+  line-height: 1.7;
+}
+
+.sonalit-public .domain-list {
+  border-top: 1px solid var(--line);
+}
+
+.sonalit-public .domain-row {
+  min-height: 105px;
+  display: grid;
+  grid-template-columns: 56px minmax(120px, 1fr) minmax(180px, 1.5fr) 32px;
+  align-items: center;
+  gap: 1rem;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  position: relative;
+}
+
+.sonalit-public .domain-row::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 18px;
+  bottom: 18px;
+  width: 4px;
+  background: var(--tone);
+  transform: scaleY(.35);
+  transform-origin: center;
+  transition: transform .2s ease;
+}
+
+.sonalit-public .domain-row:hover::before { transform: scaleY(1); }
+
+.sonalit-public .domain-index {
+  color: #849099;
+  font-size: .6rem !important;
+}
+
+.sonalit-public .domain-name {
+  font: 700 clamp(1.25rem, 2.1vw, 1.7rem)/1 var(--display) !important;
+  letter-spacing: -.035em;
+}
+
+.sonalit-public .domain-detail {
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.45;
+}
+
+.sonalit-public .domain-arrow {
+  color: var(--ink);
+  font-size: 1rem;
+  text-align: right;
+  transition: transform .18s ease;
+}
+
+.sonalit-public .domain-row:hover .domain-arrow { transform: translate(3px,-3px); }
+
+.sonalit-public .domain-signal { --tone: var(--signal); }
+.sonalit-public .domain-copper { --tone: var(--copper); }
+.sonalit-public .domain-teal { --tone: var(--teal); }
+.sonalit-public .domain-danger { --tone: var(--danger); }
+
+/* ===== GENERIC SECTIONS / EXISTING INNER PAGES ======================== */
+
+.sonalit-public .section {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 7rem 3.5rem;
+}
+
+.sonalit-public .section-tight { padding-top: 4.8rem; }
+
+.sonalit-public .capabilities-section {
+  background: var(--paper);
+}
+
+.sonalit-public .section-label {
+  color: #64747d;
+  font-size: .6rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  margin-bottom: .75rem;
+}
+
+.sonalit-public .section-title {
+  max-width: 15ch;
+  font-size: clamp(2.4rem, 4.7vw, 4.75rem);
+  line-height: .98;
+  margin-bottom: 1rem;
+}
+
+.sonalit-public .section-desc {
+  max-width: 700px;
+  color: var(--muted);
+  font-size: .9rem;
+  line-height: 1.75;
+  margin-bottom: 2.75rem;
+}
+
+.sonalit-public .cap-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.sonalit-public .cap-grid-3 {
+  grid-template-columns: repeat(3, minmax(0,1fr));
+}
+
+.sonalit-public .cap {
+  min-height: 285px;
+  display: flex;
+  flex-direction: column;
+  padding: 1.55rem;
+  background: rgba(255,255,255,.35);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-top: 3px solid var(--tone, var(--ink));
+  transition: background-color .18s ease, transform .18s ease;
+}
+
+.sonalit-public .cap:hover {
+  background: var(--white);
+  transform: translateY(-3px);
+}
+
+.sonalit-public .cap:nth-child(1) { --tone: var(--signal); }
+.sonalit-public .cap:nth-child(2) { --tone: var(--copper); }
+.sonalit-public .cap:nth-child(3) { --tone: var(--teal); }
+.sonalit-public .cap:nth-child(4) { --tone: var(--danger); }
+
+.sonalit-public .cap-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 2.3rem;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  background: var(--white);
+  font-size: 1rem;
+}
+
+.sonalit-public .cap h3 {
+  font-size: 1.3rem;
+  line-height: 1.05;
+  margin-bottom: .7rem;
+}
+
+.sonalit-public .cap p {
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.65;
+}
+
+.sonalit-public .cap-link {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  margin-top: auto;
+  padding-top: 1.4rem;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .045em;
+}
+
+.sonalit-public .cap-link span {
+  transition: transform .18s ease;
+}
+
+.sonalit-public .cap-link:hover span { transform: translate(3px,-3px); }
+
+/* ===== HANDOFF STORY ================================================== */
+
+.sonalit-public .handoff-band {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 7.25rem 3.5rem;
+  background: var(--navy);
+  color: var(--white);
+  display: grid;
+  grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+  gap: clamp(3rem, 8vw, 8rem);
+  border-top: 1px solid var(--ink);
+}
+
+.sonalit-public .eyebrow-light { color: var(--teal); }
+
+.sonalit-public .handoff-heading h2 {
+  max-width: 11ch;
+  color: var(--white);
+  font-size: clamp(2.7rem, 5.4vw, 5rem);
+  line-height: .95;
+  margin-bottom: 1.25rem;
+}
+
+.sonalit-public .handoff-heading > p:last-child {
+  max-width: 38ch;
+  color: #a5b4bc;
+  font-size: .88rem;
+  line-height: 1.75;
+}
+
+.sonalit-public .handoff-list {
+  border-top: 1px solid var(--line-dark);
+}
+
+.sonalit-public .handoff-row {
+  min-height: 145px;
+  display: grid;
+  grid-template-columns: 48px 110px minmax(0,1fr);
+  align-items: start;
+  gap: 1rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--line-dark);
+}
+
+.sonalit-public .handoff-index {
+  color: var(--copper);
+  font-size: .62rem !important;
+  padding-top: .15rem;
+}
+
+.sonalit-public .handoff-row h3 {
+  color: var(--white);
+  font-size: 1.15rem;
+  line-height: 1.05;
+  padding-top: .05rem;
+}
+
+.sonalit-public .handoff-row p {
+  color: #a5b4bc;
+  font-size: .75rem;
+  line-height: 1.7;
+  max-width: 42ch;
+}
+
+/* ===== FEATURE STORIES ================================================ */
+
+.sonalit-public .feat {
+  display: grid;
+  grid-template-columns: minmax(0, .84fr) minmax(0, 1.16fr);
+  align-items: center;
+  gap: clamp(3rem, 7vw, 8rem);
+  padding: 7rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.sonalit-public .feat:last-child { border-bottom: 0; }
+
+.sonalit-public .feat.flip {
+  grid-template-columns: minmax(0, 1.16fr) minmax(0, .84fr);
+}
+
+.sonalit-public .feat .feat-copy { grid-column: 1; }
+.sonalit-public .feat .feat-visual { grid-column: 2; }
+.sonalit-public .feat.flip .feat-copy { grid-column: 2; }
+.sonalit-public .feat.flip .feat-visual { grid-column: 1; }
+
+.sonalit-public .feat-copy {
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.sonalit-public .feat-copy::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: .2rem;
+  bottom: .2rem;
+  width: 4px;
+  background: var(--tone, var(--signal));
+}
+
+.sonalit-public .feat:nth-child(1) { --tone: var(--signal); }
+.sonalit-public .feat:nth-child(2) { --tone: var(--copper); }
+.sonalit-public .feat:nth-child(3) { --tone: var(--teal); }
+
+.sonalit-public .feat-copy h3 {
+  max-width: 12ch;
+  font-size: clamp(2.2rem, 4.2vw, 4.2rem);
+  line-height: .98;
+  margin-bottom: 1rem;
+}
+
+.sonalit-public .feat-copy p {
+  max-width: 52ch;
+  color: var(--muted);
+  font-size: .88rem;
+  line-height: 1.75;
+  margin-bottom: 1.6rem;
+}
+
+.sonalit-public .feat-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: .65rem;
+}
+
+.sonalit-public .feat-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  color: #394951;
+  font-size: .74rem;
+  line-height: 1.5;
+}
+
+.sonalit-public .feat-list li::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  margin-top: .35rem;
+  background: var(--tone, var(--signal));
+}
+
+.sonalit-public .feat-visual {
+  position: relative;
+  aspect-ratio: 16 / 10.5;
+  overflow: hidden;
+  background: var(--navy);
+  border: 1px solid rgba(8,22,33,.18);
+}
+
+.sonalit-public .feat-visual img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  filter: contrast(1.03) saturate(.96);
+}
+
+.sonalit-public .feat-visual::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--tone, var(--signal));
+  z-index: 2;
+}
+
+.sonalit-public .feat-visual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 1px rgba(247,248,244,.08);
+  pointer-events: none;
+}
+
 .sonalit-public .feat-visual-label {
-  position: absolute; bottom: 1rem; left: 1rem; z-index: 2;
-  display: flex; align-items: center; gap: 0.45rem;
-  padding: 0.4rem 0.75rem; border-radius: 6px;
-  background: rgba(1, 3, 9, 0.75);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
-  font-size: 0.72rem; font-weight: 600; color: var(--text-2);
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 3;
+  padding: .42rem .6rem;
+  background: rgba(7,16,26,.92);
+  color: rgba(247,248,244,.84);
+  border-left: 3px solid var(--tone, var(--signal));
+  font: 700 .58rem/1 var(--mono) !important;
+  text-transform: uppercase;
+  letter-spacing: .06em;
 }
 
-/* ===== PROSE (inner pages) ===== */
-.sonalit-public .prose-after { margin-top: 2.25rem; }
-.sonalit-public .prose { color: var(--text-2); font-size: 1rem; line-height: 1.7; max-width: 680px; }
-.sonalit-public .prose + .prose { margin-top: 1rem; }
-.sonalit-public .inline-link { color: var(--cyan); text-decoration: none; font-weight: 600; }
-.sonalit-public .inline-link:hover { text-decoration: underline; }
+/* ===== PROSE / CTA ==================================================== */
 
-/* ===== CTA ===== */
-.sonalit-public .cta-wrap { max-width: 1320px; margin: 1.5rem auto 5.5rem; padding: 0 2.75rem; }
+.sonalit-public .prose {
+  max-width: 720px;
+  color: var(--muted);
+  font-size: .86rem;
+  line-height: 1.8;
+}
+
+.sonalit-public .prose-after { margin-top: 2rem; }
+
+.sonalit-public .inline-link {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  font-weight: 700;
+}
+
+.sonalit-public .cta-wrap {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 0 3.5rem 6rem;
+}
+
 .sonalit-public .cta {
-  background: linear-gradient(155deg, rgba(0, 220, 255, 0.09), rgba(157, 107, 255, 0.07));
-  border: 1px solid var(--border);
-  border-radius: 18px; padding: 3.75rem 3rem;
-  text-align: center; position: relative; overflow: hidden;
+  position: relative;
+  overflow: hidden;
+  padding: 4.75rem 4rem;
+  background: var(--ink);
+  color: var(--white);
+  border: 1px solid var(--ink);
+  box-shadow: 12px 12px 0 var(--signal);
 }
+
 .sonalit-public .cta::before {
-  content: ''; position: absolute; top: 0; left: 50%;
-  transform: translateX(-50%); width: 55%; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0, 220, 255, 0.45), transparent);
+  content: 'SONALIT';
+  position: absolute;
+  right: -1rem;
+  bottom: -2rem;
+  color: rgba(247,248,244,.045);
+  font: 700 clamp(4rem, 9vw, 9rem)/1 var(--display);
+  letter-spacing: -.06em;
+  pointer-events: none;
 }
+
 .sonalit-public .cta h2 {
-  font-size: 2rem; font-weight: 700;
-  letter-spacing: -0.03em; margin-bottom: 0.7rem;
+  max-width: 11ch;
+  font-size: clamp(2.6rem, 5vw, 5rem);
+  line-height: .95;
+  margin-bottom: 1rem;
 }
+
 .sonalit-public .cta p {
-  color: var(--text-2); max-width: 460px;
-  margin: 0 auto 1.85rem; font-size: 1.02rem;
+  max-width: 44ch;
+  color: #a2b0b8;
+  font-size: .86rem;
+  line-height: 1.7;
+  margin-bottom: 1.9rem;
 }
-.sonalit-public .cta-actions { display: flex; gap: 0.9rem; justify-content: center; flex-wrap: wrap; }
 
-/* ===== FOOTER ===== */
+.sonalit-public .cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .8rem;
+  position: relative;
+  z-index: 2;
+}
+
+.sonalit-public .cta .btn-primary {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.sonalit-public .cta .btn-primary:hover {
+  background: #e4ff91;
+}
+
+.sonalit-public .cta .btn-ghost {
+  color: var(--white);
+  border-color: rgba(247,248,244,.27);
+}
+
+.sonalit-public .cta .btn-ghost:hover {
+  background: rgba(247,248,244,.05);
+  border-color: var(--white);
+}
+
+/* ===== CLOSING BRAND STAMP ============================================ */
+
+.sonalit-public .closing-statement {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 6rem 3.5rem 7rem;
+  text-align: center;
+  background: var(--paper-warm);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.sonalit-public .closing-statement .eyebrow {
+  margin-bottom: 1.4rem;
+}
+
+.sonalit-public .closing-line {
+  color: var(--ink);
+  font: 700 clamp(3.2rem, 7vw, 7.2rem)/.86 var(--display) !important;
+  letter-spacing: -.06em;
+}
+
+.sonalit-public .closing-line span {
+  color: transparent;
+  -webkit-text-stroke: 1.5px var(--ink);
+}
+
+.sonalit-public .closing-rule {
+  width: min(280px, 50%);
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 4px;
+  margin: 2rem auto 0;
+}
+
+.sonalit-public .closing-rule span {
+  display: block;
+  height: 5px;
+}
+
+.sonalit-public .closing-rule span:nth-child(1) { background: var(--signal); }
+.sonalit-public .closing-rule span:nth-child(2) { background: var(--copper); }
+.sonalit-public .closing-rule span:nth-child(3) { background: var(--teal); }
+.sonalit-public .closing-rule span:nth-child(4) { background: var(--danger); }
+
+/* ===== FOOTER ========================================================= */
+
 .sonalit-public footer {
-  border-top: 1px solid var(--border);
-  padding: 3.25rem 2.75rem 2rem;
-  max-width: 1320px; margin: 0 auto;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 4rem 3.5rem 2rem;
+  background: var(--navy);
+  color: var(--white);
 }
-.sonalit-public .foot-grid {
-  display: flex; justify-content: space-between; gap: 3rem;
-  margin-bottom: 2.5rem; flex-wrap: wrap;
-}
-.sonalit-public .foot-brand p {
-  color: var(--text-3); font-size: 0.9rem;
-  margin-top: 0.9rem; max-width: 250px;
-}
-.sonalit-public .foot-links { display: flex; gap: 3.75rem; flex-wrap: wrap; }
-.sonalit-public .foot-col h2 {
-  font-size: 0.72rem; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--text-3); margin-bottom: 0.95rem;
-  font-family: var(--sans) !important;
-}
-.sonalit-public .foot-col a {
-  display: block; color: var(--text-2); text-decoration: none;
-  font-size: 0.9rem; margin-bottom: 0.5rem; transition: color 0.15s;
-}
-.sonalit-public .foot-col a:hover { color: var(--cyan); }
-.sonalit-public .foot-bottom {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: 1rem; flex-wrap: wrap;
-  padding-top: 1.5rem; border-top: 1px solid var(--border);
-  font-size: 0.8rem; color: var(--text-3);
-}
-.sonalit-public .foot-tag { display: inline-flex; align-items: center; gap: 0.45rem; }
 
-/* ===== RESPONSIVE ===== */
-@media (max-width: 1080px) {
+.sonalit-public .foot-grid {
+  display: flex;
+  justify-content: space-between;
+  gap: 3rem;
+  margin-bottom: 3rem;
+  flex-wrap: wrap;
+}
+
+.sonalit-public .foot-brand p {
+  max-width: 255px;
+  margin-top: .9rem;
+  color: #91a1aa;
+  font-size: .76rem;
+  line-height: 1.65;
+}
+
+.sonalit-public footer .logo { color: var(--white); }
+.sonalit-public footer .logo-mark { box-shadow: 4px 4px 0 var(--copper); }
+
+.sonalit-public .foot-links {
+  display: flex;
+  gap: clamp(2rem, 6vw, 6rem);
+  flex-wrap: wrap;
+}
+
+.sonalit-public .foot-col h2 {
+  margin-bottom: 1rem;
+  color: #7f9099;
+  font: 700 .58rem/1 var(--mono) !important;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.sonalit-public .foot-col a {
+  display: block;
+  margin-bottom: .55rem;
+  color: #c4ced3;
+  text-decoration: none;
+  font-size: .74rem;
+}
+
+.sonalit-public .foot-col a:hover { color: var(--signal); }
+
+.sonalit-public .foot-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--line-dark);
+  color: #768790;
+  font-size: .62rem;
+}
+
+.sonalit-public .foot-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+}
+
+/* ===== RESPONSIVE ===================================================== */
+
+@media (max-width: 1180px) {
+  .sonalit-public .nav-links { gap: 1.1rem; }
+  .sonalit-public .hero {
+    grid-template-columns: 1fr;
+    gap: 4rem;
+    min-height: 0;
+    padding-top: 8.5rem;
+  }
+  .sonalit-public .hero-copy { max-width: 860px; }
+  .sonalit-public .hero h1 { max-width: 12ch; }
+  .sonalit-public .hero-visual { max-width: 820px; width: 100%; justify-self: end; }
+  .sonalit-public .domain-strip { grid-template-columns: 1fr; gap: 3rem; }
+  .sonalit-public .domain-intro { position: static; }
+  .sonalit-public .domain-intro h2 { max-width: 12ch; }
   .sonalit-public .cap-grid,
-  .sonalit-public .cap-grid-3 { grid-template-columns: repeat(2, 1fr); }
-  .sonalit-public .hero { grid-template-columns: 1fr; gap: 3rem; min-height: 0; padding-top: 7rem; }
+  .sonalit-public .cap-grid-3 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 900px) {
   .sonalit-public .nav-links { display: none; }
   .sonalit-public .nav-menu { display: block; }
+  .sonalit-public .handoff-band { grid-template-columns: 1fr; gap: 3.5rem; }
+  .sonalit-public .feat,
+  .sonalit-public .feat.flip {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  .sonalit-public .feat .feat-copy,
+  .sonalit-public .feat .feat-visual,
+  .sonalit-public .feat.flip .feat-copy,
+  .sonalit-public .feat.flip .feat-visual {
+    grid-column: 1;
+  }
+  .sonalit-public .feat .feat-visual,
+  .sonalit-public .feat.flip .feat-visual {
+    order: -1;
+  }
 }
+
 @media (max-width: 720px) {
   .sonalit-public .nav,
   .sonalit-public .hero,
   .sonalit-public .section,
-  .sonalit-public .cta-wrap,
-  .sonalit-public footer { padding-left: 1.35rem; padding-right: 1.35rem; }
+  .sonalit-public .domain-strip,
+  .sonalit-public .handoff-band,
+  .sonalit-public .closing-statement,
+  .sonalit-public footer {
+    padding-left: 1.2rem;
+    padding-right: 1.2rem;
+  }
+
+  .sonalit-public .hero {
+    padding-top: 7.8rem;
+    padding-bottom: 4rem;
+  }
+
+  .sonalit-public .hero h1 {
+    font-size: clamp(3.25rem, 14vw, 5.4rem);
+  }
+
+  .sonalit-public .hero-copy::before { display: none; }
+
+  .sonalit-public .hero-visual {
+    padding-right: .8rem;
+  }
+
+  .sonalit-public .hero-visual-frame {
+    box-shadow: 10px 11px 0 var(--copper);
+  }
+
+  .sonalit-public .hero-visual-note {
+    margin-left: 1rem;
+  }
+
+  .sonalit-public .domain-row {
+    grid-template-columns: 38px minmax(90px, .8fr) minmax(0, 1.4fr) 24px;
+  }
+
+  .sonalit-public .domain-detail { font-size: .7rem; }
+
+  .sonalit-public .section {
+    padding-top: 5rem;
+    padding-bottom: 5rem;
+  }
+
   .sonalit-public .cap-grid,
-  .sonalit-public .cap-grid-2,
-  .sonalit-public .cap-grid-3 { grid-template-columns: 1fr; }
-  .sonalit-public .check-grid { grid-template-columns: 1fr; }
-  .sonalit-public .feat { grid-template-columns: 1fr; gap: 1.75rem; }
-  .sonalit-public .feat .feat-visual { order: -1; }
-  .sonalit-public .hero-meta { gap: 1rem 1.5rem; }
-  .sonalit-public .cta { padding: 2.75rem 1.5rem; }
-  .sonalit-public .foot-links { gap: 2.25rem; }
+  .sonalit-public .cap-grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .sonalit-public .cap { min-height: 245px; }
+
+  .sonalit-public .handoff-band { padding-top: 5rem; padding-bottom: 5rem; }
+
+  .sonalit-public .handoff-row {
+    grid-template-columns: 38px minmax(90px, .8fr) minmax(0, 1.3fr);
+  }
+
+  .sonalit-public .cta-wrap { padding-bottom: 4.5rem; }
+  .sonalit-public .cta { padding: 3.3rem 1.4rem; box-shadow: 7px 7px 0 var(--signal); }
+  .sonalit-public .closing-statement { padding-top: 4.8rem; padding-bottom: 5.2rem; }
+
+  .sonalit-public footer { padding-top: 3rem; }
 }
+
 @media (max-width: 560px) {
-  .sonalit-public .hero-actions .btn,
-  .sonalit-public .cta-actions .btn { width: 100%; justify-content: center; }
-  /* Logo + CTA + menu button will not fit at 390px without crowding the
-     wordmark, so the CTA moves inside the menu (where .nav-panel-cta renders
-     it as a full-width primary button). */
+  .sonalit-public .nav { padding-left: 1rem; padding-right: 1rem; }
   .sonalit-public .nav-right > .btn { display: none; }
+
+  .sonalit-public .hero-actions .btn,
+  .sonalit-public .cta-actions .btn {
+    width: 100%;
+  }
+
+  .sonalit-public .hero-badge { font-size: .58rem !important; }
+  .sonalit-public .hero-visual-caption {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: .3rem;
+  }
+
+  .sonalit-public .domain-row {
+    grid-template-columns: 32px minmax(78px, .75fr) minmax(0, 1.4fr) 20px;
+    gap: .65rem;
+    min-height: 94px;
+  }
+
+  .sonalit-public .domain-name { font-size: 1.05rem !important; }
+  .sonalit-public .domain-detail { font-size: .64rem; }
+
+  .sonalit-public .handoff-row {
+    grid-template-columns: 34px 1fr;
+    gap: .55rem .9rem;
+  }
+
+  .sonalit-public .handoff-row h3 { grid-column: 2; }
+  .sonalit-public .handoff-row p { grid-column: 2; }
+
+  .sonalit-public .feat-copy { padding-left: 1rem; }
+  .sonalit-public .feat-copy h3 { font-size: 2.35rem; }
+
+  .sonalit-public .foot-links {
+    width: 100%;
+    gap: 2rem 3rem;
+  }
+
+  .sonalit-public .foot-bottom {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sonalit-public .btn,
+  .sonalit-public .cap,
+  .sonalit-public .domain-row::before,
+  .sonalit-public .domain-arrow,
+  .sonalit-public .cap-link span,
+  .sonalit-public .nav-links a::after {
+    transition: none;
+  }
 }
