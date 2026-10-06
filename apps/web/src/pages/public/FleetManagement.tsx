@@ -18,23 +18,23 @@ export default function FleetManagement(): React.ReactElement {
           <i aria-hidden="true" /> Fleet Management
         </div>
         <h1>
-          Know where every vehicle stands.
+          See the fleet as a live operational system.
           
         </h1>
         <p className="hero-lead">
-          Sonalit puts live vehicle position, driver assignment, journey history and fleet records in one place — so the person running the operation can see what is moving, what needs attention and what happened before.
+          Sonalit treats vehicle movement as a stateful operational record: live position, driver and device identity, journey history, signal health, geofences and replay remain connected to the asset instead of dissolving into isolated tracking events.
         </p>
       </header>
 
       <section className="section section-tight" aria-label="Fleet capabilities">
         <FeatureBlock
-          title="One live view of the whole fleet"
-          body="Tracked vehicles report position continuously, and those positions drive the map, the dashboards and the alerting rules at the same time. Operators watch one screen instead of reconciling several."
+          title="A live picture with memory"
+          body="Position is only the beginning. Sonalit carries each fix into the tactical map, event stream, geofence logic and journey history, while preserving enough context to reconstruct the movement later."
           points={[
-            'Live map of every tracked vehicle',
-            'Journey history retained with its position trail',
-            'Drive replay to reconstruct what actually happened',
-            'Geofence events raised automatically',
+            'Live GPS and tactical fleet mapping',
+            'Historical trail retained with the journey',
+            'Drive and operations replay for reconstruction',
+            'Geofence and route-aware events surfaced automatically',
           ]}
           visual={<OpsVisual />}
           visualLabel="Live Fleet Map"
@@ -42,13 +42,13 @@ export default function FleetManagement(): React.ReactElement {
 
         <FeatureBlock
           flip
-          title="The register behind the map"
-          body="A position is only useful next to the vehicle it belongs to. Sonalit holds the operational registers that give a track meaning."
+          title="The operational graph behind the map"
+          body="A coordinate without identity is an orphaned fact. Sonalit binds the vehicle to the driver, device, shift and operational history that make movement actionable."
           points={[
             'Vehicle records with registration, type and assignment',
             'Driver records, contact details and current assignment',
-            'Tracking devices linked to the vehicle they are fitted to',
-            'Shift management and driver rostering',
+            'Tracking devices and signal state linked to the assigned vehicle',
+            'Shift planning and driver assignment',
           ]}
           visual={<FleetVisual />}
           visualLabel="Fleet Register"
@@ -59,8 +59,8 @@ export default function FleetManagement(): React.ReactElement {
         <SectionHeading
           id="upkeep-heading"
           label="Maintenance &amp; cost"
-          title="Condition and cost tracked alongside movement"
-          desc="Maintenance and fuel are recorded against the same vehicle record the tracking uses, so cost per vehicle sits next to how that vehicle is actually being used."
+          title="Condition, cost and accountability alongside movement"
+          desc="Maintenance, fuel and claims sit beside movement, giving operations and management one continuity from utilisation to upkeep to incident history."
         />
         <div className="cap-grid cap-grid-3">
           <article className="cap">
@@ -87,8 +87,8 @@ export default function FleetManagement(): React.ReactElement {
       </section>
 
       <CtaBand
-        title="Run your fleet from one live picture"
-        body="Sonalit is built for operations teams who need vehicle tracking, driver management and fleet reporting to be the same system."
+        title="Run the fleet from one operational picture"
+        body="From live movement to maintenance, fuel, shifts, claims and reporting, Sonalit keeps the fleet legible as an operational system rather than a collection of disconnected registers."
       />
       <RelatedPages currentPath="/fleet-management" />
     </MarketingLayout>
