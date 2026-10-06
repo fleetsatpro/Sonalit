@@ -5,17 +5,22 @@ on:
     branches: ["fix/ci-real-dependency-audit"]
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 jobs:
   refresh:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: \${{ github.ref_name }}
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
+        with:
+          version: 11.28.4
 
       - name: Use Node.js 22
         uses: actions/setup-node@v7
@@ -25,9 +30,24 @@ jobs:
       - name: Refresh lockfile
         run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
 
-      - name: Upload refreshed lockfile
-        uses: actions/upload-artifact@v6
-        with:
-          name: refreshed-pnpm-lockfile
-          path: pnpm-lock.yaml
-          retention-days: 1
+      - name: Commit regenerated lockfile
+        id: commit
+        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- pnpm-lock.yaml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add pnpm-lock.yaml
+          git commit -m "chore(security): regenerate dependency lockfile"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch full CI for regenerated lockfile
+        if: ${{ steps.commit.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run node.js.yml --ref "${GITHUB_REF_NAME}"
