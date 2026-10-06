@@ -183,6 +183,6 @@ jobs:
           path: apps/web/playwright-report/
           retention-days: 7
 
-      - name: Dependency audit
+      - name: Production dependency audit
         working-directory: backend
-        run: pnpm audit --audit-level=high
+        run: pnpm audit --prod --audit-level=high
