@@ -330,6 +330,7 @@ const MODEL_UNAVAILABLE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const RETRYABLE_COOLDOWN_BASE_MS = 15 * 1000;
 const RETRYABLE_COOLDOWN_MAX_MS = 90 * 1000;
 const FABRIC_QUOTA_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const FABRIC_QUOTA_MAX_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const FABRIC_AUTH_COOLDOWN_MS = 60 * 60 * 1000;
 const fabricStates = Object.create(null);
 
@@ -602,7 +603,7 @@ function retryAfterMs(err,fallbackMs){
 function fabricCooldownMs(err,provider,state){
   if(Number(err?.status)===429 || /rate.?limit|too many requests|quota/i.test(String(err?.message||''))){
     const headerMs=retryAfterMs(err,0);
-    if(headerMs>0)return Math.min(FABRIC_QUOTA_COOLDOWN_MS,Math.max(15000,headerMs));
+    if(headerMs>0)return Math.min(FABRIC_QUOTA_MAX_COOLDOWN_MS,Math.max(15000,headerMs));
     if(providerGroup(provider)==='openrouter-free')return FABRIC_QUOTA_COOLDOWN_MS;
     return Math.min(RETRYABLE_COOLDOWN_MAX_MS,RETRYABLE_COOLDOWN_BASE_MS*Math.pow(2,Math.min(Number(state.failureCount||0)-1,5)));
   }
