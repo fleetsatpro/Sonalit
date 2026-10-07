@@ -78,7 +78,6 @@ async function callAgent(role, payload){
       system: `You are the Sonalit Intelligence Centre's ${role.id} agent. ${role.purpose}\n\nRules: work ONLY from supplied evidence; never invent facts, sources, casualties, dates, motives, locations or outcomes. Separate observed/reporting from assessment. Preserve uncertainty. Do not merely restate source material. Every analytical judgement must add causal explanation, alternative hypothesis or decision consequence when the evidence supports it. State what would change the judgement. Avoid stock language and repeated sentence structures. Use precise professional intelligence prose. Return ONLY valid JSON.`,
       providerHints:role.providerHints,
       allowFreeProviders:role.allowFreeProviders !== false,
-      dataClassification:process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION || 'public',
       reasoningEffort:role.lane==='qa' || role.lane==='editorial' || role.lane==='review' ? 'xhigh' : 'high',
       messages:[{role:'user',content:JSON.stringify(payload)}]
     });
