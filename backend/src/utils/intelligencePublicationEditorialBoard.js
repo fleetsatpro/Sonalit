@@ -35,7 +35,8 @@ const AGENT_ROLES = [
 function hasAi(){ return aiClient.hasAnyProvider(); }
 function extract(response){ return Array.isArray(response?.content) ? response.content.filter(x=>x?.type==='text').map(x=>x.text).join('\n') : ''; }
 function parse(text){ try { return JSON.parse(text); } catch (_) {} const m=String(text||'').match(/[\[{][\s\S]*[\]}]/); if(!m)return null; try{return JSON.parse(m[0]);}catch(_){return null;} }
-function clean(v,n=5000){ return String(v||'').replace(/\s+/g,' ').trim().slice(0,n); }\n
+function clean(v,n=5000){ return String(v||'').replace(/\s+/g,' ').trim().slice(0,n); }
+
 function deterministicQualityGate(final, events){
   const issues=[];
   if(!final || typeof final!=='object') issues.push('final_report_missing');
@@ -73,7 +74,10 @@ async function callAgent(role, payload){
     const response = await aiClient.createMessage({
       max_tokens: role.lane==='editorial' ? 10000 : role.lane==='review' || role.lane==='qa' ? 5200 : role.lane==='visual' ? 3200 : 4200,
       system: `You are the Sonalit Intelligence Centre's ${role.id} agent. ${role.purpose}\n\nRules: work ONLY from supplied evidence; never invent facts, sources, casualties, dates, motives, locations or outcomes. Separate observed/reporting from assessment. Preserve uncertainty. Do not merely restate source material. Every analytical judgement must add causal explanation, alternative hypothesis or decision consequence when the evidence supports it. State what would change the judgement. Avoid stock language and repeated sentence structures. Use precise professional intelligence prose. Return ONLY valid JSON.`,
-      providerHints:role.providerHints,\n      allowFreeProviders:role.allowFreeProviders !== false,\n      dataClassification:process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION || 'public',\n      reasoningEffort:role.lane==='qa' || role.lane==='editorial' || role.lane==='review' ? 'xhigh' : 'high',
+      providerHints:role.providerHints,
+      allowFreeProviders:role.allowFreeProviders !== false,
+      dataClassification:process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION || 'public',
+      reasoningEffort:role.lane==='qa' || role.lane==='editorial' || role.lane==='review' ? 'xhigh' : 'high',
       messages:[{role:'user',content:JSON.stringify(payload)}]
     });
     const parsed=parse(extract(response));
@@ -105,7 +109,8 @@ async function runPublicationEditorialBoard({country, period, events, baseBody, 
   }
   const enrichedEvents=events.map(e=>({...e,research:research.byEvent[String(e.id)]||null}));
   const evidence=evidencePackage(country,period,enrichedEvents);
-  const board={version:'2.0', agents:AGENT_ROLES.map(r=>({...r,status:'pending'})), evidence_contract:evidenceContract, started_at:new Date().toISOString(),\n    quality_policy:{minimum_qa_score:85,required_checks:['evidence','attribution','contradictions','confidence','completeness','specificity','analytical_depth','forecast_quality','source_diversity','decision_relevance'],free_lanes_allowed_for_qa:false}};
+  const board={version:'2.0', agents:AGENT_ROLES.map(r=>({...r,status:'pending'})), evidence_contract:evidenceContract, started_at:new Date().toISOString(),
+    quality_policy:{minimum_qa_score:85,required_checks:['evidence','attribution','contradictions','confidence','completeness','specificity','analytical_depth','forecast_quality','source_diversity','decision_relevance'],free_lanes_allowed_for_qa:false}};
   if(!events.length){ board.agents=board.agents.map(a=>({...a,status:'no_data'})); board.publishable=false; return {board,final:null,visual:null,graphics:null,publishable:false}; }
 
   const writers=AGENT_ROLES.filter(r=>r.lane==='writer');
