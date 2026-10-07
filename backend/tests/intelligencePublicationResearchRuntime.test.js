@@ -107,3 +107,16 @@ test('limited prior research forces another research attempt after cooldown',()=
   expect(s).toContain('(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)');
   expect(s).toContain('const priorResearchReleaseReady=!publicationResearchRequired || priorDossierResearchReady;');
 });
+
+test('research collection cools GDELT after rate limiting instead of retrying every incident',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('const GDELT_COOLDOWN_MS=5*60*1000;');
+  expect(s).toContain('let gdeltDownUntil=0;');
+  expect(s).toContain('if(Date.now()<gdeltDownUntil)return [];');
+  expect(s).toContain("gdeltDownUntil=Date.now()+GDELT_COOLDOWN_MS");
+});
+
+test('preferred free research does not probe an unavailable paid rescue lane first',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
+  expect(s).toContain('if(hasAnthropic() && !params.preferFreeProviders)');
+});
