@@ -427,7 +427,7 @@ function assessPublicationQuality(body) {
 
   const finalScore = Math.max(0, Math.min(100, Math.round(score)));
   return {
-    passed: blockers.length === 0 && finalScore >= 82,
+    passed: blockers.length === 0 && finalScore >= 90,
     score: finalScore,
     threshold: 82,
     research_complete: researchComplete,
