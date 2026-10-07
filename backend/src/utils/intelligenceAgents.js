@@ -562,8 +562,9 @@ function publicationForCountry(orgId,country,type='daily'){
   });
 }
 
-async function publishDue(orgId,now=new Date()){
+async function publishDue(orgId,now=new Date(),options={}){
  const results=[];
+ const forceDaily=Boolean(options.forceDaily);
  const run=async(country,type)=>{
    try{results.push({country,timezone:publicationTimezoneForCountry(country),...await publicationForCountry(orgId,country,type)});}
    catch(error){logger.error('Intelligence publication failed '+country+'/'+type+' org='+orgId+': '+error.message);results.push({country,type,status:'failed',error:error.message});}
@@ -571,7 +572,7 @@ async function publishDue(orgId,now=new Date()){
  for(const country of DAILY_COUNTRIES){
    const tz=publicationTimezoneForCountry(country);
    const local=zonedParts(now,tz);
-   if(isPublicationBoundary(now,tz))await run(country,'daily');
+   if(forceDaily || isPublicationBoundary(now,tz))await run(country,'daily');
    if(local.hour===0&&local.minute<5&&localWeekday(local)===1)await run(country,'weekly');
    if(local.hour===0&&local.minute<5&&local.day===1)await run(country,'monthly');
  }
@@ -579,6 +580,7 @@ async function publishDue(orgId,now=new Date()){
 }
 async function runIntelligenceAgents(options={}){
  const includePublications=Boolean(options.includePublications);
+ const forceDailyPublications=Boolean(options.forceDailyPublications);
  const now=options.now instanceof Date?options.now:new Date();
  const {rows:orgs}=await globalQuery('SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL');
  const output=[];
@@ -587,7 +589,7 @@ async function runIntelligenceAgents(options={}){
      const result=await runWithOrgContext(org_id,async()=>{
        const translation=await translateQueue(org_id);
        const synthesis=await synthesizeEvents(org_id);
-       const publications=includePublications?await publishDue(org_id,now):{processed:0,results:[],skipped:'scheduled publication boundary only'};
+       const publications=includePublications?await publishDue(org_id,now,{forceDaily:forceDailyPublications}):{processed:0,results:[],skipped:'scheduled publication boundary only'};
        return{translation,synthesis,publications};
      });
      output.push({org_id,...result});
