@@ -2,7 +2,7 @@ require('dotenv').config();
 const { runNewsMesh } = require('../utils/intelligenceNewsMesh');
 const { runCollectionFabric } = require('../utils/collectionFabric');
 const { runRegionalIncidentSweep } = require('../utils/regionalIncidentFabric');
-const { runIntelligenceAgents } = require('../utils/intelligenceAgents');
+const { runIntelligenceAgents, runScheduledPublicationBoundary, isPublicationBoundary, defaultPublicationTimezone } = require('../utils/intelligenceAgents');
 const { generateMissingPublicationPdfs } = require('../services/intelligencePublicationPdf');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { providerCapabilities } = require('../utils/aiClient');
@@ -23,6 +23,8 @@ let spatialRunning = false;
 let spatialCursor = { orgId: null, convoyId: null };
 let activeCyclePromise = null;
 let activeSpatialPromise = null;
+let publicationTimer = null;
+let activePublicationPromise = null;
 let advisoryLeader = null;
 
 async function evaluateSpatialEyeUnsafe(reason = 'scheduled') {
@@ -128,7 +130,7 @@ async function cycleUnsafe(reason) {
     }
 
     let agents = [];
-    try { agents = await runIntelligenceAgents(); } catch (error) { logger.warn(`Intelligence agents cycle failed: ${error.message}`); }
+    try { agents = await runIntelligenceAgents({includePublications:false}); } catch (error) { logger.warn(`Intelligence agents cycle failed: ${error.message}`); }
 
     let pdfs = [];
     for (const org of agents) {
@@ -169,6 +171,44 @@ async function cycle(reason) {
   }
   return guarded.value;
 }
+function msUntilNextPublicationBoundary(now=new Date()){
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:defaultPublicationTimezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(now);
+  const get=t=>Number(parts.find(x=>x.type===t)?.value||0);
+  const wallNow=Date.UTC(get('year'),get('month')-1,get('day'),get('hour'),get('minute'),get('second'));
+  const nextWall=Date.UTC(get('year'),get('month')-1,get('day')+1,0,0,5);
+  return Math.max(1000,nextWall-wallNow-(now.getMilliseconds()||0));
+}
+async function runPublicationBoundary(reason='scheduled-midnight'){
+  if(stopping)return;
+  const guarded=await withAdvisoryLock('sonalit:intelligence:publication-boundary',async()=>{
+    const now=new Date();
+    if(!isPublicationBoundary(now,defaultPublicationTimezone))return{skipped:true,reason:'boundary-missed'};
+    activePublicationPromise=runScheduledPublicationBoundary(now);
+    try{
+      const result=await activePublicationPromise;
+      let pdfs=[];
+      for(const org of result?.results||[]){
+        if(!org?.org_id)continue;
+        try{
+          const generated=await generateMissingPublicationPdfs(org.org_id,Number(process.env.INTEL_PUBLICATION_PDF_BATCH||8));
+          pdfs.push(...generated.map(x=>({org_id:org.org_id,...x})));
+        }catch(error){logger.warn('Publication boundary PDF cycle failed org='+org.org_id+': '+error.message);}
+      }
+      return{...result,pdfs,reason};
+    }finally{activePublicationPromise=null;}
+  });
+  if(!guarded.locked){logger.info('Publication boundary skipped: another intelligence worker owns the cluster lock');return null;}
+  return guarded.value;
+}
+function schedulePublicationBoundary(){
+  if(stopping)return;
+  if(publicationTimer)clearTimeout(publicationTimer);
+  const delay=msUntilNextPublicationBoundary(new Date());
+  publicationTimer=setTimeout(()=>{
+    void runPublicationBoundary('scheduled-midnight').catch(error=>logger.warn('Publication boundary failed: '+error.message)).finally(()=>schedulePublicationBoundary());
+  },delay);
+  logger.info('Intelligence publication boundary scheduled in '+Math.round(delay/1000)+'s using '+defaultPublicationTimezone);
+}
 function scheduleSpatial() {
   if (stopping) return;
   spatialTimer = setTimeout(() => {
@@ -192,8 +232,10 @@ function schedule() {
 async function drainActiveWork(reason) {
   if (timer) clearTimeout(timer);
   if (spatialTimer) clearTimeout(spatialTimer);
+  if (publicationTimer) clearTimeout(publicationTimer);
   timer = null;
   spatialTimer = null;
+  publicationTimer = null;
   const running = [activeCyclePromise, activeSpatialPromise].filter(Boolean);
   let drained = true;
   if (running.length) {
@@ -249,6 +291,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
         activeCyclePromise = null;
       }
       scheduleSpatial();
+      schedulePublicationBoundary();
       schedule();
     },
     onLose: async () => {
