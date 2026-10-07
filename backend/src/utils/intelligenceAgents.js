@@ -306,7 +306,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const publicationEvidenceContract=evidenceContract||publicationBasis.publishable;
   const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents,evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract});
   let finalBody=deterministic;
-  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || (incidentResearch.summary.researched>=expectedResearchCount && Number(incidentResearch.summary.researched_limited||0)===0 && Number(incidentResearch.summary.fallback||0)===0);
+  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || publicationEvents.every(e=>String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase()==='researched');
   let title=deterministic.title;
   let subtitle=deterministic.subtitle;
   let executive=deterministic.executive_assessment;
