@@ -376,7 +376,7 @@ async function researchBatch(events,{country,region}={}){
       const provider=String(response&&response._provider||'unknown');
       const packetUrlSet=new Set((Array.isArray(packet?.fetched_pages)?packet.fetched_pages:[]).map(x=>(safeUrl(x?.url)||'').replace(/\/+$/,'')).filter(Boolean));
       const providerSearchUsed=provider==='anthropic-web-search' && providerVerifiedSources.length>0;
-      const packetBacked=normalizedSources.some(x=>packetUrlSet.has((safeUrl(x?.url)||'').replace(/\/+$/,''));
+      const packetBacked=normalizedSources.some(x=>packetUrlSet.has((safeUrl(x?.url)||'').replace(/\/+$/,'')));
       const researchMethod=providerSearchUsed?'ai_web_search':(packetBacked?'live_web_packet':'ai_web_search');
       return{packet,agent:{...source,status,provider,sources:normalizedSources,research_method:researchMethod,research_quality:corroborated?'CORROBORATED':'LIMITED_SOURCE_BASE'},webSearchRequests};
     });
