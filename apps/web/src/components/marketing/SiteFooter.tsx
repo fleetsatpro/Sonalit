@@ -36,6 +36,7 @@ export default function SiteFooter(): React.ReactElement {
             <h2 id="foot-access">Access</h2>
             <a href="/login">Sign in to Sonalit</a>
             <a href="/contact">Request platform access</a>
+            <a href="mailto:support@sonalit.com">Support desk</a>
           </nav>
         </div>
       </div>

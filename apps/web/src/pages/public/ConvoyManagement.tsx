@@ -22,19 +22,19 @@ export default function ConvoyManagement(): React.ReactElement {
           the corridor in view.
         </h1>
         <p className="hero-lead">
-          Plan the movement, brief the field team, watch the route and carry the whole operation into the record when conditions change. The control room and the officers on the road work from the same journey — not separate message threads.
+          Sonalit gives convoy operations a common operational grammar: planned route, time-aware corridor adherence, route-risk context, CFO activity, seal integrity, evidence and response remain attached to the same journey when conditions change.
         </p>
       </header>
 
       <section className="section section-tight" aria-label="Convoy capabilities">
         <FeatureBlock
-          title="Watch the corridor, not just the dot"
-          body="Convoy positions are evaluated against the corridor they are supposed to be in and the risk profile of the ground they are covering, so operators are alerted to the situation rather than left to interpret a map."
+          title="A corridor is a condition, not a line on a map"
+          body="The movement is evaluated against both geometry and schedule. Route deviation, being ahead or behind plan, and material corridor departure become operational events rather than visual ambiguities."
           points={[
-            'Planned route and corridor recorded at creation',
-            'Corridor departure raises an alert, not a surprise',
-            'Route risk assessed before dispatch',
-            'Seal integrity checks recorded against the convoy',
+            'Planned route and corridor captured before dispatch',
+            'Time-aware corridor evaluation for off-route and schedule deviation',
+            'Risk-ranked route alternatives before dispatch',
+            'Seal integrity and evidence recorded per convoy truck',
           ]}
           visual={<ConvoyVisual />}
           visualLabel="Corridor Watch"
@@ -42,13 +42,13 @@ export default function ConvoyManagement(): React.ReactElement {
 
         <FeatureBlock
           flip
-          title="Built for the officer on the road, too"
-          body="Convoy field officers work from a mobile surface designed for their job — not a shrunken operator dashboard. What they submit from the road becomes the record the control room reads."
+          title="The field officer is part of the system"
+          body="CFOs work from a purpose-built field surface rather than a reduced control-room dashboard. Their checks, photographs, day-plan progress and escalations become part of the same evidentiary thread the desk reads."
           points={[
-            'A dedicated convoy companion application',
-            'Checks, photos and status submitted from the journey',
-            'Two-way messaging with the control room',
-            'Panic escalation with the convoy context attached',
+            'Dedicated CFO mobile workflow',
+            'Field checks, route waypoints, photos and status updates',
+            'Two-way operational broadcasts and communications',
+            'Panic escalation with convoy and location context',
           ]}
           visual={<OpsVisual />}
           visualLabel="Field Coordination"
@@ -59,8 +59,8 @@ export default function ConvoyManagement(): React.ReactElement {
         <SectionHeading
           id="reporting-heading"
           label="Operational reporting"
-          title="A convoy report that writes itself"
-          desc="Daily and per-convoy reports are assembled from what was actually recorded during the journey — positions, checks, photos, alerts and incidents — so reporting is a by-product of running the operation rather than a separate task."
+          title="The report is a by-product of the movement"
+          desc="Daily and per-convoy reports are assembled from recorded movement, checks, photos, seals, alerts and incidents. The report follows the operation; the operation does not stop to recreate the report."
         />
         <p className="prose prose-after">
           The same vehicles are managed day to day through{' '}
@@ -71,8 +71,8 @@ export default function ConvoyManagement(): React.ReactElement {
       </section>
 
       <CtaBand
-        title="Run convoys with the corridor under watch"
-        body="Plan, escort, monitor and report on every movement from a single operational record."
+        title="Run the convoy with the operational picture intact"
+        body="Plan, route, escort, monitor, communicate and prove the movement from one operational record."
       />
       <RelatedPages currentPath="/convoy-management" />
     </MarketingLayout>

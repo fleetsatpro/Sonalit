@@ -2800,3 +2800,760 @@
     transform: none;
   }
 }
+
+
+/* --------------------------------------------------------------------- */
+/* MARKETING V5 — WORLD MODEL / CAPABILITY ATLAS                          */
+/* --------------------------------------------------------------------- */
+
+.sonalit-public .home-hero-v5 {
+  min-height: 100svh;
+  align-items: center;
+}
+
+.sonalit-public .home-hero-v5 .home-hero-copy {
+  max-width: 720px;
+}
+
+.sonalit-public .home-v5-proof {
+  max-width: 760px;
+}
+
+.sonalit-public .home-v5-proof span {
+  white-space: nowrap;
+}
+
+.sonalit-public .home-command-visual {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--line-2);
+  background: var(--carbon);
+  overflow: hidden;
+}
+
+.sonalit-public .home-command-visual::before {
+  content: 'OPERATING FABRIC / SYSTEM MODEL';
+  position: absolute;
+  left: 1rem;
+  top: .85rem;
+  z-index: 5;
+  color: var(--text-3);
+  font: 500 .48rem/1 var(--mono);
+  letter-spacing: .12em;
+}
+
+.sonalit-public .home-command-meta {
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.2rem;
+  padding: .8rem 1rem;
+  border-top: 1px solid var(--line);
+  background: #070c16;
+}
+
+.sonalit-public .home-command-meta > div {
+  display: grid;
+  gap: .34rem;
+}
+
+.sonalit-public .home-command-meta span {
+  color: var(--text-3);
+  font-size: .45rem;
+  letter-spacing: .1em;
+}
+
+.sonalit-public .home-command-meta strong {
+  color: var(--text-2);
+  font: 500 .55rem/1.35 var(--mono);
+  letter-spacing: .055em;
+}
+
+.sonalit-public .home-v5-thesis {
+  display: grid;
+  grid-template-columns: minmax(160px,.32fr) minmax(0,1fr);
+  gap: clamp(2rem,6vw,7rem);
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 7rem 2.5rem 7.5rem;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.sonalit-public .home-v5-thesis-index,
+.sonalit-public .home-v5-close-index {
+  color: var(--orange);
+  font: 500 .52rem/1.4 var(--mono);
+  letter-spacing: .11em;
+  padding-top: .55rem;
+}
+
+.sonalit-public .home-v5-thesis h2 {
+  max-width: 14ch;
+  color: var(--text);
+  font-size: clamp(2.65rem,5.3vw,5.25rem);
+  line-height: .97;
+}
+
+.sonalit-public .home-v5-thesis p {
+  max-width: 760px;
+  margin-top: 2rem;
+  color: var(--text-2);
+  font-size: 1rem;
+  line-height: 1.9;
+}
+
+.sonalit-public .home-v5-thesis em {
+  color: var(--text);
+  font-style: normal;
+}
+
+.sonalit-public .home-v5-planes {
+  padding-top: 7.8rem;
+  padding-bottom: 7.8rem;
+}
+
+.sonalit-public .home-v5-plane-list {
+  margin-top: 3.2rem;
+  border-top: 1px solid var(--line-2);
+}
+
+.sonalit-public .home-v5-plane {
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px minmax(245px,.55fr) minmax(0,1fr) 28px;
+  gap: 1.25rem;
+  align-items: start;
+  min-height: 128px;
+  padding: 1.7rem .4rem 1.65rem 0;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  transition: transform .45s cubic-bezier(.22,.61,.36,1), background-color .35s ease, border-color .35s ease;
+}
+
+.sonalit-public .home-v5-plane::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--plane-accent, var(--orange));
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform .5s cubic-bezier(.16,1,.3,1);
+}
+
+.sonalit-public .home-v5-plane:hover {
+  transform: translateX(7px);
+  background: rgba(255,255,255,.018);
+}
+
+.sonalit-public .home-v5-plane:hover::before {
+  transform: scaleY(1);
+}
+
+.sonalit-public .home-v5-plane-code {
+  color: var(--text-3);
+  font-size: .53rem;
+  letter-spacing: .08em;
+}
+
+.sonalit-public .home-v5-plane-copy {
+  display: grid;
+  gap: .38rem;
+}
+
+.sonalit-public .home-v5-plane h3 {
+  font-size: clamp(1.55rem,2.6vw,2.25rem);
+  line-height: 1;
+}
+
+.sonalit-public .home-v5-plane strong {
+  color: var(--plane-accent, var(--orange));
+  font: 500 .57rem/1.35 var(--mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.sonalit-public .home-v5-plane p {
+  max-width: 740px;
+  color: var(--text-2);
+  font-size: .77rem;
+  line-height: 1.72;
+}
+
+.sonalit-public .home-v5-plane-arrow {
+  color: var(--plane-accent, var(--orange));
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: transform .35s ease;
+}
+
+.sonalit-public .home-v5-plane:hover .home-v5-plane-arrow {
+  transform: translate(3px,-3px);
+}
+
+.sonalit-public .tone-fleet { --plane-accent: var(--cyan); --feat-color: var(--cyan); }
+.sonalit-public .tone-convoy { --plane-accent: var(--amber); --feat-color: var(--amber); }
+.sonalit-public .tone-container { --plane-accent: var(--orange); --feat-color: var(--orange); }
+.sonalit-public .tone-security { --plane-accent: var(--red); --feat-color: var(--red); }
+.sonalit-public .tone-spatial { --plane-accent: var(--violet); --feat-color: var(--violet); }
+.sonalit-public .tone-guardian { --plane-accent: var(--green); --feat-color: var(--green); }
+.sonalit-public .tone-executive { --plane-accent: #76c7ff; --feat-color: #76c7ff; }
+
+.sonalit-public .home-v5-application-band {
+  background: #080d17;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.sonalit-public .home-v5-section-head {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(260px,.55fr);
+  gap: 3rem;
+  align-items: end;
+}
+
+.sonalit-public .home-v5-section-head h2 {
+  max-width: 11ch;
+  margin-top: .55rem;
+  font-size: clamp(2.7rem,5.2vw,5rem);
+  line-height: .96;
+}
+
+.sonalit-public .home-v5-section-head > p {
+  color: var(--text-2);
+  font-size: .82rem;
+  line-height: 1.8;
+}
+
+.sonalit-public .home-v5-app-grid {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  margin-top: 4rem;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.sonalit-public .home-v5-app {
+  position: relative;
+  min-height: 206px;
+  padding: 1.35rem 1.25rem 1.45rem;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255,255,255,.008);
+  transition: background-color .35s ease, transform .35s cubic-bezier(.22,.61,.36,1);
+}
+
+.sonalit-public .home-v5-app:hover {
+  transform: translateY(-4px);
+  background: rgba(255,255,255,.022);
+}
+
+.sonalit-public .home-v5-app-index {
+  color: var(--text-3);
+  font-size: .48rem;
+  letter-spacing: .1em;
+}
+
+.sonalit-public .home-v5-app h3 {
+  margin-top: 2.15rem;
+  color: var(--text);
+  font-size: .86rem;
+  letter-spacing: -.015em;
+}
+
+.sonalit-public .home-v5-app p {
+  margin-top: .6rem;
+  color: var(--text-2);
+  font-size: .68rem;
+  line-height: 1.7;
+}
+
+.sonalit-public .home-v5-app-rule {
+  position: absolute;
+  left: 1.25rem;
+  bottom: 1.25rem;
+  width: 26px;
+  height: 2px;
+  background: var(--orange);
+  transform-origin: left;
+  transition: transform .45s cubic-bezier(.16,1,.3,1);
+}
+
+.sonalit-public .home-v5-app:hover .home-v5-app-rule {
+  transform: scaleX(2.6);
+}
+
+.sonalit-public .home-v5-stack {
+  padding-top: 8rem;
+  padding-bottom: 8rem;
+}
+
+.sonalit-public .home-v5-stack-grid {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(430px,.9fr);
+  gap: clamp(3rem,7vw,8rem);
+  align-items: start;
+}
+
+.sonalit-public .home-v5-stack-grid h2 {
+  max-width: 9.8ch;
+  margin-top: .6rem;
+  font-size: clamp(2.8rem,5.2vw,5.2rem);
+  line-height: .95;
+}
+
+.sonalit-public .home-v5-stack-grid .section-desc {
+  margin-top: 1.7rem;
+  color: var(--text-2);
+}
+
+.sonalit-public .home-v5-dimension-list {
+  margin-top: 2.6rem;
+  border-top: 1px solid var(--line);
+}
+
+.sonalit-public .home-v5-dimension {
+  display: grid;
+  grid-template-columns: 28px 105px minmax(0,1fr);
+  gap: .9rem;
+  align-items: baseline;
+  padding: .85rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.sonalit-public .home-v5-dimension > span {
+  color: var(--text-3);
+  font-size: .45rem;
+}
+
+.sonalit-public .home-v5-dimension strong {
+  color: var(--text);
+  font: 500 .55rem/1.4 var(--mono);
+  letter-spacing: .08em;
+}
+
+.sonalit-public .home-v5-dimension p {
+  color: var(--text-2);
+  font-size: .67rem;
+  line-height: 1.65;
+}
+
+.sonalit-public .world-fabric-visual {
+  position: relative;
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  background: #060b14;
+  overflow: hidden;
+}
+
+.sonalit-public .world-fabric-visual.is-compact {
+  min-height: 500px;
+}
+
+.sonalit-public .world-fabric-visual svg,
+.sonalit-public .decision-loop-visual svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sonalit-public .world-orbit {
+  transform-origin: 247px 202px;
+  animation: sonalitWorldOrbitA 22s linear infinite;
+}
+
+.sonalit-public .world-orbit-b {
+  animation-duration: 14s;
+  animation-direction: reverse;
+}
+
+.sonalit-public .world-route-hot {
+  stroke-dasharray: 4 14;
+  stroke-dashoffset: 18;
+  animation: sonalitSignalDash 3.4s linear infinite;
+}
+
+.sonalit-public .world-core-pulse {
+  transform-origin: 247px 202px;
+  animation: sonalitCorePulse 2.6s ease-in-out infinite;
+}
+
+.sonalit-public .world-node-ring {
+  transform-origin: center;
+  animation: sonalitNodeRing 2.7s ease-in-out infinite;
+}
+
+.sonalit-public .world-dimension-1 { --world-accent: var(--cyan); }
+.sonalit-public .world-dimension-2 { --world-accent: var(--amber); }
+.sonalit-public .world-dimension-3 { --world-accent: var(--violet); }
+.sonalit-public .world-dimension-4 { --world-accent: var(--cyan); }
+.sonalit-public .world-dimension-5 { --world-accent: var(--green); }
+.sonalit-public .world-dimension-6 { --world-accent: var(--red); }
+.sonalit-public .world-dimension-7 { --world-accent: var(--orange); }
+.sonalit-public .world-dimension-8 { --world-accent: var(--violet); }
+
+.sonalit-public .world-satellite {
+  transform-origin: 414px 70px;
+  animation: sonalitSatelliteArc 8s ease-in-out infinite;
+}
+
+.sonalit-public .world-camera {
+  animation: sonalitCameraBlink 3.2s ease-in-out infinite;
+}
+
+.sonalit-public .decision-loop-visual {
+  margin-top: 4.25rem;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #070c16;
+  overflow: hidden;
+}
+
+.sonalit-public .decision-loop-path-hot {
+  stroke-dasharray: 8 12;
+  stroke-dashoffset: 0;
+  animation: sonalitSignalDash 3.2s linear infinite;
+}
+
+.sonalit-public .decision-step-pulse {
+  transform-origin: center;
+  animation: sonalitCorePulse 2.8s ease-in-out infinite;
+}
+
+.sonalit-public .decision-step-2 .decision-step-pulse,
+.sonalit-public .decision-step-4 .decision-step-pulse {
+  animation-delay: .7s;
+}
+
+.sonalit-public .decision-loop-return {
+  stroke-dashoffset: 0;
+  animation: sonalitReturnFlow 5.5s linear infinite;
+}
+
+.sonalit-public .home-v5-intelligence {
+  padding-top: 7rem;
+  padding-bottom: 7.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.sonalit-public .home-v5-intelligence-grid {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  margin-top: 3rem;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.sonalit-public .home-v5-intelligence-card {
+  min-height: 292px;
+  padding: 1.4rem 1.25rem 1.5rem;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transition: transform .45s cubic-bezier(.22,.61,.36,1), background-color .35s ease;
+}
+
+.sonalit-public .home-v5-intelligence-card:hover {
+  transform: translateY(-5px);
+  background: rgba(255,255,255,.018);
+}
+
+.sonalit-public .home-v5-intelligence-card > span {
+  color: var(--violet);
+  font-size: .49rem;
+  letter-spacing: .1em;
+}
+
+.sonalit-public .home-v5-intelligence-card h3 {
+  margin-top: 2rem;
+  font-size: 1.32rem;
+  line-height: 1.03;
+}
+
+.sonalit-public .home-v5-intelligence-card p {
+  margin-top: .85rem;
+  color: var(--text-2);
+  font-size: .69rem;
+  line-height: 1.75;
+}
+
+.sonalit-public .home-v5-intelligence-card small {
+  display: block;
+  margin-top: 1.25rem;
+  padding-top: .8rem;
+  color: var(--text-3);
+  font-size: .55rem;
+  line-height: 1.6;
+  border-top: 1px solid var(--line);
+}
+
+.sonalit-public .home-v5-evidence {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(320px,.62fr);
+  gap: clamp(3rem,8vw,9rem);
+  align-items: start;
+  padding-top: 7.6rem;
+  padding-bottom: 8rem;
+}
+
+.sonalit-public .home-v5-evidence-copy h2 {
+  max-width: 9.5ch;
+  margin-top: .6rem;
+  font-size: clamp(2.8rem,5.4vw,5.25rem);
+  line-height: .94;
+}
+
+.sonalit-public .home-v5-evidence-copy > p:last-child {
+  max-width: 760px;
+  margin-top: 1.8rem;
+  color: var(--text-2);
+  font-size: .83rem;
+  line-height: 1.9;
+}
+
+.sonalit-public .home-v5-evidence-rail {
+  border-top: 1px solid var(--line-2);
+}
+
+.sonalit-public .home-v5-evidence-item {
+  display: grid;
+  grid-template-columns: 14px minmax(0,1fr);
+  gap: .8rem;
+  padding: 1rem 0 1.05rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.sonalit-public .home-v5-evidence-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: .25rem;
+  transform: rotate(45deg);
+  background: var(--plane-accent,var(--orange));
+  box-shadow: 0 0 0 4px rgba(255,255,255,.02);
+}
+
+.sonalit-public .home-v5-evidence-item strong {
+  color: var(--plane-accent,var(--orange));
+  font-size: .51rem;
+  letter-spacing: .08em;
+}
+
+.sonalit-public .home-v5-evidence-item p {
+  margin-top: .4rem;
+  color: var(--text-2);
+  font-size: .66rem;
+  line-height: 1.65;
+}
+
+.sonalit-public .tone-cyan { --plane-accent: var(--cyan); }
+.sonalit-public .tone-violet { --plane-accent: var(--violet); }
+.sonalit-public .tone-amber { --plane-accent: var(--amber); }
+.sonalit-public .tone-red { --plane-accent: var(--red); }
+
+.sonalit-public .home-v5-close {
+  position: relative;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #070c16;
+}
+
+.sonalit-public .home-v5-close .section {
+  position: relative;
+  padding-top: 7.5rem;
+  padding-bottom: 8rem;
+}
+
+.sonalit-public .home-v5-close::after {
+  content: '';
+  position: absolute;
+  right: 12%;
+  top: 16%;
+  width: 180px;
+  height: 180px;
+  border: 1px solid rgba(34,232,255,.16);
+  transform: rotate(45deg);
+  animation: sonalitCloseDrift 9s ease-in-out infinite;
+}
+
+.sonalit-public .home-v5-close h2 {
+  max-width: 14ch;
+  margin-top: 1rem;
+  font-size: clamp(3rem,6vw,6rem);
+  line-height: .93;
+}
+
+.sonalit-public .home-v5-close p {
+  max-width: 700px;
+  margin-top: 2rem;
+  color: var(--text-2);
+  font-size: .91rem;
+  line-height: 1.85;
+}
+
+@keyframes sonalitWorldOrbitA {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes sonalitSignalDash {
+  to { stroke-dashoffset: -72; }
+}
+
+@keyframes sonalitCorePulse {
+  0%, 100% { transform: scale(1); opacity: .45; }
+  50% { transform: scale(1.08); opacity: .9; }
+}
+
+@keyframes sonalitNodeRing {
+  0%, 100% { transform: scale(.92); opacity: .35; }
+  50% { transform: scale(1.12); opacity: .95; }
+}
+
+@keyframes sonalitSatelliteArc {
+  0%, 100% { transform: translate3d(0,0,0); }
+  50% { transform: translate3d(-10px,7px,0); }
+}
+
+@keyframes sonalitCameraBlink {
+  0%, 62%, 100% { opacity: .68; }
+  66%, 71% { opacity: 1; }
+}
+
+@keyframes sonalitReturnFlow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -110; }
+}
+
+@keyframes sonalitCloseDrift {
+  0%, 100% { transform: rotate(45deg) translate3d(0,0,0); opacity: .35; }
+  50% { transform: rotate(53deg) translate3d(-15px,12px,0); opacity: .75; }
+}
+
+@media (max-width: 1080px) {
+  .sonalit-public .home-v5-app-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+
+  .sonalit-public .home-v5-intelligence-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+
+  .sonalit-public .home-v5-stack-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sonalit-public .home-v5-stack-grid .world-fabric-visual {
+    max-width: 720px;
+  }
+}
+
+@media (max-width: 900px) {
+  .sonalit-public .home-v5-thesis,
+  .sonalit-public .home-v5-evidence {
+    grid-template-columns: 1fr;
+  }
+
+  .sonalit-public .home-v5-plane {
+    grid-template-columns: 44px minmax(220px,.75fr) minmax(0,1fr) 22px;
+  }
+
+  .sonalit-public .home-v5-section-head {
+    grid-template-columns: 1fr;
+    gap: 1.4rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .sonalit-public .home-v5-thesis {
+    padding: 5rem .9rem 5.4rem;
+  }
+
+  .sonalit-public .home-v5-planes,
+  .sonalit-public .home-v5-stack,
+  .sonalit-public .home-v5-intelligence,
+  .sonalit-public .home-v5-evidence {
+    padding-top: 5.2rem;
+    padding-bottom: 5.5rem;
+  }
+
+  .sonalit-public .home-v5-plane {
+    grid-template-columns: 32px 1fr 18px;
+    gap: .75rem;
+  }
+
+  .sonalit-public .home-v5-plane-copy {
+    grid-column: 2 / 3;
+  }
+
+  .sonalit-public .home-v5-plane-copy p {
+    margin-top: .3rem;
+  }
+
+  .sonalit-public .home-v5-plane-arrow {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .sonalit-public .home-v5-app-grid,
+  .sonalit-public .home-v5-intelligence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sonalit-public .home-v5-app {
+    min-height: 180px;
+  }
+
+  .sonalit-public .home-v5-dimension {
+    grid-template-columns: 25px 82px minmax(0,1fr);
+    gap: .65rem;
+  }
+
+  .sonalit-public .home-v5-dimension p {
+    font-size: .61rem;
+  }
+
+  .sonalit-public .world-fabric-visual,
+  .sonalit-public .world-fabric-visual.is-compact {
+    min-height: 360px;
+  }
+
+  .sonalit-public .home-command-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sonalit-public .home-v5-close .section {
+    padding-top: 5.2rem;
+    padding-bottom: 5.8rem;
+  }
+
+  .sonalit-public .home-v5-close::after {
+    right: -40px;
+    top: 36%;
+    width: 110px;
+    height: 110px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sonalit-public .world-orbit,
+  .sonalit-public .world-orbit-b,
+  .sonalit-public .world-route-hot,
+  .sonalit-public .world-core-pulse,
+  .sonalit-public .world-node-ring,
+  .sonalit-public .world-satellite,
+  .sonalit-public .world-camera,
+  .sonalit-public .decision-loop-path-hot,
+  .sonalit-public .decision-step-pulse,
+  .sonalit-public .decision-loop-return,
+  .sonalit-public .home-v5-close::after {
+    animation: none !important;
+  }
+}

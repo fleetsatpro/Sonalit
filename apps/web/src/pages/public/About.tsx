@@ -27,23 +27,23 @@ export default function About(): React.ReactElement {
           <i aria-hidden="true" /> About Sonalit
         </div>
         <h1>
-          Software for the work between
-          pickup and proof.
+          An operational system for what happens
+          between movement and consequence.
         </h1>
         <p className="hero-lead">
-          Sonalit is built for operations where vehicles, cargo, field teams and security responsibilities change hands throughout the day — and the cost of losing the thread is measured in delay, risk and rework.
+          Sonalit is built for operations in which vehicles, cargo, field teams, devices and security responsibilities change state throughout the day. Its purpose is to preserve the thread between movement, context, intervention and proof — where fragmented systems usually leave the work to spreadsheets, calls and memory.
         </p>
       </header>
 
       <section className="section section-tight" aria-label="Why Sonalit exists">
         <FeatureBlock
-          title="Logistics operations are one problem, not four tools"
-          body="Most operations run a tracking product, a spreadsheet for containers, a messaging group for the field and a reporting pack assembled by hand at month end. None of them agree, and the reconciliation work becomes the job."
+          title="The operation is continuous. The software should be."
+          body="A live map cannot tell you who owns the handoff. A container register cannot explain the route deviation. A message thread cannot establish the chronology. Sonalit connects those states so operators can work on the movement itself rather than reconcile disconnected artefacts."
           points={[
-            'One operational record behind every surface',
-            'The fleet vehicle is the convoy vehicle is the container vehicle',
-            'Alerts, field reports and deliveries land in the same system',
-            'Reporting is a by-product of running the operation',
+            'One canonical operational state behind every surface',
+            'The vehicle, convoy and container retain their identity across the workflow',
+            'Alerts, incidents, field evidence and delivery events remain connected',
+            'Replay, reports and audit trails inherit the evidence already recorded',
           ]}
           visual={<OpsVisual />}
           visualLabel="One Operational Record"
@@ -54,8 +54,8 @@ export default function About(): React.ReactElement {
         <SectionHeading
           id="who-heading"
           label="Who it is for"
-          title="Built for the people actually running the operation"
-          desc="Each role gets a surface designed for the work it does, rather than one dashboard everybody has to tolerate."
+          title="Purpose-built surfaces for the people making the decisions"
+          desc="Different roles need different interfaces, not different truths. Sonalit separates the surface while preserving the operational state beneath it."
         />
         <div className="cap-grid cap-grid-3">
           {AUDIENCES.map((a) => (
@@ -71,13 +71,13 @@ export default function About(): React.ReactElement {
       <section className="section section-tight" aria-label="How Sonalit is built">
         <FeatureBlock
           flip
-          title="Multi-tenant, with isolation at the data layer"
-          body="Sonalit is engineered as a multi-tenant system: organisations share the platform, never each other's data. Isolation is enforced in the database itself, and access inside an organisation is decided by role."
+          title="A platform architecture designed for governed operational data"
+          body="Sonalit is multi-tenant by design, with organisation-scoped data isolation, role-aware access and separate authentication boundaries for operators, field crews and cargo owners. Realtime activity, audit trails and evidence remain tied to the organisation and workflow that produced them."
           points={[
-            'Per-organisation isolation enforced at the database layer',
-            'Role-based access control across every surface',
-            'Separate authentication for operators, field crews and cargo owners',
-            'Real-time delivery of telemetry and field activity to the browser',
+            'Per-organisation isolation enforced at the data layer',
+            'Role-based access across operational surfaces',
+            'Separate operator, field, Guardian and cargo-owner access domains',
+            'Realtime delivery of telemetry, events and field activity',
           ]}
           visual={<ContainerVisual />}
           visualLabel="Platform Architecture"
@@ -85,8 +85,8 @@ export default function About(): React.ReactElement {
       </section>
 
       <CtaBand
-        title="Talk to us about your operation"
-        body="If you move vehicles, convoys or containers and want them in one system, we would like to hear how you run today."
+        title="Design the operating picture around your actual workflow"
+        body="Tell us where movement, custody, security or evidence breaks down today. We can then show where Sonalit’s operational fabric fits."
       />
       <RelatedPages currentPath="/about" />
     </MarketingLayout>

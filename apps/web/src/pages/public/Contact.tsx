@@ -41,9 +41,9 @@ export default function Contact(): React.ReactElement {
         <SectionHeading
           id="reach-heading"
           label="How to reach us"
-          title="Two routes, depending on what you need"
+          title="Three routes, depending on where the question belongs"
         />
-        <div className="cap-grid cap-grid-2">
+        <div className="cap-grid cap-grid-3">
           <article className="cap">
             <div className="cap-icon" aria-hidden="true">✉</div>
             <h3>Email the operations team</h3>
@@ -53,6 +53,18 @@ export default function Contact(): React.ReactElement {
             </p>
             <a className="btn btn-primary" href={`mailto:${CONTACT_EMAIL}`}>
               Email {CONTACT_EMAIL}
+            </a>
+          </article>
+
+          <article className="cap">
+            <div className="cap-icon" aria-hidden="true">◎</div>
+            <h3>Reach the support team</h3>
+            <p>
+              For product support, troubleshooting and questions about using Sonalit day to day.
+              This is the direct route to the support desk.
+            </p>
+            <a className="btn btn-ghost" href="mailto:support@sonalit.com">
+              Email support@sonalit.com
             </a>
           </article>
 
