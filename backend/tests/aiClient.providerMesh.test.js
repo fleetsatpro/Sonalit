@@ -152,6 +152,37 @@ describe('intelligence provider mesh', () => {
     expect(response._free_provider).toBe(true);
   });
 
+  test('a shared OpenRouter quota failure makes the whole free account unavailable immediately', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options) {
+        this.options = options;
+        this.chat = {
+          completions: {
+            create: jest.fn(async () => {
+              const error = new Error('Too Many Requests');
+              error.status = 429;
+              throw error;
+            }),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const policy = { dataClassification: 'public', allowFreeProviders: true, preferFreeProviders: true };
+    await expect(ai.createMessage({
+      ...policy,
+      providerHints: ['gpt-oss-120b-openrouter-free'],
+      system: 'Return JSON.',
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    })).rejects.toThrow();
+    expect(ai.hasReadyProvider(policy)).toBe(false);
+  });
+
   test('structured research output is forwarded only to capable OpenRouter lanes', async () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
