@@ -26,6 +26,62 @@ const MAX_PAGE_CHARS = 6500;
 const MAX_PACKET_CHARS = 26000;
 const REQUEST_TIMEOUT_MS = 10000;
 
+const RESEARCH_RESPONSE_FORMAT = {
+  type:'json_schema',
+  json_schema:{
+    name:'sonalit_incident_research_batch',
+    strict:true,
+    schema:{
+      type:'object',
+      additionalProperties:false,
+      properties:{
+        results:{
+          type:'array',
+          items:{
+            type:'object',
+            additionalProperties:false,
+            properties:{
+              incident_id:{type:'string'},
+              status:{type:'string'},
+              narrative:{type:'string'},
+              context:{type:'string'},
+              confirmed_facts:{type:'array',items:{type:'string'}},
+              reported_or_disputed:{type:'array',items:{type:'string'}},
+              analytical_assessment:{type:'string'},
+              why_it_matters:{type:'array',items:{type:'string'}},
+              uncertainty:{type:'array',items:{type:'string'}},
+              chronology:{type:'array',items:{
+                type:'object',
+                additionalProperties:false,
+                properties:{time:{type:'string'},event:{type:'string'}},
+                required:['time','event']
+              }},
+              sources:{type:'array',items:{
+                type:'object',
+                additionalProperties:false,
+                properties:{
+                  title:{type:'string'},
+                  url:{type:'string'},
+                  domain:{type:'string'},
+                  source_type:{type:'string'}
+                },
+                required:['title','url','domain','source_type']
+              }},
+              search_notes:{type:'string'}
+            },
+            required:[
+              'incident_id','status','narrative','context','confirmed_facts',
+              'reported_or_disputed','analytical_assessment','why_it_matters',
+              'uncertainty','chronology','sources','search_notes'
+            ]
+          }
+        }
+      },
+      required:['results']
+    }
+  }
+};
+
 function clean(v,n=1200){
   return cleanPublicationText(v,n);
 }
@@ -332,7 +388,9 @@ async function researchBatch(events,{country,region}={}){
       max_tokens:8000,
       max_web_searches:8,
       ...providerPolicy,
-      system:'You are a multi-incident web-grounded research agent. Produce ONLY one JSON array containing exactly one object for each incident_id supplied.',
+      providerHints:['openrouter-free-router'],
+      responseFormat:RESEARCH_RESPONSE_FORMAT,
+      system:'You are a multi-incident web-grounded research agent. Produce ONLY the requested JSON object with a top-level "results" array containing exactly one object for each incident_id supplied.',
       messages:[{role:'user',content:prompt}]
     });
     const providerVerifiedSources=verifiedResponseSources(response);
@@ -341,12 +399,17 @@ async function researchBatch(events,{country,region}={}){
     const webSearchRequests=Number(response?.usage?.server_tool_use?.web_search_requests||0);
     let parsed=null;
     try{parsed=JSON.parse(raw)}catch(_){
-      const a=raw.indexOf('['),b=raw.lastIndexOf(']');
+      const a=raw.indexOf('{'),b=raw.lastIndexOf('}');
       if(a>=0&&b>a){try{parsed=JSON.parse(raw.slice(a,b+1))}catch(_2){}}
     }
-    if(!Array.isArray(parsed))throw new Error('research batch agent returned invalid JSON array');
+    const researchItems=Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.results)
+        ? parsed.results
+        : null;
+    if(!researchItems)throw new Error('research batch agent returned invalid structured JSON');
     return packets.map((packet,i)=>{
-      const source=parsed.find(x=>String(x&&x.incident_id)===String(events[i].id));
+      const source=researchItems.find(x=>String(x&&x.incident_id)===String(events[i].id));
       const verifiedSourceMap=new Map();
       const addVerified=(item)=>{
         const url=safeUrl(item?.url);
