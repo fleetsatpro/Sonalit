@@ -32,7 +32,7 @@ const AGENT_ROLES = [
   { id:'release-integrity-auditor', lane:'qa', purpose:'Act as the final release authority: look for provenance breaks, unsupported inference, misleading precision, missing uncertainty and any reason a client should not receive the report.', providerHints:['gpt-oss-120b-cerebras','nemotron3-ultra-550b-nvidia','deepseek-v4-flash-openrouter'], allowFreeProviders:false },
 ];
 
-function hasAi(){ return aiClient.hasAnyProvider(); }
+function hasAi(params={}){ return aiClient.hasAnyProvider(params); }
 function extract(response){ return Array.isArray(response?.content) ? response.content.filter(x=>x?.type==='text').map(x=>x.text).join('\n') : ''; }
 function parse(text){ try { return JSON.parse(text); } catch (_) {} const m=String(text||'').match(/[\[{][\s\S]*[\]}]/); if(!m)return null; try{return JSON.parse(m[0]);}catch(_){return null;} }
 function clean(v,n=5000){ return String(v||'').replace(/\s+/g,' ').trim().slice(0,n); }
