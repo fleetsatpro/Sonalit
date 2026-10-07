@@ -80,3 +80,12 @@ test('editorial board requires exact incident-id coverage in the final report',(
   expect(boardSource).toContain('returnedEventIds.size===expectedEventIds.size');
   expect(boardSource).toContain('[...expectedEventIds].every(id=>returnedEventIds.has(id))');
 });
+
+
+test('senior-editor output cannot replace verified research provenance fields',()=>{
+  const s=source();
+  expect(s).toContain('research_status:verifiedResearch.status||d?.research_status||null');
+  expect(s).toContain('research_provider:verifiedResearch.provider||d?.research_provider||null');
+  expect(s).toContain('research_method:verifiedResearch.research_method||d?.research_method||null');
+  expect(s).toContain('research_sources:Array.isArray(verifiedResearch.sources)?verifiedResearch.sources.map(src=>({...src}))');
+});
