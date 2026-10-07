@@ -294,7 +294,19 @@ process.on('SIGINT', () => shutdown('SIGINT'));
         const published = results.filter(x => x.publication_status === 'published').length;
         const drafts = results.filter(x => x.publication_status === 'draft').length;
         const failures = results.filter(x => x.status === 'failed' || x.error).length;
-        logger.info(`Intelligence publication startup catch-up: processed=${results.length}, published=${published}, drafts=${drafts}, failures=${failures}`);
+        const pdfs = [];
+        for (const org of catchup) {
+          if (!org?.org_id) continue;
+          try {
+            const generated = await generateMissingPublicationPdfs(org.org_id, Number(process.env.INTEL_PUBLICATION_PDF_BATCH || 8));
+            pdfs.push(...generated.map(x => ({ org_id: org.org_id, ...x })));
+          } catch (error) {
+            logger.warn(`Publication startup catch-up PDF cycle failed org=${org.org_id}: ${error.message}`);
+          }
+        }
+        const pdfReady = pdfs.filter(x => x.status === 'ready').length;
+        const pdfFailed = pdfs.filter(x => x.status === 'failed' || x.error).length;
+        logger.info(`Intelligence publication startup catch-up: processed=${results.length}, published=${published}, drafts=${drafts}, failures=${failures}, pdf_ready=${pdfReady}, pdf_failures=${pdfFailed}`);
       } catch (error) {
         logger.warn(`Intelligence publication startup catch-up failed: ${error.message}`);
       }
