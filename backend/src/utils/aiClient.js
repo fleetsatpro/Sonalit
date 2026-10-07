@@ -19,6 +19,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
 const logger = require('./logger');
+const { getRedis } = require('../config/redis');
 
 const AI_REQUEST_TIMEOUT_MS = Math.max(5000, Math.min(120000, Number(process.env.AI_REQUEST_TIMEOUT_MS || 30000)));
 const AI_SDK_OPTIONS = { timeout: AI_REQUEST_TIMEOUT_MS, maxRetries: 0 };
@@ -321,19 +322,102 @@ const states = Object.fromEntries([
 const clients = {};
 const modelCursors = Object.fromEntries(OPEN_WEIGHT_PROVIDERS.map(p=>[p.name,0]));
 const modelDisabledUntil = Object.fromEntries(OPEN_WEIGHT_PROVIDERS.map(p=>[p.name,0]));
-const concurrency = {
-  openrouter: { active:0, queue:[] },
-};
-const OPENROUTER_MAX_CONCURRENCY = Math.max(1, Math.min(4, Number(process.env.INTEL_OPENROUTER_CONCURRENCY || 2)));
+const concurrency = Object.create(null);
+const OPENROUTER_MAX_CONCURRENCY = Math.max(1, Math.min(2, Number(process.env.INTEL_OPENROUTER_CONCURRENCY || 1)));
 const PROVIDER_WAIT_MAX_MS = Math.max(0, Math.min(10000, Number(process.env.INTEL_PROVIDER_WAIT_MAX_MS || 5000)));
 const MODEL_UNAVAILABLE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const RETRYABLE_COOLDOWN_BASE_MS = 15 * 1000;
 const RETRYABLE_COOLDOWN_MAX_MS = 90 * 1000;
+const FABRIC_FREE_QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const PROVIDER_CIRCUIT_REDIS_ENABLED =
+  String(process.env.INTEL_PERSIST_PROVIDER_CIRCUITS || 'true').toLowerCase() === 'true' &&
+  Boolean(process.env.REDIS_URL) &&
+  String(process.env.DISABLE_REDIS || 'false').toLowerCase() !== 'true';
+const PROVIDER_CIRCUIT_REDIS_PREFIX = 'sonalit:intelligence:ai:circuit:v3:';
+const PROVIDER_CIRCUIT_HYDRATION_TIMEOUT_MS = Math.max(250, Math.min(5000, Number(process.env.INTEL_PROVIDER_CIRCUIT_HYDRATION_TIMEOUT_MS || 2000)));
+const providerCircuitPersistence = {
+  enabled: PROVIDER_CIRCUIT_REDIS_ENABLED,
+  hydrated: !PROVIDER_CIRCUIT_REDIS_ENABLED,
+  available: PROVIDER_CIRCUIT_REDIS_ENABLED,
+  hydrationPromise: null,
+};
 const FABRIC_QUOTA_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const FABRIC_QUOTA_MAX_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const FABRIC_AUTH_COOLDOWN_MS = 60 * 60 * 1000;
 const fabricStates = Object.create(null);
 
+
+function sleepMs(ms){ return new Promise(resolve=>setTimeout(resolve,ms)); }
+function providerCircuitKey(group){ return PROVIDER_CIRCUIT_REDIS_PREFIX+encodeURIComponent(String(group||'unknown')); }
+
+async function hydrateFabricState(){
+  if(!providerCircuitPersistence.enabled || providerCircuitPersistence.hydrated)return;
+  const client=getRedis();
+  if(!client){ providerCircuitPersistence.available=false; providerCircuitPersistence.hydrated=true; return; }
+  const groups=[...new Set(OPEN_WEIGHT_PROVIDERS.map(p=>providerGroup(p)).concat(['groq','openai','mistral','anthropic','self-hosted']))];
+  try{
+    const values=await Promise.race([
+      client.mget(groups.map(providerCircuitKey)),
+      sleepMs(PROVIDER_CIRCUIT_HYDRATION_TIMEOUT_MS).then(()=>null)
+    ]);
+    if(Array.isArray(values)){
+      const now=Date.now();
+      values.forEach((raw,i)=>{
+        const until=Number(raw||0);
+        if(until>now){
+          const group=groups[i];
+          const state=fabricStates[group]||(fabricStates[group]={downUntil:0,failureCount:0});
+          state.downUntil=Math.max(Number(state.downUntil||0),until);
+          state.failureCount=Math.max(Number(state.failureCount||0),1);
+        }
+      });
+    }else{
+      providerCircuitPersistence.available=false;
+      logger.warn('AI provider circuit hydration timed out; continuing with local circuit state.');
+    }
+  }catch(error){
+    providerCircuitPersistence.available=false;
+    logger.warn('AI provider circuit hydration unavailable: '+error.message);
+  }finally{
+    providerCircuitPersistence.hydrated=true;
+  }
+}
+function startFabricHydration(){
+  if(!providerCircuitPersistence.enabled)return Promise.resolve();
+  if(!providerCircuitPersistence.hydrationPromise){
+    providerCircuitPersistence.hydrationPromise=hydrateFabricState().catch(error=>{
+      providerCircuitPersistence.available=false;
+      providerCircuitPersistence.hydrated=true;
+      logger.warn('AI provider circuit hydration failed: '+error.message);
+    });
+  }
+  return providerCircuitPersistence.hydrationPromise;
+}
+async function persistFabricCooldown(group,until){
+  if(!providerCircuitPersistence.enabled || !providerCircuitPersistence.available)return;
+  const remaining=Math.max(1000,Number(until||0)-Date.now());
+  if(remaining<=0)return;
+  try{
+    const client=getRedis();
+    if(client)await Promise.race([
+      client.set(providerCircuitKey(group),String(until),'PX',remaining),
+      sleepMs(Math.min(1000,remaining)).then(()=>null)
+    ]);
+  }catch(error){
+    providerCircuitPersistence.available=false;
+    logger.warn('AI provider circuit persistence unavailable: '+error.message);
+  }
+}
+async function clearFabricCooldown(group){
+  if(!providerCircuitPersistence.enabled || !providerCircuitPersistence.available)return;
+  try{
+    const client=getRedis();
+    if(client)await Promise.race([client.del(providerCircuitKey(group)),sleepMs(1000).then(()=>null)]);
+  }catch(error){
+    providerCircuitPersistence.available=false;
+    logger.warn('AI provider circuit clear unavailable: '+error.message);
+  }
+}
 
 function keyOk(k) { return !!(k && String(k).length >= 10); }
 function hasAnthropic() { return keyOk(process.env.ANTHROPIC_API_KEY); }
@@ -378,6 +462,7 @@ function hasAnyProvider(params={}) {
 function providerCapabilities() {
   return {
     free_open_weight_enabled:freeLanesEnabled(),
+    circuit_persistence:{enabled:providerCircuitPersistence.enabled,hydrated:providerCircuitPersistence.hydrated,available:providerCircuitPersistence.available},
     open_weight: OPEN_WEIGHT_PROVIDERS.map(p => ({
       label:p.name,
       model:resolvedOpenWeightModel(p),
@@ -604,7 +689,7 @@ function fabricCooldownMs(err,provider,state){
   if(Number(err?.status)===429 || /rate.?limit|too many requests|quota/i.test(String(err?.message||''))){
     const headerMs=retryAfterMs(err,0);
     if(headerMs>0)return Math.min(FABRIC_QUOTA_MAX_COOLDOWN_MS,Math.max(15000,headerMs));
-    if(providerGroup(provider)==='openrouter-free')return FABRIC_QUOTA_COOLDOWN_MS;
+    if(providerGroup(provider)==='openrouter-free')return FABRIC_FREE_QUOTA_COOLDOWN_MS;
     return Math.min(RETRYABLE_COOLDOWN_MAX_MS,RETRYABLE_COOLDOWN_BASE_MS*Math.pow(2,Math.min(Number(state.failureCount||0)-1,5)));
   }
   if(Number(err?.status)===402 || /credit balance|billing|insufficient credit|payment required/i.test(String(err?.message||''))){
@@ -673,9 +758,8 @@ async function recoverCoolingProviders(providers){
   return providers.filter(provider=>!providerCooling(provider));
 }
 async function withConcurrency(key,fn){
-  const state=concurrency[key];
-  if(!state) return fn();
-  const limit=key==='openrouter'?OPENROUTER_MAX_CONCURRENCY:1;
+  const state=concurrency[key]||(concurrency[key]={active:0,queue:[]});
+  const limit=String(key||'').startsWith('openrouter-')?OPENROUTER_MAX_CONCURRENCY:1;
   if(state.active>=limit) await new Promise(resolve=>state.queue.push(resolve));
   state.active++;
   try{return await fn();}
@@ -704,7 +788,10 @@ function requestOptions(params, def) {
 }
 
 async function callOpenWeight(def,params) {
-  return withConcurrency(def.base==='https://openrouter.ai/api/v1'?'openrouter':'other',async()=>{
+  const key=def.base==='https://openrouter.ai/api/v1'
+    ? (def.free?'openrouter-free':'openrouter-paid')
+    : providerGroup(def);
+  return withConcurrency(key,async()=>{
     const completion=await getOpenWeightClient(def).chat.completions.create(requestOptions(params,def));
     return openAIResponseToAnthropicShape(completion);
   });
@@ -758,6 +845,7 @@ async function attempt(label,fn,meta={}){
     state.failureCount=0;
     fabric.downUntil=0;
     fabric.failureCount=0;
+    void clearFabricCooldown(group);
     return result;
   }catch(err){
     if(isModelNotFound(err) && meta.modelDef){
@@ -771,6 +859,7 @@ async function attempt(label,fn,meta={}){
       if(groupDelay){
         fabric.failureCount=Math.min(Number(fabric.failureCount||0)+1,6);
         fabric.downUntil=Math.max(Number(fabric.downUntil||0),Date.now()+groupDelay);
+        await persistFabricCooldown(group,fabric.downUntil);
       }
     }else if(isPermanentCredentialFailure(err)){
       state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
@@ -779,6 +868,7 @@ async function attempt(label,fn,meta={}){
       if(groupDelay){
         fabric.failureCount=Math.min(Number(fabric.failureCount||0)+1,6);
         fabric.downUntil=Math.max(Number(fabric.downUntil||0),Date.now()+groupDelay);
+        await persistFabricCooldown(group,fabric.downUntil);
       }
     }
     throw err;
@@ -868,10 +958,12 @@ function buildProviders(params={}) {
 }
 
 function hasReadyProvider(params={}){
+  if(providerCircuitPersistence.enabled && !providerCircuitPersistence.hydrated)return false;
   return buildProviders(params).some(provider=>!providerCooling(provider));
 }
 
 async function createMessage(params={}) {
+  await startFabricHydration();
   const providers=buildProviders(params);
   if(!providers.length)throw new Error('AI client: no configured provider for current data-classification/free-provider policy');
 
@@ -920,6 +1012,7 @@ module.exports={
   hasOpenSourceSecondary,
   hasAnyProvider,
   hasReadyProvider,
+  hydrateFabricState,
   hasOpenWeightProvider,
   providerCapabilities,
   resolvedOpenWeightModel,
@@ -927,3 +1020,6 @@ module.exports={
   createMessage,
   createResearchMessage,
 };
+
+
+void startFabricHydration();
