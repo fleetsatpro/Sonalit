@@ -555,7 +555,8 @@ function modelCandidates(def){
   return uniqueStrings([
     process.env[def.modelKey],
     def.model,
-    ...(Array.isArray(def.fallbackModels)?def.fallbackModels:[])
+    ...(Array.isArray(def.fallbackModels)?def.fallbackModels:[]),
+    def.free ? 'openrouter/free' : null,
   ]);
 }
 function resolvedOpenWeightModel(def){
@@ -742,7 +743,25 @@ function buildProviders(params={}) {
   if(hasOpenAI())providers.push({name:'openai-direct',fn:()=>callOpenAI(params),kind:'closed-fallback',free:false,qualityTier:'closed'});
   if(hasMistral())providers.push({name:'mistral-rescue',fn:()=>callMistral(params),kind:'closed-fallback',free:false,qualityTier:'closed'});
   if(hasAnthropic())providers.push({name:'anthropic-last-resort',fn:()=>callAnthropic(params),kind:'closed-fallback',free:false,qualityTier:'closed'});
-  if(params.preferFreeProviders) providers.sort((a,b)=>Number(Boolean(b.free))-Number(Boolean(a.free)));
+  if(params.preferFreeProviders){
+    const hints=new Set(Array.isArray(params.providerHints)?params.providerHints:[]);
+    const free=providers.filter(p=>p.free);
+    const hintedFree=free.filter(p=>hints.has(p.name));
+    const otherFree=free.filter(p=>!hints.has(p.name));
+    const nonFree=providers.filter(p=>!p.free);
+    if(hintedFree.length>1){
+      const cursor=Number(createMessage._freeHintCursor||0)%hintedFree.length;
+      createMessage._freeHintCursor=cursor+1;
+      providers.splice(0,providers.length,
+        ...hintedFree.slice(cursor),
+        ...hintedFree.slice(0,cursor),
+        ...otherFree,
+        ...nonFree
+      );
+    }else{
+      providers.splice(0,providers.length,...hintedFree,...otherFree,...nonFree);
+    }
+  }
   return providers;
 }
 
