@@ -1,8 +1,8 @@
 const fs=require('fs');
 const path=require('path');
+const source=()=>fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
 
 describe('publication deep-research runtime ordering',()=>{
-  const source=()=>fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
   test('defines the publication incident set before invoking research',()=>{
     const s=source();
     const subset=s.indexOf('const publicationEvents=selectPublicationResearchEvents(events,8);');
