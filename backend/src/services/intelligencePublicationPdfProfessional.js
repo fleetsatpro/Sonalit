@@ -408,12 +408,12 @@ async function buildIncidentMap(country, events) {
     graticule.push('<line x1="'+mapBox[0]+'" y1="'+gy+'" x2="'+(mapBox[0]+mapBox[2])+'" y2="'+gy+'" stroke="#cbd5e1" stroke-width="2" opacity=".45"/>');
     graticule.push('<line x1="'+gx+'" y1="'+mapBox[1]+'" x2="'+gx+'" y2="'+(mapBox[1]+mapBox[3])+'" stroke="#cbd5e1" stroke-width="2" opacity=".45"/>');
   }
+  const escXml=v=>text(v,220).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const markers=plotPoints.map(p=>{
     const [x,y]=proj(p),c=severityColor(p.severity),r=8+severityScore(p.severity)*2;
     return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r+'" fill="'+c+'" stroke="#fff" stroke-width="4"/>'+
       '<text x="'+(x+13).toFixed(1)+'" y="'+(y-9).toFixed(1)+'" fill="#0f172a" font-family="Arial" font-size="22" font-weight="700">'+p.n+'</text>';
   }).join('');
-  const escXml=v=>text(v,220).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const label=geo ? (COUNTRY_NAMES[country]||country)+' - INCIDENT GEOGRAPHY' : 'COORDINATE PLOT - GEOGRAPHIC COVERAGE';
   const svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+
     '<rect width="100%" height="100%" fill="#08131a"/>'+
