@@ -371,7 +371,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
        reportEvents.length?Math.round(reportEvents.reduce((n,e)=>n+Number(e.confidence||0),0)/reportEvents.length):0,version]
     );
     publicationId=updated.rows[0]?.id||existing[0].id;
-    if(refreshPdf && status==='published'){
+    if(refreshPdf){
       await query(
         "UPDATE intel_publications SET pdf_status='not_requested',pdf_key=NULL,pdf_url=NULL,pdf_generated_at=NULL,pdf_error=NULL,pdf_version=COALESCE(pdf_version,1)+1,updated_at=NOW() WHERE id=$1 AND org_id=$2",
         [publicationId,orgId]
