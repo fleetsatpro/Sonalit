@@ -25,6 +25,8 @@ const MAX_SOURCE_PAGES = 4;
 const MAX_PAGE_CHARS = 6500;
 const MAX_PACKET_CHARS = 26000;
 const REQUEST_TIMEOUT_MS = 10000;
+const GDELT_COOLDOWN_MS=5*60*1000;
+let gdeltDownUntil=0;
 
 const RESEARCH_RESPONSE_FORMAT = {
   type:'json_schema',
@@ -153,6 +155,7 @@ async function googleNewsSearch({headline,country,region}){
 }
 
 async function gdeltSearch({headline,country,region}){
+  if(Date.now()<gdeltDownUntil)return [];
   const q=[clean(headline,220),COUNTRY_NAMES[country]||country,region].filter(Boolean).join(' ');
   const u=new URL('https://api.gdeltproject.org/api/v2/doc/doc');
   u.searchParams.set('query',q);
@@ -175,7 +178,12 @@ async function gdeltSearch({headline,country,region}){
       kind:'gdelt_discovery'
     })).filter(a=>a.url&&!isAggregatorDomain(a.domain));
   }catch(error){
-    logger.warn('Incident research GDELT unavailable: '+error.message);
+    if(/HTTP 429|rate.?limit/i.test(String(error?.message||''))){
+      gdeltDownUntil=Date.now()+GDELT_COOLDOWN_MS;
+      logger.warn('Incident research GDELT rate-limited; cooling source for 5 minutes');
+    }else{
+      logger.warn('Incident research GDELT unavailable: '+error.message);
+    }
     return [];
   }
 }
