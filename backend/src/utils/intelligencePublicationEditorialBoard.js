@@ -28,8 +28,8 @@ const AGENT_ROLES = [
   { id:'copy-editor', lane:'editorial', purpose:'Improve clarity, structure, tone, grammar and executive readability without changing facts.', providerHints:['qwen3.5-397b-openrouter','deepseek-v3.2-openrouter','nemotron3.5-lightning-30b-nvidia'] },
   { id:'senior-editor', lane:'editorial', purpose:'Resolve reviewer findings and assemble the authoritative final report.', providerHints:['deepseek-v3.2-openrouter','qwen3.5-397b-openrouter','nemotron3-super-nvidia'] },
   { id:'publication-qa', lane:'qa', purpose:'Perform final publication safety, completeness, evidence and rendering checks.', providerHints:['nemotron3-super-nvidia','deepseek-v3.2-openrouter','nemotron3.5-lightning-30b-nvidia'] },
-  { id:'independent-quality-assurance', lane:'qa', purpose:'Independently score the final report against the Sonalit publication standard. Do not defer to the senior editor or other reviewers.', providerHints:['qwen3.5-397b-openrouter','deepseek-v3.2-openrouter','nemotron3-super-nvidia'] },
-  { id:'release-integrity-auditor', lane:'qa', purpose:'Act as the final release authority: look for provenance breaks, unsupported inference, misleading precision, missing uncertainty and any reason a client should not receive the report.', providerHints:['deepseek-v3.2-openrouter','nemotron3-super-nvidia','qwen3.5-397b-openrouter'] },
+  { id:'independent-quality-assurance', lane:'qa', purpose:'Independently score the final report against the Sonalit publication standard. Do not defer to the senior editor or other reviewers.', providerHints:['qwen3.5-397b-openrouter','nemotron3-ultra-550b-nvidia','gpt-oss-120b-cerebras'] },
+  { id:'release-integrity-auditor', lane:'qa', purpose:'Act as the final release authority: look for provenance breaks, unsupported inference, misleading precision, missing uncertainty and any reason a client should not receive the report.', providerHints:['gpt-oss-120b-cerebras','nemotron3-ultra-550b-nvidia','deepseek-v3.2-openrouter'] },
 ];
 
 function hasAi(){ return aiClient.hasAnyProvider(); }
