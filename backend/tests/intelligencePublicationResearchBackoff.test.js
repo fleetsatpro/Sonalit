@@ -1,8 +1,8 @@
 const fs=require('fs');
 const path=require('path');
+const source=()=>fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
 
 describe('publication research retry hardening',()=>{
-  const source=()=>fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
 
   test('fallback incidents do not satisfy deep-research completion',()=>{
     const s=source();
