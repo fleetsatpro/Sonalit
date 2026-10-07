@@ -2,7 +2,7 @@ require('dotenv').config();
 const { runNewsMesh } = require('../utils/intelligenceNewsMesh');
 const { runCollectionFabric } = require('../utils/collectionFabric');
 const { runRegionalIncidentSweep } = require('../utils/regionalIncidentFabric');
-const { runIntelligenceAgents, runScheduledPublicationBoundary, isPublicationBoundary, defaultPublicationTimezone } = require('../utils/intelligenceAgents');
+const { runIntelligenceAgents, runScheduledPublicationBoundary, anyCountryPublicationBoundary, msUntilAnyCountryPublicationBoundary } = require('../utils/intelligenceAgents');
 const { generateMissingPublicationPdfs } = require('../services/intelligencePublicationPdf');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { providerCapabilities } = require('../utils/aiClient');
@@ -172,17 +172,13 @@ async function cycle(reason) {
   return guarded.value;
 }
 function msUntilNextPublicationBoundary(now=new Date()){
-  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:defaultPublicationTimezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(now);
-  const get=t=>Number(parts.find(x=>x.type===t)?.value||0);
-  const wallNow=Date.UTC(get('year'),get('month')-1,get('day'),get('hour'),get('minute'),get('second'));
-  const nextWall=Date.UTC(get('year'),get('month')-1,get('day')+1,0,0,5);
-  return Math.max(1000,nextWall-wallNow-(now.getMilliseconds()||0));
+  return msUntilAnyCountryPublicationBoundary(now);
 }
-async function runPublicationBoundary(reason='scheduled-midnight'){
+async function runPublicationBoundary(reason='scheduled-local-midnight'){
   if(stopping)return;
   const guarded=await withAdvisoryLock('sonalit:intelligence:publication-boundary',async()=>{
     const now=new Date();
-    if(!isPublicationBoundary(now,defaultPublicationTimezone))return{skipped:true,reason:'boundary-missed'};
+    if(!anyCountryPublicationBoundary(now))return{skipped:true,reason:'boundary-missed'};
     activePublicationPromise=runScheduledPublicationBoundary(now);
     try{
       const result=await activePublicationPromise;
@@ -205,9 +201,9 @@ function schedulePublicationBoundary(){
   if(publicationTimer)clearTimeout(publicationTimer);
   const delay=msUntilNextPublicationBoundary(new Date());
   publicationTimer=setTimeout(()=>{
-    void runPublicationBoundary('scheduled-midnight').catch(error=>logger.warn('Publication boundary failed: '+error.message)).finally(()=>schedulePublicationBoundary());
+    void runPublicationBoundary('scheduled-local-midnight').catch(error=>logger.warn('Publication boundary failed: '+error.message)).finally(()=>schedulePublicationBoundary());
   },delay);
-  logger.info('Intelligence publication boundary scheduled in '+Math.round(delay/1000)+'s using '+defaultPublicationTimezone);
+  logger.info('Next country-local intelligence publication boundary scheduled in '+Math.round(delay/1000)+'s');
 }
 function scheduleSpatial() {
   if (stopping) return;
