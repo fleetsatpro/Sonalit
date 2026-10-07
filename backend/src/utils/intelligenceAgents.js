@@ -258,7 +258,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       LEFT JOIN intel_event_observations eo ON eo.event_id=e.id
       LEFT JOIN intel_observations o ON o.id=eo.observation_id
       LEFT JOIN intel_sources s ON s.id=o.source_id
-      WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4
+      WHERE e.org_id=$1 AND e.country_code=$2 AND ((e.occurred_from IS NOT NULL AND e.occurred_from>=$3 AND e.occurred_from<$4) OR (e.occurred_from IS NULL AND e.last_seen_at>=$3 AND e.last_seen_at<$4))
       GROUP BY e.id
       ORDER BY CASE e.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'moderate' THEN 2 ELSE 1 END DESC,e.last_seen_at DESC
       LIMIT 160`,[orgId,country,start,end]
