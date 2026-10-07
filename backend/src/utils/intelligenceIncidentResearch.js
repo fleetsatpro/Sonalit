@@ -386,7 +386,10 @@ async function researchBatch(events,{country,region}={}){
   ).toLowerCase();
   const allowFreeProviders=true;
   const providerPolicy={dataClassification,allowFreeProviders};
-  if(!aiClient.hasReadyProvider(providerPolicy)){
+  const aiReady=typeof aiClient.hasReadyProvider==='function'
+    ? aiClient.hasReadyProvider(providerPolicy)
+    : aiClient.hasAnyProvider(providerPolicy);
+  if(!aiReady){
     logger.warn('Incident research batch: AI provider fabric unavailable; skipping AI calls and preserving evidence-only fallback.');
     return packets.map((packet,i)=>({packet,agent:fallbackResearch(events[i],packet),error:'ai_provider_unavailable'}));
   }
