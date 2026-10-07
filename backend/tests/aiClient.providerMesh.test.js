@@ -35,8 +35,8 @@ describe('intelligence provider mesh', () => {
       expect.objectContaining({ label: 'qwen3.5-397b-openrouter', configured: true }),
       expect.objectContaining({ label: 'deepseek-v3.2-openrouter', configured: true }),
       expect.objectContaining({ label: 'nemotron3-super-nvidia', configured: true }),
-      expect.objectContaining({ label: 'qwen3-235b-cerebras', configured: true }),
-      expect.objectContaining({ label: 'glm47-cerebras', configured: true }),
+      expect.objectContaining({ label: 'nemotron3-ultra-550b-nvidia', configured: true }),
+      expect.objectContaining({ label: 'nemotron3.5-lightning-30b-nvidia', configured: true }),
       expect.objectContaining({ label: 'gpt-oss-120b-cerebras', configured: true }),
     ]));
   });
