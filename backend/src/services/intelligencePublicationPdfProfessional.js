@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
 const { cleanPublicationText, dedupeSources: dedupePublicationSources, uniqueStrings } = require('../utils/publicationQuality');
 
-const PDF_RENDERER_VERSION = '2.3.0';
+const PDF_RENDERER_VERSION = '2.4.0';
 
 const COUNTRY_NAMES = {
   KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania',
@@ -390,7 +390,7 @@ async function buildIncidentMap(country, events) {
   const excludedPoints=points.length-plotPoints.length;
   const pointsLonLat=plotPoints.map(p=>[p.lon,p.lat]);
   const bounds=countryBounds||projectBounds(pointsLonLat,null);
-  const W=2000,H=1050,pad=110,mapBox=[pad,150,W-pad*2,H-260];
+  const W=3200,H=1800,pad=150,mapBox=[pad,235,W-pad*2,H-390];
   const [minLon,minLat,maxLon,maxLat]=bounds;
   const proj=p=>[
     mapBox[0]+((p.lon-minLon)/(maxLon-minLon))*mapBox[2],
@@ -445,6 +445,43 @@ async function buildIncidentMap(country, events) {
   };
 }
 
+function drawVectorAnalytics(doc,y,events,publication){
+  const width=CONTENT_W, gap=12, panelW=(width-gap)/2, panelH=250;
+  const start=new Date(publication?.period_start||publication?.body?.period_start||Date.now());
+  const end=new Date(publication?.period_end||publication?.body?.period_end||Date.now());
+  const span=Math.max(1,end.getTime()-start.getTime());
+  card(doc,MARGIN,y,panelW,panelH,'#f8fafc');
+  smallLabel(doc,MARGIN+14,y+14,'ACTIVITY TIMELINE',panelW-28);
+  doc.fillColor(MUTED).font('Helvetica').fontSize(6.6).text('Recorded security events distributed across the completed reporting window.',MARGIN+14,y+28,{width:panelW-28});
+  const bins=Math.max(8,Math.min(24,Math.round(span/3600000)));
+  const counts=new Array(bins).fill(0);
+  for(const e of Array.isArray(events)?events:[]){
+    const t=new Date(e.occurred_from||e.last_seen_at||0).getTime();
+    if(!Number.isFinite(t)||t<start.getTime()||t>=end.getTime())continue;
+    counts[Math.min(bins-1,Math.max(0,Math.floor((t-start.getTime())/span*bins)))]++;
+  }
+  const max=Math.max(1,...counts), chartX=MARGIN+18, chartY=y+60, chartW=panelW-36, chartH=132;
+  doc.moveTo(chartX,chartY+chartH).lineTo(chartX+chartW,chartY+chartH).lineWidth(.6).strokeColor(LINE).stroke();
+  const bw=Math.max(3,(chartW-(bins-1)*2)/bins);
+  counts.forEach((v,i)=>{const h=chartH*(v/max);const x=chartX+i*(bw+2);doc.roundedRect(x,chartY+chartH-h,bw,Math.max(1,h),2).fill(ACCENT);if(i===0||i===bins-1||i%Math.max(1,Math.floor(bins/6))===0){doc.fillColor(MUTED).font('Helvetica').fontSize(5.5).text(String(i),x,chartY+chartH+7,{width:bw,align:'center'});}});
+  doc.fillColor(MUTED).font('Helvetica').fontSize(5.6).text('BIN',chartX,chartY+chartH+20);
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(7.4).text('Peak bin: '+String(counts.indexOf(max)+1).padStart(2,'0')+' · '+String(max)+' event(s)',chartX,y+218,{width:panelW-36});
+  const sx=MARGIN+panelW+gap, sy=y;
+  card(doc,sx,sy,panelW,panelH,'#f8fafc');
+  smallLabel(doc,sx+14,sy+14,'SEVERITY + GEOGRAPHIC CONCENTRATION',panelW-28);
+  const sevKeys=['critical','high','moderate','low','informational'];
+  const totals={critical:0,high:0,moderate:0,low:0,informational:0};
+  for(const e of Array.isArray(events)?events:[]){const k=String(e.severity||'moderate').toLowerCase();if(Object.prototype.hasOwnProperty.call(totals,k))totals[k]++;}
+  let cy=sy+46, used=0, total=Math.max(1,events.length);
+  for(const k of sevKeys){const v=totals[k];smallLabel(doc,sx+14,cy,k.toUpperCase(),68);doc.roundedRect(sx+84,cy-2,panelW-116,10,4).fill(LIGHT);const bw2=(panelW-116)*v/total;if(bw2>0)doc.roundedRect(sx+84,cy-2,bw2,10,4).fill(severityColor(k));doc.fillColor(INK).font('Helvetica-Bold').fontSize(6.8).text(String(v),sx+panelW-25,cy,{width:14,align:'right'});cy+=25;used+=v;}
+  const regions=new Map();for(const e of Array.isArray(events)?events:[]){const region=text(e.region||'UNALLOCATED',80).toUpperCase();regions.set(region,(regions.get(region)||0)+1);}
+  const topRegions=Array.from(regions.entries()).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,4);
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(7.2).text('TOP RECORDED AREAS',sx+14,cy+4,{width:panelW-28});cy+=20;
+  const maxRegion=Math.max(1,...topRegions.map(x=>x[1]));
+  for(const [name,count] of topRegions){doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(5.8).text(name,sx+14,cy,{width:92});const bw3=(panelW-128)*count/maxRegion;doc.roundedRect(sx+108,cy-2,panelW-132,8,3).fill(LIGHT);if(bw3>0)doc.roundedRect(sx+108,cy-2,bw3,8,3).fill(ACCENT);doc.fillColor(INK).font('Helvetica-Bold').fontSize(5.8).text(String(count),sx+panelW-20,cy,{width:12,align:'right'});cy+=18;}
+  doc.fillColor(MUTED).font('Helvetica').fontSize(5.8).text('Vector graphics are calculated from the stored evidence ledger; they are descriptive, not independent confirmation.',sx+14,sy+222,{width:panelW-28,lineGap:2});
+  return y+panelH+18;
+}
 function sectionIndex(doc, y, rows) {
   let cy=y;
   for (const row of rows) {
@@ -637,6 +674,12 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(7).text(String(v),MARGIN+425,y,{width:36,align:'right'});
     y+=24;
   }
+
+  // SECURITY ACTIVITY GRAPHICS
+  y=addPage(doc);
+  y=sectionHeading(doc,y,'Security activity graphics','High-resolution vector analysis built directly from the completed reporting ledger.');
+  y=drawVectorAnalytics(doc,y,mergedEvents,publication);
+  y=paragraph(doc,y,'Reading note: event volume, severity and geographic concentration describe the captured evidence set. They do not measure unobserved incidents and should not be treated as a substitute for collection coverage assessment.',{size:7.4,color:MUTED,max:850});
 
   // EMERGING TRENDS
   y=addPage(doc);
