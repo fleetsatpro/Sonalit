@@ -100,7 +100,13 @@ async function runPublicationEditorialBoard({country, period, events, baseBody, 
   board.completed_at=new Date().toISOString();
   const final=senior.output||copy.output||null;
   const finalDossiers=Array.isArray(final?.incident_dossiers)?final.incident_dossiers:[];
-  const finalDossiersComplete=events.length===0 || (finalDossiers.length>=events.length && finalDossiers.every(d=>d&&String(d.event_id||'').trim()));
+  const expectedEventIds=new Set(events.map(e=>String(e.id)));
+  const returnedEventIds=new Set(finalDossiers.map(d=>String(d?.event_id||'')).filter(Boolean));
+  const finalDossiersComplete=events.length===0 || (
+    finalDossiers.length===events.length &&
+    returnedEventIds.size===expectedEventIds.size &&
+    [...expectedEventIds].every(id=>returnedEventIds.has(id))
+  );
   const allResearchComplete=events.length===0 || events.every(e=>String(e?.research?.agent?.status||'').toLowerCase()==='researched');
   const publishable=Boolean(evidenceContract&&final&&finalDossiersComplete&&allResearchComplete&&qa.output?.publishable===true&&!(qa.output?.blocking_issues||[]).length);
   board.publishable=publishable;
