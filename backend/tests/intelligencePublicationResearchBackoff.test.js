@@ -31,3 +31,13 @@ describe('publication research retry hardening',()=>{
     expect(s).toContain('retry_cooldown_minutes:researchCooldownMinutes');
   });
 });
+
+
+test('downgrading a published product invalidates its cached PDF',()=>{
+  const s=source();
+  const blockStart=s.indexOf('if(refreshPdf){');
+  expect(blockStart).toBeGreaterThan(-1);
+  expect(s.slice(blockStart,blockStart+520)).toContain("pdf_status='not_requested'");
+  expect(s.slice(blockStart,blockStart+520)).toContain("pdf_key=NULL");
+  expect(s.slice(blockStart,blockStart+520)).toContain("pdf_url=NULL");
+});
