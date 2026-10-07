@@ -39,3 +39,9 @@ test('provider research citations must come from non-text verified web-search re
   });
   expect(sources.map(x=>x.url)).toEqual(['https://real.example/report']);
 });
+
+
+test('successful researched incidents persist an explicit research method',()=>{
+  const source=require('fs').readFileSync(require('path').join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(source).toContain("const researchMethod=providerSearchUsed?'ai_web_search':(packetBacked?'live_web_packet':'ai_web_search');");
+});
