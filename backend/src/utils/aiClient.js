@@ -581,7 +581,11 @@ function rotateModel(def){
 }
 function providerCooling(label){
   const state=states[label];
-  return Boolean(state && Date.now()<Number(state.downUntil||0));
+  const modelBlocked=Number(modelDisabledUntil[label]||0);
+  return Boolean(
+    (state && Date.now()<Number(state.downUntil||0)) ||
+    modelBlocked>0 && Date.now()<modelBlocked
+  );
 }
 async function withConcurrency(key,fn){
   const state=concurrency[key];
@@ -670,7 +674,6 @@ async function attempt(label,fn,meta={}){
     if(isModelNotFound(err) && meta.modelDef){
       state.failureCount=0;
       state.downUntil=0;
-      rotateModel(meta.modelDef);
     }else if(isRetryable(err)){
       state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
       const delay=Math.min(RETRYABLE_COOLDOWN_MAX_MS,RETRYABLE_COOLDOWN_BASE_MS*Math.pow(2,state.failureCount-1));
