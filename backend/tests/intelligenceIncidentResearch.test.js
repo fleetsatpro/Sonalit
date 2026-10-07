@@ -1,6 +1,6 @@
 jest.mock('../src/utils/aiClient',()=>({hasAnyProvider:()=>false}));
 
-const { researchPublicationIncidents } = require('../src/utils/intelligenceIncidentResearch');
+const { researchPublicationIncidents, verifiedResponseSources } = require('../src/utils/intelligenceIncidentResearch');
 
 describe('publication incident research coverage',()=>{
   beforeEach(()=>{
@@ -25,4 +25,23 @@ describe('publication incident research coverage',()=>{
     expect(result.summary.fallback).toBe(5);
     expect(global.fetch).toHaveBeenCalled();
   });
+});
+
+
+test('provider research citations must come from non-text verified web-search result blocks',()=>{
+  const sources=verifiedResponseSources({
+    content:[
+      {type:'text',text:'{"sources":[{"url":"https://invented.example/report"},{"url":"https://real.example/report"}]}'},
+      {type:'web_search_tool_result',content:[
+        {type:'web_search_result',title:'Verified report',url:'https://real.example/report',domain:'real.example'}
+      ]}
+    ]
+  });
+  expect(sources.map(x=>x.url)).toEqual(['https://real.example/report']);
+});
+
+
+test('successful researched incidents persist an explicit research method',()=>{
+  const source=require('fs').readFileSync(require('path').join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(source).toContain("const researchMethod=providerSearchUsed?'ai_web_search':(packetBacked?'live_web_packet':'ai_web_search');");
 });

@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
 const { cleanPublicationText, dedupeSources: dedupePublicationSources, uniqueStrings } = require('../utils/publicationQuality');
 
-const PDF_RENDERER_VERSION = '2.2.0';
+const PDF_RENDERER_VERSION = '2.3.0';
 
 const COUNTRY_NAMES = {
   KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania',
@@ -399,7 +399,7 @@ async function buildIncidentMap(country, events) {
   const paths=[];
   for(const feature of geometryFeatures(geo)){
     const d=svgPathForGeometry(feature.geometry,bounds,mapBox);
-    if(d)paths.push('<path d="'+d+'" fill="#e7edf2" stroke="#93a4b5" stroke-width="3" fill-rule="evenodd"/>');
+    if(d)paths.push('<path d="'+d+'" fill="#19313b" stroke="#8ca3ad" stroke-width="3" fill-rule="evenodd"/>');
   }
   const graticule=[];
   for(let i=1;i<4;i++){
@@ -408,21 +408,31 @@ async function buildIncidentMap(country, events) {
     graticule.push('<line x1="'+mapBox[0]+'" y1="'+gy+'" x2="'+(mapBox[0]+mapBox[2])+'" y2="'+gy+'" stroke="#cbd5e1" stroke-width="2" opacity=".45"/>');
     graticule.push('<line x1="'+gx+'" y1="'+mapBox[1]+'" x2="'+gx+'" y2="'+(mapBox[1]+mapBox[3])+'" stroke="#cbd5e1" stroke-width="2" opacity=".45"/>');
   }
-  const markers=plotPoints.map(p=>{
-    const [x,y]=proj(p),c=severityColor(p.severity),r=8+severityScore(p.severity)*2;
-    return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r+'" fill="'+c+'" stroke="#fff" stroke-width="4"/>'+
-      '<text x="'+(x+13).toFixed(1)+'" y="'+(y-9).toFixed(1)+'" fill="#0f172a" font-family="Arial" font-size="22" font-weight="700">'+p.n+'</text>';
-  }).join('');
   const escXml=v=>text(v,220).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const markers=plotPoints.map(p=>{
+    const [x,y]=proj(p),c=severityColor(p.severity),r=9+severityScore(p.severity)*2;
+    const labelX=x+16,labelY=y-9;
+    return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(r+9).toFixed(1)+'" fill="'+c+'" opacity=".11"/>'+
+      '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+c+'" stroke="#f8fafc" stroke-width="4"/>'+
+      '<text x="'+labelX.toFixed(1)+'" y="'+labelY.toFixed(1)+'" fill="#f8fafc" font-family="Arial" font-size="20" font-weight="700">#'+p.n+'</text>'+
+      '<text x="'+labelX.toFixed(1)+'" y="'+(labelY+20).toFixed(1)+'" fill="#b7c7cd" font-family="Arial" font-size="14">'+escXml(String(p.severity||"moderate").toUpperCase())+'</text>';
+  }).join('');
   const label=geo ? (COUNTRY_NAMES[country]||country)+' - INCIDENT GEOGRAPHY' : 'COORDINATE PLOT - GEOGRAPHIC COVERAGE';
   const svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+
-    '<rect width="100%" height="100%" fill="#f8fafc"/>'+
-    '<rect x="55" y="30" width="'+(W-110)+'" height="'+(H-60)+'" rx="18" fill="#ffffff" stroke="#e2e8f0"/>'+
-    '<text x="'+pad+'" y="64" font-family="Arial" font-size="48" font-weight="700" fill="#0f172a">'+escXml(label)+'</text>'+
-    '<text x="'+pad+'" y="104" font-family="Arial" font-size="23" fill="#64748b">'+
+    '<rect width="100%" height="100%" fill="#08131a"/>'+
+    '<rect x="55" y="30" width="'+(W-110)+'" height="'+(H-60)+'" rx="18" fill="#0d2028" stroke="#29414b"/>'+
+    '<text x="'+pad+'" y="64" font-family="Arial" font-size="48" font-weight="700" fill="#f4f7f8">'+escXml(label)+'</text>'+
+    '<text x="'+pad+'" y="104" font-family="Arial" font-size="23" fill="#9eb0b8">'+
       escXml(geo?'Recorded event coordinates; marker numbers correspond to the spatial register.':'Usable event coordinates plotted without inventing a geographic boundary.')+'</text>'+
     graticule.join('')+paths.join('')+markers+
     '<text x="'+pad+'" y="'+(H-78)+'" font-family="Arial" font-size="19" fill="#64748b">Extent: '+minLon.toFixed(2)+' to '+maxLon.toFixed(2)+' longitude | '+minLat.toFixed(2)+' to '+maxLat.toFixed(2)+' latitude</text>'+
+    '<rect x="'+pad+'" y="'+(H-166)+'" width="510" height="78" rx="12" fill="#f5f7f8"/>'+
+    '<text x="'+(pad+18)+'" y="'+(H-142)+'" fill="#20313a" font-family="Arial" font-size="16" font-weight="700">LEGEND · SIZE = SEVERITY · NUMBER = REGISTERED EVENT</text>'+
+    '<circle cx="'+(pad+24)+'" cy="'+(H-113)+'" r="7" fill="#b91c1c"/>'+
+    '<text x="'+(pad+41)+'" y="'+(H-108)+'" fill="#5d7078" font-family="Arial" font-size="15">CRITICAL / HIGH PRIORITY</text>'+
+    '<circle cx="'+(pad+274)+'" cy="'+(H-113)+'" r="7" fill="#d97706"/>'+
+    '<text x="'+(pad+291)+'" y="'+(H-108)+'" fill="#5d7078" font-family="Arial" font-size="15">MODERATE</text>'+
+    '<text x="'+(pad+18)+'" y="'+(H-95)+'" fill="#6f858e" font-family="Arial" font-size="14">'+escXml('Position represents the recorded coordinate only; it does not establish an affected-area boundary.')+'</text>'+
     '<text x="'+pad+'" y="'+(H-46)+'" font-family="Arial" font-size="18" fill="#64748b">'+
       escXml(geo?'Boundary source: country GeoJSON | Event source: Sonalit evidence ledger':'Boundary source unavailable; this is a coordinate plot, not a country map.')+'</text>'+
     '</svg>';

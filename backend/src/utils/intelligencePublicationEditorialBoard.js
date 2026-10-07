@@ -30,7 +30,7 @@ const AGENT_ROLES = [
   { id:'publication-qa', lane:'qa', purpose:'Perform final publication safety, completeness, evidence and rendering checks.' },
 ];
 
-function hasAi(){ return aiClient.hasAnthropic() || aiClient.hasGroqFallback(); }
+function hasAi(){ return aiClient.hasAnyProvider(); }
 function extract(response){ return Array.isArray(response?.content) ? response.content.filter(x=>x?.type==='text').map(x=>x.text).join('\n') : ''; }
 function parse(text){ try { return JSON.parse(text); } catch (_) {} const m=String(text||'').match(/[\[{][\s\S]*[\]}]/); if(!m)return null; try{return JSON.parse(m[0]);}catch(_){return null;} }
 function clean(v,n=5000){ return String(v||'').replace(/\s+/g,' ').trim().slice(0,n); }
@@ -40,7 +40,7 @@ async function callAgent(role, payload){
   try {
     const response = await aiClient.createMessage({
       max_tokens: role.lane==='editorial' || role.lane==='review' ? 3000 : 2400,
-      system: `You are the Sonalit Intelligence Centre's ${role.id} agent. ${role.purpose}\n\nRules: work ONLY from supplied evidence; never invent facts, sources, casualties, dates, motives, locations or outcomes. Separate reported fact from assessment. Preserve uncertainty. Return ONLY valid JSON.`,
+      system: `You are the Sonalit Intelligence Centre's ${role.id} agent. ${role.purpose}\n\nRules: work ONLY from supplied evidence; never invent facts, sources, casualties, dates, motives, locations or outcomes. Separate observed/reporting from assessment. Preserve uncertainty. Do not merely restate source material. Every analytical judgement must add causal explanation, alternative hypothesis or decision consequence when the evidence supports it. State what would change the judgement. Avoid stock language and repeated sentence structures. Use precise professional intelligence prose. Return ONLY valid JSON.`,
       messages:[{role:'user',content:JSON.stringify(payload)}]
     });
     const parsed=parse(extract(response));
@@ -90,16 +90,25 @@ async function runPublicationEditorialBoard({country, period, events, baseBody, 
   for(const result of [visual,graphics]){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
 
   const editorialPayload={evidence,research_summary:research.summary,incident_dossiers:enrichedEvents.map(e=>({incident_id:String(e.id),research:e.research})),writer_outputs:writerOutputs,reviews:reviewResults.filter(x=>x?.output).map(x=>({agent:x.role,output:x.output})),base_report:baseBody,visual_plan:visual.output||null,graphics_plan:graphics.output||null};
-  const copy=await callAgent(AGENT_ROLES.find(r=>r.id==='copy-editor'),{assignment:'Create a clean editorial draft preserving every supported fact and clearly separating assessment from reporting.',...editorialPayload});
-  const senior=await callAgent(AGENT_ROLES.find(r=>r.id==='senior-editor'),{assignment:'Resolve reviewer findings and return the complete authoritative report JSON. Required keys: title,subtitle,executive_assessment,sections,outlook.',...editorialPayload,copy_edit:copy.output||null});
+  const copy=await callAgent(AGENT_ROLES.find(r=>r.id==='copy-editor'),{assignment:'Create a publication-grade editorial draft. Preserve every supported fact, but transform source material into specific, decision-relevant analysis. Every major judgement must identify its evidentiary basis, confidence, uncertainty, causal logic and, where feasible, an observable indicator that would change the assessment. Remove generic summaries, filler, repetition and unsupported certainty.',...editorialPayload});
+  const senior=await callAgent(AGENT_ROLES.find(r=>r.id==='senior-editor'),{assignment:'Act as the senior all-source intelligence editor. Resolve reviewer findings and return the complete authoritative report JSON. Required keys: title,subtitle,executive_assessment,sections,outlook,incident_dossiers. Each incident_dossiers item must preserve event_id and include headline,what_happened,context,assessment,key_facts,why_it_matters,caveats,research_sources. Do not omit or rename the incident dossiers because the professional PDF renders them directly. Do not produce a news digest. Distinguish fact from assessment; explain why developments matter; identify competing explanations or material counter-evidence where relevant; provide explicit uncertainty; give a concrete forward outlook with indicators and time horizons; eliminate boilerplate and repetitive language; preserve source provenance.',...editorialPayload,copy_edit:copy.output||null});
   for(const result of [copy,senior]){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
 
-  const qa=await callAgent(AGENT_ROLES.find(r=>r.id==='publication-qa'),{assignment:'Return {publishable:boolean,blocking_issues:[],warnings:[],checks:{evidence,attribution,contradictions,confidence,completeness}}. Publishable requires no blocking factual/evidence problems.',evidence,final_report:senior.output||copy.output||null,reviews:reviewResults.filter(x=>x?.output).map(x=>x.output)});
+  const qa=await callAgent(AGENT_ROLES.find(r=>r.id==='publication-qa'),{assignment:'Return {publishable:boolean,blocking_issues:[],warnings:[],checks:{evidence,attribution,contradictions,confidence,completeness,specificity,analytical_depth,forecast_quality,source_diversity}}. Block publication for generic or restated prose, unsupported analytical leaps, weak source diversity, false precision, missing uncertainty, missing decision relevance, or incomplete incident research—not only for factual errors.',evidence,final_report:senior.output||copy.output||null,reviews:reviewResults.filter(x=>x?.output).map(x=>x.output)});
   const qaAgent=board.agents.find(x=>x.id==='publication-qa');if(qaAgent)Object.assign(qaAgent,qa);
 
   board.completed_at=new Date().toISOString();
   const final=senior.output||copy.output||null;
-  const publishable=Boolean(evidenceContract&&final&&qa.output?.publishable===true&&!(qa.output?.blocking_issues||[]).length);
+  const finalDossiers=Array.isArray(final?.incident_dossiers)?final.incident_dossiers:[];
+  const expectedEventIds=new Set(events.map(e=>String(e.id)));
+  const returnedEventIds=new Set(finalDossiers.map(d=>String(d?.event_id||'')).filter(Boolean));
+  const finalDossiersComplete=events.length===0 || (
+    finalDossiers.length===events.length &&
+    returnedEventIds.size===expectedEventIds.size &&
+    [...expectedEventIds].every(id=>returnedEventIds.has(id))
+  );
+  const allResearchComplete=events.length===0 || events.every(e=>String(e?.research?.agent?.status||'').toLowerCase()==='researched');
+  const publishable=Boolean(evidenceContract&&final&&finalDossiersComplete&&allResearchComplete&&qa.output?.publishable===true&&!(qa.output?.blocking_issues||[]).length);
   board.publishable=publishable;
   return {board,final,visual:visual.output||null,graphics:graphics.output||null,qa:qa.output||null,publishable,research};
 }

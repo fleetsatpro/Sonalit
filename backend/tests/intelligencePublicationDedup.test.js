@@ -34,12 +34,13 @@ describe('publication generation deduplication hardening',()=>{
 });
 
 
-test('AI editorial board is optional resilience enrichment, not a publication blocker by default',()=>{
+test('AI editorial board is mandatory publication authority by default',()=>{
   const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
-  expect(source).toContain("const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'').toLowerCase()==='true';");
-  expect(source).toContain("const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'').toLowerCase()==='true';");
+  expect(source).toContain("const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'true').toLowerCase()!=='false';");
+  expect(source).toContain("const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true').toLowerCase()!=='false';");
   expect(source).toContain('const aiBoardGate=aiBoardRequired ? boardPublishable : true;');
-  expect(source).toContain('deterministic evidence product remains eligible');
+  expect(source).toContain('researchReleaseGate');
+  expect(source).not.toContain('deterministic evidence product remains eligible');
 });
 
 
@@ -68,7 +69,7 @@ test('publication evidence policy accepts only defensible direct non-aggregator 
   expect(source).toContain('filter(sourceIsSubstantive)');
   const builder=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationBuilder.js'),'utf8');
   expect(builder).toContain("Publication basis satisfies the configured evidence-source threshold.");
-  expect(source).toContain("const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate)?'published':'draft';");
+  expect(source).toContain("const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate&&researchReleaseGate)?'published':'draft';");
 });
 
 
