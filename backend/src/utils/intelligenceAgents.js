@@ -9,7 +9,7 @@ const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 const { buildEvidencePublication } = require('./intelligencePublicationBuilder');
 const { researchPublicationIncidents } = require('./intelligenceIncidentResearch');
-const { auditPublicationContent, isAggregatorDomain, normalizeDomain, sourceIsSubstantive, isRepetitiveTemplateText } = require('./publicationQuality');
+const { auditPublicationContent, assessPublicationQuality, isAggregatorDomain, normalizeDomain, sourceIsSubstantive, isRepetitiveTemplateText } = require('./publicationQuality');
 const { PDF_RENDERER_VERSION } = require('../services/intelligencePublicationPdfProfessional');
 
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
