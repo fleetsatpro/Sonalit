@@ -41,6 +41,7 @@ describe('intelligence provider mesh', () => {
       expect.objectContaining({ label: 'nemotron3.5-lightning-30b-nvidia', configured: true }),
       expect.objectContaining({ label: 'gpt-oss-120b-cerebras', configured: true }),
       expect.objectContaining({ label: 'deepseek-v4-flash-openrouter', configured: true }),
+      expect.objectContaining({ label: 'minimax-m2.7-openrouter-free', configured: true, free: true }),\n      expect.objectContaining({ label: 'ling3.1-flash-openrouter-free', configured: true, free: true }),\n      expect.objectContaining({ label: 'gemma4-31b-openrouter-free', configured: true, free: true }),\n      expect.objectContaining({ label: 'nemotron3-super-openrouter-free', configured: true, free: true }),\n      expect.objectContaining({ label: 'nemotron3.5-lightning-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'minimax-m3-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'inkling-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'laguna-s21-openrouter-free', configured: true, free: true }),
