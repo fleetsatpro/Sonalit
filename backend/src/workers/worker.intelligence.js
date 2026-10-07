@@ -270,20 +270,9 @@ process.on('SIGINT', () => shutdown('SIGINT'));
     onAcquire: async () => {
       stopping = false;
       logger.info('Intelligence worker leader active');
-      activeCyclePromise = (async () => {
-        await evaluateSpatialEye('startup');
-        await cycle('startup');
-      })();
-      try {
-        await activeCyclePromise;
-      } finally {
-        activeCyclePromise = null;
-      }
-
-      // Backfill the most recently completed daily reporting period once after a
-      // worker deployment/restart. This repairs publications missed during an
-      // earlier outage without changing the strict local-midnight schedule for
-      // subsequent editions. Existing published editions short-circuit as unchanged.
+      // Recover the most recently completed daily publication period before the
+      // potentially expensive startup collection. This prevents a slow/unavailable
+      // collector from delaying repair of user-visible publication state.
       try {
         const catchup = await runIntelligenceAgents({
           includePublications: true,
@@ -309,6 +298,16 @@ process.on('SIGINT', () => shutdown('SIGINT'));
         logger.info(`Intelligence publication startup catch-up: processed=${results.length}, published=${published}, drafts=${drafts}, failures=${failures}, pdf_ready=${pdfReady}, pdf_failures=${pdfFailed}`);
       } catch (error) {
         logger.warn(`Intelligence publication startup catch-up failed: ${error.message}`);
+      }
+
+      activeCyclePromise = (async () => {
+        await evaluateSpatialEye('startup');
+        await cycle('startup');
+      })();
+      try {
+        await activeCyclePromise;
+      } finally {
+        activeCyclePromise = null;
       }
 
       scheduleSpatial();
