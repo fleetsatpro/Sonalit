@@ -250,6 +250,7 @@ function fallbackResearch(event,packet){
   );
   return {
     status:'fallback',
+    publication_eligible:false,
     narrative,
     context:hasWebEvidence?uniqueStrings((packet?.fetched_pages||[]).map(p=>p.description||'').filter(Boolean),1).join(' '):'',
     confirmed_facts:uniqueStrings(Array.isArray(event&&event.key_facts)?event.key_facts:[],5),
@@ -318,7 +319,7 @@ async function researchBatch(events,{country,region}={}){
       const substantive=Boolean(source&&narrative.length>=260&&normalizedSources.length>=1);
       const corroborated=sourceDomains.size>=2;
       if(!substantive||repeated){
-        return{packet,agent:fallbackResearch(events[i],packet),error:'research result failed substantive/source validation',webSearchRequests};
+        return{packet,agent:fallbackResearch(events[i],packet),error:'research result failed substantive/source validation; publication must remain on hold',webSearchRequests};
       }
       const status=corroborated?'researched':'researched_limited';
       return{packet,agent:{...source,status,provider:response&&response._provider||'unknown',sources:normalizedSources,research_quality:corroborated?'CORROBORATED':'LIMITED_SOURCE_BASE'},webSearchRequests};
