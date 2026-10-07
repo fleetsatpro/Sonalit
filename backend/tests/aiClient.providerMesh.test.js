@@ -235,6 +235,40 @@ describe('intelligence provider mesh', () => {
     )).toBe('openai/gpt-oss-120b:free');
   });
 
+
+  test('does not immediately fail when all providers are in a short retryable cooldown', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+    process.env.INTEL_PROVIDER_WAIT_MAX_MS = '5000';
+
+    jest.useFakeTimers();
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor() {
+        this.chat = {
+          completions: {
+            create: jest.fn(async () => ({
+              choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
+            })),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const response = await ai.createMessage({
+      dataClassification: 'public',
+      allowFreeProviders: true,
+      preferFreeProviders: true,
+      providerHints: ['gpt-oss-20b-openrouter-free'],
+      system: 'Return JSON.',
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    });
+
+    expect(response._free_provider).toBe(true);
+    jest.useRealTimers();
+  });
+
   test('prefers free publication lanes when explicitly requested', async () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
