@@ -53,6 +53,16 @@ test('publication runtime imports the tradecraft quality gate it invokes',()=>{
   expect(s).toContain('const tradecraftQuality=assessPublicationQuality(finalBody);');
 });
 
+test('publication AI execution short-circuits when every configured provider is cooling down',()=>{
+  const s=source();
+  const ai=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
+  const board=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(ai).toContain('function hasAvailableProvider()');
+  expect(ai).toContain('hasAvailableProvider,');
+  expect(s).toContain('aiClient.hasAvailableProvider()');
+  expect(board).toContain('function hasAi(){ return aiClient.hasAvailableProvider(); }');
+});
+
 test('senior editor must return the incident dossiers rendered by the PDF',()=>{
   const boardSource=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
   expect(boardSource).toContain('Required keys: title,subtitle,executive_assessment,sections,outlook,incident_dossiers');
