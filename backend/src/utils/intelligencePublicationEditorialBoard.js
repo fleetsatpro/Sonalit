@@ -154,7 +154,9 @@ async function runPublicationEditorialBoard({country, period, events, baseBody, 
     [...expectedEventIds].every(id=>returnedEventIds.has(id))
   );
   const allResearchComplete=events.length===0 || events.every(e=>String(e?.research?.agent?.status||'').toLowerCase()==='researched');
-  const deterministicGate=deterministicQualityGate(final,events);\n  board.quality_gate=deterministicGate;\n  const publishable=Boolean(evidenceContract&&final&&finalDossiersComplete&&allResearchComplete&&qaConsensus.all_complete&&qaConsensus.unanimous_publishable&&deterministicGate.publishable&&!qaConsensus.blocking_issues.length);
+  const deterministicGate=deterministicQualityGate(final,events);
+  board.quality_gate=deterministicGate;
+  const publishable=Boolean(evidenceContract&&final&&finalDossiersComplete&&allResearchComplete&&qaConsensus.all_complete&&qaConsensus.unanimous_publishable&&deterministicGate.publishable&&!qaConsensus.blocking_issues.length);
   board.publishable=publishable;
   return {board,final,visual:visual.output||null,graphics:graphics.output||null,qa:qa.output||null,qaConsensus,deterministicGate,publishable,research};
 }
