@@ -28,7 +28,7 @@ describe('publication incident research coverage',()=>{
 });
 
 
-test('provider research citations must come from non-text verified web-search result blocks',()=>{
+test('provider research citations must come from verified web-search evidence',()=>{
   const sources=verifiedResponseSources({
     content:[
       {
