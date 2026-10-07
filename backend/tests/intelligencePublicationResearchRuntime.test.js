@@ -89,3 +89,11 @@ test('senior-editor output cannot replace verified research provenance fields',(
   expect(s).toContain('research_method:verifiedResearch.research_method||d?.research_method||null');
   expect(s).toContain('research_sources:Array.isArray(verifiedResearch.sources)?verifiedResearch.sources.map(src=>({...src}))');
 });
+
+
+test('limited prior research forces another research attempt after cooldown',()=>{
+  const s=source();
+  expect(s).toContain('const priorDossierResearchReady=expectedResearchCount===0 || publicationEvents.every');
+  expect(s).toContain('(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)');
+  expect(s).toContain('const priorResearchReleaseReady=!publicationResearchRequired || priorDossierResearchReady;');
+});
