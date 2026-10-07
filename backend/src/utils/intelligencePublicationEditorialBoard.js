@@ -30,7 +30,7 @@ const AGENT_ROLES = [
   { id:'publication-qa', lane:'qa', purpose:'Perform final publication safety, completeness, evidence and rendering checks.' },
 ];
 
-function hasAi(){ return aiClient.hasAnyProvider(); }
+function hasAi(){ return aiClient.hasAvailableProvider(); }
 function extract(response){ return Array.isArray(response?.content) ? response.content.filter(x=>x?.type==='text').map(x=>x.text).join('\n') : ''; }
 function parse(text){ try { return JSON.parse(text); } catch (_) {} const m=String(text||'').match(/[\[{][\s\S]*[\]}]/); if(!m)return null; try{return JSON.parse(m[0]);}catch(_){return null;} }
 function clean(v,n=5000){ return String(v||'').replace(/\s+/g,' ').trim().slice(0,n); }
