@@ -325,6 +325,7 @@ const concurrency = {
   openrouter: { active:0, queue:[] },
 };
 const OPENROUTER_MAX_CONCURRENCY = Math.max(1, Math.min(4, Number(process.env.INTEL_OPENROUTER_CONCURRENCY || 2)));
+const PROVIDER_WAIT_MAX_MS = Math.max(0, Math.min(10000, Number(process.env.INTEL_PROVIDER_WAIT_MAX_MS || 5000)));
 const MODEL_UNAVAILABLE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const RETRYABLE_COOLDOWN_BASE_MS = 15 * 1000;
 const RETRYABLE_COOLDOWN_MAX_MS = 90 * 1000;
@@ -588,6 +589,20 @@ function providerCooling(label){
     modelBlocked>0 && Date.now()<modelBlocked
   );
 }
+function providerResumeAt(provider){
+  const providerUntil=Number(states[provider.name]?.downUntil||0);
+  const modelUntil=Number(modelDisabledUntil[provider.name]||0);
+  return Math.max(providerUntil,modelUntil);
+}
+async function recoverCoolingProviders(providers){
+  const now=Date.now();
+  const deadlines=providers.map(provider=>providerResumeAt(provider)).filter(ts=>ts>now);
+  if(!deadlines.length)return providers.filter(provider=>!providerCooling(provider.name));
+  const delay=Math.min(...deadlines)-now;
+  if(PROVIDER_WAIT_MAX_MS<=0 || delay>PROVIDER_WAIT_MAX_MS)return [];
+  await new Promise(resolve=>setTimeout(resolve,Math.max(25,delay+25)));
+  return providers.filter(provider=>!providerCooling(provider.name));
+}
 async function withConcurrency(key,fn){
   const state=concurrency[key];
   if(!state) return fn();
@@ -772,7 +787,10 @@ async function createMessage(params={}) {
   const providers=buildProviders(params);
   if(!providers.length)throw new Error('AI client: no configured provider for current data-classification/free-provider policy');
 
-  const eligibleProviders=providers.filter(provider=>!providerCooling(provider.name));
+  let eligibleProviders=providers.filter(provider=>!providerCooling(provider.name));
+  if(!eligibleProviders.length){
+    eligibleProviders=await recoverCoolingProviders(providers);
+  }
   if(!eligibleProviders.length)throw new Error('AI client: all configured providers are cooling down or temporarily unavailable');
   let lastErr;
   for(const provider of eligibleProviders){
