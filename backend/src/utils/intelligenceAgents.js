@@ -100,7 +100,7 @@ async function translateQueue(orgId){
 async function synthesizeEvents(orgId){
   const {rows}=await query(`SELECT e.id,e.title,e.summary,e.country_code,e.severity,e.confidence,e.last_seen_at,COALESCE(json_agg(json_build_object('id',o.id,'title',COALESCE(o.title_en,o.title),'body',COALESCE(o.body_en,o.body),'language',o.language,'credibility',o.credibility,'source',s.name,'source_reliability',s.reliability,'observed_at',o.observed_at)) FILTER (WHERE o.id IS NOT NULL),'[]') AS evidence FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id LEFT JOIN intel_sources s ON s.id=o.source_id WHERE e.org_id=$1 AND (e.synthesized_at IS NULL OR e.last_seen_at>e.synthesized_at) GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $2`,[orgId,MAX_SYNTHESIS]);
   if(!rows.length)return{queued:0,synthesized:0};
-  if(!aiClient.hasAnyProvider())return applyEvidenceSynthesisFallback(rows,orgId,'no_ai_provider_available');
+  if(!aiClient.hasAvailableProvider())return applyEvidenceSynthesisFallback(rows,orgId,'no_ai_provider_currently_available');
   const payload=rows.map(e=>({id:String(e.id),title:clean(e.title,900),summary:clean(e.summary,1800),country:e.country_code,severity:e.severity,confidence:e.confidence,evidence:e.evidence.slice(0,8)}));
   let result;let provider='unknown';
   try{
@@ -356,7 +356,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     }catch(error){aiBoardStatus='unavailable';aiBoardHoldReason=error.message;logger.warn(`Publication editorial board unavailable ${country}/${type}; publication remains on release hold: ${error.message}`);}
   }
 
-  if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=aiClient.hasAnyProvider()?'not_run':'provider_unavailable';
+  if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=aiClient.hasAvailableProvider()?'not_run':'provider_unavailable';
   const boardPublishable=board?.publishable===true;
   const finalQuality=auditPublicationContent(
     Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:
