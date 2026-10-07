@@ -275,7 +275,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
 
   let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0,web_search_requests:0}};
   let researchAttempted=false;
-  if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch){
+  if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch&&publicationAiReady){
     researchAttempted=true;
     try{
       incidentResearch=await researchPublicationIncidents(publicationEvents,{country});
@@ -284,6 +284,12 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       incidentResearch={byEvent:{},summary:{requested:expectedResearchCount,researched:0,fallback:expectedResearchCount,failed:0,web_search_requests:0}};
       logger.warn('Intelligence publication research failed '+country+'/'+type+': '+error.message);
     }
+  }else if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch&&!publicationAiReady){
+    logger.warn('Intelligence publication research '+country+'/'+type+': provider fabric unavailable; research and AI board deferred without fan-out.');
+    incidentResearch={
+      byEvent:priorResearchByEvent,
+      summary:{requested:expectedResearchCount,researched:Number(priorResearch.incidents_web_researched||0),fallback:Number(priorResearch.incidents_fallback||0),failed:0,web_search_requests:0,provider_unavailable:true}
+    };
   }else if(deepResearchEnabled&&expectedResearchCount>0&&researchAttemptRecent&&!evidenceChanged){
     incidentResearch={
       byEvent:priorResearchByEvent,
@@ -322,7 +328,9 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'true').toLowerCase()!=='false';
   const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true').toLowerCase()!=='false';
 
-  if(aiBoardEnabled && aiClient.hasAnyProvider() && events.length){
+  const publicationAiPolicy={dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase(),allowFreeProviders:true,preferFreeProviders:true};
+  const publicationAiReady=aiClient.hasReadyProvider(publicationAiPolicy);
+  if(aiBoardEnabled && publicationAiReady && events.length){
     try{
       const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events:reportEvents,baseBody:deterministic,evidenceContract:publicationEvidenceContract,precomputedResearch:incidentResearch});
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
