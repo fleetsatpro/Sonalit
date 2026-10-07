@@ -314,6 +314,140 @@ function repetitionRatio(value) {
   return duplicates / Math.max(keys.length, 1);
 }
 
+
+function textLength(value) {
+  return normalizeWhitespace(stripMarkup(value)).length;
+}
+
+function distinctDomains(items) {
+  return new Set(
+    (Array.isArray(items) ? items : [])
+      .map(x => normalizeDomain(x?.domain || x?.url || ''))
+      .filter(Boolean)
+  ).size;
+}
+
+function analyticalOverlap(a, b) {
+  return tokenJaccard(a || '', b || '');
+}
+
+function assessPublicationQuality(body) {
+  const report = body && typeof body === 'object' ? body : {};
+  const blockers = [];
+  const warnings = [];
+  let score = 100;
+
+  const executive = cleanPublicationText(report.executive_assessment || '', 2200);
+  if (textLength(executive) < 280) {
+    blockers.push('Executive assessment is too thin to establish a substantive senior judgement.');
+    score -= 18;
+  }
+
+  const dossiers = Array.isArray(report.incident_dossiers) ? report.incident_dossiers : [];
+  const deep = report.deep_research && typeof report.deep_research === 'object' ? report.deep_research : {};
+  const requested = Number(deep.incidents_requested || dossiers.length || 0);
+  const researched = Number(deep.incidents_researched || 0);
+  const limited = Number(deep.incidents_researched_limited || 0);
+  const fallbacks = Number(deep.incidents_fallback || 0);
+  const researchComplete = requested === 0 || (researched >= requested && limited === 0 && fallbacks === 0);
+
+  if (requested > 0 && !researchComplete) {
+    blockers.push(`Deep research incomplete: ${researched}/${requested} priority incidents fully researched; ${limited} limited and ${fallbacks} fallback.`);
+    score -= 30;
+  }
+
+  const dossierScores = [];
+  for (const dossier of dossiers.slice(0, 8)) {
+    let ds = 100;
+    const narrative = cleanPublicationText(dossier.what_happened || dossier.brief || '', 3200);
+    const context = cleanPublicationText(dossier.context || '', 1800);
+    const assessment = cleanPublicationText(dossier.assessment || '', 1800);
+    const facts = Array.isArray(dossier.key_facts) ? dossier.key_facts.filter(Boolean) : [];
+    const why = Array.isArray(dossier.why_it_matters) ? dossier.why_it_matters.filter(Boolean) : [];
+    const uncertainty = Array.isArray(dossier.caveats) ? dossier.caveats.filter(Boolean) : [];
+    const sources = Array.isArray(dossier.research_sources) ? dossier.research_sources : [];
+
+    if (textLength(narrative) < 320) { ds -= 20; blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} lacks a substantive narrative.`); }
+    if (textLength(context) < 100) { ds -= 10; warnings.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} has limited contextual explanation.`); }
+    if (textLength(assessment) < 100) { ds -= 20; blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} lacks a substantive analytical judgement.`); }
+    if (facts.length < 2) { ds -= 8; warnings.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} has fewer than two explicit evidence-backed facts.`); }
+    if (why.length < 1) { ds -= 10; blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} does not explain decision relevance.`); }
+    if (uncertainty.length < 1) { ds -= 5; warnings.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} has no explicit uncertainty statement.`); }
+    if (String(dossier.research_status || '').toLowerCase() !== 'researched') {
+      ds -= 35;
+      blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} is not fully researched.`);
+    }
+    if (distinctDomains(sources) < 2) {
+      ds -= 18;
+      blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} lacks two independent research domains.`);
+    }
+    const overlap = analyticalOverlap(narrative, assessment);
+    if (overlap > 0.72) {
+      ds -= 15;
+      blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} assessment substantially restates the incident narrative.`);
+    }
+    dossierScores.push(Math.max(0, ds));
+  }
+
+  if (dossierScores.length) {
+    score -= Math.max(0, 100 - Math.round(dossierScores.reduce((a,b)=>a+b,0) / dossierScores.length)) * 0.38;
+  }
+
+  const outlook = Array.isArray(report.outlook) ? uniqueStrings(report.outlook, 6) : [];
+  if (dossiers.length && outlook.length < 2) {
+    blockers.push('Outlook must contain at least two distinct, evidence-grounded forward judgements.');
+    score -= 12;
+  }
+
+  const gaps = Array.isArray(report.intelligence_gaps) ? report.intelligence_gaps : [];
+  if (dossiers.length && gaps.length < 1) {
+    warnings.push('Publication does not state material intelligence gaps.');
+    score -= 4;
+  }
+
+  const trends = Array.isArray(report.emerging_trends) ? report.emerging_trends : [];
+  const falseTrend = trends.some(x => x && x.basis !== 'PERIOD_COMPARISON' && /trend|increase|decrease|rise|fall|growth/i.test(String(x.assessment || '')));
+  if (falseTrend) {
+    blockers.push('A current-period concentration is being expressed as a time-series trend without a baseline.');
+    score -= 14;
+  }
+
+  const genericSentenceAudit = auditPublicationContent(
+    dossiers.map(d => ({
+      event_id:d.event_id || d.id,
+      what_happened:d.what_happened || d.brief,
+      context:d.context,
+      assessment:d.assessment
+    }))
+  );
+  if (genericSentenceAudit.boilerplate_hits || genericSentenceAudit.duplicate_sentence_count || genericSentenceAudit.near_duplicate_sentence_count || genericSentenceAudit.repeated_template_count) {
+    blockers.push('Cross-dossier boilerplate or repeated analytical language detected.');
+    score -= 20;
+  }
+
+  const finalScore = Math.max(0, Math.min(100, Math.round(score)));
+  return {
+    passed: blockers.length === 0 && finalScore >= 82,
+    score: finalScore,
+    threshold: 82,
+    research_complete: researchComplete,
+    dossier_count: dossiers.length,
+    blocking_issues: blockers.slice(0, 30),
+    warnings: warnings.slice(0, 30),
+    dimensions: {
+      executive_depth: textLength(executive),
+      researched,
+      requested_research: requested,
+      limited_research: limited,
+      fallbacks,
+      dossier_average_score: dossierScores.length ? Math.round(dossierScores.reduce((a,b)=>a+b,0)/dossierScores.length) : null,
+      outlook_items: outlook.length,
+      intelligence_gap_items: gaps.length,
+      generic_audit: genericSentenceAudit
+    }
+  };
+}
+
 module.exports = {
   GENERIC_PATTERNS,
   REPETITIVE_TEMPLATE_PATTERNS,
@@ -329,6 +463,7 @@ module.exports = {
   sourceIsSubstantive,
   repetitionRatio,
   auditPublicationContent,
+  assessPublicationQuality,
   tokenJaccard,
   isRepetitiveTemplateText
 };
