@@ -18,10 +18,65 @@ const DEEP_RESEARCH_VERSION='2.0';
 const PUBLICATION_EVIDENCE_VERSION='1.1';
 const MAX_TRANSLATE=24;
 const MAX_SYNTHESIS=10;
+const PUBLICATION_TIMEZONE=process.env.INTEL_PUBLICATION_TIMEZONE||'Africa/Nairobi';
+const SECURITY_EVENT_TYPES=new Set(['SECURITY','CRIME','BORDER','MARITIME']);
+const SECURITY_SIGNAL_RE=/\b(armed attack|attack|ambush|kidnap(?:ping)?|abduct(?:ion)?|bomb(?:ing)?|explosion|terror(?:ism|ist)?|militia|insurgent|insurgency|armed group|gunfire|shooting|raid|clash|violent protest|unrest|riot|roadblock|checkpoint|security operation|security incident|piracy|hijack(?:ing)?|hostage|IED|detained|curfew|coup|mutiny|bandit(?:ry)?|robbery|murder|carjacking|assassination)\b/i;
+const SECURITY_POLITICAL_RE=/\b(protest|demonstration|unrest|riot|clash|curfew|coup|election violence|political violence|security forces)\b/i;
 function clean(v,n=5000){return String(v||'').replace(/\s+/g,' ').trim().slice(0,n);}
 function extract(response){return Array.isArray(response?.content)?response.content.filter(x=>x?.type==='text').map(x=>x.text).join('\n'):'';}
 function parse(text){try{return JSON.parse(text)}catch{}const m=String(text||'').match(/[\[{][\s\S]*[\]}]/);if(!m)return null;try{return JSON.parse(m[0])}catch{return null}}
-function dayBounds(date=new Date()){const d=new Date(date);d.setUTCHours(0,0,0,0);return{start:d,end:new Date(d.getTime()+86400000)}}
+function zonedParts(date=new Date(),timeZone=PUBLICATION_TIMEZONE){
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date(date));
+  const get=type=>Number(parts.find(p=>p.type===type)?.value||0);
+  return {year:get('year'),month:get('month'),day:get('day'),hour:get('hour'),minute:get('minute'),second:get('second')};
+}
+function zonedDateFromParts(parts,timeZone=PUBLICATION_TIMEZONE){
+  let guess=Date.UTC(parts.year,parts.month-1,parts.day,parts.hour||0,parts.minute||0,parts.second||0);
+  const target=Date.UTC(parts.year,parts.month-1,parts.day,parts.hour||0,parts.minute||0,parts.second||0);
+  for(let i=0;i<5;i++){
+    const p=zonedParts(new Date(guess),timeZone);
+    const wall=Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute,p.second);
+    guess+=target-wall;
+    if(Math.abs(target-wall)<1000)break;
+  }
+  return new Date(guess);
+}
+function shiftedCalendarParts(parts,days){
+  const d=new Date(Date.UTC(parts.year,parts.month-1,parts.day+days,0,0,0));
+  return {year:d.getUTCFullYear(),month:d.getUTCMonth()+1,day:d.getUTCDate()};
+}
+function localWeekday(parts){return new Date(Date.UTC(parts.year,parts.month-1,parts.day)).getUTCDay();}
+function publicationWindow(now=new Date(),type='daily',timeZone=PUBLICATION_TIMEZONE){
+  const local=zonedParts(now,timeZone);
+  const endParts={year:local.year,month:local.month,day:local.day,hour:0,minute:0,second:0};
+  let startParts;
+  if(type==='daily'){
+    const previous=shiftedCalendarParts(local,-1);
+    startParts={...previous,hour:0,minute:0,second:0};
+  }else if(type==='weekly'){
+    const mondayOffset=(localWeekday(local)+6)%7;
+    const start=shiftedCalendarParts(local,-(mondayOffset+7));
+    startParts={...start,hour:0,minute:0,second:0};
+  }else{
+    const previousMonth=new Date(Date.UTC(local.year,local.month-2,1));
+    startParts={year:previousMonth.getUTCFullYear(),month:previousMonth.getUTCMonth()+1,day:1,hour:0,minute:0,second:0};
+    endParts.year=local.year; endParts.month=local.month; endParts.day=1;
+  }
+  return {start:zonedDateFromParts(startParts,timeZone),end:zonedDateFromParts(endParts,timeZone),timezone:timeZone,local};
+}
+function isPublicationBoundary(now=new Date(),timeZone=PUBLICATION_TIMEZONE){
+  const p=zonedParts(now,timeZone);
+  return p.hour===0 && p.minute<5;
+}
+function isSecurityRelevantEvent(event){
+  const type=String(event?.intelligence_type||'').toUpperCase();
+  if(SECURITY_EVENT_TYPES.has(type))return true;
+  const blob=String(event?.title||'')+' '+String(event?.summary||'')+' '+String(event?.headline||'');
+  if(type==='POLITICAL')return SECURITY_POLITICAL_RE.test(blob);
+  if(type==='LOGISTICS')return /\b(security|armed|attack|ambush|kidnap|roadblock|checkpoint|escort|militia|insurgent|piracy|hijack)\b/i.test(blob);
+  return SECURITY_SIGNAL_RE.test(blob)&&['OTHER',''].includes(type);
+}
+function dayBounds(date=new Date()){return publicationWindow(date,'daily');}
 function evidenceDerivedSynthesis(event){
   const text=clean(`${event?.title||''} ${event?.summary||''}`,2200).toLowerCase();
   let intelligence_type='OTHER';
@@ -178,18 +233,13 @@ function selectPublicationResearchEvents(events,limit=10){
 async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const now=new Date();
   let start,end;
-  if(type==='daily'){({start,end}=dayBounds(now));}
-  else if(type==='weekly'){
-    const d=new Date(now);const day=(d.getUTCDay()+6)%7;d.setUTCDate(d.getUTCDate()-day);d.setUTCHours(0,0,0,0);start=d;end=new Date(d.getTime()+7*86400000);
-  } else {
-    start=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1));end=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+1,1));
-  }
+  ({start,end}=publicationWindow(now,type,PUBLICATION_TIMEZONE));
   const {rows:existing}=await query(
     `SELECT id,status,version,body,pdf_status,pdf_version FROM intel_publications
       WHERE org_id=$1 AND country_code=$2 AND publication_type=$3 AND period_start=$4 AND period_end=$5 AND status IN ('draft','review','published')
       ORDER BY version DESC LIMIT 1`,[orgId,country,type,start,end]
   );
-  const {rows:events}=await query(
+  const {rows:rawEvents}=await query(
     `SELECT
       e.id,COALESCE(e.canonical_headline,e.title) AS headline,
       COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,
@@ -211,8 +261,9 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4
       GROUP BY e.id
       ORDER BY CASE e.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'moderate' THEN 2 ELSE 1 END DESC,e.last_seen_at DESC
-      LIMIT 80`,[orgId,country,start,end]
+      LIMIT 160`,[orgId,country,start,end]
   );
+  const events=rawEvents.filter(isSecurityRelevantEvent);
 
   const evidenceCount=events.reduce((n,e)=>n+Number(e.observation_count||0),0);
   const sourceIds=new Set();
@@ -224,7 +275,12 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const priorResearch=existing[0]?.body?.deep_research||{};
   const fingerprint=publicationFingerprint(country,type,start,end,events);
   // Research exactly the bounded incident set exposed by the publication.
-  const publicationEvents=selectPublicationResearchEvents(events,8);
+  const researchLimit=type==='daily'
+    ?Math.max(4,Math.min(20,Number(process.env.INTEL_PUBLICATION_RESEARCH_LIMIT_DAILY)||12))
+    :type==='weekly'
+      ?Math.max(6,Math.min(30,Number(process.env.INTEL_PUBLICATION_RESEARCH_LIMIT_WEEKLY)||20))
+      :Math.max(8,Math.min(40,Number(process.env.INTEL_PUBLICATION_RESEARCH_LIMIT_MONTHLY)||30));
+  const publicationEvents=selectPublicationResearchEvents(events,researchLimit);
   const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
   const publicationResearchRequired=String(process.env.INTEL_PUBLICATION_REQUIRE_RESEARCH||'true').toLowerCase()!=='false';
   const expectedResearchCount=publicationEvents.length;
@@ -273,6 +329,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     }}
   ]).filter(([id])=>id));
 
+  const publicationAiPolicy={dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase(),allowFreeProviders:true,preferFreeProviders:true};
+  const publicationAiReady=aiClient.hasReadyProvider(publicationAiPolicy);
   let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0,web_search_requests:0}};
   let researchAttempted=false;
   if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch&&publicationAiReady){
@@ -308,13 +366,13 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     }
   }
   const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));
-  const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents);
+  const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents,events);
   const reportEvents=publicationBasis.reportEvents;
   const reportEvidenceCount=evidenceContract ? evidenceCount : reportEvents.reduce((n,e)=>n+Number(e.observation_count||0),0);
   const reportSourceIds=new Set();
   for(const e of reportEvents)for(const obs of Array.isArray(e.evidence)?e.evidence:[])if(obs?.source_id)reportSourceIds.add(String(obs.source_id));
   const reportSourceCount=evidenceContract ? sourceCount : Math.max(publicationBasis.researchSourceCount,reportSourceIds.size);
-  const publicationEvidenceContract=evidenceContract||publicationBasis.publishable;
+  const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable;
   const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents,evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract});
   let finalBody=deterministic;
   const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || publicationEvents.every(e=>String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase()==='researched');
@@ -373,7 +431,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const tradecraftQuality=assessPublicationQuality(finalBody);
   finalBody.publication_quality={...tradecraftQuality,legacy_audit:finalQuality};
   const qualityGate=tradecraftQuality.passed===true && finalQuality.passed===true;
-  const aiBoardGate=aiBoardRequired ? boardPublishable : true;
+  const aiBoardGate=events.length===0 ? true : (aiBoardRequired ? boardPublishable : true);
   const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate&&researchReleaseGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
@@ -429,9 +487,10 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     editorial_agents:AGENT_ROLES.length,generator_mode:body.generator.mode,version
   };
 }
-function publicationEvidenceBasis(originalEvidenceContract, research, publicationEvents){
+function publicationEvidenceBasis(originalEvidenceContract, research, publicationEvents, allEvents){
   if(originalEvidenceContract){
-    return {publishable:true,basis:'ORIGINAL_EVIDENCE',reportEvents:Array.isArray(publicationEvents)?publicationEvents:[],researchBackedIncidents:0,researchSourceCount:0,researchSourceDomains:0,excludedEventCount:0};
+    const reportEvents=Array.isArray(allEvents)&&allEvents.length?allEvents:(Array.isArray(publicationEvents)?publicationEvents:[]);
+    return {publishable:true,basis:'ORIGINAL_EVIDENCE',reportEvents,researchBackedIncidents:0,researchSourceCount:0,researchSourceDomains:0,excludedEventCount:Math.max(0,(Array.isArray(allEvents)?allEvents.length:0)-reportEvents.length)};
   }
   const backed=[];
   const sources=[];
@@ -469,21 +528,38 @@ function publicationForCountry(orgId,country,type='daily'){
   });
 }
 
-async function publishDue(orgId){
+async function publishDue(orgId,now=new Date()){
  const results=[];
+ const local=zonedParts(now,PUBLICATION_TIMEZONE);
  const run=async(country,type)=>{
-   try{
-     results.push({country,...await publicationForCountry(orgId,country,type)});
-   }catch(error){
-     logger.error('Intelligence publication failed '+country+'/'+type+' org='+orgId+': '+error.message);
-     results.push({country,type,status:'failed',error:error.message});
-   }
+   try{results.push({country,...await publicationForCountry(orgId,country,type)});}
+   catch(error){logger.error('Intelligence publication failed '+country+'/'+type+' org='+orgId+': '+error.message);results.push({country,type,status:'failed',error:error.message});}
  };
  for(const country of DAILY_COUNTRIES)await run(country,'daily');
- const d=new Date();
- if(d.getUTCDay()===1)for(const country of DAILY_COUNTRIES)await run(country,'weekly');
- if(d.getUTCDate()===1)for(const country of DAILY_COUNTRIES)await run(country,'monthly');
- return{processed:results.length,results};
+ if(local.hour===0&&local.minute<5&&localWeekday(local)===1)for(const country of DAILY_COUNTRIES)await run(country,'weekly');
+ if(local.hour===0&&local.minute<5&&local.day===1)for(const country of DAILY_COUNTRIES)await run(country,'monthly');
+ return{processed:results.length,results,timezone:PUBLICATION_TIMEZONE,boundary:'00:00 local'};
 }
-async function runIntelligenceAgents(){const {rows:orgs}=await globalQuery(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const output=[];for(const {org_id} of orgs){try{const result=await runWithOrgContext(org_id,async()=>{const translation=await translateQueue(org_id);const synthesis=await synthesizeEvents(org_id);const publications=await publishDue(org_id);return{translation,synthesis,publications};});output.push({org_id,...result});}catch(error){output.push({org_id,error:error.message});logger.warn(`Intelligence agents org=${org_id} failed: ${error.message}`);}}return output;}
-module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,evidenceDerivedSynthesis};
+async function runIntelligenceAgents(options={}){
+ const includePublications=Boolean(options.includePublications);
+ const now=options.now instanceof Date?options.now:new Date();
+ const {rows:orgs}=await globalQuery('SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL');
+ const output=[];
+ for(const {org_id} of orgs){
+   try{
+     const result=await runWithOrgContext(org_id,async()=>{
+       const translation=await translateQueue(org_id);
+       const synthesis=await synthesizeEvents(org_id);
+       const publications=includePublications?await publishDue(org_id,now):{processed:0,results:[],skipped:'scheduled publication boundary only'};
+       return{translation,synthesis,publications};
+     });
+     output.push({org_id,...result});
+   }catch(error){output.push({org_id,error:error.message});logger.warn('Intelligence agents org='+org_id+' failed: '+error.message);}
+ }
+ return output;
+}
+async function runScheduledPublicationBoundary(now=new Date()){
+ if(!isPublicationBoundary(now,PUBLICATION_TIMEZONE))return{skipped:true,reason:'not_publication_boundary',timezone:PUBLICATION_TIMEZONE};
+ return{skipped:false,timezone:PUBLICATION_TIMEZONE,results:await runIntelligenceAgents({includePublications:true,now})};
+}
+module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,evidenceDerivedSynthesis,publicationWindow,isPublicationBoundary,isSecurityRelevantEvent,defaultPublicationTimezone:PUBLICATION_TIMEZONE,runScheduledPublicationBoundary};
