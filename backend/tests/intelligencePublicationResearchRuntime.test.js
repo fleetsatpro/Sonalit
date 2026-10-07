@@ -47,6 +47,12 @@ test('stored publication_quality is the final tradecraft assessment, not the leg
   expect(s).not.toContain('publication_quality:deterministic.publication_quality||null');
 });
 
+test('publication runtime imports the tradecraft quality gate it invokes',()=>{
+  const s=source();
+  expect(s).toContain("assessPublicationQuality,");
+  expect(s).toContain('const tradecraftQuality=assessPublicationQuality(finalBody);');
+});
+
 test('senior editor must return the incident dossiers rendered by the PDF',()=>{
   const boardSource=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
   expect(boardSource).toContain('Required keys: title,subtitle,executive_assessment,sections,outlook,incident_dossiers');
