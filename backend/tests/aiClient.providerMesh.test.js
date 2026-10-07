@@ -236,6 +236,50 @@ describe('intelligence provider mesh', () => {
   });
 
 
+  test('one OpenRouter 429 circuit-breaks sibling free models and falls through to Groq', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.GROQ_API_KEY = 'groq-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+
+    const calls = [];
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.baseURL = options.baseURL || 'openai';
+        this.chat = {
+          completions: {
+            create: jest.fn(async request => {
+              calls.push({ baseURL: this.baseURL, model: request.model });
+              if (this.baseURL.includes('openrouter.ai')) {
+                const error = new Error('Too Many Requests');
+                error.status = 429;
+                throw error;
+              }
+              if (this.baseURL.includes('api.groq.com')) {
+                return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
+              }
+              throw new Error('unexpected provider');
+            }),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const response = await ai.createMessage({
+      dataClassification: 'public',
+      allowFreeProviders: true,
+      preferFreeProviders: true,
+      providerHints: ['gpt-oss-120b-openrouter-free'],
+      system: 'Return JSON.',
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    });
+
+    expect(response._provider).toBe('gpt-oss-120b-groq');
+    expect(calls.filter(c => c.baseURL.includes('openrouter.ai'))).toHaveLength(1);
+    expect(calls.filter(c => c.baseURL.includes('api.groq.com'))).toHaveLength(1);
+  });
+
   test('prefers free publication lanes when explicitly requested', async () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
