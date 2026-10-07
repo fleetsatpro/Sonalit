@@ -229,6 +229,12 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const publicationResearchRequired=String(process.env.INTEL_PUBLICATION_REQUIRE_RESEARCH||'true').toLowerCase()!=='false';
   const expectedResearchCount=publicationEvents.length;
   const previousResearchCount=Number(priorResearch.incidents_web_researched||0);
+  const priorDossiers=Array.isArray(existing[0]?.body?.incident_dossiers)?existing[0].body.incident_dossiers:[];
+  const priorDossierResearchReady=expectedResearchCount===0 || publicationEvents.every(e=>{
+    const id=String(e.id);
+    const dossier=priorDossiers.find(d=>String(d?.event_id||d?.id||'')===id);
+    return String(dossier?.research_status||'').toLowerCase()==='researched';
+  });
   const researchVersionMismatch=String(priorResearch.research_version||'')!==DEEP_RESEARCH_VERSION;
   const pdfRendererMismatch=String(existing[0]?.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION;
   const publicationPolicyMismatch=String(existing[0]?.body?.collection_basis?.version||'')!==PUBLICATION_EVIDENCE_VERSION;
@@ -236,10 +242,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const lastResearchAttemptAt=priorResearch.last_attempt_at?new Date(priorResearch.last_attempt_at):null;
   const researchAttemptRecent=Boolean(lastResearchAttemptAt&&!Number.isNaN(lastResearchAttemptAt.getTime())&&(now.getTime()-lastResearchAttemptAt.getTime())<researchCooldownMinutes*60*1000);
   const evidenceChanged=String(priorCoverage.fingerprint||'')!==fingerprint;
-  const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)&&(!researchAttemptRecent||evidenceChanged);
-  const priorResearchReleaseReady=!publicationResearchRequired
-    || expectedResearchCount===0
-    || Number(priorResearch.incidents_web_researched||0)>=expectedResearchCount;
+  const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)&&(!researchAttemptRecent||evidenceChanged);
+  const priorResearchReleaseReady=!publicationResearchRequired || priorDossierResearchReady;
   const unchanged=existing.length
     && !evidenceChanged
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
@@ -252,7 +256,6 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
 
   const refreshPdf=Boolean(existing.length&&(evidenceChanged||needsDeepResearch||pdfRendererMismatch||publicationPolicyMismatch));
 
-  const priorDossiers=Array.isArray(existing[0]?.body?.incident_dossiers)?existing[0].body.incident_dossiers:[];
   const priorResearchByEvent=Object.fromEntries(priorDossiers.map(d=>[
     String(d.id||d.event_id||d.observation_id||''),
     {packet:{},agent:{
