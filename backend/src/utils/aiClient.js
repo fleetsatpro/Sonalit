@@ -40,8 +40,8 @@ const MISTRAL_MODEL = process.env.MISTRAL_MODEL || 'mistral-large-latest';
  *   - Qwen3.5 397B A17B / OpenRouter
  *   - DeepSeek V3.2 / OpenRouter
  *   - Nemotron 3 Super 120B A12B / NVIDIA NIM
- *   - Qwen3 235B A22B Instruct 2507 / Cerebras
- *   - GLM 4.7 / Cerebras
+ *   - Nemotron 3 Ultra 550B A55B / NVIDIA NIM
+ *   - Nemotron 3.5 Lightning 30B A3B / NVIDIA NIM
  *   - GPT-OSS 120B / Cerebras
  *
  * The caller can also supply arbitrary vLLM/SGLang/OpenAI-compatible slots
@@ -72,18 +72,18 @@ const OPEN_WEIGHT_PROVIDERS = [
     model:'nvidia/nemotron-3-super-120b-a12b',
   },
   {
-    name:'qwen3-235b-cerebras',
-    key:'CEREBRAS_API_KEY',
-    base:'https://api.cerebras.ai/v1',
-    modelKey:'CEREBRAS_QWEN_MODEL',
-    model:'qwen-3-235b-a22b-instruct-2507',
+    name:'nemotron3-ultra-550b-nvidia',
+    key:'NVIDIA_API_KEY',
+    base:'https://integrate.api.nvidia.com/v1',
+    modelKey:'NVIDIA_NEMOTRON_ULTRA_MODEL',
+    model:'nvidia/nemotron-3-ultra-550b-a55b',
   },
   {
-    name:'glm47-cerebras',
-    key:'CEREBRAS_API_KEY',
-    base:'https://api.cerebras.ai/v1',
-    modelKey:'CEREBRAS_GLM_MODEL',
-    model:'zai-glm-4.7',
+    name:'nemotron3.5-lightning-30b-nvidia',
+    key:'NVIDIA_API_KEY',
+    base:'https://integrate.api.nvidia.com/v1',
+    modelKey:'NVIDIA_NEMOTRON_LIGHTNING_MODEL',
+    model:'nvidia/nemotron-3.5-lightning-30b-a3b',
   },
   {
     name:'gpt-oss-120b-cerebras',
