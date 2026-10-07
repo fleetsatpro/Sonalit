@@ -47,6 +47,17 @@ describe('Intel Hub publication contract',()=>{
     expect(s).toContain("withAdvisoryLock('sonalit:intelligence:publication-boundary'");
   });
 
+  test('startup repair can catch up daily publications without converting normal cycles into publication schedules',()=>{
+    const s=worker();
+    expect(s).toContain('forceDailyPublications: true');
+    expect(s).toContain('Intelligence publication startup catch-up');
+    const a=agents();
+    expect(a).toContain('const forceDailyPublications=Boolean(options.forceDailyPublications);');
+    expect(a).toContain("publishDue(org_id,now,{forceDaily:forceDailyPublications})");
+    expect(a).toContain('const forceDaily=Boolean(options.forceDaily);');
+    expect(a).toContain("if(forceDaily || isPublicationBoundary(now,tz))await run(country,'daily');");
+  });
+
   test('SGA WhatsApp is registered as an authorized-feed source, never scraped implicitly',()=>{
     const s=mesh();
     expect(s).toContain("channel_id:'sga-whatsapp-group'");
