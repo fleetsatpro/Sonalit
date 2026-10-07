@@ -98,7 +98,7 @@ describe('intelligence provider mesh', () => {
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
 
     const until = Date.now() + 60 * 60 * 1000;
-    const blocked = new Set(['openrouter-free', 'openrouter-paid']);
+    const blocked = new Set(['openrouter-paid', 'openrouter-free:gpt-oss-120b-openrouter-free']);
     const redis = {
       mget: jest.fn(async keys => keys.map(key => {
         const group = decodeURIComponent(String(key).replace('sonalit:intelligence:ai:circuit:v3:', ''));
@@ -120,15 +120,16 @@ describe('intelligence provider mesh', () => {
     await ai.hydrateFabricState();
 
     const policy = { dataClassification:'public', allowFreeProviders:true, preferFreeProviders:true };
-    expect(ai.hasReadyProvider(policy)).toBe(false);
+    expect(ai.hasReadyProvider(policy)).toBe(true);
     await expect(ai.createMessage({
       ...policy,
       providerHints:['gpt-oss-120b-openrouter-free'],
       system:'Return JSON.',
       messages:[{role:'user',content:'must not call a cooled account'}],
       max_tokens:100,
-    })).rejects.toThrow(/cooling down|temporarily unavailable/);
-    expect(create).not.toHaveBeenCalled();
+    }));
+    expect(create).toHaveBeenCalledTimes(1);
+
   });
 
   test('free lanes remain policy-gated for non-public data', () => {
@@ -278,7 +279,7 @@ describe('intelligence provider mesh', () => {
   });
 
 
-  test('one OpenRouter 429 circuit-breaks sibling free models and falls through to Groq', async () => {
+  test('one OpenRouter free-lane 429 does not circuit-break sibling free models', async () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     process.env.GROQ_API_KEY = 'groq-test-key-123';
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
@@ -291,10 +292,13 @@ describe('intelligence provider mesh', () => {
           completions: {
             create: jest.fn(async request => {
               calls.push({ baseURL: this.baseURL, model: request.model });
-              if (this.baseURL.includes('openrouter.ai')) {
+              if (this.baseURL.includes('openrouter.ai') && request.model === 'openai/gpt-oss-120b:free') {
                 const error = new Error('Too Many Requests');
                 error.status = 429;
                 throw error;
+              }
+              if (this.baseURL.includes('openrouter.ai')) {
+                return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
               }
               if (this.baseURL.includes('api.groq.com')) {
                 return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
@@ -317,9 +321,11 @@ describe('intelligence provider mesh', () => {
       max_tokens: 100,
     });
 
-    expect(response._provider).toBe('gpt-oss-120b-groq');
+    expect(response._free_provider).toBe(true);
+    expect(response._provider).not.toBe('gpt-oss-120b-openrouter-free');
+    expect(response._provider).toMatch(/openrouter-free$/);
     expect(calls.filter(c => c.baseURL.includes('openrouter.ai'))).toHaveLength(2);
-    expect(calls.filter(c => c.baseURL.includes('api.groq.com'))).toHaveLength(1);
+    expect(calls.filter(c => c.baseURL.includes('api.groq.com'))).toHaveLength(0);
   });
 
   test('prefers free publication lanes when explicitly requested', async () => {
