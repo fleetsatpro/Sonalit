@@ -67,6 +67,15 @@ function hasOpenSourceSecondary() { return hasOpenSourceSlot(OPEN_SOURCE_SLOTS[1
 function hasAnyProvider() {
   return OPEN_SOURCE_SLOTS.some(hasOpenSourceSlot) || hasGroqFallback() || hasOpenAI() || hasMistral() || hasAnthropic();
 }
+function hasAvailableProvider() {
+  const configured = [];
+  for (const slot of OPEN_SOURCE_SLOTS) if (hasOpenSourceSlot(slot)) configured.push(slot.label);
+  if (hasGroqFallback()) configured.push('gpt-oss-120b-groq','gpt-oss-20b-groq');
+  if (hasOpenAI()) configured.push('openai-direct');
+  if (hasMistral()) configured.push('mistral-rescue');
+  if (hasAnthropic()) configured.push('anthropic-last-resort');
+  return configured.some(label => Date.now() >= Number(states[label]?.downUntil || 0));
+}
 function providerCapabilities() {
   return {
     open_source: OPEN_SOURCE_SLOTS.map(s => ({
@@ -250,4 +259,4 @@ async function createMessage(params) {
   }
   throw lastErr||new Error('AI client: all providers failed');
 }
-module.exports={hasAnthropic,hasGroqFallback,hasOpenAI,hasMistral,hasOpenSourcePrimary,hasOpenSourceSecondary,hasAnyProvider,providerCapabilities,createMessage,createResearchMessage};
+module.exports={hasAnthropic,hasGroqFallback,hasOpenAI,hasMistral,hasOpenSourcePrimary,hasOpenSourceSecondary,hasAnyProvider,hasAvailableProvider,providerCapabilities,createMessage,createResearchMessage};
