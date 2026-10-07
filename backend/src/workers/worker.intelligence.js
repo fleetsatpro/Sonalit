@@ -236,7 +236,7 @@ async function drainActiveWork(reason) {
   timer = null;
   spatialTimer = null;
   publicationTimer = null;
-  const running = [activeCyclePromise, activeSpatialPromise].filter(Boolean);
+  const running = [activeCyclePromise, activeSpatialPromise, activePublicationPromise].filter(Boolean);
   let drained = true;
   if (running.length) {
     drained = await Promise.race([
