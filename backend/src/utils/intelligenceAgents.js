@@ -314,8 +314,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   let provider='evidence-first-fallback';
   let aiBoardStatus='disabled';
   let aiBoardHoldReason=null;
-  const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'').toLowerCase()==='true';
-  const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'').toLowerCase()==='true';
+  const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'true').toLowerCase()!=='false';
+  const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true').toLowerCase()!=='false';
 
   if(aiBoardEnabled && aiClient.hasAnyProvider() && events.length){
     try{
