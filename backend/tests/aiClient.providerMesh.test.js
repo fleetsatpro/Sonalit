@@ -89,7 +89,7 @@ describe('intelligence provider mesh', () => {
         this.options = options;
         this.chat = { completions: { create: jest.fn(async () => ({
           choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
-        })) };
+        })) } };
       }
     });
     const ai = require('../src/utils/aiClient');
