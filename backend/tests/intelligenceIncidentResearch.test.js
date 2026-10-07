@@ -27,9 +27,9 @@ test('passes publication data-classification policy into AI incident research',a
     ]
   }];
   aiClient.createResearchMessage.mockResolvedValue({
-    _provider:'minimax-m3-openrouter-free',
+    _provider:'openrouter-free-router',
     content:[
-      {type:'text',text:JSON.stringify(payload)},
+      {type:'text',text:JSON.stringify({results:payload})},
       {type:'web_search_tool_result',content:[
         {type:'web_search_result',title:'Independent source A',url:'https://alpha.example/report',domain:'alpha.example'},
         {type:'web_search_result',title:'Independent source B',url:'https://bravo.example/report',domain:'bravo.example'}
@@ -46,9 +46,11 @@ test('passes publication data-classification policy into AI incident research',a
   expect(aiClient.createResearchMessage).toHaveBeenCalledWith(expect.objectContaining({
     dataClassification:'public',
     allowFreeProviders:true,
+    providerHints:['openrouter-free-router'],
+    responseFormat:expect.objectContaining({type:'json_schema'}),
   }));
   expect(result.summary.researched).toBe(1);
-  expect(result.byEvent['i-policy'].agent.provider).toBe('minimax-m3-openrouter-free');
+  expect(result.byEvent['i-policy'].agent.provider).toBe('openrouter-free-router');
 });
 
 describe('publication incident research coverage',()=>{

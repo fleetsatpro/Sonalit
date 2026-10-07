@@ -18,6 +18,7 @@ describe('intelligence provider mesh', () => {
     for (let i = 1; i <= 5; i += 1) {
       delete process.env[`OPEN_SOURCE_API_KEY_${i}`];
       delete process.env[`OPEN_SOURCE_BASE_URL_${i}`];
+      delete process.env[`OPEN_SOURCE_MODEL_${i}`];
     }
   });
 
@@ -25,33 +26,47 @@ describe('intelligence provider mesh', () => {
     process.env = originalEnv;
   });
 
-  test('exposes independent open-weight vendor lanes when configured', () => {
+  test('exposes current independent open-weight and free vendor lanes when configured', () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     process.env.NVIDIA_API_KEY = 'nvidia-test-key-123';
     process.env.CEREBRAS_API_KEY = 'cerebras-test-key-123';
 
     const ai = require('../src/utils/aiClient');
     const caps = ai.providerCapabilities();
+    const labels = caps.open_weight.map(p => p.label);
 
     expect(caps.open_weight).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'qwen3.5-397b-openrouter', configured: true }),
       expect.objectContaining({ label: 'deepseek-v3.2-openrouter', configured: true }),
+      expect.objectContaining({ label: 'deepseek-v4-flash-openrouter', configured: true }),
       expect.objectContaining({ label: 'nemotron3-super-nvidia', configured: true }),
       expect.objectContaining({ label: 'nemotron3-ultra-550b-nvidia', configured: true }),
       expect.objectContaining({ label: 'nemotron3.5-lightning-30b-nvidia', configured: true }),
       expect.objectContaining({ label: 'gpt-oss-120b-cerebras', configured: true }),
-      expect.objectContaining({ label: 'deepseek-v4-flash-openrouter', configured: true }),
-      expect.objectContaining({ label: 'minimax-m2.7-openrouter-free', configured: true, free: true }),
-      expect.objectContaining({ label: 'ling3.1-flash-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'openrouter-free-router', configured: true, free: true }),
+      expect.objectContaining({ label: 'apodex-1.1-mini-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'qwen3.8-27b-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'north-mini-code-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'ling3.0-flash-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'gemma4-26b-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'gemma4-31b-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'nemotron3-nano-omni-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'nemotron3-ultra-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'nemotron3-super-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'nemotron3.5-lightning-openrouter-free', configured: true, free: true }),
-      expect.objectContaining({ label: 'minimax-m3-openrouter-free', configured: true, free: true }),
-      expect.objectContaining({ label: 'inkling-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'laguna-s21-openrouter-free', configured: true, free: true }),
-      expect.objectContaining({ label: 'gemma4-26b-openrouter-free', configured: true, free: true }),
-      expect.objectContaining({ label: 'nemotron3-nano-omni-openrouter-free', configured: true, free: true }),
     ]));
+
+    expect(labels).not.toEqual(expect.arrayContaining([
+      'minimax-m3-openrouter-free',
+      'minimax-m2.7-openrouter-free',
+      'inkling-openrouter-free',
+    ]));
+
+    expect(caps.open_weight.find(p => p.label === 'gemma4-31b-openrouter-free').model)
+      .toBe('google/gemma-4-31b-it:free');
+    expect(caps.open_weight.find(p => p.label === 'nemotron3-super-openrouter-free').model)
+      .toBe('nvidia/nemotron-3-super-120b-a12b:free');
   });
 
   test('keeps arbitrary self-hosted open-source slots working', () => {
@@ -70,57 +85,105 @@ describe('intelligence provider mesh', () => {
     expect(ai.hasAnyProvider()).toBe(true);
   });
 
-  test('free lanes remain policy-gated for non-public data', async () => {
+  test('free lanes remain policy-gated for non-public data', () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     const ai = require('../src/utils/aiClient');
     const caps = ai.providerCapabilities();
 
-    // OpenRouter also exposes paid lanes, so hasAnyProvider() must remain true
-    // even when the free lane family is disabled. The policy under test is
-    // specifically that free lanes are not active for non-public data.
     expect(caps.free_open_weight_enabled).toBe(false);
-    expect(caps.open_weight.filter(p => p.free)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ label: 'minimax-m3-openrouter-free', active_for_public: false }),
-        expect.objectContaining({ label: 'inkling-openrouter-free', active_for_public: false }),
-      ])
-    );
+    expect(caps.open_weight).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'openrouter-free-router', active_for_public: false }),
+      expect.objectContaining({ label: 'qwen3.8-27b-openrouter-free', active_for_public: false }),
+    ]));
     expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(true);
 
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
     const enabledCaps = ai.providerCapabilities();
+
     expect(enabledCaps.free_open_weight_enabled).toBe(true);
-    expect(enabledCaps.open_weight).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ label: 'minimax-m3-openrouter-free', active_for_public: true, free: true }),
-        expect.objectContaining({ label: 'inkling-openrouter-free', active_for_public: true, free: true }),
-      ])
-    );
+    expect(enabledCaps.open_weight).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'openrouter-free-router', active_for_public: true, free: true }),
+      expect.objectContaining({ label: 'apodex-1.1-mini-openrouter-free', active_for_public: true, free: true }),
+      expect.objectContaining({ label: 'qwen3.8-27b-openrouter-free', active_for_public: true, free: true }),
+    ]));
     expect(ai.hasAnyProvider({ dataClassification: 'public' })).toBe(true);
     expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(true);
   });
 
-  test('free lanes can be explicitly enabled for public publication evidence', async () => {
+  test('free publication routing can explicitly select the dynamic free router', async () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+
     jest.doMock('openai', () => class MockOpenAI {
       constructor(options) {
         this.options = options;
-        this.chat = { completions: { create: jest.fn(async () => ({
-          choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
-        })) } };
+        this.chat = {
+          completions: {
+            create: jest.fn(async () => ({
+              choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
+            })),
+          },
+        };
       }
     });
+
     const ai = require('../src/utils/aiClient');
     const response = await ai.createMessage({
       dataClassification: 'public',
-      providerHints: ['minimax-m3-openrouter-free'],
+      providerHints: ['openrouter-free-router'],
       system: 'Return JSON.',
       messages: [{ role: 'user', content: 'test' }],
       max_tokens: 100,
     });
-    expect(response._provider).toBe('minimax-m3-openrouter-free');
+
+    expect(response._provider).toBe('openrouter-free-router');
     expect(response._free_provider).toBe(true);
+  });
+
+  test('structured research output is forwarded only to capable OpenRouter lanes', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+
+    let lastRequest;
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options) {
+        this.options = options;
+        this.chat = {
+          completions: {
+            create: jest.fn(async request => {
+              lastRequest = request;
+              return { choices: [{ message: { content: '{"results":[]}' } }] };
+            }),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    await ai.createMessage({
+      dataClassification: 'public',
+      providerHints: ['openrouter-free-router'],
+      system: 'Return structured JSON.',
+      responseFormat: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'test_schema',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: { results: { type: 'array', items: { type: 'string' } } },
+            required: ['results'],
+            additionalProperties: false,
+          },
+        },
+      },
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    });
+
+    expect(lastRequest.response_format).toEqual(expect.objectContaining({
+      type: 'json_schema',
+    }));
   });
 
   test('provider hints are advisory and do not remove the global failover mesh', async () => {
