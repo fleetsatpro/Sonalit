@@ -90,6 +90,7 @@ function anyCountryPublicationBoundary(now=new Date()){
 function nextCountryPublicationBoundary(country,now=new Date()){
   const timeZone=publicationTimezoneForCountry(country);
   const local=zonedParts(now,timeZone);
+  if(isPublicationBoundary(now,timeZone))return new Date(now.getTime()+1000);
   let day=shiftedCalendarParts(local,1);
   let target=zonedDateFromParts({...day,hour:0,minute:0,second:5},timeZone);
   if(target.getTime()<=now.getTime()){day=shiftedCalendarParts(local,2);target=zonedDateFromParts({...day,hour:0,minute:0,second:5},timeZone);}
