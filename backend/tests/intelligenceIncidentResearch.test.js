@@ -1,6 +1,55 @@
-jest.mock('../src/utils/aiClient',()=>({hasAnyProvider:()=>false}));
+jest.mock('../src/utils/aiClient',()=>({
+  hasAnyProvider:jest.fn(()=>false),
+  createResearchMessage:jest.fn(),
+}));
 
 const { researchPublicationIncidents, verifiedResponseSources } = require('../src/utils/intelligenceIncidentResearch');
+
+test('passes publication data-classification policy into AI incident research',async()=>{
+  const aiClient=require('../src/utils/aiClient');
+  process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION='public';
+  aiClient.hasAnyProvider.mockReturnValue(true);
+  const narrative='The incident occurred within the reported period and affected a named location. Available reporting indicates a specific operational development, while the available evidence does not establish a broader deterioration. Independent reporting provides useful corroboration but leaves material uncertainty about the immediate consequences and next-stage response. This assessment should therefore remain bounded to the incident and its verified context.';
+  const payload=[{
+    incident_id:'i-policy',
+    status:'researched',
+    narrative,
+    context:'The event sits within a defined local operating environment.',
+    confirmed_facts:['A reported incident occurred.'],
+    reported_or_disputed:[],
+    analytical_assessment:'The evidence supports a localized assessment rather than a wider regional deterioration.',
+    why_it_matters:['It may affect near-term operating conditions.'],
+    uncertainty:['The downstream effect remains uncertain.'],
+    chronology:[],
+    sources:[
+      {title:'Independent source A',url:'https://alpha.example/report',domain:'alpha.example',source_type:'web'},
+      {title:'Independent source B',url:'https://bravo.example/report',domain:'bravo.example',source_type:'web'}
+    ]
+  }];
+  aiClient.createResearchMessage.mockResolvedValue({
+    _provider:'minimax-m3-openrouter-free',
+    content:[
+      {type:'text',text:JSON.stringify(payload)},
+      {type:'web_search_tool_result',content:[
+        {type:'web_search_result',title:'Independent source A',url:'https://alpha.example/report',domain:'alpha.example'},
+        {type:'web_search_result',title:'Independent source B',url:'https://bravo.example/report',domain:'bravo.example'}
+      ]}
+    ]
+  });
+  const result=await researchPublicationIncidents([
+    {id:'i-policy',headline:'Policy propagation incident',brief:'A specific incident for policy coverage.',country_code:'KE',evidence:[]}
+  ],{country:'KE'});
+  expect(aiClient.hasAnyProvider).toHaveBeenCalledWith({
+    dataClassification:'public',
+    allowFreeProviders:true,
+  });
+  expect(aiClient.createResearchMessage).toHaveBeenCalledWith(expect.objectContaining({
+    dataClassification:'public',
+    allowFreeProviders:true,
+  }));
+  expect(result.summary.researched).toBe(1);
+  expect(result.byEvent['i-policy'].agent.provider).toBe('minimax-m3-openrouter-free');
+});
 
 describe('publication incident research coverage',()=>{
   beforeEach(()=>{
