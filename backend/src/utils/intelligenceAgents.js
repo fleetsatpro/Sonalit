@@ -81,6 +81,27 @@ function isPublicationBoundary(now=new Date(),timeZone=PUBLICATION_TIMEZONE){
   const p=zonedParts(now,timeZone);
   return p.hour===0 && p.minute<5;
 }
+function isCountryPublicationBoundary(country,now=new Date()){
+  return isPublicationBoundary(now,publicationTimezoneForCountry(country));
+}
+function anyCountryPublicationBoundary(now=new Date()){
+  return DAILY_COUNTRIES.some(country=>isCountryPublicationBoundary(country,now));
+}
+function nextCountryPublicationBoundary(country,now=new Date()){
+  const timeZone=publicationTimezoneForCountry(country);
+  const local=zonedParts(now,timeZone);
+  let day=shiftedCalendarParts(local,1);
+  let target=zonedDateFromParts({...day,hour:0,minute:0,second:5},timeZone);
+  if(target.getTime()<=now.getTime()){day=shiftedCalendarParts(local,2);target=zonedDateFromParts({...day,hour:0,minute:0,second:5},timeZone);}
+  return target;
+}
+function msUntilNextCountryPublicationBoundary(country,now=new Date()){
+  return Math.max(1000,nextCountryPublicationBoundary(country,now).getTime()-now.getTime());
+}
+function msUntilAnyCountryPublicationBoundary(now=new Date()){
+  if(!DAILY_COUNTRIES.length)return 86400000;
+  return Math.min(...DAILY_COUNTRIES.map(country=>msUntilNextCountryPublicationBoundary(country,now)));
+}
 function isSecurityRelevantEvent(event){
   const type=String(event?.intelligence_type||'').toUpperCase();
   if(SECURITY_EVENT_TYPES.has(type))return true;
@@ -583,4 +604,4 @@ async function runScheduledPublicationBoundary(now=new Date()){
  if(!anyCountryPublicationBoundary(now))return{skipped:true,reason:'not_publication_boundary_for_any_country',timezone:'per-country-local'};
  return{skipped:false,timezone:'per-country-local',results:await runIntelligenceAgents({includePublications:true,now})};
 }
-module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,evidenceDerivedSynthesis,publicationWindow,isPublicationBoundary,isSecurityRelevantEvent,isCountryPublicationBoundary,anyCountryPublicationBoundary,publicationTimezoneForCountry,defaultPublicationTimezone:PUBLICATION_TIMEZONE,defaultCountryTimezones:DEFAULT_COUNTRY_TIMEZONES,runScheduledPublicationBoundary};
+module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,evidenceDerivedSynthesis,publicationWindow,isPublicationBoundary,isSecurityRelevantEvent,isCountryPublicationBoundary,anyCountryPublicationBoundary,publicationTimezoneForCountry,nextCountryPublicationBoundary,msUntilNextCountryPublicationBoundary,msUntilAnyCountryPublicationBoundary,defaultPublicationTimezone:PUBLICATION_TIMEZONE,defaultCountryTimezones:DEFAULT_COUNTRY_TIMEZONES,runScheduledPublicationBoundary};
