@@ -62,8 +62,8 @@ test('release gate evaluates the effective reused research dossiers',()=>{
 
 test('changed evidence forces a fresh research attempt even when prior coverage was complete',()=>{
   const s=source();
-  expect(s).toContain('(previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)&&(!researchAttemptRecent||evidenceChanged)');
-  expect(s).toContain('&&!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)&&(!researchAttemptRecent||evidenceChanged)');
+  expect(s).toContain('const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)');
+  expect(s).toContain('&&(!researchAttemptRecent||evidenceChanged)');
   expect(s).toContain('if(!evidenceChanged){');
 });
 
