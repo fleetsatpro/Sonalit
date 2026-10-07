@@ -47,6 +47,13 @@ test('release gate evaluates the effective reused research dossiers',()=>{
   expect(s).not.toContain('incidentResearch.summary.researched>=expectedResearchCount && Number(incidentResearch.summary.researched_limited||0)===0');
 });
 
+test('changed evidence forces a fresh research attempt even when prior coverage was complete',()=>{
+  const s=source();
+  expect(s).toContain('(previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)');
+  expect(s).toContain('&&(!researchAttemptRecent||evidenceChanged)');
+  expect(s).toContain('if(!evidenceChanged){');
+});
+
 test('editorial board is enabled and required by default',()=>{
   const s=source();
   expect(s).toContain("process.env.INTEL_PUBLICATION_AI_BOARD||'true'");
