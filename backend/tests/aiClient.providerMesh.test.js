@@ -7,6 +7,8 @@ describe('intelligence provider mesh', () => {
     jest.resetModules();
     process.env = { ...originalEnv };
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.REDIS_URL;
+    delete process.env.INTEL_PERSIST_PROVIDER_CIRCUITS;
     delete process.env.OPENROUTER_GPT_OSS_120B_FREE_MODEL;
     delete process.env.OPENROUTER_GPT_OSS_20B_FREE_MODEL;
     delete process.env.OPENROUTER_GLM45_AIR_FREE_MODEL;
@@ -87,6 +89,46 @@ describe('intelligence provider mesh', () => {
       configured: true,
     });
     expect(ai.hasAnyProvider()).toBe(true);
+  });
+
+  test('hydrates persisted provider-account cooldowns before admitting work', async () => {
+    process.env.REDIS_URL = 'redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS = 'true';
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+
+    const until = Date.now() + 60 * 60 * 1000;
+    const blocked = new Set(['openrouter-free', 'openrouter-paid']);
+    const redis = {
+      mget: jest.fn(async keys => keys.map(key => {
+        const group = decodeURIComponent(String(key).replace('sonalit:intelligence:ai:circuit:v3:', ''));
+        return blocked.has(group) ? String(until) : '0';
+      })),
+      set: jest.fn(async () => 'OK'),
+      del: jest.fn(async () => 1),
+    };
+
+    jest.doMock('../src/config/redis', () => ({ getRedis: () => redis }));
+    const create = jest.fn(async () => ({
+      choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
+    }));
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(){ this.chat={completions:{create}}; }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    await ai.hydrateFabricState();
+
+    const policy = { dataClassification:'public', allowFreeProviders:true, preferFreeProviders:true };
+    expect(ai.hasReadyProvider(policy)).toBe(false);
+    await expect(ai.createMessage({
+      ...policy,
+      providerHints:['gpt-oss-120b-openrouter-free'],
+      system:'Return JSON.',
+      messages:[{role:'user',content:'must not call a cooled account'}],
+      max_tokens:100,
+    })).rejects.toThrow(/cooling down|temporarily unavailable/);
+    expect(create).not.toHaveBeenCalled();
   });
 
   test('free lanes remain policy-gated for non-public data', () => {
