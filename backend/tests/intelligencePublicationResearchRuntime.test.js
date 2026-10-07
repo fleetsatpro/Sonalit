@@ -40,3 +40,9 @@ test('AI senior-editor output is allowed to override deterministic prose fields'
   const merge=s.indexOf('finalBody={...deterministic,...final');
   expect(merge).toBeGreaterThan(-1);
 });
+
+test('release gate evaluates the effective reused research dossiers',()=>{
+  const s=source();
+  expect(s).toContain('effectiveResearchByEvent[String(e.id)]?.agent?.status');
+  expect(s).not.toContain('incidentResearch.summary.researched>=expectedResearchCount && Number(incidentResearch.summary.researched_limited||0)===0');
+});
