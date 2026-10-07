@@ -276,7 +276,7 @@ describe('intelligence provider mesh', () => {
     });
 
     expect(response._provider).toBe('gpt-oss-120b-groq');
-    expect(calls.filter(c => c.baseURL.includes('openrouter.ai'))).toHaveLength(1);
+    expect(calls.filter(c => c.baseURL.includes('openrouter.ai'))).toHaveLength(2);
     expect(calls.filter(c => c.baseURL.includes('api.groq.com'))).toHaveLength(1);
   });
 
