@@ -46,3 +46,9 @@ test('release gate evaluates the effective reused research dossiers',()=>{
   expect(s).toContain('effectiveResearchByEvent[String(e.id)]?.agent?.status');
   expect(s).not.toContain('incidentResearch.summary.researched>=expectedResearchCount && Number(incidentResearch.summary.researched_limited||0)===0');
 });
+
+test('editorial board is enabled and required by default',()=>{
+  const s=source();
+  expect(s).toContain("process.env.INTEL_PUBLICATION_AI_BOARD||'true'");
+  expect(s).toContain("process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true'");
+});
