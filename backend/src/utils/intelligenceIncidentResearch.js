@@ -284,6 +284,37 @@ function researchPrompt(packet,event,country,{includeSchema=true}={}){
     'SUPPLIED RESEARCH PACKET:\n'+jsonPacket;
 }
 
+function verifiedResponseSources(response){
+  const out=[];
+  const seen=new Set();
+  const visit=(node)=>{
+    if(!node||typeof node!=='object')return;
+    if(Array.isArray(node)){node.forEach(visit);return;}
+    const rawUrl=String(node.url||node.source_url||node.link||'').trim();
+    if(rawUrl){
+      const url=safeUrl(rawUrl);
+      if(url&&!isAggregatorDomain(normalizeDomain(url))){
+        const key=url.replace(/\/+$/,'');
+        if(!seen.has(key)){
+          seen.add(key);
+          out.push({
+            url,
+            domain:normalizeDomain(node.domain||url),
+            title:clean(node.title||node.name||'Verified web-search result',500),
+            description:clean(node.description||node.snippet||node.text||'',1200),
+            source_type:'provider_web_search'
+          });
+        }
+      }
+    }
+    Object.values(node).forEach(value=>{if(value&&typeof value==='object')visit(value);});
+  };
+  for(const block of Array.isArray(response?.content)?response.content:[]){
+    if(block?.type!=='text')visit(block);
+  }
+  return out;
+}
+
 async function researchBatch(events,{country,region}={}){
   const packets=await Promise.all(events.map(event=>buildIncidentResearchPacket(event,{country,region})));
   if(!aiClient.hasAnyProvider())return packets.map((packet,i)=>({packet,agent:fallbackResearch(events[i],packet)}));
@@ -298,6 +329,7 @@ async function researchBatch(events,{country,region}={}){
       system:'You are a multi-incident web-grounded research agent. Produce ONLY one JSON array containing exactly one object for each incident_id supplied.',
       messages:[{role:'user',content:prompt}]
     });
+    const providerVerifiedSources=verifiedResponseSources(response);
     const content=Array.isArray(response&&response.content)?response.content:[];
     const raw=content.filter(x=>x&&x.type==='text').map(x=>x.text).join('\n');
     const webSearchRequests=Number(response?.usage?.server_tool_use?.web_search_requests||0);
@@ -309,10 +341,29 @@ async function researchBatch(events,{country,region}={}){
     if(!Array.isArray(parsed))throw new Error('research batch agent returned invalid JSON array');
     return packets.map((packet,i)=>{
       const source=parsed.find(x=>String(x&&x.incident_id)===String(events[i].id));
-      const normalizedSources=dedupeSources(
-        Array.isArray(source?.sources)?source.sources.filter(x=>safeUrl(x?.url)):[],
-        8
-      );
+      const verifiedSourceMap=new Map();
+      const addVerified=(item)=>{
+        const url=safeUrl(item?.url);
+        if(!url)return;
+        const key=url.replace(/\/+$/,'');
+        if(!verifiedSourceMap.has(key))verifiedSourceMap.set(key,{
+          url,
+          domain:normalizeDomain(item?.domain||url),
+          title:clean(item?.title||'Verified research source',500),
+          description:clean(item?.description||item?.snippet||'',1200),
+          source_type:item?.source_type||'verified_research_source'
+        });
+      };
+      (Array.isArray(packet?.fetched_pages)?packet.fetched_pages:[]).forEach(addVerified);
+      (Array.isArray(events[i]?.evidence)?events[i].evidence:[]).forEach(addVerified);
+      providerVerifiedSources.forEach(addVerified);
+      const verifiedModelSources=(Array.isArray(source?.sources)?source.sources:[])
+        .map(x=>verifiedSourceMap.get((safeUrl(x?.url)||'').replace(/\/+$/,'')))
+        .filter(Boolean);
+      const verifiedPacketSources=(Array.isArray(packet?.fetched_pages)?packet.fetched_pages:[])
+        .map(x=>verifiedSourceMap.get((safeUrl(x?.url)||'').replace(/\/+$/,'')))
+        .filter(Boolean);
+      const normalizedSources=dedupeSources([...verifiedModelSources,...verifiedPacketSources],8);
       const narrative=cleanPublicationText(source?.narrative||'',2600);
       const repeated=repetitionRatio(narrative)>0.18;
       const sourceDomains=new Set(normalizedSources.map(x=>normalizeDomain(x?.domain||x?.url)).filter(Boolean));
