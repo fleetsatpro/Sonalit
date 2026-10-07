@@ -561,12 +561,6 @@ function publicationForCountry(orgId,country,type='daily'){
   });
 }
 
-function isCountryPublicationBoundary(country,now=new Date()){
-  return isPublicationBoundary(now,publicationTimezoneForCountry(country));
-}
-function anyCountryPublicationBoundary(now=new Date()){
-  return DAILY_COUNTRIES.some(country=>isCountryPublicationBoundary(country,now));
-}
 async function publishDue(orgId,now=new Date()){
  const results=[];
  const run=async(country,type)=>{
