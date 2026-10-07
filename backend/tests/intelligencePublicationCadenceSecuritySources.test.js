@@ -10,6 +10,8 @@ describe('Intel Hub publication contract',()=>{
   test('daily editions use the previous completed local calendar day',()=>{
     const s=agents();
     expect(s).toContain("PUBLICATION_TIMEZONE=process.env.INTEL_PUBLICATION_TIMEZONE||'Africa/Nairobi'");
+    expect(s).toContain("KE:'Africa/Nairobi'");
+    expect(s).toContain("CD:'Africa/Kinshasa'");
     expect(s).toContain("const previous=shiftedCalendarParts(local,-1)");
     expect(s).toContain("startParts={...previous,hour:0,minute:0,second:0}");
     expect(s).toContain("endParts={year:local.year,month:local.month,day:local.day,hour:0,minute:0,second:0}");
@@ -39,6 +41,7 @@ describe('Intel Hub publication contract',()=>{
   test('normal worker cycles do not regenerate publications every collection interval',()=>{
     const s=worker();
     expect(s).toContain("runIntelligenceAgents({includePublications:false})");
+    expect(s).toContain('country-local');
     expect(s).toContain("schedulePublicationBoundary()");
     expect(s).toContain("withAdvisoryLock('sonalit:intelligence:publication-boundary'");
   });
