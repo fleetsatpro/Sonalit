@@ -132,16 +132,9 @@ async function cycleUnsafe(reason) {
     let agents = [];
     try { agents = await runIntelligenceAgents({includePublications:false}); } catch (error) { logger.warn(`Intelligence agents cycle failed: ${error.message}`); }
 
-    let pdfs = [];
-    for (const org of agents) {
-      if (!org?.org_id) continue;
-      try {
-        const generated = await generateMissingPublicationPdfs(org.org_id, Number(process.env.INTEL_PUBLICATION_PDF_BATCH || 3));
-        pdfs.push(...generated.map(x => ({ org_id: org.org_id, ...x })));
-      } catch (error) {
-        logger.warn(`Publication PDF cycle failed org=${org.org_id}: ${error.message}`);
-      }
-    }
+    // PDF rendering is publication-work, not collection-work. It runs only from the
+    // country-local midnight publication boundary below.
+    const pdfs = [];
 
     const meshSeen = mesh.reduce((sum, x) => sum + Number(x.seen || 0), 0);
     const meshInserted = mesh.reduce((sum, x) => sum + Number(x.inserted || 0), 0);
@@ -286,6 +279,26 @@ process.on('SIGINT', () => shutdown('SIGINT'));
       } finally {
         activeCyclePromise = null;
       }
+
+      // Backfill the most recently completed daily reporting period once after a
+      // worker deployment/restart. This repairs publications missed during an
+      // earlier outage without changing the strict local-midnight schedule for
+      // subsequent editions. Existing published editions short-circuit as unchanged.
+      try {
+        const catchup = await runIntelligenceAgents({
+          includePublications: true,
+          forceDailyPublications: true,
+          now: new Date(),
+        });
+        const results = catchup.flatMap(x => Array.isArray(x.publications?.results) ? x.publications.results : []);
+        const published = results.filter(x => x.publication_status === 'published').length;
+        const drafts = results.filter(x => x.publication_status === 'draft').length;
+        const failures = results.filter(x => x.status === 'failed' || x.error).length;
+        logger.info(`Intelligence publication startup catch-up: processed=${results.length}, published=${published}, drafts=${drafts}, failures=${failures}`);
+      } catch (error) {
+        logger.warn(`Intelligence publication startup catch-up failed: ${error.message}`);
+      }
+
       scheduleSpatial();
       schedulePublicationBoundary();
       schedule();
