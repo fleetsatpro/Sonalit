@@ -329,6 +329,9 @@ const PROVIDER_WAIT_MAX_MS = Math.max(0, Math.min(10000, Number(process.env.INTE
 const MODEL_UNAVAILABLE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const RETRYABLE_COOLDOWN_BASE_MS = 15 * 1000;
 const RETRYABLE_COOLDOWN_MAX_MS = 90 * 1000;
+const FABRIC_QUOTA_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const FABRIC_AUTH_COOLDOWN_MS = 60 * 60 * 1000;
+const fabricStates = Object.create(null);
 
 
 function keyOk(k) { return !!(k && String(k).length >= 10); }
@@ -552,6 +555,65 @@ function openAIResponseToAnthropicShape(completion) {
 function uniqueStrings(items){
   return [...new Set(items.map(v=>String(v||'').trim()).filter(Boolean))];
 }
+function providerGroup(provider){
+  if(!provider)return 'unknown';
+  if(provider.providerGroup)return provider.providerGroup;
+  const name=String(provider.name||'');
+  const base=String(provider.base||'');
+  if(base.includes('openrouter.ai'))return provider.free?'openrouter-free':'openrouter-paid';
+  if(base.includes('api.groq.com')||name.includes('-groq'))return 'groq';
+  if(name==='openai-direct')return 'openai';
+  if(name==='mistral-rescue')return 'mistral';
+  if(name==='anthropic-last-resort')return 'anthropic';
+  if(name.includes('open-source')||name.includes('primary')||name.includes('secondary')||name.includes('tertiary')||name.includes('quaternary')||name.includes('rescue'))return 'self-hosted';
+  return name||'unknown';
+}
+function getErrorHeader(err,name){
+  const headers=err?.headers||err?.response?.headers||err?.cause?.headers;
+  if(!headers)return '';
+  const target=String(name).toLowerCase();
+  try{
+    if(typeof headers.get==='function')return String(headers.get(name)||headers.get(target)||'').trim();
+  }catch(_){}
+  for(const [k,v] of Object.entries(headers||{}))if(String(k).toLowerCase()===target)return String(v||'').trim();
+  return '';
+}
+function parseDurationMs(value){
+  if(value==null)return 0;
+  const raw=String(value).trim();
+  if(!raw)return 0;
+  if(/^\d+(?:\.\d+)?$/.test(raw)){
+    const n=Number(raw);
+    if(n>1000000000)return Math.max(0,n*1000-Date.now());
+    return n*1000;
+  }
+  const m=raw.match(/(?:(\d+(?:\.\d+)?)\s*d)?\s*(?:(\d+(?:\.\d+)?)\s*h)?\s*(?:(\d+(?:\.\d+)?)\s*m)?\s*(?:(\d+(?:\.\d+)?)\s*s)?/i);
+  if(!m||!m[0].trim())return 0;
+  return ((Number(m[1]||0)*86400)+(Number(m[2]||0)*3600)+(Number(m[3]||0)*60)+Number(m[4]||0))*1000;
+}
+function retryAfterMs(err,fallbackMs){
+  const direct=parseDurationMs(getErrorHeader(err,'retry-after'));
+  if(direct>0)return direct;
+  const reset=parseDurationMs(getErrorHeader(err,'x-ratelimit-reset-requests'))||
+    parseDurationMs(getErrorHeader(err,'x-ratelimit-reset'))||
+    parseDurationMs(getErrorHeader(err,'ratelimit-reset'));
+  return reset>0?reset:fallbackMs;
+}
+function fabricCooldownMs(err,provider,state){
+  if(Number(err?.status)===429 || /rate.?limit|too many requests|quota/i.test(String(err?.message||''))){
+    const headerMs=retryAfterMs(err,0);
+    if(headerMs>0)return Math.min(FABRIC_QUOTA_COOLDOWN_MS,Math.max(15000,headerMs));
+    if(providerGroup(provider)==='openrouter-free')return FABRIC_QUOTA_COOLDOWN_MS;
+    return Math.min(RETRYABLE_COOLDOWN_MAX_MS,RETRYABLE_COOLDOWN_BASE_MS*Math.pow(2,Math.min(Number(state.failureCount||0)-1,5)));
+  }
+  if(Number(err?.status)===402 || /credit balance|billing|insufficient credit|payment required/i.test(String(err?.message||''))){
+    return FABRIC_QUOTA_COOLDOWN_MS;
+  }
+  if(Number(err?.status)===401 || Number(err?.status)===403 || /invalid api key|authentication/i.test(String(err?.message||''))){
+    return FABRIC_AUTH_COOLDOWN_MS;
+  }
+  return 0;
+}
 function modelCandidates(def){
   return uniqueStrings([
     process.env[def.modelKey],
@@ -581,27 +643,33 @@ function rotateModel(def){
   modelDisabledUntil[def.name]=Date.now()+MODEL_UNAVAILABLE_COOLDOWN_MS;
   return false;
 }
-function providerCooling(label){
+function providerCooling(providerOrLabel){
+  const label=typeof providerOrLabel==='string'?providerOrLabel:providerOrLabel?.name;
+  const provider=typeof providerOrLabel==='string'?{name:label}:providerOrLabel;
   const state=states[label];
+  const group=providerGroup(provider);
+  const fabric=fabricStates[group];
   const modelBlocked=Number(modelDisabledUntil[label]||0);
   return Boolean(
     (state && Date.now()<Number(state.downUntil||0)) ||
+    (fabric && Date.now()<Number(fabric.downUntil||0)) ||
     modelBlocked>0 && Date.now()<modelBlocked
   );
 }
 function providerResumeAt(provider){
   const providerUntil=Number(states[provider.name]?.downUntil||0);
+  const fabricUntil=Number(fabricStates[providerGroup(provider)]?.downUntil||0);
   const modelUntil=Number(modelDisabledUntil[provider.name]||0);
-  return Math.max(providerUntil,modelUntil);
+  return Math.max(providerUntil,fabricUntil,modelUntil);
 }
 async function recoverCoolingProviders(providers){
   const now=Date.now();
   const deadlines=providers.map(provider=>providerResumeAt(provider)).filter(ts=>ts>now);
-  if(!deadlines.length)return providers.filter(provider=>!providerCooling(provider.name));
+  if(!deadlines.length)return providers.filter(provider=>!providerCooling(provider));
   const delay=Math.min(...deadlines)-now;
   if(PROVIDER_WAIT_MAX_MS<=0 || delay>PROVIDER_WAIT_MAX_MS)return [];
   await new Promise(resolve=>setTimeout(resolve,Math.max(25,delay+25)));
-  return providers.filter(provider=>!providerCooling(provider.name));
+  return providers.filter(provider=>!providerCooling(provider));
 }
 async function withConcurrency(key,fn){
   const state=concurrency[key];
@@ -680,11 +748,15 @@ async function callGroq(params,model) {
 
 async function attempt(label,fn,meta={}){
   const state=states[label]||(states[label]={downUntil:0,failureCount:0});
-  if(Date.now()<state.downUntil)throw new Error(label+' provider cooling down');
+  const group=providerGroup(meta);
+  const fabric=fabricStates[group]||(fabricStates[group]={downUntil:0,failureCount:0});
+  if(Date.now()<state.downUntil || Date.now()<fabric.downUntil)throw new Error(label+' provider cooling down');
   try{
     const result=await fn();
     state.downUntil=0;
     state.failureCount=0;
+    fabric.downUntil=0;
+    fabric.failureCount=0;
     return result;
   }catch(err){
     if(isModelNotFound(err) && meta.modelDef){
@@ -694,9 +766,19 @@ async function attempt(label,fn,meta={}){
       state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
       const delay=Math.min(RETRYABLE_COOLDOWN_MAX_MS,RETRYABLE_COOLDOWN_BASE_MS*Math.pow(2,state.failureCount-1));
       state.downUntil=Date.now()+delay;
+      const groupDelay=fabricCooldownMs(err,meta,state);
+      if(groupDelay){
+        fabric.failureCount=Math.min(Number(fabric.failureCount||0)+1,6);
+        fabric.downUntil=Math.max(Number(fabric.downUntil||0),Date.now()+groupDelay);
+      }
     }else if(isPermanentCredentialFailure(err)){
       state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
       state.downUntil=Date.now()+PERMANENT_FAILURE_COOLDOWN_MS;
+      const groupDelay=fabricCooldownMs(err,meta,state);
+      if(groupDelay){
+        fabric.failureCount=Math.min(Number(fabric.failureCount||0)+1,6);
+        fabric.downUntil=Math.max(Number(fabric.downUntil||0),Date.now()+groupDelay);
+      }
     }
     throw err;
   }
@@ -739,6 +821,7 @@ function buildProviders(params={}) {
       qualityTier:def.qualityTier,
       free:Boolean(def.free),
       modelDef:def,
+      providerGroup:providerGroup(def),
     });
   };
 
@@ -750,17 +833,17 @@ function buildProviders(params={}) {
 
   for (const s of OPEN_SOURCE_SLOTS) {
     if(hasOpenSourceSlot(s)) {
-      providers.push({name:s.label,fn:()=>callOpenAICompat(s,params),kind:'open-source-slot',free:false,qualityTier:'self-hosted'});
+      providers.push({name:s.label,fn:()=>callOpenAICompat(s,params),kind:'open-source-slot',free:false,qualityTier:'self-hosted',providerGroup:'self-hosted'});
     }
   }
 
   if(hasGroqFallback()){
-    providers.push({name:'gpt-oss-120b-groq',fn:()=>callGroq(params,GROQ_MODEL),kind:'open-weight',free:false,qualityTier:'high-throughput'});
-    providers.push({name:'gpt-oss-20b-groq',fn:()=>callGroq(params,GROQ_MODEL_2),kind:'open-weight',free:false,qualityTier:'rescue'});
+    providers.push({name:'gpt-oss-120b-groq',fn:()=>callGroq(params,GROQ_MODEL),kind:'open-weight',free:false,qualityTier:'high-throughput',providerGroup:'groq'});
+    providers.push({name:'gpt-oss-20b-groq',fn:()=>callGroq(params,GROQ_MODEL_2),kind:'open-weight',free:false,qualityTier:'rescue',providerGroup:'groq'});
   }
-  if(hasOpenAI())providers.push({name:'openai-direct',fn:()=>callOpenAI(params),kind:'closed-fallback',free:false,qualityTier:'closed'});
-  if(hasMistral())providers.push({name:'mistral-rescue',fn:()=>callMistral(params),kind:'closed-fallback',free:false,qualityTier:'closed'});
-  if(hasAnthropic())providers.push({name:'anthropic-last-resort',fn:()=>callAnthropic(params),kind:'closed-fallback',free:false,qualityTier:'closed'});
+  if(hasOpenAI())providers.push({name:'openai-direct',fn:()=>callOpenAI(params),kind:'closed-fallback',free:false,qualityTier:'closed',providerGroup:'openai'});
+  if(hasMistral())providers.push({name:'mistral-rescue',fn:()=>callMistral(params),kind:'closed-fallback',free:false,qualityTier:'closed',providerGroup:'mistral'});
+  if(hasAnthropic())providers.push({name:'anthropic-last-resort',fn:()=>callAnthropic(params),kind:'closed-fallback',free:false,qualityTier:'closed',providerGroup:'anthropic'});
   if(params.preferFreeProviders){
     const hints=new Set(Array.isArray(params.providerHints)?params.providerHints:[]);
     const free=providers.filter(p=>p.free);
@@ -787,15 +870,17 @@ async function createMessage(params={}) {
   const providers=buildProviders(params);
   if(!providers.length)throw new Error('AI client: no configured provider for current data-classification/free-provider policy');
 
-  let eligibleProviders=providers.filter(provider=>!providerCooling(provider.name));
+  let eligibleProviders=providers.filter(provider=>!providerCooling(provider));
   if(!eligibleProviders.length){
     eligibleProviders=await recoverCoolingProviders(providers);
   }
   if(!eligibleProviders.length)throw new Error('AI client: all configured providers are cooling down or temporarily unavailable');
   let lastErr;
   for(const provider of eligibleProviders){
+    if(providerCooling(provider))continue;
     let modelRetries=0;
     while(true){
+      if(providerCooling(provider))break;
       try {
         return {
           ...await attempt(provider.name,provider.fn,provider),
@@ -803,6 +888,7 @@ async function createMessage(params={}) {
           _provider_kind:provider.kind,
           _quality_tier:provider.qualityTier,
           _free_provider:Boolean(provider.free),
+          _provider_group:providerGroup(provider),
         };
       } catch(err) {
         lastErr=err;
