@@ -41,6 +41,19 @@ test('AI senior-editor output is allowed to override deterministic prose fields'
   expect(merge).toBeGreaterThan(-1);
 });
 
+test('stored publication_quality is the final tradecraft assessment, not the legacy deterministic score',()=>{
+  const s=source();
+  expect(s).toContain('publication_quality:finalBody.publication_quality||null');
+  expect(s).not.toContain('publication_quality:deterministic.publication_quality||null');
+});
+
+test('senior editor must return the incident dossiers rendered by the PDF',()=>{
+  const boardSource=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(boardSource).toContain('Required keys: title,subtitle,executive_assessment,sections,outlook,incident_dossiers');
+  expect(boardSource).toContain('const finalDossiers=Array.isArray(final?.incident_dossiers)?final.incident_dossiers:[];');
+  expect(boardSource).toContain('finalDossiersComplete');
+});
+
 test('release gate evaluates the effective reused research dossiers',()=>{
   const s=source();
   expect(s).toContain('effectiveResearchByEvent[String(e.id)]?.agent?.status');
