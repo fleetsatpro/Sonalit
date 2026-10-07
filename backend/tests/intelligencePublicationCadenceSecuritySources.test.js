@@ -56,6 +56,8 @@ describe('Intel Hub publication contract',()=>{
     expect(a).toContain("publishDue(org_id,now,{forceDaily:forceDailyPublications})");
     expect(a).toContain('const forceDaily=Boolean(options.forceDaily);');
     expect(a).toContain("if(forceDaily || isPublicationBoundary(now,tz))await run(country,'daily');");
+    expect(s).toContain('generateMissingPublicationPdfs(org.org_id, Number(process.env.INTEL_PUBLICATION_PDF_BATCH || 8))');
+    expect(s).toContain('pdf_ready=');
   });
 
   test('SGA WhatsApp is registered as an authorized-feed source, never scraped implicitly',()=>{
