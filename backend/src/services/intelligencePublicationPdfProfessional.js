@@ -410,9 +410,12 @@ async function buildIncidentMap(country, events) {
   }
   const escXml=v=>text(v,220).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const markers=plotPoints.map(p=>{
-    const [x,y]=proj(p),c=severityColor(p.severity),r=8+severityScore(p.severity)*2;
-    return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r+'" fill="'+c+'" stroke="#fff" stroke-width="4"/>'+
-      '<text x="'+(x+13).toFixed(1)+'" y="'+(y-9).toFixed(1)+'" fill="#0f172a" font-family="Arial" font-size="22" font-weight="700">'+p.n+'</text>';
+    const [x,y]=proj(p),c=severityColor(p.severity),r=9+severityScore(p.severity)*2;
+    const labelX=x+16,labelY=y-9;
+    return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(r+9).toFixed(1)+'" fill="'+c+'" opacity=".11"/>'+
+      '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+c+'" stroke="#f8fafc" stroke-width="4"/>'+
+      '<text x="'+labelX.toFixed(1)+'" y="'+labelY.toFixed(1)+'" fill="#f8fafc" font-family="Arial" font-size="20" font-weight="700">#'+p.n+'</text>'+
+      '<text x="'+labelX.toFixed(1)+'" y="'+(labelY+20).toFixed(1)+'" fill="#b7c7cd" font-family="Arial" font-size="14">'+escXml(String(p.severity||"moderate").toUpperCase())+'</text>';
   }).join('');
   const label=geo ? (COUNTRY_NAMES[country]||country)+' - INCIDENT GEOGRAPHY' : 'COORDINATE PLOT - GEOGRAPHIC COVERAGE';
   const svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+
