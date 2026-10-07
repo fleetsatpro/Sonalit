@@ -98,7 +98,7 @@ describe('intelligence provider mesh', () => {
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
 
     const until = Date.now() + 60 * 60 * 1000;
-    const blocked = new Set(['openrouter-paid', 'openrouter-free:gpt-oss-120b-openrouter-free']);
+    const blocked = new Set(['openrouter-paid:gpt-oss-120b-openrouter', 'openrouter-free:gpt-oss-120b-openrouter-free']);
     const redis = {
       mget: jest.fn(async keys => keys.map(key => {
         const group = decodeURIComponent(String(key).replace('sonalit:intelligence:ai:circuit:v3:', ''));

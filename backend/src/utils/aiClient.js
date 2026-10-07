@@ -664,8 +664,7 @@ function providerGroup(provider){
     // Free OpenRouter models share an account but must not share a circuit.
     // A 429 on one model lane should quarantine only that lane; siblings remain
     // eligible for failover because model availability is independently scoped.
-    if(provider.free)return 'openrouter-free:'+name;
-    return 'openrouter-paid';
+    return 'openrouter-'+(provider.free?'free':'paid')+':'+name;
   }
   if(base.includes('api.groq.com')||name.includes('-groq'))return 'groq';
   if(name==='openai-direct')return 'openai';
@@ -709,10 +708,10 @@ function fabricCooldownMs(err,provider,state){
   if(Number(err?.status)===429 || /rate.?limit|too many requests|quota/i.test(String(err?.message||''))){
     const headerMs=retryAfterMs(err,0);
     if(headerMs>0)return Math.min(FABRIC_QUOTA_MAX_COOLDOWN_MS,Math.max(15000,headerMs));
-    if(providerGroup(provider).startsWith('openrouter-free:')){
-      // Keep free OpenRouter quota/rate-limit state model-specific. The provider
-      // state already cools the individual lane; never fan a single 429 across
-      // every free model under the same OpenRouter account.
+    if(providerGroup(provider).startsWith('openrouter-free:') || providerGroup(provider).startsWith('openrouter-paid:')){
+      // OpenRouter lanes are independently circuit-broken. Keep account-level
+      // concurrency shared, but never turn one model failure into a fleet-wide
+      // quarantine. The provider state already cools the affected lane.
       return 0;
     }
     return Math.min(RETRYABLE_COOLDOWN_MAX_MS,RETRYABLE_COOLDOWN_BASE_MS*Math.pow(2,Math.min(Number(state.failureCount||0)-1,5)));
