@@ -322,7 +322,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'true').toLowerCase()!=='false';
   const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true').toLowerCase()!=='false';
 
-  if(aiBoardEnabled && aiClient.hasAnyProvider() && events.length){
+  if(aiBoardEnabled && aiClient.hasAvailableProvider() && events.length){
     try{
       const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events:reportEvents,baseBody:deterministic,evidenceContract:publicationEvidenceContract,precomputedResearch:incidentResearch});
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
