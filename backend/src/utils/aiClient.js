@@ -688,7 +688,10 @@ async function attempt(label,fn,meta={}){
 }
 
 async function createResearchMessage(params) {
-  if(hasAnthropic()){
+  // Public publication runs prefer the resilient open-weight research fabric.
+  // Keep Anthropic web search as an emergency path, not the first dependency,
+  // because a depleted account should never stall otherwise healthy free lanes.
+  if(hasAnthropic() && !params.preferFreeProviders){
     try{
       return {
         ...await attempt('anthropic-last-resort',()=>callAnthropic({
