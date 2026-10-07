@@ -17,7 +17,9 @@ describe('Intel Hub publication contract',()=>{
 
   test('weekly and monthly editions use completed periods, not the current partial period',()=>{
     const s=agents();
-    expect(s).toContain("const start=shiftedCalendarParts(local,-(mondayOffset+7))");
+    expect(s).toContain("const previousWeekStart=shiftedCalendarParts(local,-(mondayOffset+7))");
+    expect(s).toContain("const currentWeekStart=shiftedCalendarParts(local,-mondayOffset)");
+    expect(s).toContain("endParts={...currentWeekStart,hour:0,minute:0,second:0}");
     expect(s).toContain("const previousMonth=new Date(Date.UTC(local.year,local.month-2,1))");
   });
 
@@ -62,6 +64,7 @@ describe('Intel Hub publication contract',()=>{
   test('ultra-quality release gate is at least 90/100',()=>{
     const q=quality();
     expect(q).toContain('finalScore >= 90');
+    expect(q).toContain('threshold: 90');
     const board=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
     expect(board).toContain('minimum_qa_score:90');
   });
