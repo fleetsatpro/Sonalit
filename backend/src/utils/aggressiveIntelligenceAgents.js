@@ -128,7 +128,18 @@ async function fetchDirectSource(src) {
 }
 
 async function ensureSource(orgId, spec) {
-  const { rows } = await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) ON CONFLICT (org_id,provider,endpoint) WHERE provider IS NOT NULL AND endpoint IS NOT NULL DO UPDATE SET name=EXCLUDED.name,source_type=EXCLUDED.source_type,reliability=EXCLUDED.reliability,metadata=EXCLUDED.metadata,last_seen_at=NOW(),updated_at=NOW() RETURNING *`, [orgId,spec.name,spec.source_type||'other',spec.provider,spec.endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
+  const endpoint=spec.endpoint||null;
+  const provider=spec.provider||null;
+  if(provider&&endpoint){
+    const { rows } = await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) ON CONFLICT (org_id,provider,endpoint) WHERE provider IS NOT NULL AND endpoint IS NOT NULL DO UPDATE SET name=EXCLUDED.name,source_type=EXCLUDED.source_type,reliability=EXCLUDED.reliability,metadata=EXCLUDED.metadata,last_seen_at=NOW(),updated_at=NOW() RETURNING *`, [orgId,spec.name,spec.source_type||'other',provider,endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
+    return rows[0];
+  }
+  const existing=await query(`SELECT * FROM intel_sources WHERE org_id=$1 AND name=$2 ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1`,[orgId,spec.name]);
+  if(existing.rows[0]){
+    const {rows}=await query(`UPDATE intel_sources SET source_type=$3,provider=$4,endpoint=$5,reliability=$6,metadata=$7::jsonb,last_seen_at=NOW(),updated_at=NOW() WHERE org_id=$1 AND id=$2 RETURNING *`,[orgId,existing.rows[0].id,spec.source_type||'other',provider,endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
+    return rows[0];
+  }
+  const {rows}=await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) RETURNING *`,[orgId,spec.name,spec.source_type||'other',provider,endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
   return rows[0];
 }
 
