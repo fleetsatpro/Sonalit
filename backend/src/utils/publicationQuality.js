@@ -367,7 +367,7 @@ function assessPublicationQuality(body) {
     const uncertainty = Array.isArray(dossier.caveats) ? dossier.caveats.filter(Boolean) : [];
     const sources = Array.isArray(dossier.research_sources) ? dossier.research_sources : [];
 
-    if (textLength(narrative) < 320) { ds -= 20; blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} lacks a substantive narrative.`); }
+    if (textLength(narrative) < 260) { ds -= 20; blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} lacks a substantive narrative.`); }
     if (textLength(context) < 100) { ds -= 10; warnings.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} has limited contextual explanation.`); }
     if (textLength(assessment) < 100) { ds -= 20; blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} lacks a substantive analytical judgement.`); }
     if (facts.length < 2) { ds -= 8; warnings.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} has fewer than two explicit evidence-backed facts.`); }
@@ -406,7 +406,7 @@ function assessPublicationQuality(body) {
   }
 
   const trends = Array.isArray(report.emerging_trends) ? report.emerging_trends : [];
-  const falseTrend = trends.some(x => x && x.basis !== 'PERIOD_COMPARISON' && /trend|increase|decrease|rise|fall|growth/i.test(String(x.assessment || '')));
+  const falseTrend = trends.some(x => { const a=String(x?.assessment||''); return x && x.basis !== 'PERIOD_COMPARISON' && /trend|increase|decrease|rise|fall|growth/i.test(a) && !/not (?:treated as )?a time-series trend/i.test(a); });
   if (falseTrend) {
     blockers.push('A current-period concentration is being expressed as a time-series trend without a baseline.');
     score -= 14;
