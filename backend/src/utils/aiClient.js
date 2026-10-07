@@ -867,6 +867,10 @@ function buildProviders(params={}) {
   return providers;
 }
 
+function hasReadyProvider(params={}){
+  return buildProviders(params).some(provider=>!providerCooling(provider));
+}
+
 async function createMessage(params={}) {
   const providers=buildProviders(params);
   if(!providers.length)throw new Error('AI client: no configured provider for current data-classification/free-provider policy');
@@ -915,6 +919,7 @@ module.exports={
   hasOpenSourcePrimary,
   hasOpenSourceSecondary,
   hasAnyProvider,
+  hasReadyProvider,
   hasOpenWeightProvider,
   providerCapabilities,
   resolvedOpenWeightModel,
