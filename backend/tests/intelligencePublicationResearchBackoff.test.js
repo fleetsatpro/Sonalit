@@ -18,8 +18,9 @@ describe('publication research retry hardening',()=>{
     expect(s).toContain('skipped_due_to_cooldown');
   });
 
-  test('previous successful incident dossiers survive a later fallback result',()=>{
+  test('previous successful incident dossiers survive a fallback only when evidence is unchanged',()=>{
     const s=source();
+    expect(s).toContain('if(!evidenceChanged){');
     expect(s).toContain("current?.agent?.status==='fallback'&&prior?.agent?.status==='researched'");
     expect(s).toContain('else if(!current&&prior)effectiveResearchByEvent[id]=prior;');
   });
