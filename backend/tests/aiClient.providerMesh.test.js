@@ -7,6 +7,10 @@ describe('intelligence provider mesh', () => {
     jest.resetModules();
     process.env = { ...originalEnv };
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_GPT_OSS_120B_FREE_MODEL;
+    delete process.env.OPENROUTER_GPT_OSS_20B_FREE_MODEL;
+    delete process.env.OPENROUTER_GLM45_AIR_FREE_MODEL;
+    delete process.env.OPENROUTER_LING30_FLASH_VL_MODEL;
     delete process.env.NVIDIA_API_KEY;
     delete process.env.CEREBRAS_API_KEY;
     delete process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT;
@@ -45,9 +49,9 @@ describe('intelligence provider mesh', () => {
       expect.objectContaining({ label: 'gpt-oss-120b-cerebras', configured: true }),
       expect.objectContaining({ label: 'openrouter-free-router', configured: true, free: true }),
       expect.objectContaining({ label: 'apodex-1.1-mini-openrouter-free', configured: true, free: true }),
-      expect.objectContaining({ label: 'qwen3.8-27b-openrouter-free', configured: true, free: true }),
-      expect.objectContaining({ label: 'north-mini-code-openrouter-free', configured: true, free: true }),
-      expect.objectContaining({ label: 'ling3.0-flash-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'gpt-oss-120b-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'glm-4.5-air-openrouter-free', configured: true, free: true }),
+      expect.objectContaining({ label: 'ling3.0-flash-vl-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'gemma4-26b-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'gemma4-31b-openrouter-free', configured: true, free: true }),
       expect.objectContaining({ label: 'nemotron3-nano-omni-openrouter-free', configured: true, free: true }),
@@ -93,7 +97,7 @@ describe('intelligence provider mesh', () => {
     expect(caps.free_open_weight_enabled).toBe(false);
     expect(caps.open_weight).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'openrouter-free-router', active_for_public: false }),
-      expect.objectContaining({ label: 'qwen3.8-27b-openrouter-free', active_for_public: false }),
+      expect.objectContaining({ label: 'gpt-oss-120b-openrouter-free', active_for_public: false }),
     ]));
     expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(true);
 
@@ -104,7 +108,7 @@ describe('intelligence provider mesh', () => {
     expect(enabledCaps.open_weight).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'openrouter-free-router', active_for_public: true, free: true }),
       expect.objectContaining({ label: 'apodex-1.1-mini-openrouter-free', active_for_public: true, free: true }),
-      expect.objectContaining({ label: 'qwen3.8-27b-openrouter-free', active_for_public: true, free: true }),
+      expect.objectContaining({ label: 'gpt-oss-120b-openrouter-free', active_for_public: true, free: true }),
     ]));
     expect(ai.hasAnyProvider({ dataClassification: 'public' })).toBe(true);
     expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(true);
@@ -184,6 +188,82 @@ describe('intelligence provider mesh', () => {
     expect(lastRequest.response_format).toEqual(expect.objectContaining({
       type: 'json_schema',
     }));
+  });
+
+  test('rotates automatically from a stale model id after a provider 404', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+    process.env.OPENROUTER_GPT_OSS_120B_FREE_MODEL = 'openai/retired-model:free';
+
+    const seen = [];
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor() {
+        this.chat = {
+          completions: {
+            create: jest.fn(async request => {
+              seen.push(request.model);
+              if (request.model === 'openai/retired-model:free') {
+                const error = new Error('model not found');
+                error.status = 404;
+                throw error;
+              }
+              return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
+            }),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const response = await ai.createMessage({
+      dataClassification: 'public',
+      allowFreeProviders: true,
+      preferFreeProviders: true,
+      providerHints: ['gpt-oss-120b-openrouter-free'],
+      system: 'Return JSON.',
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    });
+
+    expect(response._provider).toBe('gpt-oss-120b-openrouter-free');
+    expect(seen).toEqual([
+      'openai/retired-model:free',
+      'openai/gpt-oss-120b:free',
+    ]);
+    expect(ai.resolvedOpenWeightModel(
+      ai.providerCapabilities().open_weight.find(p => p.label === 'gpt-oss-120b-openrouter-free')
+    )).toBe('openai/gpt-oss-120b:free');
+  });
+
+  test('prefers free publication lanes when explicitly requested', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor() {
+        this.chat = {
+          completions: {
+            create: jest.fn(async () => ({
+              choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
+            })),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const response = await ai.createMessage({
+      dataClassification: 'public',
+      allowFreeProviders: true,
+      preferFreeProviders: true,
+      providerHints: ['gpt-oss-20b-openrouter-free'],
+      system: 'Return JSON.',
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    });
+
+    expect(response._provider).toBe('gpt-oss-20b-openrouter-free');
+    expect(response._free_provider).toBe(true);
   });
 
   test('provider hints are advisory and do not remove the global failover mesh', async () => {
