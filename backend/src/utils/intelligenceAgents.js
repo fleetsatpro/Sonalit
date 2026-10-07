@@ -326,7 +326,29 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       aiBoardStatus=result.publishable?'passed':'held';
       aiBoardHoldReason=result.publishable?null:JSON.stringify({qa:result.qa?.publishable===true,blocking:(result.qa?.blocking_issues||[]).length});
       const final=result.final;
-      if(final){title=final.title||title;subtitle=final.subtitle||subtitle;executive=final.executive_assessment||executive;finalBody={...deterministic,...final,title:final.title||deterministic.title,subtitle:final.subtitle||deterministic.subtitle,executive_assessment:final.executive_assessment||deterministic.executive_assessment};}
+      if(final){
+        title=final.title||title;
+        subtitle=final.subtitle||subtitle;
+        executive=final.executive_assessment||executive;
+        finalBody={...deterministic,...final,title:final.title||deterministic.title,subtitle:final.subtitle||deterministic.subtitle,executive_assessment:final.executive_assessment||deterministic.executive_assessment};
+        if(Array.isArray(finalBody.incident_dossiers)){
+          finalBody.incident_dossiers=finalBody.incident_dossiers.map(d=>{
+            const id=String(d?.event_id||'');
+            const verifiedResearch=effectiveResearchByEvent[id]?.agent||{};
+            return {
+              ...d,
+              event_id:id,
+              research_status:verifiedResearch.status||d?.research_status||null,
+              research_provider:verifiedResearch.provider||d?.research_provider||null,
+              research_method:verifiedResearch.research_method||d?.research_method||null,
+              web_sources_retrieved:Number(verifiedResearch.web_sources_retrieved||d?.web_sources_retrieved||0)||0,
+              research_sources:Array.isArray(verifiedResearch.sources)?verifiedResearch.sources.map(src=>({...src})):(
+                Array.isArray(d?.research_sources)?d.research_sources:[]
+              )
+            };
+          });
+        }
+      }
       if(!result.publishable) logger.warn(`Publication editorial board held ${country}/${type}: evidence=${evidenceContract} qa=${result.qa?.publishable===true} blocking=${(result.qa?.blocking_issues||[]).length}; publication remains on release hold.`);
     }catch(error){aiBoardStatus='unavailable';aiBoardHoldReason=error.message;logger.warn(`Publication editorial board unavailable ${country}/${type}; publication remains on release hold: ${error.message}`);}
   }
