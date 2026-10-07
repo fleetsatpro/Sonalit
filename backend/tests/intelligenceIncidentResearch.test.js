@@ -31,13 +31,18 @@ describe('publication incident research coverage',()=>{
 test('provider research citations must come from non-text verified web-search result blocks',()=>{
   const sources=verifiedResponseSources({
     content:[
-      {type:'text',text:'{"sources":[{"url":"https://invented.example/report"},{"url":"https://real.example/report"}]}'},
+      {
+        type:'text',
+        text:'{"sources":[{"url":"https://invented.example/report"},{"url":"https://real.example/report"}]}',
+        citations:[{type:'web_search_result_location',url:'https://real.example/report',title:'Verified report',cited_text:'Verified source text'}]
+      },
       {type:'web_search_tool_result',content:[
         {type:'web_search_result',title:'Verified report',url:'https://real.example/report',domain:'real.example'}
       ]}
     ]
   });
   expect(sources.map(x=>x.url)).toEqual(['https://real.example/report']);
+  expect(sources[0].source_type).toBe('provider_web_citation');
 });
 
 
