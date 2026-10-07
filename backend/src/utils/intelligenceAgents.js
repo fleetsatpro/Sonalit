@@ -55,8 +55,10 @@ function publicationWindow(now=new Date(),type='daily',timeZone=PUBLICATION_TIME
     startParts={...previous,hour:0,minute:0,second:0};
   }else if(type==='weekly'){
     const mondayOffset=(localWeekday(local)+6)%7;
-    const start=shiftedCalendarParts(local,-(mondayOffset+7));
-    startParts={...start,hour:0,minute:0,second:0};
+    const currentWeekStart=shiftedCalendarParts(local,-mondayOffset);
+    const previousWeekStart=shiftedCalendarParts(local,-(mondayOffset+7));
+    startParts={...previousWeekStart,hour:0,minute:0,second:0};
+    endParts={...currentWeekStart,hour:0,minute:0,second:0};
   }else{
     const previousMonth=new Date(Date.UTC(local.year,local.month-2,1));
     startParts={year:previousMonth.getUTCFullYear(),month:previousMonth.getUTCMonth()+1,day:1,hour:0,minute:0,second:0};
