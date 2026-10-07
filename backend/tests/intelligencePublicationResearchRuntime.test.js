@@ -72,3 +72,11 @@ test('editorial board is enabled and required by default',()=>{
   expect(s).toContain("process.env.INTEL_PUBLICATION_AI_BOARD||'true'");
   expect(s).toContain("process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true'");
 });
+
+
+test('editorial board requires exact incident-id coverage in the final report',()=>{
+  const boardSource=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(boardSource).toContain('const expectedEventIds=new Set(events.map(e=>String(e.id)));');
+  expect(boardSource).toContain('returnedEventIds.size===expectedEventIds.size');
+  expect(boardSource).toContain('[...expectedEventIds].every(id=>returnedEventIds.has(id))');
+});
