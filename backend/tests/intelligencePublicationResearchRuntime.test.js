@@ -74,6 +74,16 @@ test('editorial board is enabled and required by default',()=>{
 });
 
 
+test('publication QA lanes may use free open-weight models when the publication is explicitly public',()=>{
+  const boardSource=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(boardSource).toContain("id:'publication-qa', lane:'qa'");
+  expect(boardSource).toContain("id:'independent-quality-assurance', lane:'qa'");
+  expect(boardSource).toContain("id:'release-integrity-auditor', lane:'qa'");
+  expect(boardSource).toContain("allowFreeProviders:true");
+  expect(boardSource).toContain("preferFreeProviders:true");
+  expect(boardSource).toContain("dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase()");
+});
+
 test('editorial board requires exact incident-id coverage in the final report',()=>{
   const boardSource=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
   expect(boardSource).toContain('const expectedEventIds=new Set(events.map(e=>String(e.id)));');
