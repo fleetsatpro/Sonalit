@@ -25,3 +25,18 @@ describe('publication deep-research runtime ordering',()=>{
     expect(s).toContain('web_search_requests=');
   });
 });
+
+
+test('publication release defaults to requiring complete incident research',()=>{
+  const s=source();
+  expect(s).toContain("process.env.INTEL_PUBLICATION_REQUIRE_RESEARCH||'true'");
+  expect(s).toContain('researchReleaseGate');
+  expect(s).toContain('tradecraftQuality');
+  expect(s).toContain('publication_research_required:publicationResearchRequired');
+});
+
+test('AI senior-editor output is allowed to override deterministic prose fields',()=>{
+  const s=source();
+  const merge=s.indexOf('finalBody={...deterministic,...final');
+  expect(merge).toBeGreaterThan(-1);
+});
