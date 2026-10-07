@@ -1,4 +1,4 @@
-use strict';
+'use strict';
 
 /**
  * Sonalit AI provider fabric.
