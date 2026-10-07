@@ -60,6 +60,12 @@ describe('Intel Hub publication contract',()=>{
     expect(s).toContain('pdf_ready=');
   });
 
+  test('publication recovery is ordered before the expensive startup collection',()=>{
+    const s=worker();
+    expect(s.indexOf('const catchup = await runIntelligenceAgents')).toBeGreaterThan(-1);
+    expect(s.indexOf('const catchup = await runIntelligenceAgents')).toBeLessThan(s.indexOf("await evaluateSpatialEye('startup')"));
+  });
+
   test('SGA WhatsApp is registered as an authorized-feed source, never scraped implicitly',()=>{
     const s=mesh();
     expect(s).toContain("channel_id:'sga-whatsapp-group'");
