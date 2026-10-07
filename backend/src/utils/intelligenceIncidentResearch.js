@@ -479,14 +479,20 @@ async function researchPublicationIncidents(events,{country,region}={}){
   // Research incidents independently so each case receives a clean evidence context and full web-search budget.
   const batchSize=1;
   let cursor=0;
+  let halted=false;
   const concurrency=Math.max(1,Math.min(2,Number(process.env.INTEL_PUBLICATION_RESEARCH_CONCURRENCY)||2));
   async function worker(){
     while(true){
+      if(halted)return;
       const start=cursor; cursor+=batchSize;
       if(start>=events.length)return;
       const batch=events.slice(start,start+batchSize);
       const results=await researchBatch(batch,{country,region});
       results.forEach((result,i)=>{out[String(batch[i].id)]=result});
+      if(results.some(result=>result?.error==='ai_provider_unavailable' || result?.agent?.agent_status==='provider_unavailable')){
+        halted=true;
+        logger.warn('Incident research cycle halted: AI provider fabric unavailable; remaining incidents deferred.');
+      }
     }
   }
   await Promise.all(Array.from({length:Math.min(concurrency,Math.ceil(events.length/batchSize))},worker));
