@@ -503,7 +503,7 @@ async function researchPublicationIncidents(events,{country,region}={}){
   const researchedPacket=values.filter(x=>x?.agent?.research_method==='live_web_packet').length;
   const webSearchRequests=values.reduce((n,x)=>n+Number(x?.webSearchRequests||0),0);
   const webSourcesRetrieved=values.reduce((n,x)=>n+Number(x?.agent?.web_sources_retrieved||x?.packet?.fetched_pages?.length||0),0);
-  return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved}};
+  return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,halted,deferred:Math.max(0,events.length-values.length)}};
 }
 
 module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources};
