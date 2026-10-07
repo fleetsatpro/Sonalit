@@ -46,7 +46,7 @@ test('AI editorial board is mandatory publication authority by default',()=>{
 
 test('publication agent imports the editorial quality audit before invoking it',()=>{
   const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
-  expect(source).toMatch(/const \{ auditPublicationContent, isAggregatorDomain, normalizeDomain, sourceIsSubstantive(?:, isRepetitiveTemplateText)? \} = require\('\.\/publicationQuality'\);/);
+  expect(source).toMatch(/const \{ auditPublicationContent(?:, assessPublicationQuality)?, isAggregatorDomain, normalizeDomain, sourceIsSubstantive(?:, isRepetitiveTemplateText)? \} = require\('\.\/publicationQuality'\);/);
   expect(source).toContain('const finalQuality=auditPublicationContent(');
 });
 
