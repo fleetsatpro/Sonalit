@@ -19,6 +19,17 @@ const PUBLICATION_EVIDENCE_VERSION='1.1';
 const MAX_TRANSLATE=24;
 const MAX_SYNTHESIS=10;
 const PUBLICATION_TIMEZONE=process.env.INTEL_PUBLICATION_TIMEZONE||'Africa/Nairobi';
+const DEFAULT_COUNTRY_TIMEZONES={
+  KE:'Africa/Nairobi',SO:'Africa/Mogadishu',ET:'Africa/Addis_Ababa',UG:'Africa/Kampala',TZ:'Africa/Dar_es_Salaam',
+  RW:'Africa/Kigali',BI:'Africa/Bujumbura',SS:'Africa/Juba',DJ:'Africa/Djibouti',ER:'Africa/Asmara',
+  SD:'Africa/Khartoum',CD:'Africa/Kinshasa'
+};
+let COUNTRY_TIMEZONES=DEFAULT_COUNTRY_TIMEZONES;
+try{
+  const configured=JSON.parse(process.env.INTEL_PUBLICATION_TIMEZONE_MAP_JSON||'{}');
+  if(configured&&typeof configured==='object'&&!Array.isArray(configured))COUNTRY_TIMEZONES={...DEFAULT_COUNTRY_TIMEZONES,...configured};
+}catch(_){COUNTRY_TIMEZONES=DEFAULT_COUNTRY_TIMEZONES;}
+function publicationTimezoneForCountry(country){return String(COUNTRY_TIMEZONES[String(country||'').toUpperCase()]||PUBLICATION_TIMEZONE);}
 const SECURITY_EVENT_TYPES=new Set(['SECURITY','CRIME','BORDER','MARITIME']);
 const SECURITY_SIGNAL_RE=/\b(armed attack|attack|ambush|kidnap(?:ping)?|abduct(?:ion)?|bomb(?:ing)?|explosion|terror(?:ism|ist)?|militia|insurgent|insurgency|armed group|gunfire|shooting|raid|clash|violent protest|unrest|riot|roadblock|checkpoint|security operation|security incident|piracy|hijack(?:ing)?|hostage|IED|detained|curfew|coup|mutiny|bandit(?:ry)?|robbery|murder|carjacking|assassination)\b/i;
 const SECURITY_POLITICAL_RE=/\b(protest|demonstration|unrest|riot|clash|curfew|coup|election violence|political violence|security forces)\b/i;
@@ -235,7 +246,8 @@ function selectPublicationResearchEvents(events,limit=10){
 async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const now=new Date();
   let start,end;
-  ({start,end}=publicationWindow(now,type,PUBLICATION_TIMEZONE));
+  const publicationTimezone=publicationTimezoneForCountry(country);
+  ({start,end}=publicationWindow(now,type,publicationTimezone));
   const {rows:existing}=await query(
     `SELECT id,status,version,body,pdf_status,pdf_version FROM intel_publications
       WHERE org_id=$1 AND country_code=$2 AND publication_type=$3 AND period_start=$4 AND period_end=$5 AND status IN ('draft','review','published')
@@ -528,17 +540,26 @@ function publicationForCountry(orgId,country,type='daily'){
   });
 }
 
+function isCountryPublicationBoundary(country,now=new Date()){
+  return isPublicationBoundary(now,publicationTimezoneForCountry(country));
+}
+function anyCountryPublicationBoundary(now=new Date()){
+  return DAILY_COUNTRIES.some(country=>isCountryPublicationBoundary(country,now));
+}
 async function publishDue(orgId,now=new Date()){
  const results=[];
- const local=zonedParts(now,PUBLICATION_TIMEZONE);
  const run=async(country,type)=>{
-   try{results.push({country,...await publicationForCountry(orgId,country,type)});}
+   try{results.push({country,timezone:publicationTimezoneForCountry(country),...await publicationForCountry(orgId,country,type)});}
    catch(error){logger.error('Intelligence publication failed '+country+'/'+type+' org='+orgId+': '+error.message);results.push({country,type,status:'failed',error:error.message});}
  };
- for(const country of DAILY_COUNTRIES)await run(country,'daily');
- if(local.hour===0&&local.minute<5&&localWeekday(local)===1)for(const country of DAILY_COUNTRIES)await run(country,'weekly');
- if(local.hour===0&&local.minute<5&&local.day===1)for(const country of DAILY_COUNTRIES)await run(country,'monthly');
- return{processed:results.length,results,timezone:PUBLICATION_TIMEZONE,boundary:'00:00 local'};
+ for(const country of DAILY_COUNTRIES){
+   const tz=publicationTimezoneForCountry(country);
+   const local=zonedParts(now,tz);
+   if(isPublicationBoundary(now,tz))await run(country,'daily');
+   if(local.hour===0&&local.minute<5&&localWeekday(local)===1)await run(country,'weekly');
+   if(local.hour===0&&local.minute<5&&local.day===1)await run(country,'monthly');
+ }
+ return{processed:results.length,results,timezone:'per-country-local',boundary:'00:00 local by country'};
 }
 async function runIntelligenceAgents(options={}){
  const includePublications=Boolean(options.includePublications);
@@ -559,7 +580,7 @@ async function runIntelligenceAgents(options={}){
  return output;
 }
 async function runScheduledPublicationBoundary(now=new Date()){
- if(!isPublicationBoundary(now,PUBLICATION_TIMEZONE))return{skipped:true,reason:'not_publication_boundary',timezone:PUBLICATION_TIMEZONE};
- return{skipped:false,timezone:PUBLICATION_TIMEZONE,results:await runIntelligenceAgents({includePublications:true,now})};
+ if(!anyCountryPublicationBoundary(now))return{skipped:true,reason:'not_publication_boundary_for_any_country',timezone:'per-country-local'};
+ return{skipped:false,timezone:'per-country-local',results:await runIntelligenceAgents({includePublications:true,now})};
 }
-module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,evidenceDerivedSynthesis,publicationWindow,isPublicationBoundary,isSecurityRelevantEvent,defaultPublicationTimezone:PUBLICATION_TIMEZONE,runScheduledPublicationBoundary};
+module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,evidenceDerivedSynthesis,publicationWindow,isPublicationBoundary,isSecurityRelevantEvent,isCountryPublicationBoundary,anyCountryPublicationBoundary,publicationTimezoneForCountry,defaultPublicationTimezone:PUBLICATION_TIMEZONE,defaultCountryTimezones:DEFAULT_COUNTRY_TIMEZONES,runScheduledPublicationBoundary};
