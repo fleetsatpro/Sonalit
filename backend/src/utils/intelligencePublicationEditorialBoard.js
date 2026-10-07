@@ -32,7 +32,11 @@ const AGENT_ROLES = [
   { id:'release-integrity-auditor', lane:'qa', purpose:'Act as the final release authority: look for provenance breaks, unsupported inference, misleading precision, missing uncertainty and any reason a client should not receive the report.', providerHints:['gemma4-31b-openrouter-free','nemotron3-super-openrouter-free','gpt-oss-20b-openrouter-free'], allowFreeProviders:true },
 ];
 
-function hasAi(params={}){ return aiClient.hasAnyProvider(params); }
+function hasAi(params={}){
+  return typeof aiClient.hasReadyProvider==='function'
+    ? aiClient.hasReadyProvider(params)
+    : aiClient.hasAnyProvider(params);
+}
 function extract(response){ return Array.isArray(response?.content) ? response.content.filter(x=>x?.type==='text').map(x=>x.text).join('\n') : ''; }
 function parse(text){ try { return JSON.parse(text); } catch (_) {} const m=String(text||'').match(/[\[{][\s\S]*[\]}]/); if(!m)return null; try{return JSON.parse(m[0]);}catch(_){return null;} }
 function clean(v,n=5000){ return String(v||'').replace(/\s+/g,' ').trim().slice(0,n); }
@@ -84,14 +88,25 @@ async function callAgent(role, payload){
     const parsed=parse(extract(response));
     return { role:role.id, status:parsed?'complete':'invalid_output', provider:response?._provider||'unknown', output:parsed };
   } catch(error){
+    const exhausted=/all configured providers are cooling down|temporarily unavailable|provider cooling down/i.test(String(error?.message||''));
+    if(exhausted)return { role:role.id, status:'provider_exhausted', error:error.message };
     logger.warn(`Publication agent ${role.id} failed: ${error.message}`);
     return { role:role.id, status:'failed', error:error.message };
   }
 }
 
 async function runLimited(tasks, limit=4){
-  const out=[]; let cursor=0;
-  async function worker(){ while(true){ const i=cursor++; if(i>=tasks.length)return; out[i]=await tasks[i](); } }
+  const out=[]; let cursor=0; let halted=false;
+  async function worker(){
+    while(true){
+      if(halted)return;
+      const i=cursor++;
+      if(i>=tasks.length)return;
+      const result=await tasks[i]();
+      out[i]=result;
+      if(result?.status==='provider_exhausted')halted=true;
+    }
+  }
   await Promise.all(Array.from({length:Math.min(limit,tasks.length)},worker));
   return out;
 }
