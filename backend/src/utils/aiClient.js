@@ -101,28 +101,47 @@ const OPEN_WEIGHT_PROVIDERS = [
     headers:{'HTTP-Referer':'https://www.sonalit.com','X-Title':'Sonalit Intelligence Centre'},
   },
   {
-    name:'qwen3.8-27b-openrouter-free',
+    name:'gpt-oss-120b-openrouter-free',
     key:'OPENROUTER_API_KEY',
     base:'https://openrouter.ai/api/v1',
-    modelKey:'OPENROUTER_QWEN38_MODEL',
-    model:'qwen/qwen3.8-27b:free',
-    qualityTier:'multimodal-rescue',
+    modelKey:'OPENROUTER_GPT_OSS_120B_FREE_MODEL',
+    model:'openai/gpt-oss-120b:free',
+    fallbackModels:['nvidia/nemotron-3-super-120b-a12b:free','nvidia/nemotron-3-ultra-550b-a55b:free','google/gemma-4-31b-it:free'],
+    qualityTier:'frontier-reasoning',
     free:true,
-    multimodal:true,
+    multimodal:false,
     reasoning:true,
+    structuredOutputs:true,
     sensitiveDataBlocked:true,
     headers:{'HTTP-Referer':'https://www.sonalit.com','X-Title':'Sonalit Intelligence Centre'},
   },
   {
-    name:'north-mini-code-openrouter-free',
+    name:'gpt-oss-20b-openrouter-free',
     key:'OPENROUTER_API_KEY',
     base:'https://openrouter.ai/api/v1',
-    modelKey:'OPENROUTER_NORTH_MINI_CODE_MODEL',
-    model:'cohere/north-mini-code:free',
+    modelKey:'OPENROUTER_GPT_OSS_20B_FREE_MODEL',
+    model:'openai/gpt-oss-20b:free',
+    fallbackModels:['z-ai/glm-4.5-air:free','nvidia/nemotron-3.5-lightning:free'],
+    qualityTier:'fast-reasoning',
+    free:true,
+    multimodal:false,
+    reasoning:true,
+    structuredOutputs:true,
+    sensitiveDataBlocked:true,
+    headers:{'HTTP-Referer':'https://www.sonalit.com','X-Title':'Sonalit Intelligence Centre'},
+  },
+  {
+    name:'glm-4.5-air-openrouter-free',
+    key:'OPENROUTER_API_KEY',
+    base:'https://openrouter.ai/api/v1',
+    modelKey:'OPENROUTER_GLM45_AIR_FREE_MODEL',
+    model:'z-ai/glm-4.5-air:free',
+    fallbackModels:['openai/gpt-oss-20b:free','nvidia/nemotron-3.5-lightning:free'],
     qualityTier:'agentic-fast',
     free:true,
     multimodal:false,
     reasoning:true,
+    structuredOutputs:true,
     sensitiveDataBlocked:true,
     headers:{'HTTP-Referer':'https://www.sonalit.com','X-Title':'Sonalit Intelligence Centre'},
   },
@@ -179,15 +198,17 @@ const OPEN_WEIGHT_PROVIDERS = [
     headers:{'HTTP-Referer':'https://www.sonalit.com','X-Title':'Sonalit Intelligence Centre'},
   },
   {
-    name:'ling3.0-flash-openrouter-free',
+    name:'ling3.0-flash-vl-openrouter-free',
     key:'OPENROUTER_API_KEY',
     base:'https://openrouter.ai/api/v1',
-    modelKey:'OPENROUTER_LING30_FLASH_MODEL',
-    model:'inclusionai/ling-3.0-flash:free',
-    qualityTier:'frontier-fast',
+    modelKey:'OPENROUTER_LING30_FLASH_VL_MODEL',
+    model:'inclusionai/ling-3.0-flash-vl:free',
+    fallbackModels:['google/gemma-4-26b-a4b-it:free','nvidia/nemotron-3-nano-omni-30b-a3b:free'],
+    qualityTier:'multimodal-frontier',
     free:true,
-    multimodal:false,
+    multimodal:true,
     reasoning:true,
+    structuredOutputs:false,
     sensitiveDataBlocked:true,
     headers:{'HTTP-Referer':'https://www.sonalit.com','X-Title':'Sonalit Intelligence Centre'},
   },
@@ -296,7 +317,18 @@ const states = Object.fromEntries([
   ['mistral-rescue',{downUntil:0}],
   ['anthropic-last-resort',{downUntil:0}],
 ]);
+
 const clients = {};
+const modelCursors = Object.fromEntries(OPEN_WEIGHT_PROVIDERS.map(p=>[p.name,0]));
+const modelDisabledUntil = Object.fromEntries(OPEN_WEIGHT_PROVIDERS.map(p=>[p.name,0]));
+const concurrency = {
+  openrouter: { active:0, queue:[] },
+};
+const OPENROUTER_MAX_CONCURRENCY = Math.max(1, Math.min(4, Number(process.env.INTEL_OPENROUTER_CONCURRENCY || 2)));
+const MODEL_UNAVAILABLE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const RETRYABLE_COOLDOWN_BASE_MS = 15 * 1000;
+const RETRYABLE_COOLDOWN_MAX_MS = 90 * 1000;
+
 
 function keyOk(k) { return !!(k && String(k).length >= 10); }
 function hasAnthropic() { return keyOk(process.env.ANTHROPIC_API_KEY); }
@@ -343,7 +375,7 @@ function providerCapabilities() {
     free_open_weight_enabled:freeLanesEnabled(),
     open_weight: OPEN_WEIGHT_PROVIDERS.map(p => ({
       label:p.name,
-      model:process.env[p.modelKey]||p.model,
+      model:resolvedOpenWeightModel(p),
       configured:hasOpenWeightProvider(p),
       active_for_public:hasOpenWeightProvider(p) && freeProviderAllowed(p,{dataClassification:'public'}),
       free:Boolean(p.free),
@@ -515,9 +547,59 @@ function openAIResponseToAnthropicShape(completion) {
   return {content,stop_reason:(message.tool_calls?.length||0)?'tool_use':'end_turn'};
 }
 
+
+function uniqueStrings(items){
+  return [...new Set(items.map(v=>String(v||'').trim()).filter(Boolean))];
+}
+function modelCandidates(def){
+  return uniqueStrings([
+    process.env[def.modelKey],
+    def.model,
+    ...(Array.isArray(def.fallbackModels)?def.fallbackModels:[])
+  ]);
+}
+function resolvedOpenWeightModel(def){
+  const candidates=modelCandidates(def);
+  const cursor=Math.max(0,Math.min(Number(modelCursors[def.name]||0),Math.max(0,candidates.length-1)));
+  return candidates[cursor]||def.model;
+}
+function isModelNotFound(err){
+  return Number(err?.status)===404 ||
+    /model[^a-z0-9]*(not found|does not exist|unknown|invalid)|unknown model|no such model|model .* unavailable/i.test(String(err?.message||''));
+}
+function rotateModel(def){
+  const candidates=modelCandidates(def);
+  const current=Number(modelCursors[def.name]||0);
+  if(current+1<candidates.length){
+    modelCursors[def.name]=current+1;
+    modelDisabledUntil[def.name]=0;
+    logger.warn('AI model lane '+def.name+' rotated from unavailable model to '+resolvedOpenWeightModel(def));
+    return true;
+  }
+  modelDisabledUntil[def.name]=Date.now()+MODEL_UNAVAILABLE_COOLDOWN_MS;
+  return false;
+}
+function providerCooling(label){
+  const state=states[label];
+  return Boolean(state && Date.now()<Number(state.downUntil||0));
+}
+async function withConcurrency(key,fn){
+  const state=concurrency[key];
+  if(!state) return fn();
+  const limit=key==='openrouter'?OPENROUTER_MAX_CONCURRENCY:1;
+  if(state.active>=limit) await new Promise(resolve=>state.queue.push(resolve));
+  state.active++;
+  try{return await fn();}
+  finally{
+    state.active--;
+    const next=state.queue.shift();
+    if(next) next();
+  }
+}
+
 function requestOptions(params, def) {
   const request = {
-    model:process.env[def.modelKey]||def.model,
+    model:resolvedOpenWeightModel(def),
     messages:[
       ...(params.system?[{role:'system',content:systemToOpenAI(params.system)}]:[]),
       ...messagesToOpenAI(params.messages)
@@ -533,8 +615,10 @@ function requestOptions(params, def) {
 }
 
 async function callOpenWeight(def,params) {
-  const completion=await getOpenWeightClient(def).chat.completions.create(requestOptions(params,def));
-  return openAIResponseToAnthropicShape(completion);
+  return withConcurrency(def.base==='https://openrouter.ai/api/v1'?'openrouter':'other',async()=>{
+    const completion=await getOpenWeightClient(def).chat.completions.create(requestOptions(params,def));
+    return openAIResponseToAnthropicShape(completion);
+  });
 }
 async function callOpenAICompat(slotDef,params) {
   const completion=await getOpenAICompatClient(slotDef).chat.completions.create({
@@ -574,16 +658,27 @@ async function callGroq(params,model) {
   return openAIResponseToAnthropicShape(completion);
 }
 
-async function attempt(label,fn){
-  const state=states[label]||{downUntil:0};
+async function attempt(label,fn,meta={}){
+  const state=states[label]||(states[label]={downUntil:0,failureCount:0});
   if(Date.now()<state.downUntil)throw new Error(label+' provider cooling down');
   try{
     const result=await fn();
     state.downUntil=0;
+    state.failureCount=0;
     return result;
   }catch(err){
-    if(isRetryable(err))state.downUntil=Date.now()+COOLDOWN_MS;
-    else if(isPermanentCredentialFailure(err))state.downUntil=Date.now()+PERMANENT_FAILURE_COOLDOWN_MS;
+    if(isModelNotFound(err) && meta.modelDef){
+      state.failureCount=0;
+      state.downUntil=0;
+      rotateModel(meta.modelDef);
+    }else if(isRetryable(err)){
+      state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
+      const delay=Math.min(RETRYABLE_COOLDOWN_MAX_MS,RETRYABLE_COOLDOWN_BASE_MS*Math.pow(2,state.failureCount-1));
+      state.downUntil=Date.now()+delay;
+    }else if(isPermanentCredentialFailure(err)){
+      state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
+      state.downUntil=Date.now()+PERMANENT_FAILURE_COOLDOWN_MS;
+    }
     throw err;
   }
 }
@@ -621,6 +716,7 @@ function buildProviders(params={}) {
       kind:def.free?'open-weight-free':'open-weight',
       qualityTier:def.qualityTier,
       free:Boolean(def.free),
+      modelDef:def,
     });
   };
 
@@ -643,6 +739,7 @@ function buildProviders(params={}) {
   if(hasOpenAI())providers.push({name:'openai-direct',fn:()=>callOpenAI(params),kind:'closed-fallback',free:false,qualityTier:'closed'});
   if(hasMistral())providers.push({name:'mistral-rescue',fn:()=>callMistral(params),kind:'closed-fallback',free:false,qualityTier:'closed'});
   if(hasAnthropic())providers.push({name:'anthropic-last-resort',fn:()=>callAnthropic(params),kind:'closed-fallback',free:false,qualityTier:'closed'});
+  if(params.preferFreeProviders) providers.sort((a,b)=>Number(Boolean(b.free))-Number(Boolean(a.free)));
   return providers;
 }
 
@@ -650,19 +747,31 @@ async function createMessage(params={}) {
   const providers=buildProviders(params);
   if(!providers.length)throw new Error('AI client: no configured provider for current data-classification/free-provider policy');
 
+  const eligibleProviders=providers.filter(provider=>!providerCooling(provider.name));
+  if(!eligibleProviders.length)throw new Error('AI client: all configured providers are cooling down or temporarily unavailable');
   let lastErr;
-  for(const provider of providers){
-    try {
-      return {
-        ...await attempt(provider.name,provider.fn),
-        _provider:provider.name,
-        _provider_kind:provider.kind,
-        _quality_tier:provider.qualityTier,
-        _free_provider:Boolean(provider.free),
-      };
-    } catch(err) {
-      lastErr=err;
-      logger.warn('AI provider failed: '+provider.name+' ('+(err?.status||err?.message||'unknown')+'); trying next provider');
+  for(const provider of eligibleProviders){
+    let modelRetries=0;
+    while(true){
+      try {
+        return {
+          ...await attempt(provider.name,provider.fn,provider),
+          _provider:provider.name,
+          _provider_kind:provider.kind,
+          _quality_tier:provider.qualityTier,
+          _free_provider:Boolean(provider.free),
+        };
+      } catch(err) {
+        lastErr=err;
+        if(isModelNotFound(err) && provider.modelDef && modelRetries<2 && rotateModel(provider.modelDef)){
+          modelRetries++;
+          continue;
+        }
+        if(!/provider cooling down/i.test(String(err?.message||''))){
+          logger.warn('AI provider failed: '+provider.name+' ('+(err?.status||err?.message||'unknown')+'); trying next provider');
+        }
+        break;
+      }
     }
   }
   throw lastErr||new Error('AI client: all providers failed');
@@ -678,6 +787,8 @@ module.exports={
   hasAnyProvider,
   hasOpenWeightProvider,
   providerCapabilities,
+  resolvedOpenWeightModel,
+  isModelNotFound,
   createMessage,
   createResearchMessage,
 };
