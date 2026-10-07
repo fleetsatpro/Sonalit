@@ -120,3 +120,16 @@ test('preferred free research does not probe an unavailable paid rescue lane fir
   const s=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
   expect(s).toContain('if(hasAnthropic() && !params.preferFreeProviders)');
 });
+
+test('publication layers use live provider readiness, not mere credential presence, as the admission gate',()=>{
+  const board=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  const agents=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  const research=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(board).toContain("aiClient.hasReadyProvider(publicationAiPolicy)");
+  expect(agents).toContain("const publicationAiReady=aiClient.hasReadyProvider(publicationAiPolicy);");
+  expect(agents).toContain("&&publicationAiReady&&events.length");
+  expect(agents).toContain("&&publicationAiReady){");
+  expect(research).toContain("if(!aiClient.hasReadyProvider(providerPolicy))");
+  expect(research).toContain("skipping AI calls and preserving evidence-only fallback");
+});
+
