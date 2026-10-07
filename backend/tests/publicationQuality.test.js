@@ -6,7 +6,8 @@ const {
   dedupeSources,
   isAggregatorDomain,
   repetitionRatio,
-  auditPublicationContent
+  auditPublicationContent,
+  assessPublicationQuality
 }=require('../src/utils/publicationQuality');
 
 describe('publication content quality controls',()=>{
@@ -92,4 +93,52 @@ test('blocks repeated watchpoint templates across separate incidents',()=>{
   ]);
   expect(audit.repeated_template_count).toBeGreaterThan(0);
   expect(audit.passed).toBe(false);
+});
+
+
+test('tradecraft gate rejects evidence-only generic publications',()=>{
+  const quality=assessPublicationQuality({
+    executive_assessment:'A country recorded several security-relevant events during the reporting period. The available material indicates elevated concern, but the implications for operations require further verification and stronger incident-level research before a broader judgement can be supported.',
+    deep_research:{incidents_requested:1,incidents_researched:0,incidents_researched_limited:0,incidents_fallback:1},
+    incident_dossiers:[{
+      event_id:'e1',
+      research_status:'fallback',
+      what_happened:'An incident was reported in the affected area.',
+      context:'The event occurred in a location relevant to movement.',
+      assessment:'The event was reported in the affected area and may matter operationally.',
+      key_facts:['The event was reported.','The location was identified.'],
+      why_it_matters:['The event may affect operations.'],
+      caveats:['The full extent remains unclear.'],
+      research_sources:[{domain:'one.example',url:'https://one.example/a'}]
+    }],
+    outlook:['Watch for further reporting.','Review for deterioration.'],
+    intelligence_gaps:['Independent corroboration remains incomplete.'],
+    emerging_trends:[{theme:'SECURITY',basis:'CURRENT_PERIOD_CONCENTRATION',assessment:'SECURITY accounts for most current-period event objects.'}]
+  });
+  expect(quality.passed).toBe(false);
+  expect(quality.research_complete).toBe(false);
+  expect(quality.blocking_issues.length).toBeGreaterThan(0);
+});
+
+test('tradecraft gate accepts a fully researched, differentiated dossier',()=>{
+  const quality=assessPublicationQuality({
+    executive_assessment:'The principal change is a localized disruption along a commercially important corridor. Two independent reporting streams corroborate the initial closure, but neither establishes sustained displacement of the threat. The immediate operational exposure is therefore elevated for vehicles using the affected segment rather than across the wider network.',
+    deep_research:{incidents_requested:1,incidents_researched:1,incidents_researched_limited:0,incidents_fallback:0},
+    incident_dossiers:[{
+      event_id:'e1',
+      research_status:'researched',
+      what_happened:'Authorities closed the northern approach after an armed attack was reported near the corridor. Local reporting and a separate regional source both describe the closure, while available accounts differ on its duration. No source reviewed establishes that the incident extended beyond the immediate area.',
+      context:'The corridor is a routine commercial movement route connecting the affected district with the regional freight network. A short closure creates delay exposure at the northern approach, while a prolonged closure would increase diversion and escort requirements.',
+      assessment:'The evidence supports a localized, near-term access risk rather than a confirmed wider security deterioration. The assessment would move higher if independent reporting confirmed repeated attacks on adjacent approaches or persistent closure beyond the current reporting window.',
+      key_facts:['The northern approach was closed after the reported attack.','Two independent reporting domains corroborate the closure.'],
+      why_it_matters:['Persistent closure would increase transit time and route-exposure for commercial vehicles using the corridor.'],
+      caveats:['The duration and full geographic extent of the disruption remain unresolved.'],
+      research_sources:[{domain:'source-one.example',url:'https://source-one.example/a'},{domain:'source-two.example',url:'https://source-two.example/b'}]
+    }],
+    outlook:['Over the next 24 hours, confirmation of reopening or continued closure is the principal operational indicator.','Over the next 72 hours, repeated incidents on adjacent approaches would indicate a broader deterioration hypothesis.'],
+    intelligence_gaps:['The duration of the closure is not independently established.'],
+    emerging_trends:[{theme:'SECURITY',basis:'CURRENT_PERIOD_CONCENTRATION',assessment:'SECURITY dominates the current-period event set; this is not treated as a time-series trend.'}]
+  });
+  expect(quality.passed).toBe(true);
+  expect(quality.score).toBeGreaterThanOrEqual(82);
 });
