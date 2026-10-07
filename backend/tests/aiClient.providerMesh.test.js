@@ -74,11 +74,30 @@ describe('intelligence provider mesh', () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     const ai = require('../src/utils/aiClient');
     const caps = ai.providerCapabilities();
+
+    // OpenRouter also exposes paid lanes, so hasAnyProvider() must remain true
+    // even when the free lane family is disabled. The policy under test is
+    // specifically that free lanes are not active for non-public data.
     expect(caps.free_open_weight_enabled).toBe(false);
-    expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(false);
+    expect(caps.open_weight.filter(p => p.free)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'minimax-m3-openrouter-free', active_for_public: false }),
+        expect.objectContaining({ label: 'inkling-openrouter-free', active_for_public: false }),
+      ])
+    );
+    expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(true);
+
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+    const enabledCaps = ai.providerCapabilities();
+    expect(enabledCaps.free_open_weight_enabled).toBe(true);
+    expect(enabledCaps.open_weight).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'minimax-m3-openrouter-free', active_for_public: true, free: true }),
+        expect.objectContaining({ label: 'inkling-openrouter-free', active_for_public: true, free: true }),
+      ])
+    );
     expect(ai.hasAnyProvider({ dataClassification: 'public' })).toBe(true);
-    expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(false);
+    expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(true);
   });
 
   test('free lanes can be explicitly enabled for public publication evidence', async () => {
