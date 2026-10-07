@@ -73,6 +73,14 @@ describe('intelligence provider mesh', () => {
       .toBe('nvidia/nemotron-3-super-120b-a12b:free');
   });
 
+  test('distinguishes configured providers from providers ready to receive work', () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+    const ai = require('../src/utils/aiClient');
+    expect(ai.hasAnyProvider({ dataClassification: 'public', allowFreeProviders: true })).toBe(true);
+    expect(ai.hasReadyProvider({ dataClassification: 'public', allowFreeProviders: true, preferFreeProviders: true })).toBe(true);
+  });
+
   test('keeps arbitrary self-hosted open-source slots working', () => {
     process.env.OPEN_SOURCE_API_KEY_1 = 'self-hosted-test-key';
     process.env.OPEN_SOURCE_BASE_URL_1 = 'https://llm.example.invalid/v1';
