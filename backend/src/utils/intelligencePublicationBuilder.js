@@ -35,14 +35,14 @@ function domainFor(e) {
   if (/cyber|information|media|internet|misinformation|disinformation|data breach/.test(text)) return 'INFORMATION & MEDIA';
   return 'SOCIAL';
 }
-function formatDate(v) {
+function formatDate(v,timeZone=process.env.INTEL_PUBLICATION_TIMEZONE||'Africa/Nairobi') {
   if (!v) return '—';
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric', timeZone:'UTC' });
+  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric', timeZone });
 }
-function formatPeriod(start, end) {
-  return formatDate(start) + ' — ' + formatDate(new Date(new Date(end).getTime() - 1));
+function formatPeriod(start, end, timeZone) {
+  return formatDate(start,timeZone) + ' — ' + formatDate(new Date(new Date(end).getTime() - 1),timeZone);
 }
 function sourceRefs(e) {
   return (Array.isArray(e && e.evidence) ? e.evidence : [])
@@ -277,7 +277,7 @@ function references(events) {
   return out;
 }
 
-function buildEvidencePublication({ country, type, start, end, events, evidenceCount, sourceCount, evidenceContract }) {
+function buildEvidencePublication({ country, type, start, end, events, evidenceCount, sourceCount, evidenceContract, publicationTimezone }) {
   const name = COUNTRY_NAMES[country] || country;
   const ordered = topEvents(events, Math.max(events.length, 1));
   const confidence = events.length
@@ -348,8 +348,8 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
       : 'Downgrade indicator: sustained de-escalation supported by adequate collection coverage rather than a single quiet reporting interval.'
   ];
   return {
-    title: name + (type === 'weekly' ? ' Weekly Insight' : type === 'monthly' ? ' Monthly Security Intelligence' : ' Daily Intelligence'),
-    subtitle: 'Evidence-governed intelligence · ' + formatPeriod(start, end),
+    title: name + (type === 'weekly' ? ' Weekly Security Intelligence' : type === 'monthly' ? ' Monthly Security Intelligence' : ' Daily Security Intelligence') + ' — ' + formatPeriod(start,end,publicationTimezone),
+    subtitle: 'Security-only reporting · completed period · ' + formatPeriod(start, end, publicationTimezone),
     executive_assessment: dedupeSentences(executive, new Set(), 1500),
     assessment_highlights: assessmentHighlights,
     threat_posture: p,
@@ -416,12 +416,13 @@ function buildEvidencePublication({ country, type, start, end, events, evidenceC
       contract: evidenceContract ? 'Publication basis satisfies the configured evidence-source threshold.' : 'At least 3 original evidence observations from at least 2 distinct sources.'
     },
     disclaimer: 'This product is evidence-governed decision support. It does not guarantee completeness or accuracy and should not replace appropriate operational or professional judgement.',
-    reporting_standard: 'SONALIT · evidence → verification → fusion → assessment → forecast → dissemination',
+    reporting_standard: 'SONALIT · security collection → verification → fusion → deep research → assessment → QA → dissemination',
     period_start: start.toISOString(),
     period_end: end.toISOString(),
     country_code: country,
     country_name: name,
     publication_type: type,
+    publication_timezone: publicationTimezone || process.env.INTEL_PUBLICATION_TIMEZONE || 'Africa/Nairobi',
   };
 }
 module.exports = { buildEvidencePublication, eventNarrative, formatPeriod, posture, references };

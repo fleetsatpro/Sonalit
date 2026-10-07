@@ -119,7 +119,7 @@ function evidencePackage(country, period, events){
 async function runPublicationEditorialBoard({country, period, events, baseBody, evidenceContract, precomputedResearch=null}){
   const publicationAiPolicy={dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase(),allowFreeProviders:true,preferFreeProviders:true};
   if(events.length&&!aiClient.hasReadyProvider(publicationAiPolicy)){
-    const board={version:'2.1',agents:AGENT_ROLES.map(r=>({...r,status:'deferred',reason:'ai_provider_unavailable'})),evidence_contract:evidenceContract,started_at:new Date().toISOString(),completed_at:new Date().toISOString(),publishable:false,quality_policy:{minimum_qa_score:85,required_checks:['evidence','attribution','contradictions','confidence','completeness','specificity','analytical_depth','forecast_quality','source_diversity','decision_relevance'],free_lanes_allowed_for_qa:true,provider_gate:'live_provider_required'}};
+    const board={version:'2.1',agents:AGENT_ROLES.map(r=>({...r,status:'deferred',reason:'ai_provider_unavailable'})),evidence_contract:evidenceContract,started_at:new Date().toISOString(),completed_at:new Date().toISOString(),publishable:false,quality_policy:{minimum_qa_score:90,required_checks:['evidence','attribution','contradictions','confidence','completeness','specificity','analytical_depth','forecast_quality','source_diversity','decision_relevance'],free_lanes_allowed_for_qa:true,provider_gate:'live_provider_required'}};
     return {board,final:null,visual:null,graphics:null,qa:null,qaConsensus:{reviewers:[],all_complete:false,unanimous_publishable:false,blocking_issues:['ai_provider_unavailable']},deterministicGate:{publishable:false,issues:['ai_provider_unavailable']},publishable:false,research:precomputedResearch||{byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0}}};
   }
   const deepResearchEnabled=String(process.env.INTEL_PUBLICATION_DEEP_RESEARCH||'true').toLowerCase()!=='false';
@@ -131,7 +131,7 @@ async function runPublicationEditorialBoard({country, period, events, baseBody, 
   const enrichedEvents=events.map(e=>({...e,research:research.byEvent[String(e.id)]||null}));
   const evidence=evidencePackage(country,period,enrichedEvents);
   const board={version:'2.0', agents:AGENT_ROLES.map(r=>({...r,status:'pending'})), evidence_contract:evidenceContract, started_at:new Date().toISOString(),
-    quality_policy:{minimum_qa_score:85,required_checks:['evidence','attribution','contradictions','confidence','completeness','specificity','analytical_depth','forecast_quality','source_diversity','decision_relevance'],free_lanes_allowed_for_qa:true,provider_gate:'live_provider_required'}};
+    quality_policy:{minimum_qa_score:90,required_checks:['evidence','attribution','contradictions','confidence','completeness','specificity','analytical_depth','forecast_quality','source_diversity','decision_relevance'],free_lanes_allowed_for_qa:true,provider_gate:'live_provider_required'}};
   if(!events.length){ board.agents=board.agents.map(a=>({...a,status:'no_data'})); board.publishable=false; return {board,final:null,visual:null,graphics:null,publishable:false}; }
 
   const writers=AGENT_ROLES.filter(r=>r.lane==='writer');

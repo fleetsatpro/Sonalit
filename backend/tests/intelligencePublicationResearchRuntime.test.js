@@ -5,9 +5,10 @@ const source=()=>fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceA
 describe('publication deep-research runtime ordering',()=>{
   test('defines the publication incident set before invoking research',()=>{
     const s=source();
-    const subset=s.indexOf('const publicationEvents=selectPublicationResearchEvents(events,8);');
+    const subset=s.indexOf('const publicationEvents=selectPublicationResearchEvents(events,researchLimit);');
     const research=s.indexOf('researchPublicationIncidents(publicationEvents',{});
     expect(subset).toBeGreaterThan(-1);
+    expect(s).toContain("const researchLimit=type==='daily'");
     expect(research).toBeGreaterThan(subset);
   });
   test('legacy publications without complete research are not returned as unchanged',()=>{

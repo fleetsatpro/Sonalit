@@ -52,7 +52,11 @@ const DIRECT_SOURCES = [
   { id:'tuko', source_type:'news', name:'TUKO.co.ke', url:'https://www.tuko.co.ke/', reliability:70, keywords:['Kenya','crime','security','police','traffic','weather','breaking','world'] },
   { id:'citizen-digital', source_type:'news', name:'Citizen Digital', url:'https://citizen.digital/', reliability:78, keywords:['Kenya','security','crime','police','traffic','weather','breaking','world'] },
   { id:'mutembei', source_type:'news', name:'Mutembei TV', url:'https://mutembeitv.com/', reliability:52, keywords:['Kenya','security','crime','politics','county','breaking'] },
-  { id:'sga', source_type:'news', name:'SGA Security', url:'https://www.sgasecurity.co.ke/news', reliability:62, keywords:['security','Kenya','East Africa','crime','threat'] }
+  { id:'sga', source_type:'news', name:'SGA Security', url:'https://www.sgasecurity.co.ke/news', reliability:62, keywords:['security','Kenya','East Africa','crime','threat'] },
+  { id:'mashinani-news', source_type:'news', name:'Mashinani News', url:'https://jamiiimaramashinani.org/', reliability:58, keywords:['Kenya','county','community','security','crime','police','violence','border','protest','alert','incident'] },
+  { id:'county-pulse', source_type:'news', name:'County Pulse News', url:'https://countypulsenews.co.ke/', reliability:60, keywords:['Kenya','county','security','crime','police','bandit','attack','border','protest','incident','arrest'] },
+  { id:'standard-mashinani', source_type:'news', name:'The Standard · Mashinani', url:'https://www.standardmedia.co.ke/topic/mashinani', reliability:80, keywords:['Mashinani','county','Kenya','security','crime','police','protest','attack','border','incident'] },
+  { id:'kbc-county', source_type:'news', name:'KBC · County News', url:'https://www.kbc.co.ke/category/county-news/', reliability:74, keywords:['Kenya','county','security','crime','police','border','attack','arrest','protest','incident'] }
 ];
 
 const REGISTERED_SOURCES = [
@@ -124,7 +128,18 @@ async function fetchDirectSource(src) {
 }
 
 async function ensureSource(orgId, spec) {
-  const { rows } = await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) ON CONFLICT (org_id,provider,endpoint) WHERE provider IS NOT NULL AND endpoint IS NOT NULL DO UPDATE SET name=EXCLUDED.name,source_type=EXCLUDED.source_type,reliability=EXCLUDED.reliability,metadata=EXCLUDED.metadata,last_seen_at=NOW(),updated_at=NOW() RETURNING *`, [orgId,spec.name,spec.source_type||'other',spec.provider,spec.endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
+  const endpoint=spec.endpoint||null;
+  const provider=spec.provider||null;
+  if(provider&&endpoint){
+    const { rows } = await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) ON CONFLICT (org_id,provider,endpoint) WHERE provider IS NOT NULL AND endpoint IS NOT NULL DO UPDATE SET name=EXCLUDED.name,source_type=EXCLUDED.source_type,reliability=EXCLUDED.reliability,metadata=EXCLUDED.metadata,last_seen_at=NOW(),updated_at=NOW() RETURNING *`, [orgId,spec.name,spec.source_type||'other',provider,endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
+    return rows[0];
+  }
+  const existing=await query(`SELECT * FROM intel_sources WHERE org_id=$1 AND name=$2 ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1`,[orgId,spec.name]);
+  if(existing.rows[0]){
+    const {rows}=await query(`UPDATE intel_sources SET source_type=$3,provider=$4,endpoint=$5,reliability=$6,metadata=$7::jsonb,last_seen_at=NOW(),updated_at=NOW() WHERE org_id=$1 AND id=$2 RETURNING *`,[orgId,existing.rows[0].id,spec.source_type||'other',provider,endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
+    return rows[0];
+  }
+  const {rows}=await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) RETURNING *`,[orgId,spec.name,spec.source_type||'other',provider,endpoint,spec.reliability||60,JSON.stringify(spec.metadata||{})]);
   return rows[0];
 }
 
@@ -158,10 +173,21 @@ async function fetchGdelt(queryText) {
 }
 
 function defaultWhatsappChannels() {
+  const sga={
+    channel_id:'sga-whatsapp-group',
+    name:'SGA WhatsApp Group — Local Security Updates',
+    endpoint:process.env.INTEL_SGA_WHATSAPP_FEED_URL||null,
+    token:process.env.INTEL_SGA_WHATSAPP_FEED_TOKEN||null,
+    reliability:72,
+    source_type:'social',
+    requires_authorized_ingest:true,
+    metadata:{role:'grassroots_local_security',provider:'SGA',authorized_only:true,configuration:'INTEL_SGA_WHATSAPP_FEED_URL'}
+  };
   try {
     const parsed=JSON.parse(process.env.INTEL_WHATSAPP_CHANNELS_JSON||'[]');
-    return Array.isArray(parsed)?parsed.filter(x=>x&&x.endpoint):[];
-  } catch (_) { return []; }
+    const custom=Array.isArray(parsed)?parsed.filter(x=>x&&x.channel_id!=='sga-whatsapp-group'):[];
+    return [sga,...custom];
+  } catch (_) { return [sga]; }
 }
 async function fetchAuthorizedWhatsapp(channel) {
   const response=await timeoutFetch(channel.endpoint,{headers: channel.token ? {Authorization:`Bearer ${channel.token}`} : {}});
@@ -177,10 +203,16 @@ async function sweepOrg(orgId) {
   for(const registered of REGISTERED_SOURCES) tasks.push(async()=>{const source=await ensureSource(orgId,registered);return{name:source.name,registered:true,observation_ingestion:Boolean(registered.metadata?.observation_ingestion),seen:0,inserted:0,duplicate:0};});
   for(const src of DIRECT_SOURCES) tasks.push(async()=>{const items=await fetchDirectSource(src);const source=await ensureSource(orgId,{name:src.name,source_type:src.source_type,provider:'web',endpoint:src.url,reliability:src.reliability,metadata:{agents:AGENTS.filter(a=>a.terms.some(t=>src.keywords.includes(t))).map(a=>a.id),cadence:'5m'}});const p=await persist(orgId,source,items,'WEB-MESH');return{name:src.name,seen:items.length,...p};});
   for(const agent of AGENTS) tasks.push(async()=>{const q=agent.terms.map(t=>`"${t.replace(/"/g,'')}"`).join(' OR ');const items=await fetchGdelt(q);const source=await ensureSource(orgId,{name:`GDELT · ${agent.name}`,source_type:'news',provider:'gdelt',endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',reliability:68,metadata:{agent_id:agent.id,query:q}});const p=await persist(orgId,source,items,agent.id);return{name:agent.name,agent_id:agent.id,seen:items.length,...p};});
-  for(const channel of defaultWhatsappChannels()) tasks.push(async()=>{const items=await fetchAuthorizedWhatsapp(channel);const source=await ensureSource(orgId,{name:channel.name||`WhatsApp Channel ${channel.channel_id||''}`,source_type:'social',provider:'whatsapp',endpoint:channel.endpoint,reliability:Number(channel.reliability)||55,metadata:{channel_id:channel.channel_id,authorized:true}});const p=await persist(orgId,source,items,`WA-${channel.channel_id||'CHANNEL'}`);return{name:source.name,seen:items.length,...p};});
+  for(const channel of defaultWhatsappChannels()) tasks.push(async()=>{
+    const source=await ensureSource(orgId,{name:channel.name||`WhatsApp Channel ${channel.channel_id||''}`,source_type:'social',provider:'whatsapp',endpoint:channel.endpoint||null,reliability:Number(channel.reliability)||55,metadata:{...(channel.metadata||{}),channel_id:channel.channel_id,authorized:true,configured:Boolean(channel.endpoint)}});
+    if(!channel.endpoint)return{name:source.name,configured:false,pending_authorized_feed:true,seen:0,inserted:0,duplicate:0};
+    const items=await fetchAuthorizedWhatsapp(channel);
+    const p=await persist(orgId,source,items,`WA-${channel.channel_id||'CHANNEL'}`);
+    return{name:source.name,configured:true,seen:items.length,...p};
+  });
   const results=await runWithLimit(tasks,MAX_PARALLEL);
   const ok=results.filter(r=>r.status==='fulfilled').map(r=>r.value), failed=results.filter(r=>r.status==='rejected');
-  return { agents:AGENT_COUNT, collectors:DIRECT_SOURCES.length+AGENTS.length+defaultWhatsappChannels().length+REGISTERED_SOURCES.length, parallelism:MAX_PARALLEL, configured_whatsapp_channels:defaultWhatsappChannels().length, successful_collectors:ok.length, failed_collectors:failed.length, seen:ok.reduce((n,r)=>n+Number(r.seen||0),0), inserted:ok.reduce((n,r)=>n+Number(r.inserted||0),0), duplicates:ok.reduce((n,r)=>n+Number(r.duplicate||0),0), results:ok.slice(0,80), generated_at:new Date().toISOString() };
+  return { agents:AGENT_COUNT, collectors:DIRECT_SOURCES.length+AGENTS.length+defaultWhatsappChannels().length+REGISTERED_SOURCES.length, parallelism:MAX_PARALLEL, configured_whatsapp_channels:defaultWhatsappChannels().filter(x=>x.endpoint).length, whatsapp_sources_registered:defaultWhatsappChannels().length, successful_collectors:ok.length, failed_collectors:failed.length, seen:ok.reduce((n,r)=>n+Number(r.seen||0),0), inserted:ok.reduce((n,r)=>n+Number(r.inserted||0),0), duplicates:ok.reduce((n,r)=>n+Number(r.duplicate||0),0), results:ok.slice(0,80), generated_at:new Date().toISOString() };
   });
 }
 
@@ -198,4 +230,4 @@ if (process.env.NODE_ENV!=='test' && !global.__sonalitAggressiveIntelligenceMesh
   logger.info(`Aggressive Intelligence Mesh enabled: ${AGENT_COUNT} specialist agents, ${MAX_PARALLEL} concurrent collectors, interval=${INTERVAL_MS/60000}m`);
 }
 
-module.exports={AGENTS,runAggressiveMesh,sweepOrg};
+module.exports={AGENTS,runAggressiveMesh,sweepOrg,defaultWhatsappChannels};
