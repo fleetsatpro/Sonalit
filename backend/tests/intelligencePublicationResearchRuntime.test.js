@@ -181,3 +181,11 @@ test('incident publication uses the actual research outcome instead of stale pro
   expect(s).toContain('if(aiBoardEnabled && publicationAiReady && events.length && !degradedEvidenceRelease)');
   expect(s).toContain('degradedEvidenceRelease || (!publicationAiReady && !aiClient.hasReadyProvider');
 });
+
+
+test('degraded fallback narrative is built from incident evidence, assessment, relevance and uncertainty',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain("'Operational assessment: '+derivedAssessment");
+  expect(s).toContain("'Decision relevance: '+why[0]");
+  expect(s).toContain("'Research state: evidence-constrained; this edition does not present unverified detail as fact.'");
+});
