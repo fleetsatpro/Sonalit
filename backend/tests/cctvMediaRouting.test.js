@@ -1,4 +1,4 @@
-const { classifyViewMediaType, openEyeMedia, getCctvCountries, getCountryBbox, loadOpenCctvCamera } = require('../src/services/spatial/cctv/cctvCatalog');
+const { classifyViewMediaType, openEyeMedia, getCctvCountries, getCountryBbox, getCameraById } = require('../src/services/spatial/cctv/cctvCatalog');
 const { openEyeWhepOffer, openEyeWhepDelete, fetchApprovedMedia, fetchPublicSnapshot, getMedia } = require('../src/services/spatial/cctv/cctvMediaProxy');
 
 describe('CCTV media routing', () => {
@@ -241,7 +241,7 @@ describe('CCTV media routing', () => {
       feed_type:'hls', feed_url:'https://media.example/live/channel', active:1, live:true
     }]), { status:200, headers:{'content-type':'application/json'} });
     try {
-      const camera = await loadOpenCctvCamera('uk-hls-1');
+      const camera = await getCameraById('opencctv:uk-hls-1');
       expect(camera.media.kind).toBe('video');
       expect(camera.media.sourceMediaType).toBe('application/vnd.apple.mpegurl');
       expect(camera.media.liveVideo).toBe(true);
