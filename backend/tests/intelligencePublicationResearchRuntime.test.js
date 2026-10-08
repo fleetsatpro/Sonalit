@@ -205,7 +205,7 @@ test('degraded evidence eligibility requires attribution but not per-incident du
 
 
 test('fallback evidence is initialized before narrative construction',()=>{
-  const s=source();
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
   expect(s).toContain('const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];');
   expect(s.indexOf('const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];')).toBeLessThan(s.indexOf('const narrative=cleanPublicationText('));
 });
