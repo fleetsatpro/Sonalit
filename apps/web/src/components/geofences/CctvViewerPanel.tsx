@@ -766,6 +766,7 @@ export default function CctvViewerPanel({
   const [browserFullscreen, setBrowserFullscreen] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [previewFailures, setPreviewFailures] = useState<Set<string>>(() => new Set())
+  const [streamFailures, setStreamFailures] = useState<Set<string>>(() => new Set())
   const [cameraDetails, setCameraDetails] = useState<Record<string, SpatialWorldEntity>>({})
   const [wallLayout, setWallLayout] = useState<2 | 3 | 4>(3)
   const [wallPage, setWallPage] = useState(0)
@@ -994,6 +995,14 @@ export default function CctvViewerPanel({
     const timer = window.setInterval(() => setWallVisualTick(value => value + 1), 60_000)
     return () => window.clearInterval(timer)
   }, [expanded])
+  useEffect(() => {
+    if (!expanded) return
+    setStreamFailures(current => {
+      const visibleIds = new Set(wallCameras.map(camera => camera.id))
+      const filtered = new Set([...current].filter(id => visibleIds.has(id)))
+      return filtered.size === current.size ? current : filtered
+    })
+  }, [expanded, wallCameras])
 
   useEffect(() => {
     if (!expanded) return
@@ -1323,6 +1332,8 @@ export default function CctvViewerPanel({
                   : camDirectUrl
                 const camPreviewable = (camMedia.direct === true || providerSnapshotCapability(cam)) && camKind === 'image' && Boolean(camDirectUrl) && !previewFailures.has(cam.id)
                 const camStream = camMedia.direct === true && ['video', 'mjpeg'].includes(camKind) && Boolean(camMedia.url)
+                const camStreamUrl = camStream ? streamUrlFor(cam) : ''
+                const camStreamFailed = streamFailures.has(cam.id)
                 const camLiveVideo = liveVideoCapability(cam)
                 const camPlatformVideo = platformVideoCapability(cam)
                 const isActive = cam.id === activeId
@@ -1351,6 +1362,37 @@ export default function CctvViewerPanel({
                             <span>Select this camera to activate its sanctioned in-app player.</span>
                           </div>
                         )
+                      ) : camStream && !camStreamFailed ? (
+                        camKind === 'mjpeg' ? (
+                          <div className="gev-cctv-wall-feed-media-source">
+                            <img
+                              src={camStreamUrl}
+                              alt={`${cameraName(cam)} live MJPEG stream`}
+                              loading="lazy"
+                              decoding="async"
+                              onError={() => setStreamFailures(current => {
+                                const next = new Set(current)
+                                next.add(cam.id)
+                                return next
+                              })}
+                            />
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE · MJPEG</span>
+                          </div>
+                        ) : (
+                          <div className="gev-cctv-wall-feed-media-source">
+                            <InlineCctvVideo
+                              src={camStreamUrl}
+                              mediaType={cameraPlaybackMediaType(cam)}
+                              poster={typeof camMedia.previewUrl === 'string' ? camMedia.previewUrl : undefined}
+                              onError={() => setStreamFailures(current => {
+                                const next = new Set(current)
+                                next.add(cam.id)
+                                return next
+                              })}
+                            />
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE · VIDEO</span>
+                          </div>
+                        )
                       ) : camLiveVideo ? (
                         camPreviewable ? (
                           <div className="gev-cctv-wall-feed-media-source">
@@ -1367,13 +1409,13 @@ export default function CctvViewerPanel({
                                   decoding="async"
                                   onError={() => markPreviewFailure(cam.id)}
                                 />}
-                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · SELECT TO PLAY</span>
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · FALLBACK FRAME</span>
                           </div>
                         ) : (
                           <div className="gev-cctv-wall-feed-state">
                             <Camera size={18} />
                             <strong>LIVE VIDEO</strong>
-                            <span>Select this camera to open the live footage in the focused player.</span>
+                            <span>The continuous feed is currently unavailable in-app; select the camera to retry in the focused player.</span>
                           </div>
                         )
                       ) : camPreviewable ? (
