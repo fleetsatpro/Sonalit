@@ -406,7 +406,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       String(agent.research_method||'').toLowerCase()==='degraded_evidence' &&
       Number(e.observation_count||0)>=2 &&
       Number(e.source_count||0)>=2 &&
-      (entry.error==='ai_provider_unavailable' || priorEvidenceConstrained);
+      (entry.error ? entry.error==='ai_provider_unavailable' : priorEvidenceConstrained);
   };
   const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));
   const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents,events);
@@ -435,7 +435,6 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     ...(deterministic.deep_research||{}),
     research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research')
   }};
-  const aiFabricDegradedAtGate=!aiClient.hasReadyProvider(publicationAiPolicy);
   const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || researchControlledComplete || degradedEvidenceRelease;
   let title=deterministic.title;
   let subtitle=deterministic.subtitle;
