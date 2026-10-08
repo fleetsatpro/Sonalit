@@ -1243,18 +1243,8 @@ router.post('/decision', async (req, res) => {
     return res.status(400).json({ error: 'command required' });
   }
 
-  if (!aiClient.hasAnyProvider()) {
-    return res.json({
-      answer: 'Decision Intelligence is not configured. Add ANTHROPIC_API_KEY or GROQ_API_KEY.',
-      decision: 'HUMAN_REVIEW_REQUIRED',
-      risk_level: 'HIGH',
-      confidence: 0,
-      recommended_actions: [],
-      risks: [{ risk: 'No AI provider configured', severity: 'high' }],
-      meta: { degraded: true, agent_count: 0, agent_failures: 0, provider_capabilities: aiClient.providerCapabilities() },
-    });
-  }
-
+  // Do not short-circuit when model providers are unavailable. The decision fabric
+  // has a deterministic evidence-only fallback and must remain operational.
   try {
     await ensureColumns();
     await ensureRiskZones();
