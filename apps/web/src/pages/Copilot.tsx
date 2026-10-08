@@ -8,22 +8,35 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 type Role = 'user' | 'assistant';
 interface ChatMessage { id: string; role: Role; content: string; timestamp: number }
 interface HistoryEntry { role: Role; content: string }
-interface DecisionResponse { answer?: string; response?: string; message?: string; decision?: { summary?: string }; meta?: { degraded?: boolean; fatal?: boolean; latency_ms?: number; agent_count?: number; agent_failures?: number; provider_fallback_available?: boolean }; assurance?: { safety_gate?: string; evidence_health?: { succeeded?: number } }; risk_level?: string; confidence?: number }
+interface DecisionResponse {
+  answer?: string;
+  response?: string;
+  message?: string;
+  decision?: { summary?: string };
+  meta?: { degraded?: boolean; fatal?: boolean; latency_ms?: number; agent_count?: number; agent_failures?: number; provider_fallback_available?: boolean };
+  assurance?: { safety_gate?: string; evidence_health?: { succeeded?: number } };
+  risk_level?: string;
+  confidence?: number;
+  created?: Array<{ type?: string; name?: string; geofence_id?: string; message?: string; precision?: string; route_provider?: string; road_distance_km?: string; path_points?: number; buffer_m?: number; location?: string }>;
+  task?: { type?: string; precision?: string; completed?: boolean };
+  actions?: string[];
+  source?: string;
+}
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
 const INITIAL_MESSAGE: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
-  content: 'Hello! I am the Sonalit Copilot. I can help with fleet insights, incidents, route optimization, and more. I can also draw geofences — click the map button or type "draw geofence".',
+  content: 'Hello. I am Sonalit Copilot — an evidence-linked operational agent. I can investigate fleet, convoy, shipment, maintenance, security, route, spatial and incident questions; execute supported operational tasks; and create high-precision geofences and route corridors.',
   timestamp: Date.now(),
 };
 
 const SUGGESTIONS = [
   'Which vehicles are overdue for maintenance?',
-  'Summarize incidents from this week',
-  'Draw a geofence',
-  'Show top safety risks',
+  'Assess the safest route for the active convoy',
+  'Draw a high-precision geofence around Nairobi',
+  'Create a corridor geofence from Nairobi to Mombasa with a 500m buffer',
 ];
 
 function ChatBubble({ message }: { message: ChatMessage }) {
@@ -194,11 +207,20 @@ export default function Copilot() {
     setIsLoading(true);
     const history = historyRef.current.slice(-6);
     try {
-      const res = await api.post<DecisionResponse>('/ai/decision', { command: text, history });
+      // Action language goes through the agentic task executor so Copilot can
+      // actually perform supported operations; evidence questions stay on the
+      // lower-cost, quota-resilient Decision Fabric.
+      const isAction = /\b(draw|create|make|set up|mark|define|establish|acknowledge|resolve|dispatch|schedule|reroute|approve|send|execute)\b/i.test(text)
+        && /\b(geofence|corridor|zone|alert|incident|route|convoy|message|task|operation|risk)\b/i.test(text);
+      const endpoint = isAction ? '/ai/dispatch' : '/ai/decision';
+      const res = await api.post<DecisionResponse>(endpoint, { command: text, history });
       const d = res.data;
-      const responseText = d?.answer ?? res.data?.response ?? res.data?.message ?? res.data?.decision?.summary ?? 'The decision fabric returned no readable answer.';
+      const responseText = d?.answer ?? d?.response ?? d?.message ?? d?.decision?.summary ?? 'The operational agent returned no readable result.';
+      if (d?.task?.completed && d?.created?.some(item => item.type === 'geofence')) {
+        queryClient.invalidateQueries({ queryKey: ['geofences'] });
+      }
       const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
-      setTelemetry({ ...(d.meta || {}), confidence: d.confidence, risk: d.risk_level, safety: d.assurance?.safety_gate, evidence: d.assurance?.evidence_health?.succeeded });
+      setTelemetry({ ...(d.meta || {}), confidence: d.confidence, risk: d.risk_level, safety: d.assurance?.safety_gate, evidence: d.assurance?.evidence_health?.succeeded, agent_count: d.task?.completed ? 0 : d.meta?.agent_count });
       historyRef.current = [...historyRef.current, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-12);
       setMessages((prev) => [...prev, assistantMsg]);
       if (/draw|map|geofence|zone/i.test(responseText) && /geofence|zone|area/i.test(text)) setShowDraw(true);
@@ -209,7 +231,7 @@ export default function Copilot() {
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading]);
+  }, [input, isLoading, queryClient]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -293,7 +315,7 @@ export default function Copilot() {
 
         <div className="border-t border-cyan-400/10 px-4 py-3 shrink-0 bg-[#050811]/95">
           <div className="flex gap-2 rounded-2xl border border-slate-700/80 bg-slate-950/90 p-2">
-            <textarea className="flex-1 bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-300/30 resize-none" placeholder="Ask Sonalit Copilot about vehicles, convoys, alerts, routes, security or operational exposure…" rows={1} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={isLoading} />
+            <textarea className="flex-1 bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-300/30 resize-none" placeholder="Ask, investigate or instruct: fleet, convoys, routes, security, incidents, shipments, maintenance, spatial context or geofences…" rows={1} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={isLoading} />
             <button onClick={handleSend} disabled={!input.trim() || isLoading} className="p-2.5 rounded-xl border border-cyan-300/30 bg-cyan-300/10 text-cyan-100 hover:bg-cyan-300/20 disabled:opacity-30" aria-label="Send">
               {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
             </button>
