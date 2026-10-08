@@ -375,7 +375,12 @@ function assessPublicationQuality(body) {
     if (uncertainty.length < 1) { ds -= 5; warnings.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} has no explicit uncertainty statement.`); }
     const researchStatus=String(dossier.research_status || '').toLowerCase();
     const limitedResearchAccepted=researchStatus==='researched_limited' && distinctDomains(sources)>=2;
-    if (researchStatus !== 'researched' && !limitedResearchAccepted) {
+    const degradedEvidenceAccepted=
+      researchStatus==='fallback' &&
+      String(dossier.research_method||'').toLowerCase()==='degraded_evidence' &&
+      Number(dossier.evidence_count||0)>=2 &&
+      Number(dossier.source_count||0)>=2;
+    if (researchStatus !== 'researched' && !limitedResearchAccepted && !degradedEvidenceAccepted) {
       ds -= 35;
       blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} does not meet the controlled research threshold.`);
     }
