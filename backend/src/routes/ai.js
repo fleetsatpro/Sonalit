@@ -1049,10 +1049,74 @@ router.post('/decision', async (req, res) => {
   }
 });
 
+function inferGeofenceTask(command) {
+  const raw = String(command || '').trim();
+  if (!/\b(draw|create|make|set up|define|establish|mark|build)\b[\\s\\S]{0,100}\b(geo[- ]?fence|corridor|geofence)\b/i.test(raw)) return null;
+
+  const quote = (v) => String(v || '').replace(/^["']|["']$/g, '').trim();
+  const nameMatch = raw.match(/\b(?:named|called|name(?:d)?\s+as)\s+["']?([^"']+?)["']?(?:\s*$|\s+(?:around|from|between|at|near)\b)/i);
+  const name = nameMatch ? quote(nameMatch[1]) : null;
+
+  const bufferMatch = raw.match(/(?:buffer|corridor|deviation(?:\s+limit)?)\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i);
+  const buffer_m = bufferMatch ? Number(bufferMatch[1]) * (/km/i.test(bufferMatch[2]) ? 1000 : 1) : undefined;
+  const radiusMatch = raw.match(/(?:radius|within)\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i);
+  const radius_m = radiusMatch ? Number(radiusMatch[1]) * (/km/i.test(radiusMatch[2]) ? 1000 : 1) : undefined;
+
+  const route = raw.match(/\b(?:from|between)\s+(.+?)\s+(?:to|and)\s+(.+?)(?:\s+(?:with|using|and)\s+(?:a\s+)?(?:\d+[.]?\d*\s*(?:km|m|meters|metres)\s*)?(?:buffer|corridor|deviation)|\s+named\b|[.;]|$)/i)
+    || raw.match(/\balong\s+(.+?)\s+to\s+(.+?)(?:\s+with\b|\s+named\b|[.;]|$)/i);
+
+  if (route) {
+    const start = quote(route[1]);
+    const end = quote(route[2]);
+    if (!start || !end) return null;
+    return {
+      task: 'create_geofence',
+      name: name || `Sonalit Corridor — ${start} → ${end}`,
+      location: start,
+      route_end: end,
+      buffer_m: Number.isFinite(buffer_m) ? Math.max(10, Math.min(buffer_m, 5000)) : 300,
+      precision: 'maximum',
+    };
+  }
+
+  const point = raw.match(/\b(?:around|at|near)\s+(.+?)(?:\s+(?:with|using)\s+(?:a\s+)?.*?(?:radius|buffer)\b|[.;]|$)/i);
+  if (!point) return null;
+  const location = quote(point[1]);
+  if (!location) return null;
+  return {
+    task: 'create_geofence',
+    name: name || `Sonalit Geofence — ${location}`,
+    location,
+    ...(Number.isFinite(radius_m) ? { radius_m: Math.max(10, Math.min(radius_m, 100000)) } : { radius_m: 3000 }),
+    precision: 'maximum',
+  };
+}
+
 // ── POST /ai/dispatch — agentic tool-use loop ──────────────────────────────
 router.post('/dispatch', async (req, res) => {
   const { command, history = [] } = req.body;
   if (!command || !command.trim()) return res.status(400).json({ error: 'command required' });
+
+  // High-confidence geofence commands bypass the model completely. This keeps
+  // a core operational drawing task available even during provider outages and
+  // prevents an LLM from inventing route geometry.
+  const geofenceTask = inferGeofenceTask(command);
+  if (geofenceTask) {
+    try {
+      const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id || null;
+      const userId = req.user?.id || null;
+      const result = await toolCreateGeofence(geofenceTask, userId, orgId);
+      return res.json({
+        response: result.message || (result.error ? result.error : 'Geofence task completed.'),
+        actions: result.created ? ['create_geofence'] : [],
+        created: result.created ? [{ type: 'geofence', ...result }] : [],
+        task: { type: 'geofence', precision: result.precision || 'maximum', completed: result.created === true },
+        source: result.created ? 'deterministic-geofence' : 'geofence-validation',
+      });
+    } catch (err) {
+      return res.status(200).json({ response: `Geofence task failed safely: ${err.message}`, actions: [], created: [], task: { type: 'geofence', completed: false }, source: 'geofence-error' });
+    }
+  }
 
   if (!aiClient.hasAnthropic() && !aiClient.hasGroqFallback()) {
     return res.json({
