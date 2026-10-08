@@ -314,16 +314,6 @@ function fallbackResearch(event,packet){
   const factContext=facts.length
     ? 'The structured evidence record identifies '+facts.length+' supported fact(s), including: '+facts.slice(0,3).join(' ')
     : '';
-  const narrative=cleanPublicationText(
-    dedupeSentences(
-      [eventSummary||headline+'. The recorded incident remains bounded by the available evidence.',sourceContext,factContext,
-       caveats.length?'Material uncertainty remains: '+caveats.join(' '):'The available source set does not establish the full extent or downstream consequences of the incident.']
-       .filter(Boolean).join(' '),
-      new Set(),
-      2600
-    ),
-    2600
-  );
   const eventAssessment=cleanPublicationText(event?.assessment?.judgement||'',1000);
   const derivedAssessment=eventAssessment || (
     'The available evidence supports a bounded assessment of '+headline+'. Broader deterioration is not established from the present record; the judgement should change only if subsequent evidence confirms persistence, wider geographic reach, recurrence or material operational consequence.'
@@ -332,6 +322,21 @@ function fallbackResearch(event,packet){
   const why=eventWhy.length
     ? eventWhy
     : ['Operational significance is tied to '+headline+' and to whether the reported development produces sustained access, personnel, asset or continuity consequences.'];
+  const packetContext=packetNarrative(event,packet);
+  const narrative=cleanPublicationText(
+    dedupeSentences(
+      [packetContext,eventSummary||headline+'. The recorded incident remains bounded by the available evidence.',
+       sourceContext,factContext,
+       'Operational assessment: '+derivedAssessment,
+       'Decision relevance: '+why[0],
+       caveats.length?'Material uncertainty remains: '+caveats.join(' '):'Material uncertainty remains because the available record does not establish the full extent or downstream consequences of the incident.',
+       'Research state: evidence-constrained; this edition does not present unverified detail as fact.']
+       .filter(Boolean).join(' '),
+      new Set(),
+      2600
+    ),
+    2600
+  );
   const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];
   const eventEvidenceSources=new Set(eventEvidence.map(x=>String(x?.source_id||'')).filter(Boolean));
   const eventEvidenceEligible=eventEvidence.length>=1 && eventEvidenceSources.size>=1;
