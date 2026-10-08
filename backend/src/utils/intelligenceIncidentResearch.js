@@ -137,19 +137,14 @@ async function fetchText(url,options={},timeoutMs=REQUEST_TIMEOUT_MS){
 async function googleNewsSearch({headline,country,region}){
   const countryName=COUNTRY_NAMES[country]||country;
   const cleanHeadline=clean(headline,220);
-  const relaxedHeadline=cleanHeadline
-    .replace(/[“”"']/g,' ')
-    .replace(/[^\\p{L}\\p{N}\\s:-]/gu,' ')
-    .replace(/\\s+/g,' ')
-    .trim();
-  const compactTokens=relaxedHeadline.split(/\\s+/).filter(Boolean).slice(0,14).join(' ');
+  const relaxedHeadline=cleanHeadline.replace(/[“”"']/g,' ').replace(/[^\p{L}\p{N}\s:-]/gu,' ').replace(/\s+/g,' ').trim();
+  const compactTokens=relaxedHeadline.split(/\s+/).filter(Boolean).slice(0,14).join(' ');
   const location=clean(region||'',120);
   const queries=[...new Set([
     [`"${cleanHeadline}"`,countryName,location].filter(Boolean).join(' '),
     [compactTokens,countryName,location].filter(Boolean).join(' '),
-    [countryName,location,'security incident',compactTokens.split(/\\s+/).slice(0,8).join(' ')].filter(Boolean).join(' ')
+    [countryName,location,'security incident',compactTokens.split(/\s+/).slice(0,8).join(' ')].filter(Boolean).join(' ')
   ].map(q=>q.trim()).filter(Boolean))].slice(0,3);
-
   const results=await Promise.allSettled(queries.map(async q=>{
     const u=new URL('https://news.google.com/rss/search');
     u.searchParams.set('q',q);
