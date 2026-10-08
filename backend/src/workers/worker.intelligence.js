@@ -245,6 +245,7 @@ function schedulePublicationRecovery(){
   },publicationRecoveryIntervalMs);
   logger.info('Next intelligence publication recovery scheduled in '+Math.round(publicationRecoveryIntervalMs/1000)+'s');
 }
+
 function schedulePublicationBoundary(){
   if(stopping)return;
   if(publicationTimer)clearTimeout(publicationTimer);
