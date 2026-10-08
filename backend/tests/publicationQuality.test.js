@@ -167,3 +167,31 @@ test('tradecraft gate accepts a fully researched, differentiated dossier',()=>{
   expect(quality.passed).toBe(true);
   expect(quality.score).toBeGreaterThanOrEqual(82);
 });
+
+
+test('tradecraft gate accepts attributable single-source incident inside globally corroborated degraded edition',()=>{
+  const quality=assessPublicationQuality({
+    executive_assessment:'The reporting period contains several security-relevant developments, with the strongest overall evidence meeting the publication-level source threshold. This incident remains constrained to one attributable observation, so the edition does not infer independent corroboration for this specific case. The operational judgement is therefore bounded and should change only if further reporting confirms persistence, recurrence or wider consequences. The report is explicitly evidence-constrained while the AI research fabric is unavailable.',
+    deep_research:{incidents_requested:1,incidents_researched:0,incidents_researched_limited:0,incidents_fallback:1,degraded_evidence_eligible_incidents:1},
+    incident_dossiers:[{
+      event_id:'e-single-source',
+      research_status:'fallback',
+      research_method:'degraded_evidence',
+      evidence_count:1,
+      source_count:1,
+      what_happened:'A security disruption was reported along the affected commercial corridor. The current incident record contains one attributable observation and does not establish the full duration or geographic extent of the disruption.',
+      context:'The affected corridor is relevant to commercial movement, so the principal operational question is whether access remains constrained or returns to normal after the reported incident.',
+      assessment:'The evidence supports a localized security concern but not a wider deterioration. Greater concern would require additional reporting that confirms persistence, recurrence, broader reach or material movement disruption.',
+      key_facts:['The disruption was reported along the affected corridor.','The incident record contains one attributable observation.'],
+      why_it_matters:['A persistent disruption could delay movement or require routing and security adjustments.'],
+      caveats:['Independent corroboration and duration remain unresolved.'],
+      research_sources:[{domain:'source-one.example',url:'https://source-one.example/a'}]
+    }],
+    outlook:['Over the next 24 hours, confirmation of reopening or continued disruption is the principal indicator.','Over the next 72 hours, recurrence or geographic spread would materially change the current judgement.'],
+    intelligence_gaps:['Independent corroboration and duration remain unresolved.'],
+    emerging_trends:[]
+  });
+  expect(quality.passed).toBe(true);
+  expect(quality.score).toBeGreaterThanOrEqual(90);
+  expect(quality.blocking_issues).toHaveLength(0);
+});
