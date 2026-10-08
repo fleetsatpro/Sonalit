@@ -106,6 +106,53 @@ const TOOLS = [
     },
   },
   {
+    name: 'query_shipments',
+    description: 'Query tenant-scoped shipments with tracking, customer, status, priority, route, ETA, vehicle and driver context.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        priority: { type: 'string' },
+        search: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'query_maintenance',
+    description: 'Query tenant-scoped maintenance records, due dates, status, priority, vehicle and workshop context.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        priority: { type: 'string' },
+        vehicle: { type: 'string' },
+        overdue: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'query_drivers',
+    description: 'Query tenant-scoped drivers with status, licence expiry, score, current vehicle and basic recent performance signals.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        search: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'query_devices',
+    description: 'Query tenant-scoped Guardian devices with health, assignment, panic and last-seen information.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        assignment_type: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'query_convoys',
     description: 'Query convoy missions. Returns convoys with name, status, region, priority, route origin/destination, and timing.',
     input_schema: {
@@ -285,6 +332,96 @@ async function toolQueryVehicles(input, orgId) {
     params
   );
   return { count: r.rows.length, vehicles: r.rows };
+}
+
+async function toolQueryShipments(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', shipments: [], count: 0 };
+  try {
+    const filters = ['s.org_id = $1', 's.deleted_at IS NULL'];
+    const params = [orgId];
+    if (input.status) { params.push(input.status); filters.push(`s.status = ${params.length}`); }
+    if (input.priority) { params.push(input.priority); filters.push(`s.priority = ${params.length}`); }
+    if (input.search) { params.push(`%${String(input.search).slice(0,120)}%`); filters.push(`(s.tracking_number ILIKE ${params.length} OR s.customer_name ILIKE ${params.length} OR s.origin_address ILIKE ${params.length} OR s.destination_address ILIKE ${params.length})`); }
+    const result = await query(
+      `SELECT s.tracking_number, s.customer_name, s.status, s.priority,
+              s.origin_address, s.destination_address, s.scheduled_pickup,
+              s.scheduled_delivery, s.estimated_arrival, s.actual_delivery,
+              c.name AS convoy_name, v.registration AS vehicle,
+              d.name AS driver
+         FROM shipments s
+         LEFT JOIN convoys c ON c.id=s.convoy_id
+         LEFT JOIN vehicles v ON v.id=s.vehicle_id
+         LEFT JOIN drivers d ON d.id=s.driver_id
+        WHERE ${filters.join(' AND ')}
+        ORDER BY s.created_at DESC LIMIT 60`,
+      params,
+    );
+    return { count: result.rows.length, shipments: result.rows };
+  } catch (e) { return { error: `Shipment query failed: ${e.message}`, shipments: [], count: 0 }; }
+}
+
+async function toolQueryMaintenance(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', maintenance: [], count: 0 };
+  try {
+    const filters = ['mr.org_id = $1', 'mr.deleted_at IS NULL'];
+    const params = [orgId];
+    if (input.status) { params.push(input.status); filters.push(`mr.status = ${params.length}`); }
+    if (input.priority) { params.push(input.priority); filters.push(`mr.priority = ${params.length}`); }
+    if (input.vehicle) { params.push(`%${String(input.vehicle).slice(0,80)}%`); filters.push(`v.registration ILIKE ${params.length}`); }
+    if (input.overdue) filters.push(`mr.status IN ('scheduled','in_progress') AND mr.scheduled_at < NOW()`);
+    const result = await query(
+      `SELECT mr.id, mr.type, mr.title, mr.priority, mr.status, mr.scheduled_at,
+              mr.completed_at, mr.next_service_km, mr.next_service_date,
+              mr.workshop, v.registration, v.region
+         FROM maintenance_records mr
+         JOIN vehicles v ON v.id=mr.vehicle_id
+        WHERE ${filters.join(' AND ')}
+        ORDER BY CASE mr.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
+                 mr.scheduled_at NULLS LAST LIMIT 60`,
+      params,
+    );
+    return { count: result.rows.length, maintenance: result.rows };
+  } catch (e) { return { error: `Maintenance query failed: ${e.message}`, maintenance: [], count: 0 }; }
+}
+
+async function toolQueryDrivers(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', drivers: [], count: 0 };
+  try {
+    const filters = ['d.org_id = $1', 'd.deleted_at IS NULL'];
+    const params = [orgId];
+    if (input.status) { params.push(input.status); filters.push(`d.status = ${params.length}`); }
+    if (input.search) { params.push(`%${String(input.search).slice(0,120)}%`); filters.push(`(d.name ILIKE ${params.length} OR d.employee_id ILIKE ${params.length} OR d.phone ILIKE ${params.length})`); }
+    const result = await query(
+      `SELECT d.id, d.name, d.employee_id, d.status, d.license_expiry,
+              d.driver_score, d.idling_minutes, v.registration AS vehicle
+         FROM drivers d
+         LEFT JOIN vehicles v ON v.id=d.current_vehicle_id
+        WHERE ${filters.join(' AND ')}
+        ORDER BY d.driver_score DESC NULLS LAST, d.name LIMIT 60`,
+      params,
+    );
+    return { count: result.rows.length, drivers: result.rows };
+  } catch (e) { return { error: `Driver query failed: ${e.message}`, drivers: [], count: 0 }; }
+}
+
+async function toolQueryDevices(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', devices: [], count: 0 };
+  try {
+    const filters = ['d.org_id = $1', 'd.deleted_at IS NULL'];
+    const params = [orgId];
+    if (input.status) { params.push(input.status); filters.push(`d.status = ${params.length}`); }
+    if (input.assignment_type) { params.push(input.assignment_type); filters.push(`d.assignment_type = ${params.length}`); }
+    const result = await query(
+      `SELECT d.id, d.name, d.model, d.assignment_type, d.assignment_id,
+              d.status, d.panic_active, d.last_seen, d.last_lat, d.last_lng,
+              d.last_speed, d.last_integrity_verdict, d.last_integrity_verdict_at
+         FROM guardian_devices d
+        WHERE ${filters.join(' AND ')}
+        ORDER BY d.last_seen DESC NULLS LAST LIMIT 60`,
+      params,
+    );
+    return { count: result.rows.length, devices: result.rows };
+  } catch (e) { return { error: `Device query failed: ${e.message}`, devices: [], count: 0 }; }
 }
 
 async function toolQueryConvoys(input, orgId) {
@@ -964,6 +1101,10 @@ async function runTool(name, input, context = {}) {
   const orgId = context.orgId || null;
   switch (name) {
     case 'query_vehicles':     return toolQueryVehicles(input || {}, orgId);
+    case 'query_shipments':   return toolQueryShipments(input || {}, orgId);
+    case 'query_maintenance': return toolQueryMaintenance(input || {}, orgId);
+    case 'query_drivers':     return toolQueryDrivers(input || {}, orgId);
+    case 'query_devices':     return toolQueryDevices(input || {}, orgId);
     case 'query_convoys':      return toolQueryConvoys(input || {}, orgId);
     case 'query_alerts':       return toolQueryAlerts(input || {}, orgId);
     case 'get_weather':        return toolGetWeather(input || {});
