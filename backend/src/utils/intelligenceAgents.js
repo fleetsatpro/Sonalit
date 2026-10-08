@@ -405,7 +405,17 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable;
   const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents,evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
   let finalBody=deterministic;
-  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || publicationEvents.every(e=>['researched','researched_limited'].includes(String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase()));
+  const aiFabricDegradedAtGate=!aiClient.hasReadyProvider(publicationAiPolicy);
+  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || publicationEvents.every(e=>{
+    const agent=effectiveResearchByEvent[String(e.id)]?.agent||{};
+    const status=String(agent.status||'').toLowerCase();
+    if(['researched','researched_limited'].includes(status))return true;
+    return aiFabricDegradedAtGate &&
+      status==='fallback' &&
+      String(agent.research_method||'').toLowerCase()==='degraded_evidence' &&
+      Number(e.observation_count||0)>=2 &&
+      Number(e.source_count||0)>=2;
+  });
   let title=deterministic.title;
   let subtitle=deterministic.subtitle;
   let executive=deterministic.executive_assessment;
@@ -420,8 +430,9 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     try{
       const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events:reportEvents,baseBody:deterministic,evidenceContract:publicationEvidenceContract,precomputedResearch:incidentResearch});
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
-      aiBoardStatus=result.publishable?'passed':'held';
-      aiBoardHoldReason=result.publishable?null:JSON.stringify({qa:result.qa?.publishable===true,blocking:(result.qa?.blocking_issues||[]).length});
+      const boardProviderUnavailable=Array.isArray(result?.qaConsensus?.blocking_issues) && result.qaConsensus.blocking_issues.includes('ai_provider_unavailable');
+      aiBoardStatus=boardProviderUnavailable?'provider_unavailable':(result.publishable?'passed':'held');
+      aiBoardHoldReason=result.publishable?null:JSON.stringify({qa:result.qa?.publishable===true,blocking:(result.qa?.blocking_issues||[]).length,provider_unavailable:boardProviderUnavailable});
       const final=result.final;
       if(final){
         title=final.title||title;
@@ -459,7 +470,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const tradecraftQuality=assessPublicationQuality(finalBody);
   finalBody.publication_quality={...tradecraftQuality,legacy_audit:finalQuality};
   const qualityGate=tradecraftQuality.passed===true && finalQuality.passed===true;
-  const aiBoardDegraded=!boardPublishable&&['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus);
+  const aiBoardDegraded=!boardPublishable&&(['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus) || (!publicationAiReady && !aiClient.hasReadyProvider(publicationAiPolicy)));
   const aiBoardGate=events.length===0 ? true : (boardPublishable || !aiBoardRequired || aiBoardDegraded);
   const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate&&researchReleaseGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
@@ -480,7 +491,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     publication_quality:finalBody.publication_quality||null,
     ai_board:{enabled:aiBoardEnabled,required:aiBoardRequired,status:aiBoardStatus,hold_reason:aiBoardHoldReason},
     release_gate:{publication_research_required:publicationResearchRequired,research_release_gate:researchReleaseGate,tradecraft_quality_gate:qualityGate,ai_board_gate:aiBoardGate,ai_board_degraded:aiBoardDegraded,ai_board_degraded_reason:aiBoardDegraded?'live_ai_provider_fabric_unavailable':null,status},
-    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_version:DEEP_RESEARCH_VERSION,last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),next_attempt_at:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?new Date(now.getTime()+researchCooldownMinutes*60*1000).toISOString():(priorResearch.next_attempt_at||null),retry_cooldown_minutes:researchCooldownMinutes,skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),last_failure_reason:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?'one or more incident research results fell back to evidence-only content':(priorResearch.last_failure_reason||null),research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
+    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible||0),research_version:DEEP_RESEARCH_VERSION,last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),next_attempt_at:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?new Date(now.getTime()+researchCooldownMinutes*60*1000).toISOString():(priorResearch.next_attempt_at||null),retry_cooldown_minutes:researchCooldownMinutes,skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),last_failure_reason:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?'one or more incident research results fell back to evidence-only content':(priorResearch.last_failure_reason||null),research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
     version
   };
   let publicationId=null;

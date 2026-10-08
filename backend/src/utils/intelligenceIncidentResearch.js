@@ -332,10 +332,15 @@ function fallbackResearch(event,packet){
   const why=eventWhy.length
     ? eventWhy
     : ['Operational significance is tied to '+headline+' and to whether the reported development produces sustained access, personnel, asset or continuity consequences.'];
+  const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];
+  const eventEvidenceSources=new Set(eventEvidence.map(x=>String(x?.source_id||'')).filter(Boolean));
+  const eventEvidenceEligible=eventEvidence.length>=2 && eventEvidenceSources.size>=2;
   const status=(sourceDomains.size>=2 && sources.length>=2 && narrative.length>=260)?'researched_limited':'fallback';
+  const degradedEvidenceEligible=status==='fallback' && eventEvidenceEligible;
   return {
     status,
-    publication_eligible:status==='researched_limited',
+    publication_eligible:status==='researched_limited' || degradedEvidenceEligible,
+    degraded_evidence_eligible:degradedEvidenceEligible,
     narrative,
     context:hasWebEvidence?uniqueStrings((packet?.fetched_pages||[]).map(p=>p.description||'').filter(Boolean),1).join(' '):'',
     confirmed_facts:facts,
@@ -348,7 +353,7 @@ function fallbackResearch(event,packet){
     provider:hasWebEvidence?'live-web-packet':'evidence-only',
     agent_status:status,
     web_sources_retrieved:sources.length,
-    research_method:hasWebEvidence?'live_web_packet':'evidence_only',
+    research_method:hasWebEvidence?'live_web_packet':(degradedEvidenceEligible?'degraded_evidence':'evidence_only'),
     research_quality:status==='researched_limited'?'LIMITED_SOURCE_BASE':'INSUFFICIENT_SOURCE_BASE'
   };
 }
@@ -517,9 +522,10 @@ async function researchPublicationIncidents(events,{country,region}={}){
   const researchedLimited=values.filter(x=>x&&x.agent&&x.agent.status==='researched_limited').length;
   const fallback=values.filter(x=>x&&x.agent&&x.agent.status==='fallback').length;
   const researchedPacket=values.filter(x=>x?.agent?.research_method==='live_web_packet').length;
+  const degradedEvidenceEligible=values.filter(x=>x?.agent?.status==='fallback'&&x?.agent?.degraded_evidence_eligible===true).length;
   const webSearchRequests=values.reduce((n,x)=>n+Number(x?.webSearchRequests||0),0);
   const webSourcesRetrieved=values.reduce((n,x)=>n+Number(x?.agent?.web_sources_retrieved||x?.packet?.fetched_pages?.length||0),0);
-  return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,deferred:Math.max(0,events.length-values.length)}};
+  return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,deferred:Math.max(0,events.length-values.length),degraded_evidence_eligible:degradedEvidenceEligible}};
 }
 
 module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources};

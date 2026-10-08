@@ -155,3 +155,17 @@ test('editorial board accepts controlled limited incident research',()=>{
   const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
   expect(s).toContain("['researched','researched_limited'].includes(String(e?.research?.agent?.status||'').toLowerCase())");
 });
+
+
+test('editorial board provider outage is classified as provider_unavailable rather than a generic hold',()=>{
+  const src=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  expect(src).toContain("result?.qaConsensus?.blocking_issues");
+  expect(src).toContain("aiBoardStatus=boardProviderUnavailable?'provider_unavailable'");
+});
+
+
+test('publication research records degraded evidence eligibility explicitly',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('degradedEvidenceEligible=values.filter');
+  expect(s).toContain('degraded_evidence_eligible:degradedEvidenceEligible');
+});
