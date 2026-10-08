@@ -395,27 +395,48 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       else if(!current&&prior)effectiveResearchByEvent[id]=prior;
     }
   }
+  const priorEvidenceConstrained=
+    String(existing[0]?.body?.release_gate?.research_mode||'').toLowerCase()==='evidence_constrained' ||
+    Number(priorResearch.degraded_evidence_eligible_incidents||0)>=expectedResearchCount;
+  const isDegradedEvidenceEvent=(e)=>{
+    const entry=effectiveResearchByEvent[String(e.id)]||{};
+    const agent=entry.agent||{};
+    const status=String(agent.status||'').toLowerCase();
+    return status==='fallback' &&
+      String(agent.research_method||'').toLowerCase()==='degraded_evidence' &&
+      Number(e.observation_count||0)>=2 &&
+      Number(e.source_count||0)>=2 &&
+      (entry.error==='ai_provider_unavailable' || priorEvidenceConstrained);
+  };
   const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));
   const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents,events);
-  const reportEvents=publicationBasis.reportEvents;
+  const allSelectedIncidentsDegraded=
+    expectedResearchCount>0 &&
+    publicationEvents.length===expectedResearchCount &&
+    publicationEvents.every(isDegradedEvidenceEvent);
+  const reportEvents=publicationBasis.publishable
+    ? publicationBasis.reportEvents
+    : (allSelectedIncidentsDegraded ? publicationEvents : publicationBasis.reportEvents);
   const reportEvidenceCount=evidenceContract ? evidenceCount : reportEvents.reduce((n,e)=>n+Number(e.observation_count||0),0);
   const reportSourceIds=new Set();
   for(const e of reportEvents)for(const obs of Array.isArray(e.evidence)?e.evidence:[])if(obs?.source_id)reportSourceIds.add(String(obs.source_id));
   const reportSourceCount=evidenceContract ? sourceCount : Math.max(publicationBasis.researchSourceCount,reportSourceIds.size);
-  const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable;
+  const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable || allSelectedIncidentsDegraded;
   const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents,evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
-  let finalBody=deterministic;
-  const aiFabricDegradedAtGate=!aiClient.hasReadyProvider(publicationAiPolicy);
-  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || publicationEvents.every(e=>{
-    const agent=effectiveResearchByEvent[String(e.id)]?.agent||{};
-    const status=String(agent.status||'').toLowerCase();
-    if(['researched','researched_limited'].includes(status))return true;
-    return aiFabricDegradedAtGate &&
-      status==='fallback' &&
-      String(agent.research_method||'').toLowerCase()==='degraded_evidence' &&
-      Number(e.observation_count||0)>=2 &&
-      Number(e.source_count||0)>=2;
+  const researchControlledComplete=expectedResearchCount===0 || publicationEvents.every(e=>{
+    const status=String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase();
+    return ['researched','researched_limited'].includes(status);
   });
+  const degradedEvidenceRelease=
+    allSelectedIncidentsDegraded &&
+    !researchControlledComplete &&
+    publicationEvidenceContract;
+  let finalBody={...deterministic,deep_research:{
+    ...(deterministic.deep_research||{}),
+    research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research')
+  }};
+  const aiFabricDegradedAtGate=!aiClient.hasReadyProvider(publicationAiPolicy);
+  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || researchControlledComplete || degradedEvidenceRelease;
   let title=deterministic.title;
   let subtitle=deterministic.subtitle;
   let executive=deterministic.executive_assessment;
@@ -426,7 +447,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'true').toLowerCase()!=='false';
   const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true').toLowerCase()!=='false';
 
-  if(aiBoardEnabled && publicationAiReady && events.length){
+  if(aiBoardEnabled && publicationAiReady && events.length && !degradedEvidenceRelease){
     try{
       const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events:reportEvents,baseBody:deterministic,evidenceContract:publicationEvidenceContract,precomputedResearch:incidentResearch});
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
@@ -470,7 +491,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const tradecraftQuality=assessPublicationQuality(finalBody);
   finalBody.publication_quality={...tradecraftQuality,legacy_audit:finalQuality};
   const qualityGate=tradecraftQuality.passed===true && finalQuality.passed===true;
-  const aiBoardDegraded=!boardPublishable&&(['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus) || (!publicationAiReady && !aiClient.hasReadyProvider(publicationAiPolicy)));
+  const aiBoardDegraded=!boardPublishable&&(['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus) || degradedEvidenceRelease || (!publicationAiReady && !aiClient.hasReadyProvider(publicationAiPolicy)));
   const aiBoardGate=events.length===0 ? true : (boardPublishable || !aiBoardRequired || aiBoardDegraded);
   const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate&&researchReleaseGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
@@ -490,8 +511,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     },
     publication_quality:finalBody.publication_quality||null,
     ai_board:{enabled:aiBoardEnabled,required:aiBoardRequired,status:aiBoardStatus,hold_reason:aiBoardHoldReason},
-    release_gate:{publication_research_required:publicationResearchRequired,research_release_gate:researchReleaseGate,tradecraft_quality_gate:qualityGate,ai_board_gate:aiBoardGate,ai_board_degraded:aiBoardDegraded,ai_board_degraded_reason:aiBoardDegraded?'live_ai_provider_fabric_unavailable':null,status},
-    deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible||0),research_version:DEEP_RESEARCH_VERSION,last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),next_attempt_at:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?new Date(now.getTime()+researchCooldownMinutes*60*1000).toISOString():(priorResearch.next_attempt_at||null),retry_cooldown_minutes:researchCooldownMinutes,skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),last_failure_reason:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?'one or more incident research results fell back to evidence-only content':(priorResearch.last_failure_reason||null),research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
+    release_gate:{publication_research_required:publicationResearchRequired,research_release_gate:researchReleaseGate,research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research'),research_release_reason:degradedEvidenceRelease?'AI research fabric unavailable; release constrained to the verified Sonalit evidence contract.':null,tradecraft_quality_gate:qualityGate,ai_board_gate:aiBoardGate,ai_board_degraded:aiBoardDegraded,ai_board_degraded_reason:aiBoardDegraded?'live_ai_provider_fabric_unavailable':null,status},
+    deep_research:{...finalBody.deep_research,agent_summary:incidentResearch.summary,degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible||priorResearch.degraded_evidence_eligible_incidents||0),research_version:DEEP_RESEARCH_VERSION,last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),next_attempt_at:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?new Date(now.getTime()+researchCooldownMinutes*60*1000).toISOString():(priorResearch.next_attempt_at||null),retry_cooldown_minutes:researchCooldownMinutes,skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),last_failure_reason:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?'one or more incident research results fell back to evidence-only content':(priorResearch.last_failure_reason||null),research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research'),research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
     version
   };
   let publicationId=null;

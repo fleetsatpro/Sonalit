@@ -169,3 +169,15 @@ test('publication research records degraded evidence eligibility explicitly',()=
   expect(s).toContain('degradedEvidenceEligible=values.filter');
   expect(s).toContain('degraded_evidence_eligible:degradedEvidenceEligible');
 });
+
+
+test('incident publication uses the actual research outcome instead of stale provider readiness',()=>{
+  const s=source();
+  expect(s).toContain("const priorEvidenceConstrained=");
+  expect(s).toContain("entry.error==='ai_provider_unavailable'");
+  expect(s).toContain('const allSelectedIncidentsDegraded=');
+  expect(s).toContain('const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable || allSelectedIncidentsDegraded;');
+  expect(s).toContain('const degradedEvidenceRelease=');
+  expect(s).toContain('if(aiBoardEnabled && publicationAiReady && events.length && !degradedEvidenceRelease)');
+  expect(s).toContain('degradedEvidenceRelease || (!publicationAiReady && !aiClient.hasReadyProvider');
+});
