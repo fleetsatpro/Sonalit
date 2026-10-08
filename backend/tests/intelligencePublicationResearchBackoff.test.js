@@ -14,7 +14,7 @@ describe('publication research retry hardening',()=>{
     const s=source();
     expect(s).toContain('researchCooldownMinutes');
     expect(s).toContain('researchAttemptRecent');
-    expect(s).toContain('(!researchAttemptRecent||evidenceChanged)');
+    expect(s).toContain('(!researchAttemptRecent||evidenceChanged||Boolean(options.forceResearch))');
     expect(s).toContain('skipped_due_to_cooldown');
   });
 

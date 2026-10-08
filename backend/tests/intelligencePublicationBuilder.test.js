@@ -32,7 +32,7 @@ describe('evidence-first intelligence publication builder',()=>{
       country:'KE',type:'weekly',start,end,events:[base, {...base,id:'event-2',headline:'Demonstration reported',intelligence_type:'POLITICAL',severity:'moderate'}],
       evidenceCount:4,sourceCount:2,evidenceContract:true
     });
-    expect(body.title).toMatch(/Kenya Weekly Insight/);
+    expect(body.title).toMatch(/Kenya Weekly Security Intelligence/);
     expect(body.executive_assessment).toContain('Kenya recorded 2');
     expect(body.key_developments.length).toBe(2);
     expect(body.assessment_highlights[0]).toHaveProperty('judgement');

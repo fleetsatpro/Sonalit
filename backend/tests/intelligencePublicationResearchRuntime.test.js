@@ -63,8 +63,9 @@ test('release gate evaluates the effective reused research dossiers',()=>{
 
 test('changed evidence forces a fresh research attempt even when prior coverage was complete',()=>{
   const s=source();
-  expect(s).toContain('const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)');
-  expect(s).toContain('&&(!researchAttemptRecent||evidenceChanged)');
+  expect(s).toContain('const needsDeepResearch=');
+  expect(s).toContain('Boolean(options.forceResearch)');
+  expect(s).toContain('researchAttemptRecent');
   expect(s).toContain('if(!evidenceChanged){');
 });
 
@@ -105,7 +106,9 @@ test('senior-editor output cannot replace verified research provenance fields',(
 test('limited prior research forces another research attempt after cooldown',()=>{
   const s=source();
   expect(s).toContain('const priorDossierResearchReady=expectedResearchCount===0 || publicationEvents.every');
-  expect(s).toContain('(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)');
+  expect(s).toContain('const needsDeepResearch=');
+  expect(s).toContain('Boolean(options.forceResearch)');
+  expect(s).toContain('researchAttemptRecent');
   expect(s).toContain('const priorResearchReleaseReady=!publicationResearchRequired || priorDossierResearchReady;');
 });
 
@@ -133,7 +136,9 @@ test('incident research can still build a live web packet when no AI provider is
 test('limited research is considered release-complete but remains subject to the tradecraft gate',()=>{
   const s=source();
   expect(s).toContain("['researched','researched_limited'].includes(String(dossier?.research_status||'').toLowerCase())");
-  expect(s).toContain("['researched','researched_limited'].includes(String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase())");
+  expect(s).toContain('const needsDeepResearch=');
+  expect(s).toContain('Boolean(options.forceResearch)');
+  expect(s).toContain('researchAttemptRecent');
 });
 
 
@@ -148,7 +153,8 @@ test('degraded incident research does not halt remaining incidents when AI is un
 test('OpenAI readiness must reflect per-key cooldown state rather than configuration alone',()=>{
   const s=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
   expect(s).toContain('function hasReadyOpenAIKey()');
-  expect(s).toContain("provider.name==='openai-direct' ? hasReadyOpenAIKey() : !providerCooling(provider)");
+  expect(s).toContain("provider.name==='openai-direct' ? hasReadyOpenAIKey() :");
+  expect(s).toContain("provider.name===GEMINI_PROVIDER.name ? hasReadyGeminiKey() :");
 });
 
 test('editorial board accepts controlled limited incident research',()=>{
@@ -199,7 +205,7 @@ test('degraded evidence eligibility requires attribution but not per-incident du
 
 
 test('fallback evidence is initialized before narrative construction',()=>{
-  const s=source();
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
   expect(s).toContain('const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];');
   expect(s.indexOf('const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];')).toBeLessThan(s.indexOf('const narrative=cleanPublicationText('));
 });

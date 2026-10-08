@@ -154,7 +154,7 @@ describe('professional intelligence publication PDF renderer',()=>{
     const parsed=JSON.parse(stdout);
     expect(parsed.pages).toBeLessThanOrEqual(16);
     expect(parsed.pages).toBeGreaterThanOrEqual(9);
-    expect(PDF_RENDERER_VERSION).toBe('2.3.0');
+    expect(PDF_RENDERER_VERSION).toBe('2.4.0');
     expect(parsed.text).not.toContain('[object Object]');
     expect(parsed.text).not.toContain('Comprehensive up-to-date news coverage, aggregated from sources all over the world by Google News');
     expect(parsed.text).not.toContain('Evidence-derived event record retained; automated analytical synthesis is unavailable.');
@@ -177,8 +177,8 @@ test('renders a real boundary map and filters implausible coordinates',async()=>
   ]);
   const meta=await require('sharp')(image).metadata();
   expect(meta.format).toBe('png');
-  expect(meta.width).toBe(2000);
-  expect(meta.height).toBe(1050);
+  expect(meta.width).toBe(3200);
+  expect(meta.height).toBe(1800);
   expect(totalPoints).toBe(2);
   expect(points).toHaveLength(1);
   expect(excludedPoints).toBe(1);

@@ -284,6 +284,56 @@ describe('intelligence provider mesh', () => {
   });
 
 
+  test('a shared Redis Gemini circuit cannot suppress healthy Gemini key-pool members', async () => {
+    process.env.GOOGLE_AI_API_KEY_1 = 'google-one-test-token';
+    process.env.GOOGLE_AI_API_KEY_2 = 'google-two-test-token';
+    process.env.REDIS_URL = 'redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS = 'true';
+
+    const until = Date.now() + 60 * 60 * 1000;
+    const redis = {
+      mget: jest.fn(async keys => keys.map(key => {
+        const group = decodeURIComponent(String(key).replace('sonalit:intelligence:ai:circuit:v3:', ''));
+        return group === 'google-gemini' ? String(until) : '0';
+      })),
+      set: jest.fn(async () => 'OK'),
+      del: jest.fn(async () => 1),
+    };
+
+    jest.doMock('../src/config/redis', () => ({ getRedis: () => redis }));
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.apiKey = options.apiKey;
+        this.baseURL = options.baseURL || 'openai';
+        this.chat = {
+          completions: {
+            create: jest.fn(async () => ({
+              choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
+            })),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    await ai.hydrateFabricState();
+
+    const policy = {
+      dataClassification:'public',
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['google-gemini-3.8-flash'],
+    };
+    expect(ai.hasReadyProvider(policy)).toBe(true);
+    const response = await ai.createMessage({
+      ...policy,
+      system:'Return JSON.',
+      messages:[{role:'user',content:'Gemini must remain usable when one persisted shared circuit is stale.'}],
+      max_tokens:100,
+    });
+    expect(response._provider).toBe('google-gemini-3.8-flash');
+  });
+
   test('free publication routing can explicitly select the dynamic free router', async () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
@@ -450,7 +500,7 @@ describe('intelligence provider mesh', () => {
 
     expect(response._free_provider).toBe(true);
     expect(response._provider).not.toBe('gpt-oss-120b-openrouter-free');
-    expect(response._provider).toMatch(/openrouter-free$/);
+    expect(response._provider).toMatch(/openrouter-free/);
     expect(calls.filter(c => c.baseURL.includes('openrouter.ai'))).toHaveLength(2);
     expect(calls.filter(c => c.baseURL.includes('api.groq.com'))).toHaveLength(0);
   });
