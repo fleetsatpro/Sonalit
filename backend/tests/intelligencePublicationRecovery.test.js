@@ -15,7 +15,7 @@ describe('intelligence publication autonomous recovery',()=>{
   test('stalled publication recovery is bounded and cluster-locked',()=>{
     const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
     expect(s).toContain("async function recoverStalledPublications(orgId,now=new Date(),options={})");
-    expect(s).toContain("updated_at < NOW-");
+    expect(s).toContain("updated_at < NOW()-($3::int*INTERVAL '1 minute')");
     expect(s).toContain("LIMIT $4");
     expect(s).toContain("status IN ('draft','review')");
   });
