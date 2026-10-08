@@ -600,7 +600,7 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
       WHERE org_id=$1
         AND status IN ('draft','review')
         AND period_end <= $2
-        AND updated_at < NOW()-(\$3::int*INTERVAL '1 minute')
+        AND updated_at < NOW()-($3::int*INTERVAL '1 minute')
         AND (
           COALESCE(body->'release_gate'->>'research_release_gate','true')='false'
           OR COALESCE(body->'release_gate'->>'ai_board_gate','true')='false'
@@ -613,11 +613,10 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
           ELSE 2
         END,
         updated_at ASC
-      LIMIT \$4`,
+      LIMIT $4`
     [orgId,now,staleMinutes,limit]
   );
   if(!rows.length)return{processed:0,published:0,drafts:0,failed:0,results:[]};
-
   const results=[];
   for(const row of rows){
     const country=String(row.country_code||'').toUpperCase();
@@ -625,8 +624,6 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
     if(!country||!['daily','weekly','monthly'].includes(type))continue;
     const periodEnd=new Date(row.period_end);
     if(Number.isNaN(periodEnd.getTime()))continue;
-    // publicationWindow() is anchored by the local calendar day. A point one second
-    // before period_end reconstructs the exact completed reporting period.
     const anchorNow=new Date(periodEnd.getTime()-1000);
     try{
       const result=await publicationForCountry(orgId,country,type,{now:anchorNow,forceResearch:true,recovery:true});
