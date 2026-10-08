@@ -19,6 +19,7 @@ describe('intelligence provider mesh', () => {
     delete process.env.INTEL_ALLOW_FREE_CONFIDENTIAL;
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.OPENAI_API_KEY;
+    for(let i=1;i<=100;i+=1) delete process.env['OPENAI_API_KEY_'+i];
     delete process.env.GROQ_API_KEY;
     delete process.env.MISTRAL_API_KEY;
     delete process.env.GOOGLE_AI_API_KEY;
@@ -157,6 +158,37 @@ describe('intelligence provider mesh', () => {
     ]));
     expect(ai.hasAnyProvider({ dataClassification: 'public' })).toBe(true);
     expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(true);
+  });
+
+  test('rotates across the OpenAI key pool when a member is rate-limited', async () => {
+    process.env.OPENAI_API_KEY_1 = 'key-one-test-token';
+    process.env.OPENAI_API_KEY_2 = 'key-two-test-token';
+    process.env.OPENAI_API_KEY_3 = 'key-three-test-token';
+
+    const seen=[];
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.apiKey=options.apiKey;
+        this.chat={completions:{create:jest.fn(async () => {
+          const index=this.apiKey.includes('one')?1:this.apiKey.includes('two')?2:3;
+          seen.push(index);
+          if(index===1){ const error=new Error('Too Many Requests'); error.status=429; throw error; }
+          return {choices:[{message:{content:'{"ok":true}',tool_calls:[]}}]};
+        })}};
+      }
+    });
+
+    const ai=require('../src/utils/aiClient');
+    expect(ai.providerCapabilities().openai_key_pool_size).toBe(3);
+    const response=await ai.createMessage({
+      dataClassification:'public',
+      providerHints:['openai-direct'],
+      system:'Return JSON.',
+      messages:[{role:'user',content:'test'}],
+      max_tokens:100,
+    });
+    expect(response._provider).toBe('openai-direct');
+    expect(seen).toEqual([1,2]);
   });
 
   test('routes public publication synthesis through the independent Gemini lane', async () => {
