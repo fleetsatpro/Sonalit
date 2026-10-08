@@ -702,7 +702,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         routeProvider = 'straight-line-explicit-fallback';
       }
 
-      const mid = pathLatLng[Math.floor(pathLatLng.length / 2)]!;
+      const mid = pathLatLng[Math.floor(pathLatLng.length / 2)];
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
       const approxRadius = Math.round(distM / 2) + buffer_m;
