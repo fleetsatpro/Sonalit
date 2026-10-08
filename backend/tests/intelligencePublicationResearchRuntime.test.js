@@ -136,7 +136,9 @@ test('incident research can still build a live web packet when no AI provider is
 test('limited research is considered release-complete but remains subject to the tradecraft gate',()=>{
   const s=source();
   expect(s).toContain("['researched','researched_limited'].includes(String(dossier?.research_status||'').toLowerCase())");
-  expect(s).toContain("['researched','researched_limited'].includes(String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase())");
+  expect(s).toContain('const needsDeepResearch=');
+  expect(s).toContain('Boolean(options.forceResearch)');
+  expect(s).toContain('researchAttemptRecent');
 });
 
 
