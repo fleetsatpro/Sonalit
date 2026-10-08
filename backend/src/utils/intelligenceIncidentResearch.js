@@ -298,10 +298,7 @@ function fallbackResearch(event,packet){
   const sources=dedupeSources(
     (packet?.fetched_pages||[])
       .filter(sourceIsSubstantive)
-      .map(p=>({title:p.title,url:p.url,domain:p.domain,source_type:'retrieved_web_page',description:p.description}))
-      .concat((Array.isArray(packet?.fetched_pages)?packet.fetched_pages:[])
-        .filter(sourceIsSubstantive)
-        .flatMap(p=>Array.isArray(p?.related_sources)?p.related_sources:[])),
+      .map(p=>({title:p.title,url:p.url,domain:p.domain,source_type:'retrieved_web_page',description:p.description})),
     8
   );
   const hasWebEvidence=Boolean(sources.length);
