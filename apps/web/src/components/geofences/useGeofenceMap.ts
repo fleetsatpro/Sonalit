@@ -94,11 +94,12 @@ export function useGeofenceMap(opts: Options) {
     const m = mapRef.current;
     if (!m) return;
     const render = () => {
-      ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line']
+      ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-corridor-buffer-fill', 'gf-corridor-buffer-line', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line']
         .forEach(id => { if (m.getLayer(id)) m.removeLayer(id); });
-      ['gf-zone-src', 'gf-corridor-src', 'gf-linear-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
+      ['gf-zone-src', 'gf-corridor-buffer-src', 'gf-corridor-src', 'gf-linear-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
 
       const circleFeatures: GeoJSON.Feature[] = [];
+      const corridorBufferFeatures: GeoJSON.Feature[] = [];
       const corridorFeatures: GeoJSON.Feature[] = [];
       const linearFeatures: GeoJSON.Feature[] = [];
       const visibleZoneIds = new Set(opts.visibleZones.map(z => z.id));
@@ -107,6 +108,9 @@ export function useGeofenceMap(opts: Options) {
           linearFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'LineString', coordinates: g.path.map(([lat, lng]) => [lng, lat]) } });
         } else if (g.type === 'corridor' && g.path && g.path.length >= 2) {
           corridorFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'LineString', coordinates: g.path.map(([lat, lng]) => [lng, lat]) } });
+          if (g.buffer_polygon && g.buffer_polygon.length >= 4) {
+            corridorBufferFeatures.push({ type: 'Feature', properties: { name: g.name, buffer_m: g.buffer_m || 0 }, geometry: { type: 'Polygon', coordinates: [g.buffer_polygon.map(([lat, lng]) => [lng, lat])] } });
+          }
         } else if (g.lat != null && g.lng != null) {
           circleFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'Polygon', coordinates: [geoCircle(g.lat, g.lng, (g.radius_m || 1000) / 1000)] } });
         }
@@ -121,6 +125,9 @@ export function useGeofenceMap(opts: Options) {
         'text-allow-overlap': false, 'text-optional': true,
       }, paint: { 'text-color': '#22d3ee', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
       // Corridors get a wide translucent buffer band; linear geofences are a plain route line with no buffer.
+      m.addSource('gf-corridor-buffer-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorBufferFeatures } });
+      m.addLayer({ id: 'gf-corridor-buffer-fill', type: 'fill', source: 'gf-corridor-buffer-src', paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.055 } });
+      m.addLayer({ id: 'gf-corridor-buffer-line', type: 'line', source: 'gf-corridor-buffer-src', paint: { 'line-color': '#38bdf8', 'line-width': 1, 'line-opacity': 0.45 } });
       m.addSource('gf-corridor-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorFeatures } });
       m.addLayer({ id: 'gf-corridor-glow', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 14, 'line-opacity': 0.15 } });
       m.addLayer({ id: 'gf-corridor-line', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 2.5, 'line-dasharray': [3, 2] } });
