@@ -12,7 +12,7 @@ interface DecisionResponse {
   answer?: string;
   response?: string;
   message?: string;
-  decision?: { summary?: string };
+  decision?: string | { summary?: string };
   meta?: { degraded?: boolean; fatal?: boolean; latency_ms?: number; agent_count?: number; agent_failures?: number; provider_fallback_available?: boolean };
   assurance?: { safety_gate?: string; evidence_health?: { succeeded?: number } };
   risk_level?: string;
@@ -219,6 +219,7 @@ export default function Copilot() {
       const responseText = d?.answer ?? d?.response ?? d?.message ?? d?.decision?.summary ?? 'The operational agent returned no readable result.';
       if (d?.task?.completed && d?.created?.some(item => item.type === 'geofence')) {
         queryClient.invalidateQueries({ queryKey: ['geofences'] });
+        queryClient.invalidateQueries({ queryKey: ['geofences-list'] });
       }
       const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
       setTelemetry({ ...(d.meta || {}), confidence: d.confidence, risk: d.risk_level, safety: d.assurance?.safety_gate, evidence: d.assurance?.evidence_health?.succeeded, agent_count: d.task?.completed ? 0 : d.meta?.agent_count });
