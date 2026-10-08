@@ -654,7 +654,7 @@ async function toolCreateRiskZone(input, userId, orgId) {
     const desc = description || `${zone_type} risk zone near ${location}`;
 
     const r = await query(
-      `INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by)
+      `INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by, org_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, name, risk_level, zone_type, lat, lng, radius_km`,
       [name, desc, risk_level, zone_type, g.latitude, g.longitude, radius_km, userId || null, orgId]
