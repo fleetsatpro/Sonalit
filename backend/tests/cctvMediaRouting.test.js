@@ -1,4 +1,4 @@
-const { classifyViewMediaType, openEyeMedia, getCctvCountries, getCountryBbox } = require('../src/services/spatial/cctv/cctvCatalog');
+const { classifyViewMediaType, openEyeMedia, getCctvCountries, getCountryBbox, loadOpenCctvCamera } = require('../src/services/spatial/cctv/cctvCatalog');
 const { openEyeWhepOffer, openEyeWhepDelete, fetchApprovedMedia, fetchPublicSnapshot, getMedia } = require('../src/services/spatial/cctv/cctvMediaProxy');
 
 describe('CCTV media routing', () => {
@@ -205,6 +205,22 @@ describe('CCTV media routing', () => {
     }
   });
 
+  test('sniffs generic-content-type HLS playlists instead of exposing them as progressive video', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async () => new Response('#EXTM3U\\n#EXT-X-TARGETDURATION:2\\n#EXTINF:2,\\nsegment.ts\\n', {
+      status:200,
+      headers:{'content-type':'application/octet-stream'}
+    });
+    try {
+      const camera = { id:'opencctv:generic-hls', media:{ kind:'video', url:'https://93.184.216.34/live/channel' } };
+      const playlist = await getMedia(camera);
+      expect(playlist.isHlsPlaylist).toBe(true);
+      expect(playlist.playlist).toContain('#EXTM3U');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   test('rejects a forged HLS proxy target outside the stream host set', async () => {
     const camera = {
       id:'caltrans:123',
@@ -216,6 +232,23 @@ describe('CCTV media routing', () => {
     await expect(
       getMedia(camera, { target:'https://198.51.100.10/private/stream.ts' })
     ).rejects.toMatchObject({ failureClass:'invalid_data' });
+  });
+
+  test('preserves HLS protocol metadata for OpenCCTV live feeds', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async () => new Response(JSON.stringify([{
+      id:'uk-hls-1', name:'UK HLS Test', lat:51.5, lng:-0.1, countryCode:'GB',
+      feed_type:'hls', feed_url:'https://media.example/live/channel', active:1, live:true
+    }]), { status:200, headers:{'content-type':'application/json'} });
+    try {
+      const camera = await loadOpenCctvCamera('uk-hls-1');
+      expect(camera.media.kind).toBe('video');
+      expect(camera.media.sourceMediaType).toBe('application/vnd.apple.mpegurl');
+      expect(camera.media.liveVideo).toBe(true);
+      expect(camera.media.feedKind).toBe('live_video');
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 
   test('allows an authorized OpenEye-hosted video preview to use the in-app gateway', () => {
