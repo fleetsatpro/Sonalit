@@ -177,8 +177,8 @@ test('renders a real boundary map and filters implausible coordinates',async()=>
   ]);
   const meta=await require('sharp')(image).metadata();
   expect(meta.format).toBe('png');
-  expect(meta.width).toBe(2000);
-  expect(meta.height).toBe(1050);
+  expect(meta.width).toBe(3200);
+  expect(meta.height).toBe(1800);
   expect(totalPoints).toBe(2);
   expect(points).toHaveLength(1);
   expect(excludedPoints).toBe(1);

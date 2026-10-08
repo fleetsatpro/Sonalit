@@ -783,6 +783,7 @@ function retryAfterMs(err,fallbackMs){
   return reset>0?reset:fallbackMs;
 }
 function fabricCooldownMs(err,provider,state){
+  if(providerGroup(provider)==='google-gemini')return 0;
   if(Number(err?.status)===429 || /rate.?limit|too many requests|quota/i.test(String(err?.message||''))){
     const headerMs=retryAfterMs(err,0);
     if(headerMs>0)return Math.min(FABRIC_QUOTA_MAX_COOLDOWN_MS,Math.max(15000,headerMs));
@@ -838,15 +839,17 @@ function providerCooling(providerOrLabel){
   const group=providerGroup(provider);
   const fabric=fabricStates[group];
   const modelBlocked=Number(modelDisabledUntil[label]||0);
+  const isolateGemini=label===GEMINI_PROVIDER.name;
   return Boolean(
-    (state && Date.now()<Number(state.downUntil||0)) ||
-    (fabric && Date.now()<Number(fabric.downUntil||0)) ||
+    (!isolateGemini && state && Date.now()<Number(state.downUntil||0)) ||
+    (!isolateGemini && fabric && Date.now()<Number(fabric.downUntil||0)) ||
     modelBlocked>0 && Date.now()<modelBlocked
   );
 }
 function providerResumeAt(provider){
-  const providerUntil=Number(states[provider.name]?.downUntil||0);
-  const fabricUntil=Number(fabricStates[providerGroup(provider)]?.downUntil||0);
+  const isolateGemini=provider.name===GEMINI_PROVIDER.name;
+  const providerUntil=isolateGemini?0:Number(states[provider.name]?.downUntil||0);
+  const fabricUntil=isolateGemini?0:Number(fabricStates[providerGroup(provider)]?.downUntil||0);
   const modelUntil=Number(modelDisabledUntil[provider.name]||0);
   return Math.max(providerUntil,fabricUntil,modelUntil);
 }
@@ -1004,7 +1007,7 @@ async function attempt(label,fn,meta={}){
   const group=providerGroup(meta);
   const fabric=fabricStates[group]||(fabricStates[group]={downUntil:0,failureCount:0});
   const sharedCooling=label===GEMINI_PROVIDER.name?false:Date.now()<fabric.downUntil;
-  if(Date.now()<state.downUntil || sharedCooling)throw new Error(label+' provider cooling down');
+  if(label!==GEMINI_PROVIDER.name && (Date.now()<state.downUntil || sharedCooling))throw new Error(label+' provider cooling down');
   try{
     const result=await fn();
     state.downUntil=0;

@@ -62,7 +62,7 @@ describe('publication incident research coverage',()=>{
     }));
   });
   afterEach(()=>{delete global.fetch});
-  test('halts remaining incident research once the AI provider fabric is unavailable',async()=>{
+  test('continues evidence collection when the AI provider fabric is unavailable',async()=>{
     const events=[
       {id:'i1',headline:'Incident one',brief:'First incident',country_code:'KE',evidence:[]},
       {id:'i2',headline:'Incident two',brief:'Second incident',country_code:'KE',evidence:[]},
@@ -72,10 +72,10 @@ describe('publication incident research coverage',()=>{
     ];
     const result=await researchPublicationIncidents(events,{country:'KE'});
     expect(result.summary.requested).toBe(5);
-    expect(Object.keys(result.byEvent)).toHaveLength(2);
-    expect(result.summary.fallback).toBe(2);
-    expect(result.summary.deferred).toBe(3);
-    expect(result.summary.halted).toBe(true);
+    expect(Object.keys(result.byEvent)).toHaveLength(5);
+    expect(result.summary.fallback).toBe(5);
+    expect(result.summary.deferred).toBe(0);
+    expect(result.summary.halted).toBeFalsy();
     expect(global.fetch).toHaveBeenCalled();
   });
 });

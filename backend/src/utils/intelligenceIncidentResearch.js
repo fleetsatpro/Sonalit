@@ -379,7 +379,7 @@ function fallbackResearch(event,packet,{degraded=false}={}){
     chronology:[],
     sources,
     provider:hasWebEvidence?'live-web-packet':'evidence-only',
-    agent_status:status,
+    agent_status:degraded ? 'provider_unavailable' : status,
     web_sources_retrieved:sources.length,
     research_method:hasWebEvidence?'live_web_packet':(degraded?'degraded_evidence':(degradedEvidenceEligible?'degraded_evidence':'evidence_only')),
     degraded_evidence_eligible:degraded || degradedEvidenceEligible,

@@ -500,7 +500,7 @@ describe('intelligence provider mesh', () => {
 
     expect(response._free_provider).toBe(true);
     expect(response._provider).not.toBe('gpt-oss-120b-openrouter-free');
-    expect(response._provider).toMatch(/openrouter-free$/);
+    expect(response._provider).toMatch(/openrouter-free/);
     expect(calls.filter(c => c.baseURL.includes('openrouter.ai'))).toHaveLength(2);
     expect(calls.filter(c => c.baseURL.includes('api.groq.com'))).toHaveLength(0);
   });

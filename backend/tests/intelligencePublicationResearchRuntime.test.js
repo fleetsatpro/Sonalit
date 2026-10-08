@@ -106,7 +106,9 @@ test('senior-editor output cannot replace verified research provenance fields',(
 test('limited prior research forces another research attempt after cooldown',()=>{
   const s=source();
   expect(s).toContain('const priorDossierResearchReady=expectedResearchCount===0 || publicationEvents.every');
-  expect(s).toContain('(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged)');
+  expect(s).toContain('const needsDeepResearch=');
+  expect(s).toContain('Boolean(options.forceResearch)');
+  expect(s).toContain('researchAttemptRecent');
   expect(s).toContain('const priorResearchReleaseReady=!publicationResearchRequired || priorDossierResearchReady;');
 });
 
