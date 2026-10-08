@@ -153,7 +153,8 @@ test('degraded incident research does not halt remaining incidents when AI is un
 test('OpenAI readiness must reflect per-key cooldown state rather than configuration alone',()=>{
   const s=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
   expect(s).toContain('function hasReadyOpenAIKey()');
-  expect(s).toContain("provider.name==='openai-direct' ? hasReadyOpenAIKey() : !providerCooling(provider)");
+  expect(s).toContain("provider.name==='openai-direct' ? hasReadyOpenAIKey() :");
+  expect(s).toContain("provider.name===GEMINI_PROVIDER.name ? hasReadyGeminiKey() :");
 });
 
 test('editorial board accepts controlled limited incident research',()=>{
