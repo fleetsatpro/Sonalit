@@ -154,7 +154,7 @@ describe('professional intelligence publication PDF renderer',()=>{
     const parsed=JSON.parse(stdout);
     expect(parsed.pages).toBeLessThanOrEqual(16);
     expect(parsed.pages).toBeGreaterThanOrEqual(9);
-    expect(PDF_RENDERER_VERSION).toBe('2.3.0');
+    expect(PDF_RENDERER_VERSION).toBe('2.4.0');
     expect(parsed.text).not.toContain('[object Object]');
     expect(parsed.text).not.toContain('Comprehensive up-to-date news coverage, aggregated from sources all over the world by Google News');
     expect(parsed.text).not.toContain('Evidence-derived event record retained; automated analytical synthesis is unavailable.');
