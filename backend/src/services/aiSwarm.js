@@ -234,13 +234,15 @@ function deterministicEvidenceLanes(evidence,health){
     return {id,name,status,confidence,provider:'deterministic-evidence',finding:'Evidence lane derived from live Sonalit tool results; this is not an independent model opinion.',dissent:'',tools:present,provenance:facts};
   };
   return [
-    lane('situation','SITUATION INTELLIGENCE',['query_vehicles','query_convoys','query_alerts']),
+    lane('situation','SITUATION INTELLIGENCE',['query_vehicles','query_convoys','query_alerts','query_shipments']),
     lane('security','SECURITY INTELLIGENCE',['query_alerts','query_risk_zones']),
     lane('route','ROUTE & MOBILITY',['query_convoys','get_road_conditions','get_weather']),
-    lane('fleet','FLEET & ASSET',['query_vehicles','query_alerts']),
+    lane('fleet','FLEET & ASSET',['query_vehicles','query_maintenance','query_devices']),
     lane('environment','ENVIRONMENTAL',['get_weather','get_road_conditions']),
-    lane('risk','RISK INTELLIGENCE',['query_risk_zones','query_alerts']),
-    lane('data-quality','DATA INTEGRITY',['query_vehicles','query_convoys','query_alerts','get_world_context']),
+    lane('risk','RISK INTELLIGENCE',['query_risk_zones','query_alerts','query_geofences']),
+    lane('delivery','DELIVERY & SLA',['query_shipments','query_convoys']),
+    lane('people','PEOPLE & DEVICE READINESS',['query_drivers','query_devices','query_maintenance']),
+    lane('data-quality','DATA INTEGRITY',['query_vehicles','query_convoys','query_alerts','query_shipments','query_geofences','get_world_context']),
   ].filter(x=>x.status!=='blocked');
 }
 
