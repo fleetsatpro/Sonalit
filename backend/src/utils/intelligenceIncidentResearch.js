@@ -332,10 +332,15 @@ function fallbackResearch(event,packet){
   const why=eventWhy.length
     ? eventWhy
     : ['Operational significance is tied to '+headline+' and to whether the reported development produces sustained access, personnel, asset or continuity consequences.'];
+  const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];
+  const eventEvidenceSources=new Set(eventEvidence.map(x=>String(x?.source_id||'')).filter(Boolean));
+  const eventEvidenceEligible=eventEvidence.length>=2 && eventEvidenceSources.size>=2;
   const status=(sourceDomains.size>=2 && sources.length>=2 && narrative.length>=260)?'researched_limited':'fallback';
+  const degradedEvidenceEligible=status==='fallback' && eventEvidenceEligible;
   return {
     status,
-    publication_eligible:status==='researched_limited',
+    publication_eligible:status==='researched_limited' || degradedEvidenceEligible,
+    degraded_evidence_eligible:degradedEvidenceEligible,
     narrative,
     context:hasWebEvidence?uniqueStrings((packet?.fetched_pages||[]).map(p=>p.description||'').filter(Boolean),1).join(' '):'',
     confirmed_facts:facts,
@@ -348,7 +353,7 @@ function fallbackResearch(event,packet){
     provider:hasWebEvidence?'live-web-packet':'evidence-only',
     agent_status:status,
     web_sources_retrieved:sources.length,
-    research_method:hasWebEvidence?'live_web_packet':'evidence_only',
+    research_method:hasWebEvidence?'live_web_packet':(degradedEvidenceEligible?'degraded_evidence':'evidence_only'),
     research_quality:status==='researched_limited'?'LIMITED_SOURCE_BASE':'INSUFFICIENT_SOURCE_BASE'
   };
 }
