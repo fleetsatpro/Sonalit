@@ -158,7 +158,7 @@ async function arbitrate(command,evidence,agents,history,safety){
   const compact=agents.map(a=>({id:a.id,status:a.status,finding:a.finding,facts:a.facts,inferences:a.inferences,risks:a.risks,actions:a.recommended_actions,confidence:a.confidence,gaps:a.evidence_gaps,dissent:a.dissent,provenance:a.provenance}));
   const r=await ask([
     'You are the SENIOR SONALIT COPILOT ARBITER.',
-    'Synthesize independent specialist reports and evidence.',
+    'Synthesize the live evidence and evidence-lane findings below.',
     'Do not treat model confidence as probability. Reduce confidence for missing/stale/conflicting evidence.',
     'Safety assessment below is deterministic and cannot be overridden by cost/SLA arguments.',
     'Return JSON only:',
@@ -190,7 +190,7 @@ async function critique(command,draft,evidence,agents){
 function finalize(draft,critic,safety,health){
   const base=Math.max(0,Math.min(1,Number(draft.confidence||0.4)));
   const conf=Math.max(0,Math.min(1,base+Number(critic.confidence_adjustment||0)-(health.success_rate<0.5?0.15:0)));
-  const review=safety.hard_stop||!critic.pass||(critic.critical_issues||[]).length>0||conf<0.70||health.failed>0;
+  const review=safety.hard_stop||!critic.pass||(critic.critical_issues||[]).length>0||conf<0.65||(health.failed>0&&health.success_rate<0.5);
   return {
     ...draft,
     confidence:Number(conf.toFixed(2)),
