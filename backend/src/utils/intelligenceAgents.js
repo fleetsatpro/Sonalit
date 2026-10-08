@@ -325,7 +325,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const priorDossierResearchReady=expectedResearchCount===0 || publicationEvents.every(e=>{
     const id=String(e.id);
     const dossier=priorDossiers.find(d=>String(d?.event_id||d?.id||'')===id);
-    return String(dossier?.research_status||'').toLowerCase()==='researched';
+    return ['researched','researched_limited'].includes(String(dossier?.research_status||'').toLowerCase());
   });
   const researchVersionMismatch=String(priorResearch.research_version||'')!==DEEP_RESEARCH_VERSION;
   const pdfRendererMismatch=String(existing[0]?.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION;
@@ -369,7 +369,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const publicationAiReady=aiClient.hasReadyProvider(publicationAiPolicy);
   let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0,web_search_requests:0}};
   let researchAttempted=false;
-  if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch&&publicationAiReady){
+  if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch){
     researchAttempted=true;
     try{
       incidentResearch=await researchPublicationIncidents(publicationEvents,{country});
@@ -378,12 +378,6 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
       incidentResearch={byEvent:{},summary:{requested:expectedResearchCount,researched:0,fallback:expectedResearchCount,failed:0,web_search_requests:0}};
       logger.warn('Intelligence publication research failed '+country+'/'+type+': '+error.message);
     }
-  }else if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch&&!publicationAiReady){
-    logger.warn('Intelligence publication research '+country+'/'+type+': provider fabric unavailable; research and AI board deferred without fan-out.');
-    incidentResearch={
-      byEvent:priorResearchByEvent,
-      summary:{requested:expectedResearchCount,researched:Number(priorResearch.incidents_web_researched||0),fallback:Number(priorResearch.incidents_fallback||0),failed:0,web_search_requests:0,provider_unavailable:true}
-    };
   }else if(deepResearchEnabled&&expectedResearchCount>0&&researchAttemptRecent&&!evidenceChanged){
     incidentResearch={
       byEvent:priorResearchByEvent,
@@ -411,7 +405,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable;
   const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents,evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
   let finalBody=deterministic;
-  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || publicationEvents.every(e=>String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase()==='researched');
+  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || publicationEvents.every(e=>['researched','researched_limited'].includes(String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase()));
   let title=deterministic.title;
   let subtitle=deterministic.subtitle;
   let executive=deterministic.executive_assessment;
@@ -465,7 +459,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const tradecraftQuality=assessPublicationQuality(finalBody);
   finalBody.publication_quality={...tradecraftQuality,legacy_audit:finalQuality};
   const qualityGate=tradecraftQuality.passed===true && finalQuality.passed===true;
-  const aiBoardGate=events.length===0 ? true : (aiBoardRequired ? boardPublishable : true);
+  const aiBoardDegraded=!boardPublishable&&['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus);
+  const aiBoardGate=events.length===0 ? true : (boardPublishable || !aiBoardRequired || aiBoardDegraded);
   const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate&&researchReleaseGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
@@ -484,7 +479,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     },
     publication_quality:finalBody.publication_quality||null,
     ai_board:{enabled:aiBoardEnabled,required:aiBoardRequired,status:aiBoardStatus,hold_reason:aiBoardHoldReason},
-    release_gate:{publication_research_required:publicationResearchRequired,research_release_gate:researchReleaseGate,tradecraft_quality_gate:qualityGate,ai_board_gate:aiBoardGate,status},
+    release_gate:{publication_research_required:publicationResearchRequired,research_release_gate:researchReleaseGate,tradecraft_quality_gate:qualityGate,ai_board_gate:aiBoardGate,ai_board_degraded:aiBoardDegraded,ai_board_degraded_reason:aiBoardDegraded?'live_ai_provider_fabric_unavailable':null,status},
     deep_research:{...deterministic.deep_research,agent_summary:incidentResearch.summary,research_version:DEEP_RESEARCH_VERSION,last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),next_attempt_at:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?new Date(now.getTime()+researchCooldownMinutes*60*1000).toISOString():(priorResearch.next_attempt_at||null),retry_cooldown_minutes:researchCooldownMinutes,skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),last_failure_reason:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?'one or more incident research results fell back to evidence-only content':(priorResearch.last_failure_reason||null),research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
     version
   };

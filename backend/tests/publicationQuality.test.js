@@ -120,6 +120,31 @@ test('tradecraft gate rejects evidence-only generic publications',()=>{
   expect(quality.blocking_issues.length).toBeGreaterThan(0);
 });
 
+
+test('tradecraft gate accepts controlled limited research with two independent domains',()=>{
+  const quality=assessPublicationQuality({
+    executive_assessment:'The reporting period contains a localized security development with corroboration from independent reporting streams. The evidence does not establish a wider deterioration, but the event creates a defined exposure for the affected corridor while the duration and geographic extent remain subject to confirmation.',
+    deep_research:{incidents_requested:1,incidents_researched:1,incidents_researched_limited:1,incidents_fallback:0},
+    incident_dossiers:[{
+      event_id:'e-limited',
+      research_status:'researched_limited',
+      what_happened:'Authorities reported a security disruption along the affected corridor. Two independent non-aggregator reporting domains carried material on the development, although the available source set did not establish every operational detail or the full duration of the disruption.',
+      context:'The incident affects a corridor used for commercial movement between the reported area and connected markets. The immediate operational question is the duration of access disruption and whether adjacent approaches are subsequently affected.',
+      assessment:'The available evidence supports a bounded local risk assessment rather than a confirmed wider deterioration. Greater concern would require independent reporting of recurrence, broader geographic reach or sustained disruption beyond the current period.',
+      key_facts:['The security disruption was reported along the affected corridor.','Two independent reporting domains provided material relevant to the incident.'],
+      why_it_matters:['A prolonged disruption could delay commercial movement and require route or security adjustments.'],
+      caveats:['The full duration and geographic extent remain unresolved.'],
+      research_sources:[{domain:'source-one.example',url:'https://source-one.example/a'},{domain:'source-two.example',url:'https://source-two.example/b'}]
+    }],
+    outlook:['Over the next 24 hours, confirmation of continued access disruption is the principal operational indicator.','Over the next 72 hours, recurrence or spread to adjacent approaches would change the current localised-risk assessment.'],
+    intelligence_gaps:['Duration and geographic extent are not fully established.'],
+    emerging_trends:[]
+  });
+  expect(quality.passed).toBe(true);
+  expect(quality.research_complete).toBe(true);
+  expect(quality.blocking_issues).toHaveLength(0);
+});
+
 test('tradecraft gate accepts a fully researched, differentiated dossier',()=>{
   const quality=assessPublicationQuality({
     executive_assessment:'The principal change is a localized disruption along a commercially important corridor. Two independent reporting streams corroborate the initial closure, but neither establishes sustained displacement of the threat. The immediate operational exposure is therefore elevated for vehicles using the affected segment rather than across the wider network.',

@@ -349,7 +349,7 @@ function assessPublicationQuality(body) {
   const researched = Number(deep.incidents_researched || 0);
   const limited = Number(deep.incidents_researched_limited || 0);
   const fallbacks = Number(deep.incidents_fallback || 0);
-  const researchComplete = requested === 0 || (researched >= requested && limited === 0 && fallbacks === 0);
+  const researchComplete = requested === 0 || (researched >= requested && fallbacks === 0);
 
   if (requested > 0 && !researchComplete) {
     blockers.push(`Deep research incomplete: ${researched}/${requested} priority incidents fully researched; ${limited} limited and ${fallbacks} fallback.`);
@@ -373,9 +373,11 @@ function assessPublicationQuality(body) {
     if (facts.length < 2) { ds -= 8; warnings.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} has fewer than two explicit evidence-backed facts.`); }
     if (why.length < 1) { ds -= 10; blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} does not explain decision relevance.`); }
     if (uncertainty.length < 1) { ds -= 5; warnings.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} has no explicit uncertainty statement.`); }
-    if (String(dossier.research_status || '').toLowerCase() !== 'researched') {
+    const researchStatus=String(dossier.research_status || '').toLowerCase();
+    const limitedResearchAccepted=researchStatus==='researched_limited' && distinctDomains(sources)>=2;
+    if (researchStatus !== 'researched' && !limitedResearchAccepted) {
       ds -= 35;
-      blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} is not fully researched.`);
+      blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} does not meet the controlled research threshold.`);
     }
     if (distinctDomains(sources) < 2) {
       ds -= 18;

@@ -121,3 +121,25 @@ test('preferred free research does not probe an unavailable paid rescue lane fir
   const s=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
   expect(s).toContain('if(hasAnthropic() && !params.preferFreeProviders)');
 });
+
+
+test('incident research can still build a live web packet when no AI provider is ready',()=>{
+  const s=source();
+  expect(s).toContain('if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch){');
+  expect(s).not.toContain('needsDeepResearch&&publicationAiReady');
+  expect(s).toContain("['researched','researched_limited'].includes");
+});
+
+test('limited research is considered release-complete but remains subject to the tradecraft gate',()=>{
+  const s=source();
+  expect(s).toContain("['researched','researched_limited'].includes(String(dossier?.research_status||'').toLowerCase())");
+  expect(s).toContain("['researched','researched_limited'].includes(String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase())");
+});
+
+
+test('degraded incident research does not halt remaining incidents when AI is unavailable',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('const results=await researchBatch(batch,{country,region});');
+  expect(s).not.toContain("halted=true;");
+  expect(s).not.toContain('remaining incidents deferred');
+});
