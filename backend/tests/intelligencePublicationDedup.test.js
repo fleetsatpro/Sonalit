@@ -38,7 +38,7 @@ test('AI editorial board is mandatory publication authority by default',()=>{
   const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
   expect(source).toContain("const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'true').toLowerCase()!=='false';");
   expect(source).toContain("const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true').toLowerCase()!=='false';");
-  expect(source).toContain("const aiBoardDegraded=!boardPublishable&&['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus);");
+  expect(source).toContain("const aiBoardDegraded=!boardPublishable&&(['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus) || degradedEvidenceRelease || (!publicationAiReady && !aiClient.hasReadyProvider(publicationAiPolicy)));");
   expect(source).toContain('researchReleaseGate');
   expect(source).not.toContain('deterministic evidence product remains eligible');
 });
