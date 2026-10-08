@@ -501,20 +501,14 @@ async function researchPublicationIncidents(events,{country,region}={}){
   // Research incidents independently so each case receives a clean evidence context and full web-search budget.
   const batchSize=1;
   let cursor=0;
-  let halted=false;
   const concurrency=Math.max(1,Math.min(2,Number(process.env.INTEL_PUBLICATION_RESEARCH_CONCURRENCY)||2));
   async function worker(){
     while(true){
-      if(halted)return;
       const start=cursor; cursor+=batchSize;
       if(start>=events.length)return;
       const batch=events.slice(start,start+batchSize);
       const results=await researchBatch(batch,{country,region});
       results.forEach((result,i)=>{out[String(batch[i].id)]=result});
-      if(results.some(result=>result?.error==='ai_provider_unavailable' || result?.agent?.agent_status==='provider_unavailable')){
-        halted=true;
-        logger.warn('Incident research cycle halted: AI provider fabric unavailable; remaining incidents deferred.');
-      }
     }
   }
   await Promise.all(Array.from({length:Math.min(concurrency,Math.ceil(events.length/batchSize))},worker));
@@ -525,7 +519,7 @@ async function researchPublicationIncidents(events,{country,region}={}){
   const researchedPacket=values.filter(x=>x?.agent?.research_method==='live_web_packet').length;
   const webSearchRequests=values.reduce((n,x)=>n+Number(x?.webSearchRequests||0),0);
   const webSourcesRetrieved=values.reduce((n,x)=>n+Number(x?.agent?.web_sources_retrieved||x?.packet?.fetched_pages?.length||0),0);
-  return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,halted,deferred:Math.max(0,events.length-values.length)}};
+  return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,deferred:Math.max(0,events.length-values.length)}};
 }
 
 module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources};
