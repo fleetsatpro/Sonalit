@@ -338,6 +338,8 @@ const states = Object.fromEntries([
 ]);
 
 const clients = {};
+const openAIKeyCursors={cursor:0};
+const openAIKeyStates=Object.create(null);
 const modelCursors = Object.fromEntries(OPEN_WEIGHT_PROVIDERS.map(p=>[p.name,0]));
 const modelDisabledUntil = Object.fromEntries(OPEN_WEIGHT_PROVIDERS.map(p=>[p.name,0]));
 const concurrency = Object.create(null);
@@ -450,7 +452,17 @@ async function clearFabricCooldown(group){
 function keyOk(k) { return !!(k && String(k).length >= 10); }
 function hasAnthropic() { return keyOk(process.env.ANTHROPIC_API_KEY); }
 function hasGroqFallback() { return keyOk(process.env.GROQ_API_KEY); }
-function hasOpenAI() { return keyOk(process.env.OPENAI_API_KEY); }
+function getOpenAIKeyPool() {
+  const pool=[];
+  for(let i=1;i<=100;i+=1){
+    const key=String(process.env['OPENAI_API_KEY_'+i]||'').trim();
+    if(keyOk(key)&&!pool.includes(key))pool.push(key);
+  }
+  const legacy=String(process.env.OPENAI_API_KEY||'').trim();
+  if(keyOk(legacy)&&!pool.includes(legacy))pool.push(legacy);
+  return pool;
+}
+function hasOpenAI() { return getOpenAIKeyPool().length>0; }
 function hasMistral() { return keyOk(process.env.MISTRAL_API_KEY); }
 function hasGoogleGemini() { return keyOk(process.env[GEMINI_PROVIDER.key]); }
 function hasOpenWeightProvider(def) { return keyOk(process.env[def.key]); }
@@ -521,6 +533,7 @@ function providerCapabilities() {
     })),
     gpt_oss_120b: hasGroqFallback(),
     openai_direct: hasOpenAI(),
+    openai_key_pool_size: getOpenAIKeyPool().length,
     mistral_rescue: hasMistral(),
     anthropic_last_resort: hasAnthropic(),
     order: [
@@ -540,9 +553,10 @@ function getGroqClient() {
   if (!clients.groq) clients.groq = new OpenAI({ apiKey:process.env.GROQ_API_KEY, baseURL:'https://api.groq.com/openai/v1', ...AI_SDK_OPTIONS });
   return clients.groq;
 }
-function getDirectOpenAIClient() {
-  if (!clients.openai) clients.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, ...AI_SDK_OPTIONS });
-  return clients.openai;
+function getDirectOpenAIClient(apiKey) {
+  const keyId='openai:'+String(apiKey||'').slice(0,8);
+  if (!clients[keyId]) clients[keyId] = new OpenAI({ apiKey, ...AI_SDK_OPTIONS });
+  return clients[keyId];
 }
 function getMistralClient() {
   if (!clients.mistral) clients.mistral = new OpenAI({ apiKey: process.env.MISTRAL_API_KEY, baseURL: 'https://api.mistral.ai/v1', ...AI_SDK_OPTIONS });
@@ -871,13 +885,39 @@ async function callOpenAICompat(slotDef,params) {
   return openAIResponseToAnthropicShape(completion);
 }
 async function callOpenAI(params) {
-  const completion=await getDirectOpenAIClient().chat.completions.create({
-    model:OPENAI_MODEL,
-    messages:[...(params.system?[{role:'system',content:systemToOpenAI(params.system)}]:[]),...messagesToOpenAI(params.messages)],
-    ...(params.tools?.length?{tools:toolsToOpenAI(params.tools),tool_choice:'auto'}:{}),
-    max_completion_tokens:Math.min(Number(params.max_tokens)||4096,16384),
-  });
-  return openAIResponseToAnthropicShape(completion);
+  const keys=getOpenAIKeyPool();
+  if(!keys.length)throw new Error('OpenAI direct: no configured API keys');
+  const start=openAIKeyCursors.cursor%keys.length;
+  let lastErr;
+  for(let offset=0;offset<keys.length;offset+=1){
+    const index=(start+offset)%keys.length;
+    const key=keys[index];
+    const state=openAIKeyStates[index]||(openAIKeyStates[index]={downUntil:0,failureCount:0});
+    if(Date.now()<Number(state.downUntil||0))continue;
+    try{
+      const completion=await getDirectOpenAIClient(key).chat.completions.create({
+        model:OPENAI_MODEL,
+        messages:[...(params.system?[{role:'system',content:systemToOpenAI(params.system)}]:[]),...messagesToOpenAI(params.messages)],
+        ...(params.tools?.length?{tools:toolsToOpenAI(params.tools),tool_choice:'auto'}:{}),
+        max_completion_tokens:Math.min(Number(params.max_tokens)||4096,16384),
+      });
+      state.downUntil=0;
+      state.failureCount=0;
+      openAIKeyCursors.cursor=(index+1)%keys.length;
+      return openAIResponseToAnthropicShape(completion);
+    }catch(err){
+      lastErr=err;
+      if(isRetryable(err)){
+        state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
+        state.downUntil=Date.now()+Math.max(COOLDOWN_MS,Number(retryAfterMs(err,COOLDOWN_MS)));
+      }else if(isPermanentCredentialFailure(err)){
+        state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
+        state.downUntil=Date.now()+PERMANENT_FAILURE_COOLDOWN_MS;
+      }
+      logger.warn('OpenAI key pool member '+String(index+1)+' failed ('+(err?.status||err?.message||'unknown')+'); rotating to next key');
+    }
+  }
+  throw lastErr||new Error('OpenAI direct: all key-pool members are cooling down or failed');
 }
 async function callMistral(params) {
   const completion = await getMistralClient().chat.completions.create({
