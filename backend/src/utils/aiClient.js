@@ -20,6 +20,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
 const logger = require('./logger');
 const { getRedis } = require('../config/redis');
+const providerRadar = require('./aiProviderRadar');
 
 const AI_REQUEST_TIMEOUT_MS = Math.max(5000, Math.min(120000, Number(process.env.AI_REQUEST_TIMEOUT_MS || 30000)));
 const AI_SDK_OPTIONS = { timeout: AI_REQUEST_TIMEOUT_MS, maxRetries: 0 };
@@ -565,6 +566,7 @@ function providerCapabilities() {
       ...OPEN_SOURCE_SLOTS.map(s=>s.label),
       'gpt-oss-120b-groq','gpt-oss-20b-groq','openai-direct','mistral-rescue','anthropic-last-resort'
     ],
+    radar: providerRadar.snapshot(),
   };
 }
 
@@ -1013,8 +1015,10 @@ async function attempt(label,fn,meta={}){
   const fabric=fabricStates[group]||(fabricStates[group]={downUntil:0,failureCount:0});
   const sharedCooling=label===GEMINI_PROVIDER.name?false:Date.now()<fabric.downUntil;
   if(label!==GEMINI_PROVIDER.name && (Date.now()<state.downUntil || sharedCooling))throw new Error(label+' provider cooling down');
+  const startedAt=Date.now();
   try{
     const result=await fn();
+    providerRadar.recordSuccess(label,{latencyMs:Date.now()-startedAt});
     state.downUntil=0;
     state.failureCount=0;
     fabric.downUntil=0;
@@ -1022,6 +1026,7 @@ async function attempt(label,fn,meta={}){
     void clearFabricCooldown(group);
     return result;
   }catch(err){
+    providerRadar.recordFailure(label,{status:err?.status,message:err?.message});
     if(isModelNotFound(err) && meta.modelDef){
       state.failureCount=0;
       state.downUntil=0;
@@ -1150,9 +1155,23 @@ function hasReadyProvider(params={}){
   );
 }
 
+function rankProviders(providers,params={}){
+  const hints=new Set(Array.isArray(params.providerHints)?params.providerHints.map(String):[]);
+  return providers
+    .map((provider,index)=>({provider,index,hinted:hints.has(provider.name)}))
+    .sort((a,b)=>{
+      if(a.hinted!==b.hinted)return a.hinted?-1:1;
+      if(Boolean(params.preferFreeProviders)&&Boolean(a.provider.free)!==Boolean(b.provider.free))return a.provider.free?-1:1;
+      const ah=providerRadar.routingScore(a.provider.name),bh=providerRadar.routingScore(b.provider.name);
+      if(ah!==bh)return bh-ah;
+      return a.index-b.index;
+    })
+    .map(x=>x.provider);
+}
+
 async function createMessage(params={}) {
   await startFabricHydration();
-  const providers=buildProviders(params);
+  const providers=rankProviders(buildProviders(params),params);
   if(!providers.length)throw new Error('AI client: no configured provider for current data-classification/free-provider policy');
 
   let eligibleProviders=providers.filter(provider=>!providerCooling(provider));
@@ -1174,6 +1193,7 @@ async function createMessage(params={}) {
           _quality_tier:provider.qualityTier,
           _free_provider:Boolean(provider.free),
           _provider_group:providerGroup(provider),
+          _radar:providerRadar.status(provider.name),
         };
       } catch(err) {
         lastErr=err;
@@ -1208,6 +1228,8 @@ module.exports={
   isModelNotFound,
   createMessage,
   createResearchMessage,
+  rankProviders,
+  providerHealth: providerRadar.snapshot,
 };
 
 
