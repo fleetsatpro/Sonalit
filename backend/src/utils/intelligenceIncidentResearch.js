@@ -334,7 +334,7 @@ function fallbackResearch(event,packet){
     : ['Operational significance is tied to '+headline+' and to whether the reported development produces sustained access, personnel, asset or continuity consequences.'];
   const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];
   const eventEvidenceSources=new Set(eventEvidence.map(x=>String(x?.source_id||'')).filter(Boolean));
-  const eventEvidenceEligible=eventEvidence.length>=2 && eventEvidenceSources.size>=2;
+  const eventEvidenceEligible=eventEvidence.length>=1 && eventEvidenceSources.size>=1;
   const status=(sourceDomains.size>=2 && sources.length>=2 && narrative.length>=260)?'researched_limited':'fallback';
   const degradedEvidenceEligible=status==='fallback' && eventEvidenceEligible;
   return {
