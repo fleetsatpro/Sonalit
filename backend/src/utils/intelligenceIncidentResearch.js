@@ -381,7 +381,7 @@ function fallbackResearch(event,packet,{degraded=false}={}){
     provider:hasWebEvidence?'live-web-packet':'evidence-only',
     agent_status:status,
     web_sources_retrieved:sources.length,
-    research_method:degraded?'degraded_evidence':(hasWebEvidence?'live_web_packet':(degradedEvidenceEligible?'degraded_evidence':'evidence_only')),
+    research_method:hasWebEvidence?'live_web_packet':(degraded?'degraded_evidence':(degradedEvidenceEligible?'degraded_evidence':'evidence_only')),
     degraded_evidence_eligible:degraded || degradedEvidenceEligible,
     research_quality:status==='researched_limited'?'LIMITED_SOURCE_BASE':(degraded?'AI_PROVIDER_UNAVAILABLE':'INSUFFICIENT_SOURCE_BASE')
   };
