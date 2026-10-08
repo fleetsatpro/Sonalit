@@ -21,6 +21,8 @@ describe('intelligence provider mesh', () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.GROQ_API_KEY;
     delete process.env.MISTRAL_API_KEY;
+    delete process.env.GOOGLE_AI_API_KEY;
+    delete process.env.GOOGLE_GEMINI_MODEL;
     for (let i = 1; i <= 5; i += 1) {
       delete process.env[`OPEN_SOURCE_API_KEY_${i}`];
       delete process.env[`OPEN_SOURCE_BASE_URL_${i}`];
@@ -155,6 +157,54 @@ describe('intelligence provider mesh', () => {
     ]));
     expect(ai.hasAnyProvider({ dataClassification: 'public' })).toBe(true);
     expect(ai.hasAnyProvider({ dataClassification: 'internal' })).toBe(true);
+  });
+
+  test('routes public publication synthesis through the independent Gemini lane', async () => {
+    process.env.GOOGLE_AI_API_KEY = 'google-test-key-123';
+
+    const calls = [];
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.baseURL = options.baseURL || 'openai';
+        this.chat = {
+          completions: {
+            create: jest.fn(async request => {
+              calls.push({baseURL:this.baseURL,model:request.model,request});
+              if (this.baseURL.includes('generativelanguage.googleapis.com')) {
+                return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
+              }
+              throw new Error('unexpected provider');
+            }),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const caps = ai.providerCapabilities();
+
+    expect(caps.google_gemini).toMatchObject({
+      label:'google-gemini-3.8-flash',
+      configured:true,
+      active_for_public:true,
+      free:true,
+    });
+
+    const response = await ai.createMessage({
+      dataClassification:'public',
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['google-gemini-3.8-flash'],
+      system:'Return JSON.',
+      responseFormat:{type:'json_object'},
+      messages:[{role:'user',content:'test'}],
+      max_tokens:100,
+    });
+
+    expect(response._provider).toBe('google-gemini-3.8-flash');
+    expect(response._free_provider).toBe(true);
+    expect(calls[0].model).toBe('gemini-3.8-flash');
+    expect(calls[0].baseURL).toContain('generativelanguage.googleapis.com');
   });
 
   test('free publication routing can explicitly select the dynamic free router', async () => {
