@@ -118,6 +118,18 @@ const TOOLS = [
     },
   },
   {
+    name: 'query_geofences',
+    description: 'Inspect tenant-scoped geofences with type, centre, radius, corridor buffer, geometry precision and vertex counts. Use for geofence audits, comparisons and verification.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string' },
+        search: { type: 'string' },
+        active: { type: 'boolean' },
+      },
+    },
+  },
+  {
     name: 'query_maintenance',
     description: 'Query tenant-scoped maintenance records, due dates, status, priority, vehicle and workshop context.',
     input_schema: {
@@ -358,6 +370,60 @@ async function toolQueryShipments(input, orgId) {
     );
     return { count: result.rows.length, shipments: result.rows };
   } catch (e) { return { error: `Shipment query failed: ${e.message}`, shipments: [], count: 0 }; }
+}
+
+async function toolQueryGeofences(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', geofences: [], count: 0 };
+  try {
+    const filters = ['g.org_id = $1'];
+    const params = [orgId];
+    if (input.type) { params.push(String(input.type)); filters.push(`LOWER(g.type) = LOWER(${params.length})`); }
+    if (input.search) {
+      params.push(`%${String(input.search).slice(0,120)}%`);
+      filters.push(`(g.name ILIKE ${params.length} OR COALESCE(g.region,'') ILIKE ${params.length})`);
+    }
+    if (typeof input.active === 'boolean') { params.push(input.active); filters.push(`COALESCE(g.active,true) = ${params.length}`); }
+    const result = await query(
+      `SELECT g.id, g.name, g.type, g.region, g.active, g.radius,
+              g.coordinates, g.corridor_width_km, g.created_at, g.updated_at
+         FROM geofences g
+        WHERE ${filters.join(' AND ')}
+        ORDER BY g.created_at DESC LIMIT 100`,
+      params,
+    );
+    return {
+      count: result.rows.length,
+      geofences: result.rows.map(g => {
+        let c = g.coordinates;
+        if (typeof c === 'string') { try { c = JSON.parse(c); } catch (_) {} }
+        const path = Array.isArray(c?.path) ? c.path : (
+          c?.type === 'LineString' && Array.isArray(c.coordinates)
+            ? c.coordinates.map(([lng,lat]) => [lat,lng])
+            : null
+        );
+        return {
+          id: g.id,
+          name: g.name,
+          type: g.type || 'circle',
+          region: g.region || null,
+          active: g.active !== false,
+          radius_m: Number(g.radius || 0),
+          buffer_m: Number(c?.buffer_m || (g.corridor_width_km ? g.corridor_width_km * 1000 : 0)),
+          centre: c?.lat != null && c?.lng != null ? { lat: Number(c.lat), lng: Number(c.lng) } : null,
+          path_points: Array.isArray(path) ? path.length : 0,
+          has_buffer_polygon: Array.isArray(c?.buffer_polygon) && c.buffer_polygon.length >= 4,
+          precision: c?.precision || null,
+          geometry_source: c?.geometry_source || null,
+          route_provider: c?.route_provider || null,
+          route_distance_m: Number(c?.route_distance_m || 0) || null,
+          created_at: g.created_at,
+          updated_at: g.updated_at,
+        };
+      }),
+    };
+  } catch (e) {
+    return { error: `Geofence query failed: ${e.message}`, geofences: [], count: 0 };
+  }
 }
 
 async function toolQueryMaintenance(input, orgId) {
@@ -1103,6 +1169,7 @@ async function runTool(name, input, context = {}) {
     case 'query_vehicles':     return toolQueryVehicles(input || {}, orgId);
     case 'query_shipments':   return toolQueryShipments(input || {}, orgId);
     case 'query_maintenance': return toolQueryMaintenance(input || {}, orgId);
+    case 'query_geofences':   return toolQueryGeofences(input || {}, orgId);
     case 'query_drivers':     return toolQueryDrivers(input || {}, orgId);
     case 'query_devices':     return toolQueryDevices(input || {}, orgId);
     case 'query_convoys':      return toolQueryConvoys(input || {}, orgId);
