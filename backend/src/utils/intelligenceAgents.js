@@ -405,7 +405,17 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable;
   const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents,evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
   let finalBody=deterministic;
-  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || publicationEvents.every(e=>['researched','researched_limited'].includes(String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase()));
+  const aiFabricDegradedAtGate=!aiClient.hasReadyProvider(publicationAiPolicy);
+  const researchReleaseGate=!publicationResearchRequired || expectedResearchCount===0 || publicationEvents.every(e=>{
+    const agent=effectiveResearchByEvent[String(e.id)]?.agent||{};
+    const status=String(agent.status||'').toLowerCase();
+    if(['researched','researched_limited'].includes(status))return true;
+    return aiFabricDegradedAtGate &&
+      status==='fallback' &&
+      String(agent.research_method||'').toLowerCase()==='degraded_evidence' &&
+      Number(e.observation_count||0)>=2 &&
+      Number(e.source_count||0)>=2;
+  });
   let title=deterministic.title;
   let subtitle=deterministic.subtitle;
   let executive=deterministic.executive_assessment;
@@ -459,7 +469,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
   const tradecraftQuality=assessPublicationQuality(finalBody);
   finalBody.publication_quality={...tradecraftQuality,legacy_audit:finalQuality};
   const qualityGate=tradecraftQuality.passed===true && finalQuality.passed===true;
-  const aiBoardDegraded=!boardPublishable&&['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus);
+  const aiBoardDegraded=!boardPublishable&&(['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus) || (!publicationAiReady && !aiClient.hasReadyProvider(publicationAiPolicy)));
   const aiBoardGate=events.length===0 ? true : (boardPublishable || !aiBoardRequired || aiBoardDegraded);
   const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate&&researchReleaseGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
