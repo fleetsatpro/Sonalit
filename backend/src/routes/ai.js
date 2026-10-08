@@ -85,7 +85,8 @@ Guidelines:
 - Use create_geofence when the user asks to "draw a geofence", "create a zone", "set a boundary", or "mark an area" around any location. Geocode it and create it immediately — never just describe it.
 - Use create_risk_zone when the user wants to flag a location as dangerous, mark a strike, roadblock, active incident, or high-risk area. Create it immediately.
 - For comprehensive navigation advisories: combine weather + road conditions + risk zones + active alerts + upcoming holidays. Give a rated assessment (SAFE / CAUTION / HIGH RISK / AVOID).
-- Be concise and direct — 1–4 sentences. Cite specific vehicle registrations, convoy names, zone names, and numbers from tool results.
+- Support investigation, comparison, exception hunting, situation briefs, route-risk analysis, shipment/fleet/maintenance checks, spatial context, geofence/risk-zone creation and other supported operational tasks. For multi-step work, complete the evidence collection first, perform the requested reversible action, then report the resulting object and verification.
+- Be concise and direct — 1–4 sentences when the task is simple; for complex tasks use a structured result with what was checked, what changed, what remains uncertain, and the next action. Cite specific vehicle registrations, convoy names, zone names, coordinates, distances and counts from tool results.
 - Clearly flag critical situations: low fuel, offline vehicles, critical alerts, severe weather, active risk zones, road closures, and holidays affecting convoy timing.`;
 
 // ── Tool definitions (static — cache together with the system prompt) ──────
@@ -735,6 +736,31 @@ async function toolCreateGeofence(input, userId, orgId) {
         [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
       );
 
+      // Verify the persisted geometry before reporting success. This catches
+      // coordinate-order corruption and route endpoints that drift too far
+      // from the requested locations.
+      const verify = await query(
+        `SELECT coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
+        [r.rows[0].id, orgId]
+      );
+      const persisted = verify.rows[0]?.coordinates;
+      const persistedPath = Array.isArray(persisted?.path) ? persisted.path : [];
+      const first = persistedPath[0], last = persistedPath[persistedPath.length - 1];
+      const startDriftM = first ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1])) : Infinity;
+      const endDriftM = last ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1])) : Infinity;
+      if (persistedPath.length < 2 || startDriftM > 1500 || endDriftM > 1500) {
+        await query(`DELETE FROM geofences WHERE id = $1 AND org_id = $2`, [r.rows[0].id, orgId]);
+        return {
+          created: false,
+          error: 'Geometry verification failed. No corridor geofence was retained.',
+          verification: { path_points: persistedPath.length, start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM) },
+        };
+      }
+
+      const effectivePrecision = precision === 'maximum' && (gStart.source === 'nominatim' || gStart.source === 'explicit') && (gEnd.source === 'nominatim' || gEnd.source === 'explicit')
+        ? 'maximum'
+        : (precision === 'standard' ? 'standard' : 'high');
+
       return {
         created: true,
         geofence_id: r.rows[0].id,
@@ -749,10 +775,12 @@ async function toolCreateGeofence(input, userId, orgId) {
         path_points: pathLatLng.length,
         road_distance_km: (distM / 1000).toFixed(2),
         buffer_m,
-        precision,
+        precision: effectivePrecision,
+        requested_precision: precision,
         route_provider: routeProvider,
         geometry_source: coordinates.geometry_source,
         geocode_precision: { start: gStart.precision, end: gEnd.precision },
+        geometry_verification: { start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM), persisted_path_points: persistedPath.length },
         fallback_used: routeProvider !== 'OSRM',
         message: routeProvider === 'OSRM'
           ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} centreline vertices, ${buffer_m}m deviation threshold.`
@@ -1149,7 +1177,7 @@ router.post('/dispatch', async (req, res) => {
     // open-weight model than Claude, so a Groq-served response here is a
     // degraded mode, not a like-for-like swap — flagged via `source` below
     // so the frontend can show that distinction if it wants to.
-    for (let turn = 0; turn < 8; turn++) {
+    for (let turn = 0; turn < 6; turn++) {
       const response = await aiClient.createMessage({
         model: MODEL,
         max_tokens: 8000,
