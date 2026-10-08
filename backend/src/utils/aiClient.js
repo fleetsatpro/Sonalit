@@ -744,7 +744,12 @@ function providerGroup(provider){
     // eligible for failover because model availability is independently scoped.
     return 'openrouter-'+(provider.free?'free':'paid')+':'+name;
   }
-  if(base.includes('api.groq.com')||name.includes('-groq'))return 'groq';
+  if(base.includes('api.groq.com')||name.includes('-groq')){
+    // Keep Groq model lanes independently circuit-broken. The 120B model can
+    // exhaust its own TPD quota while the smaller 20B rescue lane is still usable.
+    const model=String(provider.model||provider.modelKey||name).toLowerCase().replace(/[^a-z0-9]+/g,'-');
+    return 'groq:'+model;
+  }
   if(name==='openai-direct')return 'openai';
   if(name==='mistral-rescue')return 'mistral';
   if(name==='anthropic-last-resort')return 'anthropic';

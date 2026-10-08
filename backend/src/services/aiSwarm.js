@@ -28,6 +28,7 @@ const TOOL_CATALOG = {
   check_holidays:{description:'Public holidays for a country/year.',schema:{type:'object',properties:{country_code:{type:'string'},year:{type:'number'}},required:['country_code']}},
   get_road_conditions:{description:'Road closures, barriers, construction and weather context near a place.',schema:{type:'object',properties:{location:{type:'string'},radius_km:{type:'number'}},required:['location']}},
   query_risk_zones:{description:'Internal active risk zones.',schema:{type:'object',properties:{region:{type:'string'},risk_level:{type:'string'},zone_type:{type:'string'}}}},
+  get_world_context:{description:'Canonical tenant-scoped spatial context for mission, route, vehicle, incident, traffic, hazards, security, movement, coverage, freshness and provenance.',schema:{type:'object',properties:{subject:{type:'object'},center:{type:'object'},radiusM:{type:'number'},bbox:{type:'array'},maxEntitiesPerLayer:{type:'number'},layers:{type:'array'}}}},
 };
 
 function clip(value,max=9000){const s=typeof value==='string'?value:JSON.stringify(value);return s.length>max?s.slice(0,max)+'…':s;}
@@ -56,50 +57,46 @@ function inferLocations(command){
   return [...new Set(matches.map(x=>x.replace(/^(between|from|near|at|in|through|via)\s+/i,'').trim()).filter(Boolean))].slice(0,4);
 }
 
-async function planEvidence(command,history){
-  const lexical=[];
-  const lc=String(command).toLowerCase();
-  for(const [name,t] of Object.entries(TOOL_CATALOG)){
-    if(name==='query_vehicles' && /vehicle|truck|fleet|driver|fuel|speed|offline|telemetry|location/.test(lc)) lexical.push(name);
-    if(name==='query_convoys' && /convoy|mission|eta|departure|arrival|shipment/.test(lc)) lexical.push(name);
-    if(name==='query_alerts' && /alert|incident|anomaly|security|warning|panic/.test(lc)) lexical.push(name);
-    if(name==='get_weather' && /weather|rain|storm|wind|flood|visibility/.test(lc)) lexical.push(name);
-    if(name==='check_holidays' && /holiday|border|closure|public/.test(lc)) lexical.push(name);
-    if(name==='get_road_conditions' && /road|closure|construction|traffic|route|barrier/.test(lc)) lexical.push(name);
-    if(name==='query_risk_zones' && /risk|danger|hotspot|bandit|conflict|strike|roadblock|security/.test(lc)) lexical.push(name);
-  }
-  let modelPlan=null;
-  try{
-    const r=await ask([
-      'Plan the smallest sufficient live evidence set.',
-      'Return JSON: {"probes":[{"tool":"allowed_name","input":{}}],"reason":"...","need_live_data":true|false}.',
-      'Allowed tools:',JSON.stringify(TOOL_CATALOG),
-      'Detected candidate locations:',JSON.stringify(inferLocations(command)),
-      'REQUEST:',clip(command,3500),
-      'HISTORY:',clip(history,2500),
-    ].join('\n\n'),1000);
-    modelPlan=r.json;
-  }catch(_){}
+function planEvidence(command,history){
   const probes=[];
-  const add=(tool,input={})=>{if(TOOL_CATALOG[tool]&&!probes.some(p=>p.tool===tool&&JSON.stringify(p.input)===JSON.stringify(input)))probes.push({tool,input});};
-  for(const tool of lexical)add(tool,{});
-  for(const p of modelPlan?.probes||[]){if(TOOL_CATALOG[p.tool])add(p.tool,p.input||{});}
-  const locs=inferLocations(command);
-  for(const loc of locs.slice(0,2)){
-    if(probes.some(p=>p.tool==='get_weather')){probes.push({tool:'get_weather',input:{location:loc}});}
-    if(probes.some(p=>p.tool==='get_road_conditions')){probes.push({tool:'get_road_conditions',input:{location:loc,radius_km:50}});}
-  }
-  if(!probes.length && /(safe|risk|current|live|now|active|status)/i.test(command)){
-    add('query_alerts',{});add('query_convoys',{});
-  }
-  return [...new Map(probes.map(p=>[p.tool+JSON.stringify(p.input),p])).values()].slice(0,10);
-}
+  const lc=String(command||'').toLowerCase();
+  const add=(tool,input={})=>{
+    if(!TOOL_CATALOG[tool])return;
+    const key=tool+JSON.stringify(input);
+    if(!probes.some(p=>p.tool+JSON.stringify(p.input)===key))probes.push({tool,input});
+  };
+  const locations=inferLocations(command);
 
+  if(/vehicle|truck|fleet|driver|fuel|speed|offline|telemetry|location|maintenance|overdue|service|inspection|breakdown|mechanical/.test(lc)) add('query_vehicles',{});
+  if(/convoy|mission|eta|departure|arrival|shipment|movement|corridor/.test(lc)) add('query_convoys',{});
+  if(/alert|incident|anomaly|security|warning|panic|emergency|breach/.test(lc)) add('query_alerts',{});
+  if(/weather|rain|storm|wind|flood|visibility|heat|temperature/.test(lc)) add('get_weather',{});
+  if(/holiday|border|closure|public holiday|crossing/.test(lc)) add('check_holidays',{});
+  if(/road|closure|construction|traffic|route|barrier|detour|mobility/.test(lc)) add('get_road_conditions',{});
+  if(/risk|danger|hotspot|bandit|conflict|strike|roadblock|security|threat|exposure/.test(lc)) add('query_risk_zones',{});
+  if(/world|spatial|satellite|cctv|camera|aircraft|maritime|ais|hazard|traffic|geofence|map|position|where is|around /.test(lc)) add('get_world_context',{subject:{kind:'none',id:'context'}});
+
+  for(const loc of locations.slice(0,2)){
+    if(/weather|rain|storm|wind|flood|visibility|heat|temperature|trafficability/.test(lc)) add('get_weather',{location:loc});
+    if(/road|closure|construction|traffic|route|barrier|detour|mobility/.test(lc)) add('get_road_conditions',{location:loc,radius_km:50});
+  }
+
+  if(!probes.length && /(what|which|why|how|show|summarize|analyse|analyze|check|tell|current|live|now|active|status|decision)/i.test(String(command||''))){
+    add('query_alerts',{});
+    add('query_convoys',{});
+    add('query_vehicles',{});
+  }
+  return probes.slice(0,10);
+}
 async function collectToolEvidence(probes,executeTool,context){
   const evidence={},failures=[];
   await Promise.all(probes.map(async p=>{
-    try{evidence[p.tool+JSON.stringify(p.input)]=await executeTool(p.tool,p.input,context);}
-    catch(e){failures.push({tool:p.tool,input:p.input,error:e?.message||String(e)});}
+    try{
+      const key=p.tool+JSON.stringify(p.input);
+      const value=await executeTool(p.tool,p.input,context);
+      evidence[key]=value;
+      if(value&&typeof value==='object'&&value.error) failures.push({tool:p.tool,input:p.input,error:String(value.error)});
+    }catch(e){failures.push({tool:p.tool,input:p.input,error:e?.message||String(e)});}
   }));
   return {evidence,failures};
 }
@@ -165,7 +162,7 @@ async function arbitrate(command,evidence,agents,history,safety){
   const compact=agents.map(a=>({id:a.id,status:a.status,finding:a.finding,facts:a.facts,inferences:a.inferences,risks:a.risks,actions:a.recommended_actions,confidence:a.confidence,gaps:a.evidence_gaps,dissent:a.dissent,provenance:a.provenance}));
   const r=await ask([
     'You are the SENIOR SONALIT COPILOT ARBITER.',
-    'Synthesize independent specialist reports and evidence.',
+    'Synthesize the live evidence and evidence-lane findings below.',
     'Do not treat model confidence as probability. Reduce confidence for missing/stale/conflicting evidence.',
     'Safety assessment below is deterministic and cannot be overridden by cost/SLA arguments.',
     'Return JSON only:',
@@ -197,7 +194,7 @@ async function critique(command,draft,evidence,agents){
 function finalize(draft,critic,safety,health){
   const base=Math.max(0,Math.min(1,Number(draft.confidence||0.4)));
   const conf=Math.max(0,Math.min(1,base+Number(critic.confidence_adjustment||0)-(health.success_rate<0.5?0.15:0)));
-  const review=safety.hard_stop||!critic.pass||(critic.critical_issues||[]).length>0||conf<0.70||health.failed>0;
+  const review=safety.hard_stop||!critic.pass||(critic.critical_issues||[]).length>0||conf<0.65||(health.failed>0&&health.success_rate<0.5);
   return {
     ...draft,
     confidence:Number(conf.toFixed(2)),
@@ -208,27 +205,98 @@ function finalize(draft,critic,safety,health){
   };
 }
 
+function deterministicEvidenceLanes(evidence,health){
+  const keys=Object.keys(evidence);
+  const has=(tool)=>keys.some(k=>k.startsWith(tool));
+  const count=(tool,path)=>Object.entries(evidence).filter(([k])=>k.startsWith(tool)).reduce((n,[,v])=>n+(Array.isArray(v?.[path])?v[path].length:0),0);
+  const lane=(id,name,tools)=>{
+    const present=tools.filter(has);
+    const status=present.length?((health.failed===0||health.success_rate>=0.5)?'supported':'uncertain'):'blocked';
+    const confidence=present.length?Number(Math.max(0.2,Math.min(0.95,health.success_rate||0.2)).toFixed(2)):0;
+    const facts=[];
+    if(id==='situation'){ facts.push(count('query_vehicles','vehicles')+' vehicle records',count('query_convoys','convoys')+' convoy records',count('query_alerts','alerts')+' alert records'); }
+    if(id==='security'){ facts.push(count('query_alerts','alerts')+' alert records',count('query_risk_zones','risk_zones')+' risk-zone records'); }
+    if(id==='route'){ facts.push((has('get_road_conditions')?'road evidence':'no road evidence'),(has('get_weather')?'weather evidence':'no weather evidence')); }
+    if(id==='fleet'){ facts.push(count('query_vehicles','vehicles')+' vehicle records'); }
+    if(id==='environment'){ facts.push((has('get_weather')?'weather evidence':'no weather evidence')); }
+    if(id==='risk'){ facts.push(count('query_risk_zones','risk_zones')+' risk-zone records',count('query_alerts','alerts')+' alert records'); }
+    if(id==='data-quality'){ facts.push(health.succeeded+'/'+health.probes+' evidence probes succeeded'); }
+    return {id,name,status,confidence,provider:'deterministic-evidence',finding:'Evidence lane derived from live Sonalit tool results; this is not an independent model opinion.',dissent:'',tools:present,provenance:facts};
+  };
+  return [
+    lane('situation','SITUATION INTELLIGENCE',['query_vehicles','query_convoys','query_alerts']),
+    lane('security','SECURITY INTELLIGENCE',['query_alerts','query_risk_zones']),
+    lane('route','ROUTE & MOBILITY',['query_convoys','get_road_conditions','get_weather']),
+    lane('fleet','FLEET & ASSET',['query_vehicles','query_alerts']),
+    lane('environment','ENVIRONMENTAL',['get_weather','get_road_conditions']),
+    lane('risk','RISK INTELLIGENCE',['query_risk_zones','query_alerts']),
+    lane('data-quality','DATA INTEGRITY',['query_vehicles','query_convoys','query_alerts','get_world_context']),
+  ].filter(x=>x.status!=='blocked');
+}
+
+function deterministicNarrative(command,evidence,health,safety){
+  const all=Object.values(evidence);
+  const vehicles=all.flatMap(v=>Array.isArray(v?.vehicles)?v.vehicles:[]);
+  const convoys=all.flatMap(v=>Array.isArray(v?.convoys)?v.convoys:[]);
+  const alerts=all.flatMap(v=>Array.isArray(v?.alerts)?v.alerts:[]);
+  const zones=all.flatMap(v=>Array.isArray(v?.risk_zones)?v.risk_zones:[]);
+  const errors=all.filter(v=>v&&typeof v==='object'&&v.error).map(v=>String(v.error));
+  const criticalAlerts=alerts.filter(a=>String(a.severity).toLowerCase()==='critical').length;
+  const highAlerts=alerts.filter(a=>String(a.severity).toLowerCase()==='high').length;
+  const criticalZones=zones.filter(z=>String(z.risk_level).toLowerCase()==='critical').length;
+  const offline=vehicles.filter(v=>String(v.status).toLowerCase()==='offline').length;
+  const lowFuel=vehicles.filter(v=>Number(v.fuel_level)<25).length;
+  const activeConvoys=convoys.filter(c=>String(c.status).toLowerCase()==='active').length;
+  const lines=[
+    'Live evidence was reconciled without model-generated operational facts.',
+    'Evidence health: '+health.succeeded+'/'+health.probes+' probes succeeded'+(health.failed?' ('+health.failed+' failed).':'.'),
+  ];
+  if(vehicles.length) lines.push('Fleet: '+vehicles.length+' records; '+offline+' offline; '+lowFuel+' below 25% fuel.');
+  if(convoys.length) lines.push('Convoys: '+convoys.length+' records; '+activeConvoys+' active.');
+  if(alerts.length) lines.push('Alerts: '+alerts.length+' records; '+criticalAlerts+' critical; '+highAlerts+' high.');
+  if(zones.length) lines.push('Risk zones: '+zones.length+' records; '+criticalZones+' critical.');
+  if(errors.length) lines.push('Evidence service errors: '+errors.slice(0,3).join(' | '));
+  else if(!vehicles.length&&!convoys.length&&!alerts.length&&!zones.length&&all.length) lines.push('The requested live tools returned no matching fleet/convoy/alert/risk records.');
+  if(!all.length) lines.push('No live evidence was available for this request.');
+  const decision=safety.hard_stop?'HUMAN_REVIEW_REQUIRED':(health.failed||!all.length?'APPROVAL_REQUIRED':'MONITOR');
+  lines.push('Decision: '+decision+'. Risk posture: '+safety.level+'.');
+  if(criticalAlerts||criticalZones) lines.push('Safety gate is triggered because critical evidence is present; do not rely on an automated action.');
+  else if(offline||lowFuel||highAlerts) lines.push('Operational exposure detected; verify the affected assets before changing schedule or route.');
+  if(command) lines.push('Request: '+String(command).trim().slice(0,500));
+  return lines.join('\n');
+}
+
 async function runDecisionFabric({command,history=[],executeTool,userId,orgId,persistDecision}){
   const started=Date.now();
-  const probes=await planEvidence(command,history);
+  const probes=planEvidence(command,history);
   const collected=await collectToolEvidence(probes,executeTool,{userId,orgId});
-  const relevantToolNames = new Set(probes.map(p => p.tool));
-  const selectedAgents = AGENTS.filter(a => a.tools.some(t => relevantToolNames.has(t)));
-  const boundedAgents = (selectedAgents.length ? selectedAgents : AGENTS.slice(0, 3)).slice(0, 5);
-  const agents=await Promise.all(boundedAgents.map(a=>runSpecialist(a,command,collected.evidence,history)));
   const safety=deterministicSafetyAssessment(collected.evidence);
   const health=evidenceHealth(collected.evidence,collected.failures);
-  let draft;
-  try{draft=await arbitrate(command,collected.evidence,agents,history,safety);}
-  catch(e){logger.warn('Copilot arbiter fallback: '+e.message);draft={answer:'Sonalit Copilot is operating in degraded mode; no final autonomous decision is authorised.',decision:'HUMAN_REVIEW_REQUIRED',risk_level:safety.level,confidence:0.2,recommended_actions:[],risks:[],evidence:[],missing_data:['Arbiter unavailable'],dissent:[]};}
-  const critic=await critique(command,draft,collected.evidence,agents);
+  const lanes=deterministicEvidenceLanes(collected.evidence,health);
+  let draft=null;
+  let provider='deterministic-evidence-fallback';
+  const ready=typeof aiClient.hasReadyProvider==='function' && aiClient.hasReadyProvider({dataClassification:'internal',allowFreeProviders:false});
+  if(ready){
+    try{
+      draft=await arbitrate(command,collected.evidence,lanes,history,safety);
+      provider=draft.provider||provider;
+    }catch(e){
+      logger.warn('Copilot synthesis fallback: '+e.message);
+    }
+  }
+  if(!draft){
+    draft={answer:deterministicNarrative(command,collected.evidence,health,safety),decision:safety.hard_stop?'HUMAN_REVIEW_REQUIRED':(health.failed?'APPROVAL_REQUIRED':'MONITOR'),risk_level:safety.level,confidence:Number(Math.max(0.2,Math.min(0.95,health.success_rate||0.2)).toFixed(2)),recommended_actions:[],risks:safety.reasons.map(x=>({risk:x.code,severity:String(x.code).includes('CRITICAL')?'critical':String(x.code).includes('HIGH')?'high':'medium'})),evidence:Object.keys(collected.evidence),missing_data:collected.failures.map(x=>x.tool),dissent:[],next_check:'Re-run when missing evidence sources recover.',provider};
+  }
+  let critic={pass:true,critical_issues:[],corrections:[],confidence_adjustment:0};
+  const needsCritique=safety.level==='CRITICAL'||safety.level==='HIGH'||/\b(execute|approve|dispatch|reroute|stop|abort|override|recommend)\b/i.test(String(command));
+  if(ready&&needsCritique){ critic=await critique(command,draft,collected.evidence,lanes); }
   const final=finalize(draft,critic,safety,health);
-  final.swarm=agents.map(a=>({id:a.id,name:a.name,status:a.status,confidence:Number(a.confidence||0),provider:a.provider,finding:a.finding,dissent:a.dissent,tools:a.tools}));
-  final.meta={latency_ms:Date.now()-started,probe_plan:probes,agent_count:agents.length,agent_failures:agents.filter(a=>a.status==='blocked').length,provider_fallback_available:aiClient.hasOpenSourcePrimary?.()||aiClient.hasGroqFallback?.(),persisted:false};
+  final.answer=final.answer||deterministicNarrative(command,collected.evidence,health,safety);
+  final.swarm=lanes;
+  final.meta={...(final.meta||{}),latency_ms:Date.now()-started,probe_plan:probes,agent_count:lanes.length,agent_failures:lanes.filter(a=>a.status==='blocked').length,provider_fallback_available:aiClient.hasReadyProvider?.({dataClassification:'internal',allowFreeProviders:false})||false,persisted:false,degraded:provider==='deterministic-evidence-fallback'};
   if(persistDecision){
     try{const decisionId=await persistDecision({orgId,userId,command,result:final});final.id=decisionId;final.meta.persisted=true;}catch(e){logger.warn('Copilot decision persistence failed: '+e.message);}
   }
   return final;
 }
-
 module.exports={AGENTS,TOOL_CATALOG,runDecisionFabric};

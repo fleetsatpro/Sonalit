@@ -100,6 +100,7 @@ const TOOLS = [
         region: { type: 'string', description: 'Filter by region, e.g. Kenya, DRC, Tanzania, Uganda, Mali' },
         low_fuel: { type: 'boolean', description: 'If true, only vehicles with fuel level below 25%' },
         moving: { type: 'boolean', description: 'If true, only vehicles currently moving (speed > 2 km/h)' },
+        maintenance_overdue: { type: 'boolean', description: 'If true, only vehicles with an overdue non-completed scheduled maintenance record' },
       },
     },
   },
@@ -257,12 +258,27 @@ async function toolQueryVehicles(input, orgId) {
   if (input.region) { params.push(input.region); filters.push(`region = $${params.length}`); }
   if (input.low_fuel) filters.push('COALESCE(fuel_level, 85) < 25');
   if (input.moving) filters.push('COALESCE(speed, 0) > 2');
+  if (input.maintenance_overdue) filters.push('m.maintenance_due = true');
   const r = await query(
-    `SELECT registration, type, status, region,
-            COALESCE(fuel_level, 85) AS fuel_level, COALESCE(speed, 0) AS speed,
-            latitude, longitude, driver_name, last_ping
-     FROM vehicles WHERE ${filters.join(' AND ')}
-     ORDER BY registration LIMIT 60`,
+    `SELECT v.registration, v.type, v.status, v.region,
+            COALESCE(v.fuel_level, 85) AS fuel_level, COALESCE(v.speed, 0) AS speed,
+            v.latitude, v.longitude, v.driver_name, v.last_ping,
+            m.maintenance_status, m.maintenance_scheduled_at, m.next_service_date,
+            m.next_service_km, m.maintenance_due
+     FROM vehicles v
+     LEFT JOIN LATERAL (
+       SELECT mr.status AS maintenance_status,
+              mr.scheduled_at AS maintenance_scheduled_at,
+              mr.next_service_date,
+              mr.next_service_km,
+              (mr.scheduled_at IS NOT NULL AND mr.scheduled_at < NOW() AND COALESCE(mr.status, '') <> 'completed') AS maintenance_due
+       FROM maintenance_records mr
+       WHERE mr.vehicle_id = v.id
+       ORDER BY mr.scheduled_at NULLS LAST, mr.created_at DESC
+       LIMIT 1
+     ) m ON true
+     WHERE ${filters.join(' AND ')}
+     ORDER BY v.registration LIMIT 60`,
     params
   );
   return { count: r.rows.length, vehicles: r.rows };
@@ -654,7 +670,7 @@ async function toolCreateRiskZone(input, userId, orgId) {
     const desc = description || `${zone_type} risk zone near ${location}`;
 
     const r = await query(
-      `INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by)
+      `INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by, org_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, name, risk_level, zone_type, lat, lng, radius_km`,
       [name, desc, risk_level, zone_type, g.latitude, g.longitude, radius_km, userId || null, orgId]
