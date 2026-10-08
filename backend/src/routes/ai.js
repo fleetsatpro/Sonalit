@@ -1079,7 +1079,7 @@ router.post('/decision', async (req, res) => {
 
 function inferGeofenceTask(command) {
   const raw = String(command || '').trim();
-  if (!/\b(draw|create|make|set up|define|establish|mark|build)\b[\\s\\S]{0,100}\b(geo[- ]?fence|corridor|geofence)\b/i.test(raw)) return null;
+  if (!/\b(draw|create|make|set up|define|establish|mark|build)\b[\s\S]{0,100}\b(geo[- ]?fence|corridor|geofence)\b/i.test(raw)) return null;
 
   const quote = (v) => String(v || '').replace(/^["']|["']$/g, '').trim();
   const nameMatch = raw.match(/\b(?:named|called|name(?:d)?\s+as)\s+["']?([^"']+?)["']?(?:\s*$|\s+(?:around|from|between|at|near)\b)/i);
