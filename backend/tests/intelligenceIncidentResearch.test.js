@@ -46,7 +46,7 @@ test('passes publication data-classification policy into AI incident research',a
   expect(aiClient.createResearchMessage).toHaveBeenCalledWith(expect.objectContaining({
     dataClassification:'public',
     allowFreeProviders:true,
-    providerHints:['openrouter-free-router'],
+    providerHints:expect.arrayContaining(['google-gemini-3.8-flash','openrouter-free-router']),
     responseFormat:expect.objectContaining({type:'json_schema'}),
   }));
   expect(result.summary.researched).toBe(1);
