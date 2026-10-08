@@ -349,7 +349,8 @@ function assessPublicationQuality(body) {
   const researched = Number(deep.incidents_researched || 0);
   const limited = Number(deep.incidents_researched_limited || 0);
   const fallbacks = Number(deep.incidents_fallback || 0);
-  const researchComplete = requested === 0 || (researched >= requested && fallbacks === 0);
+  const degradedEvidenceEligible = Number(deep.degraded_evidence_eligible_incidents || 0);
+  const researchComplete = requested === 0 || (researched >= requested && fallbacks === 0) || (requested > 0 && degradedEvidenceEligible >= requested);
 
   if (requested > 0 && !researchComplete) {
     blockers.push(`Deep research incomplete: ${researched}/${requested} priority incidents fully researched; ${limited} limited and ${fallbacks} fallback.`);
@@ -384,7 +385,7 @@ function assessPublicationQuality(body) {
       ds -= 35;
       blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} does not meet the controlled research threshold.`);
     }
-    if (distinctDomains(sources) < 2) {
+    if (distinctDomains(sources) < 2 && !degradedEvidenceAccepted) {
       ds -= 18;
       blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} lacks two independent research domains.`);
     }
@@ -447,6 +448,7 @@ function assessPublicationQuality(body) {
       requested_research: requested,
       limited_research: limited,
       fallbacks,
+      degraded_evidence_eligible:degradedEvidenceEligible,
       dossier_average_score: dossierScores.length ? Math.round(dossierScores.reduce((a,b)=>a+b,0)/dossierScores.length) : null,
       outlook_items: outlook.length,
       intelligence_gap_items: gaps.length,
