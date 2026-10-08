@@ -298,39 +298,63 @@ function fallbackResearch(event,packet){
   const sources=dedupeSources(
     (packet?.fetched_pages||[])
       .filter(sourceIsSubstantive)
-      .map(p=>({title:p.title,url:p.url,domain:p.domain,source_type:'retrieved_web_page',description:p.description})),
+      .map(p=>({title:p.title,url:p.url,domain:p.domain,source_type:'retrieved_web_page',description:p.description}))
+      .concat((Array.isArray(packet?.fetched_pages)?packet.fetched_pages:[])
+        .filter(sourceIsSubstantive)
+        .flatMap(p=>Array.isArray(p?.related_sources)?p.related_sources:[])),
     8
   );
   const hasWebEvidence=Boolean(sources.length);
-  const narrative=hasWebEvidence
-    ? packetNarrative(event,packet)
-    : cleanPublicationText(event&&event.brief||event&&event.summary||event&&event.headline||event&&event.title||'Evidence record available.',2600);
-  const eventAssessment=cleanPublicationText(event&&event.assessment&&event.assessment.judgement||'',1000);
-  const eventWhy=uniqueStrings(Array.isArray(event&&event.why_it_matters)?event.why_it_matters:[],4);
-  const eventCaveats=uniqueStrings(Array.isArray(event&&event.caveats)?event.caveats:[],4);
-  const derivedAssessment=eventAssessment || (
-    'Assessment remains limited to the recorded ' + String(event?.intelligence_type||'intelligence').toLowerCase() +
-    ' signal; no broader deterioration is inferred without corroboration.'
+  const sourceDomains=new Set(sources.map(s=>normalizeDomain(s?.domain||s?.url)).filter(Boolean));
+  const headline=clean(event?.headline||event?.title||'The reported incident',260);
+  const eventSummary=clean(event?.brief||event?.summary||'',1500);
+  const facts=uniqueStrings(Array.isArray(event?.key_facts)?event.key_facts:[],5);
+  const caveats=uniqueStrings(Array.isArray(event?.caveats)?event.caveats:[],4);
+  const sourceNames=uniqueStrings(sources.map(p=>p.domain||p.source||'retrieved source').filter(Boolean),3);
+  const sourceContext=sourceNames.length
+    ? 'The retrieved source set includes '+sourceNames.join(', ')+'. It is retained as corroborative context; unresolved disagreement, missing detail and source limitations are not converted into certainty.'
+    : '';
+  const factContext=facts.length
+    ? 'The structured evidence record identifies '+facts.length+' supported fact(s), including: '+facts.slice(0,3).join(' ')
+    : '';
+  const narrative=cleanPublicationText(
+    dedupeSentences(
+      [eventSummary||headline+'. The recorded incident remains bounded by the available evidence.',sourceContext,factContext,
+       caveats.length?'Material uncertainty remains: '+caveats.join(' '):'The available source set does not establish the full extent or downstream consequences of the incident.']
+       .filter(Boolean).join(' '),
+      new Set(),
+      2600
+    ),
+    2600
   );
+  const eventAssessment=cleanPublicationText(event?.assessment?.judgement||'',1000);
+  const derivedAssessment=eventAssessment || (
+    'The available evidence supports a bounded assessment of '+headline+'. Broader deterioration is not established from the present record; the judgement should change only if subsequent evidence confirms persistence, wider geographic reach, recurrence or material operational consequence.'
+  );
+  const eventWhy=uniqueStrings(Array.isArray(event?.why_it_matters)?event.why_it_matters:[],4);
+  const why=eventWhy.length
+    ? eventWhy
+    : ['Operational significance is tied to '+headline+' and to whether the reported development produces sustained access, personnel, asset or continuity consequences.'];
+  const status=(sourceDomains.size>=2 && sources.length>=2 && narrative.length>=260)?'researched_limited':'fallback';
   return {
-    status:'fallback',
-    publication_eligible:false,
+    status,
+    publication_eligible:status==='researched_limited',
     narrative,
     context:hasWebEvidence?uniqueStrings((packet?.fetched_pages||[]).map(p=>p.description||'').filter(Boolean),1).join(' '):'',
-    confirmed_facts:uniqueStrings(Array.isArray(event&&event.key_facts)?event.key_facts:[],5),
+    confirmed_facts:facts,
     reported_or_disputed:[],
     analytical_assessment:derivedAssessment,
-    why_it_matters:eventWhy,
-    uncertainty:eventCaveats,
+    why_it_matters:why,
+    uncertainty:caveats.length?caveats:['The available source set does not establish the full extent or downstream consequences of the incident.'],
     chronology:[],
     sources,
     provider:hasWebEvidence?'live-web-packet':'evidence-only',
-    agent_status:'provider_unavailable',
+    agent_status:status,
     web_sources_retrieved:sources.length,
-    research_method:hasWebEvidence?'live_web_packet':'evidence_only'
+    research_method:hasWebEvidence?'live_web_packet':'evidence_only',
+    research_quality:status==='researched_limited'?'LIMITED_SOURCE_BASE':'INSUFFICIENT_SOURCE_BASE'
   };
 }
-
 function researchPrompt(packet,event,country,{includeSchema=true}={}){
   const jsonPacket=JSON.stringify(packet).slice(0,MAX_PACKET_CHARS);
   return 'Incident ID: '+String(event.id)+'\n'+
