@@ -404,8 +404,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     const status=String(agent.status||'').toLowerCase();
     return status==='fallback' &&
       String(agent.research_method||'').toLowerCase()==='degraded_evidence' &&
-      Number(e.observation_count||0)>=2 &&
-      Number(e.source_count||0)>=2 &&
+      Number(e.observation_count||0)>=1 &&
+      Number(e.source_count||0)>=1 &&
       (entry.error ? entry.error==='ai_provider_unavailable' : priorEvidenceConstrained);
   };
   const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));

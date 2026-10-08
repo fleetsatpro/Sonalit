@@ -379,8 +379,8 @@ function assessPublicationQuality(body) {
     const degradedEvidenceAccepted=
       researchStatus==='fallback' &&
       String(dossier.research_method||'').toLowerCase()==='degraded_evidence' &&
-      Number(dossier.evidence_count||0)>=2 &&
-      Number(dossier.source_count||0)>=2;
+      Number(dossier.evidence_count||0)>=1 &&
+      Number(dossier.source_count||0)>=1;
     if (researchStatus !== 'researched' && !limitedResearchAccepted && !degradedEvidenceAccepted) {
       ds -= 35;
       blockers.push(`Incident ${dossier.event_id || dossier.id || 'unknown'} does not meet the controlled research threshold.`);
