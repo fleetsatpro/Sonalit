@@ -73,7 +73,7 @@ async function ensureRiskZones() {
 // ── System prompt (static — kept frozen so it caches across requests) ──────
 const SYSTEM_PROMPT = `You are the AI dispatch assistant for FleetOps Pro, an enterprise logistics command platform running security convoys across East and Central Africa (Kenya, DRC, Tanzania, Uganda, Mali).
 
-You have tools to query live fleet data, weather, road conditions, public holidays, and known risk zones — and you can create geofences and mark risk zones directly on the map. Always use the tools — never guess fleet state or invent data.
+You are the Sonalit operational agent, not a generic chatbot. Investigate, compare, summarize, plan, reconcile evidence, create operational artifacts, and explain provenance. For multi-step requests use evidence → analysis → action → verification. Never invent fleet, route, location, timing, security or spatial facts. Geofence accuracy outranks speed: prefer explicit coordinates, OSM/Nominatim resolution and full OSRM road geometry; never silently turn a failed route into a straight line.
 
 Guidelines:
 - Use query_vehicles / query_convoys / query_alerts for anything about fleet state. Pass filters when the user is specific (a region, status, low fuel, etc.).
@@ -85,7 +85,8 @@ Guidelines:
 - Use create_geofence when the user asks to "draw a geofence", "create a zone", "set a boundary", or "mark an area" around any location. Geocode it and create it immediately — never just describe it.
 - Use create_risk_zone when the user wants to flag a location as dangerous, mark a strike, roadblock, active incident, or high-risk area. Create it immediately.
 - For comprehensive navigation advisories: combine weather + road conditions + risk zones + active alerts + upcoming holidays. Give a rated assessment (SAFE / CAUTION / HIGH RISK / AVOID).
-- Be concise and direct — 1–4 sentences. Cite specific vehicle registrations, convoy names, zone names, and numbers from tool results.
+- Support investigation, comparison, exception hunting, situation briefs, route-risk analysis, shipment/fleet/maintenance checks, spatial context, geofence/risk-zone creation and other supported operational tasks. For multi-step work, complete the evidence collection first, perform the requested reversible action, then report the resulting object and verification.
+- Be concise and direct — 1–4 sentences when the task is simple; for complex tasks use a structured result with what was checked, what changed, what remains uncertain, and the next action. Cite specific vehicle registrations, convoy names, zone names, coordinates, distances and counts from tool results.
 - Clearly flag critical situations: low fuel, offline vehicles, critical alerts, severe weather, active risk zones, road closures, and holidays affecting convoy timing.`;
 
 // ── Tool definitions (static — cache together with the system prompt) ──────
@@ -101,6 +102,65 @@ const TOOLS = [
         low_fuel: { type: 'boolean', description: 'If true, only vehicles with fuel level below 25%' },
         moving: { type: 'boolean', description: 'If true, only vehicles currently moving (speed > 2 km/h)' },
         maintenance_overdue: { type: 'boolean', description: 'If true, only vehicles with an overdue non-completed scheduled maintenance record' },
+      },
+    },
+  },
+  {
+    name: 'query_shipments',
+    description: 'Query tenant-scoped shipments with tracking, customer, status, priority, route, ETA, vehicle and driver context.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        priority: { type: 'string' },
+        search: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'query_geofences',
+    description: 'Inspect tenant-scoped geofences with type, centre, radius, corridor buffer, geometry precision and vertex counts. Use for geofence audits, comparisons and verification.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string' },
+        search: { type: 'string' },
+        active: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'query_maintenance',
+    description: 'Query tenant-scoped maintenance records, due dates, status, priority, vehicle and workshop context.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        priority: { type: 'string' },
+        vehicle: { type: 'string' },
+        overdue: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'query_drivers',
+    description: 'Query tenant-scoped drivers with status, licence expiry, score, current vehicle and basic recent performance signals.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        search: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'query_devices',
+    description: 'Query tenant-scoped Guardian devices with health, assignment, panic and last-seen information.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        assignment_type: { type: 'string' },
       },
     },
   },
@@ -227,6 +287,8 @@ const TOOLS = [
         radius_m: { type: 'number', description: 'Radius in metres for a point geofence (default 3000). Ignored for corridors.' },
         buffer_m: { type: 'number', description: 'Corridor half-width in metres — how far a vehicle can deviate before an alert fires (default 300).' },
         fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'corridor', 'general'] },
+        precision: { type: 'string', enum: ['standard', 'high', 'maximum'], description: 'Precision level; maximum is the default for operational geofences.' },
+        allow_straight_fallback: { type: 'boolean', description: 'Explicitly allow a straight-line fallback when road routing is unavailable. Defaults to false.' },
       },
       required: ['name', 'location'],
     },
@@ -282,6 +344,150 @@ async function toolQueryVehicles(input, orgId) {
     params
   );
   return { count: r.rows.length, vehicles: r.rows };
+}
+
+async function toolQueryShipments(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', shipments: [], count: 0 };
+  try {
+    const filters = ['s.org_id = $1', 's.deleted_at IS NULL'];
+    const params = [orgId];
+    if (input.status) { params.push(input.status); filters.push(`s.status = ${params.length}`); }
+    if (input.priority) { params.push(input.priority); filters.push(`s.priority = ${params.length}`); }
+    if (input.search) { params.push(`%${String(input.search).slice(0,120)}%`); filters.push(`(s.tracking_number ILIKE ${params.length} OR s.customer_name ILIKE ${params.length} OR s.origin_address ILIKE ${params.length} OR s.destination_address ILIKE ${params.length})`); }
+    const result = await query(
+      `SELECT s.tracking_number, s.customer_name, s.status, s.priority,
+              s.origin_address, s.destination_address, s.scheduled_pickup,
+              s.scheduled_delivery, s.estimated_arrival, s.actual_delivery,
+              c.name AS convoy_name, v.registration AS vehicle,
+              d.name AS driver
+         FROM shipments s
+         LEFT JOIN convoys c ON c.id=s.convoy_id
+         LEFT JOIN vehicles v ON v.id=s.vehicle_id
+         LEFT JOIN drivers d ON d.id=s.driver_id
+        WHERE ${filters.join(' AND ')}
+        ORDER BY s.created_at DESC LIMIT 60`,
+      params,
+    );
+    return { count: result.rows.length, shipments: result.rows };
+  } catch (e) { return { error: `Shipment query failed: ${e.message}`, shipments: [], count: 0 }; }
+}
+
+async function toolQueryGeofences(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', geofences: [], count: 0 };
+  try {
+    const filters = ['g.org_id = $1'];
+    const params = [orgId];
+    if (input.type) { params.push(String(input.type)); filters.push(`LOWER(g.type) = LOWER(${params.length})`); }
+    if (input.search) {
+      params.push(`%${String(input.search).slice(0,120)}%`);
+      filters.push(`(g.name ILIKE ${params.length} OR COALESCE(g.region,'') ILIKE ${params.length})`);
+    }
+    if (typeof input.active === 'boolean') { params.push(input.active); filters.push(`COALESCE(g.active,true) = ${params.length}`); }
+    const result = await query(
+      `SELECT g.id, g.name, g.type, g.region, g.active, g.radius,
+              g.coordinates, g.corridor_width_km, g.created_at, g.updated_at
+         FROM geofences g
+        WHERE ${filters.join(' AND ')}
+        ORDER BY g.created_at DESC LIMIT 100`,
+      params,
+    );
+    return {
+      count: result.rows.length,
+      geofences: result.rows.map(g => {
+        let c = g.coordinates;
+        if (typeof c === 'string') { try { c = JSON.parse(c); } catch (_) {} }
+        const path = Array.isArray(c?.path) ? c.path : (
+          c?.type === 'LineString' && Array.isArray(c.coordinates)
+            ? c.coordinates.map(([lng,lat]) => [lat,lng])
+            : null
+        );
+        return {
+          id: g.id,
+          name: g.name,
+          type: g.type || 'circle',
+          region: g.region || null,
+          active: g.active !== false,
+          radius_m: Number(g.radius || 0),
+          buffer_m: Number(c?.buffer_m || (g.corridor_width_km ? g.corridor_width_km * 1000 : 0)),
+          centre: c?.lat != null && c?.lng != null ? { lat: Number(c.lat), lng: Number(c.lng) } : null,
+          path_points: Array.isArray(path) ? path.length : 0,
+          has_buffer_polygon: Array.isArray(c?.buffer_polygon) && c.buffer_polygon.length >= 4,
+          precision: c?.precision || null,
+          geometry_source: c?.geometry_source || null,
+          route_provider: c?.route_provider || null,
+          route_distance_m: Number(c?.route_distance_m || 0) || null,
+          created_at: g.created_at,
+          updated_at: g.updated_at,
+        };
+      }),
+    };
+  } catch (e) {
+    return { error: `Geofence query failed: ${e.message}`, geofences: [], count: 0 };
+  }
+}
+
+async function toolQueryMaintenance(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', maintenance: [], count: 0 };
+  try {
+    const filters = ['mr.org_id = $1', 'mr.deleted_at IS NULL'];
+    const params = [orgId];
+    if (input.status) { params.push(input.status); filters.push(`mr.status = ${params.length}`); }
+    if (input.priority) { params.push(input.priority); filters.push(`mr.priority = ${params.length}`); }
+    if (input.vehicle) { params.push(`%${String(input.vehicle).slice(0,80)}%`); filters.push(`v.registration ILIKE ${params.length}`); }
+    if (input.overdue) filters.push(`mr.status IN ('scheduled','in_progress') AND mr.scheduled_at < NOW()`);
+    const result = await query(
+      `SELECT mr.id, mr.type, mr.title, mr.priority, mr.status, mr.scheduled_at,
+              mr.completed_at, mr.next_service_km, mr.next_service_date,
+              mr.workshop, v.registration, v.region
+         FROM maintenance_records mr
+         JOIN vehicles v ON v.id=mr.vehicle_id
+        WHERE ${filters.join(' AND ')}
+        ORDER BY CASE mr.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
+                 mr.scheduled_at NULLS LAST LIMIT 60`,
+      params,
+    );
+    return { count: result.rows.length, maintenance: result.rows };
+  } catch (e) { return { error: `Maintenance query failed: ${e.message}`, maintenance: [], count: 0 }; }
+}
+
+async function toolQueryDrivers(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', drivers: [], count: 0 };
+  try {
+    const filters = ['d.org_id = $1', 'd.deleted_at IS NULL'];
+    const params = [orgId];
+    if (input.status) { params.push(input.status); filters.push(`d.status = ${params.length}`); }
+    if (input.search) { params.push(`%${String(input.search).slice(0,120)}%`); filters.push(`(d.name ILIKE ${params.length} OR d.employee_id ILIKE ${params.length} OR d.phone ILIKE ${params.length})`); }
+    const result = await query(
+      `SELECT d.id, d.name, d.employee_id, d.status, d.license_expiry,
+              d.driver_score, d.idling_minutes, v.registration AS vehicle
+         FROM drivers d
+         LEFT JOIN vehicles v ON v.id=d.current_vehicle_id
+        WHERE ${filters.join(' AND ')}
+        ORDER BY d.driver_score DESC NULLS LAST, d.name LIMIT 60`,
+      params,
+    );
+    return { count: result.rows.length, drivers: result.rows };
+  } catch (e) { return { error: `Driver query failed: ${e.message}`, drivers: [], count: 0 }; }
+}
+
+async function toolQueryDevices(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', devices: [], count: 0 };
+  try {
+    const filters = ['d.org_id = $1', 'd.deleted_at IS NULL'];
+    const params = [orgId];
+    if (input.status) { params.push(input.status); filters.push(`d.status = ${params.length}`); }
+    if (input.assignment_type) { params.push(input.assignment_type); filters.push(`d.assignment_type = ${params.length}`); }
+    const result = await query(
+      `SELECT d.id, d.name, d.model, d.assignment_type, d.assignment_id,
+              d.status, d.panic_active, d.last_seen, d.last_lat, d.last_lng,
+              d.last_speed, d.last_integrity_verdict, d.last_integrity_verdict_at
+         FROM guardian_devices d
+        WHERE ${filters.join(' AND ')}
+        ORDER BY d.last_seen DESC NULLS LAST LIMIT 60`,
+      params,
+    );
+    return { count: result.rows.length, devices: result.rows };
+  } catch (e) { return { error: `Device query failed: ${e.message}`, devices: [], count: 0 }; }
 }
 
 async function toolQueryConvoys(input, orgId) {
@@ -341,6 +547,100 @@ async function geocode(locationName) {
   const data = await res.json();
   if (!data.results?.length) throw new Error(`Location "${locationName}" not found`);
   return data.results[0];
+}
+
+function parseCoordinatePair(value) {
+  const text = String(value || '').trim();
+  const m = text.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!m) return null;
+  const latitude = Number(m[1]), longitude = Number(m[2]);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  return { latitude, longitude, source: 'explicit' };
+}
+
+async function geocodePrecise(locationName) {
+  const direct = parseCoordinatePair(locationName);
+  if (direct) return { ...direct, name: 'Explicit coordinates', admin1: null, country: null, precision: 'coordinate' };
+
+  const queryText = String(locationName || '').trim();
+  if (!queryText) throw new Error('Location is required');
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=${encodeURIComponent(queryText)}`,
+      { headers: { 'User-Agent': 'Sonalit-CommandCenter/1.0 (ops@sonalit.io)', 'Accept-Language': 'en' }, signal: AbortSignal.timeout(7000) }
+    );
+    if (res.ok) {
+      const candidates = await res.json();
+      if (Array.isArray(candidates) && candidates.length) {
+        const ranked = candidates.map(c => {
+          const type = String(c.type || '').toLowerCase();
+          const importance = Number(c.importance || 0);
+          const exact = String(c.display_name || '').toLowerCase().includes(queryText.toLowerCase());
+          const featureBoost = /road|street|highway|motorway|trunk|primary|secondary|city|town|village|suburb|neighbourhood|port|airport/.test(type) ? 0.15 : 0;
+          const tokenBoost = queryText.split(/\s+/).filter(Boolean).reduce((n,t) => String(c.display_name || '').toLowerCase().includes(t.toLowerCase()) ? n + 0.04 : n, 0);
+          return { c, score: importance + featureBoost + tokenBoost + (exact ? 0.08 : 0) };
+        }).sort((a,b)=>b.score-a.score);
+        const best = ranked[0], second = ranked[1];
+        if (second && best.score < 0.55 && best.score - second.score < 0.10) {
+          throw new Error(`Location "${queryText}" is ambiguous; specify the country, city or exact coordinates.`);
+        }
+        const c = best.c;
+        return {
+          latitude: Number(c.lat),
+          longitude: Number(c.lon),
+          name: c.display_name || queryText,
+          admin1: c.address?.state || c.address?.county || null,
+          country: c.address?.country || null,
+          precision: /road|street|motorway|trunk|primary|secondary/.test(String(c.type || '').toLowerCase()) ? 'street' : 'place',
+          osm_type: c.osm_type || null,
+          osm_id: c.osm_id || null,
+          source: 'nominatim',
+          importance: Number(c.importance || 0),
+        };
+      }
+    }
+  } catch (e) {
+    if (/ambiguous/i.test(String(e?.message || ''))) throw e;
+  }
+
+  const g = await geocode(queryText);
+  return { ...g, precision: 'place-fallback', source: 'open-meteo' };
+}
+
+function toLatLngPath(osrmCoordinates) {
+  return (Array.isArray(osrmCoordinates) ? osrmCoordinates : [])
+    .filter(p => Array.isArray(p) && p.length >= 2 && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])))
+    .map(([lng, lat]) => [Number(lat), Number(lng)]);
+}
+
+function buildCorridorPolygon(path, bufferM) {
+  if (!Array.isArray(path) || path.length < 2 || !(bufferM > 0)) return null;
+  const lat0 = path.reduce((sum,p)=>sum+Number(p[0]),0)/path.length;
+  const R = 6371008.8;
+  const cos0 = Math.max(0.1, Math.cos(lat0*Math.PI/180));
+  const toXY = ([lat,lng]) => [R*cos0*Number(lng)*Math.PI/180, R*Number(lat)*Math.PI/180];
+  const toLL = ([x,y]) => [y/R*180/Math.PI, x/(R*cos0)*180/Math.PI];
+  const xy = path.map(toXY);
+  const left=[], right=[];
+  const unit=(a,b)=>{
+    const dx=b[0]-a[0], dy=b[1]-a[1], len=Math.hypot(dx,dy);
+    return len>0?[dx/len,dy/len]:[0,0];
+  };
+  for(let i=0;i<xy.length;i++){
+    const prev=i>0?unit(xy[i-1],xy[i]):unit(xy[i],xy[i+1]);
+    const next=i<xy.length-1?unit(xy[i],xy[i+1]):prev;
+    let nx=-(prev[1]+next[1]), ny=prev[0]+next[0];
+    const nlen=Math.hypot(nx,ny);
+    if(nlen<1e-9){nx=-next[1];ny=next[0];}else{nx/=nlen;ny/=nlen;}
+    const miter=bufferM/Math.max(0.35,Math.abs(nx*next[0]+ny*next[1]));
+    const d=Math.min(bufferM*2.5,Math.max(bufferM,miter));
+    left.push([xy[i][0]+nx*d,xy[i][1]+ny*d]);
+    right.push([xy[i][0]-nx*d,xy[i][1]-ny*d]);
+  }
+  const ring=[...left,...right.reverse()];
+  ring.push(ring[0]);
+  return ring.map(toLL);
 }
 
 // Haversine distance in metres between two lat/lng points
@@ -559,48 +859,78 @@ async function toolQueryRiskZones(input, orgId) {
 
 async function toolCreateGeofence(input, userId, orgId) {
   if (!orgId) return { error: 'Organisation context is required' };
-  const { name, location, route_end, fence_type = 'general' } = input;
+  const { name, location, route_end, fence_type = 'general' } = input || {};
   if (!name || !location) return { error: 'name and location are required' };
+
+  const precision = input.precision || 'maximum';
+  const allowStraightFallback = input.allow_straight_fallback === true;
 
   try {
     if (route_end) {
-      // ── Route corridor mode: use OSRM for actual road geometry ──
-      const [gStart, gEnd] = await Promise.all([geocode(location), geocode(route_end)]);
-      const buffer_m = Math.max(50, Math.min(input.buffer_m || 300, 5000));
+      const gStart = await geocodePrecise(location);
+      const gEnd = await geocodePrecise(route_end);
+      const buffer_m = Math.max(10, Math.min(Number(input.buffer_m || 300), 5000));
+      let pathLatLng = null;
+      let distM = null;
+      let routeProvider = 'OSRM';
 
-      // Fetch road route from public OSRM (free, no key)
-      let path, distM;
       try {
         const osrmRes = await fetch(
-          `https://router.project-osrm.org/route/v1/driving/${gStart.longitude},${gStart.latitude};${gEnd.longitude},${gEnd.latitude}?overview=full&geometries=geojson`,
-          { signal: AbortSignal.timeout(12000) }
+          `https://router.project-osrm.org/route/v1/driving/${gStart.longitude},${gStart.latitude};${gEnd.longitude},${gEnd.latitude}?overview=full&geometries=geojson&alternatives=false&steps=false`,
+          { signal: AbortSignal.timeout(15000) }
         );
         if (osrmRes.ok) {
           const od = await osrmRes.json();
-          if (od.routes?.length) {
-            // OSRM returns [lng, lat] — keep as GeoJSON [lng, lat]
-            path = od.routes[0].geometry.coordinates;
-            distM = od.routes[0].distance;
+          if (od.code === 'Ok' && od.routes?.[0]?.geometry?.coordinates?.length >= 2) {
+            pathLatLng = toLatLngPath(od.routes[0].geometry.coordinates);
+            distM = Number(od.routes[0].distance);
           }
         }
-      } catch (_) {}
-
-      // Fallback: straight line if OSRM unavailable
-      if (!path || path.length < 2) {
-        path = [[gStart.longitude, gStart.latitude], [gEnd.longitude, gEnd.latitude]];
-        distM = haversineM(gStart.latitude, gStart.longitude, gEnd.latitude, gEnd.longitude);
-        logger.warn(`OSRM unavailable for corridor "${name}" — using straight-line fallback`);
+      } catch (e) {
+        logger.warn(`Precision geofence routing failed for "${name}": ${e.message}`);
       }
 
-      // Midpoint for map fly-to — path is [lng, lat] order
-      const mid = path[Math.floor(path.length / 2)];
-      const midLng = mid[0], midLat = mid[1];
-      const region = gStart.admin1 || gStart.country || location;
-      const locationLabel = `${gStart.name} → ${gEnd.name}`;
-      const approxRadius = Math.round(distM / 2) + buffer_m;
+      if (!pathLatLng || pathLatLng.length < 2 || !Number.isFinite(distM)) {
+        if (!allowStraightFallback) {
+          return {
+            created: false,
+            error: 'Road routing is unavailable. No corridor geofence was created because a straight-line substitute would be inaccurate.',
+            precision: 'unavailable',
+            start: { latitude: gStart.latitude, longitude: gStart.longitude, precision: gStart.precision },
+            end: { latitude: gEnd.latitude, longitude: gEnd.longitude, precision: gEnd.precision },
+          };
+        }
+        pathLatLng = [[gStart.latitude, gStart.longitude], [gEnd.latitude, gEnd.longitude]];
+        distM = haversineM(gStart.latitude, gStart.longitude, gEnd.latitude, gEnd.longitude);
+        routeProvider = 'straight-line-explicit-fallback';
+      }
 
-      // Store coordinates as GeoJSON [lng,lat] array under 'coordinates' key
-      const coordinates = { lat: midLat, lng: midLng, type: 'corridor', coordinates: path, buffer_m };
+      const mid = pathLatLng[Math.floor(pathLatLng.length / 2)];
+      const region = gStart.admin1 || gStart.country || location;
+      const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
+      const approxRadius = Math.round(distM / 2) + buffer_m;
+      const bufferPolygon = buildCorridorPolygon(pathLatLng, buffer_m);
+
+      // IMPORTANT: the operational engine uses [lat,lng] path order. OSRM
+      // returns [lng,lat], so normalization happens exactly once here.
+      const coordinates = {
+        lat: mid[0],
+        lng: mid[1],
+        type: 'corridor',
+        path: pathLatLng,
+        buffer_m,
+        buffer_polygon: bufferPolygon,
+        precision,
+        geometry_source: 'OpenStreetMap via OSRM',
+        route_provider: routeProvider,
+        route_distance_m: distM,
+        path_points: pathLatLng.length,
+        geocoding: {
+          start: { source: gStart.source || 'unknown', precision: gStart.precision || 'unknown', osm_id: gStart.osm_id || null },
+          end: { source: gEnd.source || 'unknown', precision: gEnd.precision || 'unknown', osm_id: gEnd.osm_id || null },
+        },
+        created_at: new Date().toISOString(),
+      };
 
       const r = await query(
         `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
@@ -609,51 +939,94 @@ async function toolCreateGeofence(input, userId, orgId) {
         [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
       );
 
+      // Verify the persisted geometry before reporting success. This catches
+      // coordinate-order corruption and route endpoints that drift too far
+      // from the requested locations.
+      const verify = await query(
+        `SELECT coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
+        [r.rows[0].id, orgId]
+      );
+      const persisted = verify.rows[0]?.coordinates;
+      const persistedPath = Array.isArray(persisted?.path) ? persisted.path : [];
+      const first = persistedPath[0], last = persistedPath[persistedPath.length - 1];
+      const startDriftM = first ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1])) : Infinity;
+      const endDriftM = last ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1])) : Infinity;
+      if (persistedPath.length < 2 || startDriftM > 1500 || endDriftM > 1500) {
+        await query(`DELETE FROM geofences WHERE id = $1 AND org_id = $2`, [r.rows[0].id, orgId]);
+        return {
+          created: false,
+          error: 'Geometry verification failed. No corridor geofence was retained.',
+          verification: { path_points: persistedPath.length, start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM) },
+        };
+      }
+
+      const effectivePrecision = precision === 'maximum' && (gStart.source === 'nominatim' || gStart.source === 'explicit') && (gEnd.source === 'nominatim' || gEnd.source === 'explicit')
+        ? 'maximum'
+        : (precision === 'standard' ? 'standard' : 'high');
+
       return {
         created: true,
         geofence_id: r.rows[0].id,
         name,
         fence_type: 'corridor',
-        lat: midLat,
-        lng: midLng,
+        lat: mid[0],
+        lng: mid[1],
         radius_m: approxRadius,
         region,
         location: locationLabel,
         is_corridor: true,
-        path_points: path.length,
-        road_distance_km: (distM / 1000).toFixed(1),
+        path_points: pathLatLng.length,
+        road_distance_km: (distM / 1000).toFixed(2),
         buffer_m,
-        message: `Corridor geofence "${name}" created from ${locationLabel} — ${(distM / 1000).toFixed(1)} km road, ${path.length} waypoints, ${buffer_m}m deviation limit.`,
-      };
-    } else {
-      // ── Point mode: single location circle ──
-      const g = await geocode(location);
-      const radius_m = input.radius_m || 3000;
-      const coordinates = { lat: g.latitude, lng: g.longitude };
-      const region = g.admin1 || g.country || location;
-
-      const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id`,
-        [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
-      );
-
-      const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
-      return {
-        created: true,
-        geofence_id: r.rows[0].id,
-        name,
-        fence_type,
-        lat: g.latitude,
-        lng: g.longitude,
-        radius_m,
-        region,
-        location: locationLabel,
-        is_corridor: false,
-        message: `Geofence "${name}" created at ${locationLabel}, radius ${radius_m}m.`,
+        precision: effectivePrecision,
+        requested_precision: precision,
+        route_provider: routeProvider,
+        geometry_source: coordinates.geometry_source,
+        geocode_precision: { start: gStart.precision, end: gEnd.precision },
+        geometry_verification: { start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM), persisted_path_points: persistedPath.length },
+        fallback_used: routeProvider !== 'OSRM',
+        message: routeProvider === 'OSRM'
+          ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} centreline vertices, ${buffer_m}m deviation threshold.`
+          : `LOW-PRECISION explicit fallback "${name}" created from a straight line. Review before operational use.`,
       };
     }
+
+    const g = await geocodePrecise(location);
+    const radius_m = Math.max(10, Math.min(Number(input.radius_m || 3000), 100000));
+    const coordinates = {
+      lat: g.latitude,
+      lng: g.longitude,
+      precision,
+      geometry_source: 'geocoded point',
+      geocoding: { source: g.source || 'unknown', precision: g.precision || 'unknown', osm_id: g.osm_id || null },
+      created_at: new Date().toISOString(),
+    };
+    const region = g.admin1 || g.country || location;
+
+    const r = await query(
+      `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
+    );
+
+    const locationLabel = g.name || location;
+    return {
+      created: true,
+      geofence_id: r.rows[0].id,
+      name,
+      fence_type,
+      lat: g.latitude,
+      lng: g.longitude,
+      radius_m,
+      region,
+      location: locationLabel,
+      is_corridor: false,
+      precision,
+      geometry_source: coordinates.geometry_source,
+      geocode_precision: g.precision,
+      message: `Geofence "${name}" created at ${locationLabel}, radius ${radius_m}m, precision ${precision}.`,
+    };
   } catch (e) {
     return { error: `Failed to create geofence: ${e.message}` };
   }
@@ -794,6 +1167,11 @@ async function runTool(name, input, context = {}) {
   const orgId = context.orgId || null;
   switch (name) {
     case 'query_vehicles':     return toolQueryVehicles(input || {}, orgId);
+    case 'query_shipments':   return toolQueryShipments(input || {}, orgId);
+    case 'query_maintenance': return toolQueryMaintenance(input || {}, orgId);
+    case 'query_geofences':   return toolQueryGeofences(input || {}, orgId);
+    case 'query_drivers':     return toolQueryDrivers(input || {}, orgId);
+    case 'query_devices':     return toolQueryDevices(input || {}, orgId);
     case 'query_convoys':      return toolQueryConvoys(input || {}, orgId);
     case 'query_alerts':       return toolQueryAlerts(input || {}, orgId);
     case 'get_weather':        return toolGetWeather(input || {});
@@ -865,18 +1243,8 @@ router.post('/decision', async (req, res) => {
     return res.status(400).json({ error: 'command required' });
   }
 
-  if (!aiClient.hasAnyProvider()) {
-    return res.json({
-      answer: 'Decision Intelligence is not configured. Add ANTHROPIC_API_KEY or GROQ_API_KEY.',
-      decision: 'HUMAN_REVIEW_REQUIRED',
-      risk_level: 'HIGH',
-      confidence: 0,
-      recommended_actions: [],
-      risks: [{ risk: 'No AI provider configured', severity: 'high' }],
-      meta: { degraded: true, agent_count: 0, agent_failures: 0, provider_capabilities: aiClient.providerCapabilities() },
-    });
-  }
-
+  // Do not short-circuit when model providers are unavailable. The decision fabric
+  // has a deterministic evidence-only fallback and must remain operational.
   try {
     await ensureColumns();
     await ensureRiskZones();
@@ -907,10 +1275,95 @@ router.post('/decision', async (req, res) => {
   }
 });
 
+function inferGeofenceTask(command) {
+  const raw = String(command || '').trim();
+  if (!/\b(draw|create|make|set up|define|establish|mark|build)\b[\s\S]{0,100}\b(geo[- ]?fence|corridor|geofence)\b/i.test(raw)) return null;
+
+  const quote = (v) => String(v || '').replace(/^["']|["']$/g, '').trim();
+  const nameMatch = raw.match(/\b(?:named|called|name(?:d)?\s+as)\s+["']?([^"']+?)["']?(?:\s*$|\s+(?:around|from|between|at|near)\b)/i);
+  const name = nameMatch ? quote(nameMatch[1]) : null;
+
+  const measureToM = (m) => {
+    if (!m) return undefined;
+    const n = Number(m[1]);
+    return Number.isFinite(n) ? n * (/km/i.test(m[2]) ? 1000 : 1) : undefined;
+  };
+  const buffer_m = measureToM(
+    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*(?:buffer|corridor|deviation(?:\s+limit)?)/i)
+    || raw.match(/(?:buffer|corridor|deviation(?:\s+limit)?)\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i)?.slice?.(0)
+  );
+  const radius_m = measureToM(
+    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*radius\b/i)
+    || raw.match(/radius\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i)?.slice?.(0)
+  );
+
+  const route = raw.match(/\b(?:from|between)\s+(.+?)\s+(?:to|and)\s+(.+?)(?:\s+(?:with|using)\s+(?:a\s+)?\d+(?:\.\d+)?\s*(?:km|m|meters|metres)\s*(?:buffer|corridor|deviation)|\s+named\b|[.;]|$)/i)
+    || raw.match(/\balong\s+(.+?)\s+to\s+(.+?)(?:\s+with\b|\s+named\b|[.;]|$)/i);
+
+  if (route) {
+    const start = quote(route[1]);
+    const end = quote(route[2]);
+    if (!start || !end) return null;
+    return {
+      task: 'create_geofence',
+      name: name || `Sonalit Corridor — ${start} → ${end}`,
+      location: start,
+      route_end: end,
+      buffer_m: Number.isFinite(buffer_m) ? Math.max(10, Math.min(buffer_m, 5000)) : 300,
+      precision: 'maximum',
+    };
+  }
+
+  const coordMatch = raw.match(/(?:around|at|near)\s+(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/i);
+  if (coordMatch) {
+    const location = `${coordMatch[1]},${coordMatch[2]}`;
+    return {
+      task: 'create_geofence',
+      name: name || `Sonalit Geofence — ${location}`,
+      radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
+      location,
+      precision: 'maximum',
+    };
+  }
+
+  const point = raw.match(/\b(?:around|at|near)\s+(.+?)(?=\s+(?:with|using)\b|\s+radius\b|\s+buffer\b|[.;]|$)/i);
+  if (!point) return null;
+  const location = quote(point[1]);
+  if (!location) return null;
+  return {
+    task: 'create_geofence',
+    name: name || `Sonalit Geofence — ${location}`,
+    location,
+    radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
+    precision: 'maximum',
+  };
+}
+
 // ── POST /ai/dispatch — agentic tool-use loop ──────────────────────────────
 router.post('/dispatch', async (req, res) => {
   const { command, history = [] } = req.body;
   if (!command || !command.trim()) return res.status(400).json({ error: 'command required' });
+
+  // High-confidence geofence commands bypass the model completely. This keeps
+  // a core operational drawing task available even during provider outages and
+  // prevents an LLM from inventing route geometry.
+  const geofenceTask = inferGeofenceTask(command);
+  if (geofenceTask) {
+    try {
+      const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id || null;
+      const userId = req.user?.id || null;
+      const result = await toolCreateGeofence(geofenceTask, userId, orgId);
+      return res.json({
+        response: result.message || (result.error ? result.error : 'Geofence task completed.'),
+        actions: result.created ? ['create_geofence'] : [],
+        created: result.created ? [{ type: 'geofence', ...result }] : [],
+        task: { type: 'geofence', precision: result.precision || 'maximum', completed: result.created === true },
+        source: result.created ? 'deterministic-geofence' : 'geofence-validation',
+      });
+    } catch (err) {
+      return res.status(200).json({ response: `Geofence task failed safely: ${err.message}`, actions: [], created: [], task: { type: 'geofence', completed: false }, source: 'geofence-error' });
+    }
+  }
 
   if (!aiClient.hasAnthropic() && !aiClient.hasGroqFallback()) {
     return res.json({
@@ -943,7 +1396,7 @@ router.post('/dispatch', async (req, res) => {
     // open-weight model than Claude, so a Groq-served response here is a
     // degraded mode, not a like-for-like swap — flagged via `source` below
     // so the frontend can show that distinction if it wants to.
-    for (let turn = 0; turn < 8; turn++) {
+    for (let turn = 0; turn < 6; turn++) {
       const response = await aiClient.createMessage({
         model: MODEL,
         max_tokens: 8000,

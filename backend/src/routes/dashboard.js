@@ -299,7 +299,7 @@ router.get('/map', asyncHandler(async (req, res) => {
           const mid = path[Math.floor(path.length / 2)];
           return {
             id: g.id, name: g.name, type: isLinear ? 'linear' : 'corridor',
-            path, buffer_m,
+            path, buffer_m, buffer_polygon: Array.isArray(coords.buffer_polygon) ? coords.buffer_polygon : null,
             lat: mid ? parseFloat(mid[0]) : null,
             lng: mid ? parseFloat(mid[1]) : null,
             radius_m: parseFloat(g.radius_m),

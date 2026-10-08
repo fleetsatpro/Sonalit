@@ -1,7 +1,7 @@
 // /dashboard/map — normalized geometry for rendering (real GPS + Guardian telemetry)
 export interface MapVehicle { id: string; registration: string; status: string; lat: number; lng: number; heading: number; speed_kmh: number }
 export interface MapDevice { id: string; name: string; model?: string; assignment_type?: string; lat: number; lng: number; speed_kmh: number; status: string; panic_active: boolean; last_seen: string | null }
-export interface MapGeofence { id: string; name: string; type: string; lat: number | null; lng: number | null; radius_m: number; path?: [number, number][] | null; buffer_m?: number | null }
+export interface MapGeofence { id: string; name: string; type: string; lat: number | null; lng: number | null; radius_m: number; path?: [number, number][] | null; buffer_m?: number | null; buffer_polygon?: [number, number][] | null }
 export interface MapData { vehicles: MapVehicle[]; devices: MapDevice[]; geofences: MapGeofence[] }
 
 // /geofences — full CRUD record

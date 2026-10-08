@@ -22,6 +22,11 @@ const AGENTS = [
 
 const TOOL_CATALOG = {
   query_vehicles:{description:'Live vehicles with registration, status, region, fuel, speed, coordinates, driver and last ping.',schema:{type:'object',properties:{status:{type:'string'},region:{type:'string'},low_fuel:{type:'boolean'},moving:{type:'boolean'}}}},
+  query_shipments:{description:'Tenant-scoped shipments with tracking, customer, route, status, priority, ETA, vehicle and driver.',schema:{type:'object',properties:{status:{type:'string'},priority:{type:'string'},search:{type:'string'}}}},
+  query_maintenance:{description:'Tenant-scoped maintenance records with due state, priority, workshop, vehicle and schedule.',schema:{type:'object',properties:{status:{type:'string'},priority:{type:'string'},vehicle:{type:'string'},overdue:{type:'boolean'}}}},
+  query_drivers:{description:'Tenant-scoped driver status, licence expiry, score and assigned vehicle.',schema:{type:'object',properties:{status:{type:'string'},search:{type:'string'}}}},
+  query_devices:{description:'Tenant-scoped Guardian device health, assignment, panic and last-seen information.',schema:{type:'object',properties:{status:{type:'string'},assignment_type:{type:'string'}}}},
+  query_geofences:{description:'Tenant-scoped geofence inventory and geometry verification metadata.',schema:{type:'object',properties:{type:{type:'string'},search:{type:'string'},active:{type:'boolean'}}}},
   query_convoys:{description:'Convoys with status, region, priority, origin, destination and timing.',schema:{type:'object',properties:{status:{type:'string'},region:{type:'string'},priority:{type:'string'}}}},
   query_alerts:{description:'Open or historical operational alerts with severity, type, vehicle and timestamps.',schema:{type:'object',properties:{severity:{type:'string'},type:{type:'string'},include_resolved:{type:'boolean'}}}},
   get_weather:{description:'Current conditions and short forecast at a place.',schema:{type:'object',properties:{location:{type:'string'}},required:['location']}},
@@ -68,6 +73,11 @@ function planEvidence(command,history){
   const locations=inferLocations(command);
 
   if(/vehicle|truck|fleet|driver|fuel|speed|offline|telemetry|location|maintenance|overdue|service|inspection|breakdown|mechanical/.test(lc)) add('query_vehicles',{});
+  if(/shipment|consignment|cargo|delivery|customer|tracking|eta breach|pod/.test(lc)) add('query_shipments',{});
+  if(/maintenance|service|workshop|scheduled|overdue|repair|mechanical/.test(lc)) add('query_maintenance',{});
+  if(/driver|licen[cs]e|scorecard|fatigue|behaviour|behavior/.test(lc)) add('query_drivers',{});
+  if(/device|guardian|heartbeat|panic|last seen|integrity/.test(lc)) add('query_devices',{});
+  if(/geofence|corridor|zone boundary|zone geometry|boundary|fence|geofencing/.test(lc)) add('query_geofences',{});
   if(/convoy|mission|eta|departure|arrival|shipment|movement|corridor/.test(lc)) add('query_convoys',{});
   if(/alert|incident|anomaly|security|warning|panic|emergency|breach/.test(lc)) add('query_alerts',{});
   if(/weather|rain|storm|wind|flood|visibility|heat|temperature/.test(lc)) add('get_weather',{});
@@ -224,13 +234,15 @@ function deterministicEvidenceLanes(evidence,health){
     return {id,name,status,confidence,provider:'deterministic-evidence',finding:'Evidence lane derived from live Sonalit tool results; this is not an independent model opinion.',dissent:'',tools:present,provenance:facts};
   };
   return [
-    lane('situation','SITUATION INTELLIGENCE',['query_vehicles','query_convoys','query_alerts']),
+    lane('situation','SITUATION INTELLIGENCE',['query_vehicles','query_convoys','query_alerts','query_shipments']),
     lane('security','SECURITY INTELLIGENCE',['query_alerts','query_risk_zones']),
     lane('route','ROUTE & MOBILITY',['query_convoys','get_road_conditions','get_weather']),
-    lane('fleet','FLEET & ASSET',['query_vehicles','query_alerts']),
+    lane('fleet','FLEET & ASSET',['query_vehicles','query_maintenance','query_devices']),
     lane('environment','ENVIRONMENTAL',['get_weather','get_road_conditions']),
-    lane('risk','RISK INTELLIGENCE',['query_risk_zones','query_alerts']),
-    lane('data-quality','DATA INTEGRITY',['query_vehicles','query_convoys','query_alerts','get_world_context']),
+    lane('risk','RISK INTELLIGENCE',['query_risk_zones','query_alerts','query_geofences']),
+    lane('delivery','DELIVERY & SLA',['query_shipments','query_convoys']),
+    lane('people','PEOPLE & DEVICE READINESS',['query_drivers','query_devices','query_maintenance']),
+    lane('data-quality','DATA INTEGRITY',['query_vehicles','query_convoys','query_alerts','query_shipments','query_geofences','get_world_context']),
   ].filter(x=>x.status!=='blocked');
 }
 
@@ -240,6 +252,11 @@ function deterministicNarrative(command,evidence,health,safety){
   const convoys=all.flatMap(v=>Array.isArray(v?.convoys)?v.convoys:[]);
   const alerts=all.flatMap(v=>Array.isArray(v?.alerts)?v.alerts:[]);
   const zones=all.flatMap(v=>Array.isArray(v?.risk_zones)?v.risk_zones:[]);
+  const shipments=all.flatMap(v=>Array.isArray(v?.shipments)?v.shipments:[]);
+  const maintenance=all.flatMap(v=>Array.isArray(v?.maintenance)?v.maintenance:[]);
+  const drivers=all.flatMap(v=>Array.isArray(v?.drivers)?v.drivers:[]);
+  const devices=all.flatMap(v=>Array.isArray(v?.devices)?v.devices:[]);
+  const geofences=all.flatMap(v=>Array.isArray(v?.geofences)?v.geofences:[]);
   const errors=all.filter(v=>v&&typeof v==='object'&&v.error).map(v=>String(v.error));
   const criticalAlerts=alerts.filter(a=>String(a.severity).toLowerCase()==='critical').length;
   const highAlerts=alerts.filter(a=>String(a.severity).toLowerCase()==='high').length;
@@ -255,6 +272,11 @@ function deterministicNarrative(command,evidence,health,safety){
   if(convoys.length) lines.push('Convoys: '+convoys.length+' records; '+activeConvoys+' active.');
   if(alerts.length) lines.push('Alerts: '+alerts.length+' records; '+criticalAlerts+' critical; '+highAlerts+' high.');
   if(zones.length) lines.push('Risk zones: '+zones.length+' records; '+criticalZones+' critical.');
+  if(shipments.length) lines.push('Shipments: '+shipments.length+' records; '+shipments.filter(x=>String(x.status).toLowerCase()==='in_transit').length+' in transit.');
+  if(maintenance.length) lines.push('Maintenance: '+maintenance.length+' records; '+maintenance.filter(x=>String(x.status).toLowerCase()!=='completed').length+' not completed.');
+  if(drivers.length) lines.push('Drivers: '+drivers.length+' records; '+drivers.filter(x=>String(x.status).toLowerCase()==='active').length+' active.');
+  if(devices.length) lines.push('Guardian devices: '+devices.length+' records; '+devices.filter(x=>String(x.status).toLowerCase()==='active').length+' active.');
+  if(geofences.length) lines.push('Geofences: '+geofences.length+' records; '+geofences.filter(x=>x.active).length+' active; '+geofences.filter(x=>x.type==='corridor').length+' corridors.');
   if(errors.length) lines.push('Evidence service errors: '+errors.slice(0,3).join(' | '));
   else if(!vehicles.length&&!convoys.length&&!alerts.length&&!zones.length&&all.length) lines.push('The requested live tools returned no matching fleet/convoy/alert/risk records.');
   if(!all.length) lines.push('No live evidence was available for this request.');
