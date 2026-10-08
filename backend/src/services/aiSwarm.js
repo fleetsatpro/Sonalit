@@ -91,8 +91,12 @@ function planEvidence(command,history){
 async function collectToolEvidence(probes,executeTool,context){
   const evidence={},failures=[];
   await Promise.all(probes.map(async p=>{
-    try{evidence[p.tool+JSON.stringify(p.input)]=await executeTool(p.tool,p.input,context);}
-    catch(e){failures.push({tool:p.tool,input:p.input,error:e?.message||String(e)});}
+    try{
+      const key=p.tool+JSON.stringify(p.input);
+      const value=await executeTool(p.tool,p.input,context);
+      evidence[key]=value;
+      if(value&&typeof value==='object'&&value.error) failures.push({tool:p.tool,input:p.input,error:String(value.error)});
+    }catch(e){failures.push({tool:p.tool,input:p.input,error:e?.message||String(e)});}
   }));
   return {evidence,failures};
 }
@@ -236,6 +240,7 @@ function deterministicNarrative(command,evidence,health,safety){
   const convoys=all.flatMap(v=>Array.isArray(v?.convoys)?v.convoys:[]);
   const alerts=all.flatMap(v=>Array.isArray(v?.alerts)?v.alerts:[]);
   const zones=all.flatMap(v=>Array.isArray(v?.risk_zones)?v.risk_zones:[]);
+  const errors=all.filter(v=>v&&typeof v==='object'&&v.error).map(v=>String(v.error));
   const criticalAlerts=alerts.filter(a=>String(a.severity).toLowerCase()==='critical').length;
   const highAlerts=alerts.filter(a=>String(a.severity).toLowerCase()==='high').length;
   const criticalZones=zones.filter(z=>String(z.risk_level).toLowerCase()==='critical').length;
@@ -250,7 +255,8 @@ function deterministicNarrative(command,evidence,health,safety){
   if(convoys.length) lines.push('Convoys: '+convoys.length+' records; '+activeConvoys+' active.');
   if(alerts.length) lines.push('Alerts: '+alerts.length+' records; '+criticalAlerts+' critical; '+highAlerts+' high.');
   if(zones.length) lines.push('Risk zones: '+zones.length+' records; '+criticalZones+' critical.');
-  if(!vehicles.length&&!convoys.length&&!alerts.length&&!zones.length&&all.length) lines.push('The requested live tools returned no matching fleet/convoy/alert/risk records.');
+  if(errors.length) lines.push('Evidence service errors: '+errors.slice(0,3).join(' | '));
+  else if(!vehicles.length&&!convoys.length&&!alerts.length&&!zones.length&&all.length) lines.push('The requested live tools returned no matching fleet/convoy/alert/risk records.');
   if(!all.length) lines.push('No live evidence was available for this request.');
   const decision=safety.hard_stop?'HUMAN_REVIEW_REQUIRED':(health.failed||!all.length?'APPROVAL_REQUIRED':'MONITOR');
   lines.push('Decision: '+decision+'. Risk posture: '+safety.level+'.');
