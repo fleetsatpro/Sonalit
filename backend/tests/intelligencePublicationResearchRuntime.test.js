@@ -162,3 +162,10 @@ test('editorial board provider outage is classified as provider_unavailable rath
   expect(src).toContain("result?.qaConsensus?.blocking_issues");
   expect(src).toContain("aiBoardStatus=boardProviderUnavailable?'provider_unavailable'");
 });
+
+
+test('publication research records degraded evidence eligibility explicitly',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('degradedEvidenceEligible=values.filter');
+  expect(s).toContain('degraded_evidence_eligible:degradedEvidenceEligible');
+});
