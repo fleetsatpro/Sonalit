@@ -412,7 +412,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     const status=String(agent.status||'').toLowerCase();
     const method=String(agent.research_method||'').toLowerCase();
     return status==='fallback' &&
-      method==='degraded_evidence' &&
+      (method==='degraded_evidence' || (method==='live_web_packet' && entry.error==='ai_provider_unavailable')) &&
       Number(e.observation_count||0)>=1 &&
       Number(e.source_count||0)>=1 &&
       (entry.error==='ai_provider_unavailable' || priorEvidenceConstrained || researchProviderUnavailable);
