@@ -463,6 +463,11 @@ function getOpenAIKeyPool() {
   return pool;
 }
 function hasOpenAI() { return getOpenAIKeyPool().length>0; }
+function hasReadyOpenAIKey(){
+  const keys=getOpenAIKeyPool();
+  if(!keys.length)return false;
+  return keys.some((_,index)=>Date.now()>=Number(openAIKeyStates[index]?.downUntil||0));
+}
 function hasMistral() { return keyOk(process.env.MISTRAL_API_KEY); }
 function hasGoogleGemini() { return keyOk(process.env[GEMINI_PROVIDER.key]); }
 function hasOpenWeightProvider(def) { return keyOk(process.env[def.key]); }
@@ -1084,7 +1089,9 @@ function buildProviders(params={}) {
 
 function hasReadyProvider(params={}){
   if(providerCircuitPersistence.enabled && !providerCircuitPersistence.hydrated)return false;
-  return buildProviders(params).some(provider=>!providerCooling(provider));
+  return buildProviders(params).some(provider=>
+    provider.name==='openai-direct' ? hasReadyOpenAIKey() : !providerCooling(provider)
+  );
 }
 
 async function createMessage(params={}) {
