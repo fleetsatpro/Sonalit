@@ -29,6 +29,23 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const GROQ_MODEL_2 = process.env.GROQ_MODEL_2 || 'openai/gpt-oss-20b';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-6.1-sol';
 const MISTRAL_MODEL = process.env.MISTRAL_MODEL || 'mistral-large-latest';
+const GOOGLE_GEMINI_MODEL = process.env.GOOGLE_GEMINI_MODEL || 'gemini-3.8-flash';
+const GOOGLE_GEMINI_REASONING_EFFORT = process.env.GOOGLE_GEMINI_REASONING_EFFORT || 'high';
+
+const GEMINI_PROVIDER = {
+  name:'google-gemini-3.8-flash',
+  key:'GOOGLE_AI_API_KEY',
+  base:'https://generativelanguage.googleapis.com/v1beta/openai/',
+  modelKey:'GOOGLE_GEMINI_MODEL',
+  model:GOOGLE_GEMINI_MODEL,
+  qualityTier:'frontier-flash',
+  free:true,
+  freeRequiresOpenWeightOptIn:false,
+  multimodal:true,
+  reasoning:true,
+  structuredOutputs:true,
+  sensitiveDataBlocked:true,
+};
 
 /*
  * Named open-weight lanes. Model IDs are pinned rather than "latest" aliases
@@ -317,6 +334,7 @@ const states = Object.fromEntries([
   ['openai-direct',{downUntil:0}],
   ['mistral-rescue',{downUntil:0}],
   ['anthropic-last-resort',{downUntil:0}],
+  [GEMINI_PROVIDER.name,{downUntil:0}],
 ]);
 
 const clients = {};
@@ -358,7 +376,7 @@ async function hydrateFabricState(){
     providerCircuitPersistence.hydrated=true;
     return;
   }
-  const groups=[...new Set(OPEN_WEIGHT_PROVIDERS.map(p=>providerGroup(p)).concat(['groq','openai','mistral','anthropic','self-hosted']))];
+  const groups=[...new Set(OPEN_WEIGHT_PROVIDERS.map(p=>providerGroup(p)).concat([providerGroup(GEMINI_PROVIDER),'groq','openai','mistral','anthropic','self-hosted']))];
   try{
     const values=await Promise.race([
       client.mget(groups.map(providerCircuitKey)),
@@ -434,6 +452,7 @@ function hasAnthropic() { return keyOk(process.env.ANTHROPIC_API_KEY); }
 function hasGroqFallback() { return keyOk(process.env.GROQ_API_KEY); }
 function hasOpenAI() { return keyOk(process.env.OPENAI_API_KEY); }
 function hasMistral() { return keyOk(process.env.MISTRAL_API_KEY); }
+function hasGoogleGemini() { return keyOk(process.env[GEMINI_PROVIDER.key]); }
 function hasOpenWeightProvider(def) { return keyOk(process.env[def.key]); }
 
 function freeLanesEnabled() {
@@ -442,7 +461,7 @@ function freeLanesEnabled() {
 
 function freeProviderAllowed(def, params={}) {
   if (!def.free) return true;
-  if (!freeLanesEnabled()) return false;
+  if (def.freeRequiresOpenWeightOptIn !== false && !freeLanesEnabled()) return false;
   if (params.allowFreeProviders === false) return false;
   const classification = String(
     params.dataClassification ||
@@ -465,6 +484,7 @@ function hasOpenSourceSecondary() { return hasOpenSourceSlot(OPEN_SOURCE_SLOTS[1
 function hasAnyProvider(params={}) {
   const openWeight = OPEN_WEIGHT_PROVIDERS.some(p => hasOpenWeightProvider(p) && freeProviderAllowed(p, params));
   return openWeight ||
+    (hasGoogleGemini() && freeProviderAllowed(GEMINI_PROVIDER, params)) ||
     OPEN_SOURCE_SLOTS.some(hasOpenSourceSlot) ||
     hasGroqFallback() || hasOpenAI() || hasMistral() || hasAnthropic();
 }
@@ -486,6 +506,16 @@ function providerCapabilities() {
       multimodal:Boolean(p.multimodal),
       quality_tier:p.qualityTier,
     })),
+    google_gemini: {
+      label:GEMINI_PROVIDER.name,
+      model:GOOGLE_GEMINI_MODEL,
+      configured:hasGoogleGemini(),
+      active_for_public:hasGoogleGemini() && freeProviderAllowed(GEMINI_PROVIDER,{dataClassification:'public'}),
+      free:true,
+      multimodal:true,
+      reasoning:true,
+      quality_tier:GEMINI_PROVIDER.qualityTier,
+    },
     open_source: OPEN_SOURCE_SLOTS.map(s => ({
       slot:s.slot,label:s.label,model:process.env[s.modelKey]||s.model,configured:hasOpenSourceSlot(s)
     })),
@@ -494,6 +524,7 @@ function providerCapabilities() {
     mistral_rescue: hasMistral(),
     anthropic_last_resort: hasAnthropic(),
     order: [
+      GEMINI_PROVIDER.name,
       ...OPEN_WEIGHT_PROVIDERS.map(p=>p.name),
       ...OPEN_SOURCE_SLOTS.map(s=>s.label),
       'gpt-oss-120b-groq','gpt-oss-20b-groq','openai-direct','mistral-rescue','anthropic-last-resort'
@@ -516,6 +547,14 @@ function getDirectOpenAIClient() {
 function getMistralClient() {
   if (!clients.mistral) clients.mistral = new OpenAI({ apiKey: process.env.MISTRAL_API_KEY, baseURL: 'https://api.mistral.ai/v1', ...AI_SDK_OPTIONS });
   return clients.mistral;
+}
+function getGoogleGeminiClient() {
+  if (!clients[GEMINI_PROVIDER.name]) clients[GEMINI_PROVIDER.name] = new OpenAI({
+    apiKey: process.env[GEMINI_PROVIDER.key],
+    baseURL: GEMINI_PROVIDER.base,
+    ...AI_SDK_OPTIONS,
+  });
+  return clients[GEMINI_PROVIDER.name];
 }
 function getOpenWeightClient(def) {
   const key=def.name;
@@ -660,6 +699,7 @@ function providerGroup(provider){
   if(provider.providerGroup)return provider.providerGroup;
   const name=String(provider.name||'');
   const base=String(provider.base||'');
+  if(base.includes('generativelanguage.googleapis.com')||name===GEMINI_PROVIDER.name)return 'google-gemini';
   if(base.includes('openrouter.ai')){
     // Free OpenRouter models share an account but must not share a circuit.
     // A 429 on one model lane should quarantine only that lane; siblings remain
@@ -848,6 +888,17 @@ async function callMistral(params) {
   });
   return openAIResponseToAnthropicShape(completion);
 }
+async function callGoogleGemini(params) {
+  const completion = await getGoogleGeminiClient().chat.completions.create({
+    model:GOOGLE_GEMINI_MODEL,
+    messages:[...(params.system?[{role:'system',content:systemToOpenAI(params.system)}]:[]),...messagesToOpenAI(params.messages)],
+    ...(params.tools?.length?{tools:toolsToOpenAI(params.tools),tool_choice:'auto'}:{}),
+    ...(params.responseFormat?{response_format:params.responseFormat}:{}),
+    reasoning_effort:params.reasoningEffort||GOOGLE_GEMINI_REASONING_EFFORT,
+    max_completion_tokens:Math.min(Number(params.max_tokens)||4096,16384),
+  });
+  return openAIResponseToAnthropicShape(completion);
+}
 async function callGroq(params,model) {
   const completion=await getGroqClient().chat.completions.create({
     model,
@@ -927,6 +978,16 @@ async function createResearchMessage(params) {
 
 function buildProviders(params={}) {
   const providers = [];
+  if(hasGoogleGemini() && freeProviderAllowed(GEMINI_PROVIDER,params)){
+    providers.push({
+      name:GEMINI_PROVIDER.name,
+      fn:()=>callGoogleGemini(params),
+      kind:'google-gemini',
+      qualityTier:GEMINI_PROVIDER.qualityTier,
+      free:true,
+      providerGroup:providerGroup(GEMINI_PROVIDER),
+    });
+  }
   const addOpenWeight = (def) => {
     if (!hasOpenWeightProvider(def) || !freeProviderAllowed(def,params)) return;
     providers.push({
@@ -1032,6 +1093,7 @@ module.exports={
   hasGroqFallback,
   hasOpenAI,
   hasMistral,
+  hasGoogleGemini,
   hasOpenSourcePrimary,
   hasOpenSourceSecondary,
   hasAnyProvider,
