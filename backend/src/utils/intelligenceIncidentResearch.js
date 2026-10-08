@@ -402,6 +402,7 @@ async function researchBatch(events,{country,region}={}){
       max_tokens:8000,
       max_web_searches:8,
       ...providerPolicy,
+      preferFreeProviders:true,
       providerHints:['google-gemini-3.8-flash','openrouter-free-router'],
       responseFormat:RESEARCH_RESPONSE_FORMAT,
       system:'You are a multi-incident web-grounded research agent. Produce ONLY the requested JSON object with a top-level "results" array containing exactly one object for each incident_id supplied.',
