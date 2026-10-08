@@ -322,6 +322,9 @@ function fallbackResearch(event,packet){
     'The available evidence supports a bounded assessment of '+headline+'. Broader deterioration is not established from the present record; the judgement should change only if subsequent evidence confirms persistence, wider geographic reach, recurrence or material operational consequence.'
   );
   const eventWhy=uniqueStrings(Array.isArray(event?.why_it_matters)?event.why_it_matters:[],4);
+  const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];
+  const eventEvidenceSources=new Set(eventEvidence.map(x=>String(x?.source_id||'')).filter(Boolean));
+  const eventEvidenceEligible=eventEvidence.length>=1 && eventEvidenceSources.size>=1;
   const why=eventWhy.length
     ? eventWhy
     : ['Operational significance is tied to '+headline+' and to whether the reported development produces sustained access, personnel, asset or continuity consequences.'];
@@ -341,9 +344,6 @@ function fallbackResearch(event,packet){
     ),
     2600
   );
-  const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];
-  const eventEvidenceSources=new Set(eventEvidence.map(x=>String(x?.source_id||'')).filter(Boolean));
-  const eventEvidenceEligible=eventEvidence.length>=1 && eventEvidenceSources.size>=1;
   const status=(sourceDomains.size>=2 && sources.length>=2 && narrative.length>=260)?'researched_limited':'fallback';
   const degradedEvidenceEligible=status==='fallback' && eventEvidenceEligible;
   return {
