@@ -1085,12 +1085,21 @@ function inferGeofenceTask(command) {
   const nameMatch = raw.match(/\b(?:named|called|name(?:d)?\s+as)\s+["']?([^"']+?)["']?(?:\s*$|\s+(?:around|from|between|at|near)\b)/i);
   const name = nameMatch ? quote(nameMatch[1]) : null;
 
-  const bufferMatch = raw.match(/(?:buffer|corridor|deviation(?:\s+limit)?)\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i);
-  const buffer_m = bufferMatch ? Number(bufferMatch[1]) * (/km/i.test(bufferMatch[2]) ? 1000 : 1) : undefined;
-  const radiusMatch = raw.match(/(?:radius|within)\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i);
-  const radius_m = radiusMatch ? Number(radiusMatch[1]) * (/km/i.test(radiusMatch[2]) ? 1000 : 1) : undefined;
+  const measureToM = (m) => {
+    if (!m) return undefined;
+    const n = Number(m[1]);
+    return Number.isFinite(n) ? n * (/km/i.test(m[2]) ? 1000 : 1) : undefined;
+  };
+  const buffer_m = measureToM(
+    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*(?:buffer|corridor|deviation(?:\s+limit)?)/i)
+    || raw.match(/(?:buffer|corridor|deviation(?:\s+limit)?)\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i)?.slice?.(0)
+  );
+  const radius_m = measureToM(
+    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*radius\b/i)
+    || raw.match(/radius\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i)?.slice?.(0)
+  );
 
-  const route = raw.match(/\b(?:from|between)\s+(.+?)\s+(?:to|and)\s+(.+?)(?:\s+(?:with|using|and)\s+(?:a\s+)?(?:\d+[.]?\d*\s*(?:km|m|meters|metres)\s*)?(?:buffer|corridor|deviation)|\s+named\b|[.;]|$)/i)
+  const route = raw.match(/\b(?:from|between)\s+(.+?)\s+(?:to|and)\s+(.+?)(?:\s+(?:with|using)\s+(?:a\s+)?\d+(?:\.\d+)?\s*(?:km|m|meters|metres)\s*(?:buffer|corridor|deviation)|\s+named\b|[.;]|$)/i)
     || raw.match(/\balong\s+(.+?)\s+to\s+(.+?)(?:\s+with\b|\s+named\b|[.;]|$)/i);
 
   if (route) {
@@ -1107,7 +1116,19 @@ function inferGeofenceTask(command) {
     };
   }
 
-  const point = raw.match(/\b(?:around|at|near)\s+(.+?)(?:\s+(?:with|using)\s+(?:a\s+)?.*?(?:radius|buffer)\b|[.;]|$)/i);
+  const coordMatch = raw.match(/(?:around|at|near)\s+(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/i);
+  if (coordMatch) {
+    const location = `${coordMatch[1]},${coordMatch[2]}`;
+    return {
+      task: 'create_geofence',
+      name: name || `Sonalit Geofence — ${location}`,
+      radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
+      location,
+      precision: 'maximum',
+    };
+  }
+
+  const point = raw.match(/\b(?:around|at|near)\s+(.+?)(?=\s+(?:with|using)\b|\s+radius\b|\s+buffer\b|[.;]|$)/i);
   if (!point) return null;
   const location = quote(point[1]);
   if (!location) return null;
@@ -1115,7 +1136,7 @@ function inferGeofenceTask(command) {
     task: 'create_geofence',
     name: name || `Sonalit Geofence — ${location}`,
     location,
-    ...(Number.isFinite(radius_m) ? { radius_m: Math.max(10, Math.min(radius_m, 100000)) } : { radius_m: 3000 }),
+    radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
     precision: 'maximum',
   };
 }
