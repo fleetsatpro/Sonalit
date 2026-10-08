@@ -430,8 +430,9 @@ async function publicationForCountryUnsafe(orgId,country,type='daily'){
     try{
       const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events:reportEvents,baseBody:deterministic,evidenceContract:publicationEvidenceContract,precomputedResearch:incidentResearch});
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
-      aiBoardStatus=result.publishable?'passed':'held';
-      aiBoardHoldReason=result.publishable?null:JSON.stringify({qa:result.qa?.publishable===true,blocking:(result.qa?.blocking_issues||[]).length});
+      const boardProviderUnavailable=Array.isArray(result?.qaConsensus?.blocking_issues) && result.qaConsensus.blocking_issues.includes('ai_provider_unavailable');
+      aiBoardStatus=boardProviderUnavailable?'provider_unavailable':(result.publishable?'passed':'held');
+      aiBoardHoldReason=result.publishable?null:JSON.stringify({qa:result.qa?.publishable===true,blocking:(result.qa?.blocking_issues||[]).length,provider_unavailable:boardProviderUnavailable});
       const final=result.final;
       if(final){
         title=final.title||title;
