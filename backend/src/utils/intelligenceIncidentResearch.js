@@ -311,6 +311,9 @@ function fallbackResearch(event,packet){
   const sourceContext=sourceNames.length
     ? 'The retrieved source set includes '+sourceNames.join(', ')+'. It is retained as corroborative context; unresolved disagreement, missing detail and source limitations are not converted into certainty.'
     : '';
+  const classification=clean(event?.intelligence_type||'SECURITY',80).toUpperCase();
+  const severity=clean(event?.severity||'moderate',40).toUpperCase();
+  const region=clean(event?.region||'location not specified',160);
   const factContext=facts.length
     ? 'The structured evidence record identifies '+facts.length+' supported fact(s), including: '+facts.slice(0,3).join(' ')
     : '';
@@ -326,6 +329,7 @@ function fallbackResearch(event,packet){
   const narrative=cleanPublicationText(
     dedupeSentences(
       [packetContext,eventSummary||headline+'. The recorded incident remains bounded by the available evidence.',
+       'Incident classification: '+classification+'. Severity recorded as '+severity+' in '+region+'. The event record contains '+eventEvidence.length+' attributable observation(s) across '+eventEvidenceSources.size+' source record(s).',
        sourceContext,factContext,
        'Operational assessment: '+derivedAssessment,
        'Decision relevance: '+why[0],
