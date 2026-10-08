@@ -73,7 +73,7 @@ async function ensureRiskZones() {
 // ── System prompt (static — kept frozen so it caches across requests) ──────
 const SYSTEM_PROMPT = `You are the AI dispatch assistant for FleetOps Pro, an enterprise logistics command platform running security convoys across East and Central Africa (Kenya, DRC, Tanzania, Uganda, Mali).
 
-You have tools to query live fleet data, weather, road conditions, public holidays, and known risk zones — and you can create geofences and mark risk zones directly on the map. Always use the tools — never guess fleet state or invent data.
+You are the Sonalit operational agent, not a generic chatbot. Investigate, compare, summarize, plan, reconcile evidence, create operational artifacts, and explain provenance. For multi-step requests use evidence → analysis → action → verification. Never invent fleet, route, location, timing, security or spatial facts. Geofence accuracy outranks speed: prefer explicit coordinates, OSM/Nominatim resolution and full OSRM road geometry; never silently turn a failed route into a straight line.
 
 Guidelines:
 - Use query_vehicles / query_convoys / query_alerts for anything about fleet state. Pass filters when the user is specific (a region, status, low fuel, etc.).
@@ -227,6 +227,8 @@ const TOOLS = [
         radius_m: { type: 'number', description: 'Radius in metres for a point geofence (default 3000). Ignored for corridors.' },
         buffer_m: { type: 'number', description: 'Corridor half-width in metres — how far a vehicle can deviate before an alert fires (default 300).' },
         fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'corridor', 'general'] },
+        precision: { type: 'string', enum: ['standard', 'high', 'maximum'], description: 'Precision level; maximum is the default for operational geofences.' },
+        allow_straight_fallback: { type: 'boolean', description: 'Explicitly allow a straight-line fallback when road routing is unavailable. Defaults to false.' },
       },
       required: ['name', 'location'],
     },
@@ -341,6 +343,100 @@ async function geocode(locationName) {
   const data = await res.json();
   if (!data.results?.length) throw new Error(`Location "${locationName}" not found`);
   return data.results[0];
+}
+
+function parseCoordinatePair(value) {
+  const text = String(value || '').trim();
+  const m = text.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!m) return null;
+  const latitude = Number(m[1]), longitude = Number(m[2]);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  return { latitude, longitude, source: 'explicit' };
+}
+
+async function geocodePrecise(locationName) {
+  const direct = parseCoordinatePair(locationName);
+  if (direct) return { ...direct, name: 'Explicit coordinates', admin1: null, country: null, precision: 'coordinate' };
+
+  const queryText = String(locationName || '').trim();
+  if (!queryText) throw new Error('Location is required');
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=${encodeURIComponent(queryText)}`,
+      { headers: { 'User-Agent': 'Sonalit-CommandCenter/1.0 (ops@sonalit.io)', 'Accept-Language': 'en' }, signal: AbortSignal.timeout(7000) }
+    );
+    if (res.ok) {
+      const candidates = await res.json();
+      if (Array.isArray(candidates) && candidates.length) {
+        const ranked = candidates.map(c => {
+          const type = String(c.type || '').toLowerCase();
+          const importance = Number(c.importance || 0);
+          const exact = String(c.display_name || '').toLowerCase().includes(queryText.toLowerCase());
+          const featureBoost = /road|street|highway|motorway|trunk|primary|secondary|city|town|village|suburb|neighbourhood|port|airport/.test(type) ? 0.15 : 0;
+          const tokenBoost = queryText.split(/\s+/).filter(Boolean).reduce((n,t) => String(c.display_name || '').toLowerCase().includes(t.toLowerCase()) ? n + 0.04 : n, 0);
+          return { c, score: importance + featureBoost + tokenBoost + (exact ? 0.08 : 0) };
+        }).sort((a,b)=>b.score-a.score);
+        const best = ranked[0], second = ranked[1];
+        if (second && best.score < 0.55 && best.score - second.score < 0.10) {
+          throw new Error(`Location "${queryText}" is ambiguous; specify the country, city or exact coordinates.`);
+        }
+        const c = best.c;
+        return {
+          latitude: Number(c.lat),
+          longitude: Number(c.lon),
+          name: c.display_name || queryText,
+          admin1: c.address?.state || c.address?.county || null,
+          country: c.address?.country || null,
+          precision: /road|street|motorway|trunk|primary|secondary/.test(String(c.type || '').toLowerCase()) ? 'street' : 'place',
+          osm_type: c.osm_type || null,
+          osm_id: c.osm_id || null,
+          source: 'nominatim',
+          importance: Number(c.importance || 0),
+        };
+      }
+    }
+  } catch (e) {
+    if (/ambiguous/i.test(String(e?.message || ''))) throw e;
+  }
+
+  const g = await geocode(queryText);
+  return { ...g, precision: 'place-fallback', source: 'open-meteo' };
+}
+
+function toLatLngPath(osrmCoordinates) {
+  return (Array.isArray(osrmCoordinates) ? osrmCoordinates : [])
+    .filter(p => Array.isArray(p) && p.length >= 2 && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])))
+    .map(([lng, lat]) => [Number(lat), Number(lng)]);
+}
+
+function buildCorridorPolygon(path, bufferM) {
+  if (!Array.isArray(path) || path.length < 2 || !(bufferM > 0)) return null;
+  const lat0 = path.reduce((sum,p)=>sum+Number(p[0]),0)/path.length;
+  const R = 6371008.8;
+  const cos0 = Math.max(0.1, Math.cos(lat0*Math.PI/180));
+  const toXY = ([lat,lng]) => [R*cos0*Number(lng)*Math.PI/180, R*Number(lat)*Math.PI/180];
+  const toLL = ([x,y]) => [y/R*180/Math.PI, x/(R*cos0)*180/Math.PI];
+  const xy = path.map(toXY);
+  const left=[], right=[];
+  const unit=(a,b)=>{
+    const dx=b[0]-a[0], dy=b[1]-a[1], len=Math.hypot(dx,dy);
+    return len>0?[dx/len,dy/len]:[0,0];
+  };
+  for(let i=0;i<xy.length;i++){
+    const prev=i>0?unit(xy[i-1],xy[i]):unit(xy[i],xy[i+1]);
+    const next=i<xy.length-1?unit(xy[i],xy[i+1]):prev;
+    let nx=-(prev[1]+next[1]), ny=prev[0]+next[0];
+    const nlen=Math.hypot(nx,ny);
+    if(nlen<1e-9){nx=-next[1];ny=next[0];}else{nx/=nlen;ny/=nlen;}
+    const miter=bufferM/Math.max(0.35,Math.abs(nx*next[0]+ny*next[1]));
+    const d=Math.min(bufferM*2.5,Math.max(bufferM,miter));
+    left.push([xy[i][0]+nx*d,xy[i][1]+ny*d]);
+    right.push([xy[i][0]-nx*d,xy[i][1]-ny*d]);
+  }
+  const ring=[...left,...right.reverse()];
+  ring.push(ring[0]);
+  return ring.map(toLL);
 }
 
 // Haversine distance in metres between two lat/lng points
