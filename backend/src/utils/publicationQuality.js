@@ -349,7 +349,7 @@ function assessPublicationQuality(body) {
   const researched = Number(deep.incidents_researched || 0);
   const limited = Number(deep.incidents_researched_limited || 0);
   const fallbacks = Number(deep.incidents_fallback || 0);
-  const researchComplete = requested === 0 || (researched + limited >= requested && fallbacks === 0);
+  const researchComplete = requested === 0 || (researched >= requested && fallbacks === 0);
 
   if (requested > 0 && !researchComplete) {
     blockers.push(`Deep research incomplete: ${researched}/${requested} priority incidents fully researched; ${limited} limited and ${fallbacks} fallback.`);
