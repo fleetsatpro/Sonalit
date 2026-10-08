@@ -181,7 +181,7 @@ test('tradecraft gate accepts attributable single-source incident inside globall
       source_count:1,
       what_happened:'A security disruption was reported along the affected commercial corridor. The current incident record contains one attributable observation and does not establish the full duration or geographic extent of the disruption.',
       context:'The affected corridor is relevant to commercial movement, so the principal operational question is whether access remains constrained or returns to normal after the reported incident.',
-      assessment:'The evidence supports a localized security concern but not a wider deterioration. Greater concern would require additional reporting that confirms persistence, recurrence, broader reach or material movement disruption.',
+      assessment:'The decision question is continuity rather than geographic escalation. Maintain observation of route availability, authority response and any downstream effect on commercial movement; revise the judgement only when those indicators change materially.',
       key_facts:['The disruption was reported along the affected corridor.','The incident record contains one attributable observation.'],
       why_it_matters:['A persistent disruption could delay movement or require routing and security adjustments.'],
       caveats:['Independent corroboration and duration remain unresolved.'],
