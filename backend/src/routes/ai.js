@@ -655,48 +655,78 @@ async function toolQueryRiskZones(input, orgId) {
 
 async function toolCreateGeofence(input, userId, orgId) {
   if (!orgId) return { error: 'Organisation context is required' };
-  const { name, location, route_end, fence_type = 'general' } = input;
+  const { name, location, route_end, fence_type = 'general' } = input || {};
   if (!name || !location) return { error: 'name and location are required' };
+
+  const precision = input.precision || 'maximum';
+  const allowStraightFallback = input.allow_straight_fallback === true;
 
   try {
     if (route_end) {
-      // ── Route corridor mode: use OSRM for actual road geometry ──
-      const [gStart, gEnd] = await Promise.all([geocode(location), geocode(route_end)]);
-      const buffer_m = Math.max(50, Math.min(input.buffer_m || 300, 5000));
+      const gStart = await geocodePrecise(location);
+      const gEnd = await geocodePrecise(route_end);
+      const buffer_m = Math.max(10, Math.min(Number(input.buffer_m || 300), 5000));
+      let pathLatLng = null;
+      let distM = null;
+      let routeProvider = 'OSRM';
 
-      // Fetch road route from public OSRM (free, no key)
-      let path, distM;
       try {
         const osrmRes = await fetch(
-          `https://router.project-osrm.org/route/v1/driving/${gStart.longitude},${gStart.latitude};${gEnd.longitude},${gEnd.latitude}?overview=full&geometries=geojson`,
-          { signal: AbortSignal.timeout(12000) }
+          `https://router.project-osrm.org/route/v1/driving/${gStart.longitude},${gStart.latitude};${gEnd.longitude},${gEnd.latitude}?overview=full&geometries=geojson&alternatives=false&steps=false`,
+          { signal: AbortSignal.timeout(15000) }
         );
         if (osrmRes.ok) {
           const od = await osrmRes.json();
-          if (od.routes?.length) {
-            // OSRM returns [lng, lat] — keep as GeoJSON [lng, lat]
-            path = od.routes[0].geometry.coordinates;
-            distM = od.routes[0].distance;
+          if (od.code === 'Ok' && od.routes?.[0]?.geometry?.coordinates?.length >= 2) {
+            pathLatLng = toLatLngPath(od.routes[0].geometry.coordinates);
+            distM = Number(od.routes[0].distance);
           }
         }
-      } catch (_) {}
-
-      // Fallback: straight line if OSRM unavailable
-      if (!path || path.length < 2) {
-        path = [[gStart.longitude, gStart.latitude], [gEnd.longitude, gEnd.latitude]];
-        distM = haversineM(gStart.latitude, gStart.longitude, gEnd.latitude, gEnd.longitude);
-        logger.warn(`OSRM unavailable for corridor "${name}" — using straight-line fallback`);
+      } catch (e) {
+        logger.warn(`Precision geofence routing failed for "${name}": ${e.message}`);
       }
 
-      // Midpoint for map fly-to — path is [lng, lat] order
-      const mid = path[Math.floor(path.length / 2)];
-      const midLng = mid[0], midLat = mid[1];
-      const region = gStart.admin1 || gStart.country || location;
-      const locationLabel = `${gStart.name} → ${gEnd.name}`;
-      const approxRadius = Math.round(distM / 2) + buffer_m;
+      if (!pathLatLng || pathLatLng.length < 2 || !Number.isFinite(distM)) {
+        if (!allowStraightFallback) {
+          return {
+            created: false,
+            error: 'Road routing is unavailable. No corridor geofence was created because a straight-line substitute would be inaccurate.',
+            precision: 'unavailable',
+            start: { latitude: gStart.latitude, longitude: gStart.longitude, precision: gStart.precision },
+            end: { latitude: gEnd.latitude, longitude: gEnd.longitude, precision: gEnd.precision },
+          };
+        }
+        pathLatLng = [[gStart.latitude, gStart.longitude], [gEnd.latitude, gEnd.longitude]];
+        distM = haversineM(gStart.latitude, gStart.longitude, gEnd.latitude, gEnd.longitude);
+        routeProvider = 'straight-line-explicit-fallback';
+      }
 
-      // Store coordinates as GeoJSON [lng,lat] array under 'coordinates' key
-      const coordinates = { lat: midLat, lng: midLng, type: 'corridor', coordinates: path, buffer_m };
+      const mid = pathLatLng[Math.floor(pathLatLng.length / 2)]!;
+      const region = gStart.admin1 || gStart.country || location;
+      const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
+      const approxRadius = Math.round(distM / 2) + buffer_m;
+      const bufferPolygon = buildCorridorPolygon(pathLatLng, buffer_m);
+
+      // IMPORTANT: the operational engine uses [lat,lng] path order. OSRM
+      // returns [lng,lat], so normalization happens exactly once here.
+      const coordinates = {
+        lat: mid[0],
+        lng: mid[1],
+        type: 'corridor',
+        path: pathLatLng,
+        buffer_m,
+        buffer_polygon: bufferPolygon,
+        precision,
+        geometry_source: 'OpenStreetMap via OSRM',
+        route_provider: routeProvider,
+        route_distance_m: distM,
+        path_points: pathLatLng.length,
+        geocoding: {
+          start: { source: gStart.source || 'unknown', precision: gStart.precision || 'unknown', osm_id: gStart.osm_id || null },
+          end: { source: gEnd.source || 'unknown', precision: gEnd.precision || 'unknown', osm_id: gEnd.osm_id || null },
+        },
+        created_at: new Date().toISOString(),
+      };
 
       const r = await query(
         `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
@@ -710,46 +740,62 @@ async function toolCreateGeofence(input, userId, orgId) {
         geofence_id: r.rows[0].id,
         name,
         fence_type: 'corridor',
-        lat: midLat,
-        lng: midLng,
+        lat: mid[0],
+        lng: mid[1],
         radius_m: approxRadius,
         region,
         location: locationLabel,
         is_corridor: true,
-        path_points: path.length,
-        road_distance_km: (distM / 1000).toFixed(1),
+        path_points: pathLatLng.length,
+        road_distance_km: (distM / 1000).toFixed(2),
         buffer_m,
-        message: `Corridor geofence "${name}" created from ${locationLabel} — ${(distM / 1000).toFixed(1)} km road, ${path.length} waypoints, ${buffer_m}m deviation limit.`,
-      };
-    } else {
-      // ── Point mode: single location circle ──
-      const g = await geocode(location);
-      const radius_m = input.radius_m || 3000;
-      const coordinates = { lat: g.latitude, lng: g.longitude };
-      const region = g.admin1 || g.country || location;
-
-      const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id`,
-        [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
-      );
-
-      const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
-      return {
-        created: true,
-        geofence_id: r.rows[0].id,
-        name,
-        fence_type,
-        lat: g.latitude,
-        lng: g.longitude,
-        radius_m,
-        region,
-        location: locationLabel,
-        is_corridor: false,
-        message: `Geofence "${name}" created at ${locationLabel}, radius ${radius_m}m.`,
+        precision,
+        route_provider: routeProvider,
+        geometry_source: coordinates.geometry_source,
+        geocode_precision: { start: gStart.precision, end: gEnd.precision },
+        fallback_used: routeProvider !== 'OSRM',
+        message: routeProvider === 'OSRM'
+          ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} centreline vertices, ${buffer_m}m deviation threshold.`
+          : `LOW-PRECISION explicit fallback "${name}" created from a straight line. Review before operational use.`,
       };
     }
+
+    const g = await geocodePrecise(location);
+    const radius_m = Math.max(10, Math.min(Number(input.radius_m || 3000), 100000));
+    const coordinates = {
+      lat: g.latitude,
+      lng: g.longitude,
+      precision,
+      geometry_source: 'geocoded point',
+      geocoding: { source: g.source || 'unknown', precision: g.precision || 'unknown', osm_id: g.osm_id || null },
+      created_at: new Date().toISOString(),
+    };
+    const region = g.admin1 || g.country || location;
+
+    const r = await query(
+      `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
+    );
+
+    const locationLabel = g.name || location;
+    return {
+      created: true,
+      geofence_id: r.rows[0].id,
+      name,
+      fence_type,
+      lat: g.latitude,
+      lng: g.longitude,
+      radius_m,
+      region,
+      location: locationLabel,
+      is_corridor: false,
+      precision,
+      geometry_source: coordinates.geometry_source,
+      geocode_precision: g.precision,
+      message: `Geofence "${name}" created at ${locationLabel}, radius ${radius_m}m, precision ${precision}.`,
+    };
   } catch (e) {
     return { error: `Failed to create geofence: ${e.message}` };
   }
