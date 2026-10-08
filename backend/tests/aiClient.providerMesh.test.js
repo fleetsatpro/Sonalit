@@ -23,6 +23,8 @@ describe('intelligence provider mesh', () => {
     delete process.env.GROQ_API_KEY;
     delete process.env.MISTRAL_API_KEY;
     delete process.env.GOOGLE_AI_API_KEY;
+    delete process.env.GEMINI_PROVIDER_KEY;
+    for(let i=1;i<=100;i+=1) delete process.env['GOOGLE_AI_API_KEY_'+i];
     delete process.env.GOOGLE_GEMINI_MODEL;
     for (let i = 1; i <= 5; i += 1) {
       delete process.env[`OPEN_SOURCE_API_KEY_${i}`];
@@ -238,6 +240,49 @@ describe('intelligence provider mesh', () => {
     expect(calls[0].model).toBe('gemini-3.8-flash');
     expect(calls[0].baseURL).toContain('generativelanguage.googleapis.com');
   });
+
+  test('rotates across the Gemini key pool when a member is rate-limited', async () => {
+    process.env.GOOGLE_AI_API_KEY_1 = 'google-one-test-token';
+    process.env.GOOGLE_AI_API_KEY_2 = 'google-two-test-token';
+
+    const seen = [];
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.apiKey = options.apiKey;
+        this.baseURL = options.baseURL || 'openai';
+        this.chat = {
+          completions: {
+            create: jest.fn(async () => {
+              const index = this.apiKey.includes('one') ? 1 : 2;
+              seen.push(index);
+              if (index === 1) {
+                const error = new Error('Too Many Requests');
+                error.status = 429;
+                throw error;
+              }
+              return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
+            }),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    expect(ai.providerCapabilities().google_gemini.key_pool_size).toBe(2);
+    const response = await ai.createMessage({
+      dataClassification:'public',
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['google-gemini-3.8-flash'],
+      system:'Return JSON.',
+      messages:[{role:'user',content:'test'}],
+      max_tokens:100,
+    });
+
+    expect(response._provider).toBe('google-gemini-3.8-flash');
+    expect(seen).toEqual([1,2]);
+  });
+
 
   test('free publication routing can explicitly select the dynamic free router', async () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
