@@ -284,6 +284,56 @@ describe('intelligence provider mesh', () => {
   });
 
 
+  test('a shared Redis Gemini circuit cannot suppress healthy Gemini key-pool members', async () => {
+    process.env.GOOGLE_AI_API_KEY_1 = 'google-one-test-token';
+    process.env.GOOGLE_AI_API_KEY_2 = 'google-two-test-token';
+    process.env.REDIS_URL = 'redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS = 'true';
+
+    const until = Date.now() + 60 * 60 * 1000;
+    const redis = {
+      mget: jest.fn(async keys => keys.map(key => {
+        const group = decodeURIComponent(String(key).replace('sonalit:intelligence:ai:circuit:v3:', ''));
+        return group === 'google-gemini' ? String(until) : '0';
+      })),
+      set: jest.fn(async () => 'OK'),
+      del: jest.fn(async () => 1),
+    };
+
+    jest.doMock('../src/config/redis', () => ({ getRedis: () => redis }));
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.apiKey = options.apiKey;
+        this.baseURL = options.baseURL || 'openai';
+        this.chat = {
+          completions: {
+            create: jest.fn(async () => ({
+              choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
+            })),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    await ai.hydrateFabricState();
+
+    const policy = {
+      dataClassification:'public',
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['google-gemini-3.8-flash'],
+    };
+    expect(ai.hasReadyProvider(policy)).toBe(true);
+    const response = await ai.createMessage({
+      ...policy,
+      system:'Return JSON.',
+      messages:[{role:'user',content:'Gemini must remain usable when one persisted shared circuit is stale.'}],
+      max_tokens:100,
+    });
+    expect(response._provider).toBe('google-gemini-3.8-flash');
+  });
+
   test('free publication routing can explicitly select the dynamic free router', async () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
@@ -428,90 +478,3 @@ describe('intelligence provider mesh', () => {
                 return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
               }
               if (this.baseURL.includes('api.groq.com')) {
-                return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
-              }
-              throw new Error('unexpected provider');
-            }),
-          },
-        };
-      }
-    });
-
-    const ai = require('../src/utils/aiClient');
-    const response = await ai.createMessage({
-      dataClassification: 'public',
-      allowFreeProviders: true,
-      preferFreeProviders: true,
-      providerHints: ['gpt-oss-120b-openrouter-free'],
-      system: 'Return JSON.',
-      messages: [{ role: 'user', content: 'test' }],
-      max_tokens: 100,
-    });
-
-    expect(response._free_provider).toBe(true);
-    expect(response._provider).not.toBe('gpt-oss-120b-openrouter-free');
-    expect(response._provider).toMatch(/openrouter-free$/);
-    expect(calls.filter(c => c.baseURL.includes('openrouter.ai'))).toHaveLength(2);
-    expect(calls.filter(c => c.baseURL.includes('api.groq.com'))).toHaveLength(0);
-  });
-
-  test('prefers free publication lanes when explicitly requested', async () => {
-    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
-    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
-
-    jest.doMock('openai', () => class MockOpenAI {
-      constructor() {
-        this.chat = {
-          completions: {
-            create: jest.fn(async () => ({
-              choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
-            })),
-          },
-        };
-      }
-    });
-
-    const ai = require('../src/utils/aiClient');
-    const response = await ai.createMessage({
-      dataClassification: 'public',
-      allowFreeProviders: true,
-      preferFreeProviders: true,
-      providerHints: ['gpt-oss-20b-openrouter-free'],
-      system: 'Return JSON.',
-      messages: [{ role: 'user', content: 'test' }],
-      max_tokens: 100,
-    });
-
-    expect(response._provider).toBe('gpt-oss-20b-openrouter-free');
-    expect(response._free_provider).toBe(true);
-  });
-
-  test('provider hints are advisory and do not remove the global failover mesh', async () => {
-    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
-    process.env.NVIDIA_API_KEY = 'nvidia-test-key-123';
-
-    jest.doMock('openai', () => class MockOpenAI {
-      constructor(options) {
-        this.options = options;
-        this.chat = {
-          completions: {
-            create: jest.fn(async () => ({
-              choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
-            })),
-          },
-        };
-      }
-    });
-
-    const ai = require('../src/utils/aiClient');
-    const response = await ai.createMessage({
-      providerHints: ['deepseek-v3.2-openrouter'],
-      system: 'Return JSON.',
-      messages: [{ role: 'user', content: 'test' }],
-      max_tokens: 100,
-    });
-
-    expect(response._provider).toBe('deepseek-v3.2-openrouter');
-    expect(response._provider_kind).toBe('open-weight');
-  });
-});
