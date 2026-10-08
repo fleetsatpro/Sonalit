@@ -17,7 +17,7 @@ describe('AI provider radar',()=>{
 
     radar.recordFailure('provider-a',{status:429,message:'rate limited'});
     expect(radar.status('provider-a')).toMatchObject({
-      status:'unhealthy',failures:1,consecutive_failures:1,last_status:429,last_outcome:'failure'
+      status:'degraded',failures:1,consecutive_failures:1,last_status:429,last_outcome:'failure'
     });
 
     radar.recordSuccess('provider-a',{latencyMs:500});
