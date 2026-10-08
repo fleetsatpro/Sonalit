@@ -478,3 +478,90 @@ describe('intelligence provider mesh', () => {
                 return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
               }
               if (this.baseURL.includes('api.groq.com')) {
+                return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
+              }
+              throw new Error('unexpected provider');
+            }),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const response = await ai.createMessage({
+      dataClassification: 'public',
+      allowFreeProviders: true,
+      preferFreeProviders: true,
+      providerHints: ['gpt-oss-120b-openrouter-free'],
+      system: 'Return JSON.',
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    });
+
+    expect(response._free_provider).toBe(true);
+    expect(response._provider).not.toBe('gpt-oss-120b-openrouter-free');
+    expect(response._provider).toMatch(/openrouter-free$/);
+    expect(calls.filter(c => c.baseURL.includes('openrouter.ai'))).toHaveLength(2);
+    expect(calls.filter(c => c.baseURL.includes('api.groq.com'))).toHaveLength(0);
+  });
+
+  test('prefers free publication lanes when explicitly requested', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor() {
+        this.chat = {
+          completions: {
+            create: jest.fn(async () => ({
+              choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
+            })),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const response = await ai.createMessage({
+      dataClassification: 'public',
+      allowFreeProviders: true,
+      preferFreeProviders: true,
+      providerHints: ['gpt-oss-20b-openrouter-free'],
+      system: 'Return JSON.',
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    });
+
+    expect(response._provider).toBe('gpt-oss-20b-openrouter-free');
+    expect(response._free_provider).toBe(true);
+  });
+
+  test('provider hints are advisory and do not remove the global failover mesh', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.NVIDIA_API_KEY = 'nvidia-test-key-123';
+
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options) {
+        this.options = options;
+        this.chat = {
+          completions: {
+            create: jest.fn(async () => ({
+              choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }],
+            })),
+          },
+        };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const response = await ai.createMessage({
+      providerHints: ['deepseek-v3.2-openrouter'],
+      system: 'Return JSON.',
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    });
+
+    expect(response._provider).toBe('deepseek-v3.2-openrouter');
+    expect(response._provider_kind).toBe('open-weight');
+  });
+});
