@@ -2,7 +2,7 @@ require('dotenv').config();
 const { runNewsMesh } = require('../utils/intelligenceNewsMesh');
 const { runCollectionFabric } = require('../utils/collectionFabric');
 const { runRegionalIncidentSweep } = require('../utils/regionalIncidentFabric');
-const { runIntelligenceAgents, runScheduledPublicationBoundary, anyCountryPublicationBoundary, msUntilAnyCountryPublicationBoundary } = require('../utils/intelligenceAgents');
+const { runIntelligenceAgents, runScheduledPublicationBoundary, recoverStalledPublications, anyCountryPublicationBoundary, msUntilAnyCountryPublicationBoundary } = require('../utils/intelligenceAgents');
 const { generateMissingPublicationPdfs } = require('../services/intelligencePublicationPdf');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { providerCapabilities } = require('../utils/aiClient');
@@ -16,6 +16,7 @@ const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINU
 const spatialIntervalMs = Math.max(15, Number(process.env.SPATIAL_EYE_INTERVAL_SECONDS || 60)) * 1000;
 const spatialMaxConvoys = Math.max(1, Math.min(100, Number(process.env.SPATIAL_EYE_MAX_CONVOYS_PER_CYCLE || 25)));
 const spatialConcurrency = Math.max(1, Math.min(6, Number(process.env.SPATIAL_EYE_CONCURRENCY || 3)));
+const publicationRecoveryIntervalMs = Math.max(5, Math.min(60, Number(process.env.INTEL_PUBLICATION_RECOVERY_INTERVAL_MINUTES || 15))) * 60 * 1000;
 let stopping = false;
 let timer = null;
 let spatialTimer = null;
@@ -25,6 +26,8 @@ let activeCyclePromise = null;
 let activeSpatialPromise = null;
 let publicationTimer = null;
 let activePublicationPromise = null;
+let publicationRecoveryTimer = null;
+let activePublicationRecoveryPromise = null;
 let advisoryLeader = null;
 
 async function evaluateSpatialEyeUnsafe(reason = 'scheduled') {
@@ -167,6 +170,48 @@ async function cycle(reason) {
 function msUntilNextPublicationBoundary(now=new Date()){
   return msUntilAnyCountryPublicationBoundary(now);
 }
+async function runPublicationRecovery(reason='scheduled-recovery'){
+  if(stopping)return{skipped:true,reason:'stopping'};
+  const guarded=await withAdvisoryLock('sonalit:intelligence:publication-recovery',async()=>{
+    const started=Date.now();
+    const now=new Date();
+    const {rows:orgs}=await globalQuery('SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL');
+    const results=[];
+    const published=[];
+    for(const org of orgs){
+      if(!org?.org_id)continue;
+      try{
+        const recovered=await recoverStalledPublications(org.org_id,now,{limit:Number(process.env.INTEL_PUBLICATION_RECOVERY_BATCH)||4});
+        results.push({org_id:org.org_id,...recovered});
+        for(const item of recovered.results||[])if(item.publication_status==='published'&&item.publication_id)published.push({org_id:org.org_id,id:item.publication_id});
+      }catch(error){
+        logger.warn('Publication recovery failed org='+org.org_id+': '+error.message);
+      }
+    }
+    const pdfs=[];
+    for(const item of published){
+      try{
+        const generated=await generateMissingPublicationPdfs(item.org_id,1);
+        pdfs.push(...generated.map(x=>({org_id:item.org_id,...x})));
+      }catch(error){
+        logger.warn('Publication recovery PDF failed org='+item.org_id+' id='+item.id+': '+error.message);
+      }
+    }
+    const processed=results.reduce((n,x)=>n+Number(x.processed||0),0);
+    const released=results.reduce((n,x)=>n+Number(x.published||0),0);
+    const drafts=results.reduce((n,x)=>n+Number(x.drafts||0),0);
+    const failed=results.reduce((n,x)=>n+Number(x.failed||0),0);
+    const pdfReady=pdfs.filter(x=>x.status==='ready').length;
+    logger.info(`Intelligence publication recovery complete (${reason}) in ${Date.now()-started}ms: processed=${processed}, released=${released}, drafts=${drafts}, failures=${failed}, pdf_ready=${pdfReady}, interval=${publicationRecoveryIntervalMs/60000}m`);
+    return{skipped:false,results,pdfs,processed,released,drafts,failed,pdfReady};
+  });
+  if(!guarded.locked){
+    logger.info('Publication recovery skipped: another intelligence worker owns the cluster recovery lock');
+    return{skipped:true,reason:'cluster_run_in_progress'};
+  }
+  return guarded.value;
+}
+
 async function runPublicationBoundary(reason='scheduled-local-midnight'){
   if(stopping)return;
   const guarded=await withAdvisoryLock('sonalit:intelligence:publication-boundary',async()=>{
@@ -188,6 +233,17 @@ async function runPublicationBoundary(reason='scheduled-local-midnight'){
   });
   if(!guarded.locked){logger.info('Publication boundary skipped: another intelligence worker owns the cluster lock');return null;}
   return guarded.value;
+}
+function schedulePublicationRecovery(){
+  if(stopping)return;
+  if(publicationRecoveryTimer)clearTimeout(publicationRecoveryTimer);
+  publicationRecoveryTimer=setTimeout(()=>{
+    activePublicationRecoveryPromise=runPublicationRecovery('scheduled-recovery')
+      .catch(error=>logger.warn('Publication recovery scheduled run failed: '+error.message))
+      .finally(()=>{activePublicationRecoveryPromise=null;});
+    activePublicationRecoveryPromise.finally(()=>schedulePublicationRecovery());
+  },publicationRecoveryIntervalMs);
+  logger.info('Next intelligence publication recovery scheduled in '+Math.round(publicationRecoveryIntervalMs/1000)+'s');
 }
 function schedulePublicationBoundary(){
   if(stopping)return;
@@ -222,10 +278,12 @@ async function drainActiveWork(reason) {
   if (timer) clearTimeout(timer);
   if (spatialTimer) clearTimeout(spatialTimer);
   if (publicationTimer) clearTimeout(publicationTimer);
+  if (publicationRecoveryTimer) clearTimeout(publicationRecoveryTimer);
   timer = null;
   spatialTimer = null;
   publicationTimer = null;
-  const running = [activeCyclePromise, activeSpatialPromise, activePublicationPromise].filter(Boolean);
+  publicationRecoveryTimer = null;
+  const running = [activeCyclePromise, activeSpatialPromise, activePublicationPromise, activePublicationRecoveryPromise].filter(Boolean);
   let drained = true;
   if (running.length) {
     drained = await Promise.race([
@@ -307,12 +365,19 @@ process.on('SIGINT', () => shutdown('SIGINT'));
         const pdfReady = pdfs.filter(x => x.status === 'ready').length;
         const pdfFailed = pdfs.filter(x => x.status === 'failed' || x.error).length;
         logger.info(`Intelligence publication startup catch-up: processed=${results.length}, published=${published}, drafts=${drafts}, failures=${failures}, pdf_ready=${pdfReady}, pdf_failures=${pdfFailed}`);
+        try{
+          const recovery=await runPublicationRecovery('startup-recovery');
+          logger.info(`Intelligence publication startup recovery: processed=${recovery?.processed||0}, released=${recovery?.released||0}, drafts=${recovery?.drafts||0}, failures=${recovery?.failed||0}, pdf_ready=${recovery?.pdfReady||0}`);
+        }catch(error){
+          logger.warn('Intelligence publication startup recovery failed: '+error.message);
+        }
       } catch (error) {
         logger.warn(`Intelligence publication startup catch-up failed: ${error.message}`);
       }
 
       scheduleSpatial();
       schedulePublicationBoundary();
+      schedulePublicationRecovery();
       schedule();
     },
     onLose: async () => {
