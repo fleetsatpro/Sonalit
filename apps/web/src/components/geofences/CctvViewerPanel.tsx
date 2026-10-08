@@ -377,8 +377,13 @@ function InlineCctvVideo({
           if (HlsRuntime.isSupported()) {
             hls = new HlsRuntime({
               enableWorker: true,
-              lowLatencyMode: true,
+              // Public UK feeds are often ordinary segment-based HLS rather
+              // than LL-HLS. Use the broadly compatible live configuration.
+              lowLatencyMode: false,
               backBufferLength: 30,
+              liveSyncDurationCount: 3,
+              liveMaxLatencyDurationCount: 7,
+              maxBufferLength: 30,
               maxLiveSyncPlaybackRate: 1.5,
               capLevelToPlayerSize: true,
               startLevel: -1,
@@ -418,6 +423,19 @@ function InlineCctvVideo({
             })
             hls.attachMedia(video)
             hls.loadSource(src)
+            hls.once(HlsRuntime.Events.MANIFEST_PARSED, () => {
+              if (disposed) return
+              lastProgressAt = Date.now()
+              playbackRecovery = 0
+              clearStallTimer()
+              void video.play().catch(() => {})
+            })
+            hls.on(HlsRuntime.Events.FRAG_BUFFERED, () => {
+              if (disposed) return
+              lastProgressAt = Date.now()
+              playbackRecovery = 0
+              clearStallTimer()
+            })
             return
           }
         } catch {
@@ -471,7 +489,7 @@ function InlineCctvVideo({
       muted
       playsInline
       controls
-      preload="metadata"
+      preload="auto"
     />
   )
 }
