@@ -99,7 +99,8 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
 
     map.on('click', (e) => {
       if ((e.originalEvent.target as HTMLElement).closest('button')) return;
-      setPoints((prev) => [...prev, [e.lngLat.lng, e.lngLat.lat]]);
+      // Sonalit geofence storage/engine use [lat,lng] for plain path arrays.
+      setPoints((prev) => [...prev, [e.lngLat.lat, e.lngLat.lng]]);
     });
 
     mapRef.current = map;
@@ -111,9 +112,9 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
     if (!map?.loaded()) return;
     const source = map.getSource('draw') as maplibregl.GeoJSONSource | undefined;
     if (!source) return;
-    const features: GeoJSON.Feature[] = points.map((p) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: p }, properties: {} }));
-    if (points.length >= 2) features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: points }, properties: {} });
-    if (points.length >= 3) features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...points, points[0]!]] }, properties: {} });
+    const features: GeoJSON.Feature[] = points.map((p) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] }, properties: {} }));
+    if (points.length >= 2) features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: points.map(([lat, lng]) => [lng, lat]) }, properties: {} });
+    if (points.length >= 3) features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...points, points[0]!].map(([lat, lng]) => [lng, lat]) ] }, properties: {} });
     source.setData({ type: 'FeatureCollection', features });
   }, [points]);
 
