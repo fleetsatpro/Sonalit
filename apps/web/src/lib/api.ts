@@ -7,6 +7,9 @@ import type { AuthUser } from '../stores/auth.js';
 const API_BASE = import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1';
 export const api = axios.create({ baseURL: API_BASE, timeout: 15_000, withCredentials: true });
 api.interceptors.request.use((config) => {
+  // Copilot now performs bounded evidence collection + at most one synthesis call.
+  // Give that endpoint enough headroom without slowing unrelated API requests.
+  if (String(config.url ?? '') === '/ai/decision' || String(config.url ?? '').endsWith('/ai/decision')) config.timeout = 30_000;
   if (config.url === '/communications/recipients' && config.data && typeof config.data === 'object' && !Array.isArray(config.data)) {
     const { phone: _unsupportedPhone, ...recipientPayload } = config.data as Record<string, unknown>; config.data = recipientPayload;
   }
