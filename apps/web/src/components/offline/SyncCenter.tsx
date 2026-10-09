@@ -255,12 +255,12 @@ export default function SyncCenter({ userId }: { userId: string }) {
           Everything recorded on this device has been confirmed by Sonalit.
         </p>
       )}
-      {active.length === 0 && unresolvedMedia == null && (
+      {active.length === 0 && unresolvedMedia === null && (
         <p role="status" className="rounded-xl border border-cds-amber/30 bg-cds-amber/[.06] px-4 py-4 text-center text-[12px] text-text-2">
           The binary-media queue could not be read. Sonalit cannot confirm that all recordings have uploaded; keep this device storage intact and retry.
         </p>
       )}
-      {active.length === 0 && unresolvedMedia != null && unresolvedMedia > 0 && (
+      {active.length === 0 && unresolvedMedia !== null && unresolvedMedia > 0 && (
         <p role="status" className="rounded-xl border border-cds-amber/30 bg-cds-amber/[.06] px-4 py-4 text-center text-[12px] text-text-2">
           {unresolvedMedia} voice-note upload{unresolvedMedia === 1 ? '' : 's'} still need confirmation or review. Open the associated record to retry; queued audio remains on this device until Sonalit confirms it.
         </p>
