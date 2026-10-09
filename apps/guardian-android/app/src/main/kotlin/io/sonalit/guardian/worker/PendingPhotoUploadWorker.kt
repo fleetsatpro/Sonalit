@@ -35,7 +35,7 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
     private val okHttp: OkHttpClient,
 ) : CoroutineWorker(context, params) {
 
-    private fun deviceToken(): String = try {
+    private fun preference(key: String): String = try {
         val masterKey = MasterKey.Builder(applicationContext)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         val prefs = EncryptedSharedPreferences.create(
@@ -43,14 +43,25 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
         )
-        prefs.getString("auth_token", null) ?: ""
+        prefs.getString(key, null) ?: ""
     } catch (_: Exception) {
         ""
     }
 
+    private fun deviceToken(): String = preference("auth_token")
+    private fun cfoUserId(): String = preference("cfo_user_id")
+
     override suspend fun doWork(): Result {
         val dao = db.pendingPhotoDao()
-        val pending = dao.getPending(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS, PendingPhotoUploadPolicy.MAX_BATCH_SIZE)
+        // Do not let a background retry run under an anonymous/device session
+        // or take another CFO's photo queue just because the Room DB is shared.
+        val ownerUserId = cfoUserId()
+        if (ownerUserId.isBlank()) return Result.success()
+        val pending = dao.getPending(
+            ownerUserId,
+            PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS,
+            PendingPhotoUploadPolicy.MAX_BATCH_SIZE,
+        )
         if (pending.isEmpty()) return Result.success()
 
         val token = deviceToken()
@@ -58,6 +69,7 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
 
         var anyFailed = false
         for (p in pending) {
+            if (!PendingPhotoUploadPolicy.belongsToOwner(p.ownerUserId, ownerUserId)) continue
             try {
                 uploadOne(token, p)
                 dao.delete(p.eventUuid)

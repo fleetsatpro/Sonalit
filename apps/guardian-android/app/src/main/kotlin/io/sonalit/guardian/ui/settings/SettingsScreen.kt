@@ -106,6 +106,11 @@ fun SettingsScreen(
                 Spacer(Modifier.height(12.dp))
                 SettingRow("Photos queued for upload", "${cfoState.pendingCount}")
                 SettingRow("Photos needing attention", "${cfoState.failedPhotoCount}")
+                Text(
+                    "Retry is account-scoped. Photos from older versions without a verified owner are retained on this device but are not automatically replayed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (cfoState.failedPhotoCount > 0) {
                     Spacer(Modifier.height(4.dp))
                     Text(

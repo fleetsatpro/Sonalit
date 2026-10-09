@@ -10,4 +10,10 @@ object PendingPhotoUploadPolicy {
 
     fun isExhausted(attempts: Int): Boolean =
         attempts >= MAX_AUTOMATIC_ATTEMPTS
+
+    /** Unknown legacy ownership or another login must never qualify for replay. */
+    fun belongsToOwner(photoOwnerUserId: String?, activeUserId: String?): Boolean =
+        !photoOwnerUserId.isNullOrBlank() &&
+            !activeUserId.isNullOrBlank() &&
+            photoOwnerUserId == activeUserId
 }

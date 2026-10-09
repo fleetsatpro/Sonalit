@@ -26,4 +26,13 @@ class PendingPhotoUploadPolicyTest {
         assertFalse(PendingPhotoUploadPolicy.canAutoRetry(-1))
         assertFalse(PendingPhotoUploadPolicy.isExhausted(-1))
     }
+
+    @Test
+    fun onlyTheSameNonBlankCfoCanRetryAPhoto() {
+        assertTrue(PendingPhotoUploadPolicy.belongsToOwner("cfo-a", "cfo-a"))
+        assertFalse(PendingPhotoUploadPolicy.belongsToOwner("cfo-a", "cfo-b"))
+        assertFalse(PendingPhotoUploadPolicy.belongsToOwner("", "cfo-a"))
+        assertFalse(PendingPhotoUploadPolicy.belongsToOwner(null, "cfo-a"))
+        assertFalse(PendingPhotoUploadPolicy.belongsToOwner("cfo-a", ""))
+    }
 }

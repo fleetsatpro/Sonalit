@@ -217,7 +217,11 @@ class CfoViewModel @Inject constructor(
         location: Location?,
         eventUuid: String = UUID.randomUUID().toString(),
     ) {
+        val ownerUserId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return
         val ctx = _state.value.context ?: return
+        // Capture ownership before the asynchronous request starts. If the
+        // account changes while it is in flight, the saved photo remains bound
+        // to the user who initiated the capture.
         // Uploads always target the live convoy day, even while the CFO is
         // browsing a past date's history in the dashboard.
         val uploadDate = ctx.today_date
@@ -302,6 +306,7 @@ class CfoViewModel @Inject constructor(
                         lng = location?.longitude,
                         notes = null,
                         createdAt = System.currentTimeMillis(),
+                        ownerUserId = ownerUserId,
                     )
                 )
                 PendingPhotoUploadWorker.schedule(appContext)
@@ -364,21 +369,28 @@ class CfoViewModel @Inject constructor(
 
     private fun refreshPendingCounts() {
         viewModelScope.launch {
-            val pending = pendingPhotoDao.countPending(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
-            val failed = pendingPhotoDao.countExhausted(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
-            val failedRows = pendingPhotoDao.getExhausted(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS, 5)
+            val ownerUserId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return@launch
+            val pending = pendingPhotoDao.countPending(ownerUserId, PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
+            val failed = pendingPhotoDao.countExhausted(ownerUserId, PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
+            val failedRows = pendingPhotoDao.getExhausted(ownerUserId, PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS, 5)
+            // An account switch while Room was reading must not paint the old
+            // account's queue into the newly authenticated operator's screen.
+            if (_state.value.loggedInUser?.user_id != ownerUserId) return@launch
             _state.update {
                 it.copy(pendingCount = pending, failedPhotoCount = failed, failedPhotos = failedRows)
             }
         }
     }
 
-    /** Retry exhausted uploads on explicit operator request without deleting local evidence. */
+    /** Retry exhausted uploads for this CFO only; legacy unowned rows are never reset. */
     fun retryFailedPhotos() {
         viewModelScope.launch {
-            val reset = pendingPhotoDao.resetExhausted(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
+            val ownerUserId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return@launch
+            val reset = pendingPhotoDao.resetExhausted(ownerUserId, PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
             refreshPendingCounts()
-            if (reset > 0) PendingPhotoUploadWorker.retryNow(appContext)
+            if (reset > 0 && _state.value.loggedInUser?.user_id == ownerUserId) {
+                PendingPhotoUploadWorker.retryNow(appContext)
+            }
         }
     }
 }

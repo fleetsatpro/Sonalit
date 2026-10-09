@@ -1,6 +1,8 @@
 package io.sonalit.guardian.data.local
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 // ── GPS fixes ─────────────────────────────────────────────────────────────────
 
@@ -56,6 +58,9 @@ data class PendingPhotoEntity(
     val createdAt: Long,
     val attempts: Int = 0,
     val lastError: String? = null,
+    // Empty for rows created before ownership was recorded. Such legacy
+    // evidence is retained but never retried under whichever account logs in.
+    @ColumnInfo(defaultValue = "''") val ownerUserId: String = "",
 )
 
 @Dao
@@ -63,33 +68,31 @@ interface PendingPhotoDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(photo: PendingPhotoEntity): Long
 
-    @Query("SELECT * FROM pending_photos ORDER BY createdAt ASC")
-    suspend fun getAll(): List<PendingPhotoEntity>
+    @Query("SELECT * FROM pending_photos WHERE ownerUserId = :ownerUserId ORDER BY createdAt ASC")
+    suspend fun getAll(ownerUserId: String): List<PendingPhotoEntity>
 
-    @Query("SELECT * FROM pending_photos WHERE attempts < :maxAttempts ORDER BY createdAt ASC LIMIT :limit")
-    suspend fun getPending(maxAttempts: Int, limit: Int): List<PendingPhotoEntity>
+    @Query("SELECT * FROM pending_photos WHERE ownerUserId = :ownerUserId AND attempts < :maxAttempts ORDER BY createdAt ASC LIMIT :limit")
+    suspend fun getPending(ownerUserId: String, maxAttempts: Int, limit: Int): List<PendingPhotoEntity>
 
-    @Query("SELECT * FROM pending_photos WHERE attempts >= :maxAttempts ORDER BY createdAt DESC LIMIT :limit")
-    suspend fun getExhausted(maxAttempts: Int, limit: Int): List<PendingPhotoEntity>
+    @Query("SELECT * FROM pending_photos WHERE ownerUserId = :ownerUserId AND attempts >= :maxAttempts ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun getExhausted(ownerUserId: String, maxAttempts: Int, limit: Int): List<PendingPhotoEntity>
 
     @Query("UPDATE pending_photos SET attempts = attempts + 1, lastError = :err WHERE eventUuid = :id")
     suspend fun incrementAttempt(id: String, err: String)
 
     /** Operator retry preserves the file and event UUID while resetting only the retry budget. */
-    @Query("UPDATE pending_photos SET attempts = 0, lastError = NULL WHERE attempts >= :maxAttempts")
-    suspend fun resetExhausted(maxAttempts: Int): Int
+    @Query("UPDATE pending_photos SET attempts = 0, lastError = NULL WHERE ownerUserId = :ownerUserId AND attempts >= :maxAttempts")
+    suspend fun resetExhausted(ownerUserId: String, maxAttempts: Int): Int
 
     @Query("DELETE FROM pending_photos WHERE eventUuid = :id")
     suspend fun delete(id: String)
 
-    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts < :maxAttempts")
-    suspend fun countPending(maxAttempts: Int): Int
+    @Query("SELECT COUNT(*) FROM pending_photos WHERE ownerUserId = :ownerUserId AND attempts < :maxAttempts")
+    suspend fun countPending(ownerUserId: String, maxAttempts: Int): Int
 
-    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts >= :maxAttempts")
-    suspend fun countExhausted(maxAttempts: Int): Int
+    @Query("SELECT COUNT(*) FROM pending_photos WHERE ownerUserId = :ownerUserId AND attempts >= :maxAttempts")
+    suspend fun countExhausted(ownerUserId: String, maxAttempts: Int): Int
 
-    @Query("SELECT COUNT(*) FROM pending_photos")
-    suspend fun count(): Int
 }
 
 // ── Dispatch inbox (show_message / play_voice_message commands) ──────────────
@@ -153,7 +156,7 @@ interface ActivityEventDao {
         GpsFixEntity::class, PendingPhotoEntity::class,
         DispatchMessageEntity::class, ActivityEventEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -161,4 +164,19 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pendingPhotoDao(): PendingPhotoDao
     abstract fun dispatchMessageDao(): DispatchMessageDao
     abstract fun activityEventDao(): ActivityEventDao
+
+    companion object {
+        /**
+         * Additive migration: preserve every queued photo and mark historical
+         * rows with an empty owner. They remain on disk but are not replayable
+         * until an account-bound recovery procedure can safely attribute them.
+         */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE pending_photos ADD COLUMN ownerUserId TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+    }
 }
