@@ -289,4 +289,7 @@ test('bounded publication coverage explicitly discloses excluded period incident
   expect(s).toContain('full_period_event_count:events.length,detailed_event_count:reportEvents.length,excluded_event_count:excludedPeriodEventCount');
   expect(s).toContain('(Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:[]).filter(d=>');
   expect(s).not.toContain('degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible');
+  const quality=fs.readFileSync(path.join(__dirname,'../src/utils/publicationQuality.js'),'utf8');
+  expect(quality).toContain('researched + degradedEvidenceEligible >= requested');
+  expect(quality).toContain('fallbacks === degradedEvidenceEligible');
 });
