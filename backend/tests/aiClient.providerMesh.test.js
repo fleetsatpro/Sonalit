@@ -567,3 +567,70 @@ describe('intelligence provider mesh', () => {
     expect(response._provider_kind).toBe('open-weight');
   });
 });
+
+  test('half-open probes the hinted public OpenRouter rescue lane after all ordinary providers fail',async()=>{
+    process.env.OPENROUTER_API_KEY='openrouter-test-key-123';
+    process.env.GOOGLE_AI_API_KEY='google-test-key-123';
+    process.env.OPENAI_API_KEY='openai-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT='true';
+    process.env.REDIS_URL='redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS='true';
+
+    const until=Date.now()+6*60*60*1000;
+    const prefix='sonalit:intelligence:ai:circuit:v3:';
+    const redis={
+      mget:jest.fn(async keys=>keys.map(key=>{
+        const group=decodeURIComponent(String(key).replace(prefix,''));
+        return group.startsWith('openrouter-')?String(until):'0';
+      })),
+      scan:jest.fn(async()=>['0',[]]),
+      get:jest.fn(async()=>null),
+      set:jest.fn(async()=> 'OK'),
+      del:jest.fn(async()=>1),
+    };
+    jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
+
+    const calls=[];
+    jest.doMock('openai',()=>class MockOpenAI{
+      constructor(options={}){
+        this.baseURL=options.baseURL||'openai';
+        this.chat={completions:{create:jest.fn(async request=>{
+          calls.push({baseURL:this.baseURL,model:request.model});
+          if(this.baseURL.includes('generativelanguage.googleapis.com')){
+            const error=new Error('Gemini rate limit');
+            error.status=429;
+            throw error;
+          }
+          if(this.baseURL==='openai'){
+            const error=new Error('insufficient credit balance');
+            error.status=402;
+            throw error;
+          }
+          if(this.baseURL.includes('openrouter.ai')&&request.model==='openrouter/free'){
+            return {choices:[{message:{content:'{"results":[]}',tool_calls:[]}}]};
+          }
+          throw new Error('Unexpected provider/model in half-open test');
+        })}};
+      }
+    });
+
+    const ai=require('../src/utils/aiClient');
+    const response=await ai.createMessage({
+      dataClassification:'public',
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['google-gemini-3.8-flash','openrouter-free-router'],
+      system:'Return structured JSON.',
+      messages:[{role:'user',content:'Use only supplied public evidence and return JSON.'}],
+      max_tokens:100,
+    });
+
+    expect(response._provider).toBe('openrouter-free-router');
+    expect(response._free_provider).toBe(true);
+    expect(calls.some(c=>c.baseURL.includes('generativelanguage.googleapis.com'))).toBe(true);
+    expect(calls.some(c=>c.baseURL==='openai')).toBe(true);
+    expect(calls.filter(c=>c.baseURL.includes('openrouter.ai'))).toEqual([
+      expect.objectContaining({model:'openrouter/free'})
+    ]);
+  });
+
