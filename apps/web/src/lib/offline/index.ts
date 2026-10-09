@@ -51,6 +51,9 @@ let identity: OfflineIdentity | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let available = false;
 let blocked: SyncBlockedError | null = null;
+let lifecycleGeneration = 0;
+let activeTick: Promise<void> | null = null;
+let unsubscribeReconnect: (() => void) | null = null;
 
 type StatusListener = () => void;
 const statusListeners = new Set<StatusListener>();
@@ -78,18 +81,48 @@ export function syncBlockedReason(): SyncBlockedError | null {
 }
 
 async function tick(): Promise<void> {
-  if (!identity || !available) return schedule();
-
-  try {
-    const result = await runSync(identity.userId, identity.orgId);
-    blocked = result.blocked;
-    if (result.pull || result.push) announce();
-  } catch {
-    // runSync does not throw, but a future change might. The loop survives.
+  const session = identity;
+  if (!session || !available) {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    return;
+  }
+  if (activeTick) {
+    await activeTick;
+    return;
   }
 
-  await relieveStoragePressure();
-  return schedule();
+  const generation = lifecycleGeneration;
+  const work = (async () => {
+    try {
+      const result = await runSync(session.userId, session.orgId);
+      // A result from a prior login/tenant must not update the new session.
+      if (generation === lifecycleGeneration && identity === session) {
+        blocked = result.blocked;
+        if (result.pull || result.push) announce();
+      }
+    } catch {
+      // runSync does not throw, but a future change might. The loop survives.
+    }
+
+    if (generation === lifecycleGeneration && identity === session && available) {
+      try { await relieveStoragePressure(); } catch { /* cleanup must not wedge sync */ }
+    }
+  })();
+  activeTick = work;
+
+  try {
+    await work;
+  } finally {
+    if (activeTick === work) activeTick = null;
+    if (!identity || !available) {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      return;
+    }
+    if (generation === lifecycleGeneration && identity === session) schedule();
+    else void tick();
+  }
 }
 
 function schedule(): void {
@@ -131,13 +164,26 @@ async function relieveStoragePressure(): Promise<void> {
 export async function startOffline(id: OfflineIdentity): Promise<boolean> {
   if (!isEnabled('OFFLINE_MODE')) return false;
 
-  available = await isStorageAvailable();
-  if (!available) {
+  const generation = ++lifecycleGeneration;
+  if (timer) clearTimeout(timer);
+  timer = null;
+  unsubscribeReconnect?.();
+  unsubscribeReconnect = null;
+  identity = null;
+  blocked = null;
+  available = false;
+  announce();
+
+  const storageAvailable = await isStorageAvailable();
+  if (generation !== lifecycleGeneration) return false;
+  if (!storageAvailable) {
     // No durable storage. The app runs exactly as it did before this layer.
     return false;
   }
+  available = true;
 
   const previous = await db.sync_meta.get('session:identity');
+  if (generation !== lifecycleGeneration) return false;
   if (previous?.value && typeof previous.value === 'object') {
     const prev = previous.value as { userId?: unknown; orgId?: unknown };
     if (typeof prev.userId === 'string' && (prev.userId !== id.userId || prev.orgId !== id.orgId)) {
@@ -145,12 +191,16 @@ export async function startOffline(id: OfflineIdentity): Promise<boolean> {
       // there is no safe reason to retain unsent work from the previous org on
       // a shared device where it could later be surfaced or replayed.
       await purgeUserData(prev.userId, { keepUnsyncedOutbox: false });
+      if (generation !== lifecycleGeneration) return false;
     }
   } else if (typeof previous?.value === 'string' && previous.value !== id.userId) {
     await purgeUserData(previous.value);
+    if (generation !== lifecycleGeneration) return false;
   }
   await db.sync_meta.put({ key: 'session:identity', value: { userId: id.userId, orgId: id.orgId } });
+  if (generation !== lifecycleGeneration) return false;
   await db.sync_meta.delete('session:userId');
+  if (generation !== lifecycleGeneration) return false;
 
   identity = id;
   blocked = null;
@@ -159,9 +209,12 @@ export async function startOffline(id: OfflineIdentity): Promise<boolean> {
   startConnectivity();
   announce();
 
-  // Reconnection is the moment that matters; do not wait for the timer.
-  subscribeConnectivity(() => {
-    if (isReachable() && identity) void tick();
+  // Keep exactly one reconnect subscription. Starting a new session or
+  // signing out must detach the old callback before it can trigger another sync.
+  unsubscribeReconnect?.();
+  unsubscribeReconnect = subscribeConnectivity(() => {
+    if (generation !== lifecycleGeneration || identity !== id || !available) return;
+    if (isReachable()) void tick();
   });
 
   void tick();
@@ -176,6 +229,9 @@ export async function startOffline(id: OfflineIdentity): Promise<boolean> {
  * same user signs back in on this device.
  */
 export async function stopOffline({ purge = true }: { purge?: boolean } = {}): Promise<void> {
+  lifecycleGeneration += 1;
+  unsubscribeReconnect?.();
+  unsubscribeReconnect = null;
   if (timer) clearTimeout(timer);
   timer = null;
   stopConnectivity();

@@ -326,48 +326,57 @@ function scheduleProbe(): void {
  * Start listening. Idempotent — every screen that needs connectivity calls it
  * on mount and only the first call takes effect.
  */
+function handleOnline(): void {
+  // Clear the failure count along with the flag. Those failures were recorded
+  // while the interface was down; carrying them over would keep the state at
+  // OFFLINE until fresh probes disproved them, stranding the UI in a takeover
+  // after the network had visibly returned.
+  snapshot = { ...snapshot, networkUp: true, consecutiveFailures: 0 };
+  recompute();
+  emit();
+  // Then verify, rather than believing it — this is precisely where captive
+  // portals lie. A failing probe will walk the state back down.
+  void probeNow();
+}
+
+function handleOffline(): void {
+  snapshot = { ...snapshot, networkUp: false, apiReachable: false };
+  everProbed = true;
+  recompute();
+  // recompute() only emits when the state changes; subscribers also read
+  // networkUp directly. Emit explicitly so the flip is never swallowed.
+  emit();
+  scheduleProbe();
+}
+
+function handleVisibilityChange(): void {
+  // A backgrounded tab's timers are throttled to near-nothing, so the snapshot
+  // is stale the moment the worker looks at the screen again. Re-probe when
+  // becoming visible so the first thing they see is true.
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') void probeNow();
+}
+
 export function startConnectivity(): void {
   if (started || typeof window === 'undefined') return;
   started = true;
-
-  window.addEventListener('online', () => {
-    // Clear the failure count along with the flag. Those failures were recorded
-    // while the interface was down; carrying them over would keep the state at
-    // OFFLINE until fresh probes disproved them, stranding the UI in a takeover
-    // after the network had visibly returned.
-    snapshot = { ...snapshot, networkUp: true, consecutiveFailures: 0 };
-    recompute();
-    emit();
-    // Then verify, rather than believing it — this is precisely where captive
-    // portals lie. A failing probe will walk the state back down.
-    void probeNow();
-  });
-
-  window.addEventListener('offline', () => {
-    snapshot = { ...snapshot, networkUp: false, apiReachable: false };
-    everProbed = true;
-    recompute();
-    // recompute() only emits when the *state* changes, and subscribers read
-    // networkUp directly (OfflineGuard does). Emit explicitly so a networkUp
-    // flip is never swallowed just because the derived state happened to stay
-    // put.
-    emit();
-    scheduleProbe();
-  });
-
-  // A backgrounded tab's timers are throttled to near-nothing, so the snapshot
-  // is stale the moment the worker looks at the screen again. Re-probe on
-  // becoming visible so the first thing they see is true.
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void probeNow();
-  });
-
+  window.addEventListener('online', handleOnline);
+  window.addEventListener('offline', handleOffline);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
   void probeNow();
 }
 
 export function stopConnectivity(): void {
   if (probeTimer) clearTimeout(probeTimer);
   probeTimer = null;
+  if (started && typeof window !== 'undefined') {
+    window.removeEventListener('online', handleOnline);
+    window.removeEventListener('offline', handleOffline);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }
+  }
   started = false;
 }
 
