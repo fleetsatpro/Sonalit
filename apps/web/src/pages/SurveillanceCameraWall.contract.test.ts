@@ -7,8 +7,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 describe('Surveillance Camera Wall module contract', () => {
   test('is exposed as a first-class Surveillance child route', () => {
-    const router = fs.readFileSync(path.resolve(__dirname, '../../router.tsx'), 'utf8')
-    const rail = fs.readFileSync(path.resolve(__dirname, '../../components/layout/Rail.tsx'), 'utf8')
+    const router = fs.readFileSync(path.resolve(__dirname, '../router.tsx'), 'utf8')
+    const rail = fs.readFileSync(path.resolve(__dirname, '../components/layout/Rail.tsx'), 'utf8')
     expect(router).toContain("path:'/surveillance/camera-wall'")
     expect(router).toContain("import('./pages/SurveillanceCameraWall.js')")
     expect(rail).toContain("path:'/surveillance/camera-wall'")
