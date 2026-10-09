@@ -357,9 +357,19 @@ function fallbackResearch(event,packet,{degraded=false}={}){
   const headline=clean(event?.headline||event?.title||'The reported incident',260);
   const facts=uniqueStrings(Array.isArray(event?.key_facts)?event.key_facts:[],5);
   const caveats=uniqueStrings(Array.isArray(event?.caveats)?event.caveats:[],4);
-  const specificCaveats=caveats.filter(c=>
-    !/^evidence coverage is limited to the sources linked to this event in sonalit\.?$/i.test(c) &&
-    !/^the available source set does not establish the full extent or downstream consequences of the incident\.?$/i.test(c)
+  const genericCaveatPatterns=[
+    /^evidence coverage is limited to the sources linked to this event in sonalit\.?$/i,
+    /^unresolved details are retained as intelligence gaps rather than filled with assumption\.?$/i,
+    /^the available source set does not establish the full extent or downstream consequences of the incident\.?$/i,
+    /^material uncertainty remains because the available record does not establish the full extent or downstream consequences of the incident\.?$/i
+  ];
+  // Synthesis fallback can append incident-specific caveats after a generic
+  // disclaimer in the same string. Filter sentence-by-sentence so a generic
+  // preamble cannot turn otherwise useful uncertainty into repeated boilerplate.
+  const specificCaveats=uniqueStrings(
+    caveats.flatMap(c=>String(c||'').split(/(?<=[.!?])\s+(?=[A-Z])/).map(part=>part.trim()))
+      .filter(c=>c&&!genericCaveatPatterns.some(pattern=>pattern.test(c))),
+    4
   );
   const classification=clean(event?.intelligence_type||'SECURITY',80).toUpperCase();
   const severity=clean(event?.severity||'moderate',40).toUpperCase();
