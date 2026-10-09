@@ -13,6 +13,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') }
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { checkIntelligenceSchema } = require('../src/utils/intelligenceSchemaHealth');
 
 const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production'
   || String(process.env.RAILWAY_ENVIRONMENT_NAME || '').toLowerCase() === 'production';
@@ -84,6 +85,54 @@ function isReconciliation(rawSql) {
   return /^\s*--\s*@sonalit-reconcile-always\b/i.test(rawSql);
 }
 
+const CERTIFICATION_RECONCILIATION = '20260908_114_intelligence_schema_reconciliation_certification.sql';
+const PUBLIC_REPAIR_RECONCILIATION = '20260908_115_intelligence_public_schema_repair.sql';
+const CERTIFICATION_NAME = '20260908_114_intelligence_schema_reconciliation_certification';
+
+async function reconciliationAlreadySatisfied(client, file) {
+  if (![CERTIFICATION_RECONCILIATION, PUBLIC_REPAIR_RECONCILIATION].includes(file)) return false;
+
+  const health = await checkIntelligenceSchema(client.query.bind(client));
+  if (!health.ok) {
+    console.warn(
+      `[db-migrate] ${file}: physical schema repair required; missing_tables=${health.missing_tables.join(',') || '-'}; `+
+      `missing_columns=${health.missing_columns.join(',') || '-'}; missing_indexes=${health.missing_indexes.join(',') || '-'}`
+    );
+    return false;
+  }
+
+  // Preserve the certification record without replaying ALTER TABLE against
+  // a healthy live schema. Do not touch the data tables on this fast path.
+  if (file === CERTIFICATION_RECONCILIATION) {
+    const table = await client.query(`
+      SELECT 1 FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname = 'intelligence_schema_reconciliations'
+        AND c.relkind IN ('r','p')
+      LIMIT 1
+    `);
+    if (!table.rows.length) {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS public.intelligence_schema_reconciliations (
+          id BIGSERIAL PRIMARY KEY,
+          migration_name TEXT NOT NULL UNIQUE,
+          reconciled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          details JSONB NOT NULL DEFAULT '{}'::jsonb
+        )
+      `);
+    }
+    await client.query(`
+      INSERT INTO public.intelligence_schema_reconciliations (migration_name, details)
+      VALUES ($1, jsonb_build_object('mode','catalog_certified_skip','data_destructive',false))
+      ON CONFLICT (migration_name) DO NOTHING
+    `, [CERTIFICATION_NAME]);
+  }
+
+  console.log(`[db-migrate] skip reconciliation ${file}: public Intelligence schema certified; avoiding repeated DDL`);
+  return true;
+}
+
 async function executeMigration(client, file, rawSql, { reconciliation = false } = {}) {
   const statements = splitStatements(cleanMigration(rawSql)).filter(s => {
     const code = s.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
@@ -93,6 +142,11 @@ async function executeMigration(client, file, rawSql, { reconciliation = false }
   console.log(`[db-migrate] ${reconciliation ? 'reconcile' : 'apply'} ${file} (${statements.length} stmts)`);
   await client.query('BEGIN');
   try {
+    if (reconciliation) {
+      // Fail closed instead of indefinitely queuing startup DDL behind traffic.
+      await client.query("SET LOCAL lock_timeout = '8s'");
+      await client.query("SET LOCAL statement_timeout = '120s'");
+    }
     for (let idx = 0; idx < statements.length; idx++) {
       try {
         await client.query(statements[idx]);
@@ -139,6 +193,7 @@ async function run() {
       const rawSql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
       const reconciliation = isReconciliation(rawSql);
       if (reconciliation) {
+        if (await reconciliationAlreadySatisfied(client, file)) continue;
         await executeMigration(client, file, rawSql, { reconciliation: true });
         reconciled++;
         continue;
