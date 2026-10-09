@@ -10,7 +10,7 @@ describe('publication research retry wiring', () => {
     expect(source).toContain("router.post('/publications/:id/retry-research'");
     expect(source).toContain("WHERE id=$1 AND org_id=$2");
     expect(source).toContain("['draft', 'review'].includes(String(publication.status || '').toLowerCase())");
-    expect(source).toContain("new Date(periodEnd.getTime() - 1000), forceResearch: true, recovery: true");
+    expect(source).toContain("periodAnchor: new Date(periodEnd.getTime() - 1000), forceResearch: true, recovery: true");
     expect(source).toContain('renderAndStorePublicationPdf(req.user.org_id, publicationId)');
   });
 
@@ -44,8 +44,11 @@ describe('publication research retry wiring', () => {
     expect(recovery).toContain("updated_at < NOW()-($6::int*INTERVAL '1 minute')");
     expect(recovery).toContain('END = $7');
     expect(recovery).toContain('last_recovery_attempt_at');
+    expect(recovery).toContain("body->'deep_research'->>'next_attempt_at'");
+    expect(recovery).toContain("'next_attempt_at',$8::text");
     expect(source).toContain('const priorGenerationGatePassed=');
-    expect(recovery).toContain('&& priorGenerationGatePassed');
+    expect(source).toContain('&& priorGenerationGatePassed');
+    expect(recovery).toContain('periodAnchor:anchorNow');
     expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit,maxAttempts\]\s*\)\);/);
     expect(recovery).toContain('await withOrg(orgId,client=>client.query(');
     expect(recovery).not.toContain('await query(');

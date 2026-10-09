@@ -140,7 +140,7 @@ router.post('/publications/:id/retry-research', async (req, res, next) => {
       req.user.org_id,
       country,
       type,
-      { now: new Date(periodEnd.getTime() - 1000), forceResearch: true, recovery: true },
+      { periodAnchor: new Date(periodEnd.getTime() - 1000), forceResearch: true, recovery: true },
     );
     const publicationId = recovered.publication_id || recovered.id || publication.id;
     let pdf = null;

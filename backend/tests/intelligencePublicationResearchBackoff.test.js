@@ -1,6 +1,7 @@
 const fs=require('fs');
 const path=require('path');
 const source=()=>fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+const {publicationRecoveryMetadata}=require('../src/utils/publicationRecoveryMetadata');
 
 describe('publication research retry hardening',()=>{
 
@@ -25,11 +26,23 @@ describe('publication research retry hardening',()=>{
     expect(s).toContain('else if(!current&&prior)effectiveResearchByEvent[id]=prior;');
   });
 
-  test('research attempt timing is persisted in publication metadata',()=>{
+  test('research attempt timing and next retry are persisted using the active execution clock',()=>{
     const s=source();
     expect(s).toContain('last_attempt_at:researchAttempted?now.toISOString()');
-    expect(s).toContain('next_attempt_at:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount');
-    expect(s).toContain('retry_cooldown_minutes:researchCooldownMinutes');
+    expect(s).toContain('...publicationRecoveryMetadata({');
+    expect(s).toContain('cooldownMinutes:researchCooldownMinutes');
+    const state=publicationRecoveryMetadata({
+      priorResearch:{recovery_attempts:1},
+      researchSummary:{researched:1,researched_limited:0},
+      expectedResearchCount:2,
+      researchAttempted:true,
+      now:new Date('2026-10-09T08:00:00.000Z'),
+      cooldownMinutes:60,
+      maxAttempts:3
+    });
+    expect(state.last_failure_reason).toContain('evidence-only');
+    expect(state.next_attempt_at).toBe('2026-10-09T09:00:00.000Z');
+    expect(state.recovery_attempts).toBe(1);
   });
 });
 
