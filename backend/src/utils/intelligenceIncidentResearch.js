@@ -439,11 +439,14 @@ async function researchBatch(events,{country,region}={}){
   ).toLowerCase();
   const allowFreeProviders=true;
   const providerPolicy={dataClassification,allowFreeProviders};
-  const aiReady=typeof aiClient.hasReadyProvider==='function'
-    ? aiClient.hasReadyProvider(providerPolicy)
-    : aiClient.hasAnyProvider(providerPolicy);
-  if(!aiReady){
-    logger.warn('Incident research batch: AI provider fabric unavailable; skipping AI calls and preserving evidence-only fallback.');
+  // Admission checks configuration and policy, not instantaneous circuit readiness.
+  // createResearchMessage/createMessage owns bounded cooldown recovery; short-circuiting
+  // on hasReadyProvider() here would prevent that recovery path from ever running.
+  const aiConfigured=typeof aiClient.hasAnyProvider==='function'
+    ? aiClient.hasAnyProvider(providerPolicy)
+    : (typeof aiClient.hasReadyProvider==='function' && aiClient.hasReadyProvider(providerPolicy));
+  if(!aiConfigured){
+    logger.warn('Incident research batch: no configured AI provider is permitted by the current data-classification policy; preserving evidence-only fallback.');
     return packets.map((packet,i)=>({packet,agent:fallbackResearch(events[i],packet,{degraded:true}),error:'ai_provider_unavailable'}));
   }
   const prompt='You are the web-grounded incident research desk for a serious professional intelligence publication. Each incident packet below has been freshly assembled from live Google News and GDELT discovery and fetched source pages. Research EACH incident independently using that supplied evidence as the primary source base. When the selected provider supports web search, use it to deepen or corroborate the packet; when it does not, do not claim a provider-side search occurred. Seek independent corroboration where the supplied packet permits it, preferring credible local reporting, authoritative institutions, specialist reporting and primary statements.\n\n'+
