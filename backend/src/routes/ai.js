@@ -1295,10 +1295,9 @@ router.post('/decision/:decisionId/feedback', async (req, res) => {
 });
 
 router.post('/decision', async (req, res) => {
-  const { command, history = [] } = req.body || {};
-  if (!command || !String(command).trim()) {
-    return res.status(400).json({ error: 'command required' });
-  }
+  const request = validateCopilotRequest(req.body, 12);
+  if (request.error) return res.status(request.status).json({ error: request.error });
+  const { command, history } = request;
 
   // Do not short-circuit when model providers are unavailable. The decision fabric
   // has a deterministic evidence-only fallback and must remain operational.
