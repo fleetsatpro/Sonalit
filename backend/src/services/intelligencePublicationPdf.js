@@ -633,7 +633,7 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
     await r2.send(new PutObjectCommand({Bucket:bucket,Key:key,Body:pdf,ContentType:'application/pdf',CacheControl:'private, max-age=0'}));
     // Publication PDFs are returned only by streamPublicationPdf after
     // tenant- and role-scoped authorization; never publish a raw R2 URL.
-    await query("UPDATE intel_publications SET pdf_status='ready',pdf_key=$3,pdf_url=$4,pdf_generated_at=NOW(),pdf_error=NULL,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,key,pdfUrl]);
+    await query("UPDATE intel_publications SET pdf_status='ready',pdf_key=$3,pdf_url=NULL,pdf_generated_at=NOW(),pdf_error=NULL,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,key]);
     for(const img of images)await query('INSERT INTO intel_publication_pdf_assets (org_id,publication_id,asset_type,source_url,source_label,provenance) VALUES ($1,$2,$3,$4,$5,$6::jsonb)',[orgId,publicationId,'image',img.source_url,img.label,JSON.stringify({embedded:true})]).catch(()=>{});
     return{status:'ready',publication_id:publicationId,pdf_url:null};
   }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3 WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
