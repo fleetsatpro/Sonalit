@@ -591,28 +591,23 @@ describe('intelligence provider mesh', () => {
     jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
 
     const calls=[];
+    const errorWithStatus=(message,status)=>Object.assign(new Error(message),{status});
     jest.doMock('openai',()=>class MockOpenAI{
       constructor(options={}){
         this.apiKey=options.apiKey;
         this.baseURL=options.baseURL||'openai';
         this.chat={completions:{create:jest.fn(async request=>{
-          calls.push({apiKey:this.apiKey,baseURL:this.baseURL,model:request.model});
-          // Match the configured test credential, not baseURL: the SDK options
-          // object may override the endpoint in this environment.
-          if(this.apiKey==='google-test-key-123'){
-            const error=new Error('Gemini rate limit');
-            error.status=429;
-            throw error;
-          }
-          if(this.apiKey==='openai-test-key-123'){
-            const error=new Error('insufficient credit balance');
-            error.status=402;
-            throw error;
-          }
-          if(this.apiKey==='openrouter-test-key-123'&&request.model==='openrouter/free'){
+          const call={ordinal:calls.length+1,apiKey:this.apiKey,baseURL:this.baseURL,model:request.model};
+          calls.push(call);
+          // This provider order is deterministic: hinted Gemini, then direct
+          // OpenAI; the persisted circuits exclude all OpenRouter lanes until
+          // the final half-open probe is invoked.
+          if(call.ordinal===1)throw errorWithStatus('Gemini rate limit',429);
+          if(call.ordinal===2)throw errorWithStatus('OpenAI insufficient credit balance',402);
+          if(call.ordinal===3&&request.model==='openrouter/free'){
             return {choices:[{message:{content:'{"results":[]}',tool_calls:[]}}]};
           }
-          throw new Error('Unexpected provider credential/model in half-open test');
+          throw new Error('Unexpected call order/provider in half-open test: '+JSON.stringify(call));
         })}};
       }
     });
@@ -630,9 +625,8 @@ describe('intelligence provider mesh', () => {
 
     expect(response._provider).toBe('openrouter-free-router');
     expect(response._free_provider).toBe(true);
-    expect(calls.some(c=>c.apiKey==='google-test-key-123')).toBe(true);
-    expect(calls.some(c=>c.apiKey==='openai-test-key-123')).toBe(true);
-    expect(calls.filter(c=>c.apiKey==='openrouter-test-key-123')).toEqual([
-      expect.objectContaining({model:'openrouter/free'})
-    ]);
+    expect(calls).toHaveLength(3);
+    expect(calls[0].model).not.toBe('openrouter/free');
+    expect(calls[1].model).not.toBe('openrouter/free');
+    expect(calls[2].model).toBe('openrouter/free');
   });
