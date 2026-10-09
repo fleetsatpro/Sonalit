@@ -272,7 +272,7 @@ export interface OfflineStatus {
 
 export async function getOfflineStatus(): Promise<OfflineStatus> {
   const connectivity = connectivitySnapshot();
-  const quarantinedLocalRecords = available ? await quarantinedOfflineCount() : null;
+  const quarantinedLocalRecords = available && identity ? await quarantinedOfflineCount(identity.userId) : null;
   const base: OfflineStatus = {
     enabled: isEnabled('OFFLINE_MODE'),
     storageAvailable: available,
