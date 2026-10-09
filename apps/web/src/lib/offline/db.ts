@@ -153,6 +153,17 @@ class SonalitDB extends Dexie {
 
 export const db = new SonalitDB();
 
+/** Count retained legacy rows that cannot be replayed until their tenant is verified. */
+export async function quarantinedOfflineCount(): Promise<number | null> {
+  try {
+    return await db.offline_quarantine.count();
+  } catch {
+    // Unknown is not zero: callers must not imply the quarantine is empty if
+    // the local store could not be queried.
+    return null;
+  }
+}
+
 /**
  * Is durable storage actually available?
  *
