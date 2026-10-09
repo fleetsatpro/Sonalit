@@ -10,8 +10,13 @@ jest.mock('../src/utils/publicResearchFetch',()=>({
   MAX_RESPONSE_BYTES:2*1024*1024,
 }));
 
-const { researchPublicationIncidents, verifiedResponseSources, parseGdeltResponse } = require('../src/utils/intelligenceIncidentResearch');
+const { researchPublicationIncidents, verifiedResponseSources, parseGdeltResponse, _resetGdeltCooldownForTests } = require('../src/utils/intelligenceIncidentResearch');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
+
+// The GDELT circuit is deliberately module-scoped in production; reset it between
+// tests so one mocked provider failure cannot contaminate unrelated scenarios.
+beforeEach(()=>_resetGdeltCooldownForTests());
+afterEach(()=>_resetGdeltCooldownForTests());
 
 test('passes publication data-classification policy into AI incident research',async()=>{
   const aiClient=require('../src/utils/aiClient');
