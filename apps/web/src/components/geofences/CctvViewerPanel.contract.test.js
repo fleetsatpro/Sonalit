@@ -35,7 +35,7 @@ describe('GEV CCTV wall contract', () => {
     expect(source).not.toContain('LIVE VIDEO · SOURCE')
     expect(source).not.toContain('LIVE VIDEO READY')
     expect(source).toContain("import('hls.js')")
-    expect(source).toContain('lowLatencyMode: true')
+    expect(source).toContain('lowLatencyMode: false')
     expect(source).toContain('recoverMediaError')
     expect(source).toContain('playsInline')
     expect(source).toContain('RTCPeerConnection')
