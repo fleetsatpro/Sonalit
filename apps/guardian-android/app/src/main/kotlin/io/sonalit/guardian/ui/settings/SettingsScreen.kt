@@ -11,21 +11,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import io.sonalit.guardian.BuildConfig
 import io.sonalit.guardian.ui.cfo.CfoViewModel
-import io.sonalit.guardian.worker.PendingPhotoUploadWorker
 
 @Composable
 fun SettingsScreen(
     cfoViewModel: CfoViewModel = hiltViewModel(),
     panicPinViewModel: PanicPinViewModel = hiltViewModel(),
 ) {
-    val context = LocalContext.current
     val cfoState by cfoViewModel.state.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -104,12 +101,22 @@ fun SettingsScreen(
             Column(Modifier.padding(16.dp)) {
                 SectionHeader(Icons.Default.CloudSync, "Sync & Offline")
                 Spacer(Modifier.height(12.dp))
-                SettingRow("Photos queued for upload", "${cfoState.pendingCount}")
+                SettingRow("Photos waiting to retry", "${cfoState.pendingCount}")
+                if (cfoState.failedPhotoCount > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    SettingRow("Uploads needing attention", "${cfoState.failedPhotoCount}")
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Automatic retries stopped for these photos after five attempts. The queue records remain on this device; use Retry Now after restoring connectivity or access.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
-                    onClick = { PendingPhotoUploadWorker.retryNow(context) },
+                    onClick = { cfoViewModel.retryPhotoUploadsNow() },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = cfoState.pendingCount > 0,
+                    enabled = cfoState.pendingCount > 0 || cfoState.failedPhotoCount > 0,
                 ) {
                     Text("Retry Now")
                 }
