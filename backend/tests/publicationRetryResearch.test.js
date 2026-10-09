@@ -9,14 +9,22 @@ describe('publication research retry wiring', () => {
     const source = fs.readFileSync(path.join(__dirname, '../src/routes/communicationsControl.js'), 'utf8');
     expect(source).toContain("router.post('/publications/:id/retry-research'");
     expect(source).toContain("WHERE id=$1 AND org_id=$2");
-    expect(source).toContain("['draft', 'review'].includes(String(publication.status || '').toLowerCase())");
-    expect(source).toContain("periodAnchor: new Date(periodEnd.getTime() - 1000), forceResearch: true, recovery: true");
+    expect(source).toContain('assessManualPublicationRetry');
+    expect(source).toContain('status: publication.status, deepResearch: priorResearch, now,');
+    expect(source).toContain('COALESCE(version,0)=$3');
+    expect(source).toContain("'next_attempt_at',$5::text");
+    expect(source).toContain("'manual_retry_state','in_progress'");
+    expect(source).toContain("error: 'publication_changed_before_retry'");
+    expect(source).toContain("error: 'publication_research_retry_failed'");
+    expect(source).toContain('periodAnchor: new Date(periodEnd.getTime() - 1000), forceResearch: true, recovery: true, manualRetry: true');
     expect(source).toContain('renderAndStorePublicationPdf(req.user.org_id, publicationId)');
   });
 
   test('publication desk exposes recovery and distinguishes query failures, held releases and PDF failures', () => {
     const source = fs.readFileSync(path.join(__dirname, '../../apps/web/src/pages/IntelligencePublicationDesk.tsx'), 'utf8');
     expect(source).toContain("'/retry-research'");
+    expect(source).toContain('onError:(error:any)=>{');
+    expect(source).toContain('cooldown-gated until');
     expect(source).toContain('RETRY RESEARCH');
     expect(source).toContain('PUBLICATION SERVICE UNAVAILABLE');
     expect(source).toContain('PUBLISHED · GATE UNVERIFIED');

@@ -56,10 +56,18 @@ export default function IntelligencePublicationDesk(){
  const report=useMutation({mutationFn:(id:string)=>api.post('/admin/communications/publications/'+encodeURIComponent(id)+'/generate-report'),onSuccess:()=>qc.invalidateQueries({queryKey:['intel-publications']})})
  const retryResearch=useMutation({
   mutationFn:(id:string)=>api.post('/admin/communications/publications/'+encodeURIComponent(id)+'/retry-research'),
+  onError:(error:any)=>{
+   const data=error?.response?.data;
+   const retryAt=typeof data?.retry_at==='string'?new Date(data.retry_at):null;
+   setRetryMessage(data?.message || (retryAt&&!Number.isNaN(retryAt.getTime())
+    ? `Research retry is cooldown-gated until ${retryAt.toLocaleString()}.`
+    : 'Research retry failed. The publication has not been confirmed recovered.'));
+  },
   onSuccess:async(response:any)=>{
    const data=response?.data?.data;
+   const retryAt=typeof data?.research_retry?.retry_at==='string'?new Date(data.research_retry.retry_at):null;
    setRetryMessage(data?.publication_status
-    ? `Research retry finished: ${String(data.publication_status).toUpperCase()}.`
+    ? `Research retry finished: ${String(data.publication_status).toUpperCase()}.${retryAt&&!Number.isNaN(retryAt.getTime())?` Next manual retry after ${retryAt.toLocaleString()}.`:''}`
     : 'Research retry request completed. Verify the publication state below.');
    setSelected(null);
    await qc.invalidateQueries({queryKey:['intel-publications']});
@@ -76,7 +84,7 @@ export default function IntelligencePublicationDesk(){
   {retryMessage&&<div className="ipd-empty" role="status"><b>RESEARCH RECOVERY RESULT</b><span>{retryMessage}</span><button type="button" onClick={()=>setRetryMessage(null)}>DISMISS</button></div>}
   {q.isPending&&<div className="ipd-empty" role="status"><b>LOADING PUBLICATIONS</b><span>Retrieving the authorized publication register.</span></div>}
   {q.isError&&<div className="ipd-empty" role="alert"><b>PUBLICATION SERVICE UNAVAILABLE</b><span>The publication register could not be loaded. This is not an empty or zero-incident result.</span><button type="button" onClick={()=>void q.refetch()}>RETRY REGISTER</button></div>}
-  {retryResearch.isError&&<div className="ipd-empty" role="alert"><b>RESEARCH RETRY FAILED</b><span>The server did not confirm successful recovery. The publication must not be treated as fixed.</span></div>}
+  {retryResearch.isError&&<div className="ipd-empty" role="alert"><b>RESEARCH RETRY NOT COMPLETED</b><span>{retryMessage||'The server did not confirm successful recovery. The publication must not be treated as fixed.'}</span></div>}
   <section className="ipd-grid">{items.map((x:Row,i:number)=>{
  const dr=x.body?.deep_research||{}; const dossierCount=Array.isArray(x.body?.incident_dossiers)?x.body.incident_dossiers.length:0; const pdfReady=String(x.pdf_status||'').toLowerCase()==='ready';
  return <article key={x.id||i} className="ipd-card">
