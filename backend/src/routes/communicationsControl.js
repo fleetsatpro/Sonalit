@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { listCustomerPulseTargets, generateAndQueueScopedClientPulse } = require('../services/email/scopedClientPulse.service');
 const { generateAndQueueSuperAdminClientPulse } = require('../services/email/clientPulseDispatch.service');
 const { withOrg } = require('../utils/orgScopedDb');
+const logger = require('../utils/logger');
 const { assessManualPublicationRetry } = require('../utils/publicationManualRetryPolicy');
 const { publicationForCountry } = require('../utils/intelligenceAgents');
 const { renderAndStorePublicationPdf, getPublicationPdfAccessUrl, getPublicationPdfObject, streamPublicationPdf } = require('../services/intelligencePublicationPdf');
@@ -168,6 +169,7 @@ router.post('/publications/:id/retry-research', async (req, res, next) => {
         periodAnchor: new Date(periodEnd.getTime() - 1000), forceResearch: true, recovery: true, manualRetry: true,
       });
     } catch (_error) {
+      logger.warn('Manual intelligence publication research retry failed org=' + req.user.org_id + ' publication=' + publication.id + ': ' + String(_error?.status || _error?.message || 'unknown').slice(0, 300));
       await withOrg(req.user.org_id, c => c.query(
         `UPDATE intel_publications
             SET body=jsonb_set(COALESCE(body,'{}'::jsonb), '{deep_research}',
