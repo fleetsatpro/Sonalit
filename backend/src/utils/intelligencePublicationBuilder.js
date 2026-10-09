@@ -114,6 +114,7 @@ function eventNarrative(e) {
     research_status: research.status || null,
     research_provider: research.provider || null,
     research_method: research.research_method || null,
+    degraded_evidence_eligible: research.degraded_evidence_eligible === true,
     web_sources_retrieved: Number(research.web_sources_retrieved || 0) || 0,
     research_sources: Array.isArray(research.sources) ? dedupeQualitySources(research.sources.map(src => ({
       ...src,

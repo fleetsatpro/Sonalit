@@ -411,13 +411,22 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const priorEvidenceConstrained=
     String(existing[0]?.body?.release_gate?.research_mode||'').toLowerCase()==='evidence_constrained' ||
     Number(priorResearch.degraded_evidence_eligible_incidents||0)>=expectedResearchCount;
+  const hasEligiblePerIncidentProviderFailure=publicationEvents.some(e=>{
+    const entry=effectiveResearchByEvent[String(e.id)]||{};
+    const agent=entry.agent||{};
+    const status=String(agent.status||'').toLowerCase();
+    const method=String(agent.research_method||'').toLowerCase();
+    return entry.error==='ai_provider_unavailable' &&
+      status==='fallback' &&
+      ['degraded_evidence','live_web_packet'].includes(method) &&
+      agent.degraded_evidence_eligible===true &&
+      Number(e.observation_count||0)>=1 &&
+      Number(e.source_count||0)>=1;
+  });
   const researchProviderUnavailable=Boolean(
     !publicationAiAvailable ||
     incidentResearch?.summary?.provider_unavailable===true ||
-    (researchAttempted &&
-      expectedResearchCount>0 &&
-      Number(incidentResearch?.summary?.researched||0)+Number(incidentResearch?.summary?.researched_limited||0)===0 &&
-      Number(incidentResearch?.summary?.fallback||0)+Number(incidentResearch?.summary?.failed||0)>=expectedResearchCount)
+    hasEligiblePerIncidentProviderFailure
   );
   const isDegradedEvidenceEvent=(e)=>{
     const entry=effectiveResearchByEvent[String(e.id)]||{};
@@ -428,14 +437,25 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
       (method==='degraded_evidence' || (method==='live_web_packet' && entry.error==='ai_provider_unavailable')) &&
       Number(e.observation_count||0)>=1 &&
       Number(e.source_count||0)>=1 &&
-      (entry.error==='ai_provider_unavailable' || priorEvidenceConstrained || researchProviderUnavailable);
+      (entry.error==='ai_provider_unavailable' || priorEvidenceConstrained);
   };
   const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));
+  const enrichedEventsById=new Map(enrichedEvents.map(e=>[String(e.id),e]));
   const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents,events);
   const allSelectedIncidentsDegraded=
     expectedResearchCount>0 &&
     publicationEvents.length===expectedResearchCount &&
     publicationEvents.every(isDegradedEvidenceEvent);
+  // Each selected dossier must have either controlled AI research or a narrowly
+  // eligible, attributable evidence-only fallback. This also supports mixed
+  // outcomes when some pages were retrieved but providers failed for other cases.
+  const releaseResearchEligible=
+    expectedResearchCount>0 &&
+    publicationEvents.length===expectedResearchCount &&
+    publicationEvents.every(e=>{
+      const status=String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase();
+      return ['researched','researched_limited'].includes(status) || isDegradedEvidenceEvent(e);
+    });
   const reportEvents=publicationBasis.publishable
     ? publicationBasis.reportEvents
     : (allSelectedIncidentsDegraded ? publicationEvents : publicationBasis.reportEvents);
@@ -444,13 +464,13 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   for(const e of reportEvents)for(const obs of Array.isArray(e.evidence)?e.evidence:[])if(obs?.source_id)reportSourceIds.add(String(obs.source_id));
   const reportSourceCount=evidenceContract ? sourceCount : Math.max(publicationBasis.researchSourceCount,reportSourceIds.size);
   const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable || allSelectedIncidentsDegraded;
-  const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents,evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
+  const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents.map(e=>enrichedEventsById.get(String(e.id))||e),evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
   const researchControlledComplete=expectedResearchCount===0 || publicationEvents.every(e=>{
     const status=String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase();
     return ['researched','researched_limited'].includes(status);
   });
   const degradedEvidenceRelease=
-    allSelectedIncidentsDegraded &&
+    releaseResearchEligible &&
     !researchControlledComplete &&
     publicationEvidenceContract &&
     researchProviderUnavailable;

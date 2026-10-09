@@ -222,3 +222,39 @@ test('fallback evidence is initialized before narrative construction',()=>{
   expect(s).toContain('const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];');
   expect(s.indexOf('const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];')).toBeLessThan(s.indexOf('const narrative=cleanPublicationText('));
 });
+
+test('deterministic publication receives effective per-incident research and provenance',()=>{
+  const s=source();
+  expect(s).toContain('const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));');
+  expect(s).toContain('const enrichedEventsById=new Map(enrichedEvents.map(e=>[String(e.id),e]));');
+  expect(s).toContain('events:reportEvents.map(e=>enrichedEventsById.get(String(e.id))||e)');
+});
+
+test('provider-outage release supports mixed researched and evidence-eligible dossiers without bypassing the research gate',()=>{
+  const s=source();
+  expect(s).toContain('const releaseResearchEligible=');
+  expect(s).toContain("return ['researched','researched_limited'].includes(status) || isDegradedEvidenceEvent(e);");
+  expect(s).toContain('releaseResearchEligible &&');
+  expect(s).toContain('publicationEvidenceContract &&');
+  expect(s).toContain('researchProviderUnavailable;');
+});
+
+test('degraded fallback eligibility is carried into the dossier and explicitly required by tradecraft QA',()=>{
+  const builder=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationBuilder.js'),'utf8');
+  const quality=fs.readFileSync(path.join(__dirname,'../src/utils/publicationQuality.js'),'utf8');
+  expect(builder).toContain('degraded_evidence_eligible: research.degraded_evidence_eligible === true');
+  expect(quality).toContain('dossier.degraded_evidence_eligible===true');
+  expect(quality).toContain("['degraded_evidence','live_web_packet'].includes(String(dossier.research_method||'').toLowerCase())");
+  expect(quality).toContain('Number(dossier.evidence_count||0)>=1');
+  expect(quality).toContain('Number(dossier.source_count||0)>=1');
+});
+
+test('degraded eligibility is per incident and a generic fallback batch is not treated as provider outage',()=>{
+  const s=source();
+  expect(s).toContain('const hasEligiblePerIncidentProviderFailure=publicationEvents.some(e=>');
+  expect(s).toContain("entry.error==='ai_provider_unavailable' &&");
+  expect(s).toContain("['degraded_evidence','live_web_packet'].includes(method)");
+  expect(s).toContain("(entry.error==='ai_provider_unavailable' || priorEvidenceConstrained)");
+  expect(s).not.toContain('|| priorEvidenceConstrained || researchProviderUnavailable');
+});
+
