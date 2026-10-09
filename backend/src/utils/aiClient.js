@@ -799,6 +799,38 @@ function retryAfterMs(err,fallbackMs){
     parseDurationMs(getErrorHeader(err,'ratelimit-reset'));
   return reset>0?reset:fallbackMs;
 }
+function safeProviderDiagnosticToken(value){
+  const token=String(value==null?'':value).trim();
+  return /^[A-Za-z0-9_.:-]{1,64}$/.test(token)?token:'unknown';
+}
+function safeNumericErrorHeader(err,name){
+  const value=getErrorHeader(err,name);
+  return /^\d+(?:\.\d+)?$/.test(value)?value:'unknown';
+}
+function openRouterRateLimitDiagnostic(err){
+  // OpenAI-compatible SDKs expose parsed response bodies under slightly
+  // different wrappers. Read only stable metadata fields and rate headers;
+  // never log raw provider messages, prompts, URLs or credentials.
+  const outer=err?.error&&typeof err.error==='object'
+    ? err.error
+    : (err?.response?.data&&typeof err.response.data==='object'?err.response.data:{});
+  const body=outer?.error&&typeof outer.error==='object'?outer.error:outer;
+  const metadata=body?.metadata||outer?.metadata||err?.metadata||{};
+  const errorType=safeProviderDiagnosticToken(metadata.error_type||body?.type);
+  const providerCode=safeProviderDiagnosticToken(metadata.provider_code||body?.code);
+  const retryMs=Math.max(0,Math.min(7*24*60*60*1000,retryAfterMs(err,0)));
+  const remaining=safeNumericErrorHeader(err,'x-ratelimit-remaining');
+  const limit=safeNumericErrorHeader(err,'x-ratelimit-limit');
+  const reset=safeNumericErrorHeader(err,'x-ratelimit-reset-requests')!=='unknown'
+    ? safeNumericErrorHeader(err,'x-ratelimit-reset-requests')
+    : safeNumericErrorHeader(err,'x-ratelimit-reset');
+  return 'error_type='+errorType+
+    ' provider_code='+providerCode+
+    ' retry_after_ms='+retryMs+
+    ' rate_limit_remaining='+remaining+
+    ' rate_limit_limit='+limit+
+    ' rate_limit_reset='+reset;
+}
 function fabricCooldownMs(err,provider,state){
   if(providerGroup(provider)==='google-gemini')return 0;
   if(Number(err?.status)===429 || /rate.?limit|too many requests|quota/i.test(String(err?.message||''))){
@@ -1266,10 +1298,14 @@ async function tryHalfOpenOpenRouterRouter(providers,params,coolingAtStart,attem
       providerResumeAt(provider)
     );
     halfOpenProbeNotBefore[provider.name]=nextAt;
+    const rateLimitDetails=Number(error?.status)===429
+      ? ' '+openRouterRateLimitDiagnostic(error)
+      : '';
     logger.warn(
       'AI provider half-open recovery probe failed: provider='+provider.name+
       ' status='+(Number(error?.status)||'unknown')+
-      ' retry_in_ms='+Math.max(0,nextAt-Date.now())
+      ' retry_in_ms='+Math.max(0,nextAt-Date.now())+
+      rateLimitDetails
     );
     return {response:null,provider,error};
   }
@@ -1342,6 +1378,7 @@ module.exports={
   providerCapabilities,
   resolvedOpenWeightModel,
   isModelNotFound,
+  openRouterRateLimitDiagnostic,
   createMessage,
   createResearchMessage,
   rankProviders,
