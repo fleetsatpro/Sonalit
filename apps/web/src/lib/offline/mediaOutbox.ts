@@ -280,16 +280,27 @@ async function finishFailure(entry: MediaUploadEntry, failure: Failure): Promise
   const permanent = !failure.retryable || entry.attempts >= MAX_MEDIA_AUTOMATIC_ATTEMPTS;
   const status: MediaUploadStatus = permanent ? 'FAILED_PERMANENT' : 'FAILED_RETRYABLE';
   const now = Date.now();
-  await db.media_outbox.update(entry.id, {
-    status,
-    nextAttemptAt: permanent ? Number.MAX_SAFE_INTEGER : now + backoffMs(entry.attempts),
-    lastAttemptAt: entry.lastAttemptAt,
-    leaseUntil: null,
-    updatedAt: now,
-    lastErrorCode: failure.code,
-    lastErrorMessage: failure.message,
-  });
-  announce();
+  // Compare-and-set the lease. A late result from an older attempt must never
+  // overwrite a newer retry or replace an authoritative acknowledgement.
+  const updated = await db.media_outbox
+    .where('id').equals(entry.id)
+    .and(row =>
+      row.ownerUserId === entry.ownerUserId &&
+      row.ownerOrgId === entry.ownerOrgId &&
+      row.status === 'UPLOADING' &&
+      row.attempts === entry.attempts &&
+      row.leaseUntil === entry.leaseUntil,
+    )
+    .modify({
+      status,
+      nextAttemptAt: permanent ? Number.MAX_SAFE_INTEGER : now + backoffMs(entry.attempts),
+      lastAttemptAt: entry.lastAttemptAt,
+      leaseUntil: null,
+      updatedAt: now,
+      lastErrorCode: failure.code,
+      lastErrorMessage: failure.message,
+    });
+  if (updated > 0) announce();
 }
 
 async function uploadOne(entry: MediaUploadEntry): Promise<void> {
@@ -352,18 +363,28 @@ async function uploadOne(entry: MediaUploadEntry): Promise<void> {
 async function uploadClaimed(entry: MediaUploadEntry): Promise<boolean> {
   try {
     await uploadOne(entry);
-    await db.media_outbox.update(entry.id, {
-      status: 'ACKNOWLEDGED',
-      blob: null,
-      acknowledgedAt: Date.now(),
-      updatedAt: Date.now(),
-      leaseUntil: null,
-      lastErrorCode: null,
-      lastErrorMessage: null,
-      nextAttemptAt: Number.MAX_SAFE_INTEGER,
-    });
-    announce();
-    return true;
+    const now = Date.now();
+    const updated = await db.media_outbox
+      .where('id').equals(entry.id)
+      .and(row =>
+        row.ownerUserId === entry.ownerUserId &&
+        row.ownerOrgId === entry.ownerOrgId &&
+        row.status === 'UPLOADING' &&
+        row.attempts === entry.attempts &&
+        row.leaseUntil === entry.leaseUntil,
+      )
+      .modify({
+        status: 'ACKNOWLEDGED',
+        blob: null,
+        acknowledgedAt: now,
+        updatedAt: now,
+        leaseUntil: null,
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        nextAttemptAt: Number.MAX_SAFE_INTEGER,
+      });
+    if (updated > 0) announce();
+    return updated > 0;
   } catch (error) {
     const e = error as { permanent?: boolean; code?: string; status?: number; response?: { status?: number; data?: { error?: string } } };
     const failure = e.permanent
@@ -413,6 +434,9 @@ export async function retryMediaUpload(id: string, ownerUserId: string, ownerOrg
     const row = await db.media_outbox.get(id);
     if (!row || row.ownerUserId !== ownerUserId || row.ownerOrgId !== ownerOrgId || row.status === 'ACKNOWLEDGED') {
       throw new MediaQueueError('media_not_found', 'This queued recording is not available to the current account.');
+    }
+    if (row.status === 'UPLOADING' && (row.leaseUntil ?? 0) > Date.now()) {
+      throw new MediaQueueError('media_already_uploading', 'This recording is already uploading. Keep this panel open while Sonalit confirms it.');
     }
     await db.media_outbox.update(id, {
       status: 'PENDING',
