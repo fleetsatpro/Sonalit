@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { isAllowedR2UploadUrl } from '../lib/offline/mediaOutbox.js';
 
 const recorder = readFileSync(new URL('./VoiceNoteRecorder.tsx', import.meta.url), 'utf8');
 const mediaQueue = readFileSync(new URL('../lib/offline/mediaOutbox.ts', import.meta.url), 'utf8');
@@ -36,4 +37,15 @@ describe('voice-note recorder delivery contract', () => {
     expect(mediaQueue).toContain('MAX_PENDING_MEDIA_COUNT = 100');
     expect(mediaQueue).toContain('MAX_MEDIA_AUTOMATIC_ATTEMPTS = 5');
   });
+
+  it('accepts only credential-free HTTPS URLs on the canonical R2 endpoint shape', () => {
+    expect(isAllowedR2UploadUrl('https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/bucket/key?signature=opaque')).toBe(true);
+    expect(isAllowedR2UploadUrl('http://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/bucket/key')).toBe(false);
+    expect(isAllowedR2UploadUrl('https://r2.cloudflarestorage.com/bucket/key')).toBe(false);
+    expect(isAllowedR2UploadUrl('https://attacker.example/bucket/key')).toBe(false);
+    expect(isAllowedR2UploadUrl('https://attacker.r2.cloudflarestorage.com/bucket/key')).toBe(false);
+    expect(isAllowedR2UploadUrl('https://user:password@0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/bucket/key')).toBe(false);
+    expect(isAllowedR2UploadUrl('https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com:8443/bucket/key')).toBe(false);
+  });
+
 });
