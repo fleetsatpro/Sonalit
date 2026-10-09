@@ -172,6 +172,7 @@ export async function startOffline(id: OfflineIdentity): Promise<boolean> {
   identity = null;
   blocked = null;
   available = false;
+  announce();
 
   const storageAvailable = await isStorageAvailable();
   if (generation !== lifecycleGeneration) return false;
