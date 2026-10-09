@@ -140,6 +140,17 @@ describe('voice-note storage readiness and commit integrity', () => {
     expect(mockGetSignedUrl).not.toHaveBeenCalled();
   });
 
+  test('does not reuse a soft-deleted note ID or overwrite its retained object', async () => {
+    dbMode = 'duplicate-match';
+    existingRow = { ...existingRow, deleted_at: '2026-10-01T12:00:00.000Z' };
+
+    const response = await uploadRequest();
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ error: 'voice_note_id_conflict' });
+    expect(mockGetSignedUrl).not.toHaveBeenCalled();
+  });
+
   test('allows the original uploader to request a stable-ID retry only for matching metadata', async () => {
     dbMode = 'duplicate-match';
 
