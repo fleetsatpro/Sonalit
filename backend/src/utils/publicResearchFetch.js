@@ -17,18 +17,38 @@ function researchError(message, failureClass = 'invalid_data') {
   return error;
 }
 
+function isNonPublicIpv4(address) {
+  const octets = String(address || '').split('.').map(Number);
+  if (octets.length !== 4 || octets.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const value = octets.reduce((result, octet) => result * 256 + octet, 0) >>> 0;
+  const blocked = [
+    ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
+    ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24],
+    ['192.0.2.0', 24], ['192.88.99.0', 24], ['192.168.0.0', 16],
+    ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24],
+    ['224.0.0.0', 4], ['240.0.0.0', 4],
+  ];
+  return blocked.some(([network, prefix]) => {
+    const base = network.split('.').map(Number).reduce((result, octet) => result * 256 + octet, 0) >>> 0;
+    const mask = (0xffffffff << (32 - prefix)) >>> 0;
+    return ((value & mask) >>> 0) === ((base & mask) >>> 0);
+  });
+}
+
 function isPublicResearchAddress(value) {
   const address = String(value || '').split('%')[0].toLowerCase();
   const family = net.isIP(address);
   if (!family || isPrivateIp(address)) return false;
+  if (family === 4) return !isNonPublicIpv4(address);
   if (family === 6) {
     // Only global-unicast IPv6 is accepted; mapped IPv4 and transition ranges
     // are rejected so they cannot disguise private IPv4 destinations.
     if (!/^[23][0-9a-f]{3}:/.test(address)) return false;
     if (/^2001:(?:0000|0{0,3}db8|0{0,3}0010):/i.test(address)) return false;
     if (/^2002:/i.test(address)) return false;
+    return true;
   }
-  return family === 4 || family === 6;
+  return false;
 }
 
 function parsePublicResearchUrl(rawUrl) {
@@ -232,6 +252,7 @@ function createPublicResearchFetcher({ resolveAddresses = resolvePublicAddresses
         headers: { get: name => headerValue(headers, name) },
         arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
         text: async () => body.toString('utf8'),
+        json: async () => JSON.parse(body.toString('utf8')),
         url: parsed.url.toString(),
       };
     }
