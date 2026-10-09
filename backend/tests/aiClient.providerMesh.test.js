@@ -651,7 +651,7 @@ describe('intelligence provider mesh', () => {
     const path=require('path');
     const source=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
     const start=source.indexOf('function halfOpenRouterBlockReason');
-    const end=source.indexOf('\\nfunction logHalfOpenProbeSkipped',start);
+    const end=source.indexOf('\nfunction logHalfOpenProbeSkipped',start);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     const gate=source.slice(start,end);
