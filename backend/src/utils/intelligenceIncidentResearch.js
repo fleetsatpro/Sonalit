@@ -27,8 +27,19 @@ const MAX_PAGE_CHARS = 6500;
 const MAX_PACKET_CHARS = 30000;
 const REQUEST_TIMEOUT_MS = 10000;
 const GDELT_COOLDOWN_MS=5*60*1000;
+const DEFAULT_INCIDENT_RESEARCH_BATCH_SIZE=4;
+const MAX_INCIDENT_RESEARCH_BATCH_SIZE=4;
 let gdeltDownUntil=0;
 function _resetGdeltCooldownForTests(){ gdeltDownUntil=0; }
+
+function chunkIncidentResearchBatches(events,batchSize=DEFAULT_INCIDENT_RESEARCH_BATCH_SIZE){
+  const input=Array.isArray(events)?events:[];
+  const requested=Number.isFinite(Number(batchSize))?Math.floor(Number(batchSize)):DEFAULT_INCIDENT_RESEARCH_BATCH_SIZE;
+  const size=Math.max(1,Math.min(MAX_INCIDENT_RESEARCH_BATCH_SIZE,requested||DEFAULT_INCIDENT_RESEARCH_BATCH_SIZE));
+  const batches=[];
+  for(let i=0;i<input.length;i+=size)batches.push(input.slice(i,i+size));
+  return batches;
+}
 
 const RESEARCH_RESPONSE_FORMAT = {
   type:'json_schema',
@@ -583,20 +594,25 @@ async function researchIncident(event,{country,region}={}){
 
 async function researchPublicationIncidents(events,{country,region}={}){
   const out={};
-  // Research incidents independently so each case receives a clean evidence context and full web-search budget.
-  const batchSize=1;
+  // Keep incident packets individually attributable while batching multiple
+  // keyed dossiers into one provider request. This lowers free-provider request
+  // pressure without merging sources, facts or QA decisions across incidents.
+  const configuredBatchSize=Math.floor(Number(process.env.INTEL_PUBLICATION_RESEARCH_BATCH_SIZE)||DEFAULT_INCIDENT_RESEARCH_BATCH_SIZE);
+  const batches=chunkIncidentResearchBatches(events,configuredBatchSize);
   let cursor=0;
-  const concurrency=Math.max(1,Math.min(4,Number(process.env.INTEL_PUBLICATION_RESEARCH_CONCURRENCY)||3));
+  // Two in-flight research calls by default: bounded request rate and bounded
+  // source-fetch fan-out. An explicit value may lower concurrency to one.
+  const concurrency=Math.max(1,Math.min(2,Number(process.env.INTEL_PUBLICATION_RESEARCH_CONCURRENCY)||2));
   async function worker(){
     while(true){
-      const start=cursor; cursor+=batchSize;
-      if(start>=events.length)return;
-      const batch=events.slice(start,start+batchSize);
+      const index=cursor++;
+      if(index>=batches.length)return;
+      const batch=batches[index];
       const results=await researchBatch(batch,{country,region});
       results.forEach((result,i)=>{out[String(batch[i].id)]=result});
     }
   }
-  await Promise.all(Array.from({length:Math.min(concurrency,Math.ceil(events.length/batchSize))},worker));
+  await Promise.all(Array.from({length:Math.min(concurrency,batches.length)},worker));
   const values=Object.values(out);
   const researched=values.filter(x=>x&&x.agent&&x.agent.status==='researched').length;
   const researchedLimited=values.filter(x=>x&&x.agent&&x.agent.status==='researched_limited').length;
@@ -610,4 +626,4 @@ async function researchPublicationIncidents(events,{country,region}={}){
   return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,deferred:Math.max(0,events.length-values.length),degraded_evidence_eligible:degradedEvidenceEligible,provider_unavailable:providerUnavailable}};
 }
 
-module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,_resetGdeltCooldownForTests};
+module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,chunkIncidentResearchBatches,_resetGdeltCooldownForTests};
