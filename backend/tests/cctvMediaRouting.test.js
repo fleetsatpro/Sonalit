@@ -207,7 +207,7 @@ describe('CCTV media routing', () => {
 
   test('sniffs generic-content-type HLS playlists instead of exposing them as progressive video', async () => {
     const originalFetch = global.fetch;
-    global.fetch = async () => new Response('#EXTM3U\\n#EXT-X-TARGETDURATION:2\\n#EXTINF:2,\\nsegment.ts\\n', {
+    global.fetch = async () => new Response('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment.ts\n', {
       status:200,
       headers:{'content-type':'application/octet-stream'}
     });
