@@ -28,6 +28,7 @@ const MAX_PACKET_CHARS = 30000;
 const REQUEST_TIMEOUT_MS = 10000;
 const GDELT_COOLDOWN_MS=5*60*1000;
 let gdeltDownUntil=0;
+function _resetGdeltCooldownForTests(){ gdeltDownUntil=0; }
 
 const RESEARCH_RESPONSE_FORMAT = {
   type:'json_schema',
@@ -601,4 +602,4 @@ async function researchPublicationIncidents(events,{country,region}={}){
   return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,deferred:Math.max(0,events.length-values.length),degraded_evidence_eligible:degradedEvidenceEligible,provider_unavailable:providerUnavailable}};
 }
 
-module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse};
+module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,_resetGdeltCooldownForTests};
