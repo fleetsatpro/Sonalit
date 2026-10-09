@@ -294,6 +294,7 @@ function InlineCctvVideo({
   onError?: () => void
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [playbackState, setPlaybackState] = useState<'verifying' | 'progressing' | 'unavailable'>('verifying')
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
 
@@ -302,6 +303,7 @@ function InlineCctvVideo({
     if (!video || !src) return
 
     let disposed = false
+    setPlaybackState('verifying')
     let hls: Hls | null = null
     let fatalRecovery = 0
     let authRefreshAttempted = false
@@ -311,7 +313,10 @@ function InlineCctvVideo({
     const hlsSource = isHlsUrl(src, mediaType)
 
     const fail = () => {
-      if (!disposed) onErrorRef.current?.()
+      if (!disposed) {
+        setPlaybackState('unavailable')
+        onErrorRef.current?.()
+      }
     }
 
     const clearStallTimer = () => {
@@ -362,11 +367,21 @@ function InlineCctvVideo({
       lastProgressAt = Date.now()
       playbackRecovery = 0
       clearStallTimer()
+      setPlaybackState('progressing')
     }
 
-    const onWaiting = () => scheduleStallRecovery()
-    const onStalled = () => scheduleStallRecovery()
-    const onEnded = () => recoverStalledPlayback()
+    const onWaiting = () => {
+      if (!disposed) setPlaybackState('verifying')
+      scheduleStallRecovery()
+    }
+    const onStalled = () => {
+      if (!disposed) setPlaybackState('verifying')
+      scheduleStallRecovery()
+    }
+    const onEnded = () => {
+      if (!disposed) setPlaybackState('verifying')
+      recoverStalledPlayback()
+    }
 
     const attach = async () => {
       if (hlsSource) {
@@ -482,15 +497,20 @@ function InlineCctvVideo({
   }, [mediaType, src])
 
   return (
-    <video
-      ref={videoRef}
-      poster={poster}
-      autoPlay
-      muted
-      playsInline
-      controls
-      preload="auto"
-    />
+    <div className="gev-cctv-inline-video" data-playback-state={playbackState}>
+      <video
+        ref={videoRef}
+        poster={poster}
+        autoPlay
+        muted
+        playsInline
+        controls
+        preload="auto"
+      />
+      <span className="gev-cctv-inline-playback-status" aria-live="polite">
+        {playbackState === 'progressing' ? 'PLAYBACK PROGRESSING' : playbackState === 'unavailable' ? 'PLAYBACK UNAVAILABLE' : 'VERIFYING PLAYBACK'}
+      </span>
+    </div>
   )
 }
 
@@ -1059,7 +1079,7 @@ export default function CctvViewerPanel({
         : direct
       ? 'PUBLIC PREVIEW'
       : sourcePlayback
-        ? 'LIVE VIDEO / SOURCE'
+        ? 'PROVIDER-REPORTED VIDEO'
         : mode === 'source'
           ? 'SOURCE-ONLY'
           : synthetic
@@ -1126,7 +1146,7 @@ export default function CctvViewerPanel({
             poster={typeof camMedia.previewUrl === 'string' ? camMedia.previewUrl : undefined}
             onError={() => markPreviewFailure(camera.id)}
           />
-          <div className="gev-cctv-source-live-badge"><i /> LIVE VIDEO · SOURCE</div>
+          <div className="gev-cctv-source-live-badge"><i /> PROVIDER-REPORTED VIDEO</div>
         </div>
       )
     }
@@ -1371,12 +1391,12 @@ export default function CctvViewerPanel({
                               src={platformEmbedUrl(cam)}
                               title={cameraName(cam) + ' sanctioned live video'}
                             />
-                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE · PLATFORM</span>
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> APPROVED PLATFORM EMBED</span>
                           </div>
                         ) : (
                           <div className="gev-cctv-wall-feed-state">
                             <Camera size={18} />
-                            <strong>LIVE PLATFORM</strong>
+                            <strong>APPROVED PLATFORM EMBED</strong>
                             <span>Select this camera to activate its sanctioned in-app player.</span>
                           </div>
                         )
@@ -1394,7 +1414,7 @@ export default function CctvViewerPanel({
                                 return next
                               })}
                             />
-                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE · MJPEG</span>
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> PROVIDER-REPORTED MJPEG</span>
                           </div>
                         ) : (
                           <div className="gev-cctv-wall-feed-media-source">
@@ -1408,7 +1428,7 @@ export default function CctvViewerPanel({
                                 return next
                               })}
                             />
-                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE · VIDEO</span>
+                            
                           </div>
                         )
                       ) : camLiveVideo ? (
@@ -1427,12 +1447,12 @@ export default function CctvViewerPanel({
                                   decoding="async"
                                   onError={() => markPreviewFailure(cam.id)}
                                 />}
-                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · FALLBACK FRAME</span>
+                            <span className="gev-cctv-wall-feed-source-badge"><i /> PROVIDER-REPORTED VIDEO · SNAPSHOT FALLBACK</span>
                           </div>
                         ) : (
                           <div className="gev-cctv-wall-feed-state">
                             <Camera size={18} />
-                            <strong>LIVE VIDEO</strong>
+                            <strong>VIDEO CAPABILITY REPORTED</strong>
                             <span>The continuous feed is currently unavailable in-app; select the camera to retry in the focused player.</span>
                           </div>
                         )
@@ -1457,7 +1477,7 @@ export default function CctvViewerPanel({
                       ) : camStream ? (
                         <div className="gev-cctv-wall-feed-state">
                           <Camera size={18} />
-                          <strong>LIVE STREAM</strong>
+                          <strong>STREAM CAPABILITY REPORTED</strong>
                           <span>Select this camera to activate its approved stream.</span>
                         </div>
                       ) : camMode === 'source' ? (
@@ -1478,12 +1498,12 @@ export default function CctvViewerPanel({
                               poster={typeof camMedia.previewUrl === 'string' ? camMedia.previewUrl : undefined}
                               onError={() => markPreviewFailure(cam.id)}
                             />
-                            <span className="gev-cctv-wall-feed-source-badge"><i /> LIVE VIDEO · SOURCE</span>
+                            
                           </div>
                         ) : (
                           <div className="gev-cctv-wall-feed-state gev-cctv-wall-feed-state--source">
                             <Camera size={18} />
-                            <strong>{sourceMediaIsImage(cam) ? 'LIVE FRAME ONLY' : camSourcePlayback ? 'LIVE VIDEO READY' : 'LIVE SOURCE UNAVAILABLE'}</strong>
+                            <strong>{sourceMediaIsImage(cam) ? 'SNAPSHOT ONLY' : camSourcePlayback ? 'VIDEO CAPABILITY REPORTED' : 'LIVE SOURCE UNAVAILABLE'}</strong>
                             <span>
                               {sourceMediaIsImage(cam)
                                 ? 'Current source is a live-updating image, not a continuous video stream.'
