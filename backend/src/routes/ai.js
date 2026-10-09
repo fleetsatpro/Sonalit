@@ -1397,8 +1397,9 @@ function inferGeofenceTask(command) {
 
 // ── POST /ai/dispatch — agentic tool-use loop ──────────────────────────────
 router.post('/dispatch', async (req, res) => {
-  const { command, history = [] } = req.body;
-  if (!command || !command.trim()) return res.status(400).json({ error: 'command required' });
+  const request = validateCopilotRequest(req.body, 6);
+  if (request.error) return res.status(request.status).json({ error: request.error });
+  const { command, history } = request;
 
   // High-confidence geofence commands bypass the model completely. This keeps
   // a core operational drawing task available even during provider outages and
