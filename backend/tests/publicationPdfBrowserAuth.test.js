@@ -19,6 +19,22 @@ describe('browser-native publication PDF compatibility', () => {
     expect(s).toContain("AND org_id = $2");
   });
 
+  test('bearer-token PDF access enforces the admin role before the compatibility route can stream data', () => {
+    const s = fs.readFileSync(path.join(__dirname, '../src/middleware/publicationPdfCapability.js'), 'utf8');
+    expect(s).toContain("const { authenticate, authorize } = require('./auth');");
+    expect(s).toContain("authorize('admin', 'super_admin')(req, res, next)");
+    expect(s).not.toContain("if (authHeader) return authenticate(req, res, next);");
+  });
+
+  test('publication PDF images use the same bounded public-HTTPS fetch boundary', () => {
+    const s = fs.readFileSync(path.join(__dirname, '../src/services/intelligencePublicationPdf.js'), 'utf8');
+    expect(s).toContain("safeFetchPublicResearch(url,{timeoutMs:10000,maxBytes:MAX_PDF_IMAGE_BYTES})");
+    expect(s).toContain("PDF_IMAGE_CONTENT_TYPES.has(contentType)");
+    expect(s).toContain("limitInputPixels:30_000_000");
+    expect(s).toContain("response.arrayBuffer()");
+    expect(s).not.toContain("fetch(url,{redirect:'follow'");
+  });
+
   test('Intelligence publication feed mints the PDF capability used by the legacy browser links', () => {
     const s = fs.readFileSync(path.join(__dirname, '../src/routes/intelligenceOperations.js'), 'utf8');
     expect(s).toContain("router.get('/publications'");
