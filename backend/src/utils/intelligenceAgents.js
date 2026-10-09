@@ -431,11 +431,22 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
       (entry.error==='ai_provider_unavailable' || priorEvidenceConstrained || researchProviderUnavailable);
   };
   const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));
+  const enrichedEventsById=new Map(enrichedEvents.map(e=>[String(e.id),e]));
   const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents,events);
   const allSelectedIncidentsDegraded=
     expectedResearchCount>0 &&
     publicationEvents.length===expectedResearchCount &&
     publicationEvents.every(isDegradedEvidenceEvent);
+  // Each selected dossier must have either controlled AI research or a narrowly
+  // eligible, attributable evidence-only fallback. This also supports mixed
+  // outcomes when some pages were retrieved but providers failed for other cases.
+  const releaseResearchEligible=
+    expectedResearchCount>0 &&
+    publicationEvents.length===expectedResearchCount &&
+    publicationEvents.every(e=>{
+      const status=String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase();
+      return ['researched','researched_limited'].includes(status) || isDegradedEvidenceEvent(e);
+    });
   const reportEvents=publicationBasis.publishable
     ? publicationBasis.reportEvents
     : (allSelectedIncidentsDegraded ? publicationEvents : publicationBasis.reportEvents);
@@ -444,13 +455,13 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   for(const e of reportEvents)for(const obs of Array.isArray(e.evidence)?e.evidence:[])if(obs?.source_id)reportSourceIds.add(String(obs.source_id));
   const reportSourceCount=evidenceContract ? sourceCount : Math.max(publicationBasis.researchSourceCount,reportSourceIds.size);
   const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable || allSelectedIncidentsDegraded;
-  const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents,evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
+  const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents.map(e=>enrichedEventsById.get(String(e.id))||e),evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
   const researchControlledComplete=expectedResearchCount===0 || publicationEvents.every(e=>{
     const status=String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase();
     return ['researched','researched_limited'].includes(status);
   });
   const degradedEvidenceRelease=
-    allSelectedIncidentsDegraded &&
+    releaseResearchEligible &&
     !researchControlledComplete &&
     publicationEvidenceContract &&
     researchProviderUnavailable;
