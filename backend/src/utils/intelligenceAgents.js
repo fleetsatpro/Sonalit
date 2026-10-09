@@ -344,7 +344,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     && !needsDeepResearch
     && !pdfRendererMismatch
     && !publicationPolicyMismatch
-    && priorResearchReleaseReady;
+    && priorResearchReleaseReady
+    && !(priorResearch.last_failure_reason && priorDossierResearchReady);
   if(existing.length&&unchanged)return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 
   const refreshPdf=Boolean(existing.length&&(evidenceChanged||needsDeepResearch||pdfRendererMismatch||publicationPolicyMismatch));
@@ -652,8 +653,9 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
     const periodEnd=new Date(row.period_end);
     if(Number.isNaN(periodEnd.getTime()))continue;
     const research=row.body?.deep_research&&typeof row.body.deep_research==='object'?row.body.deep_research:{};
-    const storedAttempts=Number(research.recovery_attempts);
-    const nextAttempt=Number.isSafeInteger(storedAttempts)&&storedAttempts>=0?storedAttempts+1:1;
+    const storedAttemptsRaw=Number(research.recovery_attempts);
+    const storedAttempts=Number.isSafeInteger(storedAttemptsRaw)&&storedAttemptsRaw>=0?storedAttemptsRaw:0;
+    const nextAttempt=storedAttempts+1;
     try{
       // Claim and persist the attempt before expensive provider calls so a
       // process restart or thrown exception cannot reset the retry budget.
@@ -673,9 +675,94 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
             updated_at=NOW()
           WHERE id=$1 AND org_id=$2
             AND status IN ('draft','review')
-            AND updated_at=$6
+            AND updated_at < NOW()-($6::int*INTERVAL '1 minute')
+            AND CASE
+              WHEN NULLIF(body->'deep_research'->>'recovery_attempts','') IS NULL THEN 0
+              WHEN (body->'deep_research'->>'recovery_attempts') ~ '^[0-9]{1,6}
+      ));
+      if(!claim.rows.length){
+        results.push({id:String(row.id),country,type,status:'skipped',reason:'publication_changed_before_recovery_claim'});
+        continue;
+      }
+      const anchorNow=new Date(periodEnd.getTime()-1000);
+      const result=await publicationForCountry(orgId,country,type,{
+        now:anchorNow,forceResearch:true,recovery:true,recoveryAttempt:nextAttempt,recoveryMaxAttempts:maxAttempts
+      });
+      results.push({
+        id:String(row.id),country,type,
+        publication_status:result.publication_status,
+        status:result.status||'created',
+        publication_id:result.publication_id||result.id||row.id,
+        recovery_attempt:nextAttempt,
+        recovery_max_attempts:maxAttempts
+      });
+    }catch(error){
+      logger.warn(`Intelligence publication recovery failed ${country}/${type} id=${row.id}: ${error.message}`);
+      results.push({id:String(row.id),country,type,status:'failed',error:String(error.message||error),recovery_attempt:nextAttempt,recovery_max_attempts:maxAttempts});
+    }
+  }
+  return {
+    processed:results.filter(x=>x.status!=='skipped').length,
+    published:results.filter(x=>x.publication_status==='published').length,
+    drafts:results.filter(x=>x.publication_status==='draft').length,
+    failed:results.filter(x=>x.status==='failed'||x.error).length,
+    skipped:results.filter(x=>x.status==='skipped').length,
+    results
+  };
+}
+
+function publicationForCountry(orgId,country,type='daily',options={}){
+  return withOrg(orgId, async client => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`sonalit:intelligence:publication:${orgId}:${country}:${type}`]);
+    return publicationForCountryUnsafe(orgId,country,type,options);
+  });
+}
+
+async function publishDue(orgId,now=new Date(),options={}){
+ const results=[];
+ const forceDaily=Boolean(options.forceDaily);
+ const run=async(country,type)=>{
+   try{results.push({country,timezone:publicationTimezoneForCountry(country),...await publicationForCountry(orgId,country,type)});}
+   catch(error){logger.error('Intelligence publication failed '+country+'/'+type+' org='+orgId+': '+error.message);results.push({country,type,status:'failed',error:error.message});}
+ };
+ for(const country of DAILY_COUNTRIES){
+   const tz=publicationTimezoneForCountry(country);
+   const local=zonedParts(now,tz);
+   if(forceDaily || isPublicationBoundary(now,tz))await run(country,'daily');
+   if(local.hour===0&&local.minute<5&&localWeekday(local)===1)await run(country,'weekly');
+   if(local.hour===0&&local.minute<5&&local.day===1)await run(country,'monthly');
+ }
+ return{processed:results.length,results,timezone:'per-country-local',boundary:'00:00 local by country'};
+}
+async function runIntelligenceAgents(options={}){
+ const includePublications=Boolean(options.includePublications);
+ const forceDailyPublications=Boolean(options.forceDailyPublications);
+ const now=options.now instanceof Date?options.now:new Date();
+ const {rows:orgs}=await globalQuery('SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL');
+ const output=[];
+ for(const {org_id} of orgs){
+   try{
+     const result=await runWithOrgContext(org_id,async()=>{
+       const translation=await translateQueue(org_id);
+       const synthesis=await synthesizeEvents(org_id);
+       const publications=includePublications?await publishDue(org_id,now,{forceDaily:forceDailyPublications}):{processed:0,results:[],skipped:'scheduled publication boundary only'};
+       return{translation,synthesis,publications};
+     });
+     output.push({org_id,...result});
+   }catch(error){output.push({org_id,error:error.message});logger.warn('Intelligence agents org='+org_id+' failed: '+error.message);}
+ }
+ return output;
+}
+async function runScheduledPublicationBoundary(now=new Date()){
+ if(!anyCountryPublicationBoundary(now))return{skipped:true,reason:'not_publication_boundary_for_any_country',timezone:'per-country-local'};
+ return{skipped:false,timezone:'per-country-local',results:await runIntelligenceAgents({includePublications:true,now})};
+}
+module.exports={runIntelligenceAgents,translateQueue,synthesizeEvents,publishDue,publicationForCountry,recoverStalledPublications,evidenceDerivedSynthesis,publicationWindow,isPublicationBoundary,isSecurityRelevantEvent,isCountryPublicationBoundary,anyCountryPublicationBoundary,publicationTimezoneForCountry,nextCountryPublicationBoundary,msUntilNextCountryPublicationBoundary,msUntilAnyCountryPublicationBoundary,defaultPublicationTimezone:PUBLICATION_TIMEZONE,defaultCountryTimezones:DEFAULT_COUNTRY_TIMEZONES,runScheduledPublicationBoundary};
+                THEN (body->'deep_research'->>'recovery_attempts')::int
+              ELSE 999999
+            END = $7
           RETURNING id`,
-        [row.id,orgId,nextAttempt,maxAttempts,now.toISOString(),row.updated_at]
+        [row.id,orgId,nextAttempt,maxAttempts,now.toISOString(),staleMinutes,storedAttempts]
       ));
       if(!claim.rows.length){
         results.push({id:String(row.id),country,type,status:'skipped',reason:'publication_changed_before_recovery_claim'});

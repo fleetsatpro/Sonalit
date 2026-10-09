@@ -31,7 +31,7 @@ describe('publication research retry wiring', () => {
     const end = source.indexOf('function publicationForCountry', start);
     const recovery = source.slice(start, end);
     expect(recovery).toContain('withOrg(orgId,client=>client.query(');
-    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit\]\s*\)\);/);
+    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit,maxAttempts\]\s*\)\);/);
     expect(recovery).not.toContain('await query(');
   });
 
@@ -41,7 +41,8 @@ describe('publication research retry wiring', () => {
     const end = source.indexOf('function publicationForCountry', start);
     const recovery = source.slice(start, end);
     expect(recovery).toContain('INTEL_PUBLICATION_RECOVERY_MAX_ATTEMPTS');
-    expect(recovery).toContain('AND updated_at=$6');
+    expect(recovery).toContain("updated_at < NOW()-($6::int*INTERVAL '1 minute')");
+    expect(recovery).toContain('END = $7');
     expect(recovery).toContain('last_recovery_attempt_at');
     expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit,maxAttempts\]\s*\)\);/);
     expect(recovery).toContain('await withOrg(orgId,client=>client.query(');
