@@ -6518,6 +6518,16 @@
         }
       }
     },
+    "/api/v1/admin/communications/publications/{id}/retry-research": {
+      "post": {
+        "operationId": "post_api_v1_admin_communications_publications_id_retry_research",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/admin/communications/publications/{id}/generate-report": {
       "post": {
         "operationId": "post_api_v1_admin_communications_publications_id_generate_report",

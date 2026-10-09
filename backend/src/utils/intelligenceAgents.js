@@ -8,6 +8,7 @@ const {withOrg}=require('./orgScopedDb');
 const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 const { buildEvidencePublication } = require('./intelligencePublicationBuilder');
+const { publicationRecoveryMetadata } = require('./publicationRecoveryMetadata');
 const { researchPublicationIncidents } = require('./intelligenceIncidentResearch');
 const { auditPublicationContent, assessPublicationQuality, isAggregatorDomain, normalizeDomain, sourceIsSubstantive, isRepetitiveTemplateText } = require('./publicationQuality');
 const { PDF_RENDERER_VERSION } = require('../services/intelligencePublicationPdfProfessional');
@@ -521,7 +522,26 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     publication_quality:finalBody.publication_quality||null,
     ai_board:{enabled:aiBoardEnabled,required:aiBoardRequired,status:aiBoardStatus,hold_reason:aiBoardHoldReason},
     release_gate:{publication_research_required:publicationResearchRequired,research_release_gate:researchReleaseGate,research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research'),research_release_reason:degradedEvidenceRelease?'AI research fabric unavailable; release constrained to the verified Sonalit evidence contract.':null,tradecraft_quality_gate:qualityGate,ai_board_gate:aiBoardGate,ai_board_degraded:aiBoardDegraded,ai_board_degraded_reason:aiBoardDegraded?'live_ai_provider_fabric_unavailable':null,status},
-    deep_research:{...finalBody.deep_research,agent_summary:incidentResearch.summary,degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible||priorResearch.degraded_evidence_eligible_incidents||0),research_version:DEEP_RESEARCH_VERSION,last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),next_attempt_at:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?new Date(now.getTime()+researchCooldownMinutes*60*1000).toISOString():(priorResearch.next_attempt_at||null),retry_cooldown_minutes:researchCooldownMinutes,skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),last_failure_reason:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?'one or more incident research results fell back to evidence-only content':(priorResearch.last_failure_reason||null),research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research'),research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
+    deep_research:{
+      ...finalBody.deep_research,
+      agent_summary:incidentResearch.summary,
+      degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible||priorResearch.degraded_evidence_eligible_incidents||0),
+      research_version:DEEP_RESEARCH_VERSION,
+      last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),
+      retry_cooldown_minutes:researchCooldownMinutes,
+      skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),
+      ...publicationRecoveryMetadata({
+        priorResearch,
+        researchSummary:incidentResearch.summary,
+        expectedResearchCount,
+        researchAttempted,
+        now,
+        cooldownMinutes:researchCooldownMinutes,
+        maxAttempts:Math.max(1,Math.min(8,Number(process.env.INTEL_PUBLICATION_RECOVERY_MAX_ATTEMPTS)||3))
+      }),
+      research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research'),
+      research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')
+    },
     version
   };
   let publicationId=null;
@@ -594,6 +614,7 @@ function publicationEvidenceBasis(originalEvidenceContract, research, publicatio
 async function recoverStalledPublications(orgId,now=new Date(),options={}){
   const staleMinutes=Math.max(5,Math.min(180,Number(options.staleMinutes||process.env.INTEL_PUBLICATION_RECOVERY_STALE_MINUTES)||15));
   const limit=Math.max(1,Math.min(8,Number(options.limit||process.env.INTEL_PUBLICATION_RECOVERY_BATCH)||4));
+  const maxAttempts=Math.max(1,Math.min(8,Number(options.maxAttempts||process.env.INTEL_PUBLICATION_RECOVERY_MAX_ATTEMPTS)||3));
   const {rows}=await withOrg(orgId,client=>client.query(
     `SELECT id,country_code,publication_type,period_end,updated_at,body
        FROM intel_publications
@@ -606,6 +627,12 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
           OR COALESCE(body->'release_gate'->>'ai_board_gate','true')='false'
           OR body->'deep_research'->>'last_failure_reason' IS NOT NULL
         )
+        AND CASE
+          WHEN NULLIF(body->'deep_research'->>'recovery_attempts','') IS NULL THEN 0
+          WHEN (body->'deep_research'->>'recovery_attempts') ~ '^[0-9]{1,6}$'
+            THEN (body->'deep_research'->>'recovery_attempts')::int
+          ELSE 999999
+        END < $5
       ORDER BY
         CASE
           WHEN COALESCE(body->'release_gate'->>'research_release_gate','true')='false' THEN 0
@@ -614,7 +641,7 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
         END,
         updated_at ASC
       LIMIT $4`,
-    [orgId,now,staleMinutes,limit]
+    [orgId,now,staleMinutes,limit,maxAttempts]
   ));
   if(!rows.length)return{processed:0,published:0,drafts:0,failed:0,results:[]};
   const results=[];
@@ -624,20 +651,59 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
     if(!country||!['daily','weekly','monthly'].includes(type))continue;
     const periodEnd=new Date(row.period_end);
     if(Number.isNaN(periodEnd.getTime()))continue;
-    const anchorNow=new Date(periodEnd.getTime()-1000);
+    const research=row.body?.deep_research&&typeof row.body.deep_research==='object'?row.body.deep_research:{};
+    const storedAttempts=Number(research.recovery_attempts);
+    const nextAttempt=Number.isSafeInteger(storedAttempts)&&storedAttempts>=0?storedAttempts+1:1;
     try{
-      const result=await publicationForCountry(orgId,country,type,{now:anchorNow,forceResearch:true,recovery:true});
-      results.push({id:String(row.id),country,type,publication_status:result.publication_status,status:result.status||'created',publication_id:result.publication_id||result.id||row.id});
+      // Claim and persist the attempt before expensive provider calls so a
+      // process restart or thrown exception cannot reset the retry budget.
+      const claim=await withOrg(orgId,client=>client.query(
+        `UPDATE intel_publications
+            SET body=jsonb_set(
+              COALESCE(body,'{}'::jsonb),
+              '{deep_research}',
+              COALESCE(body->'deep_research','{}'::jsonb) ||
+                jsonb_build_object(
+                  'recovery_attempts',$3::int,
+                  'recovery_max_attempts',$4::int,
+                  'last_recovery_attempt_at',$5::text
+                ),
+              true
+            ),
+            updated_at=NOW()
+          WHERE id=$1 AND org_id=$2
+            AND status IN ('draft','review')
+            AND updated_at=$6
+          RETURNING id`,
+        [row.id,orgId,nextAttempt,maxAttempts,now.toISOString(),row.updated_at]
+      ));
+      if(!claim.rows.length){
+        results.push({id:String(row.id),country,type,status:'skipped',reason:'publication_changed_before_recovery_claim'});
+        continue;
+      }
+      const anchorNow=new Date(periodEnd.getTime()-1000);
+      const result=await publicationForCountry(orgId,country,type,{
+        now:anchorNow,forceResearch:true,recovery:true,recoveryAttempt:nextAttempt,recoveryMaxAttempts:maxAttempts
+      });
+      results.push({
+        id:String(row.id),country,type,
+        publication_status:result.publication_status,
+        status:result.status||'created',
+        publication_id:result.publication_id||result.id||row.id,
+        recovery_attempt:nextAttempt,
+        recovery_max_attempts:maxAttempts
+      });
     }catch(error){
       logger.warn(`Intelligence publication recovery failed ${country}/${type} id=${row.id}: ${error.message}`);
-      results.push({id:String(row.id),country,type,status:'failed',error:String(error.message||error)});
+      results.push({id:String(row.id),country,type,status:'failed',error:String(error.message||error),recovery_attempt:nextAttempt,recovery_max_attempts:maxAttempts});
     }
   }
   return {
-    processed:results.length,
+    processed:results.filter(x=>x.status!=='skipped').length,
     published:results.filter(x=>x.publication_status==='published').length,
     drafts:results.filter(x=>x.publication_status==='draft').length,
     failed:results.filter(x=>x.status==='failed'||x.error).length,
+    skipped:results.filter(x=>x.status==='skipped').length,
     results
   };
 }
