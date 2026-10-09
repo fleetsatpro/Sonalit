@@ -22,7 +22,7 @@
  * src/pages/Login.tsx.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useAuthStore, getAccessToken } from '../../../stores/auth';
 
@@ -30,8 +30,6 @@ import './login.css';
 import Theater from './Theater';
 import CustodyChainLedger from './CustodyChainLedger';
 import AuthConsole from './AuthConsole';
-import ForgotPasswordModal from './ForgotPasswordModal';
-import RequestAccessModal from './RequestAccessModal';
 import Toast, { useLoginToast } from './Toast';
 
 // Only follow ?redirect= if it's a same-origin path — refuse open-redirects.
@@ -69,10 +67,6 @@ export default function LoginPage(): React.ReactElement | null {
   const redirectTo: string = resolveRedirect(explicitRedirect);
 
   const { toastProps, fire } = useLoginToast();
-  const [forgotOpen, setForgotOpen] = useState<boolean>(false);
-  const [requestOpen, setRequestOpen] = useState<boolean>(false);
-  const [emailForReset, setEmailForReset] = useState<string>('');
-  const currentEmailRef = useRef<string>('');
 
   // Body scroll-lock while login is mounted.
   useEffect(() => {
@@ -109,24 +103,9 @@ export default function LoginPage(): React.ReactElement | null {
         <AuthConsole
           toast={fire}
           onLoginSuccess={onLoginSuccess}
-          onOpenForgot={() => {
-            setEmailForReset(currentEmailRef.current);
-            setForgotOpen(true);
-          }}
-          onOpenRequestAccess={() => setRequestOpen(true)}
-          currentEmailRef={currentEmailRef}
         />
       </div>
 
-      <ForgotPasswordModal
-        open={forgotOpen}
-        initialEmail={emailForReset}
-        onClose={() => setForgotOpen(false)}
-      />
-      <RequestAccessModal
-        open={requestOpen}
-        onClose={() => setRequestOpen(false)}
-      />
 
       <Toast {...toastProps} />
     </div>

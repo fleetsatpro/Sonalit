@@ -9,8 +9,10 @@
 // The reference HTML used /auth/passkey/*; we deliberately use the real,
 // currently-deployed paths.
 //
-// The forgot-password and request-access endpoints below don't exist in
-// backend/src/routes/auth.js yet — TODO(griff) markers at each call site.
+// Deprecated API helpers retained for the dormant modal source files only.
+// The canonical LoginPage does not mount those modals because these routes are
+// not implemented. Do not reconnect their controls until server-side flows,
+// enumeration resistance, rate limits, audit events, and recovery tests exist.
 
 import { api } from '../../../lib/api';
 import type { AuthUser } from '../../../stores/auth';
@@ -25,13 +27,11 @@ export type WebAuthnOptions = {
   userVerification?: AuthenticatorSelectionCriteria['userVerification'];
 };
 
-// TODO(griff): backend needs POST /auth/password/forgot — accept { email },
-// respond 204 whether or not the email exists (don't leak account presence).
+/** @deprecated Inactive modal only; backend route is not implemented. */
 export const requestPasswordReset = (email: string): Promise<unknown> =>
   api.post('/auth/password/forgot', { email });
 
-// TODO(griff): backend needs POST /auth/request-access — accept
-// { email, organization }, forward to sales inbox / CRM. Rate-limit per IP.
+/** @deprecated Inactive modal only; backend route is not implemented. */
 export const requestAccess = (email: string, organization: string): Promise<unknown> =>
   api.post('/auth/request-access', { email, organization });
 
@@ -65,9 +65,3 @@ export function bufferToBase64Url(buffer: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-// SSO redirect targets — backend needs these routes; frontend just navigates.
-// TODO(griff): backend needs OAuth start routes /auth/sso/google + /auth/sso/microsoft.
-export const SSO_URLS = {
-  google:    '/api/v1/auth/sso/google',
-  microsoft: '/api/v1/auth/sso/microsoft',
-};

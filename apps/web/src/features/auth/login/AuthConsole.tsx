@@ -4,34 +4,27 @@ import { useAuthStore } from '../../../stores/auth';
 import {
   passwordLogin, getPasskeyOptions, verifyPasskey,
   base64UrlToBuffer, bufferToBase64Url,
-  SSO_URLS,
   type AuthResponse,
 } from './authApi';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_ATTEMPTS = 5;
 
-// SSO (Google/Microsoft) and the self-serve forgot-password / request-access
-// flows have no backend routes yet (see authApi.ts TODO markers), so clicking
-// them 404s. Hide them by default and gate behind env flags so they can be
-// switched back on the moment those backend routes ship — no code change needed.
-const SSO_ENABLED = import.meta.env['VITE_AUTH_SSO_ENABLED'] === 'true';
-const SELF_SERVE_ENABLED = import.meta.env['VITE_AUTH_SELF_SERVE_ENABLED'] === 'true';
+// Password reset, access requests, and Google/Microsoft SSO remain unavailable
+// until their backend routes and security contracts exist. Do not expose them
+// via build-time feature flags that can turn a dead endpoint into a live control.
 
 function pad(n: number): string { return n.toString().padStart(2, '0'); }
 
 type Props = {
   toast: (msg: string, isError?: boolean) => void;
   onLoginSuccess: () => void;
-  onOpenForgot: () => void;
-  onOpenRequestAccess: () => void;
-  currentEmailRef: React.MutableRefObject<string>;
 };
 
 type AttemptsNote = { kind: 'warn' | 'locked' | null; text: string };
 
 export default function AuthConsole({
-  toast, onLoginSuccess, onOpenForgot, onOpenRequestAccess, currentEmailRef,
+  toast, onLoginSuccess,
 }: Props): React.ReactElement {
   const setAuth = useAuthStore((s) => s.setAuth);
 
@@ -41,7 +34,6 @@ export default function AuthConsole({
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [rememberMe, setRememberMe] = useState<boolean>(false);
   const [showPw, setShowPw] = useState<boolean>(false);
   const [emailErr, setEmailErr] = useState<boolean>(false);
   const [pwErr, setPwErr] = useState<boolean>(false);
@@ -73,7 +65,6 @@ export default function AuthConsole({
   useEffect(() => () => window.clearInterval(lockTimerRef.current), []);
 
   // Keep the LoginPage's ref updated so ForgotPasswordModal can prefill it.
-  useEffect(() => { currentEmailRef.current = email; }, [email, currentEmailRef]);
 
   function startLockout(seconds: number): void {
     setLockRemaining(seconds);
@@ -221,9 +212,6 @@ export default function AuthConsole({
     setCtaState('loading');
     setCtaLabel('AUTHENTICATING…');
     passwordMutation.mutate({ email: emailVal, password });
-    // TODO(griff): rememberMe is captured but /auth/login doesn't accept it
-    // yet — plumb through when we honour session-lifetime preference.
-    void rememberMe;
   }
 
   async function onPasskey(): Promise<void> {
@@ -235,8 +223,6 @@ export default function AuthConsole({
     passkeyMutation.mutate(targetEmail);
   }
 
-  function onSsoGoogle(): void    { window.location.href = SSO_URLS.google; }
-  function onSsoMicrosoft(): void { window.location.href = SSO_URLS.microsoft; }
 
   const ctaClassName =
     'cta' +
@@ -346,16 +332,9 @@ export default function AuthConsole({
           </div>
 
           <div className="field-row">
-            <label className="remember">
-              <input
-                type="checkbox" id="rememberMe" name="rememberMe"
-                checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)}
-              />
-              <span>Remember me</span>
-            </label>
-            {SELF_SERVE_ENABLED && (
-              <button type="button" className="forgot-link" onClick={onOpenForgot}>Forgot password?</button>
-            )}
+            <p className="auth-capability-note" role="note">
+              Password reset, new-account requests, and SSO are not enabled here. Contact your Sonalit administrator for account help.
+            </p>
           </div>
 
           <button
@@ -418,31 +397,7 @@ export default function AuthConsole({
         </div>
       )}
 
-      {SSO_ENABLED && (
-        <>
-          <div className="divider">OR CONTINUE WITH</div>
-          <div className="sso-row">
-            <button type="button" className="sso-btn" onClick={onSsoGoogle}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.26 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.85A11 11 0 0 0 12 23Z" />
-                <path fill="#FBBC05" d="M5.84 14.09A6.6 6.6 0 0 1 5.5 12c0-.73.12-1.43.34-2.09V7.06H2.18A11 11 0 0 0 1 12c0 1.77.43 3.45 1.18 4.94l3.66-2.85Z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1a11 11 0 0 0-9.82 6.06l3.66 2.85C6.71 7.31 9.14 5.38 12 5.38Z" />
-              </svg>
-              <span>Google</span>
-            </button>
-            <button type="button" className="sso-btn" onClick={onSsoMicrosoft}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="2" y="2" width="9" height="9" fill="#F25022" />
-                <rect x="13" y="2" width="9" height="9" fill="#7FBA00" />
-                <rect x="2" y="13" width="9" height="9" fill="#00A4EF" />
-                <rect x="13" y="13" width="9" height="9" fill="#FFB900" />
-              </svg>
-              <span>Microsoft</span>
-            </button>
-          </div>
-        </>
-      )}
+
 
       <div className="console-foot">
         <div className="trust-row">
@@ -468,12 +423,7 @@ export default function AuthConsole({
             <span>99.99% UPTIME</span>
           </div>
         </div>
-        {SELF_SERVE_ENABLED && (
-          <div className="footer-link">
-            Don&apos;t have an account?{' '}
-            <button type="button" onClick={onOpenRequestAccess}>Request access</button>
-          </div>
-        )}
+
       </div>
     </section>
   );

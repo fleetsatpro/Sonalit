@@ -15,13 +15,13 @@ login/
   Theater.tsx              — left column (globe + HUD + telemetry + stats)
   OperationsGlobe.tsx      — canvas ref + rAF lifecycle around engine.ts
   CustodyChainLedger.tsx   — middle column (simulated hash-chain preview)
-  AuthConsole.tsx          — right column (tabs, password, passkey, SSO)
-  ForgotPasswordModal.tsx  — reset flow, focus-trapped
-  RequestAccessModal.tsx   — sales inbound, focus-trapped
+  AuthConsole.tsx          — right column (password and passkey; unavailable actions withheld)
+  ForgotPasswordModal.tsx  — dormant legacy source; not mounted (backend route absent)
+  RequestAccessModal.tsx   — dormant legacy source; not mounted (backend route absent)
   Toast.tsx                — bespoke toast (route-scoped)
   useModal.ts              — focus trap + Escape + focus restore
   useReducedMotion.ts      — live prefers-reduced-motion
-  authApi.ts               — wraps ../../lib/api.ts for the login endpoints
+  authApi.ts               — wraps ../../lib/api.ts; unsupported reset/access helpers are deprecated
   login.css                — scoped under .sonalit-login-root
   globe/
     engine.ts              — framework-agnostic canvas renderer
@@ -73,12 +73,12 @@ Consistent with the platform's RLS / tenant-isolation posture. Do not
 | Password login      | POST   | `/auth/login`                             | `passwordLogin()` → `setAuth()`       |
 | Passkey options     | GET    | `/auth/webauthn/authenticate-options`     | `getPasskeyOptions()`                 |
 | Passkey verify      | POST   | `/auth/webauthn/authenticate`             | `verifyPasskey()` → `setAuth()`       |
-| Forgot password     | POST   | `/auth/password/forgot`                   | `requestPasswordReset()` — **TODO(griff)** backend |
-| Request access      | POST   | `/auth/request-access`                    | `requestAccess()` — **TODO(griff)** backend |
-| SSO Google          | (nav)  | `/api/v1/auth/sso/google`                 | `window.location.href` — **TODO(griff)** backend |
-| SSO Microsoft       | (nav)  | `/api/v1/auth/sso/microsoft`              | `window.location.href` — **TODO(griff)** backend |
+| Password reset      | —      | **Unavailable**                            | No backend route; control removed from active login |
+| Request access      | —      | **Unavailable**                            | No backend route; control removed from active login |
+| SSO Google          | —      | **Unavailable**                            | No backend OAuth/OIDC start/callback routes |
+| SSO Microsoft       | —      | **Unavailable**                            | No backend OAuth/OIDC start/callback routes |
 
-Password + WebAuthn paths match what production already implements. The
+Password and WebAuthn remain the only supported login flows on the mounted route. Password reset, new-account requests, and SSO are intentionally not exposed until their complete backend security contracts exist. The old modal component files and deprecated API helpers remain as dormant source, not supported workflows. The active screen tells operators to contact their Sonalit administrator. The “Remember me” control has been removed because the login endpoint does not implement a distinct session lifetime. The
 four `TODO(griff)` endpoints don't exist in `backend/src/routes/auth.js`
 yet — the frontend fires real POSTs and shows the error toast on
 4xx/5xx (no silent stubs).
