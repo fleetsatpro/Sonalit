@@ -411,13 +411,22 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const priorEvidenceConstrained=
     String(existing[0]?.body?.release_gate?.research_mode||'').toLowerCase()==='evidence_constrained' ||
     Number(priorResearch.degraded_evidence_eligible_incidents||0)>=expectedResearchCount;
+  const hasEligiblePerIncidentProviderFailure=publicationEvents.some(e=>{
+    const entry=effectiveResearchByEvent[String(e.id)]||{};
+    const agent=entry.agent||{};
+    const status=String(agent.status||'').toLowerCase();
+    const method=String(agent.research_method||'').toLowerCase();
+    return entry.error==='ai_provider_unavailable' &&
+      status==='fallback' &&
+      ['degraded_evidence','live_web_packet'].includes(method) &&
+      agent.degraded_evidence_eligible===true &&
+      Number(e.observation_count||0)>=1 &&
+      Number(e.source_count||0)>=1;
+  });
   const researchProviderUnavailable=Boolean(
     !publicationAiAvailable ||
     incidentResearch?.summary?.provider_unavailable===true ||
-    (researchAttempted &&
-      expectedResearchCount>0 &&
-      Number(incidentResearch?.summary?.researched||0)+Number(incidentResearch?.summary?.researched_limited||0)===0 &&
-      Number(incidentResearch?.summary?.fallback||0)+Number(incidentResearch?.summary?.failed||0)>=expectedResearchCount)
+    hasEligiblePerIncidentProviderFailure
   );
   const isDegradedEvidenceEvent=(e)=>{
     const entry=effectiveResearchByEvent[String(e.id)]||{};
@@ -428,7 +437,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
       (method==='degraded_evidence' || (method==='live_web_packet' && entry.error==='ai_provider_unavailable')) &&
       Number(e.observation_count||0)>=1 &&
       Number(e.source_count||0)>=1 &&
-      (entry.error==='ai_provider_unavailable' || priorEvidenceConstrained || researchProviderUnavailable);
+      (entry.error==='ai_provider_unavailable' || priorEvidenceConstrained);
   };
   const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));
   const enrichedEventsById=new Map(enrichedEvents.map(e=>[String(e.id),e]));
