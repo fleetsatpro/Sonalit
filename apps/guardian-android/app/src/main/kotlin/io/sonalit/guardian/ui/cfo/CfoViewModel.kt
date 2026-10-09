@@ -12,6 +12,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.sonalit.guardian.data.local.PendingPhotoDao
 import io.sonalit.guardian.data.local.PendingPhotoEntity
+import io.sonalit.guardian.data.local.PendingPhotoUploadPolicy
 import io.sonalit.guardian.data.remote.*
 import io.sonalit.guardian.worker.PendingPhotoUploadWorker
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +60,8 @@ data class CfoUiState(
     val selectedTruckId: String? = null,
     val uploads: List<UploadState> = emptyList(),
     val pendingCount: Int = 0,
+    val failedPhotoCount: Int = 0,
+    val failedPhotos: List<PendingPhotoEntity> = emptyList(),
     val handoverUploading: Boolean = false,
     val handoverError: String? = null,
     // Set directly from a handover commit's convoy_completed flag — the
@@ -111,7 +114,7 @@ class CfoViewModel @Inject constructor(
             }
             loadContext()
         }
-        refreshPendingCount()
+        refreshPendingCounts()
         // Resume any photos queued from a previous session/app-restart — schedule()
         // is a no-op if a worker is already enqueued (ExistingPeriodicWorkPolicy.KEEP).
         PendingPhotoUploadWorker.schedule(appContext)
@@ -124,6 +127,7 @@ class CfoViewModel @Inject constructor(
         viewModelScope.launch {
             while (isActive) {
                 delay(30_000)
+                refreshPendingCounts()
                 val s = _state.value
                 if (s.loggedInUser != null && s.screen != CfoNavScreen.LOGIN && !s.contextLoading && !s.convoyEnded) {
                     loadContext(s.selectedDate)
@@ -301,6 +305,7 @@ class CfoViewModel @Inject constructor(
                     )
                 )
                 PendingPhotoUploadWorker.schedule(appContext)
+                refreshPendingCounts()
                 _state.update {
                     it.copy(
                         uploads = it.uploads.map { u ->
@@ -309,7 +314,6 @@ class CfoViewModel @Inject constructor(
                                 error = e.message
                             ) else u
                         },
-                        pendingCount = it.pendingCount + 1,
                     )
                 }
             }
@@ -358,10 +362,23 @@ class CfoViewModel @Inject constructor(
         }
     }
 
-    private fun refreshPendingCount() {
+    private fun refreshPendingCounts() {
         viewModelScope.launch {
-            val count = pendingPhotoDao.count()
-            _state.update { it.copy(pendingCount = count) }
+            val pending = pendingPhotoDao.countPending(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
+            val failed = pendingPhotoDao.countExhausted(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
+            val failedRows = pendingPhotoDao.getExhausted(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS, 5)
+            _state.update {
+                it.copy(pendingCount = pending, failedPhotoCount = failed, failedPhotos = failedRows)
+            }
+        }
+    }
+
+    /** Retry exhausted uploads on explicit operator request without deleting local evidence. */
+    fun retryFailedPhotos() {
+        viewModelScope.launch {
+            val reset = pendingPhotoDao.resetExhausted(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
+            refreshPendingCounts()
+            if (reset > 0) PendingPhotoUploadWorker.retryNow(appContext)
         }
     }
 }
