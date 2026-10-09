@@ -249,9 +249,9 @@ test('provider-outage fallback dossiers stay differentiated enough to pass the c
   const aiClient=require('../src/utils/aiClient');
   aiClient.hasAnyProvider.mockReturnValue(false);
   const events=[
-    {id:'fallback-a',headline:'Armed attack closes the northern freight approach',country_code:'KE',region:'Kisumu',severity:'HIGH',intelligence_type:'SECURITY',key_facts:[],caveats:[],why_it_matters:[],evidence:[]},
-    {id:'fallback-b',headline:'Port access interrupted after dockside violence',country_code:'KE',region:'Mombasa',severity:'HIGH',intelligence_type:'SECURITY',key_facts:[],caveats:[],why_it_matters:[],evidence:[]},
-    {id:'fallback-c',headline:'Fuel convoy delayed by reported road blockade',country_code:'KE',region:'Nakuru',severity:'MODERATE',intelligence_type:'LOGISTICS',key_facts:[],caveats:[],why_it_matters:[],evidence:[]}
+    {id:'fallback-a',headline:'Armed attack closes the northern freight approach',country_code:'KE',region:'Kisumu',severity:'HIGH',intelligence_type:'SECURITY',key_facts:[],caveats:['Evidence coverage is limited to the sources linked to this event in Sonalit. Unresolved details are retained as intelligence gaps rather than filled with assumption.','Authorities have not confirmed when the Kisumu approach reopened.'],why_it_matters:[],evidence:[]},
+    {id:'fallback-b',headline:'Port access interrupted after dockside violence',country_code:'KE',region:'Mombasa',severity:'HIGH',intelligence_type:'SECURITY',key_facts:[],caveats:['Evidence coverage is limited to the sources linked to this event in Sonalit. Unresolved details are retained as intelligence gaps rather than filled with assumption.','The duration of the Mombasa port access interruption remains unconfirmed.'],why_it_matters:[],evidence:[]},
+    {id:'fallback-c',headline:'Fuel convoy delayed by reported road blockade',country_code:'KE',region:'Nakuru',severity:'MODERATE',intelligence_type:'LOGISTICS',key_facts:[],caveats:['Evidence coverage is limited to the sources linked to this event in Sonalit. Unresolved details are retained as intelligence gaps rather than filled with assumption.','The extent of the reported Nakuru blockade has not been independently confirmed.'],why_it_matters:[],evidence:[]}
   ];
   const result=await researchPublicationIncidents(events,{country:'KE'});
   const dossiers=events.map(event=>{
