@@ -56,7 +56,7 @@ Nothing else in the app could function without a connection.
 
 | Module | Responsibility |
 |---|---|
-| `db.ts` | Dexie/IndexedDB schema v2: `entities`, `outbox`, `gps_buffer`, `conflicts`, `sync_meta`. Storage-pressure and persistence helpers. Per-user purge. |
+| `db.ts` | Dexie/IndexedDB schema v4: tenant-qualified `entities`, `outbox`, `gps_buffer`, `conflicts`, `sync_meta`, plus `offline_quarantine`. v4 preserves the full raw row and stops replay when a legacy outbox/GPS/conflict/entity row lacks provable tenant ownership; it never assigns the current login's organisation by guess. Sync Center surfaces a review warning without exposing quarantined payloads. |
 | `connectivity.ts` | The single connectivity authority. `UNKNOWN / ONLINE / DEGRADED / OFFLINE / SYNCING`. |
 | `capabilities.ts` | The Operation Capability Matrix — what may happen offline, and under what conditions. |
 | `outbox.ts` | Durable transactional queue: six states, priority bands, dependencies, backoff. |
@@ -325,9 +325,7 @@ realtime connectivity separately, because Centrifugo can die while REST is fine.
 
 `OFFLINE_MODE`, `OFFLINE_SYNC`, `LOW_BANDWIDTH_MODE` default **on** (with all
 per-surface flags off, they only make the app honest about connectivity — no
-write path changes). `OFFLINE_QR`, `OFFLINE_CDS`, `OFFLINE_GPS`, `OFFLINE_MAPS`
-default **off**; each opens a specific offline write path and is earned per
-surface on real devices.
+write path changes). Only `OFFLINE_GPS` remains as a per-surface flag, and it defaults **off**. It is consumed by the actual GPS buffer/write path. `OFFLINE_QR` and `OFFLINE_CDS` were removed because no active code consumed them; they did not enable the QR/CDS workflows. The older field clamp/unclamp queue remains a separate idempotent path, not a flag-controlled feature. No `OFFLINE_MAPS` flag is exposed because there is no tile-cache implementation to enable.
 
 Set via `VITE_<FLAG>` at build time, or per-device in localStorage in
 non-production builds.
@@ -362,16 +360,25 @@ No MQTT. No NATS added. No new microservice. No new database.
    connectivity manager, which was the duplication that mattered. The migration
    path is the `http` transport, already built and used by the matrix entries
    for `cds_container.clamp` / `.unclamp`.
-2. **Media queue is not implemented.** The outbox supports dependencies
-   (`dependsOn`) and a SUPPORTING priority band, which is the scaffolding a
-   media queue needs, but photo/video upload still goes through the existing
-   paths. An incident's photo would currently upload eagerly rather than
-   deferring behind bandwidth.
-3. **Offline maps are not implemented.** `OFFLINE_MAPS` exists as a flag only.
-   Tile caching needs a licensing decision before an implementation one.
-4. **Background sync on Android is not wired.** The Capacitor shells wrap the
-   hosted web app; sync runs while the WebView is alive. Android does not
-   guarantee background execution, and promising it would be dishonest.
+2. **Browser media queue is not implemented.** The Web outbox carries JSON
+   operations, not binary attachments; hosted Web field surfaces must not
+   label an attachment queued unless its bytes and parent record are durably
+   retained. The separate native Guardian Android CFO workflow does queue local
+   photos and retries the existing presign → PUT → commit contract. Automatic
+   retries are bounded; after exhaustion, Settings shows the retained failure
+   and offers an explicit human-triggered retry. That native queue is scoped
+   to its authenticated convoy/photo workflow, not every Web attachment.
+3. **Offline maps are not implemented.** The inert `OFFLINE_MAPS` flag has
+   been removed so `VITE_OFFLINE_MAPS=true` cannot imply support. Sync Center
+   explicitly states that Sonalit does not guarantee a local tile cache. Tile
+   caching needs an approved provider/licensing decision, attribution and
+   real-device storage/expiry validation before implementation.
+4. **Background sync differs by Android product.** The Capacitor-hosted WebView
+   outbox syncs while its page lifecycle is alive and has no native background
+   scheduler. The separate `apps/guardian-android/` product uses WorkManager
+   for GPS sync and CFO photo retries with a connected-network constraint and
+   a 15-minute periodic floor. WorkManager is best-effort and subject to OS/OEM
+   scheduling; exact-time or guaranteed background delivery is not promised.
 5. **`cds_trip`, `cds_incident` and `cds_geofence` pull their column list from
    `information_schema`** rather than an explicit allowlist, because those
    tables have drifted across migrations and a hard-coded list would break a

@@ -78,7 +78,8 @@ describe('externalWorldFeatures', () => {
     }
     const entities = worldContextEntities(context)
     expect(WORLD_CONTEXT_LAYERS).toHaveLength(11)
-    expect(new Set(entities.map(entity => entity.id)).size).toBe(11)
+    expect(new Set(entities.map(entity => entity.id)).size).toBe(10)
+    expect(entities.filter(entity => entity.entityType === 'satellite')).toHaveLength(1) // the same satellite is supplied through two buckets
     expect(spatialEntityLayer(satellite)).toBe('satellites')
     const layerSamples = [
       ['aircraft', 'aircraft'], ['weather', 'weather'], ['vessel', 'maritime'],

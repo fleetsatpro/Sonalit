@@ -29,6 +29,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 
 import type { BufferedFix, ConflictRecord, LocalEntity, OutboxEntry, SyncMeta } from './types.js';
+import { classifyOfflineRow, createOfflineQuarantineRecord, type OfflineQuarantineRecord, type OfflineQuarantineSource } from './offlineMigration.js';
 
 /**
  * Legacy stores from the original lib/db.ts. They were declared but never
@@ -53,6 +54,8 @@ class SonalitDB extends Dexie {
   conflicts!: EntityTable<ConflictRecord, 'id'>;
   /** Checkpoints, device id, last-sync times. */
   sync_meta!: EntityTable<SyncMeta, 'key'>;
+  /** Legacy local work retained without replay when tenant ownership is unknown. */
+  offline_quarantine!: EntityTable<OfflineQuarantineRecord, 'id'>;
 
   constructor() {
     super('sonalit');
@@ -93,6 +96,14 @@ class SonalitDB extends Dexie {
       const store = tx.table('entities');
       const rows = await store.toCollection().toArray();
       for (const row of rows) {
+        // An unscoped/malformed row must survive this earlier-version migration
+        // intact so v4 can quarantine it. Concatenating undefined components here
+        // could collapse multiple distinct legacy rows onto one key.
+        if (typeof row.orgId !== 'string' || !row.orgId ||
+            typeof row.ownerLookup !== 'string' || !row.ownerLookup ||
+            typeof row.entityType !== 'string' || !row.entityType ||
+            typeof row.entityId !== 'string' || !row.entityId) continue;
+
         const nextKey = row.orgId + ':' + row.entityType + ':' + row.entityId;
         if (row.key !== nextKey) {
           await store.delete(row.key);
@@ -100,10 +111,69 @@ class SonalitDB extends Dexie {
         }
       }
     });
+
+    // v3 added tenant indexes but did not reconcile pre-existing queue records.
+    // Do not infer the missing organisation from the current login: a shared
+    // device may have switched tenants since a record was created. Copy every
+    // unscoped record into a local quarantine store before deleting it from the
+    // active queue. Both writes occur in this versionchange transaction; if the
+    // copy fails, the entire upgrade rolls back and the original row survives.
+    this.version(4).stores({
+      gps_fixes: 'id, device_id, ts',
+      pending_uploads: 'id, kind, created_at',
+      entities: 'key, entityType, [entityType+entityId], orgId, ownerLookup, lastSyncedAt',
+      outbox: 'id, status, priority, nextAttemptAt, localSequence, ownerUserId, ownerOrgId, [status+nextAttemptAt]',
+      gps_buffer: 'id, vehicleId, sequence, deviceTime, ownerUserId, ownerOrgId',
+      conflicts: 'id, entityType, detectedAt, ownerUserId, ownerOrgId',
+      sync_meta: 'key',
+      offline_quarantine: 'id, source, ownerUserId, ownerOrgId, quarantinedAt, reasonCode',
+    }).upgrade(async tx => {
+      const quarantine = tx.table('offline_quarantine');
+
+      const moveUnscopedRows = async (
+        source: OfflineQuarantineSource,
+        tableName: 'entities' | 'outbox' | 'gps_buffer' | 'conflicts',
+        primaryKeyField: 'key' | 'id',
+      ) => {
+        const table = tx.table(tableName);
+        const rows = await table.toCollection().toArray();
+        for (const row of rows) {
+          const raw = row as Record<string, unknown>;
+          const classification = classifyOfflineRow(source, raw);
+          if (!classification.quarantine) continue;
+
+          const quarantineRecord = createOfflineQuarantineRecord(
+            source, raw[primaryKeyField], raw, classification, Date.now(),
+          );
+          await quarantine.put(quarantineRecord);
+          // Delete only after the full raw record has been persisted locally.
+          await table.delete(raw[primaryKeyField] as string);
+        }
+      };
+
+      await moveUnscopedRows('outbox', 'outbox', 'id');
+      await moveUnscopedRows('gps_buffer', 'gps_buffer', 'id');
+      await moveUnscopedRows('conflicts', 'conflicts', 'id');
+      await moveUnscopedRows('entities', 'entities', 'key');
+    });
   }
 }
 
 export const db = new SonalitDB();
+
+/** Count retained legacy rows that cannot be replayed until their tenant is verified. */
+export async function quarantinedOfflineCount(userId: string): Promise<number | null> {
+  try {
+    // Report only rows attributable to the signed-in user. A shared device may
+    // retain quarantined rows from another login; the new tenant must not learn
+    // their count or see their payload through this status surface.
+    return await db.offline_quarantine.where('ownerUserId').equals(userId).count();
+  } catch {
+    // Unknown is not zero: callers must not imply the quarantine is empty if
+    // the local store could not be queried.
+    return null;
+  }
+}
 
 /**
  * Is durable storage actually available?

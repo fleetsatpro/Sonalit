@@ -128,6 +128,12 @@ jobs:
       - name: Build web
         run: pnpm --filter @sonalit/web build
 
+      # The web package owns unit and contract tests for offline queues, auth,
+      # health indicators, and feature capability claims. Typecheck/build alone
+      # does not execute these behavioural regressions.
+      - name: Web unit tests
+        run: pnpm --filter @sonalit/web test:unit
+
       # --forceExit for the same reason the integration step below has it: a suite
       # leaks a handle, so jest reports all tests green and then never exits,
       # hanging the job indefinitely (reproducible locally — 172 tests pass in

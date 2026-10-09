@@ -53,7 +53,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/',
     title: 'Sonalit | Fleet, Convoy & Logistics Operations Platform',
     description:
-      'Sonalit is an operational intelligence platform for fleet, convoy, container custody and security teams — live GPS, route risk, spatial context, field coordination, incident response and evidence.',
+      'Sonalit unifies fleet, convoy, container custody and security operations with GPS tracking, route-risk intelligence, field coordination, incident response and evidence.',
     priority: 1.0,
     changefreq: 'weekly',
     jsonLd: [ORGANIZATION, WEBSITE],
@@ -71,7 +71,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/convoy-management',
     title: 'Convoy Management & Security Operations | Sonalit',
     description:
-      'Plan and govern convoys with risk-ranked routes, time-aware corridor evaluation, CFO field coordination, seal integrity, evidence capture, alerts and daily operational reporting.',
+      'Coordinate safer convoys with risk-ranked routes, corridor timing, CFO field teams, seal checks, evidence capture, incident alerts and daily operational reporting.',
     breadcrumb: 'Convoy Management',
     priority: 0.9,
     changefreq: 'monthly',
@@ -80,7 +80,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/container-delivery',
     title: 'Container Delivery System | Sonalit',
     description:
-      'Run the Container Delivery System across bookings, containers, transporters, trips, e-lock events, yard and port field operations, AI-assisted intelligence, billing, analytics and proof of delivery.',
+      'Manage container bookings, transporters and trips with e-lock events, yard and port workflows, billing, analytics and proof of delivery.',
     breadcrumb: 'Container Delivery',
     priority: 0.9,
     changefreq: 'monthly',
@@ -89,7 +89,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/security-operations',
     title: 'Fleet & Security Operations | Sonalit',
     description:
-      'Operate security as a response fabric: prioritised alerts, incidents, panic escalation, Guardian field safety, signal integrity, geofences, route risk, spatial intelligence, communications and reconstruction.',
+      'Coordinate security response through prioritised alerts, panic escalation, Guardian field safety, signal integrity, geofences, route risk and incident reconstruction.',
     breadcrumb: 'Security Operations',
     priority: 0.9,
     changefreq: 'monthly',
@@ -98,7 +98,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/about',
     title: 'About Sonalit | Fleet & Logistics Operations Technology',
     description:
-      'Sonalit connects movement, custody, security and spatial intelligence in one operational fabric, with dedicated control-room, field, Guardian, CDS and cargo-owner surfaces.',
+      'Sonalit connects fleet movement, container custody, security and spatial intelligence across control rooms, field teams, Guardian, CDS and cargo-owner portals.',
     breadcrumb: 'About',
     priority: 0.6,
     changefreq: 'monthly',

@@ -105,6 +105,49 @@ fun SettingsScreen(
                 SectionHeader(Icons.Default.CloudSync, "Sync & Offline")
                 Spacer(Modifier.height(12.dp))
                 SettingRow("Photos queued for upload", "${cfoState.pendingCount}")
+                SettingRow("Photos needing attention", "${cfoState.failedPhotoCount}")
+                Text(
+                    "Retry is account-scoped. Photos from older versions without a verified owner are retained on this device but are not automatically replayed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (cfoState.failedPhotoCount > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Automatic retries stopped after five failed attempts. Files and capture details are retained.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    cfoState.failedPhotos.forEach { photo ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Text(
+                                "${photo.photoType.uppercase()} · ${photo.session.uppercase()} · ${photo.truckId}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                photo.lastError ?: "Upload needs operator review.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                    if (cfoState.failedPhotoCount > cfoState.failedPhotos.size) {
+                        Text(
+                            "Showing the ${cfoState.failedPhotos.size} most recent failures.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { cfoViewModel.retryFailedPhotos() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Retry Failed Photos")
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = { PendingPhotoUploadWorker.retryNow(context) },

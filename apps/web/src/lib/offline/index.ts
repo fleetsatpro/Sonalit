@@ -16,7 +16,7 @@ import {
   getSnapshot as connectivitySnapshot, isDegraded, isReachable, startConnectivity,
   stopConnectivity, subscribe as subscribeConnectivity, probeNow,
 } from './connectivity.js';
-import { db, isStorageAvailable, purgeUserData, requestPersistence, storageEstimate, unsyncedCount } from './db.js';
+import { db, isStorageAvailable, purgeUserData, quarantinedOfflineCount, requestPersistence, storageEstimate, unsyncedCount } from './db.js';
 import { getDeviceId } from './device.js';
 import { applyLocalChange, findEntityBy, getEntity, listEntities, pruneEntities } from './entities.js';
 import { isEnabled, type OfflineFlag } from './flags.js';
@@ -264,12 +264,15 @@ export interface OfflineStatus {
   deviceId: string;
   queue: Awaited<ReturnType<typeof counts>> | null;
   gpsBuffered: number;
+  /** Number of preserved legacy rows withheld from replay because ownership is ambiguous; null if unknown. */
+  quarantinedLocalRecords: number | null;
   blocked: { code: string; message: string } | null;
   lastSyncAt: number | null;
 }
 
 export async function getOfflineStatus(): Promise<OfflineStatus> {
   const connectivity = connectivitySnapshot();
+  const quarantinedLocalRecords = available && identity ? await quarantinedOfflineCount(identity.userId) : null;
   const base: OfflineStatus = {
     enabled: isEnabled('OFFLINE_MODE'),
     storageAvailable: available,
@@ -277,6 +280,7 @@ export async function getOfflineStatus(): Promise<OfflineStatus> {
     deviceId: getDeviceId(),
     queue: null,
     gpsBuffered: 0,
+    quarantinedLocalRecords,
     blocked: blocked ? { code: blocked.code, message: blocked.message } : null,
     lastSyncAt: connectivity.lastSuccessfulSyncAt,
   };

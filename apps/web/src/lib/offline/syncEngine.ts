@@ -301,6 +301,7 @@ async function recordConflict(entry: OutboxEntry, result: PushResult): Promise<v
     reason: result.error_message ?? 'This record changed while your device was offline.',
     detectedAt: Date.now(),
     ownerUserId: entry.ownerUserId,
+    ownerOrgId: entry.ownerOrgId,
   });
 }
 

@@ -12,6 +12,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.sonalit.guardian.data.local.PendingPhotoDao
 import io.sonalit.guardian.data.local.PendingPhotoEntity
+import io.sonalit.guardian.data.local.PendingPhotoUploadPolicy
 import io.sonalit.guardian.data.remote.*
 import io.sonalit.guardian.worker.PendingPhotoUploadWorker
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +60,8 @@ data class CfoUiState(
     val selectedTruckId: String? = null,
     val uploads: List<UploadState> = emptyList(),
     val pendingCount: Int = 0,
+    val failedPhotoCount: Int = 0,
+    val failedPhotos: List<PendingPhotoEntity> = emptyList(),
     val handoverUploading: Boolean = false,
     val handoverError: String? = null,
     // Set directly from a handover commit's convoy_completed flag — the
@@ -111,7 +114,7 @@ class CfoViewModel @Inject constructor(
             }
             loadContext()
         }
-        refreshPendingCount()
+        refreshPendingCounts()
         // Resume any photos queued from a previous session/app-restart — schedule()
         // is a no-op if a worker is already enqueued (ExistingPeriodicWorkPolicy.KEEP).
         PendingPhotoUploadWorker.schedule(appContext)
@@ -124,6 +127,7 @@ class CfoViewModel @Inject constructor(
         viewModelScope.launch {
             while (isActive) {
                 delay(30_000)
+                refreshPendingCounts()
                 val s = _state.value
                 if (s.loggedInUser != null && s.screen != CfoNavScreen.LOGIN && !s.contextLoading && !s.convoyEnded) {
                     loadContext(s.selectedDate)
@@ -149,9 +153,13 @@ class CfoViewModel @Inject constructor(
                     editor.putString("auth_token", resp.device_token)
                 }
                 editor.apply()
+                // A prior operator's one-shot retry must not continue into this session.
+                PendingPhotoUploadWorker.cancelRetryNow(appContext)
                 _state.update {
                     it.copy(loginLoading = false, loggedInUser = resp, screen = CfoNavScreen.DASHBOARD)
                 }
+                PendingPhotoUploadWorker.schedule(appContext)
+                refreshPendingCounts()
                 loadContext()
             }.onFailure { e ->
                 _state.update { it.copy(loginLoading = false, loginError = e.message ?: "Login failed") }
@@ -160,6 +168,8 @@ class CfoViewModel @Inject constructor(
     }
 
     fun logout() {
+        // Worker row ownership checks prevent any queued photo from crossing sessions.
+        PendingPhotoUploadWorker.cancelRetryNow(appContext)
         prefs.edit().remove("cfo_user_id").remove("cfo_name").remove("cfo_email").apply()
         _state.update { CfoUiState() }
     }
@@ -167,11 +177,25 @@ class CfoViewModel @Inject constructor(
     // ── Context ───────────────────────────────────────────────────────────────
 
     fun loadContext(date: String? = null) {
+        val requestOwnerId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return
         _state.update { it.copy(contextLoading = true, contextError = null) }
         viewModelScope.launch {
             runCatching {
                 api.cfoContext(deviceToken, date)
             }.onSuccess { resp ->
+                // Ignore a response from an older account after a login switch or logout.
+                if (_state.value.loggedInUser?.user_id != requestOwnerId) return@onSuccess
+                if (resp.data.cfo_user_id != requestOwnerId) {
+                    _state.update {
+                        if (it.loggedInUser?.user_id == requestOwnerId) {
+                            it.copy(
+                                contextLoading = false,
+                                contextError = "Signed-in account does not match the CFO context. Sign in again before continuing.",
+                            )
+                        } else it
+                    }
+                    return@onSuccess
+                }
                 _state.update {
                     it.copy(
                         contextLoading = false,
@@ -181,7 +205,10 @@ class CfoViewModel @Inject constructor(
                     )
                 }
             }.onFailure { e ->
-                _state.update { it.copy(contextLoading = false, contextError = e.message) }
+                _state.update {
+                    if (it.loggedInUser?.user_id == requestOwnerId) it.copy(contextLoading = false, contextError = e.message)
+                    else it
+                }
             }
         }
     }
@@ -213,7 +240,17 @@ class CfoViewModel @Inject constructor(
         location: Location?,
         eventUuid: String = UUID.randomUUID().toString(),
     ) {
+        val ownerUserId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return
         val ctx = _state.value.context ?: return
+        if (ctx.cfo_user_id != ownerUserId) {
+            _state.update {
+                it.copy(contextError = "Signed-in account does not match the current convoy context. Refresh or sign in again.")
+            }
+            return
+        }
+        // Capture ownership before the asynchronous request starts. If the
+        // account changes while it is in flight, the saved photo remains bound
+        // to the user who initiated the capture.
         // Uploads always target the live convoy day, even while the CFO is
         // browsing a past date's history in the dashboard.
         val uploadDate = ctx.today_date
@@ -298,9 +335,11 @@ class CfoViewModel @Inject constructor(
                         lng = location?.longitude,
                         notes = null,
                         createdAt = System.currentTimeMillis(),
+                        ownerUserId = ownerUserId,
                     )
                 )
                 PendingPhotoUploadWorker.schedule(appContext)
+                refreshPendingCounts()
                 _state.update {
                     it.copy(
                         uploads = it.uploads.map { u ->
@@ -309,7 +348,6 @@ class CfoViewModel @Inject constructor(
                                 error = e.message
                             ) else u
                         },
-                        pendingCount = it.pendingCount + 1,
                     )
                 }
             }
@@ -358,10 +396,30 @@ class CfoViewModel @Inject constructor(
         }
     }
 
-    private fun refreshPendingCount() {
+    private fun refreshPendingCounts() {
         viewModelScope.launch {
-            val count = pendingPhotoDao.count()
-            _state.update { it.copy(pendingCount = count) }
+            val ownerUserId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return@launch
+            val pending = pendingPhotoDao.countPending(ownerUserId, PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
+            val failed = pendingPhotoDao.countExhausted(ownerUserId, PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
+            val failedRows = pendingPhotoDao.getExhausted(ownerUserId, PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS, 5)
+            // An account switch while Room was reading must not paint the old
+            // account's queue into the newly authenticated operator's screen.
+            if (_state.value.loggedInUser?.user_id != ownerUserId) return@launch
+            _state.update {
+                it.copy(pendingCount = pending, failedPhotoCount = failed, failedPhotos = failedRows)
+            }
+        }
+    }
+
+    /** Retry exhausted uploads for this CFO only; legacy unowned rows are never reset. */
+    fun retryFailedPhotos() {
+        viewModelScope.launch {
+            val ownerUserId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return@launch
+            val reset = pendingPhotoDao.resetExhausted(ownerUserId, PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS)
+            refreshPendingCounts()
+            if (reset > 0 && _state.value.loggedInUser?.user_id == ownerUserId) {
+                PendingPhotoUploadWorker.retryNow(appContext)
+            }
         }
     }
 }
