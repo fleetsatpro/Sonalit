@@ -34,7 +34,7 @@ describe('voice-note recorder delivery contract', () => {
   it('retains retryability when an older backend returns a null upload URL', () => {
     expect(mediaQueue).toContain("code === 'storage_not_configured'");
     expect(mediaQueue).toContain("typeof signed.upload_url !== 'string'");
-    expect(mediaQueue).toContain('deployment skew response as retryable');
+    expect(mediaQueue).toContain('rollout-skew response as retryable');
     expect(mediaQueue).toContain("retryable: true");
   });
 
