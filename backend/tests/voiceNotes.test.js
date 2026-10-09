@@ -175,6 +175,16 @@ describe('voice-note storage readiness and commit integrity', () => {
     expect(mockDb).not.toHaveBeenCalled();
   });
 
+  test('rejects an object without authoritative content-length metadata', async () => {
+    mockS3Send.mockResolvedValueOnce({ ContentType: 'audio/webm' });
+
+    const response = await commitRequest();
+
+    expect(response.status).toBe(422);
+    expect(response.body.error).toBe('uploaded_object_size_mismatch');
+    expect(mockDb).not.toHaveBeenCalled();
+  });
+
   test('rejects an object without authoritative content-type metadata', async () => {
     mockS3Send.mockResolvedValueOnce({ ContentLength: 512 });
 
