@@ -439,10 +439,11 @@ async function researchBatch(events,{country,region}={}){
   ).toLowerCase();
   const allowFreeProviders=true;
   const providerPolicy={dataClassification,allowFreeProviders};
-  const aiReady=typeof aiClient.hasReadyProvider==='function'
-    ? aiClient.hasReadyProvider(providerPolicy)
-    : aiClient.hasAnyProvider(providerPolicy);
-  if(!aiReady){
+  // This is a configuration/policy preflight, not a live-readiness probe.
+  // createResearchMessage/createMessage performs bounded cooldown recovery and
+  // provider failover. A transiently cooling lane must not short-circuit that path.
+  const aiConfigured=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(providerPolicy);
+  if(!aiConfigured){
     logger.warn('Incident research batch: AI provider fabric unavailable; skipping AI calls and preserving evidence-only fallback.');
     return packets.map((packet,i)=>({packet,agent:fallbackResearch(events[i],packet,{degraded:true}),error:'ai_provider_unavailable'}));
   }
