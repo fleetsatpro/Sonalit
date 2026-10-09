@@ -120,7 +120,8 @@ router.post('/commit', asyncHandler(async (req, res) => {
   try {
     const { HeadObjectCommand } = require('@aws-sdk/client-s3');
     const head = await s3.send(new HeadObjectCommand({ Bucket: process.env.R2_BUCKET, Key: expectedKey }));
-    if (head?.ContentLength != null && Number(head.ContentLength) !== Number(value.file_size_bytes)) {
+    if (head?.ContentLength == null || !Number.isFinite(Number(head.ContentLength)) ||
+        Number(head.ContentLength) !== Number(value.file_size_bytes)) {
       return res.status(422).json({ error: 'uploaded_object_size_mismatch' });
     }
     const actualMime = String(head?.ContentType || '').split(';')[0].trim().toLowerCase();
