@@ -36,7 +36,7 @@ async function responseLooksLikeHlsPlaylist(response) {
     const reader = clone.body?.getReader?.();
     if (!reader) return false;
     const { value } = await reader.read();
-    try { await reader.cancel(); } catch (_) {}
+    try { void reader.cancel().catch(() => {}); } catch (_) {}
     if (!value) return false;
     const prefix = Buffer.from(value).toString('utf8').replace(/^\uFEFF/, '').trimStart();
     return prefix.startsWith('#EXTM3U');
