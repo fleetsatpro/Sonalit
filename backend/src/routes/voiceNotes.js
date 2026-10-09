@@ -38,6 +38,7 @@ function createR2Client() {
 
 function validExistingCommit(row, value, req, storageKey) {
   return row &&
+    !row.deleted_at &&
     row.id === value.note_id &&
     row.org_id === req.user.org_id &&
     row.parent_type === value.parent_type &&
@@ -74,8 +75,8 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
   // voice note inside the same organisation.
   if (value.note_id) {
     const existing = await req.db(
-      `SELECT id, org_id, parent_type, parent_id, uploaded_by, storage_key, file_size_bytes, mime_type, duration_sec
-         FROM voice_notes WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`,
+      `SELECT id, org_id, parent_type, parent_id, uploaded_by, storage_key, file_size_bytes, mime_type, duration_sec, deleted_at
+         FROM voice_notes WHERE id=$1 AND org_id=$2 LIMIT 1`,
       [noteId, orgId],
     );
     const row = existing.rows?.[0];
