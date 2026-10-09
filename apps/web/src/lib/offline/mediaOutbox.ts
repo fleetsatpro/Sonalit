@@ -100,6 +100,24 @@ async function digestBlob(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * The backend currently signs directly against the Cloudflare R2 S3 endpoint.
+ * A malformed or unexpected signing response must never exfiltrate field audio
+ * to an arbitrary HTTPS host.
+ */
+export function isAllowedR2UploadUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      url.hostname.endsWith('.r2.cloudflarestorage.com');
+  } catch {
+    return false;
+  }
+}
+
 function parentIdLooksValid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -298,15 +316,14 @@ async function uploadOne(entry: MediaUploadEntry): Promise<void> {
     file_size_bytes: entry.fileSizeBytes,
   });
   const signed = presign.data;
-  const expectedPrefix = `voice-notes/${entry.ownerOrgId}/${entry.parentType}/${entry.parentId}/${entry.id}.`;
-  if (signed.note_id !== entry.id || !signed.storage_key.startsWith(expectedPrefix)) {
+  const expectedExtension = entry.mimeType === 'audio/mp4' ? 'mp4' : entry.mimeType === 'audio/ogg' ? 'ogg' : 'webm';
+  const expectedKey = `voice-notes/${entry.ownerOrgId}/${entry.parentType}/${entry.parentId}/${entry.id}.${expectedExtension}`;
+  if (signed.note_id !== entry.id || signed.storage_key !== expectedKey) {
     throw Object.assign(new MediaQueueError('invalid_storage_contract', 'The storage service returned an unexpected upload destination.'), { code: 'invalid_storage_contract', permanent: true });
   }
-  let target: URL;
-  try { target = new URL(signed.upload_url); }
-  catch { throw Object.assign(new MediaQueueError('invalid_upload_url', 'The storage service returned an invalid upload URL.'), { code: 'invalid_upload_url', permanent: true }); }
-  if (target.protocol !== 'https:') {
-    throw Object.assign(new MediaQueueError('invalid_upload_url', 'The storage service returned an insecure upload URL.'), { code: 'invalid_upload_url', permanent: true });
+  if (typeof signed.expires_in !== 'number' || signed.expires_in < 1 || signed.expires_in > 300 ||
+      !isAllowedR2UploadUrl(signed.upload_url)) {
+    throw Object.assign(new MediaQueueError('invalid_upload_url', 'The storage service returned an invalid or untrusted upload URL.'), { code: 'invalid_upload_url', permanent: true });
   }
 
   const put = await fetch(target.toString(), {
