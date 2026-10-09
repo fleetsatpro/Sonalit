@@ -13,6 +13,30 @@ jest.mock('../src/utils/publicResearchFetch',()=>({
 const { researchPublicationIncidents, verifiedResponseSources, parseGdeltResponse, _resetGdeltCooldownForTests } = require('../src/utils/intelligenceIncidentResearch');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
 
+function installResearchFetchFixture() {
+  safeFetchPublicResearch.mockReset();
+  safeFetchPublicResearch.mockImplementation(async rawUrl => {
+    const url = String(rawUrl);
+    const isGdelt = url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc');
+    const isGoogleNews = url.startsWith('https://news.google.com/rss/search');
+    const rss = '<rss><channel></channel></rss>';
+    return {
+      ok: true,
+      status: 200,
+      url,
+      headers: { get: () => isGdelt ? 'application/json; charset=utf-8' : isGoogleNews ? 'application/rss+xml' : 'text/html' },
+      text: async () => isGdelt ? JSON.stringify({ articles: [] }) : isGoogleNews ? rss : '<html><head><title>Research fixture</title></head><body><main><p>A bounded deterministic research fixture without factual assertions.</p></main></body></html>',
+      json: async () => ({ articles: [] }),
+    };
+  });
+}
+
+beforeEach(() => {
+  // Start every test with protocol-correct fixtures. Malformed mock responses
+  // must not open the module-level GDELT cooldown for unrelated tests.
+  installResearchFetchFixture();
+});
+
 // The GDELT circuit is deliberately module-scoped in production; reset it between
 // tests so one mocked provider failure cannot contaminate unrelated scenarios.
 beforeEach(()=>_resetGdeltCooldownForTests());
@@ -67,17 +91,6 @@ test('passes publication data-classification policy into AI incident research',a
 });
 
 describe('publication incident research coverage',()=>{
-  beforeEach(()=>{
-    safeFetchPublicResearch.mockReset();
-    safeFetchPublicResearch.mockResolvedValue({
-      ok:true,
-      status:200,
-      url:'https://news.google.com/rss/search',
-      headers:{get:()=> 'application/rss+xml'},
-      text:async()=>'<rss><channel></channel></rss>',
-      json:async()=>({articles:[]})
-    });
-  });
   afterEach(()=>{delete global.fetch});
   test('does not skip research just because configured providers are temporarily cooling down',async()=>{
     const aiClient=require('../src/utils/aiClient');
