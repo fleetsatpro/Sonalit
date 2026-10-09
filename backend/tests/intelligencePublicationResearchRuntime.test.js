@@ -286,5 +286,7 @@ test('bounded publication coverage explicitly discloses excluded period incident
   expect(s).toContain('detailed_event_count:reportEvents.length');
   expect(s).toContain('priority_research_limit:researchLimit');
   expect(s).toContain('Their omission is not evidence that no incident occurred.');
+  expect(s).toContain('full_period_event_count:events.length,detailed_event_count:reportEvents.length,excluded_event_count:excludedPeriodEventCount');
   expect(s).toContain('(Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:[]).filter(d=>');
+  expect(s).not.toContain('degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible');
 });
