@@ -195,6 +195,7 @@ export interface ConflictRecord {
   reason: string;
   detectedAt: number;
   ownerUserId: string;
+  ownerOrgId: string;
 }
 
 /** One operation's outcome as reported by POST /sync/push. */
