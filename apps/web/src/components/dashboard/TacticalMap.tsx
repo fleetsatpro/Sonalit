@@ -461,6 +461,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
         <LegendDot color='#888888' label='IDLE' />
         {/* Traffic toggle — hidden entirely if no TOMTOM_API_KEY is configured server-side */}
         {trafficStatus?.configured && (
+          <>
           <button
             onClick={() => setTrafficOn(v => !v)}
             title={trafficOn ? 'Hide traffic (congestion + incidents)' : 'Show traffic (congestion + incidents) — coverage is sparse or absent in some conflict corridors'}
@@ -473,6 +474,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
               ROAD STATE UNKNOWN
             </span>
           )}
+          </>
         )}
         {/* Layer switcher: normal operational map, reference satellite, or latest validated optical observation */}
         <button
