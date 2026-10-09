@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
-import { classifyOfflineRow, createOfflineQuarantineRecord } from './offlineMigration.js';
+import { classifyOfflineRow, createOfflineQuarantineRecord, shouldPurgeOfflineQuarantineRecord } from './offlineMigration.js';
 
 const dbSource = readFileSync(new URL('./db.ts', import.meta.url), 'utf8');
 
@@ -50,6 +50,36 @@ describe('offline tenant-scope migration', () => {
     expect(() => createOfflineQuarantineRecord('outbox', row.id, row, classifyOfflineRow('outbox', {
       ...row, ownerOrgId: 'org-b',
     }), 1234)).toThrow('offline_quarantine_requires_classified_failure');
+  });
+
+  it('purges quarantine rows only for an explicit handover and exact known owner', () => {
+    expect(shouldPurgeOfflineQuarantineRecord(
+      { ownerUserId: 'user-a' }, 'user-a', false,
+    )).toBe(true);
+    expect(shouldPurgeOfflineQuarantineRecord(
+      { ownerUserId: 'user-a' }, 'user-a', true,
+    )).toBe(false);
+    expect(shouldPurgeOfflineQuarantineRecord(
+      { ownerUserId: 'user-b' }, 'user-a', false,
+    )).toBe(false);
+    expect(shouldPurgeOfflineQuarantineRecord(
+      { ownerUserId: null }, 'user-a', false,
+    )).toBe(false);
+    expect(shouldPurgeOfflineQuarantineRecord(
+      { ownerUserId: 'user-a' }, ' ', false,
+    )).toBe(false);
+  });
+
+  it('includes quarantine in the purge transaction but deletes it only on explicit data removal', () => {
+    const purgeStart = dbSource.indexOf('export async function purgeUserData');
+    const purgeEnd = dbSource.indexOf('/** How many operations this user has', purgeStart);
+    const purgeSource = dbSource.slice(purgeStart, purgeEnd);
+
+    expect(purgeSource).toContain('db.sync_meta, db.offline_quarantine');
+    expect(purgeSource).toContain('shouldPurgeOfflineQuarantineRecord(row, userId, keepUnsyncedOutbox)');
+    expect(purgeSource).toContain('counts.quarantined = disposableQuarantine.length');
+    expect(purgeSource).toContain('quarantined: number');
+    expect(purgeSource).not.toContain('offline_quarantine.clear()');
   });
 
   it('runs an additive v4 IndexedDB upgrade and quarantines before deleting source rows', () => {
