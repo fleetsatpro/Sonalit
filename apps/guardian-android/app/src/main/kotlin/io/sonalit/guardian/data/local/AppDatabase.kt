@@ -75,6 +75,20 @@ interface PendingPhotoDao {
     @Query("DELETE FROM pending_photos WHERE eventUuid = :id")
     suspend fun delete(id: String)
 
+    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts < 5")
+    suspend fun countPending(): Int
+
+    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts >= 5")
+    suspend fun countExhausted(): Int
+
+    /**
+     * Explicit operator retry is the only path that reopens exhausted records.
+     * The evidence rows and original event UUIDs remain intact so the server's
+     * existing idempotency contract is preserved.
+     */
+    @Query("UPDATE pending_photos SET attempts = 0, lastError = NULL WHERE attempts >= 5")
+    suspend fun resetExhaustedAttempts(): Int
+
     @Query("SELECT COUNT(*) FROM pending_photos")
     suspend fun count(): Int
 }
