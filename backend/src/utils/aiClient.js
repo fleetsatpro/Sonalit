@@ -1170,7 +1170,7 @@ function rankProviders(providers,params={}){
 }
 
 async function createMessage(params={}) {
-  await startFabricHydration();
+  await Promise.all([startFabricHydration(),providerRadar.hydrate()]);
   const providers=rankProviders(buildProviders(params),params);
   if(!providers.length)throw new Error('AI client: no configured provider for current data-classification/free-provider policy');
 
