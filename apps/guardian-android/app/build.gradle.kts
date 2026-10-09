@@ -84,6 +84,8 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+
     // Compose BOM
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)
