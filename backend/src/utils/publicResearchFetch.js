@@ -175,10 +175,15 @@ function requestPublicOnce(url, addresses, { timeoutMs, maxBytes }) {
           'unavailable',
         )));
       });
-      request.on('error', error => finish(researchError(
-        'External research request failed: ' + String(error && error.code || 'network_error'),
-        'unavailable',
-      )));
+      request.on('error', error => {
+        const code = String(error && error.code || '').slice(0, 64);
+        const message = String(error && error.message || '').replace(/https?:\\/\\/[^\\s)]+/gi, '[url]').slice(0, 180);
+        const failureClass = String(error && error.failureClass || 'unavailable');
+        const detail = code
+          ? 'External research request failed: ' + code
+          : (message || 'External research request failed without a transport code');
+        finish(researchError(detail, failureClass));
+      });
       request.end();
     } catch (_) {
       finish(researchError('External research request could not be started', 'unavailable'));
