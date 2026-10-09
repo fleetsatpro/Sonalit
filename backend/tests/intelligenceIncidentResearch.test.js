@@ -12,6 +12,7 @@ jest.mock('../src/utils/publicResearchFetch',()=>({
 
 const { researchPublicationIncidents, verifiedResponseSources, parseGdeltResponse, _resetGdeltCooldownForTests } = require('../src/utils/intelligenceIncidentResearch');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
+const { _resetGdeltStateForTests } = require('../src/utils/gdeltClient');
 
 function installResearchFetchFixture() {
   safeFetchPublicResearch.mockReset();
@@ -39,8 +40,8 @@ beforeEach(() => {
 
 // The GDELT circuit is deliberately module-scoped in production; reset it between
 // tests so one mocked provider failure cannot contaminate unrelated scenarios.
-beforeEach(()=>_resetGdeltCooldownForTests());
-afterEach(()=>_resetGdeltCooldownForTests());
+beforeEach(()=>{_resetGdeltCooldownForTests();_resetGdeltStateForTests();});
+afterEach(()=>{_resetGdeltCooldownForTests();_resetGdeltStateForTests();});
 
 test('passes publication data-classification policy into AI incident research',async()=>{
   const aiClient=require('../src/utils/aiClient');
