@@ -6,26 +6,47 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
+const { buildCorridorPolygon, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
+const { validateToolInput } = require('../utils/aiToolInputValidation');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
   if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
-  const decisionRow = await query(
-    `INSERT INTO public.copilot_decisions (org_id, user_id, command, decision, risk_level, confidence, answer, result, completed_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) RETURNING id`,
-    [orgId, userId || null, command, result.decision || 'HUMAN_REVIEW_REQUIRED', result.risk_level || 'HIGH', Number(result.confidence || 0), result.answer || '', JSON.stringify(result)]
-  );
-  const decisionId = decisionRow.rows[0].id;
-  for (const agent of result.swarm || []) {
-    await query(
-      `INSERT INTO public.copilot_decision_agents (decision_id, org_id, agent_id, status, confidence, provider, finding, dissent, tools, provenance)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [decisionId, orgId, agent.id, agent.status || 'uncertain', Number(agent.confidence || 0), agent.provider || null, agent.finding || '', agent.dissent || '', JSON.stringify(agent.tools || []), JSON.stringify(agent.provenance || [])]
+  return withOrg(orgId, async (client) => {
+    const decisionRow = await client.query(
+      `INSERT INTO public.copilot_decisions (org_id, user_id, command, decision, risk_level, confidence, answer, result, completed_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) RETURNING id`,
+      [orgId, userId || null, command, result.decision || 'HUMAN_REVIEW_REQUIRED', result.risk_level || 'HIGH', Number(result.confidence || 0), result.answer || '', JSON.stringify(result)]
     );
-  }
-  return decisionId;
+    const decisionId = decisionRow.rows?.[0]?.id;
+    if (!decisionId) throw new Error('Copilot decision insert returned no identifier');
+    for (const agent of result.swarm || []) {
+      await client.query(
+        `INSERT INTO public.copilot_decision_agents (decision_id, org_id, agent_id, status, confidence, provider, finding, dissent, tools, provenance)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [decisionId, orgId, agent.id, agent.status || 'uncertain', Number(agent.confidence || 0), agent.provider || null, agent.finding || '', agent.dissent || '', JSON.stringify(agent.tools || []), JSON.stringify(agent.provenance || [])]
+      );
+    }
+    return decisionId;
+  });
 }
 
 router.use(authenticate);
+
+function validateCopilotRequest(body, historyLimit = 12) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, error: 'request body must be an object' };
+  if (typeof body.command !== 'string' || !body.command.trim()) return { status: 400, error: 'command required' };
+  if (body.command.length > 4000) return { status: 413, error: 'command exceeds the 4000-character limit' };
+  const history = body.history === undefined ? [] : body.history;
+  if (!Array.isArray(history) || history.length > 50) return { status: 400, error: 'history must be an array of at most 50 entries' };
+  for (let i = 0; i < history.length; i += 1) {
+    const item = history[i];
+    if (!item || typeof item !== 'object' || !['user', 'assistant'].includes(item.role) ||
+        typeof item.content !== 'string' || item.content.length > 4000) {
+      return { status: 400, error: 'history entry ' + i + ' is invalid or too large' };
+    }
+  }
+  return { command: body.command.trim(), history: history.slice(-Math.max(0, Math.min(12, historyLimit))) };
+}
 
 const MODEL = 'claude-opus-4-7';
 
@@ -281,11 +302,11 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Name, e.g. "Thika Road Corridor" or "Nairobi CBD Safe Zone"' },
-        location: { type: 'string', description: 'Place name or route start point' },
-        route_end: { type: 'string', description: 'Route end point for a corridor geofence, e.g. "Juja". Omit for a point geofence.' },
-        radius_m: { type: 'number', description: 'Radius in metres for a point geofence (default 3000). Ignored for corridors.' },
-        buffer_m: { type: 'number', description: 'Corridor half-width in metres — how far a vehicle can deviate before an alert fires (default 300).' },
+        name: { type: 'string', minLength: 1, maxLength: 160, description: 'Name, e.g. "Thika Road Corridor" or "Nairobi CBD Safe Zone"' },
+        location: { type: 'string', minLength: 1, maxLength: 400, description: 'Place name or route start point' },
+        route_end: { type: 'string', minLength: 1, maxLength: 400, description: 'Route end point for a corridor geofence, e.g. "Juja". Omit for a point geofence.' },
+        radius_m: { type: 'number', minimum: 10, maximum: 100000, description: 'Radius in metres for a point geofence (default 3000). Ignored for corridors.' },
+        buffer_m: { type: 'number', minimum: 10, maximum: 5000, description: 'Corridor half-width in metres — how far a vehicle can deviate before an alert fires (default 300).' },
         fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'corridor', 'general'] },
         precision: { type: 'string', enum: ['standard', 'high', 'maximum'], description: 'Precision level; maximum is the default for operational geofences.' },
         allow_straight_fallback: { type: 'boolean', description: 'Explicitly allow a straight-line fallback when road routing is unavailable. Defaults to false.' },
@@ -609,38 +630,28 @@ async function geocodePrecise(locationName) {
 }
 
 function toLatLngPath(osrmCoordinates) {
-  return (Array.isArray(osrmCoordinates) ? osrmCoordinates : [])
-    .filter(p => Array.isArray(p) && p.length >= 2 && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])))
-    .map(([lng, lat]) => [Number(lat), Number(lng)]);
-}
-
-function buildCorridorPolygon(path, bufferM) {
-  if (!Array.isArray(path) || path.length < 2 || !(bufferM > 0)) return null;
-  const lat0 = path.reduce((sum,p)=>sum+Number(p[0]),0)/path.length;
-  const R = 6371008.8;
-  const cos0 = Math.max(0.1, Math.cos(lat0*Math.PI/180));
-  const toXY = ([lat,lng]) => [R*cos0*Number(lng)*Math.PI/180, R*Number(lat)*Math.PI/180];
-  const toLL = ([x,y]) => [y/R*180/Math.PI, x/(R*cos0)*180/Math.PI];
-  const xy = path.map(toXY);
-  const left=[], right=[];
-  const unit=(a,b)=>{
-    const dx=b[0]-a[0], dy=b[1]-a[1], len=Math.hypot(dx,dy);
-    return len>0?[dx/len,dy/len]:[0,0];
-  };
-  for(let i=0;i<xy.length;i++){
-    const prev=i>0?unit(xy[i-1],xy[i]):unit(xy[i],xy[i+1]);
-    const next=i<xy.length-1?unit(xy[i],xy[i+1]):prev;
-    let nx=-(prev[1]+next[1]), ny=prev[0]+next[0];
-    const nlen=Math.hypot(nx,ny);
-    if(nlen<1e-9){nx=-next[1];ny=next[0];}else{nx/=nlen;ny/=nlen;}
-    const miter=bufferM/Math.max(0.35,Math.abs(nx*next[0]+ny*next[1]));
-    const d=Math.min(bufferM*2.5,Math.max(bufferM,miter));
-    left.push([xy[i][0]+nx*d,xy[i][1]+ny*d]);
-    right.push([xy[i][0]-nx*d,xy[i][1]-ny*d]);
+  if (!Array.isArray(osrmCoordinates) || osrmCoordinates.length < 2) {
+    throw new RangeError('OSRM returned no usable route geometry.');
   }
-  const ring=[...left,...right.reverse()];
-  ring.push(ring[0]);
-  return ring.map(toLL);
+  // Bound untrusted upstream payload size before allocating a large converted
+  // array. Dense routes are simplified later with an explicit metre tolerance;
+  // don't invoke normalizePath here because it intentionally caps final
+  // operational geometry at 800 vertices.
+  if (osrmCoordinates.length > 20000) {
+    throw new RangeError('OSRM route geometry exceeds the safe input vertex limit.');
+  }
+  return osrmCoordinates.map((point, index) => {
+    if (!Array.isArray(point) || point.length < 2 ||
+        !Number.isFinite(Number(point[0])) || !Number.isFinite(Number(point[1]))) {
+      throw new RangeError('OSRM returned an invalid coordinate at route index ' + index + '.');
+    }
+    const lng = Number(point[0]);
+    const lat = Number(point[1]);
+    if (Math.abs(lat) > 85 || Math.abs(lng) > 180) {
+      throw new RangeError('OSRM returned an out-of-bounds coordinate at route index ' + index + '.');
+    }
+    return [lat, lng];
+  });
 }
 
 // Haversine distance in metres between two lat/lng points
@@ -905,7 +916,12 @@ async function toolCreateGeofence(input, userId, orgId) {
         routeProvider = 'straight-line-explicit-fallback';
       }
 
-      const mid = pathLatLng[Math.floor(pathLatLng.length / 2)];
+      // Simplify only to a documented geometric error bound, never to an
+      // arbitrary point count. Preserve both endpoints and refuse a route that
+      // cannot be represented safely within the algorithm's complexity budget.
+      const pathSimplification = simplifyPath(pathLatLng, 10);
+      pathLatLng = pathSimplification.path;
+      const mid = midpointOnPath(pathLatLng);
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
       const approxRadius = Math.round(distM / 2) + buffer_m;
@@ -921,10 +937,12 @@ async function toolCreateGeofence(input, userId, orgId) {
         buffer_m,
         buffer_polygon: bufferPolygon,
         precision,
-        geometry_source: 'OpenStreetMap via OSRM',
+        geometry_source: routeProvider === 'OSRM' ? 'OpenStreetMap via OSRM' : 'geocoded straight-line explicit fallback',
         route_provider: routeProvider,
         route_distance_m: distM,
         path_points: pathLatLng.length,
+        source_path_points: pathSimplification.originalPointCount,
+        path_simplification_tolerance_m: pathSimplification.toleranceM,
         geocoding: {
           start: { source: gStart.source || 'unknown', precision: gStart.precision || 'unknown', osm_id: gStart.osm_id || null },
           end: { source: gEnd.source || 'unknown', precision: gEnd.precision || 'unknown', osm_id: gEnd.osm_id || null },
@@ -932,33 +950,59 @@ async function toolCreateGeofence(input, userId, orgId) {
         created_at: new Date().toISOString(),
       };
 
-      const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id`,
-        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
-      );
+      const stored = await withOrg(orgId, async (client) => {
+        const insert = await client.query(
+          `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+          [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
+        );
+        const geofenceId = insert.rows?.[0]?.id;
+        if (!geofenceId) throw new Error('Corridor insert returned no identifier');
 
-      // Verify the persisted geometry before reporting success. This catches
-      // coordinate-order corruption and route endpoints that drift too far
-      // from the requested locations.
-      const verify = await query(
-        `SELECT coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
-        [r.rows[0].id, orgId]
-      );
-      const persisted = verify.rows[0]?.coordinates;
-      const persistedPath = Array.isArray(persisted?.path) ? persisted.path : [];
-      const first = persistedPath[0], last = persistedPath[persistedPath.length - 1];
-      const startDriftM = first ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1])) : Infinity;
-      const endDriftM = last ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1])) : Infinity;
-      if (persistedPath.length < 2 || startDriftM > 1500 || endDriftM > 1500) {
-        await query(`DELETE FROM geofences WHERE id = $1 AND org_id = $2`, [r.rows[0].id, orgId]);
+        // Read back in the same tenant transaction. A write acknowledgement
+        // alone is not proof that the authoritative geometry is valid.
+        const verify = await client.query(
+          `SELECT coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
+          [geofenceId, orgId]
+        );
+        let persisted = verify.rows?.[0]?.coordinates;
+        if (typeof persisted === 'string') {
+          try { persisted = JSON.parse(persisted); } catch (_) { persisted = null; }
+        }
+        const persistedPath = Array.isArray(persisted?.path) ? persisted.path : [];
+        const first = persistedPath[0], last = persistedPath[persistedPath.length - 1];
+        const startDriftM = first ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1])) : Infinity;
+        const endDriftM = last ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1])) : Infinity;
+        const shape = validateCorridorGeometry(persistedPath, persisted?.buffer_polygon, persisted?.buffer_m);
+        const valid = shape.valid && persisted?.type === 'corridor' &&
+          persistedPath.length === pathLatLng.length && startDriftM <= 1500 && endDriftM <= 1500;
+        if (!valid) {
+          await client.query('DELETE FROM geofences WHERE id = $1 AND org_id = $2', [geofenceId, orgId]);
+          return {
+            valid: false,
+            verification: {
+              path_points: persistedPath.length,
+              expected_path_points: pathLatLng.length,
+              start_drift_m: Number.isFinite(startDriftM) ? Math.round(startDriftM) : null,
+              end_drift_m: Number.isFinite(endDriftM) ? Math.round(endDriftM) : null,
+              shape_reason: shape.reason || null,
+            },
+          };
+        }
+        return { valid: true, geofenceId, persistedPath, startDriftM, endDriftM };
+      });
+      if (!stored.valid) {
         return {
           created: false,
           error: 'Geometry verification failed. No corridor geofence was retained.',
-          verification: { path_points: persistedPath.length, start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM) },
+          verification: stored.verification,
         };
       }
+      const geofenceId = stored.geofenceId;
+      const persistedPath = stored.persistedPath;
+      const startDriftM = stored.startDriftM;
+      const endDriftM = stored.endDriftM;
 
       const effectivePrecision = precision === 'maximum' && (gStart.source === 'nominatim' || gStart.source === 'explicit') && (gEnd.source === 'nominatim' || gEnd.source === 'explicit')
         ? 'maximum'
@@ -966,7 +1010,7 @@ async function toolCreateGeofence(input, userId, orgId) {
 
       return {
         created: true,
-        geofence_id: r.rows[0].id,
+        geofence_id: geofenceId,
         name,
         fence_type: 'corridor',
         lat: mid[0],
@@ -976,6 +1020,8 @@ async function toolCreateGeofence(input, userId, orgId) {
         location: locationLabel,
         is_corridor: true,
         path_points: pathLatLng.length,
+        source_path_points: pathSimplification.originalPointCount,
+        path_simplification_tolerance_m: pathSimplification.toleranceM,
         road_distance_km: (distM / 1000).toFixed(2),
         buffer_m,
         precision: effectivePrecision,
@@ -986,7 +1032,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         geometry_verification: { start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM), persisted_path_points: persistedPath.length },
         fallback_used: routeProvider !== 'OSRM',
         message: routeProvider === 'OSRM'
-          ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} centreline vertices, ${buffer_m}m deviation threshold.`
+          ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} verified centreline vertices, ${buffer_m}m deviation threshold${pathSimplification.toleranceM ? " (centreline simplified within 10m tolerance)" : ""}.`
           : `LOW-PRECISION explicit fallback "${name}" created from a straight line. Review before operational use.`,
       };
     }
@@ -1003,17 +1049,46 @@ async function toolCreateGeofence(input, userId, orgId) {
     };
     const region = g.admin1 || g.country || location;
 
-    const r = await query(
-      `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id`,
-      [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
-    );
+    const stored = await withOrg(orgId, async (client) => {
+      const insert = await client.query(
+        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
+        [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
+      );
+      const geofenceId = insert.rows?.[0]?.id;
+      if (!geofenceId) throw new Error('Point geofence insert returned no identifier');
+      const verify = await client.query(
+        `SELECT type, radius, coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
+        [geofenceId, orgId]
+      );
+      const row = verify.rows?.[0];
+      let persisted = row?.coordinates;
+      if (typeof persisted === 'string') {
+        try { persisted = JSON.parse(persisted); } catch (_) { persisted = null; }
+      }
+      const persistedLat = Number(persisted?.lat);
+      const persistedLng = Number(persisted?.lng);
+      const persistedRadius = Number(row?.radius);
+      const driftM = Number.isFinite(persistedLat) && Number.isFinite(persistedLng)
+        ? haversineM(g.latitude, g.longitude, persistedLat, persistedLng)
+        : Infinity;
+      const valid = row?.type === 'circle' && Number.isFinite(persistedRadius) &&
+        Math.abs(persistedRadius - radius_m) < 0.5 && driftM <= 5;
+      if (!valid) {
+        await client.query('DELETE FROM geofences WHERE id = $1 AND org_id = $2', [geofenceId, orgId]);
+        return { valid: false, verification: { persisted_type: row?.type || null, persisted_radius_m: Number.isFinite(persistedRadius) ? persistedRadius : null, coordinate_drift_m: Number.isFinite(driftM) ? Math.round(driftM * 100) / 100 : null } };
+      }
+      return { valid: true, geofenceId, driftM };
+    });
+    if (!stored.valid) {
+      return { created: false, error: 'Persisted point geometry failed verification. No geofence was retained.', verification: stored.verification };
+    }
 
     const locationLabel = g.name || location;
     return {
       created: true,
-      geofence_id: r.rows[0].id,
+      geofence_id: stored.geofenceId,
       name,
       fence_type,
       lat: g.latitude,
@@ -1238,10 +1313,9 @@ router.post('/decision/:decisionId/feedback', async (req, res) => {
 });
 
 router.post('/decision', async (req, res) => {
-  const { command, history = [] } = req.body || {};
-  if (!command || !String(command).trim()) {
-    return res.status(400).json({ error: 'command required' });
-  }
+  const request = validateCopilotRequest(req.body, 12);
+  if (request.error) return res.status(request.status).json({ error: request.error });
+  const { command, history } = request;
 
   // Do not short-circuit when model providers are unavailable. The decision fabric
   // has a deterministic evidence-only fallback and must remain operational.
@@ -1341,8 +1415,9 @@ function inferGeofenceTask(command) {
 
 // ── POST /ai/dispatch — agentic tool-use loop ──────────────────────────────
 router.post('/dispatch', async (req, res) => {
-  const { command, history = [] } = req.body;
-  if (!command || !command.trim()) return res.status(400).json({ error: 'command required' });
+  const request = validateCopilotRequest(req.body, 6);
+  if (request.error) return res.status(request.status).json({ error: request.error });
+  const { command, history } = request;
 
   // High-confidence geofence commands bypass the model completely. This keeps
   // a core operational drawing task available even during provider outages and
@@ -1350,9 +1425,13 @@ router.post('/dispatch', async (req, res) => {
   const geofenceTask = inferGeofenceTask(command);
   if (geofenceTask) {
     try {
+      const { task: _taskName, ...geofenceInput } = geofenceTask;
+      const definition = TOOLS.find(tool => tool.name === 'create_geofence');
+      const check = definition ? validateToolInput(definition.input_schema, geofenceInput) : { valid: false, errors: [] };
+      if (!check.valid) return res.status(400).json({ error: 'invalid_geofence_request', details: check.errors });
       const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id || null;
       const userId = req.user?.id || null;
-      const result = await toolCreateGeofence(geofenceTask, userId, orgId);
+      const result = await toolCreateGeofence(geofenceInput, userId, orgId);
       return res.json({
         response: result.message || (result.error ? result.error : 'Geofence task completed.'),
         actions: result.created ? ['create_geofence'] : [],
@@ -1415,19 +1494,32 @@ router.post('/dispatch', async (req, res) => {
           if (block.type !== 'tool_use') continue;
           toolsUsed.push(block.name);
           let result, isError = false;
-          try {
-            result = await runTool(block.name, block.input, { userId, orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null });
-            // Track map-mutating actions for frontend refresh
-            if (block.name === 'create_geofence' && result.created) {
-              actionsCreated.push({ type: 'geofence', ...result });
-            }
-            if (block.name === 'create_risk_zone' && result.created) {
-              actionsCreated.push({ type: 'risk_zone', ...result });
-            }
-          } catch (e) {
-            result = { error: e.message };
+          const definition = TOOLS.find(tool => tool.name === block.name);
+          const argumentCheck = definition
+            ? validateToolInput(definition.input_schema, block.input)
+            : { valid: false, errors: [{ path: 'input', code: 'unknown_tool', message: 'Tool is not registered.' }] };
+          if (!argumentCheck.valid) {
+            // Invalid model arguments are never passed to tool implementations.
+            // Give the model a structured rejection so it can correct or
+            // explain the failure without triggering a side effect.
+            result = { error: 'invalid_tool_input', details: argumentCheck.errors };
             isError = true;
-            logger.warn(`AI tool ${block.name} failed: ${e.message}`);
+          } else {
+            try {
+              result = await runTool(block.name, block.input, { userId, orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null });
+              // Track map-mutating actions only after their authoritative handler succeeds.
+              if (block.name === 'create_geofence' && result?.created === true) {
+                actionsCreated.push({ type: 'geofence', ...result });
+              }
+              if (block.name === 'create_risk_zone' && result?.created === true) {
+                actionsCreated.push({ type: 'risk_zone', ...result });
+              }
+              if (result && typeof result === 'object' && result.error) isError = true;
+            } catch (e) {
+              result = { error: 'tool_execution_failed', message: String(e?.message || 'Unknown tool failure').slice(0, 300) };
+              isError = true;
+              logger.warn(`AI tool ${block.name} failed: ${String(e?.message || 'unknown').slice(0, 180)}`);
+            }
           }
           toolResults.push({
             type: 'tool_result',

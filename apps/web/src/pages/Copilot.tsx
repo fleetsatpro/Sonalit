@@ -190,6 +190,8 @@ export default function Copilot() {
   const [isLoading, setIsLoading] = useState(false);
   const [showDraw, setShowDraw] = useState(false);
   const [telemetry, setTelemetry] = useState<DecisionResponse['meta'] & { confidence?: number; risk?: string; safety?: string; evidence?: number }>({});
+  const [responseStatus, setResponseStatus] = useState<'NOT_CHECKED' | 'RESPONDED' | 'DEGRADED' | 'FAILED' | 'COMPLETED'>('NOT_CHECKED');
+  const responseDotClass = responseStatus === 'RESPONDED' || responseStatus === 'COMPLETED' ? 'bg-emerald-400' : responseStatus === 'DEGRADED' ? 'bg-amber-400' : responseStatus === 'FAILED' ? 'bg-rose-400' : 'bg-slate-500';
   const bottomRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryEntry[]>([]);
 
@@ -223,12 +225,17 @@ export default function Copilot() {
       }
       const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
       setTelemetry({ ...(d.meta || {}), confidence: d.confidence, risk: d.risk_level, safety: d.assurance?.safety_gate, evidence: d.assurance?.evidence_health?.succeeded, agent_count: d.task?.completed ? 0 : d.meta?.agent_count });
+      if (d.task) setResponseStatus(d.task.completed === true ? 'COMPLETED' : 'FAILED');
+      else if (d.meta?.fatal) setResponseStatus('FAILED');
+      else if (d.meta?.degraded || ['error', 'unconfigured', 'groq-fallback', 'geofence-error', 'geofence-validation'].includes(String(d.source || ''))) setResponseStatus('DEGRADED');
+      else setResponseStatus('RESPONDED');
       historyRef.current = [...historyRef.current, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-12);
       setMessages((prev) => [...prev, assistantMsg]);
       if (/draw|map|geofence|zone/i.test(responseText) && /geofence|zone|area/i.test(text)) setShowDraw(true);
     } catch (error: any) {
       const detail = error?.response?.data?.error || error?.response?.data?.message;
       const status = error?.response?.status;
+      setResponseStatus('FAILED');
       setMessages((prev) => [...prev, { id: `error-${Date.now()}`, role: 'assistant', content: detail || `Copilot request failed${status ? ` (HTTP ${status})` : ''}. Please try again.` , timestamp: Date.now() }]);
     } finally {
       setIsLoading(false);
@@ -246,7 +253,7 @@ export default function Copilot() {
           <div className="flex items-center gap-3 px-5 py-3">
             <div className="relative grid h-10 w-10 place-items-center rounded-xl border border-cyan-300/20 bg-cyan-300/5">
               <Bot size={19} className="text-cyan-200" />
-              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400" />
+              <span className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full ${responseDotClass}`} />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -257,13 +264,13 @@ export default function Copilot() {
             </div>
             <div className="ml-auto flex items-center gap-2">
               <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5">
-                <Activity size={12} className="text-cyan-300" /><div><div className="text-[8px] tracking-widest text-slate-600">SWARM</div><div className="font-mono text-[9px] text-slate-300">{telemetry.agent_count ?? 'READY'}</div></div>
+                <Activity size={12} className="text-cyan-300" /><div><div className="text-[8px] tracking-widest text-slate-600">SWARM</div><div className="font-mono text-[9px] text-slate-300">{telemetry.agent_count ?? 'NOT CHECKED'}</div></div>
               </div>
               <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5">
-                <Database size={12} className="text-cyan-300" /><div><div className="text-[8px] tracking-widest text-slate-600">EVIDENCE</div><div className="font-mono text-[9px] text-slate-300">{telemetry.evidence ?? 'LIVE'}</div></div>
+                <Database size={12} className="text-cyan-300" /><div><div className="text-[8px] tracking-widest text-slate-600">EVIDENCE</div><div className="font-mono text-[9px] text-slate-300">{telemetry.evidence ?? 'NOT REPORTED'}</div></div>
               </div>
               <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5">
-                <ShieldCheck size={12} className="text-cyan-300" /><div><div className="text-[8px] tracking-widest text-slate-600">SAFETY</div><div className="font-mono text-[9px] text-slate-300">{telemetry.safety ?? 'ARMED'}</div></div>
+                <ShieldCheck size={12} className="text-cyan-300" /><div><div className="text-[8px] tracking-widest text-slate-600">SAFETY</div><div className="font-mono text-[9px] text-slate-300">{telemetry.safety ?? 'NOT ASSESSED'}</div></div>
               </div>
               <button onClick={() => setShowDraw((v) => !v)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 bg-slate-900/70 text-slate-300 hover:border-cyan-300/30 hover:text-cyan-200">
                 <MapPin size={12} /> {showDraw ? 'Hide Map' : 'Draw Geofence'}
@@ -272,7 +279,7 @@ export default function Copilot() {
           </div>
           <div className="grid grid-cols-4 border-t border-cyan-400/10 bg-slate-950/70">
             {[
-              ['POSTURE', telemetry.risk || 'NOMINAL'],
+              ['POSTURE', telemetry.risk || 'UNASSESSED'],
               ['CONFIDENCE', telemetry.confidence != null ? `${Math.round(telemetry.confidence * 100)}%` : '—'],
               ['LATENCY', telemetry.latency_ms ? `${telemetry.latency_ms}ms` : '—'],
               ['FALLBACK', telemetry.provider_fallback_available ? 'READY' : 'CHECK']
@@ -287,7 +294,7 @@ export default function Copilot() {
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 bg-[radial-gradient(circle_at_70%_15%,rgba(34,211,238,.035),transparent_32%)]">
           <div className="flex items-center gap-2 rounded-xl border border-cyan-400/10 bg-cyan-300/[0.025] px-3 py-2 text-[9px] uppercase tracking-[0.16em] text-slate-500">
-            <Radar size={12} className="text-cyan-300" /> LIVE EVIDENCE CHANNEL <span className="ml-auto font-mono text-emerald-400">● ONLINE</span>
+            <Radar size={12} className="text-cyan-300" /> COPILOT RESPONSE STATUS <span className={`ml-auto font-mono ${responseDotClass.replace('bg-', 'text-')}`}>● {responseStatus.replaceAll('_', ' ')}</span>
           </div>
           {messages.map((m) => <ChatBubble key={m.id} message={m} />)}
           {isLoading && (
