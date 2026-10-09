@@ -163,6 +163,16 @@ export async function enqueueVoiceNote(input: EnqueueVoiceNoteInput): Promise<Me
   return entry;
 }
 
+export async function getMediaUploadEntry(
+  id: string,
+  ownerUserId: string,
+  ownerOrgId: string,
+): Promise<MediaUploadEntry | null> {
+  const row = await db.media_outbox.get(id);
+  if (!row || row.ownerUserId !== ownerUserId || row.ownerOrgId !== ownerOrgId) return null;
+  return row;
+}
+
 export async function listVoiceNotesForParent(
   ownerUserId: string,
   ownerOrgId: string,
@@ -204,8 +214,11 @@ function classifyFailure(error: unknown): Failure {
   if (serverCode === 'storage_not_configured' || serverCode === 'storage_signing_failed') {
     return { code: serverCode, message: 'Voice-note storage is temporarily unavailable. The recording remains on this device.', retryable: true };
   }
-  if (status === 401 || status === 403) {
-    return { code: 'authorization_required', message: 'Sign in again with the same account to resume this upload.', retryable: false };
+  if (status === 401) {
+    return { code: 'authorization_required', message: 'Sign in again with the same account to resume this upload.', retryable: true };
+  }
+  if (status === 403) {
+    return { code: 'access_revoked', message: 'This account is not authorised to upload the recording. Keep it for review or contact your Sonalit administrator.', retryable: false };
   }
   if (status != null && [400, 413, 415, 422].includes(status)) {
     return { code: serverCode || 'upload_rejected', message: 'Sonalit rejected this recording. It remains on this device for review.', retryable: false };
