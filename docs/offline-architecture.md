@@ -325,10 +325,7 @@ realtime connectivity separately, because Centrifugo can die while REST is fine.
 
 `OFFLINE_MODE`, `OFFLINE_SYNC`, `LOW_BANDWIDTH_MODE` default **on** (with all
 per-surface flags off, they only make the app honest about connectivity — no
-write path changes). `OFFLINE_QR`, `OFFLINE_CDS`, and `OFFLINE_GPS`
-default **off**; each opens a specific offline write path and is earned per
-surface on real devices. No `OFFLINE_MAPS` flag is exposed because there is
-no tile-cache implementation to enable.
+write path changes). Only `OFFLINE_GPS` remains as a per-surface flag, and it defaults **off**. It is consumed by the actual GPS buffer/write path. `OFFLINE_QR` and `OFFLINE_CDS` were removed because no active code consumed them; they did not enable the QR/CDS workflows. The older field clamp/unclamp queue remains a separate idempotent path, not a flag-controlled feature. No `OFFLINE_MAPS` flag is exposed because there is no tile-cache implementation to enable.
 
 Set via `VITE_<FLAG>` at build time, or per-device in localStorage in
 non-production builds.

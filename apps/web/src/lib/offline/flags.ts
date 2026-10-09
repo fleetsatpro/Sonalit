@@ -18,8 +18,6 @@
 export type OfflineFlag =
   | 'OFFLINE_MODE'
   | 'OFFLINE_SYNC'
-  | 'OFFLINE_QR'
-  | 'OFFLINE_CDS'
   | 'OFFLINE_GPS'
   | 'LOW_BANDWIDTH_MODE';
 
@@ -39,8 +37,6 @@ export type OfflineFlag =
 const DEFAULTS: Record<OfflineFlag, boolean> = {
   OFFLINE_MODE: true,
   OFFLINE_SYNC: true,
-  OFFLINE_QR: false,
-  OFFLINE_CDS: false,
   OFFLINE_GPS: false,
   LOW_BANDWIDTH_MODE: true,
 };
