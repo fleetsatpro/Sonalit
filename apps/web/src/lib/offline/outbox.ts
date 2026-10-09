@@ -33,6 +33,25 @@ import { CLIENT_SCHEMA_VERSION } from './types.js';
 /** Above this, new non-critical operations are refused rather than silently piling up. */
 export const MAX_QUEUE_DEPTH = 5_000;
 
+const ACTIVE_QUEUE_STATUSES: readonly OutboxStatus[] = ['PENDING', 'FAILED_RETRYABLE', 'SYNCING'];
+
+/**
+ * Capacity belongs to the active identity, not the entire browser database.
+ * A shared device can retain rows from a prior tenant; those rows must neither
+ * count against this tenant nor become eligible for this tenant's queue.
+ */
+export function countActiveQueueEntries(
+  entries: readonly Pick<OutboxEntry, 'ownerUserId' | 'ownerOrgId' | 'status'>[],
+  userId: string,
+  orgId: string,
+): number {
+  return entries.filter(entry =>
+    entry.ownerUserId === userId &&
+    entry.ownerOrgId === orgId &&
+    ACTIVE_QUEUE_STATUSES.includes(entry.status),
+  ).length;
+}
+
 function newId(): string {
   // crypto.randomUUID needs a secure context. The field surfaces are HTTPS, but
   // a plain-http dev host would not have it, and losing the queue to a
@@ -102,7 +121,11 @@ export async function recordOperation(
   // telemetry, so it applies only to the lower bands. A panic is never refused
   // for lack of queue space.
   if (priority > PRIORITY.CRITICAL) {
-    const depth = await db.outbox.where('status').anyOf('PENDING', 'FAILED_RETRYABLE', 'SYNCING').count();
+    // Query the owner index first; scope by organization before enforcing the
+    // limit. The same browser may hold isolated rows from another signed-in
+    // tenant, and those must not starve the current tenant's queue.
+    const ownedRows = await db.outbox.where('ownerUserId').equals(input.ownerUserId).toArray();
+    const depth = countActiveQueueEntries(ownedRows, input.ownerUserId, input.ownerOrgId);
     if (depth >= MAX_QUEUE_DEPTH) throw new QueueFullError();
   }
 
