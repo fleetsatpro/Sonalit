@@ -1,6 +1,6 @@
 /**
  * S2-F7: Voice Notes
- * Storage: presigned S3/GCS upload URL approach (org controls storage bucket)
+ * Storage: signed Cloudflare R2 object uploads, confirmed before metadata commit.
  */
 const router = require('express').Router();
 const Joi = require('joi');
