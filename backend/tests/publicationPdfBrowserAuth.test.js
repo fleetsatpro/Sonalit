@@ -64,4 +64,17 @@ describe('browser-native publication PDF compatibility', () => {
     expect(s).toContain("Content-Disposition");
     expect(s).not.toContain('res.redirect(302');
   });
+
+  test('Intel Hub publication listing never returns raw PDF storage locators', () => {
+    const s = fs.readFileSync(path.join(__dirname, '../src/routes/intelligenceOperations.js'), 'utf8');
+    expect(s).toContain('const safeRows=rows.map(row=>{const item={...row,pdf_url:null};delete item.pdf_key;return item;});');
+    expect(s).toContain('publications:safeRows');
+  });
+
+  test('new publication PDFs use opaque storage keys and do not return public R2 URLs', () => {
+    const s = fs.readFileSync(path.join(__dirname, '../src/services/intelligencePublicationPdf.js'), 'utf8');
+    expect(s).toContain('crypto.randomUUID()');
+    expect(s).toContain('pdf_url:null');
+    expect(s).not.toContain('R2_PUBLIC_URL');
+  });
 });
