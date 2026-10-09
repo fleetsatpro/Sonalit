@@ -56,7 +56,7 @@ Nothing else in the app could function without a connection.
 
 | Module | Responsibility |
 |---|---|
-| `db.ts` | Dexie/IndexedDB schema v2: `entities`, `outbox`, `gps_buffer`, `conflicts`, `sync_meta`. Storage-pressure and persistence helpers. Per-user purge. |
+| `db.ts` | Dexie/IndexedDB schema v4: tenant-qualified `entities`, `outbox`, `gps_buffer`, `conflicts`, `sync_meta`, plus `offline_quarantine`. v4 preserves the full raw row and stops replay when a legacy outbox/GPS/conflict/entity row lacks provable tenant ownership; it never assigns the current login's organisation by guess. Sync Center surfaces a review warning without exposing quarantined payloads. |
 | `connectivity.ts` | The single connectivity authority. `UNKNOWN / ONLINE / DEGRADED / OFFLINE / SYNCING`. |
 | `capabilities.ts` | The Operation Capability Matrix — what may happen offline, and under what conditions. |
 | `outbox.ts` | Durable transactional queue: six states, priority bands, dependencies, backoff. |
