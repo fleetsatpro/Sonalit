@@ -9,6 +9,7 @@ import {
   trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
   bboxFromMap, useTrafficIncidents, useTrafficStatus,
 } from '../../../lib/trafficLayer.js'
+import { trafficAvailabilityNotice } from '../../../lib/trafficHealth.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 import '../../../styles/spatial-command.css'
 
@@ -205,7 +206,8 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   const [worldViewport, setWorldViewport] = useState<{ latitude: number; longitude: number; radiusM: number } | null>(null)
 
   const { data: trafficStatus } = useTrafficStatus()
-  const { data: trafficFC } = useTrafficIncidents(bbox, trafficOn)
+  const { data: trafficFC, isError: trafficIncidentsError } = useTrafficIncidents(bbox, trafficOn)
+  const trafficNotice = trafficOn ? trafficAvailabilityNotice(trafficIncidentsError, trafficFC?.health?.status) : null
 
   const { data: worldContext, isFetching: worldFetching, isError: worldError } = useQuery({
     queryKey: ['gps-world-context', worldViewport?.latitude, worldViewport?.longitude, worldViewport?.radiusM],
@@ -374,9 +376,14 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   }, [trafficOn, mapReady])
 
   useEffect(() => {
-    const map = mapRef.current; if (!map || !mapReady || !trafficFC) return
+    const map = mapRef.current; if (!map || !mapReady) return
+    if (trafficIncidentsError) {
+      setTrafficIncidents(map, { type: 'FeatureCollection', features: [] })
+      return
+    }
+    if (!trafficFC) return
     setTrafficIncidents(map, trafficFC)
-  }, [trafficFC, mapReady])
+  }, [trafficFC, trafficIncidentsError, mapReady])
 
   // risk zone overlay
   useEffect(() => {
@@ -634,6 +641,11 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
             style={{ width: 34, height: 34, borderRadius: 7, background: trafficOn ? 'rgba(239,68,68,.18)' : 'rgba(8,11,20,.92)', border: `1px solid ${trafficOn ? 'rgba(239,68,68,.6)' : 'rgba(255,255,255,.11)'}`, color: trafficOn ? '#ef4444' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="2" width="6" height="20" rx="1"/><circle cx="12" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
           </button>
+          {trafficOn && trafficNotice && (
+            <span role="status" aria-live="polite" title={trafficNotice} style={{ color: '#fbbf24', fontSize: 9, maxWidth: 160, textAlign: 'center' }}>
+              ROAD STATE UNKNOWN
+            </span>
+          )}
         )}
         {/* dedicated latest-optical control: normal map remains one click away */}
         <button
