@@ -146,6 +146,7 @@ export default function SyncCenter({ userId }: { userId: string }) {
 
   const c = status.connectivity;
   const q = status.queue;
+  const mq = status.mediaQueue;
 
   // Acknowledged history is deliberately last and collapsed: the queue is for
   // what still needs attention, not a log to scroll past.
@@ -222,6 +223,9 @@ export default function SyncCenter({ userId }: { userId: string }) {
           <Stat label="Needs review" value={String(q?.conflict ?? 0)} tone={q?.conflict ? 'text-cds-orange' : undefined} />
           <Stat label="Not accepted" value={String(q?.failedPermanent ?? 0)} tone={q?.failedPermanent ? 'text-cds-red' : undefined} />
           <Stat label="GPS buffered" value={String(status.gpsBuffered)} />
+          <Stat label="Media waiting" value={mq == null ? 'unknown' : String(mq.pending + mq.failedRetryable)} />
+          <Stat label="Media uploading" value={mq == null ? 'unknown' : String(mq.uploading)} />
+          <Stat label="Media needs review" value={mq == null ? 'unknown' : String(mq.failedPermanent)} tone={mq?.failedPermanent ? 'text-cds-red' : undefined} />
           {/* Realtime is reported separately because it fails on its own: live
               updates can be dead while everything else is healthy, and the map
               must not claim LIVE in that state. */}
@@ -229,6 +233,9 @@ export default function SyncCenter({ userId }: { userId: string }) {
           <Stat label="Latency" value={c.latencyMs == null ? 'unknown' : `${Math.round(c.latencyMs)}ms`} />
           <Stat label="Oldest waiting" value={q?.oldestPendingAgeMs ? ago(q.oldestPendingAgeMs) : '—'} />
         </dl>
+        <p className="mt-2 text-[10px] text-text-2">
+          Voice-note recordings stay on this device until Sonalit confirms the stored object and note record. Unknown media status is shown as unknown, not zero.
+        </p>
       </section>
 
       {active.length > 0 && (
