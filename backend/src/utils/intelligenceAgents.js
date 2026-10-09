@@ -452,10 +452,14 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const reportEvidenceCount=reportEvents.reduce((n,e)=>n+Number(e.observation_count||0),0);
   const reportSourceIds=new Set();
   for(const e of reportEvents)for(const obs of Array.isArray(e.evidence)?e.evidence:[])if(obs?.source_id)reportSourceIds.add(String(obs.source_id));
+  const reportSourceCount=Math.max(
+    publicationBasis.basis==='DIRECT_WEB_RESEARCH'?Number(publicationBasis.researchSourceCount||0):0,
+    reportSourceIds.size
+  );
   const reportObservationEvidenceContract=reportEvidenceCount>=3&&reportSourceIds.size>=2;
   const researchBackedEvidenceContract=publicationBasis.basis==='DIRECT_WEB_RESEARCH'&&publicationBasis.publishable;
   const publicationEvidenceContract=events.length===0 || reportObservationEvidenceContract || researchBackedEvidenceContract;
-  const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents.map(e=>enrichedEventsById.get(String(e.id))||e),evidenceCount:reportEvidenceCount,sourceCount:Math.max(publicationBasis.basis==='DIRECT_WEB_RESEARCH'?publicationBasis.researchSourceCount:0,reportSourceIds.size),evidenceContract:publicationEvidenceContract,publicationTimezone});
+  const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents.map(e=>enrichedEventsById.get(String(e.id))||e),evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
   const researchControlledComplete=reportEvents.length===0
     ? expectedResearchCount===0
     : reportEvents.every(e=>{
@@ -526,7 +530,8 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const excludedPeriodEventCount=Math.max(0,events.length-reportEvents.length);
   if(excludedPeriodEventCount>0){
     const selectionGap='The full reporting period contains '+events.length+' security-relevant event record(s); this edition details '+reportEvents.length+' research-eligible priority incident(s). '+excludedPeriodEventCount+' additional record(s) were not expanded because they fell outside the bounded research set or did not meet incident-level evidence and research eligibility. Their omission is not evidence that no incident occurred.';
-    finalBody.intelligence_gaps=uniqueStrings([...(Array.isArray(finalBody.intelligence_gaps)?finalBody.intelligence_gaps:[]),selectionGap],12);
+    const coverageGaps=[...(Array.isArray(finalBody.intelligence_gaps)?finalBody.intelligence_gaps:[]),selectionGap].filter(Boolean);
+    finalBody.intelligence_gaps=Array.from(new Set(coverageGaps)).slice(-12);
     finalBody.collection_coverage={
       ...(finalBody.collection_coverage||{}),
       full_period_event_count:events.length,
