@@ -91,6 +91,22 @@ export const BATCH_SIZE = 500;
  */
 export const MAX_BUFFERED = 20_000;
 
+/**
+ * Defense-in-depth tenant boundary for buffered positions. The session manager
+ * purges old user data on identity changes, but queue reads must still be
+ * scoped by both authenticated user and organisation: cleanup is not access
+ * control, and no stale row may be re-labelled under the current tenant.
+ */
+export function scopeBufferedFixesForTenant(
+  fixes: readonly BufferedFix[],
+  userId: string,
+  orgId: string,
+): BufferedFix[] {
+  return fixes
+    .filter(fix => fix.ownerUserId === userId && fix.ownerOrgId === orgId)
+    .sort((a, b) => a.sequence - b.sequence);
+}
+
 const SEQ_KEY = 'gps:sequence';
 
 async function nextSequence(): Promise<number> {
@@ -156,8 +172,9 @@ export async function recordFix(input: RecordFixInput): Promise<BufferedFix | nu
   return fix;
 }
 
-export async function bufferedCount(userId: string): Promise<number> {
-  return db.gps_buffer.where('ownerUserId').equals(userId).count();
+export async function bufferedCount(userId: string, orgId: string): Promise<number> {
+  const rows = await db.gps_buffer.where('ownerUserId').equals(userId).toArray();
+  return rows.filter(fix => fix.ownerOrgId === orgId).length;
 }
 
 /**
@@ -177,9 +194,10 @@ export async function flushToOutbox(
 ): Promise<number> {
   if (!isEnabled('OFFLINE_GPS')) return 0;
 
-  const pending = await db.gps_buffer
+  const storedRows = await db.gps_buffer
     .where('ownerUserId').equals(userId)
-    .sortBy('sequence');
+    .toArray();
+  const pending = scopeBufferedFixesForTenant(storedRows, userId, orgId);
   if (pending.length === 0) return 0;
 
   // One outbox entry per vehicle: the server's batch handler takes a single
