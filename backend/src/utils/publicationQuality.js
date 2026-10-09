@@ -378,7 +378,8 @@ function assessPublicationQuality(body) {
     const limitedResearchAccepted=researchStatus==='researched_limited' && distinctDomains(sources)>=2;
     const degradedEvidenceAccepted=
       researchStatus==='fallback' &&
-      String(dossier.research_method||'').toLowerCase()==='degraded_evidence' &&
+      dossier.degraded_evidence_eligible===true &&
+      ['degraded_evidence','live_web_packet'].includes(String(dossier.research_method||'').toLowerCase()) &&
       Number(dossier.evidence_count||0)>=1 &&
       Number(dossier.source_count||0)>=1;
     if (researchStatus !== 'researched' && !limitedResearchAccepted && !degradedEvidenceAccepted) {
