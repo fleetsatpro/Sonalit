@@ -591,11 +591,9 @@ describe('intelligence provider mesh', () => {
       set:jest.fn(async()=> 'OK'),
       del:jest.fn(async()=>1),
     };
-    jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
-
     const calls=[];
     const errorWithStatus=(message,status)=>Object.assign(new Error(message),{status});
-    jest.doMock('openai',()=>class MockOpenAI{
+    const mockOpenAI = class MockOpenAI{
       constructor(options={}){
         this.apiKey=options.apiKey;
         this.baseURL=options.baseURL||'openai';
@@ -616,13 +614,15 @@ describe('intelligence provider mesh', () => {
           throw new Error('Unexpected provider credential/model in half-open test: '+JSON.stringify(call));
         })}};
       }
-    });
+    };
 
     let ai;
-    // Isolate this provider graph from mocks/cached clients left by the many
-    // other provider-mesh tests in this file; the regression must exercise the
-    // exact OpenAI constructor registered immediately above.
+    // Register both dependency mocks inside Jest's isolated registry. Doing
+    // this outside isolateModules can leave the provider graph bound to a
+    // prior test's provider clients even after resetModules().
     jest.isolateModules(()=>{
+      jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
+      jest.doMock('openai',()=>mockOpenAI);
       ai=require('../src/utils/aiClient');
     });
     const response=await ai.createMessage({
