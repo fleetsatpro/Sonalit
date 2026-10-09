@@ -11,7 +11,7 @@ describe('active login control honesty contract', () => {
   it('does not expose a remember-me preference that the login contract ignores', () => {
     expect(consoleSource).not.toContain('rememberMe');
     expect(consoleSource).not.toContain('Remember me');
-    expect(consoleSource).toContain('Password and WebAuthn');
+    expect(consoleSource).toContain('passwordMutation.mutate({ email: emailVal, password });');
   });
 
   it('does not mount password-reset or access-request UI without backend routes', () => {
