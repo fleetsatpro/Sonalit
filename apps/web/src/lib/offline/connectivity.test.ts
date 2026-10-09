@@ -5,9 +5,9 @@
  * can be verified without a browser, a timer or a network — the alternative is
  * discovering the hysteresis is wrong in a yard.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { deriveState, isNetworkDown, isReachable, OFFLINE_AFTER_FAILURES, _reset } from './connectivity.js';
+import { deriveState, isNetworkDown, isReachable, OFFLINE_AFTER_FAILURES, _reset, setProbe, startConnectivity, stopConnectivity } from './connectivity.js';
 
 const healthy = {
   networkUp: true,
@@ -87,5 +87,52 @@ describe('isNetworkDown', () => {
     // This drives the full-screen offline takeover. Reporting "down" before any
     // evidence would blank the entire app on every cold load.
     expect(isNetworkDown()).toBe(false);
+  });
+});
+
+
+describe('connectivity listener lifecycle', () => {
+  afterEach(() => {
+    stopConnectivity();
+    _reset();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('removes the exact online/offline/visibility handlers before a restart', () => {
+    vi.useFakeTimers();
+    _reset();
+
+    const fakeWindow = {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    const fakeDocument = {
+      visibilityState: 'visible',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal('window', fakeWindow);
+    vi.stubGlobal('document', fakeDocument);
+    setProbe(async () => true);
+
+    startConnectivity();
+    startConnectivity(); // Idempotent start must not duplicate listeners.
+    expect(fakeWindow.addEventListener).toHaveBeenCalledTimes(2);
+    expect(fakeDocument.addEventListener).toHaveBeenCalledTimes(1);
+
+    const addedWindowHandlers = fakeWindow.addEventListener.mock.calls;
+    const addedDocumentHandlers = fakeDocument.addEventListener.mock.calls;
+    stopConnectivity();
+
+    expect(fakeWindow.removeEventListener.mock.calls).toEqual(addedWindowHandlers);
+    expect(fakeDocument.removeEventListener.mock.calls).toEqual(addedDocumentHandlers);
+
+    startConnectivity();
+    stopConnectivity();
+    expect(fakeWindow.addEventListener).toHaveBeenCalledTimes(4);
+    expect(fakeWindow.removeEventListener).toHaveBeenCalledTimes(4);
+    expect(fakeDocument.addEventListener).toHaveBeenCalledTimes(2);
+    expect(fakeDocument.removeEventListener).toHaveBeenCalledTimes(2);
   });
 });
