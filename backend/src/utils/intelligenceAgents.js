@@ -8,6 +8,7 @@ const {withOrg}=require('./orgScopedDb');
 const {runWithOrgContext}=require('./tenantContext');
 const logger=require('./logger');
 const { buildEvidencePublication } = require('./intelligencePublicationBuilder');
+const { publicationRecoveryMetadata } = require('./publicationRecoveryMetadata');
 const { researchPublicationIncidents } = require('./intelligenceIncidentResearch');
 const { auditPublicationContent, assessPublicationQuality, isAggregatorDomain, normalizeDomain, sourceIsSubstantive, isRepetitiveTemplateText } = require('./publicationQuality');
 const { PDF_RENDERER_VERSION } = require('../services/intelligencePublicationPdfProfessional');
@@ -266,10 +267,11 @@ function selectPublicationResearchEvents(events,limit=10){
 }
 
 async function publicationForCountryUnsafe(orgId,country,type='daily',options={}){
-  const now=options.now instanceof Date?options.now:new Date();
+  const now=options.executionNow instanceof Date?options.executionNow:(options.periodAnchor instanceof Date?new Date():(options.now instanceof Date?options.now:new Date()));
+  const periodAnchor=options.periodAnchor instanceof Date?options.periodAnchor:now;
   let start,end;
   const publicationTimezone=publicationTimezoneForCountry(country);
-  ({start,end}=publicationWindow(now,type,publicationTimezone));
+  ({start,end}=publicationWindow(periodAnchor,type,publicationTimezone));
   const {rows:existing}=await query(
     `SELECT id,status,version,body,pdf_status,pdf_version FROM intel_publications
       WHERE org_id=$1 AND country_code=$2 AND publication_type=$3 AND period_start=$4 AND period_end=$5 AND status IN ('draft','review','published')
@@ -336,6 +338,12 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const evidenceChanged=String(priorCoverage.fingerprint||'')!==fingerprint;
   const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged||Boolean(options.forceResearch))&&(!researchAttemptRecent||evidenceChanged||Boolean(options.forceResearch));
   const priorResearchReleaseReady=!publicationResearchRequired || priorDossierResearchReady;
+  const priorReleaseGate=existing[0]?.body?.release_gate||{};
+  const priorQualityState=existing[0]?.body?.publication_quality||{};
+  const priorGenerationGatePassed=priorReleaseGate.research_release_gate!==false
+    &&priorReleaseGate.ai_board_gate!==false
+    &&priorReleaseGate.tradecraft_quality_gate!==false
+    &&priorQualityState.passed!==false;
   const unchanged=existing.length
     && !evidenceChanged
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
@@ -343,7 +351,9 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     && !needsDeepResearch
     && !pdfRendererMismatch
     && !publicationPolicyMismatch
-    && priorResearchReleaseReady;
+    && priorResearchReleaseReady
+    && priorGenerationGatePassed
+    && !(priorResearch.last_failure_reason && priorDossierResearchReady);
   if(existing.length&&unchanged)return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 
   const refreshPdf=Boolean(existing.length&&(evidenceChanged||needsDeepResearch||pdfRendererMismatch||publicationPolicyMismatch));
@@ -491,7 +501,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     }catch(error){aiBoardStatus='unavailable';aiBoardHoldReason=error.message;logger.warn(`Publication editorial board unavailable ${country}/${type}; publication remains on release hold: ${error.message}`);}
   }
 
-  if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=aiClient.hasAnyProvider()?'not_run':'provider_unavailable';
+  if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=publicationAiReady?'not_run':'provider_unavailable';
   const boardPublishable=board?.publishable===true;
   const finalQuality=auditPublicationContent(
     Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:
@@ -521,7 +531,26 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     publication_quality:finalBody.publication_quality||null,
     ai_board:{enabled:aiBoardEnabled,required:aiBoardRequired,status:aiBoardStatus,hold_reason:aiBoardHoldReason},
     release_gate:{publication_research_required:publicationResearchRequired,research_release_gate:researchReleaseGate,research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research'),research_release_reason:degradedEvidenceRelease?'AI research fabric unavailable; release constrained to the verified Sonalit evidence contract.':null,tradecraft_quality_gate:qualityGate,ai_board_gate:aiBoardGate,ai_board_degraded:aiBoardDegraded,ai_board_degraded_reason:aiBoardDegraded?'live_ai_provider_fabric_unavailable':null,status},
-    deep_research:{...finalBody.deep_research,agent_summary:incidentResearch.summary,degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible||priorResearch.degraded_evidence_eligible_incidents||0),research_version:DEEP_RESEARCH_VERSION,last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),next_attempt_at:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?new Date(now.getTime()+researchCooldownMinutes*60*1000).toISOString():(priorResearch.next_attempt_at||null),retry_cooldown_minutes:researchCooldownMinutes,skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),last_failure_reason:researchAttempted&&incidentResearch.summary.researched<expectedResearchCount?'one or more incident research results fell back to evidence-only content':(priorResearch.last_failure_reason||null),research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research'),research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')},
+    deep_research:{
+      ...finalBody.deep_research,
+      agent_summary:incidentResearch.summary,
+      degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible||priorResearch.degraded_evidence_eligible_incidents||0),
+      research_version:DEEP_RESEARCH_VERSION,
+      last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),
+      retry_cooldown_minutes:researchCooldownMinutes,
+      skipped_due_to_cooldown:Boolean(incidentResearch.summary.skipped_due_to_cooldown),
+      ...publicationRecoveryMetadata({
+        priorResearch,
+        researchSummary:incidentResearch.summary,
+        expectedResearchCount,
+        researchAttempted,
+        now,
+        cooldownMinutes:researchCooldownMinutes,
+        maxAttempts:Math.max(1,Math.min(8,Number(process.env.INTEL_PUBLICATION_RECOVERY_MAX_ATTEMPTS)||3))
+      }),
+      research_mode:degradedEvidenceRelease?'evidence_constrained':(expectedResearchCount===0?'no_incidents':'deep_research'),
+      research_method:incidentResearch.summary.researched>0?'ai_web_search':(incidentResearch.summary.web_packet_researched>0?'live_web_packet':'evidence_only')
+    },
     version
   };
   let publicationId=null;
@@ -594,18 +623,33 @@ function publicationEvidenceBasis(originalEvidenceContract, research, publicatio
 async function recoverStalledPublications(orgId,now=new Date(),options={}){
   const staleMinutes=Math.max(5,Math.min(180,Number(options.staleMinutes||process.env.INTEL_PUBLICATION_RECOVERY_STALE_MINUTES)||15));
   const limit=Math.max(1,Math.min(8,Number(options.limit||process.env.INTEL_PUBLICATION_RECOVERY_BATCH)||4));
-  const {rows}=await query(
+  const maxAttempts=Math.max(1,Math.min(8,Number(options.maxAttempts||process.env.INTEL_PUBLICATION_RECOVERY_MAX_ATTEMPTS)||3));
+  const recoveryCooldownMinutes=Math.max(5,Math.min(1440,Number(options.cooldownMinutes||process.env.INTEL_PUBLICATION_RESEARCH_RETRY_MINUTES)||60));
+  const nextAttemptAt=new Date(now.getTime()+recoveryCooldownMinutes*60*1000).toISOString();
+  const {rows}=await withOrg(orgId,client=>client.query(
     `SELECT id,country_code,publication_type,period_end,updated_at,body
        FROM intel_publications
       WHERE org_id=$1
         AND status IN ('draft','review')
         AND period_end <= $2
         AND updated_at < NOW()-($3::int*INTERVAL '1 minute')
+        AND CASE
+          WHEN NULLIF(body->'deep_research'->>'next_attempt_at','') IS NULL THEN TRUE
+          WHEN (body->'deep_research'->>'next_attempt_at') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$'
+            THEN (body->'deep_research'->>'next_attempt_at')::timestamptz <= NOW()
+          ELSE FALSE
+        END
         AND (
           COALESCE(body->'release_gate'->>'research_release_gate','true')='false'
           OR COALESCE(body->'release_gate'->>'ai_board_gate','true')='false'
           OR body->'deep_research'->>'last_failure_reason' IS NOT NULL
         )
+        AND CASE
+          WHEN NULLIF(body->'deep_research'->>'recovery_attempts','') IS NULL THEN 0
+          WHEN (body->'deep_research'->>'recovery_attempts') ~ '^[0-9]{1,6}$'
+            THEN (body->'deep_research'->>'recovery_attempts')::int
+          ELSE 999999
+        END < $5
       ORDER BY
         CASE
           WHEN COALESCE(body->'release_gate'->>'research_release_gate','true')='false' THEN 0
@@ -613,9 +657,9 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
           ELSE 2
         END,
         updated_at ASC
-      LIMIT $4`
-    [orgId,now,staleMinutes,limit]
-  );
+      LIMIT $4`,
+    [orgId,now,staleMinutes,limit,maxAttempts]
+  ));
   if(!rows.length)return{processed:0,published:0,drafts:0,failed:0,results:[]};
   const results=[];
   for(const row of rows){
@@ -624,20 +668,67 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
     if(!country||!['daily','weekly','monthly'].includes(type))continue;
     const periodEnd=new Date(row.period_end);
     if(Number.isNaN(periodEnd.getTime()))continue;
-    const anchorNow=new Date(periodEnd.getTime()-1000);
+    const research=row.body?.deep_research&&typeof row.body.deep_research==='object'?row.body.deep_research:{};
+    const storedAttemptsRaw=Number(research.recovery_attempts);
+    const storedAttempts=Number.isSafeInteger(storedAttemptsRaw)&&storedAttemptsRaw>=0?storedAttemptsRaw:0;
+    const nextAttempt=storedAttempts+1;
     try{
-      const result=await publicationForCountry(orgId,country,type,{now:anchorNow,forceResearch:true,recovery:true});
-      results.push({id:String(row.id),country,type,publication_status:result.publication_status,status:result.status||'created',publication_id:result.publication_id||result.id||row.id});
+      // Claim and persist the attempt before expensive provider calls so a
+      // process restart or thrown exception cannot reset the retry budget.
+      const claim=await withOrg(orgId,client=>client.query(
+        `UPDATE intel_publications
+            SET body=jsonb_set(
+              COALESCE(body,'{}'::jsonb),
+              '{deep_research}',
+              COALESCE(body->'deep_research','{}'::jsonb) ||
+                jsonb_build_object(
+                  'recovery_attempts',$3::int,
+                  'recovery_max_attempts',$4::int,
+                  'last_recovery_attempt_at',$5::text,
+                  'next_attempt_at',$8::text
+                ),
+              true
+            ),
+            updated_at=NOW()
+          WHERE id=$1 AND org_id=$2
+            AND status IN ('draft','review')
+            AND updated_at < NOW()-($6::int*INTERVAL '1 minute')
+            AND CASE
+              WHEN NULLIF(body->'deep_research'->>'recovery_attempts','') IS NULL THEN 0
+              WHEN (body->'deep_research'->>'recovery_attempts') ~ '^[0-9]{1,6}$'
+                THEN (body->'deep_research'->>'recovery_attempts')::int
+              ELSE 999999
+            END = $7
+          RETURNING id`,
+        [row.id,orgId,nextAttempt,maxAttempts,now.toISOString(),staleMinutes,storedAttempts,nextAttemptAt]
+      ));
+      if(!claim.rows.length){
+        results.push({id:String(row.id),country,type,status:'skipped',reason:'publication_changed_before_recovery_claim'});
+        continue;
+      }
+      const anchorNow=new Date(periodEnd.getTime()-1000);
+      const result=await publicationForCountry(orgId,country,type,{
+        periodAnchor:anchorNow,forceResearch:true,recovery:true,recoveryAttempt:nextAttempt,recoveryMaxAttempts:maxAttempts
+      });
+      results.push({
+        id:String(row.id),country,type,
+        publication_status:result.publication_status,
+        status:result.status||'created',
+        publication_id:result.publication_id||result.id||row.id,
+        recovery_attempt:nextAttempt,
+        recovery_max_attempts:maxAttempts
+      });
     }catch(error){
       logger.warn(`Intelligence publication recovery failed ${country}/${type} id=${row.id}: ${error.message}`);
-      results.push({id:String(row.id),country,type,status:'failed',error:String(error.message||error)});
+      results.push({id:String(row.id),country,type,status:'failed',error:String(error.message||error),recovery_attempt:nextAttempt,recovery_max_attempts:maxAttempts});
     }
   }
   return {
-    processed:results.length,
+    processed:results.filter(x=>x.status!=='skipped').length,
     published:results.filter(x=>x.publication_status==='published').length,
     drafts:results.filter(x=>x.publication_status==='draft').length,
     failed:results.filter(x=>x.status==='failed'||x.error).length,
+    skipped:results.filter(x=>x.status==='skipped').length,
     results
   };
 }
@@ -653,7 +744,7 @@ async function publishDue(orgId,now=new Date(),options={}){
  const results=[];
  const forceDaily=Boolean(options.forceDaily);
  const run=async(country,type)=>{
-   try{results.push({country,timezone:publicationTimezoneForCountry(country),...await publicationForCountry(orgId,country,type)});}
+   try{results.push({country,timezone:publicationTimezoneForCountry(country),...await publicationForCountry(orgId,country,type,{now})});}
    catch(error){logger.error('Intelligence publication failed '+country+'/'+type+' org='+orgId+': '+error.message);results.push({country,type,status:'failed',error:error.message});}
  };
  for(const country of DAILY_COUNTRIES){

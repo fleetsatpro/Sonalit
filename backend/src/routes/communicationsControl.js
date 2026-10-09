@@ -105,6 +105,68 @@ router.post('/publications/:id/generate-report', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Re-research one held/draft publication using its original, closed reporting period.
+// This intentionally reuses the canonical publication pipeline and its advisory lock.
+router.post('/publications/:id/retry-research', async (req, res, next) => {
+  try {
+    const lookup = await withOrg(req.user.org_id, c => c.query(
+      'SELECT id,country_code,publication_type,status,period_end FROM intel_publications WHERE id=$1 AND org_id=$2',
+      [String(req.params.id), req.user.org_id],
+    ));
+    if (!lookup.rows.length) return res.status(404).json({ error: 'Publication not found' });
+    const publication = lookup.rows[0];
+    if (!['draft', 'review'].includes(String(publication.status || '').toLowerCase())) {
+      return res.status(409).json({
+        error: 'publication_not_research_retriable',
+        message: 'Only draft or review publications can be re-researched.',
+      });
+    }
+    const country = String(publication.country_code || '').toUpperCase();
+    const type = String(publication.publication_type || '').toLowerCase();
+    const periodEnd = new Date(publication.period_end);
+    if (!['daily', 'weekly', 'monthly'].includes(type)) {
+      return res.status(409).json({
+        error: 'publication_type_not_research_retriable',
+        message: 'This publication type has no supported scheduled re-research workflow.',
+      });
+    }
+    if (!country || Number.isNaN(periodEnd.getTime())) {
+      return res.status(409).json({
+        error: 'publication_period_invalid',
+        message: 'The publication country or reporting-period end is invalid; no retry was started.',
+      });
+    }
+    const recovered = await publicationForCountry(
+      req.user.org_id,
+      country,
+      type,
+      { periodAnchor: new Date(periodEnd.getTime() - 1000), forceResearch: true, recovery: true },
+    );
+    const publicationId = recovered.publication_id || recovered.id || publication.id;
+    let pdf = null;
+    let pdfError = null;
+    if (publicationId && recovered.publication_status === 'published') {
+      try {
+        pdf = await renderAndStorePublicationPdf(req.user.org_id, publicationId);
+      } catch (error) {
+        pdfError = String(error?.message || error).slice(0, 1200);
+      }
+    }
+    res.status(202).json({
+      data: {
+        publication_id: publicationId,
+        country,
+        type,
+        publication_status: recovered.publication_status || 'draft',
+        recovery_status: recovered.status || 'completed',
+        research_retry: { requested: true, forceResearch: true, reporting_period_end: periodEnd.toISOString() },
+        pdf,
+        pdfError,
+      },
+    });
+  } catch (err) { next(err); }
+});
+
 router.get('/publications/:id/pdf', async (req, res, next) => {
   try {
     await streamPublicationPdf(req.user.org_id, String(req.params.id), req, res);
