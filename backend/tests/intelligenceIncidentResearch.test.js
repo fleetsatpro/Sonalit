@@ -1,5 +1,6 @@
 jest.mock('../src/utils/aiClient',()=>({
   hasAnyProvider:jest.fn(()=>false),
+  hasReadyProvider:jest.fn(()=>false),
   createResearchMessage:jest.fn(),
 }));
 
@@ -72,6 +73,27 @@ describe('publication incident research coverage',()=>{
     });
   });
   afterEach(()=>{delete global.fetch});
+  test('does not skip research just because configured providers are temporarily cooling down',async()=>{
+    const aiClient=require('../src/utils/aiClient');
+    process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION='public';
+    aiClient.hasAnyProvider.mockReset().mockReturnValue(true);
+    aiClient.hasReadyProvider.mockReset().mockReturnValue(false);
+    aiClient.createResearchMessage.mockReset().mockResolvedValue({
+      _provider:'openrouter-free-router',
+      content:[{type:'text',text:JSON.stringify({results:[]})}]
+    });
+    const result=await researchPublicationIncidents([
+      {id:'i-circuit-cooldown',headline:'Temporary border crossing disruption',brief:'A reported temporary crossing disruption.',country_code:'KE',evidence:[]}
+    ],{country:'KE'});
+    expect(aiClient.hasAnyProvider).toHaveBeenCalledWith({
+      dataClassification:'public',
+      allowFreeProviders:true,
+    });
+    expect(aiClient.hasReadyProvider).not.toHaveBeenCalled();
+    expect(aiClient.createResearchMessage).toHaveBeenCalled();
+    expect(result.summary.requested).toBe(1);
+  });
+
   test('continues evidence collection when the AI provider fabric is unavailable',async()=>{
     const events=[
       {id:'i1',headline:'Incident one',brief:'First incident',country_code:'KE',evidence:[]},
