@@ -31,6 +31,13 @@ describe('voice-note recorder delivery contract', () => {
     expect(recorder).not.toContain("api.post('/voice-notes/commit'");
   });
 
+  it('retries expired or rejected presigned PUT URLs without treating them as account revocation', () => {
+    expect(mediaQueue).toContain("stage: 'object_storage' as const");
+    expect(mediaQueue).toContain("if (e.stage === 'object_storage')");
+    expect(mediaQueue).toContain('object_storage_http_');
+    expect(mediaQueue).toContain("if (status === 403)");
+  });
+
   it('pins upload URLs to the Cloudflare R2 account host and exact object key', () => {
     expect(isAllowedR2UploadUrl('https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/bucket/key?signature=opaque')).toBe(true);
     expect(isAllowedR2UploadUrl('https://attacker.r2.cloudflarestorage.com/bucket/key')).toBe(false);
