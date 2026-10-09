@@ -24,6 +24,16 @@ describe('publication research retry wiring', () => {
     expect(source).toContain("!q.isPending&&!q.isError&&!items.length");
   });
 
+  test('autonomous recovery performs its candidate query within the organization-scoped database transaction', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceAgents.js'), 'utf8');
+    const start = source.indexOf('async function recoverStalledPublications');
+    const end = source.indexOf('function publicationForCountry', start);
+    const recovery = source.slice(start, end);
+    expect(recovery).toContain('withOrg(orgId,client=>client.query(');
+    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit\]\s*\)\)\);/);
+    expect(recovery).not.toContain('await query(');
+  });
+
   test('provider readiness status respects active cooldown and publication data policy', () => {
     const source = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceAgents.js'), 'utf8');
     expect(source).toContain("if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=publicationAiReady?'not_run':'provider_unavailable';");

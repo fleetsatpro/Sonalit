@@ -594,7 +594,7 @@ function publicationEvidenceBasis(originalEvidenceContract, research, publicatio
 async function recoverStalledPublications(orgId,now=new Date(),options={}){
   const staleMinutes=Math.max(5,Math.min(180,Number(options.staleMinutes||process.env.INTEL_PUBLICATION_RECOVERY_STALE_MINUTES)||15));
   const limit=Math.max(1,Math.min(8,Number(options.limit||process.env.INTEL_PUBLICATION_RECOVERY_BATCH)||4));
-  const {rows}=await query(
+  const {rows}=await withOrg(orgId,client=>client.query(
     `SELECT id,country_code,publication_type,period_end,updated_at,body
        FROM intel_publications
       WHERE org_id=$1
@@ -613,9 +613,9 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
           ELSE 2
         END,
         updated_at ASC
-      LIMIT $4`
+      LIMIT $4`,
     [orgId,now,staleMinutes,limit]
-  );
+  ));
   if(!rows.length)return{processed:0,published:0,drafts:0,failed:0,results:[]};
   const results=[];
   for(const row of rows){
