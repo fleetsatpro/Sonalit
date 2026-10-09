@@ -907,7 +907,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         buffer_m,
         buffer_polygon: bufferPolygon,
         precision,
-        geometry_source: 'OpenStreetMap via OSRM',
+        geometry_source: routeProvider === 'OSRM' ? 'OpenStreetMap via OSRM' : 'geocoded straight-line explicit fallback',
         route_provider: routeProvider,
         route_distance_m: distM,
         path_points: pathLatLng.length,
@@ -918,33 +918,59 @@ async function toolCreateGeofence(input, userId, orgId) {
         created_at: new Date().toISOString(),
       };
 
-      const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id`,
-        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
-      );
+      const stored = await withOrg(orgId, async (client) => {
+        const insert = await client.query(
+          `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+          [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
+        );
+        const geofenceId = insert.rows?.[0]?.id;
+        if (!geofenceId) throw new Error('Corridor insert returned no identifier');
 
-      // Verify the persisted geometry before reporting success. This catches
-      // coordinate-order corruption and route endpoints that drift too far
-      // from the requested locations.
-      const verify = await query(
-        `SELECT coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
-        [r.rows[0].id, orgId]
-      );
-      const persisted = verify.rows[0]?.coordinates;
-      const persistedPath = Array.isArray(persisted?.path) ? persisted.path : [];
-      const first = persistedPath[0], last = persistedPath[persistedPath.length - 1];
-      const startDriftM = first ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1])) : Infinity;
-      const endDriftM = last ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1])) : Infinity;
-      if (persistedPath.length < 2 || startDriftM > 1500 || endDriftM > 1500) {
-        await query(`DELETE FROM geofences WHERE id = $1 AND org_id = $2`, [r.rows[0].id, orgId]);
+        // Read back in the same tenant transaction. A write acknowledgement
+        // alone is not proof that the authoritative geometry is valid.
+        const verify = await client.query(
+          `SELECT coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
+          [geofenceId, orgId]
+        );
+        let persisted = verify.rows?.[0]?.coordinates;
+        if (typeof persisted === 'string') {
+          try { persisted = JSON.parse(persisted); } catch (_) { persisted = null; }
+        }
+        const persistedPath = Array.isArray(persisted?.path) ? persisted.path : [];
+        const first = persistedPath[0], last = persistedPath[persistedPath.length - 1];
+        const startDriftM = first ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1])) : Infinity;
+        const endDriftM = last ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1])) : Infinity;
+        const shape = validateCorridorGeometry(persistedPath, persisted?.buffer_polygon, persisted?.buffer_m);
+        const valid = shape.valid && persisted?.type === 'corridor' &&
+          persistedPath.length === pathLatLng.length && startDriftM <= 1500 && endDriftM <= 1500;
+        if (!valid) {
+          await client.query('DELETE FROM geofences WHERE id = $1 AND org_id = $2', [geofenceId, orgId]);
+          return {
+            valid: false,
+            verification: {
+              path_points: persistedPath.length,
+              expected_path_points: pathLatLng.length,
+              start_drift_m: Number.isFinite(startDriftM) ? Math.round(startDriftM) : null,
+              end_drift_m: Number.isFinite(endDriftM) ? Math.round(endDriftM) : null,
+              shape_reason: shape.reason || null,
+            },
+          };
+        }
+        return { valid: true, geofenceId, persistedPath, startDriftM, endDriftM };
+      });
+      if (!stored.valid) {
         return {
           created: false,
           error: 'Geometry verification failed. No corridor geofence was retained.',
-          verification: { path_points: persistedPath.length, start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM) },
+          verification: stored.verification,
         };
       }
+      const geofenceId = stored.geofenceId;
+      const persistedPath = stored.persistedPath;
+      const startDriftM = stored.startDriftM;
+      const endDriftM = stored.endDriftM;
 
       const effectivePrecision = precision === 'maximum' && (gStart.source === 'nominatim' || gStart.source === 'explicit') && (gEnd.source === 'nominatim' || gEnd.source === 'explicit')
         ? 'maximum'
@@ -952,7 +978,7 @@ async function toolCreateGeofence(input, userId, orgId) {
 
       return {
         created: true,
-        geofence_id: r.rows[0].id,
+        geofence_id: geofenceId,
         name,
         fence_type: 'corridor',
         lat: mid[0],
