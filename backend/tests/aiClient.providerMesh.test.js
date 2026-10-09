@@ -664,4 +664,34 @@ describe('intelligence provider mesh', () => {
     expect(source).toContain('AI provider half-open recovery probe skipped: reason=');
   });
 
+
+  test('OpenRouter 429 diagnostics expose quota metadata without logging raw provider text or credentials',()=>{
+    const {openRouterRateLimitDiagnostic}=require('../src/utils/aiClient');
+    const diagnostic=openRouterRateLimitDiagnostic({
+      status:429,
+      headers:{
+        'retry-after':'60',
+        'x-ratelimit-remaining':'0',
+        'x-ratelimit-limit':'50',
+        'x-ratelimit-reset-requests':'1781049600'
+      },
+      error:{
+        error:{
+          code:429,
+          type:'rate_limit_exceeded',
+          message:'Private request text and sk-or-secret-must-never-be-logged',
+          metadata:{error_type:'rate_limit_exceeded',provider_code:'429'}
+        }
+      }
+    });
+    expect(diagnostic).toContain('error_type=rate_limit_exceeded');
+    expect(diagnostic).toContain('provider_code=429');
+    expect(diagnostic).toContain('retry_after_ms=60000');
+    expect(diagnostic).toContain('rate_limit_remaining=0');
+    expect(diagnostic).toContain('rate_limit_limit=50');
+    expect(diagnostic).toContain('rate_limit_reset=1781049600');
+    expect(diagnostic).not.toContain('sk-or-secret');
+    expect(diagnostic).not.toContain('Private request text');
+  });
+
 });
