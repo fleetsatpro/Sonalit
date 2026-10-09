@@ -153,9 +153,13 @@ class CfoViewModel @Inject constructor(
                     editor.putString("auth_token", resp.device_token)
                 }
                 editor.apply()
+                // A prior operator's one-shot retry must not continue into this session.
+                PendingPhotoUploadWorker.cancelRetryNow(appContext)
                 _state.update {
                     it.copy(loginLoading = false, loggedInUser = resp, screen = CfoNavScreen.DASHBOARD)
                 }
+                PendingPhotoUploadWorker.schedule(appContext)
+                refreshPendingCounts()
                 loadContext()
             }.onFailure { e ->
                 _state.update { it.copy(loginLoading = false, loginError = e.message ?: "Login failed") }
@@ -164,6 +168,8 @@ class CfoViewModel @Inject constructor(
     }
 
     fun logout() {
+        // Worker row ownership checks prevent any queued photo from crossing sessions.
+        PendingPhotoUploadWorker.cancelRetryNow(appContext)
         prefs.edit().remove("cfo_user_id").remove("cfo_name").remove("cfo_email").apply()
         _state.update { CfoUiState() }
     }

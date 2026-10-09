@@ -69,15 +69,20 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
         // The user can log out or switch accounts between preference reads.
         // Re-check immediately before the first request so a token from the new
         // session is not paired with the previous user's queue.
-        if (cfoUserId() != ownerUserId) return Result.retry()
+        if (cfoUserId() != ownerUserId) return Result.success()
 
         var anyFailed = false
         for (p in pending) {
+            // Stop the drain if logout/account switching happens during this pass.
+            if (cfoUserId() != ownerUserId) return Result.success()
             if (!PendingPhotoUploadPolicy.belongsToOwner(p.ownerUserId, ownerUserId)) continue
             try {
-                uploadOne(token, p)
+                uploadOne(token, p, ownerUserId)
                 dao.delete(p.eventUuid)
                 File(p.localFilePath).delete()
+            } catch (_: AccountChangedException) {
+                // Retain this record and local file for review/resumption by its owner.
+                return Result.success()
             } catch (e: Exception) {
                 anyFailed = true
                 dao.incrementAttempt(p.eventUuid, e.message ?: "unknown error")
@@ -86,7 +91,13 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
         return if (anyFailed) Result.retry() else Result.success()
     }
 
-    private suspend fun uploadOne(token: String, p: PendingPhotoEntity) {
+    private class AccountChangedException : Exception("CFO session changed during photo upload")
+
+    private suspend fun uploadOne(token: String, p: PendingPhotoEntity, expectedOwnerId: String) {
+        fun requireSameOwner() {
+            if (cfoUserId() != expectedOwnerId) throw AccountChangedException()
+        }
+        requireSameOwner()
         val file = File(p.localFilePath)
         if (!file.exists()) throw IllegalStateException("local file missing")
 
@@ -101,6 +112,7 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
                 report_date = p.reportDate,
             ),
         )
+        requireSameOwner()
 
         val putRequest = Request.Builder()
             .url(urlResp.upload_url)
@@ -110,6 +122,7 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
             if (!resp.isSuccessful) error("Upload failed: ${resp.code}")
         }
 
+        requireSameOwner()
         api.cfoCommitPhoto(
             token,
             CommitPhotoRequest(
@@ -138,6 +151,11 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 "pending_photo_upload", ExistingPeriodicWorkPolicy.KEEP, request,
             )
+        }
+
+        /** Cancel a one-shot pass when its authenticated account changes. */
+        fun cancelRetryNow(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork("pending_photo_upload_retry_now")
         }
 
         /** Runs the retry pass immediately — used by the Settings "Retry Now" action. */

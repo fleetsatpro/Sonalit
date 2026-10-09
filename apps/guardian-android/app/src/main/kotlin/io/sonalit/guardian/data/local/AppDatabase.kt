@@ -167,6 +167,105 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         /**
+         * v1 contained GPS fixes only. Create the original v2 queue schema.
+         */
+        val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS pending_photos (
+                        eventUuid TEXT NOT NULL,
+                        convoyId TEXT NOT NULL,
+                        truckId TEXT NOT NULL,
+                        session TEXT NOT NULL,
+                        photoType TEXT NOT NULL,
+                        sealPosition TEXT,
+                        reportDate TEXT NOT NULL,
+                        localFilePath TEXT NOT NULL,
+                        lat REAL,
+                        lng REAL,
+                        notes TEXT,
+                        createdAt INTEGER NOT NULL,
+                        attempts INTEGER NOT NULL,
+                        lastError TEXT,
+                        PRIMARY KEY(eventUuid)
+                    )"""
+                )
+            }
+        }
+
+        /**
+         * v2 had no capture-time field. Rebuild the table so the added column
+         * has the same schema as the v3 entity (no persistent SQL default).
+         * A legacy timestamp remains explicitly unknown; ownerless rows are
+         * preserved but are not automatically replayed after v4→v5.
+         */
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """CREATE TABLE pending_photos_new (
+                        eventUuid TEXT NOT NULL,
+                        convoyId TEXT NOT NULL,
+                        truckId TEXT NOT NULL,
+                        session TEXT NOT NULL,
+                        photoType TEXT NOT NULL,
+                        sealPosition TEXT,
+                        reportDate TEXT NOT NULL,
+                        localFilePath TEXT NOT NULL,
+                        takenAt TEXT NOT NULL,
+                        lat REAL,
+                        lng REAL,
+                        notes TEXT,
+                        createdAt INTEGER NOT NULL,
+                        attempts INTEGER NOT NULL,
+                        lastError TEXT,
+                        PRIMARY KEY(eventUuid)
+                    )"""
+                )
+                database.execSQL(
+                    """INSERT INTO pending_photos_new (
+                        eventUuid, convoyId, truckId, session, photoType, sealPosition,
+                        reportDate, localFilePath, takenAt, lat, lng, notes, createdAt,
+                        attempts, lastError
+                    )
+                    SELECT eventUuid, convoyId, truckId, session, photoType, sealPosition,
+                           reportDate, localFilePath, '', lat, lng, notes, createdAt,
+                           attempts, lastError
+                    FROM pending_photos"""
+                )
+                database.execSQL("DROP TABLE pending_photos")
+                database.execSQL("ALTER TABLE pending_photos_new RENAME TO pending_photos")
+            }
+        }
+
+        /** Add the two Room tables introduced by v4 without resetting GPS/photos. */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS dispatch_messages (
+                        id TEXT NOT NULL,
+                        kind TEXT NOT NULL,
+                        text TEXT,
+                        voiceUrl TEXT,
+                        receivedAt INTEGER NOT NULL,
+                        read INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )"""
+                )
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS activity_events (
+                        id TEXT NOT NULL,
+                        kind TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        detail TEXT,
+                        severity TEXT NOT NULL,
+                        occurredAt INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )"""
+                )
+            }
+        }
+
+        /**
          * Additive migration: preserve every queued photo and mark historical
          * rows with an empty owner. They remain on disk but are not replayable
          * until an account-bound recovery procedure can safely attribute them.
