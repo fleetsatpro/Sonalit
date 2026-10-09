@@ -1,6 +1,7 @@
 [versions]
 agp = "8.5.2"
 kotlin = "2.0.21"
+junit = "4.13.2"
 ksp = "2.0.21-1.0.28"
 hilt = "2.52"
 compose-bom = "2025.02.00"
@@ -26,6 +27,7 @@ media = "1.7.0"
 haze = "1.5.2"
 
 [libraries]
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 # Compose BOM
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }

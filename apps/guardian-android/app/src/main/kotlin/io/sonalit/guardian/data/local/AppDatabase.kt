@@ -61,19 +61,32 @@ data class PendingPhotoEntity(
 @Dao
 interface PendingPhotoDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(photo: PendingPhotoEntity)
+    suspend fun insert(photo: PendingPhotoEntity): Long
 
     @Query("SELECT * FROM pending_photos ORDER BY createdAt ASC")
     suspend fun getAll(): List<PendingPhotoEntity>
 
-    @Query("SELECT * FROM pending_photos WHERE attempts < 5 ORDER BY createdAt ASC LIMIT 10")
-    suspend fun getPending(): List<PendingPhotoEntity>
+    @Query("SELECT * FROM pending_photos WHERE attempts < :maxAttempts ORDER BY createdAt ASC LIMIT :limit")
+    suspend fun getPending(maxAttempts: Int, limit: Int): List<PendingPhotoEntity>
+
+    @Query("SELECT * FROM pending_photos WHERE attempts >= :maxAttempts ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun getExhausted(maxAttempts: Int, limit: Int): List<PendingPhotoEntity>
 
     @Query("UPDATE pending_photos SET attempts = attempts + 1, lastError = :err WHERE eventUuid = :id")
     suspend fun incrementAttempt(id: String, err: String)
 
+    /** Operator retry preserves the file and event UUID while resetting only the retry budget. */
+    @Query("UPDATE pending_photos SET attempts = 0, lastError = NULL WHERE attempts >= :maxAttempts")
+    suspend fun resetExhausted(maxAttempts: Int): Int
+
     @Query("DELETE FROM pending_photos WHERE eventUuid = :id")
     suspend fun delete(id: String)
+
+    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts < :maxAttempts")
+    suspend fun countPending(maxAttempts: Int): Int
+
+    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts >= :maxAttempts")
+    suspend fun countExhausted(maxAttempts: Int): Int
 
     @Query("SELECT COUNT(*) FROM pending_photos")
     suspend fun count(): Int

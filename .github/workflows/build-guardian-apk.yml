@@ -100,6 +100,10 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: echo "$KEYSTORE_BASE64" | base64 -d > apps/guardian-android/app/release.keystore
 
+      - name: Run Guardian unit tests
+        working-directory: apps/guardian-android
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build APK
         working-directory: apps/guardian-android
         env:

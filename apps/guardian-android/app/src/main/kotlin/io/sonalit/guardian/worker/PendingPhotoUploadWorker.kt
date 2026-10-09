@@ -9,6 +9,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.local.PendingPhotoEntity
+import io.sonalit.guardian.data.local.PendingPhotoUploadPolicy
 import io.sonalit.guardian.data.remote.CommitPhotoRequest
 import io.sonalit.guardian.data.remote.GuardianApi
 import io.sonalit.guardian.data.remote.PhotoUploadUrlRequest
@@ -49,7 +50,7 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val dao = db.pendingPhotoDao()
-        val pending = dao.getPending()
+        val pending = dao.getPending(PendingPhotoUploadPolicy.MAX_AUTOMATIC_ATTEMPTS, PendingPhotoUploadPolicy.MAX_BATCH_SIZE)
         if (pending.isEmpty()) return Result.success()
 
         val token = deviceToken()

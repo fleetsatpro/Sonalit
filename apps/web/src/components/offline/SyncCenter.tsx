@@ -175,6 +175,16 @@ export default function SyncCenter({ userId }: { userId: string }) {
         </div>
       )}
 
+      <section aria-label="Offline map availability" className="rounded-xl border border-cds-amber/30 bg-cds-amber/[.06] px-4 py-3">
+        <div className="flex items-center gap-2 text-[12px] font-semibold text-cds-amber">
+          <AlertTriangle size={14} /> Offline maps unavailable
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-text-1">
+          This build does not provide a guaranteed local map-tile cache. Map backgrounds may not load without a connection.
+          Sonalit has not enabled tile downloading while provider licensing and on-device acceptance remain unresolved.
+        </p>
+      </section>
+
       <section className="rounded-xl border border-white/10 bg-black/20 p-4">
         <header className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
