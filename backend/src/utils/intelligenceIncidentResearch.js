@@ -4,6 +4,7 @@ const { XMLParser } = require('fast-xml-parser');
 const { safeFetchPublicResearch, MAX_RESPONSE_BYTES: MAX_PUBLIC_RESEARCH_RESPONSE_BYTES } = require('./publicResearchFetch');
 const aiClient = require('./aiClient');
 const logger = require('./logger');
+const { fetchGdeltJson, parseGdeltResponse } = require('./gdeltClient');
 const {
   cleanPublicationText,
   dedupeSentences,
@@ -171,31 +172,6 @@ async function googleNewsSearch({headline,country,region}){
   return uniqueByUrl(merged).slice(0,Math.max(MAX_SEARCH_RESULTS,14));
 }
 
-async function parseGdeltResponse(response){
-  const status=Number(response?.status||0);
-  const contentType=String(response?.headers?.get?.('content-type')||'unknown')
-    .split(';')[0].trim().toLowerCase().slice(0,100);
-  let body='';
-  try{
-    body=await response.text();
-  }catch(_){
-    throw Object.assign(
-      new Error('GDELT response body could not be read (HTTP '+status+')'),
-      {failureClass:'upstream_protocol',upstreamStatus:status,upstreamContentType:contentType}
-    );
-  }
-  try{
-    return JSON.parse(body);
-  }catch(_){
-    const throttleNotice=/(?:rate.?limit|too many requests|queries? per second|slow down|wait\s+\d+\s+seconds|try again later|request quota)/i.test(body);
-    const failureClass=throttleNotice||status===429?'rate_limited':'upstream_protocol';
-    throw Object.assign(
-      new Error('GDELT returned a non-JSON response (HTTP '+status+', content-type '+contentType+')'),
-      {failureClass,upstreamStatus:status,upstreamContentType:contentType}
-    );
-  }
-}
-
 async function gdeltSearch({headline,country,region}){
   if(Date.now()<gdeltDownUntil)return [];
   const q=[clean(headline,220),COUNTRY_NAMES[country]||country,region].filter(Boolean).join(' ');
@@ -206,9 +182,15 @@ async function gdeltSearch({headline,country,region}){
   u.searchParams.set('sort','HybridRel');
   u.searchParams.set('format','json');
   try{
-    const res=await fetchText(u.toString(),{},REQUEST_TIMEOUT_MS);
-    if(!res.ok)throw new Error('GDELT HTTP '+res.status);
-    const parsed=await parseGdeltResponse(res);
+    // Preserve the SSRF-resistant public-research transport while using the
+    // same serialized cadence, bounded parser, and cooldown as other GDELT lanes.
+    const parsed=await fetchGdeltJson(u.toString(),{
+      timeoutMs:REQUEST_TIMEOUT_MS,
+      fetchImpl:(target,_options)=>safeFetchPublicResearch(target,{
+        timeoutMs:REQUEST_TIMEOUT_MS,
+        maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES,
+      }),
+    });
     const articles=Array.isArray(parsed?.articles)?parsed.articles:Array.isArray(parsed?.results)?parsed.results:[];
     return articles.map(a=>({
       title:clean(a?.title,500),
