@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.intel_forecasts (id UUID PRIMARY KEY DEFAULT g
 CREATE TABLE IF NOT EXISTS public.intel_publication_reviews (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), org_id UUID, publication_id UUID, action TEXT NOT NULL DEFAULT 'request_changes', created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 
 ALTER TABLE public.intel_events ADD COLUMN IF NOT EXISTS id UUID, ADD COLUMN IF NOT EXISTS org_id UUID, ADD COLUMN IF NOT EXISTS country_code TEXT, ADD COLUMN IF NOT EXISTS severity TEXT NOT NULL DEFAULT 'moderate', ADD COLUMN IF NOT EXISTS confidence NUMERIC(5,2) NOT NULL DEFAULT 50, ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now();
-ALTER TABLE public.intel_observations ADD COLUMN IF NOT EXISTS id UUID, ADD COLUMN IF NOT EXISTS source_id UUID, ADD COLUMN IF NOT EXISTS observed_at TIMESTAMPTZ NOT NULL DEFAULT now(), ADD COLUMN IF NOT EXISTS credibility NUMERIC(5,2) DEFAULT 50, ADD COLUMN IF NOT EXISTS manipulation_score NUMERIC(5,2) DEFAULT 0;
+ALTER TABLE public.intel_observations ADD COLUMN IF NOT EXISTS id UUID, ADD COLUMN IF NOT EXISTS org_id UUID, ADD COLUMN IF NOT EXISTS source_id UUID, ADD COLUMN IF NOT EXISTS observed_at TIMESTAMPTZ NOT NULL DEFAULT now(), ADD COLUMN IF NOT EXISTS credibility NUMERIC(5,2) DEFAULT 50, ADD COLUMN IF NOT EXISTS manipulation_score NUMERIC(5,2) DEFAULT 0;
 ALTER TABLE public.intel_gaps ADD COLUMN IF NOT EXISTS id UUID, ADD COLUMN IF NOT EXISTS org_id UUID, ADD COLUMN IF NOT EXISTS gap_type TEXT NOT NULL DEFAULT 'other', ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open', ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'medium';
 ALTER TABLE public.intel_storylines ADD COLUMN IF NOT EXISTS id UUID, ADD COLUMN IF NOT EXISTS org_id UUID, ADD COLUMN IF NOT EXISTS reference TEXT NOT NULL DEFAULT 'UNREFERENCED', ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active', ADD COLUMN IF NOT EXISTS severity TEXT NOT NULL DEFAULT 'moderate', ADD COLUMN IF NOT EXISTS confidence NUMERIC(5,2) NOT NULL DEFAULT 50;
 ALTER TABLE public.intel_storyline_events ADD COLUMN IF NOT EXISTS storyline_id UUID, ADD COLUMN IF NOT EXISTS event_id UUID, ADD COLUMN IF NOT EXISTS sequence_no INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS relationship TEXT NOT NULL DEFAULT 'develops';
@@ -25,7 +25,7 @@ BEGIN
   FROM (
     VALUES
       ('intel_events','id'),('intel_events','org_id'),('intel_events','country_code'),('intel_events','severity'),('intel_events','confidence'),('intel_events','last_seen_at'),
-      ('intel_observations','id'),('intel_observations','source_id'),('intel_observations','observed_at'),('intel_observations','credibility'),('intel_observations','manipulation_score'),
+      ('intel_observations','id'),('intel_observations','org_id'),('intel_observations','source_id'),('intel_observations','observed_at'),('intel_observations','credibility'),('intel_observations','manipulation_score'),
       ('intel_gaps','id'),('intel_gaps','org_id'),('intel_gaps','gap_type'),('intel_gaps','status'),('intel_gaps','priority'),
       ('intel_storylines','id'),('intel_storylines','org_id'),('intel_storylines','reference'),('intel_storylines','status'),('intel_storylines','severity'),('intel_storylines','confidence'),
       ('intel_storyline_events','storyline_id'),('intel_storyline_events','event_id'),('intel_storyline_events','sequence_no'),('intel_storyline_events','relationship'),

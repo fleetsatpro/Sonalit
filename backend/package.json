@@ -4,7 +4,7 @@
   "description": "FleetOps Pro — Backend API Server",
   "main": "src/app.js",
   "scripts": {
-    "prestart": "node scripts/db-migrate.js && node scripts/intelligence-schema-gate.js",
+    "prestart": "node scripts/intelligence-schema-gate.js",
     "start": "node -r ./src/utils/runtimeFenceBootstrap.js -r ./src/utils/runtimeDiagnosticsBootstrap.js -r ./src/utils/intelligenceCollectionBootstrap.js src/app.js",
     "start:api": "node -r ./src/utils/runtimeFenceBootstrap.js -r ./src/utils/runtimeDiagnosticsBootstrap.js -r ./src/utils/intelligenceCollectionBootstrap.js src/app.js",
     "start:worker:gps": "node src/workers/worker.gps.js",
