@@ -177,7 +177,7 @@ function requestPublicOnce(url, addresses, { timeoutMs, maxBytes }) {
       });
       request.on('error', error => {
         const code = String(error && error.code || '').slice(0, 64);
-        const message = String(error && error.message || '').replace(/https?:\\/\\/[^\\s)]+/gi, '[url]').slice(0, 180);
+        const message = String(error && error.message || '').replace(/https?:\/\/[^\s)]+/gi, '[url]').slice(0, 180);
         const failureClass = String(error && error.failureClass || 'unavailable');
         const detail = code
           ? 'External research request failed: ' + code
