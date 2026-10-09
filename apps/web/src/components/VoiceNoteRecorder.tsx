@@ -215,6 +215,11 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
         } else if (entry.status === 'FAILED_PERMANENT') {
           setState('error');
           setError(entry.lastErrorMessage || 'Sonalit did not accept this recording. It remains on this device for review.');
+        } else if (entry.status === 'UPLOADING') {
+          // Do not surface a second Retry action while another tab/worker owns
+          // the active lease; this prevents overlapping PUT/commit attempts.
+          setState('uploading');
+          setError(null);
         } else {
           setState('queued');
           setError(entry.lastErrorMessage || null);
