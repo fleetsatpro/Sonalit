@@ -8,6 +8,20 @@ const {
   validateCorridorGeometry,
 } = require('../src/utils/corridorGeometry');
 
+const EARTH_RADIUS_M = 6371008.8;
+function pointToSegmentDistanceM(point, start, end) {
+  const scale = EARTH_RADIUS_M * Math.PI / 180;
+  const latScale = Math.cos(((start[0] + end[0]) / 2) * Math.PI / 180);
+  const wrappedDelta = delta => ((delta + 540) % 360) - 180;
+  const dx = wrappedDelta(end[1] - start[1]) * scale * latScale;
+  const dy = (end[0] - start[0]) * scale;
+  const px = wrappedDelta(point[1] - start[1]) * scale * latScale;
+  const py = (point[0] - start[0]) * scale;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared > 0 ? Math.max(0, Math.min(1, (px * dx + py * dy) / lengthSquared)) : 0;
+  return Math.hypot(px - t * dx, py - t * dy);
+}
+
 describe('validated corridor geometry', () => {
   test('straight two-point routes preserve the requested metre half-width', () => {
     const path = [[0, 0], [0, 1]];
@@ -43,15 +57,32 @@ describe('validated corridor geometry', () => {
     expect(distanceM(path[0], midpoint)).toBeCloseTo(totalLengthM / 2, 0);
   });
 
-  test('bounds dense route vertices while preserving the endpoints', () => {
+  test('bounds dense route vertices without exceeding the declared metre tolerance', () => {
     const path = [];
-    for (let i = 0; i <= 1600; i++) path.push([0, i / 1600]);
+    for (let i = 0; i <= 1600; i++) {
+      path.push([0.00018 * Math.sin((Math.PI * 80 * i) / 1600), i / 1600]);
+    }
     const result = simplifyPath(path, 10);
     expect(result.originalPointCount).toBe(1601);
     expect(result.path.length).toBeLessThanOrEqual(800);
+    expect(result.path.length).toBeGreaterThan(2);
     expect(result.toleranceM).toBe(10);
     expect(result.path[0]).toEqual(path[0]);
     expect(result.path[result.path.length - 1]).toEqual(path[path.length - 1]);
+
+    const sourceIndexes = new Map(path.map((point, index) => [point.join(','), index]));
+    const retained = result.path.map(point => sourceIndexes.get(point.join(',')));
+    let maximumErrorM = 0;
+    for (let segment = 0; segment < retained.length - 1; segment++) {
+      const first = retained[segment];
+      const last = retained[segment + 1];
+      expect(first).toBeDefined();
+      expect(last).toBeDefined();
+      for (let i = first; i <= last; i++) {
+        maximumErrorM = Math.max(maximumErrorM, pointToSegmentDistanceM(path[i], path[first], path[last]));
+      }
+    }
+    expect(maximumErrorM).toBeLessThanOrEqual(10.5);
   });
 
   test('handles the distance midpoint across the antimeridian', () => {
