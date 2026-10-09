@@ -125,7 +125,7 @@ router.post('/commit', asyncHandler(async (req, res) => {
     }
     const actualMime = String(head?.ContentType || '').split(';')[0].trim().toLowerCase();
     const expectedMime = String(value.mime_type).split(';')[0].trim().toLowerCase();
-    if (actualMime && actualMime !== expectedMime) {
+    if (!actualMime || actualMime !== expectedMime) {
       return res.status(422).json({ error: 'uploaded_object_type_mismatch' });
     }
   } catch (err) {
@@ -179,6 +179,11 @@ router.get('/:parentType/:parentId', asyncHandler(async (req, res) => {
   // Download URLs use the same canonical Sonalit R2 account as uploads.
   const s3 = createR2Client();
   const notes = await Promise.all(result.rows.map(async (note) => {
+    // Do not sign a historical or corrupted key outside this tenant's exact
+    // namespace, even if its metadata row is visible through an older schema.
+    if (typeof note.storage_key !== 'string' || !note.storage_key.startsWith(`voice-notes/${req.user.org_id}/`)) {
+      return { ...note, download_url: null, download_available: false, storage_error: 'storage_key_not_in_tenant_namespace' };
+    }
     if (!s3) return { ...note, download_url: null, download_available: false, storage_error: 'storage_not_configured' };
     try {
       const { GetObjectCommand } = require('@aws-sdk/client-s3');
