@@ -40,6 +40,7 @@ describe('voice-note recorder delivery contract', () => {
 
   it('pins upload URLs to the Cloudflare R2 account host and exact object key', () => {
     expect(isAllowedR2UploadUrl('https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/bucket/key?signature=opaque')).toBe(true);
+    expect(isAllowedR2UploadUrl('https://sonalit-media-prod.0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/voice-notes/note.webm?signature=opaque')).toBe(true);
     expect(isAllowedR2UploadUrl('https://attacker.r2.cloudflarestorage.com/bucket/key')).toBe(false);
     expect(mediaQueue).toContain('signed.storage_key !== expectedKey');
     expect(mediaQueue).toContain('row.attempts === entry.attempts');
