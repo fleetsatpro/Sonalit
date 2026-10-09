@@ -57,8 +57,10 @@ router.get('/publications', async (req, res, next) => {
       `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='published')::int AS published, COUNT(*) FILTER (WHERE status='draft')::int AS drafts, COUNT(*) FILTER (WHERE status='review')::int AS review, COUNT(*) FILTER (WHERE status='published' AND pdf_status='ready')::int AS pdf_ready, COUNT(*) FILTER (WHERE status='published' AND pdf_status='failed')::int AS pdf_failed FROM intel_publications WHERE org_id=$1`,
       [req.user.org_id],
     ));
+    // Never hand out public object URLs; downloads must use the scoped PDF stream route.
+    const publications = rows.rows.map(row => ({ ...row, pdf_url: null }));
     issuePublicationPdfCapability(res, req.user);
-    res.json({ data: { publications: rows.rows, summary: counts.rows[0] } });
+    res.json({ data: { publications, summary: counts.rows[0] } });
   } catch (err) { next(err); }
 });
 

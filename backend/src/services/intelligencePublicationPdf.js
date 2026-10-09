@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const crypto = require('node:crypto');
 const sharp = require('sharp');
 const { PutObjectCommand, GetObjectCommand, S3Client } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -6,6 +7,8 @@ const { query } = require('../config/database');
 const { runWithOrgContext } = require('../utils/tenantContext');
 const logger = require('../utils/logger');
 const { buildProfessionalPdf, PDF_RENDERER_VERSION } = require('./intelligencePublicationPdfProfessional');
+const { safeFetchPublicResearch, MAX_RESPONSE_BYTES: MAX_PDF_IMAGE_BYTES } = require('../utils/publicResearchFetch');
+const PDF_IMAGE_CONTENT_TYPES = new Set(['image/jpeg','image/png','image/webp','image/avif','image/tiff']);
 
 const COUNTRY_NAMES = { KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania', RW:'Rwanda', BI:'Burundi', SS:'South Sudan', DJ:'Djibouti', ER:'Eritrea', SD:'Sudan', CD:'DR Congo' };
 const BOUNDS = {
@@ -581,16 +584,31 @@ async function fetchImages(rows,researchSources=[]){
   const seen=new Set(),out=[];
   for(const candidate of candidates){
     const url=candidate.image_url;
-    if(!/^https?:\/\//i.test(url)||seen.has(url))continue;
+    // Images are optional context, never authoritative evidence. Fetch them
+    // only through the validated public-HTTPS boundary, with byte and pixel
+    // ceilings before they can enter the PDF renderer.
+    if(!/^https:\/\//i.test(url)||seen.has(url))continue;
     seen.add(url);
     try{
-      const r=await fetch(url,{redirect:'follow',headers:{'User-Agent':'Sonalit-Publication-Renderer/1.0'}});
-      if(!r.ok)continue;
-      const b=Buffer.from(await r.arrayBuffer());
-      if(!b.length||b.length>8*1024*1024)continue;
-      out.push({buffer:b,label:candidate.label,source_url:candidate.source_url});
+      const response=await safeFetchPublicResearch(url,{timeoutMs:10000,maxBytes:MAX_PDF_IMAGE_BYTES});
+      if(!response.ok)continue;
+      const contentType=String(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+      if(!PDF_IMAGE_CONTENT_TYPES.has(contentType))continue;
+      const raw=Buffer.from(await response.arrayBuffer());
+      if(!raw.length||raw.length>MAX_PDF_IMAGE_BYTES)continue;
+      const metadata=await sharp(raw,{limitInputPixels:30_000_000}).metadata();
+      if(!['jpeg','png','webp','avif','heif','tiff'].includes(String(metadata.format||'').toLowerCase()))continue;
+      const buffer=await sharp(raw,{limitInputPixels:30_000_000})
+        .resize({width:1800,height:1200,fit:'inside',withoutEnlargement:true})
+        .jpeg({quality:82,mozjpeg:true})
+        .toBuffer();
+      if(!buffer.length||buffer.length>MAX_PDF_IMAGE_BYTES)continue;
+      out.push({buffer,label:candidate.label,source_url:candidate.source_url});
       if(out.length>=6)break;
-    }catch(error){logger.warn('Image fetch failed: '+error.message)}
+    }catch(error){
+      const sourceHost=(()=>{try{return new URL(url).hostname.toLowerCase().slice(0,255)}catch(_){return 'invalid-url'}})();
+      logger.warn('Publication image fetch failed host='+sourceHost+': '+String(error&&error.message||'unknown').slice(0,300));
+    }
   }
   return out;
 }
@@ -606,12 +624,18 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
     const researchSources=(Array.isArray(publication.body?.incident_dossiers)?publication.body.incident_dossiers:[]).flatMap(e=>Array.isArray(e?.research_sources)?e.research_sources:[]);
     const images=await fetchImages(observationRows,researchSources); const pdf=await buildProfessionalPdf(publication,events,images);
     const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured'); const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
-    const safe=`${publication.country_code}-${publication.publication_type}-${new Date(publication.period_start).toISOString().slice(0,10)}`.replace(/[^A-Z0-9._-]/gi,'-');const key=`intelligence-publications/${orgId}/${safe}-r${PDF_RENDERER_VERSION}-v${publication.pdf_version||1}.pdf`;
+    const safe=`${publication.country_code}-${publication.publication_type}-${new Date(publication.period_start).toISOString().slice(0,10)}`.replace(/[^A-Z0-9._-]/gi,'-');
+    const pdfVersion=Number(publication.pdf_version)||1;
+    const keyPrefix=`intelligence-publications/${orgId}/${safe}-r${PDF_RENDERER_VERSION}-v${pdfVersion}-`;
+    const priorKey=String(publication.pdf_key||'');
+    const priorSuffix=priorKey.startsWith(keyPrefix)?priorKey.slice(keyPrefix.length):'';
+    const key=/^[0-9a-f-]{36}\.pdf$/i.test(priorSuffix)?priorKey:`${keyPrefix}${crypto.randomUUID()}.pdf`;
     await r2.send(new PutObjectCommand({Bucket:bucket,Key:key,Body:pdf,ContentType:'application/pdf',CacheControl:'private, max-age=0'}));
-    const publicBase=(process.env.R2_PUBLIC_URL||'').replace(/\/$/,''); const pdfUrl=publicBase?`${publicBase}/${key}`:null;
-    await query("UPDATE intel_publications SET pdf_status='ready',pdf_key=$3,pdf_url=$4,pdf_generated_at=NOW(),pdf_error=NULL,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,key,pdfUrl]);
+    // Publication PDFs are returned only by streamPublicationPdf after
+    // tenant- and role-scoped authorization; never publish a raw R2 URL.
+    await query("UPDATE intel_publications SET pdf_status='ready',pdf_key=$3,pdf_url=NULL,pdf_generated_at=NOW(),pdf_error=NULL,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,key]);
     for(const img of images)await query('INSERT INTO intel_publication_pdf_assets (org_id,publication_id,asset_type,source_url,source_label,provenance) VALUES ($1,$2,$3,$4,$5,$6::jsonb)',[orgId,publicationId,'image',img.source_url,img.label,JSON.stringify({embedded:true})]).catch(()=>{});
-    return{status:'ready',publication_id:publicationId,pdf_url:pdfUrl,key};
+    return{status:'ready',publication_id:publicationId,pdf_url:null};
   }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3 WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
 }
 

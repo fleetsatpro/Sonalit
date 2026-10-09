@@ -3,7 +3,13 @@ jest.mock('../src/utils/aiClient',()=>({
   createResearchMessage:jest.fn(),
 }));
 
+jest.mock('../src/utils/publicResearchFetch',()=>({
+  safeFetchPublicResearch:jest.fn(),
+  MAX_RESPONSE_BYTES:2*1024*1024,
+}));
+
 const { researchPublicationIncidents, verifiedResponseSources } = require('../src/utils/intelligenceIncidentResearch');
+const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
 
 test('passes publication data-classification policy into AI incident research',async()=>{
   const aiClient=require('../src/utils/aiClient');
@@ -55,11 +61,14 @@ test('passes publication data-classification policy into AI incident research',a
 
 describe('publication incident research coverage',()=>{
   beforeEach(()=>{
-    global.fetch=jest.fn(async()=>({
+    safeFetchPublicResearch.mockReset();
+    safeFetchPublicResearch.mockResolvedValue({
       ok:true,
+      status:200,
+      url:'https://news.google.com/rss/search',
       headers:{get:()=> 'application/rss+xml'},
       text:async()=>'<rss><channel></channel></rss>'
-    }));
+    });
   });
   afterEach(()=>{delete global.fetch});
   test('continues evidence collection when the AI provider fabric is unavailable',async()=>{
@@ -76,7 +85,7 @@ describe('publication incident research coverage',()=>{
     expect(result.summary.fallback).toBe(5);
     expect(result.summary.deferred).toBe(0);
     expect(result.summary.halted).toBeFalsy();
-    expect(global.fetch).toHaveBeenCalled();
+    expect(safeFetchPublicResearch).toHaveBeenCalled();
   });
 });
 
