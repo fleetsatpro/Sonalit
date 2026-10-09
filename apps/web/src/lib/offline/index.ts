@@ -27,6 +27,7 @@ import {
 } from './outbox.js';
 import { canActOnScan, decodeScan, resolveScan } from './qr.js';
 import { lastSyncRun, queueDepth, runSync, SyncBlockedError } from './syncEngine.js';
+import { getMediaQueueCounts, subscribeMediaOutbox, type MediaQueueCounts } from './mediaOutbox.js';
 
 export interface OfflineIdentity {
   userId: string;
@@ -68,10 +69,12 @@ export function subscribeOfflineStatus(fn: StatusListener): () => void {
   statusListeners.add(fn);
   const unsubOutbox = subscribeOutbox(fn);
   const unsubConn = subscribeConnectivity(fn);
+  const unsubMedia = subscribeMediaOutbox(fn);
   return () => {
     statusListeners.delete(fn);
     unsubOutbox();
     unsubConn();
+    unsubMedia();
   };
 }
 
@@ -242,10 +245,13 @@ export async function stopOffline({ purge = true }: { purge?: boolean } = {}): P
 
   if (purge && id && available) {
     try {
+      // Preserve unacknowledged user-owned work on ordinary logout. Keep only
+      // non-secret identity metadata so the next login can detect a user/org
+      // switch and run the explicit full-purge path before any other sync.
+      // Access/refresh tokens are never stored in this record.
       await purgeUserData(id.userId);
-      await db.sync_meta.delete('session:identity');
       await db.sync_meta.delete('session:userId');
-    } catch { /* a failed purge must not block sign-out */ }
+    } catch { /* a failed local cleanup must not block sign-out */ }
   }
   announce();
 }
@@ -264,6 +270,8 @@ export interface OfflineStatus {
   deviceId: string;
   queue: Awaited<ReturnType<typeof counts>> | null;
   gpsBuffered: number;
+  /** Binary upload queue; null means storage/status could not be read, not zero. */
+  mediaQueue: MediaQueueCounts | null;
   /** Number of preserved legacy rows withheld from replay because ownership is ambiguous; null if unknown. */
   quarantinedLocalRecords: number | null;
   blocked: { code: string; message: string } | null;
@@ -280,17 +288,21 @@ export async function getOfflineStatus(): Promise<OfflineStatus> {
     deviceId: getDeviceId(),
     queue: null,
     gpsBuffered: 0,
+    mediaQueue: null,
     quarantinedLocalRecords,
     blocked: blocked ? { code: blocked.code, message: blocked.message } : null,
     lastSyncAt: connectivity.lastSuccessfulSyncAt,
   };
   if (!identity || !available) return base;
 
-  return {
-    ...base,
-    queue: await counts(identity.userId, identity.orgId),
-    gpsBuffered: await bufferedCount(identity.userId, identity.orgId),
-  };
+  let queue = base.queue;
+  let gpsBuffered = base.gpsBuffered;
+  let mediaQueue: MediaQueueCounts | null = null;
+  try { queue = await counts(identity.userId, identity.orgId); } catch { /* unknown is not zero */ }
+  try { gpsBuffered = await bufferedCount(identity.userId, identity.orgId); } catch { /* unknown is not zero */ }
+  try { mediaQueue = await getMediaQueueCounts(identity.userId, identity.orgId); } catch { /* unknown is not zero */ }
+
+  return { ...base, queue, gpsBuffered, mediaQueue };
 }
 
 /**
