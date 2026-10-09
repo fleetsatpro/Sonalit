@@ -81,7 +81,7 @@ export default function SurveillanceCameraWall() {
     data?.coverage?.providers?.openeye?.total ||
     cameras.length
 
-  const playableVideoCount = cameras.filter(camera => {
+  const videoCapableSourceCount = cameras.filter(camera => {
     const media = ((camera.attributes?.media ?? {}) as Record<string, unknown>)
     const kind = String(media.kind ?? '').toLowerCase()
     return media.liveVideo === true ||
@@ -90,11 +90,10 @@ export default function SurveillanceCameraWall() {
       media.sourceMediaPlayable === true
   }).length
 
-  const refreshingSnapshotCount = cameras.filter(camera => {
+  const snapshotCapableCount = cameras.filter(camera => {
     const media = ((camera.attributes?.media ?? {}) as Record<string, unknown>)
     const kind = String(media.kind ?? '').toLowerCase()
-    return camera.status === 'LIVE' &&
-      kind === 'image' &&
+    return kind === 'image' &&
       (media.providerFrameAvailable === true ||
         (media.direct === true && Boolean(media.frameUrl || media.previewUrl || media.url)))
   }).length
@@ -119,7 +118,7 @@ export default function SurveillanceCameraWall() {
           <div>
             <div className="surveillance-camera-wall-page-kicker">SURVEILLANCE · MODULE</div>
             <h1>Camera Wall</h1>
-            <p>{selectedCountry.name} · current live video and verified refreshing snapshots are admitted to the wall</p>
+            <p>{selectedCountry.name} · provider-reported video and snapshot capabilities; playback and frame freshness are verified only after in-app acquisition</p>
           </div>
         </div>
 
@@ -140,13 +139,13 @@ export default function SurveillanceCameraWall() {
               ))}
             </select>
           </label>
-          <div className="surveillance-camera-wall-live-only" aria-label="Playback policy">
+          <div className="surveillance-camera-wall-live-only" aria-label="Source and playback status">
             <span className="surveillance-camera-wall-live-only-dot" />
-            VERIFIED LIVE VISUALS
+            SOURCE STATUS ≠ PLAYBACK PROOF
           </div>
           <div className="surveillance-camera-wall-health">
             <span className="surveillance-camera-wall-health-dot" />
-            <span>{isError ? 'DEGRADED' : isFetching ? 'SYNCING' : cameras.length ? 'LIVE SOURCES' : 'NO LIVE VISUALS'}</span>
+            <span>{isError ? 'DEGRADED' : isFetching ? 'SYNCING' : cameras.length ? 'CATALOG LOADED' : 'NO CAMERA RECORDS'}</span>
           </div>
           <button
             type="button"
@@ -162,9 +161,9 @@ export default function SurveillanceCameraWall() {
       </header>
 
       <section className="surveillance-camera-wall-page-summary" aria-label="Camera wall status">
-        <span><strong>{cameras.length}</strong> verified live visuals in {selectedCountry.name}</span>
-        <span><strong>{playableVideoCount}</strong> continuous video feeds</span>
-        <span><strong>{refreshingSnapshotCount}</strong> refreshing snapshots</span>
+        <span><strong>{cameras.length}</strong> catalog entries in {selectedCountry.name}</span>
+        <span><strong>{videoCapableSourceCount}</strong> video-capable records · playback unverified</span>
+        <span><strong>{snapshotCapableCount}</strong> snapshot-capable sources</span>
         <span><strong>{publicTotal.toLocaleString()}</strong> public directory records</span>
         <span><ShieldCheck size={12} /> Source attribution enforced</span>
         <span>No person / face / plate tracking</span>
