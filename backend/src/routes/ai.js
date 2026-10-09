@@ -32,6 +32,22 @@ async function persistCopilotDecision({ orgId, userId, command, result }) {
 
 router.use(authenticate);
 
+function validateCopilotRequest(body, historyLimit = 12) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, error: 'request body must be an object' };
+  if (typeof body.command !== 'string' || !body.command.trim()) return { status: 400, error: 'command required' };
+  if (body.command.length > 4000) return { status: 413, error: 'command exceeds the 4000-character limit' };
+  const history = body.history === undefined ? [] : body.history;
+  if (!Array.isArray(history) || history.length > 50) return { status: 400, error: 'history must be an array of at most 50 entries' };
+  for (let i = 0; i < history.length; i += 1) {
+    const item = history[i];
+    if (!item || typeof item !== 'object' || !['user', 'assistant'].includes(item.role) ||
+        typeof item.content !== 'string' || item.content.length > 4000) {
+      return { status: 400, error: 'history entry ' + i + ' is invalid or too large' };
+    }
+  }
+  return { command: body.command.trim(), history: history.slice(-Math.max(0, Math.min(12, historyLimit))) };
+}
+
 const MODEL = 'claude-opus-4-7';
 
 // Ensure vehicle columns exist (run once on first request)
