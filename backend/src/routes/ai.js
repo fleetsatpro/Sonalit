@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
+const { buildCorridorPolygon, midpointOnPath, normalizePath: normalizeCorridorPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
   if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
@@ -614,34 +615,6 @@ function toLatLngPath(osrmCoordinates) {
     .map(([lng, lat]) => [Number(lat), Number(lng)]);
 }
 
-function buildCorridorPolygon(path, bufferM) {
-  if (!Array.isArray(path) || path.length < 2 || !(bufferM > 0)) return null;
-  const lat0 = path.reduce((sum,p)=>sum+Number(p[0]),0)/path.length;
-  const R = 6371008.8;
-  const cos0 = Math.max(0.1, Math.cos(lat0*Math.PI/180));
-  const toXY = ([lat,lng]) => [R*cos0*Number(lng)*Math.PI/180, R*Number(lat)*Math.PI/180];
-  const toLL = ([x,y]) => [y/R*180/Math.PI, x/(R*cos0)*180/Math.PI];
-  const xy = path.map(toXY);
-  const left=[], right=[];
-  const unit=(a,b)=>{
-    const dx=b[0]-a[0], dy=b[1]-a[1], len=Math.hypot(dx,dy);
-    return len>0?[dx/len,dy/len]:[0,0];
-  };
-  for(let i=0;i<xy.length;i++){
-    const prev=i>0?unit(xy[i-1],xy[i]):unit(xy[i],xy[i+1]);
-    const next=i<xy.length-1?unit(xy[i],xy[i+1]):prev;
-    let nx=-(prev[1]+next[1]), ny=prev[0]+next[0];
-    const nlen=Math.hypot(nx,ny);
-    if(nlen<1e-9){nx=-next[1];ny=next[0];}else{nx/=nlen;ny/=nlen;}
-    const miter=bufferM/Math.max(0.35,Math.abs(nx*next[0]+ny*next[1]));
-    const d=Math.min(bufferM*2.5,Math.max(bufferM,miter));
-    left.push([xy[i][0]+nx*d,xy[i][1]+ny*d]);
-    right.push([xy[i][0]-nx*d,xy[i][1]-ny*d]);
-  }
-  const ring=[...left,...right.reverse()];
-  ring.push(ring[0]);
-  return ring.map(toLL);
-}
 
 // Haversine distance in metres between two lat/lng points
 function haversineM(lat1, lng1, lat2, lng2) {
@@ -905,14 +878,17 @@ async function toolCreateGeofence(input, userId, orgId) {
         routeProvider = 'straight-line-explicit-fallback';
       }
 
-      const mid = pathLatLng[Math.floor(pathLatLng.length / 2)];
+      // Normalize before measuring or buffering. Never silently truncate a route:
+      // invalid, oversized or degenerate paths must fail closed.
+      pathLatLng = normalizeCorridorPath(pathLatLng);
+      const mid = midpointOnPath(pathLatLng);
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
       const approxRadius = Math.round(distM / 2) + buffer_m;
       const bufferPolygon = buildCorridorPolygon(pathLatLng, buffer_m);
 
-      // IMPORTANT: the operational engine uses [lat,lng] path order. OSRM
-      // returns [lng,lat], so normalization happens exactly once here.
+      // Store and verify within one RLS-scoped transaction. An INSERT acknowledgement
+      // is not success until the canonical persisted centreline and envelope validate.
       const coordinates = {
         lat: mid[0],
         lng: mid[1],
@@ -921,7 +897,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         buffer_m,
         buffer_polygon: bufferPolygon,
         precision,
-        geometry_source: 'OpenStreetMap via OSRM',
+        geometry_source: routeProvider === 'OSRM' ? 'OpenStreetMap via OSRM' : 'geocoded straight-line explicit fallback',
         route_provider: routeProvider,
         route_distance_m: distM,
         path_points: pathLatLng.length,
@@ -932,33 +908,61 @@ async function toolCreateGeofence(input, userId, orgId) {
         created_at: new Date().toISOString(),
       };
 
-      const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id`,
-        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
-      );
+      const stored = await withOrg(orgId, async (client) => {
+        const insert = await client.query(
+          `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+          [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
+        );
+        const geofenceId = insert.rows?.[0]?.id;
+        if (!geofenceId) throw new Error('Corridor insert returned no identifier');
 
-      // Verify the persisted geometry before reporting success. This catches
-      // coordinate-order corruption and route endpoints that drift too far
-      // from the requested locations.
-      const verify = await query(
-        `SELECT coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
-        [r.rows[0].id, orgId]
-      );
-      const persisted = verify.rows[0]?.coordinates;
-      const persistedPath = Array.isArray(persisted?.path) ? persisted.path : [];
-      const first = persistedPath[0], last = persistedPath[persistedPath.length - 1];
-      const startDriftM = first ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1])) : Infinity;
-      const endDriftM = last ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1])) : Infinity;
-      if (persistedPath.length < 2 || startDriftM > 1500 || endDriftM > 1500) {
-        await query(`DELETE FROM geofences WHERE id = $1 AND org_id = $2`, [r.rows[0].id, orgId]);
+        const verify = await client.query(
+          `SELECT coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
+          [geofenceId, orgId]
+        );
+        let persisted = verify.rows?.[0]?.coordinates;
+        if (typeof persisted === 'string') {
+          try { persisted = JSON.parse(persisted); } catch (_) { persisted = null; }
+        }
+        const persistedPath = Array.isArray(persisted?.path) ? persisted.path : [];
+        const first = persistedPath[0], last = persistedPath[persistedPath.length - 1];
+        const startDriftM = first
+          ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1]))
+          : Infinity;
+        const endDriftM = last
+          ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1]))
+          : Infinity;
+        const shape = validateCorridorGeometry(persistedPath, persisted?.buffer_polygon, persisted?.buffer_m);
+        const valid = shape.valid && persisted?.type === 'corridor' &&
+          persistedPath.length === pathLatLng.length && startDriftM <= 1500 && endDriftM <= 1500;
+        if (!valid) {
+          await client.query('DELETE FROM geofences WHERE id = $1 AND org_id = $2', [geofenceId, orgId]);
+          return {
+            valid: false,
+            verification: {
+              path_points: persistedPath.length,
+              expected_path_points: pathLatLng.length,
+              start_drift_m: Number.isFinite(startDriftM) ? Math.round(startDriftM) : null,
+              end_drift_m: Number.isFinite(endDriftM) ? Math.round(endDriftM) : null,
+              shape_reason: shape.reason || null,
+            },
+          };
+        }
+        return { valid: true, geofenceId, persistedPath, startDriftM, endDriftM };
+      });
+      if (!stored.valid) {
         return {
           created: false,
           error: 'Geometry verification failed. No corridor geofence was retained.',
-          verification: { path_points: persistedPath.length, start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM) },
+          verification: stored.verification,
         };
       }
+      const geofenceId = stored.geofenceId;
+      const persistedPath = stored.persistedPath;
+      const startDriftM = stored.startDriftM;
+      const endDriftM = stored.endDriftM;
 
       const effectivePrecision = precision === 'maximum' && (gStart.source === 'nominatim' || gStart.source === 'explicit') && (gEnd.source === 'nominatim' || gEnd.source === 'explicit')
         ? 'maximum'
