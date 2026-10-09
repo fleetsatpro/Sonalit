@@ -184,7 +184,8 @@ test('incident publication uses the actual research outcome instead of stale pro
   expect(s).toContain('const allSelectedIncidentsDegraded=');
   expect(s).toContain('const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable || allSelectedIncidentsDegraded;');
   expect(s).toContain('const degradedEvidenceRelease=');
-  expect(s).toContain('if(aiBoardEnabled && publicationAiReady && events.length && !degradedEvidenceRelease)');
+  expect(s).toContain('if(aiBoardEnabled && publicationAiAvailable && events.length && !degradedEvidenceRelease)');
+  expect(s).toContain("const publicationAiAvailable=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(publicationAiPolicy);");
   expect(s).toContain('degradedEvidenceRelease || !publicationAiAvailable');
 });
 
