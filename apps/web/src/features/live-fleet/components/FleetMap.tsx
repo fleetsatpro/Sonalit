@@ -635,6 +635,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
         </button>
         {/* traffic toggle — hidden entirely if no TOMTOM_API_KEY is configured server-side */}
         {trafficStatus?.configured && (
+          <>
           <button
             onClick={() => setTrafficOn(v => !v)}
             title={trafficOn ? 'Hide traffic (congestion + incidents)' : 'Show traffic (congestion + incidents) — coverage is sparse or absent in some conflict corridors'}
@@ -646,6 +647,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
               ROAD STATE UNKNOWN
             </span>
           )}
+          </>
         )}
         {/* dedicated latest-optical control: normal map remains one click away */}
         <button
