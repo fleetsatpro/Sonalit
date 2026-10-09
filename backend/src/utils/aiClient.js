@@ -784,7 +784,12 @@ function parseDurationMs(value){
   if(!raw)return 0;
   if(/^\d+(?:\.\d+)?$/.test(raw)){
     const n=Number(raw);
-    if(n>1000000000)return Math.max(0,n*1000-Date.now());
+    // Provider reset headers are not consistent about units: some emit Unix
+    // seconds, others Unix milliseconds. Distinguish epoch-ms before the
+    // epoch-seconds branch; multiplying an ms timestamp by 1000 falsely
+    // quarantines a recovered free lane for the maximum cooldown.
+    if(n>=1_000_000_000_000)return Math.max(0,n-Date.now());
+    if(n>1_000_000_000)return Math.max(0,n*1000-Date.now());
     return n*1000;
   }
   const m=raw.match(/(?:(\d+(?:\.\d+)?)\s*d)?\s*(?:(\d+(?:\.\d+)?)\s*h)?\s*(?:(\d+(?:\.\d+)?)\s*m)?\s*(?:(\d+(?:\.\d+)?)\s*s)?/i);
