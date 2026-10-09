@@ -367,6 +367,15 @@ const providerCircuitPersistence = {
 const FABRIC_QUOTA_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const FABRIC_QUOTA_MAX_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const FABRIC_AUTH_COOLDOWN_MS = 60 * 60 * 1000;
+// A public, hinted rescue lane may be tested once after the normal failover
+// mesh is exhausted, even if a persisted circuit is stale. Failed probes are
+// throttled and re-enter the ordinary circuit policy; this is not a global reset.
+const OPENROUTER_HALF_OPEN_MIN_INTERVAL_MS = Math.max(
+  60_000,
+  Math.min(60 * 60_000, Number(process.env.INTEL_OPENROUTER_HALF_OPEN_INTERVAL_MS || 15 * 60_000))
+);
+const halfOpenProbeNotBefore = Object.create(null);
+let nextOpenRouterCircuitDiagnosticAt = 0;
 const fabricStates = Object.create(null);
 
 
@@ -1014,7 +1023,8 @@ async function attempt(label,fn,meta={}){
   const group=providerGroup(meta);
   const fabric=fabricStates[group]||(fabricStates[group]={downUntil:0,failureCount:0});
   const sharedCooling=label===GEMINI_PROVIDER.name?false:Date.now()<fabric.downUntil;
-  if(label!==GEMINI_PROVIDER.name && (Date.now()<state.downUntil || sharedCooling))throw new Error(label+' provider cooling down');
+  const allowCircuitProbe=meta.allowCircuitProbe===true;
+  if(label!==GEMINI_PROVIDER.name && !allowCircuitProbe && (Date.now()<state.downUntil || sharedCooling))throw new Error(label+' provider cooling down');
   const startedAt=Date.now();
   try{
     const result=await fn();
@@ -1169,33 +1179,111 @@ function rankProviders(providers,params={}){
     .map(x=>x.provider);
 }
 
+function providerResponse(result,provider){
+  return {
+    ...result,
+    _provider:provider.name,
+    _provider_kind:provider.kind,
+    _quality_tier:provider.qualityTier,
+    _free_provider:Boolean(provider.free),
+    _provider_group:providerGroup(provider),
+    _radar:providerRadar.status(provider.name),
+  };
+}
+
+function logOpenRouterCircuitPosture(providers,params){
+  const hints=new Set(Array.isArray(params.providerHints)?params.providerHints.map(String):[]);
+  if(!params.preferFreeProviders || !hints.has('openrouter-free-router'))return;
+  const openRouter=providers.filter(p=>String(providerGroup(p)).startsWith('openrouter-'));
+  if(!openRouter.length)return;
+  const cooling=openRouter.filter(providerCooling);
+  if(!cooling.length)return;
+  const now=Date.now();
+  if(now<nextOpenRouterCircuitDiagnosticAt)return;
+  nextOpenRouterCircuitDiagnosticAt=now+60_000;
+  const coolingSummary=cooling.slice(0,12).map(p=>{
+    const remaining=Math.max(0,providerResumeAt(p)-now);
+    return p.name+':'+remaining+'ms';
+  }).join(',');
+  logger.warn(
+    'AI provider routing: public OpenRouter rescue lanes are circuit-blocked; configured='+
+    openRouter.length+', eligible='+String(openRouter.length-cooling.length)+
+    ', cooling='+cooling.length+', lanes='+coolingSummary
+  );
+}
+
+function halfOpenRouterEligible(provider,params,coolingAtStart,attempted){
+  if(!provider || provider.name!=='openrouter-free-router' || provider.free!==true)return false;
+  const hints=new Set(Array.isArray(params.providerHints)?params.providerHints.map(String):[]);
+  const classification=String(
+    params.dataClassification || process.env.INTEL_DEFAULT_DATA_CLASSIFICATION || 'internal'
+  ).toLowerCase();
+  if(params.preferFreeProviders!==true || !hints.has(provider.name) || classification!=='public' || params.allowFreeProviders===false)return false;
+  if(!coolingAtStart.has(provider.name) || attempted.has(provider.name) || !providerCooling(provider))return false;
+  // A confirmed unavailable model is not circuit-recovered by a half-open call.
+  if(Date.now()<Number(modelDisabledUntil[provider.name]||0))return false;
+  if(Date.now()<Number(halfOpenProbeNotBefore[provider.name]||0))return false;
+  return true;
+}
+
+async function tryHalfOpenOpenRouterRouter(providers,params,coolingAtStart,attempted){
+  const provider=providers.find(p=>p.name==='openrouter-free-router');
+  if(!halfOpenRouterEligible(provider,params,coolingAtStart,attempted))return null;
+  const startedAt=Date.now();
+  const oldCooldownMs=Math.max(0,providerResumeAt(provider)-startedAt);
+  halfOpenProbeNotBefore[provider.name]=startedAt+OPENROUTER_HALF_OPEN_MIN_INTERVAL_MS;
+  logger.warn('AI provider half-open recovery probe: provider='+provider.name+' prior_cooldown_ms='+oldCooldownMs);
+  try{
+    // Only the explicitly hinted dynamic free router is probed. Other provider
+    // circuits remain intact, and data-classification policy is still required.
+    const result=await attempt(provider.name,provider.fn,{...provider,allowCircuitProbe:true});
+    delete halfOpenProbeNotBefore[provider.name];
+    logger.info('AI provider half-open recovery probe succeeded: provider='+provider.name);
+    return {response:providerResponse(result,provider),provider,error:null};
+  }catch(error){
+    const nextAt=Math.max(
+      Date.now()+OPENROUTER_HALF_OPEN_MIN_INTERVAL_MS,
+      providerResumeAt(provider)
+    );
+    halfOpenProbeNotBefore[provider.name]=nextAt;
+    logger.warn(
+      'AI provider half-open recovery probe failed: provider='+provider.name+
+      ' status='+(Number(error?.status)||'unknown')+
+      ' retry_in_ms='+Math.max(0,nextAt-Date.now())
+    );
+    return {response:null,provider,error};
+  }
+}
+
 async function createMessage(params={}) {
   await Promise.all([startFabricHydration(),providerRadar.hydrate()]);
   const providers=rankProviders(buildProviders(params),params);
   if(!providers.length)throw new Error('AI client: no configured provider for current data-classification/free-provider policy');
 
+  const coolingAtStart=new Set(providers.filter(providerCooling).map(provider=>provider.name));
+  logOpenRouterCircuitPosture(providers,params);
   let eligibleProviders=providers.filter(provider=>!providerCooling(provider));
   if(!eligibleProviders.length){
     eligibleProviders=await recoverCoolingProviders(providers);
   }
-  if(!eligibleProviders.length)throw new Error('AI client: all configured providers are cooling down or temporarily unavailable');
+  const attempted=new Set();
   let lastErr;
+  if(!eligibleProviders.length){
+    const halfOpen=await tryHalfOpenOpenRouterRouter(providers,params,coolingAtStart,attempted);
+    if(halfOpen?.response)return halfOpen.response;
+    if(halfOpen?.error)lastErr=halfOpen.error;
+    throw lastErr||new Error('AI client: all configured providers are cooling down or temporarily unavailable');
+  }
+
   for(const provider of eligibleProviders){
     if(providerCooling(provider))continue;
     let modelRetries=0;
+    attempted.add(provider.name);
     while(true){
       if(providerCooling(provider))break;
-      try {
-        return {
-          ...await attempt(provider.name,provider.fn,provider),
-          _provider:provider.name,
-          _provider_kind:provider.kind,
-          _quality_tier:provider.qualityTier,
-          _free_provider:Boolean(provider.free),
-          _provider_group:providerGroup(provider),
-          _radar:providerRadar.status(provider.name),
-        };
-      } catch(err) {
+      try{
+        return providerResponse(await attempt(provider.name,provider.fn,provider),provider);
+      }catch(err){
         lastErr=err;
         if(isModelNotFound(err) && provider.modelDef && modelRetries<2 && rotateModel(provider.modelDef)){
           modelRetries++;
@@ -1208,6 +1296,14 @@ async function createMessage(params={}) {
       }
     }
   }
+
+  // Do not leave the public research lane idle for the full persisted circuit
+  // TTL when every non-cooled provider has failed. The explicitly hinted dynamic
+  // router receives one half-open probe per bounded interval; success clears
+  // only its own circuit, while failure re-establishes normal backoff.
+  const halfOpen=await tryHalfOpenOpenRouterRouter(providers,params,coolingAtStart,attempted);
+  if(halfOpen?.response)return halfOpen.response;
+  if(halfOpen?.error)lastErr=halfOpen.error;
   throw lastErr||new Error('AI client: all providers failed');
 }
 
