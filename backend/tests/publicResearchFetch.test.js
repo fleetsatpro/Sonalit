@@ -6,7 +6,7 @@ const {
 } = require('../src/utils/publicResearchFetch');
 
 const PUBLIC_V4 = [{ address: '93.184.216.34', family: 4 }];
-const PUBLIC_V4_ALT = [{ address: '203.0.114.10', family: 4 }];
+const PUBLIC_V4_ALT = [{ address: '1.1.1.1', family: 4 }];
 
 function response(status, headers = {}, body = '') {
   return { status, headers, body: Buffer.isBuffer(body) ? body : Buffer.from(String(body)) };
