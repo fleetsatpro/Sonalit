@@ -170,13 +170,14 @@ test('tradecraft gate accepts a fully researched, differentiated dossier',()=>{
 
 
 test('tradecraft gate accepts attributable single-source incident inside globally corroborated degraded edition',()=>{
-  const quality=assessPublicationQuality({
+  const report={
     executive_assessment:'The reporting period contains several security-relevant developments, with the strongest overall evidence meeting the publication-level source threshold. This incident remains constrained to one attributable observation, so the edition does not infer independent corroboration for this specific case. The operational judgement is therefore bounded and should change only if further reporting confirms persistence, recurrence or wider consequences. The report is explicitly evidence-constrained while the AI research fabric is unavailable.',
     deep_research:{incidents_requested:1,incidents_researched:0,incidents_researched_limited:0,incidents_fallback:1,degraded_evidence_eligible_incidents:1},
     incident_dossiers:[{
       event_id:'e-single-source',
       research_status:'fallback',
       research_method:'degraded_evidence',
+      degraded_evidence_eligible:true,
       evidence_count:1,
       source_count:1,
       what_happened:'A security disruption was reported along the affected commercial corridor. The current incident record contains one attributable observation and does not establish the full duration or geographic extent of the disruption. The evidence supports treating the event as a bounded report rather than assuming persistence, recurrence, or wider spillover.',
@@ -190,8 +191,16 @@ test('tradecraft gate accepts attributable single-source incident inside globall
     outlook:['Over the next 24 hours, confirmation of reopening or continued disruption is the principal indicator.','Over the next 72 hours, recurrence or geographic spread would materially change the current judgement.'],
     intelligence_gaps:['Independent corroboration and duration remain unresolved.'],
     emerging_trends:[]
-  });
+  };
+  const quality=assessPublicationQuality(report);
   expect(quality.passed).toBe(true);
   expect(quality.score).toBeGreaterThanOrEqual(90);
   expect(quality.blocking_issues).toHaveLength(0);
+
+  const withoutEligibility=assessPublicationQuality({
+    ...report,
+    incident_dossiers:report.incident_dossiers.map(d=>({...d,degraded_evidence_eligible:false}))
+  });
+  expect(withoutEligibility.passed).toBe(false);
+  expect(withoutEligibility.blocking_issues.some(issue=>issue.includes('controlled research threshold'))).toBe(true);
 });
