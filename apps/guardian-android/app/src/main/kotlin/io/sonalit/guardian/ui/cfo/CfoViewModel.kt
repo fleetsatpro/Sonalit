@@ -59,6 +59,7 @@ data class CfoUiState(
     val selectedTruckId: String? = null,
     val uploads: List<UploadState> = emptyList(),
     val pendingCount: Int = 0,
+    val failedPhotoCount: Int = 0,
     val handoverUploading: Boolean = false,
     val handoverError: String? = null,
     // Set directly from a handover commit's convoy_completed flag — the
@@ -124,6 +125,10 @@ class CfoViewModel @Inject constructor(
         viewModelScope.launch {
             while (isActive) {
                 delay(30_000)
+                // WorkManager runs independently of the screen. Refresh durable queue
+                // state so a photo that exhausted its retries cannot appear pending
+                // forever in Settings while the background worker has stopped selecting it.
+                refreshPendingCount()
                 val s = _state.value
                 if (s.loggedInUser != null && s.screen != CfoNavScreen.LOGIN && !s.contextLoading && !s.convoyEnded) {
                     loadContext(s.selectedDate)
@@ -360,8 +365,22 @@ class CfoViewModel @Inject constructor(
 
     private fun refreshPendingCount() {
         viewModelScope.launch {
-            val count = pendingPhotoDao.count()
-            _state.update { it.copy(pendingCount = count) }
+            val pending = pendingPhotoDao.countPending()
+            val exhausted = pendingPhotoDao.countExhausted()
+            _state.update { it.copy(pendingCount = pending, failedPhotoCount = exhausted) }
+        }
+    }
+
+    /**
+     * Explicit user-initiated recovery for photos whose automatic retry budget
+     * has been exhausted. Nothing is deleted or re-keyed; the original event UUID
+     * survives so a repeat commit remains idempotent on the server.
+     */
+    fun retryPhotoUploadsNow() {
+        viewModelScope.launch {
+            pendingPhotoDao.resetExhaustedAttempts()
+            refreshPendingCount()
+            PendingPhotoUploadWorker.retryNow(appContext)
         }
     }
 }
