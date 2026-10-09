@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { globalQuery } = require('../config/database');
 const { attachOrgDb } = require('../utils/orgScopedDb');
-const { authenticate } = require('./auth');
+const { authenticate, authorize } = require('./auth');
 
 const PDF_CAPABILITY_COOKIE = 'sonalit_pdf_capability';
 const PDF_CAPABILITY_PATH = '/api/v1/admin/communications/publications';
@@ -24,7 +24,14 @@ function issuePublicationPdfCapability(res, user) {
 
 async function authenticatePublicationPdfCapability(req, res, next) {
   const authHeader = String(req.headers.authorization || '');
-  if (authHeader) return authenticate(req, res, next);
+  if (authHeader) {
+    // This compatibility route is mounted before the admin router's global
+    // role gate, so bearer authentication must enforce that gate explicitly.
+    return authenticate(req, res, (error) => {
+      if (error) return next(error);
+      return authorize('admin', 'super_admin')(req, res, next);
+    });
+  }
 
   const raw = req.cookies?.[PDF_CAPABILITY_COOKIE];
   if (!raw) return next();
