@@ -259,13 +259,12 @@ export async function requestPersistence(): Promise<boolean> {
  * Called on logout and whenever a different user signs in on this device.
  *
  * `keepUnsyncedOutbox` exists because "clear the data" and "throw away work
- * somebody did" are different decisions. Cached entities, GPS and resolved
- * outbox rows go unconditionally — they are a copy of server state and the next
- * user must not see them. Unacknowledged operations are held by default: they
- * are the only record that the work happened, and a logout (deliberate or
- * forced by an expiring token) is not consent to discard a shift. A caller that
- * genuinely needs a clean device — handing hardware to another organisation,
- * say — passes false and takes the loss knowingly.
+ * somebody did" are different decisions. The cached entity mirror is removed
+ * so the next user cannot see the previous worker's records. Unacknowledged
+ * operations, GPS fixes, conflict snapshots and binary media are preserved by
+ * default because logout (even from token expiry) is not consent to discard a
+ * shift. An explicit device/tenant handover passes false and removes the
+ * departing user's scoped work; unowned legacy rows remain quarantined.
  */
 export async function purgeUserData(
   userId: string,
