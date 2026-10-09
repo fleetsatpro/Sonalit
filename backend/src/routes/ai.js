@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
-const { buildCorridorPolygon, normalizePath: normalizeCorridorPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
+const { buildCorridorPolygon, midpointOnPath, normalizePath: normalizeCorridorPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 const { validateToolInput } = require('../utils/aiToolInputValidation');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
@@ -907,7 +907,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         routeProvider = 'straight-line-explicit-fallback';
       }
 
-      const mid = pathLatLng[Math.floor(pathLatLng.length / 2)];
+      const mid = midpointOnPath(pathLatLng);
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
       const approxRadius = Math.round(distM / 2) + buffer_m;
