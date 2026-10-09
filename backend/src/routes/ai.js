@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
-const { buildCorridorPolygon, midpointOnPath, normalizePath: normalizeCorridorPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
+const { buildCorridorPolygon, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 const { validateToolInput } = require('../utils/aiToolInputValidation');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
