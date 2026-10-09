@@ -12,6 +12,7 @@ jest.mock('../src/utils/publicResearchFetch',()=>({
 
 const { researchPublicationIncidents, verifiedResponseSources, parseGdeltResponse, _resetGdeltCooldownForTests } = require('../src/utils/intelligenceIncidentResearch');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
+const { auditPublicationContent } = require('../src/utils/publicationQuality');
 
 function installResearchFetchFixture() {
   safeFetchPublicResearch.mockReset();
@@ -242,4 +243,27 @@ describe('GDELT HTTP-success rejection handling',()=>{
     expect(thrown).toMatchObject({failureClass:'upstream_protocol',upstreamStatus:200});
     expect(thrown.message).not.toContain('sensitive upstream response detail');
   });
+});
+
+test('provider-outage fallback dossiers stay differentiated enough to pass the cross-incident boilerplate audit',async()=>{
+  const aiClient=require('../src/utils/aiClient');
+  aiClient.hasAnyProvider.mockReturnValue(false);
+  const events=[
+    {id:'fallback-a',headline:'Armed attack closes the northern freight approach',country_code:'KE',region:'Kisumu',severity:'HIGH',intelligence_type:'SECURITY',key_facts:[],caveats:['Evidence coverage is limited to the sources linked to this event in Sonalit. Unresolved details are retained as intelligence gaps rather than filled with assumption.','Authorities have not confirmed when the Kisumu approach reopened.'],why_it_matters:[],evidence:[]},
+    {id:'fallback-b',headline:'Port access interrupted after dockside violence',country_code:'KE',region:'Mombasa',severity:'HIGH',intelligence_type:'SECURITY',key_facts:[],caveats:['Evidence coverage is limited to the sources linked to this event in Sonalit. Unresolved details are retained as intelligence gaps rather than filled with assumption.','The duration of the Mombasa port access interruption remains unconfirmed.'],why_it_matters:[],evidence:[]},
+    {id:'fallback-c',headline:'Fuel convoy delayed by reported road blockade',country_code:'KE',region:'Nakuru',severity:'MODERATE',intelligence_type:'LOGISTICS',key_facts:[],caveats:['Evidence coverage is limited to the sources linked to this event in Sonalit. Unresolved details are retained as intelligence gaps rather than filled with assumption.','The extent of the reported Nakuru blockade has not been independently confirmed.'],why_it_matters:[],evidence:[]}
+  ];
+  const result=await researchPublicationIncidents(events,{country:'KE'});
+  const dossiers=events.map(event=>{
+    const agent=result.byEvent[String(event.id)].agent;
+    return {event_id:String(event.id),what_happened:agent.narrative,context:agent.context,assessment:agent.analytical_assessment};
+  });
+  const audit=auditPublicationContent(dossiers);
+  expect(result.summary.provider_unavailable).toBe(true);
+  expect(dossiers.every(d=>d.what_happened.length>=260)).toBe(true);
+  expect(audit.passed).toBe(true);
+  expect(audit.boilerplate_hits).toBe(0);
+  expect(audit.duplicate_sentence_count).toBe(0);
+  expect(audit.near_duplicate_sentence_count).toBe(0);
+  expect(audit.repeated_template_count).toBe(0);
 });

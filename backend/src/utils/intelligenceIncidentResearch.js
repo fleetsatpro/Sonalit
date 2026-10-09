@@ -329,24 +329,20 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
 function packetNarrative(event,packet){
   const pages=(Array.isArray(packet?.fetched_pages)?packet.fetched_pages:[]).filter(sourceIsSubstantive).slice(0,4);
   const headline=clean(event?.headline||event?.title||'The reported incident',260);
+  const region=clean(event?.region||'the reported area',160);
   const eventSummary=clean(event?.brief||event?.summary||'',1400);
-  const facts=uniqueStrings(Array.isArray(event?.key_facts)?event.key_facts:[],4);
-  const caveats=uniqueStrings(Array.isArray(event?.caveats)?event.caveats:[],3);
   const sourceNames=uniqueStrings(
     pages.map(p=>p.domain||p.source||'retrieved source').filter(Boolean),
     3
   );
   const paragraphs=[];
   if(eventSummary)paragraphs.push(eventSummary);
-  else paragraphs.push(headline+' is retained as the clearest label for the recorded development.');
+  else paragraphs.push('The event ledger records "'+headline+'" in '+region+'.');
   if(sourceNames.length){
     paragraphs.push(
-      'Independent web material was retrieved from '+sourceNames.join(', ')+
-      '. The retrieved material is retained in the source register and is not presented here as a second incident narrative.'
+      'For "'+headline+'" in '+region+', retrievable page metadata was available from '+sourceNames.join(', ')+'.'
     );
   }
-  if(facts.length)paragraphs.push('The structured evidence record identifies '+facts.length+' supported fact(s) for analyst review.');
-  if(caveats.length)paragraphs.push('The unresolved elements remain material: '+caveats.join(' '));
   return cleanPublicationText(dedupeSentences(paragraphs.join(' '),new Set(),2200),2200);
 }
 function fallbackResearch(event,packet,{degraded=false}={}){
@@ -359,22 +355,32 @@ function fallbackResearch(event,packet,{degraded=false}={}){
   const hasWebEvidence=Boolean(sources.length);
   const sourceDomains=new Set(sources.map(s=>normalizeDomain(s?.domain||s?.url)).filter(Boolean));
   const headline=clean(event?.headline||event?.title||'The reported incident',260);
-  const eventSummary=clean(event?.brief||event?.summary||'',1500);
   const facts=uniqueStrings(Array.isArray(event?.key_facts)?event.key_facts:[],5);
   const caveats=uniqueStrings(Array.isArray(event?.caveats)?event.caveats:[],4);
-  const sourceNames=uniqueStrings(sources.map(p=>p.domain||p.source||'retrieved source').filter(Boolean),3);
-  const sourceContext=sourceNames.length
-    ? 'The retrieved source set includes '+sourceNames.join(', ')+'. It is retained as corroborative context; unresolved disagreement, missing detail and source limitations are not converted into certainty.'
-    : '';
+  const genericCaveatPatterns=[
+    /^evidence coverage is limited to the sources linked to this event in sonalit\.?$/i,
+    /^unresolved details are retained as intelligence gaps rather than filled with assumption\.?$/i,
+    /^the available source set does not establish the full extent or downstream consequences of the incident\.?$/i,
+    /^material uncertainty remains because the available record does not establish the full extent or downstream consequences of the incident\.?$/i
+  ];
+  // Synthesis fallback can append incident-specific caveats after a generic
+  // disclaimer in the same string. Filter sentence-by-sentence so a generic
+  // preamble cannot turn otherwise useful uncertainty into repeated boilerplate.
+  const specificCaveats=uniqueStrings(
+    caveats.flatMap(c=>String(c||'').split(/(?<=[.!?])\s+(?=[A-Z])/).map(part=>part.trim()))
+      .filter(c=>c&&!genericCaveatPatterns.some(pattern=>pattern.test(c))),
+    4
+  );
   const classification=clean(event?.intelligence_type||'SECURITY',80).toUpperCase();
   const severity=clean(event?.severity||'moderate',40).toUpperCase();
   const region=clean(event?.region||'location not specified',160);
   const factContext=facts.length
-    ? 'The structured evidence record identifies '+facts.length+' supported fact(s), including: '+facts.slice(0,3).join(' ')
+    ? 'For "'+headline+'", the structured event record identifies '+facts.length+' supported fact(s), including: '+facts.slice(0,3).join(' ')
     : '';
   const eventAssessment=cleanPublicationText(event?.assessment?.judgement||'',1000);
   const derivedAssessment=eventAssessment || (
-    'The available evidence supports a bounded assessment of '+headline+'. Broader deterioration is not established from the present record; the judgement should change only if subsequent evidence confirms persistence, wider geographic reach, recurrence or material operational consequence.'
+    'For "'+headline+'" in '+region+', the available observations support a bounded '+classification.toLowerCase()+' judgement at '+severity.toLowerCase()+' severity; they do not establish wider deterioration. '+
+    'Revise the assessment of "'+headline+'" only if independent evidence confirms persistence, recurrence, spread beyond '+region+', or a material consequence not established in this record.'
   );
   const eventWhy=uniqueStrings(Array.isArray(event?.why_it_matters)?event.why_it_matters:[],4);
   const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];
@@ -382,17 +388,17 @@ function fallbackResearch(event,packet,{degraded=false}={}){
   const eventEvidenceEligible=eventEvidence.length>=1 && eventEvidenceSources.size>=1;
   const why=eventWhy.length
     ? eventWhy
-    : ['Operational significance is tied to '+headline+' and to whether the reported development produces sustained access, personnel, asset or continuity consequences.'];
+    : ['Operational significance is tied to "'+headline+'" and to whether the reported development produces sustained access, personnel, asset or continuity consequences.'];
   const packetContext=packetNarrative(event,packet);
+  const scopeSentence='For "'+headline+'" in '+region+', the ledger classifies the event as '+classification+' at '+severity+' severity and links '+eventEvidence.length+' attributable observation(s) across '+eventEvidenceSources.size+' recorded source record(s).';
+  const materialUncertainty=specificCaveats.length
+    ? 'For "'+headline+'" in '+region+', unresolved limitations include: '+specificCaveats.join(' ')
+    : 'For "'+headline+'" in '+region+', persistence, recurrence, geographic spread and downstream effects remain unconfirmed; they are open questions rather than established outcomes.';
   const narrative=cleanPublicationText(
     dedupeSentences(
-      [packetContext,eventSummary||headline+'. The recorded incident remains bounded by the available evidence.',
-       'Incident classification: '+classification+'. Severity recorded as '+severity+' in '+region+'. The event record contains '+eventEvidence.length+' attributable observation(s) across '+eventEvidenceSources.size+' source record(s).',
-       sourceContext,factContext,
-       'Operational assessment: '+derivedAssessment,
-       'Decision relevance: '+why[0],
-       caveats.length?'Material uncertainty remains: '+caveats.join(' '):'Material uncertainty remains because the available record does not establish the full extent or downstream consequences of the incident.',
-       'Research state: evidence-constrained; this edition does not present unverified detail as fact.']
+      [packetContext,scopeSentence,factContext,
+       'Decision relevance for "'+headline+'": '+why[0],
+       materialUncertainty]
        .filter(Boolean).join(' '),
       new Set(),
       2600
@@ -406,12 +412,14 @@ function fallbackResearch(event,packet,{degraded=false}={}){
     publication_eligible:status==='researched_limited' || degradedEvidenceEligible,
     degraded_evidence_eligible:degradedEvidenceEligible,
     narrative,
-    context:hasWebEvidence?uniqueStrings((packet?.fetched_pages||[]).map(p=>p.description||'').filter(Boolean),1).join(' '):'',
+    context:hasWebEvidence
+      ? 'For "'+headline+'" in '+region+', retrieved page metadata states: '+uniqueStrings((packet?.fetched_pages||[]).map(p=>p.description||'').filter(Boolean),1).join(' ')
+      : '',
     confirmed_facts:facts,
     reported_or_disputed:[],
     analytical_assessment:derivedAssessment,
     why_it_matters:why,
-    uncertainty:caveats.length?caveats:['The available source set does not establish the full extent or downstream consequences of the incident.'],
+    uncertainty:specificCaveats.length?specificCaveats:[materialUncertainty],
     chronology:[],
     sources,
     provider:hasWebEvidence?'live-web-packet':'evidence-only',
