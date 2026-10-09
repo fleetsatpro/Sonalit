@@ -295,6 +295,7 @@ test('bounded publication coverage explicitly discloses excluded period incident
   const quality=fs.readFileSync(path.join(__dirname,'../src/utils/publicationQuality.js'),'utf8');
   expect(quality).toContain('researched + degradedEvidenceEligible >= requested');
   expect(quality).toContain('fallbacks === degradedEvidenceEligible');
+  });
 
   test('incident research batching bounds provider calls without losing or reordering dossiers',()=>{
     const {chunkIncidentResearchBatches}=require('../src/utils/intelligenceIncidentResearch');
