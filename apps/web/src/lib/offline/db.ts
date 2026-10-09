@@ -96,6 +96,14 @@ class SonalitDB extends Dexie {
       const store = tx.table('entities');
       const rows = await store.toCollection().toArray();
       for (const row of rows) {
+        // An unscoped/malformed row must survive this earlier-version migration
+        // intact so v4 can quarantine it. Concatenating undefined components here
+        // could collapse multiple distinct legacy rows onto one key.
+        if (typeof row.orgId !== 'string' || !row.orgId ||
+            typeof row.ownerLookup !== 'string' || !row.ownerLookup ||
+            typeof row.entityType !== 'string' || !row.entityType ||
+            typeof row.entityId !== 'string' || !row.entityId) continue;
+
         const nextKey = row.orgId + ':' + row.entityType + ':' + row.entityId;
         if (row.key !== nextKey) {
           await store.delete(row.key);
