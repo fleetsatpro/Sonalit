@@ -16,7 +16,7 @@ import {
   getSnapshot as connectivitySnapshot, isDegraded, isReachable, startConnectivity,
   stopConnectivity, subscribe as subscribeConnectivity, probeNow,
 } from './connectivity.js';
-import { db, isStorageAvailable, purgeUserData, requestPersistence, storageEstimate, unsyncedCount } from './db.js';
+import { db, isStorageAvailable, purgeUserData, quarantinedOfflineCount, requestPersistence, storageEstimate, unsyncedCount } from './db.js';
 import { getDeviceId } from './device.js';
 import { applyLocalChange, findEntityBy, getEntity, listEntities, pruneEntities } from './entities.js';
 import { isEnabled, type OfflineFlag } from './flags.js';
@@ -270,6 +270,7 @@ export interface OfflineStatus {
 
 export async function getOfflineStatus(): Promise<OfflineStatus> {
   const connectivity = connectivitySnapshot();
+  const quarantinedLocalRecords = available ? await quarantinedOfflineCount() : null;
   const base: OfflineStatus = {
     enabled: isEnabled('OFFLINE_MODE'),
     storageAvailable: available,
@@ -277,6 +278,7 @@ export async function getOfflineStatus(): Promise<OfflineStatus> {
     deviceId: getDeviceId(),
     queue: null,
     gpsBuffered: 0,
+    quarantinedLocalRecords,
     blocked: blocked ? { code: blocked.code, message: blocked.message } : null,
     lastSyncAt: connectivity.lastSuccessfulSyncAt,
   };
