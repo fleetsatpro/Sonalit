@@ -287,7 +287,10 @@ test('bounded publication coverage explicitly discloses excluded period incident
   expect(s).toContain('priority_research_limit:researchLimit');
   expect(s).toContain('Their omission is not evidence that no incident occurred.');
   expect(s).toContain('full_period_event_count:events.length,detailed_event_count:reportEvents.length,excluded_event_count:excludedPeriodEventCount');
-  expect(s).toContain('(Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:[]).filter(d=>');
+  expect(s).toContain('const reportSourceCount=Math.max(');
+  expect(s).toContain('sourceCount:reportSourceCount');
+  expect(s).toContain('finalBody.intelligence_gaps=Array.from(new Set(coverageGaps)).slice(-12);');
+  expect(s).not.toContain('uniqueStrings([...(Array.isArray(finalBody.intelligence_gaps)');
   expect(s).not.toContain('degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible');
   const quality=fs.readFileSync(path.join(__dirname,'../src/utils/publicationQuality.js'),'utf8');
   expect(quality).toContain('researched + degradedEvidenceEligible >= requested');
