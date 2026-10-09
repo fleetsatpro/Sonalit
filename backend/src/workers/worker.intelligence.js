@@ -5,7 +5,7 @@ const { runRegionalIncidentSweep } = require('../utils/regionalIncidentFabric');
 const { runIntelligenceAgents, runScheduledPublicationBoundary, recoverStalledPublications, anyCountryPublicationBoundary, msUntilAnyCountryPublicationBoundary } = require('../utils/intelligenceAgents');
 const { generateMissingPublicationPdfs } = require('../services/intelligencePublicationPdf');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
-const { providerCapabilities } = require('../utils/aiClient');
+const { providerCapabilities, startFabricHydration } = require('../utils/aiClient');
 const { withOrg } = require('../utils/orgScopedDb');
 const { publish } = require('../realtime/centrifugo');
 const { query, globalQuery, pool } = require('../config/database');
@@ -315,6 +315,9 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 (async () => {
   logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; spatial cadence=${spatialIntervalMs / 1000}s; news mesh + synthesis agents enabled`);
+  // The first readiness snapshot must include persisted account/model circuits;
+  // otherwise startup diagnostics claim lanes are available before hydration.
+  await startFabricHydration();
   logger.info(`Intelligence AI provider readiness: ${JSON.stringify(providerCapabilities())}`);
   try {
     const context = await globalQuery(`SELECT current_user, session_user, current_setting('app.current_org_id', true) AS rls_org, (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS visible_users`);
