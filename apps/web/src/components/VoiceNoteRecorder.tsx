@@ -50,6 +50,7 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
   const announceCommitted = useCallback((noteId: string) => {
     if (notifiedCommittedRef.current === noteId) return;
     notifiedCommittedRef.current = noteId;
+    setQueuedId(null);
     setState('done');
     setError(null);
     onCommitted?.(noteId);
@@ -292,8 +293,9 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
       )}
 
       {state === 'done' && (
-        <span className="text-green-400 text-xs flex items-center gap-1.5">
+        <span className="text-green-400 text-xs flex items-center gap-2">
           <CheckCircle className="w-3.5 h-3.5" /> Note saved
+          <button type="button" onClick={() => { setState('idle'); setError(null); setSeconds(0); secondsRef.current = 0; notifiedCommittedRef.current = null; }} className="underline hover:no-underline">Record another</button>
         </span>
       )}
 
