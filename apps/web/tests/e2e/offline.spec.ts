@@ -41,7 +41,8 @@ test.describe('Offline behaviour', () => {
     await expect(page.getByRole('heading', { name: /welcome back/i })).toBeVisible({ timeout: 8000 });
 
     const outcome = await page.evaluate(async () => {
-      const { db, purgeUserData } = await import('/src/lib/offline/db.ts');
+      const modulePath: string = '/src/lib/offline/db.ts';
+      const { db, purgeUserData } = await import(modulePath);
       await db.open();
       try {
         await db.offline_quarantine.bulkPut([
