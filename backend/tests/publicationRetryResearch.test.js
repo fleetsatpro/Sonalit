@@ -30,7 +30,7 @@ describe('publication research retry wiring', () => {
     const end = source.indexOf('function publicationForCountry', start);
     const recovery = source.slice(start, end);
     expect(recovery).toContain('withOrg(orgId,client=>client.query(');
-    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit\]\s*\)\)\);/);
+    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit\]\s*\)\);/);
     expect(recovery).not.toContain('await query(');
   });
 
