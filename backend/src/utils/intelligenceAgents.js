@@ -337,6 +337,12 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const evidenceChanged=String(priorCoverage.fingerprint||'')!==fingerprint;
   const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged||Boolean(options.forceResearch))&&(!researchAttemptRecent||evidenceChanged||Boolean(options.forceResearch));
   const priorResearchReleaseReady=!publicationResearchRequired || priorDossierResearchReady;
+  const priorReleaseGate=existing[0]?.body?.release_gate||{};
+  const priorQualityState=existing[0]?.body?.publication_quality||{};
+  const priorGenerationGatePassed=priorReleaseGate.research_release_gate!==false
+    &&priorReleaseGate.ai_board_gate!==false
+    &&priorReleaseGate.tradecraft_quality_gate!==false
+    &&priorQualityState.passed!==false;
   const unchanged=existing.length
     && !evidenceChanged
     && Number(priorCoverage.evidence_count||-1)===evidenceCount
@@ -345,6 +351,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     && !pdfRendererMismatch
     && !publicationPolicyMismatch
     && priorResearchReleaseReady
+    && priorGenerationGatePassed
     && !(priorResearch.last_failure_reason && priorDossierResearchReady);
   if(existing.length&&unchanged)return{status:'exists',id:existing[0].id,publication_id:existing[0].id,publication_status:existing[0].status,version:existing[0].version||1};
 

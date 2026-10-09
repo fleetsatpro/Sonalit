@@ -44,6 +44,8 @@ describe('publication research retry wiring', () => {
     expect(recovery).toContain("updated_at < NOW()-($6::int*INTERVAL '1 minute')");
     expect(recovery).toContain('END = $7');
     expect(recovery).toContain('last_recovery_attempt_at');
+    expect(source).toContain('const priorGenerationGatePassed=');
+    expect(recovery).toContain('&& priorGenerationGatePassed');
     expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit,maxAttempts\]\s*\)\);/);
     expect(recovery).toContain('await withOrg(orgId,client=>client.query(');
     expect(recovery).not.toContain('await query(');
