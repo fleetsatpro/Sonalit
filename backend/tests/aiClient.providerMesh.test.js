@@ -618,7 +618,13 @@ describe('intelligence provider mesh', () => {
       }
     });
 
-    const ai=require('../src/utils/aiClient');
+    let ai;
+    // Isolate this provider graph from mocks/cached clients left by the many
+    // other provider-mesh tests in this file; the regression must exercise the
+    // exact OpenAI constructor registered immediately above.
+    jest.isolateModules(()=>{
+      ai=require('../src/utils/aiClient');
+    });
     const response=await ai.createMessage({
       dataClassification:'public',
       allowFreeProviders:true,
@@ -632,6 +638,7 @@ describe('intelligence provider mesh', () => {
     if(response._provider!=='openrouter-free-router'){
       throw new Error('Expected the half-open OpenRouter rescue lane; got '+response._provider+'; calls='+JSON.stringify(calls));
     }
+    expect(calls.length).toBeGreaterThan(0);
     expect(response._free_provider).toBe(true);
     expect(calls.some(c=>c.model==='gemini-test-model'&&c.apiKey==='google-test-key-123')).toBe(true);
     expect(calls.some(c=>c.model==='openai-test-model'&&c.apiKey==='openai-test-key-123')).toBe(true);
