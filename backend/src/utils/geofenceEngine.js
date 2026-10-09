@@ -56,6 +56,14 @@ function extractRing(coordinates) {
   if (c?.type === 'Polygon' && Array.isArray(c.coordinates?.[0])) {
     return c.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
   }
+  // AI-created corridor fences store a route centreline and a separately
+  // buffered envelope. The envelope is the containment boundary; using the
+  // centreline as a closed ring would miss two-point routes and produce false
+  // containment for multi-point routes.
+  if ((c?.type === 'corridor' || Array.isArray(c?.buffer_polygon)) &&
+      Array.isArray(c?.buffer_polygon) && c.buffer_polygon.length >= 4) {
+    return c.buffer_polygon.map(([lat, lng]) => ({ lat: Number(lat), lng: Number(lng) }));
+  }
   // Custom array format: [[lat, lng], ...]
   if (Array.isArray(c?.path)) return c.path.map(([lat, lng]) => ({ lat, lng }));
   if (Array.isArray(c) && Array.isArray(c[0])) return c.map(([lat, lng]) => ({ lat, lng }));
