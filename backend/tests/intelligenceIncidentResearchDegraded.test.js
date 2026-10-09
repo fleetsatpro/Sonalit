@@ -11,9 +11,9 @@ describe('degraded incident research remains useful',()=>{
     const article='<html><head><title>Independent report on the incident</title><meta name="description" content="Local reporting describes a temporary disruption on the corridor and notes that authorities responded while the full duration remained unclear."></head><body><main><p>The report places the incident on the affected corridor and describes a temporary disruption. It also records that authorities responded and that the precise duration was not yet established.</p></main></body></html>';
     const gdeltJson=jest.fn(async()=>({articles:[{
       title:'Corroborating public report on corridor disruption',
-      url:'https://gdelt.example/report',
+      url:'https://example.com/report',
       seendate:'20261009T100000Z',
-      domain:'gdelt.example'
+      domain:'example.com'
     }]}));
     safeFetchPublicResearch.mockImplementation(async(url)=>{
       const value=String(url);
