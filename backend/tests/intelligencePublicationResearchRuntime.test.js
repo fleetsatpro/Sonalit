@@ -316,4 +316,3 @@ test('bounded publication coverage explicitly discloses excluded period incident
     expect(research).toContain('Math.min(2,Number(process.env.INTEL_PUBLICATION_RESEARCH_CONCURRENCY)||2)');
   });
 
-});
