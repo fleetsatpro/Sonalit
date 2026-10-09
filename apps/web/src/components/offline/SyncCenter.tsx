@@ -152,6 +152,7 @@ export default function SyncCenter({ userId }: { userId: string }) {
   // what still needs attention, not a log to scroll past.
   const active = entries.filter(e => e.status !== 'ACKNOWLEDGED');
   const done = entries.filter(e => e.status === 'ACKNOWLEDGED');
+  const unresolvedMedia = mq == null ? null : mq.pending + mq.uploading + mq.failedRetryable + mq.failedPermanent;
 
   return (
     <div className="space-y-4">
@@ -249,9 +250,19 @@ export default function SyncCenter({ userId }: { userId: string }) {
         </section>
       )}
 
-      {active.length === 0 && (
+      {active.length === 0 && unresolvedMedia === 0 && (
         <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-6 text-center text-[12px] text-text-2">
           Everything recorded on this device has been confirmed by Sonalit.
+        </p>
+      )}
+      {active.length === 0 && unresolvedMedia == null && (
+        <p role="status" className="rounded-xl border border-cds-amber/30 bg-cds-amber/[.06] px-4 py-4 text-center text-[12px] text-text-2">
+          The binary-media queue could not be read. Sonalit cannot confirm that all recordings have uploaded; keep this device storage intact and retry.
+        </p>
+      )}
+      {active.length === 0 && unresolvedMedia != null && unresolvedMedia > 0 && (
+        <p role="status" className="rounded-xl border border-cds-amber/30 bg-cds-amber/[.06] px-4 py-4 text-center text-[12px] text-text-2">
+          {unresolvedMedia} voice-note upload{unresolvedMedia === 1 ? '' : 's'} still need confirmation or review. Open the associated record to retry; queued audio remains on this device until Sonalit confirms it.
         </p>
       )}
 
