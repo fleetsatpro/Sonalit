@@ -14,6 +14,94 @@ function distanceM(a, b) {
   const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h)));
 }
+const MAX_INPUT_PATH_POINTS = 20000;
+const MAX_SIMPLIFICATION_COMPARISONS = 2000000;
+
+function wrappedDeltaDegrees(delta) {
+  return ((delta + 540) % 360) - 180;
+}
+
+function pointToSegmentDistanceM(point, start, end) {
+  const latScale = Math.cos(((start[0] + end[0]) / 2) * Math.PI / 180);
+  const scale = R * Math.PI / 180;
+  const dx = wrappedDeltaDegrees(end[1] - start[1]) * scale * latScale;
+  const dy = (end[0] - start[0]) * scale;
+  const px = wrappedDeltaDegrees(point[1] - start[1]) * scale * latScale;
+  const py = (point[0] - start[0]) * scale;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared > 0 ? Math.max(0, Math.min(1, (px * dx + py * dy) / lengthSquared)) : 0;
+  return Math.hypot(px - t * dx, py - t * dy);
+}
+
+/**
+ * Bound route geometry cost without arbitrary truncation. Douglas–Peucker keeps
+ * both endpoints and guarantees each removed vertex is within tolerance of its
+ * retained segment in a local metric projection. If the route cannot be
+ * represented inside the vertex/computation budget at this tolerance, fail
+ * closed instead of pretending a coarse line is the requested road corridor.
+ */
+function simplifyPath(path, toleranceM = 10) {
+  if (!Array.isArray(path) || path.length < 2) throw new TypeError('A corridor needs at least two route points.');
+  if (path.length > MAX_INPUT_PATH_POINTS) throw new RangeError('Route geometry exceeds the safe input vertex limit.');
+  const tolerance = Number(toleranceM);
+  if (!Number.isFinite(tolerance) || tolerance < 1 || tolerance > 100) throw new RangeError('Geometry simplification tolerance must be between 1 and 100 metres.');
+
+  const raw = [];
+  for (let i = 0; i < path.length; i++) {
+    const point = path[i];
+    if (!Array.isArray(point) || point.length < 2) throw new TypeError('Invalid coordinate at centreline index ' + i + '.');
+    const lat = Number(point[0]), lng = Number(point[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 85 || Math.abs(lng) > 180) {
+      throw new RangeError('Invalid coordinate at centreline index ' + i + '.');
+    }
+    const normalized = [lat, lng];
+    if (!raw.length || distanceM(raw[raw.length - 1], normalized) >= 0.05) raw.push(normalized);
+  }
+  if (raw.length < 2) throw new RangeError('The route has no measurable length.');
+  if (raw.length <= MAX_PATH_POINTS) {
+    const normalized = normalizePath(raw);
+    return { path: normalized, originalPointCount: raw.length, finalPointCount: normalized.length, toleranceM: 0 };
+  }
+
+  const keep = new Uint8Array(raw.length);
+  keep[0] = 1;
+  keep[raw.length - 1] = 1;
+  const stack = [[0, raw.length - 1]];
+  let comparisons = 0;
+  while (stack.length) {
+    const [first, last] = stack.pop();
+    if (last <= first + 1) continue;
+    let farthest = -1;
+    let farthestDistance = tolerance;
+    for (let i = first + 1; i < last; i++) {
+      if (++comparisons > MAX_SIMPLIFICATION_COMPARISONS) {
+        throw new RangeError('Route geometry is too complex to simplify within the safe computation budget.');
+      }
+      const distance = pointToSegmentDistanceM(raw[i], raw[first], raw[last]);
+      if (distance > farthestDistance) {
+        farthestDistance = distance;
+        farthest = i;
+      }
+    }
+    if (farthest >= 0) {
+      keep[farthest] = 1;
+      stack.push([first, farthest], [farthest, last]);
+    }
+  }
+
+  const reduced = raw.filter((_, index) => keep[index]);
+  if (reduced.length > MAX_PATH_POINTS) {
+    throw new RangeError('Route still exceeds the safe vertex limit at the requested geometry tolerance; no coarse substitute was created.');
+  }
+  const normalized = normalizePath(reduced);
+  return {
+    path: normalized,
+    originalPointCount: raw.length,
+    finalPointCount: normalized.length,
+    toleranceM: normalized.length < raw.length ? tolerance : 0,
+  };
+}
+
 function normalizePath(path) {
   if (!Array.isArray(path) || path.length < 2) throw new TypeError('A corridor needs at least two [latitude, longitude] points.');
   if (path.length > MAX_PATH_POINTS) throw new RangeError('Routed centreline exceeds the safe vertex limit; geometry was not truncated.');
@@ -201,4 +289,4 @@ function buildCorridorPolygon(path, bufferM) {
   if(!verified.valid) throw new RangeError(verified.reason);
   return polygon;
 }
-module.exports={MAX_PATH_POINTS,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,validateCorridorGeometry};
+module.exports={MAX_PATH_POINTS,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,simplifyPath,validateCorridorGeometry};
