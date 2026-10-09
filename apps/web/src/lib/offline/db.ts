@@ -29,6 +29,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 
 import type { BufferedFix, ConflictRecord, LocalEntity, OutboxEntry, SyncMeta } from './types.js';
+import { classifyOfflineRow, createOfflineQuarantineRecord, type OfflineQuarantineRecord, type OfflineQuarantineSource } from './offlineMigration.js';
 
 /**
  * Legacy stores from the original lib/db.ts. They were declared but never
@@ -53,6 +54,8 @@ class SonalitDB extends Dexie {
   conflicts!: EntityTable<ConflictRecord, 'id'>;
   /** Checkpoints, device id, last-sync times. */
   sync_meta!: EntityTable<SyncMeta, 'key'>;
+  /** Legacy local work retained without replay when tenant ownership is unknown. */
+  offline_quarantine!: EntityTable<OfflineQuarantineRecord, 'id'>;
 
   constructor() {
     super('sonalit');
@@ -99,6 +102,51 @@ class SonalitDB extends Dexie {
           await store.put({ ...row, key: nextKey });
         }
       }
+    });
+
+    // v3 added tenant indexes but did not reconcile pre-existing queue records.
+    // Do not infer the missing organisation from the current login: a shared
+    // device may have switched tenants since a record was created. Copy every
+    // unscoped record into a local quarantine store before deleting it from the
+    // active queue. Both writes occur in this versionchange transaction; if the
+    // copy fails, the entire upgrade rolls back and the original row survives.
+    this.version(4).stores({
+      gps_fixes: 'id, device_id, ts',
+      pending_uploads: 'id, kind, created_at',
+      entities: 'key, entityType, [entityType+entityId], orgId, ownerLookup, lastSyncedAt',
+      outbox: 'id, status, priority, nextAttemptAt, localSequence, ownerUserId, ownerOrgId, [status+nextAttemptAt]',
+      gps_buffer: 'id, vehicleId, sequence, deviceTime, ownerUserId, ownerOrgId',
+      conflicts: 'id, entityType, detectedAt, ownerUserId, ownerOrgId',
+      sync_meta: 'key',
+      offline_quarantine: 'id, source, ownerUserId, ownerOrgId, quarantinedAt, reasonCode',
+    }).upgrade(async tx => {
+      const quarantine = tx.table('offline_quarantine');
+
+      const moveUnscopedRows = async (
+        source: OfflineQuarantineSource,
+        tableName: 'entities' | 'outbox' | 'gps_buffer' | 'conflicts',
+        primaryKeyField: 'key' | 'id',
+      ) => {
+        const table = tx.table(tableName);
+        const rows = await table.toCollection().toArray();
+        for (const row of rows) {
+          const raw = row as Record<string, unknown>;
+          const classification = classifyOfflineRow(source, raw);
+          if (!classification.quarantine) continue;
+
+          const quarantineRecord = createOfflineQuarantineRecord(
+            source, raw[primaryKeyField], raw, classification, Date.now(),
+          );
+          await quarantine.put(quarantineRecord);
+          // Delete only after the full raw record has been persisted locally.
+          await table.delete(raw[primaryKeyField] as string);
+        }
+      };
+
+      await moveUnscopedRows('outbox', 'outbox', 'id');
+      await moveUnscopedRows('gps_buffer', 'gps_buffer', 'id');
+      await moveUnscopedRows('conflicts', 'conflicts', 'id');
+      await moveUnscopedRows('entities', 'entities', 'key');
     });
   }
 }
