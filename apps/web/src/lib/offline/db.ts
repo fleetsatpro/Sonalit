@@ -131,21 +131,6 @@ class SonalitDB extends Dexie {
       offline_quarantine: 'id, source, ownerUserId, ownerOrgId, quarantinedAt, reasonCode',
     });
 
-    // v5 adds a separate durable binary queue. Media is not stored in JSON
-    // operation payloads: its Blob survives tab/process restart until the
-    // server confirms the metadata commit. There is no destructive upgrade.
-    this.version(5).stores({
-      gps_fixes: 'id, device_id, ts',
-      pending_uploads: 'id, kind, created_at',
-      entities: 'key, entityType, [entityType+entityId], orgId, ownerLookup, lastSyncedAt',
-      outbox: 'id, status, priority, nextAttemptAt, localSequence, ownerUserId, ownerOrgId, [status+nextAttemptAt]',
-      gps_buffer: 'id, vehicleId, sequence, deviceTime, ownerUserId, ownerOrgId',
-      conflicts: 'id, entityType, detectedAt, ownerUserId, ownerOrgId',
-      sync_meta: 'key',
-      offline_quarantine: 'id, source, ownerUserId, ownerOrgId, quarantinedAt, reasonCode',
-      media_outbox: 'id, kind, ownerUserId, ownerOrgId, [ownerUserId+ownerOrgId], status, [status+nextAttemptAt], nextAttemptAt, createdAt, acknowledgedAt, parentType, parentId',
-    });
-
     }).upgrade(async tx => {
       const quarantine = tx.table('offline_quarantine');
 
@@ -174,6 +159,21 @@ class SonalitDB extends Dexie {
       await moveUnscopedRows('gps_buffer', 'gps_buffer', 'id');
       await moveUnscopedRows('conflicts', 'conflicts', 'id');
       await moveUnscopedRows('entities', 'entities', 'key');
+    });
+
+    // v5 adds a separate durable binary queue. Media is not stored in JSON
+    // operation payloads: its Blob survives tab/process restart until the
+    // server confirms the metadata commit. There is no destructive upgrade.
+    this.version(5).stores({
+      gps_fixes: 'id, device_id, ts',
+      pending_uploads: 'id, kind, created_at',
+      entities: 'key, entityType, [entityType+entityId], orgId, ownerLookup, lastSyncedAt',
+      outbox: 'id, status, priority, nextAttemptAt, localSequence, ownerUserId, ownerOrgId, [status+nextAttemptAt]',
+      gps_buffer: 'id, vehicleId, sequence, deviceTime, ownerUserId, ownerOrgId',
+      conflicts: 'id, entityType, detectedAt, ownerUserId, ownerOrgId',
+      sync_meta: 'key',
+      offline_quarantine: 'id, source, ownerUserId, ownerOrgId, quarantinedAt, reasonCode',
+      media_outbox: 'id, kind, ownerUserId, ownerOrgId, [ownerUserId+ownerOrgId], status, [status+nextAttemptAt], nextAttemptAt, createdAt, acknowledgedAt, parentType, parentId',
     });
   }
 }
