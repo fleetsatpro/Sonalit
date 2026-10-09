@@ -1,5 +1,7 @@
 jest.mock('../src/utils/aiClient',()=>({
+  // Configured-but-cooling is intentionally distinct from no configured provider.
   hasAnyProvider:jest.fn(()=>false),
+  hasReadyProvider:jest.fn(()=>false),
   createResearchMessage:jest.fn(),
 }));
 
