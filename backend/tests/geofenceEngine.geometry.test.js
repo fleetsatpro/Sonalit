@@ -34,28 +34,30 @@ describe('geofence engine corridor-envelope containment', () => {
 
   test('keeps ordinary custom [lat, lng] polygon handling intact', () => {
     const polygon = [
-      [0, 0],
-      [0, 1],
-      [1, 1],
-      [1, 0],
-      [0, 0],
+      [-2, 30],
+      [-2, 31],
+      [-1, 31],
+      [-1, 30],
+      [-2, 30],
     ];
-    expect(isPointInPolygon(0.5, 0.5, polygon)).toBe(true);
-    expect(isPointInPolygon(2, 0.5, polygon)).toBe(false);
+    expect(isPointInPolygon(-1.5, 30.5, polygon)).toBe(true);
+    expect(isPointInPolygon(30.5, -1.5, polygon)).toBe(false);
+    expect(isPointInPolygon(-3, 30.5, polygon)).toBe(false);
   });
 
   test('keeps GeoJSON Polygon [lng, lat] handling intact', () => {
     const polygon = {
       type: 'Polygon',
       coordinates: [[
-        [0, 0],
-        [1, 0],
-        [1, 1],
-        [0, 1],
-        [0, 0],
+        [30, -2],
+        [31, -2],
+        [31, -1],
+        [30, -1],
+        [30, -2],
       ]],
     };
-    expect(isPointInPolygon(0.5, 0.5, polygon)).toBe(true);
-    expect(isPointInPolygon(0.5, 2, polygon)).toBe(false);
+    expect(isPointInPolygon(-1.5, 30.5, polygon)).toBe(true);
+    expect(isPointInPolygon(30.5, -1.5, polygon)).toBe(false);
+    expect(isPointInPolygon(-3, 30.5, polygon)).toBe(false);
   });
 });
