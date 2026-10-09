@@ -175,6 +175,16 @@ describe('voice-note storage readiness and commit integrity', () => {
     expect(mockDb).not.toHaveBeenCalled();
   });
 
+  test('rejects an object without authoritative content-type metadata', async () => {
+    mockS3Send.mockResolvedValueOnce({ ContentLength: 512 });
+
+    const response = await commitRequest();
+
+    expect(response.status).toBe(422);
+    expect(response.body.error).toBe('uploaded_object_type_mismatch');
+    expect(mockDb).not.toHaveBeenCalled();
+  });
+
   test('commits only the exact tenant/parent/note key after a successful object HEAD', async () => {
     const response = await commitRequest();
 
