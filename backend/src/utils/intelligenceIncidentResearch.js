@@ -1,6 +1,7 @@
 'use strict';
 
 const { XMLParser } = require('fast-xml-parser');
+const { safeFetchPublicResearch, MAX_RESPONSE_BYTES: MAX_PUBLIC_RESEARCH_RESPONSE_BYTES } = require('./publicResearchFetch');
 const aiClient = require('./aiClient');
 const logger = require('./logger');
 const {
@@ -126,12 +127,8 @@ function meta(html,key){
   const re=new RegExp("<meta[^>]+(?:name|property)=[\"']"+escaped+"[\"'][^>]+content=[\"']([^\"']+)[\"']","i");
   const m=String(html||'').match(re); return m?clean(m[1],600):'';
 }
-async function fetchText(url,options={},timeoutMs=REQUEST_TIMEOUT_MS){
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),timeoutMs);
-  try{
-    return await fetch(url,{redirect:'follow',...options,signal:controller.signal,headers:{'User-Agent':'Sonalit-Intelligence-Research/1.0',...(options.headers||{})}});
-  }finally{clearTimeout(timer);}
+async function fetchText(url,_options={},timeoutMs=REQUEST_TIMEOUT_MS){
+  return safeFetchPublicResearch(url,{timeoutMs,maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES});
 }
 
 async function googleNewsSearch({headline,country,region}){
@@ -253,7 +250,8 @@ async function fetchSourcePage(item){
       source:item.source||item.domain||resolvedDomain
     };
   }catch(error){
-    logger.warn('Incident research source fetch failed '+item.url+': '+error.message);
+    const sourceHost=(()=>{try{return new URL(item.url).hostname.toLowerCase().slice(0,255)}catch(_){return 'invalid-url'}})();
+    logger.warn('Incident research source fetch failed host='+sourceHost+': '+String(error&&error.message||'unknown').slice(0,300));
     return null;
   }
 }
