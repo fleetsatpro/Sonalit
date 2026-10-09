@@ -566,4 +566,84 @@ describe('intelligence provider mesh', () => {
     expect(response._provider).toBe('deepseek-v3.2-openrouter');
     expect(response._provider_kind).toBe('open-weight');
   });
+
+
+  test('half-open probes the hinted public OpenRouter rescue lane after all ordinary providers fail',async()=>{
+    process.env.OPENROUTER_API_KEY='openrouter-test-key-123';
+    process.env.OPENROUTER_FREE_ROUTER_MODEL='openrouter/free';
+    process.env.GOOGLE_AI_API_KEY='google-test-key-123';
+    process.env.GOOGLE_GEMINI_MODEL='gemini-test-model';
+    process.env.OPENAI_API_KEY='openai-test-key-123';
+    process.env.OPENAI_MODEL='openai-test-model';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT='true';
+    process.env.REDIS_URL='redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS='true';
+
+    const until=Date.now()+6*60*60*1000;
+    const prefix='sonalit:intelligence:ai:circuit:v3:';
+    const redis={
+      mget:jest.fn(async keys=>keys.map(key=>{
+        const group=decodeURIComponent(String(key).replace(prefix,''));
+        return group.startsWith('openrouter-')?String(until):'0';
+      })),
+      scan:jest.fn(async()=>['0',[]]),
+      get:jest.fn(async()=>null),
+      set:jest.fn(async()=> 'OK'),
+      del:jest.fn(async()=>1),
+    };
+    const calls=[];
+    const errorWithStatus=(message,status)=>Object.assign(new Error(message),{status});
+    const mockOpenAI = class MockOpenAI{
+      constructor(options={}){
+        this.apiKey=options.apiKey;
+        this.baseURL=options.baseURL||'openai';
+        this.chat={completions:{create:jest.fn(async request=>{
+          const call={apiKey:this.apiKey,baseURL:this.baseURL,model:request.model};
+          calls.push(call);
+          if(this.apiKey==='google-test-key-123'){
+            if(request.model!=='gemini-test-model')throw new Error('Unexpected Gemini model: '+JSON.stringify(call));
+            throw errorWithStatus('Gemini rate limit',429);
+          }
+          if(this.apiKey==='openai-test-key-123'){
+            if(request.model!=='openai-test-model')throw new Error('Unexpected OpenAI model: '+JSON.stringify(call));
+            throw errorWithStatus('OpenAI insufficient credit balance',402);
+          }
+          if(this.apiKey==='openrouter-test-key-123'&&request.model==='openrouter/free'){
+            return {choices:[{message:{content:'{"results":[]}',tool_calls:[]}}]};
+          }
+          throw new Error('Unexpected provider credential/model in half-open test: '+JSON.stringify(call));
+        })}};
+      }
+    };
+
+    let ai;
+    // Register both dependency mocks inside Jest's isolated registry. Doing
+    // this outside isolateModules can leave the provider graph bound to a
+    // prior test's provider clients even after resetModules().
+    jest.isolateModules(()=>{
+      jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
+      jest.doMock('openai',()=>mockOpenAI);
+      ai=require('../src/utils/aiClient');
+    });
+    const response=await ai.createMessage({
+      dataClassification:'public',
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['google-gemini-3.8-flash','openrouter-free-router'],
+      system:'Return structured JSON.',
+      messages:[{role:'user',content:'Use only supplied public evidence and return JSON.'}],
+      max_tokens:100,
+    });
+
+    if(response._provider!=='openrouter-free-router'){
+      throw new Error('Expected the half-open OpenRouter rescue lane; got '+response._provider+'; calls='+JSON.stringify(calls));
+    }
+    expect(calls.length).toBeGreaterThan(0);
+    expect(response._free_provider).toBe(true);
+    expect(calls.some(c=>c.model==='gemini-test-model'&&c.apiKey==='google-test-key-123')).toBe(true);
+    expect(calls.some(c=>c.model==='openai-test-model'&&c.apiKey==='openai-test-key-123')).toBe(true);
+    expect(calls.filter(c=>c.apiKey==='openrouter-test-key-123')).toEqual([
+      expect.objectContaining({model:'openrouter/free'})
+    ]);
+  });
 });
