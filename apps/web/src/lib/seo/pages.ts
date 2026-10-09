@@ -53,7 +53,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/',
     title: 'Sonalit | Fleet, Convoy & Logistics Operations Platform',
     description:
-      'Sonalit is an operational intelligence platform for fleet, convoy, container custody and security teams — live GPS, route risk, spatial context, field coordination, incident response and evidence.',
+      'Sonalit unifies fleet, convoy, container custody and security operations with GPS tracking, route-risk intelligence, field coordination, incident response and evidence.',
     priority: 1.0,
     changefreq: 'weekly',
     jsonLd: [ORGANIZATION, WEBSITE],
