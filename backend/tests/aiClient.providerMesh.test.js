@@ -570,8 +570,11 @@ describe('intelligence provider mesh', () => {
 
   test('half-open probes the hinted public OpenRouter rescue lane after all ordinary providers fail',async()=>{
     process.env.OPENROUTER_API_KEY='openrouter-test-key-123';
+    process.env.OPENROUTER_FREE_ROUTER_MODEL='openrouter/free';
     process.env.GOOGLE_AI_API_KEY='google-test-key-123';
+    process.env.GOOGLE_GEMINI_MODEL='gemini-test-model';
     process.env.OPENAI_API_KEY='openai-test-key-123';
+    process.env.OPENAI_MODEL='openai-test-model';
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT='true';
     process.env.REDIS_URL='redis://mock';
     process.env.INTEL_PERSIST_PROVIDER_CIRCUITS='true';
@@ -597,17 +600,20 @@ describe('intelligence provider mesh', () => {
         this.apiKey=options.apiKey;
         this.baseURL=options.baseURL||'openai';
         this.chat={completions:{create:jest.fn(async request=>{
-          const call={ordinal:calls.length+1,apiKey:this.apiKey,baseURL:this.baseURL,model:request.model};
+          const call={apiKey:this.apiKey,baseURL:this.baseURL,model:request.model};
           calls.push(call);
-          // This provider order is deterministic: hinted Gemini, then direct
-          // OpenAI; the persisted circuits exclude all OpenRouter lanes until
-          // the final half-open probe is invoked.
-          if(call.ordinal===1)throw errorWithStatus('Gemini rate limit',429);
-          if(call.ordinal===2)throw errorWithStatus('OpenAI insufficient credit balance',402);
-          if(call.ordinal===3&&request.model==='openrouter/free'){
+          if(this.apiKey==='google-test-key-123'){
+            if(request.model!=='gemini-test-model')throw new Error('Unexpected Gemini model: '+JSON.stringify(call));
+            throw errorWithStatus('Gemini rate limit',429);
+          }
+          if(this.apiKey==='openai-test-key-123'){
+            if(request.model!=='openai-test-model')throw new Error('Unexpected OpenAI model: '+JSON.stringify(call));
+            throw errorWithStatus('OpenAI insufficient credit balance',402);
+          }
+          if(this.apiKey==='openrouter-test-key-123'&&request.model==='openrouter/free'){
             return {choices:[{message:{content:'{"results":[]}',tool_calls:[]}}]};
           }
-          throw new Error('Unexpected call order/provider in half-open test: '+JSON.stringify(call));
+          throw new Error('Unexpected provider credential/model in half-open test: '+JSON.stringify(call));
         })}};
       }
     });
@@ -623,10 +629,13 @@ describe('intelligence provider mesh', () => {
       max_tokens:100,
     });
 
-    expect(response._provider).toBe('openrouter-free-router');
+    if(response._provider!=='openrouter-free-router'){
+      throw new Error('Expected the half-open OpenRouter rescue lane; got '+response._provider+'; calls='+JSON.stringify(calls));
+    }
     expect(response._free_provider).toBe(true);
-    expect(calls).toHaveLength(3);
-    expect(calls[0].model).not.toBe('openrouter/free');
-    expect(calls[1].model).not.toBe('openrouter/free');
-    expect(calls[2].model).toBe('openrouter/free');
+    expect(calls.some(c=>c.model==='gemini-test-model'&&c.apiKey==='google-test-key-123')).toBe(true);
+    expect(calls.some(c=>c.model==='openai-test-model'&&c.apiKey==='openai-test-key-123')).toBe(true);
+    expect(calls.filter(c=>c.apiKey==='openrouter-test-key-123')).toEqual([
+      expect.objectContaining({model:'openrouter/free'})
+    ]);
   });
