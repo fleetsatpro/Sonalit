@@ -66,8 +66,9 @@ describe('publication incident research coverage',()=>{
       ok:true,
       status:200,
       url:'https://news.google.com/rss/search',
-      headers:{get:()=> 'application/rss+xml'},
-      text:async()=>'<rss><channel></channel></rss>'
+      headers:{get:()=> 'application/rss+xml, application/json'},
+      text:async()=>'<rss><channel></channel></rss>',
+      json:async()=>({articles:[]})
     });
   });
   afterEach(()=>{delete global.fetch});
