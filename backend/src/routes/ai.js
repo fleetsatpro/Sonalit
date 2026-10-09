@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
-const { buildCorridorPolygon, midpointOnPath, normalizePath: normalizeCorridorPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
+const { buildCorridorPolygon, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
   if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
@@ -880,7 +880,8 @@ async function toolCreateGeofence(input, userId, orgId) {
 
       // Normalize before measuring or buffering. Never silently truncate a route:
       // invalid, oversized or degenerate paths must fail closed.
-      pathLatLng = normalizeCorridorPath(pathLatLng);
+      const pathSimplification = simplifyPath(pathLatLng, 10);
+      pathLatLng = pathSimplification.path;
       const mid = midpointOnPath(pathLatLng);
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
@@ -901,6 +902,8 @@ async function toolCreateGeofence(input, userId, orgId) {
         route_provider: routeProvider,
         route_distance_m: distM,
         path_points: pathLatLng.length,
+        source_path_points: pathSimplification.originalPointCount,
+        path_simplification_tolerance_m: pathSimplification.toleranceM,
         geocoding: {
           start: { source: gStart.source || 'unknown', precision: gStart.precision || 'unknown', osm_id: gStart.osm_id || null },
           end: { source: gEnd.source || 'unknown', precision: gEnd.precision || 'unknown', osm_id: gEnd.osm_id || null },
@@ -980,6 +983,8 @@ async function toolCreateGeofence(input, userId, orgId) {
         location: locationLabel,
         is_corridor: true,
         path_points: pathLatLng.length,
+        source_path_points: pathSimplification.originalPointCount,
+        path_simplification_tolerance_m: pathSimplification.toleranceM,
         road_distance_km: (distM / 1000).toFixed(2),
         buffer_m,
         precision: effectivePrecision,
