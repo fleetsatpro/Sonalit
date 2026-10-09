@@ -238,8 +238,9 @@ function classifyFailure(error: unknown): Failure {
     }
     return { code: status ? `object_storage_http_${status}` : 'object_storage_unreachable', message: 'Object storage did not accept the upload. Sonalit will request a fresh upload URL on retry.', retryable: true };
   }
-  if (serverCode === 'storage_not_configured' || serverCode === 'storage_signing_failed') {
-    return { code: serverCode, message: 'Voice-note storage is temporarily unavailable. The recording remains on this device.', retryable: true };
+  if (serverCode === 'storage_not_configured' || serverCode === 'storage_signing_failed' ||
+      code === 'storage_not_configured' || code === 'storage_signing_failed') {
+    return { code: serverCode || code, message: 'Voice-note storage is temporarily unavailable. The recording remains on this device.', retryable: true };
   }
   if (status === 401) {
     return { code: 'authorization_required', message: 'Sign in again with the same account to resume this upload.', retryable: true };
@@ -336,6 +337,12 @@ async function uploadOne(entry: MediaUploadEntry): Promise<void> {
     file_size_bytes: entry.fileSizeBytes,
   });
   const signed = presign.data;
+  if (!signed || typeof signed.upload_url !== 'string' || !signed.upload_url.trim()) {
+    // A previous API deployment returned HTTP 200 with a null upload URL when
+    // storage was misconfigured. Treat that rollout-skew response as retryable,
+    // never as a successful upload and never as a permanently lost recording.
+    throw Object.assign(new MediaQueueError('storage_not_configured', 'Voice-note storage is not ready yet. The recording remains saved on this device.'), { code: 'storage_not_configured' });
+  }
   const expectedExtension = entry.mimeType === 'audio/mp4' ? 'mp4' : entry.mimeType === 'audio/ogg' ? 'ogg' : 'webm';
   const expectedKey = `voice-notes/${entry.ownerOrgId}/${entry.parentType}/${entry.parentId}/${entry.id}.${expectedExtension}`;
   if (signed.note_id !== entry.id || signed.storage_key !== expectedKey) {
