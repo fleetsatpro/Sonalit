@@ -1,4 +1,4 @@
-jest.mock('../src/utils/aiClient',()=>({hasAnyProvider:()=>false}));
+jest.mock('../src/utils/aiClient',()=>({hasAnyProvider:()=>false,hasReadyProvider:()=>false}));
 jest.mock('../src/utils/publicResearchFetch',()=>({safeFetchPublicResearch:jest.fn(),MAX_RESPONSE_BYTES:2*1024*1024}));
 
 const { researchPublicationIncidents } = require('../src/utils/intelligenceIncidentResearch');

@@ -33,9 +33,9 @@ const AGENT_ROLES = [
 ];
 
 function hasAi(params={}){
-  return typeof aiClient.hasReadyProvider==='function'
-    ? aiClient.hasReadyProvider(params)
-    : aiClient.hasAnyProvider(params);
+  // This guard only answers whether a policy-eligible provider is configured.
+  // Actual readiness, cooldown recovery and failover belong to createMessage().
+  return typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(params);
 }
 function extract(response){ return Array.isArray(response?.content) ? response.content.filter(x=>x?.type==='text').map(x=>x.text).join('\n') : ''; }
 function parse(text){ try { return JSON.parse(text); } catch (_) {} const m=String(text||'').match(/[\[{][\s\S]*[\]}]/); if(!m)return null; try{return JSON.parse(m[0]);}catch(_){return null;} }
@@ -118,7 +118,7 @@ function evidencePackage(country, period, events){
 
 async function runPublicationEditorialBoard({country, period, events, baseBody, evidenceContract, precomputedResearch=null}){
   const publicationAiPolicy={dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase(),allowFreeProviders:true,preferFreeProviders:true};
-  if(events.length&&!aiClient.hasReadyProvider(publicationAiPolicy)){
+  if(events.length&&!hasAi(publicationAiPolicy)){
     const board={version:'2.1',agents:AGENT_ROLES.map(r=>({...r,status:'deferred',reason:'ai_provider_unavailable'})),evidence_contract:evidenceContract,started_at:new Date().toISOString(),completed_at:new Date().toISOString(),publishable:false,quality_policy:{minimum_qa_score:90,required_checks:['evidence','attribution','contradictions','confidence','completeness','specificity','analytical_depth','forecast_quality','source_diversity','decision_relevance'],free_lanes_allowed_for_qa:true,provider_gate:'live_provider_required'}};
     return {board,final:null,visual:null,graphics:null,qa:null,qaConsensus:{reviewers:[],all_complete:false,unanimous_publishable:false,blocking_issues:['ai_provider_unavailable']},deterministicGate:{publishable:false,issues:['ai_provider_unavailable']},publishable:false,research:precomputedResearch||{byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0}}};
   }

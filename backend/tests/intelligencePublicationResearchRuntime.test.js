@@ -184,10 +184,23 @@ test('incident publication uses the actual research outcome instead of stale pro
   expect(s).toContain('const allSelectedIncidentsDegraded=');
   expect(s).toContain('const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable || allSelectedIncidentsDegraded;');
   expect(s).toContain('const degradedEvidenceRelease=');
-  expect(s).toContain('if(aiBoardEnabled && publicationAiReady && events.length && !degradedEvidenceRelease)');
-  expect(s).toContain('degradedEvidenceRelease || (!publicationAiReady && !aiClient.hasReadyProvider');
+  expect(s).toContain('if(aiBoardEnabled && publicationAiAvailable && events.length && !degradedEvidenceRelease)');
+  expect(s).toContain("const publicationAiAvailable=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(publicationAiPolicy);");
+  expect(s).toContain('degradedEvidenceRelease || !publicationAiAvailable');
 });
 
+
+test('publication preflights defer cooldown recovery to the bounded AI router',()=>{
+  const research=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  const agents=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  const board=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(research).toContain("const aiConfigured=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(providerPolicy);");
+  expect(research).not.toContain('aiClient.hasReadyProvider(providerPolicy)');
+  expect(agents).toContain("const publicationAiAvailable=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(publicationAiPolicy);");
+  expect(agents).not.toContain('aiClient.hasReadyProvider(publicationAiPolicy)');
+  expect(board).toContain("return typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(params);");
+  expect(board).toContain('if(events.length&&!hasAi(publicationAiPolicy))');
+});
 
 test('degraded fallback narrative is built from incident evidence, assessment, relevance and uncertainty',()=>{
   const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
