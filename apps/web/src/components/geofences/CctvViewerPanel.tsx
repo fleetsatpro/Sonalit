@@ -1428,7 +1428,7 @@ export default function CctvViewerPanel({
                                 return next
                               })}
                             />
-                            <span className="gev-cctv-wall-feed-source-badge"><i /> PROVIDER-REPORTED VIDEO</span>
+                            
                           </div>
                         )
                       ) : camLiveVideo ? (
@@ -1498,12 +1498,12 @@ export default function CctvViewerPanel({
                               poster={typeof camMedia.previewUrl === 'string' ? camMedia.previewUrl : undefined}
                               onError={() => markPreviewFailure(cam.id)}
                             />
-                            <span className="gev-cctv-wall-feed-source-badge"><i /> PROVIDER-REPORTED VIDEO</span>
+                            
                           </div>
                         ) : (
                           <div className="gev-cctv-wall-feed-state gev-cctv-wall-feed-state--source">
                             <Camera size={18} />
-                            <strong>{sourceMediaIsImage(cam) ? 'SNAPSHOT ONLY' : camSourcePlayback ? 'LIVE VIDEO READY' : 'LIVE SOURCE UNAVAILABLE'}</strong>
+                            <strong>{sourceMediaIsImage(cam) ? 'SNAPSHOT ONLY' : camSourcePlayback ? 'VIDEO CAPABILITY REPORTED' : 'LIVE SOURCE UNAVAILABLE'}</strong>
                             <span>
                               {sourceMediaIsImage(cam)
                                 ? 'Current source is a live-updating image, not a continuous video stream.'
