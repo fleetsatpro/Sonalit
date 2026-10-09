@@ -225,10 +225,19 @@ function classifyFailure(error: unknown): Failure {
     message?: string;
     response?: { status?: number; data?: { error?: string; message?: string } };
     status?: number;
+    stage?: 'object_storage';
   };
   const status = e.response?.status ?? e.status;
   const code = String(e.code || '');
   const serverCode = String(e.response?.data?.error || '');
+  if (e.stage === 'object_storage') {
+    // Each retry requests a fresh signed URL. In particular, a delayed PUT that
+    // reaches an expired URL must not become a permanent account-auth failure.
+    if (status != null && [400, 413, 415, 422].includes(status)) {
+      return { code: 'object_storage_rejected', message: 'The object store rejected this recording. The bytes remain on this device for review.', retryable: false };
+    }
+    return { code: status ? `object_storage_http_${status}` : 'object_storage_unreachable', message: 'Object storage did not accept the upload. Sonalit will request a fresh upload URL on retry.', retryable: true };
+  }
   if (serverCode === 'storage_not_configured' || serverCode === 'storage_signing_failed') {
     return { code: serverCode, message: 'Voice-note storage is temporarily unavailable. The recording remains on this device.', retryable: true };
   }
@@ -343,7 +352,7 @@ async function uploadOne(entry: MediaUploadEntry): Promise<void> {
     headers: { 'Content-Type': entry.mimeType },
   });
   if (!put.ok) {
-    throw Object.assign(new Error('media_put_failed'), { status: put.status, code: `http_${put.status}` });
+    throw Object.assign(new Error('media_put_failed'), { status: put.status, code: `http_${put.status}`, stage: 'object_storage' as const });
   }
 
   const committed = await api.post<{ data?: { id?: string } }>('/voice-notes/commit', {
