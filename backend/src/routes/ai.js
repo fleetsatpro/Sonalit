@@ -1456,19 +1456,32 @@ router.post('/dispatch', async (req, res) => {
           if (block.type !== 'tool_use') continue;
           toolsUsed.push(block.name);
           let result, isError = false;
-          try {
-            result = await runTool(block.name, block.input, { userId, orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null });
-            // Track map-mutating actions for frontend refresh
-            if (block.name === 'create_geofence' && result.created) {
-              actionsCreated.push({ type: 'geofence', ...result });
-            }
-            if (block.name === 'create_risk_zone' && result.created) {
-              actionsCreated.push({ type: 'risk_zone', ...result });
-            }
-          } catch (e) {
-            result = { error: e.message };
+          const definition = TOOLS.find(tool => tool.name === block.name);
+          const argumentCheck = definition
+            ? validateToolInput(definition.input_schema, block.input)
+            : { valid: false, errors: [{ path: 'input', code: 'unknown_tool', message: 'Tool is not registered.' }] };
+          if (!argumentCheck.valid) {
+            // Invalid model arguments are never passed to tool implementations.
+            // Give the model a structured rejection so it can correct or
+            // explain the failure without triggering a side effect.
+            result = { error: 'invalid_tool_input', details: argumentCheck.errors };
             isError = true;
-            logger.warn(`AI tool ${block.name} failed: ${e.message}`);
+          } else {
+            try {
+              result = await runTool(block.name, block.input, { userId, orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null });
+              // Track map-mutating actions only after their authoritative handler succeeds.
+              if (block.name === 'create_geofence' && result?.created === true) {
+                actionsCreated.push({ type: 'geofence', ...result });
+              }
+              if (block.name === 'create_risk_zone' && result?.created === true) {
+                actionsCreated.push({ type: 'risk_zone', ...result });
+              }
+              if (result && typeof result === 'object' && result.error) isError = true;
+            } catch (e) {
+              result = { error: 'tool_execution_failed', message: String(e?.message || 'Unknown tool failure').slice(0, 300) };
+              isError = true;
+              logger.warn(`AI tool ${block.name} failed: ${String(e?.message || 'unknown').slice(0, 180)}`);
+            }
           }
           toolResults.push({
             type: 'tool_result',
