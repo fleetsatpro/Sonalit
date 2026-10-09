@@ -129,8 +129,6 @@ class SonalitDB extends Dexie {
       conflicts: 'id, entityType, detectedAt, ownerUserId, ownerOrgId',
       sync_meta: 'key',
       offline_quarantine: 'id, source, ownerUserId, ownerOrgId, quarantinedAt, reasonCode',
-    });
-
     }).upgrade(async tx => {
       const quarantine = tx.table('offline_quarantine');
 
