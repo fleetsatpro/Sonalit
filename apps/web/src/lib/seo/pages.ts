@@ -71,7 +71,7 @@ export const PUBLIC_PAGES: PageSeo[] = [
     path: '/convoy-management',
     title: 'Convoy Management & Security Operations | Sonalit',
     description:
-      'Plan and govern convoys with risk-ranked routes, time-aware corridor evaluation, CFO field coordination, seal integrity, evidence capture, alerts and daily operational reporting.',
+      'Coordinate safer convoys with risk-ranked routes, corridor timing, CFO field teams, seal checks, evidence capture, incident alerts and daily operational reporting.',
     breadcrumb: 'Convoy Management',
     priority: 0.9,
     changefreq: 'monthly',
