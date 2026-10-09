@@ -376,7 +376,10 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   ]).filter(([id])=>id));
 
   const publicationAiPolicy={dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase(),allowFreeProviders:true,preferFreeProviders:true};
-  const publicationAiReady=aiClient.hasReadyProvider(publicationAiPolicy);
+  // Use configuration/policy eligibility here. The AI client owns bounded
+  // cooldown waiting and provider failover; a momentarily cooling provider must
+  // not prevent the research/editorial path from attempting recovery.
+  const publicationAiAvailable=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(publicationAiPolicy);
   let incidentResearch={byEvent:{},summary:{requested:0,researched:0,fallback:0,failed:0,web_search_requests:0}};
   let researchAttempted=false;
   if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch){
@@ -409,7 +412,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     String(existing[0]?.body?.release_gate?.research_mode||'').toLowerCase()==='evidence_constrained' ||
     Number(priorResearch.degraded_evidence_eligible_incidents||0)>=expectedResearchCount;
   const researchProviderUnavailable=Boolean(
-    !publicationAiReady ||
+    !publicationAiAvailable ||
     incidentResearch?.summary?.provider_unavailable===true ||
     (researchAttempted &&
       expectedResearchCount>0 &&
@@ -466,7 +469,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const aiBoardEnabled=String(process.env.INTEL_PUBLICATION_AI_BOARD||'true').toLowerCase()!=='false';
   const aiBoardRequired=String(process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true').toLowerCase()!=='false';
 
-  if(aiBoardEnabled && publicationAiReady && events.length && !degradedEvidenceRelease){
+  if(aiBoardEnabled && publicationAiAvailable && events.length && !degradedEvidenceRelease){
     try{
       const result=await runPublicationEditorialBoard({country:COUNTRY_NAMES[country],period:{start,end},events:reportEvents,baseBody:deterministic,evidenceContract:publicationEvidenceContract,precomputedResearch:incidentResearch});
       board=result.board;visual=result.visual;graphics=result.graphics;provider=result.provider||'multi-agent-editorial-board';
@@ -501,7 +504,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     }catch(error){aiBoardStatus='unavailable';aiBoardHoldReason=error.message;logger.warn(`Publication editorial board unavailable ${country}/${type}; publication remains on release hold: ${error.message}`);}
   }
 
-  if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=publicationAiReady?'not_run':'provider_unavailable';
+  if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=publicationAiAvailable?'not_run':'provider_unavailable';
   const boardPublishable=board?.publishable===true;
   const finalQuality=auditPublicationContent(
     Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:
@@ -510,7 +513,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const tradecraftQuality=assessPublicationQuality(finalBody);
   finalBody.publication_quality={...tradecraftQuality,legacy_audit:finalQuality};
   const qualityGate=tradecraftQuality.passed===true && finalQuality.passed===true;
-  const aiBoardDegraded=!boardPublishable&&(['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus) || degradedEvidenceRelease || (!publicationAiReady && !aiClient.hasReadyProvider(publicationAiPolicy)));
+  const aiBoardDegraded=!boardPublishable&&(['provider_unavailable','unavailable','disabled','not_run'].includes(aiBoardStatus) || degradedEvidenceRelease || !publicationAiAvailable);
   const aiBoardGate=events.length===0 ? true : (boardPublishable || !aiBoardRequired || aiBoardDegraded);
   const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate&&researchReleaseGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
