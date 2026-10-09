@@ -50,7 +50,6 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
   const announceCommitted = useCallback((noteId: string) => {
     if (notifiedCommittedRef.current === noteId) return;
     notifiedCommittedRef.current = noteId;
-    setQueuedId(null);
     setState('done');
     setError(null);
     onCommitted?.(noteId);
