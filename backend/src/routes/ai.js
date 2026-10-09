@@ -6,6 +6,8 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
+const { buildCorridorPolygon, normalizePath: normalizeCorridorPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
+const { validateToolInput } = require('../utils/aiToolInputValidation');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
   if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
@@ -609,38 +611,19 @@ async function geocodePrecise(locationName) {
 }
 
 function toLatLngPath(osrmCoordinates) {
-  return (Array.isArray(osrmCoordinates) ? osrmCoordinates : [])
-    .filter(p => Array.isArray(p) && p.length >= 2 && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])))
-    .map(([lng, lat]) => [Number(lat), Number(lng)]);
-}
-
-function buildCorridorPolygon(path, bufferM) {
-  if (!Array.isArray(path) || path.length < 2 || !(bufferM > 0)) return null;
-  const lat0 = path.reduce((sum,p)=>sum+Number(p[0]),0)/path.length;
-  const R = 6371008.8;
-  const cos0 = Math.max(0.1, Math.cos(lat0*Math.PI/180));
-  const toXY = ([lat,lng]) => [R*cos0*Number(lng)*Math.PI/180, R*Number(lat)*Math.PI/180];
-  const toLL = ([x,y]) => [y/R*180/Math.PI, x/(R*cos0)*180/Math.PI];
-  const xy = path.map(toXY);
-  const left=[], right=[];
-  const unit=(a,b)=>{
-    const dx=b[0]-a[0], dy=b[1]-a[1], len=Math.hypot(dx,dy);
-    return len>0?[dx/len,dy/len]:[0,0];
-  };
-  for(let i=0;i<xy.length;i++){
-    const prev=i>0?unit(xy[i-1],xy[i]):unit(xy[i],xy[i+1]);
-    const next=i<xy.length-1?unit(xy[i],xy[i+1]):prev;
-    let nx=-(prev[1]+next[1]), ny=prev[0]+next[0];
-    const nlen=Math.hypot(nx,ny);
-    if(nlen<1e-9){nx=-next[1];ny=next[0];}else{nx/=nlen;ny/=nlen;}
-    const miter=bufferM/Math.max(0.35,Math.abs(nx*next[0]+ny*next[1]));
-    const d=Math.min(bufferM*2.5,Math.max(bufferM,miter));
-    left.push([xy[i][0]+nx*d,xy[i][1]+ny*d]);
-    right.push([xy[i][0]-nx*d,xy[i][1]-ny*d]);
+  if (!Array.isArray(osrmCoordinates) || osrmCoordinates.length < 2) {
+    throw new RangeError('OSRM returned no usable route geometry.');
   }
-  const ring=[...left,...right.reverse()];
-  ring.push(ring[0]);
-  return ring.map(toLL);
+  // OSRM geometry is [longitude, latitude]. Convert once, then validate rather
+  // than dropping malformed points and silently changing the actual route.
+  const path = osrmCoordinates.map((point, index) => {
+    if (!Array.isArray(point) || point.length < 2 ||
+        !Number.isFinite(Number(point[0])) || !Number.isFinite(Number(point[1]))) {
+      throw new RangeError('OSRM returned an invalid coordinate at route index ' + index + '.');
+    }
+    return [Number(point[1]), Number(point[0])];
+  });
+  return normalizeCorridorPath(path);
 }
 
 // Haversine distance in metres between two lat/lng points
