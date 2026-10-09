@@ -231,7 +231,11 @@ async function gdeltSearch({headline,country,region}){
       gdeltDownUntil=Date.now()+60*1000;
       logger.warn('Incident research GDELT returned a non-JSON response; cooling source for 60 seconds');
     }else{
-      logger.warn('Incident research GDELT unavailable: '+String(error?.message||'unknown failure').slice(0,200));
+      // Timeouts, DNS/connect failures and other transient provider failures
+      // must not be retried once per incident in the same collection cycle.
+      // Keep the reason class (not the raw upstream body or URL) observable.
+      gdeltDownUntil=Date.now()+60*1000;
+      logger.warn('Incident research GDELT unavailable; cooling source for 60 seconds ('+(failureClass||'upstream_failure')+')');
     }
     return [];
   }
