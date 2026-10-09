@@ -29,7 +29,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 
 import type { BufferedFix, ConflictRecord, LocalEntity, OutboxEntry, SyncMeta } from './types.js';
-import { classifyOfflineRow, createOfflineQuarantineRecord, type OfflineQuarantineRecord, type OfflineQuarantineSource } from './offlineMigration.js';
+import { classifyOfflineRow, createOfflineQuarantineRecord, shouldPurgeOfflineQuarantineRecord, type OfflineQuarantineRecord, type OfflineQuarantineSource } from './offlineMigration.js';
 
 /**
  * Legacy stores from the original lib/db.ts. They were declared but never
@@ -253,13 +253,13 @@ export async function requestPersistence(): Promise<boolean> {
 export async function purgeUserData(
   userId: string,
   { keepUnsyncedOutbox = true }: { keepUnsyncedOutbox?: boolean } = {},
-): Promise<{ entities: number; gps: number; outbox: number; conflicts: number }> {
-  const counts = { entities: 0, gps: 0, outbox: 0, conflicts: 0 };
+): Promise<{ entities: number; gps: number; outbox: number; conflicts: number; quarantined: number }> {
+  const counts = { entities: 0, gps: 0, outbox: 0, conflicts: 0, quarantined: 0 };
 
-  // Array form: Dexie's variadic overload tops out at five tables, and the
-  // purge has to span all six atomically — a half-purged device would leave one
-  // user's rows visible to the next.
-  await db.transaction('rw', [db.entities, db.gps_buffer, db.outbox, db.conflicts, db.sync_meta], async () => {
+  // Array form: keep the user-owned stores in one transaction so a failure
+  // cannot leave a half-purged shared device. Quarantine is included because a
+  // deliberate tenant handover must clear the departing user's retained payloads.
+  await db.transaction('rw', [db.entities, db.gps_buffer, db.outbox, db.conflicts, db.sync_meta, db.offline_quarantine], async () => {
     counts.entities = await db.entities.where('ownerLookup').equals(userId).delete();
     counts.gps = await db.gps_buffer.where('ownerUserId').equals(userId).delete();
     counts.conflicts = await db.conflicts.where('ownerUserId').equals(userId).delete();
@@ -274,6 +274,16 @@ export async function purgeUserData(
       counts.outbox = disposable.length;
     } else {
       counts.outbox = await owned.delete();
+
+      // Only quarantine rows with an exact, known owner can be removed safely.
+      // Unknown-owner records stay quarantined; assigning or deleting them for
+      // the active user would cross the same boundary this migration protects.
+      const candidates = await db.offline_quarantine.where('ownerUserId').equals(userId).toArray();
+      const disposableQuarantine = candidates
+        .filter(row => shouldPurgeOfflineQuarantineRecord(row, userId, keepUnsyncedOutbox))
+        .map(row => row.id);
+      await db.offline_quarantine.bulkDelete(disposableQuarantine);
+      counts.quarantined = disposableQuarantine.length;
     }
 
     // The pull checkpoint is per-user because scope is per-user: a different

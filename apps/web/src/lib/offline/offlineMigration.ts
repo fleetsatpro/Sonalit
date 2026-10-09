@@ -18,6 +18,22 @@ export interface OfflineQuarantineRecord {
   record: Record<string, unknown>;
 }
 
+/**
+ * Explicit device/tenant handover may remove quarantine data attributable to
+ * the departing user. A normal logout keeps the unsynced work recoverable, and
+ * rows with unknown owners are never attributed to the active user.
+ */
+export function shouldPurgeOfflineQuarantineRecord(
+  record: Pick<OfflineQuarantineRecord, 'ownerUserId'>,
+  userId: string,
+  keepUnsyncedOutbox: boolean,
+): boolean {
+  return !keepUnsyncedOutbox &&
+    typeof userId === 'string' &&
+    userId.trim().length > 0 &&
+    record.ownerUserId === userId;
+}
+
 export interface OfflineRowClassification {
   quarantine: boolean;
   reasonCode: OfflineQuarantineReason | null;
