@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./CorridorWorldScene.tsx', import.meta.url), 'utf8');
