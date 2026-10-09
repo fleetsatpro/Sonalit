@@ -204,3 +204,51 @@ test('tradecraft gate accepts attributable single-source incident inside globall
   expect(withoutEligibility.passed).toBe(false);
   expect(withoutEligibility.blocking_issues.some(issue=>issue.includes('controlled research threshold'))).toBe(true);
 });
+
+test('tradecraft gate accepts a mixed report of researched incidents and explicitly eligible degraded fallbacks',()=>{
+  const quality=assessPublicationQuality({
+    executive_assessment:'The reporting period contains several distinct security developments with materially different implications for movement and continuity. One incident has corroborated direct research, while a second remains constrained to attributable Sonalit observations because the external AI research fabric was unavailable. The second incident is included only as an evidence-constrained report, with no inference that unconfirmed duration or geographic spread is established. The overall judgement remains limited to the included incident dossiers and the coverage gaps described below.',
+    deep_research:{incidents_requested:2,incidents_researched:1,incidents_researched_limited:0,incidents_fallback:1,degraded_evidence_eligible_incidents:1},
+    incident_dossiers:[
+      {
+        event_id:'researched-port-closure',
+        research_status:'researched',
+        research_method:'ai_web_search',
+        what_happened:'Port authorities closed the eastern access gate after a reported warehouse fire damaged loading equipment. Two independent maritime and local reporting sources describe the closure, while neither confirms that the channel or adjoining road network was affected. The incident record does not establish the reopening time, the number of delayed consignments, or whether the equipment damage disrupted adjacent terminals.',
+        context:'The eastern gate connects the terminal storage area to a principal freight staging corridor used by commercial hauliers. A prolonged closure could create queueing pressure and increase the time vehicles remain in the port approaches. Available reporting is specific to this gate and should not be generalized to other port entrances without further confirmation.',
+        assessment:'The evidence supports a localized access and cargo-handling disruption at the eastern gate, not a port-wide shutdown. Operational concern should rise if authorities report a prolonged closure, if independent sources confirm spillover into the staging corridor, or if terminal notices identify a sustained reduction in handling capacity.',
+        key_facts:['Authorities closed the eastern access gate after the reported warehouse fire.','Two independent reporting domains describe the closure.'],
+        why_it_matters:['A prolonged gate closure could delay freight movement and increase queueing exposure at the terminal approach.'],
+        caveats:['The reopening time and scale of downstream delay remain unconfirmed.'],
+        research_sources:[{domain:'maritime-report.example',url:'https://maritime-report.example/port-gate'},{domain:'local-news.example',url:'https://local-news.example/eastern-terminal'}],
+        evidence_count:3,
+        source_count:2
+      },
+      {
+        event_id:'fallback-road-blockade',
+        research_status:'fallback',
+        research_method:'degraded_evidence',
+        degraded_evidence_eligible:true,
+        what_happened:'A road blockade was recorded on the northern freight approach after a dispute near the roadside market. The current ledger contains one attributable observation, which identifies the affected approach but does not establish the length of the obstruction or how long commercial vehicles were delayed. No independent report in the available packet confirms that adjoining routes were also blocked.',
+        context:'The northern approach is used by regional delivery vehicles travelling between the market district and the main freight corridor. The operational concern is whether the blockage is temporary or sustained; no conclusion about wider network disruption should be drawn from the single recorded observation.',
+        assessment:'The evidence supports treating the blockade as a localized, reported movement constraint rather than a confirmed regional escalation. Reassess the event if an independent report confirms persistence, authorities announce a closure, or later observations show that commercial traffic is being diverted onto adjacent roads.',
+        key_facts:['One attributable Sonalit observation records the blockade.','The observation identifies the northern freight approach as the affected location.'],
+        why_it_matters:['A persistent blockade could delay deliveries and increase vehicle exposure while movements wait for access to reopen.'],
+        caveats:['Duration, cause and effects on adjacent routes remain unconfirmed.'],
+        research_sources:[{domain:'sonalit-observation.example',url:'https://sonalit-observation.example/observation-42'}],
+        evidence_count:1,
+        source_count:1
+      }
+    ],
+    outlook:[
+      'Over the next 24 hours, confirmation of the eastern gate reopening and any authority notice on freight access are the primary indicators for the port incident.',
+      'Over the next 72 hours, independent confirmation of sustained blockage or diversion on the northern freight approach would change the localized movement assessment.'
+    ],
+    intelligence_gaps:['Independent corroboration and duration remain incomplete for the northern freight approach.'],
+    emerging_trends:[]
+  });
+  expect(quality.passed).toBe(true);
+  expect(quality.research_complete).toBe(true);
+  expect(quality.blocking_issues).toHaveLength(0);
+});
+

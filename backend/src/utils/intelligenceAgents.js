@@ -441,33 +441,30 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   };
   const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));
   const enrichedEventsById=new Map(enrichedEvents.map(e=>[String(e.id),e]));
-  const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,publicationEvents,events);
-  const allSelectedIncidentsDegraded=
-    expectedResearchCount>0 &&
-    publicationEvents.length===expectedResearchCount &&
-    publicationEvents.every(isDegradedEvidenceEvent);
-  // Each selected dossier must have either controlled AI research or a narrowly
-  // eligible, attributable evidence-only fallback. This also supports mixed
-  // outcomes when some pages were retrieved but providers failed for other cases.
-  const releaseResearchEligible=
-    expectedResearchCount>0 &&
-    publicationEvents.length===expectedResearchCount &&
-    publicationEvents.every(e=>{
-      const status=String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase();
-      return ['researched','researched_limited'].includes(status) || isDegradedEvidenceEvent(e);
-    });
-  const reportEvents=publicationBasis.publishable
+  const researchEligibleEvents=publicationEvents.filter(e=>{
+    const status=String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase();
+    return ['researched','researched_limited'].includes(status) || isDegradedEvidenceEvent(e);
+  });
+  const publicationBasis=publicationEvidenceBasis(evidenceContract,incidentResearch,researchEligibleEvents,events);
+  const reportEvents=publicationBasis.basis==='DIRECT_WEB_RESEARCH' && publicationBasis.publishable
     ? publicationBasis.reportEvents
-    : (allSelectedIncidentsDegraded ? publicationEvents : publicationBasis.reportEvents);
-  const reportEvidenceCount=evidenceContract ? evidenceCount : reportEvents.reduce((n,e)=>n+Number(e.observation_count||0),0);
+    : researchEligibleEvents;
+  const reportEvidenceCount=reportEvents.reduce((n,e)=>n+Number(e.observation_count||0),0);
   const reportSourceIds=new Set();
   for(const e of reportEvents)for(const obs of Array.isArray(e.evidence)?e.evidence:[])if(obs?.source_id)reportSourceIds.add(String(obs.source_id));
-  const reportSourceCount=evidenceContract ? sourceCount : Math.max(publicationBasis.researchSourceCount,reportSourceIds.size);
-  const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable || allSelectedIncidentsDegraded;
-  const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents.map(e=>enrichedEventsById.get(String(e.id))||e),evidenceCount:reportEvidenceCount,sourceCount:reportSourceCount,evidenceContract:publicationEvidenceContract,publicationTimezone});
-  const researchControlledComplete=expectedResearchCount===0 || publicationEvents.every(e=>{
+  const reportObservationEvidenceContract=reportEvidenceCount>=3&&reportSourceIds.size>=2;
+  const researchBackedEvidenceContract=publicationBasis.basis==='DIRECT_WEB_RESEARCH'&&publicationBasis.publishable;
+  const publicationEvidenceContract=events.length===0 || reportObservationEvidenceContract || researchBackedEvidenceContract;
+  const deterministic=buildEvidencePublication({country,type,start,end,events:reportEvents.map(e=>enrichedEventsById.get(String(e.id))||e),evidenceCount:reportEvidenceCount,sourceCount:Math.max(publicationBasis.basis==='DIRECT_WEB_RESEARCH'?publicationBasis.researchSourceCount:0,reportSourceIds.size),evidenceContract:publicationEvidenceContract,publicationTimezone});
+  const researchControlledComplete=reportEvents.length===0
+    ? expectedResearchCount===0
+    : reportEvents.every(e=>{
+      const status=String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase();
+      return ['researched','researched_limited'].includes(status);
+    });
+  const releaseResearchEligible=reportEvents.length>0 && reportEvents.every(e=>{
     const status=String(effectiveResearchByEvent[String(e.id)]?.agent?.status||'').toLowerCase();
-    return ['researched','researched_limited'].includes(status);
+    return ['researched','researched_limited'].includes(status) || isDegradedEvidenceEvent(e);
   });
   const degradedEvidenceRelease=
     releaseResearchEligible &&
@@ -526,6 +523,18 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
 
   if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=publicationAiAvailable?'not_run':'provider_unavailable';
   const boardPublishable=board?.publishable===true;
+  const excludedPeriodEventCount=Math.max(0,events.length-reportEvents.length);
+  if(excludedPeriodEventCount>0){
+    const selectionGap='The full reporting period contains '+events.length+' security-relevant event record(s); this edition details '+reportEvents.length+' research-eligible priority incident(s). '+excludedPeriodEventCount+' additional record(s) were not expanded because they fell outside the bounded research set or did not meet incident-level evidence and research eligibility. Their omission is not evidence that no incident occurred.';
+    finalBody.intelligence_gaps=uniqueStrings([...(Array.isArray(finalBody.intelligence_gaps)?finalBody.intelligence_gaps:[]),selectionGap],12);
+    finalBody.collection_coverage={
+      ...(finalBody.collection_coverage||{}),
+      full_period_event_count:events.length,
+      detailed_event_count:reportEvents.length,
+      excluded_event_count:excludedPeriodEventCount,
+      priority_research_limit:researchLimit
+    };
+  }
   const finalQuality=auditPublicationContent(
     Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:
     (Array.isArray(deterministic.incident_dossiers)?deterministic.incident_dossiers:[])
@@ -539,7 +548,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
     ...finalBody,title,subtitle,executive_assessment:executive,key_events:reportEvents,
-    collection_basis:{version:PUBLICATION_EVIDENCE_VERSION,original_evidence_contract_met:evidenceContract,publication_evidence_contract_met:publicationEvidenceContract,basis:publicationBasis.basis,research_backed_incidents:publicationBasis.researchBackedIncidents,research_source_count:publicationBasis.researchSourceCount,research_source_domains:publicationBasis.researchSourceDomains,excluded_event_count:publicationBasis.excludedEventCount},
+    collection_basis:{version:PUBLICATION_EVIDENCE_VERSION,original_evidence_contract_met:evidenceContract,publication_evidence_contract_met:publicationEvidenceContract,basis:publicationBasis.basis,research_backed_incidents:publicationBasis.researchBackedIncidents,research_source_count:publicationBasis.researchSourceCount,research_source_domains:publicationBasis.researchSourceDomains,full_period_event_count:events.length,detailed_event_count:reportEvents.length,excluded_event_count:excludedPeriodEventCount},
     editorial_board:{agents:AGENT_ROLES.map(a=>a.id),board,visual_plan:visual,graphics_plan:graphics,provider},
     generator:{
       name:'SONALIT EVIDENCE-FIRST PUBLICATION FABRIC',
@@ -557,7 +566,13 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     deep_research:{
       ...finalBody.deep_research,
       agent_summary:incidentResearch.summary,
-      degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible||priorResearch.degraded_evidence_eligible_incidents||0),
+      degraded_evidence_eligible_incidents:(Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:[]).filter(d=>
+        String(d?.research_status||'').toLowerCase()==='fallback' &&
+        d?.degraded_evidence_eligible===true &&
+        ['degraded_evidence','live_web_packet'].includes(String(d?.research_method||'').toLowerCase()) &&
+        Number(d?.evidence_count||0)>=1 &&
+        Number(d?.source_count||0)>=1
+      ).length,
       research_version:DEEP_RESEARCH_VERSION,
       last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),
       retry_cooldown_minutes:researchCooldownMinutes,
@@ -611,7 +626,10 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
 }
 function publicationEvidenceBasis(originalEvidenceContract, research, publicationEvents, allEvents){
   if(originalEvidenceContract){
-    const reportEvents=Array.isArray(allEvents)&&allEvents.length?allEvents:(Array.isArray(publicationEvents)?publicationEvents:[]);
+    // Preserve the research budget boundary: only incident dossiers in the
+    // bounded, evidence-qualified publication set are detailed in the report.
+    // Full-period counts and omissions are disclosed separately in coverage metadata.
+    const reportEvents=Array.isArray(publicationEvents)?publicationEvents:[];
     return {publishable:true,basis:'ORIGINAL_EVIDENCE',reportEvents,researchBackedIncidents:0,researchSourceCount:0,researchSourceDomains:0,excludedEventCount:Math.max(0,(Array.isArray(allEvents)?allEvents.length:0)-reportEvents.length)};
   }
   const backed=[];
@@ -639,7 +657,7 @@ function publicationEvidenceBasis(originalEvidenceContract, research, publicatio
     researchBackedIncidents:backed.length,
     researchSourceCount:uniqueUrls.size,
     researchSourceDomains:uniqueDomains.size,
-    excludedEventCount:Math.max(0,(Array.isArray(publicationEvents)?publicationEvents.length:0)-backed.length)
+    excludedEventCount:Math.max(0,(Array.isArray(allEvents)?allEvents.length:0)-backed.length)
   };
 }
 

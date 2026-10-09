@@ -1,4 +1,4 @@
-FROM node:22-slim
+FROM public.ecr.aws/docker/library/node:22-slim
 
 # PDF/SVG rendering uses sharp/libvips; provide a real Fontconfig runtime so
 # map labels and embedded text render consistently in production containers.

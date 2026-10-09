@@ -350,7 +350,13 @@ function assessPublicationQuality(body) {
   const limited = Number(deep.incidents_researched_limited || 0);
   const fallbacks = Number(deep.incidents_fallback || 0);
   const degradedEvidenceEligible = Number(deep.degraded_evidence_eligible_incidents || 0);
-  const researchComplete = requested === 0 || (researched >= requested && fallbacks === 0) || (requested > 0 && degradedEvidenceEligible >= requested);
+  // A bounded dossier set may legitimately mix fully/limited-researched incidents
+  // with individually attributable degraded fallbacks. Every fallback must carry
+  // the explicit eligibility marker; unqualified fallbacks still block release.
+  const researchComplete = requested === 0 || (
+    researched + degradedEvidenceEligible >= requested &&
+    fallbacks === degradedEvidenceEligible
+  );
 
   if (requested > 0 && !researchComplete) {
     blockers.push(`Deep research incomplete: ${researched}/${requested} priority incidents fully researched; ${limited} limited and ${fallbacks} fallback.`);
