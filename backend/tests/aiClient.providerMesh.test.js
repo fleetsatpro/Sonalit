@@ -646,4 +646,22 @@ describe('intelligence provider mesh', () => {
       expect.objectContaining({model:'openrouter/free'})
     ]);
   });
+  test('half-open rescue does not discard a stale cooling snapshot after a concurrent circuit clear',()=>{
+    const fs=require('fs');
+    const path=require('path');
+    const source=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
+    const start=source.indexOf('function halfOpenRouterBlockReason');
+    const end=source.indexOf('\nfunction logHalfOpenProbeSkipped',start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const gate=source.slice(start,end);
+    expect(gate).toContain('coolingAtStart.has(provider.name)');
+    expect(gate).toContain('attempted.has(provider.name)');
+    // The circuit may be cleared by another concurrent request after this
+    // request snapshots candidates; current cooling state must not suppress
+    // this request's sole, policy-constrained attempt.
+    expect(gate).not.toContain('providerCooling(provider)');
+    expect(source).toContain('AI provider half-open recovery probe skipped: reason=');
+  });
+
 });

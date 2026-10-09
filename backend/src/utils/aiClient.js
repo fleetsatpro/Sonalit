@@ -376,6 +376,7 @@ const OPENROUTER_HALF_OPEN_MIN_INTERVAL_MS = Math.max(
 );
 const halfOpenProbeNotBefore = Object.create(null);
 let nextOpenRouterCircuitDiagnosticAt = 0;
+let nextHalfOpenDiagnosticAt = 0;
 const fabricStates = Object.create(null);
 
 
@@ -1212,23 +1213,42 @@ function logOpenRouterCircuitPosture(providers,params){
   );
 }
 
-function halfOpenRouterEligible(provider,params,coolingAtStart,attempted){
-  if(!provider || provider.name!=='openrouter-free-router' || provider.free!==true)return false;
+function halfOpenRouterBlockReason(provider,params,coolingAtStart,attempted){
+  if(!provider || provider.name!=='openrouter-free-router' || provider.free!==true)return 'rescue-lane-not-configured';
   const hints=new Set(Array.isArray(params.providerHints)?params.providerHints.map(String):[]);
   const classification=String(
     params.dataClassification || process.env.INTEL_DEFAULT_DATA_CLASSIFICATION || 'internal'
   ).toLowerCase();
-  if(params.preferFreeProviders!==true || !hints.has(provider.name) || classification!=='public' || params.allowFreeProviders===false)return false;
-  if(!coolingAtStart.has(provider.name) || attempted.has(provider.name) || !providerCooling(provider))return false;
-  // A confirmed unavailable model is not circuit-recovered by a half-open call.
-  if(Date.now()<Number(modelDisabledUntil[provider.name]||0))return false;
-  if(Date.now()<Number(halfOpenProbeNotBefore[provider.name]||0))return false;
-  return true;
+  if(params.preferFreeProviders!==true || !hints.has(provider.name))return 'rescue-lane-not-explicitly-hinted';
+  if(classification!=='public' || params.allowFreeProviders===false)return 'public-free-lane-policy-blocked';
+  if(!coolingAtStart.has(provider.name))return 'lane-not-cooling-at-request-start';
+  if(attempted.has(provider.name))return 'lane-already-attempted-this-request';
+  // A confirmed unavailable model stays quarantined; stale circuit state alone
+  // is recoverable with a half-open probe.
+  if(Date.now()<Number(modelDisabledUntil[provider.name]||0))return 'model-unavailable-quarantine';
+  if(Date.now()<Number(halfOpenProbeNotBefore[provider.name]||0))return 'probe-interval-not-elapsed';
+  // Do not re-check providerCooling() here: another concurrent request can
+  // clear this circuit after our initial candidate snapshot/filter. This request
+  // may still need a call, and it has not attempted this lane yet. The explicit
+  // request policy and per-lane probe throttle above still constrain recovery.
+  return null;
+}
+
+function logHalfOpenProbeSkipped(reason){
+  const now=Date.now();
+  if(now<nextHalfOpenDiagnosticAt)return;
+  nextHalfOpenDiagnosticAt=now+60_000;
+  logger.warn('AI provider half-open recovery probe skipped: reason='+reason);
 }
 
 async function tryHalfOpenOpenRouterRouter(providers,params,coolingAtStart,attempted){
   const provider=providers.find(p=>p.name==='openrouter-free-router');
-  if(!halfOpenRouterEligible(provider,params,coolingAtStart,attempted))return null;
+  const blockReason=halfOpenRouterBlockReason(provider,params,coolingAtStart,attempted);
+  if(blockReason){
+    const hints=new Set(Array.isArray(params.providerHints)?params.providerHints.map(String):[]);
+    if(params.preferFreeProviders===true && hints.has('openrouter-free-router'))logHalfOpenProbeSkipped(blockReason);
+    return null;
+  }
   const startedAt=Date.now();
   const oldCooldownMs=Math.max(0,providerResumeAt(provider)-startedAt);
   halfOpenProbeNotBefore[provider.name]=startedAt+OPENROUTER_HALF_OPEN_MIN_INTERVAL_MS;
