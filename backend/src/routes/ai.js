@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
-const { buildCorridorPolygon, midpointOnPath, normalizePath: normalizeCorridorPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
+const { buildCorridorPolygon, midpointOnPath, normalizePath: normalizeCorridorPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 const { validateToolInput } = require('../utils/aiToolInputValidation');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
@@ -633,16 +633,25 @@ function toLatLngPath(osrmCoordinates) {
   if (!Array.isArray(osrmCoordinates) || osrmCoordinates.length < 2) {
     throw new RangeError('OSRM returned no usable route geometry.');
   }
-  // OSRM geometry is [longitude, latitude]. Convert once, then validate rather
-  // than dropping malformed points and silently changing the actual route.
-  const path = osrmCoordinates.map((point, index) => {
+  // Bound untrusted upstream payload size before allocating a large converted
+  // array. Dense routes are simplified later with an explicit metre tolerance;
+  // don't invoke normalizePath here because it intentionally caps final
+  // operational geometry at 800 vertices.
+  if (osrmCoordinates.length > 20000) {
+    throw new RangeError('OSRM route geometry exceeds the safe input vertex limit.');
+  }
+  return osrmCoordinates.map((point, index) => {
     if (!Array.isArray(point) || point.length < 2 ||
         !Number.isFinite(Number(point[0])) || !Number.isFinite(Number(point[1]))) {
       throw new RangeError('OSRM returned an invalid coordinate at route index ' + index + '.');
     }
-    return [Number(point[1]), Number(point[0])];
+    const lng = Number(point[0]);
+    const lat = Number(point[1]);
+    if (Math.abs(lat) > 85 || Math.abs(lng) > 180) {
+      throw new RangeError('OSRM returned an out-of-bounds coordinate at route index ' + index + '.');
+    }
+    return [lat, lng];
   });
-  return normalizeCorridorPath(path);
 }
 
 // Haversine distance in metres between two lat/lng points
@@ -907,6 +916,11 @@ async function toolCreateGeofence(input, userId, orgId) {
         routeProvider = 'straight-line-explicit-fallback';
       }
 
+      // Simplify only to a documented geometric error bound, never to an
+      // arbitrary point count. Preserve both endpoints and refuse a route that
+      // cannot be represented safely within the algorithm's complexity budget.
+      const pathSimplification = simplifyPath(pathLatLng, 10);
+      pathLatLng = pathSimplification.path;
       const mid = midpointOnPath(pathLatLng);
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
@@ -927,6 +941,8 @@ async function toolCreateGeofence(input, userId, orgId) {
         route_provider: routeProvider,
         route_distance_m: distM,
         path_points: pathLatLng.length,
+        source_path_points: pathSimplification.originalPointCount,
+        path_simplification_tolerance_m: pathSimplification.toleranceM,
         geocoding: {
           start: { source: gStart.source || 'unknown', precision: gStart.precision || 'unknown', osm_id: gStart.osm_id || null },
           end: { source: gEnd.source || 'unknown', precision: gEnd.precision || 'unknown', osm_id: gEnd.osm_id || null },
@@ -1004,6 +1020,8 @@ async function toolCreateGeofence(input, userId, orgId) {
         location: locationLabel,
         is_corridor: true,
         path_points: pathLatLng.length,
+        source_path_points: pathSimplification.originalPointCount,
+        path_simplification_tolerance_m: pathSimplification.toleranceM,
         road_distance_km: (distM / 1000).toFixed(2),
         buffer_m,
         precision: effectivePrecision,
@@ -1014,7 +1032,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         geometry_verification: { start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM), persisted_path_points: persistedPath.length },
         fallback_used: routeProvider !== 'OSRM',
         message: routeProvider === 'OSRM'
-          ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} centreline vertices, ${buffer_m}m deviation threshold.`
+          ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} verified centreline vertices, ${buffer_m}m deviation threshold${pathSimplification.toleranceM ? " (centreline simplified within 10m tolerance)" : ""}.`
           : `LOW-PRECISION explicit fallback "${name}" created from a straight line. Review before operational use.`,
       };
     }
