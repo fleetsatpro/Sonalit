@@ -295,4 +295,24 @@ test('bounded publication coverage explicitly discloses excluded period incident
   const quality=fs.readFileSync(path.join(__dirname,'../src/utils/publicationQuality.js'),'utf8');
   expect(quality).toContain('researched + degradedEvidenceEligible >= requested');
   expect(quality).toContain('fallbacks === degradedEvidenceEligible');
+
+  test('incident research batching bounds provider calls without losing or reordering dossiers',()=>{
+    const {chunkIncidentResearchBatches}=require('../src/utils/intelligenceIncidentResearch');
+    const events=Array.from({length:9},(_,i)=>({id:String(i+1),headline:'Incident '+String(i+1)}));
+    const batches=chunkIncidentResearchBatches(events);
+    expect(batches.map(batch=>batch.map(event=>event.id))).toEqual([
+      ['1','2','3','4'],
+      ['5','6','7','8'],
+      ['9']
+    ]);
+    expect(batches.flat()).toEqual(events);
+    expect(chunkIncidentResearchBatches(events,2).map(batch=>batch.length)).toEqual([2,2,2,2,1]);
+    expect(chunkIncidentResearchBatches(events,99).map(batch=>batch.length)).toEqual([4,4,1]);
+    expect(chunkIncidentResearchBatches([],4)).toEqual([]);
+    const research=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+    expect(research).toContain('const batches=chunkIncidentResearchBatches(events,configuredBatchSize);');
+    expect(research).toContain('INTEL_PUBLICATION_RESEARCH_BATCH_SIZE');
+    expect(research).toContain('Math.min(2,Number(process.env.INTEL_PUBLICATION_RESEARCH_CONCURRENCY)||2)');
+  });
+
 });
