@@ -66,7 +66,7 @@ interface PendingPhotoDao {
     @Query("SELECT * FROM pending_photos ORDER BY createdAt ASC")
     suspend fun getAll(): List<PendingPhotoEntity>
 
-    @Query("SELECT * FROM pending_photos WHERE attempts < 5 ORDER BY createdAt ASC LIMIT 10")
+    @Query("SELECT * FROM pending_photos WHERE attempts < ${MAX_PENDING_PHOTO_ATTEMPTS} ORDER BY createdAt ASC LIMIT 10")
     suspend fun getPending(): List<PendingPhotoEntity>
 
     @Query("UPDATE pending_photos SET attempts = attempts + 1, lastError = :err WHERE eventUuid = :id")
@@ -75,10 +75,10 @@ interface PendingPhotoDao {
     @Query("DELETE FROM pending_photos WHERE eventUuid = :id")
     suspend fun delete(id: String)
 
-    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts < 5")
+    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts < ${MAX_PENDING_PHOTO_ATTEMPTS}")
     suspend fun countPending(): Int
 
-    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts >= 5")
+    @Query("SELECT COUNT(*) FROM pending_photos WHERE attempts >= ${MAX_PENDING_PHOTO_ATTEMPTS}")
     suspend fun countExhausted(): Int
 
     /**
@@ -86,7 +86,7 @@ interface PendingPhotoDao {
      * The evidence rows and original event UUIDs remain intact so the server's
      * existing idempotency contract is preserved.
      */
-    @Query("UPDATE pending_photos SET attempts = 0, lastError = NULL WHERE attempts >= 5")
+    @Query("UPDATE pending_photos SET attempts = 0, lastError = NULL WHERE attempts >= ${MAX_PENDING_PHOTO_ATTEMPTS}")
     suspend fun resetExhaustedAttempts(): Int
 
     @Query("SELECT COUNT(*) FROM pending_photos")
