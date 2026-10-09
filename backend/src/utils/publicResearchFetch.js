@@ -230,6 +230,7 @@ function createPublicResearchFetcher({ resolveAddresses = resolvePublicAddresses
         ok: status >= 200 && status < 300,
         status,
         headers: { get: name => headerValue(headers, name) },
+        arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
         text: async () => body.toString('utf8'),
         url: parsed.url.toString(),
       };
