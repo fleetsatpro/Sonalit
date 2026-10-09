@@ -23,7 +23,26 @@ const hlsProxyHosts = new Map();
 
 function isHlsMedia(contentType, sourceUrl) {
   const type = String(contentType || '').toLowerCase();
-  return type === 'application/vnd.apple.mpegurl' || type === 'application/x-mpegurl' || type === 'audio/mpegurl' || /\.m3u8(?:[?#].*)?$/i.test(String(sourceUrl || ''));
+  return type === 'application/vnd.apple.mpegurl' ||
+    type === 'application/x-mpegurl' ||
+    type === 'audio/mpegurl' ||
+    /\.m3u8(?:[?#].*)?$/i.test(String(sourceUrl || ''));
+}
+
+async function responseLooksLikeHlsPlaylist(response) {
+  if (!response || typeof response.clone !== 'function') return false;
+  try {
+    const clone = response.clone();
+    const reader = clone.body?.getReader?.();
+    if (!reader) return false;
+    const { value } = await reader.read();
+    try { void reader.cancel().catch(() => {}); } catch (_) {}
+    if (!value) return false;
+    const prefix = Buffer.from(value).toString('utf8').replace(/^\uFEFF/, '').trimStart();
+    return prefix.startsWith('#EXTM3U');
+  } catch (_) {
+    return false;
+  }
 }
 
 function rewriteHlsPlaylist(playlist, baseUrl, proxyUrlForTarget, hosts) {
@@ -356,7 +375,14 @@ async function getMedia(camera, options = {}) {
     allowedHosts:[...knownHosts]
   });
 
-  if (!isHlsMedia(fetched.contentType, fetched.sourceUrl)) return fetched;
+  let hlsPlaylist = isHlsMedia(fetched.contentType, fetched.sourceUrl);
+  // Some public operators serve HLS manifests as generic octet-stream/text
+  // and omit ".m3u8" from the URL. Sniff only the first response chunk so a
+  // valid live manifest is not misclassified as progressive video.
+  if (!hlsPlaylist && /^(?:application\/octet-stream|text\/plain)$/i.test(fetched.contentType)) {
+    hlsPlaylist = await responseLooksLikeHlsPlaylist(fetched.response);
+  }
+  if (!hlsPlaylist) return fetched;
 
   const playlist = await fetched.response.text();
   if (Buffer.byteLength(playlist, 'utf8') > 2 * 1024 * 1024) {

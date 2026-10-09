@@ -239,7 +239,13 @@ async function mapOpenCctvRecord(row, index = 0) {
       previewUrl:null,
       sourcePageUrl:'https://opencctv.org/cameras/' + String(row.countryCode || row.country || '').toLowerCase(),
       sourceMediaUrl:null,
-      sourceMediaType:kind,
+      // Preserve the provider's actual stream protocol. OpenCCTV uses a
+      // generic "video" media kind for both MP4 and HLS; the player needs the
+      // protocol hint to select hls.js instead of treating an HLS manifest as
+      // a progressive video file.
+      sourceMediaType:declared === 'm3u8' || declared === 'hls'
+        ? 'application/vnd.apple.mpegurl'
+        : kind,
       sourceMediaPlayable:continuousLive,
       direct:continuousLive,
       available:true,
