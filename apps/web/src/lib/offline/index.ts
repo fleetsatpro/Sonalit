@@ -264,6 +264,8 @@ export interface OfflineStatus {
   deviceId: string;
   queue: Awaited<ReturnType<typeof counts>> | null;
   gpsBuffered: number;
+  /** Number of preserved legacy rows withheld from replay because ownership is ambiguous; null if unknown. */
+  quarantinedLocalRecords: number | null;
   blocked: { code: string; message: string } | null;
   lastSyncAt: number | null;
 }
