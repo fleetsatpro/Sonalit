@@ -466,11 +466,10 @@ function getOpenAIKeyPool() {
   return pool;
 }
 function hasOpenAI() { return getOpenAIKeyPool().length>0; }
-function hasReadyOpenAIKey(){
-  const keys=getOpenAIKeyPool();
-  if(!keys.length)return false;
-  return keys.some((_,index)=>Date.now()>=Number(openAIKeyStates[index]?.downUntil||0));
+function readyOpenAIKeyPoolSize(){
+  return getOpenAIKeyPool().filter((_,index)=>Date.now()>=Number(openAIKeyStates[index]?.downUntil||0)).length;
 }
+function hasReadyOpenAIKey(){return readyOpenAIKeyPoolSize()>0;}
 function getGeminiKeyPool() {
   const pool=[];
   for(let i=1;i<=100;i+=1){
@@ -483,11 +482,10 @@ function getGeminiKeyPool() {
 }
 function hasMistral() { return keyOk(process.env.MISTRAL_API_KEY); }
 function hasGoogleGemini() { return getGeminiKeyPool().length>0; }
-function hasReadyGeminiKey(){
-  const keys=getGeminiKeyPool();
-  if(!keys.length)return false;
-  return keys.some((_,index)=>Date.now()>=Number(geminiKeyStates[index]?.downUntil||0));
+function readyGeminiKeyPoolSize(){
+  return getGeminiKeyPool().filter((_,index)=>Date.now()>=Number(geminiKeyStates[index]?.downUntil||0)).length;
 }
+function hasReadyGeminiKey(){return readyGeminiKeyPoolSize()>0;}
 function hasOpenWeightProvider(def) { return keyOk(process.env[def.key]); }
 
 function freeLanesEnabled() {
@@ -537,6 +535,8 @@ function providerCapabilities() {
       model:resolvedOpenWeightModel(p),
       configured:hasOpenWeightProvider(p),
       active_for_public:hasOpenWeightProvider(p) && freeProviderAllowed(p,{dataClassification:'public'}),
+      cooling_down:providerCooling(p),
+      retry_in_ms:Math.max(0,providerResumeAt(p)-Date.now()),
       free:Boolean(p.free),
       multimodal:Boolean(p.multimodal),
       quality_tier:p.qualityTier,
@@ -546,7 +546,10 @@ function providerCapabilities() {
       model:GOOGLE_GEMINI_MODEL,
       configured:hasGoogleGemini(),
       key_pool_size:getGeminiKeyPool().length,
+      ready_key_pool_size:readyGeminiKeyPoolSize(),
       active_for_public:hasGoogleGemini() && freeProviderAllowed(GEMINI_PROVIDER,{dataClassification:'public'}),
+      cooling_down:providerCooling(GEMINI_PROVIDER),
+      retry_in_ms:Math.max(0,providerResumeAt(GEMINI_PROVIDER)-Date.now()),
       free:true,
       multimodal:true,
       reasoning:true,
@@ -558,6 +561,9 @@ function providerCapabilities() {
     gpt_oss_120b: hasGroqFallback(),
     openai_direct: hasOpenAI(),
     openai_key_pool_size: getOpenAIKeyPool().length,
+    openai_ready_key_pool_size:readyOpenAIKeyPoolSize(),
+    openai_cooling_down:providerCooling({name:'openai-direct',providerGroup:'openai'}),
+    openai_retry_in_ms:Math.max(0,providerResumeAt({name:'openai-direct',providerGroup:'openai'})-Date.now()),
     mistral_rescue: hasMistral(),
     anthropic_last_resort: hasAnthropic(),
     order: [
@@ -839,6 +845,16 @@ function rotateModel(def){
   modelDisabledUntil[def.name]=Date.now()+MODEL_UNAVAILABLE_COOLDOWN_MS;
   return false;
 }
+function providerKeyPoolResumeAt(label){
+  let poolStates=[];
+  if(label==='openai-direct')poolStates=getOpenAIKeyPool().map((_,index)=>openAIKeyStates[index]);
+  else if(label===GEMINI_PROVIDER.name)poolStates=getGeminiKeyPool().map((_,index)=>geminiKeyStates[index]);
+  if(!poolStates.length)return 0;
+  const now=Date.now();
+  if(poolStates.some(state=>now>=Number(state?.downUntil||0)))return 0;
+  const deadlines=poolStates.map(state=>Number(state?.downUntil||0)).filter(until=>until>now);
+  return deadlines.length?Math.min(...deadlines):0;
+}
 function providerCooling(providerOrLabel){
   const label=typeof providerOrLabel==='string'?providerOrLabel:providerOrLabel?.name;
   const provider=typeof providerOrLabel==='string'?{name:label}:providerOrLabel;
@@ -847,7 +863,12 @@ function providerCooling(providerOrLabel){
   const fabric=fabricStates[group];
   const modelBlocked=Number(modelDisabledUntil[label]||0);
   const isolateGemini=label===GEMINI_PROVIDER.name;
+  const keyPoolCooling=
+    label==='openai-direct'?!hasReadyOpenAIKey():
+    label===GEMINI_PROVIDER.name?!hasReadyGeminiKey():
+    false;
   return Boolean(
+    keyPoolCooling ||
     (!isolateGemini && state && Date.now()<Number(state.downUntil||0)) ||
     (!isolateGemini && fabric && Date.now()<Number(fabric.downUntil||0)) ||
     modelBlocked>0 && Date.now()<modelBlocked
@@ -858,7 +879,8 @@ function providerResumeAt(provider){
   const providerUntil=isolateGemini?0:Number(states[provider.name]?.downUntil||0);
   const fabricUntil=isolateGemini?0:Number(fabricStates[providerGroup(provider)]?.downUntil||0);
   const modelUntil=Number(modelDisabledUntil[provider.name]||0);
-  return Math.max(providerUntil,fabricUntil,modelUntil);
+  const keyPoolUntil=providerKeyPoolResumeAt(provider.name);
+  return Math.max(providerUntil,fabricUntil,modelUntil,keyPoolUntil);
 }
 async function recoverCoolingProviders(providers){
   const now=Date.now();
@@ -1186,8 +1208,15 @@ async function createMessage(params={}) {
     while(true){
       if(providerCooling(provider))break;
       try {
+        const invokeAttempt=()=>attempt(provider.name,provider.fn,provider);
+        // Direct Gemini/OpenAI pools may serve many publication agents at once.
+        // Serialize those pools so the first 401/429 updates per-key circuits
+        // before queued work can fan out across every remaining configured key.
+        const result=(provider.name==='openai-direct'||provider.name===GEMINI_PROVIDER.name)
+          ? await withConcurrency('credential-pool:'+provider.name,invokeAttempt)
+          : await invokeAttempt();
         return {
-          ...await attempt(provider.name,provider.fn,provider),
+          ...result,
           _provider:provider.name,
           _provider_kind:provider.kind,
           _quality_tier:provider.qualityTier,
@@ -1222,6 +1251,7 @@ module.exports={
   hasAnyProvider,
   hasReadyProvider,
   hydrateFabricState,
+  startFabricHydration,
   hasOpenWeightProvider,
   providerCapabilities,
   resolvedOpenWeightModel,
