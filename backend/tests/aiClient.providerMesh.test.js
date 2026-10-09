@@ -709,4 +709,80 @@ describe('intelligence provider mesh', () => {
     expect(diagnostic).toContain('rate_limit_reset='+String(resetAt));
   });
 
+
+  test('a fresh half-open Retry-After replaces a stale persisted OpenRouter circuit deadline',async()=>{
+    process.env.OPENROUTER_API_KEY='openrouter-test-key-123';
+    process.env.OPENROUTER_FREE_ROUTER_MODEL='openrouter/free';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT='true';
+    process.env.REDIS_URL='redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS='true';
+
+    const staleUntil=Date.now()+6*60*60*1000;
+    const prefix='sonalit:intelligence:ai:circuit:v3:';
+    const redis={
+      mget:jest.fn(async keys=>keys.map(key=>{
+        const group=decodeURIComponent(String(key).replace(prefix,''));
+        return group.startsWith('openrouter-')?String(staleUntil):'0';
+      })),
+      scan:jest.fn(async()=>['0',[]]),
+      get:jest.fn(async()=>null),
+      set:jest.fn(async()=> 'OK'),
+      del:jest.fn(async()=>1),
+    };
+    const calls=[];
+    const mockOpenAI=class MockOpenAI{
+      constructor(options={}){
+        this.apiKey=options.apiKey;
+        this.baseURL=options.baseURL||'openai';
+        this.chat={completions:{create:jest.fn(async request=>{
+          calls.push({apiKey:this.apiKey,baseURL:this.baseURL,model:request.model});
+          const error=Object.assign(new Error('OpenRouter free-router rate limit'),{
+            status:429,
+            headers:{
+              'retry-after':'360',
+              'x-ratelimit-remaining':'0',
+              'x-ratelimit-limit':'50',
+              'x-ratelimit-reset-requests':String(Date.now()+6*60*1000)
+            }
+          });
+          throw error;
+        })}};
+      }
+    };
+
+    let ai;
+    jest.isolateModules(()=>{
+      jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
+      jest.doMock('openai',()=>mockOpenAI);
+      ai=require('../src/utils/aiClient');
+    });
+
+    let caught;
+    try{
+      await ai.createMessage({
+        dataClassification:'public',
+        allowFreeProviders:true,
+        preferFreeProviders:true,
+        providerHints:['openrouter-free-router'],
+        system:'Return structured JSON.',
+        messages:[{role:'user',content:'Use only supplied public evidence and return JSON.'}],
+        max_tokens:100,
+      });
+    }catch(error){
+      caught=error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught.status).toBe(429);
+    expect(calls).toEqual([expect.objectContaining({model:'openrouter/free'})]);
+
+    const laneKey=prefix+encodeURIComponent('openrouter-free:openrouter-free-router');
+    const writes=redis.set.mock.calls.filter(call=>call[0]===laneKey);
+    expect(writes.length).toBeGreaterThan(0);
+    const refreshedUntil=Number(writes[writes.length-1][1]);
+    expect(refreshedUntil).toBeLessThan(staleUntil);
+    expect(refreshedUntil-Date.now()).toBeGreaterThan(5*60*1000);
+    expect(refreshedUntil-Date.now()).toBeLessThanOrEqual(6*60*1000);
+  });
+
 });
