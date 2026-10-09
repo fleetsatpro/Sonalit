@@ -37,6 +37,7 @@ describe('voice-note storage readiness and commit integrity', () => {
       uploaded_by: USER_ID,
       storage_key: STORAGE_KEY,
       file_size_bytes: 512,
+      duration_sec: 10,
       mime_type: 'audio/webm',
     };
     mockDb = jest.fn(async (sql, params = []) => {
@@ -126,6 +127,28 @@ describe('voice-note storage readiness and commit integrity', () => {
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ error: 'storage_not_configured' });
     expect(mockGetSignedUrl).not.toHaveBeenCalled();
+  });
+
+  test('refuses to re-sign an existing note ID owned by another uploader', async () => {
+    dbMode = 'duplicate-match';
+    existingRow = { ...existingRow, uploaded_by: '99999999-9999-4999-8999-999999999999' };
+
+    const response = await uploadRequest();
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ error: 'voice_note_id_conflict' });
+    expect(mockGetSignedUrl).not.toHaveBeenCalled();
+  });
+
+  test('allows the original uploader to request a stable-ID retry only for matching metadata', async () => {
+    dbMode = 'duplicate-match';
+
+    const response = await uploadRequest();
+
+    expect(response.status).toBe(200);
+    expect(response.body.note_id).toBe(NOTE_ID);
+    expect(response.body.storage_key).toBe(STORAGE_KEY);
+    expect(mockGetSignedUrl).toHaveBeenCalledTimes(1);
   });
 
   test('uses Sonalit R2 and keeps the upload key stable across client retries', async () => {
