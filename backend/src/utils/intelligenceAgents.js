@@ -523,6 +523,18 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
 
   if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=publicationAiAvailable?'not_run':'provider_unavailable';
   const boardPublishable=board?.publishable===true;
+  const excludedPeriodEventCount=Math.max(0,events.length-reportEvents.length);
+  if(excludedPeriodEventCount>0){
+    const selectionGap='The full reporting period contains '+events.length+' security-relevant event record(s); this edition details '+reportEvents.length+' research-eligible priority incident(s). '+excludedPeriodEventCount+' additional record(s) were not expanded because they fell outside the bounded research set or did not meet incident-level evidence and research eligibility. Their omission is not evidence that no incident occurred.';
+    finalBody.intelligence_gaps=uniqueStrings([...(Array.isArray(finalBody.intelligence_gaps)?finalBody.intelligence_gaps:[]),selectionGap],12);
+    finalBody.collection_coverage={
+      ...(finalBody.collection_coverage||{}),
+      full_period_event_count:events.length,
+      detailed_event_count:reportEvents.length,
+      excluded_event_count:excludedPeriodEventCount,
+      priority_research_limit:researchLimit
+    };
+  }
   const finalQuality=auditPublicationContent(
     Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:
     (Array.isArray(deterministic.incident_dossiers)?deterministic.incident_dossiers:[])
@@ -536,7 +548,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
     ...finalBody,title,subtitle,executive_assessment:executive,key_events:reportEvents,
-    collection_basis:{version:PUBLICATION_EVIDENCE_VERSION,original_evidence_contract_met:evidenceContract,publication_evidence_contract_met:publicationEvidenceContract,basis:publicationBasis.basis,research_backed_incidents:publicationBasis.researchBackedIncidents,research_source_count:publicationBasis.researchSourceCount,research_source_domains:publicationBasis.researchSourceDomains,excluded_event_count:publicationBasis.excludedEventCount},
+    collection_basis:{version:PUBLICATION_EVIDENCE_VERSION,original_evidence_contract_met:evidenceContract,publication_evidence_contract_met:publicationEvidenceContract,basis:publicationBasis.basis,research_backed_incidents:publicationBasis.researchBackedIncidents,research_source_count:publicationBasis.researchSourceCount,research_source_domains:publicationBasis.researchSourceDomains,full_period_event_count:events.length,detailed_event_count:reportEvents.length,excluded_event_count:excludedPeriodEventCount},
     editorial_board:{agents:AGENT_ROLES.map(a=>a.id),board,visual_plan:visual,graphics_plan:graphics,provider},
     generator:{
       name:'SONALIT EVIDENCE-FIRST PUBLICATION FABRIC',
@@ -554,7 +566,13 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     deep_research:{
       ...finalBody.deep_research,
       agent_summary:incidentResearch.summary,
-      degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible||priorResearch.degraded_evidence_eligible_incidents||0),
+      degraded_evidence_eligible_incidents:(Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:[]).filter(d=>
+        String(d?.research_status||'').toLowerCase()==='fallback' &&
+        d?.degraded_evidence_eligible===true &&
+        ['degraded_evidence','live_web_packet'].includes(String(d?.research_method||'').toLowerCase()) &&
+        Number(d?.evidence_count||0)>=1 &&
+        Number(d?.source_count||0)>=1
+      ).length,
       research_version:DEEP_RESEARCH_VERSION,
       last_attempt_at:researchAttempted?now.toISOString():(priorResearch.last_attempt_at||null),
       retry_cooldown_minutes:researchCooldownMinutes,
