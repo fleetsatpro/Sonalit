@@ -202,11 +202,14 @@ test('publication preflights defer cooldown recovery to the bounded AI router',(
   expect(board).toContain('if(events.length&&!hasAi(publicationAiPolicy))');
 });
 
-test('degraded fallback narrative is built from incident evidence, assessment, relevance and uncertainty',()=>{
+test('degraded fallback keeps a structured assessment while its incident narrative avoids repeated stock prose',()=>{
   const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
-  expect(s).toContain("'Operational assessment: '+derivedAssessment");
-  expect(s).toContain("'Decision relevance: '+why[0]");
-  expect(s).toContain("'Research state: evidence-constrained; this edition does not present unverified detail as fact.'");
+  expect(s).toContain('analytical_assessment:derivedAssessment');
+  expect(s).toContain("'Decision relevance for \"'+headline+'\": '+why[0]");
+  expect(s).toContain('const materialUncertainty=specificCaveats.length');
+  expect(s).toContain('persistence, geographic spread and downstream effects remain unconfirmed');
+  expect(s).not.toContain("'Research state: evidence-constrained; this edition does not present unverified detail as fact.'");
+  expect(s).not.toContain('Broader deterioration is not established from the present record; the judgement should change only if subsequent evidence confirms');
 });
 
 
