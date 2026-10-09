@@ -171,11 +171,25 @@ class CfoViewModel @Inject constructor(
     // ── Context ───────────────────────────────────────────────────────────────
 
     fun loadContext(date: String? = null) {
+        val requestOwnerId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return
         _state.update { it.copy(contextLoading = true, contextError = null) }
         viewModelScope.launch {
             runCatching {
                 api.cfoContext(deviceToken, date)
             }.onSuccess { resp ->
+                // Ignore a response from an older account after a login switch or logout.
+                if (_state.value.loggedInUser?.user_id != requestOwnerId) return@onSuccess
+                if (resp.data.cfo_user_id != requestOwnerId) {
+                    _state.update {
+                        if (it.loggedInUser?.user_id == requestOwnerId) {
+                            it.copy(
+                                contextLoading = false,
+                                contextError = "Signed-in account does not match the CFO context. Sign in again before continuing.",
+                            )
+                        } else it
+                    }
+                    return@onSuccess
+                }
                 _state.update {
                     it.copy(
                         contextLoading = false,
@@ -185,7 +199,10 @@ class CfoViewModel @Inject constructor(
                     )
                 }
             }.onFailure { e ->
-                _state.update { it.copy(contextLoading = false, contextError = e.message) }
+                _state.update {
+                    if (it.loggedInUser?.user_id == requestOwnerId) it.copy(contextLoading = false, contextError = e.message)
+                    else it
+                }
             }
         }
     }
@@ -219,6 +236,12 @@ class CfoViewModel @Inject constructor(
     ) {
         val ownerUserId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return
         val ctx = _state.value.context ?: return
+        if (ctx.cfo_user_id != ownerUserId) {
+            _state.update {
+                it.copy(contextError = "Signed-in account does not match the current convoy context. Refresh or sign in again.")
+            }
+            return
+        }
         // Capture ownership before the asynchronous request starts. If the
         // account changes while it is in flight, the saved photo remains bound
         // to the user who initiated the capture.

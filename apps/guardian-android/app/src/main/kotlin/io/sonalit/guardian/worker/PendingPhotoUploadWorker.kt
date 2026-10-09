@@ -66,6 +66,10 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
 
         val token = deviceToken()
         if (token.isEmpty()) return Result.retry()
+        // The user can log out or switch accounts between preference reads.
+        // Re-check immediately before the first request so a token from the new
+        // session is not paired with the previous user's queue.
+        if (cfoUserId() != ownerUserId) return Result.retry()
 
         var anyFailed = false
         for (p in pending) {
