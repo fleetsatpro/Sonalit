@@ -77,4 +77,66 @@ describe('Copilot dispatch tool execution contract', () => {
     expect(response.status).toBe(413);
     expect(mockAiClient.createMessage).not.toHaveBeenCalled();
   });
+
+  test('simplifies a dense routed corridor within a stated tolerance and verifies persisted geometry', async () => {
+    const previousFetch = global.fetch;
+    let persistedCoordinates = null;
+    const osrmCoordinates = Array.from({ length: 1601 }, (_, index) => [
+      index / 1600,
+      0.00018 * Math.sin((Math.PI * 80 * index) / 1600),
+    ]);
+
+    mockQuery.mockImplementation(async (sql, params = []) => {
+      if (/INSERT INTO geofences/i.test(String(sql))) {
+        persistedCoordinates = JSON.parse(params[2]);
+        return { rows: [{ id: 'geo-route-test-1' }] };
+      }
+      if (/SELECT coordinates FROM geofences/i.test(String(sql))) {
+        return { rows: persistedCoordinates ? [{ coordinates: persistedCoordinates }] : [] };
+      }
+      if (/DELETE FROM geofences/i.test(String(sql))) return { rows: [] };
+      return { rows: [] };
+    });
+    global.fetch = jest.fn(async (url) => {
+      if (!String(url).startsWith('https://router.project-osrm.org/route/v1/driving/')) {
+        throw new Error('Unexpected network request in geofence test');
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          code: 'Ok',
+          routes: [{ distance: 111195, geometry: { coordinates: osrmCoordinates } }],
+        }),
+      };
+    });
+
+    try {
+      const response = await request(app)
+        .post('/ai/dispatch')
+        .send({ command: 'Create a corridor geofence from 0,0 to 0,1 with a 300m buffer', history: [] });
+
+      expect(response.status).toBe(200);
+      expect(response.body.task).toMatchObject({ type: 'geofence', completed: true });
+      expect(response.body.created).toHaveLength(1);
+      expect(response.body.created[0]).toMatchObject({
+        geofence_id: 'geo-route-test-1',
+        source_path_points: 1601,
+        path_simplification_tolerance_m: 10,
+        fallback_used: false,
+        geometry_verification: { persisted_path_points: expect.any(Number) },
+      });
+      expect(response.body.created[0].path_points).toBeLessThan(800);
+      expect(response.body.created[0].geometry_verification.start_drift_m).toBeLessThanOrEqual(1500);
+      expect(response.body.created[0].geometry_verification.end_drift_m).toBeLessThanOrEqual(1500);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(mockQuery.mock.calls.some(([sql]) => /INSERT INTO geofences/i.test(String(sql)))).toBe(true);
+      expect(mockQuery.mock.calls.some(([sql]) => /SELECT coordinates FROM geofences/i.test(String(sql)))).toBe(true);
+      expect(persistedCoordinates?.buffer_polygon).toHaveLength(2 * response.body.created[0].path_points + 1);
+    } finally {
+      global.fetch = previousFetch;
+      mockQuery.mockReset().mockImplementation(async () => ({ rows: [] }));
+    }
+  });
+
 });
