@@ -4,6 +4,7 @@ const {query,globalQuery}=require('../config/database');
 const { runWithOrgContext } = require('./tenantContext');
 const telegramMtproto=require('./telegramMtproto');
 const logger=require('./logger');
+const { fetchGdeltJson } = require('./gdeltClient');
 
 const TIMEOUT_MS=15000,MAX_ITEMS=100;
 const INCIDENT_TERMS=['protest','protests','rally','demonstration','fire','explosion','gunfire','shooting','attack','attacked','ambush','kidnapping','abduction','IED','bomb','accident','crash','collision','traffic','roadblock','unrest','riot','robbery','flooding','flood','landslide','earthquake','storm','curfew','clash','murder','killed','missing','closure','closed','shutdown','outage','derailment','tanker','spill','border','crossing','strike','evacuation','warning','alert'];
@@ -136,9 +137,7 @@ async function fetchGdelt(){
   const q=`(${EA_CODES.map(c=>EA_COUNTRIES[c].terms.slice(0,5).map(v=>`"${v}"`).join(' OR ')).join(' OR ')}) (${INCIDENT_QUERY})`;
   const url=`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&maxrecords=${MAX_ITEMS}&timespan=1h&format=json`;
   try{
-    const r=await timeoutFetch(url);
-    if(!r.ok) throw new Error(`GDELT HTTP ${r.status}`);
-    const d=await r.json();
+    const d=await fetchGdeltJson(url,{timeoutMs:TIMEOUT_MS});
     gdeltUnavailableUntil=0;
     return(d.articles||[]).map(a=>({external_id:a.url?`gdelt:${sha(a.url)}`:null,title:a.title,body:a.title,url:a.url,published_at:a.seendate?parseDate(String(a.seendate).replace(/(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})/,'$1-$2-$3T$4:$5:$6Z')):null,language:a.language||null,country_code:detectCountry(`${a.title||''} ${a.domain||''}`),credibility:72,raw_metadata:{domain:a.domain,tone:a.tone,sourcecountry:a.sourcecountry}}));
   }catch(e){
