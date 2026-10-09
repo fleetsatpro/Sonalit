@@ -59,7 +59,11 @@ describe('offline tenant-scope migration', () => {
     expect(dbSource).toContain("moveUnscopedRows('gps_buffer'");
     expect(dbSource).toContain("moveUnscopedRows('conflicts'");
     expect(dbSource).toContain("moveUnscopedRows('entities'");
-    expect(dbSource).toMatch(/await quarantine\\.put\\(quarantineRecord\\);[\\s\\S]{0,180}await table\\.delete\\(/);
+    const copyIndex = dbSource.indexOf('await quarantine.put(quarantineRecord);');
+    const deleteIndex = dbSource.indexOf('await table.delete(', copyIndex);
+    expect(copyIndex).toBeGreaterThanOrEqual(0);
+    expect(deleteIndex).toBeGreaterThan(copyIndex);
+    expect(dbSource).toContain('An unscoped/malformed row must survive this earlier-version migration');
     expect(dbSource).toContain('Do not infer the missing organisation from the current login');
   });
 });
