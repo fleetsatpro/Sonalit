@@ -188,6 +188,31 @@ describe('GDELT HTTP-success rejection handling',()=>{
     });
   });
 
+  test('backs off GDELT transport timeouts instead of retrying once per incident',async()=>{
+    let gdeltRequests=0;
+    safeFetchPublicResearch.mockImplementation(async url=>{
+      const parsed=new URL(String(url));
+      if(parsed.hostname==='api.gdeltproject.org'){
+        gdeltRequests++;
+        throw Object.assign(new Error('External research request timed out'),{failureClass:'unavailable'});
+      }
+      return {
+        ok:true,
+        status:200,
+        url:parsed.toString(),
+        headers:{get:()=> 'application/rss+xml'},
+        text:async()=> '<rss><channel></channel></rss>',
+      };
+    });
+
+    const first={id:'gdelt-timeout-1',headline:'Test route disruption one',brief:'A bounded test incident.',country_code:'KE',evidence:[]};
+    const second={id:'gdelt-timeout-2',headline:'Test route disruption two',brief:'A separate bounded test incident.',country_code:'KE',evidence:[]};
+    await researchPublicationIncidents([first],{country:'KE'});
+    await researchPublicationIncidents([second],{country:'KE'});
+
+    expect(gdeltRequests).toBe(1);
+  });
+
   test('does not leak upstream response content when the body cannot be read',async()=>{
     const response={
       status:200,
