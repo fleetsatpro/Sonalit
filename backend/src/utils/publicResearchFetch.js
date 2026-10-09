@@ -232,6 +232,7 @@ function createPublicResearchFetcher({ resolveAddresses = resolvePublicAddresses
         headers: { get: name => headerValue(headers, name) },
         arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
         text: async () => body.toString('utf8'),
+        json: async () => JSON.parse(body.toString('utf8')),
         url: parsed.url.toString(),
       };
     }
