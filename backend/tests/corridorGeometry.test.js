@@ -4,6 +4,7 @@ const {
   buildCorridorPolygon,
   distanceM,
   midpointOnPath,
+  simplifyPath,
   validateCorridorGeometry,
 } = require('../src/utils/corridorGeometry');
 
@@ -40,6 +41,17 @@ describe('validated corridor geometry', () => {
     expect(midpoint[0]).toBeCloseTo(0, 6);
     expect(midpoint[1]).toBeCloseTo(0.5, 2);
     expect(distanceM(path[0], midpoint)).toBeCloseTo(totalLengthM / 2, 0);
+  });
+
+  test('bounds dense route vertices while preserving the endpoints', () => {
+    const path = [];
+    for (let i = 0; i <= 1600; i++) path.push([0, i / 1600]);
+    const result = simplifyPath(path, 10);
+    expect(result.originalPointCount).toBe(1601);
+    expect(result.path.length).toBeLessThanOrEqual(800);
+    expect(result.toleranceM).toBe(10);
+    expect(result.path[0]).toEqual(path[0]);
+    expect(result.path[result.path.length - 1]).toEqual(path[path.length - 1]);
   });
 
   test('handles the distance midpoint across the antimeridian', () => {
