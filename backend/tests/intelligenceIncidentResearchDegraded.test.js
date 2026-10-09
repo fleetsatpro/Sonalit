@@ -1,23 +1,22 @@
 jest.mock('../src/utils/aiClient',()=>({hasAnyProvider:()=>false}));
+jest.mock('../src/utils/publicResearchFetch',()=>({safeFetchPublicResearch:jest.fn(),MAX_RESPONSE_BYTES:2*1024*1024}));
 
 const { researchPublicationIncidents } = require('../src/utils/intelligenceIncidentResearch');
+const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
 
 describe('degraded incident research remains useful',()=>{
   afterEach(()=>{delete global.fetch});
   test('turns live web research into a substantive dossier when no model provider is available',async()=>{
-    global.fetch=jest.fn(async(url)=>{
+    const rss='<rss><channel><item><title>Independent report on the incident</title><link>https://example.com/report</link><pubDate>Sat, 04 Oct 2026 08:00:00 GMT</pubDate><source>Example News</source><description><![CDATA[Local reporting describes a temporary disruption on the corridor and notes that authorities responded while the full duration remained unclear.]]></description></item></channel></rss>';
+    const article='<html><head><title>Independent report on the incident</title><meta name="description" content="Local reporting describes a temporary disruption on the corridor and notes that authorities responded while the full duration remained unclear."></head><body><main><p>The report places the incident on the affected corridor and describes a temporary disruption. It also records that authorities responded and that the precise duration was not yet established.</p></main></body></html>';
+    safeFetchPublicResearch.mockImplementation(async(url)=>{
       const value=String(url);
-      if(value.startsWith('https://news.google.com/rss/search')){
-        return {
-          ok:true,
-          headers:{get:()=> 'application/rss+xml'},
-          text:async()=>'<rss><channel><item><title>Independent report on the incident</title><link>https://example.com/report</link><pubDate>Sat, 04 Oct 2026 08:00:00 GMT</pubDate><source>Example News</source><description><![CDATA[Local reporting describes a temporary disruption on the corridor and notes that authorities responded while the full duration remained unclear.]]></description></item></channel></rss>'
-        };
-      }
+      const isRss=value.startsWith('https://news.google.com/rss/search');
       return {
-        ok:true,
-        headers:{get:()=> 'text/html'},
-        text:async()=>'<html><head><title>Independent report on the incident</title><meta name="description" content="Local reporting describes a temporary disruption on the corridor and notes that authorities responded while the full duration remained unclear."></head><body><main><p>The report places the incident on the affected corridor and describes a temporary disruption. It also records that authorities responded and that the precise duration was not yet established.</p></main></body></html>'
+        ok:true,status:200,url:value,
+        headers:{get:()=>isRss?'application/rss+xml':'text/html'},
+        text:async()=>isRss?rss:article,
+        arrayBuffer:async()=>Buffer.from(isRss?rss:article)
       };
     });
     const events=[{
