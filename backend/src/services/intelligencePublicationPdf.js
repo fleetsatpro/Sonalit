@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const crypto = require('node:crypto');
 const sharp = require('sharp');
 const { PutObjectCommand, GetObjectCommand, S3Client } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -623,12 +624,18 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
     const researchSources=(Array.isArray(publication.body?.incident_dossiers)?publication.body.incident_dossiers:[]).flatMap(e=>Array.isArray(e?.research_sources)?e.research_sources:[]);
     const images=await fetchImages(observationRows,researchSources); const pdf=await buildProfessionalPdf(publication,events,images);
     const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured'); const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
-    const safe=`${publication.country_code}-${publication.publication_type}-${new Date(publication.period_start).toISOString().slice(0,10)}`.replace(/[^A-Z0-9._-]/gi,'-');const key=`intelligence-publications/${orgId}/${safe}-r${PDF_RENDERER_VERSION}-v${publication.pdf_version||1}.pdf`;
+    const safe=`${publication.country_code}-${publication.publication_type}-${new Date(publication.period_start).toISOString().slice(0,10)}`.replace(/[^A-Z0-9._-]/gi,'-');
+    const pdfVersion=Number(publication.pdf_version)||1;
+    const keyPrefix=`intelligence-publications/${orgId}/${safe}-r${PDF_RENDERER_VERSION}-v${pdfVersion}-`;
+    const priorKey=String(publication.pdf_key||'');
+    const priorSuffix=priorKey.startsWith(keyPrefix)?priorKey.slice(keyPrefix.length):'';
+    const key=/^[0-9a-f-]{36}\.pdf$/i.test(priorSuffix)?priorKey:`${keyPrefix}${crypto.randomUUID()}.pdf`;
     await r2.send(new PutObjectCommand({Bucket:bucket,Key:key,Body:pdf,ContentType:'application/pdf',CacheControl:'private, max-age=0'}));
-    const publicBase=(process.env.R2_PUBLIC_URL||'').replace(/\/$/,''); const pdfUrl=publicBase?`${publicBase}/${key}`:null;
+    // Publication PDFs are returned only by streamPublicationPdf after
+    // tenant- and role-scoped authorization; never publish a raw R2 URL.
     await query("UPDATE intel_publications SET pdf_status='ready',pdf_key=$3,pdf_url=$4,pdf_generated_at=NOW(),pdf_error=NULL,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,key,pdfUrl]);
     for(const img of images)await query('INSERT INTO intel_publication_pdf_assets (org_id,publication_id,asset_type,source_url,source_label,provenance) VALUES ($1,$2,$3,$4,$5,$6::jsonb)',[orgId,publicationId,'image',img.source_url,img.label,JSON.stringify({embedded:true})]).catch(()=>{});
-    return{status:'ready',publication_id:publicationId,pdf_url:pdfUrl,key};
+    return{status:'ready',publication_id:publicationId,pdf_url:null};
   }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3 WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
 }
 
