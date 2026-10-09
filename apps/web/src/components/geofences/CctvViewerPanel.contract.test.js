@@ -23,7 +23,7 @@ describe('GEV CCTV wall contract', () => {
     expect(source).toContain('providerSnapshotEndpoint')
     expect(source).toContain('InlineCctvSnapshot')
     expect(source).toContain('wallVisualTick')
-    expect(source).toContain('LIVE FRAME ONLY')
+    expect(source).toContain('SNAPSHOT ONLY')
     expect(source).toContain('PROVIDER-REPORTED VIDEO')
     expect(source).toContain('sourceMediaUrl')
     expect(source).toContain('sourceMediaPlaybackKind')
