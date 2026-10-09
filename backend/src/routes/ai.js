@@ -1015,17 +1015,46 @@ async function toolCreateGeofence(input, userId, orgId) {
     };
     const region = g.admin1 || g.country || location;
 
-    const r = await query(
-      `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id`,
-      [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
-    );
+    const stored = await withOrg(orgId, async (client) => {
+      const insert = await client.query(
+        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
+        [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
+      );
+      const geofenceId = insert.rows?.[0]?.id;
+      if (!geofenceId) throw new Error('Point geofence insert returned no identifier');
+      const verify = await client.query(
+        `SELECT type, radius, coordinates FROM geofences WHERE id = $1 AND org_id = $2`,
+        [geofenceId, orgId]
+      );
+      const row = verify.rows?.[0];
+      let persisted = row?.coordinates;
+      if (typeof persisted === 'string') {
+        try { persisted = JSON.parse(persisted); } catch (_) { persisted = null; }
+      }
+      const persistedLat = Number(persisted?.lat);
+      const persistedLng = Number(persisted?.lng);
+      const persistedRadius = Number(row?.radius);
+      const driftM = Number.isFinite(persistedLat) && Number.isFinite(persistedLng)
+        ? haversineM(g.latitude, g.longitude, persistedLat, persistedLng)
+        : Infinity;
+      const valid = row?.type === 'circle' && Number.isFinite(persistedRadius) &&
+        Math.abs(persistedRadius - radius_m) < 0.5 && driftM <= 5;
+      if (!valid) {
+        await client.query('DELETE FROM geofences WHERE id = $1 AND org_id = $2', [geofenceId, orgId]);
+        return { valid: false, verification: { persisted_type: row?.type || null, persisted_radius_m: Number.isFinite(persistedRadius) ? persistedRadius : null, coordinate_drift_m: Number.isFinite(driftM) ? Math.round(driftM * 100) / 100 : null } };
+      }
+      return { valid: true, geofenceId, driftM };
+    });
+    if (!stored.valid) {
+      return { created: false, error: 'Persisted point geometry failed verification. No geofence was retained.', verification: stored.verification };
+    }
 
     const locationLabel = g.name || location;
     return {
       created: true,
-      geofence_id: r.rows[0].id,
+      geofence_id: stored.geofenceId,
       name,
       fence_type,
       lat: g.latitude,
