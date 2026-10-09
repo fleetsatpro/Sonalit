@@ -566,7 +566,7 @@ describe('intelligence provider mesh', () => {
     expect(response._provider).toBe('deepseek-v3.2-openrouter');
     expect(response._provider_kind).toBe('open-weight');
   });
-});
+
 
   test('half-open probes the hinted public OpenRouter rescue lane after all ordinary providers fail',async()=>{
     process.env.OPENROUTER_API_KEY='openrouter-test-key-123';
@@ -646,3 +646,4 @@ describe('intelligence provider mesh', () => {
       expect.objectContaining({model:'openrouter/free'})
     ]);
   });
+});
