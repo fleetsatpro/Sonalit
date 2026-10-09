@@ -71,6 +71,37 @@ async function inRequestQueue(fn) {
   }
 }
 
+async function parseGdeltResponse(response) {
+  const status = Number(response?.status || 0);
+  const { body, contentType } = await readResponseText(response);
+  let data;
+  try {
+    data = JSON.parse(body);
+  } catch (_) {
+    const statusClass = isRateLimitNotice(body) || status === 429 ? 'rate_limited' : 'upstream_protocol';
+    const message = statusClass === 'rate_limited'
+      ? 'GDELT rate limited; circuit opened'
+      : 'GDELT returned a non-JSON response (HTTP ' + status + ', content-type ' + contentType + ')';
+    throw failure(message, statusClass, { upstreamStatus: status, upstreamContentType: contentType });
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw failure('GDELT JSON response was not an object', 'upstream_protocol', {
+      upstreamStatus: status,
+      upstreamContentType: contentType,
+    });
+  }
+  const articles = Array.isArray(data.articles)
+    ? data.articles
+    : Array.isArray(data.results) ? data.results : null;
+  if (!articles) {
+    throw failure('GDELT JSON response did not contain an articles array', 'upstream_protocol', {
+      upstreamStatus: status,
+      upstreamContentType: contentType,
+    });
+  }
+  return { ...data, articles };
+}
+
 async function fetchGdeltJson(url, options = {}) {
   return inRequestQueue(async () => {
     if (Date.now() < cooldownUntil) {
@@ -89,15 +120,22 @@ async function fetchGdeltJson(url, options = {}) {
 
     const timeoutMs = Math.max(1000, Number(options.timeoutMs || 15_000));
     const fetchOptions = { ...options };
+    const fetchImpl = typeof fetchOptions.fetchImpl === 'function' ? fetchOptions.fetchImpl : fetch;
     delete fetchOptions.timeoutMs;
+    delete fetchOptions.fetchImpl;
     if (!fetchOptions.signal) fetchOptions.signal = AbortSignal.timeout(timeoutMs);
 
     lastRequestAt = Date.now();
     try {
       let response;
       try {
-        response = await fetch(url, fetchOptions);
+        response = await fetchImpl(url, fetchOptions);
       } catch (error) {
+        if (error?.failureClass) {
+          throw failure(String(error.message || 'GDELT request failed').slice(0, 250), error.failureClass, {
+            upstreamStatus: Number(error.upstreamStatus || 0) || undefined,
+          });
+        }
         throw failure(
           'GDELT request failed: ' + (error?.name === 'TimeoutError' ? 'timeout' : 'network error'),
           'upstream_network',
@@ -112,25 +150,7 @@ async function fetchGdeltJson(url, options = {}) {
         throw failure('GDELT HTTP ' + (status || 'unknown'), 'upstream_http', { upstreamStatus: status });
       }
 
-      const { body, contentType } = await readResponseText(response);
-      let data;
-      try {
-        data = JSON.parse(body);
-      } catch (_) {
-        const statusClass = isRateLimitNotice(body) ? 'rate_limited' : 'upstream_protocol';
-        const message = statusClass === 'rate_limited'
-          ? 'GDELT rate limited; circuit opened'
-          : 'GDELT returned a non-JSON response (HTTP ' + status + ', content-type ' + contentType + ')';
-        throw failure(message, statusClass, { upstreamStatus: status, upstreamContentType: contentType });
-      }
-
-      if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.articles)) {
-        throw failure('GDELT JSON response did not contain an articles array', 'upstream_protocol', {
-          upstreamStatus: status,
-          upstreamContentType: contentType,
-        });
-      }
-      return data;
+      return await parseGdeltResponse(response);
     } catch (error) {
       // Never include upstream response text in logs/errors; it is untrusted input.
       cooldownUntil = Math.max(cooldownUntil, Date.now() + COOLDOWN_MS);
@@ -150,5 +170,6 @@ module.exports = {
   COOLDOWN_MS,
   MAX_RESPONSE_BYTES,
   fetchGdeltJson,
+  parseGdeltResponse,
   _resetGdeltStateForTests,
 };
