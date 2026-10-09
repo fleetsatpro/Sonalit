@@ -31,6 +31,62 @@ function normalizePath(path) {
   if (out.length < 2) throw new RangeError('The route has no measurable length.');
   return out;
 }
+function wrapLongitude(lng) {
+  return ((lng + 180) % 360 + 360) % 360 - 180;
+}
+
+// Return the point halfway along the route's measured geodesic length. The
+// overview polyline can have highly non-uniform vertex spacing, so the middle
+// array element is not a reliable geographic or distance midpoint.
+function midpointOnPath(path) {
+  const route = normalizePath(path);
+  const lengths = [];
+  let total = 0;
+  for (let i = 0; i < route.length - 1; i++) {
+    const length = distanceM(route[i], route[i + 1]);
+    if (!Number.isFinite(length) || length <= 0) throw new RangeError('Route segment has no measurable length.');
+    lengths.push(length);
+    total += length;
+  }
+  if (!Number.isFinite(total) || total <= 0) throw new RangeError('Route has no measurable length.');
+
+  const target = total / 2;
+  let traversed = 0;
+  for (let i = 0; i < lengths.length; i++) {
+    const segmentLength = lengths[i];
+    if (traversed + segmentLength >= target) {
+      const fraction = Math.max(0, Math.min(1, (target - traversed) / segmentLength));
+      const [lat1, lng1] = route[i].map(Number);
+      const [lat2, lng2] = route[i + 1].map(Number);
+      const phi1 = lat1 * Math.PI / 180;
+      const phi2 = lat2 * Math.PI / 180;
+      const lambda1 = lng1 * Math.PI / 180;
+      const lambda2 = lng2 * Math.PI / 180;
+      const centralAngle = distanceM(route[i], route[i + 1]) / R;
+      const sinAngle = Math.sin(centralAngle);
+
+      // Spherical linear interpolation avoids a longitude jump across the
+      // antimeridian and is more stable than averaging lat/lng coordinates.
+      if (centralAngle > 1e-10 && Math.abs(sinAngle) > 1e-10) {
+        const a = Math.sin((1 - fraction) * centralAngle) / sinAngle;
+        const b = Math.sin(fraction * centralAngle) / sinAngle;
+        const x = a * Math.cos(phi1) * Math.cos(lambda1) + b * Math.cos(phi2) * Math.cos(lambda2);
+        const y = a * Math.cos(phi1) * Math.sin(lambda1) + b * Math.cos(phi2) * Math.sin(lambda2);
+        const z = a * Math.sin(phi1) + b * Math.sin(phi2);
+        return [
+          Math.atan2(z, Math.hypot(x, y)) * 180 / Math.PI,
+          wrapLongitude(Math.atan2(y, x) * 180 / Math.PI),
+        ];
+      }
+
+      const lngDelta = ((lng2 - lng1 + 540) % 360) - 180;
+      return [lat1 + (lat2 - lat1) * fraction, wrapLongitude(lng1 + lngDelta * fraction)];
+    }
+    traversed += segmentLength;
+  }
+  return [...route[route.length - 1]];
+}
+
 function unwrap(points) {
   return points.map((p, i) => {
     let lng = p[1];
@@ -145,4 +201,4 @@ function buildCorridorPolygon(path, bufferM) {
   if(!verified.valid) throw new RangeError(verified.reason);
   return polygon;
 }
-module.exports={MAX_PATH_POINTS,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorPolygon,distanceM,normalizePath,validateCorridorGeometry};
+module.exports={MAX_PATH_POINTS,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,validateCorridorGeometry};
