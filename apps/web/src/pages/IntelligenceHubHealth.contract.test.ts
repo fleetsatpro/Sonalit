@@ -17,6 +17,7 @@ describe('Intel Hub health-truth contract', () => {
     expect(alerts).toContain("useState<'CHECKING'|'RESPONDING'|'DEGRADED'>('CHECKING')");
     expect(alerts).toContain("setRequestState('RESPONDING')");
     expect(alerts).toContain("setRequestState('DEGRADED')");
+    expect(alerts).toContain("if(!Array.isArray(a.data?.alerts))throw new Error('invalid_alerts_payload')");
     expect(alerts).toContain('ALERT QUERY FAILED — INCIDENT STATE UNKNOWN');
     expect(alerts).toContain('An empty result is not evidence of zero incidents');
     expect(alerts).not.toContain("loading?'SYNCING':'LIVE'");
@@ -26,6 +27,7 @@ describe('Intel Hub health-truth contract', () => {
     expect(newsroom).toContain("useState('CHECKING')");
     expect(newsroom).toContain("setStatus('RESPONDING')");
     expect(newsroom).toContain("setStatus('DEGRADED')");
+    expect(newsroom).toContain("if(!Array.isArray(news?.observations))throw new Error('invalid_observations_payload')");
     expect(newsroom).toContain("'API RESPONDING'");
     expect(newsroom).not.toContain("setStatus('LIVE')");
     expect(newsroom).not.toContain("'CONTINUOUS'"); // browser refresh is not proof of continuous upstream collection
