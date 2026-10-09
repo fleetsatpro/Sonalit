@@ -314,5 +314,8 @@ test('bounded publication coverage explicitly discloses excluded period incident
     expect(research).toContain('const batches=chunkIncidentResearchBatches(events,configuredBatchSize);');
     expect(research).toContain('INTEL_PUBLICATION_RESEARCH_BATCH_SIZE');
     expect(research).toContain('Math.min(2,Number(process.env.INTEL_PUBLICATION_RESEARCH_CONCURRENCY)||2)');
+    // Batch-level tool citations have no deterministic event association; they
+    // must never be copied into every incident's source allowlist.
+    expect(research).toContain('const providerVerifiedSources=events.length===1?verifiedResponseSources(response):[];');
   });
 
