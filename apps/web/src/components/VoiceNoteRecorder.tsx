@@ -2,9 +2,12 @@
  * VoiceNoteRecorder — records audio via MediaRecorder, uploads via presigned URL,
  * then commits the note. Gracefully degrades when microphone is unavailable.
  */
-import { useState, useRef, useCallback } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { api } from '../lib/api.js';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useAuthStore } from '../stores/auth.js';
+import {
+  enqueueVoiceNote, drainMediaOutbox, getMediaUploadEntry, listVoiceNotesForParent,
+  retryMediaUpload, subscribeMediaOutbox,
+} from '../lib/offline/mediaOutbox.js';
 import { Mic, MicOff, Square, Upload, CheckCircle, AlertTriangle } from 'lucide-react';
 
 type ParentType = 'shift_handover' | 'incident' | 'convoy' | 'claim';
@@ -16,7 +19,7 @@ interface Props {
   disabled?: boolean;
 }
 
-type RecorderState = 'idle' | 'recording' | 'recorded' | 'uploading' | 'done' | 'error';
+type RecorderState = 'idle' | 'recording' | 'recorded' | 'uploading' | 'queued' | 'done' | 'error';
 
 const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
 
@@ -32,39 +35,34 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
   const [state, setState] = useState<RecorderState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(0);
+  const [queuedId, setQueuedId] = useState<string | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const secondsRef = useRef(0);
   const blobRef = useRef<Blob | null>(null);
+  const notifiedCommittedRef = useRef<string | null>(null);
+  const user = useAuthStore(s => s.user);
 
   const mimeType = getSupportedMimeType();
   const supported = mimeType !== null;
 
-  const commitMut = useMutation({
-    mutationFn: async ({ noteId, storageKey, blob }: { noteId: string; storageKey: string; blob: Blob }) => {
-      await api.post('/voice-notes/commit', {
-        note_id: noteId,
-        parent_type: parentType,
-        parent_id: parentId,
-        storage_key: storageKey,
-        duration_sec: seconds,
-        file_size_bytes: blob.size,
-        mime_type: blob.type || mimeType,
-      });
-      return noteId;
-    },
-    onSuccess: (noteId) => {
-      setState('done');
-      onCommitted?.(noteId);
-    },
-    onError: () => { setState('error'); setError('Failed to save voice note.'); },
-  });
+  const announceCommitted = useCallback((noteId: string) => {
+    if (notifiedCommittedRef.current === noteId) return;
+    notifiedCommittedRef.current = noteId;
+    setState('done');
+    setError(null);
+    onCommitted?.(noteId);
+  }, [onCommitted]);
 
   const startRecording = useCallback(async () => {
     setError(null);
     setState('idle');
     chunksRef.current = [];
+    secondsRef.current = 0;
     setSeconds(0);
+    setQueuedId(null);
+    setError(null);
 
     let stream: MediaStream;
     try {
@@ -84,7 +82,18 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
     };
     recorder.start(250);
     setState('recording');
-    timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
+    timerRef.current = setInterval(() => {
+      const next = secondsRef.current + 1;
+      secondsRef.current = next;
+      setSeconds(next);
+      // Voice notes are deliberately bounded to 60 seconds for low-bandwidth
+      // and storage safety. Stop the actual recorder, not just the timer.
+      if (next >= 60) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = null;
+        if (mediaRef.current?.state === 'recording') mediaRef.current.stop();
+      }
+    }, 1000);
   }, [mimeType]);
 
   const stopRecording = useCallback(() => {
@@ -93,28 +102,129 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
   }, []);
 
   const upload = useCallback(async () => {
-    if (!blobRef.current) return;
+    const blob = blobRef.current;
+    if (!blob) return;
+    if (!user?.id || !user.org_id) {
+      setState('error');
+      setError('Sign in again with the same account to save this recording.');
+      return;
+    }
     setState('uploading');
+    setError(null);
 
     try {
-      const urlRes = await api.post<{ note_id: string; storage_key: string; upload_url: string | null }>(
-        '/voice-notes/upload-url',
-        { parent_type: parentType, parent_id: parentId, mime_type: blobRef.current.type || mimeType, duration_sec: seconds, file_size_bytes: blobRef.current.size },
-      );
-      const { note_id, storage_key, upload_url } = urlRes.data;
+      // Durably persist the Blob before any network request. From this point on
+      // a failed connection never destroys the only copy of the recording.
+      const entry = await enqueueVoiceNote({
+        ownerUserId: user.id,
+        ownerOrgId: user.org_id,
+        parentType,
+        parentId,
+        blob,
+        mimeType: blob.type || mimeType || 'audio/webm',
+        durationSec: Math.max(1, secondsRef.current || seconds),
+      });
+      setQueuedId(entry.id);
+      setState('queued');
+      blobRef.current = null;
 
-      if (upload_url) {
-        await fetch(upload_url, { method: 'PUT', body: blobRef.current, headers: { 'Content-Type': blobRef.current.type || 'audio/webm' } });
+      // Opportunistic immediate send. The same persistent entry is retried if
+      // the page closes, the network drops, or the API cannot sign R2 uploads.
+      await drainMediaOutbox(user.id, user.org_id, { onlyId: entry.id, force: true, limit: 1 });
+      const latest = await getMediaUploadEntry(entry.id, user.id, user.org_id);
+      if (latest?.status === 'ACKNOWLEDGED') {
+        announceCommitted(entry.id);
+      } else if (latest?.status === 'FAILED_PERMANENT') {
+        setState('error');
+        setError(latest.lastErrorMessage || 'Sonalit did not accept this recording. It remains saved on this device for review.');
+      } else if (latest) {
+        setState('queued');
+        setError(latest.lastErrorMessage || 'Saved on this device. Upload will retry when the connection and storage service are ready.');
       }
-
-      commitMut.mutate({ noteId: note_id, storageKey: storage_key, blob: blobRef.current });
-    } catch (_) {
+    } catch (err) {
+      // Enqueue errors happen before the Blob is durably accepted; retain the
+      // in-memory recording and allow Retry to enqueue it again.
       setState('error');
-      setError('Upload failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'The recording could not be saved locally. Keep this screen open and retry.');
     }
-  }, [parentType, parentId, mimeType, seconds, commitMut]);
+  }, [user?.id, user?.org_id, parentType, parentId, mimeType, seconds, announceCommitted]);
 
-  const reset = () => { setState('idle'); setError(null); setSeconds(0); blobRef.current = null; };
+  const retry = useCallback(async () => {
+    if (!queuedId) {
+      await upload();
+      return;
+    }
+    if (!user?.id || !user.org_id) {
+      setError('Sign in again with the same account to resume this recording.');
+      return;
+    }
+    setState('uploading');
+    setError(null);
+    try {
+      const result = await retryMediaUpload(queuedId, user.id, user.org_id);
+      const latest = await getMediaUploadEntry(queuedId, user.id, user.org_id);
+      if (result.acknowledged > 0 || latest?.status === 'ACKNOWLEDGED') announceCommitted(queuedId);
+      else if (latest?.status === 'FAILED_PERMANENT') {
+        setState('error');
+        setError(latest.lastErrorMessage || 'Sonalit did not accept this recording. It remains on this device for review.');
+      } else {
+        setState('queued');
+        setError(latest?.lastErrorMessage || 'Recording remains saved on this device.');
+      }
+    } catch (err) {
+      setState('queued');
+      setError(err instanceof Error ? err.message : 'Retry could not finish; the recording remains saved on this device.');
+    }
+  }, [queuedId, user?.id, user?.org_id, upload, announceCommitted]);
+
+  const reset = () => {
+    // Reset/discard is available only before a recording has entered the
+    // durable queue. A queued evidence item requires its explicit upload retry.
+    if (queuedId) return;
+    setState('idle');
+    setError(null);
+    setSeconds(0);
+    secondsRef.current = 0;
+    blobRef.current = null;
+  };
+
+  useEffect(() => {
+    if (!user?.id || !user.org_id) return;
+    let active = true;
+    const refreshQueued = async () => {
+      try {
+        let entry = queuedId
+          ? await getMediaUploadEntry(queuedId, user.id, user.org_id)
+          : null;
+        if (!entry) {
+          const rows = await listVoiceNotesForParent(user.id, user.org_id, parentType, parentId);
+          entry = rows[rows.length - 1] ?? null;
+          if (entry && active) setQueuedId(entry.id);
+        }
+        if (!active || !entry) return;
+        if (entry.status === 'ACKNOWLEDGED') {
+          announceCommitted(entry.id);
+        } else if (entry.status === 'FAILED_PERMANENT') {
+          setState('error');
+          setError(entry.lastErrorMessage || 'Sonalit did not accept this recording. It remains on this device for review.');
+        } else {
+          setState('queued');
+          setError(entry.lastErrorMessage || null);
+        }
+      } catch {
+        // Status is unknown if IndexedDB cannot be read; do not fake an empty queue.
+        if (active && queuedId) setError('Upload status is unavailable. Keep this recording on the device and retry.');
+      }
+    };
+    void refreshQueued();
+    const unsubscribe = subscribeMediaOutbox(() => { void refreshQueued(); });
+    window.addEventListener('focus', refreshQueued);
+    return () => {
+      active = false;
+      unsubscribe();
+      window.removeEventListener('focus', refreshQueued);
+    };
+  }, [user?.id, user?.org_id, parentType, parentId, queuedId, announceCommitted]);
 
   if (!supported) {
     return (
@@ -174,6 +284,13 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
         </span>
       )}
 
+      {state === 'queued' && (
+        <span className="flex items-center gap-2 text-amber-300 text-xs" role="status" aria-live="polite">
+          <Upload className="h-3.5 w-3.5" /> {error || 'Saved on this device — awaiting Sonalit confirmation.'}
+          <button type="button" onClick={() => { void retry(); }} className="underline hover:no-underline">Retry upload</button>
+        </span>
+      )}
+
       {state === 'done' && (
         <span className="text-green-400 text-xs flex items-center gap-1.5">
           <CheckCircle className="w-3.5 h-3.5" /> Note saved
@@ -181,9 +298,9 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
       )}
 
       {state === 'error' && (
-        <span className="text-red-400 text-xs flex items-center gap-1.5">
+        <span className="text-red-400 text-xs flex items-center gap-1.5" role="alert">
           <AlertTriangle className="w-3.5 h-3.5" /> {error}
-          <button type="button" onClick={reset} className="underline hover:no-underline">Retry</button>
+          <button type="button" onClick={() => { void retry(); }} className="underline hover:no-underline">Retry</button>
         </span>
       )}
     </div>
