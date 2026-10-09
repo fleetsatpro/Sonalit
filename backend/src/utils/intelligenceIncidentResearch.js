@@ -519,7 +519,12 @@ async function researchBatch(events,{country,region}={}){
       system:'You are a multi-incident web-grounded research agent. Produce ONLY the requested JSON object with a top-level "results" array containing exactly one object for each incident_id supplied.',
       messages:[{role:'user',content:prompt}]
     });
-    const providerVerifiedSources=verifiedResponseSources(response);
+    // Provider-level citations belong to the whole response, not to an
+    // individual incident. In a multi-incident batch, do not copy those global
+    // citations into every dossier's source allowlist; each dossier must cite
+    // only its own fetched packet/evidence unless future provider metadata gives
+    // an explicit incident-to-citation mapping.
+    const providerVerifiedSources=events.length===1?verifiedResponseSources(response):[];
     const content=Array.isArray(response&&response.content)?response.content:[];
     const raw=content.filter(x=>x&&x.type==='text').map(x=>x.text).join('\n');
     const webSearchRequests=Number(response?.usage?.server_tool_use?.web_search_requests||0);
