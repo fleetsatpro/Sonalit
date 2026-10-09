@@ -1406,9 +1406,13 @@ router.post('/dispatch', async (req, res) => {
   const geofenceTask = inferGeofenceTask(command);
   if (geofenceTask) {
     try {
+      const { task: _taskName, ...geofenceInput } = geofenceTask;
+      const definition = TOOLS.find(tool => tool.name === 'create_geofence');
+      const check = definition ? validateToolInput(definition.input_schema, geofenceInput) : { valid: false, errors: [] };
+      if (!check.valid) return res.status(400).json({ error: 'invalid_geofence_request', details: check.errors });
       const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id || null;
       const userId = req.user?.id || null;
-      const result = await toolCreateGeofence(geofenceTask, userId, orgId);
+      const result = await toolCreateGeofence(geofenceInput, userId, orgId);
       return res.json({
         response: result.message || (result.error ? result.error : 'Geofence task completed.'),
         actions: result.created ? ['create_geofence'] : [],
