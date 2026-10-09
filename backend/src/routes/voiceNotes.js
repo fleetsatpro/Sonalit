@@ -45,6 +45,7 @@ function validExistingCommit(row, value, req, storageKey) {
     row.storage_key === storageKey &&
     row.uploaded_by === req.user.id &&
     Number(row.file_size_bytes || 0) === Number(value.file_size_bytes || 0) &&
+    Number(row.duration_sec || 0) === Number(value.duration_sec || 0) &&
     String(row.mime_type || '') === String(value.mime_type || '');
 }
 
@@ -66,6 +67,22 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
   const ext = objectExtension(value.mime_type);
   if (!ext) return res.status(415).json({ error: 'unsupported_audio_type' });
   const storageKey = `voice-notes/${orgId}/${value.parent_type}/${value.parent_id}/${noteId}.${ext}`;
+
+  // The client may present its stable note ID again after a lost ACK. Re-sign
+  // that object only for the original uploader and exact parent/payload. Never
+  // issue a new PUT capability that could overwrite another worker's committed
+  // voice note inside the same organisation.
+  if (value.note_id) {
+    const existing = await req.db(
+      `SELECT id, org_id, parent_type, parent_id, uploaded_by, storage_key, file_size_bytes, mime_type, duration_sec
+         FROM voice_notes WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`,
+      [noteId, orgId],
+    );
+    const row = existing.rows?.[0];
+    if (row && !validExistingCommit(row, { ...value, note_id: noteId }, req, storageKey)) {
+      return res.status(409).json({ error: 'voice_note_id_conflict' });
+    }
+  }
 
   const s3 = createR2Client();
   if (!s3) return res.status(503).json({ error: 'storage_not_configured' });
@@ -153,7 +170,7 @@ router.post('/commit', asyncHandler(async (req, res) => {
   // A lost commit acknowledgement is retryable; a duplicate ID with different
   // tenant/parent/payload is not. RLS hides rows belonging to another tenant.
   const existing = await req.db(
-    `SELECT id, org_id, parent_type, parent_id, uploaded_by, storage_key, file_size_bytes, mime_type
+    `SELECT id, org_id, parent_type, parent_id, uploaded_by, storage_key, file_size_bytes, mime_type, duration_sec
        FROM voice_notes WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`,
     [value.note_id, orgId],
   );
