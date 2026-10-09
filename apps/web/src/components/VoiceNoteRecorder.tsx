@@ -111,6 +111,7 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
     }
     setState('uploading');
     setError(null);
+    let persistedId: string | null = null;
 
     try {
       // Durably persist the Blob before any network request. From this point on
@@ -124,6 +125,7 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
         mimeType: blob.type || mimeType || 'audio/webm',
         durationSec: Math.max(1, secondsRef.current || seconds),
       });
+      persistedId = entry.id;
       setQueuedId(entry.id);
       setState('queued');
       blobRef.current = null;
@@ -142,10 +144,16 @@ export default function VoiceNoteRecorder({ parentType, parentId, onCommitted, d
         setError(latest.lastErrorMessage || 'Saved on this device. Upload will retry when the connection and storage service are ready.');
       }
     } catch (err) {
-      // Enqueue errors happen before the Blob is durably accepted; retain the
-      // in-memory recording and allow Retry to enqueue it again.
-      setState('error');
-      setError(err instanceof Error ? err.message : 'The recording could not be saved locally. Keep this screen open and retry.');
+      if (persistedId) {
+        // The Blob is already durable; a later status/read failure cannot turn
+        // it into a lost in-memory-only recording.
+        setQueuedId(persistedId);
+        setState('queued');
+        setError('Recording is saved on this device, but upload confirmation is unavailable. Retry without discarding it.');
+      } else {
+        setState('error');
+        setError(err instanceof Error ? err.message : 'The recording could not be saved locally. Keep this screen open and retry.');
+      }
     }
   }, [user?.id, user?.org_id, parentType, parentId, mimeType, seconds, announceCommitted]);
 
