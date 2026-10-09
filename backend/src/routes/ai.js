@@ -995,7 +995,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         geometry_verification: { start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM), persisted_path_points: persistedPath.length },
         fallback_used: routeProvider !== 'OSRM',
         message: routeProvider === 'OSRM'
-          ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} centreline vertices, ${buffer_m}m deviation threshold.`
+          ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} verified centreline vertices, ${buffer_m}m deviation threshold${pathSimplification.toleranceM ? " (centreline simplified within 10m tolerance)" : ""}.`
           : `LOW-PRECISION explicit fallback "${name}" created from a straight line. Review before operational use.`,
       };
     }
