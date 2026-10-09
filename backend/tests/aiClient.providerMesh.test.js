@@ -701,7 +701,7 @@ describe('intelligence provider mesh', () => {
       status:429,
       headers:{'x-ratelimit-reset-requests':String(resetAt)}
     });
-    const match=diagnostic.match(/retry_after_ms=(\\d+)/);
+    const match=diagnostic.match(/retry_after_ms=(\d+)/);
     expect(match).not.toBeNull();
     const retryAfterMs=Number(match[1]);
     expect(retryAfterMs).toBeGreaterThan(14*60*1000);
