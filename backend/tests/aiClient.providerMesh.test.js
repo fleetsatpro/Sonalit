@@ -109,6 +109,8 @@ describe('intelligence provider mesh', () => {
         const group = decodeURIComponent(String(key).replace('sonalit:intelligence:ai:circuit:v3:', ''));
         return blocked.has(group) ? String(until) : '0';
       })),
+      scan: jest.fn(async () => ['0', []]),
+      get: jest.fn(async () => null),
       set: jest.fn(async () => 'OK'),
       del: jest.fn(async () => 1),
     };
@@ -126,13 +128,13 @@ describe('intelligence provider mesh', () => {
 
     const policy = { dataClassification:'public', allowFreeProviders:true, preferFreeProviders:true };
     expect(ai.hasReadyProvider(policy)).toBe(true);
-    await expect(ai.createMessage({
+    await ai.createMessage({
       ...policy,
       providerHints:['gpt-oss-120b-openrouter-free'],
       system:'Return JSON.',
       messages:[{role:'user',content:'must not call a cooled account'}],
       max_tokens:100,
-    }));
+    });
     expect(create).toHaveBeenCalledTimes(1);
 
   });
