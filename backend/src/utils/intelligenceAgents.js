@@ -685,7 +685,12 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
             AND updated_at < NOW()-($6::int*INTERVAL '1 minute')
             AND CASE
               WHEN NULLIF(body->'deep_research'->>'recovery_attempts','') IS NULL THEN 0
-              WHEN (body->'deep_research'->>'recovery_attempts') ~ '^[0-9]{1,6}
+              WHEN (body->'deep_research'->>'recovery_attempts') ~ '^[0-9]{1,6}$'
+                THEN (body->'deep_research'->>'recovery_attempts')::int
+              ELSE 999999
+            END = $7
+          RETURNING id`,
+        [row.id,orgId,nextAttempt,maxAttempts,now.toISOString(),staleMinutes,storedAttempts]
       ));
       if(!claim.rows.length){
         results.push({id:String(row.id),country,type,status:'skipped',reason:'publication_changed_before_recovery_claim'});
