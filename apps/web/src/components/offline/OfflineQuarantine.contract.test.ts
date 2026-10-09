@@ -27,7 +27,11 @@ describe('offline quarantine operator contract', () => {
     const types = read('../../lib/offline/types.ts');
     const engine = read('../../lib/offline/syncEngine.ts');
     expect(types).toContain('export interface ConflictRecord');
-    expect(types).toMatch(/export interface ConflictRecord[\\s\\S]*?ownerUserId: string;[\\s\\S]*?ownerOrgId: string;/);
+    const start = types.indexOf('export interface ConflictRecord');
+    const end = types.indexOf('/** One operation\'s outcome', start);
+    const conflictType = types.slice(start, end);
+    expect(conflictType).toContain('ownerUserId: string;');
+    expect(conflictType).toContain('ownerOrgId: string;');
     expect(engine).toContain('ownerOrgId: entry.ownerOrgId');
   });
 });
