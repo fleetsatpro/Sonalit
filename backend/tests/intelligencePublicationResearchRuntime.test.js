@@ -207,7 +207,7 @@ test('degraded fallback keeps a structured assessment while its incident narrati
   expect(s).toContain('analytical_assessment:derivedAssessment');
   expect(s).toContain("'Decision relevance for \"'+headline+'\": '+why[0]");
   expect(s).toContain('const materialUncertainty=specificCaveats.length');
-  expect(s).toContain('persistence, geographic spread and downstream effects remain unconfirmed');
+  expect(s).toContain('persistence, recurrence, geographic spread and downstream effects remain unconfirmed');
   expect(s).not.toContain("'Research state: evidence-constrained; this edition does not present unverified detail as fact.'");
   expect(s).not.toContain('Broader deterioration is not established from the present record; the judgement should change only if subsequent evidence confirms');
 });
