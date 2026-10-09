@@ -302,11 +302,11 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Name, e.g. "Thika Road Corridor" or "Nairobi CBD Safe Zone"' },
-        location: { type: 'string', description: 'Place name or route start point' },
-        route_end: { type: 'string', description: 'Route end point for a corridor geofence, e.g. "Juja". Omit for a point geofence.' },
-        radius_m: { type: 'number', description: 'Radius in metres for a point geofence (default 3000). Ignored for corridors.' },
-        buffer_m: { type: 'number', description: 'Corridor half-width in metres — how far a vehicle can deviate before an alert fires (default 300).' },
+        name: { type: 'string', minLength: 1, maxLength: 160, description: 'Name, e.g. "Thika Road Corridor" or "Nairobi CBD Safe Zone"' },
+        location: { type: 'string', minLength: 1, maxLength: 400, description: 'Place name or route start point' },
+        route_end: { type: 'string', minLength: 1, maxLength: 400, description: 'Route end point for a corridor geofence, e.g. "Juja". Omit for a point geofence.' },
+        radius_m: { type: 'number', minimum: 10, maximum: 100000, description: 'Radius in metres for a point geofence (default 3000). Ignored for corridors.' },
+        buffer_m: { type: 'number', minimum: 10, maximum: 5000, description: 'Corridor half-width in metres — how far a vehicle can deviate before an alert fires (default 300).' },
         fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'corridor', 'general'] },
         precision: { type: 'string', enum: ['standard', 'high', 'maximum'], description: 'Precision level; maximum is the default for operational geofences.' },
         allow_straight_fallback: { type: 'boolean', description: 'Explicitly allow a straight-line fallback when road routing is unavailable. Defaults to false.' },
