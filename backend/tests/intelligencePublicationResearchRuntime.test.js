@@ -261,3 +261,30 @@ test('degraded eligibility is per incident and a generic fallback batch is not t
   expect(s).not.toContain('|| priorEvidenceConstrained || researchProviderUnavailable');
 });
 
+test('published dossiers cannot exceed the bounded research set when period-wide evidence is sufficient',()=>{
+  const s=source();
+  const basisStart=s.indexOf('function publicationEvidenceBasis(');
+  const basisEnd=s.indexOf('\nasync function recoverStalledPublications',basisStart);
+  expect(basisStart).toBeGreaterThan(-1);
+  expect(basisEnd).toBeGreaterThan(basisStart);
+  const basis=s.slice(basisStart,basisEnd);
+  expect(basis).toContain('const reportEvents=Array.isArray(publicationEvents)?publicationEvents:[];');
+  expect(basis).not.toContain('Array.isArray(allEvents)&&allEvents.length?allEvents');
+  expect(s).toContain('const researchEligibleEvents=publicationEvents.filter(e=>');
+  expect(s).toContain('const reportEvidenceCount=reportEvents.reduce');
+  expect(s).not.toContain('const reportEvidenceCount=evidenceContract ? evidenceCount');
+});
+
+test('bounded publication coverage explicitly discloses excluded period incidents and gates on reported evidence',()=>{
+  const s=source();
+  expect(s).toContain('const reportObservationEvidenceContract=reportEvidenceCount>=3&&reportSourceIds.size>=2;');
+  expect(s).toContain("const researchBackedEvidenceContract=publicationBasis.basis==='DIRECT_WEB_RESEARCH'&&publicationBasis.publishable;");
+  expect(s).toContain('const publicationEvidenceContract=events.length===0 || reportObservationEvidenceContract || researchBackedEvidenceContract;');
+  expect(s).toContain('const excludedPeriodEventCount=Math.max(0,events.length-reportEvents.length);');
+  expect(s).toContain('full_period_event_count:events.length');
+  expect(s).toContain('detailed_event_count:reportEvents.length');
+  expect(s).toContain('priority_research_limit:researchLimit');
+  expect(s).toContain('Their omission is not evidence that no incident occurred.');
+  expect(s).toContain('(Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:[]).filter(d=>');
+});
+
