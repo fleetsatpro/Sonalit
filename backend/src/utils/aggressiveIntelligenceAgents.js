@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const { query, globalQuery } = require('../config/database');
 const { runWithOrgContext } = require('./tenantContext');
 const logger = require('./logger');
+const { fetchGdeltJson } = require('./gdeltClient');
 
 const TIMEOUT_MS = Math.max(5000, Number(process.env.INTEL_AGENT_TIMEOUT_MS || 15000));
 const INTERVAL_MS = Math.max(5, Number(process.env.INTEL_AGENT_INTERVAL_MINUTES || 5)) * 60 * 1000;
@@ -168,8 +169,22 @@ async function runWithLimit(tasks, limit=MAX_PARALLEL) {
 
 async function fetchGdelt(queryText) {
   const url=`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(queryText)}&mode=artlist&maxrecords=${MAX_ITEMS_PER_SOURCE}&timespan=15min&format=json`;
-  const response=await timeoutFetch(url); if(!response.ok) throw new Error(`GDELT HTTP ${response.status}`);
-  const data=await response.json(); return (data.articles||[]).map(a=>({external_id:`gdelt:${sha(a.url||a.title)}`,title:a.title,body:a.title,url:a.url,published_at:a.seendate ? `${a.seendate.slice(0,4)}-${a.seendate.slice(4,6)}-${a.seendate.slice(6,8)}T${a.seendate.slice(8,10)}:${a.seendate.slice(10,12)}:${a.seendate.slice(12,14)}Z` : null,raw_metadata:{domain:a.domain,sourcecountry:a.sourcecountry,tone:a.tone}}));
+  const data=await fetchGdeltJson(url,{
+    timeoutMs:TIMEOUT_MS,
+    headers:{'user-agent':'Sonalit-Intelligence/1.0 (+https://sonalit.com)'},
+  });
+  return data.articles.map(a=>({
+    external_id:`gdelt:${sha(a.url||a.title)}`,
+    title:a.title,
+    body:a.title,
+    url:a.url,
+    published_at:a.seendate ? `${a.seendate.slice(0,4)}-${a.seendate.slice(4,6)}-${a.seendate.slice(6,8)}T${a.seendate.slice(8,10)}:${a.seendate.slice(10,12)}:${a.seendate.slice(12,14)}Z` : null,
+    raw_metadata:{domain:a.domain,sourcecountry:a.sourcecountry,tone:a.tone},
+  }));
+}
+function matchedSpecialistAgents(item) {
+  const text=`${item?.title||''} ${item?.body||''} ${item?.raw_metadata?.domain||''}`.toLowerCase();
+  return AGENTS.filter(agent=>agent.terms.some(term=>text.includes(String(term).toLowerCase()))).map(agent=>agent.id);
 }
 
 function defaultWhatsappChannels() {
@@ -202,7 +217,31 @@ async function sweepOrg(orgId) {
   const tasks=[];
   for(const registered of REGISTERED_SOURCES) tasks.push(async()=>{const source=await ensureSource(orgId,registered);return{name:source.name,registered:true,observation_ingestion:Boolean(registered.metadata?.observation_ingestion),seen:0,inserted:0,duplicate:0};});
   for(const src of DIRECT_SOURCES) tasks.push(async()=>{const items=await fetchDirectSource(src);const source=await ensureSource(orgId,{name:src.name,source_type:src.source_type,provider:'web',endpoint:src.url,reliability:src.reliability,metadata:{agents:AGENTS.filter(a=>a.terms.some(t=>src.keywords.includes(t))).map(a=>a.id),cadence:'5m'}});const p=await persist(orgId,source,items,'WEB-MESH');return{name:src.name,seen:items.length,...p};});
-  for(const agent of AGENTS) tasks.push(async()=>{const q=agent.terms.map(t=>`"${t.replace(/"/g,'')}"`).join(' OR ');const items=await fetchGdelt(q);const source=await ensureSource(orgId,{name:`GDELT · ${agent.name}`,source_type:'news',provider:'gdelt',endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',reliability:68,metadata:{agent_id:agent.id,query:q}});const p=await persist(orgId,source,items,agent.id);return{name:agent.name,agent_id:agent.id,seen:items.length,...p};});
+  // One combined provider request feeds the 24 logical specialist lanes. The
+  // previous one-request-per-agent fan-out could issue several simultaneous
+  // GDELT queries, exceed upstream limits, and create repetitive/empty coverage.
+  tasks.push(async()=>{
+    const items=await fetchGdelt(agentQueries);
+    const source=await ensureSource(orgId,{
+      name:'GDELT · Combined Specialist Mesh',
+      source_type:'news',
+      provider:'gdelt',
+      endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',
+      reliability:68,
+      metadata:{agent_ids:AGENTS.map(agent=>agent.id),agent_count:AGENT_COUNT,query:agentQueries,query_mode:'combined-specialist-or',cadence:'5m'},
+    });
+    const attributed=items.map(item=>({
+      ...item,
+      raw_metadata:{
+        ...(item.raw_metadata||{}),
+        specialist_mesh:'combined-query',
+        matched_agent_ids:matchedSpecialistAgents(item),
+        agent_match_basis:'title-body-domain',
+      },
+    }));
+    const p=await persist(orgId,source,attributed,'GDELT-COMBINED-MESH');
+    return{name:'GDELT Combined Specialist Mesh',agents:AGENT_COUNT,seen:items.length,...p};
+  });
   for(const channel of defaultWhatsappChannels()) tasks.push(async()=>{
     const source=await ensureSource(orgId,{name:channel.name||`WhatsApp Channel ${channel.channel_id||''}`,source_type:'social',provider:'whatsapp',endpoint:channel.endpoint||null,reliability:Number(channel.reliability)||55,metadata:{...(channel.metadata||{}),channel_id:channel.channel_id,authorized:true,configured:Boolean(channel.endpoint)}});
     if(!channel.endpoint)return{name:source.name,configured:false,pending_authorized_feed:true,seen:0,inserted:0,duplicate:0};
@@ -212,7 +251,7 @@ async function sweepOrg(orgId) {
   });
   const results=await runWithLimit(tasks,MAX_PARALLEL);
   const ok=results.filter(r=>r.status==='fulfilled').map(r=>r.value), failed=results.filter(r=>r.status==='rejected');
-  return { agents:AGENT_COUNT, collectors:DIRECT_SOURCES.length+AGENTS.length+defaultWhatsappChannels().length+REGISTERED_SOURCES.length, parallelism:MAX_PARALLEL, configured_whatsapp_channels:defaultWhatsappChannels().filter(x=>x.endpoint).length, whatsapp_sources_registered:defaultWhatsappChannels().length, successful_collectors:ok.length, failed_collectors:failed.length, seen:ok.reduce((n,r)=>n+Number(r.seen||0),0), inserted:ok.reduce((n,r)=>n+Number(r.inserted||0),0), duplicates:ok.reduce((n,r)=>n+Number(r.duplicate||0),0), results:ok.slice(0,80), generated_at:new Date().toISOString() };
+  return { agents:AGENT_COUNT, collectors:DIRECT_SOURCES.length+1+defaultWhatsappChannels().length+REGISTERED_SOURCES.length, specialist_agents:AGENT_COUNT, parallelism:MAX_PARALLEL, configured_whatsapp_channels:defaultWhatsappChannels().filter(x=>x.endpoint).length, whatsapp_sources_registered:defaultWhatsappChannels().length, successful_collectors:ok.length, failed_collectors:failed.length, seen:ok.reduce((n,r)=>n+Number(r.seen||0),0), inserted:ok.reduce((n,r)=>n+Number(r.inserted||0),0), duplicates:ok.reduce((n,r)=>n+Number(r.duplicate||0),0), results:ok.slice(0,80), generated_at:new Date().toISOString() };
   });
 }
 
