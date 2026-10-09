@@ -8,8 +8,11 @@ describe('voice-note recorder delivery contract', () => {
   it('writes the recording to durable storage before attempting network upload', () => {
     expect(recorder).toContain('const entry = await enqueueVoiceNote({');
     expect(recorder.indexOf('enqueueVoiceNote({')).toBeLessThan(recorder.indexOf('drainMediaOutbox(user.id, user.org_id'));
-    expect(recorder).toContain('blobRef.current = null;');
-    expect(recorder.indexOf('blobRef.current = null;')).toBeGreaterThan(recorder.indexOf('setQueuedId(entry.id)'));
+    const uploadStart = recorder.indexOf('const upload = useCallback');
+    const uploadEnd = recorder.indexOf('const retry = useCallback', uploadStart);
+    const uploadSource = recorder.slice(uploadStart, uploadEnd);
+    expect(uploadSource.indexOf('setQueuedId(entry.id)')).toBeGreaterThanOrEqual(0);
+    expect(uploadSource.indexOf('blobRef.current = null;')).toBeGreaterThan(uploadSource.indexOf('setQueuedId(entry.id)'));
   });
 
   it('retries the durable entry rather than clearing the original Blob', () => {
