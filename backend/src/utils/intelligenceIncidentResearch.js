@@ -28,6 +28,7 @@ const MAX_PACKET_CHARS = 30000;
 const REQUEST_TIMEOUT_MS = 10000;
 const GDELT_COOLDOWN_MS=5*60*1000;
 let gdeltDownUntil=0;
+function _resetGdeltCooldownForTests(){ gdeltDownUntil=0; }
 
 const RESEARCH_RESPONSE_FORMAT = {
   type:'json_schema',
@@ -170,6 +171,31 @@ async function googleNewsSearch({headline,country,region}){
   return uniqueByUrl(merged).slice(0,Math.max(MAX_SEARCH_RESULTS,14));
 }
 
+async function parseGdeltResponse(response){
+  const status=Number(response?.status||0);
+  const contentType=String(response?.headers?.get?.('content-type')||'unknown')
+    .split(';')[0].trim().toLowerCase().slice(0,100);
+  let body='';
+  try{
+    body=await response.text();
+  }catch(_){
+    throw Object.assign(
+      new Error('GDELT response body could not be read (HTTP '+status+')'),
+      {failureClass:'upstream_protocol',upstreamStatus:status,upstreamContentType:contentType}
+    );
+  }
+  try{
+    return JSON.parse(body);
+  }catch(_){
+    const throttleNotice=/(?:rate.?limit|too many requests|queries? per second|slow down|wait\s+\d+\s+seconds|try again later|request quota)/i.test(body);
+    const failureClass=throttleNotice||status===429?'rate_limited':'upstream_protocol';
+    throw Object.assign(
+      new Error('GDELT returned a non-JSON response (HTTP '+status+', content-type '+contentType+')'),
+      {failureClass,upstreamStatus:status,upstreamContentType:contentType}
+    );
+  }
+}
+
 async function gdeltSearch({headline,country,region}){
   if(Date.now()<gdeltDownUntil)return [];
   const q=[clean(headline,220),COUNTRY_NAMES[country]||country,region].filter(Boolean).join(' ');
@@ -182,7 +208,7 @@ async function gdeltSearch({headline,country,region}){
   try{
     const res=await fetchText(u.toString(),{},REQUEST_TIMEOUT_MS);
     if(!res.ok)throw new Error('GDELT HTTP '+res.status);
-    const parsed=await res.json();
+    const parsed=await parseGdeltResponse(res);
     const articles=Array.isArray(parsed?.articles)?parsed.articles:Array.isArray(parsed?.results)?parsed.results:[];
     return articles.map(a=>({
       title:clean(a?.title,500),
@@ -194,11 +220,23 @@ async function gdeltSearch({headline,country,region}){
       kind:'gdelt_discovery'
     })).filter(a=>a.url&&!isAggregatorDomain(a.domain));
   }catch(error){
-    if(/HTTP 429|rate.?limit/i.test(String(error?.message||''))){
+    const failureClass=String(error?.failureClass||'');
+    if(failureClass==='rate_limited'||/HTTP 429|rate.?limit/i.test(String(error?.message||''))){
       gdeltDownUntil=Date.now()+GDELT_COOLDOWN_MS;
       logger.warn('Incident research GDELT rate-limited; cooling source for 5 minutes');
+    }else if(failureClass==='upstream_protocol'){
+      // GDELT sometimes reports invalid queries or throttling as HTTP 200
+      // plain text. Do not mistake that body for an empty article list or log
+      // its contents; pause this upstream lane briefly and make the contract
+      // failure observable without echoing source text.
+      gdeltDownUntil=Date.now()+60*1000;
+      logger.warn('Incident research GDELT returned a non-JSON response; cooling source for 60 seconds');
     }else{
-      logger.warn('Incident research GDELT unavailable: '+error.message);
+      // Timeouts, DNS/connect failures and other transient provider failures
+      // must not be retried once per incident in the same collection cycle.
+      // Keep the reason class (not the raw upstream body or URL) observable.
+      gdeltDownUntil=Date.now()+60*1000;
+      logger.warn('Incident research GDELT unavailable; cooling source for 60 seconds ('+(failureClass||'upstream_failure')+')');
     }
     return [];
   }
@@ -564,4 +602,4 @@ async function researchPublicationIncidents(events,{country,region}={}){
   return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,deferred:Math.max(0,events.length-values.length),degraded_evidence_eligible:degradedEvidenceEligible,provider_unavailable:providerUnavailable}};
 }
 
-module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources};
+module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,_resetGdeltCooldownForTests};
