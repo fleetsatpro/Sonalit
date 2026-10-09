@@ -177,12 +177,13 @@ test('publication research records degraded evidence eligibility explicitly',()=
 });
 
 
-test('incident publication uses the actual research outcome instead of stale provider readiness',()=>{
+test('incident publication uses bounded, evidence-eligible research outcomes rather than stale provider readiness',()=>{
   const s=source();
   expect(s).toContain("const priorEvidenceConstrained=");
   expect(s).toContain("entry.error==='ai_provider_unavailable'");
-  expect(s).toContain('const allSelectedIncidentsDegraded=');
-  expect(s).toContain('const publicationEvidenceContract=events.length===0 || evidenceContract || publicationBasis.publishable || allSelectedIncidentsDegraded;');
+  expect(s).toContain('const researchEligibleEvents=publicationEvents.filter(e=>');
+  expect(s).toContain('const reportEvents=publicationBasis.basis===\'DIRECT_WEB_RESEARCH\' && publicationBasis.publishable');
+  expect(s).toContain('const reportObservationEvidenceContract=reportEvidenceCount>=3&&reportSourceIds.size>=2;');
   expect(s).toContain('const degradedEvidenceRelease=');
   expect(s).toContain('if(aiBoardEnabled && publicationAiAvailable && events.length && !degradedEvidenceRelease)');
   expect(s).toContain("const publicationAiAvailable=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(publicationAiPolicy);");
@@ -287,4 +288,3 @@ test('bounded publication coverage explicitly discloses excluded period incident
   expect(s).toContain('Their omission is not evidence that no incident occurred.');
   expect(s).toContain('(Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:[]).filter(d=>');
 });
-
