@@ -204,8 +204,10 @@ function createPublicResearchFetcher({ resolveAddresses = resolvePublicAddresses
         throw researchError('External research host resolves to a private or reserved address');
       }
 
+      const requestRemainingMs = deadline - Date.now();
+      if (requestRemainingMs <= 0) throw researchError('External research request timed out', 'unavailable');
       const response = await requestOnce(parsed.url, addresses, {
-        timeoutMs: Math.max(500, deadline - Date.now()),
+        timeoutMs: requestRemainingMs,
         maxBytes,
       });
       const status = Number(response && response.status || 0);
