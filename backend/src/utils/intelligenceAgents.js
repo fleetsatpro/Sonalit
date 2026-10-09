@@ -491,7 +491,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
     }catch(error){aiBoardStatus='unavailable';aiBoardHoldReason=error.message;logger.warn(`Publication editorial board unavailable ${country}/${type}; publication remains on release hold: ${error.message}`);}
   }
 
-  if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=aiClient.hasAnyProvider()?'not_run':'provider_unavailable';
+  if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=publicationAiReady?'not_run':'provider_unavailable';
   const boardPublishable=board?.publishable===true;
   const finalQuality=auditPublicationContent(
     Array.isArray(finalBody.incident_dossiers)?finalBody.incident_dossiers:
