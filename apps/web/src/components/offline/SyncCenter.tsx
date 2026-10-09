@@ -175,6 +175,17 @@ export default function SyncCenter({ userId }: { userId: string }) {
         </div>
       )}
 
+      {status.quarantinedLocalRecords != null && status.quarantinedLocalRecords > 0 && (
+        <section role="alert" aria-label="Legacy offline records require review" className="rounded-xl border border-cds-amber/40 bg-cds-amber/[.08] px-4 py-3">
+          <div className="flex items-center gap-2 text-[12px] font-semibold text-cds-amber">
+            <AlertTriangle size={14} /> {status.quarantinedLocalRecords} older offline record{status.quarantinedLocalRecords === 1 ? '' : 's'} retained for safe review
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-text-1">
+            These records are not being replayed because their original organisation cannot be verified safely. Sonalit preserved the original data on this device rather than assigning it to the current account. Do not clear this browser storage; contact your Sonalit administrator before device handover.
+          </p>
+        </section>
+      )}
+
       <section aria-label="Offline map availability" className="rounded-xl border border-cds-amber/30 bg-cds-amber/[.06] px-4 py-3">
         <div className="flex items-center gap-2 text-[12px] font-semibold text-cds-amber">
           <AlertTriangle size={14} /> Offline maps unavailable
