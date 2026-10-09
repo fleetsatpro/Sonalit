@@ -90,6 +90,14 @@ describe('public intelligence research fetch boundary', () => {
     await expect(fetchPublic('https://publisher.test/large', { maxBytes: 10 })).rejects.toThrow('exceeds the byte limit');
   });
 
+  test('exposes the exact response bytes for binary consumers', async () => {
+    const bytes = Buffer.from('bounded-binary-fixture');
+    const requestOnce = jest.fn(async () => response(200, { 'content-type': 'application/octet-stream' }, bytes));
+    const fetchPublic = createPublicResearchFetcher({ resolveAddresses: jest.fn(async () => PUBLIC_V4), requestOnce });
+    const result = await fetchPublic('https://publisher.test/asset', { maxBytes: bytes.length });
+    expect(Buffer.from(await result.arrayBuffer())).toEqual(bytes);
+  });
+
   test('enforces a bounded redirect count', async () => {
     const requestOnce = jest.fn(async url => response(302, { location: 'https://publisher.test/next?path=' + encodeURIComponent(url.pathname) }));
     const fetchPublic = createPublicResearchFetcher({ resolveAddresses: jest.fn(async () => PUBLIC_V4), requestOnce });
