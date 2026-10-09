@@ -107,6 +107,8 @@ describe('publication research retry wiring', () => {
 
   test('provider readiness status respects active cooldown and publication data policy', () => {
     const source = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceAgents.js'), 'utf8');
-    expect(source).toContain("if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=publicationAiReady?'not_run':'provider_unavailable';");
+    expect(source).toContain("if(aiBoardEnabled && aiBoardStatus==='disabled')aiBoardStatus=publicationAiAvailable?'not_run':'provider_unavailable';");
+    expect(source).toContain("const publicationAiAvailable=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(publicationAiPolicy);");
+    expect(source).not.toContain('aiClient.hasReadyProvider(publicationAiPolicy)');
   });
 });
