@@ -112,7 +112,7 @@ export function isAllowedR2UploadUrl(value: string): boolean {
       !url.username &&
       !url.password &&
       !url.port &&
-      /^[a-f0-9]{32}\.r2\.cloudflarestorage\.com$/.test(url.hostname);
+      /^(?:[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])\.)?[a-f0-9]{32}\.r2\.cloudflarestorage\.com$/.test(url.hostname);
   } catch {
     return false;
   }
