@@ -593,23 +593,26 @@ describe('intelligence provider mesh', () => {
     const calls=[];
     jest.doMock('openai',()=>class MockOpenAI{
       constructor(options={}){
+        this.apiKey=options.apiKey;
         this.baseURL=options.baseURL||'openai';
         this.chat={completions:{create:jest.fn(async request=>{
-          calls.push({baseURL:this.baseURL,model:request.model});
-          if(this.baseURL.includes('generativelanguage.googleapis.com')){
+          calls.push({apiKey:this.apiKey,baseURL:this.baseURL,model:request.model});
+          // Match the configured test credential, not baseURL: the SDK options
+          // object may override the endpoint in this environment.
+          if(this.apiKey==='google-test-key-123'){
             const error=new Error('Gemini rate limit');
             error.status=429;
             throw error;
           }
-          if(this.baseURL==='openai'){
+          if(this.apiKey==='openai-test-key-123'){
             const error=new Error('insufficient credit balance');
             error.status=402;
             throw error;
           }
-          if(this.baseURL.includes('openrouter.ai')&&request.model==='openrouter/free'){
+          if(this.apiKey==='openrouter-test-key-123'&&request.model==='openrouter/free'){
             return {choices:[{message:{content:'{"results":[]}',tool_calls:[]}}]};
           }
-          throw new Error('Unexpected provider/model in half-open test');
+          throw new Error('Unexpected provider credential/model in half-open test');
         })}};
       }
     });
@@ -627,10 +630,9 @@ describe('intelligence provider mesh', () => {
 
     expect(response._provider).toBe('openrouter-free-router');
     expect(response._free_provider).toBe(true);
-    expect(calls.some(c=>c.baseURL.includes('generativelanguage.googleapis.com'))).toBe(true);
-    expect(calls.some(c=>c.baseURL==='openai')).toBe(true);
-    expect(calls.filter(c=>c.baseURL.includes('openrouter.ai'))).toEqual([
+    expect(calls.some(c=>c.apiKey==='google-test-key-123')).toBe(true);
+    expect(calls.some(c=>c.apiKey==='openai-test-key-123')).toBe(true);
+    expect(calls.filter(c=>c.apiKey==='openrouter-test-key-123')).toEqual([
       expect.objectContaining({model:'openrouter/free'})
     ]);
   });
-
