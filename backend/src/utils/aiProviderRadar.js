@@ -38,6 +38,7 @@ function boundedCount(value){
 }
 
 function boundedNumber(value){
+  if(value===null||value===undefined||value==='')return null;
   const n=Number(value);
   return Number.isFinite(n)&&n>=0?Math.min(n,86_400_000):null;
 }
