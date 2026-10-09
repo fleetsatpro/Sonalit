@@ -19,6 +19,13 @@ describe('public intelligence research fetch boundary', () => {
     '172.16.0.10',
     '192.168.1.2',
     '169.254.169.254',
+    '192.0.2.1',
+    '192.88.99.1',
+    '198.18.0.1',
+    '198.51.100.1',
+    '203.0.113.1',
+    '224.0.0.1',
+    '240.0.0.1',
     '::1',
     'fc00::1',
     'fe80::1',
@@ -96,6 +103,13 @@ describe('public intelligence research fetch boundary', () => {
     const fetchPublic = createPublicResearchFetcher({ resolveAddresses: jest.fn(async () => PUBLIC_V4), requestOnce });
     const result = await fetchPublic('https://publisher.test/asset', { maxBytes: bytes.length });
     expect(Buffer.from(await result.arrayBuffer())).toEqual(bytes);
+  });
+
+  test('supports guarded JSON parsing required by the GDELT collector', async () => {
+    const requestOnce = jest.fn(async () => response(200, { 'content-type': 'application/json' }, '{"articles":[{"title":"Route disruption"}]}'));
+    const fetchPublic = createPublicResearchFetcher({ resolveAddresses: jest.fn(async () => PUBLIC_V4), requestOnce });
+    const result = await fetchPublic('https://api.gdeltproject.org/api/v2/doc/doc');
+    await expect(result.json()).resolves.toEqual({ articles: [{ title: 'Route disruption' }] });
   });
 
   test('enforces a bounded redirect count', async () => {
