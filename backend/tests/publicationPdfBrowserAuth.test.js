@@ -75,6 +75,7 @@ describe('browser-native publication PDF compatibility', () => {
     const s = fs.readFileSync(path.join(__dirname, '../src/services/intelligencePublicationPdf.js'), 'utf8');
     expect(s).toContain('crypto.randomUUID()');
     expect(s).toContain('pdf_url:null');
+    expect(s).toContain('pdf_url=NULL,pdf_generated_at=NOW()');
     expect(s).not.toContain('R2_PUBLIC_URL');
   });
 
