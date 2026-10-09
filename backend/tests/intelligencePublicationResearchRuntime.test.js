@@ -249,3 +249,12 @@ test('degraded fallback eligibility is carried into the dossier and explicitly r
   expect(quality).toContain('Number(dossier.source_count||0)>=1');
 });
 
+test('degraded eligibility is per incident and a generic fallback batch is not treated as provider outage',()=>{
+  const s=source();
+  expect(s).toContain('const hasEligiblePerIncidentProviderFailure=publicationEvents.some(e=>');
+  expect(s).toContain("entry.error==='ai_provider_unavailable' &&");
+  expect(s).toContain("['degraded_evidence','live_web_packet'].includes(method)");
+  expect(s).toContain("(entry.error==='ai_provider_unavailable' || priorEvidenceConstrained)");
+  expect(s).not.toContain('|| priorEvidenceConstrained || researchProviderUnavailable');
+});
+
