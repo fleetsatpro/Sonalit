@@ -694,4 +694,19 @@ describe('intelligence provider mesh', () => {
     expect(diagnostic).not.toContain('Private request text');
   });
 
+  test('OpenRouter reset timestamps in epoch milliseconds are not misread as seconds',()=>{
+    const {openRouterRateLimitDiagnostic}=require('../src/utils/aiClient');
+    const resetAt=Date.now()+15*60*1000;
+    const diagnostic=openRouterRateLimitDiagnostic({
+      status:429,
+      headers:{'x-ratelimit-reset-requests':String(resetAt)}
+    });
+    const match=diagnostic.match(/retry_after_ms=(\d+)/);
+    expect(match).not.toBeNull();
+    const retryAfterMs=Number(match[1]);
+    expect(retryAfterMs).toBeGreaterThan(14*60*1000);
+    expect(retryAfterMs).toBeLessThanOrEqual(15*60*1000);
+    expect(diagnostic).toContain('rate_limit_reset='+String(resetAt));
+  });
+
 });
