@@ -372,6 +372,8 @@
 .forgot-link{font-size:12px;color:var(--gold);cursor:pointer;font-weight:500;background:none;border:none;padding:0;}
 .forgot-link:hover{text-decoration:underline;}
 
+.auth-capability-note{width:100%;margin:0;color:var(--text-dim);font-size:11px;line-height:1.5;}
+
 .cta{
   width:100%;padding:15px;border:none;color:#04121a;
   background:linear-gradient(102deg,var(--gold) 0%,var(--gold-hot) 100%);
