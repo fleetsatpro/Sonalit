@@ -635,7 +635,12 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
         AND updated_at < NOW()-($3::int*INTERVAL '1 minute')
         AND CASE
           WHEN NULLIF(body->'deep_research'->>'next_attempt_at','') IS NULL THEN TRUE
-          WHEN (body->'deep_research'->>'next_attempt_at') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z
+          WHEN (body->'deep_research'->>'next_attempt_at') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$'
+            THEN (body->'deep_research'->>'next_attempt_at')::timestamptz <= NOW()
+          ELSE FALSE
+        END
+        AND (
+          COALESCE(body->'release_gate'->>'research_release_gate','true')='false'
           OR COALESCE(body->'release_gate'->>'ai_board_gate','true')='false'
           OR body->'deep_research'->>'last_failure_reason' IS NOT NULL
         )
