@@ -10,6 +10,7 @@ import {
   trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
   bboxFromMap, useTrafficIncidents, useTrafficStatus,
 } from '../../lib/trafficLayer.js';
+import { trafficAvailabilityNotice } from '../../lib/trafficHealth.js';
 
 installOpticalReconMapLibreProtocol()
 
@@ -286,7 +287,8 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
   });
 
   const { data: trafficStatus } = useTrafficStatus();
-  const { data: trafficFC } = useTrafficIncidents(bbox, trafficOn);
+  const { data: trafficFC, isError: trafficIncidentsError } = useTrafficIncidents(bbox, trafficOn);
+  const trafficNotice = trafficOn ? trafficAvailabilityNotice(trafficIncidentsError, trafficFC?.health?.status) : null;
 
   const { data: mapData } = useQuery<MapData>({
     queryKey: ['dashboard-map'],
@@ -376,10 +378,13 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
   }, [trafficOn]);
 
   useEffect(() => {
-    trafficFCRef.current = trafficFC ?? null;
-    const map = mapRef.current; if (!map || !mapReadyRef.current || !trafficFC) return;
-    setTrafficIncidents(map, trafficFC);
-  }, [trafficFC]);
+    const currentCollection = trafficIncidentsError
+      ? { type: 'FeatureCollection' as const, features: [] }
+      : trafficFC ?? null;
+    trafficFCRef.current = currentCollection;
+    const map = mapRef.current; if (!map || !mapReadyRef.current || !currentCollection) return;
+    setTrafficIncidents(map, currentCollection);
+  }, [trafficFC, trafficIncidentsError]);
 
   useEffect(() => {
     vehiclePositions.forEach((pos, vehicleId) => {
@@ -463,6 +468,11 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
           >
             TRAFFIC
           </button>
+          {trafficOn && trafficNotice && (
+            <span role="status" aria-live="polite" title={trafficNotice} style={{ color: '#fbbf24', fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', maxWidth: 180 }}>
+              ROAD STATE UNKNOWN
+            </span>
+          )}
         )}
         {/* Layer switcher: normal operational map, reference satellite, or latest validated optical observation */}
         <button
