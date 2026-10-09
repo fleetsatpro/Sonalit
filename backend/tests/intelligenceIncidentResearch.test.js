@@ -10,7 +10,7 @@ jest.mock('../src/utils/publicResearchFetch',()=>({
   MAX_RESPONSE_BYTES:2*1024*1024,
 }));
 
-const { researchPublicationIncidents, verifiedResponseSources } = require('../src/utils/intelligenceIncidentResearch');
+const { researchPublicationIncidents, verifiedResponseSources, parseGdeltResponse } = require('../src/utils/intelligenceIncidentResearch');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
 
 test('passes publication data-classification policy into AI incident research',async()=>{
@@ -139,4 +139,64 @@ test('provider research citations must come from non-text verified web-search re
 test('successful researched incidents persist an explicit research method',()=>{
   const source=require('fs').readFileSync(require('path').join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
   expect(source).toContain("const researchMethod=providerSearchUsed?'ai_web_search':(packetBacked?'live_web_packet':'ai_web_search');");
+});
+
+
+describe('GDELT HTTP-success rejection handling',()=>{
+  test('parses valid GDELT JSON through the bounded text response contract',async()=>{
+    const response={
+      status:200,
+      headers:{get:()=> 'application/json; charset=utf-8'},
+      text:jest.fn().mockResolvedValue(JSON.stringify({articles:[{url:'https://news.example/a'}]})),
+      json:jest.fn(()=>{throw new Error('must not use implicit JSON parser');})
+    };
+    await expect(parseGdeltResponse(response)).resolves.toEqual({
+      articles:[{url:'https://news.example/a'}]
+    });
+    expect(response.text).toHaveBeenCalledTimes(1);
+    expect(response.json).not.toHaveBeenCalled();
+  });
+
+  test('recognizes a plain-text HTTP 200 rejection without logging or returning its body',async()=>{
+    const body='Your search was rejected by the upstream service because its query is not accepted.';
+    const response={
+      status:200,
+      headers:{get:()=> 'text/html; charset=UTF-8'},
+      text:jest.fn().mockResolvedValue(body)
+    };
+    let thrown;
+    try{await parseGdeltResponse(response);}catch(error){thrown=error;}
+    expect(thrown).toMatchObject({
+      failureClass:'upstream_protocol',
+      upstreamStatus:200,
+      upstreamContentType:'text/html'
+    });
+    expect(thrown.message).toBe('GDELT returned a non-JSON response (HTTP 200, content-type text/html)');
+    expect(thrown.message).not.toContain('rejected by the upstream service');
+  });
+
+  test('classifies explicit throttling notices separately from malformed/query responses',async()=>{
+    const response={
+      status:200,
+      headers:{get:()=> 'text/plain'},
+      text:jest.fn().mockResolvedValue('Rate limit reached. Please try again later.')
+    };
+    await expect(parseGdeltResponse(response)).rejects.toMatchObject({
+      failureClass:'rate_limited',
+      upstreamStatus:200,
+      upstreamContentType:'text/plain'
+    });
+  });
+
+  test('does not leak upstream response content when the body cannot be read',async()=>{
+    const response={
+      status:200,
+      headers:{get:()=> 'application/json'},
+      text:jest.fn().mockRejectedValue(new Error('sensitive upstream response detail'))
+    };
+    let thrown;
+    try{await parseGdeltResponse(response);}catch(error){thrown=error;}
+    expect(thrown).toMatchObject({failureClass:'upstream_protocol',upstreamStatus:200});
+    expect(thrown.message).not.toContain('sensitive upstream response detail');
+  });
 });
