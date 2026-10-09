@@ -77,4 +77,10 @@ describe('browser-native publication PDF compatibility', () => {
     expect(s).toContain('pdf_url:null');
     expect(s).not.toContain('R2_PUBLIC_URL');
   });
+
+  test('publication listings redact legacy direct R2 URLs while preserving scoped PDF streaming', () => {
+    const s = fs.readFileSync(path.join(__dirname, '../src/routes/communicationsControl.js'), 'utf8');
+    expect(s).toContain('const publications = rows.rows.map(row => ({ ...row, pdf_url: null }));');
+    expect(s).toContain('streamPublicationPdf(req.user.org_id');
+  });
 });
