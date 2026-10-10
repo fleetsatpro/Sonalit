@@ -15,7 +15,7 @@ const { PDF_RENDERER_VERSION } = require('../services/intelligencePublicationPdf
 
 const COUNTRY_NAMES={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
 const DAILY_COUNTRIES=(process.env.INTEL_PUBLICATION_COUNTRIES||Object.keys(COUNTRY_NAMES).join(',')).split(',').map(x=>x.trim().toUpperCase()).filter(x=>COUNTRY_NAMES[x]);
-const DEEP_RESEARCH_VERSION='2.0';
+const DEEP_RESEARCH_VERSION='2.1'; // Revalidate stored dossiers against the substantive-source contract.
 const PUBLICATION_EVIDENCE_VERSION='1.1';
 const MAX_TRANSLATE=24;
 const MAX_SYNTHESIS=10;
