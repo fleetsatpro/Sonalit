@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const copilot = readFileSync(new URL('./Copilot.tsx', import.meta.url), 'utf8');
+const geofenceIntent = readFileSync(new URL('../lib/geofenceIntent.ts', import.meta.url), 'utf8');
 const geofencesPage = readFileSync(new URL('./Geofences.tsx', import.meta.url), 'utf8');
 const mapRenderer = readFileSync(new URL('../components/geofences/useGeofenceMap.ts', import.meta.url), 'utf8');
 const serverCreate = readFileSync(new URL('../../../../backend/src/routes/geofences.js', import.meta.url), 'utf8');
@@ -14,6 +15,10 @@ describe('Copilot geofence end-to-end geometry contract', () => {
     expect(copilot).not.toContain("type: 'both'");
     expect(copilot).toContain('polygonValidationError(points)');
     expect(copilot).toContain('setMapReady(true)');
+    expect(copilot).toContain('shouldOpenManualPolygonDrawing(text)');
+    expect(copilot).toContain("queryClient.invalidateQueries({ queryKey: ['geofence-map-data'] })");
+    expect(copilot).not.toContain("if (/draw.*(geofence|zone|area)|create.*(geofence|zone)/i.test(input)) setShowDraw(true)");
+    expect(geofenceIntent).toContain('export function shouldOpenManualPolygonDrawing');
   });
 
   it('keeps polygon drawing preview and the persisted map rendering path aligned', () => {

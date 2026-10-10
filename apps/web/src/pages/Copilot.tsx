@@ -4,6 +4,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
 import { formatArea, polygonAreaM2, polygonValidationError, toGeoJsonPolygon } from '../lib/geofenceGeometry.js';
+import { shouldOpenManualPolygonDrawing } from '../lib/geofenceIntent.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 type Role = 'user' | 'assistant';
@@ -183,10 +184,6 @@ export default function Copilot() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  useEffect(() => {
-    if (/draw.*(geofence|zone|area)|create.*(geofence|zone)/i.test(input)) setShowDraw(true);
-  }, [input]);
-
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || isLoading) return;
@@ -196,6 +193,15 @@ export default function Copilot() {
     setIsLoading(true);
     const history = historyRef.current.slice(-6);
     try {
+      if (shouldOpenManualPolygonDrawing(text)) {
+        setShowDraw(true);
+        const responseText = 'Polygon drawing mode is open. Click the map to place at least three vertices. You can undo the last point, review the approximate area and boundary validation, then name and confirm the polygon. Nothing is saved until you press Create Polygon Geofence.';
+        const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
+        historyRef.current = [...historyRef.current, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-12);
+        setResponseStatus('RESPONDED');
+        setMessages((prev) => [...prev, assistantMsg]);
+        return;
+      }
       // Action language goes through the agentic task executor so Copilot can
       // actually perform supported operations; evidence questions stay on the
       // lower-cost, quota-resilient Decision Fabric.
@@ -208,6 +214,7 @@ export default function Copilot() {
       if (d?.task?.completed && d?.created?.some(item => item.type === 'geofence')) {
         queryClient.invalidateQueries({ queryKey: ['geofences'] });
         queryClient.invalidateQueries({ queryKey: ['geofences-list'] });
+        queryClient.invalidateQueries({ queryKey: ['geofence-map-data'] });
       }
       const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
       setTelemetry({ ...(d.meta || {}), confidence: d.confidence, risk: d.risk_level, safety: d.assurance?.safety_gate, evidence: d.assurance?.evidence_health?.succeeded, agent_count: d.task?.completed ? 0 : d.meta?.agent_count });
@@ -217,7 +224,6 @@ export default function Copilot() {
       else setResponseStatus('RESPONDED');
       historyRef.current = [...historyRef.current, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-12);
       setMessages((prev) => [...prev, assistantMsg]);
-      if (/draw|map|geofence|zone/i.test(responseText) && /geofence|zone|area/i.test(text)) setShowDraw(true);
     } catch (error: any) {
       const detail = error?.response?.data?.error || error?.response?.data?.message;
       const status = error?.response?.status;
