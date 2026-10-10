@@ -123,6 +123,9 @@ describe('degraded incident research remains useful',()=>{
     },{country:'KE'});
     expect(safeFetchPublicResearch).toHaveBeenCalledWith(feedUrl,expect.objectContaining({timeoutMs:10000}));
     expect(packet.discovery_summary.configured_rss_candidates).toBe(1);
+    // A successful GDELT request with zero articles must still be counted.
+    expect(packet.discovery_summary.gdelt_candidates).toBe(0);
+    expect(packet.discovery_summary.gdelt_requested).toBe(true);
     expect(packet.fetched_pages.some(page=>page.url===articleUrl&&page.domain==='allafrica.com'&&page.text.length>=250)).toBe(true);
   });
 
