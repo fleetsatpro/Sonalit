@@ -40,6 +40,7 @@ const sourceHttpCache = new Map();
 const sourceHttpInflight = new Map();
 const PUBLISHER_FEED_FAILURE_TTL_MS=10*60*1000;
 const publisherFeedFailureUntil=new Map();
+const publisherFeedReadInflight=new Map();
 let sourceHttpCacheBytes=0;
 let activePublicFetches=0;
 const publicFetchWaiters=[];
@@ -55,6 +56,7 @@ function _resetResearchCacheForTests(){
   sourceHttpCacheBytes=0;
   sourceHttpInflight.clear();
   publisherFeedFailureUntil.clear();
+  publisherFeedReadInflight.clear();
   activePublicFetches=0;
   publicFetchWaiters.length=0;
   gdeltDownUntil=0;
@@ -467,28 +469,41 @@ function feedItemWrapperUrl(item){
   return null;
 }
 async function readPublisherFeedItems(url){
-  if(publisherFeedCooling(url))return null;
-  try{
-    const res=await fetchText(url,{},REQUEST_TIMEOUT_MS);
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    const body=await res.text();
-    const contentType=String(res.headers?.get?.('content-type')||'').split(';')[0].trim().toLowerCase();
-    // Some publisher endpoints return HTML landing pages rather than feeds.
-    // Reject HTML before the XML parser hits its nested-tag ceiling.
-    if(contentType==='text/html'||/^\s*<(?:!doctype\s+)?html\b/i.test(body)){
-      throw new Error('publisher feed returned HTML instead of RSS/XML');
+  const key=(safeUrl(url)||String(url||'')).replace(/\/+$/,'').toLowerCase();
+  if(!key||publisherFeedCooling(url))return null;
+  // Share parsing as well as HTTP across concurrent incident dossiers. Without
+  // this guard one cached malformed response could still create one parser
+  // exception and warning per incident in a country batch.
+  const inflight=publisherFeedReadInflight.get(key);
+  if(inflight)return inflight;
+  let request;
+  request=(async()=>{
+    try{
+      const res=await fetchText(url,{},REQUEST_TIMEOUT_MS);
+      if(!res.ok)throw new Error('HTTP '+res.status);
+      const body=await res.text();
+      const contentType=String(res.headers?.get?.('content-type')||'').split(';')[0].trim().toLowerCase();
+      // Some publisher endpoints return HTML landing pages rather than feeds.
+      // Reject HTML before the XML parser hits its nested-tag ceiling.
+      if(contentType==='text/html'||/^\s*<(?:!doctype\s+)?html\b/i.test(body)){
+        throw new Error('publisher feed returned HTML instead of RSS/XML');
+      }
+      let parsed;
+      try{parsed=XML.parse(body);}catch(error){
+        throw new Error('publisher RSS/XML parse failed: '+String(error?.message||'invalid XML').slice(0,100));
+      }
+      return xmlFeedItems(parsed);
+    }catch(error){
+      markPublisherFeedFailure(url);
+      const host=(()=>{try{return new URL(url).hostname}catch(_){return 'invalid'}})();
+      logger.warn('Publication RSS research feed unavailable host='+host+': '+String(error?.message||'unknown').slice(0,120));
+      return null;
+    }finally{
+      if(publisherFeedReadInflight.get(key)===request)publisherFeedReadInflight.delete(key);
     }
-    let parsed;
-    try{parsed=XML.parse(body);}catch(error){
-      throw new Error('publisher RSS/XML parse failed: '+String(error?.message||'invalid XML').slice(0,100));
-    }
-    return xmlFeedItems(parsed);
-  }catch(error){
-    markPublisherFeedFailure(url);
-    const host=(()=>{try{return new URL(url).hostname}catch(_){return 'invalid'}})();
-    logger.warn('Publication RSS research feed unavailable host='+host+': '+String(error?.message||'unknown').slice(0,120));
-    return null;
-  }
+  })();
+  publisherFeedReadInflight.set(key,request);
+  return request;
 }
 async function publisherCandidatesFromUrl(feed,feedUrl,{headline,country,region,event}){
   const items=await readPublisherFeedItems(feedUrl);
@@ -1357,4 +1372,4 @@ async function researchPublicationIncidents(events,{country,region}={}){
   return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,...discoverySummary,deferred:Math.max(0,events.length-values.length),degraded_evidence_eligible:degradedEvidenceEligible,provider_unavailable:providerUnavailable}};
 }
 
-module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,chunkIncidentResearchBatches,parseResearchItemsFromText,resolveGoogleNewsArticleUrl,_getConfiguredPublisherFeedsForTests:getConfiguredPublisherFeeds,_resetGdeltCooldownForTests,_resetResearchCacheForTests,_fallbackResearchForTests:fallbackResearch};
+module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,chunkIncidentResearchBatches,parseResearchItemsFromText,resolveGoogleNewsArticleUrl,_getConfiguredPublisherFeedsForTests:getConfiguredPublisherFeeds,_readPublisherFeedItemsForTests:readPublisherFeedItems,_resetGdeltCooldownForTests,_resetResearchCacheForTests,_fallbackResearchForTests:fallbackResearch};
