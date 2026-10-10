@@ -182,10 +182,10 @@ async function applyEvidenceSynthesisFallback(rows,orgId,reason){
 }
 
 async function translateQueue(orgId){
-  const {rows}=await query(`SELECT id,title,body,language FROM intel_observations WHERE org_id=$1 AND translation_status='pending' AND language IS NOT NULL AND LOWER(language) NOT LIKE 'en%' ORDER BY observed_at DESC LIMIT $2`,[orgId,MAX_TRANSLATE]);
+  const {rows}=await query(`SELECT id,title,body,language FROM intel_observations WHERE org_id=$1 AND translation_status IN ('pending','failed') AND language IS NOT NULL AND LOWER(language) NOT LIKE 'en%' ORDER BY observed_at DESC LIMIT $2`,[orgId,MAX_TRANSLATE]);
   if(!rows.length)return{queued:0,translated:0};
   const translated=await translateItems(rows);let done=0;
-  for(const r of rows){const t=translated.get(String(r.id));if(t){await query(`UPDATE intel_observations SET title_en=$2,body_en=$3,translation_status='translated',translated_at=NOW() WHERE id=$1 AND org_id=$4`,[r.id,t.title||r.title,t.body||r.body,orgId]);done++;}else if(aiClient.hasAnyProvider())await query(`UPDATE intel_observations SET translation_status='failed' WHERE id=$1 AND org_id=$2`,[r.id,orgId]).catch(()=>{});}
+  for(const r of rows){const t=translated.get(String(r.id));if(t){await query(`UPDATE intel_observations SET title_en=$2,body_en=$3,translation_status='translated',translated_at=NOW() WHERE id=$1 AND org_id=$4`,[r.id,t.title||r.title,t.body||r.body,orgId]);done++;}else await query(`UPDATE intel_observations SET translation_status='failed' WHERE id=$1 AND org_id=$2`,[r.id,orgId]).catch(()=>{});}
   return{queued:rows.length,translated:done};
 }
 async function synthesizeEvents(orgId){

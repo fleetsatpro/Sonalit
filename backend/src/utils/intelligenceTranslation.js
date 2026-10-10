@@ -14,9 +14,41 @@ async function translateItems(items){
  const candidates=(Array.isArray(items)?items:[]).filter(x=>x&&x.id&&!looksEnglish(x.language)).slice(0,MAX_ITEMS);if(!candidates.length)return new Map();
  const out=new Map(),uncached=[];
  for(const item of candidates){const key=hash(`${item.language||''}|${item.title||''}|${item.body||''}`);const hit=cache.get(key);if(hit&&hit.expires>Date.now()){out.set(String(item.id),hit.value);continue}uncached.push({item,key});}
- if(!uncached.length)return out;if(!(aiClient.hasAnthropic()||aiClient.hasGroqFallback()))return out;
+ if(!uncached.length)return out;
+ // This queue translates externally collected source observations, not private
+ // convoy data. Keep classification explicit and permit the provider mesh to use
+ // its eligible public lanes rather than requiring only Anthropic or Groq.
+ const providerPolicy={
+   dataClassification:String(process.env.INTEL_TRANSLATION_DATA_CLASSIFICATION||'public').toLowerCase(),
+   allowFreeProviders:true,
+   preferFreeProviders:true,
+   providerHints:['google-gemini-3.8-flash','openrouter-free-router','gpt-oss-120b-openrouter-free']
+ };
+ if(typeof aiClient.hasAnyProvider!=='function'||!aiClient.hasAnyProvider(providerPolicy))return out;
  const payload=uncached.map(({item})=>({id:String(item.id),language:item.language||'unknown',title:clean(item.title,900),body:clean(item.body,MAX_CHARS)}));
- try{const response=await aiClient.createMessage({max_tokens:Math.min(7200,600+payload.length*260),system:'You are Sonalit\'s intelligence translation engine. Translate source material into precise, neutral operational English. Preserve names, places, numbers, dates, units, quotations, uncertainty, and security terminology. Do not add facts. Return ONLY a JSON array with objects {id, translated_title, translated_body}.',messages:[{role:'user',content:JSON.stringify(payload)}]});for(const translated of parseJson(extractText(response))){if(!translated?.id)continue;const value={title:clean(translated.translated_title,900),body:clean(translated.translated_body,MAX_CHARS)};if(!value.title&&!value.body)continue;const key=uncached.find(x=>String(x.item.id)===String(translated.id))?.key;if(key)cache.set(key,{value,expires:Date.now()+CACHE_TTL_MS});out.set(String(translated.id),value)}}catch(err){logger.warn(`Intelligence translation unavailable: ${err.message}`)}return out;
+ try{
+ const response=await aiClient.createMessage({
+   max_tokens:Math.min(7200,600+payload.length*260),
+   ...providerPolicy,
+   system:'You are Sonalit\\'s intelligence translation engine. Translate source material into precise, neutral operational English. Preserve names, places, numbers, dates, units, quotations, uncertainty, and security terminology. Do not add facts. Return ONLY a JSON array with objects {id, translated_title, translated_body}.',
+   messages:[{role:'user',content:JSON.stringify(payload)}]
+ });
+ const candidatesById=new Map(uncached.map(entry=>[String(entry.item.id),entry]));
+ for(const translated of parseJson(extractText(response))){
+   if(!translated?.id)continue;
+   const entry=candidatesById.get(String(translated.id));
+   if(!entry)continue;
+   const value={title:clean(translated.translated_title,900),body:clean(translated.translated_body,MAX_CHARS)};
+   if(!value.title&&!value.body)continue;
+   cache.set(entry.key,{value,expires:Date.now()+CACHE_TTL_MS});
+   out.set(String(translated.id),value);
+ }
+}catch(_){
+ // Provider errors may contain account/key details; keep the observation retryable
+ // and avoid echoing the raw upstream exception into application logs.
+ logger.warn('Intelligence translation unavailable; source observations remain eligible for retry.');
+}
+return out;
 }
 async function translatePayload(payload){
  const buckets=[];const add=(items)=>{if(Array.isArray(items))buckets.push(items)};add(payload?.events);add(payload?.observations);add(payload?.warnings);if(payload?.event)add([payload.event]);if(Array.isArray(payload?.event?.evidence))add(payload.event.evidence);
