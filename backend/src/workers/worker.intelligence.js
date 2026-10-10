@@ -315,8 +315,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 (async () => {
   logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; spatial cadence=${spatialIntervalMs / 1000}s; news mesh + synthesis agents enabled`);
-  // The first readiness snapshot must include persisted account/model circuits;
-  // otherwise startup diagnostics claim lanes are available before hydration.
+  // Do not publish a startup readiness snapshot until persisted circuit state is hydrated.
   await startFabricHydration();
   logger.info(`Intelligence AI provider readiness: ${JSON.stringify(providerCapabilities())}`);
   try {
