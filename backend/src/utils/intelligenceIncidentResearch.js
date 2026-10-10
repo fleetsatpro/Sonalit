@@ -254,12 +254,12 @@ function articleRelevanceScore(event,item){
 function getConfiguredPublisherFeeds(country){
   const code=String(country||'').trim().toUpperCase();
   const name=String(COUNTRY_NAMES[code]||'').trim().toUpperCase();
+  const configured=[];
   const rawValues=[
     process.env.INTEL_PUBLICATION_RESEARCH_FEEDS,
     process.env.INTEL_RSS_FEEDS,
     process.env.RISK_INTEL_EXTRA_RSS_FEEDS
   ].filter(value=>String(value||'').trim());
-  const out=[],seen=new Set();
   for(const raw of rawValues){
     let parsed;
     try{parsed=JSON.parse(raw);}catch(_){
@@ -273,24 +273,64 @@ function getConfiguredPublisherFeeds(country){
       if(!feedCountry||![code,name].filter(Boolean).includes(feedCountry))continue;
       const url=safeUrl(feed.url||feed.feed_url||feed.feedUrl);
       if(!url||isAggregatorDomain(new URL(url).hostname))continue;
-      const key=url.toLowerCase();
-      if(seen.has(key))continue;
-      seen.add(key);
-      out.push({name:clean(feed.name||feed.title||new URL(url).hostname,180),url,country_code:code,language:clean(feed.language||'',30),credibility:Number(feed.credibility||0)||null});
+      configured.push({
+        name:clean(feed.name||feed.title||new URL(url).hostname,180),
+        url,country_code:code,language:clean(feed.language||'',30),
+        credibility:Number(feed.credibility??feed.reliability??0)||null,
+        feed_origin:'explicit_configuration'
+      });
     }
   }
-  const selected=out.slice(0,MAX_CONFIGURED_FEEDS_PER_COUNTRY);
-  // Reuse the country RDF endpoint already used by Sonalit's collection fabric.
+
+  // Reuse Sonalit's existing country-coded RSS registry rather than maintaining
+  // an independent, inevitably divergent list of local publishers.
+  let regional=[];
+  try{
+    const registry=require('./regionalIncidentFabric').RSS_FEEDS;
+    regional=(Array.isArray(registry)?registry:[])
+      .filter(feed=>String(feed?.country_code||'').trim().toUpperCase()===code)
+      .map(feed=>{
+        const url=safeUrl(feed.url);
+        if(!url||isAggregatorDomain(new URL(url).hostname))return null;
+        return {
+          name:clean(feed.name||new URL(url).hostname,180),url,country_code:code,
+          language:clean(feed.language||'',30),
+          credibility:Number(feed.credibility??feed.reliability??0)||null,
+          feed_origin:'regional_incident_registry'
+        };
+      }).filter(Boolean);
+  }catch(error){
+    logger.warn('Publication regional publisher registry unavailable for '+code+': '+String(error?.message||'unknown').slice(0,120));
+  }
+
   const countryName=COUNTRY_NAMES[code];
-  if(countryName){
-    const slug=countryName.toLowerCase().replace(/\s+/g,'-');
-    const defaultUrl=safeUrl('https://allafrica.com/tools/headlines/rdf/'+slug+'/headlines.rdf');
-    if(defaultUrl&&!seen.has(defaultUrl.toLowerCase())&&!isAggregatorDomain(new URL(defaultUrl).hostname)){
-      selected.push({name:'AllAfrica '+countryName+' headlines',url:defaultUrl,country_code:code,language:'en',credibility:null,default_source:true});
-    }
+  const allAfricaUrl=countryName
+    ? safeUrl('https://allafrica.com/tools/headlines/rdf/'+countryName.toLowerCase().replace(/\s+/g,'-')+'/headlines.rdf')
+    : null;
+  const allAfrica=allAfricaUrl&&!isAggregatorDomain(new URL(allAfricaUrl).hostname)
+    ? {name:'AllAfrica '+countryName+' headlines',url:allAfricaUrl,country_code:code,language:'en',credibility:74,feed_origin:'built_in_country_rdf'}
+    : null;
+
+  const candidates=[],seen=new Set();
+  for(const feed of configured.concat(regional,allAfrica?[allAfrica]:[])){
+    const url=safeUrl(feed.url);
+    if(!url||isAggregatorDomain(normalizeDomain(url)))continue;
+    const key=url.replace(/\/+$/,'').toLowerCase();
+    if(seen.has(key))continue;
+    seen.add(key);
+    candidates.push({...feed,url});
   }
-  return selected;
+  // Always reserve a slot for the direct AllAfrica country RDF endpoint when
+  // one exists; fill the rest with explicit or existing local/regional feeds.
+  if(allAfrica){
+    const selected=candidates.filter(feed=>feed.url.replace(/\/+$/,'').toLowerCase()!==allAfrica.url.replace(/\/+$/,'').toLowerCase())
+      .slice(0,Math.max(0,MAX_CONFIGURED_FEEDS_PER_COUNTRY-1));
+    selected.push(allAfrica);
+    return selected;
+  }
+  return candidates.slice(0,MAX_CONFIGURED_FEEDS_PER_COUNTRY);
 }
+
 function xmlFeedItems(parsed){
   const candidates=[parsed?.rss?.channel?.item,parsed?.['rdf:RDF']?.item,parsed?.RDF?.item,parsed?.feed?.entry];
   for(const raw of candidates){
@@ -571,41 +611,75 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
   }catch(error){
     logger.warn('Incident research Google News unavailable: '+String(error?.message||'unknown').slice(0,180));
   }
-  const gdelt=await gdeltSearch({headline:event.headline||event.title,country,region:event.region||region});
-  const discovered=uniqueByUrl(publisher.concat(search,gdelt))
+
+  const directDiscovered=uniqueByUrl(publisher.concat(search))
+    .filter(x=>x.url&&!isAggregatorDomain(normalizeDomain(x.url)))
+    .sort((a,b)=>{
+      const lane=x=>x.kind==='configured_publisher_rss'?0:1;
+      return lane(a)-lane(b)||Number(b.relevance||0)-Number(a.relevance||0);
+    });
+  // Reserve two bounded slots for GDELT, but do not call its already-rate-limited
+  // shared endpoint unless first-party event evidence, local publisher RSS and
+  // Google News results fail to produce two independent, substantive domains.
+  const baseCandidates=dedupeSources(primary.concat(directDiscovered),Math.max(1,MAX_SOURCE_CANDIDATES-2));
+  const allPages=[];
+  const attemptedUrls=new Set();
+  async function retrieveCandidatePages(candidates){
+    const pending=(Array.isArray(candidates)?candidates:[]).filter(item=>{
+      const normalized=(safeUrl(item?.url)||'').replace(/\/+$/,'');
+      if(!normalized||attemptedUrls.has(normalized))return false;
+      attemptedUrls.add(normalized);
+      return true;
+    });
+    for(let offset=0;offset<pending.length;offset+=MAX_SOURCE_PAGES){
+      const batch=pending.slice(offset,offset+MAX_SOURCE_PAGES);
+      const attempted=await Promise.all(batch.map(fetchSourcePage));
+      for(let i=0;i<batch.length;i++){
+        const item=batch[i],page=attempted[i];
+        if(page&&sourceIsSubstantive(page)){allPages.push(page);continue;}
+        const excerpt=clean(item?.snippet||item?.description||'',1500);
+        // A publisher RSS description remains explicitly labelled as an excerpt.
+        if(item?.kind==='configured_publisher_rss'&&excerpt.length>=160){
+          allPages.push({
+            url:item.url,domain:normalizeDomain(item.url),title:clean(item.title,500),
+            description:excerpt,text:'',source_type:'publisher_rss_excerpt',
+            published_at:item.published_at||null,retrieved_at:new Date().toISOString(),
+            source:item.source||item.domain||normalizeDomain(item.url)
+          });
+        }
+      }
+      const usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120)
+        .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+      if(usableDomains.size>=MAX_SOURCE_PAGES)break;
+    }
+  }
+  await retrieveCandidatePages(baseCandidates);
+
+  let gdelt=[];
+  let usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120)
+    .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+  const remainingCandidateSlots=Math.max(0,MAX_SOURCE_CANDIDATES-attemptedUrls.size);
+  if(usableDomains.size<2&&remainingCandidateSlots>0){
+    gdelt=await gdeltSearch({headline:event.headline||event.title,country,region:event.region||region});
+    const alreadyDiscovered=new Set(directDiscovered.map(x=>(safeUrl(x.url)||'').replace(/\/+$/,'')).filter(Boolean));
+    const followup=dedupeSources(gdelt.filter(item=>{
+      const url=(safeUrl(item?.url)||'').replace(/\/+$/,'');
+      return url&&!alreadyDiscovered.has(url)&&!attemptedUrls.has(url);
+    }),Math.min(2,remainingCandidateSlots));
+    await retrieveCandidatePages(followup);
+    usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120)
+      .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+  }
+
+  const discovered=uniqueByUrl(directDiscovered.concat(gdelt))
     .filter(x=>x.url&&!isAggregatorDomain(normalizeDomain(x.url)))
     .sort((a,b)=>{
       const lane=x=>x.kind==='configured_publisher_rss'?0:x.kind==='google_news_discovery'?1:2;
       return lane(a)-lane(b)||Number(b.relevance||0)-Number(a.relevance||0);
     })
     .slice(0,MAX_SEARCH_RESULTS);
-  const candidates=dedupeSources(primary.concat(discovered),MAX_SOURCE_CANDIDATES);
-  const allPages=[];
-  // Fetch in progressive batches. Four usable domains end the work for this
-  // incident early; slow or dead secondary publishers do not hold up the whole
-  // report after sufficient evidence has already been acquired.
-  for(let offset=0;offset<candidates.length;offset+=MAX_SOURCE_PAGES){
-    const batch=candidates.slice(offset,offset+MAX_SOURCE_PAGES);
-    const attempted=await Promise.all(batch.map(fetchSourcePage));
-    for(let i=0;i<batch.length;i++){
-      const item=batch[i],page=attempted[i];
-      if(page&&sourceIsSubstantive(page)){allPages.push(page);continue;}
-      const excerpt=clean(item?.snippet||item?.description||'',1500);
-      // Only configured publisher feeds can supply an attributed excerpt fallback.
-      if(item?.kind==='configured_publisher_rss'&&excerpt.length>=160){
-        allPages.push({
-          url:item.url,domain:normalizeDomain(item.url),title:clean(item.title,500),
-          description:excerpt,text:'',source_type:'publisher_rss_excerpt',
-          published_at:item.published_at||null,retrieved_at:new Date().toISOString(),
-          source:item.source||item.domain||normalizeDomain(item.url)
-        });
-      }
-    }
-    const usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120).map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
-    if(usableDomains.size>=MAX_SOURCE_PAGES)break;
-  }
-  const seenDomains=new Set(),pages=[];
   const orderedPages=allPages.sort((a,b)=>sourceMaterialText(b).length-sourceMaterialText(a).length);
+  const seenDomains=new Set(),pages=[];
   for(const page of orderedPages){
     const host=normalizeDomain(page.domain||page.url);
     if(host&&!seenDomains.has(host)){pages.push(page);seenDomains.add(host);}
@@ -618,9 +692,10 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
       if(pages.length>=MAX_SOURCE_PAGES)break;
     }
   }
-  const domainCount=new Set(pages.map(x=>normalizeDomain(x.domain||x.url)).filter(Boolean)).size;
+  const domainCount=new Set(pages.filter(x=>sourceMaterialText(x).length>=120)
+    .map(x=>normalizeDomain(x.domain||x.url)).filter(Boolean)).size;
   return {
-    version:'3.0',
+    version:'3.1',
     incident_id:String(event.id),
     query:[clean(event.headline||event.title,220),COUNTRY_NAMES[country]||country,event.region||region].filter(Boolean).join(' '),
     discovered_sources:discovered.slice(0,MAX_SEARCH_RESULTS).map(x=>({
@@ -632,6 +707,7 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
       configured_rss_candidates:publisher.length,
       google_news_candidates:search.length,
       gdelt_candidates:gdelt.length,
+      gdelt_requested:gdelt.length>0,
       source_pages_fetched:pages.filter(x=>String(x.source_type||'')==='retrieved_web_page'&&String(x.text||'').length>=120).length,
       substantive_sources:pages.filter(x=>sourceMaterialText(x).length>=120).length,
       source_domains:domainCount
@@ -1075,4 +1151,4 @@ async function researchPublicationIncidents(events,{country,region}={}){
   return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,...discoverySummary,deferred:Math.max(0,events.length-values.length),degraded_evidence_eligible:degradedEvidenceEligible,provider_unavailable:providerUnavailable}};
 }
 
-module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,chunkIncidentResearchBatches,parseResearchItemsFromText,resolveGoogleNewsArticleUrl,_resetGdeltCooldownForTests,_resetResearchCacheForTests,_fallbackResearchForTests:fallbackResearch};
+module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,chunkIncidentResearchBatches,parseResearchItemsFromText,resolveGoogleNewsArticleUrl,_getConfiguredPublisherFeedsForTests:getConfiguredPublisherFeeds,_resetGdeltCooldownForTests,_resetResearchCacheForTests,_fallbackResearchForTests:fallbackResearch};

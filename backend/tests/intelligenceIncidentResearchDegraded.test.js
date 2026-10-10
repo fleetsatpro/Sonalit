@@ -1,7 +1,7 @@
 jest.mock('../src/utils/aiClient',()=>({hasAnyProvider:()=>false,hasReadyProvider:()=>false}));
 jest.mock('../src/utils/publicResearchFetch',()=>({safeFetchPublicResearch:jest.fn(),MAX_RESPONSE_BYTES:2*1024*1024}));
 
-const { researchPublicationIncidents, buildIncidentResearchPacket, resolveGoogleNewsArticleUrl, _fallbackResearchForTests, _resetGdeltCooldownForTests, _resetResearchCacheForTests } = require('../src/utils/intelligenceIncidentResearch');
+const { researchPublicationIncidents, buildIncidentResearchPacket, resolveGoogleNewsArticleUrl, _getConfiguredPublisherFeedsForTests, _fallbackResearchForTests, _resetGdeltCooldownForTests, _resetResearchCacheForTests } = require('../src/utils/intelligenceIncidentResearch');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
 
 const RESEARCH_FEED_ENV_KEYS = ['INTEL_RSS_FEEDS','INTEL_PUBLICATION_RESEARCH_FEEDS','RISK_INTEL_EXTRA_RSS_FEEDS'];
@@ -138,6 +138,46 @@ describe('degraded incident research remains useful',()=>{
       {url:'https://two.example/report',domain:'two.example',title:'Corridor update',text:'A separate publisher reports a temporary interruption on the Garissa corridor. Its account also notes a response by local authorities, but does not confirm when all traffic resumed. The source gives no verified casualty count and does not establish a wider pattern of attacks on the route.'}
     ]};
     expect(_fallbackResearchForTests(event,substantial).status).toBe('researched_limited');
+  });
+
+
+  test('reuses the existing country-coded publisher registry while preserving AllAfrica as a bounded fallback',()=>{
+    const kenya=_getConfiguredPublisherFeedsForTests('KE');
+    const somalia=_getConfiguredPublisherFeedsForTests('SO');
+    expect(kenya.length).toBeLessThanOrEqual(8);
+    expect(kenya.map(feed=>feed.url)).toContain('https://www.kenyanews.go.ke/feed');
+    expect(kenya.some(feed=>feed.url==='https://allafrica.com/tools/headlines/rdf/kenya/headlines.rdf')).toBe(true);
+    expect(somalia.some(feed=>/shabellemedia\.com\/feed/i.test(feed.url)||/puntlandpost\.net\/feed/i.test(feed.url))).toBe(true);
+    expect([...kenya,...somalia].every(feed=>!new URL(feed.url).hostname.toLowerCase().includes('news.google.com'))).toBe(true);
+  });
+
+  test('does not call GDELT when independent direct-publisher bodies already satisfy the source threshold',async()=>{
+    const headline='Violence interrupts freight corridor in Garissa County';
+    const allAfricaFeed='https://allafrica.com/tools/headlines/rdf/kenya/headlines.rdf';
+    const allAfricaArticle='https://allafrica.com/stories/202610100001.html';
+    const secondArticle='https://publisher.example/garissa-security-report';
+    const allAfricaBody='Local reporting describes a security interruption on the freight corridor in Garissa County. Authorities responded to the reported incident, but the initial report does not confirm how long the interruption lasted or when normal movement resumed. The story identifies the affected corridor and states that the operational impact beyond the immediate location remains unclear. It contains no verified casualty total and does not establish any linked incidents elsewhere.';
+    const secondBody='A separate local publisher reports that a security incident temporarily interrupted movement along the freight corridor in Garissa County. The article describes an official response but says the exact duration, traffic backlog and wider commercial effects remain unconfirmed. It does not establish casualty figures or confirm that other routes were affected. The publisher treats the event as an isolated report pending further official detail.';
+    const allAfricaRss='<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns" xmlns="http://purl.org/rss/1.0/"><item><title>Violence interrupts freight corridor in Garissa County</title><link>'+allAfricaArticle+'</link><description>Local reporting describes a security interruption on the freight corridor in Garissa County after a reported incident.</description></item></rdf:RDF>';
+    const googleRss='<rss><channel><item><title>Violence interrupts freight corridor in Garissa County — Local Publisher</title><link>'+secondArticle+'</link><pubDate>Fri, 09 Oct 2026 09:00:00 GMT</pubDate><description>A separate local publisher reports a temporary disruption and official response in Garissa County.</description></item></channel></rss>';
+    const page=(title,body)=>'<html><head><title>'+title+'</title></head><body><article><p>'+body+'</p></article></body></html>';
+    safeFetchPublicResearch.mockImplementation(async rawUrl=>{
+      const url=String(rawUrl);
+      let contentType='application/rss+xml',body='<rss><channel/></rss>';
+      if(url===allAfricaFeed)body=allAfricaRss;
+      else if(url.startsWith('https://news.google.com/rss/search'))body=googleRss;
+      else if(url===allAfricaArticle){contentType='text/html';body=page('AllAfrica Garissa report',allAfricaBody);}
+      else if(url===secondArticle){contentType='text/html';body=page('Garissa corridor report',secondBody);}
+      else if(url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc'))throw new Error('GDELT should not be called after source coverage is adequate');
+      return {ok:true,status:200,url,headers:{get:()=>contentType},text:async()=>body,arrayBuffer:async()=>Buffer.from(body)};
+    });
+    const packet=await buildIncidentResearchPacket({
+      id:'KE-budget-1',headline,region:'Garissa County',occurred_from:'2026-10-09T06:00:00.000Z',evidence:[]
+    },{country:'KE'});
+    expect(packet.discovery_summary.gdelt_requested).toBe(false);
+    expect(packet.discovery_summary.gdelt_candidates).toBe(0);
+    expect(new Set(packet.fetched_pages.filter(page=>String(page.text||'').length>=250).map(page=>page.domain)).size).toBeGreaterThanOrEqual(2);
+    expect(safeFetchPublicResearch.mock.calls.some(([url])=>String(url).startsWith('https://api.gdeltproject.org/api/v2/doc/doc'))).toBe(false);
   });
 
 });
