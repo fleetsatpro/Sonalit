@@ -286,6 +286,53 @@ describe('intelligence provider mesh', () => {
   });
 
 
+  test('a shared Redis OpenAI circuit cannot suppress a healthy OpenAI key-pool member', async () => {
+    process.env.OPENAI_API_KEY_1 = 'openai-healthy-test-token-123';
+    process.env.REDIS_URL = 'redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS = 'true';
+
+    const until = Date.now() + 60 * 60 * 1000;
+    const redis = {
+      mget: jest.fn(async keys => keys.map(key => {
+        const group = decodeURIComponent(String(key).replace('sonalit:intelligence:ai:circuit:v3:', ''));
+        return group === 'openai' ? String(until) : '0';
+      })),
+      scan: jest.fn(async () => ['0', []]),
+      get: jest.fn(async () => null),
+      set: jest.fn(async () => 'OK'),
+      del: jest.fn(async () => 1),
+    };
+    const calls = [];
+    jest.doMock('../src/config/redis', () => ({ getRedis: () => redis }));
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.apiKey = options.apiKey;
+        this.baseURL = options.baseURL || 'openai';
+        this.chat = { completions: { create: jest.fn(async request => {
+          calls.push({apiKey:this.apiKey,baseURL:this.baseURL,model:request.model});
+          return {choices:[{message:{content:'{"ok":true}',tool_calls:[]}}]};
+        }) } };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    await ai.hydrateFabricState();
+    const policy = {
+      dataClassification:'public',
+      allowFreeProviders:true,
+      providerHints:['openai-direct'],
+      system:'Return JSON.',
+      messages:[{role:'user',content:'A healthy credential must not be masked by a stale shared circuit.'}],
+      max_tokens:100,
+    };
+    expect(ai.providerCapabilities().openai_ready_key_pool_size).toBe(1);
+    expect(ai.hasReadyProvider(policy)).toBe(true);
+    const response = await ai.createMessage(policy);
+    expect(response._provider).toBe('openai-direct');
+    expect(calls).toHaveLength(1);
+    expect(ai.providerCapabilities().openai_cooling_down).toBe(false);
+  });
+
   test('a shared Redis Gemini circuit cannot suppress healthy Gemini key-pool members', async () => {
     process.env.GOOGLE_AI_API_KEY_1 = 'google-one-test-token';
     process.env.GOOGLE_AI_API_KEY_2 = 'google-two-test-token';

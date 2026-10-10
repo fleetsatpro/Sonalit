@@ -1008,22 +1008,22 @@ function providerCooling(providerOrLabel){
   const group=providerGroup(provider);
   const fabric=fabricStates[group];
   const modelBlocked=Number(modelDisabledUntil[label]||0);
-  const isolateGemini=label===GEMINI_PROVIDER.name;
+  const isolateKeyPool=label==='openai-direct'||label===GEMINI_PROVIDER.name;
   const keyPoolCooling=
     label==='openai-direct'?!hasReadyOpenAIKey():
     label===GEMINI_PROVIDER.name?!hasReadyGeminiKey():
     false;
   return Boolean(
     keyPoolCooling ||
-    (!isolateGemini && state && Date.now()<Number(state.downUntil||0)) ||
-    (!isolateGemini && fabric && Date.now()<Number(fabric.downUntil||0)) ||
+    (!isolateKeyPool && state && Date.now()<Number(state.downUntil||0)) ||
+    (!isolateKeyPool && fabric && Date.now()<Number(fabric.downUntil||0)) ||
     modelBlocked>0 && Date.now()<modelBlocked
   );
 }
 function providerResumeAt(provider){
-  const isolateGemini=provider.name===GEMINI_PROVIDER.name;
-  const providerUntil=isolateGemini?0:Number(states[provider.name]?.downUntil||0);
-  const fabricUntil=isolateGemini?0:Number(fabricStates[providerGroup(provider)]?.downUntil||0);
+  const isolateKeyPool=provider.name==='openai-direct'||provider.name===GEMINI_PROVIDER.name;
+  const providerUntil=isolateKeyPool?0:Number(states[provider.name]?.downUntil||0);
+  const fabricUntil=isolateKeyPool?0:Number(fabricStates[providerGroup(provider)]?.downUntil||0);
   const modelUntil=Number(modelDisabledUntil[provider.name]||0);
   const keyPoolUntil=providerKeyPoolResumeAt(provider.name);
   return Math.max(providerUntil,fabricUntil,modelUntil,keyPoolUntil);
@@ -1185,9 +1185,13 @@ async function attempt(label,fn,meta={}){
   const state=states[label]||(states[label]={downUntil:0,failureCount:0});
   const group=providerGroup(meta);
   const fabric=fabricStates[group]||(fabricStates[group]={downUntil:0,failureCount:0});
-  const sharedCooling=label===GEMINI_PROVIDER.name?false:Date.now()<fabric.downUntil;
+  const isolateCredentialPool=label==='openai-direct'||label===GEMINI_PROVIDER.name;
+  const sharedCooling=isolateCredentialPool?false:Date.now()<fabric.downUntil;
   const allowCircuitProbe=meta.allowCircuitProbe===true;
-  if(label!==GEMINI_PROVIDER.name && !allowCircuitProbe && (Date.now()<state.downUntil || sharedCooling))throw new Error(label+' provider cooling down');
+  // OpenAI and Gemini direct lanes rotate credentials inside one provider call.
+  // Their per-key cooldowns determine eligibility; a stale shared circuit must
+  // not prevent a healthy pool member from being tried.
+  if(!isolateCredentialPool && !allowCircuitProbe && (Date.now()<state.downUntil || sharedCooling))throw new Error(label+' provider cooling down');
   const startedAt=Date.now();
   try{
     const result=await fn();
