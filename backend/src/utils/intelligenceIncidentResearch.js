@@ -423,7 +423,7 @@ async function configuredPublisherSearch({headline,country,region,event}){
   const feeds=getConfiguredPublisherFeeds(country);
   const candidates=[];
   await Promise.all(feeds.map(async feed=>{
-    const primaryKey=String(feed.url||'').replace(/\\/+$/,'').toLowerCase();
+    const primaryKey=String(feed.url||'').replace(new RegExp('/+$'),'').toLowerCase();
     const fallbackUntil=publisherFeedFailureUntil.get(primaryKey)||0;
     const primaryCooling=fallbackUntil>Date.now()&&Boolean(feed.fallback_url);
     if(fallbackUntil&&fallbackUntil<=Date.now())publisherFeedFailureUntil.delete(primaryKey);
@@ -436,9 +436,9 @@ async function configuredPublisherSearch({headline,country,region,event}){
         if(!res.ok)throw new Error('HTTP '+res.status);
         const body=await res.text();
         const contentType=String(res.headers?.get?.('content-type')||'').toLowerCase();
-        if(/^\\s*<(?:!doctype\\s+)?html\\b/i.test(body)||contentType.includes('text/html')){
+        const startsWithHtml=body.trimStart().slice(0,100).toLowerCase();
+        if(startsWithHtml.startsWith('<html')||startsWithHtml.startsWith('<!doctype html')||contentType.includes('text/html')){
           throw new Error('publisher feed returned HTML instead of RSS/XML');
-        }
         const parsed=XML.parse(body);
         const feedCandidates=[];
         for(const item of xmlFeedItems(parsed)){
