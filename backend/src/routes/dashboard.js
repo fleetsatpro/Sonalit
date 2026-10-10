@@ -320,15 +320,19 @@ router.get('/map', asyncHandler(async (req, res) => {
           return null;
         }
 
-        // GeoJSON Polygon (e.g. imported/legacy zones) — coordinates is
-        // [[[lng,lat],...]] (ring array); use the ring's centroid as the
-        // zone center rather than dropping it outright.
-        if (coords.type === 'Polygon' && Array.isArray(coords.coordinates?.[0]) && coords.coordinates[0].length >= 3) {
-          const ring = coords.coordinates[0];
-          const sum = ring.reduce((acc, [lng, lat]) => [acc[0] + lat, acc[1] + lng], [0, 0]);
-          const lat = sum[0] / ring.length;
-          const lng = sum[1] / ring.length;
-          return { id: g.id, name: g.name, type, lat, lng, radius_m: parseFloat(g.radius_m), path: null, buffer_m: null };
+        // GeoJSON Polygon: preserve the full boundary for rendering and containment.
+        if (coords.type === 'Polygon' && Array.isArray(coords.coordinates?.[0]) && coords.coordinates[0].length >= 4) {
+          const sourceRing = coords.coordinates[0];
+          const ring = sourceRing.filter(point => Array.isArray(point) && point.length >= 2 && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1])))
+            .map(([lng, lat]) => [Number(lat), Number(lng)]);
+          if (ring.length < 4) {
+            logger.warn('Geofence polygon omitted from /dashboard/map because its ring is malformed: id=' + g.id);
+            return null;
+          }
+          const first = ring[0], last = ring[ring.length - 1];
+          const openRing = first[0] === last[0] && first[1] === last[1] ? ring.slice(0, -1) : ring;
+          const sum = openRing.reduce((acc, point) => [acc[0] + point[0], acc[1] + point[1]], [0, 0]);
+          return { id: g.id, name: g.name, type: 'polygon', lat: sum[0] / openRing.length, lng: sum[1] / openRing.length, radius_m: parseFloat(g.radius_m), polygon: ring, path: null, buffer_m: null };
         }
 
         // GeoJSON Point (e.g. the border-crossing seed data) — coordinates

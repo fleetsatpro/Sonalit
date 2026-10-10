@@ -6,6 +6,7 @@ const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { invalidateGeofenceCache } = require('../utils/geofenceEngine');
+const { normalizePolygonGeometry } = require('../utils/geofenceGeometry');
 const { asyncHandler } = require('../middleware/error');
 router.use(authenticate, attachOrgDb);
 
@@ -76,6 +77,12 @@ router.post('/', async (req, res, next) => {
     const lng = req.body.lng;
     if (!coordinates && lat != null && lng != null) {
       coordinates = { lat: parseFloat(lat), lng: parseFloat(lng) };
+    }
+    if (String(type).toLowerCase() === 'polygon') {
+      try { coordinates = normalizePolygonGeometry(coordinates); }
+      catch (geometryError) {
+        return res.status(400).json({ error: 'invalid_polygon', details: String(geometryError.message || geometryError) });
+      }
     }
     const { rows } = await db(
       `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
