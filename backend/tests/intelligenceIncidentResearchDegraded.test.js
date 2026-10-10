@@ -12,6 +12,7 @@ describe('degraded incident research remains useful',()=>{
     previousResearchFeedEnvironment=Object.fromEntries(RESEARCH_FEED_ENV_KEYS.map(key=>[key,process.env[key]]));
     _resetGdeltCooldownForTests();
     _resetResearchCacheForTests();
+    safeFetchPublicResearch.mockClear();
   });
   afterEach(()=>{
     _resetGdeltCooldownForTests();

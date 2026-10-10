@@ -116,7 +116,7 @@ test('research collection cools GDELT after rate limiting instead of retrying ev
   const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
   expect(s).toContain('const GDELT_COOLDOWN_MS=5*60*1000;');
   expect(s).toContain('let gdeltDownUntil=0;');
-  expect(s).toContain('if(Date.now()<gdeltDownUntil)return [];');
+  expect(s).toContain('if(Date.now()<gdeltDownUntil)return {articles:[],requestAttempted:false};');
   expect(s).toContain("gdeltDownUntil=Date.now()+GDELT_COOLDOWN_MS");
 });
 
