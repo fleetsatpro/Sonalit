@@ -30,7 +30,7 @@ async function translateItems(items){
  const response=await aiClient.createMessage({
    max_tokens:Math.min(7200,600+payload.length*260),
    ...providerPolicy,
-   system:'You are Sonalit\\'s intelligence translation engine. Translate source material into precise, neutral operational English. Preserve names, places, numbers, dates, units, quotations, uncertainty, and security terminology. Do not add facts. Return ONLY a JSON array with objects {id, translated_title, translated_body}.',
+   system:'You are Sonalit\'s intelligence translation engine. Translate source material into precise, neutral operational English. Preserve names, places, numbers, dates, units, quotations, uncertainty, and security terminology. Do not add facts. Return ONLY a JSON array with objects {id, translated_title, translated_body}.',
    messages:[{role:'user',content:JSON.stringify(payload)}]
  });
  const candidatesById=new Map(uncached.map(entry=>[String(entry.item.id),entry]));
