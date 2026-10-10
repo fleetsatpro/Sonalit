@@ -14,6 +14,9 @@ const { researchPublicationIncidents, verifiedResponseSources, parseGdeltRespons
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
 const { auditPublicationContent } = require('../src/utils/publicationQuality');
 
+const RESEARCH_ENV_KEYS = ['INTEL_RSS_FEEDS','INTEL_PUBLICATION_RESEARCH_FEEDS','RISK_INTEL_EXTRA_RSS_FEEDS','INTEL_PUBLICATION_DATA_CLASSIFICATION'];
+let previousResearchEnvironment = {};
+
 function installResearchFetchFixture() {
   safeFetchPublicResearch.mockReset();
   safeFetchPublicResearch.mockImplementation(async rawUrl => {
@@ -33,6 +36,7 @@ function installResearchFetchFixture() {
 }
 
 beforeEach(() => {
+  previousResearchEnvironment=Object.fromEntries(RESEARCH_ENV_KEYS.map(key=>[key,process.env[key]]));
   // Start every test with protocol-correct fixtures. Malformed mock responses
   // must not open the module-level GDELT cooldown for unrelated tests.
   installResearchFetchFixture();
@@ -41,7 +45,14 @@ beforeEach(() => {
 // The GDELT circuit is deliberately module-scoped in production; reset it between
 // tests so one mocked provider failure cannot contaminate unrelated scenarios.
 beforeEach(()=>{_resetGdeltCooldownForTests();_resetResearchCacheForTests();});
-afterEach(()=>{_resetGdeltCooldownForTests();_resetResearchCacheForTests();delete process.env.INTEL_RSS_FEEDS;delete process.env.INTEL_PUBLICATION_RESEARCH_FEEDS;delete process.env.RISK_INTEL_EXTRA_RSS_FEEDS;});
+afterEach(()=>{
+  _resetGdeltCooldownForTests();
+  _resetResearchCacheForTests();
+  for(const key of RESEARCH_ENV_KEYS){
+    if(previousResearchEnvironment[key]===undefined)delete process.env[key];
+    else process.env[key]=previousResearchEnvironment[key];
+  }
+});
 
 test('passes publication data-classification policy into AI incident research',async()=>{
   const aiClient=require('../src/utils/aiClient');
@@ -63,7 +74,7 @@ test('passes publication data-classification policy into AI incident research',a
         ? '<rss><channel><item><title>Policy propagation incident reported independently</title><link>https://bravo.example/report</link><pubDate>Fri, 09 Oct 2026 09:00:00 GMT</pubDate><description>A second publisher reports the policy propagation incident.</description></item></channel></rss>'
         : url.startsWith('https://news.google.com/rss/search')?'<rss><channel></channel></rss>'
           : url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc')?'{"articles":[]}'
-            : '<html><head><title>Independent publisher report</title></head><body><main><p>'+ (parsed.hostname==='alpha.example'?articleTextA:articleTextB) +'</p></main></body></html>';
+            : '<html><head><title>Independent publisher report</title>'+(parsed.hostname==='alpha.example'?'<link rel="canonical" href="https://syndication.example/copied-story">':'')+'</head><body><main><p>'+ (parsed.hostname==='alpha.example'?articleTextA:articleTextB) +'</p></main></body></html>';
     return {ok:true,status:200,url,headers,text:async()=>body,json:async()=>({articles:[]})};
   });
   aiClient.hasAnyProvider.mockReturnValue(true);
@@ -110,6 +121,8 @@ test('passes publication data-classification policy into AI incident research',a
   expect(result.summary.researched).toBe(1);
   expect(result.byEvent['i-policy'].agent.status).toBe('researched');
   expect(result.byEvent['i-policy'].agent.sources.filter(source=>String(source.source_type)==='retrieved_web_page')).toHaveLength(2);
+  expect(result.byEvent['i-policy'].agent.sources.find(source=>source.url==='https://alpha.example/report').domain).toBe('alpha.example');
+  expect(result.byEvent['i-policy'].agent.sources.some(source=>source.domain==='syndication.example')).toBe(false);
   expect(result.byEvent['i-policy'].agent.sources.every(source=>!Object.prototype.hasOwnProperty.call(source,'text'))).toBe(true);
   expect(result.byEvent['i-policy'].agent.provider).toBe('openrouter-free-router');
   if(previousClassification===undefined)delete process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION;

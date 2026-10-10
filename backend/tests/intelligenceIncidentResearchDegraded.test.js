@@ -4,9 +4,24 @@ jest.mock('../src/utils/publicResearchFetch',()=>({safeFetchPublicResearch:jest.
 const { researchPublicationIncidents, buildIncidentResearchPacket, resolveGoogleNewsArticleUrl, _fallbackResearchForTests, _resetGdeltCooldownForTests, _resetResearchCacheForTests } = require('../src/utils/intelligenceIncidentResearch');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
 
+const RESEARCH_FEED_ENV_KEYS = ['INTEL_RSS_FEEDS','INTEL_PUBLICATION_RESEARCH_FEEDS','RISK_INTEL_EXTRA_RSS_FEEDS'];
+let previousResearchFeedEnvironment = {};
+
 describe('degraded incident research remains useful',()=>{
-  beforeEach(()=>{_resetGdeltCooldownForTests();_resetResearchCacheForTests();});
-  afterEach(()=>{_resetGdeltCooldownForTests();_resetResearchCacheForTests();delete global.fetch;delete process.env.INTEL_RSS_FEEDS;delete process.env.INTEL_PUBLICATION_RESEARCH_FEEDS;delete process.env.RISK_INTEL_EXTRA_RSS_FEEDS;});
+  beforeEach(()=>{
+    previousResearchFeedEnvironment=Object.fromEntries(RESEARCH_FEED_ENV_KEYS.map(key=>[key,process.env[key]]));
+    _resetGdeltCooldownForTests();
+    _resetResearchCacheForTests();
+  });
+  afterEach(()=>{
+    _resetGdeltCooldownForTests();
+    _resetResearchCacheForTests();
+    delete global.fetch;
+    for(const key of RESEARCH_FEED_ENV_KEYS){
+      if(previousResearchFeedEnvironment[key]===undefined)delete process.env[key];
+      else process.env[key]=previousResearchFeedEnvironment[key];
+    }
+  });
   test('turns live web research into a substantive dossier when no model provider is available',async()=>{
     const rss='<rss><channel><item><title>Independent report on the incident</title><link>https://example.com/report</link><pubDate>Sat, 04 Oct 2026 08:00:00 GMT</pubDate><source>Example News</source><description><![CDATA[Local reporting describes a temporary disruption on the corridor and notes that authorities responded while the full duration remained unclear.]]></description></item></channel></rss>';
     const article='<html><head><title>Independent report on the incident</title><meta name="description" content="Local reporting describes a temporary disruption on the corridor and notes that authorities responded while the full duration remained unclear."></head><body><main><p>The report places the incident on the affected corridor and describes a temporary disruption. It also records that authorities responded and that the precise duration was not yet established.</p></main></body></html>';
@@ -82,6 +97,33 @@ describe('degraded incident research remains useful',()=>{
     expect(packet.fetched_pages.some(page=>page.url==='https://publisher.example/garissa-disruption')).toBe(true);
     expect(packet.fetched_pages.some(page=>page.domain==='other.example')).toBe(false);
     expect(packet.fetched_pages.some(page=>String(page.text||'').length>=120)).toBe(true);
+  });
+
+  test('uses the built-in country AllAfrica RSS lane when no curated feed is configured',async()=>{
+    for(const key of RESEARCH_FEED_ENV_KEYS)delete process.env[key];
+    const feedUrl='https://allafrica.com/tools/headlines/rdf/kenya/headlines.rdf';
+    const articleUrl='https://allafrica.com/stories/202610100001.html';
+    const articleText='Local reporting describes a security interruption on the freight corridor in Garissa County. Authorities responded to the reported incident, but the initial report does not confirm how long the interruption lasted or when normal movement resumed. The story identifies the affected corridor and states that the operational impact beyond the immediate location remains unclear. It contains no verified casualty total and does not establish any linked incidents elsewhere.';
+    const rss='<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns" xmlns="http://purl.org/rss/1.0/"><item><title>Violence interrupts freight corridor in Garissa County</title><link>'+articleUrl+'</link><description>Local reporting describes a security interruption on the freight corridor in Garissa County after a reported incident. Authorities responded, while the duration and wider transport impact remained unclear.</description></item></rdf:RDF>';
+    safeFetchPublicResearch.mockImplementation(async rawUrl=>{
+      const url=String(rawUrl);
+      const headers={get:()=>url===feedUrl?'application/rdf+xml':url.startsWith('https://news.google.com/rss/search')?'application/rss+xml':url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc')?'application/json':'text/html'};
+      const body=url===feedUrl?rss:
+        url.startsWith('https://news.google.com/rss/search')?'<rss><channel/></rss>':
+        url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc')?'{"articles":[]}':
+        '<html><head><title>Garissa corridor security report</title></head><body><article><p>'+articleText+'</p></article></body></html>';
+      return {ok:true,status:200,url,headers,text:async()=>body};
+    });
+    const packet=await buildIncidentResearchPacket({
+      id:'KE-allafrica-1',
+      headline:'Violence interrupts freight corridor in Garissa County',
+      region:'Garissa County',
+      occurred_from:'2026-10-09T06:00:00.000Z',
+      evidence:[]
+    },{country:'KE'});
+    expect(safeFetchPublicResearch).toHaveBeenCalledWith(feedUrl,expect.objectContaining({timeoutMs:10000}));
+    expect(packet.discovery_summary.configured_rss_candidates).toBe(1);
+    expect(packet.fetched_pages.some(page=>page.url===articleUrl&&page.domain==='allafrica.com'&&page.text.length>=250)).toBe(true);
   });
 
   test('fallback research never labels metadata-only source rows as researched_limited',()=>{
