@@ -1,7 +1,8 @@
 jest.mock('../src/utils/aiClient',()=>({hasAnyProvider:()=>false,hasReadyProvider:()=>false}));
 jest.mock('../src/utils/publicResearchFetch',()=>({safeFetchPublicResearch:jest.fn(),MAX_RESPONSE_BYTES:2*1024*1024}));
 
-const { researchPublicationIncidents, buildIncidentResearchPacket, resolveGoogleNewsArticleUrl, _getConfiguredPublisherFeedsForTests, _fallbackResearchForTests, _resetGdeltCooldownForTests, _resetResearchCacheForTests } = require('../src/utils/intelligenceIncidentResearch');
+const { researchPublicationIncidents, buildIncidentResearchPacket, resolveGoogleNewsArticleUrl, _getConfiguredPublisherFeedsForTests, _readPublisherFeedItemsForTests, _fallbackResearchForTests, _resetGdeltCooldownForTests, _resetResearchCacheForTests } = require('../src/utils/intelligenceIncidentResearch');
+const logger=require('../src/utils/logger');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
 
 const RESEARCH_FEED_ENV_KEYS = ['INTEL_RSS_FEEDS','INTEL_PUBLICATION_RESEARCH_FEEDS','RISK_INTEL_EXTRA_RSS_FEEDS'];
@@ -188,6 +189,31 @@ describe('degraded incident research remains useful',()=>{
       const url=new URL(feed.url);
       return url.hostname.toLowerCase()!=='news.google.com'||url.pathname==='/rss/search';
     })).toBe(true);
+  });
+
+  test('coalesces concurrent malformed-feed parsing and emits one warning per URL',async()=>{
+    const feedUrl='https://www.tuko.co.ke/?service=rss';
+    const html='<html><body><div><div><div><h1>HTML landing page</h1></div></div></div></body></html>';
+    safeFetchPublicResearch.mockImplementation(async rawUrl=>{
+      const url=String(rawUrl);
+      return {ok:true,status:200,url,headers:{get:()=> 'text/html; charset=utf-8'},text:async()=>html,arrayBuffer:async()=>Buffer.from(html)};
+    });
+    const warning=jest.spyOn(logger,'warn').mockImplementation(()=>{});
+    try{
+      const [first,second]=await Promise.all([
+        _readPublisherFeedItemsForTests(feedUrl),
+        _readPublisherFeedItemsForTests(feedUrl)
+      ]);
+      expect(first).toBeNull();
+      expect(second).toBeNull();
+      expect(safeFetchPublicResearch.mock.calls.filter(([url])=>String(url)===feedUrl)).toHaveLength(1);
+      expect(warning.mock.calls.filter(([message])=>String(message).includes('host=www.tuko.co.ke'))).toHaveLength(1);
+      expect(await _readPublisherFeedItemsForTests(feedUrl)).toBeNull();
+      expect(safeFetchPublicResearch.mock.calls.filter(([url])=>String(url)===feedUrl)).toHaveLength(1);
+      expect(warning.mock.calls.filter(([message])=>String(message).includes('host=www.tuko.co.ke'))).toHaveLength(1);
+    }finally{
+      warning.mockRestore();
+    }
   });
 
   test('uses registered Google News fallbacks when primary publisher feeds return HTML or fail TLS',async()=>{
