@@ -84,7 +84,7 @@ function isPointInPolygon(lat, lng, coordinates) {
     const cross = (lng - xi) * (yj - yi) - (lat - yi) * (xj - xi);
     const dot = (lng - xi) * (xj - xi) + (lat - yi) * (yj - yi);
     const lengthSq = (xj - xi) ** 2 + (yj - yi) ** 2;
-    if (Math.abs(cross) <= 1e-9 && dot >= -1e-9 && dot <= lengthSq + 1e-9) return true;
+    if (lengthSq > 1e-18 && Math.abs(cross) <= 1e-9 && dot >= -1e-9 && dot <= lengthSq + 1e-9) return true;
     if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
       inside = !inside;
     }
