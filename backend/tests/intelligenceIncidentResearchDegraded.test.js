@@ -129,6 +129,33 @@ describe('degraded incident research remains useful',()=>{
     expect(packet.fetched_pages.some(page=>page.url===articleUrl&&page.domain==='allafrica.com'&&page.text.length>=250)).toBe(true);
   });
 
+  test('counts outbound GDELT requests that fail with a rate limit',async()=>{
+    for(const key of RESEARCH_FEED_ENV_KEYS)delete process.env[key];
+    const feedUrl='https://allafrica.com/tools/headlines/rdf/kenya/headlines.rdf';
+    const articleUrl='https://allafrica.com/stories/202610100002.html';
+    const articleText='Local reporting describes a security interruption on the freight corridor in Garissa County. Authorities responded to the reported incident, but the initial report does not confirm how long the interruption lasted or when normal movement resumed. The story identifies the affected corridor and states that the operational impact beyond the immediate location remains unclear. It contains no verified casualty total and does not establish any linked incidents elsewhere.';
+    const rss='<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns" xmlns="http://purl.org/rss/1.0/"><item><title>Security interruption reported on freight corridor in Garissa County</title><link>'+articleUrl+'</link><description>Local reporting describes a security interruption on the freight corridor in Garissa County after a reported incident. Authorities responded while the duration remained unclear.</description></item></rdf:RDF>';
+    safeFetchPublicResearch.mockImplementation(async rawUrl=>{
+      const url=String(rawUrl);
+      if(url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc')){
+        return {ok:false,status:429,url,headers:{get:()=> 'text/html'},text:async()=>'<html>Too many requests</html>'};
+      }
+      const isRss=url===feedUrl||url.startsWith('https://news.google.com/rss/search')||url.endsWith('/feed')||url.endsWith('.xml');
+      const body=url===feedUrl?rss:
+        url.startsWith('https://news.google.com/rss/search')?'<rss><channel/></rss>':
+        isRss?'<rss><channel/></rss>':
+        '<html><head><title>Garissa freight corridor report</title></head><body><article><p>'+articleText+'</p></article></body></html>';
+      return {ok:true,status:200,url,headers:{get:()=>isRss?'application/rss+xml':url===feedUrl?'application/rdf+xml':'text/html'},text:async()=>body,arrayBuffer:async()=>Buffer.from(body)};
+    });
+    const packet=await buildIncidentResearchPacket({
+      id:'KE-gdelt-429',headline:'Security interruption reported on freight corridor in Garissa County',
+      region:'Garissa County',occurred_from:'2026-10-09T06:00:00.000Z',evidence:[]
+    },{country:'KE'});
+    expect(packet.discovery_summary.gdelt_candidates).toBe(0);
+    expect(packet.discovery_summary.gdelt_requested).toBe(true);
+    expect(safeFetchPublicResearch.mock.calls.filter(([url])=>String(url).startsWith('https://api.gdeltproject.org/api/v2/doc/doc'))).toHaveLength(1);
+  });
+
   test('fallback research never labels metadata-only source rows as researched_limited',()=>{
     const event={id:'KE-metadata-only',headline:'Reported corridor disruption',region:'Garissa',brief:'A reported interruption affected a transport corridor.',evidence:[]};
     const packet={fetched_pages:[
