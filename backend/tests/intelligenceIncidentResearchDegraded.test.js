@@ -148,13 +148,15 @@ describe('degraded incident research remains useful',()=>{
         '<html><head><title>Garissa freight corridor report</title></head><body><article><p>'+articleText+'</p></article></body></html>';
       return {ok:true,status:200,url,headers:{get:()=>isRss?'application/rss+xml':url===feedUrl?'application/rdf+xml':'text/html'},text:async()=>body,arrayBuffer:async()=>Buffer.from(body)};
     });
+    const gdeltCallsBefore=safeFetchPublicResearch.mock.calls.filter(([url])=>String(url).startsWith('https://api.gdeltproject.org/api/v2/doc/doc')).length;
     const packet=await buildIncidentResearchPacket({
       id:'KE-gdelt-429',headline:'Security interruption reported on freight corridor in Garissa County',
       region:'Garissa County',occurred_from:'2026-10-09T06:00:00.000Z',evidence:[]
     },{country:'KE'});
     expect(packet.discovery_summary.gdelt_candidates).toBe(0);
     expect(packet.discovery_summary.gdelt_requested).toBe(true);
-    expect(safeFetchPublicResearch.mock.calls.filter(([url])=>String(url).startsWith('https://api.gdeltproject.org/api/v2/doc/doc'))).toHaveLength(1);
+    const gdeltCallsAfter=safeFetchPublicResearch.mock.calls.filter(([url])=>String(url).startsWith('https://api.gdeltproject.org/api/v2/doc/doc')).length;
+    expect(gdeltCallsAfter-gdeltCallsBefore).toBe(1);
   });
 
   test('fallback research never labels metadata-only source rows as researched_limited',()=>{
@@ -202,13 +204,15 @@ describe('degraded incident research remains useful',()=>{
       else if(url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc'))throw new Error('GDELT should not be called after source coverage is adequate');
       return {ok:true,status:200,url,headers:{get:()=>contentType},text:async()=>body,arrayBuffer:async()=>Buffer.from(body)};
     });
+    const gdeltCallsBefore=safeFetchPublicResearch.mock.calls.filter(([url])=>String(url).startsWith('https://api.gdeltproject.org/api/v2/doc/doc')).length;
     const packet=await buildIncidentResearchPacket({
       id:'KE-budget-1',headline,region:'Garissa County',occurred_from:'2026-10-09T06:00:00.000Z',evidence:[]
     },{country:'KE'});
     expect(packet.discovery_summary.gdelt_requested).toBe(false);
     expect(packet.discovery_summary.gdelt_candidates).toBe(0);
     expect(new Set(packet.fetched_pages.filter(page=>String(page.text||'').length>=250).map(page=>page.domain)).size).toBeGreaterThanOrEqual(2);
-    expect(safeFetchPublicResearch.mock.calls.some(([url])=>String(url).startsWith('https://api.gdeltproject.org/api/v2/doc/doc'))).toBe(false);
+    const gdeltCallsAfter=safeFetchPublicResearch.mock.calls.filter(([url])=>String(url).startsWith('https://api.gdeltproject.org/api/v2/doc/doc')).length;
+    expect(gdeltCallsAfter-gdeltCallsBefore).toBe(0);
   });
 
 
