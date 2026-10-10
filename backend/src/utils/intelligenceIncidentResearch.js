@@ -33,8 +33,10 @@ const MAX_PUBLIC_FETCH_CONCURRENCY = Math.max(2,Math.min(16,Math.floor(Number(pr
 const REQUEST_TIMEOUT_MS = 10000;
 const SOURCE_HTTP_CACHE_TTL_MS = Math.max(60_000, Math.min(30*60_000, Number(process.env.INTEL_PUBLICATION_RESEARCH_CACHE_TTL_MS)||5*60_000));
 const SOURCE_HTTP_CACHE_MAX_ENTRIES = 300;
+const SOURCE_HTTP_CACHE_MAX_BYTES = 16*1024*1024;
 const sourceHttpCache = new Map();
 const sourceHttpInflight = new Map();
+let sourceHttpCacheBytes=0;
 let activePublicFetches=0;
 const publicFetchWaiters=[];
 const GDELT_COOLDOWN_MS=5*60*1000;
@@ -46,6 +48,7 @@ const MAX_INCIDENT_RESEARCH_BATCH_SIZE=4;
 let gdeltDownUntil=0;
 function _resetResearchCacheForTests(){
   sourceHttpCache.clear();
+  sourceHttpCacheBytes=0;
   sourceHttpInflight.clear();
   activePublicFetches=0;
   publicFetchWaiters.length=0;
@@ -84,19 +87,26 @@ function makeFetchResponse(snapshot){
   };
 }
 function cacheSnapshot(key,snapshot){
+  const sizeBytes=Buffer.byteLength(String(snapshot.body||''),'utf8');
+  if(sizeBytes>SOURCE_HTTP_CACHE_MAX_BYTES)return;
+  const previous=sourceHttpCache.get(key);
+  if(previous)sourceHttpCacheBytes=Math.max(0,sourceHttpCacheBytes-Number(previous.sizeBytes||0));
   sourceHttpCache.delete(key);
-  sourceHttpCache.set(key,{expiresAt:Date.now()+SOURCE_HTTP_CACHE_TTL_MS,snapshot});
-  while(sourceHttpCache.size>SOURCE_HTTP_CACHE_MAX_ENTRIES){
+  sourceHttpCache.set(key,{expiresAt:Date.now()+SOURCE_HTTP_CACHE_TTL_MS,snapshot,sizeBytes});
+  sourceHttpCacheBytes+=sizeBytes;
+  while(sourceHttpCache.size>SOURCE_HTTP_CACHE_MAX_ENTRIES||sourceHttpCacheBytes>SOURCE_HTTP_CACHE_MAX_BYTES){
     const oldest=sourceHttpCache.keys().next().value;
     if(oldest===undefined)break;
+    const entry=sourceHttpCache.get(oldest);
     sourceHttpCache.delete(oldest);
+    sourceHttpCacheBytes=Math.max(0,sourceHttpCacheBytes-Number(entry?.sizeBytes||0));
   }
 }
 async function fetchText(url,_options={},timeoutMs=REQUEST_TIMEOUT_MS){
   const cacheKey=httpCacheKey(url);
   const cached=sourceHttpCache.get(cacheKey);
   if(cached&&cached.expiresAt>Date.now())return makeFetchResponse(cached.snapshot);
-  if(cached)sourceHttpCache.delete(cacheKey);
+  if(cached){sourceHttpCache.delete(cacheKey);sourceHttpCacheBytes=Math.max(0,sourceHttpCacheBytes-Number(cached.sizeBytes||0));}
   if(sourceHttpInflight.has(cacheKey))return makeFetchResponse(await sourceHttpInflight.get(cacheKey));
   const request=withPublicFetchSlot(async()=>{
     const res=await safeFetchPublicResearch(url,{timeoutMs,maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES});
@@ -219,9 +229,11 @@ function safeIsoDate(value){
 function sourceMaterialText(source){
   const body=clean(source?.text||'',MAX_PAGE_CHARS);
   if(body.length>=120)return body;
-  if(String(source?.source_type||'').toLowerCase()==='publisher_rss_excerpt'){
+  const sourceType=String(source?.source_type||'').toLowerCase();
+  if(['publisher_rss_excerpt','provider_web_citation','provider_web_search'].includes(sourceType)){
     const excerpt=clean(source?.description||source?.snippet||'',1500);
-    if(excerpt.length>=160)return excerpt;
+    const minimum=sourceType==='publisher_rss_excerpt'?160:180;
+    if(excerpt.length>=minimum)return excerpt;
   }
   return '';
 }
@@ -236,7 +248,7 @@ function articleRelevanceScore(event,item){
   if(!eventTokens.length)return 0;
   const corpus=new Set(researchTokens([item?.title,item?.snippet,item?.description].filter(Boolean).join(' ')));
   const matched=eventTokens.filter(token=>corpus.has(token)).length;
-  const required=eventTokens.length<=2?1:Math.min(2,Math.ceil(eventTokens.length*0.3));
+  const required=eventTokens.length<=2?1:Math.min(3,Math.max(2,Math.ceil(eventTokens.length*0.25)));
   return matched>=required?matched/eventTokens.length:0;
 }
 function getConfiguredPublisherFeeds(country){
@@ -267,7 +279,17 @@ function getConfiguredPublisherFeeds(country){
       out.push({name:clean(feed.name||feed.title||new URL(url).hostname,180),url,country_code:code,language:clean(feed.language||'',30),credibility:Number(feed.credibility||0)||null});
     }
   }
-  return out.slice(0,MAX_CONFIGURED_FEEDS_PER_COUNTRY);
+  const selected=out.slice(0,MAX_CONFIGURED_FEEDS_PER_COUNTRY);
+  // Reuse the country RDF endpoint already used by Sonalit's collection fabric.
+  const countryName=COUNTRY_NAMES[code];
+  if(countryName){
+    const slug=countryName.toLowerCase().replace(/\s+/g,'-');
+    const defaultUrl=safeUrl('https://allafrica.com/tools/headlines/rdf/'+slug+'/headlines.rdf');
+    if(defaultUrl&&!seen.has(defaultUrl.toLowerCase())&&!isAggregatorDomain(new URL(defaultUrl).hostname)){
+      selected.push({name:'AllAfrica '+countryName+' headlines',url:defaultUrl,country_code:code,language:'en',credibility:null,default_source:true});
+    }
+  }
+  return selected;
 }
 function xmlFeedItems(parsed){
   const candidates=[parsed?.rss?.channel?.item,parsed?.['rdf:RDF']?.item,parsed?.RDF?.item,parsed?.feed?.entry];
@@ -497,10 +519,10 @@ async function fetchSourcePage(item){
     const contentType=String(res.headers.get('content-type')||'').toLowerCase();
     if(!contentType.includes('text/html') && !contentType.includes('application/xhtml+xml'))return null;
     const html=await res.text();
-    const canonical=safeUrl(meta(html,'og:url')||meta(html,'twitter:url')||((html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)||[])[1]||''));
-    const resolvedUrl=canonical&&!isAggregatorDomain(normalizeDomain(canonical))
-      ? canonical
-      : (safeUrl(res.url)||item.url);
+    const fetchedUrl=safeUrl(res.url)||item.url;
+    const canonicalCandidate=safeUrl(meta(html,'og:url')||meta(html,'twitter:url')||((html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)||[])[1]||''));
+    const canonical=canonicalCandidate&&normalizeDomain(canonicalCandidate)===normalizeDomain(fetchedUrl)?canonicalCandidate:null;
+    const resolvedUrl=canonical&&!isAggregatorDomain(normalizeDomain(canonical))?canonical:fetchedUrl;
     const title=clean(meta(html,'og:title')||meta(html,'twitter:title')||((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)||[])[1]||item.title),500);
     const description=clean(meta(html,'og:description')||meta(html,'description')||item.snippet,1200);
     const imageUrl=safeUrl(meta(html,'og:image')||meta(html,'twitter:image'));
@@ -705,7 +727,6 @@ function fallbackResearch(event,packet,{degraded=false}={}){
   return {
     status,
     publication_eligible:status==='researched_limited' || degradedEvidenceEligible,
-    degraded_evidence_eligible:degradedEvidenceEligible,
     narrative,
     context:hasWebEvidence
       ? 'For "'+headline+'" in '+region+', retrieved page metadata states: '+uniqueStrings((packet?.fetched_pages||[]).map(p=>p.description||'').filter(Boolean),1).join(' ')
