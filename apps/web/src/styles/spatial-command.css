@@ -108,8 +108,8 @@
 
 .spatial-brand-kicker {
   font-family: 'IBM Plex Mono', monospace !important;
-  font-size: 8px !important;
-  letter-spacing: .2em !important;
+  font-size: 9px !important;
+  letter-spacing: .16em !important;
   text-transform: uppercase;
   color: #8e96a6 !important;
   white-space: nowrap;
@@ -135,8 +135,8 @@
   border-radius: 999px;
   background: rgba(52,211,153,.055);
   color: #9af4ce;
-  font: 700 8px/1 'IBM Plex Mono', monospace;
-  letter-spacing: .13em;
+  font: 700 9px/1 'IBM Plex Mono', monospace;
+  letter-spacing: .10em;
 }
 
 .spatial-live-indicator::before {
@@ -220,8 +220,8 @@
 }
 
 .spatial-panel-header {
-  letter-spacing: .16em !important;
-  font-size: 8px !important;
+  letter-spacing: .12em !important;
+  font-size: 9px !important;
   color: #a7b0c0 !important;
 }
 
@@ -235,9 +235,9 @@
 
 .spatial-panel-subtitle {
   font-family: 'IBM Plex Mono', monospace !important;
-  font-size: 8px !important;
-  color: #737e8f !important;
-  letter-spacing: .06em !important;
+  font-size: 9px !important;
+  color: #8b96a8 !important;
+  letter-spacing: .04em !important;
 }
 
 .spatial-metric-grid {
@@ -257,9 +257,9 @@
 .spatial-metric-label {
   display: block;
   margin-bottom: 4px;
-  font: 700 7px/1 'IBM Plex Mono', monospace !important;
-  letter-spacing: .12em;
-  color: #697485 !important;
+  font: 700 9px/1 'IBM Plex Mono', monospace !important;
+  letter-spacing: .08em;
+  color: #8f9bad !important;
 }
 
 .spatial-metric-value {
@@ -278,7 +278,7 @@
   border: 1px solid rgba(255,255,255,.08);
   background: rgba(255,255,255,.028);
   color: #a9b1be;
-  font: 700 7.5px/1 'IBM Plex Mono', monospace;
+  font: 700 9px/1 'IBM Plex Mono', monospace;
   letter-spacing: .1em;
   white-space: nowrap;
 }
@@ -440,8 +440,8 @@
   }
   .spatial-brand-title { font-size: 13px !important; }
   .spatial-brand-kicker { display: none; }
-  .spatial-live-indicator { padding: 4px 7px; font-size: 7px; }
-  .spatial-view-button { min-height: 32px; padding-inline: 9px; font-size: 8px; }
+  .spatial-live-indicator { padding: 4px 7px; font-size: 9px; }
+  .spatial-view-button { min-height: 44px; padding-inline: 9px; font-size: 9px; }
 }
 
 @media (max-width: 620px) {

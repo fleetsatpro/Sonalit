@@ -59,20 +59,15 @@ File: `apps/web/src/index.css`
 
 ### Typography
 
-- **Primary font**: Archivo (400, 500, 700 weights) — `var(--p-sans)`
-- **Monospace font**: IBM Plex Mono (400, 500) — `var(--p-mono)`, class `.mono`
-- Use Archivo for all UI text
-- Use IBM Plex Mono for data values, codes, coordinates, timestamps
+- **Operations UI**: Sora through `var(--d-font)`, with normal-weight body copy and a restrained heading hierarchy.
+- **Cargo/partner portal**: Archivo through `var(--p-sans)`; this shell intentionally keeps a distinct, more formal voice.
+- **Instrument labels**: Michroma only for short, high-signal labels and instrumentation—not paragraphs.
+- **Operations data**: Space Mono through `.d-font-mono`; **portal data**: IBM Plex Mono through `.mono`.
+- Preserve component-level typographic choices. Never apply a universal `*` font or weight rule with `!important`; it erases the hierarchy and defeats accessible, scannable data presentation.
 
 ### Body Defaults
 
-```css
-body {
-  background: #050813;
-  color: #e2e8f0;
-  font-family: var(--p-sans);
-}
-```
+The inherited operations typography baseline, heading hierarchy, visible keyboard focus, and reduced-motion defaults live in `apps/web/src/styles/dashboard.css`. The cargo portal opts into Archivo through `.portal-root` in `apps/web/src/index.css`; do not force one shell's typography onto another.
 
 ### Accent Colors (Tailwind classes used in components)
 
@@ -143,6 +138,6 @@ The cargo owner portal (`/portal/*`) has its own visual identity:
 
 - Introduce light-theme components without dark variants
 - Use raw hex colors instead of design tokens
-- Mix font families (only Archivo and IBM Plex Mono)
+- Add ad-hoc font families or override component typography globally with universal `!important` rules
 - Use bright white backgrounds — darkest is `#050813`
 - Add CSS frameworks beyond Tailwind

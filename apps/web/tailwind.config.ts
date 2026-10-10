@@ -57,14 +57,15 @@ export default {
         'cds-red-dim': 'rgba(255,92,92,0.12)',
         'cds-cyan-dim': 'rgba(55,230,255,0.12)',
       },
-      // Single system-wide font (Inter) — orbitron/mono keys are kept so
-      // existing font-orbitron/font-mono classNames don't need touching,
-      // they just no longer resolve to a separate typeface.
+      // Shared operations typography matches dashboard.css and the self-hosted
+      // fontsource assets. Legacy utility names remain aliases for compatibility;
+      // mono is real mono, while display/orbitron resolve to the body face unless
+      // a component deliberately opts into .d-font-display instrumentation styling.
       fontFamily: {
-        orbitron: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['Inter', 'system-ui', 'sans-serif'],
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        display: ['Inter', 'system-ui', 'sans-serif'],
+        orbitron: ['Sora', 'system-ui', 'sans-serif'],
+        mono: ['Space Mono', 'IBM Plex Mono', 'ui-monospace', 'monospace'],
+        sans: ['Sora', 'system-ui', 'sans-serif'],
+        display: ['Sora', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         'd': '12px',

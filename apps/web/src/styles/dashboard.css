@@ -99,41 +99,86 @@
   --d-t4: #cbd5e1;
 }
 
-/* ── System-wide font override ─────────────────────────────────────────
-   Forces Inter everywhere, including on the ~60 components that set
-   font-family inline (Orbitron, Space Grotesk, Syne, Fraunces, Barlow
-   Condensed, DM Sans...) — !important is deliberate here: it's the only
-   way to guarantee one consistent, legible typeface across the whole app
-   without a file-by-file rewrite of every inline style. Tabular numerals
-   keep metric columns aligned since Inter is proportional, not monospace. */
-html, body, #root, * {
-  font-family: var(--d-font) !important;
+/* ── App-wide typography baseline ───────────────────────────────────────
+   Sora is the inherited operations-shell face. Feature shells may deliberately
+   choose their own face (the cargo portal uses Archivo); instrument/data faces
+   are explicit utilities. Avoid universal selectors and !important typography
+   overrides: they erase hierarchy, component intent, and monospace alignment.
+*/
+html, body, #root {
+  font-family: var(--d-font);
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  line-height: 1.45;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+/* A deliberate, restrained hierarchy: page title > section title > body. */
+:where(h1, h2) {
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+}
+
+:where(h3, h4) {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+:where(h5, h6) {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+:where(strong, b, th) {
+  font-weight: 600;
+}
+
+/* Keep native controls readable without overriding component-level classes. */
+:where(button, input, select, textarea) {
+  font: inherit;
+}
+
+:where(input, select, textarea) {
+  font-variant-numeric: normal;
+}
+
+/* Telemetry and identifiers use tabular digits; prose stays naturally spaced. */
+:where(.d-font-mono, .mono, code, kbd, samp, pre, [data-mono="true"]) {
+  font-family: var(--d-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Legibility contract ────────────────────────────────────────────────
-   Strong, scannable typography across every themed application surface. */
-html[data-theme] body,
-html[data-theme] body #root,
-html[data-theme] body #root * {
-  font-weight: 600 !important;
-  font-synthesis: none;
-}
-html[data-theme] body #root :is(h1,h2,h3,h4,h5,h6,strong,b,th,.font-extrabold,.font-bold,.font-semibold) {
-  font-weight: 800 !important;
-}
-html[data-theme] body #root :is(input,select,textarea,button,[role="button"]) {
-  font-weight: 700 !important;
+:where(time, .tabular-nums, [data-numeric="true"]) {
+  font-variant-numeric: tabular-nums;
 }
 
-/* ── Rail (side nav) bold font ──────────────────────────────────────────
-   The blanket `* { font-family: var(--d-font) !important }` above wins
-   over any inline font-family Rail.tsx sets on its own, since !important
-   in an author stylesheet beats a plain inline style regardless of
-   specificity — so the only way to actually change the nav's typeface is
-   a rule at least as specific, also !important. Barlow Condensed is
-   already loaded (index.html's Google Fonts link) for the login page, so
-   this adds no new font asset. */
+/* Keyboard focus remains visible in every theme and on every shell. */
+:focus-visible {
+  outline: 2px solid var(--son-theme-accent, var(--d-sig));
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Navigation typography: the wordmark and compact nav labels have an explicit face. ── */
 .d-rail-navlabel {
   font-family: 'Barlow Condensed', var(--d-font) !important;
   font-weight: 700 !important;
@@ -147,11 +192,7 @@ html[data-theme] body #root :is(input,select,textarea,button,[role="button"]) {
   font-weight: 800 !important;
 }
 
-/* ── Holoframe typography overrides ──────────────────────────────────────
-   The blanket `* { font-family: var(--d-font) !important }` rule above
-   wins over any plain inline font-family, so a deliberate typeface switch
-   (eyebrow labels in Michroma, data/timestamps in Space Mono) needs a class
-   at least as specific — same pattern as .d-rail-navlabel/.d-rail-wordmark. */
+/* Explicit display/data face utilities; ordinary component fonts remain inherited. */
 .d-font-display {
   font-family: 'Michroma', var(--d-font) !important;
 }

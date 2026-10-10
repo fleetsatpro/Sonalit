@@ -57,6 +57,19 @@ html[data-theme] #root {
   color: var(--p-text);
 }
 
+/* Tailwind font utilities are explicit declarations, so they can override the
+   inherited portal face. Keep those utilities aligned with the partner-shell
+   contract without changing typography in operations, maps, or media overlays. */
+:root[data-theme] .portal-root [class~="font-sans"],
+:root[data-theme] .portal-root [class~="font-display"],
+:root[data-theme] .portal-root [class~="font-orbitron"] {
+  font-family: var(--p-sans) !important;
+}
+:root[data-theme] .portal-root [class~="font-mono"],
+:root[data-theme] .portal-root .mono {
+  font-family: var(--p-mono) !important;
+}
+
 /* ── Intelligence Centre token bridges ─────────────────────────────────── */
 :root[data-theme] .sonalit-intelligence-shell {
   --ic-bg: var(--d-void);

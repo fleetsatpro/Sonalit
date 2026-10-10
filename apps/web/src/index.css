@@ -3,6 +3,7 @@
 @import '@fontsource/archivo/700.css';
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/700.css';
 
 /* Holoframe design system — Command console, Orbit, Login */
 @import '@fontsource/michroma/400.css';
@@ -13,11 +14,9 @@
 @import '@fontsource/space-mono/400.css';
 @import '@fontsource/space-mono/700.css';
 
-/* Orbitron is referenced inline (fontFamily: 'Orbitron, sans-serif') across
-   ~20 dashboard components, but dashboard.css has a blanket
-   `* { font-family: var(--d-font) !important }` rule that always wins over
-   those plain inline styles — Orbitron never actually renders. Not loaded
-   here; loading it would just be dead weight. */
+/* Optional instrument faces requested by a few legacy components are not bundled
+   or fetched remotely. Their declared sans-serif fallback is intentional; do not
+   force a global typeface over component typography just to hide that fallback. */
 
 @tailwind base;
 @tailwind components;
