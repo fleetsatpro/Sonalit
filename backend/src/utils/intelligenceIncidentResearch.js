@@ -38,6 +38,8 @@ const SOURCE_HTTP_CACHE_MAX_ENTRIES = 300;
 const SOURCE_HTTP_CACHE_MAX_BYTES = 16*1024*1024;
 const sourceHttpCache = new Map();
 const sourceHttpInflight = new Map();
+const publisherFeedFailureUntil = new Map();
+const PUBLISHER_FEED_FAILURE_COOLDOWN_MS = 10*60*1000;
 let sourceHttpCacheBytes=0;
 let activePublicFetches=0;
 const publicFetchWaiters=[];
@@ -52,6 +54,7 @@ function _resetResearchCacheForTests(){
   sourceHttpCache.clear();
   sourceHttpCacheBytes=0;
   sourceHttpInflight.clear();
+  publisherFeedFailureUntil.clear();
   activePublicFetches=0;
   publicFetchWaiters.length=0;
   gdeltDownUntil=0;
@@ -329,7 +332,8 @@ function getConfiguredPublisherFeeds(country){
       if(!url||isAggregatorDomain(new URL(url).hostname))continue;
       configured.push({
         name:clean(feed.name||feed.title||new URL(url).hostname,180),
-        url,country_code:code,language:clean(feed.language||'',30),
+        url,fallback_url:safeUrl(feed.fallback_url||feed.fallbackUrl)||null,
+        country_code:code,language:clean(feed.language||'',30),
         credibility:Number(feed.credibility??feed.reliability??0)||null,
         feed_origin:'explicit_configuration'
       });
@@ -347,7 +351,8 @@ function getConfiguredPublisherFeeds(country){
         const url=safeUrl(feed.url);
         if(!url||isAggregatorDomain(new URL(url).hostname))return null;
         return {
-          name:clean(feed.name||new URL(url).hostname,180),url,country_code:code,
+          name:clean(feed.name||new URL(url).hostname,180),url,
+          fallback_url:safeUrl(feed.fallback_url)||null,country_code:code,
           language:clean(feed.language||'',30),
           credibility:Number(feed.credibility??feed.reliability??0)||null,
           feed_origin:'regional_incident_registry'
@@ -418,32 +423,71 @@ async function configuredPublisherSearch({headline,country,region,event}){
   const feeds=getConfiguredPublisherFeeds(country);
   const candidates=[];
   await Promise.all(feeds.map(async feed=>{
-    try{
-      const res=await fetchText(feed.url,{},REQUEST_TIMEOUT_MS);
-      if(!res.ok)throw new Error('HTTP '+res.status);
-      const parsed=XML.parse(await res.text());
-      for(const item of xmlFeedItems(parsed)){
-        const title=clean(feedText(item?.title),500);
-        if(!title)continue;
-        const description=clean(stripHtml(
-          feedText(item?.description)||feedText(item?.summary)||feedText(item?.content)||feedText(item?.['content:encoded'])
-        ),1500);
-        const url=feedItemUrl(item);
-        if(!url)continue;
-        const publishedAt=safeIsoDate(feedText(item?.pubDate)||feedText(item?.published)||feedText(item?.updated)||feedText(item?.['dc:date']));
-        const eventTime=safeIsoDate(event?.occurred_from||event?.occurred_to);
-        if(eventTime&&publishedAt){
-          const delta=new Date(publishedAt).getTime()-new Date(eventTime).getTime();
-          if(delta < -2*24*60*60*1000 || delta > 14*24*60*60*1000)continue;
+    const primaryKey=String(feed.url||'').replace(/\\/+$/,'').toLowerCase();
+    const fallbackUntil=publisherFeedFailureUntil.get(primaryKey)||0;
+    const primaryCooling=fallbackUntil>Date.now()&&Boolean(feed.fallback_url);
+    if(fallbackUntil&&fallbackUntil<=Date.now())publisherFeedFailureUntil.delete(primaryKey);
+    const attempts=[];
+    if(!primaryCooling)attempts.push({url:feed.url,fallback:false});
+    if(feed.fallback_url&&feed.fallback_url!==feed.url)attempts.push({url:feed.fallback_url,fallback:true});
+    for(const attempt of attempts){
+      try{
+        const res=await fetchText(attempt.url,{},REQUEST_TIMEOUT_MS);
+        if(!res.ok)throw new Error('HTTP '+res.status);
+        const body=await res.text();
+        const contentType=String(res.headers?.get?.('content-type')||'').toLowerCase();
+        if(/^\\s*<(?:!doctype\\s+)?html\\b/i.test(body)||contentType.includes('text/html')){
+          throw new Error('publisher feed returned HTML instead of RSS/XML');
         }
-        const itemRecord={title,url,published_at:publishedAt,source:feed.name,domain:normalizeDomain(url),snippet:description,description,kind:'configured_publisher_rss',source_type:'publisher_rss_excerpt',credibility:feed.credibility,feed_url:feed.url};
-        const relevance=articleRelevanceScore({...event,headline:event?.headline||headline,region:event?.region||region},itemRecord);
-        if(!relevance)continue;
-        candidates.push({...itemRecord,relevance});
+        const parsed=XML.parse(body);
+        const feedCandidates=[];
+        for(const item of xmlFeedItems(parsed)){
+          const title=clean(feedText(item?.title),500);
+          if(!title)continue;
+          const description=clean(stripHtml(
+            feedText(item?.description)||feedText(item?.summary)||feedText(item?.content)||feedText(item?.['content:encoded'])
+          ),1500);
+          const url=feedItemUrl(item);
+          if(!url)continue;
+          const publishedAt=safeIsoDate(feedText(item?.pubDate)||feedText(item?.published)||feedText(item?.updated)||feedText(item?.['dc:date']));
+          const eventTime=safeIsoDate(event?.occurred_from||event?.occurred_to);
+          if(eventTime&&publishedAt){
+            const delta=new Date(publishedAt).getTime()-new Date(eventTime).getTime();
+            if(delta < -2*24*60*60*1000 || delta > 14*24*60*60*1000)continue;
+          }
+          const itemRecord={
+            title,url,published_at:publishedAt,
+            source:attempt.fallback?normalizeDomain(url):feed.name,
+            domain:normalizeDomain(url),snippet:description,description,
+            kind:'configured_publisher_rss',source_type:'publisher_rss_excerpt',
+            credibility:feed.credibility,feed_url:attempt.url,
+            publisher_feed_origin:feed.feed_origin||null,
+            discovery_fallback:attempt.fallback
+          };
+          const relevance=articleRelevanceScore({...event,headline:event?.headline||headline,region:event?.region||region},itemRecord);
+          if(!relevance)continue;
+          feedCandidates.push({...itemRecord,relevance});
+        }
+        if(feedCandidates.length){
+          candidates.push(...feedCandidates);
+          if(!attempt.fallback)publisherFeedFailureUntil.delete(primaryKey);
+          break;
+        }
+        if(!attempt.fallback&&feed.fallback_url){
+          logger.info('Publication RSS research feed had no relevant items host='+new URL(feed.url).hostname+'; trying its scoped discovery fallback.');
+        }
+      }catch(error){
+        const host=(()=>{try{return new URL(attempt.url).hostname}catch(_){return 'invalid'}})();
+        if(!attempt.fallback&&feed.fallback_url){
+          publisherFeedFailureUntil.set(primaryKey,Date.now()+PUBLISHER_FEED_FAILURE_COOLDOWN_MS);
+          while(publisherFeedFailureUntil.size>256){
+            publisherFeedFailureUntil.delete(publisherFeedFailureUntil.keys().next().value);
+          }
+          logger.warn('Publication RSS research feed unavailable host='+host+'; switching to scoped discovery fallback: '+String(error?.message||'unknown').slice(0,120));
+        }else{
+          logger.warn('Publication RSS research feed unavailable host='+host+': '+String(error?.message||'unknown').slice(0,120));
+        }
       }
-    }catch(error){
-      const host=(()=>{try{return new URL(feed.url).hostname}catch(_){return 'invalid'}})();
-      logger.warn('Publication RSS research feed unavailable host='+host+': '+String(error?.message||'unknown').slice(0,120));
     }
   }));
   candidates.sort((a,b)=>b.relevance-a.relevance||String(b.published_at||'').localeCompare(String(a.published_at||'')));
