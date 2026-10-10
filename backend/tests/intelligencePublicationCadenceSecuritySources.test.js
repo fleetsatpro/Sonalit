@@ -20,7 +20,8 @@ describe('Intel Hub publication contract',()=>{
   test('weekly and monthly editions use completed periods, not the current partial period',()=>{
     const s=agents();
     expect(s).toContain("const previousWeekStart=shiftedCalendarParts(local,-(mondayOffset+7))");
-    expect(s).toContain("if(isPublicationBoundary(now,timeZone))return new Date(now.getTime()+1000);");
+    expect(s).toContain("The five-minute window is a recovery tolerance, not a repeating cadence.");
+    expect(s).not.toContain("if(isPublicationBoundary(now,timeZone))return new Date(now.getTime()+1000);");
     expect(s).toContain("const currentWeekStart=shiftedCalendarParts(local,-mondayOffset)");
     expect(s).toContain("endParts={...currentWeekStart,hour:0,minute:0,second:0}");
     expect(s).toContain("const previousMonth=new Date(Date.UTC(local.year,local.month-2,1))");

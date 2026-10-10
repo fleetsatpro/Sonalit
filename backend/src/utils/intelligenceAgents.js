@@ -91,7 +91,9 @@ function anyCountryPublicationBoundary(now=new Date()){
 function nextCountryPublicationBoundary(country,now=new Date()){
   const timeZone=publicationTimezoneForCountry(country);
   const local=zonedParts(now,timeZone);
-  if(isPublicationBoundary(now,timeZone))return new Date(now.getTime()+1000);
+  // The five-minute window is a recovery tolerance, not a repeating cadence.
+  // If the scheduler is already inside it, this boundary is current/being handled;
+  // the *next* boundary is tomorrow. Startup performs an explicit daily catch-up.
   let day=shiftedCalendarParts(local,1);
   let target=zonedDateFromParts({...day,hour:0,minute:0,second:5},timeZone);
   if(target.getTime()<=now.getTime()){day=shiftedCalendarParts(local,2);target=zonedDateFromParts({...day,hour:0,minute:0,second:5},timeZone);}
