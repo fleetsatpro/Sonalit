@@ -28,7 +28,7 @@
  */
 import Dexie, { type EntityTable } from 'dexie';
 
-import type { BufferedFix, ConflictRecord, LocalEntity, OutboxEntry, SyncMeta } from './types.js';
+import type { BufferedFix, ConflictRecord, LocalEntity, MediaUploadEntry, OutboxEntry, SyncMeta } from './types.js';
 import { classifyOfflineRow, createOfflineQuarantineRecord, shouldPurgeOfflineQuarantineRecord, type OfflineQuarantineRecord, type OfflineQuarantineSource } from './offlineMigration.js';
 
 /**
@@ -56,6 +56,8 @@ class SonalitDB extends Dexie {
   sync_meta!: EntityTable<SyncMeta, 'key'>;
   /** Legacy local work retained without replay when tenant ownership is unknown. */
   offline_quarantine!: EntityTable<OfflineQuarantineRecord, 'id'>;
+  /** Durable binary uploads; Blob payloads remain local until server acknowledgement. */
+  media_outbox!: EntityTable<MediaUploadEntry, 'id'>;
 
   constructor() {
     super('sonalit');
@@ -156,6 +158,21 @@ class SonalitDB extends Dexie {
       await moveUnscopedRows('conflicts', 'conflicts', 'id');
       await moveUnscopedRows('entities', 'entities', 'key');
     });
+
+    // v5 adds a separate durable binary queue. Media is not stored in JSON
+    // operation payloads: its Blob survives tab/process restart until the
+    // server confirms the metadata commit. There is no destructive upgrade.
+    this.version(5).stores({
+      gps_fixes: 'id, device_id, ts',
+      pending_uploads: 'id, kind, created_at',
+      entities: 'key, entityType, [entityType+entityId], orgId, ownerLookup, lastSyncedAt',
+      outbox: 'id, status, priority, nextAttemptAt, localSequence, ownerUserId, ownerOrgId, [status+nextAttemptAt]',
+      gps_buffer: 'id, vehicleId, sequence, deviceTime, ownerUserId, ownerOrgId',
+      conflicts: 'id, entityType, detectedAt, ownerUserId, ownerOrgId',
+      sync_meta: 'key',
+      offline_quarantine: 'id, source, ownerUserId, ownerOrgId, quarantinedAt, reasonCode',
+      media_outbox: 'id, kind, ownerUserId, ownerOrgId, [ownerUserId+ownerOrgId], status, [status+nextAttemptAt], nextAttemptAt, createdAt, acknowledgedAt, parentType, parentId',
+    });
   }
 }
 
@@ -242,37 +259,43 @@ export async function requestPersistence(): Promise<boolean> {
  * Called on logout and whenever a different user signs in on this device.
  *
  * `keepUnsyncedOutbox` exists because "clear the data" and "throw away work
- * somebody did" are different decisions. Cached entities, GPS and resolved
- * outbox rows go unconditionally — they are a copy of server state and the next
- * user must not see them. Unacknowledged operations are held by default: they
- * are the only record that the work happened, and a logout (deliberate or
- * forced by an expiring token) is not consent to discard a shift. A caller that
- * genuinely needs a clean device — handing hardware to another organisation,
- * say — passes false and takes the loss knowingly.
+ * somebody did" are different decisions. The cached entity mirror is removed
+ * so the next user cannot see the previous worker's records. Unacknowledged
+ * operations, GPS fixes, conflict snapshots and binary media are preserved by
+ * default because logout (even from token expiry) is not consent to discard a
+ * shift. An explicit device/tenant handover passes false and removes the
+ * departing user's scoped work; unowned legacy rows remain quarantined.
  */
 export async function purgeUserData(
   userId: string,
   { keepUnsyncedOutbox = true }: { keepUnsyncedOutbox?: boolean } = {},
-): Promise<{ entities: number; gps: number; outbox: number; conflicts: number; quarantined: number }> {
-  const counts = { entities: 0, gps: 0, outbox: 0, conflicts: 0, quarantined: 0 };
+): Promise<{ entities: number; gps: number; outbox: number; conflicts: number; quarantined: number; media: number }> {
+  const counts = { entities: 0, gps: 0, outbox: 0, conflicts: 0, quarantined: 0, media: 0 };
 
   // Array form: keep the user-owned stores in one transaction so a failure
   // cannot leave a half-purged shared device. Quarantine is included because a
   // deliberate tenant handover must clear the departing user's retained payloads.
-  await db.transaction('rw', [db.entities, db.gps_buffer, db.outbox, db.conflicts, db.sync_meta, db.offline_quarantine], async () => {
+  await db.transaction('rw', [db.entities, db.gps_buffer, db.outbox, db.conflicts, db.sync_meta, db.offline_quarantine, db.media_outbox], async () => {
     counts.entities = await db.entities.where('ownerLookup').equals(userId).delete();
-    counts.gps = await db.gps_buffer.where('ownerUserId').equals(userId).delete();
-    counts.conflicts = await db.conflicts.where('ownerUserId').equals(userId).delete();
 
     const owned = db.outbox.where('ownerUserId').equals(userId);
     if (keepUnsyncedOutbox) {
+      // A normal logout is not permission to discard unacknowledged field work.
+      // Keep permanent rejections visible for human review and retain buffered
+      // GPS, conflict snapshots, and binary media so the same user can resume.
       const rows = await owned.toArray();
-      const disposable = rows
-        .filter(r => r.status === 'ACKNOWLEDGED' || r.status === 'FAILED_PERMANENT')
-        .map(r => r.id);
-      await db.outbox.bulkDelete(disposable);
-      counts.outbox = disposable.length;
+      const acknowledged = rows.filter(r => r.status === 'ACKNOWLEDGED').map(r => r.id);
+      await db.outbox.bulkDelete(acknowledged);
+      counts.outbox = acknowledged.length;
+      counts.gps = 0;
+      counts.conflicts = 0;
+      counts.media = 0;
     } else {
+      // Explicit device/tenant handover: purge all work scoped to this departing
+      // user together in this transaction. Unowned rows remain quarantined.
+      counts.gps = await db.gps_buffer.where('ownerUserId').equals(userId).delete();
+      counts.conflicts = await db.conflicts.where('ownerUserId').equals(userId).delete();
+      counts.media = await db.media_outbox.where('ownerUserId').equals(userId).delete();
       counts.outbox = await owned.delete();
 
       // Only quarantine rows with an exact, known owner can be removed safely.

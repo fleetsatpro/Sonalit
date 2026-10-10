@@ -24,6 +24,7 @@
  */
 
 import { api } from '../api.js';
+import { drainMediaOutbox, pruneAcknowledgedMedia } from './mediaOutbox.js';
 
 import { chaosDelay, chaosSyncShouldFail, CHAOS } from './chaos.js';
 import { beginSync, isDegraded, isReachable, reportRequestOutcome, reportSyncSuccess } from './connectivity.js';
@@ -524,10 +525,23 @@ export async function runSync(userId: string, orgId: string): Promise<SyncRunSum
     // 1. Authorisation first. Everything below depends on still being allowed.
     await registerDevice();
 
-    // 2. Field work up before state comes down.
+    // 2. Critical field work up before secondary binary media. A photo/audio
+    // upload must never hold up incident, panic, or other outbox operations.
     result.push = await push(userId, orgId);
 
-    // 3. Reconcile.
+    // 3. Drain one durable media item only after server authorization and field
+    // operations. Each item persists its own outcome; a media failure does not
+    // invalidate a successful operational push or block state reconciliation.
+    try {
+      await drainMediaOutbox(userId, orgId, { limit: 1 });
+      await pruneAcknowledgedMedia(userId, orgId);
+    } catch {
+      // Binary queue rows remain durable and will be retried on a later sync.
+      // The Sync Center reads media state separately; never report an upload as
+      // acknowledged unless the voice-note commit returned its authoritative ID.
+    }
+
+    // 4. Reconcile.
     result.pull = await pull(userId, orgId);
 
     reportSyncSuccess();
