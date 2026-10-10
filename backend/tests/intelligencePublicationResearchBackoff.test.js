@@ -5,6 +5,12 @@ const {publicationRecoveryMetadata}=require('../src/utils/publicationRecoveryMet
 
 describe('publication research retry hardening',()=>{
 
+  test('new source-quality contract invalidates older stored research dossiers',()=>{
+    const s=source();
+    expect(s).toContain("const DEEP_RESEARCH_VERSION='2.2'");
+    expect(s).toContain('gdelt_requests=');
+  });
+
   test('fallback incidents do not satisfy deep-research completion',()=>{
     const s=source();
     expect(s).toContain("const previousResearchCount=Number(priorResearch.incidents_web_researched||0);");

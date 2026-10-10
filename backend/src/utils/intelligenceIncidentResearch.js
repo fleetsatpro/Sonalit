@@ -32,6 +32,8 @@ const MAX_ITEMS_PER_FEED = 100;
 const MAX_PUBLIC_FETCH_CONCURRENCY = Math.max(2,Math.min(16,Math.floor(Number(process.env.INTEL_PUBLICATION_FETCH_CONCURRENCY)||8)));
 const REQUEST_TIMEOUT_MS = 10000;
 const SOURCE_HTTP_CACHE_TTL_MS = Math.max(60_000, Math.min(30*60_000, Number(process.env.INTEL_PUBLICATION_RESEARCH_CACHE_TTL_MS)||5*60_000));
+const SOURCE_HTTP_NEGATIVE_CACHE_TTL_MS = Math.max(5_000,Math.min(120_000,Number(process.env.INTEL_PUBLICATION_RESEARCH_NEGATIVE_CACHE_TTL_MS)||30_000));
+const MAX_GOOGLE_NEWS_WRAPPER_RESOLVES = 2;
 const SOURCE_HTTP_CACHE_MAX_ENTRIES = 300;
 const SOURCE_HTTP_CACHE_MAX_BYTES = 16*1024*1024;
 const sourceHttpCache = new Map();
@@ -71,7 +73,7 @@ async function withPublicFetchSlot(task){
 function httpCacheKey(url){
   return crypto.createHash('sha256').update(String(url)).digest('hex');
 }
-function makeFetchResponse(snapshot){
+function makeFetchResponse(snapshot,requestAttempted=false){
   const body=String(snapshot.body||'');
   return {
     ok:snapshot.ok===true,
@@ -83,16 +85,17 @@ function makeFetchResponse(snapshot){
       return bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
     },
     json:async()=>JSON.parse(body),
-    url:snapshot.url
+    url:snapshot.url,
+    requestAttempted:Boolean(requestAttempted)
   };
 }
-function cacheSnapshot(key,snapshot){
+function cacheSnapshot(key,snapshot,ttlMs=SOURCE_HTTP_CACHE_TTL_MS){
   const sizeBytes=Buffer.byteLength(String(snapshot.body||''),'utf8');
   if(sizeBytes>SOURCE_HTTP_CACHE_MAX_BYTES)return;
   const previous=sourceHttpCache.get(key);
   if(previous)sourceHttpCacheBytes=Math.max(0,sourceHttpCacheBytes-Number(previous.sizeBytes||0));
   sourceHttpCache.delete(key);
-  sourceHttpCache.set(key,{expiresAt:Date.now()+SOURCE_HTTP_CACHE_TTL_MS,snapshot,sizeBytes});
+  sourceHttpCache.set(key,{expiresAt:Date.now()+ttlMs,snapshot,sizeBytes});
   sourceHttpCacheBytes+=sizeBytes;
   while(sourceHttpCache.size>SOURCE_HTTP_CACHE_MAX_ENTRIES||sourceHttpCacheBytes>SOURCE_HTTP_CACHE_MAX_BYTES){
     const oldest=sourceHttpCache.keys().next().value;
@@ -102,26 +105,77 @@ function cacheSnapshot(key,snapshot){
     sourceHttpCacheBytes=Math.max(0,sourceHttpCacheBytes-Number(entry?.sizeBytes||0));
   }
 }
+function errorFromCachedFailure(snapshot){
+  const failure=snapshot?.failure||{};
+  const error=new Error(String(failure.message||'External research request is temporarily unavailable').slice(0,240));
+  error.failureClass=String(failure.failureClass||'unavailable').slice(0,64);
+  if(failure.code)error.code=String(failure.code).slice(0,64);
+  error.requestAttempted=false;
+  return error;
+}
 async function fetchText(url,_options={},timeoutMs=REQUEST_TIMEOUT_MS){
   const cacheKey=httpCacheKey(url);
   const cached=sourceHttpCache.get(cacheKey);
-  if(cached&&cached.expiresAt>Date.now())return makeFetchResponse(cached.snapshot);
+  if(cached&&cached.expiresAt>Date.now()){
+    if(cached.snapshot?.failure)throw errorFromCachedFailure(cached.snapshot);
+    // Cached HTTP failures are still failures, but are not fresh outbound calls.
+    return makeFetchResponse(cached.snapshot,false);
+  }
   if(cached){sourceHttpCache.delete(cacheKey);sourceHttpCacheBytes=Math.max(0,sourceHttpCacheBytes-Number(cached.sizeBytes||0));}
-  if(sourceHttpInflight.has(cacheKey))return makeFetchResponse(await sourceHttpInflight.get(cacheKey));
+  if(sourceHttpInflight.has(cacheKey)){
+    try{return makeFetchResponse(await sourceHttpInflight.get(cacheKey),false);}
+    catch(error){
+      // The request owner accounts for the shared outbound attempt. A waiter
+      // observes the shared failure but did not issue another HTTP request.
+      const sharedError=new Error(String(error?.message||'Public research fetch failed'));
+      for(const key of ['failureClass','upstreamStatus','upstreamContentType'])if(error?.[key]!==undefined)sharedError[key]=error[key];
+      sharedError.requestAttempted=false;
+      throw sharedError;
+    }
+  }
+  const requestState={attempted:false};
   const request=withPublicFetchSlot(async()=>{
-    const res=await safeFetchPublicResearch(url,{timeoutMs,maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES});
-    const body=await res.text();
-    const snapshot={
-      ok:res.ok===true,status:Number(res.status||0),
-      headers:{'content-type':String(res.headers?.get?.('content-type')||'')},
-      body,url:String(res.url||url)
-    };
-    if(snapshot.ok&&snapshot.status>=200&&snapshot.status<300&&Buffer.byteLength(body,'utf8')<=256*1024)cacheSnapshot(cacheKey,snapshot);
-    return snapshot;
+    requestState.attempted=true;
+    try{
+      const res=await safeFetchPublicResearch(url,{timeoutMs,maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES});
+      const body=await res.text();
+      const snapshot={
+        ok:res.ok===true,status:Number(res.status||0),
+        headers:{'content-type':String(res.headers?.get?.('content-type')||'')},
+        body,url:String(res.url||url)
+      };
+      const size=Buffer.byteLength(body,'utf8');
+      if(snapshot.ok&&snapshot.status>=200&&snapshot.status<300&&size<=256*1024){
+        cacheSnapshot(cacheKey,snapshot);
+        // The transport follows only public-address-validated HTTPS redirects.
+        // Alias the final publisher URL so the body is not fetched a second time.
+        const finalKey=httpCacheKey(snapshot.url);
+        if(finalKey!==cacheKey)cacheSnapshot(finalKey,snapshot);
+      }else{
+        // A short negative cache damps repeated HTTP 403/429/5xx and malformed
+        // upstream responses across incidents while retaining the current status.
+        cacheSnapshot(cacheKey,{...snapshot,body:size<=32*1024?body:''},SOURCE_HTTP_NEGATIVE_CACHE_TTL_MS);
+      }
+      return snapshot;
+    }catch(error){
+      cacheSnapshot(cacheKey,{
+        ok:false,status:Number(error?.upstreamStatus||0),
+        headers:{'content-type':''},body:'',url:String(url),
+        failure:{
+          message:String(error?.message||'External research request failed').replace(/https?:\/\/[^\s)]+/gi,'[url]').slice(0,240),
+          failureClass:String(error?.failureClass||'unavailable').slice(0,64),
+          code:String(error?.code||'').slice(0,64)
+        }
+      },SOURCE_HTTP_NEGATIVE_CACHE_TTL_MS);
+      throw error;
+    }
   });
   sourceHttpInflight.set(cacheKey,request);
-  try{return makeFetchResponse(await request);}
-  finally{if(sourceHttpInflight.get(cacheKey)===request)sourceHttpInflight.delete(cacheKey);}
+  try{return makeFetchResponse(await request,requestState.attempted);}
+  catch(error){
+    if(error&&typeof error==='object')error.requestAttempted=requestState.attempted;
+    throw error;
+  }finally{if(sourceHttpInflight.get(cacheKey)===request)sourceHttpInflight.delete(cacheKey);}
 }
 
 function chunkIncidentResearchBatches(events,batchSize=DEFAULT_INCIDENT_RESEARCH_BATCH_SIZE){
@@ -254,12 +308,12 @@ function articleRelevanceScore(event,item){
 function getConfiguredPublisherFeeds(country){
   const code=String(country||'').trim().toUpperCase();
   const name=String(COUNTRY_NAMES[code]||'').trim().toUpperCase();
+  const configured=[];
   const rawValues=[
     process.env.INTEL_PUBLICATION_RESEARCH_FEEDS,
     process.env.INTEL_RSS_FEEDS,
     process.env.RISK_INTEL_EXTRA_RSS_FEEDS
   ].filter(value=>String(value||'').trim());
-  const out=[],seen=new Set();
   for(const raw of rawValues){
     let parsed;
     try{parsed=JSON.parse(raw);}catch(_){
@@ -273,24 +327,64 @@ function getConfiguredPublisherFeeds(country){
       if(!feedCountry||![code,name].filter(Boolean).includes(feedCountry))continue;
       const url=safeUrl(feed.url||feed.feed_url||feed.feedUrl);
       if(!url||isAggregatorDomain(new URL(url).hostname))continue;
-      const key=url.toLowerCase();
-      if(seen.has(key))continue;
-      seen.add(key);
-      out.push({name:clean(feed.name||feed.title||new URL(url).hostname,180),url,country_code:code,language:clean(feed.language||'',30),credibility:Number(feed.credibility||0)||null});
+      configured.push({
+        name:clean(feed.name||feed.title||new URL(url).hostname,180),
+        url,country_code:code,language:clean(feed.language||'',30),
+        credibility:Number(feed.credibility??feed.reliability??0)||null,
+        feed_origin:'explicit_configuration'
+      });
     }
   }
-  const selected=out.slice(0,MAX_CONFIGURED_FEEDS_PER_COUNTRY);
-  // Reuse the country RDF endpoint already used by Sonalit's collection fabric.
+
+  // Reuse Sonalit's existing country-coded RSS registry rather than maintaining
+  // an independent, inevitably divergent list of local publishers.
+  let regional=[];
+  try{
+    const registry=require('./regionalIncidentFabric').RSS_FEEDS;
+    regional=(Array.isArray(registry)?registry:[])
+      .filter(feed=>String(feed?.country_code||'').trim().toUpperCase()===code)
+      .map(feed=>{
+        const url=safeUrl(feed.url);
+        if(!url||isAggregatorDomain(new URL(url).hostname))return null;
+        return {
+          name:clean(feed.name||new URL(url).hostname,180),url,country_code:code,
+          language:clean(feed.language||'',30),
+          credibility:Number(feed.credibility??feed.reliability??0)||null,
+          feed_origin:'regional_incident_registry'
+        };
+      }).filter(Boolean);
+  }catch(error){
+    logger.warn('Publication regional publisher registry unavailable for '+code+': '+String(error?.message||'unknown').slice(0,120));
+  }
+
   const countryName=COUNTRY_NAMES[code];
-  if(countryName){
-    const slug=countryName.toLowerCase().replace(/\s+/g,'-');
-    const defaultUrl=safeUrl('https://allafrica.com/tools/headlines/rdf/'+slug+'/headlines.rdf');
-    if(defaultUrl&&!seen.has(defaultUrl.toLowerCase())&&!isAggregatorDomain(new URL(defaultUrl).hostname)){
-      selected.push({name:'AllAfrica '+countryName+' headlines',url:defaultUrl,country_code:code,language:'en',credibility:null,default_source:true});
-    }
+  const allAfricaUrl=countryName
+    ? safeUrl('https://allafrica.com/tools/headlines/rdf/'+countryName.toLowerCase().replace(/\s+/g,'-')+'/headlines.rdf')
+    : null;
+  const allAfrica=allAfricaUrl&&!isAggregatorDomain(new URL(allAfricaUrl).hostname)
+    ? {name:'AllAfrica '+countryName+' headlines',url:allAfricaUrl,country_code:code,language:'en',credibility:74,feed_origin:'built_in_country_rdf'}
+    : null;
+
+  const candidates=[],seen=new Set();
+  for(const feed of configured.concat(regional,allAfrica?[allAfrica]:[])){
+    const url=safeUrl(feed.url);
+    if(!url||isAggregatorDomain(normalizeDomain(url)))continue;
+    const key=url.replace(/\/+$/,'').toLowerCase();
+    if(seen.has(key))continue;
+    seen.add(key);
+    candidates.push({...feed,url});
   }
-  return selected;
+  // Always reserve a slot for the direct AllAfrica country RDF endpoint when
+  // one exists; fill the rest with explicit or existing local/regional feeds.
+  if(allAfrica){
+    const selected=candidates.filter(feed=>feed.url.replace(/\/+$/,'').toLowerCase()!==allAfrica.url.replace(/\/+$/,'').toLowerCase())
+      .slice(0,Math.max(0,MAX_CONFIGURED_FEEDS_PER_COUNTRY-1));
+    selected.push(allAfrica);
+    return selected;
+  }
+  return candidates.slice(0,MAX_CONFIGURED_FEEDS_PER_COUNTRY);
 }
+
 function xmlFeedItems(parsed){
   const candidates=[parsed?.rss?.channel?.item,parsed?.['rdf:RDF']?.item,parsed?.RDF?.item,parsed?.feed?.entry];
   for(const raw of candidates){
@@ -355,6 +449,25 @@ async function configuredPublisherSearch({headline,country,region,event}){
   candidates.sort((a,b)=>b.relevance-a.relevance||String(b.published_at||'').localeCompare(String(a.published_at||'')));
   return candidates.slice(0,MAX_SEARCH_RESULTS);
 }
+async function resolveGoogleNewsWrapper(item){
+  const wrapperUrl=safeUrl(item?.wrapper_url);
+  if(!wrapperUrl||normalizeDomain(wrapperUrl)!=='news.google.com')return null;
+  try{
+    const response=await fetchText(wrapperUrl,{},REQUEST_TIMEOUT_MS);
+    if(!response.ok)return null;
+    const directUrl=safeUrl(response.url);
+    if(!directUrl||isAggregatorDomain(normalizeDomain(directUrl)))return null;
+    return {
+      ...item,url:directUrl,wrapper_url:null,
+      domain:normalizeDomain(directUrl),
+      kind:'google_news_discovery',
+      resolved_via:'validated_https_redirect'
+    };
+  }catch(error){
+    logger.warn('Google News publisher redirect unavailable: '+String(error?.message||'unknown').slice(0,160));
+    return null;
+  }
+}
 function uniqueByUrl(items){
   const seen=new Set();
   const out=[];
@@ -409,22 +522,38 @@ async function googleNewsSearch({headline,country,region}){
     if(!res.ok)throw new Error('Google News HTTP '+res.status);
     const parsed=XML.parse(await res.text());
     const raw=parsed&&parsed.rss&&parsed.rss.channel&&parsed.rss.channel.item||[];
-    return (Array.isArray(raw)?raw:[raw]).slice(0,MAX_SEARCH_RESULTS).map(x=>({
-      title:clean(x&&x.title,500),
-      url:resolveGoogleNewsArticleUrl(typeof (x&&x.link)==='string' ? x.link : x&&x.link&&x.link['#text']),
-      published_at:x&&x.pubDate?safeIsoDate(x.pubDate):null,
-      source:clean(typeof (x&&x.source)==='string' ? x.source : x&&x.source&&x.source['#text']||'',180),
-      snippet:clean(stripHtml(x&&x.description||''),1200),
-      kind:'google_news_discovery'
-    })).filter(x=>x.url);
+    return (Array.isArray(raw)?raw:[raw]).slice(0,MAX_SEARCH_RESULTS).map(x=>{
+      const rawLink=typeof (x&&x.link)==='string'?x.link:x&&x.link&&x.link['#text'];
+      const resolvedUrl=resolveGoogleNewsArticleUrl(rawLink);
+      const wrapperUrl=!resolvedUrl&&/^https:\/\/news\.google\.com\/(?:rss\/articles|articles|read)\//i.test(String(rawLink||''))
+        ? safeUrl(rawLink)
+        : null;
+      return {
+        title:clean(x&&x.title,500),
+        url:resolvedUrl,
+        wrapper_url:wrapperUrl,
+        published_at:x&&x.pubDate?safeIsoDate(x.pubDate):null,
+        source:clean(typeof (x&&x.source)==='string'?x.source:x&&x.source&&x.source['#text']||'',180),
+        snippet:clean(stripHtml(x&&x.description||''),1200),
+        kind:'google_news_discovery'
+      };
+    }).filter(x=>x.url||x.wrapper_url);
   }));
-  const merged=[];
-  for(const result of results)if(result.status==='fulfilled')merged.push(...result.value);
+  const merged=[],seen=new Set();
+  for(const result of results){
+    if(result.status!=='fulfilled')continue;
+    for(const item of result.value){
+      const identity=(safeUrl(item.url||item.wrapper_url)||'').replace(/\/+$/,'').toLowerCase();
+      if(!identity||seen.has(identity))continue;
+      seen.add(identity);
+      merged.push(item);
+    }
+  }
   if(!merged.length){
     const reason=results.find(x=>x.status==='rejected')?.reason;
     if(reason)throw reason;
   }
-  return uniqueByUrl(merged).slice(0,Math.max(MAX_SEARCH_RESULTS,14));
+  return merged.slice(0,Math.max(MAX_SEARCH_RESULTS,14));
 }
 
 async function parseGdeltResponse(response){
@@ -453,7 +582,7 @@ async function parseGdeltResponse(response){
 }
 
 async function gdeltSearch({headline,country,region}){
-  if(Date.now()<gdeltDownUntil)return [];
+  if(Date.now()<gdeltDownUntil)return {articles:[],requestAttempted:false};
   const q=[clean(headline,220),COUNTRY_NAMES[country]||country,region].filter(Boolean).join(' ');
   const u=new URL('https://api.gdeltproject.org/api/v2/doc/doc');
   u.searchParams.set('query',q);
@@ -462,13 +591,15 @@ async function gdeltSearch({headline,country,region}){
   u.searchParams.set('sort','HybridRel');
   u.searchParams.set('format','json');
   const run=async()=>{
-    if(Date.now()<gdeltDownUntil)return [];
+    if(Date.now()<gdeltDownUntil)return {articles:[],requestAttempted:false};
+    let requestAttempted=false;
     try{
       const res=await fetchText(u.toString(),{},REQUEST_TIMEOUT_MS);
+      requestAttempted=res.requestAttempted===true;
       if(!res.ok)throw new Error('GDELT HTTP '+res.status);
       const parsed=await parseGdeltResponse(res);
       const articles=Array.isArray(parsed?.articles)?parsed.articles:Array.isArray(parsed?.results)?parsed.results:[];
-      return articles.map(a=>({
+      return {articles:articles.map(a=>({
         title:clean(a?.title,500),
         url:safeUrl(a?.url),
         published_at:parseGdeltDate(a?.seendate||a?.published_at),
@@ -476,8 +607,9 @@ async function gdeltSearch({headline,country,region}){
         domain:normalizeDomain(a?.domain||a?.url||''),
         snippet:clean(a?.snippet||'',1200),
         kind:'gdelt_discovery'
-      })).filter(a=>a.url&&!isAggregatorDomain(a.domain));
+      })).filter(a=>a.url&&!isAggregatorDomain(a.domain)),requestAttempted};
     }catch(error){
+      requestAttempted=requestAttempted||error?.requestAttempted===true;
       const failureClass=String(error?.failureClass||'');
       if(failureClass==='rate_limited'||/HTTP 429|rate.?limit/i.test(String(error?.message||''))){
         gdeltDownUntil=Date.now()+GDELT_COOLDOWN_MS;
@@ -489,12 +621,14 @@ async function gdeltSearch({headline,country,region}){
         gdeltDownUntil=Date.now()+60*1000;
         logger.warn('Incident research GDELT unavailable; cooling source for 60 seconds ('+(failureClass||'upstream_failure')+')');
       }
-      return [];
+      return {articles:[],requestAttempted};
     }
   };
   const next=gdeltRequestQueue.then(async()=>{
+    if(Date.now()<gdeltDownUntil)return {articles:[],requestAttempted:false};
     const wait=GDELT_MIN_INTERVAL_MS-(Date.now()-gdeltLastRequestAt);
     if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));
+    if(Date.now()<gdeltDownUntil)return {articles:[],requestAttempted:false};
     gdeltLastRequestAt=Date.now();
     return run();
   });
@@ -571,41 +705,90 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
   }catch(error){
     logger.warn('Incident research Google News unavailable: '+String(error?.message||'unknown').slice(0,180));
   }
-  const gdelt=await gdeltSearch({headline:event.headline||event.title,country,region:event.region||region});
-  const discovered=uniqueByUrl(publisher.concat(search,gdelt))
+
+  const directDiscovered=uniqueByUrl(publisher.concat(search))
+    .filter(x=>x.url&&!isAggregatorDomain(normalizeDomain(x.url)))
+    .sort((a,b)=>{
+      const lane=x=>x.kind==='configured_publisher_rss'?0:1;
+      return lane(a)-lane(b)||Number(b.relevance||0)-Number(a.relevance||0);
+    });
+  // Reserve two bounded slots for GDELT, but do not call its already-rate-limited
+  // shared endpoint unless first-party event evidence, local publisher RSS and
+  // Google News results fail to produce two independent, substantive domains.
+  const baseCandidateLimit=Math.max(1,MAX_SOURCE_CANDIDATES-MAX_GOOGLE_NEWS_WRAPPER_RESOLVES-2);
+  const baseCandidates=dedupeSources(primary.concat(directDiscovered),baseCandidateLimit);
+  const allPages=[];
+  const attemptedUrls=new Set();
+  async function retrieveCandidatePages(candidates){
+    const pending=(Array.isArray(candidates)?candidates:[]).filter(item=>{
+      const normalized=(safeUrl(item?.url)||'').replace(/\/+$/,'');
+      if(!normalized||attemptedUrls.has(normalized))return false;
+      attemptedUrls.add(normalized);
+      return true;
+    });
+    for(let offset=0;offset<pending.length;offset+=MAX_SOURCE_PAGES){
+      const batch=pending.slice(offset,offset+MAX_SOURCE_PAGES);
+      const attempted=await Promise.all(batch.map(fetchSourcePage));
+      for(let i=0;i<batch.length;i++){
+        const item=batch[i],page=attempted[i];
+        if(page&&sourceIsSubstantive(page)){allPages.push(page);continue;}
+        const excerpt=clean(item?.snippet||item?.description||'',1500);
+        // A publisher RSS description remains explicitly labelled as an excerpt.
+        if(item?.kind==='configured_publisher_rss'&&excerpt.length>=160){
+          allPages.push({
+            url:item.url,domain:normalizeDomain(item.url),title:clean(item.title,500),
+            description:excerpt,text:'',source_type:'publisher_rss_excerpt',
+            published_at:item.published_at||null,retrieved_at:new Date().toISOString(),
+            source:item.source||item.domain||normalizeDomain(item.url)
+          });
+        }
+      }
+      const usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120)
+        .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+      if(usableDomains.size>=MAX_SOURCE_PAGES)break;
+    }
+  }
+  await retrieveCandidatePages(baseCandidates);
+
+  let gdelt=[];
+  let gdeltRequested=false;
+  let usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120)
+    .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+  let remainingCandidateSlots=Math.max(0,MAX_SOURCE_CANDIDATES-attemptedUrls.size);
+  if(usableDomains.size<2&&remainingCandidateSlots>0){
+    const wrappers=search.filter(item=>item?.wrapper_url).slice(0,Math.min(MAX_GOOGLE_NEWS_WRAPPER_RESOLVES,remainingCandidateSlots));
+    const resolvedWrappers=(await Promise.all(wrappers.map(resolveGoogleNewsWrapper))).filter(Boolean);
+    if(resolvedWrappers.length){
+      resolvedWrappers.forEach(item=>directDiscovered.push(item));
+      await retrieveCandidatePages(resolvedWrappers);
+      usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120)
+        .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+      remainingCandidateSlots=Math.max(0,MAX_SOURCE_CANDIDATES-attemptedUrls.size);
+    }
+  }
+  if(usableDomains.size<2&&remainingCandidateSlots>0){
+    const gdeltResult=await gdeltSearch({headline:event.headline||event.title,country,region:event.region||region});
+    gdelt=gdeltResult.articles;
+    gdeltRequested=gdeltResult.requestAttempted===true;
+    const alreadyDiscovered=new Set(directDiscovered.map(x=>(safeUrl(x.url)||'').replace(/\/+$/,'')).filter(Boolean));
+    const followup=dedupeSources(gdelt.filter(item=>{
+      const url=(safeUrl(item?.url)||'').replace(/\/+$/,'');
+      return url&&!alreadyDiscovered.has(url)&&!attemptedUrls.has(url);
+    }),Math.min(2,remainingCandidateSlots));
+    await retrieveCandidatePages(followup);
+    usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120)
+      .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+  }
+
+  const discovered=uniqueByUrl(directDiscovered.concat(gdelt))
     .filter(x=>x.url&&!isAggregatorDomain(normalizeDomain(x.url)))
     .sort((a,b)=>{
       const lane=x=>x.kind==='configured_publisher_rss'?0:x.kind==='google_news_discovery'?1:2;
       return lane(a)-lane(b)||Number(b.relevance||0)-Number(a.relevance||0);
     })
     .slice(0,MAX_SEARCH_RESULTS);
-  const candidates=dedupeSources(primary.concat(discovered),MAX_SOURCE_CANDIDATES);
-  const allPages=[];
-  // Fetch in progressive batches. Four usable domains end the work for this
-  // incident early; slow or dead secondary publishers do not hold up the whole
-  // report after sufficient evidence has already been acquired.
-  for(let offset=0;offset<candidates.length;offset+=MAX_SOURCE_PAGES){
-    const batch=candidates.slice(offset,offset+MAX_SOURCE_PAGES);
-    const attempted=await Promise.all(batch.map(fetchSourcePage));
-    for(let i=0;i<batch.length;i++){
-      const item=batch[i],page=attempted[i];
-      if(page&&sourceIsSubstantive(page)){allPages.push(page);continue;}
-      const excerpt=clean(item?.snippet||item?.description||'',1500);
-      // Only configured publisher feeds can supply an attributed excerpt fallback.
-      if(item?.kind==='configured_publisher_rss'&&excerpt.length>=160){
-        allPages.push({
-          url:item.url,domain:normalizeDomain(item.url),title:clean(item.title,500),
-          description:excerpt,text:'',source_type:'publisher_rss_excerpt',
-          published_at:item.published_at||null,retrieved_at:new Date().toISOString(),
-          source:item.source||item.domain||normalizeDomain(item.url)
-        });
-      }
-    }
-    const usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120).map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
-    if(usableDomains.size>=MAX_SOURCE_PAGES)break;
-  }
-  const seenDomains=new Set(),pages=[];
   const orderedPages=allPages.sort((a,b)=>sourceMaterialText(b).length-sourceMaterialText(a).length);
+  const seenDomains=new Set(),pages=[];
   for(const page of orderedPages){
     const host=normalizeDomain(page.domain||page.url);
     if(host&&!seenDomains.has(host)){pages.push(page);seenDomains.add(host);}
@@ -618,9 +801,10 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
       if(pages.length>=MAX_SOURCE_PAGES)break;
     }
   }
-  const domainCount=new Set(pages.map(x=>normalizeDomain(x.domain||x.url)).filter(Boolean)).size;
+  const domainCount=new Set(pages.filter(x=>sourceMaterialText(x).length>=120)
+    .map(x=>normalizeDomain(x.domain||x.url)).filter(Boolean)).size;
   return {
-    version:'3.0',
+    version:'3.1',
     incident_id:String(event.id),
     query:[clean(event.headline||event.title,220),COUNTRY_NAMES[country]||country,event.region||region].filter(Boolean).join(' '),
     discovered_sources:discovered.slice(0,MAX_SEARCH_RESULTS).map(x=>({
@@ -632,6 +816,7 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
       configured_rss_candidates:publisher.length,
       google_news_candidates:search.length,
       gdelt_candidates:gdelt.length,
+      gdelt_requested:gdeltRequested,
       source_pages_fetched:pages.filter(x=>String(x.source_type||'')==='retrieved_web_page'&&String(x.text||'').length>=120).length,
       substantive_sources:pages.filter(x=>sourceMaterialText(x).length>=120).length,
       source_domains:domainCount
@@ -1065,14 +1250,15 @@ async function researchPublicationIncidents(events,{country,region}={}){
     total.configured_rss_candidates+=Number(d.configured_rss_candidates||0);
     total.google_news_candidates+=Number(d.google_news_candidates||0);
     total.gdelt_candidates+=Number(d.gdelt_candidates||0);
+    total.gdelt_requests+=d.gdelt_requested===true?1:0;
     total.source_pages_fetched+=Number(d.source_pages_fetched||0);
     total.substantive_sources+=Number(d.substantive_sources||0);
     total.source_domains+=Number(d.source_domains||0);
     return total;
-  },{configured_rss_candidates:0,google_news_candidates:0,gdelt_candidates:0,source_pages_fetched:0,substantive_sources:0,source_domains:0});
+  },{configured_rss_candidates:0,google_news_candidates:0,gdelt_requests:0,gdelt_candidates:0,source_pages_fetched:0,substantive_sources:0,source_domains:0});
   const providerUnavailable=events.length>0 && values.length===events.length &&
     values.every(x=>String(x?.error||'')==='ai_provider_unavailable' || String(x?.agent?.research_quality||'')==='AI_PROVIDER_UNAVAILABLE');
   return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,...discoverySummary,deferred:Math.max(0,events.length-values.length),degraded_evidence_eligible:degradedEvidenceEligible,provider_unavailable:providerUnavailable}};
 }
 
-module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,chunkIncidentResearchBatches,parseResearchItemsFromText,resolveGoogleNewsArticleUrl,_resetGdeltCooldownForTests,_resetResearchCacheForTests,_fallbackResearchForTests:fallbackResearch};
+module.exports={researchIncident,researchPublicationIncidents,buildIncidentResearchPacket,verifiedResponseSources,parseGdeltResponse,chunkIncidentResearchBatches,parseResearchItemsFromText,resolveGoogleNewsArticleUrl,_getConfiguredPublisherFeedsForTests:getConfiguredPublisherFeeds,_resetGdeltCooldownForTests,_resetResearchCacheForTests,_fallbackResearchForTests:fallbackResearch};

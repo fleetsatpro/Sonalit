@@ -981,4 +981,16 @@ describe('intelligence provider mesh', () => {
     expect(secondAi.providerCapabilities().google_gemini.cooling_down).toBe(true);
   });
 
+
+  test('reports configured Groq models and their circuit posture instead of configuration-only readiness',()=>{
+    process.env.GROQ_API_KEY='groq-test-key-123';
+    const ai=require('../src/utils/aiClient');
+    const caps=ai.providerCapabilities();
+    expect(caps.gpt_oss_120b).toBe(true);
+    expect(caps.groq_lanes).toEqual(expect.arrayContaining([
+      expect.objectContaining({label:'gpt-oss-120b-groq',configured:true,cooling_down:expect.any(Boolean),retry_in_ms:expect.any(Number)}),
+      expect.objectContaining({label:'gpt-oss-20b-groq',configured:true,cooling_down:expect.any(Boolean),retry_in_ms:expect.any(Number)})
+    ]));
+  });
+
 });
