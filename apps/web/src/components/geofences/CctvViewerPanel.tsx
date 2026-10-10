@@ -5,6 +5,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, restoreAccessToken } from '../../lib/api.js'
 import { getAccessToken } from '../../stores/auth.js'
+import { isTrustedCctvApiMediaRequest } from '../../lib/cctvPlaybackAuth.js'
 import { enhanceImageBitmap, preferredImageryAiScale, isImageryAiEnabled, IMAGERY_AI_CCTV_MAX_INPUT_EDGE } from '../../lib/imageryAi.js'
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js'
 import type Hls from 'hls.js'
@@ -402,10 +403,19 @@ function InlineCctvVideo({
               maxLiveSyncPlaybackRate: 1.5,
               capLevelToPlayerSize: true,
               startLevel: -1,
-              xhrSetup: (xhr: XMLHttpRequest) => {
+              xhrSetup: (xhr: XMLHttpRequest, requestUrl: string) => {
+                // Only Sonalit's configured CCTV API proxy may receive app credentials.
+                // HLS source URLs may point directly at public third-party operators.
+                const apiBase = String(import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1')
+                const trustedApiRequest = isTrustedCctvApiMediaRequest(
+                  requestUrl,
+                  apiBase,
+                  window.location.origin,
+                )
+                xhr.withCredentials = trustedApiRequest
+                if (!trustedApiRequest) return
                 const token = getAccessToken()
                 if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-                xhr.withCredentials = true
               },
             })
             hls.on(HlsRuntime.Events.ERROR, async (_event, data) => {
