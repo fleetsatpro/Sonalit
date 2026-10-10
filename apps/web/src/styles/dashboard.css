@@ -163,6 +163,88 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* User-selectable application-wide typography weight profiles.
+   Weight is deliberately configurable and scoped to text-bearing UI elements;
+   glyphs, code blocks and map canvases are excluded. */
+:root {
+  --son-readable-weight: 700;
+  --son-control-weight: 800;
+  --son-heading-weight: 800;
+  --son-emphasis-weight: 900;
+}
+:root[data-typography="maximum"] {
+  --son-readable-weight: 800;
+  --son-control-weight: 900;
+  --son-heading-weight: 900;
+  --son-emphasis-weight: 900;
+}
+html[data-typography] body #root :where(p, span, a, button, input, select, textarea, li, label, td, th, small, dt, dd, summary, figcaption, blockquote) {
+  font-weight: var(--son-readable-weight) !important;
+}
+html[data-typography] body #root :where(button, input, select, textarea, [role="button"]) {
+  font-weight: var(--son-control-weight) !important;
+}
+html[data-typography] body #root :where(h1, h2, h3, h4, h5, h6) {
+  font-weight: var(--son-heading-weight) !important;
+  text-shadow: 0 0 .01px currentColor;
+}
+html[data-typography] body #root :where(strong, b, th, .font-bold, .font-extrabold, .font-semibold, .font-medium) {
+  font-weight: var(--son-emphasis-weight) !important;
+}
+
+/* Raised vector-icon hardware: Lucide remains crisp at any scale, with a
+   bevel, inset highlight and soft contact shadow rather than emoji glyphs. */
+.son-icon-tile {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  color: var(--son-theme-accent, var(--d-sig));
+  border: 1px solid color-mix(in srgb, currentColor 36%, transparent);
+  background:
+    radial-gradient(circle at 27% 18%, color-mix(in srgb, currentColor 22%, transparent), transparent 58%),
+    linear-gradient(145deg, color-mix(in srgb, var(--son-theme-surface-2) 92%, currentColor), var(--son-theme-bg));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -2px 0 rgba(0,0,0,.35), 0 5px 12px rgba(0,0,0,.25), 0 1px 0 color-mix(in srgb, currentColor 35%, transparent);
+}
+.son-icon-tile svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.6;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.45));
+}
+.son-type-profile-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 13px;
+  border: 1px solid var(--son-theme-border);
+  border-radius: 14px;
+  text-align: left;
+  color: var(--son-theme-text);
+  background: var(--son-theme-surface);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+}
+.son-type-profile-option:hover,
+.son-type-profile-option[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--son-theme-accent) 62%, transparent);
+  background: color-mix(in srgb, var(--son-theme-accent) 8%, var(--son-theme-surface));
+}
+.son-type-profile-option[data-selected="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--son-theme-accent) 32%, transparent), 0 8px 24px rgba(0,0,0,.15);
+}
+.son-type-profile-copy { display: grid; gap: 4px; }
+.son-type-profile-copy strong { font-size: 1rem; font-weight: 900; letter-spacing: -.015em; }
+.son-type-profile-copy span { font-size: .875rem; font-weight: 700; color: var(--son-theme-muted); line-height: 1.4; }
+.son-type-profile-option:focus-visible { outline: 3px solid var(--son-theme-accent); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .son-type-profile-option { transition: none; }
+}
+
 /* Keyboard focus remains visible in every theme and on every shell. */
 :focus-visible {
   outline: 2px solid var(--son-theme-accent, var(--d-sig));
