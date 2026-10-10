@@ -32,6 +32,8 @@ const MAX_ITEMS_PER_FEED = 100;
 const MAX_PUBLIC_FETCH_CONCURRENCY = Math.max(2,Math.min(16,Math.floor(Number(process.env.INTEL_PUBLICATION_FETCH_CONCURRENCY)||8)));
 const REQUEST_TIMEOUT_MS = 10000;
 const SOURCE_HTTP_CACHE_TTL_MS = Math.max(60_000, Math.min(30*60_000, Number(process.env.INTEL_PUBLICATION_RESEARCH_CACHE_TTL_MS)||5*60_000));
+const SOURCE_HTTP_NEGATIVE_CACHE_TTL_MS = Math.max(5_000,Math.min(120_000,Number(process.env.INTEL_PUBLICATION_RESEARCH_NEGATIVE_CACHE_TTL_MS)||30_000);
+const MAX_GOOGLE_NEWS_WRAPPER_RESOLVES = 2;
 const SOURCE_HTTP_CACHE_MAX_ENTRIES = 300;
 const SOURCE_HTTP_CACHE_MAX_BYTES = 16*1024*1024;
 const sourceHttpCache = new Map();
@@ -87,13 +89,13 @@ function makeFetchResponse(snapshot,requestAttempted=false){
     requestAttempted:Boolean(requestAttempted)
   };
 }
-function cacheSnapshot(key,snapshot){
+function cacheSnapshot(key,snapshot,ttlMs=SOURCE_HTTP_CACHE_TTL_MS){
   const sizeBytes=Buffer.byteLength(String(snapshot.body||''),'utf8');
   if(sizeBytes>SOURCE_HTTP_CACHE_MAX_BYTES)return;
   const previous=sourceHttpCache.get(key);
   if(previous)sourceHttpCacheBytes=Math.max(0,sourceHttpCacheBytes-Number(previous.sizeBytes||0));
   sourceHttpCache.delete(key);
-  sourceHttpCache.set(key,{expiresAt:Date.now()+SOURCE_HTTP_CACHE_TTL_MS,snapshot,sizeBytes});
+  sourceHttpCache.set(key,{expiresAt:Date.now()+ttlMs,snapshot,sizeBytes});
   sourceHttpCacheBytes+=sizeBytes;
   while(sourceHttpCache.size>SOURCE_HTTP_CACHE_MAX_ENTRIES||sourceHttpCacheBytes>SOURCE_HTTP_CACHE_MAX_BYTES){
     const oldest=sourceHttpCache.keys().next().value;
@@ -103,13 +105,25 @@ function cacheSnapshot(key,snapshot){
     sourceHttpCacheBytes=Math.max(0,sourceHttpCacheBytes-Number(entry?.sizeBytes||0));
   }
 }
+function errorFromCachedFailure(snapshot){
+  const failure=snapshot?.failure||{};
+  const error=new Error(String(failure.message||'External research request is temporarily unavailable').slice(0,240));
+  error.failureClass=String(failure.failureClass||'unavailable').slice(0,64);
+  if(failure.code)error.code=String(failure.code).slice(0,64);
+  error.requestAttempted=false;
+  return error;
+}
 async function fetchText(url,_options={},timeoutMs=REQUEST_TIMEOUT_MS){
   const cacheKey=httpCacheKey(url);
   const cached=sourceHttpCache.get(cacheKey);
-  if(cached&&cached.expiresAt>Date.now())return makeFetchResponse(cached.snapshot);
+  if(cached&&cached.expiresAt>Date.now()){
+    if(cached.snapshot?.failure)throw errorFromCachedFailure(cached.snapshot);
+    // Cached HTTP failures are still failures, but are not fresh outbound calls.
+    return makeFetchResponse(cached.snapshot,false);
+  }
   if(cached){sourceHttpCache.delete(cacheKey);sourceHttpCacheBytes=Math.max(0,sourceHttpCacheBytes-Number(cached.sizeBytes||0));}
   if(sourceHttpInflight.has(cacheKey)){
-    try{return makeFetchResponse(await sourceHttpInflight.get(cacheKey));}
+    try{return makeFetchResponse(await sourceHttpInflight.get(cacheKey),false);}
     catch(error){
       // The request owner accounts for the shared outbound attempt. A waiter
       // observes the shared failure but did not issue another HTTP request.
@@ -122,15 +136,39 @@ async function fetchText(url,_options={},timeoutMs=REQUEST_TIMEOUT_MS){
   const requestState={attempted:false};
   const request=withPublicFetchSlot(async()=>{
     requestState.attempted=true;
-    const res=await safeFetchPublicResearch(url,{timeoutMs,maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES});
-    const body=await res.text();
-    const snapshot={
-      ok:res.ok===true,status:Number(res.status||0),
-      headers:{'content-type':String(res.headers?.get?.('content-type')||'')},
-      body,url:String(res.url||url)
-    };
-    if(snapshot.ok&&snapshot.status>=200&&snapshot.status<300&&Buffer.byteLength(body,'utf8')<=256*1024)cacheSnapshot(cacheKey,snapshot);
-    return snapshot;
+    try{
+      const res=await safeFetchPublicResearch(url,{timeoutMs,maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES});
+      const body=await res.text();
+      const snapshot={
+        ok:res.ok===true,status:Number(res.status||0),
+        headers:{'content-type':String(res.headers?.get?.('content-type')||'')},
+        body,url:String(res.url||url)
+      };
+      const size=Buffer.byteLength(body,'utf8');
+      if(snapshot.ok&&snapshot.status>=200&&snapshot.status<300&&size<=256*1024){
+        cacheSnapshot(cacheKey,snapshot);
+        // The transport follows only public-address-validated HTTPS redirects.
+        // Alias the final publisher URL so the body is not fetched a second time.
+        const finalKey=httpCacheKey(snapshot.url);
+        if(finalKey!==cacheKey)cacheSnapshot(finalKey,snapshot);
+      }else{
+        // A short negative cache damps repeated HTTP 403/429/5xx and malformed
+        // upstream responses across incidents while retaining the current status.
+        cacheSnapshot(cacheKey,{...snapshot,body:size<=32*1024?body:''},SOURCE_HTTP_NEGATIVE_CACHE_TTL_MS);
+      }
+      return snapshot;
+    }catch(error){
+      cacheSnapshot(cacheKey,{
+        ok:false,status:Number(error?.upstreamStatus||0),
+        headers:{'content-type':''},body:'',url:String(url),
+        failure:{
+          message:String(error?.message||'External research request failed').replace(/https?:\/\/[^\s)]+/gi,'[url]').slice(0,240),
+          failureClass:String(error?.failureClass||'unavailable').slice(0,64),
+          code:String(error?.code||'').slice(0,64)
+        }
+      },SOURCE_HTTP_NEGATIVE_CACHE_TTL_MS);
+      throw error;
+    }
   });
   sourceHttpInflight.set(cacheKey,request);
   try{return makeFetchResponse(await request,requestState.attempted);}
@@ -411,6 +449,25 @@ async function configuredPublisherSearch({headline,country,region,event}){
   candidates.sort((a,b)=>b.relevance-a.relevance||String(b.published_at||'').localeCompare(String(a.published_at||'')));
   return candidates.slice(0,MAX_SEARCH_RESULTS);
 }
+async function resolveGoogleNewsWrapper(item){
+  const wrapperUrl=safeUrl(item?.wrapper_url);
+  if(!wrapperUrl||normalizeDomain(wrapperUrl)!=='news.google.com')return null;
+  try{
+    const response=await fetchText(wrapperUrl,{},REQUEST_TIMEOUT_MS);
+    if(!response.ok)return null;
+    const directUrl=safeUrl(response.url);
+    if(!directUrl||isAggregatorDomain(normalizeDomain(directUrl)))return null;
+    return {
+      ...item,url:directUrl,wrapper_url:null,
+      domain:normalizeDomain(directUrl),
+      kind:'google_news_discovery',
+      resolved_via:'validated_https_redirect'
+    };
+  }catch(error){
+    logger.warn('Google News publisher redirect unavailable: '+String(error?.message||'unknown').slice(0,160));
+    return null;
+  }
+}
 function uniqueByUrl(items){
   const seen=new Set();
   const out=[];
@@ -465,22 +522,38 @@ async function googleNewsSearch({headline,country,region}){
     if(!res.ok)throw new Error('Google News HTTP '+res.status);
     const parsed=XML.parse(await res.text());
     const raw=parsed&&parsed.rss&&parsed.rss.channel&&parsed.rss.channel.item||[];
-    return (Array.isArray(raw)?raw:[raw]).slice(0,MAX_SEARCH_RESULTS).map(x=>({
-      title:clean(x&&x.title,500),
-      url:resolveGoogleNewsArticleUrl(typeof (x&&x.link)==='string' ? x.link : x&&x.link&&x.link['#text']),
-      published_at:x&&x.pubDate?safeIsoDate(x.pubDate):null,
-      source:clean(typeof (x&&x.source)==='string' ? x.source : x&&x.source&&x.source['#text']||'',180),
-      snippet:clean(stripHtml(x&&x.description||''),1200),
-      kind:'google_news_discovery'
-    })).filter(x=>x.url);
+    return (Array.isArray(raw)?raw:[raw]).slice(0,MAX_SEARCH_RESULTS).map(x=>{
+      const rawLink=typeof (x&&x.link)==='string'?x.link:x&&x.link&&x.link['#text'];
+      const resolvedUrl=resolveGoogleNewsArticleUrl(rawLink);
+      const wrapperUrl=!resolvedUrl&&/^https:\/\/news\.google\.com\/(?:rss\/articles|articles|read)\//i.test(String(rawLink||''))
+        ? safeUrl(rawLink)
+        : null;
+      return {
+        title:clean(x&&x.title,500),
+        url:resolvedUrl,
+        wrapper_url:wrapperUrl,
+        published_at:x&&x.pubDate?safeIsoDate(x.pubDate):null,
+        source:clean(typeof (x&&x.source)==='string'?x.source:x&&x.source&&x.source['#text']||'',180),
+        snippet:clean(stripHtml(x&&x.description||''),1200),
+        kind:'google_news_discovery'
+      };
+    }).filter(x=>x.url||x.wrapper_url);
   }));
-  const merged=[];
-  for(const result of results)if(result.status==='fulfilled')merged.push(...result.value);
+  const merged=[],seen=new Set();
+  for(const result of results){
+    if(result.status!=='fulfilled')continue;
+    for(const item of result.value){
+      const identity=(safeUrl(item.url||item.wrapper_url)||'').replace(/\/+$/,'').toLowerCase();
+      if(!identity||seen.has(identity))continue;
+      seen.add(identity);
+      merged.push(item);
+    }
+  }
   if(!merged.length){
     const reason=results.find(x=>x.status==='rejected')?.reason;
     if(reason)throw reason;
   }
-  return uniqueByUrl(merged).slice(0,Math.max(MAX_SEARCH_RESULTS,14));
+  return merged.slice(0,Math.max(MAX_SEARCH_RESULTS,14));
 }
 
 async function parseGdeltResponse(response){
@@ -642,7 +715,8 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
   // Reserve two bounded slots for GDELT, but do not call its already-rate-limited
   // shared endpoint unless first-party event evidence, local publisher RSS and
   // Google News results fail to produce two independent, substantive domains.
-  const baseCandidates=dedupeSources(primary.concat(directDiscovered),Math.max(1,MAX_SOURCE_CANDIDATES-2));
+  const baseCandidateLimit=Math.max(1,MAX_SOURCE_CANDIDATES-MAX_GOOGLE_NEWS_WRAPPER_RESOLVES-2);
+  const baseCandidates=dedupeSources(primary.concat(directDiscovered),baseCandidateLimit);
   const allPages=[];
   const attemptedUrls=new Set();
   async function retrieveCandidatePages(candidates){
@@ -680,7 +754,18 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
   let gdeltRequested=false;
   let usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120)
     .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
-  const remainingCandidateSlots=Math.max(0,MAX_SOURCE_CANDIDATES-attemptedUrls.size);
+  let remainingCandidateSlots=Math.max(0,MAX_SOURCE_CANDIDATES-attemptedUrls.size);
+  if(usableDomains.size<2&&remainingCandidateSlots>0){
+    const wrappers=search.filter(item=>item?.wrapper_url).slice(0,Math.min(MAX_GOOGLE_NEWS_WRAPPER_RESOLVES,remainingCandidateSlots));
+    const resolvedWrappers=(await Promise.all(wrappers.map(resolveGoogleNewsWrapper))).filter(Boolean);
+    if(resolvedWrappers.length){
+      resolvedWrappers.forEach(item=>directDiscovered.push(item));
+      await retrieveCandidatePages(resolvedWrappers);
+      usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120)
+        .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+      remainingCandidateSlots=Math.max(0,MAX_SOURCE_CANDIDATES-attemptedUrls.size);
+    }
+  }
   if(usableDomains.size<2&&remainingCandidateSlots>0){
     const gdeltResult=await gdeltSearch({headline:event.headline||event.title,country,region:event.region||region});
     gdelt=gdeltResult.articles;

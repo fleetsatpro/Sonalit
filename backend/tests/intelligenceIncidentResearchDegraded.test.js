@@ -210,4 +210,63 @@ describe('degraded incident research remains useful',()=>{
     expect(safeFetchPublicResearch.mock.calls.some(([url])=>String(url).startsWith('https://api.gdeltproject.org/api/v2/doc/doc'))).toBe(false);
   });
 
+
+  test('negative-caches unavailable publisher feeds across incident packets',async()=>{
+    const feedUrl='https://allafrica.com/tools/headlines/rdf/kenya/headlines.rdf';
+    let feedAttempts=0;
+    safeFetchPublicResearch.mockImplementation(async url=>{
+      const value=String(url);
+      if(value===feedUrl){
+        feedAttempts+=1;
+        throw Object.assign(new Error('External research request failed: ECONNREFUSED'),{failureClass:'unavailable',code:'ECONNREFUSED'});
+      }
+      if(value.startsWith('https://news.google.com/rss/search')){
+        const body='<rss><channel/></rss>';
+        return {ok:true,status:200,url:value,headers:{get:()=> 'application/rss+xml'},text:async()=>body,arrayBuffer:async()=>Buffer.from(body)};
+      }
+      const body='{"articles":[]}';
+      return {ok:true,status:200,url:value,headers:{get:()=> 'application/json'},text:async()=>body,arrayBuffer:async()=>Buffer.from(body)};
+    });
+    const event={id:'KE-feed-failure',headline:'Security disruption in Garissa County',region:'Garissa County',evidence:[]};
+    await buildIncidentResearchPacket(event,{country:'KE'});
+    await buildIncidentResearchPacket({...event,id:'KE-feed-failure-2'},{country:'KE'});
+    expect(feedAttempts).toBe(1);
+  });
+
+  test('resolves opaque Google News wrappers to publisher bodies using validated HTTPS redirects',async()=>{
+    const wrapperUrl='https://news.google.com/rss/articles/CBMiOpaqueArticleToken';
+    const publisherUrl='https://publisher.example/security/garissa-corridor';
+    const publisherBody='A local publisher reports a security interruption along the Garissa corridor. Authorities responded to the incident, but the source does not establish the exact duration, any casualty count or a wider pattern beyond the named area. The account says follow-up details were still being checked and does not claim that other routes were affected.';
+    const rss='<rss><channel><item><title>Security interruption along Garissa corridor</title><link>'+wrapperUrl+'</link><pubDate>Fri, 09 Oct 2026 09:00:00 GMT</pubDate><source>Local publisher</source><description>Local publisher reports a security interruption along the Garissa corridor; duration and wider effects remain unclear.</description></item></channel></rss>';
+    safeFetchPublicResearch.mockImplementation(async rawUrl=>{
+      const url=String(rawUrl);
+      if(url===wrapperUrl){
+        const html='<html><body><article><p>'+publisherBody+'</p></article></body></html>';
+        return {ok:true,status:200,url:publisherUrl,headers:{get:()=> 'text/html'},text:async()=>html,arrayBuffer:async()=>Buffer.from(html)};
+      }
+      if(url.startsWith('https://news.google.com/rss/search')){
+        return {ok:true,status:200,url,headers:{get:()=> 'application/rss+xml'},text:async()=>rss,arrayBuffer:async()=>Buffer.from(rss)};
+      }
+      if(url==='https://allafrica.com/tools/headlines/rdf/kenya/headlines.rdf'){
+        const empty='<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns"/>';
+        return {ok:true,status:200,url,headers:{get:()=> 'application/rdf+xml'},text:async()=>empty,arrayBuffer:async()=>Buffer.from(empty)};
+      }
+      if(url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc')){
+        const payload=JSON.stringify({articles:[{title:'Independent Garissa update',url:'https://second-publisher.example/security-update',domain:'second-publisher.example'}]});
+        return {ok:true,status:200,url,headers:{get:()=> 'application/json'},text:async()=>payload,arrayBuffer:async()=>Buffer.from(payload)};
+      }
+      if(url==='https://second-publisher.example/security-update'){
+        const body='A second independent report describes the same security interruption in Garissa County and records a response by local authorities. It does not confirm the duration or establish a casualty figure. The source does not identify other affected routes, and its account remains limited to the specific incident.';
+        const html='<html><head><title>Garissa security update</title></head><body><article><p>'+body+'</p></article></body></html>';
+        return {ok:true,status:200,url,headers:{get:()=> 'text/html'},text:async()=>html,arrayBuffer:async()=>Buffer.from(html)};
+      }
+      const html='<html></html>';
+      return {ok:true,status:200,url,headers:{get:()=> 'text/html'},text:async()=>html,arrayBuffer:async()=>Buffer.from(html)};
+    });
+    const packet=await buildIncidentResearchPacket({id:'KE-wrapper',headline:'Security interruption along Garissa corridor',region:'Garissa County',occurred_from:'2026-10-09T06:00:00.000Z',evidence:[]},{country:'KE'});
+    expect(packet.discovery_summary.google_news_candidates).toBeGreaterThan(0);
+    expect(packet.fetched_pages.some(page=>page.url===publisherUrl&&page.domain==='publisher.example'&&String(page.text||'').length>=120)).toBe(true);
+    expect(safeFetchPublicResearch.mock.calls.filter(([url])=>String(url)===publisherUrl)).toHaveLength(0);
+  });
+
 });
