@@ -919,7 +919,7 @@ function openRouterRateLimitDiagnostic(err){
 function isAccountCreditExhaustion(err){
   const message=String(err?.message||err?.error?.message||'');
   return Number(err?.status)===402 ||
-    /credit balance|billing|insufficient credit|insufficient[_\\s-]*quota|no credits remaining|out of credits|payment required/i.test(message);
+    /credit balance|billing|insufficient credit|insufficient[\\s_-]*quota|no credits remaining|out of credits|payment required/i.test(message);
 }
 
 function credentialPoolCooldownMs(err,fallbackMs=COOLDOWN_MS){
