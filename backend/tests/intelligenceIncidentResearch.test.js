@@ -10,7 +10,7 @@ jest.mock('../src/utils/publicResearchFetch',()=>({
   MAX_RESPONSE_BYTES:2*1024*1024,
 }));
 
-const { researchPublicationIncidents, verifiedResponseSources, parseGdeltResponse, _resetGdeltCooldownForTests } = require('../src/utils/intelligenceIncidentResearch');
+const { researchPublicationIncidents, verifiedResponseSources, parseGdeltResponse, _resetGdeltCooldownForTests, _resetResearchCacheForTests } = require('../src/utils/intelligenceIncidentResearch');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
 const { auditPublicationContent } = require('../src/utils/publicationQuality');
 
@@ -40,12 +40,32 @@ beforeEach(() => {
 
 // The GDELT circuit is deliberately module-scoped in production; reset it between
 // tests so one mocked provider failure cannot contaminate unrelated scenarios.
-beforeEach(()=>_resetGdeltCooldownForTests());
-afterEach(()=>_resetGdeltCooldownForTests());
+beforeEach(()=>{_resetGdeltCooldownForTests();_resetResearchCacheForTests();});
+afterEach(()=>{_resetGdeltCooldownForTests();_resetResearchCacheForTests();delete process.env.INTEL_RSS_FEEDS;delete process.env.INTEL_PUBLICATION_RESEARCH_FEEDS;delete process.env.RISK_INTEL_EXTRA_RSS_FEEDS;});
 
 test('passes publication data-classification policy into AI incident research',async()=>{
   const aiClient=require('../src/utils/aiClient');
+  const previousClassification=process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION;
   process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION='public';
+  process.env.INTEL_RSS_FEEDS=JSON.stringify([
+    {name:'Independent source A',url:'https://alpha.example/feed.xml',country_code:'KE'},
+    {name:'Independent source B',url:'https://bravo.example/feed.xml',country_code:'KE'}
+  ]);
+  const articleTextA='The report describes a specific development affecting the policy propagation process at a named operational location. Local authorities responded, but this report does not independently establish the total duration or the full set of consequences. The article records what was reported, distinguishes confirmed details from open questions, and notes that further official information is needed before drawing wider conclusions. The available text does not support claims about casualties or a regional trend.';
+  const articleTextB='A second independent report describes the policy propagation incident from a separate publisher and provides a different account of the immediate operational impact. It says the timing of a full resolution remained unconfirmed and does not establish any linked events in neighbouring areas. The report records the limits of the available evidence and identifies the facts that would need confirmation before any wider assessment could be supported. It makes no verified claim about casualties.';
+  safeFetchPublicResearch.mockImplementation(async rawUrl=>{
+    const url=String(rawUrl);
+    const parsed=new URL(url);
+    const headers={get:()=>url.includes('/feed.xml')?'application/rss+xml':url.startsWith('https://news.google.com/rss/search')?'application/rss+xml':url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc')?'application/json':'text/html'};
+    const body=url==='https://alpha.example/feed.xml'
+      ? '<rss><channel><item><title>Policy propagation incident at the primary facility</title><link>https://alpha.example/report</link><pubDate>Fri, 09 Oct 2026 08:00:00 GMT</pubDate><description>Independent report of a policy propagation incident.</description></item></channel></rss>'
+      : url==='https://bravo.example/feed.xml'
+        ? '<rss><channel><item><title>Policy propagation incident reported independently</title><link>https://bravo.example/report</link><pubDate>Fri, 09 Oct 2026 09:00:00 GMT</pubDate><description>A second publisher reports the policy propagation incident.</description></item></channel></rss>'
+        : url.startsWith('https://news.google.com/rss/search')?'<rss><channel></channel></rss>'
+          : url.startsWith('https://api.gdeltproject.org/api/v2/doc/doc')?'{"articles":[]}'
+            : '<html><head><title>Independent publisher report</title></head><body><main><p>'+ (parsed.hostname==='alpha.example'?articleTextA:articleTextB) +'</p></main></body></html>';
+    return {ok:true,status:200,url,headers,text:async()=>body,json:async()=>({articles:[]})};
+  });
   aiClient.hasAnyProvider.mockReturnValue(true);
   const narrative='The incident occurred within the reported period and affected a named location. Available reporting indicates a specific operational development, while the available evidence does not establish a broader deterioration. Independent reporting provides useful corroboration but leaves material uncertainty about the immediate consequences and next-stage response. This assessment should therefore remain bounded to the incident and its verified context.';
   const payload=[{
@@ -88,7 +108,12 @@ test('passes publication data-classification policy into AI incident research',a
     responseFormat:expect.objectContaining({type:'json_schema'}),
   }));
   expect(result.summary.researched).toBe(1);
+  expect(result.byEvent['i-policy'].agent.status).toBe('researched');
+  expect(result.byEvent['i-policy'].agent.sources.filter(source=>String(source.source_type)==='retrieved_web_page')).toHaveLength(2);
+  expect(result.byEvent['i-policy'].agent.sources.every(source=>!Object.prototype.hasOwnProperty.call(source,'text'))).toBe(true);
   expect(result.byEvent['i-policy'].agent.provider).toBe('openrouter-free-router');
+  if(previousClassification===undefined)delete process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION;
+  else process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION=previousClassification;
 });
 
 describe('publication incident research coverage',()=>{
