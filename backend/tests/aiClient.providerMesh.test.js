@@ -921,7 +921,7 @@ describe('intelligence provider mesh', () => {
 
     expect(caught).toBeDefined();
     expect(caught.status).toBe(401);
-    expect(caught.message).toContain('credentials were rejected');
+    expect(caught.message).toContain('permanent configuration response');
     expect(caught.message).not.toContain('sk-live-credential-fragment-do-not-log');
   });
 
