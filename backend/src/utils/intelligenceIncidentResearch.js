@@ -366,10 +366,6 @@ function meta(html,key){
   const re=new RegExp("<meta[^>]+(?:name|property)=[\"']"+escaped+"[\"'][^>]+content=[\"']([^\"']+)[\"']","i");
   const m=String(html||'').match(re); return m?clean(m[1],600):'';
 }
-async function fetchText(url,_options={},timeoutMs=REQUEST_TIMEOUT_MS){
-  return safeFetchPublicResearch(url,{timeoutMs,maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES});
-}
-
 async function googleNewsSearch({headline,country,region}){
   const countryName=COUNTRY_NAMES[country]||country;
   const cleanHeadline=clean(headline,220);
