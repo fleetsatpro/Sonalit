@@ -163,6 +163,28 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Dimensional icon tiles used by dashboard quick actions and empty states. */
+.son-rail-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, currentColor 18%, var(--d-surf)), var(--d-carbon));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), inset 0 -1px 0 rgba(0,0,0,.4), 0 2px 5px rgba(0,0,0,.18);
+  transition: background .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+.son-rail-icon svg { width: 17px; height: 17px; stroke-width: 2.6; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+.d-rail-navlabel:hover .son-rail-icon,
+.d-rail-navlabel.is-active .son-rail-icon {
+  border-color: color-mix(in srgb, currentColor 65%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, currentColor 27%, var(--d-surf)), var(--d-carbon));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 0 13px color-mix(in srgb, currentColor 16%, transparent), 0 3px 7px rgba(0,0,0,.23);
+}
+@media (prefers-reduced-motion: reduce) { .son-rail-icon { transition: none; } }
+
 /* User-selectable application-wide typography weight profiles.
    Weight is deliberately configurable and scoped to text-bearing UI elements;
    glyphs, code blocks and map canvases are excluded. */
