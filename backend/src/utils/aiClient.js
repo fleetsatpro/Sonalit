@@ -327,7 +327,7 @@ const OPEN_SOURCE_SLOTS = [
 ];
 
 const COOLDOWN_MS = 60_000;
-const PERMANENT_FAILURE_COOLDOWN_MS = 15 * 60_000;
+const PERMANENT_FAILURE_COOLDOWN_MS = 60 * 60_000;
 const states = Object.fromEntries([
   ...OPEN_SOURCE_SLOTS.map(s => [s.label, { downUntil:0 }]),
   ...OPEN_WEIGHT_PROVIDERS.map(p => [p.name,{downUntil:0}]),
@@ -722,9 +722,30 @@ function isRetryable(err) {
     /overload|timeout|temporar|rate.?limit|quota|connection reset|econnreset/i.test(err?.message || '');
 }
 function isPermanentCredentialFailure(err) {
-  const s = err?.status;
+  const s = Number(err?.status || err?.response?.status);
   return s === 400 || s === 401 || s === 402 || s === 403 ||
     /credit balance|billing|insufficient credit|invalid api key|authentication|payment required/i.test(err?.message || '');
+}
+
+// Provider exception messages can contain credential fragments, account details,
+// or user-supplied request text. Operational logs and radar state keep only safe
+// status/code metadata; the actionable raw exception remains inside the SDK call.
+function safeProviderErrorSummary(err) {
+  const status = Number(err?.status || err?.response?.status);
+  if (Number.isInteger(status) && status >= 100 && status <= 599) return 'HTTP ' + status;
+  const code = String(err?.code || err?.name || 'provider_error')
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .slice(0, 40);
+  return code || 'provider_error';
+}
+
+function safeCredentialPoolError(provider, err) {
+  const status = Number(err?.status || err?.response?.status) || 401;
+  const safe = new Error(provider + ': configured credentials were rejected (HTTP ' + status +
+    '); verify the API key and account access.');
+  safe.status = status;
+  safe.code = 'AI_CREDENTIAL_POOL_REJECTED';
+  return safe;
 }
 
 function normalizeAnthropicParams(input) {
@@ -1118,9 +1139,10 @@ async function callOpenAI(params) {
         state.downUntil=Date.now()+PERMANENT_FAILURE_COOLDOWN_MS;
       }
       await persistCredentialKeyCooldown('openai',key,state);
-      logger.warn('OpenAI key pool member '+String(index+1)+' failed ('+(err?.status||err?.message||'unknown')+'); rotating to next key');
+      logger.warn('OpenAI key pool member '+String(index+1)+' failed ('+safeProviderErrorSummary(err)+'); rotating to next key');
     }
   }
+  if (lastErr && isPermanentCredentialFailure(lastErr)) throw safeCredentialPoolError('OpenAI direct', lastErr);
   throw lastErr||new Error('OpenAI direct: all key-pool members are cooling down or failed');
 }
 async function callMistral(params) {
@@ -1166,9 +1188,10 @@ async function callGoogleGemini(params) {
         state.downUntil=Date.now()+PERMANENT_FAILURE_COOLDOWN_MS;
       }
       await persistCredentialKeyCooldown('google-gemini',key,state);
-      logger.warn('Gemini key pool member '+String(index+1)+' failed ('+(err?.status||err?.message||'unknown')+'); rotating to next key');
+      logger.warn('Gemini key pool member '+String(index+1)+' failed ('+safeProviderErrorSummary(err)+'); rotating to next key');
     }
   }
+  if (lastErr && isPermanentCredentialFailure(lastErr)) throw safeCredentialPoolError('Google Gemini', lastErr);
   throw lastErr||new Error('Google Gemini: all key-pool members are cooling down or failed');
 }
 async function callGroq(params,model) {
@@ -1203,7 +1226,7 @@ async function attempt(label,fn,meta={}){
     void clearFabricCooldown(group);
     return result;
   }catch(err){
-    providerRadar.recordFailure(label,{status:err?.status,message:err?.message});
+    providerRadar.recordFailure(label,{status:err?.status || err?.response?.status,message:safeProviderErrorSummary(err)});
     if(isModelNotFound(err) && meta.modelDef){
       state.failureCount=0;
       state.downUntil=0;
@@ -1265,7 +1288,7 @@ async function createResearchMessage(params) {
         _provider:'anthropic-web-search',
       };
     }catch(err){
-      logger.warn('AI research web-search provider failed: '+(err?.status||err?.message||'unknown')+'; falling back to provider fabric');
+      logger.warn('AI research web-search provider failed: '+safeProviderErrorSummary(err)+'; falling back to provider fabric');
     }
   }
   return createMessage(params);
@@ -1500,7 +1523,7 @@ async function createMessage(params={}) {
           continue;
         }
         if(!/provider cooling down/i.test(String(err?.message||''))){
-          logger.warn('AI provider failed: '+provider.name+' ('+(err?.status||err?.message||'unknown')+'); trying next provider');
+          logger.warn('AI provider failed: '+provider.name+' ('+safeProviderErrorSummary(err)+'); trying next provider');
         }
         break;
       }
@@ -1514,6 +1537,15 @@ async function createMessage(params={}) {
   const halfOpen=await tryHalfOpenOpenRouterRouter(providers,params,coolingAtStart,attempted);
   if(halfOpen?.response)return halfOpen.response;
   if(halfOpen?.error)lastErr=halfOpen.error;
+  if (lastErr && isPermanentCredentialFailure(lastErr)) {
+    const status = Number(lastErr.status || lastErr.response?.status);
+    const safe = new Error('AI provider rejected the request with a permanent configuration response' +
+      (status ? ' (HTTP ' + status + ')' : '') +
+      '; check credentials, model access, and billing.');
+    if (status) safe.status = status;
+    safe.code = 'AI_PROVIDER_CONFIGURATION_REJECTED';
+    throw safe;
+  }
   throw lastErr||new Error('AI client: all providers failed');
 }
 

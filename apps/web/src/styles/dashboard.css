@@ -185,28 +185,30 @@ body {
 }
 @media (prefers-reduced-motion: reduce) { .son-rail-icon { transition: none; } }
 
-/* User-selectable application-wide typography weight profiles.
-   Weight is deliberately configurable and scoped to text-bearing UI elements;
-   glyphs, code blocks and map canvases are excluded. */
+/* User-selectable typography profiles preserve the reading hierarchy.
+   Maximum means clearer emphasis, not making every container and inline span
+   equally heavy. Structural layout, links, code and map overlays keep their
+   component typography; only readable copy, controls, headings and emphasis
+   receive a profile-level weight. */
 :root {
-  --son-readable-weight: 800;
-  --son-control-weight: 900;
-  --son-heading-weight: 900;
-  --son-emphasis-weight: 900;
+  --son-readable-weight: 500;
+  --son-control-weight: 700;
+  --son-heading-weight: 800;
+  --son-emphasis-weight: 800;
 }
 :root[data-typography="strong"] {
-  --son-readable-weight: 700;
-  --son-control-weight: 800;
-  --son-heading-weight: 800;
-  --son-emphasis-weight: 900;
+  --son-readable-weight: 400;
+  --son-control-weight: 600;
+  --son-heading-weight: 700;
+  --son-emphasis-weight: 700;
 }
 :root[data-typography="maximum"] {
-  --son-readable-weight: 800;
-  --son-control-weight: 900;
-  --son-heading-weight: 900;
-  --son-emphasis-weight: 900;
+  --son-readable-weight: 500;
+  --son-control-weight: 700;
+  --son-heading-weight: 800;
+  --son-emphasis-weight: 800;
 }
-html[data-typography] body #root :where(div, main, section, article, nav, header, footer, p, span, a, button, input, select, textarea, li, label, td, th, small, dt, dd, summary, figcaption, blockquote) {
+html[data-typography] body #root :where(p, li, label, td, th, small, dt, dd, summary, figcaption, blockquote) {
   font-weight: var(--son-readable-weight) !important;
 }
 html[data-typography] body #root :where(button, input, select, textarea, [role="button"]) {
@@ -214,9 +216,8 @@ html[data-typography] body #root :where(button, input, select, textarea, [role="
 }
 html[data-typography] body #root :where(h1, h2, h3, h4, h5, h6) {
   font-weight: var(--son-heading-weight) !important;
-  text-shadow: 0 0 .01px currentColor;
 }
-html[data-typography] body #root :where(strong, b, th, .font-bold, .font-extrabold, .font-semibold, .font-medium) {
+html[data-typography] body #root :where(strong, b, th, .font-bold, .font-extrabold, .font-semibold) {
   font-weight: var(--son-emphasis-weight) !important;
 }
 

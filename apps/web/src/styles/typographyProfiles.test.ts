@@ -18,6 +18,12 @@ describe('high-visibility typography and dimensional icon settings', () => {
     expect(css).toContain('font-weight: var(--son-readable-weight) !important');
     expect(css).toContain('font-weight: var(--son-heading-weight) !important');
   });
+  it('preserves a premium reading hierarchy instead of bolding every layout element', () => {
+    expect(css).toContain('--son-readable-weight: 500;');
+    expect(css).toContain('--son-control-weight: 700;');
+    expect(css).toContain(':where(p, li, label, td, th, small, dt, dd, summary, figcaption, blockquote)');
+    expect(css).not.toContain(':where(div, main, section, article, nav, header, footer, p, span, a, button');
+  });
   it('renders dimensional vector icon tiles without emoji-dependent controls', () => {
     expect(settings).toContain('className="son-icon-tile"');
     expect(css).toContain('.son-icon-tile svg');
