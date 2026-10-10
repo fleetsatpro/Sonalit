@@ -7,10 +7,10 @@ interface Form { name: string; region: string; radius: string; buffer_km: string
 interface PendingAction { action_type: string; recipient: string }
 
 const TYPE_META: { type: Exclude<DrawMode, null>; label: string; hint: string; icon: React.ReactNode }[] = [
-  { type: 'circle', label: 'Circle', hint: 'A radius around one point', icon: <CircleIcon size={18} strokeWidth={2.5} /> },
-  { type: 'polygon', label: 'Polygon zone', hint: 'Draw a validated custom boundary', icon: <Hexagon size={18} strokeWidth={2.5} /> },
-  { type: 'linear', label: 'Linear', hint: 'A plain route line, no buffer', icon: <Minus size={18} strokeWidth={2.5} /> },
-  { type: 'corridor', label: 'Corridor', hint: 'A route line with a buffered safety band', icon: <Waypoints size={18} /> },
+  { type: 'circle', label: 'Circle', hint: 'A radius around one point', icon: <span className="son-icon-tile" style={{ color: 'var(--d-sig)' }}><CircleIcon size={21} strokeWidth={2.7} /></span> },
+  { type: 'polygon', label: 'Polygon zone', hint: 'Draw a validated custom boundary', icon: <span className="son-icon-tile" style={{ color: 'var(--d-orange)' }}><Hexagon size={21} strokeWidth={2.7} /></span> },
+  { type: 'linear', label: 'Linear', hint: 'A plain route line, no buffer', icon: <span className="son-icon-tile" style={{ color: 'var(--d-sig)' }}><Minus size={21} strokeWidth={2.7} /></span> },
+  { type: 'corridor', label: 'Corridor', hint: 'A route line with a buffered safety band', icon: <span className="son-icon-tile" style={{ color: 'var(--d-ok)' }}><Waypoints size={21} strokeWidth={2.7} /></span> },
 ];
 
 export default function CreateGeofenceModal({

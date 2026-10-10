@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Truck, BellRing, RadioTower, Package, UsersRound, ShieldAlert, ChartNoAxesCombined, Settings2, type LucideIcon } from 'lucide-react';
+import { Truck, BellRing, RadioTower, Package, UsersRound, ShieldAlert, BarChart3, Settings2, type LucideIcon } from 'lucide-react';
 
 const ACTIONS: { icon: LucideIcon; label: string; path: string; color: string }[] = [
   { icon: Truck, label: 'New Convoy', path: '/convoys/new', color: 'var(--d-orange)' },
@@ -9,7 +9,7 @@ const ACTIONS: { icon: LucideIcon; label: string; path: string; color: string }[
   { icon: Package, label: 'Shipments', path: '/shipments', color: 'var(--d-sig2)' },
   { icon: UsersRound, label: 'Drivers', path: '/drivers', color: 'var(--d-warn)' },
   { icon: ShieldAlert, label: 'Incidents', path: '/incidents', color: 'var(--d-warn)' },
-  { icon: ChartNoAxesCombined, label: 'Analytics', path: '/analytics', color: 'var(--d-purple)' },
+  { icon: BarChart3, label: 'Analytics', path: '/analytics', color: 'var(--d-purple)' },
   { icon: Settings2, label: 'Settings', path: '/settings', color: 'var(--d-t2)' },
 ];
 
