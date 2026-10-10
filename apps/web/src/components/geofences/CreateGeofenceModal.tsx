@@ -1,14 +1,16 @@
-import { X, Circle as CircleIcon, Waypoints, Minus, Bell, Trash2, Plus } from 'lucide-react';
+import { X, Circle as CircleIcon, Waypoints, Minus, Bell, Trash2, Plus, Hexagon } from 'lucide-react';
 import { REGIONS, ACTION_TYPE_META } from './types.js';
+import { formatArea, polygonAreaM2, polygonValidationError } from '../../lib/geofenceGeometry.js';
 
-type DrawMode = 'circle' | 'linear' | 'corridor' | null;
+type DrawMode = 'circle' | 'polygon' | 'linear' | 'corridor' | null;
 interface Form { name: string; region: string; radius: string; buffer_km: string }
 interface PendingAction { action_type: string; recipient: string }
 
 const TYPE_META: { type: Exclude<DrawMode, null>; label: string; hint: string; icon: React.ReactNode }[] = [
-  { type: 'circle', label: 'Circle', hint: 'A radius around one point', icon: <CircleIcon size={18} /> },
-  { type: 'linear', label: 'Linear', hint: 'A plain route line, no buffer', icon: <Minus size={18} /> },
-  { type: 'corridor', label: 'Corridor', hint: 'A route line with a buffered safety band', icon: <Waypoints size={18} /> },
+  { type: 'circle', label: 'Circle', hint: 'A radius around one point', icon: <span className="son-icon-tile" style={{ color: 'var(--d-sig)' }}><CircleIcon size={21} strokeWidth={2.7} /></span> },
+  { type: 'polygon', label: 'Polygon zone', hint: 'Draw a validated custom boundary', icon: <span className="son-icon-tile" style={{ color: 'var(--d-orange)' }}><Hexagon size={21} strokeWidth={2.7} /></span> },
+  { type: 'linear', label: 'Linear', hint: 'A plain route line, no buffer', icon: <span className="son-icon-tile" style={{ color: 'var(--d-sig)' }}><Minus size={21} strokeWidth={2.7} /></span> },
+  { type: 'corridor', label: 'Corridor', hint: 'A route line with a buffered safety band', icon: <span className="son-icon-tile" style={{ color: 'var(--d-ok)' }}><Waypoints size={21} strokeWidth={2.7} /></span> },
 ];
 
 export default function CreateGeofenceModal({
@@ -29,6 +31,8 @@ export default function CreateGeofenceModal({
   error: boolean;
 }) {
   const addAction = () => setPendingActions([...pendingActions, { action_type: 'sms', recipient: '' }]);
+  const polygonError = drawMode === 'polygon' ? polygonValidationError(drawPath) : null;
+  const canSubmit = drawMode === 'circle' ? Boolean(drawCenter) && Number.isFinite(Number(form.radius)) && Number(form.radius) >= 10 : drawMode === 'polygon' ? !polygonError : drawPath.length >= 2;
   const updateAction = (i: number, patch: Partial<PendingAction>) => setPendingActions(pendingActions.map((a, idx) => idx === i ? { ...a, ...patch } : a));
   const removeAction = (i: number) => setPendingActions(pendingActions.filter((_, idx) => idx !== i));
 
@@ -93,19 +97,20 @@ export default function CreateGeofenceModal({
             <div className="text-xs font-bold text-cyan-400 uppercase tracking-wide">
               {drawMode === 'circle'
                 ? `Center: ${drawCenter ? `${drawCenter[0].toFixed(4)}, ${drawCenter[1].toFixed(4)}` : 'not set'} · Radius: ${form.radius}m`
-                : `${drawPath.length} points captured${drawMode === 'corridor' ? ` · Buffer ${form.buffer_km}km` : ''}`}
+                : drawMode === 'polygon' ? `${drawPath.length} vertices · ${formatArea(polygonAreaM2(drawPath))}` : `${drawPath.length} points captured${drawMode === 'corridor' ? ` · Buffer ${form.buffer_km}km` : ''}`}
             </div>
             {drawMode === 'circle' && (
               <input type="number" value={form.radius} onChange={e => setForm({ ...form, radius: e.target.value })} placeholder="Radius (m)" className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg text-sm font-medium" />
             )}
             {drawMode === 'corridor' && (
-              <input type="number" value={form.buffer_km} onChange={e => setForm({ ...form, buffer_km: e.target.value })} placeholder="Buffer width (km)" className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg text-sm font-medium" />
+              <input type="number" min="0.01" max="5" step="0.01" value={form.buffer_km} onChange={e => setForm({ ...form, buffer_km: e.target.value })} placeholder="Buffer width (km)" className="w-full min-h-11 bg-gray-700 text-white px-3 py-2 rounded-lg text-sm font-semibold" />
             )}
+            {drawMode === 'polygon' && <p role="status" className={`text-sm font-bold ${polygonError ? 'text-amber-200' : 'text-emerald-300'}`}>{polygonError ?? 'Boundary is valid. You can save the drawn area.'}</p>}
             <div className="flex gap-3 justify-end">
               <button onClick={() => onStartDraw(null)} className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white">Back</button>
               <button
                 onClick={onSubmit}
-                disabled={!form.name || submitting || (drawMode === 'circle' ? !drawCenter : drawPath.length < 2)}
+                disabled={!form.name.trim() || submitting || !canSubmit}
                 className="px-4 py-2 text-sm font-bold bg-cyan-600 hover:bg-cyan-700 disabled:opacity-40 text-white rounded-lg"
               >
                 {submitting ? 'Creating…' : 'Create Geofence'}

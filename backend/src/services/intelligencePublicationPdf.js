@@ -617,7 +617,7 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
   const {rows:[publication]}=await query('SELECT * FROM intel_publications WHERE id=$1 AND org_id=$2 LIMIT 1',[publicationId,orgId]);
   if(!publication)throw new Error('Publication not found');
   if(publication.status!=='published')return{status:'skipped',reason:'publication_not_published'};
-  await query("UPDATE intel_publications SET pdf_status='generating',pdf_error=NULL WHERE id=$1 AND org_id=$2",[publicationId,orgId]);
+  await query("UPDATE intel_publications SET pdf_status='generating',pdf_error=NULL,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId]);
   try{
     const {rows:events}=await query(`SELECT e.id,COALESCE(e.canonical_headline,e.title) AS headline,COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,e.latitude,e.longitude,e.last_seen_at,COUNT(DISTINCT eo.observation_id)::int AS observation_count,COUNT(DISTINCT o.source_id)::int AS source_count,array_agg(DISTINCT o.source_id) FILTER (WHERE o.source_id IS NOT NULL) AS source_ids,array_agg(DISTINCT jsonb_build_object('id',o.id,'title',o.title,'url',o.url,'raw_metadata',o.raw_metadata)) FILTER (WHERE o.id IS NOT NULL) AS observations FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4 GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 120`,[orgId,publication.country_code,publication.period_start,publication.period_end]);
     const observationRows=[];for(const e of events){for(const o of e.observations||[])observationRows.push(o)}
@@ -636,7 +636,7 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
     await query("UPDATE intel_publications SET pdf_status='ready',pdf_key=$3,pdf_url=NULL,pdf_generated_at=NOW(),pdf_error=NULL,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,key]);
     for(const img of images)await query('INSERT INTO intel_publication_pdf_assets (org_id,publication_id,asset_type,source_url,source_label,provenance) VALUES ($1,$2,$3,$4,$5,$6::jsonb)',[orgId,publicationId,'image',img.source_url,img.label,JSON.stringify({embedded:true})]).catch(()=>{});
     return{status:'ready',publication_id:publicationId,pdf_url:null};
-  }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3 WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
+  }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
 }
 
 async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId,{download=false}={}){
@@ -649,7 +649,7 @@ async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId,{download=fa
   return getSignedUrl(r2,new GetObjectCommand({Bucket:bucket,Key:row.pdf_key,...(download?{ResponseContentType:'application/pdf',ResponseContentDisposition:`attachment; filename="${filename}"`}: {})}),{expiresIn:300});
 }
 
-async function generateMissingPublicationPdfsUnsafe(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes') OR (pdf_status='ready' AND COALESCE(body->'generator'->>'pdf_renderer_version','') <> $2)) ORDER BY published_at DESC NULLS LAST LIMIT $3",[orgId,PDF_RENDERER_VERSION,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdfUnsafe(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
+async function generateMissingPublicationPdfsUnsafe(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes') OR (pdf_status='generating' AND updated_at < NOW()-INTERVAL '30 minutes') OR (pdf_status='ready' AND COALESCE(body->'generator'->>'pdf_renderer_version','') <> $2)) ORDER BY COALESCE(pdf_generated_at,published_at,created_at) ASC NULLS FIRST LIMIT $3",[orgId,PDF_RENDERER_VERSION,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdfUnsafe(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
 async function generateMissingPublicationPdfs(orgId,limit=3){
   return runWithOrgContext(orgId, () => generateMissingPublicationPdfsUnsafe(orgId, limit));
 }

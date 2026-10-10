@@ -18,7 +18,7 @@ async function loadGeofences(orgId) {
 
   const fences = await withOrg(orgId, async (db) => {
     const r = await db.query(
-      `SELECT id, name, type, coordinates, active,
+      `SELECT id, name, type, coordinates, radius, active,
               corridor_width_km, active_from_time, active_to_time,
               days_of_week, checkpoint_order, dwell_alert_min
          FROM geofences
@@ -51,7 +51,10 @@ function isGeofenceActiveNow(fence) {
 // ── isPointInPolygon (ray casting, GeoJSON coordinates or custom path) ────────
 function extractRing(coordinates) {
   if (!coordinates) return null;
-  const c = typeof coordinates === 'string' ? JSON.parse(coordinates) : coordinates;
+  let c = coordinates;
+  if (typeof c === 'string') {
+    try { c = JSON.parse(c); } catch (_) { return null; }
+  }
   // GeoJSON Polygon: { type: 'Polygon', coordinates: [[[lng, lat], ...]] }
   if (c?.type === 'Polygon' && Array.isArray(c.coordinates?.[0])) {
     return c.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
@@ -78,11 +81,40 @@ function isPointInPolygon(lat, lng, coordinates) {
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const xi = ring[i].lng, yi = ring[i].lat;
     const xj = ring[j].lng, yj = ring[j].lat;
+    const cross = (lng - xi) * (yj - yi) - (lat - yi) * (xj - xi);
+    const dot = (lng - xi) * (xj - xi) + (lat - yi) * (yj - yi);
+    const lengthSq = (xj - xi) ** 2 + (yj - yi) ** 2;
+    if (lengthSq > 1e-18 && Math.abs(cross) <= 1e-9 && dot >= -1e-9 && dot <= lengthSq + 1e-9) return true;
     if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
       inside = !inside;
     }
   }
   return inside;
+}
+
+// ── isPointInCorridor ─────────────────────────────────────────────────────────
+function isPointInGeofence(lat, lng, fence) {
+  if (!fence || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return false;
+  let coordinates = fence.coordinates;
+  if (typeof coordinates === 'string') {
+    try { coordinates = JSON.parse(coordinates); } catch (_) { return false; }
+  }
+  const type = String(fence.type || '').toLowerCase();
+  // Prefer explicit stored geometry for polygons and buffered corridors.
+  const ring = extractRing(coordinates);
+  if (ring && ring.length >= 3) return isPointInPolygon(Number(lat), Number(lng), coordinates);
+
+  if (type !== 'circle') return false;
+  const centerLat = Number(coordinates?.lat ?? coordinates?.center?.lat ?? coordinates?.latitude ??
+    (coordinates?.type === 'Point' ? coordinates.coordinates?.[1] : NaN));
+  const centerLng = Number(coordinates?.lng ?? coordinates?.center?.lng ?? coordinates?.longitude ??
+    (coordinates?.type === 'Point' ? coordinates.coordinates?.[0] : NaN));
+  const radiusM = Number(fence.radius ?? fence.radius_m ?? coordinates?.radius_m ?? coordinates?.radius);
+  if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng) ||
+      Math.abs(centerLat) > 90 || Math.abs(centerLng) > 180 ||
+      !Number.isFinite(radiusM) || radiusM <= 0) return false;
+  // geofences.radius is persisted in metres by both the main UI and Copilot.
+  return haversine(Number(lat), Number(lng), centerLat, centerLng) * 1000 <= radiusM;
 }
 
 // ── isPointInCorridor ─────────────────────────────────────────────────────────
@@ -172,7 +204,7 @@ async function evaluateVehiclePosition(orgId, vehicleId, deviceId, convoyId, fix
     const stateKey = `geo:state:${orgId}:${vehicleId}:${fence.id}`;
     const dwellKey = `geo:dwell:${orgId}:${vehicleId}:${fence.id}`;
 
-    const inPolygon = isPointInPolygon(lat, lng, fence.coordinates);
+    const inPolygon = isPointInGeofence(lat, lng, fence);
     const prevState = await redisGet(stateKey); // 'in' | 'out' | null
 
     if (inPolygon && prevState !== 'in') {
@@ -265,6 +297,7 @@ function invalidateGeofenceCache(orgId) {
 
 module.exports = {
   isPointInPolygon,
+  isPointInGeofence,
   isPointInCorridor,
   isGeofenceActiveNow,
   evaluateVehiclePosition,

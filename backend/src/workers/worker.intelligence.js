@@ -177,24 +177,23 @@ async function runPublicationRecovery(reason='scheduled-recovery'){
     const now=new Date();
     const {rows:orgs}=await globalQuery('SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL');
     const results=[];
-    const published=[];
+    const pdfs=[];
+    const pdfBatchSize=Math.max(1,Math.min(12,Number(process.env.INTEL_PUBLICATION_PDF_BATCH || 8)));
     for(const org of orgs){
       if(!org?.org_id)continue;
       try{
         const recovered=await recoverStalledPublications(org.org_id,now,{limit:Number(process.env.INTEL_PUBLICATION_RECOVERY_BATCH)||4});
         results.push({org_id:org.org_id,...recovered});
-        for(const item of recovered.results||[])if(item.publication_status==='published'&&item.publication_id)published.push({org_id:org.org_id,id:item.publication_id});
       }catch(error){
         logger.warn('Publication recovery failed org='+org.org_id+': '+error.message);
       }
-    }
-    const pdfs=[];
-    for(const item of published){
+      // Published PDF repair is independent of draft recovery: a failed or missing
+      // PDF must be recoverable even if this tenant has no stalled draft to release.
       try{
-        const generated=await generateMissingPublicationPdfs(item.org_id,1);
-        pdfs.push(...generated.map(x=>({org_id:item.org_id,...x})));
+        const generated=await generateMissingPublicationPdfs(org.org_id,pdfBatchSize);
+        pdfs.push(...generated.map(x=>({org_id:org.org_id,...x})));
       }catch(error){
-        logger.warn('Publication recovery PDF failed org='+item.org_id+' id='+item.id+': '+error.message);
+        logger.warn('Publication recovery PDF failed org='+org.org_id+': '+error.message);
       }
     }
     const processed=results.reduce((n,x)=>n+Number(x.processed||0),0);

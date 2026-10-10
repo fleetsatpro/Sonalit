@@ -1,15 +1,16 @@
 import React from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { Truck, BellRing, RadioTower, Package, UsersRound, ShieldAlert, BarChart3, Settings2, type LucideIcon } from 'lucide-react';
 
-const ACTIONS = [
-  { icon: '🚛', label: 'New Convoy',    path: '/convoys/new',      color: 'var(--d-orange)' },
-  { icon: '🔔', label: 'Alerts',        path: '/alerts',            color: 'var(--d-fire)' },
-  { icon: '📡', label: 'GPS Live',      path: '/gps',              color: 'var(--d-ok)' },
-  { icon: '📦', label: 'Shipments',     path: '/shipments',        color: 'var(--d-sig2)' },
-  { icon: '👤', label: 'Drivers',       path: '/drivers',          color: 'var(--d-warn)' },
-  { icon: '🛡',  label: 'Incidents',    path: '/incidents',        color: 'var(--d-warn)' },
-  { icon: '📊', label: 'Analytics',     path: '/analytics',        color: 'var(--d-purple)' },
-  { icon: '⚙',  label: 'Settings',     path: '/settings',         color: 'var(--d-t2)' },
+const ACTIONS: { icon: LucideIcon; label: string; path: string; color: string }[] = [
+  { icon: Truck, label: 'New Convoy', path: '/convoys/new', color: 'var(--d-orange)' },
+  { icon: BellRing, label: 'Alerts', path: '/alerts', color: 'var(--d-fire)' },
+  { icon: RadioTower, label: 'GPS Live', path: '/gps', color: 'var(--d-ok)' },
+  { icon: Package, label: 'Shipments', path: '/shipments', color: 'var(--d-sig2)' },
+  { icon: UsersRound, label: 'Drivers', path: '/drivers', color: 'var(--d-warn)' },
+  { icon: ShieldAlert, label: 'Incidents', path: '/incidents', color: 'var(--d-warn)' },
+  { icon: BarChart3, label: 'Analytics', path: '/analytics', color: 'var(--d-purple)' },
+  { icon: Settings2, label: 'Settings', path: '/settings', color: 'var(--d-t2)' },
 ];
 
 const QuickActions = React.memo(function QuickActions() {
@@ -41,8 +42,8 @@ const QuickActions = React.memo(function QuickActions() {
               position: 'absolute', top: 0, left: 0, right: 0, height: 2,
               background: a.color,
             }} />
-            <div style={{ fontSize: 22 }}>{a.icon}</div>
-            <div style={{ fontSize: 11, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t2)', letterSpacing: '.04em' }}>{a.label}</div>
+            <span className="son-icon-tile" style={{ color: a.color }} aria-hidden="true"><a.icon size={21} strokeWidth={2.7} /></span>
+            <div style={{ fontSize: 12, fontWeight: 800, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t1)', letterSpacing: '.025em' }}>{a.label}</div>
           </button>
         ))}
       </div>

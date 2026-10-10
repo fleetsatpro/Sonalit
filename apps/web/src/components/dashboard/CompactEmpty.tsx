@@ -1,4 +1,5 @@
 import React from 'react';
+import { UsersRound, ScanLine, Map, ShieldAlert, BrainCircuit, RadioTower, type LucideIcon } from 'lucide-react';
 
 interface CompactEmptyProps {
   accent: string;
@@ -6,16 +7,16 @@ interface CompactEmptyProps {
   message: string;
 }
 
-const ICONS: Record<string, string> = {
-  'DRIVER BEHAVIOR': '👤',
-  'BORDER CROSSINGS': '🛂',
-  'ROUTE RISK INTELLIGENCE': '🗺',
-  'PANIC CENTER': '🛡',
-  'AI INTELLIGENCE': '🤖',
+const ICONS: Record<string, LucideIcon> = {
+  'DRIVER BEHAVIOR': UsersRound,
+  'BORDER CROSSINGS': ScanLine,
+  'ROUTE RISK INTELLIGENCE': Map,
+  'PANIC CENTER': ShieldAlert,
+  'AI INTELLIGENCE': BrainCircuit,
 };
 
 const CompactEmpty = React.memo(function CompactEmpty({ accent, title, message }: CompactEmptyProps) {
-  const icon = ICONS[title] || '📡';
+  const Icon = ICONS[title] || RadioTower;
   return (
     <div className='d-section-reveal d-card' style={{ padding: '14px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -23,7 +24,7 @@ const CompactEmpty = React.memo(function CompactEmpty({ accent, title, message }
         <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>{title}</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--d-lift)', borderRadius: 8, border: '1px solid var(--d-rim)' }}>
-        <span style={{ fontSize: 22, opacity: 0.5, flexShrink: 0 }}>{icon}</span>
+        <span className="son-icon-tile" style={{ color: accent }} aria-hidden="true"><Icon size={21} strokeWidth={2.7} /></span>
         <div>
           <div style={{ fontSize: 11, color: 'var(--d-t2)', fontFamily: 'IBM Plex Mono, monospace' }}>{message}</div>
           <div style={{ fontSize: 10, color: 'var(--d-t4)', fontFamily: 'IBM Plex Mono, monospace', marginTop: 2, letterSpacing: '.04em' }}>Awaiting data feed</div>

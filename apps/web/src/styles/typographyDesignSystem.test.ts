@@ -11,6 +11,7 @@ describe('Sonalit typography design-system contract', () => {
     expect(tailwind).toContain("mono: ['Space Mono', 'IBM Plex Mono', 'ui-monospace', 'monospace']");
     expect(tailwind).toContain("display: ['Sora', 'system-ui', 'sans-serif']");
     expect(indexCss).toContain("@import '@fontsource/sora/400.css';");
+    expect(indexCss).toContain("@import '@fontsource/sora/800.css';");
     expect(indexCss).toContain("@import '@fontsource/space-mono/700.css';");
   });
 

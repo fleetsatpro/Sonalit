@@ -891,6 +891,40 @@ describe('intelligence provider mesh', () => {
   });
 
 
+  test('does not expose provider credential fragments after a full OpenAI authentication failure', async () => {
+    process.env.OPENAI_API_KEY_1 = 'key-one-invalid-token';
+
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.apiKey = options.apiKey;
+        this.baseURL = options.baseURL || 'openai';
+        this.chat = { completions: { create: jest.fn(async () => {
+          const error = new Error('Incorrect API key provided: sk-live-credential-fragment-do-not-log');
+          error.status = 401;
+          throw error;
+        }) } };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    let caught;
+    try {
+      await ai.createMessage({
+        dataClassification: 'internal',
+        system: 'Return JSON.',
+        messages: [{ role: 'user', content: 'Credential redaction regression test.' }],
+        max_tokens: 50,
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught.status).toBe(401);
+    expect(caught.message).toContain('permanent configuration response');
+    expect(caught.message).not.toContain('sk-live-credential-fragment-do-not-log');
+  });
+
   test('persists OpenAI account-credit exhaustion as a long-lived circuit',async()=>{
     const apiKey='openai-key-persistence-test-12345';
     process.env.OPENAI_API_KEY_1=apiKey;

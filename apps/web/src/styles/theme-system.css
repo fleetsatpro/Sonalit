@@ -154,8 +154,8 @@ html[data-theme] .text-slate-400,
 html[data-theme] .text-slate-500 { color: var(--son-theme-muted) !important; }
 html[data-theme] .text-orange-400 { color: var(--son-theme-accent) !important; }
 html[data-theme] .bg-orange-600 { background-color: var(--son-theme-accent) !important; color: var(--son-theme-bg) !important; }
-html[data-theme] .hover\\:bg-orange-500:hover,
-html[data-theme] .hover\\:bg-orange-700:hover { background-color: var(--son-theme-accent) !important; }
+html[data-theme] .hover\:bg-orange-500:hover,
+html[data-theme] .hover\:bg-orange-700:hover { background-color: var(--son-theme-accent) !important; }
 
 .gev-shell {
   --gev-bg: var(--son-theme-bg);

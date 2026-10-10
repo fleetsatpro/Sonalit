@@ -3,6 +3,8 @@ import { Bot, Send, User, Loader2, MapPin, Trash2, CheckCheck, X, Activity, Data
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
+import { formatArea, polygonAreaM2, polygonValidationError, toGeoJsonPolygon } from '../lib/geofenceGeometry.js';
+import { shouldOpenManualPolygonDrawing } from '../lib/geofenceIntent.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 type Role = 'user' | 'assistant';
@@ -70,12 +72,17 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
   const [points, setPoints] = useState<[number, number][]>([]);
   const [name, setName] = useState('');
   const [done, setDone] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const polygonError = polygonValidationError(points);
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      api.post('/geofences', { name, type: 'both', coordinates: points }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['geofences'] });
+    mutationFn: () => api.post('/geofences', { name: name.trim(), type: 'polygon', coordinates: toGeoJsonPolygon(points) }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['geofences'] }),
+        queryClient.invalidateQueries({ queryKey: ['geofences-list'] }),
+        queryClient.invalidateQueries({ queryKey: ['geofence-map-data'] }),
+      ]);
       onClose();
     },
   });
@@ -92,9 +99,10 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
 
     map.on('load', () => {
       map.addSource('draw', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#f07020', 'fill-opacity': 0.2 } });
-      map.addLayer({ id: 'draw-line', type: 'line', source: 'draw', filter: ['==', '$type', 'LineString'], paint: { 'line-color': '#ff9040', 'line-width': 2 } });
-      map.addLayer({ id: 'draw-pts', type: 'circle', source: 'draw', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 5, 'circle-color': '#ff9040', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' } });
+      map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#a78bfa', 'fill-opacity': 0.2 } });
+      map.addLayer({ id: 'draw-line', type: 'line', source: 'draw', filter: ['==', '$type', 'LineString'], paint: { 'line-color': '#c4b5fd', 'line-width': 3 } });
+      map.addLayer({ id: 'draw-pts', type: 'circle', source: 'draw', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 5, 'circle-color': '#ff9040', 'circle-stroke-width': 2.5, 'circle-stroke-color': '#fff' } });
+      setMapReady(true);
     });
 
     map.on('click', (e) => {
@@ -109,14 +117,14 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map?.loaded()) return;
+    if (!mapReady || !map || !map.loaded()) return;
     const source = map.getSource('draw') as maplibregl.GeoJSONSource | undefined;
     if (!source) return;
-    const features: GeoJSON.Feature[] = points.map((p) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] }, properties: {} }));
+    const features: GeoJSON.Feature[] = points.map((p, index) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] }, properties: { index: index + 1 } }));
     if (points.length >= 2) features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: points.map(([lat, lng]) => [lng, lat]) }, properties: {} });
-    if (points.length >= 3) features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...points, points[0]!].map(([lat, lng]) => [lng, lat]) ] }, properties: {} });
+    if (points.length >= 3) features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: toGeoJsonPolygon(points).coordinates }, properties: {} });
     source.setData({ type: 'FeatureCollection', features });
-  }, [points]);
+  }, [points, mapReady]);
 
   return (
     <div className="flex flex-col h-full border-l border-gray-800" style={{ minWidth: 0 }}>
@@ -131,25 +139,19 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
         <div ref={mapContainer} className="w-full h-full" />
         <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-col gap-2">
           {points.length > 0 && !done && (
-            <div className="flex gap-2">
-              <button onClick={() => setPoints([])} className="flex items-center gap-1 px-2 py-1.5 bg-gray-900/90 hover:bg-gray-800 text-gray-300 text-xs rounded-lg border border-gray-700">
-                <Trash2 size={11} /> Clear
-              </button>
-              {points.length >= 3 && (
-                <button onClick={() => setDone(true)} className="flex items-center gap-1 px-2 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-xs rounded-lg font-medium">
-                  <CheckCheck size={11} /> Finish ({points.length} pts)
-                </button>
-              )}
-              {points.length < 3 && (
-                <span className="px-2 py-1.5 bg-gray-900/90 text-gray-400 text-xs rounded-lg border border-gray-700">
-                  {points.length} pt{points.length !== 1 ? 's' : ''} — need 3+
-                </span>
-              )}
+            <div className="rounded-xl border border-white/10 bg-gray-950/95 p-2.5 space-y-2 shadow-2xl backdrop-blur-xl">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-bold text-white"><span>{points.length} vertices · {formatArea(polygonAreaM2(points))}</span><span className="text-xs font-semibold text-violet-200">Area preview</span></div>
+              {polygonError && <p className="text-xs font-bold text-amber-200" role="status">{polygonError}</p>}
+              <div className="flex gap-2">
+                <button onClick={() => setPoints(prev => prev.slice(0, -1))} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-bold text-gray-100 hover:bg-gray-700"><ChevronRight size={15} className="rotate-180" /> Undo</button>
+                <button onClick={() => { setPoints([]); setDone(false); createMutation.reset(); }} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-bold text-gray-100 hover:bg-gray-700"><Trash2 size={15} /> Clear</button>
+                <button onClick={() => setDone(true)} disabled={Boolean(polygonError)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-violet-400/40 bg-violet-600 px-3 text-sm font-extrabold text-white shadow-lg shadow-violet-950/40 hover:bg-violet-500 disabled:opacity-40"><CheckCheck size={15} strokeWidth={2.5} /> Finish</button>
+              </div>
             </div>
           )}
           {points.length === 0 && (
-            <span className="px-2 py-1.5 bg-gray-900/90 text-gray-400 text-xs rounded-lg border border-gray-700 text-center">
-              Click map to place vertices
+            <span className="px-3 py-2 bg-gray-950/95 text-gray-100 text-sm font-bold rounded-xl border border-white/10 text-center shadow-xl">
+              Click the map to place area vertices · 3 or more points
             </span>
           )}
         </div>
@@ -157,27 +159,12 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
 
       {done && (
         <div className="shrink-0 border-t border-gray-800 p-3 space-y-2">
-          <input
-            autoFocus
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500"
-            placeholder="Geofence name…"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && name.trim() && createMutation.mutate()}
-          />
+          <input autoFocus aria-label="Geofence name" className="w-full min-h-11 bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-base font-bold text-white focus:outline-none focus:border-violet-400" placeholder="Geofence name…" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && !polygonError && createMutation.mutate()} />
           <div className="flex gap-2">
-            <button
-              onClick={() => createMutation.mutate()}
-              disabled={!name.trim() || createMutation.isPending}
-              className="flex-1 py-1.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors"
-            >
-              {createMutation.isPending ? 'Saving…' : 'Create Geofence'}
-            </button>
-            <button onClick={() => setDone(false)} className="px-3 py-1.5 text-gray-400 hover:text-white text-xs rounded-lg">
-              Back
-            </button>
+            <button onClick={() => createMutation.mutate()} disabled={!name.trim() || Boolean(polygonError) || createMutation.isPending} className="flex-1 min-h-11 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-extrabold rounded-lg transition-colors">{createMutation.isPending ? 'Saving area…' : 'Create Polygon Geofence'}</button>
+            <button onClick={() => { setDone(false); createMutation.reset(); }} className="min-h-11 px-4 text-gray-100 hover:text-white text-sm font-bold rounded-lg border border-gray-700">Back</button>
           </div>
-          {createMutation.isError && <p className="text-red-400 text-xs">Failed to create geofence.</p>}
+          {createMutation.isError && <p className="text-red-200 text-sm font-bold" role="alert">{(createMutation.error as any)?.response?.data?.details ?? (createMutation.error as any)?.response?.data?.error ?? 'Failed to create geofence. Review the polygon boundary and try again.'}</p>}
         </div>
       )}
     </div>
@@ -197,10 +184,6 @@ export default function Copilot() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  useEffect(() => {
-    if (/draw.*(geofence|zone|area)|create.*(geofence|zone)/i.test(input)) setShowDraw(true);
-  }, [input]);
-
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || isLoading) return;
@@ -210,6 +193,15 @@ export default function Copilot() {
     setIsLoading(true);
     const history = historyRef.current.slice(-6);
     try {
+      if (shouldOpenManualPolygonDrawing(text)) {
+        setShowDraw(true);
+        const responseText = 'Polygon drawing mode is open. Click the map to place at least three vertices. You can undo the last point, review the approximate area and boundary validation, then name and confirm the polygon. Nothing is saved until you press Create Polygon Geofence.';
+        const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
+        historyRef.current = [...historyRef.current, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-12);
+        setResponseStatus('RESPONDED');
+        setMessages((prev) => [...prev, assistantMsg]);
+        return;
+      }
       // Action language goes through the agentic task executor so Copilot can
       // actually perform supported operations; evidence questions stay on the
       // lower-cost, quota-resilient Decision Fabric.
@@ -222,6 +214,7 @@ export default function Copilot() {
       if (d?.task?.completed && d?.created?.some(item => item.type === 'geofence')) {
         queryClient.invalidateQueries({ queryKey: ['geofences'] });
         queryClient.invalidateQueries({ queryKey: ['geofences-list'] });
+        queryClient.invalidateQueries({ queryKey: ['geofence-map-data'] });
       }
       const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
       setTelemetry({ ...(d.meta || {}), confidence: d.confidence, risk: d.risk_level, safety: d.assurance?.safety_gate, evidence: d.assurance?.evidence_health?.succeeded, agent_count: d.task?.completed ? 0 : d.meta?.agent_count });
@@ -231,7 +224,6 @@ export default function Copilot() {
       else setResponseStatus('RESPONDED');
       historyRef.current = [...historyRef.current, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-12);
       setMessages((prev) => [...prev, assistantMsg]);
-      if (/draw|map|geofence|zone/i.test(responseText) && /geofence|zone|area/i.test(text)) setShowDraw(true);
     } catch (error: any) {
       const detail = error?.response?.data?.error || error?.response?.data?.message;
       const status = error?.response?.status;

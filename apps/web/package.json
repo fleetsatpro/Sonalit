@@ -5,8 +5,9 @@
   "description": "Sonalit v4 — React 18 web dashboard (TypeScript strict, TanStack Router, MapLibre GL)",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json && vite build && pnpm prerender",
+    "build": "tsc -p tsconfig.json && vite build && pnpm verify:pwa && pnpm prerender",
     "prerender": "tsx scripts/prerender.tsx",
+    "verify:pwa": "node scripts/verify-pwa-precache.mjs",
     "start": "vite preview",
     "dev": "vite",
     "test": "pnpm test:unit",

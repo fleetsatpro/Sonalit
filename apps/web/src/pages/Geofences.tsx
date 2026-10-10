@@ -14,6 +14,7 @@ import AlertsDrawer from '../components/geofences/AlertsDrawer.js';
 import MissionControlDrawer from '../components/geofences/MissionControlDrawer.js';
 import ZoneCard from '../components/geofences/ZoneCard.js';
 import CreateGeofenceModal from '../components/geofences/CreateGeofenceModal.js';
+import { formatArea, polygonAreaM2, polygonValidationError, toGeoJsonPolygon } from '../lib/geofenceGeometry.js';
 import { useGeofenceMap } from '../components/geofences/useGeofenceMap.js';
 import {
   STATUS_COLOR, REGIONS, REGION_BOUNDS, EA_CENTER, EA_ZOOM, EVENT_LABEL, EVENT_COLOR, SEVERITY_COLOR, SEVERITY_WEIGHT,
@@ -22,7 +23,7 @@ import type {
   MapData, Geofence, GeofenceEvent, GeofenceAction, VehicleMeta, VehicleTelemetry, AlertRow, MapVehicle,
 } from '../components/geofences/types.js';
 
-type DrawMode = 'circle' | 'linear' | 'corridor' | null;
+type DrawMode = 'circle' | 'polygon' | 'linear' | 'corridor' | null;
 
 export default function Geofences() {
   const qc = useQueryClient();
@@ -150,7 +151,9 @@ export default function Geofences() {
   const cancelDraw = useCallback(() => { setDrawMode(null); setDrawCenter(null); setDrawPath([]); setPendingActions([]); }, []);
   const submitCreate = useCallback(() => {
     if (drawMode === 'circle' && drawCenter) {
-      createMut.mutate({ body: { name: form.name, type: 'circle', lat: drawCenter[0], lng: drawCenter[1], radius: parseFloat(form.radius), region: form.region }, actions: pendingActions });
+      createMut.mutate({ body: { name: form.name.trim(), type: 'circle', lat: drawCenter[0], lng: drawCenter[1], radius: parseFloat(form.radius), region: form.region }, actions: pendingActions });
+    } else if (drawMode === 'polygon' && !polygonValidationError(drawPath)) {
+      createMut.mutate({ body: { name: form.name.trim(), type: 'polygon', region: form.region, coordinates: toGeoJsonPolygon(drawPath) }, actions: pendingActions });
     } else if (drawMode === 'linear' && drawPath.length >= 2) {
       createMut.mutate({ body: { name: form.name, type: 'linear', region: form.region, coordinates: { path: drawPath } }, actions: pendingActions });
     } else if (drawMode === 'corridor' && drawPath.length >= 2) {
@@ -331,17 +334,26 @@ export default function Geofences() {
               <div className="flex gap-2"><button onClick={cancelDraw} className="flex-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Cancel</button>{drawCenter && <button onClick={finishDraw} className="flex-1 px-2 py-1 rounded bg-orange-600 hover:bg-orange-700">Continue</button>}</div>
             </div>
           )}
+          {drawMode === 'polygon' && (
+            <div className="bg-black/90 backdrop-blur border border-violet-400/60 rounded-xl p-3 text-sm font-bold text-white space-y-2 max-w-[280px] shadow-2xl">
+              <div className="text-base font-extrabold">Custom boundary · {drawPath.length} vertices</div>
+              <div className="text-sm font-bold text-violet-100">Approximate area: {formatArea(polygonAreaM2(drawPath))}</div>
+              {polygonValidationError(drawPath) && <div role="status" className="text-sm font-bold text-amber-200">{polygonValidationError(drawPath)}</div>}
+              <div className="flex gap-2"><button onClick={() => setDrawPath(p => p.slice(0,-1))} disabled={!drawPath.length} className="flex-1 min-h-11 px-3 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-40">Undo point</button><button onClick={cancelDraw} className="flex-1 min-h-11 px-3 rounded-lg bg-gray-700 hover:bg-gray-600">Cancel</button><button onClick={finishDraw} disabled={Boolean(polygonValidationError(drawPath))} className="flex-1 min-h-11 px-3 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-40">Continue</button></div>
+            </div>
+          )}
           {drawMode === 'linear' && (
-            <div className="bg-black/80 backdrop-blur border border-orange-500/50 rounded-lg px-3 py-2 text-xs font-semibold text-white space-y-2 max-w-[220px]">
-              <div>{drawPath.length} point{drawPath.length === 1 ? '' : 's'} — click to add, need at least 2</div>
-              <div className="flex gap-2"><button onClick={cancelDraw} className="flex-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Cancel</button><button onClick={finishDraw} disabled={drawPath.length < 2} className="flex-1 px-2 py-1 rounded bg-orange-600 hover:bg-orange-700 disabled:opacity-40">Continue</button></div>
+            <div className="bg-black/85 backdrop-blur border border-orange-500/50 rounded-xl px-3 py-2.5 text-sm font-semibold text-white space-y-2 max-w-[250px] shadow-2xl">
+              <div className="text-base font-extrabold">Linear boundary · {drawPath.length} points</div>
+              <div className="text-sm font-semibold text-gray-200">Click to add at least two points.</div>
+              <div className="flex gap-2"><button onClick={() => setDrawPath(p => p.slice(0,-1))} disabled={!drawPath.length} className="flex-1 min-h-11 px-3 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-40">Undo point</button><button onClick={cancelDraw} className="flex-1 min-h-11 px-3 rounded-lg bg-gray-700 hover:bg-gray-600">Cancel</button><button onClick={finishDraw} disabled={drawPath.length < 2} className="flex-1 min-h-11 px-3 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-40">Continue</button></div>
             </div>
           )}
           {drawMode === 'corridor' && (
-            <div className="bg-black/80 backdrop-blur border border-orange-500/50 rounded-lg px-3 py-2 text-xs font-semibold text-white space-y-2 max-w-[220px]">
-              <div>{drawPath.length} point{drawPath.length === 1 ? '' : 's'} — click to add, need at least 2</div>
-              <input type="number" value={form.buffer_km} onChange={e => setForm(p => ({ ...p, buffer_km: e.target.value }))} placeholder="Buffer width (km)" className="w-full bg-gray-800 text-white px-2 py-1 rounded text-xs" />
-              <div className="flex gap-2"><button onClick={cancelDraw} className="flex-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Cancel</button><button onClick={finishDraw} disabled={drawPath.length < 2} className="flex-1 px-2 py-1 rounded bg-orange-600 hover:bg-orange-700 disabled:opacity-40">Continue</button></div>
+            <div className="bg-black/85 backdrop-blur border border-sky-400/50 rounded-xl p-3 text-sm font-semibold text-white space-y-2 max-w-[270px] shadow-2xl">
+              <div className="text-base font-extrabold">Safety corridor · {drawPath.length} points</div>
+              <input type="number" min="0.01" max="5" step="0.01" value={form.buffer_km} onChange={e => setForm(p => ({ ...p, buffer_km: e.target.value }))} placeholder="Buffer width (km)" className="w-full min-h-11 bg-gray-800 text-white px-3 rounded-lg text-sm font-semibold" />
+              <div className="flex gap-2"><button onClick={() => setDrawPath(p => p.slice(0,-1))} disabled={!drawPath.length} className="flex-1 min-h-11 px-3 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-40">Undo point</button><button onClick={cancelDraw} className="flex-1 min-h-11 px-3 rounded-lg bg-gray-700 hover:bg-gray-600">Cancel</button><button onClick={finishDraw} disabled={drawPath.length < 2 || !(Number(form.buffer_km) >= 0.01 && Number(form.buffer_km) <= 5)} className="flex-1 min-h-11 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-40">Continue</button></div>
             </div>
           )}
         </div>

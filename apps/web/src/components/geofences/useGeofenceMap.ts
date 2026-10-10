@@ -5,7 +5,7 @@ import { STREET_STYLE, SAT_STYLE } from '../../lib/mapStyles.js';
 import { STATUS_COLOR, EA_CENTER, EA_ZOOM } from './types.js';
 import type { MapVehicle, MapDevice, MapGeofence, Geofence } from './types.js';
 
-type DrawMode = 'circle' | 'linear' | 'corridor' | null;
+type DrawMode = 'circle' | 'polygon' | 'linear' | 'corridor' | null;
 
 interface Options {
   drawMode: DrawMode;
@@ -94,17 +94,20 @@ export function useGeofenceMap(opts: Options) {
     const m = mapRef.current;
     if (!m) return;
     const render = () => {
-      ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-corridor-buffer-fill', 'gf-corridor-buffer-line', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line']
+      ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-polygon-fill', 'gf-polygon-line', 'gf-polygon-label', 'gf-corridor-buffer-fill', 'gf-corridor-buffer-line', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line', 'gf-draw-vertices']
         .forEach(id => { if (m.getLayer(id)) m.removeLayer(id); });
-      ['gf-zone-src', 'gf-corridor-buffer-src', 'gf-corridor-src', 'gf-linear-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
+      ['gf-zone-src', 'gf-polygon-src', 'gf-corridor-buffer-src', 'gf-corridor-src', 'gf-linear-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
 
       const circleFeatures: GeoJSON.Feature[] = [];
+      const polygonFeatures: GeoJSON.Feature[] = [];
       const corridorBufferFeatures: GeoJSON.Feature[] = [];
       const corridorFeatures: GeoJSON.Feature[] = [];
       const linearFeatures: GeoJSON.Feature[] = [];
       const visibleZoneIds = new Set(opts.visibleZones.map(z => z.id));
       opts.mapGeofences.filter(g => opts.regionFilter === 'all' || visibleZoneIds.has(g.id)).forEach(g => {
-        if (g.type === 'linear' && g.path && g.path.length >= 2) {
+        if ((g.type === 'polygon' || g.polygon) && g.polygon && g.polygon.length >= 4) {
+          polygonFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'Polygon', coordinates: [g.polygon.map(([lat, lng]) => [lng, lat])] } });
+        } else if (g.type === 'linear' && g.path && g.path.length >= 2) {
           linearFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'LineString', coordinates: g.path.map(([lat, lng]) => [lng, lat]) } });
         } else if (g.type === 'corridor' && g.path && g.path.length >= 2) {
           corridorFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'LineString', coordinates: g.path.map(([lat, lng]) => [lng, lat]) } });
@@ -124,6 +127,10 @@ export function useGeofenceMap(opts: Options) {
         'text-field': ['get', 'name'], 'text-size': 10, 'text-anchor': 'center', 'text-font': LABEL_FONT,
         'text-allow-overlap': false, 'text-optional': true,
       }, paint: { 'text-color': '#22d3ee', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
+      m.addSource('gf-polygon-src', { type: 'geojson', data: { type: 'FeatureCollection', features: polygonFeatures } });
+      m.addLayer({ id: 'gf-polygon-fill', type: 'fill', source: 'gf-polygon-src', paint: { 'fill-color': '#a78bfa', 'fill-opacity': 0.14 } });
+      m.addLayer({ id: 'gf-polygon-line', type: 'line', source: 'gf-polygon-src', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#c4b5fd', 'line-width': 2.5 } });
+      m.addLayer({ id: 'gf-polygon-label', type: 'symbol', source: 'gf-polygon-src', layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-font': LABEL_FONT, 'text-anchor': 'center', 'text-allow-overlap': false, 'text-optional': true }, paint: { 'text-color': '#ddd6fe', 'text-halo-color': '#080b12', 'text-halo-width': 2 } });
       // Corridors get a wide translucent buffer band; linear geofences are a plain route line with no buffer.
       m.addSource('gf-corridor-buffer-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorBufferFeatures } });
       m.addLayer({ id: 'gf-corridor-buffer-fill', type: 'fill', source: 'gf-corridor-buffer-src', paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.055 } });
@@ -163,10 +170,13 @@ export function useGeofenceMap(opts: Options) {
 
       const drawFeatures: GeoJSON.Feature[] = [];
       if (opts.drawMode === 'circle' && opts.drawCenter) drawFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [geoCircle(opts.drawCenter[0], opts.drawCenter[1], parseFloat(opts.drawRadiusM || '2000') / 1000)] } });
-      else if ((opts.drawMode === 'corridor' || opts.drawMode === 'linear') && opts.drawPath.length >= 2) drawFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: opts.drawPath.map(([lat, lng]) => [lng, lat]) } });
+      else if (opts.drawMode === 'polygon' && opts.drawPath.length >= 3) drawFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[...opts.drawPath, opts.drawPath[0]!].map(([lat, lng]) => [lng, lat])] } });
+      else if ((opts.drawMode === 'corridor' || opts.drawMode === 'linear' || opts.drawMode === 'polygon') && opts.drawPath.length >= 2) drawFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: opts.drawPath.map(([lat, lng]) => [lng, lat]) } });
+      opts.drawPath.forEach(([lat, lng], index) => drawFeatures.push({ type: 'Feature', properties: { index: index + 1 }, geometry: { type: 'Point', coordinates: [lng, lat] } }));
       m.addSource('gf-draw-src', { type: 'geojson', data: { type: 'FeatureCollection', features: drawFeatures } });
-      m.addLayer({ id: 'gf-draw-fill', type: 'fill', source: 'gf-draw-src', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#f97316', 'fill-opacity': 0.15 } });
-      m.addLayer({ id: 'gf-draw-line', type: 'line', source: 'gf-draw-src', paint: { 'line-color': '#f97316', 'line-width': 2.5 } });
+      m.addLayer({ id: 'gf-draw-fill', type: 'fill', source: 'gf-draw-src', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#f97316', 'fill-opacity': 0.18 } });
+      m.addLayer({ id: 'gf-draw-line', type: 'line', source: 'gf-draw-src', paint: { 'line-color': '#ffb36b', 'line-width': 3, 'line-opacity': 0.95 } });
+      m.addLayer({ id: 'gf-draw-vertices', type: 'circle', source: 'gf-draw-src', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 5, 'circle-color': '#ff8a30', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
     };
     if (mapReadyRef.current) render(); else m.once('load', render);
     m.on('style.load', render);

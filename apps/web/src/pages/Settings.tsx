@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore, getAccessToken } from '../stores/auth.js';
-import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette, Type, Eye } from 'lucide-react';
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
 import { useUIStore } from '../stores/ui.js';
@@ -46,8 +46,8 @@ function SectionCard({ title, icon, children }: { title: string; icon: React.Rea
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-4">
       <div className="flex items-center gap-2 border-b border-slate-700 pb-3">
-        {icon}
-        <h2 className="font-semibold">{title}</h2>
+        <span className="son-icon-tile" aria-hidden="true">{icon}</span>
+        <h2 className="font-extrabold">{title}</h2>
       </div>
       {children}
     </div>
@@ -381,6 +381,8 @@ interface WhatsAppConfig {
 function AppearanceSection() {
   const theme = useUIStore((s) => s.theme);
   const setTheme = useUIStore((s) => s.setTheme);
+  const typographyProfile = useUIStore((s) => s.typographyProfile);
+  const setTypographyProfile = useUIStore((s) => s.setTypographyProfile);
 
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
@@ -390,6 +392,24 @@ function AppearanceSection() {
           <p className="text-xs text-slate-500 mt-1">
             Presentation only — operational data, permissions, status meaning and workflows never change with appearance.
           </p>
+        </div>
+
+        <div className="son-type-profile-section space-y-3">
+          <div>
+            <p className="text-base font-extrabold text-slate-100">Typography visibility</p>
+            <p className="text-sm font-bold text-slate-400 mt-1">Make labels, controls and operational values easier to read across the application.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Application typography weight">
+            <button type="button" role="radio" aria-checked={typographyProfile === 'strong'} data-selected={typographyProfile === 'strong'} className="son-type-profile-option" onClick={() => setTypographyProfile('strong')}>
+              <span className="son-icon-tile"><Type size={20} strokeWidth={2.7} /></span>
+              <span className="son-type-profile-copy"><strong>Strong visibility</strong><span>Bold text with a clear heading hierarchy.</span></span>
+            </button>
+            <button type="button" role="radio" aria-checked={typographyProfile === 'maximum'} data-selected={typographyProfile === 'maximum'} className="son-type-profile-option" onClick={() => setTypographyProfile('maximum')}>
+              <span className="son-icon-tile"><Eye size={20} strokeWidth={2.7} /></span>
+              <span className="son-type-profile-copy"><strong>Maximum emphasis</strong><span>Heavier labels and headings throughout.</span></span>
+            </button>
+          </div>
+          <p className="text-sm font-bold text-slate-400">The selected profile is saved on this device. It changes presentation only, never status meaning or permissions.</p>
         </div>
 
         <div className="son-theme-picker" role="radiogroup" aria-label="Sonalit interface theme">

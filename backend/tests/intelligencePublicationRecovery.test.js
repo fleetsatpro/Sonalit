@@ -27,4 +27,18 @@ describe('intelligence publication autonomous recovery',()=>{
     expect(s).toContain("sonalit:intelligence:publication-recovery");
     expect(s).toContain("schedulePublicationRecovery();");
   });
+
+  test('PDF backlog repair runs for each tenant independently of draft recovery',()=>{
+    const s=fs.readFileSync(path.join(__dirname,'../src/workers/worker.intelligence.js'),'utf8');
+    expect(s).toContain('generateMissingPublicationPdfs(org.org_id,pdfBatchSize)');
+    expect(s).toContain('const pdfBatchSize=Math.max(1,Math.min(12,Number(process.env.INTEL_PUBLICATION_PDF_BATCH || 8)))');
+    expect(s).not.toContain('const published=[]');
+  });
+
+  test('failed and abandoned PDF generations can be retried after a cooldown',()=>{
+    const s=fs.readFileSync(path.join(__dirname,'../src/services/intelligencePublicationPdf.js'),'utf8');
+    expect(s).toContain("pdf_status='generating',pdf_error=NULL,updated_at=NOW()");
+    expect(s).toContain("pdf_status='failed',pdf_error=$3,updated_at=NOW()");
+    expect(s).toContain("pdf_status='generating' AND updated_at < NOW()-INTERVAL '30 minutes'");
+  });
 });
