@@ -843,4 +843,142 @@ describe('intelligence provider mesh', () => {
     expect(calls.filter(call=>call.baseURL.includes('openrouter.ai')).length).toBeGreaterThanOrEqual(5);
   });
 
+
+  test('persists OpenAI account-credit exhaustion as a long-lived circuit',async()=>{
+    const apiKey='openai-key-persistence-test-12345';
+    process.env.OPENAI_API_KEY_1=apiKey;
+    process.env.REDIS_URL='redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS='true';
+
+    const values=new Map();
+    const redis={
+      mget:jest.fn(async keys=>keys.map(key=>values.has(key)?values.get(key):null)),
+      scan:jest.fn(async()=>['0',[]]),
+      get:jest.fn(async()=>null),
+      set:jest.fn(async(key,value)=>{values.set(String(key),String(value));return 'OK';}),
+      del:jest.fn(async key=>{values.delete(String(key));return 1;}),
+    };
+    const calls=[];
+    const mockOpenAI=class MockOpenAI{
+      constructor(options={}){
+        this.apiKey=options.apiKey;
+        this.baseURL=options.baseURL||'openai';
+        this.chat={completions:{create:jest.fn(async request=>{
+          calls.push({apiKey:this.apiKey,baseURL:this.baseURL,model:request.model});
+          throw Object.assign(new Error('You have no credits remaining'),{status:429});
+        })}};
+      }
+    };
+    let ai;
+    jest.isolateModules(()=>{
+      jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
+      jest.doMock('openai',()=>mockOpenAI);
+      ai=require('../src/utils/aiClient');
+    });
+
+    let caught;
+    try{
+      await ai.createMessage({
+        dataClassification:'internal',
+        providerHints:['openai-direct'],
+        system:'Return concise text.',
+        messages:[{role:'user',content:'Test provider account exhaustion handling.'}],
+        max_tokens:50,
+      });
+    }catch(error){caught=error;}
+
+    expect(caught).toBeDefined();
+    expect(caught.status).toBe(429);
+    expect(calls).toHaveLength(1);
+
+    const circuitKey='sonalit:intelligence:ai:circuit:v3:openai';
+    expect(values.has(circuitKey)).toBe(true);
+    const circuitUntil=Number(values.get(circuitKey));
+    expect(circuitUntil-Date.now()).toBeGreaterThan(5*60*60*1000);
+    expect(circuitUntil-Date.now()).toBeLessThanOrEqual(6*60*60*1000);
+
+    const keyStateEntry=[...values.entries()].find(([key])=>key.startsWith('sonalit:intelligence:ai:key-state:v1:openai:'));
+    expect(keyStateEntry).toBeDefined();
+    expect(keyStateEntry[0]).not.toContain(apiKey);
+    const keyState=JSON.parse(keyStateEntry[1]);
+    expect(keyState.downUntil-Date.now()).toBeGreaterThan(5*60*60*1000);
+    expect(keyState.failureCount).toBeGreaterThan(0);
+
+    const capabilities=ai.providerCapabilities();
+    expect(capabilities.openai_cooling_down).toBe(true);
+    expect(capabilities.openai_retry_in_ms).toBeGreaterThan(5*60*60*1000);
+  });
+
+  test('restores Gemini per-key cooldown after a module restart',async()=>{
+    const apiKey='gemini-key-persistence-test-12345';
+    process.env.GOOGLE_AI_API_KEY_1=apiKey;
+    process.env.REDIS_URL='redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS='true';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT='true';
+
+    const values=new Map();
+    const redis={
+      mget:jest.fn(async keys=>keys.map(key=>values.has(key)?values.get(key):null)),
+      scan:jest.fn(async()=>['0',[]]),
+      get:jest.fn(async()=>null),
+      set:jest.fn(async(key,value)=>{values.set(String(key),String(value));return 'OK';}),
+      del:jest.fn(async key=>{values.delete(String(key));return 1;}),
+    };
+    const calls=[];
+    const mockOpenAI=class MockOpenAI{
+      constructor(options={}){
+        this.apiKey=options.apiKey;
+        this.baseURL=options.baseURL||'openai';
+        this.chat={completions:{create:jest.fn(async request=>{
+          calls.push({apiKey:this.apiKey,baseURL:this.baseURL,model:request.model});
+          throw Object.assign(new Error('You have no credits remaining'),{status:429});
+        })}};
+      }
+    };
+    const loadAi=()=>{
+      let loaded;
+      jest.isolateModules(()=>{
+        jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
+        jest.doMock('openai',()=>mockOpenAI);
+        loaded=require('../src/utils/aiClient');
+      });
+      return loaded;
+    };
+
+    const firstAi=loadAi();
+    let firstError;
+    try{
+      await firstAi.createMessage({
+        dataClassification:'public',
+        allowFreeProviders:true,
+        preferFreeProviders:true,
+        providerHints:['google-gemini-3.8-flash'],
+        system:'Return JSON only.',
+        messages:[{role:'user',content:'Check per-key cooldown persistence.'}],
+        max_tokens:50,
+      });
+    }catch(error){firstError=error;}
+    expect(firstError).toBeDefined();
+    expect(calls).toHaveLength(1);
+
+    const keyStateEntry=[...values.entries()].find(([key])=>key.startsWith('sonalit:intelligence:ai:key-state:v1:google-gemini:'));
+    expect(keyStateEntry).toBeDefined();
+    expect(keyStateEntry[0]).not.toContain(apiKey);
+    expect(JSON.parse(keyStateEntry[1]).downUntil-Date.now()).toBeGreaterThan(5*60*60*1000);
+
+    const secondAi=loadAi();
+    await expect(secondAi.createMessage({
+      dataClassification:'public',
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['google-gemini-3.8-flash'],
+      system:'Return JSON only.',
+      messages:[{role:'user',content:'The persisted cooldown should block another request.'}],
+      max_tokens:50,
+    })).rejects.toThrow('all configured providers are cooling down');
+    expect(calls).toHaveLength(1);
+    expect(secondAi.providerCapabilities().google_gemini.ready_key_pool_size).toBe(0);
+    expect(secondAi.providerCapabilities().google_gemini.cooling_down).toBe(true);
+  });
+
 });
