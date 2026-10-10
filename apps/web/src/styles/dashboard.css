@@ -500,8 +500,8 @@ html[data-typography] body #root :where(strong, b, th, .font-bold, .font-extrabo
 :root[data-theme] .bg-slate-800 { background-color:var(--d-well)!important; }
 :root[data-theme] .bg-slate-700 { background-color:var(--d-surf)!important; }
 :root[data-theme] .bg-slate-600 { background-color:var(--d-lift)!important; }
-:root[data-theme] .bg-slate-800\\/50 { background-color:color-mix(in srgb,var(--d-well) 70%,transparent)!important; }
-:root[data-theme] .bg-slate-900\\/50 { background-color:color-mix(in srgb,var(--d-carbon) 70%,transparent)!important; }
+:root[data-theme] .bg-slate-800\/50 { background-color:color-mix(in srgb,var(--d-well) 70%,transparent)!important; }
+:root[data-theme] .bg-slate-900\/50 { background-color:color-mix(in srgb,var(--d-carbon) 70%,transparent)!important; }
 :root[data-theme] .border-slate-700 { border-color:var(--d-rim2)!important; }
 :root[data-theme] .border-slate-600, :root[data-theme] .border-slate-500 { border-color:var(--d-rim3)!important; }
 :root[data-theme] .text-white, :root[data-theme] .text-slate-100,
@@ -510,7 +510,7 @@ html[data-typography] body #root :where(strong, b, th, .font-bold, .font-extrabo
 :root[data-theme] .text-slate-500 { color:var(--d-t2)!important; }
 :root[data-theme] .text-slate-600 { color:var(--d-t3)!important; }
 :root[data-theme] .bg-orange-600, :root[data-theme] .bg-orange-500 { background-color:var(--d-orange)!important; }
-:root[data-theme] .hover\\:bg-orange-700:hover, :root[data-theme] .hover\\:bg-orange-500:hover { background-color:color-mix(in srgb,var(--d-orange) 86%,#000)!important; }
+:root[data-theme] .hover\:bg-orange-700:hover, :root[data-theme] .hover\:bg-orange-500:hover { background-color:color-mix(in srgb,var(--d-orange) 86%,#000)!important; }
 :root[data-theme] .text-orange-400, :root[data-theme] .text-orange-300 { color:var(--d-orange)!important; }
 :root[data-theme] .border-orange-500, :root[data-theme] .border-orange-600 { border-color:var(--d-orange)!important; }
 
