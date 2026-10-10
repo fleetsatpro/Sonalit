@@ -38,6 +38,8 @@ const SOURCE_HTTP_CACHE_MAX_ENTRIES = 300;
 const SOURCE_HTTP_CACHE_MAX_BYTES = 16*1024*1024;
 const sourceHttpCache = new Map();
 const sourceHttpInflight = new Map();
+const PUBLISHER_FEED_FAILURE_TTL_MS=10*60*1000;
+const publisherFeedFailureUntil=new Map();
 let sourceHttpCacheBytes=0;
 let activePublicFetches=0;
 const publicFetchWaiters=[];
@@ -52,6 +54,7 @@ function _resetResearchCacheForTests(){
   sourceHttpCache.clear();
   sourceHttpCacheBytes=0;
   sourceHttpInflight.clear();
+  publisherFeedFailureUntil.clear();
   activePublicFetches=0;
   publicFetchWaiters.length=0;
   gdeltDownUntil=0;
@@ -252,6 +255,37 @@ function domain(url){
 function safeUrl(url){
   try{const u=new URL(String(url));if(!/^https?:$/.test(u.protocol)||u.username||u.password)return null;return u.toString()}catch(_){return null;}
 }
+function safeGoogleNewsSearchUrl(rawUrl){
+  const url=safeUrl(rawUrl);
+  if(!url)return null;
+  const parsed=new URL(url);
+  return parsed.hostname.toLowerCase()==='news.google.com'&&parsed.pathname==='/rss/search'?url:null;
+}
+function isGoogleNewsSearchFeed(rawUrl){return Boolean(safeGoogleNewsSearchUrl(rawUrl));}
+function safeGoogleNewsWrapperUrl(rawUrl){
+  const url=safeUrl(rawUrl);
+  if(!url)return null;
+  const parsed=new URL(url);
+  return parsed.hostname.toLowerCase()==='news.google.com'&&/^\/(?:rss\/articles|articles|read)\/[^/]+/i.test(parsed.pathname)?url:null;
+}
+function publisherFeedCooling(url){
+  const key=(safeUrl(url)||String(url||'')).replace(/\/+$/,'').toLowerCase();
+  const until=publisherFeedFailureUntil.get(key)||0;
+  if(until>Date.now())return true;
+  if(until)publisherFeedFailureUntil.delete(key);
+  return false;
+}
+function markPublisherFeedFailure(url){
+  const key=(safeUrl(url)||String(url||'')).replace(/\/+$/,'').toLowerCase();
+  if(!key)return;
+  const now=Date.now();
+  for(const [candidate,until] of publisherFeedFailureUntil)if(until<=now)publisherFeedFailureUntil.delete(candidate);
+  if(publisherFeedFailureUntil.size>=256&&!publisherFeedFailureUntil.has(key)){
+    const oldest=publisherFeedFailureUntil.keys().next().value;
+    if(oldest!==undefined)publisherFeedFailureUntil.delete(oldest);
+  }
+  publisherFeedFailureUntil.set(key,now+PUBLISHER_FEED_FAILURE_TTL_MS);
+}
 function resolveGoogleNewsArticleUrl(rawUrl){
   const url=safeUrl(rawUrl);
   if(!url)return null;
@@ -326,18 +360,21 @@ function getConfiguredPublisherFeeds(country){
       const feedCountry=String(feed.country_code||feed.countryCode||feed.country||'').trim().toUpperCase();
       if(!feedCountry||![code,name].filter(Boolean).includes(feedCountry))continue;
       const url=safeUrl(feed.url||feed.feed_url||feed.feedUrl);
-      if(!url||isAggregatorDomain(new URL(url).hostname))continue;
+      const googleNewsFeed=isGoogleNewsSearchFeed(url);
+      if(!url||(isAggregatorDomain(new URL(url).hostname)&&!googleNewsFeed))continue;
+      const fallbackUrl=safeGoogleNewsSearchUrl(feed.fallback_url||feed.fallbackUrl||feed.search_fallback_url);
       configured.push({
         name:clean(feed.name||feed.title||new URL(url).hostname,180),
-        url,country_code:code,language:clean(feed.language||'',30),
+        url,fallback_url:fallbackUrl,google_news_feed:googleNewsFeed,
+        country_code:code,language:clean(feed.language||'',30),
         credibility:Number(feed.credibility??feed.reliability??0)||null,
         feed_origin:'explicit_configuration'
       });
     }
   }
 
-  // Reuse Sonalit's existing country-coded RSS registry rather than maintaining
-  // an independent, inevitably divergent list of local publishers.
+  // Reuse Sonalit's existing country-coded RSS registry, including its
+  // approved Google News fallback for publishers with unusable direct feeds.
   let regional=[];
   try{
     const registry=require('./regionalIncidentFabric').RSS_FEEDS;
@@ -345,10 +382,13 @@ function getConfiguredPublisherFeeds(country){
       .filter(feed=>String(feed?.country_code||'').trim().toUpperCase()===code)
       .map(feed=>{
         const url=safeUrl(feed.url);
-        if(!url||isAggregatorDomain(new URL(url).hostname))return null;
+        const googleNewsFeed=isGoogleNewsSearchFeed(url);
+        if(!url||(isAggregatorDomain(new URL(url).hostname)&&!googleNewsFeed))return null;
         return {
-          name:clean(feed.name||new URL(url).hostname,180),url,country_code:code,
-          language:clean(feed.language||'',30),
+          name:clean(feed.name||new URL(url).hostname,180),url,
+          fallback_url:safeGoogleNewsSearchUrl(feed.fallback_url||feed.fallbackUrl),
+          google_news_feed:googleNewsFeed,
+          country_code:code,language:clean(feed.language||'',30),
           credibility:Number(feed.credibility??feed.reliability??0)||null,
           feed_origin:'regional_incident_registry'
         };
@@ -368,11 +408,12 @@ function getConfiguredPublisherFeeds(country){
   const candidates=[],seen=new Set();
   for(const feed of configured.concat(regional,allAfrica?[allAfrica]:[])){
     const url=safeUrl(feed.url);
-    if(!url||isAggregatorDomain(normalizeDomain(url)))continue;
+    const googleNewsFeed=isGoogleNewsSearchFeed(url);
+    if(!url||(isAggregatorDomain(normalizeDomain(url))&&!googleNewsFeed))continue;
     const key=url.replace(/\/+$/,'').toLowerCase();
     if(seen.has(key))continue;
     seen.add(key);
-    candidates.push({...feed,url});
+    candidates.push({...feed,url,fallback_url:safeGoogleNewsSearchUrl(feed.fallback_url)});
   }
   // Always reserve a slot for the direct AllAfrica country RDF endpoint when
   // one exists; fill the rest with explicit or existing local/regional feeds.
@@ -414,37 +455,92 @@ function feedItemUrl(item){
   }
   return null;
 }
+function feedItemWrapperUrl(item){
+  const links=Array.isArray(item?.link)?item.link:(item?.link?[item.link]:[]);
+  const rawValues=links.map(link=>typeof link==='object'?(link['@_href']||link['#text']||''):link)
+    .concat([item?.url,item?.guid,item?.id,item?.['rdf:about']].map(feedText));
+  for(const raw of rawValues){
+    if(resolveGoogleNewsArticleUrl(raw))continue;
+    const wrapper=safeGoogleNewsWrapperUrl(raw);
+    if(wrapper)return wrapper;
+  }
+  return null;
+}
+async function readPublisherFeedItems(url){
+  if(publisherFeedCooling(url))return null;
+  try{
+    const res=await fetchText(url,{},REQUEST_TIMEOUT_MS);
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const body=await res.text();
+    const contentType=String(res.headers?.get?.('content-type')||'').split(';')[0].trim().toLowerCase();
+    // Some publisher endpoints return HTML landing pages rather than feeds.
+    // Reject HTML before the XML parser hits its nested-tag ceiling.
+    if(contentType==='text/html'||/^\s*<(?:!doctype\s+)?html\b/i.test(body)){
+      throw new Error('publisher feed returned HTML instead of RSS/XML');
+    }
+    let parsed;
+    try{parsed=XML.parse(body);}catch(error){
+      throw new Error('publisher RSS/XML parse failed: '+String(error?.message||'invalid XML').slice(0,100));
+    }
+    return xmlFeedItems(parsed);
+  }catch(error){
+    markPublisherFeedFailure(url);
+    const host=(()=>{try{return new URL(url).hostname}catch(_){return 'invalid'}})();
+    logger.warn('Publication RSS research feed unavailable host='+host+': '+String(error?.message||'unknown').slice(0,120));
+    return null;
+  }
+}
+async function publisherCandidatesFromUrl(feed,feedUrl,{headline,country,region,event}){
+  const items=await readPublisherFeedItems(feedUrl);
+  if(!items)return null;
+  const googleNewsFeed=isGoogleNewsSearchFeed(feedUrl);
+  const candidates=[];
+  for(const item of items){
+    const title=clean(feedText(item?.title),500);
+    if(!title)continue;
+    const description=clean(stripHtml(
+      feedText(item?.description)||feedText(item?.summary)||feedText(item?.content)||feedText(item?.['content:encoded'])
+    ),1500);
+    const url=feedItemUrl(item);
+    const wrapperUrl=url?null:feedItemWrapperUrl(item);
+    if(!url&&!wrapperUrl)continue;
+    const publishedAt=safeIsoDate(feedText(item?.pubDate)||feedText(item?.published)||feedText(item?.updated)||feedText(item?.['dc:date']));
+    const eventTime=safeIsoDate(event?.occurred_from||event?.occurred_to);
+    if(eventTime&&publishedAt){
+      const delta=new Date(publishedAt).getTime()-new Date(eventTime).getTime();
+      if(delta < -2*24*60*60*1000 || delta > 14*24*60*60*1000)continue;
+    }
+    const recordUrl=url||wrapperUrl;
+    const googleDiscovery=googleNewsFeed||Boolean(wrapperUrl);
+    const itemRecord={
+      title,url:recordUrl,wrapper_url:wrapperUrl,published_at:publishedAt,source:feed.name,
+      domain:url?normalizeDomain(url):'news.google.com',snippet:description,description,
+      kind:googleDiscovery?'google_news_discovery':'configured_publisher_rss',
+      source_type:googleDiscovery?'provider_web_search':'publisher_rss_excerpt',
+      credibility:feed.credibility,feed_url:feedUrl,feed_fallback_used:feedUrl!==feed.url
+    };
+    const relevance=articleRelevanceScore({...event,headline:event?.headline||headline,region:event?.region||region},itemRecord);
+    if(!relevance)continue;
+    candidates.push({...itemRecord,relevance});
+  }
+  return candidates;
+}
 async function configuredPublisherSearch({headline,country,region,event}){
   const feeds=getConfiguredPublisherFeeds(country);
   const candidates=[];
   await Promise.all(feeds.map(async feed=>{
-    try{
-      const res=await fetchText(feed.url,{},REQUEST_TIMEOUT_MS);
-      if(!res.ok)throw new Error('HTTP '+res.status);
-      const parsed=XML.parse(await res.text());
-      for(const item of xmlFeedItems(parsed)){
-        const title=clean(feedText(item?.title),500);
-        if(!title)continue;
-        const description=clean(stripHtml(
-          feedText(item?.description)||feedText(item?.summary)||feedText(item?.content)||feedText(item?.['content:encoded'])
-        ),1500);
-        const url=feedItemUrl(item);
-        if(!url)continue;
-        const publishedAt=safeIsoDate(feedText(item?.pubDate)||feedText(item?.published)||feedText(item?.updated)||feedText(item?.['dc:date']));
-        const eventTime=safeIsoDate(event?.occurred_from||event?.occurred_to);
-        if(eventTime&&publishedAt){
-          const delta=new Date(publishedAt).getTime()-new Date(eventTime).getTime();
-          if(delta < -2*24*60*60*1000 || delta > 14*24*60*60*1000)continue;
-        }
-        const itemRecord={title,url,published_at:publishedAt,source:feed.name,domain:normalizeDomain(url),snippet:description,description,kind:'configured_publisher_rss',source_type:'publisher_rss_excerpt',credibility:feed.credibility,feed_url:feed.url};
-        const relevance=articleRelevanceScore({...event,headline:event?.headline||headline,region:event?.region||region},itemRecord);
-        if(!relevance)continue;
-        candidates.push({...itemRecord,relevance});
-      }
-    }catch(error){
-      const host=(()=>{try{return new URL(feed.url).hostname}catch(_){return 'invalid'}})();
-      logger.warn('Publication RSS research feed unavailable host='+host+': '+String(error?.message||'unknown').slice(0,120));
+    const primary=await publisherCandidatesFromUrl(feed,feed.url,{headline,country,region,event});
+    if(primary?.length){
+      candidates.push(...primary);
+      return;
     }
+    // Only approved Google News RSS-search URLs may be used as source fallbacks.
+    // Their wrappers are resolved to direct publisher HTTPS URLs before article
+    // bodies can satisfy a research-quality contract.
+    const fallbackUrl=safeGoogleNewsSearchUrl(feed.fallback_url);
+    if(!fallbackUrl||fallbackUrl===feed.url||publisherFeedCooling(fallbackUrl))return;
+    const fallback=await publisherCandidatesFromUrl(feed,fallbackUrl,{headline,country,region,event});
+    if(fallback?.length)candidates.push(...fallback);
   }));
   candidates.sort((a,b)=>b.relevance-a.relevance||String(b.published_at||'').localeCompare(String(a.published_at||'')));
   return candidates.slice(0,MAX_SEARCH_RESULTS);
@@ -756,7 +852,7 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
     .map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
   let remainingCandidateSlots=Math.max(0,MAX_SOURCE_CANDIDATES-attemptedUrls.size);
   if(usableDomains.size<2&&remainingCandidateSlots>0){
-    const wrappers=search.filter(item=>item?.wrapper_url).slice(0,Math.min(MAX_GOOGLE_NEWS_WRAPPER_RESOLVES,remainingCandidateSlots));
+    const wrappers=publisher.concat(search).filter(item=>item?.wrapper_url).slice(0,Math.min(MAX_GOOGLE_NEWS_WRAPPER_RESOLVES,remainingCandidateSlots));
     const resolvedWrappers=(await Promise.all(wrappers.map(resolveGoogleNewsWrapper))).filter(Boolean);
     if(resolvedWrappers.length){
       resolvedWrappers.forEach(item=>directDiscovered.push(item));
