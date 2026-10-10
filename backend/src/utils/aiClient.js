@@ -16,6 +16,7 @@
  * explicitly classifies the request as public and INTEL_ALLOW_FREE_OPEN_WEIGHT
  * is enabled.
  */
+const { createHash } = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
 const logger = require('./logger');
@@ -357,6 +358,7 @@ const PROVIDER_CIRCUIT_REDIS_ENABLED =
   Boolean(process.env.REDIS_URL) &&
   String(process.env.DISABLE_REDIS || 'false').toLowerCase() !== 'true';
 const PROVIDER_CIRCUIT_REDIS_PREFIX = 'sonalit:intelligence:ai:circuit:v3:';
+const PROVIDER_KEY_STATE_REDIS_PREFIX = 'sonalit:intelligence:ai:key-state:v1:';
 const PROVIDER_CIRCUIT_HYDRATION_TIMEOUT_MS = Math.max(250, Math.min(5000, Number(process.env.INTEL_PROVIDER_CIRCUIT_HYDRATION_TIMEOUT_MS || 2000)));
 const providerCircuitPersistence = {
   enabled: PROVIDER_CIRCUIT_REDIS_ENABLED,
@@ -383,6 +385,57 @@ const fabricStates = Object.create(null);
 function sleepMs(ms){ return new Promise(resolve=>setTimeout(resolve,ms)); }
 function providerCircuitKey(group){ return PROVIDER_CIRCUIT_REDIS_PREFIX+encodeURIComponent(String(group||'unknown')); }
 
+function credentialKeyStateRedisKey(provider,key){
+  // Persist only a one-way fingerprint; never write the credential itself or
+  // any recoverable prefix of it into Redis.
+  const fingerprint=createHash('sha256').update(String(key||'')).digest('hex').slice(0,24);
+  return PROVIDER_KEY_STATE_REDIS_PREFIX+encodeURIComponent(String(provider||'unknown'))+':'+fingerprint;
+}
+
+function getCredentialKeyEntries(){
+  return [
+    ...getOpenAIKeyPool().map((key,index)=>({provider:'openai',key,index,states:openAIKeyStates})),
+    ...getGeminiKeyPool().map((key,index)=>({provider:'google-gemini',key,index,states:geminiKeyStates}))
+  ];
+}
+
+async function persistCredentialKeyCooldown(provider,key,state){
+  if(!providerCircuitPersistence.enabled||!providerCircuitPersistence.available||!key)return;
+  const until=Number(state?.downUntil||0);
+  const remaining=until-Date.now();
+  if(remaining<=0)return;
+  try{
+    const client=getRedis();
+    if(!client)return;
+    const payload=JSON.stringify({
+      downUntil:until,
+      failureCount:Math.max(0,Number(state?.failureCount||0))
+    });
+    await Promise.race([
+      client.set(credentialKeyStateRedisKey(provider,key),payload,'PX',remaining),
+      sleepMs(Math.min(1000,remaining)).then(()=>null)
+    ]);
+  }catch(error){
+    providerCircuitPersistence.available=false;
+    logger.warn('AI provider credential cooldown persistence unavailable: provider='+String(provider||'unknown')+' ('+String(error?.message||'unknown')+')');
+  }
+}
+
+async function clearCredentialKeyCooldown(provider,key){
+  if(!providerCircuitPersistence.enabled||!providerCircuitPersistence.available||!key)return;
+  try{
+    const client=getRedis();
+    if(!client)return;
+    await Promise.race([
+      client.del(credentialKeyStateRedisKey(provider,key)),
+      sleepMs(1000).then(()=>null)
+    ]);
+  }catch(error){
+    providerCircuitPersistence.available=false;
+    logger.warn('AI provider credential cooldown clear unavailable: provider='+String(provider||'unknown')+' ('+String(error?.message||'unknown')+')');
+  }
+}
+
 async function hydrateFabricState(){
   if(!providerCircuitPersistence.enabled || providerCircuitPersistence.hydrated)return;
   const client=getRedis();
@@ -392,14 +445,19 @@ async function hydrateFabricState(){
     return;
   }
   const groups=[...new Set(OPEN_WEIGHT_PROVIDERS.map(p=>providerGroup(p)).concat([providerGroup(GEMINI_PROVIDER),'groq','openai','mistral','anthropic','self-hosted']))];
+  const credentialEntries=getCredentialKeyEntries();
+  const redisKeys=[
+    ...groups.map(providerCircuitKey),
+    ...credentialEntries.map(entry=>credentialKeyStateRedisKey(entry.provider,entry.key))
+  ];
   try{
     const values=await Promise.race([
-      client.mget(groups.map(providerCircuitKey)),
+      client.mget(redisKeys),
       sleepMs(PROVIDER_CIRCUIT_HYDRATION_TIMEOUT_MS).then(()=>null)
     ]);
     if(Array.isArray(values)){
       const now=Date.now();
-      values.forEach((raw,i)=>{
+      values.slice(0,groups.length).forEach((raw,i)=>{
         const until=Number(raw||0);
         if(until>now){
           const group=groups[i];
@@ -407,6 +465,18 @@ async function hydrateFabricState(){
           state.downUntil=Math.max(Number(state.downUntil||0),until);
           state.failureCount=Math.max(Number(state.failureCount||0),1);
         }
+      });
+      values.slice(groups.length).forEach((raw,i)=>{
+        if(!raw)return;
+        let snapshot;
+        try{snapshot=JSON.parse(String(raw))}catch(_){return;}
+        const until=Number(snapshot?.downUntil||0);
+        if(until<=now)return;
+        const entry=credentialEntries[i];
+        if(!entry)return;
+        const state=entry.states[entry.index]||(entry.states[entry.index]={downUntil:0,failureCount:0});
+        state.downUntil=Math.max(Number(state.downUntil||0),until);
+        state.failureCount=Math.max(Number(state.failureCount||0),Number(snapshot?.failureCount||1));
       });
     }else{
       providerCircuitPersistence.available=false;
@@ -575,7 +645,11 @@ function providerCapabilities() {
     openai_cooling_down:providerCooling({name:'openai-direct',providerGroup:'openai'}),
     openai_retry_in_ms:Math.max(0,providerResumeAt({name:'openai-direct',providerGroup:'openai'})-Date.now()),
     mistral_rescue: hasMistral(),
+    mistral_cooling_down:providerCooling({name:'mistral-rescue',providerGroup:'mistral'}),
+    mistral_retry_in_ms:Math.max(0,providerResumeAt({name:'mistral-rescue',providerGroup:'mistral'})-Date.now()),
     anthropic_last_resort: hasAnthropic(),
+    anthropic_cooling_down:providerCooling({name:'anthropic-last-resort',providerGroup:'anthropic'}),
+    anthropic_retry_in_ms:Math.max(0,providerResumeAt({name:'anthropic-last-resort',providerGroup:'anthropic'})-Date.now()),
     order: [
       GEMINI_PROVIDER.name,
       ...OPEN_WEIGHT_PROVIDERS.map(p=>p.name),
@@ -842,24 +916,38 @@ function openRouterRateLimitDiagnostic(err){
     ' rate_limit_limit='+limit+
     ' rate_limit_reset='+reset;
 }
+function isAccountCreditExhaustion(err){
+  const message=String(err?.message||err?.error?.message||'');
+  return Number(err?.status)===402 ||
+    /credit balance|billing|insufficient credit|insufficient[\s_-]*quota|no credits remaining|out of credits|payment required/i.test(message);
+}
+
+function credentialPoolCooldownMs(err,fallbackMs=COOLDOWN_MS){
+  if(isAccountCreditExhaustion(err))return FABRIC_QUOTA_COOLDOWN_MS;
+  return Math.max(COOLDOWN_MS,Number(retryAfterMs(err,fallbackMs))||fallbackMs);
+}
+
 function fabricCooldownMs(err,provider,state){
+  const status=Number(err?.status)||0;
+  const message=String(err?.message||err?.error?.message||'');
+
+  // Check explicit billing/credit exhaustion before generic HTTP 429 handling.
+  // An empty account is not a short rate limit: persisting only the generic
+  // retry interval causes the same pool to hammer every key again after restart.
+  if(isAccountCreditExhaustion(err))return FABRIC_QUOTA_COOLDOWN_MS;
+  if(status===401||status===403||/invalid api key|authentication/i.test(message))return FABRIC_AUTH_COOLDOWN_MS;
+
+  // Gemini credentials are independently quarantined and persisted below. A
+  // normal per-minute Gemini limit should not quarantine the whole provider.
   if(providerGroup(provider)==='google-gemini')return 0;
-  if(Number(err?.status)===429 || /rate.?limit|too many requests|quota/i.test(String(err?.message||''))){
+  if(status===429||/rate.?limit|too many requests|quota/i.test(message)){
     const headerMs=retryAfterMs(err,0);
     if(headerMs>0)return Math.min(FABRIC_QUOTA_MAX_COOLDOWN_MS,Math.max(15000,headerMs));
     if(providerGroup(provider).startsWith('openrouter-free:') || providerGroup(provider).startsWith('openrouter-paid:')){
-      // OpenRouter lanes are independently circuit-broken. Keep account-level
-      // concurrency shared, but never turn one model failure into a fleet-wide
-      // quarantine. The provider state already cools the affected lane.
+      // OpenRouter model lanes are independently circuit-broken.
       return 0;
     }
     return Math.min(RETRYABLE_COOLDOWN_MAX_MS,RETRYABLE_COOLDOWN_BASE_MS*Math.pow(2,Math.min(Number(state.failureCount||0)-1,5)));
-  }
-  if(Number(err?.status)===402 || /credit balance|billing|insufficient credit|payment required/i.test(String(err?.message||''))){
-    return FABRIC_QUOTA_COOLDOWN_MS;
-  }
-  if(Number(err?.status)===401 || Number(err?.status)===403 || /invalid api key|authentication/i.test(String(err?.message||''))){
-    return FABRIC_AUTH_COOLDOWN_MS;
   }
   return 0;
 }
@@ -1007,17 +1095,19 @@ async function callOpenAI(params) {
       });
       state.downUntil=0;
       state.failureCount=0;
+      void clearCredentialKeyCooldown('openai',key);
       openAIKeyCursors.cursor=(index+1)%keys.length;
       return openAIResponseToAnthropicShape(completion);
     }catch(err){
       lastErr=err;
       if(isRetryable(err)){
         state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
-        state.downUntil=Date.now()+Math.max(COOLDOWN_MS,Number(retryAfterMs(err,COOLDOWN_MS)));
+        state.downUntil=Date.now()+credentialPoolCooldownMs(err,COOLDOWN_MS);
       }else if(isPermanentCredentialFailure(err)){
         state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
         state.downUntil=Date.now()+PERMANENT_FAILURE_COOLDOWN_MS;
       }
+      await persistCredentialKeyCooldown('openai',key,state);
       logger.warn('OpenAI key pool member '+String(index+1)+' failed ('+(err?.status||err?.message||'unknown')+'); rotating to next key');
     }
   }
@@ -1053,17 +1143,19 @@ async function callGoogleGemini(params) {
       });
       state.downUntil=0;
       state.failureCount=0;
+      void clearCredentialKeyCooldown('google-gemini',key);
       geminiKeyCursors.cursor=(index+1)%keys.length;
       return openAIResponseToAnthropicShape(completion);
     }catch(err){
       lastErr=err;
       if(isRetryable(err)){
         state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
-        state.downUntil=Date.now()+Math.max(COOLDOWN_MS,Number(retryAfterMs(err,COOLDOWN_MS)));
+        state.downUntil=Date.now()+credentialPoolCooldownMs(err,COOLDOWN_MS);
       }else if(isPermanentCredentialFailure(err)){
         state.failureCount=Math.min(Number(state.failureCount||0)+1,6);
         state.downUntil=Date.now()+PERMANENT_FAILURE_COOLDOWN_MS;
       }
+      await persistCredentialKeyCooldown('google-gemini',key,state);
       logger.warn('Gemini key pool member '+String(index+1)+' failed ('+(err?.status||err?.message||'unknown')+'); rotating to next key');
     }
   }
