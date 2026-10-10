@@ -92,6 +92,12 @@ The deterministic fusion layer:
 
 This is deliberately conservative. A single social post is **not** treated as corroborated intelligence. Contradiction handling, stronger semantic entity resolution, geospatial clustering, coordinated-narrative detection, source-history scoring and analyst verification are higher-order intelligence stages.
 
+## Publication research and evidence quality
+
+The publication research layer reuses country-scoped publisher feeds configured through `INTEL_RSS_FEEDS` (or the dedicated `INTEL_PUBLICATION_RESEARCH_FEEDS` override). A feed must declare its country explicitly; feed location is a collection hint, not authoritative event attribution. Feed items are matched to the incident headline/location, and the article URL is kept separate from the feed URL. Public fetches retain the existing SSRF, redirect, timeout and response-size protections. Short-lived response caching, in-flight de-duplication and a serialized GDELT lane reduce duplicate requests and avoid bursty retries when a public endpoint is rate-limiting.
+
+A source title or metadata description alone is not proof of substantive research. The `researched_limited` classification requires readable source content (or an explicitly labelled publisher RSS excerpt), at least two independent publisher domains, a minimum body length per source and a minimum combined content threshold. When those tests fail, the dossier remains a fallback. Provider exhaustion does not itself make a fallback evidence-eligible: the underlying Sonalit event must still retain attributable observations and source records. The editorial, tradecraft and release gates remain authoritative; these source-discovery improvements must never silently publish a thin report.
+
 ## Operational rule
 
 The Collection Fabric is an evidence-acquisition system. Collection volume is never equivalent to truth. Every downstream assessment and publication must preserve provenance, timestamp, source reliability, confidence and review state.
