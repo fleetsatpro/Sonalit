@@ -195,7 +195,18 @@ async function synthesizeEvents(orgId){
   const payload=rows.map(e=>({id:String(e.id),title:clean(e.title,900),summary:clean(e.summary,1800),country:e.country_code,severity:e.severity,confidence:e.confidence,evidence:e.evidence.slice(0,8)}));
   let result;let provider='unknown';
   try{
-    const response=await aiClient.createMessage({max_tokens:5200,system:`You are the Sonalit headline and intelligence synthesis agent. Work only from supplied evidence. Produce factual, publication-safe objects. Never invent actors, casualties, motives, dates, locations or outcomes. Distinguish reported facts from assessment. Return ONLY JSON array with {id,headline,brief,intelligence_type,key_facts,why_it_matters,caveats,confidence}. headline <= 120 chars. key_facts/why_it_matters/caveats are short arrays. intelligence_type must be one of SECURITY, POLITICAL, CRIME, LOGISTICS, MARITIME, BORDER, NATURAL_HAZARD, HEALTH, ECONOMIC, OTHER. confidence is 0-100.`,messages:[{role:'user',content:JSON.stringify(payload)}]});
+    const response=await aiClient.createMessage({
+      max_tokens:5200,
+      // Event synthesis is part of the public intelligence pipeline. Explicitly
+      // carry the publication classification so eligible free/open-weight lanes
+      // remain routable instead of silently falling back to the internal default.
+      dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase(),
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['google-gemini-3.8-flash','openrouter-free-router','gpt-oss-120b-openrouter-free'],
+      system:`You are the Sonalit headline and intelligence synthesis agent. Work only from supplied evidence. Produce factual, publication-safe objects. Never invent actors, casualties, motives, dates, locations or outcomes. Distinguish reported facts from assessment. Return ONLY JSON array with {id,headline,brief,intelligence_type,key_facts,why_it_matters,caveats,confidence}. headline <= 120 chars. key_facts/why_it_matters/caveats are short arrays. intelligence_type must be one of SECURITY, POLITICAL, CRIME, LOGISTICS, MARITIME, BORDER, NATURAL_HAZARD, HEALTH, ECONOMIC, OTHER. confidence is 0-100.`,
+      messages:[{role:'user',content:JSON.stringify(payload)}]
+    });
     provider=response?._provider||'unknown';
     result=parse(extract(response));
   }catch(error){

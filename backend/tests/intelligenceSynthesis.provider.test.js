@@ -1,4 +1,6 @@
 const request = require('supertest');
+const fs = require('fs');
+const path = require('path');
 
 describe('intelligence synthesis provider contract', () => {
   beforeEach(() => {
@@ -24,6 +26,18 @@ describe('intelligence synthesis provider contract', () => {
         }],
       }),
     }));
+  });
+
+  test('routes public event synthesis through the publication-eligible open-weight providers', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceAgents.js'), 'utf8');
+    const start = source.indexOf('async function synthesizeEvents');
+    const end = source.indexOf('  if(!Array.isArray(result)||!result.length)', start);
+    const synthesis = source.slice(start, end);
+
+    expect(synthesis).toContain("dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase()");
+    expect(synthesis).toContain('allowFreeProviders:true');
+    expect(synthesis).toContain('preferFreeProviders:true');
+    expect(synthesis).toContain("providerHints:['google-gemini-3.8-flash','openrouter-free-router','gpt-oss-120b-openrouter-free']");
   });
 
   test('uses the any-provider capability rather than an Anthropic/Groq-only gate', async () => {
