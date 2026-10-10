@@ -558,21 +558,29 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
     })
     .slice(0,MAX_SEARCH_RESULTS);
   const candidates=dedupeSources(primary.concat(discovered),MAX_SOURCE_CANDIDATES);
-  const attempted=await Promise.all(candidates.map(fetchSourcePage));
   const allPages=[];
-  for(let i=0;i<candidates.length;i++){
-    const item=candidates[i],page=attempted[i];
-    if(page&&sourceIsSubstantive(page)){allPages.push(page);continue;}
-    const excerpt=clean(item?.snippet||item?.description||'',1500);
-    // Only configured publisher feeds can supply an attributed excerpt fallback.
-    if(item?.kind==='configured_publisher_rss'&&excerpt.length>=160){
-      allPages.push({
-        url:item.url,domain:normalizeDomain(item.url),title:clean(item.title,500),
-        description:excerpt,text:'',source_type:'publisher_rss_excerpt',
-        published_at:item.published_at||null,retrieved_at:new Date().toISOString(),
-        source:item.source||item.domain||normalizeDomain(item.url)
-      });
+  // Fetch in progressive batches. Four usable domains end the work for this
+  // incident early; slow or dead secondary publishers do not hold up the whole
+  // report after sufficient evidence has already been acquired.
+  for(let offset=0;offset<candidates.length;offset+=MAX_SOURCE_PAGES){
+    const batch=candidates.slice(offset,offset+MAX_SOURCE_PAGES);
+    const attempted=await Promise.all(batch.map(fetchSourcePage));
+    for(let i=0;i<batch.length;i++){
+      const item=batch[i],page=attempted[i];
+      if(page&&sourceIsSubstantive(page)){allPages.push(page);continue;}
+      const excerpt=clean(item?.snippet||item?.description||'',1500);
+      // Only configured publisher feeds can supply an attributed excerpt fallback.
+      if(item?.kind==='configured_publisher_rss'&&excerpt.length>=160){
+        allPages.push({
+          url:item.url,domain:normalizeDomain(item.url),title:clean(item.title,500),
+          description:excerpt,text:'',source_type:'publisher_rss_excerpt',
+          published_at:item.published_at||null,retrieved_at:new Date().toISOString(),
+          source:item.source||item.domain||normalizeDomain(item.url)
+        });
+      }
     }
+    const usableDomains=new Set(allPages.map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+    if(usableDomains.size>=MAX_SOURCE_PAGES)break;
   }
   const seenDomains=new Set(),pages=[];
   const orderedPages=allPages.sort((a,b)=>sourceMaterialText(b).length-sourceMaterialText(a).length);
