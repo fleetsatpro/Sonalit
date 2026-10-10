@@ -29,13 +29,16 @@ const MAX_PAGE_CHARS = 6500;
 const MAX_PACKET_CHARS = 30000;
 const MAX_CONFIGURED_FEEDS_PER_COUNTRY = 8;
 const MAX_ITEMS_PER_FEED = 100;
+const MAX_PUBLIC_FETCH_CONCURRENCY = Math.max(2,Math.min(16,Math.floor(Number(process.env.INTEL_PUBLICATION_FETCH_CONCURRENCY)||8)));
 const REQUEST_TIMEOUT_MS = 10000;
 const SOURCE_HTTP_CACHE_TTL_MS = Math.max(60_000, Math.min(30*60_000, Number(process.env.INTEL_PUBLICATION_RESEARCH_CACHE_TTL_MS)||5*60_000));
 const SOURCE_HTTP_CACHE_MAX_ENTRIES = 300;
 const sourceHttpCache = new Map();
 const sourceHttpInflight = new Map();
+let activePublicFetches=0;
+const publicFetchWaiters=[];
 const GDELT_COOLDOWN_MS=5*60*1000;
-const GDELT_MIN_INTERVAL_MS=900;
+const GDELT_MIN_INTERVAL_MS=1500;
 let gdeltRequestQueue=Promise.resolve();
 let gdeltLastRequestAt=0;
 const DEFAULT_INCIDENT_RESEARCH_BATCH_SIZE=4;
@@ -44,12 +47,24 @@ let gdeltDownUntil=0;
 function _resetResearchCacheForTests(){
   sourceHttpCache.clear();
   sourceHttpInflight.clear();
+  activePublicFetches=0;
+  publicFetchWaiters.length=0;
   gdeltDownUntil=0;
   gdeltLastRequestAt=0;
   gdeltRequestQueue=Promise.resolve();
 }
 function _resetGdeltCooldownForTests(){ gdeltDownUntil=0; gdeltLastRequestAt=0; gdeltRequestQueue=Promise.resolve(); }
 
+async function withPublicFetchSlot(task){
+  if(activePublicFetches<MAX_PUBLIC_FETCH_CONCURRENCY)activePublicFetches+=1;
+  else await new Promise(resolve=>publicFetchWaiters.push(resolve));
+  try{return await task();}
+  finally{
+    const next=publicFetchWaiters.shift();
+    if(next)next();
+    else activePublicFetches=Math.max(0,activePublicFetches-1);
+  }
+}
 function httpCacheKey(url){
   return crypto.createHash('sha256').update(String(url)).digest('hex');
 }
@@ -83,7 +98,7 @@ async function fetchText(url,_options={},timeoutMs=REQUEST_TIMEOUT_MS){
   if(cached&&cached.expiresAt>Date.now())return makeFetchResponse(cached.snapshot);
   if(cached)sourceHttpCache.delete(cacheKey);
   if(sourceHttpInflight.has(cacheKey))return makeFetchResponse(await sourceHttpInflight.get(cacheKey));
-  const request=(async()=>{
+  const request=withPublicFetchSlot(async()=>{
     const res=await safeFetchPublicResearch(url,{timeoutMs,maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES});
     const body=await res.text();
     const snapshot={
@@ -93,7 +108,7 @@ async function fetchText(url,_options={},timeoutMs=REQUEST_TIMEOUT_MS){
     };
     if(snapshot.ok&&snapshot.status>=200&&snapshot.status<300&&Buffer.byteLength(body,'utf8')<=256*1024)cacheSnapshot(cacheKey,snapshot);
     return snapshot;
-  })();
+  });
   sourceHttpInflight.set(cacheKey,request);
   try{return makeFetchResponse(await request);}
   finally{if(sourceHttpInflight.get(cacheKey)===request)sourceHttpInflight.delete(cacheKey);}
