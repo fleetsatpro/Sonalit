@@ -22,5 +22,7 @@ describe('high-visibility typography and dimensional icon settings', () => {
     expect(css).toContain('inset 0 1px 0');
     expect(css).toContain('son-type-profile-option:focus-visible');
     expect(coverage).toContain('.gev-nav-button');
+    expect(coverage).toContain('min-width: 44px');
+    expect(coverage).toContain('height: 44px');
   });
 });

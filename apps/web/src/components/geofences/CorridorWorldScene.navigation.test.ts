@@ -12,8 +12,8 @@ describe('GEV camera navigation contract', () => {
     }
   });
   it('documents mouse and touch movement and guards destroyed viewers', () => {
-    expect(source).toContain('LEFT-DRAG TO ORBIT');
-    expect(source).toContain('RIGHT-DRAG / WHEEL TO ZOOM');
+    expect(source).toContain('LEFT-DRAG ORBITS');
+    expect(source).toContain('RIGHT-DRAG / WHEEL ZOOMS');
     expect(source).toContain('MIDDLE-DRAG TILTS');
     expect(source).toContain('USE ARROWS TO PAN');
     expect(source).toContain('PINCH TO ZOOM');

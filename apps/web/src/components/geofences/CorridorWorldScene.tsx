@@ -1186,7 +1186,7 @@ export default function CorridorWorldScene({
       </div>
       )}
       <div className="pointer-events-none absolute top-[154px] right-3 hidden sm:block">
-        <span className="rounded-lg border border-white/10 bg-[#070a10]/88 px-3 py-2 text-xs font-extrabold tracking-wide text-neutral-100 shadow-xl backdrop-blur-xl">LEFT-DRAG TO ORBIT · RIGHT-DRAG / WHEEL TO ZOOM · MIDDLE-DRAG TILTS · USE ARROWS TO PAN · PINCH TO ZOOM</span>
+        <span className="max-w-[480px] rounded-lg border border-white/10 bg-[#070a10]/88 px-3 py-2 text-right text-xs font-extrabold tracking-wide text-neutral-100 shadow-xl backdrop-blur-xl">LEFT-DRAG ORBITS · RIGHT-DRAG / WHEEL ZOOMS · MIDDLE-DRAG TILTS · USE ARROWS TO PAN · PINCH TO ZOOM</span>
       </div>
       <div className="spatial-cesium-chrome pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
