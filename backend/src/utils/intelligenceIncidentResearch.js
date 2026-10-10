@@ -370,14 +370,19 @@ function getConfiguredPublisherFeeds(country){
     ? {name:'AllAfrica '+countryName+' headlines',url:allAfricaUrl,country_code:code,language:'en',credibility:74,feed_origin:'built_in_country_rdf'}
     : null;
 
-  const candidates=[],seen=new Set();
+  const candidates=[],seen=new Map();
   for(const feed of configured.concat(regional,allAfrica?[allAfrica]:[])){
     const url=safeUrl(feed.url);
     if(!url||isAggregatorDomain(normalizeDomain(url)))continue;
     const key=url.replace(/\/+$/,'').toLowerCase();
-    if(seen.has(key))continue;
-    seen.add(key);
-    candidates.push({...feed,url});
+    const fallbackUrl=safeUrl(feed.fallback_url)||null;
+    if(seen.has(key)){
+      const existing=candidates[seen.get(key)];
+      if(!existing.fallback_url&&fallbackUrl)existing.fallback_url=fallbackUrl;
+      continue;
+    }
+    seen.set(key,candidates.length);
+    candidates.push({...feed,url,fallback_url:fallbackUrl});
   }
   // Always reserve a slot for the direct AllAfrica country RDF endpoint when
   // one exists; fill the rest with explicit or existing local/regional feeds.
