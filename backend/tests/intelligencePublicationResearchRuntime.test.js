@@ -319,3 +319,26 @@ test('bounded publication coverage explicitly discloses excluded period incident
     expect(research).toContain('const providerVerifiedSources=events.length===1?verifiedResponseSources(response):[];');
   });
 
+
+
+test('publication research structured output parser accepts schema wrappers and rejects malformed envelopes',()=>{
+  const {parseResearchItemsFromText}=require('../src/utils/intelligenceIncidentResearch');
+  const item={incident_id:'KE-test-1',status:'researched',narrative:'Evidence-backed test narrative.',sources:[]};
+  const objectEnvelope=JSON.stringify({results:[item]});
+  expect(parseResearchItemsFromText(objectEnvelope)).toEqual([item]);
+  expect(parseResearchItemsFromText(JSON.stringify([item]))).toEqual([item]);
+  expect(parseResearchItemsFromText('Model output follows:\n```json\n'+objectEnvelope+'\n```')).toEqual([item]);
+  expect(parseResearchItemsFromText('not valid structured output')).toBeNull();
+  expect(parseResearchItemsFromText(JSON.stringify({error:'missing results contract',incidents:[item]}))).toBeNull();
+  expect(parseResearchItemsFromText('{"results":[{"incident_id":"truncated"')).toBeNull();
+});
+
+test('publication research prompt and bounded retry use the same results-envelope contract',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('Return ONLY one JSON object whose top-level results property is an array.');
+  expect(s).toContain('function parseResearchItemsFromText(');
+  expect(s).toContain("responseFormat:{type:'json_object'}");
+  expect(s).toContain('retrying once');
+  expect(s).toContain("providerHints:retryHint==='openrouter-free-router'");
+  expect(s).not.toContain('Return ONLY a JSON array with one object per incident');
+});

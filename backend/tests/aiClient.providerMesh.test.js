@@ -785,4 +785,62 @@ describe('intelligence provider mesh', () => {
     expect(refreshedUntil-Date.now()).toBeLessThanOrEqual(6*60*1000);
   });
 
+  test('quarantines a fully failed OpenAI key pool and routes subsequent public work to the open-weight mesh', async () => {
+    process.env.OPENAI_API_KEY_1 = 'key-one-invalid-token';
+    process.env.OPENAI_API_KEY_2 = 'key-two-invalid-token';
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+
+    const calls=[];
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.apiKey=options.apiKey;
+        this.baseURL=options.baseURL || 'openai';
+        this.chat={completions:{create:jest.fn(async request=>{
+          calls.push({baseURL:this.baseURL,apiKey:this.apiKey,model:request.model});
+          if(this.baseURL==='openai'){
+            const error=new Error('Invalid API key');
+            error.status=401;
+            throw error;
+          }
+          if(this.baseURL.includes('openrouter.ai')){
+            return {choices:[{message:{content:'{"ok":true}',tool_calls:[]}}]};
+          }
+          throw new Error('unexpected provider '+this.baseURL);
+        })}};
+      }
+    });
+
+    const ai=require('../src/utils/aiClient');
+    const policy={
+      dataClassification:'public',
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['openai-direct'],
+      system:'Return JSON.',
+      messages:[{role:'user',content:'Use a healthy public open-weight lane after credential failures.'}],
+      max_tokens:100,
+    };
+
+    // Simulate several publication agents entering the same exhausted pool at once.
+    const concurrent=await Promise.all(
+      Array.from({length:4},()=>ai.createMessage(policy))
+    );
+    expect(concurrent).toHaveLength(4);
+    expect(concurrent.every(response=>response._provider==='openrouter-free-router')).toBe(true);
+    // Pool serialization + provider cooldown must stop queued agents from
+    // replaying all credentials after the first request has quarantined them.
+    expect(calls.filter(call=>call.baseURL==='openai')).toHaveLength(2);
+
+    const capabilities=ai.providerCapabilities();
+    expect(capabilities.openai_ready_key_pool_size).toBe(0);
+    expect(capabilities.openai_cooling_down).toBe(true);
+    expect(capabilities.openai_retry_in_ms).toBeGreaterThan(0);
+
+    const subsequent=await ai.createMessage(policy);
+    expect(subsequent._provider).toBe('openrouter-free-router');
+    expect(calls.filter(call=>call.baseURL==='openai')).toHaveLength(2);
+    expect(calls.filter(call=>call.baseURL.includes('openrouter.ai')).length).toBeGreaterThanOrEqual(5);
+  });
+
 });
