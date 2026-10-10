@@ -822,8 +822,14 @@ describe('intelligence provider mesh', () => {
       max_tokens:100,
     };
 
-    const first=await ai.createMessage(policy);
-    expect(first._provider).toBe('openrouter-free-router');
+    // Simulate several publication agents entering the same exhausted pool at once.
+    const concurrent=await Promise.all(
+      Array.from({length:4},()=>ai.createMessage(policy))
+    );
+    expect(concurrent).toHaveLength(4);
+    expect(concurrent.every(response=>response._provider==='openrouter-free-router')).toBe(true);
+    // Pool serialization + provider cooldown must stop queued agents from
+    // replaying all credentials after the first request has quarantined them.
     expect(calls.filter(call=>call.baseURL==='openai')).toHaveLength(2);
 
     const capabilities=ai.providerCapabilities();
@@ -831,10 +837,10 @@ describe('intelligence provider mesh', () => {
     expect(capabilities.openai_cooling_down).toBe(true);
     expect(capabilities.openai_retry_in_ms).toBeGreaterThan(0);
 
-    const second=await ai.createMessage(policy);
-    expect(second._provider).toBe('openrouter-free-router');
+    const subsequent=await ai.createMessage(policy);
+    expect(subsequent._provider).toBe('openrouter-free-router');
     expect(calls.filter(call=>call.baseURL==='openai')).toHaveLength(2);
-    expect(calls.filter(call=>call.baseURL.includes('openrouter.ai')).length).toBeGreaterThanOrEqual(2);
+    expect(calls.filter(call=>call.baseURL.includes('openrouter.ai')).length).toBeGreaterThanOrEqual(5);
   });
 
 });
