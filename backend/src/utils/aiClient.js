@@ -639,6 +639,16 @@ function providerCapabilities() {
       slot:s.slot,label:s.label,model:process.env[s.modelKey]||s.model,configured:hasOpenSourceSlot(s)
     })),
     gpt_oss_120b: hasGroqFallback(),
+    groq_lanes: [
+      {label:'gpt-oss-120b-groq',model:GROQ_MODEL,configured:hasGroqFallback(),
+        cooling_down:providerCooling({name:'gpt-oss-120b-groq',providerGroup:'groq'}),
+        retry_in_ms:Math.max(0,providerResumeAt({name:'gpt-oss-120b-groq',providerGroup:'groq'})-Date.now()),
+        health:providerRadar.status('gpt-oss-120b-groq')},
+      {label:'gpt-oss-20b-groq',model:GROQ_MODEL_2,configured:hasGroqFallback(),
+        cooling_down:providerCooling({name:'gpt-oss-20b-groq',providerGroup:'groq'}),
+        retry_in_ms:Math.max(0,providerResumeAt({name:'gpt-oss-20b-groq',providerGroup:'groq'})-Date.now()),
+        health:providerRadar.status('gpt-oss-20b-groq')}
+    ],
     openai_direct: hasOpenAI(),
     openai_key_pool_size: getOpenAIKeyPool().length,
     openai_ready_key_pool_size:readyOpenAIKeyPoolSize(),
