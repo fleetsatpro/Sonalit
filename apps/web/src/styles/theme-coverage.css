@@ -745,3 +745,37 @@ html[data-theme] #root {
     transition-duration: .01ms !important;
   }
 }
+
+/* GEV controls are tactile vector controls: high-contrast bevel, real button
+   semantics and 44px targets. Navigation never relies on tiny unlabeled icons. */
+.gev-nav-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 12px;
+  color: #e6edf8;
+  border: 1px solid rgba(196,181,253,.22);
+  background: linear-gradient(145deg, rgba(38,47,67,.97), rgba(7,11,19,.97));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -2px 0 rgba(0,0,0,.45), 0 3px 8px rgba(0,0,0,.28);
+  transition: background .14s ease, border-color .14s ease, transform .14s ease;
+}
+.gev-nav-button:hover {
+  color: #fff;
+  border-color: rgba(196,181,253,.62);
+  background: linear-gradient(145deg, rgba(75,67,119,.98), rgba(16,21,34,.98));
+}
+.gev-nav-button:active { transform: translateY(1px); }
+.gev-nav-button:focus-visible { outline: 3px solid #c4b5fd; outline-offset: 2px; }
+.gev-map-controls .spatial-control-rail button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gev-nav-button { transition: none; }
+}

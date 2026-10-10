@@ -178,7 +178,7 @@ body {
   --son-heading-weight: 900;
   --son-emphasis-weight: 900;
 }
-html[data-typography] body #root :where(p, span, a, button, input, select, textarea, li, label, td, th, small, dt, dd, summary, figcaption, blockquote) {
+html[data-typography] body #root :where(div, main, section, article, nav, header, footer, p, span, a, button, input, select, textarea, li, label, td, th, small, dt, dd, summary, figcaption, blockquote) {
   font-weight: var(--son-readable-weight) !important;
 }
 html[data-typography] body #root :where(button, input, select, textarea, [role="button"]) {

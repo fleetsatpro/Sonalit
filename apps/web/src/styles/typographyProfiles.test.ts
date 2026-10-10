@@ -18,8 +18,8 @@ describe('high-visibility typography and dimensional icon settings', () => {
   });
   it('renders dimensional vector icon tiles without emoji-dependent controls', () => {
     expect(settings).toContain('className="son-icon-tile"');
-    expect(coverage).toContain('.son-icon-tile svg');
-    expect(coverage).toContain('inset 0 1px 0');
-    expect(coverage).toContain('son-type-profile-option:focus-visible');
+    expect(css).toContain('.son-icon-tile svg');
+    expect(css).toContain('inset 0 1px 0');
+    expect(css).toContain('son-type-profile-option:focus-visible');
   });
 });
