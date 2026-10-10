@@ -618,7 +618,9 @@ async function researchBatch(events,{country,region}={}){
       try{
         const retryResponse=await aiClient.createResearchMessage({
           ...researchRequest,
-          providerHints:[retryHint],
+          providerHints:retryHint==='openrouter-free-router'
+            ? [retryHint]
+            : [retryHint,'openrouter-free-router'],
           responseFormat:{type:'json_object'},
           system:'You are a strict structured-output incident research agent. The previous response was invalid or incomplete. Return ONLY one valid JSON object with a top-level results array and exactly one result for every supplied incident_id. Do not emit Markdown, commentary, trailing commas, or text outside JSON. Preserve uncertainty and use only supplied or retrieved evidence; never invent facts or sources.',
           messages:[{role:'user',content:prompt+'\n\nSTRICT OUTPUT CONTRACT: Serialize exactly one JSON object with a top-level results array. Include every supplied incident_id exactly once. No Markdown fences or explanatory prose.'}]
