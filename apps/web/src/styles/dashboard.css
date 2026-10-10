@@ -167,6 +167,12 @@ body {
    Weight is deliberately configurable and scoped to text-bearing UI elements;
    glyphs, code blocks and map canvases are excluded. */
 :root {
+  --son-readable-weight: 800;
+  --son-control-weight: 900;
+  --son-heading-weight: 900;
+  --son-emphasis-weight: 900;
+}
+:root[data-typography="strong"] {
   --son-readable-weight: 700;
   --son-control-weight: 800;
   --son-heading-weight: 800;

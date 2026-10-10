@@ -7,6 +7,8 @@ const settings = readFileSync(new URL('../pages/Settings.tsx', import.meta.url),
 describe('high-visibility typography and dimensional icon settings', () => {
   it('exposes persisted, selectable strong and maximum text profiles', () => {
     expect(store).toContain("type TypographyProfile = 'strong' | 'maximum'");
+    expect(store).toContain("const DEFAULT_TYPOGRAPHY: TypographyProfile = 'maximum'");
+    expect(store).toContain("return value === 'strong' || value === 'maximum' ? value : DEFAULT_TYPOGRAPHY");
     expect(store).toContain("name: 'sonalit-ui'");
     expect(store).toContain('typographyProfile: s.typographyProfile');
     expect(settings).toContain("setTypographyProfile('strong')");

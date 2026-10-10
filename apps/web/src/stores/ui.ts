@@ -4,9 +4,9 @@ import { getTheme, normalizeTheme, type SonalitTheme } from '../styles/themes.js
 
 export type Theme = SonalitTheme;
 export type TypographyProfile = 'strong' | 'maximum';
-const DEFAULT_TYPOGRAPHY: TypographyProfile = 'strong';
+const DEFAULT_TYPOGRAPHY: TypographyProfile = 'maximum';
 export function normalizeTypographyProfile(value: unknown): TypographyProfile {
-  return value === 'maximum' ? 'maximum' : DEFAULT_TYPOGRAPHY;
+  return value === 'strong' || value === 'maximum' ? value : DEFAULT_TYPOGRAPHY;
 }
 function applyTypographyProfile(profile: TypographyProfile) {
   if (typeof document !== 'undefined') document.documentElement.setAttribute('data-typography', profile);

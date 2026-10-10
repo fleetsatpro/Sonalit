@@ -746,6 +746,15 @@ html[data-theme] #root {
   }
 }
 
+/* Maximum emphasis preserves contrast on muted legacy utilities as well as weight. */
+html[data-typography="maximum"] body #root :where(
+  [class~="text-slate-400"], [class~="text-slate-500"], [class~="text-gray-400"],
+  [class~="text-gray-500"], [class~="text-neutral-400"], [class~="text-neutral-500"],
+  [class~="text-2"], [class~="text-white/40"], [class~="text-white/50"]
+) {
+  color: color-mix(in srgb, var(--son-theme-text) 82%, var(--son-theme-bg)) !important;
+}
+
 /* GEV controls are tactile vector controls: high-contrast bevel, real button
    semantics and 44px targets. Navigation never relies on tiny unlabeled icons. */
 .gev-nav-button {
