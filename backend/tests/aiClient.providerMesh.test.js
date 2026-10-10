@@ -568,6 +568,223 @@ describe('intelligence provider mesh', () => {
   });
 
 
+  test('half-open probes the hinted public OpenRouter rescue lane after all ordinary providers fail',async()=>{
+    process.env.OPENROUTER_API_KEY='openrouter-test-key-123';
+    process.env.OPENROUTER_FREE_ROUTER_MODEL='openrouter/free';
+    process.env.GOOGLE_AI_API_KEY='google-test-key-123';
+    process.env.GOOGLE_GEMINI_MODEL='gemini-test-model';
+    process.env.OPENAI_API_KEY='openai-test-key-123';
+    process.env.OPENAI_MODEL='openai-test-model';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT='true';
+    process.env.REDIS_URL='redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS='true';
+
+    const until=Date.now()+6*60*60*1000;
+    const prefix='sonalit:intelligence:ai:circuit:v3:';
+    const redis={
+      mget:jest.fn(async keys=>keys.map(key=>{
+        const group=decodeURIComponent(String(key).replace(prefix,''));
+        return group.startsWith('openrouter-')?String(until):'0';
+      })),
+      scan:jest.fn(async()=>['0',[]]),
+      get:jest.fn(async()=>null),
+      set:jest.fn(async()=> 'OK'),
+      del:jest.fn(async()=>1),
+    };
+    const calls=[];
+    const errorWithStatus=(message,status)=>Object.assign(new Error(message),{status});
+    const mockOpenAI = class MockOpenAI{
+      constructor(options={}){
+        this.apiKey=options.apiKey;
+        this.baseURL=options.baseURL||'openai';
+        this.chat={completions:{create:jest.fn(async request=>{
+          const call={apiKey:this.apiKey,baseURL:this.baseURL,model:request.model};
+          calls.push(call);
+          if(this.apiKey==='google-test-key-123'){
+            if(request.model!=='gemini-test-model')throw new Error('Unexpected Gemini model: '+JSON.stringify(call));
+            throw errorWithStatus('Gemini rate limit',429);
+          }
+          if(this.apiKey==='openai-test-key-123'){
+            if(request.model!=='openai-test-model')throw new Error('Unexpected OpenAI model: '+JSON.stringify(call));
+            throw errorWithStatus('OpenAI insufficient credit balance',402);
+          }
+          if(this.apiKey==='openrouter-test-key-123'&&request.model==='openrouter/free'){
+            return {choices:[{message:{content:'{"results":[]}',tool_calls:[]}}]};
+          }
+          throw new Error('Unexpected provider credential/model in half-open test: '+JSON.stringify(call));
+        })}};
+      }
+    };
+
+    let ai;
+    // Register both dependency mocks inside Jest's isolated registry. Doing
+    // this outside isolateModules can leave the provider graph bound to a
+    // prior test's provider clients even after resetModules().
+    jest.isolateModules(()=>{
+      jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
+      jest.doMock('openai',()=>mockOpenAI);
+      ai=require('../src/utils/aiClient');
+    });
+    const response=await ai.createMessage({
+      dataClassification:'public',
+      allowFreeProviders:true,
+      preferFreeProviders:true,
+      providerHints:['google-gemini-3.8-flash','openrouter-free-router'],
+      system:'Return structured JSON.',
+      messages:[{role:'user',content:'Use only supplied public evidence and return JSON.'}],
+      max_tokens:100,
+    });
+
+    if(response._provider!=='openrouter-free-router'){
+      throw new Error('Expected the half-open OpenRouter rescue lane; got '+response._provider+'; calls='+JSON.stringify(calls));
+    }
+    expect(calls.length).toBeGreaterThan(0);
+    expect(response._free_provider).toBe(true);
+    expect(calls.some(c=>c.model==='gemini-test-model'&&c.apiKey==='google-test-key-123')).toBe(true);
+    expect(calls.some(c=>c.model==='openai-test-model'&&c.apiKey==='openai-test-key-123')).toBe(true);
+    expect(calls.filter(c=>c.apiKey==='openrouter-test-key-123')).toEqual([
+      expect.objectContaining({model:'openrouter/free'})
+    ]);
+  });
+  test('half-open rescue does not discard a stale cooling snapshot after a concurrent circuit clear',()=>{
+    const fs=require('fs');
+    const path=require('path');
+    const source=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
+    const start=source.indexOf('function halfOpenRouterBlockReason');
+    const end=source.indexOf('\nfunction logHalfOpenProbeSkipped',start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const gate=source.slice(start,end);
+    expect(gate).toContain('coolingAtStart.has(provider.name)');
+    expect(gate).toContain('attempted.has(provider.name)');
+    // The circuit may be cleared by another concurrent request after this
+    // request snapshots candidates; current cooling state must not suppress
+    // this request's sole, policy-constrained attempt.
+    expect(gate).not.toContain('providerCooling(provider)');
+    expect(source).toContain('AI provider half-open recovery probe skipped: reason=');
+  });
+
+
+  test('OpenRouter 429 diagnostics expose quota metadata without logging raw provider text or credentials',()=>{
+    const {openRouterRateLimitDiagnostic}=require('../src/utils/aiClient');
+    const diagnostic=openRouterRateLimitDiagnostic({
+      status:429,
+      headers:{
+        'retry-after':'60',
+        'x-ratelimit-remaining':'0',
+        'x-ratelimit-limit':'50',
+        'x-ratelimit-reset-requests':'1781049600'
+      },
+      error:{
+        error:{
+          code:429,
+          type:'rate_limit_exceeded',
+          message:'Private request text and sk-or-secret-must-never-be-logged',
+          metadata:{error_type:'rate_limit_exceeded',provider_code:'429'}
+        }
+      }
+    });
+    expect(diagnostic).toContain('error_type=rate_limit_exceeded');
+    expect(diagnostic).toContain('provider_code=429');
+    expect(diagnostic).toContain('retry_after_ms=60000');
+    expect(diagnostic).toContain('rate_limit_remaining=0');
+    expect(diagnostic).toContain('rate_limit_limit=50');
+    expect(diagnostic).toContain('rate_limit_reset=1781049600');
+    expect(diagnostic).not.toContain('sk-or-secret');
+    expect(diagnostic).not.toContain('Private request text');
+  });
+
+  test('OpenRouter reset timestamps in epoch milliseconds are not misread as seconds',()=>{
+    const {openRouterRateLimitDiagnostic}=require('../src/utils/aiClient');
+    const resetAt=Date.now()+15*60*1000;
+    const diagnostic=openRouterRateLimitDiagnostic({
+      status:429,
+      headers:{'x-ratelimit-reset-requests':String(resetAt)}
+    });
+    const match=diagnostic.match(/retry_after_ms=(\d+)/);
+    expect(match).not.toBeNull();
+    const retryAfterMs=Number(match[1]);
+    expect(retryAfterMs).toBeGreaterThan(14*60*1000);
+    expect(retryAfterMs).toBeLessThanOrEqual(15*60*1000);
+    expect(diagnostic).toContain('rate_limit_reset='+String(resetAt));
+  });
+
+
+  test('a fresh half-open Retry-After replaces a stale persisted OpenRouter circuit deadline',async()=>{
+    process.env.OPENROUTER_API_KEY='openrouter-test-key-123';
+    process.env.OPENROUTER_FREE_ROUTER_MODEL='openrouter/free';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT='true';
+    process.env.REDIS_URL='redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS='true';
+
+    const staleUntil=Date.now()+6*60*60*1000;
+    const prefix='sonalit:intelligence:ai:circuit:v3:';
+    const redis={
+      mget:jest.fn(async keys=>keys.map(key=>{
+        const group=decodeURIComponent(String(key).replace(prefix,''));
+        return group.startsWith('openrouter-')?String(staleUntil):'0';
+      })),
+      scan:jest.fn(async()=>['0',[]]),
+      get:jest.fn(async()=>null),
+      set:jest.fn(async()=> 'OK'),
+      del:jest.fn(async()=>1),
+    };
+    const calls=[];
+    const mockOpenAI=class MockOpenAI{
+      constructor(options={}){
+        this.apiKey=options.apiKey;
+        this.baseURL=options.baseURL||'openai';
+        this.chat={completions:{create:jest.fn(async request=>{
+          calls.push({apiKey:this.apiKey,baseURL:this.baseURL,model:request.model});
+          const error=Object.assign(new Error('OpenRouter free-router rate limit'),{
+            status:429,
+            headers:{
+              'retry-after':'360',
+              'x-ratelimit-remaining':'0',
+              'x-ratelimit-limit':'50',
+              'x-ratelimit-reset-requests':String(Date.now()+6*60*1000)
+            }
+          });
+          throw error;
+        })}};
+      }
+    };
+
+    let ai;
+    jest.isolateModules(()=>{
+      jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
+      jest.doMock('openai',()=>mockOpenAI);
+      ai=require('../src/utils/aiClient');
+    });
+
+    let caught;
+    try{
+      await ai.createMessage({
+        dataClassification:'public',
+        allowFreeProviders:true,
+        preferFreeProviders:true,
+        providerHints:['openrouter-free-router'],
+        system:'Return structured JSON.',
+        messages:[{role:'user',content:'Use only supplied public evidence and return JSON.'}],
+        max_tokens:100,
+      });
+    }catch(error){
+      caught=error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught.status).toBe(429);
+    expect(calls).toEqual([expect.objectContaining({model:'openrouter/free'})]);
+
+    const laneKey=prefix+encodeURIComponent('openrouter-free:openrouter-free-router');
+    const writes=redis.set.mock.calls.filter(call=>call[0]===laneKey);
+    expect(writes.length).toBeGreaterThan(0);
+    const refreshedUntil=Number(writes[writes.length-1][1]);
+    expect(refreshedUntil).toBeLessThan(staleUntil);
+    expect(refreshedUntil-Date.now()).toBeGreaterThan(5*60*1000);
+    expect(refreshedUntil-Date.now()).toBeLessThanOrEqual(6*60*1000);
+  });
+
   test('quarantines a fully failed OpenAI key pool and routes subsequent public work to the open-weight mesh', async () => {
     process.env.OPENAI_API_KEY_1 = 'key-one-invalid-token';
     process.env.OPENAI_API_KEY_2 = 'key-two-invalid-token';
