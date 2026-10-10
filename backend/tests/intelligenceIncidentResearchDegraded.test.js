@@ -181,7 +181,68 @@ describe('degraded incident research remains useful',()=>{
     expect(kenya.map(feed=>feed.url)).toContain('https://www.kenyanews.go.ke/feed');
     expect(kenya.some(feed=>feed.url==='https://allafrica.com/tools/headlines/rdf/kenya/headlines.rdf')).toBe(true);
     expect(somalia.some(feed=>/shabellemedia\.com\/feed/i.test(feed.url)||/puntlandpost\.net\/feed/i.test(feed.url))).toBe(true);
-    expect([...kenya,...somalia].every(feed=>!new URL(feed.url).hostname.toLowerCase().includes('news.google.com'))).toBe(true);
+    expect(kenya.some(feed=>feed.name==='KNA Kenya'&&/news\.google\.com\/rss\/search/.test(feed.fallback_url||''))).toBe(true);
+    expect(kenya.some(feed=>feed.name==='Tuko Kenya'&&/news\.google\.com\/rss\/search/.test(feed.fallback_url||''))).toBe(true);
+    expect(kenya.some(feed=>feed.name==='Nation Kenya'&&feed.google_news_feed===true)).toBe(true);
+    expect([...kenya,...somalia].every(feed=>{
+      const url=new URL(feed.url);
+      return url.hostname.toLowerCase()!=='news.google.com'||url.pathname==='/rss/search';
+    })).toBe(true);
+  });
+
+  test('uses registered Google News fallbacks when primary publisher feeds return HTML or fail TLS',async()=>{
+    const tukoFeed='https://www.tuko.co.ke/?service=rss';
+    const knaFeed='https://www.kenyanews.go.ke/feed';
+    const tukoArticle='https://www.tuko.co.ke/news/local/202610100010.html';
+    const knaArticle='https://www.kenyanews.go.ke/news/security/garissa-corridor-update';
+    const tukoText='Tuko reporting from Garissa County describes a security interruption affecting the freight corridor. The account records that local authorities responded, while the exact duration of the disruption and any wider transport effects remain unconfirmed. It does not report a verified casualty total or establish that neighbouring routes were affected. The report says further details were being checked and confines its account to the named incident.';
+    const knaText='Kenya News Agency reports a separate official account of the Garissa County corridor disruption. Authorities responded to the security incident, but the agency report does not yet establish the full duration, traffic backlog or commercial impact. It reports no verified casualty count and does not conclude that the interruption spread to other routes. The available account remains specific to the event and location.';
+    const wrap=url=>'https://news.google.com/rss/articles/'+Buffer.from(url,'utf8').toString('base64url');
+    const item=(title,url,description)=>'<item><title>'+title+'</title><link>'+wrap(url)+'</link><pubDate>Fri, 09 Oct 2026 09:00:00 GMT</pubDate><description><![CDATA['+description+']]></description></item>';
+    const tukoRss='<rss><channel>'+item('Security incident on Garissa freight corridor — Tuko',tukoArticle,'Local reporting describes a security interruption in Garissa County; duration and wider consequences remain unclear.')+'</channel></rss>';
+    const knaRss='<rss><channel>'+item('Official update on Garissa corridor security incident — Kenya News Agency',knaArticle,'Kenya News Agency reports an official response to a security incident affecting the Garissa corridor.')+'</channel></rss>';
+    const unrelatedRss='<rss><channel><item><title>Unrelated regional business bulletin</title><link>https://unrelated.example/business-bulletin</link><description>A general business bulletin about retail sales and a scheduled industry conference. It does not mention the reported event, Garissa County, transport security or a corridor interruption.</description></item></channel></rss>';
+    const allAfrica='<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns" xmlns="http://purl.org/rss/1.0/"></rdf:RDF>';
+    const page=(title,body)=>'<html><head><title>'+title+'</title></head><body><article><p>'+body+'</p></article></body></html>';
+    safeFetchPublicResearch.mockImplementation(async rawUrl=>{
+      const url=String(rawUrl);
+      if(url===tukoFeed){
+        const html='<html><body><div><div><div><h1>Tuko home</h1><p>HTML page, not an RSS feed.</p></div></div></div></body></html>';
+        return {ok:true,status:200,url,headers:{get:()=> 'text/html; charset=utf-8'},text:async()=>html,arrayBuffer:async()=>Buffer.from(html)};
+      }
+      if(url===knaFeed)throw Object.assign(new Error('External research request failed: SELF_SIGNED_CERT_IN_CHAIN'),{failureClass:'unavailable',code:'SELF_SIGNED_CERT_IN_CHAIN'});
+      if(url===tukoArticle){
+        return {ok:true,status:200,url,headers:{get:()=> 'text/html; charset=utf-8'},text:async()=>page('Tuko Garissa security update',tukoText),arrayBuffer:async()=>Buffer.from(page('Tuko Garissa security update',tukoText))};
+      }
+      if(url===knaArticle){
+        return {ok:true,status:200,url,headers:{get:()=> 'text/html; charset=utf-8'},text:async()=>page('KNA Garissa corridor update',knaText),arrayBuffer:async()=>Buffer.from(page('KNA Garissa corridor update',knaText))};
+      }
+      if(url.includes('allafrica.com/tools/headlines/rdf/kenya/headlines.rdf')){
+        return {ok:true,status:200,url,headers:{get:()=> 'application/rdf+xml'},text:async()=>allAfrica,arrayBuffer:async()=>Buffer.from(allAfrica)};
+      }
+      if(url.startsWith('https://news.google.com/rss/search')){
+        const query=new URL(url).searchParams.get('q')||'';
+        const body=query.includes('site:tuko.co.ke')?tukoRss:
+          query.includes('site:kenyanews.go.ke')?knaRss:unrelatedRss;
+        return {ok:true,status:200,url,headers:{get:()=> 'application/rss+xml; charset=utf-8'},text:async()=>body,arrayBuffer:async()=>Buffer.from(body)};
+      }
+      if(url==='https://unrelated.example/business-bulletin'){
+        return {ok:true,status:200,url,headers:{get:()=> 'text/html'},text:async()=>page('Unrelated bulletin','This general business item does not contain incident details.'),arrayBuffer:async()=>Buffer.from(page('Unrelated bulletin','This general business item does not contain incident details.'))};
+      }
+      return {ok:true,status:200,url,headers:{get:()=> 'application/rss+xml'},text:async()=>unrelatedRss,arrayBuffer:async()=>Buffer.from(unrelatedRss)};
+    });
+    const packet=await buildIncidentResearchPacket({
+      id:'KE-publisher-fallback',headline:'Security incident reported on Garissa freight corridor',
+      region:'Garissa County',occurred_from:'2026-10-09T06:00:00.000Z',evidence:[]
+    },{country:'KE'});
+    expect(safeFetchPublicResearch.mock.calls.some(([url])=>String(url)===tukoFeed)).toBe(true);
+    expect(safeFetchPublicResearch.mock.calls.some(([url])=>String(url)===knaFeed)).toBe(true);
+    expect(safeFetchPublicResearch.mock.calls.some(([url])=>String(url).startsWith('https://news.google.com/rss/search')&&(new URL(String(url)).searchParams.get('q')||'').includes('site:tuko.co.ke'))).toBe(true);
+    expect(safeFetchPublicResearch.mock.calls.some(([url])=>String(url).startsWith('https://news.google.com/rss/search')&&(new URL(String(url)).searchParams.get('q')||'').includes('site:kenyanews.go.ke'))).toBe(true);
+    expect(packet.fetched_pages.some(page=>page.url===tukoArticle&&page.domain==='tuko.co.ke'&&String(page.text||'').length>=250)).toBe(true);
+    expect(packet.fetched_pages.some(page=>page.url===knaArticle&&page.domain==='kenyanews.go.ke'&&String(page.text||'').length>=250)).toBe(true);
+    expect(packet.discovery_summary.gdelt_requested).toBe(false);
+    expect(new Set(packet.fetched_pages.filter(page=>String(page.text||'').length>=250).map(page=>page.domain)).size).toBeGreaterThanOrEqual(2);
   });
 
   test('does not call GDELT when independent direct-publisher bodies already satisfy the source threshold',async()=>{
