@@ -166,9 +166,13 @@ const SEV_COLOR: Record<string, string> = {
 };
 ```
 
-### Global Font Override
+### Typography Architecture
 
-`dashboard.css` applies `font-family: var(--d-font) !important` on `*` to enforce Inter across ~60 components that previously set inline fonts. `font-variant-numeric: tabular-nums` ensures numeric columns align.
+Sonalit's operations shell inherits Sora from `--d-font`. Tailwind's `font-sans`, `font-display`, and legacy `font-orbitron` aliases resolve to Sora so utility classes cannot silently fork the type system. `font-mono` resolves to self-hosted Space Mono, and telemetry/data values use tabular numerals explicitly.
+
+The cargo/partner portal is a separate shell: `.portal-root` uses Archivo for prose and IBM Plex Mono for data. The final theme-coverage layer scopes Tailwind font-utility overrides back to those portal faces. Keep those shell boundaries intentional.
+
+Never restore a universal `*` font or font-weight override with `!important`. It suppresses purpose-built data fonts, erases heading/body hierarchy, and makes local component styling ineffective. Use design tokens and semantic classes; only use `!important` for narrowly scoped shell bridges where selector precedence genuinely requires it.
 
 ## Relevant Files
 
