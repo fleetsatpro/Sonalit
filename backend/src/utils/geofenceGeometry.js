@@ -4,7 +4,7 @@ function onSegment(a,b,p,eps=1e-10){return Math.abs(orientation(a,b,p))<=eps&&p[
 function intersects(a,b,c,d){const o1=orientation(a,b,c),o2=orientation(a,b,d),o3=orientation(c,d,a),o4=orientation(c,d,b);if(((o1>1e-10&&o2< -1e-10)||(o1< -1e-10&&o2>1e-10))&&((o3>1e-10&&o4< -1e-10)||(o3< -1e-10&&o4>1e-10)))return true;return onSegment(a,b,c)||onSegment(a,b,d)||onSegment(c,d,a)||onSegment(c,d,b);}
 function normalizePolygonGeometry(input){
  const geometry=input?.type==='Feature'?input.geometry:input;
- if(!geometry||geometry.type!=='Polygon'||!Array.isArray(geometry.coordinates))throw new Error('Provide a GeoJSON Polygon geometry.');
+ if(!geometry||geometry.type!=='Polygon'||!Array.isArray(geometry.coordinates)||geometry.coordinates.length===0)throw new Error('Provide a GeoJSON Polygon with one outer boundary.');
  if(geometry.coordinates.length!==1)throw new Error('Polygon holes are not supported; draw one outer boundary.');
  const raw=geometry.coordinates[0];
  if(!Array.isArray(raw)||raw.length<3||raw.length>501)throw new Error('A polygon requires 3 to 500 vertices.');
