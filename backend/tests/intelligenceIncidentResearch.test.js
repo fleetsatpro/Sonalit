@@ -185,11 +185,12 @@ test('provider research citations must come from non-text verified web-search re
     content:[
       {type:'text',text:'{"sources":[{"url":"https://invented.example/report"},{"url":"https://real.example/report"}]}'},
       {type:'web_search_tool_result',content:[
-        {type:'web_search_result',title:'Verified report',url:'https://real.example/report',domain:'real.example'}
+        {type:'web_search_result',title:'Verified report',url:'https://real.example/report',domain:'fabricated.example'}
       ]}
     ]
   });
   expect(sources.map(x=>x.url)).toEqual(['https://real.example/report']);
+  expect(sources[0].domain).toBe('real.example');
 });
 
 

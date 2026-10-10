@@ -777,7 +777,7 @@ function verifiedResponseSources(response){
     seen.add(key);
     out.push({
       url,
-      domain:normalizeDomain(node.domain||url),
+      domain:normalizeDomain(url),
       title:clean(node.title||node.name||'Verified web-search result',500),
       description:clean(node.description||node.snippet||node.cited_text||node.text||'',1200),
       source_type:sourceType

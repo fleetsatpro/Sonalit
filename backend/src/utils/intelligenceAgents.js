@@ -336,7 +336,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const lastResearchAttemptAt=priorResearch.last_attempt_at?new Date(priorResearch.last_attempt_at):null;
   const researchAttemptRecent=Boolean(lastResearchAttemptAt&&!Number.isNaN(lastResearchAttemptAt.getTime())&&(now.getTime()-lastResearchAttemptAt.getTime())<researchCooldownMinutes*60*1000);
   const evidenceChanged=String(priorCoverage.fingerprint||'')!==fingerprint;
-  const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged||Boolean(options.forceResearch))&&(!researchAttemptRecent||evidenceChanged||Boolean(options.forceResearch));
+  const needsDeepResearch=deepResearchEnabled&&expectedResearchCount>0&&(!priorDossierResearchReady||previousResearchCount<expectedResearchCount||researchVersionMismatch||evidenceChanged||Boolean(options.forceResearch))&&(!researchAttemptRecent||evidenceChanged||researchVersionMismatch||publicationPolicyMismatch||Boolean(options.forceResearch));
   const priorResearchReleaseReady=!publicationResearchRequired || priorDossierResearchReady;
   const priorReleaseGate=existing[0]?.body?.release_gate||{};
   const priorQualityState=existing[0]?.body?.publication_quality||{};
