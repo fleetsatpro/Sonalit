@@ -28,18 +28,19 @@ describe('intelligence synthesis provider contract', () => {
     }));
   });
 
-  test('routes public event synthesis through the publication-eligible open-weight providers', () => {
+  test('keeps event synthesis classified independently from publications and uses one provider policy', () => {
     const source = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceAgents.js'), 'utf8');
     const start = source.indexOf('async function synthesizeEvents');
     const end = source.indexOf('  if(!Array.isArray(result)||!result.length)', start);
     const synthesis = source.slice(start, end);
 
-    expect(synthesis).toContain("dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase()");
+    expect(synthesis).toContain("dataClassification:String(process.env.INTEL_EVENT_SYNTHESIS_DATA_CLASSIFICATION||process.env.INTEL_DEFAULT_DATA_CLASSIFICATION||'internal').toLowerCase()");
+    expect(synthesis).not.toContain('INTEL_PUBLICATION_DATA_CLASSIFICATION');
     expect(synthesis).toContain('aiClient.hasAnyProvider(synthesisAiPolicy)');
     expect(synthesis).toContain('...synthesisAiPolicy');
     expect(synthesis).toContain('allowFreeProviders:true');
     expect(synthesis).toContain('preferFreeProviders:true');
-    expect(synthesis).toContain("providerHints:['google-gemini-3.8-flash','openrouter-free-router','gpt-oss-120b-openrouter-free']");
+    expect(synthesis).toContain("providerHints:['deepseek-v4-flash-openrouter','qwen3.5-397b-openrouter','gpt-oss-120b-groq']");
   });
 
   test('uses the any-provider capability rather than an Anthropic/Groq-only gate', async () => {

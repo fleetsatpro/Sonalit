@@ -191,11 +191,14 @@ async function translateQueue(orgId){
 async function synthesizeEvents(orgId){
   const {rows}=await query(`SELECT e.id,e.title,e.summary,e.country_code,e.severity,e.confidence,e.last_seen_at,COALESCE(json_agg(json_build_object('id',o.id,'title',COALESCE(o.title_en,o.title),'body',COALESCE(o.body_en,o.body),'language',o.language,'credibility',o.credibility,'source',s.name,'source_reliability',s.reliability,'observed_at',o.observed_at)) FILTER (WHERE o.id IS NOT NULL),'[]') AS evidence FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id LEFT JOIN intel_sources s ON s.id=o.source_id WHERE e.org_id=$1 AND (e.synthesized_at IS NULL OR e.last_seen_at>e.synthesized_at) GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $2`,[orgId,MAX_SYNTHESIS]);
   if(!rows.length)return{queued:0,synthesized:0};
+  // Event records may contain observations from non-public sources. Never inherit
+  // the publication classification here: this pipeline defaults to internal unless
+  // an operator explicitly classifies event synthesis as public.
   const synthesisAiPolicy={
-    dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase(),
+    dataClassification:String(process.env.INTEL_EVENT_SYNTHESIS_DATA_CLASSIFICATION||process.env.INTEL_DEFAULT_DATA_CLASSIFICATION||'internal').toLowerCase(),
     allowFreeProviders:true,
     preferFreeProviders:true,
-    providerHints:['google-gemini-3.8-flash','openrouter-free-router','gpt-oss-120b-openrouter-free']
+    providerHints:['deepseek-v4-flash-openrouter','qwen3.5-397b-openrouter','gpt-oss-120b-groq']
   };
   if(!aiClient.hasAnyProvider(synthesisAiPolicy))return applyEvidenceSynthesisFallback(rows,orgId,'no_ai_provider_available');
   const payload=rows.map(e=>({id:String(e.id),title:clean(e.title,900),summary:clean(e.summary,1800),country:e.country_code,severity:e.severity,confidence:e.confidence,evidence:e.evidence.slice(0,8)}));
