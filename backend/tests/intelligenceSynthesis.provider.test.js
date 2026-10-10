@@ -35,6 +35,8 @@ describe('intelligence synthesis provider contract', () => {
     const synthesis = source.slice(start, end);
 
     expect(synthesis).toContain("dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase()");
+    expect(synthesis).toContain('aiClient.hasAnyProvider(synthesisAiPolicy)');
+    expect(synthesis).toContain('...synthesisAiPolicy');
     expect(synthesis).toContain('allowFreeProviders:true');
     expect(synthesis).toContain('preferFreeProviders:true');
     expect(synthesis).toContain("providerHints:['google-gemini-3.8-flash','openrouter-free-router','gpt-oss-120b-openrouter-free']");
