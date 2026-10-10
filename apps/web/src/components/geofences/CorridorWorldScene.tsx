@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
-import { Crosshair, Layers, Map as MapIcon, Satellite, Signal, Target, TriangleAlert, ZoomIn, ZoomOut, RotateCcw, RotateCw, ArrowUp, ArrowDown } from 'lucide-react';
+import { Crosshair, Layers, Map as MapIcon, Satellite, Signal, Target, TriangleAlert, ZoomIn, ZoomOut, RotateCcw, RotateCw, ArrowUp, ArrowDown, MoveLeft, MoveRight, MoveUp, MoveDown } from 'lucide-react';
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js';
 import { spatialEntityLayer } from '../../lib/spatialClient.js';
 import { createAiCesiumImageryProvider, wrapCesiumImageryProvider } from '../../lib/imageryAiCesium.js';
@@ -1015,6 +1015,18 @@ export default function CorridorWorldScene({
     viewer.scene.requestRender();
   };
 
+  const panCamera = (direction: 'left' | 'right' | 'up' | 'down') => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+    const heightM = viewer.camera.positionCartographic.height;
+    const distance = Math.max(100, Math.min(1_200_000, heightM * 0.09));
+    if (direction === 'left') viewer.camera.moveLeft(distance);
+    else if (direction === 'right') viewer.camera.moveRight(distance);
+    else if (direction === 'up') viewer.camera.moveUp(distance);
+    else viewer.camera.moveDown(distance);
+    viewer.scene.requestRender();
+  };
+
   const recenter = () => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
@@ -1164,13 +1176,17 @@ export default function CorridorWorldScene({
           <button type="button" onClick={() => rotateCamera('right')} className="gev-nav-button" aria-label="Orbit right" title="Orbit right"><RotateCw size={19} strokeWidth={2.7} /></button>
           <button type="button" onClick={() => rotateCamera('up')} className="gev-nav-button" aria-label="Tilt camera up" title="Tilt camera up"><ArrowUp size={19} strokeWidth={2.7} /></button>
           <button type="button" onClick={() => rotateCamera('down')} className="gev-nav-button" aria-label="Tilt camera down" title="Tilt camera down"><ArrowDown size={19} strokeWidth={2.7} /></button>
+          <button type="button" onClick={() => panCamera('left')} className="gev-nav-button" aria-label="Pan left" title="Pan left"><MoveLeft size={19} strokeWidth={2.7} /></button>
+          <button type="button" onClick={() => panCamera('up')} className="gev-nav-button" aria-label="Pan up" title="Pan up"><MoveUp size={19} strokeWidth={2.7} /></button>
+          <button type="button" onClick={() => panCamera('right')} className="gev-nav-button" aria-label="Pan right" title="Pan right"><MoveRight size={19} strokeWidth={2.7} /></button>
           <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const cameraEntities = globalView ? globalCameraEntities(worldEntities) : worldEntities; const points = fitPoints(route, liveMembers, trail, zones, cameraEntities); if (points.length === 1) { const only = singleWorldPoint(liveMembers, zones, worldEntities); if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="gev-nav-button" aria-label={globalView ? 'Fit world' : 'Fit corridor'} title={globalView ? 'Fit world' : 'Fit corridor'}><Target size={19} strokeWidth={2.7} /></button>
+          <button type="button" onClick={() => panCamera('down')} className="gev-nav-button" aria-label="Pan down" title="Pan down"><MoveDown size={19} strokeWidth={2.7} /></button>
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="gev-nav-button" aria-label="Map information" aria-expanded={creditsOpen} title="Map information"><Signal size={19} strokeWidth={2.7} /></button>
         </div>
       </div>
       )}
       <div className="pointer-events-none absolute top-[154px] right-3 hidden sm:block">
-        <span className="rounded-lg border border-white/10 bg-[#070a10]/88 px-3 py-2 text-xs font-extrabold tracking-wide text-neutral-100 shadow-xl backdrop-blur-xl">DRAG TO ORBIT · RIGHT-DRAG TO PAN · WHEEL / PINCH TO ZOOM</span>
+        <span className="rounded-lg border border-white/10 bg-[#070a10]/88 px-3 py-2 text-xs font-extrabold tracking-wide text-neutral-100 shadow-xl backdrop-blur-xl">LEFT-DRAG TO ORBIT · RIGHT-DRAG / WHEEL TO ZOOM · MIDDLE-DRAG TILTS · USE ARROWS TO PAN · PINCH TO ZOOM</span>
       </div>
       <div className="spatial-cesium-chrome pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
