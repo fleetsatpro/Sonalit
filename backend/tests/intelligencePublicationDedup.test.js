@@ -19,9 +19,10 @@ describe('publication generation deduplication hardening',()=>{
   });
   test('forces one refresh when the research contract version changes',()=>{
     const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
-    expect(source).toContain("const DEEP_RESEARCH_VERSION='2.0'");
+    expect(source).toContain("const DEEP_RESEARCH_VERSION='2.1'");
     expect(source).toContain("String(priorResearch.research_version||'')!==DEEP_RESEARCH_VERSION");
     expect(source).toContain("Number(priorResearch.incidents_web_researched||0)");
+    expect(source).toContain("&&(!researchAttemptRecent||evidenceChanged||researchVersionMismatch||publicationPolicyMismatch||Boolean(options.forceResearch));");
   });
   test('database schema retains historical duplicates but enforces one active publication per period',()=>{
     const files=fs.readdirSync(path.join(__dirname,'../migrations')).filter(name=>name.includes('intelligence_publication_dedupe'));
