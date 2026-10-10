@@ -579,7 +579,7 @@ async function buildIncidentResearchPacket(event,{country,region}={}){
         });
       }
     }
-    const usableDomains=new Set(allPages.map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
+    const usableDomains=new Set(allPages.filter(page=>sourceMaterialText(page).length>=120).map(page=>normalizeDomain(page.domain||page.url)).filter(Boolean));
     if(usableDomains.size>=MAX_SOURCE_PAGES)break;
   }
   const seenDomains=new Set(),pages=[];
