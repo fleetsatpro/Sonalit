@@ -327,7 +327,7 @@ test('publication research structured output parser accepts schema wrappers and 
   const objectEnvelope=JSON.stringify({results:[item]});
   expect(parseResearchItemsFromText(objectEnvelope)).toEqual([item]);
   expect(parseResearchItemsFromText(JSON.stringify([item]))).toEqual([item]);
-  expect(parseResearchItemsFromText('Model output follows:\\n```json\\n'+objectEnvelope+'\\n```')).toEqual([item]);
+  expect(parseResearchItemsFromText('Model output follows:\n```json\n'+objectEnvelope+'\n```')).toEqual([item]);
   expect(parseResearchItemsFromText('not valid structured output')).toBeNull();
   expect(parseResearchItemsFromText(JSON.stringify({error:'missing results contract',incidents:[item]}))).toBeNull();
   expect(parseResearchItemsFromText('{"results":[{"incident_id":"truncated"')).toBeNull();
