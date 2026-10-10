@@ -339,5 +339,6 @@ test('publication research prompt and bounded retry use the same results-envelop
   expect(s).toContain('function parseResearchItemsFromText(');
   expect(s).toContain("responseFormat:{type:'json_object'}");
   expect(s).toContain('retrying once');
+  expect(s).toContain("providerHints:retryHint==='openrouter-free-router'");
   expect(s).not.toContain('Return ONLY a JSON array with one object per incident');
 });
