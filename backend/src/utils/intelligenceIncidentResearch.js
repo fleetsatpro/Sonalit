@@ -697,7 +697,7 @@ function fallbackResearch(event,packet,{degraded=false}={}){
     why_it_matters:why,
     uncertainty:specificCaveats.length?specificCaveats:[materialUncertainty],
     chronology:[],
-    sources,
+    sources:sources.map(({text,...source})=>source),
     provider:hasWebEvidence?'live-web-packet':'evidence-only',
     agent_status:degraded ? 'provider_unavailable' : status,
     web_sources_retrieved:materialSources.length,
@@ -938,6 +938,7 @@ async function researchBatch(events,{country,region}={}){
           domain:normalizeDomain(item?.domain||url),
           title:clean(item?.title||'Verified research source',500),
           description:clean(item?.description||item?.snippet||'',1200),
+          text:clean(item?.text||'',MAX_PAGE_CHARS),
           source_type:item?.source_type||'verified_research_source'
         });
       };
@@ -953,19 +954,25 @@ async function researchBatch(events,{country,region}={}){
       const normalizedSources=dedupeSources([...verifiedModelSources,...verifiedPacketSources],8);
       const narrative=cleanPublicationText(source?.narrative||'',2600);
       const repeated=repetitionRatio(narrative)>0.18;
-      const sourceDomains=new Set(normalizedSources.map(x=>normalizeDomain(x?.domain||x?.url)).filter(Boolean));
-      const substantive=Boolean(source&&narrative.length>=260&&normalizedSources.length>=1);
-      const corroborated=sourceDomains.size>=2;
+      const materialSources=normalizedSources.filter(x=>sourceMaterialText(x).length>=120);
+      const materialDomains=new Set(materialSources.map(x=>normalizeDomain(x?.domain||x?.url)).filter(Boolean));
+      const usableSourceTextChars=materialSources.reduce((total,x)=>total+sourceMaterialText(x).length,0);
+      const sourceContract=materialSources.length>=2&&materialSources.every(x=>sourceMaterialText(x).length>=120)&&materialDomains.size>=2&&usableSourceTextChars>=360;
+      const fullTextSources=materialSources.filter(x=>String(x?.source_type||'')==='retrieved_web_page'&&String(x?.text||'').length>=250);
+      const fullTextDomains=new Set(fullTextSources.map(x=>normalizeDomain(x?.domain||x?.url)).filter(Boolean));
+      const fullyResearched=sourceContract&&fullTextDomains.size>=2&&fullTextSources.length>=2&&fullTextSources.every(x=>String(x.text||'').length>=250)&&fullTextSources.reduce((n,x)=>n+String(x.text||'').length,0)>=600;
+      const substantive=Boolean(source&&narrative.length>=260&&sourceContract);
       if(!substantive||repeated){
-        return{packet,agent:fallbackResearch(events[i],packet),error:'research result failed substantive/source validation; publication must remain on hold',webSearchRequests};
+        return{packet,agent:fallbackResearch(events[i],packet),error:'research result failed substantive/two-domain source-content validation; publication must remain on hold',webSearchRequests};
       }
-      const status=corroborated?'researched':'researched_limited';
+      const status=fullyResearched?'researched':'researched_limited';
       const provider=String(response&&response._provider||'unknown');
       const packetUrlSet=new Set((Array.isArray(packet?.fetched_pages)?packet.fetched_pages:[]).map(x=>(safeUrl(x?.url)||'').replace(/\/+$/,'')).filter(Boolean));
       const providerSearchUsed=provider==='anthropic-web-search' && providerVerifiedSources.length>0;
       const packetBacked=normalizedSources.some(x=>packetUrlSet.has((safeUrl(x?.url)||'').replace(/\/+$/,'')));
       const researchMethod=providerSearchUsed?'ai_web_search':(packetBacked?'live_web_packet':'ai_web_search');
-      return{packet,agent:{...source,status,provider,sources:normalizedSources,research_method:researchMethod,research_quality:corroborated?'CORROBORATED':'LIMITED_SOURCE_BASE'},webSearchRequests};
+      const publicSources=normalizedSources.map(({text,...item})=>item);
+      return{packet,agent:{...source,status,provider,sources:publicSources,research_method:researchMethod,research_quality:fullyResearched?'CORROBORATED':'LIMITED_SOURCE_BASE'},webSearchRequests};
     });
   }catch(error){
     const message=String(error?.message||error||'unknown research provider failure');
