@@ -179,9 +179,45 @@ describe('degraded incident research remains useful',()=>{
     const somalia=_getConfiguredPublisherFeedsForTests('SO');
     expect(kenya.length).toBeLessThanOrEqual(8);
     expect(kenya.map(feed=>feed.url)).toContain('https://www.kenyanews.go.ke/feed');
+    expect(kenya.find(feed=>feed.url==='https://www.kenyanews.go.ke/feed')?.fallback_url).toContain('https://news.google.com/rss/search?');
     expect(kenya.some(feed=>feed.url==='https://allafrica.com/tools/headlines/rdf/kenya/headlines.rdf')).toBe(true);
     expect(somalia.some(feed=>/shabellemedia\.com\/feed/i.test(feed.url)||/puntlandpost\.net\/feed/i.test(feed.url))).toBe(true);
     expect([...kenya,...somalia].every(feed=>!new URL(feed.url).hostname.toLowerCase().includes('news.google.com'))).toBe(true);
+  });
+
+
+  test('falls back to the country-scoped discovery feed when the primary publisher RSS is unavailable',async()=>{
+    const headline='Security disruption in Garissa County';
+    const primaryUrl='https://www.kenyanews.go.ke/feed';
+    const officialUrl='https://authority.example/garissa-security-bulletin';
+    const fallbackArticleUrl='https://kenyanews.go.ke/garissa-corridor-update';
+    const officialBody='An official local bulletin records a security-related interruption near Garissa County and says the local response is underway. It does not establish the exact duration of the interruption, confirm any casualties, or show that other corridors are affected. Authorities have not yet published a complete operational timeline or a final assessment of downstream transport consequences.';
+    const articleBody='A Kenya News report describes a temporary disruption near the Garissa corridor following a reported security incident. Local responders attended the scene, but the article does not confirm the duration, a verified casualty count, or whether freight movement was interrupted beyond the immediate area. It identifies no independently confirmed linked incidents and leaves the wider commercial effect unresolved.';
+    const page=(title,body)=>'<html><head><title>'+title+'</title><meta name="description" content="'+title+'"></head><body><article><p>'+body+'</p></article></body></html>';
+    const fallbackRss='<rss><channel><item><title>Security disruption in Garissa County</title><link>'+fallbackArticleUrl+'</link><pubDate>Fri, 09 Oct 2026 09:00:00 GMT</pubDate><description>A Kenya News report describes a temporary disruption near the Garissa corridor following a reported security incident; the duration and wider effects remain unclear.</description></item></channel></rss>';
+    const emptyRss='<rss><channel/></rss>';
+    const emptyRdf='<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns"/>';
+    const requested=[];
+    safeFetchPublicResearch.mockImplementation(async rawUrl=>{
+      const url=String(rawUrl);
+      requested.push(url);
+      if(url===primaryUrl)throw Object.assign(new Error('External research request failed: SELF_SIGNED_CERT_IN_CHAIN'),{failureClass:'unavailable',code:'SELF_SIGNED_CERT_IN_CHAIN'});
+      if(url.includes('site%3Akenyanews.go.ke'))return {ok:true,status:200,url,headers:{get:()=> 'application/rss+xml'},text:async()=>fallbackRss,arrayBuffer:async()=>Buffer.from(fallbackRss)};
+      if(url===officialUrl)return {ok:true,status:200,url,headers:{get:()=> 'text/html'},text:async()=>page('Official Garissa security bulletin',officialBody),arrayBuffer:async()=>Buffer.from(page('Official Garissa security bulletin',officialBody))};
+      if(url===fallbackArticleUrl)return {ok:true,status:200,url,headers:{get:()=> 'text/html'},text:async()=>page('Kenya News Garissa corridor update',articleBody),arrayBuffer:async()=>Buffer.from(page('Kenya News Garissa corridor update',articleBody))};
+      if(url.includes('/tools/headlines/rdf/kenya/'))return {ok:true,status:200,url,headers:{get:()=> 'application/rdf+xml'},text:async()=>emptyRdf,arrayBuffer:async()=>Buffer.from(emptyRdf)};
+      if(url.startsWith('https://news.google.com/rss/search'))return {ok:true,status:200,url,headers:{get:()=> 'application/rss+xml'},text:async()=>emptyRss,arrayBuffer:async()=>Buffer.from(emptyRss)};
+      return {ok:true,status:200,url,headers:{get:()=> 'application/rss+xml'},text:async()=>emptyRss,arrayBuffer:async()=>Buffer.from(emptyRss)};
+    });
+    const packet=await buildIncidentResearchPacket({
+      id:'KE-kna-fallback',headline,region:'Garissa County',occurred_from:'2026-10-09T06:00:00.000Z',
+      evidence:[{url:officialUrl,title:'Official Garissa security bulletin',source_name:'Local authority',description:'Official bulletin regarding a security incident near Garissa County.'}]
+    },{country:'KE'});
+    expect(requested).toContain(primaryUrl);
+    expect(requested.some(url=>url.includes('site%3Akenyanews.go.ke'))).toBe(true);
+    expect(packet.fetched_pages.some(page=>page.url===fallbackArticleUrl&&page.domain==='kenyanews.go.ke'&&String(page.text||'').length>=250)).toBe(true);
+    expect(packet.discovery_summary.source_domains).toBeGreaterThanOrEqual(2);
+    expect(packet.discovery_summary.gdelt_requested).toBe(false);
   });
 
   test('does not call GDELT when independent direct-publisher bodies already satisfy the source threshold',async()=>{
