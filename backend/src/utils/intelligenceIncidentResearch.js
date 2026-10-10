@@ -1141,11 +1141,12 @@ async function researchPublicationIncidents(events,{country,region}={}){
     total.configured_rss_candidates+=Number(d.configured_rss_candidates||0);
     total.google_news_candidates+=Number(d.google_news_candidates||0);
     total.gdelt_candidates+=Number(d.gdelt_candidates||0);
+    total.gdelt_requests+=d.gdelt_requested===true?1:0;
     total.source_pages_fetched+=Number(d.source_pages_fetched||0);
     total.substantive_sources+=Number(d.substantive_sources||0);
     total.source_domains+=Number(d.source_domains||0);
     return total;
-  },{configured_rss_candidates:0,google_news_candidates:0,gdelt_candidates:0,source_pages_fetched:0,substantive_sources:0,source_domains:0});
+  },{configured_rss_candidates:0,google_news_candidates:0,gdelt_requests:0,gdelt_candidates:0,source_pages_fetched:0,substantive_sources:0,source_domains:0});
   const providerUnavailable=events.length>0 && values.length===events.length &&
     values.every(x=>String(x?.error||'')==='ai_provider_unavailable' || String(x?.agent?.research_quality||'')==='AI_PROVIDER_UNAVAILABLE');
   return {byEvent:out,summary:{requested:events.length,researched,researched_limited:researchedLimited,fallback,web_packet_researched:researchedPacket,failed:events.length-researched-researchedLimited-fallback,web_search_requests:webSearchRequests,web_sources_retrieved:webSourcesRetrieved,...discoverySummary,deferred:Math.max(0,events.length-values.length),degraded_evidence_eligible:degradedEvidenceEligible,provider_unavailable:providerUnavailable}};
