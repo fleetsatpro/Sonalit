@@ -444,6 +444,7 @@ async function configuredPublisherSearch({headline,country,region,event}){
         const startsWithHtml=body.trimStart().slice(0,100).toLowerCase();
         if(startsWithHtml.startsWith('<html')||startsWithHtml.startsWith('<!doctype html')||contentType.includes('text/html')){
           throw new Error('publisher feed returned HTML instead of RSS/XML');
+        }
         const parsed=XML.parse(body);
         const feedCandidates=[];
         for(const item of xmlFeedItems(parsed)){
