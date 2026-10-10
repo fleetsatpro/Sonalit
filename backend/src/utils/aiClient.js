@@ -1085,7 +1085,14 @@ async function attempt(label,fn,meta={}){
       const groupDelay=fabricCooldownMs(err,meta,state);
       if(groupDelay){
         fabric.failureCount=Math.min(Number(fabric.failureCount||0)+1,6);
-        fabric.downUntil=Math.max(Number(fabric.downUntil||0),Date.now()+groupDelay);
+        const observedRetryDeadline=Date.now()+groupDelay;
+        // A half-open probe is a fresh response from a lane previously marked
+        // unavailable. Its current Retry-After/reset metadata must replace a
+        // stale persisted group deadline; max(old,new) would keep a six-minute
+        // provider retry hint hidden behind yesterday's 24-hour circuit.
+        fabric.downUntil=allowCircuitProbe
+          ? observedRetryDeadline
+          : Math.max(Number(fabric.downUntil||0),observedRetryDeadline);
         await persistFabricCooldown(group,fabric.downUntil);
       }
     }else if(isPermanentCredentialFailure(err)){
@@ -1094,7 +1101,14 @@ async function attempt(label,fn,meta={}){
       const groupDelay=fabricCooldownMs(err,meta,state);
       if(groupDelay){
         fabric.failureCount=Math.min(Number(fabric.failureCount||0)+1,6);
-        fabric.downUntil=Math.max(Number(fabric.downUntil||0),Date.now()+groupDelay);
+        const observedRetryDeadline=Date.now()+groupDelay;
+        // A half-open probe is a fresh response from a lane previously marked
+        // unavailable. Its current Retry-After/reset metadata must replace a
+        // stale persisted group deadline; max(old,new) would keep a six-minute
+        // provider retry hint hidden behind yesterday's 24-hour circuit.
+        fabric.downUntil=allowCircuitProbe
+          ? observedRetryDeadline
+          : Math.max(Number(fabric.downUntil||0),observedRetryDeadline);
         await persistFabricCooldown(group,fabric.downUntil);
       }
     }
