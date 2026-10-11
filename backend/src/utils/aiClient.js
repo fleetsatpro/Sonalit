@@ -681,8 +681,15 @@ function getGroqClient() {
   if (!clients.groq) clients.groq = new OpenAI({ apiKey:process.env.GROQ_API_KEY, baseURL:'https://api.groq.com/openai/v1', ...AI_SDK_OPTIONS });
   return clients.groq;
 }
+function credentialClientCacheKey(provider,apiKey) {
+  // Many keys from one provider share the same short prefix. Never use a
+  // truncated prefix for client identity: distinct credentials must never
+  // alias the same SDK client during pool failover.
+  const fingerprint=createHash('sha256').update(String(apiKey||'')).digest('hex');
+  return String(provider||'credential')+':'+fingerprint;
+}
 function getDirectOpenAIClient(apiKey) {
-  const keyId='openai:'+String(apiKey||'').slice(0,8);
+  const keyId=credentialClientCacheKey('openai',apiKey);
   if (!clients[keyId]) clients[keyId] = new OpenAI({ apiKey, ...AI_SDK_OPTIONS });
   return clients[keyId];
 }
@@ -691,7 +698,7 @@ function getMistralClient() {
   return clients.mistral;
 }
 function getGoogleGeminiClient(apiKey) {
-  const keyId='gemini:'+String(apiKey||'').slice(0,8);
+  const keyId=credentialClientCacheKey('google-gemini',apiKey);
   if (!clients[keyId]) clients[keyId] = new OpenAI({
     apiKey,
     baseURL: GEMINI_PROVIDER.base,

@@ -92,7 +92,7 @@ const RSS_FEEDS=[
  {name:'Eye Radio South Sudan',url:'https://eyeradio.org/feed',country_code:'SS',reliability:82},
  {name:'Radio Tamazuj',url:'https://www.radiotamazuj.org/en/feed',country_code:'SS',reliability:82},
  {name:'South Sudan News Now',url:GOOGLE_RSS('site:ssnewsnow.com South Sudan security OR fighting'),country_code:'SS',reliability:65},
- {name:'Hot in Juba',url:'https://hotinjuba.com/feed',country_code:'SS',reliability:60},
+ {name:'Hot in Juba',url:'https://hotinjuba.com/feed',fallback_url:GOOGLE_RSS('site:hotinjuba.com (South Sudan OR Juba OR Bor OR Malakal) (security OR fighting OR incident OR crime OR protest)','SS','en-SS'),country_code:'SS',reliability:60},
 
  {name:'Shabelle Somalia',url:'https://shabellemedia.com/feed',country_code:'SO',reliability:78},
  {name:'SONNA Somalia',url:'https://sonna.so/en/feed',fallback_url:GOOGLE_RSS('site:sonna.so Somalia security OR attack OR accident OR incident','SO','en-SO'),country_code:'SO',reliability:80},
@@ -107,7 +107,7 @@ const RSS_FEEDS=[
  {name:'Zehabesha Ethiopia',url:'https://zehabesha.com/feed',fallback_url:GOOGLE_RSS('site:zehabesha.com Ethiopia security OR incident OR conflict','ET','en-ET'),country_code:'ET',reliability:62},
 
  {name:'Actualite.cd DRC',url:'https://actualite.cd/feed',fallback_url:GOOGLE_RSS('site:actualite.cd DRC Goma Bukavu security OR conflict OR incident','CD','en-CD'),country_code:'CD',reliability:78},
- {name:'Radio Okapi DRC',url:'https://www.radiookapi.net/feed',country_code:'CD',reliability:84},
+ {name:'Radio Okapi DRC',url:'https://www.radiookapi.net/feed',fallback_url:GOOGLE_RSS('site:radiookapi.net (RDC OR Congo OR Goma OR Bukavu OR Nord-Kivu OR Sud-Kivu) (securite OR attaque OR conflit OR incident)','CD','fr'),country_code:'CD',reliability:84},
  {name:'Kivu Times DRC',url:GOOGLE_RSS('site:theeastafrican.co.ke DRC Goma Bukavu conflict','CD','en-KE'),country_code:'CD',reliability:68},
 
  {name:'Radio Dabanga Sudan',url:'https://www.dabangasudan.org/en/feed',country_code:'SD',reliability:82},
