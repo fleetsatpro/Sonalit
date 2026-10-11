@@ -159,7 +159,7 @@ async function fetchGdelt(){
     if(!r.ok) throw new Error(`GDELT HTTP ${r.status}`);
     const d=await r.json();
     gdeltUnavailableUntil=0;
-    return(d.articles||[]).map(a=>({external_id:a.url?`gdelt:${sha(a.url)}`:null,title:a.title,body:a.title,url:a.url,published_at:parseGdeltDate(a.seendate)null,language:a.language||null,country_code:detectCountry(`${a.title||''} ${a.domain||''}`),credibility:72,raw_metadata:{domain:a.domain,tone:a.tone,sourcecountry:a.sourcecountry}}));
+    return(d.articles||[]).map(a=>({external_id:a.url?`gdelt:${sha(a.url)}`:null,title:a.title,body:a.title,url:a.url,published_at:parseGdeltDate(a.seendate),language:a.language||null,country_code:detectCountry(`${a.title||''} ${a.domain||''}`),credibility:72,raw_metadata:{domain:a.domain,tone:a.tone,sourcecountry:a.sourcecountry}}));
   }catch(e){
     gdeltUnavailableUntil=Date.now()+GDELT_COOLDOWN_MS;
     logger.info(`Regional Incident Fabric: GDELT unavailable (${e.message}); using Google News fallback for ${GDELT_COOLDOWN_MS/60000}m`);
