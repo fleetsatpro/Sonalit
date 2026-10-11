@@ -1,6 +1,8 @@
 jest.mock('../src/utils/aiClient',()=>({hasAnyProvider:()=>false,hasReadyProvider:()=>false}));
 jest.mock('../src/utils/publicResearchFetch',()=>({safeFetchPublicResearch:jest.fn(),MAX_RESPONSE_BYTES:2*1024*1024}));
 
+const fs=require('fs');
+const path=require('path');
 const { researchPublicationIncidents, buildIncidentResearchPacket, resolveGoogleNewsArticleUrl, _getConfiguredPublisherFeedsForTests, _readPublisherFeedItemsForTests, _fallbackResearchForTests, _resetGdeltCooldownForTests, _resetResearchCacheForTests } = require('../src/utils/intelligenceIncidentResearch');
 const logger=require('../src/utils/logger');
 const { safeFetchPublicResearch } = require('../src/utils/publicResearchFetch');
@@ -360,5 +362,14 @@ describe('degraded incident research remains useful',()=>{
     expect(packet.fetched_pages.some(page=>page.url===publisherUrl&&page.domain==='publisher.example'&&String(page.text||'').length>=120)).toBe(true);
     expect(safeFetchPublicResearch.mock.calls.filter(([url])=>String(url)===publisherUrl)).toHaveLength(0);
   });
+
+  test('keeps expanded publisher-wrapper recovery bounded and reserves candidate slots for GDELT',()=>{
+    const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+    expect(source).toContain('const MAX_SOURCE_CANDIDATES = 12;');
+    expect(source).toContain('const MAX_GOOGLE_NEWS_WRAPPER_RESOLVES = 4;');
+    expect(source).toMatch(/const baseCandidateLimit\s*=\s*Math.max\(1,MAX_SOURCE_CANDIDATES-MAX_GOOGLE_NEWS_WRAPPER_RESOLVES-2\);/);
+    expect(source).toContain('const wrappers=publisher.concat(search).filter(item=>item?.wrapper_url).slice(0,Math.min(MAX_GOOGLE_NEWS_WRAPPER_RESOLVES,remainingCandidateSlots));');
+  });
+
 
 });
