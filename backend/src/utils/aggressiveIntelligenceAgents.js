@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const { query, globalQuery } = require('../config/database');
 const { runWithOrgContext } = require('./tenantContext');
 const logger = require('./logger');
+const { normalizeCountryCode, inferCountryCodeFromText, inferCountryCodeFromItem } = require('./intelligenceGeography');
 
 const TIMEOUT_MS = Math.max(5000, Number(process.env.INTEL_AGENT_TIMEOUT_MS || 15000));
 const INTERVAL_MS = Math.max(5, Number(process.env.INTEL_AGENT_INTERVAL_MINUTES || 5)) * 60 * 1000;
@@ -53,10 +54,10 @@ const DIRECT_SOURCES = [
   { id:'citizen-digital', source_type:'news', name:'Citizen Digital', url:'https://citizen.digital/', reliability:78, keywords:['Kenya','security','crime','police','traffic','weather','breaking','world'] },
   { id:'mutembei', source_type:'news', name:'Mutembei TV', url:'https://mutembeitv.com/', reliability:52, keywords:['Kenya','security','crime','politics','county','breaking'] },
   { id:'sga', source_type:'news', name:'SGA Security', url:'https://www.sgasecurity.co.ke/news', reliability:62, keywords:['security','Kenya','East Africa','crime','threat'] },
-  { id:'mashinani-news', source_type:'news', name:'Mashinani News', url:'https://jamiiimaramashinani.org/', reliability:58, keywords:['Kenya','county','community','security','crime','police','violence','border','protest','alert','incident'] },
-  { id:'county-pulse', source_type:'news', name:'County Pulse News', url:'https://countypulsenews.co.ke/', reliability:60, keywords:['Kenya','county','security','crime','police','bandit','attack','border','protest','incident','arrest'] },
-  { id:'standard-mashinani', source_type:'news', name:'The Standard · Mashinani', url:'https://www.standardmedia.co.ke/topic/mashinani', reliability:80, keywords:['Mashinani','county','Kenya','security','crime','police','protest','attack','border','incident'] },
-  { id:'kbc-county', source_type:'news', name:'KBC · County News', url:'https://www.kbc.co.ke/category/county-news/', reliability:74, keywords:['Kenya','county','security','crime','police','border','attack','arrest','protest','incident'] }
+  { id:'mashinani-news', source_type:'news', name:'Mashinani News', country_hint:'KE', url:'https://jamiiimaramashinani.org/', reliability:58, keywords:['Kenya','county','community','security','crime','police','violence','border','protest','alert','incident'] },
+  { id:'county-pulse', source_type:'news', name:'County Pulse News', country_hint:'KE', url:'https://countypulsenews.co.ke/', reliability:60, keywords:['Kenya','county','security','crime','police','bandit','attack','border','protest','incident','arrest'] },
+  { id:'standard-mashinani', source_type:'news', name:'The Standard · Mashinani', country_hint:'KE', url:'https://www.standardmedia.co.ke/topic/mashinani', reliability:80, keywords:['Mashinani','county','Kenya','security','crime','police','protest','attack','border','incident'] },
+  { id:'kbc-county', source_type:'news', name:'KBC · County News', country_hint:'KE', url:'https://www.kbc.co.ke/category/county-news/', reliability:74, keywords:['Kenya','county','security','crime','police','border','attack','arrest','protest','incident'] }
 ];
 
 const REGISTERED_SOURCES = [
@@ -144,21 +145,37 @@ async function ensureSource(orgId, spec) {
 }
 
 async function persist(orgId, source, items, agentId) {
-  let inserted=0, duplicate=0;
-  for (const item of items.slice(0,MAX_ITEMS_PER_SOURCE)) {
-    const title = clean(item.title,700); const body = clean(item.body || item.description,7000); const url=item.url||null;
-    if (!title && !body) continue;
-    const externalId=item.external_id || (url ? `${source.provider}:${sha(url)}` : `${source.provider}:${sha(title+'|'+(item.published_at||''))}`);
-    const metadata={ ...(item.raw_metadata||{}), severity_hint:severityHint(`${title} ${body}`), collector_agent:agentId, collection_mesh:'aggressive-multi-player', source_family:source.name };
-    const r=await query(`INSERT INTO intel_observations (org_id,source_id,external_id,observed_at,published_at,title,body,url,language,country_code,latitude,longitude,content_hash,raw_metadata,credibility,manipulation_score) VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15) ON CONFLICT (org_id,source_id,external_id) DO NOTHING`, [orgId,source.id,externalId,item.published_at||null,title,body,url,item.language||null,item.country_code||guessCountry(`${title} ${body}`),item.latitude??null,item.longitude??null,sha(`${title}|${body}|${url||''}`.toLowerCase()),JSON.stringify(metadata),source.reliability||60,0]);
-    if(r.rowCount)inserted++; else duplicate++;
+  let inserted=0,duplicate=0,countryScopeUpdated=0;
+  const sql="INSERT INTO intel_observations (org_id,source_id,external_id,observed_at,published_at,title,body,url,language,country_code,latitude,longitude,content_hash,raw_metadata,credibility,manipulation_score) "+
+    "VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15) "+
+    "ON CONFLICT (org_id,source_id,external_id) DO UPDATE "+
+    "SET country_code=COALESCE(intel_observations.country_code,EXCLUDED.country_code), "+
+    "raw_metadata=COALESCE(intel_observations.raw_metadata,'{}'::jsonb)||EXCLUDED.raw_metadata||jsonb_build_object('country_scope_repaired',EXCLUDED.country_code) "+
+    "WHERE intel_observations.country_code IS NULL AND EXCLUDED.country_code IS NOT NULL "+
+    "RETURNING (xmax=0) AS inserted";
+  for(const item of items.slice(0,MAX_ITEMS_PER_SOURCE)){
+    const title=clean(item.title,700);
+    const body=clean(item.body||item.description,7000);
+    const url=item.url||null;
+    if(!title&&!body)continue;
+    const externalId=item.external_id||(url?(source.provider+':'+sha(url)):(source.provider+':'+sha(title+'|'+(item.published_at||''))));
+    const itemCountry=inferCountryCodeFromItem({...item,title,body});
+    const countryCode=itemCountry;
+    const headlineCountry=inferCountryCodeFromText(title);
+    const bodyCountry=inferCountryCodeFromText(body);
+    const attribution=normalizeCountryCode(item.country_code)?'provider_explicit':headlineCountry?'headline_geography':bodyCountry?'body_geography':null;
+    const metadata={...(item.raw_metadata||{}),...(attribution?{country_attribution:attribution}:{}),severity_hint:severityHint(title+' '+body),collector_agent:agentId,collection_mesh:'aggressive-multi-player',source_family:source.name};
+    const contentHash=sha((title+'|'+body+'|'+(url||'')).toLowerCase());
+    const r=await query(sql,[orgId,source.id,externalId,item.published_at||null,title,body,url,item.language||null,countryCode,item.latitude??null,item.longitude??null,contentHash,JSON.stringify(metadata),source.reliability||60,0]);
+    if(r.rowCount){
+      if(r.rows[0]?.inserted)inserted++;
+      else{duplicate++;countryScopeUpdated++;}
+    }else duplicate++;
   }
-  return {inserted,duplicate};
+  return {inserted,duplicate,country_scope_updated:countryScopeUpdated};
 }
 function guessCountry(text) {
-  const t=String(text||'').toLowerCase();
-  for(const [code,name] of Object.entries(COUNTRY_NAMES)) if(new RegExp(`\\b${escapeRegex(name.toLowerCase())}\\b`,'i').test(t)) return code;
-  return /nairobi|mombasa|kenya/i.test(t) ? 'KE' : null;
+  return inferCountryCodeFromText(text);
 }
 async function runWithLimit(tasks, limit=MAX_PARALLEL) {
   const out=[]; let cursor=0;
@@ -201,7 +218,7 @@ async function sweepOrg(orgId) {
   const agentQueries = AGENTS.map(a => `(${a.terms.map(t=>`\"${t.replace(/\"/g,'')}\"`).join(' OR ')})`).join(' OR ');
   const tasks=[];
   for(const registered of REGISTERED_SOURCES) tasks.push(async()=>{const source=await ensureSource(orgId,registered);return{name:source.name,registered:true,observation_ingestion:Boolean(registered.metadata?.observation_ingestion),seen:0,inserted:0,duplicate:0};});
-  for(const src of DIRECT_SOURCES) tasks.push(async()=>{const items=await fetchDirectSource(src);const source=await ensureSource(orgId,{name:src.name,source_type:src.source_type,provider:'web',endpoint:src.url,reliability:src.reliability,metadata:{agents:AGENTS.filter(a=>a.terms.some(t=>src.keywords.includes(t))).map(a=>a.id),cadence:'5m'}});const p=await persist(orgId,source,items,'WEB-MESH');return{name:src.name,seen:items.length,...p};});
+  for(const src of DIRECT_SOURCES) tasks.push(async()=>{const items=await fetchDirectSource(src);const source=await ensureSource(orgId,{name:src.name,source_type:src.source_type,provider:'web',endpoint:src.url,reliability:src.reliability,metadata:{agents:AGENTS.filter(a=>a.terms.some(t=>src.keywords.includes(t))).map(a=>a.id),cadence:'5m',...(src.country_hint?{country_hint:src.country_hint,country_hint_authoritative:false}:{})}});const p=await persist(orgId,source,items,'WEB-MESH');return{name:src.name,seen:items.length,...p};});
   for(const agent of AGENTS) tasks.push(async()=>{const q=agent.terms.map(t=>`"${t.replace(/"/g,'')}"`).join(' OR ');const items=await fetchGdelt(q);const source=await ensureSource(orgId,{name:`GDELT · ${agent.name}`,source_type:'news',provider:'gdelt',endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',reliability:68,metadata:{agent_id:agent.id,query:q}});const p=await persist(orgId,source,items,agent.id);return{name:agent.name,agent_id:agent.id,seen:items.length,...p};});
   for(const channel of defaultWhatsappChannels()) tasks.push(async()=>{
     const source=await ensureSource(orgId,{name:channel.name||`WhatsApp Channel ${channel.channel_id||''}`,source_type:'social',provider:'whatsapp',endpoint:channel.endpoint||null,reliability:Number(channel.reliability)||55,metadata:{...(channel.metadata||{}),channel_id:channel.channel_id,authorized:true,configured:Boolean(channel.endpoint)}});

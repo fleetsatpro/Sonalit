@@ -182,7 +182,9 @@ describe('publication incident research coverage',()=>{
 
 test('isolates incidents omitted from a partial batch response for bounded individual re-research',async()=>{
   const aiClient=require('../src/utils/aiClient');
+  const previousClassification=process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION;
   aiClient.hasAnyProvider.mockReset().mockReturnValue(true);
+  aiClient.hasReadyProvider.mockReset().mockReturnValue(false);
   const requests=[];
   const responseFor=id=>({
     _provider:'openrouter-free-router',
@@ -197,15 +199,24 @@ test('isolates incidents omitted from a partial batch response for bounded indiv
     requests.push(String(request?.messages?.[0]?.content||''));
     return responseFor(requests.length<=2?'partial-a':'partial-b');
   });
-  const result=await researchPublicationIncidents([
-    {id:'partial-a',headline:'Incident one distinctive heading',brief:'First incident record.',country_code:'KE',evidence:[]},
-    {id:'partial-b',headline:'Incident two isolated heading',brief:'Second incident record.',country_code:'KE',evidence:[]},
-  ],{country:'KE'});
-  expect(requests).toHaveLength(3);
-  expect(requests[2]).toContain('Incident two isolated heading');
-  expect(requests[2]).not.toContain('Incident one distinctive heading');
-  expect(result.summary.requested).toBe(2);
+  try {
+    const result=await researchPublicationIncidents([
+      {id:'partial-a',headline:'Incident one distinctive heading',brief:'First incident record.',country_code:'KE',evidence:[]},
+      {id:'partial-b',headline:'Incident two isolated heading',brief:'Second incident record.',country_code:'KE',evidence:[]},
+    ],{country:'KE'});
+    expect(requests).toHaveLength(3);
+    expect(requests[2]).toContain('Incident two isolated heading');
+    expect(requests[2]).not.toContain('Incident one distinctive heading');
+    expect(result.summary.requested).toBe(2);
+  } finally {
+    aiClient.hasAnyProvider.mockReset().mockReturnValue(false);
+    aiClient.hasReadyProvider.mockReset().mockReturnValue(false);
+    aiClient.createResearchMessage.mockReset();
+    if(previousClassification===undefined)delete process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION;
+    else process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION=previousClassification;
+  }
 });
+
 
 test('provider research citations must come from non-text verified web-search result blocks',()=>{
   const sources=verifiedResponseSources({
