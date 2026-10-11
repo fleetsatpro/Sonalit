@@ -554,6 +554,59 @@ describe('intelligence provider mesh', () => {
     expect(calls.filter(c => c.baseURL.includes('api.groq.com'))).toHaveLength(0);
   });
 
+
+  test('OpenRouter account-level free-model quota pauses sibling free lanes until reset', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
+    process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
+
+    const calls = [];
+    const resetAt = Date.now() + 20 * 60 * 1000;
+    jest.doMock('openai', () => class MockOpenAI {
+      constructor(options = {}) {
+        this.baseURL = options.baseURL || 'openai';
+        this.apiKey = options.apiKey;
+        this.chat = { completions: { create: jest.fn(async request => {
+          calls.push({ baseURL: this.baseURL, model: request.model });
+          if (this.baseURL.includes('openrouter.ai') && (String(request.model).endsWith(':free') || request.model === 'openrouter/free')) {
+            const error = Object.assign(new Error('Rate limit exceeded'), {
+              status: 429,
+              headers: {
+                'x-ratelimit-remaining': '0',
+                'x-ratelimit-limit': '50',
+                'x-ratelimit-reset-requests': String(resetAt),
+              },
+            });
+            throw error;
+          }
+          if (this.baseURL.includes('openrouter.ai')) {
+            return { choices: [{ message: { content: '{"ok":true}', tool_calls: [] } }] };
+          }
+          throw new Error('unexpected provider');
+        }) } };
+      }
+    });
+
+    const ai = require('../src/utils/aiClient');
+    const response = await ai.createMessage({
+      dataClassification: 'public',
+      allowFreeProviders: true,
+      preferFreeProviders: true,
+      providerHints: ['gpt-oss-120b-openrouter-free'],
+      system: 'Return JSON.',
+      messages: [{ role: 'user', content: 'test' }],
+      max_tokens: 100,
+    });
+
+    // The free lane that discovers the exhausted account quota is attempted
+    // once; every sibling free lane stays out until the account reset. Paid
+    // lanes remain an independent fallback under the existing routing policy.
+    expect(calls.filter(call => call.baseURL.includes('openrouter.ai') && (String(call.model).endsWith(':free') || call.model === 'openrouter/free'))).toHaveLength(1);
+    expect(response._free_provider).toBe(false);
+    const capabilities = ai.providerCapabilities();
+    expect(capabilities.open_weight.find(provider => provider.label === 'gpt-oss-120b-openrouter-free').cooling_down).toBe(true);
+    expect(capabilities.open_weight.find(provider => provider.label === 'gemma4-26b-openrouter-free').cooling_down).toBe(true);
+  });
+
   test('prefers free publication lanes when explicitly requested', async () => {
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key-123';
     process.env.INTEL_ALLOW_FREE_OPEN_WEIGHT = 'true';
@@ -631,7 +684,7 @@ describe('intelligence provider mesh', () => {
     const redis={
       mget:jest.fn(async keys=>keys.map(key=>{
         const group=decodeURIComponent(String(key).replace(prefix,''));
-        return group.startsWith('openrouter-')?String(until):'0';
+        return (group.startsWith('openrouter-free:')||group.startsWith('openrouter-paid:'))?String(until):'0';
       })),
       scan:jest.fn(async()=>['0',[]]),
       get:jest.fn(async()=>null),
@@ -769,7 +822,7 @@ describe('intelligence provider mesh', () => {
     const redis={
       mget:jest.fn(async keys=>keys.map(key=>{
         const group=decodeURIComponent(String(key).replace(prefix,''));
-        return group.startsWith('openrouter-')?String(staleUntil):'0';
+        return (group.startsWith('openrouter-free:')||group.startsWith('openrouter-paid:'))?String(staleUntil):'0';
       })),
       scan:jest.fn(async()=>['0',[]]),
       get:jest.fn(async()=>null),

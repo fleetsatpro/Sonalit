@@ -377,6 +377,9 @@ const OPENROUTER_HALF_OPEN_MIN_INTERVAL_MS = Math.max(
   Math.min(60 * 60_000, Number(process.env.INTEL_OPENROUTER_HALF_OPEN_INTERVAL_MS || 15 * 60_000))
 );
 const halfOpenProbeNotBefore = Object.create(null);
+// OpenRouter reports X-RateLimit-* headers for platform-wide free-model request limits.
+// Keep this separate from per-model circuits: sibling free models share this quota.
+const OPENROUTER_FREE_ACCOUNT_GROUP = 'openrouter-free-platform-quota';
 let nextOpenRouterCircuitDiagnosticAt = 0;
 let nextHalfOpenDiagnosticAt = 0;
 const fabricStates = Object.create(null);
@@ -444,7 +447,7 @@ async function hydrateFabricState(){
     providerCircuitPersistence.hydrated=true;
     return;
   }
-  const groups=[...new Set(OPEN_WEIGHT_PROVIDERS.map(p=>providerGroup(p)).concat([providerGroup(GEMINI_PROVIDER),'groq','openai','mistral','anthropic','self-hosted']))];
+  const groups=[...new Set(OPEN_WEIGHT_PROVIDERS.map(p=>providerGroup(p)).concat([OPENROUTER_FREE_ACCOUNT_GROUP,providerGroup(GEMINI_PROVIDER),'groq','openai','mistral','anthropic','self-hosted']))];
   const credentialEntries=getCredentialKeyEntries();
   const redisKeys=[
     ...groups.map(providerCircuitKey),
@@ -915,6 +918,25 @@ function retryAfterMs(err,fallbackMs){
     parseDurationMs(getErrorHeader(err,'ratelimit-reset'));
   return reset>0?reset:fallbackMs;
 }
+function openRouterFreeAccountQuotaCooldownMs(err,provider){
+  const status=Number(err?.status||err?.response?.status)||0;
+  if(status!==429 || provider?.free!==true || !String(provider?.modelDef?.base||provider?.base||provider?.baseURL||'').includes('openrouter.ai'))return 0;
+
+  // Only promote a 429 to the account-level free-model circuit when OpenRouter's
+  // own rate-limit headers explicitly say the shared request quota is exhausted
+  // and provide its reset time. Upstream/model-only 429s retain per-lane isolation.
+  const remaining=getErrorHeader(err,'x-ratelimit-remaining');
+  const limit=getErrorHeader(err,'x-ratelimit-limit');
+  if(!/^\d+(?:\.\d+)?$/.test(remaining) || Number(remaining)!==0)return 0;
+  if(!/^\d+(?:\.\d+)?$/.test(limit) || Number(limit)<=0)return 0;
+
+  const resetMs=
+    parseDurationMs(getErrorHeader(err,'x-ratelimit-reset-requests'))||
+    parseDurationMs(getErrorHeader(err,'x-ratelimit-reset'));
+  if(resetMs<=0)return 0;
+  return Math.min(FABRIC_QUOTA_MAX_COOLDOWN_MS,Math.max(15000,resetMs));
+}
+
 function safeProviderDiagnosticToken(value){
   const token=String(value==null?'':value).trim();
   return /^[A-Za-z0-9_.:-]{1,64}$/.test(token)?token:'unknown';
@@ -1034,7 +1056,11 @@ function providerCooling(providerOrLabel){
     label==='openai-direct'?!hasReadyOpenAIKey():
     label===GEMINI_PROVIDER.name?!hasReadyGeminiKey():
     false;
+  const sharedFreeQuotaUntil = provider.free===true && String(provider.modelDef?.base||provider.base||provider.baseURL||'').includes('openrouter.ai')
+    ? Number(fabricStates[OPENROUTER_FREE_ACCOUNT_GROUP]?.downUntil||0)
+    : 0;
   return Boolean(
+    sharedFreeQuotaUntil>Date.now() ||
     keyPoolCooling ||
     (!isolateKeyPool && state && Date.now()<Number(state.downUntil||0)) ||
     (!isolateKeyPool && fabric && Date.now()<Number(fabric.downUntil||0)) ||
@@ -1047,7 +1073,10 @@ function providerResumeAt(provider){
   const fabricUntil=isolateKeyPool?0:Number(fabricStates[providerGroup(provider)]?.downUntil||0);
   const modelUntil=Number(modelDisabledUntil[provider.name]||0);
   const keyPoolUntil=providerKeyPoolResumeAt(provider.name);
-  return Math.max(providerUntil,fabricUntil,modelUntil,keyPoolUntil);
+  const sharedFreeQuotaUntil=provider.free===true && String(provider.modelDef?.base||provider.base||provider.baseURL||'').includes('openrouter.ai')
+    ? Number(fabricStates[OPENROUTER_FREE_ACCOUNT_GROUP]?.downUntil||0)
+    : 0;
+  return Math.max(providerUntil,fabricUntil,modelUntil,keyPoolUntil,sharedFreeQuotaUntil);
 }
 async function recoverCoolingProviders(providers){
   const now=Date.now();
@@ -1264,6 +1293,20 @@ async function attempt(label,fn,meta={}){
         await persistFabricCooldown(group,fabric.downUntil);
       }
     }
+    const sharedQuotaCooldownMs=openRouterFreeAccountQuotaCooldownMs(err,meta);
+    if(sharedQuotaCooldownMs>0){
+      const shared=fabricStates[OPENROUTER_FREE_ACCOUNT_GROUP]||
+        (fabricStates[OPENROUTER_FREE_ACCOUNT_GROUP]={downUntil:0,failureCount:0});
+      // A fresh reset header supersedes any stale account-quota deadline.
+      shared.failureCount=Math.min(Number(shared.failureCount||0)+1,6);
+      shared.downUntil=Date.now()+sharedQuotaCooldownMs;
+      await persistFabricCooldown(OPENROUTER_FREE_ACCOUNT_GROUP,shared.downUntil);
+      logger.warn(
+        'AI provider shared free-model quota circuit opened: limit='+
+        getErrorHeader(err,'x-ratelimit-limit')+
+        ' retry_in_ms='+Math.max(0,shared.downUntil-Date.now())
+      );
+    }
     throw err;
   }
 }
@@ -1428,6 +1471,7 @@ function halfOpenRouterBlockReason(provider,params,coolingAtStart,attempted){
   if(attempted.has(provider.name))return 'lane-already-attempted-this-request';
   // A confirmed unavailable model stays quarantined; stale circuit state alone
   // is recoverable with a half-open probe.
+  if(Date.now()<Number(fabricStates[OPENROUTER_FREE_ACCOUNT_GROUP]?.downUntil||0))return 'openrouter-free-platform-quota-cooling';
   if(Date.now()<Number(modelDisabledUntil[provider.name]||0))return 'model-unavailable-quarantine';
   if(Date.now()<Number(halfOpenProbeNotBefore[provider.name]||0))return 'probe-interval-not-elapsed';
   // Do not re-check providerCooling() here: another concurrent request can
