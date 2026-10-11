@@ -83,6 +83,7 @@ export default function GodsEyeView() {
   const [layersOpen, setLayersOpen] = useState(true)
   const [externalVisible, setExternalVisible] = useState(true)
   const [cctvOpen, setCctvOpen] = useState(false)
+  const [mapNavigationExpanded, setMapNavigationExpanded] = useState(false)
   const [clock, setClock] = useState(() => new Date())
 
   const chromeExpanded = overviewOpen || intelligenceOpen
@@ -282,6 +283,7 @@ export default function GodsEyeView() {
       className="gev-shell"
       data-overview-collapsed={!overviewOpen}
       data-intelligence-collapsed={!intelligenceOpen}
+      data-navigation-expanded={mapNavigationExpanded}
     >
       <header className="gev-topbar">
         <div className="gev-brand">
@@ -345,6 +347,7 @@ export default function GodsEyeView() {
               fixedView="3D"
               showChrome={false}
               showMapControls
+              onNavigationExpandedChange={setMapNavigationExpanded}
               worldEntities={renderableExternalEntities}
               selectedExternalId={selectedExternalId}
               onExternalSelect={id => {

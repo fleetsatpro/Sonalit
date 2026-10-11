@@ -305,6 +305,7 @@ export default function CorridorWorldScene({
   fill = false,
   globalView = false,
   showMapControls = true,
+  onNavigationExpandedChange,
 }: {
   route: LatLng[];
   corridorKm: number;
@@ -321,6 +322,7 @@ export default function CorridorWorldScene({
   fill?: boolean;
   globalView?: boolean;
   showMapControls?: boolean;
+  onNavigationExpandedChange?: (expanded: boolean) => void;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
@@ -1046,6 +1048,12 @@ export default function CorridorWorldScene({
     }
   };
 
+  const toggleNavigation = () => {
+    const nextExpanded = !navigationExpanded;
+    setNavigationExpanded(nextExpanded);
+    onNavigationExpandedChange?.(nextExpanded);
+  };
+
   const fitWorld = () => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
@@ -1191,13 +1199,13 @@ export default function CorridorWorldScene({
             <span className="ml-1 max-w-[280px] truncate border-l border-white/10 pl-2 pr-2 text-[10px] font-bold font-mono text-neutral-400">{mapStatus}</span>
           </div>
 
-          <div className="gev-nav-dock pointer-events-auto" role="group" aria-label="3D world navigation" aria-describedby="gev-map-navigation-help">
+          <div className="gev-nav-dock pointer-events-auto" data-expanded={navigationExpanded} role="group" aria-label="3D world navigation" aria-describedby="gev-map-navigation-help">
             <div className="gev-nav-primary" role="group" aria-label="Primary map navigation">
               <button type="button" onClick={() => zoomCamera('in')} className="gev-nav-button" aria-label="Zoom in" title="Zoom in"><ZoomIn size={19} strokeWidth={2.7} /></button>
               <button type="button" onClick={() => zoomCamera('out')} className="gev-nav-button" aria-label="Zoom out" title="Zoom out"><ZoomOut size={19} strokeWidth={2.7} /></button>
               <button type="button" onClick={recenter} className="gev-nav-button" aria-label="Recenter world" title="Recenter view"><Crosshair size={19} strokeWidth={2.7} /></button>
               <button type="button" onClick={fitWorld} className="gev-nav-button" aria-label={globalView ? 'Fit world' : 'Fit corridor'} title={globalView ? 'Fit world' : 'Fit corridor'}><Target size={19} strokeWidth={2.7} /></button>
-              <button type="button" onClick={() => setNavigationExpanded(open => !open)} className="gev-nav-button gev-nav-disclosure" aria-label={navigationExpanded ? 'Hide advanced navigation' : 'Show advanced navigation'} aria-expanded={navigationExpanded} aria-controls="gev-advanced-navigation" title={navigationExpanded ? 'Hide advanced navigation' : 'More navigation controls'}>
+              <button type="button" onClick={toggleNavigation} className="gev-nav-button gev-nav-disclosure" aria-label={navigationExpanded ? 'Hide advanced navigation' : 'Show advanced navigation'} aria-expanded={navigationExpanded} aria-controls="gev-advanced-navigation" title={navigationExpanded ? 'Hide advanced navigation' : 'More navigation controls'}>
                 {navigationExpanded ? <ChevronUp size={19} strokeWidth={2.7} /> : <ChevronDown size={19} strokeWidth={2.7} />}
               </button>
             </div>
@@ -1218,7 +1226,7 @@ export default function CorridorWorldScene({
           <p id="gev-map-navigation-help" className="sr-only">LEFT-DRAG ORBITS · RIGHT-DRAG / WHEEL ZOOMS · MIDDLE-DRAG TILTS · USE ARROWS TO PAN · PINCH TO ZOOM</p>
         </div>
       )}
-      <div className="spatial-cesium-chrome pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
+      <div className="spatial-cesium-chrome gev-map-status-rail pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
         <span className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold font-mono backdrop-blur-xl ${surfaceQuality === 'photorealistic' ? 'border-cyan-400/25 bg-cyan-400/[0.09] text-cyan-200' : terrainReady ? 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-300' : surfaceQuality === 'loading' ? 'border-amber-400/20 bg-amber-400/[0.07] text-amber-200' : 'border-red-400/20 bg-red-400/[0.07] text-red-200'}`}>{surfaceQuality === 'photorealistic' ? 'PHOTOREALISTIC 3D' : terrainReady ? 'WORLD TERRAIN + 3D BUILDINGS' : surfaceQuality === 'loading' ? '3D SURFACE LOADING' : 'ESRI RASTER FALLBACK'}</span>
         {focusId && <span className="rounded-lg border border-violet-500/25 bg-violet-500/[0.09] px-2.5 py-1.5 text-[10px] font-bold font-mono text-violet-300 backdrop-blur-xl">FOCUS · {liveMembers.find(m => m.id === focusId)?.name ?? focusId.slice(0, 8)}</span>}

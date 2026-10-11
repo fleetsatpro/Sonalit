@@ -2550,3 +2550,119 @@
     right: 10px;
   }
 }
+
+
+/* GEV UXR hardening: edge docks, single-owned HUD and responsive focus mode. */
+@media (min-width: 861px) and (max-width: 1180px) {
+  .gev-shell .gev-map-controls--global .spatial-control-rail {
+    top: auto;
+    left: 94px;
+    right: auto;
+    bottom: 70px;
+    max-width: calc(100% - 190px);
+  }
+  .gev-shell .gev-map-controls--global .gev-nav-dock {
+    left: 254px;
+    right: auto;
+    bottom: 70px;
+    max-width: calc(100% - 270px);
+  }
+  .gev-shell .gev-map-controls--global .gev-nav-dock[data-expanded="true"] {
+    left: 94px;
+    right: auto;
+    bottom: 70px;
+    max-width: calc(100% - 190px);
+    flex-direction: row-reverse;
+    align-items: flex-end;
+  }
+  .gev-shell[data-navigation-expanded="true"] .gev-map-controls--global .spatial-control-rail {
+    left: 94px;
+    right: auto;
+    bottom: 14px;
+  }
+  .gev-shell[data-navigation-expanded="true"] .gev-map-status-rail {
+    display: none;
+  }
+}
+@media (max-width: 860px) {
+  .gev-shell .gev-map-controls--global .spatial-control-rail {
+    top: auto;
+    left: 10px;
+    right: auto;
+    bottom: calc(min(43vh, 330px) + 18px);
+    max-width: calc(100vw - 20px);
+  }
+  .gev-shell .gev-map-controls--global .gev-nav-dock {
+    left: auto;
+    right: 10px;
+    bottom: calc(min(43vh, 330px) + 18px);
+    max-width: calc(100vw - 20px);
+  }
+  .gev-shell .gev-map-controls--global ~ .gev-map-info-popover {
+    left: 10px;
+    right: 10px;
+    bottom: calc(min(43vh, 330px) + 18px);
+    max-width: min(300px, calc(100vw - 20px));
+  }
+  .gev-shell[data-intelligence-collapsed="true"]:not([data-navigation-expanded="true"]) .gev-map-controls--global .spatial-control-rail,
+  .gev-shell[data-intelligence-collapsed="true"]:not([data-navigation-expanded="true"]) .gev-map-controls--global .gev-nav-dock,
+  .gev-shell[data-intelligence-collapsed="true"]:not([data-navigation-expanded="true"]) .gev-map-controls--global ~ .gev-map-info-popover {
+    bottom: 76px;
+  }
+
+  /* Opening advanced controls enters a reversible map-focus state. */
+  .gev-shell[data-navigation-expanded="true"] .gev-chrome > * {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s ease, visibility .16s linear;
+  }
+  .gev-shell[data-navigation-expanded="true"] .gev-map-controls--global .spatial-control-rail {
+    top: auto;
+    left: 10px;
+    right: auto;
+    bottom: 14px;
+  }
+  .gev-shell[data-navigation-expanded="true"] .gev-map-controls--global .gev-nav-dock {
+    left: auto;
+    right: 10px;
+    bottom: 14px;
+  }
+  .gev-shell[data-navigation-expanded="true"] .gev-map-controls--global ~ .gev-map-info-popover {
+    left: 10px;
+    right: 10px;
+    bottom: 14px;
+  }
+  .gev-shell[data-navigation-expanded="true"] .gev-map-status-rail {
+    display: none;
+  }
+
+  /* Large glass blur is expensive on mobile GPUs while Cesium is rendering. */
+  .gev-shell .gev-panel,
+  .gev-shell .gev-rail,
+  .gev-shell .gev-ribbon,
+  .gev-shell .gev-nav-primary,
+  .gev-shell .gev-nav-advanced,
+  .gev-shell .gev-map-controls--global .spatial-control-rail,
+  .gev-shell .gev-map-info-popover,
+  .gev-shell .gev-cctv-panel {
+    backdrop-filter: blur(10px) saturate(112%);
+  }
+}
+@media (max-width: 560px) {
+  .gev-shell .gev-map-controls--global .spatial-control-rail,
+  .gev-shell .gev-map-controls--global .gev-nav-dock,
+  .gev-shell .gev-map-controls--global ~ .gev-map-info-popover {
+    bottom: calc(39vh + 18px);
+  }
+  .gev-shell[data-intelligence-collapsed="true"]:not([data-navigation-expanded="true"]) .gev-map-controls--global .spatial-control-rail,
+  .gev-shell[data-intelligence-collapsed="true"]:not([data-navigation-expanded="true"]) .gev-map-controls--global .gev-nav-dock,
+  .gev-shell[data-intelligence-collapsed="true"]:not([data-navigation-expanded="true"]) .gev-map-controls--global ~ .gev-map-info-popover {
+    bottom: 76px;
+  }
+  .gev-shell[data-navigation-expanded="true"] .gev-map-controls--global .spatial-control-rail,
+  .gev-shell[data-navigation-expanded="true"] .gev-map-controls--global .gev-nav-dock,
+  .gev-shell[data-navigation-expanded="true"] .gev-map-controls--global ~ .gev-map-info-popover {
+    bottom: 14px;
+  }
+}
