@@ -11,6 +11,7 @@ describe('regional incident provider resilience', () => {
       'Zehabesha Ethiopia',
       'Sudan Tribune',
       'Radio Okapi DRC',
+      'Hot in Juba',
     ];
 
     for (const name of names) {
@@ -27,6 +28,15 @@ describe('regional incident provider resilience', () => {
     expect(feed.fallback_url.startsWith('https://news.google.com/rss/search?')).toBe(true);
     expect(feed.fallback_url).toContain('radiookapi.net');
     expect(feed.fallback_url).toContain('Bukavu');
+  });
+
+  test('Hot in Juba uses a South Sudan-scoped discovery fallback after direct-feed failure', () => {
+    const feed = RSS_FEEDS.find((candidate) => candidate.name === 'Hot in Juba');
+    expect(feed.url).toBe('https://hotinjuba.com/feed');
+    expect(feed.country_code).toBe('SS');
+    expect(feed.fallback_url.startsWith('https://news.google.com/rss/search?')).toBe(true);
+    expect(feed.fallback_url).toContain('hotinjuba.com');
+    expect(feed.fallback_url).toContain('Malakal');
   });
 
   test('fallback feeds preserve the regional country scope', () => {
