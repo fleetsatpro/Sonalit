@@ -920,7 +920,7 @@ function retryAfterMs(err,fallbackMs){
 }
 function openRouterFreeAccountQuotaCooldownMs(err,provider){
   const status=Number(err?.status||err?.response?.status)||0;
-  if(status!==429 || provider?.free!==true || !String(provider?.base||'').includes('openrouter.ai'))return 0;
+  if(status!==429 || provider?.free!==true || !String(provider?.modelDef?.base||provider?.base||provider?.baseURL||'').includes('openrouter.ai'))return 0;
 
   // Only promote a 429 to the account-level free-model circuit when OpenRouter's
   // own rate-limit headers explicitly say the shared request quota is exhausted
