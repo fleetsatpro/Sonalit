@@ -706,12 +706,8 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
           OR COALESCE(body->'release_gate'->>'ai_board_gate','true')='false'
           OR body->'deep_research'->>'last_failure_reason' IS NOT NULL
         )
-        AND CASE
-          WHEN NULLIF(body->'deep_research'->>'recovery_attempts','') IS NULL THEN 0
-          WHEN (body->'deep_research'->>'recovery_attempts') ~ '^[0-9]{1,6}$'
-            THEN (body->'deep_research'->>'recovery_attempts')::int
-          ELSE 999999
-        END < $5
+        -- Retry eligible held publications indefinitely with the persisted cooldown.
+        -- Attempt count is diagnostic, not a terminal dead-letter condition.
       ORDER BY
         CASE
           WHEN COALESCE(body->'release_gate'->>'research_release_gate','true')='false' THEN 0
@@ -720,7 +716,7 @@ async function recoverStalledPublications(orgId,now=new Date(),options={}){
         END,
         updated_at ASC
       LIMIT $4`,
-    [orgId,now,staleMinutes,limit,maxAttempts]
+    [orgId,now,staleMinutes,limit]
   ));
   if(!rows.length)return{processed:0,published:0,drafts:0,failed:0,results:[]};
   const results=[];

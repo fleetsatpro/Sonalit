@@ -39,17 +39,19 @@ describe('publication research retry wiring', () => {
     const end = source.indexOf('function publicationForCountry', start);
     const recovery = source.slice(start, end);
     expect(recovery).toContain('withOrg(orgId,client=>client.query(');
-    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit,maxAttempts\]\s*\)\);/);
+    expect(recovery).toContain('Retry eligible held publications indefinitely with the persisted cooldown.');
+    expect(recovery).not.toContain('END < $5');
+    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit\]\s*\)\);/);
     expect(recovery).not.toContain('await query(');
   });
 
-  test('autonomous retries are persisted, bounded, and fail closed for malformed counters', () => {
+  test('autonomous retries are persisted and never terminally dead-letter held publications', () => {
     const source = fs.readFileSync(path.join(__dirname, '../src/utils/intelligenceAgents.js'), 'utf8');
     const start = source.indexOf('async function recoverStalledPublications');
     const end = source.indexOf('function publicationForCountry', start);
     const recovery = source.slice(start, end);
     expect(recovery).toContain('INTEL_PUBLICATION_RECOVERY_MAX_ATTEMPTS');
-    expect(recovery).toContain("updated_at < NOW()-($6::int*INTERVAL '1 minute')");
+    expect(recovery).toContain("updated_at < NOW()-($3::int*INTERVAL '1 minute')");
     expect(recovery).toContain('END = $7');
     expect(recovery).toContain('last_recovery_attempt_at');
     expect(recovery).toContain("body->'deep_research'->>'next_attempt_at'");
@@ -57,7 +59,9 @@ describe('publication research retry wiring', () => {
     expect(source).toContain('const priorGenerationGatePassed=');
     expect(source).toContain('&& priorGenerationGatePassed');
     expect(recovery).toContain('periodAnchor:anchorNow');
-    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit,maxAttempts\]\s*\)\);/);
+    expect(recovery).toContain('Retry eligible held publications indefinitely with the persisted cooldown.');
+    expect(recovery).not.toContain('END < $5');
+    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit\]\s*\)\);/);
     expect(recovery).toContain('await withOrg(orgId,client=>client.query(');
     expect(recovery).not.toContain('await query(');
   });
