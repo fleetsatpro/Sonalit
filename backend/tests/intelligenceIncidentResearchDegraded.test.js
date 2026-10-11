@@ -361,4 +361,13 @@ describe('degraded incident research remains useful',()=>{
     expect(safeFetchPublicResearch.mock.calls.filter(([url])=>String(url)===publisherUrl)).toHaveLength(0);
   });
 
+  test('keeps expanded publisher-wrapper recovery bounded and reserves candidate slots for GDELT',()=>{
+    const source=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+    expect(source).toContain('const MAX_SOURCE_CANDIDATES = 12;');
+    expect(source).toContain('const MAX_GOOGLE_NEWS_WRAPPER_RESOLVES = 4;');
+    expect(source).toContain('const baseCandidateLimit=Math.max(1,MAX_SOURCE_CANDIDATES-MAX_GOOGLE_NEWS_WRAPPER_RESOLVES-2);');
+    expect(source).toContain('const wrappers=publisher.concat(search).filter(item=>item?.wrapper_url).slice(0,Math.min(MAX_GOOGLE_NEWS_WRAPPER_RESOLVES,remainingCandidateSlots));');
+  });
+
+
 });
