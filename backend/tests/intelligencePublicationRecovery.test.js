@@ -47,6 +47,7 @@ describe('intelligence publication autonomous recovery',()=>{
     expect(render).toContain("body->'generator'->>'pdf_generation_claim'=$4");
     expect(render).toContain("reason:existing.pdf_status==='generating'?'pdf_generation_in_progress'");
     expect(render).toContain("const key=keyPrefix+claimToken+'.pdf'");
+    expect(render).toContain(".replace(/[^A-Z0-9._-]/gi,'-')");
     expect(render).toContain("status:'superseded'");
     expect(render).toContain("SET pdf_status='failed',pdf_error=$3,updated_at=NOW()");
   });
