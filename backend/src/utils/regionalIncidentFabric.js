@@ -92,7 +92,7 @@ const RSS_FEEDS=[
  {name:'Eye Radio South Sudan',url:'https://eyeradio.org/feed',country_code:'SS',reliability:82},
  {name:'Radio Tamazuj',url:'https://www.radiotamazuj.org/en/feed',country_code:'SS',reliability:82},
  {name:'South Sudan News Now',url:GOOGLE_RSS('site:ssnewsnow.com South Sudan security OR fighting'),country_code:'SS',reliability:65},
- {name:'Hot in Juba',url:'https://hotinjuba.com/feed',country_code:'SS',reliability:60},
+ {name:'Hot in Juba',url:'https://hotinjuba.com/feed',fallback_url:GOOGLE_RSS('site:hotinjuba.com (South Sudan OR Juba OR Bor OR Malakal) (security OR fighting OR incident OR crime OR protest)','SS','en-SS'),country_code:'SS',reliability:60},
 
  {name:'Shabelle Somalia',url:'https://shabellemedia.com/feed',country_code:'SO',reliability:78},
  {name:'SONNA Somalia',url:'https://sonna.so/en/feed',fallback_url:GOOGLE_RSS('site:sonna.so Somalia security OR attack OR accident OR incident','SO','en-SO'),country_code:'SO',reliability:80},
