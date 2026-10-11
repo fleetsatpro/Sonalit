@@ -614,29 +614,73 @@ async function fetchImages(rows,researchSources=[]){
 }
 
 async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
-  const {rows:[publication]}=await query('SELECT * FROM intel_publications WHERE id=$1 AND org_id=$2 LIMIT 1',[publicationId,orgId]);
-  if(!publication)throw new Error('Publication not found');
-  if(publication.status!=='published')return{status:'skipped',reason:'publication_not_published'};
-  await query("UPDATE intel_publications SET pdf_status='generating',pdf_error=NULL,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId]);
+  const claimToken=crypto.randomUUID();
+  // Atomic row claim: publication boundary and periodic recovery use distinct
+  // cluster locks, so one PDF may be selected by both workers at once.
+  const {rows:[publication]}=await query(
+    "UPDATE intel_publications\n" +
+    "SET pdf_status='generating',pdf_error=NULL,updated_at=NOW(),\n" +
+    "body=jsonb_set(COALESCE(body,'{}'::jsonb),'{generator}',\n" +
+    "(CASE WHEN jsonb_typeof(COALESCE(body,'{}'::jsonb)->'generator')='object' THEN COALESCE(body,'{}'::jsonb)->'generator' ELSE '{}'::jsonb END) || jsonb_build_object('pdf_generation_claim',$3::text),true)\n" +
+    "WHERE id=$1 AND org_id=$2 AND status='published' AND (COALESCE(pdf_status,'not_requested') <> 'generating' OR updated_at < NOW()-INTERVAL '30 minutes') RETURNING *",
+    [publicationId,orgId,claimToken]
+  );
+  if(!publication){
+    const {rows:[existing]}=await query(
+      'SELECT status,pdf_status FROM intel_publications WHERE id=$1 AND org_id=$2 LIMIT 1',
+      [publicationId,orgId]
+    );
+    if(!existing)throw new Error('Publication not found');
+    if(existing.status!=='published')return{status:'skipped',reason:'publication_not_published'};
+    return{
+      status:'skipped',
+      publication_id:publicationId,
+      reason:existing.pdf_status==='generating'?'pdf_generation_in_progress':'pdf_generation_claim_not_acquired'
+    };
+  }
   try{
-    const {rows:events}=await query(`SELECT e.id,COALESCE(e.canonical_headline,e.title) AS headline,COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,e.latitude,e.longitude,e.last_seen_at,COUNT(DISTINCT eo.observation_id)::int AS observation_count,COUNT(DISTINCT o.source_id)::int AS source_count,array_agg(DISTINCT o.source_id) FILTER (WHERE o.source_id IS NOT NULL) AS source_ids,array_agg(DISTINCT jsonb_build_object('id',o.id,'title',o.title,'url',o.url,'raw_metadata',o.raw_metadata)) FILTER (WHERE o.id IS NOT NULL) AS observations FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4 GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 120`,[orgId,publication.country_code,publication.period_start,publication.period_end]);
+    const {rows:events}=await query("SELECT e.id,COALESCE(e.canonical_headline,e.title) AS headline,COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,e.latitude,e.longitude,e.last_seen_at,COUNT(DISTINCT eo.observation_id)::int AS observation_count,COUNT(DISTINCT o.source_id)::int AS source_count,array_agg(DISTINCT o.source_id) FILTER (WHERE o.source_id IS NOT NULL) AS source_ids,array_agg(DISTINCT jsonb_build_object('id',o.id,'title',o.title,'url',o.url,'raw_metadata',o.raw_metadata)) FILTER (WHERE o.id IS NOT NULL) AS observations FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4 GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 120",[orgId,publication.country_code,publication.period_start,publication.period_end]);
     const observationRows=[];for(const e of events){for(const o of e.observations||[])observationRows.push(o)}
     const researchSources=(Array.isArray(publication.body?.incident_dossiers)?publication.body.incident_dossiers:[]).flatMap(e=>Array.isArray(e?.research_sources)?e.research_sources:[]);
     const images=await fetchImages(observationRows,researchSources); const pdf=await buildProfessionalPdf(publication,events,images);
     const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured'); const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
-    const safe=`${publication.country_code}-${publication.publication_type}-${new Date(publication.period_start).toISOString().slice(0,10)}`.replace(/[^A-Z0-9._-]/gi,'-');
+    const safe=String(publication.country_code)+'-'+String(publication.publication_type)+'-'+new Date(publication.period_start).toISOString().slice(0,10);
     const pdfVersion=Number(publication.pdf_version)||1;
-    const keyPrefix=`intelligence-publications/${orgId}/${safe}-r${PDF_RENDERER_VERSION}-v${pdfVersion}-`;
-    const priorKey=String(publication.pdf_key||'');
-    const priorSuffix=priorKey.startsWith(keyPrefix)?priorKey.slice(keyPrefix.length):'';
-    const key=/^[0-9a-f-]{36}\.pdf$/i.test(priorSuffix)?priorKey:`${keyPrefix}${crypto.randomUUID()}.pdf`;
+    const keyPrefix='intelligence-publications/'+orgId+'/'+safe+'-r'+PDF_RENDERER_VERSION+'-v'+pdfVersion+'-';
+    // Immutable attempt-specific keys stop an expired worker overwriting the
+    // object produced by the current lease holder.
+    const key=keyPrefix+claimToken+'.pdf';
     await r2.send(new PutObjectCommand({Bucket:bucket,Key:key,Body:pdf,ContentType:'application/pdf',CacheControl:'private, max-age=0'}));
-    // Publication PDFs are returned only by streamPublicationPdf after
-    // tenant- and role-scoped authorization; never publish a raw R2 URL.
-    await query("UPDATE intel_publications SET pdf_status='ready',pdf_key=$3,pdf_url=NULL,pdf_generated_at=NOW(),pdf_error=NULL,body=jsonb_set(COALESCE(body,'{}'::jsonb),'{generator}',(CASE WHEN jsonb_typeof(body->'generator')='object' THEN body->'generator' ELSE '{}'::jsonb END)||jsonb_build_object('pdf_renderer_version',$4::text),true),updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,key,PDF_RENDERER_VERSION]);
+    const {rows:[completed]}=await query(
+      "UPDATE intel_publications SET pdf_status='ready',pdf_key=$3,pdf_url=NULL,pdf_generated_at=NOW(),pdf_error=NULL," +
+      "body=jsonb_set(COALESCE(body,'{}'::jsonb),'{generator}'," +
+      "((CASE WHEN jsonb_typeof(COALESCE(body,'{}'::jsonb)->'generator')='object' THEN COALESCE(body,'{}'::jsonb)->'generator' ELSE '{}'::jsonb END) - 'pdf_generation_claim') || jsonb_build_object('pdf_renderer_version',$4::text),true)," +
+      "updated_at=NOW() WHERE id=$1 AND org_id=$2 AND status='published' AND pdf_status='generating' AND body->'generator'->>'pdf_generation_claim'=$5 RETURNING id",
+      [publicationId,orgId,key,PDF_RENDERER_VERSION,claimToken]
+    );
+    if(!completed)return{status:'superseded',publication_id:publicationId};
+    // Publication PDFs are served only through tenant- and role-scoped streaming.
     for(const img of images)await query('INSERT INTO intel_publication_pdf_assets (org_id,publication_id,asset_type,source_url,source_label,provenance) VALUES ($1,$2,$3,$4,$5,$6::jsonb)',[orgId,publicationId,'image',img.source_url,img.label,JSON.stringify({embedded:true})]).catch(()=>{});
     return{status:'ready',publication_id:publicationId,pdf_url:null};
-  }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3,updated_at=NOW() WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
+  }catch(error){
+    let failed;
+    try{
+      const result=await query(
+        "UPDATE intel_publications SET pdf_status='failed',pdf_error=$3,updated_at=NOW()," +
+        "body=jsonb_set(COALESCE(body,'{}'::jsonb),'{generator}'," +
+        "(CASE WHEN jsonb_typeof(COALESCE(body,'{}'::jsonb)->'generator')='object' THEN COALESCE(body,'{}'::jsonb)->'generator' ELSE '{}'::jsonb END) - 'pdf_generation_claim',true) " +
+        "WHERE id=$1 AND org_id=$2 AND status='published' AND pdf_status='generating' AND body->'generator'->>'pdf_generation_claim'=$4 RETURNING id",
+        [publicationId,orgId,String(error.message||error).slice(0,2000),claimToken]
+      );
+      failed=result.rows[0];
+    }catch(stateError){
+      logger.warn('PDF failure-state persistence failed publication='+publicationId+': '+String(stateError.message||stateError).slice(0,300));
+      throw error;
+    }
+    // A stale attempt cannot overwrite the newer attempt's success/failure state.
+    if(!failed)return{status:'superseded',publication_id:publicationId};
+    throw error;
+  }
 }
 
 async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId,{download=false}={}){
