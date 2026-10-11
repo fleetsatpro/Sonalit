@@ -358,7 +358,7 @@ const PROVIDER_CIRCUIT_REDIS_ENABLED =
   Boolean(process.env.REDIS_URL) &&
   String(process.env.DISABLE_REDIS || 'false').toLowerCase() !== 'true';
 const PROVIDER_CIRCUIT_REDIS_PREFIX = 'sonalit:intelligence:ai:circuit:v3:';
-const PROVIDER_KEY_STATE_REDIS_PREFIX = 'sonalit:intelligence:ai:key-state:v1:';
+const PROVIDER_KEY_STATE_REDIS_PREFIX = 'sonalit:intelligence:ai:key-state:v2:';
 const PROVIDER_CIRCUIT_HYDRATION_TIMEOUT_MS = Math.max(250, Math.min(5000, Number(process.env.INTEL_PROVIDER_CIRCUIT_HYDRATION_TIMEOUT_MS || 2000)));
 const providerCircuitPersistence = {
   enabled: PROVIDER_CIRCUIT_REDIS_ENABLED,
