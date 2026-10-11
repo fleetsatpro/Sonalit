@@ -978,6 +978,36 @@ describe('intelligence provider mesh', () => {
     expect(caught.message).not.toContain('sk-live-credential-fragment-do-not-log');
   });
 
+  test('does not restore legacy per-key cooldowns created before credential-client isolation',async()=>{
+    process.env.OPENAI_API_KEY_1='sk-proj-shared-prefix-key-one';
+    process.env.OPENAI_API_KEY_2='sk-proj-shared-prefix-key-two';
+    process.env.REDIS_URL='redis://mock';
+    process.env.INTEL_PERSIST_PROVIDER_CIRCUITS='true';
+    const legacyUntil=Date.now()+60*60*1000;
+    let requestedKeys=[];
+    const redis={
+      mget:jest.fn(async keys=>{
+        requestedKeys=keys.map(String);
+        return keys.map(key=>String(key).startsWith('sonalit:intelligence:ai:key-state:v1:')
+          ?JSON.stringify({downUntil:legacyUntil,failureCount:1})
+          :null);
+      }),
+      scan:jest.fn(async()=>['0',[]]),
+      get:jest.fn(async()=>null),
+      set:jest.fn(async()=> 'OK'),
+      del:jest.fn(async()=>1),
+    };
+    jest.doMock('../src/config/redis',()=>({getRedis:()=>redis}));
+    jest.doMock('openai',()=>class MockOpenAI{});
+    const ai=require('../src/utils/aiClient');
+    await ai.hydrateFabricState();
+    const capabilities=ai.providerCapabilities();
+    expect(requestedKeys.some(key=>key.startsWith('sonalit:intelligence:ai:key-state:v1:'))).toBe(false);
+    expect(requestedKeys.some(key=>key.startsWith('sonalit:intelligence:ai:key-state:v2:openai:'))).toBe(true);
+    expect(capabilities.openai_key_pool_size).toBe(2);
+    expect(capabilities.openai_ready_key_pool_size).toBe(2);
+  });
+
   test('persists OpenAI account-credit exhaustion as a long-lived circuit',async()=>{
     const apiKey='openai-key-persistence-test-12345';
     process.env.OPENAI_API_KEY_1=apiKey;
@@ -1031,7 +1061,7 @@ describe('intelligence provider mesh', () => {
     expect(circuitUntil-Date.now()).toBeGreaterThan(5*60*60*1000);
     expect(circuitUntil-Date.now()).toBeLessThanOrEqual(6*60*60*1000);
 
-    const keyStateEntry=[...values.entries()].find(([key])=>key.startsWith('sonalit:intelligence:ai:key-state:v1:openai:'));
+    const keyStateEntry=[...values.entries()].find(([key])=>key.startsWith('sonalit:intelligence:ai:key-state:v2:openai:'));
     expect(keyStateEntry).toBeDefined();
     expect(keyStateEntry[0]).not.toContain(apiKey);
     const keyState=JSON.parse(keyStateEntry[1]);
@@ -1095,7 +1125,7 @@ describe('intelligence provider mesh', () => {
     expect(firstError).toBeDefined();
     expect(calls).toHaveLength(1);
 
-    const keyStateEntry=[...values.entries()].find(([key])=>key.startsWith('sonalit:intelligence:ai:key-state:v1:google-gemini:'));
+    const keyStateEntry=[...values.entries()].find(([key])=>key.startsWith('sonalit:intelligence:ai:key-state:v2:google-gemini:'));
     expect(keyStateEntry).toBeDefined();
     expect(keyStateEntry[0]).not.toContain(apiKey);
     expect(JSON.parse(keyStateEntry[1]).downUntil-Date.now()).toBeGreaterThan(5*60*60*1000);
