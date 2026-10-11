@@ -1150,6 +1150,25 @@ function researchCoverage(items,events){
   return{matched:Math.max(0,(Array.isArray(events)?events.length:0)-missing.length),missingIds:missing};
 }
 
+async function recoverMissingIncidentResearch(events,missingIds,{country,region}={}){
+  const targets=new Set((Array.isArray(missingIds)?missingIds:[]).map(String).filter(Boolean));
+  const recovered=new Map();
+  // Keep retries serial and bounded by the existing four-incident batch maximum.
+  // This isolates malformed/partial batch output without amplifying provider outages.
+  for(const event of Array.isArray(events)?events:[]){
+    const id=String(event&&event.id||'');
+    if(!id||!targets.has(id))continue;
+    try{
+      const results=await researchBatch([event],{country,region});
+      const result=results[0];
+      if(['researched','researched_limited'].includes(String(result&&result.agent&&result.agent.status||'')))recovered.set(id,result);
+    }catch(error){
+      logger.warn('Incident research isolated retry failed: '+String(error&&error.message||'unknown').slice(0,180));
+    }
+  }
+  return recovered;
+}
+
 function researchResponseText(response){
   return (Array.isArray(response&&response.content)?response.content:[])
     .filter(block=>block&&block.type==='text')
@@ -1256,6 +1275,9 @@ async function researchBatch(events,{country,region}={}){
     if(coverage.matched<events.length){
       logger.warn('Incident research batch returned partial incident coverage after bounded retry (matched='+coverage.matched+'/'+events.length+')');
     }
+    const isolatedResearch=events.length>1&&coverage.missingIds.length
+      ? await recoverMissingIncidentResearch(events,coverage.missingIds,{country,region})
+      : new Map();
     // Provider-level citations belong to the whole response, not to an
     // individual incident. In a multi-incident batch, do not copy those global
     // citations into every dossier's source allowlist; each dossier must cite
@@ -1263,6 +1285,8 @@ async function researchBatch(events,{country,region}={}){
     // an explicit incident-to-citation mapping.
     const providerVerifiedSources=events.length===1?verifiedResponseSources(response):[];
     return packets.map((packet,i)=>{
+      const isolated=isolatedResearch.get(String(events[i]&&events[i].id||''));
+      if(isolated)return isolated;
       const source=researchItems.find(x=>String(x&&x.incident_id)===String(events[i].id));
       const verifiedSourceMap=new Map();
       const addVerified=(item)=>{
@@ -1312,8 +1336,15 @@ async function researchBatch(events,{country,region}={}){
     });
   }catch(error){
     const message=String(error?.message||error||'unknown research provider failure');
-    const providerFailure=/AI client:|provider|cooling down|temporarily unavailable|429|quota|credit|rate limit|401|403|unauthorized/i.test(message);
+    const providerFailure=/AI client:|provider|cooling down|temporarily unavailable|429|quota|credit|rate limit|401|403|unauthorized|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|fetch failed|network error|socket hang up/i.test(message);
     logger.warn('Incident research batch agent failed: '+message);
+    if(events.length>1&&!providerFailure&&/invalid structured JSON|structured output|incomplete structured/i.test(message)){
+      const recovered=await recoverMissingIncidentResearch(events,events.map(event=>String(event&&event.id||'')),{country,region});
+      return packets.map((packet,i)=>{
+        const isolated=recovered.get(String(events[i]&&events[i].id||''));
+        return isolated||{packet,agent:fallbackResearch(events[i],packet),error:message};
+      });
+    }
     return packets.map((packet,i)=>({
       packet,
       agent:fallbackResearch(events[i],packet,{degraded:providerFailure}),
