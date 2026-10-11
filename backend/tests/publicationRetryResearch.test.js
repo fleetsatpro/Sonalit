@@ -59,7 +59,9 @@ describe('publication research retry wiring', () => {
     expect(source).toContain('const priorGenerationGatePassed=');
     expect(source).toContain('&& priorGenerationGatePassed');
     expect(recovery).toContain('periodAnchor:anchorNow');
-    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit,maxAttempts\]\s*\)\);/);
+    expect(recovery).toContain('Retry eligible held publications indefinitely with the persisted cooldown.');
+    expect(recovery).not.toContain('END < $5');
+    expect(recovery).toMatch(/LIMIT \$4`,\s*\[orgId,now,staleMinutes,limit\]\s*\)\);/);
     expect(recovery).toContain('await withOrg(orgId,client=>client.query(');
     expect(recovery).not.toContain('await query(');
   });
