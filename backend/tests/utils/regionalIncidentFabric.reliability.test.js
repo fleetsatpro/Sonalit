@@ -10,6 +10,7 @@ describe('regional incident provider resilience', () => {
       'The Reporter Ethiopia',
       'Zehabesha Ethiopia',
       'Sudan Tribune',
+      'Radio Okapi DRC',
     ];
 
     for (const name of names) {
@@ -17,6 +18,15 @@ describe('regional incident provider resilience', () => {
       expect(feed).toBeDefined();
       expect(feed.fallback_url).toMatch(/^https:\/\/news\.google\.com\/rss\/search\?/);
     }
+  });
+
+  test('Radio Okapi retains its direct source and uses a DRC-targeted French discovery fallback', () => {
+    const feed = RSS_FEEDS.find((candidate) => candidate.name === 'Radio Okapi DRC');
+    expect(feed.url).toBe('https://www.radiookapi.net/feed');
+    expect(feed.country_code).toBe('CD');
+    expect(feed.fallback_url).toMatch(/^https:\/\/news\\.google\\.com\/rss\/search\\?/);
+    expect(feed.fallback_url).toContain('radiookapi.net');
+    expect(feed.fallback_url).toContain('Bukavu');
   });
 
   test('fallback feeds preserve the regional country scope', () => {
