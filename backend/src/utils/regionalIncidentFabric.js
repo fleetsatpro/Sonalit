@@ -107,7 +107,7 @@ const RSS_FEEDS=[
  {name:'Zehabesha Ethiopia',url:'https://zehabesha.com/feed',fallback_url:GOOGLE_RSS('site:zehabesha.com Ethiopia security OR incident OR conflict','ET','en-ET'),country_code:'ET',reliability:62},
 
  {name:'Actualite.cd DRC',url:'https://actualite.cd/feed',fallback_url:GOOGLE_RSS('site:actualite.cd DRC Goma Bukavu security OR conflict OR incident','CD','en-CD'),country_code:'CD',reliability:78},
- {name:'Radio Okapi DRC',url:'https://www.radiookapi.net/feed',country_code:'CD',reliability:84},
+ {name:'Radio Okapi DRC',url:'https://www.radiookapi.net/feed',fallback_url:GOOGLE_RSS('site:radiookapi.net (RDC OR Congo OR Goma OR Bukavu OR Nord-Kivu OR Sud-Kivu) (securite OR attaque OR conflit OR incident)','CD','fr'),country_code:'CD',reliability:84},
  {name:'Kivu Times DRC',url:GOOGLE_RSS('site:theeastafrican.co.ke DRC Goma Bukavu conflict','CD','en-KE'),country_code:'CD',reliability:68},
 
  {name:'Radio Dabanga Sudan',url:'https://www.dabangasudan.org/en/feed',country_code:'SD',reliability:82},
