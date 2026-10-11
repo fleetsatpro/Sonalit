@@ -119,3 +119,41 @@ describe('public intelligence research fetch boundary', () => {
     expect(requestOnce).toHaveBeenCalledTimes(4);
   });
 });
+
+
+describe('bounded compressed source responses',()=>{
+  const zlib=require('node:zlib');
+  const { _decodeExternalResearchBodyForTests: decode }=require('../src/utils/publicResearchFetch');
+
+  test.each([
+    ['gzip',zlib.gzipSync],
+    ['x-gzip',zlib.gzipSync],
+    ['deflate',zlib.deflateSync],
+    ['br',zlib.brotliCompressSync],
+  ])('decodes %s bodies within the configured byte limit', (encoding,compress)=>{
+    const plain=Buffer.from('<rss><channel><item><title>East Africa security update</title></item></channel></rss>');
+    expect(decode(compress(plain),encoding,2048)).toEqual(plain);
+  });
+
+  test('applies the byte cap to decompressed output, not only the compact wire payload',()=>{
+    const expanded=Buffer.alloc(4096,65);
+    const compressed=zlib.gzipSync(expanded);
+    expect(compressed.length).toBeLessThan(256);
+    expect(()=>decode(compressed,'gzip',512)).toThrow('exceeds the byte limit');
+  });
+
+  test('rejects corrupt, unsupported and stacked content encodings safely',()=>{
+    expect(()=>decode(Buffer.from('not-gzip'),'gzip',1024)).toThrow('could not be decoded');
+    expect(()=>decode(Buffer.from('payload'),'compress',1024)).toThrow('Unsupported external research content encoding');
+    expect(()=>decode(Buffer.from('payload'),'gzip, br',1024)).toThrow('Unsupported external research content encoding');
+  });
+
+  test('keeps the public fetch transport on explicit supported compression formats',()=>{
+    const fs=require('node:fs');
+    const path=require('node:path');
+    const source=fs.readFileSync(path.join(__dirname,'../src/utils/publicResearchFetch.js'),'utf8');
+    expect(source).toContain("'Accept-Encoding': 'gzip, deflate, br'");
+    expect(source).toContain('decodeExternalResearchBody(Buffer.concat(chunks, bytes), encoding, maxBytes)');
+    expect(source).toContain('maxOutputLength:maxBytes');
+  });
+});

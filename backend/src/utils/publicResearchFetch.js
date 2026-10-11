@@ -3,6 +3,7 @@
 const dns = require('node:dns').promises;
 const https = require('node:https');
 const net = require('node:net');
+const zlib = require('node:zlib');
 const { isPrivateIp } = require('../services/spatial/cctv/cctvAllowlist');
 
 const DEFAULT_TIMEOUT_MS = 10000;
@@ -99,6 +100,36 @@ function headerValue(headers, name) {
   return value == null ? null : String(value);
 }
 
+function decodeExternalResearchBody(bodyValue, encodingValue='identity', maxBytesValue=MAX_RESPONSE_BYTES) {
+  const body=Buffer.isBuffer(bodyValue)?bodyValue:Buffer.from(bodyValue||'');
+  const maxBytes=Math.max(1,Math.trunc(Number(maxBytesValue)||MAX_RESPONSE_BYTES));
+  if(body.length>maxBytes)throw researchError('External research response exceeds the byte limit');
+  const encodings=String(encodingValue||'identity').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean);
+  if(encodings.length!==1)throw researchError('Unsupported external research content encoding');
+  const encoding=encodings[0];
+  if(encoding==='identity')return body;
+  const decompressors={
+    gzip:zlib.gunzipSync,
+    'x-gzip':zlib.gunzipSync,
+    deflate:zlib.inflateSync,
+    br:zlib.brotliDecompressSync,
+  };
+  const decompress=decompressors[encoding];
+  if(typeof decompress!=='function')throw researchError('Unsupported external research content encoding');
+  let decoded;
+  try{
+    // maxOutputLength is enforced by zlib while inflating, not after the full
+    // expanded payload has been allocated. The wire and decoded sizes are both
+    // capped to prevent compressed-payload bombs and memory amplification.
+    decoded=decompress(body,{maxOutputLength:maxBytes});
+  }catch(error){
+    if(error?.code==='ERR_BUFFER_TOO_LARGE')throw researchError('External research response exceeds the byte limit');
+    throw researchError('External research compressed response could not be decoded','upstream_protocol');
+  }
+  if(decoded.length>maxBytes)throw researchError('External research response exceeds the byte limit');
+  return decoded;
+}
+
 function requestPublicOnce(url, addresses, { timeoutMs, maxBytes }) {
   return new Promise((resolve, reject) => {
     let request;
@@ -133,7 +164,7 @@ function requestPublicOnce(url, addresses, { timeoutMs, maxBytes }) {
         lookup: pinnedLookup,
         headers: {
           Accept: 'text/html,application/xhtml+xml,application/rss+xml,application/atom+xml,application/json;q=0.8,*/*;q=0.1',
-          'Accept-Encoding': 'identity',
+          'Accept-Encoding': 'gzip, deflate, br',
           'User-Agent': 'Sonalit-Intelligence-Research/1.0',
         },
       }, response => {
@@ -146,8 +177,10 @@ function requestPublicOnce(url, addresses, { timeoutMs, maxBytes }) {
           return;
         }
         const encoding = String(headers['content-encoding'] || 'identity').trim().toLowerCase();
-        if (encoding && encoding !== 'identity') {
-          finish(researchError('Compressed external research responses are not accepted'));
+        const supportedEncoding = ['identity', 'gzip', 'x-gzip', 'deflate', 'br'].includes(encoding);
+        if (!supportedEncoding) {
+          response.on('error', () => {});
+          finish(researchError('Unsupported external research content encoding'));
           response.destroy();
           return;
         }
@@ -169,7 +202,14 @@ function requestPublicOnce(url, addresses, { timeoutMs, maxBytes }) {
           }
           chunks.push(buffer);
         });
-        response.on('end', () => finish(null, { status, headers, body: Buffer.concat(chunks, bytes) }));
+        response.on('end', () => {
+          try {
+            const body=decodeExternalResearchBody(Buffer.concat(chunks, bytes), encoding, maxBytes);
+            finish(null, { status, headers, body });
+          } catch(error) {
+            finish(error);
+          }
+        });
         response.on('error', error => finish(researchError(
           'External research response could not be read: ' + String(error && error.code || 'stream_error'),
           'unavailable',
@@ -271,6 +311,7 @@ module.exports = {
   MAX_RESPONSE_BYTES,
   createPublicResearchFetcher,
   isPublicResearchAddress,
+  _decodeExternalResearchBodyForTests: decodeExternalResearchBody,
   parsePublicResearchUrl,
   safeFetchPublicResearch,
 };
