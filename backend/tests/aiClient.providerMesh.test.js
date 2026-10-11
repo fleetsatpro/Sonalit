@@ -244,8 +244,8 @@ describe('intelligence provider mesh', () => {
   });
 
   test('rotates across the Gemini key pool when a member is rate-limited', async () => {
-    process.env.GOOGLE_AI_API_KEY_1 = 'google-one-test-token';
-    process.env.GOOGLE_AI_API_KEY_2 = 'google-two-test-token';
+    process.env.GOOGLE_AI_API_KEY_1 = 'AIzaSyAB-shared-prefix-key-one';
+    process.env.GOOGLE_AI_API_KEY_2 = 'AIzaSyAB-shared-prefix-key-two';
 
     const seen = [];
     jest.doMock('openai', () => class MockOpenAI {
