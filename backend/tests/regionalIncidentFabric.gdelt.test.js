@@ -29,7 +29,7 @@ describe('regional GDELT discovery query',()=>{
   test('query stays short and uses separate, non-nested geography and incident OR groups',()=>{
     const query=buildGdeltQuery();
     expect(query.length).toBeLessThanOrEqual(GDELT_QUERY_MAX_LENGTH);
-    expect(GDELT_QUERY_MAX_LENGTH).toBe(260);
+    expect(GDELT_QUERY_MAX_LENGTH).toBe(240);
     expect(query).toMatch(/^\([^()]+\) \([^()]+\)$/);
     expect((query.match(/\bOR\b/g)||[])).toHaveLength(16);
     expect(query).toContain('"South Sudan"');
