@@ -2535,3 +2535,18 @@
     transition: none;
   }
 }
+
+
+/* Responsive collision pass: preserve a clear lane between layer chrome and globe controls. */
+@media (min-width: 861px) and (max-width: 1180px) {
+  .gev-shell .gev-map-controls--global .spatial-control-rail {
+    top: auto;
+    bottom: clamp(190px, 32vh, 255px);
+  }
+}
+@media (max-width: 860px) {
+  .gev-shell .gev-map-controls--global .spatial-control-rail {
+    top: 58px;
+    right: 10px;
+  }
+}
