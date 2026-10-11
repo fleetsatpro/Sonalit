@@ -66,5 +66,6 @@ describe('regional GDELT discovery query',()=>{
       credibility:72,
     });
     expect(items[0].external_id).toMatch(/^gdelt:/);
+    expect(items[0].published_at).toBe('2026-10-11T04:30:00.000Z');
   });
 });
