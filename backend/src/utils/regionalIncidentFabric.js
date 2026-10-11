@@ -130,10 +130,22 @@ function xQueryForCountry(code){const country=EA_COUNTRIES[code];const geo=count
 async function fetchX(code){const token=process.env.X_BEARER_TOKEN||process.env.TWITTER_BEARER_TOKEN;if(!token)return[];const q=xQueryForCountry(code),p=new URLSearchParams({query:q,max_results:'100',sort_order:'recency','tweet.fields':'created_at,lang,author_id,public_metrics,context_annotations,geo,entities'});const r=await timeoutFetch(`https://api.x.com/2/tweets/search/recent?${p}`,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw new Error(`X ${EA_COUNTRIES[code].name} HTTP ${r.status}`);const d=await r.json();return(d.data||[]).map(t=>({external_id:`x:${t.id}`,text:t.text,title:clean(t.text,700),published_at:t.created_at,observed_at:t.created_at,language:t.lang,country_code:code,url:`https://x.com/i/web/status/${t.id}`,credibility:45,raw_metadata:{author_id:t.author_id,public_metrics:t.public_metrics,context_annotations:t.context_annotations,geo:t.geo}}));}
 let gdeltUnavailableUntil=0;
 const GDELT_COOLDOWN_MS=15*60*1000;
+const GDELT_QUERY_MAX_LENGTH=260;
+// GDELT DOC accepts OR groups, but rejects overly large queries. Keep the regional
+// geography and incident vocabularies intentionally small and bounded so a bad
+// query cannot silently force the discovery source onto a 15-minute fallback.
+const GDELT_INCIDENT_TERMS=['attack','explosion','shooting','kidnapping','accident','protest','flood','roadblock'];
+function buildGdeltQuery(){
+  const geography=EA_CODES.map(code=>EA_COUNTRIES[code].name).filter(Boolean).map(name=>`"${name}"`).join(' OR ');
+  const incidents=GDELT_INCIDENT_TERMS.map(term=>`"${term}"`).join(' OR ');
+  const query=`(${geography}) (${incidents})`;
+  if(query.length>GDELT_QUERY_MAX_LENGTH)throw new Error(`GDELT query exceeds safe length (${query.length} characters)`);
+  return query;
+}
 const GDELT_FALLBACK_FEED={name:'Google News East Africa Incident Discovery',url:GOOGLE_RSS('(Kenya OR Uganda OR Tanzania OR Rwanda OR Burundi OR Somalia OR Ethiopia OR South Sudan OR DRC OR Sudan) (attack OR conflict OR violence OR kidnapping OR ambush OR unrest OR clash OR protest)','KE','en-KE'),country_code:null,reliability:68};
 async function fetchGdelt(){
   if(Date.now()<gdeltUnavailableUntil) return fetchRss(GDELT_FALLBACK_FEED);
-  const q=`(${EA_CODES.map(c=>EA_COUNTRIES[c].terms.slice(0,5).map(v=>`"${v}"`).join(' OR ')).join(' OR ')}) (${INCIDENT_QUERY})`;
+  const q=buildGdeltQuery();
   const url=`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&maxrecords=${MAX_ITEMS}&timespan=1h&format=json`;
   try{
     const r=await timeoutFetch(url);
@@ -183,4 +195,4 @@ async function runRegionalIncidentSweep(orgId){return runWithOrgContext(orgId, a
  return{region:'EAST_AFRICA',duration_ms:Date.now()-started,results,totalSeen:results.reduce((s,r)=>s+(r.seen||0),0),totalInserted:results.reduce((s,r)=>s+(r.inserted||0),0),totalAlerts:results.reduce((s,r)=>s+(r.alerts||0),0)};
 });}
 async function runRegionalIncidentSweepAll(){const{rows:orgs}=await globalQuery(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const results=[];for(const{org_id}of orgs){try{results.push(await runRegionalIncidentSweep(org_id));}catch(e){logger.warn(`Regional Incident Fabric: org=${org_id} failed: ${e.message}`);results.push({region:'EAST_AFRICA',status:'failed',error:e.message});}}return results;}
-module.exports={runRegionalIncidentSweep,runRegionalIncidentSweepAll,EA_CODES,EA_COUNTRIES,X_ACCOUNT_MONITORS,RSS_FEEDS,DEFAULT_TELEGRAM,category,severity,detectCountry,fetchRss};
+module.exports={runRegionalIncidentSweep,runRegionalIncidentSweepAll,EA_CODES,EA_COUNTRIES,X_ACCOUNT_MONITORS,RSS_FEEDS,DEFAULT_TELEGRAM,category,severity,detectCountry,fetchRss,fetchGdelt,buildGdeltQuery,GDELT_QUERY_MAX_LENGTH};
