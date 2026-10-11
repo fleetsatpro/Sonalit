@@ -1056,7 +1056,7 @@ function providerCooling(providerOrLabel){
     label==='openai-direct'?!hasReadyOpenAIKey():
     label===GEMINI_PROVIDER.name?!hasReadyGeminiKey():
     false;
-  const sharedFreeQuotaUntil = provider.free===true && String(provider.base||'').includes('openrouter.ai')
+  const sharedFreeQuotaUntil = provider.free===true && String(provider.modelDef?.base||provider.base||provider.baseURL||'').includes('openrouter.ai')
     ? Number(fabricStates[OPENROUTER_FREE_ACCOUNT_GROUP]?.downUntil||0)
     : 0;
   return Boolean(
@@ -1073,7 +1073,7 @@ function providerResumeAt(provider){
   const fabricUntil=isolateKeyPool?0:Number(fabricStates[providerGroup(provider)]?.downUntil||0);
   const modelUntil=Number(modelDisabledUntil[provider.name]||0);
   const keyPoolUntil=providerKeyPoolResumeAt(provider.name);
-  const sharedFreeQuotaUntil=provider.free===true && String(provider.base||'').includes('openrouter.ai')
+  const sharedFreeQuotaUntil=provider.free===true && String(provider.modelDef?.base||provider.base||provider.baseURL||'').includes('openrouter.ai')
     ? Number(fabricStates[OPENROUTER_FREE_ACCOUNT_GROUP]?.downUntil||0)
     : 0;
   return Math.max(providerUntil,fabricUntil,modelUntil,keyPoolUntil,sharedFreeQuotaUntil);
