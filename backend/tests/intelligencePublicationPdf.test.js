@@ -23,4 +23,15 @@ describe('ultra publication PDF invariants',()=>{
     expect(s).toContain('fetchImages(rows,researchSources=[])');
     expect(s).toContain('researchSources');
   });
+
+  test('missing stored PDF objects become retryable instead of remaining falsely ready',()=>{
+    const s=source();
+    const start=s.indexOf('async function getPublicationPdfObjectUnsafe');
+    const end=s.indexOf('async function getPublicationPdfObject(orgId,publicationId)',start);
+    const access=s.slice(start,end);
+    expect(access).toContain('publication_pdf_object_not_found');
+    expect(access).toContain("SET pdf_status='failed',pdf_error=$3,updated_at=NOW()");
+    expect(access).toContain("AND status='published' AND pdf_status='ready' AND pdf_key=$4");
+    expect(s).toContain("pdf_error LIKE 'Publication PDF object not found%'");
+  });
 });

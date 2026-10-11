@@ -649,7 +649,7 @@ async function getPublicationPdfAccessUrlUnsafe(orgId,publicationId,{download=fa
   return getSignedUrl(r2,new GetObjectCommand({Bucket:bucket,Key:row.pdf_key,...(download?{ResponseContentType:'application/pdf',ResponseContentDisposition:`attachment; filename="${filename}"`}: {})}),{expiresIn:300});
 }
 
-async function generateMissingPublicationPdfsUnsafe(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes') OR (pdf_status='generating' AND updated_at < NOW()-INTERVAL '30 minutes') OR (pdf_status='ready' AND COALESCE(body->'generator'->>'pdf_renderer_version','') <> $2)) ORDER BY COALESCE(pdf_generated_at,published_at,created_at) ASC NULLS FIRST LIMIT $3",[orgId,PDF_RENDERER_VERSION,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdfUnsafe(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
+async function generateMissingPublicationPdfsUnsafe(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND (pdf_error LIKE 'Publication PDF object not found%' OR updated_at < NOW()-INTERVAL '30 minutes')) OR (pdf_status='generating' AND updated_at < NOW()-INTERVAL '30 minutes') OR (pdf_status='ready' AND COALESCE(body->'generator'->>'pdf_renderer_version','') <> $2)) ORDER BY COALESCE(pdf_generated_at,published_at,created_at) ASC NULLS FIRST LIMIT $3",[orgId,PDF_RENDERER_VERSION,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdfUnsafe(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
 async function generateMissingPublicationPdfs(orgId,limit=3){
   return runWithOrgContext(orgId, () => generateMissingPublicationPdfsUnsafe(orgId, limit));
 }
@@ -697,7 +697,12 @@ async function getPublicationPdfObjectUnsafe(orgId,publicationId){
   }catch(error){
     const status=error?.$metadata?.httpStatusCode;
     if(status===404||error?.name==='NoSuchKey'||error?.name==='NotFound'){
-      const wrapped=new Error('Publication PDF object not found');
+      // The ledger previously remained "ready", which excluded this report from
+      // regeneration forever. Compare-and-swap the exact missing key so a newer
+      // concurrent render is never downgraded by a stale reader.
+      await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3,updated_at=NOW() WHERE id=$1 AND org_id=$2 AND status='published' AND pdf_status='ready' AND pdf_key=$4",
+        [publicationId,orgId,'Publication PDF object not found; regeneration queued.',row.pdf_key]).catch(()=>{});
+      const wrapped=new Error('Publication PDF object not found; regeneration queued');
       wrapped.code='publication_pdf_object_not_found';
       throw wrapped;
     }

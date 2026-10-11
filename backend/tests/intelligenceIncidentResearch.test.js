@@ -180,6 +180,33 @@ describe('publication incident research coverage',()=>{
 });
 
 
+test('isolates incidents omitted from a partial batch response for bounded individual re-research',async()=>{
+  const aiClient=require('../src/utils/aiClient');
+  aiClient.hasAnyProvider.mockReset().mockReturnValue(true);
+  const requests=[];
+  const responseFor=id=>({
+    _provider:'openrouter-free-router',
+    content:[{type:'text',text:JSON.stringify({results:[{
+      incident_id:id,status:'researched',narrative:'A specific incident narrative based only on available evidence.',
+      context:'A bounded local context.',confirmed_facts:[],reported_or_disputed:[],
+      analytical_assessment:'The available record does not establish broader consequences.',why_it_matters:[],
+      uncertainty:['Further independent corroboration is required.'],chronology:[],sources:[],search_notes:''
+    }]})}]
+  });
+  aiClient.createResearchMessage.mockReset().mockImplementation(async request=>{
+    requests.push(String(request?.messages?.[0]?.content||''));
+    return responseFor(requests.length<=2?'partial-a':'partial-b');
+  });
+  const result=await researchPublicationIncidents([
+    {id:'partial-a',headline:'Incident one distinctive heading',brief:'First incident record.',country_code:'KE',evidence:[]},
+    {id:'partial-b',headline:'Incident two isolated heading',brief:'Second incident record.',country_code:'KE',evidence:[]},
+  ],{country:'KE'});
+  expect(requests).toHaveLength(3);
+  expect(requests[2]).toContain('Incident two isolated heading');
+  expect(requests[2]).not.toContain('Incident one distinctive heading');
+  expect(result.summary.requested).toBe(2);
+});
+
 test('provider research citations must come from non-text verified web-search result blocks',()=>{
   const sources=verifiedResponseSources({
     content:[
