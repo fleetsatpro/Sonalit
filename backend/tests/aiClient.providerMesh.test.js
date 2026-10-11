@@ -165,9 +165,9 @@ describe('intelligence provider mesh', () => {
   });
 
   test('rotates across the OpenAI key pool when a member is rate-limited', async () => {
-    process.env.OPENAI_API_KEY_1 = 'key-one-test-token';
-    process.env.OPENAI_API_KEY_2 = 'key-two-test-token';
-    process.env.OPENAI_API_KEY_3 = 'key-three-test-token';
+    process.env.OPENAI_API_KEY_1 = 'sk-proj-shared-prefix-key-one';
+    process.env.OPENAI_API_KEY_2 = 'sk-proj-shared-prefix-key-two';
+    process.env.OPENAI_API_KEY_3 = 'sk-proj-shared-prefix-key-three';
 
     const seen=[];
     jest.doMock('openai', () => class MockOpenAI {
@@ -334,8 +334,8 @@ describe('intelligence provider mesh', () => {
   });
 
   test('a shared Redis Gemini circuit cannot suppress healthy Gemini key-pool members', async () => {
-    process.env.GOOGLE_AI_API_KEY_1 = 'google-one-test-token';
-    process.env.GOOGLE_AI_API_KEY_2 = 'google-two-test-token';
+    process.env.GOOGLE_AI_API_KEY_1 = 'AIzaSyAB-shared-prefix-key-one';
+    process.env.GOOGLE_AI_API_KEY_2 = 'AIzaSyAB-shared-prefix-key-two';
     process.env.REDIS_URL = 'redis://mock';
     process.env.INTEL_PERSIST_PROVIDER_CIRCUITS = 'true';
 
