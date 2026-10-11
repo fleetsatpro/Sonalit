@@ -684,7 +684,7 @@ describe('intelligence provider mesh', () => {
     const redis={
       mget:jest.fn(async keys=>keys.map(key=>{
         const group=decodeURIComponent(String(key).replace(prefix,''));
-        return group.startsWith('openrouter-')?String(until):'0';
+        return (group.startsWith('openrouter-free:')||group.startsWith('openrouter-paid:'))?String(until):'0';
       })),
       scan:jest.fn(async()=>['0',[]]),
       get:jest.fn(async()=>null),
@@ -822,7 +822,7 @@ describe('intelligence provider mesh', () => {
     const redis={
       mget:jest.fn(async keys=>keys.map(key=>{
         const group=decodeURIComponent(String(key).replace(prefix,''));
-        return group.startsWith('openrouter-')?String(staleUntil):'0';
+        return (group.startsWith('openrouter-free:')||group.startsWith('openrouter-paid:'))?String(staleUntil):'0';
       })),
       scan:jest.fn(async()=>['0',[]]),
       get:jest.fn(async()=>null),
