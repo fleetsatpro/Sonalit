@@ -644,7 +644,7 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
     const researchSources=(Array.isArray(publication.body?.incident_dossiers)?publication.body.incident_dossiers:[]).flatMap(e=>Array.isArray(e?.research_sources)?e.research_sources:[]);
     const images=await fetchImages(observationRows,researchSources); const pdf=await buildProfessionalPdf(publication,events,images);
     const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured'); const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
-    const safe=String(publication.country_code)+'-'+String(publication.publication_type)+'-'+new Date(publication.period_start).toISOString().slice(0,10);
+    const safe=(String(publication.country_code)+'-'+String(publication.publication_type)+'-'+new Date(publication.period_start).toISOString().slice(0,10)).replace(/[^A-Z0-9._-]/gi,'-');
     const pdfVersion=Number(publication.pdf_version)||1;
     const keyPrefix='intelligence-publications/'+orgId+'/'+safe+'-r'+PDF_RENDERER_VERSION+'-v'+pdfVersion+'-';
     // Immutable attempt-specific keys stop an expired worker overwriting the
