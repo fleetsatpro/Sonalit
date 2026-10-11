@@ -16,7 +16,7 @@ describe('regional incident provider resilience', () => {
     for (const name of names) {
       const feed = RSS_FEEDS.find((candidate) => candidate.name === name);
       expect(feed).toBeDefined();
-      expect(feed.fallback_url).toMatch(/^https:\/\/news\.google\.com\/rss\/search\?/);
+    expect(feed.fallback_url.startsWith('https://news.google.com/rss/search?')).toBe(true);
     }
   });
 
