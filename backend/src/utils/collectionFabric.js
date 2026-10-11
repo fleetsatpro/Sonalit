@@ -4,6 +4,8 @@ const {XMLParser}=require('fast-xml-parser');
 const {query,pool}=require('../config/database');
 const { runWithOrgContext } = require('./tenantContext');
 const logger=require('./logger');
+const { normalizeCountryCode, inferCountryCodeFromItem, inferCountryCodeFromText } = require('./intelligenceGeography');
+const { safeFetchPublicResearch, MAX_RESPONSE_BYTES: MAX_PUBLIC_RESEARCH_RESPONSE_BYTES } = require('./publicResearchFetch');
 const xmlParser=new XMLParser({ignoreAttributes:true});
 const TIMEOUT_MS=20000,MAX_ITEMS=50;
 let gdeltCooldownUntil=0,gdeltLastRequestAt=0;
@@ -16,19 +18,89 @@ function sourceType(p){return['x','facebook','telegram'].includes(p)?'social':p=
 async function ensureSource(orgId,spec){const{rows}=await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) ON CONFLICT (org_id,provider,endpoint) WHERE provider IS NOT NULL AND endpoint IS NOT NULL DO UPDATE SET name=EXCLUDED.name,source_type=EXCLUDED.source_type,reliability=EXCLUDED.reliability,metadata=EXCLUDED.metadata,last_seen_at=NOW(),updated_at=NOW() RETURNING *`,[orgId,spec.name,sourceType(spec.provider),spec.provider,spec.endpoint||null,Number.isFinite(spec.reliability)?spec.reliability:60,JSON.stringify(spec.metadata||{})]);return rows[0];}
 async function startRun(id,sourceId,metadata={}){const{rows}=await query(`INSERT INTO intel_collection_runs (org_id,source_id,metadata) VALUES ($1,$2,$3::jsonb) RETURNING id`,[id,sourceId,JSON.stringify(metadata)]);return rows[0].id;}
 async function finishRun(id,p){await query(`UPDATE intel_collection_runs SET finished_at=NOW(),status=$2,observations_seen=$3,observations_inserted=$4,observations_duplicate=$5,error_count=$6,error_message=$7,metadata=metadata || $8::jsonb WHERE id=$1`,[id,p.status,p.seen||0,p.inserted||0,p.duplicate||0,p.errors||0,p.errorMessage||null,JSON.stringify(p.metadata||{})]);}
-function normalize(provider,item){const title=clean(item.title||item.text||item.description,700),body=clean(item.body||item.text||item.description,7000),url=item.url||null;const externalId=item.external_id||(url?`${provider}:${sha256(url)}`:`${provider}:${sha256(`${title}|${item.published_at||''}`)}`);return{external_id:externalId,observed_at:item.observed_at||new Date().toISOString(),published_at:item.published_at||null,title:title||null,body:body||null,url,language:item.language||null,country_code:item.country_code||null,latitude:item.latitude??null,longitude:item.longitude??null,content_hash:sha256(`${title}|${body}|${url||''}`.toLowerCase()),raw_metadata:{...(item.raw_metadata||{}),severity_hint:severityHint(`${title} ${body}`),collected_via:provider},credibility:Number.isFinite(item.credibility)?item.credibility:(['x','facebook'].includes(provider)?45:65),manipulation_score:0};}
-async function persist(orgId,source,items){let inserted=0,duplicate=0;for(const item of items.slice(0,MAX_ITEMS)){const o=normalize(source.provider,item);if(!o.title&&!o.body)continue;const r=await query(`INSERT INTO intel_observations (org_id,source_id,external_id,observed_at,published_at,title,body,url,language,country_code,latitude,longitude,content_hash,raw_metadata,credibility,manipulation_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16) ON CONFLICT (org_id,source_id,external_id) DO NOTHING`,[orgId,source.id,o.external_id,o.observed_at,o.published_at,o.title,o.body,o.url,o.language,o.country_code,o.latitude,o.longitude,o.content_hash,JSON.stringify(o.raw_metadata),o.credibility,o.manipulation_score]);if(r.rowCount)inserted++;else duplicate++;}return{inserted,duplicate};}
+function normalize(provider,item){
+  const title=clean(item.title||item.text||item.description,700);
+  const body=clean(item.body||item.text||item.description,7000);
+  const url=item.url||null;
+  const externalId=item.external_id||(url?provider+':'+sha256(url):provider+':'+sha256(title+'|'+(item.published_at||'')));
+  const countryCode=inferCountryCodeFromItem({...item,title,body});
+  const countryAttribution=normalizeCountryCode(item.country_code)?'provider_explicit':countryCode?(inferCountryCodeFromText(title)?'headline_geography':'body_geography'):null;
+  return {
+    external_id:externalId,observed_at:item.observed_at||new Date().toISOString(),
+    published_at:item.published_at||null,title:title||null,body:body||null,url,
+    language:item.language||null,country_code:countryCode,
+    latitude:item.latitude??null,longitude:item.longitude??null,
+    content_hash:sha256((title+'|'+body+'|'+(url||'')).toLowerCase()),
+    raw_metadata:{...(item.raw_metadata||{}),...(countryAttribution?{country_attribution:countryAttribution}:{}),severity_hint:severityHint(title+' '+body),collected_via:provider},
+    credibility:Number.isFinite(item.credibility)?item.credibility:(['x','facebook'].includes(provider)?45:65),
+    manipulation_score:0
+  };
+}
+async function persist(orgId,source,items){
+  let inserted=0,duplicate=0,countryScopeUpdated=0;
+  const sql="INSERT INTO intel_observations (org_id,source_id,external_id,observed_at,published_at,title,body,url,language,country_code,latitude,longitude,content_hash,raw_metadata,credibility,manipulation_score) "+
+    "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16) "+
+    "ON CONFLICT (org_id,source_id,external_id) DO UPDATE "+
+    "SET country_code=COALESCE(intel_observations.country_code,EXCLUDED.country_code), "+
+    "raw_metadata=COALESCE(intel_observations.raw_metadata,'{}'::jsonb)||EXCLUDED.raw_metadata||jsonb_build_object('country_scope_repaired',EXCLUDED.country_code) "+
+    "WHERE intel_observations.country_code IS NULL AND EXCLUDED.country_code IS NOT NULL "+
+    "RETURNING (xmax=0) AS inserted";
+  for(const item of items.slice(0,MAX_ITEMS)){
+    const o=normalize(source.provider,item);
+    if(!o.title&&!o.body)continue;
+    const r=await query(sql,[orgId,source.id,o.external_id,o.observed_at,o.published_at,o.title,o.body,o.url,o.language,o.country_code,o.latitude,o.longitude,o.content_hash,JSON.stringify(o.raw_metadata),o.credibility,o.manipulation_score]);
+    if(r.rowCount){
+      if(r.rows[0]?.inserted)inserted++;
+      else{duplicate++;countryScopeUpdated++;}
+    }else duplicate++;
+  }
+  return{inserted,duplicate,country_scope_updated:countryScopeUpdated};
+}
 function parseGdeltDate(v){const s=String(v||'');return/^\d{14}$/.test(s)?`${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T${s.slice(8,10)}:${s.slice(10,12)}:${s.slice(12,14)}Z`:null;}
 async function fetchGdelt(q){const now=Date.now();if(now<gdeltCooldownUntil)throw new Error('GDELT cooldown active after a previous provider failure');const wait=GDELT_MIN_INTERVAL_MS-(now-gdeltLastRequestAt);if(wait>0)await new Promise(r=>setTimeout(r,wait));const url=`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&maxrecords=${MAX_ITEMS}&timespan=24h&format=json`;gdeltLastRequestAt=Date.now();try{const r=await timeoutFetch(url);if(r.status===429){gdeltCooldownUntil=Date.now()+GDELT_COOLDOWN_MS;throw new Error('GDELT rate limited; circuit opened');}if(!r.ok)throw new Error(`GDELT HTTP ${r.status}`);const d=await r.json();return(d.articles||[]).map(a=>({external_id:a.url?`gdelt:${sha256(a.url)}`:null,title:a.title,body:a.title,url:a.url,published_at:parseGdeltDate(a.seendate),language:a.language||null,raw_metadata:{domain:a.domain,tone:a.tone,sourcecountry:a.sourcecountry}}));}catch(e){gdeltCooldownUntil=Date.now()+GDELT_COOLDOWN_MS;logger.warn(`Collection Fabric: GDELT unavailable — ${e.message}`);throw e;}}
 async function fetchX(q){const token=process.env.X_BEARER_TOKEN||process.env.TWITTER_BEARER_TOKEN;if(!token)return[];const p=new URLSearchParams({query:`${q} -is:retweet`,max_results:'50','tweet.fields':'created_at,lang,author_id,public_metrics,context_annotations'});const r=await timeoutFetch(`https://api.x.com/2/tweets/search/recent?${p}`,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw new Error(`X API HTTP ${r.status}`);const d=await r.json();return(d.data||[]).map(t=>({external_id:`x:${t.id}`,title:clean(t.text,700),body:t.text,published_at:t.created_at,language:t.lang,raw_metadata:{author_id:t.author_id,public_metrics:t.public_metrics,context_annotations:t.context_annotations}}));}
 async function fetchFacebook(page){const token=page.access_token||process.env.META_GRAPH_ACCESS_TOKEN||process.env.FACEBOOK_GRAPH_ACCESS_TOKEN;if(!token||!page.page_id)return[];const fields='id,message,created_time,permalink_url,from,attachments';const r=await timeoutFetch(`https://graph.facebook.com/${encodeURIComponent(page.page_id)}/feed?fields=${encodeURIComponent(fields)}&limit=50&access_token=${encodeURIComponent(token)}`);if(!r.ok)throw new Error(`Meta Graph HTTP ${r.status}`);const d=await r.json();return(d.data||[]).map(p=>({external_id:`facebook:${p.id}`,title:clean(p.message,700),body:p.message,url:p.permalink_url||null,published_at:p.created_time,raw_metadata:{from:p.from,attachments:p.attachments}}));}
 function rssText(value){if(value==null)return'';if(typeof value==='string')return value;if(typeof value==='object')return value['#text']||value['__cdata']||value.value||value.text||'';return String(value);}
 function rssLink(value){if(value==null)return null;if(typeof value==='string')return value;if(Array.isArray(value))return rssLink(value[0]);if(typeof value==='object')return value.href||value['#text']||value.url||null;return String(value);}
-async function fetchRss(url){const r=await timeoutFetch(url,{headers:{Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9,*/*;q=0.1'}});if(!r.ok)throw new Error(`RSS HTTP ${r.status}`);const x=xmlParser.parse(await r.text()),raw=x?.rss?.channel?.item||x?.feed?.entry||[],items=Array.isArray(raw)?raw:[raw];return items.slice(0,MAX_ITEMS).map(i=>{const title=clean(rssText(i.title),700),link=rssLink(i.link),published=rssText(i.pubDate)||rssText(i.published)||rssText(i.updated);let publishedAt=null;try{publishedAt=published?new Date(published).toISOString():null}catch{}return{external_id:i.guid?`rss:${rssText(i.guid)}`:(i.id?`rss:${rssText(i.id)}`:(link?`rss:${sha256(link)}`:null)),title,body:clean(rssText(i.description)||rssText(i.summary)||rssText(i.content),5000),url:link,published_at:publishedAt,language:rssText(i.language)||null};});}
+async function fetchRss(url){
+  const response=await safeFetchPublicResearch(url,{timeoutMs:TIMEOUT_MS,maxBytes:MAX_PUBLIC_RESEARCH_RESPONSE_BYTES});
+  if(!response.ok)throw new Error('RSS HTTP '+response.status);
+  const parsed=xmlParser.parse(await response.text());
+  const raw=parsed?.rss?.channel?.item||parsed?.feed?.entry||[];
+  const items=Array.isArray(raw)?raw:[raw];
+  return items.slice(0,MAX_ITEMS).map(item=>{
+    const title=clean(rssText(item.title),700);
+    const link=rssLink(item.link);
+    const published=rssText(item.pubDate)||rssText(item.published)||rssText(item.updated);
+    let publishedAt=null;
+    try{publishedAt=published?new Date(published).toISOString():null}catch(_){}
+    return{
+      external_id:item.guid?'rss:'+rssText(item.guid):(item.id?'rss:'+rssText(item.id):(link?'rss:'+sha256(link):null)),
+      title,body:clean(rssText(item.description)||rssText(item.summary)||rssText(item.content),5000),
+      url:link,published_at:publishedAt,language:rssText(item.language)||null
+    };
+  });
+}
 function buildQuery(watchlists){const terms=[];for(const w of watchlists){const t=w.target||{};if(w.watch_type==='keyword'&&t.keyword)terms.push(t.keyword);if(w.watch_type==='topic'&&t.query)terms.push(t.query);if(w.watch_type==='country'&&t.country)terms.push(t.country);if(w.watch_type==='region'&&t.region)terms.push(t.region);if(w.watch_type==='entity'&&t.name)terms.push(t.name);}const u=[...new Set(terms.map(clean).filter(Boolean))].slice(0,12);return u.length?`(${u.map(t=>`\"${t.replace(/\"/g,'')}\"`).join(' OR ')})`:'(Africa OR Kenya OR Tanzania OR Uganda OR Rwanda OR DRC OR Somalia OR Ethiopia OR Sudan OR conflict OR security OR transport)';}
 function defaultRssFeeds(){return[{provider:'rss',name:'BBC World RSS',endpoint:'https://feeds.bbci.co.uk/news/world/rss.xml',url:'https://feeds.bbci.co.uk/news/world/rss.xml',reliability:82},{provider:'rss',name:'DW World RSS',endpoint:'https://rss.dw.com/rdf/rss-en-world',url:'https://rss.dw.com/rdf/rss-en-world',reliability:80},{provider:'rss',name:'Al Jazeera RSS',endpoint:'https://www.aljazeera.com/xml/rss/all.xml',url:'https://www.aljazeera.com/xml/rss/all.xml',reliability:78}];}
-async function collectForOrg(orgId){return runWithOrgContext(orgId, async () => {const{rows:watchlists}=await query(`SELECT name,watch_type,target FROM intel_watchlists WHERE org_id=$1 AND active=true ORDER BY updated_at DESC LIMIT 100`,[orgId]);const q=buildQuery(watchlists);const adapters=[];adapters.push({provider:'gdelt',name:'GDELT Global News',endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',reliability:72,run:()=>fetchGdelt(q)});for(const f of defaultRssFeeds())adapters.push({...f,run:()=>fetchRss(f.url)});if(process.env.X_BEARER_TOKEN||process.env.TWITTER_BEARER_TOKEN)adapters.push({provider:'x',name:'X Recent Search',endpoint:'https://api.x.com/2/tweets/search/recent',reliability:45,run:()=>fetchX(q)});let pages=[];try{pages=JSON.parse(process.env.RISK_INTEL_FACEBOOK_PAGES||'[]');}catch{}for(const p of Array.isArray(pages)?pages.slice(0,20):[])if(p?.page_id)adapters.push({provider:'facebook',name:`Facebook Page ${p.page_id}`,endpoint:`page:${p.page_id}`,reliability:Number(p.reliability)||48,run:()=>fetchFacebook(p)});let feeds=[];try{feeds=JSON.parse(process.env.RISK_INTEL_EXTRA_RSS_FEEDS||'[]');}catch{}for(const f of Array.isArray(feeds)?feeds.slice(0,30):[])if(f?.url)adapters.push({provider:'rss',name:f.name||`RSS ${f.url}`,endpoint:f.url,reliability:Number(f.reliability)||60,run:()=>fetchRss(f.url)});
-  const results=[];for(const a of adapters){let runId=null,seen=0,inserted=0,duplicate=0;try{const source=await ensureSource(orgId,{...a,metadata:{query:q}});runId=await startRun(orgId,source.id,{query:q,adapter:a.provider});const items=await a.run();seen=items.length;const p=await persist(orgId,source,items);inserted=p.inserted;duplicate=p.duplicate;await finishRun(runId,{status:'success',seen,inserted,duplicate,metadata:{query:q}});logger.info(`Collection Fabric: provider=${a.name} status=success seen=${seen} inserted=${inserted} duplicate=${duplicate}`);results.push({provider:a.provider,name:a.name,seen,inserted,duplicate,status:'success'});}catch(e){if(runId)await finishRun(runId,{status:seen?'partial':'failed',seen,inserted,duplicate,errors:1,errorMessage:String(e.message).slice(0,500)}).catch(()=>{});logger.warn(`Collection Fabric: provider=${a.name} status=failed seen=${seen} inserted=${inserted} error=${e.message}`);results.push({provider:a.provider,name:a.name,seen,inserted,duplicate,status:'failed',error:e.message});}}
+async function collectForOrg(orgId){return runWithOrgContext(orgId, async () => {const{rows:watchlists}=await query(`SELECT name,watch_type,target FROM intel_watchlists WHERE org_id=$1 AND active=true ORDER BY updated_at DESC LIMIT 100`,[orgId]);const q=buildQuery(watchlists);const adapters=[];adapters.push({provider:'gdelt',name:'GDELT Global News',endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',reliability:72,run:()=>fetchGdelt(q)});for(const f of defaultRssFeeds())adapters.push({...f,run:()=>fetchRss(f.url)});if(process.env.X_BEARER_TOKEN||process.env.TWITTER_BEARER_TOKEN)adapters.push({provider:'x',name:'X Recent Search',endpoint:'https://api.x.com/2/tweets/search/recent',reliability:45,run:()=>fetchX(q)});let pages=[];try{pages=JSON.parse(process.env.RISK_INTEL_FACEBOOK_PAGES||'[]');}catch{}for(const p of Array.isArray(pages)?pages.slice(0,20):[])if(p?.page_id)adapters.push({provider:'facebook',name:`Facebook Page ${p.page_id}`,endpoint:`page:${p.page_id}`,reliability:Number(p.reliability)||48,run:()=>fetchFacebook(p)});const configuredFeedUrls=new Set(adapters.filter(a=>a.provider==='rss').map(a=>String(a.endpoint||a.url||'').trim().toLowerCase()).filter(Boolean));
+  let configuredFeedCount=0;
+  for(const rawFeeds of [process.env.INTEL_RSS_FEEDS,process.env.RISK_INTEL_EXTRA_RSS_FEEDS]){
+    if(!String(rawFeeds||'').trim())continue;
+    let feeds;
+    try{feeds=JSON.parse(rawFeeds)}catch(_){logger.warn('Collection Fabric: configured RSS feeds contain invalid JSON; one feed list was skipped.');continue;}
+    if(!Array.isArray(feeds))continue;
+    for(const feed of feeds){
+      if(!feed?.url||configuredFeedCount>=30)continue;
+      const endpoint=String(feed.url).trim();
+      const key=endpoint.toLowerCase();
+      if(!endpoint||configuredFeedUrls.has(key))continue;
+      configuredFeedUrls.add(key);
+      configuredFeedCount++;
+      adapters.push({...feed,provider:'rss',name:feed.name||('RSS '+endpoint),endpoint,reliability:Number(feed.reliability||feed.credibility)||60,run:()=>fetchRss(endpoint)});
+    }
+  }
+  const results=[];for(const a of adapters){let runId=null,seen=0,inserted=0,duplicate=0;try{const source=await ensureSource(orgId,{...a,metadata:{query:q,...((a.country_code||a.country)?{country_hint:normalizeCountryCode(a.country_code||a.country),country_hint_authoritative:false}:{})}});runId=await startRun(orgId,source.id,{query:q,adapter:a.provider});const items=await a.run();seen=items.length;const p=await persist(orgId,source,items);inserted=p.inserted;duplicate=p.duplicate;await finishRun(runId,{status:'success',seen,inserted,duplicate,metadata:{query:q}});logger.info(`Collection Fabric: provider=${a.name} status=success seen=${seen} inserted=${inserted} duplicate=${duplicate}`);results.push({provider:a.provider,name:a.name,seen,inserted,duplicate,status:'success'});}catch(e){if(runId)await finishRun(runId,{status:seen?'partial':'failed',seen,inserted,duplicate,errors:1,errorMessage:String(e.message).slice(0,500)}).catch(()=>{});logger.warn(`Collection Fabric: provider=${a.name} status=failed seen=${seen} inserted=${inserted} error=${e.message}`);results.push({provider:a.provider,name:a.name,seen,inserted,duplicate,status:'failed',error:e.message});}}
   return{orgId,query:q,results,totalSeen:results.reduce((s,r)=>s+(r.seen||0),0),totalInserted:results.reduce((s,r)=>s+(r.inserted||0),0)};
 });}
 async function runCollectionFabric(){const client=await pool.connect();let locked=false;try{const lock=await client.query("SELECT pg_try_advisory_lock(hashtext('sonalit:intelligence:collection')) AS acquired");locked=Boolean(lock.rows[0]?.acquired);if(!locked)return{skipped:true,reason:'cluster_run_in_progress'};const{rows:orgs}=await client.query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const{fuseOrg}=require('./intelligenceFusionRuntime');const{enrichOrg}=require('./intelligenceAdvancedRuntime');const output=[];for(const{org_id}of orgs){const started=Date.now();try{const result=await runWithOrgContext(org_id,async()=>{const collection=await collectForOrg(org_id);const fusion=await fuseOrg(org_id);const enrichment=await enrichOrg(org_id);return{collection,fusion,enrichment};});const{collection,fusion,enrichment}=result;output.push({org_id,collection,fusion,enrichment,duration_ms:Date.now()-started});logger.info(`Intelligence Collection Fabric: org=${org_id} completed in ${Date.now()-started}ms seen=${collection.totalSeen} inserted=${collection.totalInserted}`);}catch(e){output.push({org_id,error:e.message,duration_ms:Date.now()-started});logger.warn(`Intelligence Collection Fabric: org=${org_id} failed: ${e.message}`);}}return{organizations:output.length,discovered:output.reduce((s,o)=>s+(o.collection?.totalSeen||0),0),ingested:output.reduce((s,o)=>s+(o.collection?.totalInserted||0),0),results:output};}finally{if(locked){try{await client.query("SELECT pg_advisory_unlock(hashtext('sonalit:intelligence:collection'))")}catch(_){}}client.release();}}
