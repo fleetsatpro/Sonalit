@@ -35,10 +35,20 @@ describe('intelligence publication autonomous recovery',()=>{
     expect(s).not.toContain('const published=[]');
   });
 
-  test('failed and abandoned PDF generations can be retried after a cooldown',()=>{
+  test('PDF rendering uses an atomic lease and fences stale render completion',()=>{
     const s=fs.readFileSync(path.join(__dirname,'../src/services/intelligencePublicationPdf.js'),'utf8');
-    expect(s).toContain("pdf_status='generating',pdf_error=NULL,updated_at=NOW()");
-    expect(s).toContain("pdf_status='failed',pdf_error=$3,updated_at=NOW()");
-    expect(s).toContain("pdf_status='generating' AND updated_at < NOW()-INTERVAL '30 minutes'");
+    const start=s.indexOf('async function renderAndStorePublicationPdfUnsafe');
+    const end=s.indexOf('async function getPublicationPdfAccessUrlUnsafe',start);
+    const render=s.slice(start,end);
+    expect(render).toContain("SET pdf_status='generating'");
+    expect(render).toContain("updated_at < NOW()-INTERVAL '30 minutes'");
+    expect(render).toContain("'pdf_generation_claim'");
+    expect(render).toContain("body->'generator'->>'pdf_generation_claim'=$5");
+    expect(render).toContain("body->'generator'->>'pdf_generation_claim'=$4");
+    expect(render).toContain("reason:existing.pdf_status==='generating'?'pdf_generation_in_progress'");
+    expect(render).toContain("const key=keyPrefix+claimToken+'.pdf'");
+    expect(render).toContain(".replace(/[^A-Z0-9._-]/gi,'-')");
+    expect(render).toContain("status:'superseded'");
+    expect(render).toContain("SET pdf_status='failed',pdf_error=$3,updated_at=NOW()");
   });
 });
