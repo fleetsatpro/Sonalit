@@ -24,6 +24,14 @@ describe('ultra publication PDF invariants',()=>{
     expect(s).toContain('researchSources');
   });
 
+  test('successful regeneration stamps the renderer version checked by PDF delivery',()=>{
+    const s=source();
+    const ready=s.slice(s.indexOf("UPDATE intel_publications SET pdf_status='ready'"),s.indexOf("UPDATE intel_publications SET pdf_status='ready'")+850);
+    expect(ready).toContain("body=jsonb_set(COALESCE(body,'{}'::jsonb),'{generator}'");
+    expect(ready).toContain("jsonb_build_object('pdf_renderer_version',$4::text)");
+    expect(ready).toContain('key,PDF_RENDERER_VERSION');
+    expect(s).toContain("row.body?.generator?.pdf_renderer_version||'')!==PDF_RENDERER_VERSION");
+  });
   test('missing stored PDF objects become retryable instead of remaining falsely ready',()=>{
     const s=source();
     const start=s.indexOf('async function getPublicationPdfObjectUnsafe');
