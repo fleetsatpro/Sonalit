@@ -107,8 +107,11 @@ router.get('/publications', asyncHandler(async(req,res)=>{
   const s=scope(req);
   const geo=countryClause(s,'p',4);
   const baseValues=[req.user.org_id,status,publicationType,...geo.params];
+  // PostgreSQL requires parameter placeholders; literal indices left bound values unused.
+  const limitParameter='$'+(baseValues.length+1);
+  const offsetParameter='$'+(baseValues.length+2);
   const [listResult,countResult]=await Promise.all([
-    req.db(`SELECT p.*,COUNT(r.id)::int AS review_count FROM intel_publications p LEFT JOIN intel_publication_reviews r ON r.publication_id=p.id WHERE p.org_id=$1 AND ($2::text IS NULL OR p.status=$2) AND ($3::text IS NULL OR p.publication_type=$3) AND ${geo.clause} GROUP BY p.id ORDER BY p.updated_at DESC LIMIT ${baseValues.length+1} OFFSET ${baseValues.length+2}`,[...baseValues,limit,offset]),
+    req.db(`SELECT p.*,COUNT(r.id)::int AS review_count FROM intel_publications p LEFT JOIN intel_publication_reviews r ON r.publication_id=p.id WHERE p.org_id=$1 AND ($2::text IS NULL OR p.status=$2) AND ($3::text IS NULL OR p.publication_type=$3) AND ${geo.clause} GROUP BY p.id ORDER BY p.updated_at DESC LIMIT ${limitParameter} OFFSET ${offsetParameter}`,[...baseValues,limit,offset]),
     req.db(`SELECT COUNT(*)::int AS total_count FROM intel_publications p WHERE p.org_id=$1 AND ($2::text IS NULL OR p.status=$2) AND ($3::text IS NULL OR p.publication_type=$3) AND ${geo.clause}`,baseValues),
   ]);
   const rows=listResult.rows;

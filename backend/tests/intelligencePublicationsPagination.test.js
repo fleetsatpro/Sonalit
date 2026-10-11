@@ -10,6 +10,11 @@ describe('intelligence publications archive pagination',()=>{
   expect(route).toContain('Number(req.query.offset)||0');
   expect(route).toContain('COUNT(*)::int AS total_count');
   expect(route).toContain('has_more:offset+safeRows.length<totalCount');
+  expect(route).toContain("const limitParameter='$'+(baseValues.length+1)");
+  expect(route).toContain("const offsetParameter='$'+(baseValues.length+2)");
+  expect(route).toContain('LIMIT ${limitParameter} OFFSET ${offsetParameter}');
+  expect(route).toContain('[...baseValues,limit,offset]');
+  expect(route).not.toContain('LIMIT ${baseValues.length+1} OFFSET ${baseValues.length+2}');
   expect(route).toContain('req.user.org_id');
  });
 });
