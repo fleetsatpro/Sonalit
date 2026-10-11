@@ -137,7 +137,7 @@ function xQueryForCountry(code){const country=EA_COUNTRIES[code];const geo=count
 async function fetchX(code){const token=process.env.X_BEARER_TOKEN||process.env.TWITTER_BEARER_TOKEN;if(!token)return[];const q=xQueryForCountry(code),p=new URLSearchParams({query:q,max_results:'100',sort_order:'recency','tweet.fields':'created_at,lang,author_id,public_metrics,context_annotations,geo,entities'});const r=await timeoutFetch(`https://api.x.com/2/tweets/search/recent?${p}`,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw new Error(`X ${EA_COUNTRIES[code].name} HTTP ${r.status}`);const d=await r.json();return(d.data||[]).map(t=>({external_id:`x:${t.id}`,text:t.text,title:clean(t.text,700),published_at:t.created_at,observed_at:t.created_at,language:t.lang,country_code:code,url:`https://x.com/i/web/status/${t.id}`,credibility:45,raw_metadata:{author_id:t.author_id,public_metrics:t.public_metrics,context_annotations:t.context_annotations,geo:t.geo}}));}
 let gdeltUnavailableUntil=0;
 const GDELT_COOLDOWN_MS=15*60*1000;
-const GDELT_QUERY_MAX_LENGTH=260;
+const GDELT_QUERY_MAX_LENGTH=240;
 // GDELT DOC accepts OR groups, but rejects overly large queries. Keep the regional
 // geography and incident vocabularies intentionally small and bounded so a bad
 // query cannot silently force the discovery source onto a 15-minute fallback.
