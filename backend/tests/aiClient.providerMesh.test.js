@@ -567,7 +567,7 @@ describe('intelligence provider mesh', () => {
         this.apiKey = options.apiKey;
         this.chat = { completions: { create: jest.fn(async request => {
           calls.push({ baseURL: this.baseURL, model: request.model });
-          if (this.baseURL.includes('openrouter.ai') && String(request.model).endsWith(':free')) {
+          if (this.baseURL.includes('openrouter.ai') && (String(request.model).endsWith(':free') || request.model === 'openrouter/free')) {
             const error = Object.assign(new Error('Rate limit exceeded'), {
               status: 429,
               headers: {
@@ -600,7 +600,7 @@ describe('intelligence provider mesh', () => {
     // The free lane that discovers the exhausted account quota is attempted
     // once; every sibling free lane stays out until the account reset. Paid
     // lanes remain an independent fallback under the existing routing policy.
-    expect(calls.filter(call => call.baseURL.includes('openrouter.ai') && String(call.model).endsWith(':free'))).toHaveLength(1);
+    expect(calls.filter(call => call.baseURL.includes('openrouter.ai') && (String(call.model).endsWith(':free') || call.model === 'openrouter/free'))).toHaveLength(1);
     expect(response._free_provider).toBe(false);
     const capabilities = ai.providerCapabilities();
     expect(capabilities.open_weight.find(provider => provider.label === 'gpt-oss-120b-openrouter-free').cooling_down).toBe(true);
