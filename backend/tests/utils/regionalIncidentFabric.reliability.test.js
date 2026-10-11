@@ -24,7 +24,7 @@ describe('regional incident provider resilience', () => {
     const feed = RSS_FEEDS.find((candidate) => candidate.name === 'Radio Okapi DRC');
     expect(feed.url).toBe('https://www.radiookapi.net/feed');
     expect(feed.country_code).toBe('CD');
-    expect(feed.fallback_url).toMatch(/^https:\/\/news\\.google\\.com\/rss\/search\\?/);
+    expect(feed.fallback_url.startsWith('https://news.google.com/rss/search?')).toBe(true);
     expect(feed.fallback_url).toContain('radiookapi.net');
     expect(feed.fallback_url).toContain('Bukavu');
   });
