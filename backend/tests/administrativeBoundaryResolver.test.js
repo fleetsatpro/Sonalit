@@ -237,6 +237,29 @@ describe('redundant administrative-boundary resolver', () => {
 
     await expect(resolveAdministrativeBoundary('Nairobi')).rejects.toThrow(/No geofence was created|geoBoundaries fallback did not resolve/);
   });
+  test('rejects geoBoundaries redirects outside the trusted repository hosts', async () => {
+    const geometryUrl = 'https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/KEN/ADM1/geoBoundaries-KEN-ADM1_simplified.geojson';
+    global.fetch.mockImplementation(async (url) => {
+      const requested = String(url);
+      if (requested.startsWith('https://nominatim.openstreetmap.org/search?')) return jsonResponse(osmPlaceOnly);
+      if (requested.startsWith('https://www.geoboundaries.org/api/current/gbOpen/KEN/')) {
+        return jsonResponse({ ...geoBoundaryMetadata, simplifiedGeometryGeoJSON: geometryUrl });
+      }
+      if (requested === geometryUrl) {
+        return {
+          ok: false,
+          status: 302,
+          headers: { get: (name) => name.toLowerCase() === 'location' ? 'https://169.254.169.254/latest/meta-data/' : null },
+          text: async () => '',
+        };
+      }
+      throw new Error('Unexpected request: ' + requested);
+    });
+
+    await expect(resolveAdministrativeBoundary('Nairobi')).rejects.toThrow(/untrusted redirect host or path/);
+    expect(global.fetch.mock.calls.some(([url]) => String(url).startsWith('https://169.254.169.254/'))).toBe(false);
+  });
+
   test('opens provider circuit breakers after repeated transient failures and avoids hammering the source', async () => {
     global.fetch.mockImplementation(async (url) => {
       const requested = String(url);

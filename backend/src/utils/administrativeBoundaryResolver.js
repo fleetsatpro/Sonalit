@@ -246,11 +246,42 @@ async function requestProviderJson(provider, url, options = {}) {
   }
 }
 
-async function requestJson(url, { timeoutMs = 9000, headers = {} } = {}) {
-  const response = await fetch(url, {
-    headers,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+function isTrustedGeoBoundaryUrl(value) {
+  let target;
+  try { target = new URL(value); } catch (_) { return false; }
+  if (target.protocol !== 'https:') return false;
+  if (target.hostname === 'github.com') {
+    return target.pathname.startsWith('/wmgeolab/geoBoundaries/raw/');
+  }
+  if (target.hostname === 'raw.githubusercontent.com') {
+    return target.pathname.startsWith('/wmgeolab/geoBoundaries/');
+  }
+  if (target.hostname === 'media.githubusercontent.com') {
+    return target.pathname.startsWith('/media/wmgeolab/geoBoundaries/');
+  }
+  return false;
+}
+
+async function requestJson(url, { timeoutMs = 9000, headers = {}, allowedRedirectHosts = null } = {}) {
+  let currentUrl = new URL(url);
+  let response;
+  for (let redirectCount = 0; ; redirectCount += 1) {
+    response = await fetch(currentUrl.toString(), {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+      ...(Array.isArray(allowedRedirectHosts) ? { redirect: 'manual' } : {}),
+    });
+    const isRedirect = response.status >= 300 && response.status < 400;
+    if (!Array.isArray(allowedRedirectHosts) || !isRedirect) break;
+    if (redirectCount >= 4) throw new Error('geoBoundaries geometry download exceeded the safe redirect limit.');
+    const location = response.headers?.get?.('location');
+    if (!location) throw new Error('geoBoundaries returned a redirect without a Location header.');
+    const nextUrl = new URL(location, currentUrl);
+    if (!allowedRedirectHosts.includes(nextUrl.hostname) || !isTrustedGeoBoundaryUrl(nextUrl.toString())) {
+      throw new Error('geoBoundaries geometry download attempted an untrusted redirect host or path.');
+    }
+    currentUrl = nextUrl;
+  }
   if (!response.ok) {
     const error = new Error('HTTP ' + response.status);
     error.status = response.status;
@@ -659,11 +690,14 @@ async function fetchGeoBoundaryLayer(countryIso3, level) {
   const metadata = await requestProviderJson('geoBoundaries', metadataUrl, { timeoutMs: 10000 });
   const downloadUrl = metadata.simplifiedGeometryGeoJSON || metadata.gjDownloadURL;
   if (!downloadUrl) throw new Error('geoBoundaries metadata did not provide a GeoJSON download URL.');
-  const parsedUrl = new URL(downloadUrl);
-  if (parsedUrl.protocol !== 'https:' || !['github.com', 'raw.githubusercontent.com', 'media.githubusercontent.com'].includes(parsedUrl.hostname)) {
-    throw new Error('geoBoundaries returned an unsupported geometry host.');
+  if (!isTrustedGeoBoundaryUrl(downloadUrl)) {
+    throw new Error('geoBoundaries returned an unsupported geometry host or repository path.');
   }
-  const collection = await requestProviderJson('geoBoundaries', parsedUrl.toString(), { timeoutMs: 12000 });
+  const parsedUrl = new URL(downloadUrl);
+  const collection = await requestProviderJson('geoBoundaries', parsedUrl.toString(), {
+    timeoutMs: 12000,
+    allowedRedirectHosts: ['github.com', 'raw.githubusercontent.com', 'media.githubusercontent.com'],
+  });
   if (!collection || collection.type !== 'FeatureCollection' || !Array.isArray(collection.features)) {
     throw new Error('geoBoundaries returned an invalid FeatureCollection.');
   }
