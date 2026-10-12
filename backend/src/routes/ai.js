@@ -935,6 +935,7 @@ async function toolQueryRiskZones(input, orgId) {
 async function toolCreateGeofence(input, userId, orgId) {
   if (!orgId) return { error: 'Organisation context is required' };
   const { name, location, route_end, fence_type = 'general' } = input || {};
+  const shape = ['circle', 'polygon', 'boundary'].includes(input?.shape) ? input.shape : 'circle';
   if (!name || !location) return { error: 'name and location are required' };
 
   const precision = input.precision || 'maximum';
@@ -1063,6 +1064,7 @@ async function toolCreateGeofence(input, userId, orgId) {
           verification: stored.verification,
         };
       }
+      invalidateGeofenceCache(orgId);
       const geofenceId = stored.geofenceId;
       const persistedPath = stored.persistedPath;
       const startDriftM = stored.startDriftM;
@@ -1098,6 +1100,114 @@ async function toolCreateGeofence(input, userId, orgId) {
         message: routeProvider === 'OSRM'
           ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} verified centreline vertices, ${buffer_m}m deviation threshold${pathSimplification.toleranceM ? " (centreline simplified within 10m tolerance)" : ""}.`
           : `LOW-PRECISION explicit fallback "${name}" created from a straight line. Review before operational use.`,
+      };
+    }
+
+    if (shape === 'polygon' || shape === 'boundary') {
+      let g;
+      let geometry;
+      let geometrySource;
+      let precisionUsed;
+      let radius_m = null;
+
+      if (shape === 'boundary') {
+        const resolved = await geocodeAdministrativeBoundary(location);
+        g = resolved.location;
+        geometry = normalizeBoundaryGeometry(resolved.geometry);
+        geometrySource = 'OpenStreetMap Nominatim administrative boundary';
+        precisionUsed = 'source-backed-administrative-boundary';
+      } else {
+        g = await geocodePrecise(location);
+        radius_m = Math.max(10, Math.min(Number(input.radius_m || 3000), 100000));
+        geometry = createRadiusPolygon(g.latitude, g.longitude, radius_m);
+        geometrySource = 'Sonalit-generated geodesic radius approximation (48 vertices)';
+        precisionUsed = 'generated-radius-approximation';
+      }
+
+      const ring = geometry.coordinates[0];
+      const polygonCoordinates = {
+        type: 'Polygon',
+        coordinates: geometry.coordinates,
+        lat: g.latitude,
+        lng: g.longitude,
+        shape,
+        radius_m,
+        precision: precisionUsed,
+        geometry_source: geometrySource,
+        vertex_count: ring.length - 1,
+        geocoding: {
+          source: g.source || (shape === 'boundary' ? 'nominatim-boundary' : 'unknown'),
+          precision: g.precision || precisionUsed,
+          osm_type: g.osm_type || null,
+          osm_id: g.osm_id || null,
+        },
+        created_at: new Date().toISOString(),
+      };
+      const region = g.admin1 || g.country || location;
+
+      const stored = await withOrg(orgId, async (client) => {
+        const insert = await client.query(
+          'INSERT INTO geofences (name, type, coordinates, radius, region, org_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+          [name, 'polygon', JSON.stringify(polygonCoordinates), radius_m, region, orgId]
+        );
+        const geofenceId = insert.rows?.[0]?.id;
+        if (!geofenceId) throw new Error('Polygon insert returned no identifier');
+
+        const verify = await client.query(
+          'SELECT type, coordinates FROM geofences WHERE id = $1 AND org_id = $2',
+          [geofenceId, orgId]
+        );
+        let persisted = verify.rows?.[0]?.coordinates;
+        if (typeof persisted === 'string') {
+          try { persisted = JSON.parse(persisted); } catch (_) { persisted = null; }
+        }
+        let normalized = null;
+        try { normalized = normalizePolygonGeometry(persisted); } catch (_) {}
+        const persistedRing = normalized?.coordinates?.[0];
+        const valid = verify.rows?.[0]?.type === 'polygon'
+          && Array.isArray(persistedRing)
+          && persistedRing.length === ring.length
+          && persistedRing[0]?.[0] === persistedRing[persistedRing.length - 1]?.[0]
+          && persistedRing[0]?.[1] === persistedRing[persistedRing.length - 1]?.[1];
+        if (!valid) {
+          await client.query('DELETE FROM geofences WHERE id = $1 AND org_id = $2', [geofenceId, orgId]);
+          return { valid: false, verification: { expected_vertices: ring.length, persisted_vertices: persistedRing?.length || 0 } };
+        }
+        return { valid: true, geofenceId, persistedRing };
+      });
+
+      if (!stored.valid) {
+        return {
+          created: false,
+          error: 'Persisted polygon geometry failed verification. No geofence was retained.',
+          verification: stored.verification,
+        };
+      }
+
+      invalidateGeofenceCache(orgId);
+      const locationLabel = g.name || location;
+      const isBoundary = shape === 'boundary';
+      const vertexCount = stored.persistedRing.length - 1;
+      const message = isBoundary
+        ? 'Source-backed administrative boundary geofence "' + name + '" created from OpenStreetMap geometry at ' + locationLabel + ', with ' + vertexCount + ' verified vertices.'
+        : 'Autonomously created a ' + vertexCount + '-vertex polygon geofence approximating a ' + radius_m + ' m radius around ' + locationLabel + '. This is a radius approximation, not an official place boundary.';
+
+      return {
+        created: true,
+        geofence_id: stored.geofenceId,
+        name,
+        fence_type: isBoundary ? 'boundary' : 'polygon',
+        shape,
+        lat: g.latitude,
+        lng: g.longitude,
+        radius_m,
+        region,
+        location: locationLabel,
+        precision: precisionUsed,
+        geometry_source: geometrySource,
+        vertex_count: vertexCount,
+        geometry_verification: { vertices: vertexCount, persisted: true },
+        message,
       };
     }
 
@@ -1149,6 +1259,7 @@ async function toolCreateGeofence(input, userId, orgId) {
       return { created: false, error: 'Persisted point geometry failed verification. No geofence was retained.', verification: stored.verification };
     }
 
+    invalidateGeofenceCache(orgId);
     const locationLabel = g.name || location;
     return {
       created: true,
