@@ -19,7 +19,7 @@ interface DecisionResponse {
   assurance?: { safety_gate?: string; evidence_health?: { succeeded?: number } };
   risk_level?: string;
   confidence?: number;
-  created?: Array<{ type?: string; name?: string; geofence_id?: string; message?: string; precision?: string; route_provider?: string; road_distance_km?: string; path_points?: number; buffer_m?: number; location?: string }>;
+  created?: Array<{ type?: string; name?: string; geofence_id?: string; message?: string; precision?: string; route_provider?: string; road_distance_km?: string; path_points?: number; buffer_m?: number; location?: string; shape?: string; radius_m?: number | null; vertex_count?: number; geometry_source?: string }>;
   task?: { type?: string; precision?: string; completed?: boolean };
   actions?: string[];
   source?: string;
@@ -205,8 +205,8 @@ export default function Copilot() {
       // Action language goes through the agentic task executor so Copilot can
       // actually perform supported operations; evidence questions stay on the
       // lower-cost, quota-resilient Decision Fabric.
-      const isAction = /\b(draw|create|make|set up|mark|define|establish|acknowledge|resolve|dispatch|schedule|reroute|approve|send|execute)\b/i.test(text)
-        && /\b(geofence|corridor|zone|alert|incident|route|convoy|message|task|operation|risk)\b/i.test(text);
+      const isAction = /\b(draw|sketch|outline|create|make|build|set up|mark|define|establish|acknowledge|resolve|dispatch|schedule|reroute|approve|send|execute)\b/i.test(text)
+        && /\b(geofence|corridor|zone|boundary|polygon|area|alert|incident|route|convoy|message|task|operation|risk)\b/i.test(text);
       const endpoint = isAction ? '/ai/dispatch' : '/ai/decision';
       const res = await api.post<DecisionResponse>(endpoint, { command: text, history });
       const d = res.data;
