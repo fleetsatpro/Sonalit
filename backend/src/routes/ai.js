@@ -8,6 +8,9 @@ const { buildWorldContext } = require('../services/spatial/worldContextService')
 const { withOrg } = require('../utils/orgScopedDb');
 const { buildCorridorPolygon, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 const { validateToolInput } = require('../utils/aiToolInputValidation');
+const { normalizePolygonGeometry } = require('../utils/geofenceGeometry');
+const { createRadiusPolygon, normalizeBoundaryGeometry } = require('../utils/geofenceAutoGeometry');
+const { invalidateGeofenceCache } = require('../utils/geofenceEngine');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
   if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
@@ -103,7 +106,7 @@ Guidelines:
 - Use get_road_conditions to check for construction zones, road closures, and barriers near a location or along a route. Call it for both origin and destination on convoy routes.
 - Use query_risk_zones to surface internal records of banditry hotspots, conflict zones, strike zones, and high-risk corridors. Always check this when advising on route safety.
 - Use get_world_context for mission-specific spatial questions. It is the canonical spatial source for convoy/vehicle position, route/corridor state, nearby incidents, risk zones, checkpoints, weather, AIS movement, road traffic, external incidents, natural hazards, relationships, events, freshness, provenance, uncertainty, and evidence. Never invent spatial facts that are not present in its result.
-- Use create_geofence when the user asks to "draw a geofence", "create a zone", "set a boundary", or "mark an area" around any location. Geocode it and create it immediately — never just describe it.
+- Use create_geofence when the user asks to draw/create a geofence, polygon, boundary, or corridor around a location. Use shape=polygon for a clearly requested radius-based polygon approximation; use shape=boundary only for an explicitly requested official/administrative boundary backed by OpenStreetMap geometry. Never invent an official boundary or disguise an approximation as one. Create valid requested geometry immediately and report its source, radius, vertex count and verification.
 - Use create_risk_zone when the user wants to flag a location as dangerous, mark a strike, roadblock, active incident, or high-risk area. Create it immediately.
 - For comprehensive navigation advisories: combine weather + road conditions + risk zones + active alerts + upcoming holidays. Give a rated assessment (SAFE / CAUTION / HIGH RISK / AVOID).
 - Support investigation, comparison, exception hunting, situation briefs, route-risk analysis, shipment/fleet/maintenance checks, spatial context, geofence/risk-zone creation and other supported operational tasks. For multi-step work, complete the evidence collection first, perform the requested reversible action, then report the resulting object and verification.
@@ -298,14 +301,15 @@ const TOOLS = [
   },
   {
     name: 'create_geofence',
-    description: 'Create a geofence zone on the map. Two modes: (1) Point — geocode a place and draw a circle. (2) Route corridor — provide location (start) AND route_end (end) to create a polygon corridor that follows the actual road geometry. Vehicles that stray more than buffer_m metres off the road trigger a deviation alert. Use for "draw a geofence around X", "geofence from A to B", or "geofence on Thika Road from Ngara to Juja".',
+    description: 'Create and verify a geofence without requiring manual map clicks. Shapes: circle (point radius), polygon (48-vertex geodesic approximation of a radius buffer), boundary (only a source-backed single-ring OpenStreetMap administrative Polygon), or a road corridor when route_end is provided. A generated polygon is not an official place boundary. Route corridors use routed road geometry and never silently fall back to a straight line.',
     input_schema: {
       type: 'object',
       properties: {
         name: { type: 'string', minLength: 1, maxLength: 160, description: 'Name, e.g. "Thika Road Corridor" or "Nairobi CBD Safe Zone"' },
         location: { type: 'string', minLength: 1, maxLength: 400, description: 'Place name or route start point' },
         route_end: { type: 'string', minLength: 1, maxLength: 400, description: 'Route end point for a corridor geofence, e.g. "Juja". Omit for a point geofence.' },
-        radius_m: { type: 'number', minimum: 10, maximum: 100000, description: 'Radius in metres for a point geofence (default 3000). Ignored for corridors.' },
+        shape: { type: 'string', enum: ['circle', 'polygon', 'boundary'], description: 'circle by default; polygon creates a radius-buffer approximation; boundary requires a source-backed administrative boundary and fails closed when unavailable.' },
+        radius_m: { type: 'number', minimum: 10, maximum: 100000, description: 'Radius in metres for circle or polygon geofence (default 3000). Ignored for route corridors and administrative boundaries.' },
         buffer_m: { type: 'number', minimum: 10, maximum: 5000, description: 'Corridor half-width in metres — how far a vehicle can deviate before an alert fires (default 300).' },
         fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'corridor', 'general'] },
         precision: { type: 'string', enum: ['standard', 'high', 'maximum'], description: 'Precision level; maximum is the default for operational geofences.' },
