@@ -38,6 +38,7 @@ jest.mock('../src/middleware/auth', () => ({
   },
 }));
 jest.mock('../src/config/database', () => ({ query: (...args) => mockQuery(...args) }));
+jest.mock('../src/config/redis', () => ({ getRedis: () => null }));
 jest.mock('../src/utils/orgScopedDb', () => ({ withOrg: jest.fn(async (_orgId, fn) => fn({ query: mockQuery })) }));
 jest.mock('../src/utils/aiClient', () => mockAiClient);
 jest.mock('../src/services/aiSwarm', () => ({ runDecisionFabric: jest.fn() }));
@@ -193,7 +194,7 @@ describe('Copilot dispatch tool execution contract', () => {
       expect(response.body.created[0].path_points).toBeLessThan(800);
       expect(response.body.created[0].geometry_verification.start_drift_m).toBeLessThanOrEqual(1500);
       expect(response.body.created[0].geometry_verification.end_drift_m).toBeLessThanOrEqual(1500);
-      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch).toHaveBeenCalledTimes(3);
       expect(mockQuery.mock.calls.some(([sql]) => /INSERT INTO geofences/i.test(String(sql)))).toBe(true);
       expect(mockQuery.mock.calls.some(([sql]) => /SELECT coordinates FROM geofences/i.test(String(sql)))).toBe(true);
       expect(persistedCoordinates?.buffer_polygon).toHaveLength(2 * response.body.created[0].path_points + 1);
@@ -243,37 +244,54 @@ describe('Copilot dispatch tool execution contract', () => {
       }
       return { rows: [] };
     });
-    global.fetch = jest.fn(async (url) => {
-      if (!String(url).startsWith('https://nominatim.openstreetmap.org/search?')) {
-        throw new Error('Unexpected upstream request: ' + String(url));
-      }
-      return {
-        ok: true,
-        status: 200,
-        json: async () => [{
-          class: 'boundary',
-          type: 'administrative',
-          lat: '-1.2864',
-          lon: '36.8172',
-          importance: 0.95,
-          display_name: 'Nairobi, Kenya',
-          osm_type: 'relation',
-          osm_id: 12345,
-          address: { county: 'Nairobi County', country: 'Kenya' },
-          geojson: {
-            type: 'Polygon',
-            coordinates: [[
-              [36.70, -1.35],
-              [36.95, -1.35],
-              [36.95, -1.15],
-              [36.70, -1.15],
-              [36.70, -1.35],
-            ]],
-          },
-        }],
-      };
+    const placeOnly = [{
+      class: 'place',
+      type: 'city',
+      lat: '-1.2864',
+      lon: '36.8172',
+      display_name: 'Nairobi, Nairobi County, Kenya',
+      address: { city: 'Nairobi', county: 'Nairobi County', country: 'Kenya', country_code: 'ke' },
+    }];
+    const boundaryMetadata = {
+      boundaryID: 'KEN-ADM1-32016919',
+      boundaryName: 'Kenya',
+      boundaryISO: 'KEN',
+      boundaryYearRepresented: '2020',
+      boundaryType: 'ADM1',
+      boundarySource: 'RCMRD GeoPortal, Africa GeoPortal',
+      boundaryLicense: 'Public Domain',
+      simplifiedGeometryGeoJSON: 'https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/KEN/ADM1/geoBoundaries-KEN-ADM1_simplified.geojson',
+    };
+    const boundaryCollection = {
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        properties: { shapeName: 'Nairobi City County', shapeID: 'KEN-ADM1-NAIROBI' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [36.70, -1.35],
+            [36.95, -1.35],
+            [36.95, -1.15],
+            [36.70, -1.15],
+            [36.70, -1.35],
+          ]],
+        },
+      }],
+    };
+    const response = (payload) => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      text: async () => JSON.stringify(payload),
     });
-
+    global.fetch = jest.fn(async (url) => {
+      const requested = String(url);
+      if (requested.startsWith('https://nominatim.openstreetmap.org/search?')) return response(placeOnly);
+      if (requested === 'https://www.geoboundaries.org/api/current/gbOpen/KEN/ADM1/') return response(boundaryMetadata);
+      if (requested === boundaryMetadata.simplifiedGeometryGeoJSON) return response(boundaryCollection);
+      throw new Error('Unexpected upstream request: ' + requested);
+    });
     try {
       const response = await request(app).post('/ai/dispatch').send({
         command: "Create a geofence matching Nairobi's official administrative boundary",
@@ -288,7 +306,10 @@ describe('Copilot dispatch tool execution contract', () => {
         geofence_id: 'geofence-boundary-test',
         fence_type: 'boundary',
         precision: 'source-backed-administrative-boundary',
-        geometry_source: expect.stringContaining('OpenStreetMap Nominatim'),
+        geometry_source: expect.stringContaining('geoBoundaries'),
+        source_year: '2020',
+        source_license: 'Public Domain',
+        source_id: 'KEN-ADM1-NAIROBI',
       });
       expect(response.body.created[0].vertex_count).toBeGreaterThanOrEqual(3);
       expect(response.body.action_receipt).toMatchObject({ status: 'succeeded', tool_name: 'create_geofence' });
