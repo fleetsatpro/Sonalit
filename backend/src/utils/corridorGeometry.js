@@ -72,12 +72,16 @@ function simplifyRawPath(raw, toleranceM) {
   return raw.filter((_, index) => keep[index]);
 }
 
-function simplifyPath(path, toleranceM = 10) {
+function simplifyPath(path, toleranceM = 10, maxToleranceM = MAX_SIMPLIFICATION_TOLERANCE_M) {
   if (!Array.isArray(path) || path.length < 2) throw new TypeError('A corridor needs at least two route points.');
   if (path.length > MAX_INPUT_PATH_POINTS) throw new RangeError('Route geometry exceeds the safe input vertex limit.');
   const requestedToleranceM = Number(toleranceM);
-  if (!Number.isFinite(requestedToleranceM) || requestedToleranceM < 1 || requestedToleranceM > MAX_SIMPLIFICATION_TOLERANCE_M) {
-    throw new RangeError('Geometry simplification tolerance must be between 1 and ' + MAX_SIMPLIFICATION_TOLERANCE_M + ' metres.');
+  const toleranceCeilingM = Number(maxToleranceM);
+  if (!Number.isFinite(toleranceCeilingM) || toleranceCeilingM < 1 || toleranceCeilingM > MAX_SIMPLIFICATION_TOLERANCE_M) {
+    throw new RangeError('Geometry simplification ceiling must be between 1 and ' + MAX_SIMPLIFICATION_TOLERANCE_M + ' metres.');
+  }
+  if (!Number.isFinite(requestedToleranceM) || requestedToleranceM < 1 || requestedToleranceM > toleranceCeilingM) {
+    throw new RangeError('Requested geometry simplification tolerance must be between 1 and the configured ' + toleranceCeilingM + ' m ceiling.');
   }
 
   const raw = [];
@@ -108,9 +112,9 @@ function simplifyPath(path, toleranceM = 10) {
   // Exponential search reaches the documented ceiling in at most eight
   // passes, even when callers choose the minimum 1 m requested tolerance.
   const candidates = [requestedToleranceM];
-  while (candidates.length < 8 && candidates[candidates.length - 1] < MAX_SIMPLIFICATION_TOLERANCE_M) {
+  while (candidates.length < 8 && candidates[candidates.length - 1] < toleranceCeilingM) {
     const previous = candidates[candidates.length - 1];
-    const next = Math.min(MAX_SIMPLIFICATION_TOLERANCE_M, previous * 2);
+    const next = Math.min(toleranceCeilingM, previous * 2);
     if (next <= previous) break;
     candidates.push(next);
   }
@@ -180,7 +184,7 @@ function simplifyPath(path, toleranceM = 10) {
 
   throw new RangeError(
     'Route geometry could not be reduced to ' + MAX_PATH_POINTS + ' or fewer vertices within the '
-    + MAX_SIMPLIFICATION_TOLERANCE_M + ' m maximum simplification tolerance and safe computation budget '
+    + toleranceCeilingM + ' m configured simplification ceiling and safe computation budget '
     + '(' + lastFailure + '); no geofence was created.'
   );
 }
