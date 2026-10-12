@@ -16,6 +16,7 @@ describe('Copilot geofence intent routing', () => {
     expect(shouldOpenManualPolygonDrawing('Draw a polygon boundary around Nairobi')).toBe(false);
     expect(shouldOpenManualPolygonDrawing('Create a custom area around the depot')).toBe(false);
     expect(shouldOpenManualPolygonDrawing('Create an administrative boundary geofence around Nairobi')).toBe(false);
+    expect(shouldOpenManualPolygonDrawing('Build a polygon in Nairobi')).toBe(false);
   });
 
   it('keeps explicit manual drawing requests on the interactive editor', () => {
