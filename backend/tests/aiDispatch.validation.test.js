@@ -11,6 +11,13 @@ const mockActionLedger = {
   claimActionRun: jest.fn(),
   declineActionRun: jest.fn(),
   recordToolTrace: jest.fn(),
+  summarizeToolInput: jest.fn((input) => ({
+    name: input && input.name,
+    location: input && input.location,
+    risk_level: input && input.risk_level,
+    zone_type: input && input.zone_type,
+    radius_km: input && input.radius_km,
+  })),
   makeActionReceipt: jest.fn((run) => run ? ({
     id: run.id, request_id: run.request_id, tool_name: run.tool_name,
     risk_level: run.risk_level, status: run.status,
