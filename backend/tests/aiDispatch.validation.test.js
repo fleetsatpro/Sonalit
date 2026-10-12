@@ -212,6 +212,20 @@ describe('Copilot dispatch tool execution contract', () => {
     expect(mockQuery.mock.calls.some(([sql]) => /INSERT INTO geofences/i.test(String(sql)))).toBe(false);
   });
 
+  test('does not let the model reinterpret an invalid high-risk radius', async () => {
+    const response = await request(app).post('/ai/dispatch').send({
+      command: 'Create a high-risk zone around Nairobi with radius 200 km',
+      history: [],
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('risk_zone_request_not_understood');
+    expect(response.body.message).toContain('will not guess');
+    expect(mockAiClient.createMessage).not.toHaveBeenCalled();
+    expect(mockActionLedger.createActionRun).not.toHaveBeenCalled();
+    expect(mockQuery.mock.calls.some(([sql]) => /INSERT INTO risk_zones/i.test(String(sql)))).toBe(false);
+  });
+
   test('high-risk risk-zone writes stage an approval instead of executing immediately', async () => {
     const previous = process.env.COPILOT_ACTION_SECRET;
     process.env.COPILOT_ACTION_SECRET = 'dispatch-test-secret-with-more-than-thirty-two-bytes';

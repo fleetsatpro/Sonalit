@@ -1816,6 +1816,17 @@ router.post('/dispatch', async (req, res) => {
     return res.json(outcome);
   }
 
+  if (explicitMutation === 'create_risk_zone' && !riskZoneTask) {
+    return res.status(400).json({
+      error: 'risk_zone_request_not_understood',
+      message: 'No risk zone was staged. Specify one unambiguous place or valid latitude/longitude pair and, when needed, a radius from 0.1 to 100 km. Use an explicit radius such as “radius 5 km”; Copilot will not guess or silently change the requested geometry.',
+      request_id: requestId,
+      actions: [],
+      created: [],
+      source: 'deterministic-intent-validation',
+    });
+  }
+
   // Deterministic risk-zone intent stages high-risk writes even if every model
   // provider is down. The write itself remains impossible until the user
   // approves a signed, tenant-bound, expiring confirmation receipt.
