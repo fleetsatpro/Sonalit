@@ -85,6 +85,37 @@ describe('validated corridor geometry', () => {
     expect(maximumErrorM).toBeLessThanOrEqual(10.5);
   });
 
+  test('adaptively widens tolerance for long, dense routes while preserving endpoints and the error bound', () => {
+    const path = [];
+    // A deliberately dense, high-frequency centreline: a 10 m pass needs
+    // more than 800 vertices, while a bounded ~20 m tolerance is sufficient.
+    for (let i = 0; i <= 1600; i++) {
+      path.push([0.00015 * Math.sin((Math.PI * 800 * i) / 1600), i / 100000]);
+    }
+
+    const result = simplifyPath(path, 10);
+    expect(result.originalPointCount).toBe(1601);
+    expect(result.path.length).toBeLessThanOrEqual(800);
+    expect(result.path.length).toBeGreaterThanOrEqual(2);
+    expect(result.path[0]).toEqual(path[0]);
+    expect(result.path[result.path.length - 1]).toEqual(path[path.length - 1]);
+    expect(result.requestedToleranceM).toBe(10);
+    expect(result.toleranceEscalated).toBe(true);
+    expect(result.toleranceM).toBeGreaterThan(10);
+    expect(result.toleranceM).toBeLessThanOrEqual(20);
+    expect(result.method).toBe('douglas-peucker-adaptive');
+
+    let maximumErrorM = 0;
+    for (const point of path) {
+      let nearest = Infinity;
+      for (let i = 0; i < result.path.length - 1; i++) {
+        nearest = Math.min(nearest, pointToSegmentDistanceM(point, result.path[i], result.path[i + 1]));
+      }
+      maximumErrorM = Math.max(maximumErrorM, nearest);
+    }
+    expect(maximumErrorM).toBeLessThanOrEqual(result.toleranceM + 0.5);
+  });
+
   test('handles the distance midpoint across the antimeridian', () => {
     const path = [[0, 179.9], [0, -179.9]];
     const midpoint = midpointOnPath(path);
