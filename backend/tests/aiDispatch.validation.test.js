@@ -40,6 +40,7 @@ jest.mock('../src/services/copilotActionLedger', () => mockActionLedger);
 
 const express = require('express');
 const request = require('supertest');
+const { runDecisionFabric } = require('../src/services/aiSwarm');
 const router = require('../src/routes/ai');
 const app = express();
 app.use(express.json());
@@ -88,6 +89,7 @@ describe('Copilot dispatch tool execution contract', () => {
     mockActionLedger.recordToolTrace.mockReset().mockResolvedValue('trace-test');
     mockActionLedger.makeActionReceipt.mockClear();
     mockAiClient.createMessage.mockReset();
+    runDecisionFabric.mockReset();
     mockAiClient.hasAnthropic.mockReturnValue(true);
     mockAiClient.hasGroqFallback.mockReturnValue(false);
   });
@@ -192,6 +194,33 @@ describe('Copilot dispatch tool execution contract', () => {
       global.fetch = previousFetch;
       mockQuery.mockReset().mockImplementation(async () => ({ rows: [] }));
     }
+  });
+
+  test('routes investigation requests through the Decision Fabric instead of the dispatch tool loop', async () => {
+    runDecisionFabric.mockResolvedValue({
+      answer: 'Evidence-backed result from the Decision Fabric.',
+      decision: 'MONITOR',
+      risk_level: 'LOW',
+      confidence: 0.88,
+      recommended_actions: [],
+      risks: [],
+      evidence: ['query_vehicles', 'query_maintenance'],
+      missing_data: [],
+      swarm: [],
+      meta: { degraded: false, latency_ms: 25, agent_count: 10 },
+    });
+
+    const response = await request(app).post('/ai/dispatch').send({
+      command: 'Which vehicles are overdue for maintenance?',
+      history: [],
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain('Evidence-backed result');
+    expect(response.body.source).toBe('decision-fabric');
+    expect(runDecisionFabric).toHaveBeenCalledTimes(1);
+    expect(runDecisionFabric.mock.calls[0][0].command).toBe('Which vehicles are overdue for maintenance?');
+    expect(mockAiClient.createMessage).not.toHaveBeenCalled();
   });
 
   test('tutorial questions never trigger a geofence write', async () => {

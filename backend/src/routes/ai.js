@@ -1931,6 +1931,23 @@ router.post('/dispatch', async (req, res) => {
 
   const runFallback = async () => runCopilotEvidenceFallback({ command, history, userId, orgId, requestId });
 
+  // One public endpoint, two server-selected lanes: investigation turns keep
+  // the Decision Fabric's evidence plan, deterministic safety gate and synthesis.
+  // The browser never picks a less-governed execution path with regex keywords.
+  if (classification.kind === 'investigation') {
+    try {
+      return res.json(await runFallback());
+    } catch (error) {
+      logger.error('Copilot investigation failed: ' + String(error && error.message || error).slice(0, 200));
+      return res.status(503).json({
+        error: 'copilot_unavailable',
+        response: 'Copilot could not complete its evidence-backed investigation. No operational write was performed.',
+        request_id: requestId,
+        source: 'error',
+      });
+    }
+  }
+
   if (!aiClient.hasAnthropic() && !aiClient.hasGroqFallback()) {
     if (hasExplicitActionIntent(command, 'create_risk_zone')) {
       return res.status(503).json({
