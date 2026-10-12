@@ -633,6 +633,66 @@ async function geocodePrecise(locationName) {
   return { ...g, precision: 'place-fallback', source: 'open-meteo' };
 }
 
+async function geocodeAdministrativeBoundary(locationName) {
+  const place = String(locationName || '').trim().slice(0, 200);
+  if (!place) throw new Error('Specify a named place for the administrative boundary.');
+
+  const endpoint = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&polygon_geojson=1&polygon_threshold=0.002&limit=5&q=' + encodeURIComponent(place);
+  const response = await fetch(endpoint, {
+    headers: { 'User-Agent': 'Sonalit-CommandCenter/1.0 (ops@sonalit.io)', 'Accept-Language': 'en' },
+    signal: AbortSignal.timeout(9000),
+  });
+  if (!response.ok) {
+    throw new Error('OpenStreetMap boundary lookup failed (HTTP ' + response.status + '). No geofence was created.');
+  }
+  const candidates = await response.json();
+  if (!Array.isArray(candidates)) {
+    throw new Error('OpenStreetMap returned an invalid boundary response. No geofence was created.');
+  }
+
+  const administrative = candidates
+    .filter(item => item
+      && String(item.class || '').toLowerCase() === 'boundary'
+      && String(item.type || '').toLowerCase() === 'administrative')
+    .sort((a, b) => Number(b.importance || 0) - Number(a.importance || 0));
+
+  let lastGeometryError = null;
+  for (const candidate of administrative.slice(0, 5)) {
+    try {
+      const geometry = normalizeBoundaryGeometry(candidate.geojson || candidate.geometry);
+      const latitude = Number(candidate.lat);
+      const longitude = Number(candidate.lon);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+          || Math.abs(latitude) > 85 || Math.abs(longitude) > 180) {
+        throw new Error('Boundary location coordinates were invalid.');
+      }
+      return {
+        geometry,
+        location: {
+          latitude,
+          longitude,
+          name: candidate.display_name || place,
+          admin1: candidate.address?.state || candidate.address?.county || null,
+          country: candidate.address?.country || null,
+          precision: 'source-backed-administrative-boundary',
+          source: 'nominatim',
+          osm_type: candidate.osm_type || null,
+          osm_id: candidate.osm_id || null,
+        },
+      };
+    } catch (error) {
+      lastGeometryError = error;
+    }
+  }
+
+  const detail = lastGeometryError?.message ? ' ' + String(lastGeometryError.message).slice(0, 220) : '';
+  throw new Error(
+    'OpenStreetMap did not provide a usable single-ring administrative boundary for "' + place
+      + '". No geofence was created; request a radius-based polygon instead or choose a supported boundary.'
+      + detail,
+  );
+}
+
 function toLatLngPath(osrmCoordinates) {
   if (!Array.isArray(osrmCoordinates) || osrmCoordinates.length < 2) {
     throw new RangeError('OSRM returned no usable route geometry.');
