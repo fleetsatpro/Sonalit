@@ -114,6 +114,10 @@ describe('validated corridor geometry', () => {
       maximumErrorM = Math.max(maximumErrorM, nearest);
     }
     expect(maximumErrorM).toBeLessThanOrEqual(result.toleranceM + 0.5);
+
+    const polygon = buildCorridorPolygon(result.path, 300);
+    expect(polygon).toHaveLength(result.path.length * 2 + 1);
+    expect(validateCorridorGeometry(result.path, polygon, 300)).toMatchObject({ valid: true });
   });
 
   test('handles the distance midpoint across the antimeridian', () => {
