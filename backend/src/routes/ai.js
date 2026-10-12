@@ -8,6 +8,10 @@ const { buildWorldContext } = require('../services/spatial/worldContextService')
 const { withOrg } = require('../utils/orgScopedDb');
 const { buildCorridorPolygon, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 const { validateToolInput } = require('../utils/aiToolInputValidation');
+const { normalizePolygonGeometry } = require('../utils/geofenceGeometry');
+const { createRadiusPolygon, normalizeBoundaryGeometry } = require('../utils/geofenceAutoGeometry');
+const { invalidateGeofenceCache } = require('../utils/geofenceEngine');
+const { inferGeofenceTask } = require('../utils/geofenceCommandIntent');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
   if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
@@ -103,7 +107,7 @@ Guidelines:
 - Use get_road_conditions to check for construction zones, road closures, and barriers near a location or along a route. Call it for both origin and destination on convoy routes.
 - Use query_risk_zones to surface internal records of banditry hotspots, conflict zones, strike zones, and high-risk corridors. Always check this when advising on route safety.
 - Use get_world_context for mission-specific spatial questions. It is the canonical spatial source for convoy/vehicle position, route/corridor state, nearby incidents, risk zones, checkpoints, weather, AIS movement, road traffic, external incidents, natural hazards, relationships, events, freshness, provenance, uncertainty, and evidence. Never invent spatial facts that are not present in its result.
-- Use create_geofence when the user asks to "draw a geofence", "create a zone", "set a boundary", or "mark an area" around any location. Geocode it and create it immediately — never just describe it.
+- Use create_geofence when the user asks to draw/create a geofence, polygon, boundary, or corridor around a location. Use shape=polygon for a clearly requested radius-based polygon approximation; use shape=boundary only for an explicitly requested official/administrative boundary backed by OpenStreetMap geometry. Never invent an official boundary or disguise an approximation as one. Create valid requested geometry immediately and report its source, radius, vertex count and verification.
 - Use create_risk_zone when the user wants to flag a location as dangerous, mark a strike, roadblock, active incident, or high-risk area. Create it immediately.
 - For comprehensive navigation advisories: combine weather + road conditions + risk zones + active alerts + upcoming holidays. Give a rated assessment (SAFE / CAUTION / HIGH RISK / AVOID).
 - Support investigation, comparison, exception hunting, situation briefs, route-risk analysis, shipment/fleet/maintenance checks, spatial context, geofence/risk-zone creation and other supported operational tasks. For multi-step work, complete the evidence collection first, perform the requested reversible action, then report the resulting object and verification.
@@ -298,14 +302,15 @@ const TOOLS = [
   },
   {
     name: 'create_geofence',
-    description: 'Create a geofence zone on the map. Two modes: (1) Point — geocode a place and draw a circle. (2) Route corridor — provide location (start) AND route_end (end) to create a polygon corridor that follows the actual road geometry. Vehicles that stray more than buffer_m metres off the road trigger a deviation alert. Use for "draw a geofence around X", "geofence from A to B", or "geofence on Thika Road from Ngara to Juja".',
+    description: 'Create and verify a geofence without requiring manual map clicks. Shapes: circle (point radius), polygon (48-vertex geodesic approximation of a radius buffer), boundary (only a source-backed single-ring OpenStreetMap administrative Polygon), or a road corridor when route_end is provided. A generated polygon is not an official place boundary. Route corridors use routed road geometry and never silently fall back to a straight line.',
     input_schema: {
       type: 'object',
       properties: {
         name: { type: 'string', minLength: 1, maxLength: 160, description: 'Name, e.g. "Thika Road Corridor" or "Nairobi CBD Safe Zone"' },
         location: { type: 'string', minLength: 1, maxLength: 400, description: 'Place name or route start point' },
         route_end: { type: 'string', minLength: 1, maxLength: 400, description: 'Route end point for a corridor geofence, e.g. "Juja". Omit for a point geofence.' },
-        radius_m: { type: 'number', minimum: 10, maximum: 100000, description: 'Radius in metres for a point geofence (default 3000). Ignored for corridors.' },
+        shape: { type: 'string', enum: ['circle', 'polygon', 'boundary'], description: 'circle by default; polygon creates a radius-buffer approximation; boundary requires a source-backed administrative boundary and fails closed when unavailable.' },
+        radius_m: { type: 'number', minimum: 10, maximum: 100000, description: 'Radius in metres for circle or polygon geofence (default 3000). Ignored for route corridors and administrative boundaries.' },
         buffer_m: { type: 'number', minimum: 10, maximum: 5000, description: 'Corridor half-width in metres — how far a vehicle can deviate before an alert fires (default 300).' },
         fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'corridor', 'general'] },
         precision: { type: 'string', enum: ['standard', 'high', 'maximum'], description: 'Precision level; maximum is the default for operational geofences.' },
@@ -431,8 +436,10 @@ async function toolQueryGeofences(input, orgId) {
           radius_m: Number(g.radius || 0),
           buffer_m: Number(c?.buffer_m || (g.corridor_width_km ? g.corridor_width_km * 1000 : 0)),
           centre: c?.lat != null && c?.lng != null ? { lat: Number(c.lat), lng: Number(c.lng) } : null,
-          path_points: Array.isArray(path) ? path.length : 0,
+          path_points: Array.isArray(path) ? path.length : (Array.isArray(c?.coordinates?.[0]) ? Math.max(0, c.coordinates[0].length - 1) : 0),
           has_buffer_polygon: Array.isArray(c?.buffer_polygon) && c.buffer_polygon.length >= 4,
+          shape: c?.shape || (c?.type === 'Polygon' ? 'polygon' : null),
+          vertex_count: Number(c?.vertex_count || 0) || (Array.isArray(c?.coordinates?.[0]) ? Math.max(0, c.coordinates[0].length - 1) : 0),
           precision: c?.precision || null,
           geometry_source: c?.geometry_source || null,
           route_provider: c?.route_provider || null,
@@ -627,6 +634,68 @@ async function geocodePrecise(locationName) {
 
   const g = await geocode(queryText);
   return { ...g, precision: 'place-fallback', source: 'open-meteo' };
+}
+
+async function geocodeAdministrativeBoundary(locationName) {
+  const place = String(locationName || '').trim().slice(0, 200);
+  if (!place) throw new Error('Specify a named place for the administrative boundary.');
+
+  const simplificationToleranceDegrees = 0.0001;
+  const endpoint = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&polygon_geojson=1&polygon_threshold=' + simplificationToleranceDegrees + '&limit=5&q=' + encodeURIComponent(place);
+  const response = await fetch(endpoint, {
+    headers: { 'User-Agent': 'Sonalit-CommandCenter/1.0 (ops@sonalit.io)', 'Accept-Language': 'en' },
+    signal: AbortSignal.timeout(9000),
+  });
+  if (!response.ok) {
+    throw new Error('OpenStreetMap boundary lookup failed (HTTP ' + response.status + '). No geofence was created.');
+  }
+  const candidates = await response.json();
+  if (!Array.isArray(candidates)) {
+    throw new Error('OpenStreetMap returned an invalid boundary response. No geofence was created.');
+  }
+
+  const administrative = candidates
+    .filter(item => item
+      && String(item.class || '').toLowerCase() === 'boundary'
+      && String(item.type || '').toLowerCase() === 'administrative')
+    .sort((a, b) => Number(b.importance || 0) - Number(a.importance || 0));
+
+  let lastGeometryError = null;
+  for (const candidate of administrative.slice(0, 5)) {
+    try {
+      const geometry = normalizeBoundaryGeometry(candidate.geojson || candidate.geometry);
+      const latitude = Number(candidate.lat);
+      const longitude = Number(candidate.lon);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+          || Math.abs(latitude) > 85 || Math.abs(longitude) > 180) {
+        throw new Error('Boundary location coordinates were invalid.');
+      }
+      return {
+        geometry,
+        simplification_tolerance_degrees: simplificationToleranceDegrees,
+        location: {
+          latitude,
+          longitude,
+          name: candidate.display_name || place,
+          admin1: candidate.address?.state || candidate.address?.county || null,
+          country: candidate.address?.country || null,
+          precision: 'source-backed-administrative-boundary',
+          source: 'nominatim',
+          osm_type: candidate.osm_type || null,
+          osm_id: candidate.osm_id || null,
+        },
+      };
+    } catch (error) {
+      lastGeometryError = error;
+    }
+  }
+
+  const detail = lastGeometryError?.message ? ' ' + String(lastGeometryError.message).slice(0, 220) : '';
+  throw new Error(
+    'OpenStreetMap did not provide a usable single-ring administrative boundary for "' + place
+      + '". No geofence was created; request a radius-based polygon instead or choose a supported boundary.'
+      + detail,
+  );
 }
 
 function toLatLngPath(osrmCoordinates) {
@@ -871,6 +940,7 @@ async function toolQueryRiskZones(input, orgId) {
 async function toolCreateGeofence(input, userId, orgId) {
   if (!orgId) return { error: 'Organisation context is required' };
   const { name, location, route_end, fence_type = 'general' } = input || {};
+  const shape = ['circle', 'polygon', 'boundary'].includes(input?.shape) ? input.shape : 'circle';
   if (!name || !location) return { error: 'name and location are required' };
 
   const precision = input.precision || 'maximum';
@@ -999,6 +1069,7 @@ async function toolCreateGeofence(input, userId, orgId) {
           verification: stored.verification,
         };
       }
+      invalidateGeofenceCache(orgId);
       const geofenceId = stored.geofenceId;
       const persistedPath = stored.persistedPath;
       const startDriftM = stored.startDriftM;
@@ -1034,6 +1105,118 @@ async function toolCreateGeofence(input, userId, orgId) {
         message: routeProvider === 'OSRM'
           ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} verified centreline vertices, ${buffer_m}m deviation threshold${pathSimplification.toleranceM ? " (centreline simplified within 10m tolerance)" : ""}.`
           : `LOW-PRECISION explicit fallback "${name}" created from a straight line. Review before operational use.`,
+      };
+    }
+
+    if (shape === 'polygon' || shape === 'boundary') {
+      let g;
+      let geometry;
+      let geometrySource;
+      let precisionUsed;
+      let simplificationToleranceDegrees = null;
+      let radius_m = null;
+
+      if (shape === 'boundary') {
+        const resolved = await geocodeAdministrativeBoundary(location);
+        g = resolved.location;
+        geometry = normalizeBoundaryGeometry(resolved.geometry);
+        simplificationToleranceDegrees = resolved.simplification_tolerance_degrees;
+        geometrySource = 'OpenStreetMap Nominatim administrative boundary (topology-preserving simplification tolerance ' + simplificationToleranceDegrees + ' degrees)';
+        precisionUsed = 'source-backed-administrative-boundary';
+      } else {
+        g = await geocodePrecise(location);
+        radius_m = Math.max(10, Math.min(Number(input.radius_m || 3000), 100000));
+        geometry = createRadiusPolygon(g.latitude, g.longitude, radius_m);
+        geometrySource = 'Sonalit-generated geodesic radius approximation (48 vertices)';
+        precisionUsed = 'generated-radius-approximation';
+      }
+
+      const ring = geometry.coordinates[0];
+      const polygonCoordinates = {
+        type: 'Polygon',
+        coordinates: geometry.coordinates,
+        lat: g.latitude,
+        lng: g.longitude,
+        shape,
+        radius_m,
+        precision: precisionUsed,
+        geometry_source: geometrySource,
+        source_simplification_tolerance_degrees: simplificationToleranceDegrees,
+        vertex_count: ring.length - 1,
+        geocoding: {
+          source: g.source || (shape === 'boundary' ? 'nominatim-boundary' : 'unknown'),
+          precision: g.precision || precisionUsed,
+          osm_type: g.osm_type || null,
+          osm_id: g.osm_id || null,
+        },
+        created_at: new Date().toISOString(),
+      };
+      const region = g.admin1 || g.country || location;
+
+      const stored = await withOrg(orgId, async (client) => {
+        const insert = await client.query(
+          'INSERT INTO geofences (name, type, coordinates, radius, region, org_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+          [name, 'polygon', JSON.stringify(polygonCoordinates), radius_m, region, orgId]
+        );
+        const geofenceId = insert.rows?.[0]?.id;
+        if (!geofenceId) throw new Error('Polygon insert returned no identifier');
+
+        const verify = await client.query(
+          'SELECT type, coordinates FROM geofences WHERE id = $1 AND org_id = $2',
+          [geofenceId, orgId]
+        );
+        let persisted = verify.rows?.[0]?.coordinates;
+        if (typeof persisted === 'string') {
+          try { persisted = JSON.parse(persisted); } catch (_) { persisted = null; }
+        }
+        let normalized = null;
+        try { normalized = normalizePolygonGeometry(persisted); } catch (_) {}
+        const persistedRing = normalized?.coordinates?.[0];
+        const valid = verify.rows?.[0]?.type === 'polygon'
+          && Array.isArray(persistedRing)
+          && persistedRing.length === ring.length
+          && persistedRing[0]?.[0] === persistedRing[persistedRing.length - 1]?.[0]
+          && persistedRing[0]?.[1] === persistedRing[persistedRing.length - 1]?.[1];
+        if (!valid) {
+          await client.query('DELETE FROM geofences WHERE id = $1 AND org_id = $2', [geofenceId, orgId]);
+          return { valid: false, verification: { expected_vertices: ring.length, persisted_vertices: persistedRing?.length || 0 } };
+        }
+        return { valid: true, geofenceId, persistedRing };
+      });
+
+      if (!stored.valid) {
+        return {
+          created: false,
+          error: 'Persisted polygon geometry failed verification. No geofence was retained.',
+          verification: stored.verification,
+        };
+      }
+
+      invalidateGeofenceCache(orgId);
+      const locationLabel = g.name || location;
+      const isBoundary = shape === 'boundary';
+      const vertexCount = stored.persistedRing.length - 1;
+      const message = isBoundary
+        ? 'Source-backed administrative boundary geofence "' + name + '" created from OpenStreetMap geometry at ' + locationLabel + ', with ' + vertexCount + ' verified vertices (topology-preserving simplification tolerance ' + simplificationToleranceDegrees + ' degrees).'
+        : 'Autonomously created a ' + vertexCount + '-vertex polygon geofence approximating a ' + radius_m + ' m radius around ' + locationLabel + '. This is a radius approximation, not an official place boundary.';
+
+      return {
+        created: true,
+        geofence_id: stored.geofenceId,
+        name,
+        fence_type: isBoundary ? 'boundary' : 'polygon',
+        shape,
+        lat: g.latitude,
+        lng: g.longitude,
+        radius_m,
+        region,
+        location: locationLabel,
+        precision: precisionUsed,
+        geometry_source: geometrySource,
+        source_simplification_tolerance_degrees: simplificationToleranceDegrees,
+        vertex_count: vertexCount,
+        geometry_verification: { vertices: vertexCount, persisted: true },
+        message,
       };
     }
 
@@ -1085,6 +1268,7 @@ async function toolCreateGeofence(input, userId, orgId) {
       return { created: false, error: 'Persisted point geometry failed verification. No geofence was retained.', verification: stored.verification };
     }
 
+    invalidateGeofenceCache(orgId);
     const locationLabel = g.name || location;
     return {
       created: true,
@@ -1348,70 +1532,6 @@ router.post('/decision', async (req, res) => {
     });
   }
 });
-
-function inferGeofenceTask(command) {
-  const raw = String(command || '').trim();
-  if (!/\b(draw|create|make|set up|define|establish|mark|build)\b[\s\S]{0,100}\b(geo[- ]?fence|corridor|geofence)\b/i.test(raw)) return null;
-
-  const quote = (v) => String(v || '').replace(/^["']|["']$/g, '').trim();
-  const nameMatch = raw.match(/\b(?:named|called|name(?:d)?\s+as)\s+["']?([^"']+?)["']?(?:\s*$|\s+(?:around|from|between|at|near)\b)/i);
-  const name = nameMatch ? quote(nameMatch[1]) : null;
-
-  const measureToM = (m) => {
-    if (!m) return undefined;
-    const n = Number(m[1]);
-    return Number.isFinite(n) ? n * (/km/i.test(m[2]) ? 1000 : 1) : undefined;
-  };
-  const buffer_m = measureToM(
-    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*(?:buffer|corridor|deviation(?:\s+limit)?)/i)
-    || raw.match(/(?:buffer|corridor|deviation(?:\s+limit)?)\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i)?.slice?.(0)
-  );
-  const radius_m = measureToM(
-    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*radius\b/i)
-    || raw.match(/radius\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i)?.slice?.(0)
-  );
-
-  const route = raw.match(/\b(?:from|between)\s+(.+?)\s+(?:to|and)\s+(.+?)(?:\s+(?:with|using)\s+(?:a\s+)?\d+(?:\.\d+)?\s*(?:km|m|meters|metres)\s*(?:buffer|corridor|deviation)|\s+named\b|[.;]|$)/i)
-    || raw.match(/\balong\s+(.+?)\s+to\s+(.+?)(?:\s+with\b|\s+named\b|[.;]|$)/i);
-
-  if (route) {
-    const start = quote(route[1]);
-    const end = quote(route[2]);
-    if (!start || !end) return null;
-    return {
-      task: 'create_geofence',
-      name: name || `Sonalit Corridor — ${start} → ${end}`,
-      location: start,
-      route_end: end,
-      buffer_m: Number.isFinite(buffer_m) ? Math.max(10, Math.min(buffer_m, 5000)) : 300,
-      precision: 'maximum',
-    };
-  }
-
-  const coordMatch = raw.match(/(?:around|at|near)\s+(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/i);
-  if (coordMatch) {
-    const location = `${coordMatch[1]},${coordMatch[2]}`;
-    return {
-      task: 'create_geofence',
-      name: name || `Sonalit Geofence — ${location}`,
-      radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
-      location,
-      precision: 'maximum',
-    };
-  }
-
-  const point = raw.match(/\b(?:around|at|near)\s+(.+?)(?=\s+(?:with|using)\b|\s+radius\b|\s+buffer\b|[.;]|$)/i);
-  if (!point) return null;
-  const location = quote(point[1]);
-  if (!location) return null;
-  return {
-    task: 'create_geofence',
-    name: name || `Sonalit Geofence — ${location}`,
-    location,
-    radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
-    precision: 'maximum',
-  };
-}
 
 // ── POST /ai/dispatch — agentic tool-use loop ──────────────────────────────
 router.post('/dispatch', async (req, res) => {

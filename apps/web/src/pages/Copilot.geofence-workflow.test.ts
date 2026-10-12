@@ -6,6 +6,8 @@ const geofenceIntent = readFileSync(new URL('../lib/geofenceIntent.ts', import.m
 const geofencesPage = readFileSync(new URL('./Geofences.tsx', import.meta.url), 'utf8');
 const mapRenderer = readFileSync(new URL('../components/geofences/useGeofenceMap.ts', import.meta.url), 'utf8');
 const serverCreate = readFileSync(new URL('../../../../backend/src/routes/geofences.js', import.meta.url), 'utf8');
+const aiRoutes = readFileSync(new URL('../../../../backend/src/routes/ai.js', import.meta.url), 'utf8');
+const autoGeometry = readFileSync(new URL('../../../../backend/src/utils/geofenceAutoGeometry.js', import.meta.url), 'utf8');
 const mapResponse = readFileSync(new URL('../../../../backend/src/routes/dashboard.js', import.meta.url), 'utf8');
 
 describe('Copilot geofence end-to-end geometry contract', () => {
@@ -19,6 +21,13 @@ describe('Copilot geofence end-to-end geometry contract', () => {
     expect(copilot).toContain("queryClient.invalidateQueries({ queryKey: ['geofence-map-data'] })");
     expect(copilot).not.toContain("if (/draw.*(geofence|zone|area)|create.*(geofence|zone)/i.test(input)) setShowDraw(true)");
     expect(geofenceIntent).toContain('export function shouldOpenManualPolygonDrawing');
+    expect(geofenceIntent).toContain('if (explicitlyManual) return true');
+    expect(copilot).toContain('boundary|polygon|area');
+    expect(aiRoutes).toContain('inferGeofenceTask(command)');
+    expect(aiRoutes).toContain('shape === \'polygon\' || shape === \'boundary\'');
+    expect(aiRoutes).toContain('normalizePolygonGeometry(persisted)');
+    expect(autoGeometry).toContain('createRadiusPolygon');
+    expect(autoGeometry).toContain('normalizeBoundaryGeometry');
   });
 
   it('keeps polygon drawing preview and the persisted map rendering path aligned', () => {
