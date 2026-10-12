@@ -1074,7 +1074,7 @@ async function toolCreateGeofence(input, userId, orgId) {
       const startDriftM = stored.startDriftM;
       const endDriftM = stored.endDriftM;
 
-      const effectivePrecision = precision === 'maximum' && !pathSimplification.toleranceEscalated && (gStart.source === 'nominatim' || gStart.source === 'explicit') && (gEnd.source === 'nominatim' || gEnd.source === 'explicit')
+      const effectivePrecision = precision === 'maximum' && pathSimplification.toleranceM === 0 && (gStart.source === 'nominatim' || gStart.source === 'explicit') && (gEnd.source === 'nominatim' || gEnd.source === 'explicit')
         ? 'maximum'
         : (precision === 'standard' ? 'standard' : 'high');
 
