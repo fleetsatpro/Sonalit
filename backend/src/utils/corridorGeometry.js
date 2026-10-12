@@ -16,6 +16,8 @@ function distanceM(a, b) {
 }
 const MAX_INPUT_PATH_POINTS = 20000;
 const MAX_SIMPLIFICATION_COMPARISONS = 2000000;
+const MAX_SIMPLIFICATION_TOTAL_COMPARISONS = 8000000;
+const MAX_SIMPLIFICATION_TOLERANCE_M = 100;
 
 function wrappedDeltaDegrees(delta) {
   return ((delta + 540) % 360) - 180;
@@ -34,17 +36,56 @@ function pointToSegmentDistanceM(point, start, end) {
 }
 
 /**
- * Bound route geometry cost without arbitrary truncation. Douglas–Peucker keeps
- * both endpoints and guarantees each removed vertex is within tolerance of its
- * retained segment in a local metric projection. If the route cannot be
- * represented inside the vertex/computation budget at this tolerance, fail
- * closed instead of pretending a coarse line is the requested road corridor.
+ * Keep routed centreline geometry bounded without truncating vertices or
+ * replacing a road route with a straight line. Start at the requested error
+ * tolerance, then widen it adaptively (never beyond 100 m) only when the
+ * vertex/computation budget requires it. The actual tolerance and any
+ * escalation are returned for operational provenance.
  */
-function simplifyPath(path, toleranceM = 10) {
+function simplifyRawPath(raw, toleranceM, comparisonBudget) {
+  const keep = new Uint8Array(raw.length);
+  keep[0] = 1;
+  keep[raw.length - 1] = 1;
+  const stack = [[0, raw.length - 1]];
+  let comparisons = 0;
+  while (stack.length) {
+    const [first, last] = stack.pop();
+    if (last <= first + 1) continue;
+    let farthest = -1;
+    let farthestDistance = toleranceM;
+    for (let i = first + 1; i < last; i++) {
+      comparisons++;
+      comparisonBudget.total++;
+      if (comparisons > MAX_SIMPLIFICATION_COMPARISONS || comparisonBudget.total > MAX_SIMPLIFICATION_TOTAL_COMPARISONS) {
+        const error = new RangeError('Route geometry is too complex to simplify within the safe computation budget.');
+        error.code = 'SIMPLIFICATION_BUDGET_EXCEEDED';
+        throw error;
+      }
+      const distance = pointToSegmentDistanceM(raw[i], raw[first], raw[last]);
+      if (distance > farthestDistance) {
+        farthestDistance = distance;
+        farthest = i;
+      }
+    }
+    if (farthest >= 0) {
+      keep[farthest] = 1;
+      stack.push([first, farthest], [farthest, last]);
+    }
+  }
+  return raw.filter((_, index) => keep[index]);
+}
+
+function simplifyPath(path, toleranceM = 10, maxToleranceM = MAX_SIMPLIFICATION_TOLERANCE_M) {
   if (!Array.isArray(path) || path.length < 2) throw new TypeError('A corridor needs at least two route points.');
   if (path.length > MAX_INPUT_PATH_POINTS) throw new RangeError('Route geometry exceeds the safe input vertex limit.');
-  const tolerance = Number(toleranceM);
-  if (!Number.isFinite(tolerance) || tolerance < 1 || tolerance > 100) throw new RangeError('Geometry simplification tolerance must be between 1 and 100 metres.');
+  const requestedToleranceM = Number(toleranceM);
+  const toleranceCeilingM = Number(maxToleranceM);
+  if (!Number.isFinite(toleranceCeilingM) || toleranceCeilingM < 1 || toleranceCeilingM > MAX_SIMPLIFICATION_TOLERANCE_M) {
+    throw new RangeError('Geometry simplification ceiling must be between 1 and ' + MAX_SIMPLIFICATION_TOLERANCE_M + ' metres.');
+  }
+  if (!Number.isFinite(requestedToleranceM) || requestedToleranceM < 1 || requestedToleranceM > toleranceCeilingM) {
+    throw new RangeError('Requested geometry simplification tolerance must be between 1 and the configured ' + toleranceCeilingM + ' m ceiling.');
+  }
 
   const raw = [];
   for (let i = 0; i < path.length; i++) {
@@ -60,48 +101,97 @@ function simplifyPath(path, toleranceM = 10) {
   if (raw.length < 2) throw new RangeError('The route has no measurable length.');
   if (raw.length <= MAX_PATH_POINTS) {
     const normalized = normalizePath(raw);
-    return { path: normalized, originalPointCount: raw.length, finalPointCount: normalized.length, toleranceM: 0 };
+    return {
+      path: normalized,
+      originalPointCount: raw.length,
+      finalPointCount: normalized.length,
+      toleranceM: 0,
+      requestedToleranceM,
+      toleranceEscalated: false,
+      method: 'none',
+    };
   }
 
-  const keep = new Uint8Array(raw.length);
-  keep[0] = 1;
-  keep[raw.length - 1] = 1;
-  const stack = [[0, raw.length - 1]];
-  let comparisons = 0;
-  while (stack.length) {
-    const [first, last] = stack.pop();
-    if (last <= first + 1) continue;
-    let farthest = -1;
-    let farthestDistance = tolerance;
-    for (let i = first + 1; i < last; i++) {
-      if (++comparisons > MAX_SIMPLIFICATION_COMPARISONS) {
-        throw new RangeError('Route geometry is too complex to simplify within the safe computation budget.');
-      }
-      const distance = pointToSegmentDistanceM(raw[i], raw[first], raw[last]);
-      if (distance > farthestDistance) {
-        farthestDistance = distance;
-        farthest = i;
-      }
-    }
-    if (farthest >= 0) {
-      keep[farthest] = 1;
-      stack.push([first, farthest], [farthest, last]);
-    }
+  // Exponential search reaches the documented ceiling in at most eight
+  // passes, even when callers choose the minimum 1 m requested tolerance.
+  const candidates = [requestedToleranceM];
+  while (candidates.length < 8 && candidates[candidates.length - 1] < toleranceCeilingM) {
+    const previous = candidates[candidates.length - 1];
+    const next = Math.min(toleranceCeilingM, previous * 2);
+    if (next <= previous) break;
+    candidates.push(next);
   }
 
-  const reduced = raw.filter((_, index) => keep[index]);
-  if (reduced.length > MAX_PATH_POINTS) {
-    throw new RangeError('Route still exceeds the safe vertex limit at the requested geometry tolerance; no coarse substitute was created.');
+  const comparisonBudget = { total: 0 };
+  let lastUnsuccessfulToleranceM = requestedToleranceM;
+  let lastFailure = 'vertex limit';
+  for (const candidateToleranceM of candidates) {
+    let reduced;
+    try {
+      reduced = simplifyRawPath(raw, candidateToleranceM, comparisonBudget);
+    } catch (error) {
+      if (error && error.code === 'SIMPLIFICATION_BUDGET_EXCEEDED') {
+        lastUnsuccessfulToleranceM = candidateToleranceM;
+        lastFailure = 'computation budget';
+        continue;
+      }
+      throw error;
+    }
+
+    if (reduced.length > MAX_PATH_POINTS) {
+      lastUnsuccessfulToleranceM = candidateToleranceM;
+      lastFailure = 'vertex limit';
+      continue;
+    }
+
+    // Refine the first passing tolerance twice. This avoids jumping straight
+    // from (for example) 40 m to 80 m when a smaller bounded tolerance works.
+    let chosenToleranceM = candidateToleranceM;
+    let chosenPath = reduced;
+    if (candidateToleranceM > requestedToleranceM) {
+      let low = lastUnsuccessfulToleranceM;
+      let high = candidateToleranceM;
+      for (let attempt = 0; attempt < 2 && high - low > 1; attempt++) {
+        const middle = (low + high) / 2;
+        let trial;
+        try {
+          trial = simplifyRawPath(raw, middle, comparisonBudget);
+        } catch (error) {
+          if (error && error.code === 'SIMPLIFICATION_BUDGET_EXCEEDED') {
+            low = middle;
+            continue;
+          }
+          throw error;
+        }
+        if (trial.length <= MAX_PATH_POINTS) {
+          high = middle;
+          chosenToleranceM = middle;
+          chosenPath = trial;
+        } else {
+          low = middle;
+        }
+      }
+    }
+
+    const normalized = normalizePath(chosenPath);
+    const toleranceEscalated = chosenToleranceM > requestedToleranceM;
+    return {
+      path: normalized,
+      originalPointCount: raw.length,
+      finalPointCount: normalized.length,
+      toleranceM: normalized.length < raw.length ? chosenToleranceM : 0,
+      requestedToleranceM,
+      toleranceEscalated,
+      method: toleranceEscalated ? 'douglas-peucker-adaptive' : 'douglas-peucker',
+    };
   }
-  const normalized = normalizePath(reduced);
-  return {
-    path: normalized,
-    originalPointCount: raw.length,
-    finalPointCount: normalized.length,
-    toleranceM: normalized.length < raw.length ? tolerance : 0,
-  };
+
+  throw new RangeError(
+    'Route geometry could not be reduced to ' + MAX_PATH_POINTS + ' or fewer vertices within the '
+    + toleranceCeilingM + ' m configured simplification ceiling and safe computation budget '
+    + '(' + lastFailure + '); no geofence was created.'
+  );
 }
-
 function normalizePath(path) {
   if (!Array.isArray(path) || path.length < 2) throw new TypeError('A corridor needs at least two [latitude, longitude] points.');
   if (path.length > MAX_PATH_POINTS) throw new RangeError('Routed centreline exceeds the safe vertex limit; geometry was not truncated.');
@@ -289,4 +379,4 @@ function buildCorridorPolygon(path, bufferM) {
   if(!verified.valid) throw new RangeError(verified.reason);
   return polygon;
 }
-module.exports={MAX_PATH_POINTS,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,simplifyPath,validateCorridorGeometry};
+module.exports={MAX_PATH_POINTS,MAX_SIMPLIFICATION_TOLERANCE_M,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,simplifyPath,validateCorridorGeometry};
