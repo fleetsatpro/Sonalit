@@ -979,6 +979,11 @@ async function toolCreateGeofence(input, userId, orgId) {
       // cannot be represented safely within the algorithm's complexity budget.
       const pathSimplification = simplifyPath(pathLatLng, 10);
       pathLatLng = pathSimplification.path;
+      const simplificationSummary = pathSimplification.toleranceEscalated
+        ? 'centreline tolerance adaptively increased from ' + pathSimplification.requestedToleranceM + 'm to ' + pathSimplification.toleranceM + 'm to remain within the documented 100m ceiling'
+        : pathSimplification.toleranceM
+          ? 'centreline simplified within ' + pathSimplification.toleranceM + 'm tolerance'
+          : 'routed centreline retained without simplification';
       const mid = midpointOnPath(pathLatLng);
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
@@ -1000,7 +1005,10 @@ async function toolCreateGeofence(input, userId, orgId) {
         route_distance_m: distM,
         path_points: pathLatLng.length,
         source_path_points: pathSimplification.originalPointCount,
+        path_simplification_requested_tolerance_m: pathSimplification.requestedToleranceM,
         path_simplification_tolerance_m: pathSimplification.toleranceM,
+        path_simplification_escalated: pathSimplification.toleranceEscalated,
+        path_simplification_method: pathSimplification.method,
         geocoding: {
           start: { source: gStart.source || 'unknown', precision: gStart.precision || 'unknown', osm_id: gStart.osm_id || null },
           end: { source: gEnd.source || 'unknown', precision: gEnd.precision || 'unknown', osm_id: gEnd.osm_id || null },
@@ -1063,7 +1071,7 @@ async function toolCreateGeofence(input, userId, orgId) {
       const startDriftM = stored.startDriftM;
       const endDriftM = stored.endDriftM;
 
-      const effectivePrecision = precision === 'maximum' && (gStart.source === 'nominatim' || gStart.source === 'explicit') && (gEnd.source === 'nominatim' || gEnd.source === 'explicit')
+      const effectivePrecision = precision === 'maximum' && !pathSimplification.toleranceEscalated && (gStart.source === 'nominatim' || gStart.source === 'explicit') && (gEnd.source === 'nominatim' || gEnd.source === 'explicit')
         ? 'maximum'
         : (precision === 'standard' ? 'standard' : 'high');
 
@@ -1080,7 +1088,10 @@ async function toolCreateGeofence(input, userId, orgId) {
         is_corridor: true,
         path_points: pathLatLng.length,
         source_path_points: pathSimplification.originalPointCount,
+        path_simplification_requested_tolerance_m: pathSimplification.requestedToleranceM,
         path_simplification_tolerance_m: pathSimplification.toleranceM,
+        path_simplification_escalated: pathSimplification.toleranceEscalated,
+        path_simplification_method: pathSimplification.method,
         road_distance_km: (distM / 1000).toFixed(2),
         buffer_m,
         precision: effectivePrecision,
@@ -1091,7 +1102,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         geometry_verification: { start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM), persisted_path_points: persistedPath.length },
         fallback_used: routeProvider !== 'OSRM',
         message: routeProvider === 'OSRM'
-          ? `High-precision corridor "${name}" created on the routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} verified centreline vertices, ${buffer_m}m deviation threshold${pathSimplification.toleranceM ? " (centreline simplified within 10m tolerance)" : ""}.`
+          ? `Corridor "${name}" created on routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} verified centreline vertices, ${buffer_m}m deviation threshold; ${simplificationSummary}.`
           : `LOW-PRECISION explicit fallback "${name}" created from a straight line. Review before operational use.`,
       };
     }
