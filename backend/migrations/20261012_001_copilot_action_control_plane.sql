@@ -62,17 +62,37 @@ CREATE INDEX IF NOT EXISTS idx_copilot_tool_traces_request
   ON public.copilot_tool_traces(org_id, request_id, ordinal);
 
 ALTER TABLE public.copilot_action_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.copilot_action_runs FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.copilot_tool_traces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.copilot_tool_traces FORCE ROW LEVEL SECURITY;
 
+-- Permissive base policies grant access only within the active tenant. The
+-- separate restrictive hardening policies are required by Sonalit's global
+-- tenant-isolation contract and remain authoritative if a permissive policy
+-- is added or broadened in a later migration.
 DROP POLICY IF EXISTS copilot_action_runs_org_isolation ON public.copilot_action_runs;
 CREATE POLICY copilot_action_runs_org_isolation ON public.copilot_action_runs
-  USING (org_id = current_setting('app.current_org_id', true)::uuid)
-  WITH CHECK (org_id = current_setting('app.current_org_id', true)::uuid);
+  AS PERMISSIVE FOR ALL
+  USING (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''))
+  WITH CHECK (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''));
 
 DROP POLICY IF EXISTS copilot_tool_traces_org_isolation ON public.copilot_tool_traces;
 CREATE POLICY copilot_tool_traces_org_isolation ON public.copilot_tool_traces
-  USING (org_id = current_setting('app.current_org_id', true)::uuid)
-  WITH CHECK (org_id = current_setting('app.current_org_id', true)::uuid);
+  AS PERMISSIVE FOR ALL
+  USING (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''))
+  WITH CHECK (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''));
+
+DROP POLICY IF EXISTS tenant_isolation_hardening ON public.copilot_action_runs;
+CREATE POLICY tenant_isolation_hardening ON public.copilot_action_runs
+  AS RESTRICTIVE FOR ALL
+  USING (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''))
+  WITH CHECK (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''));
+
+DROP POLICY IF EXISTS tenant_isolation_hardening ON public.copilot_tool_traces;
+CREATE POLICY tenant_isolation_hardening ON public.copilot_tool_traces
+  AS RESTRICTIVE FOR ALL
+  USING (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''))
+  WITH CHECK (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''));
 
 GRANT SELECT, INSERT, UPDATE ON public.copilot_decisions TO sonalit_app;
 GRANT SELECT, INSERT, DELETE ON public.copilot_decision_agents TO sonalit_app;
