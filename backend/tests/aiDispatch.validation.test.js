@@ -111,7 +111,7 @@ describe('Copilot dispatch tool execution contract', () => {
         content: [{ type: 'text', text: 'The invalid geometry request was rejected.' }],
       });
 
-    const response = await request(app).post('/ai/dispatch').send({ command: 'Analyze corridor operations', history: [] });
+    const response = await request(app).post('/ai/dispatch').send({ command: 'Corridor operations summary', history: [] });
 
     expect(response.status).toBe(200);
     expect(response.body.response).toContain('invalid geometry request');
