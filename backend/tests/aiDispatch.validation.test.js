@@ -224,6 +224,18 @@ describe('Copilot dispatch tool execution contract', () => {
   });
 
   test('tutorial questions never trigger a geofence write', async () => {
+    runDecisionFabric.mockResolvedValue({
+      answer: 'To create a geofence, specify a location and a supported radius.',
+      decision: 'MONITOR',
+      risk_level: 'LOW',
+      confidence: 0.7,
+      recommended_actions: [],
+      risks: [],
+      evidence: [],
+      missing_data: [],
+      swarm: [],
+      meta: { degraded: false, latency_ms: 10, agent_count: 10 },
+    });
     mockAiClient.createMessage.mockResolvedValue({
       _provider: 'test-provider',
       stop_reason: 'end_turn',
