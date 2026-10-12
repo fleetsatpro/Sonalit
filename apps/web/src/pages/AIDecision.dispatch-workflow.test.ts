@@ -14,6 +14,9 @@ describe('AIDecision operational dispatch contract', () => {
   it('shows verified operation results and durable receipts rather than analysis-only metrics', () => {
     expect(page).toContain('Operational action completed');
     expect(page).toContain('Geometry provenance');
+    expect(page).toContain('Source boundary vertices');
+    expect(page).toContain('Simplification error budget');
+    expect(page).toContain('Simplification method');
     expect(page).toContain('Durable action receipt');
     expect(page).toContain('response?.data?.message');
     expect(page).toContain('No operation is reported as completed');

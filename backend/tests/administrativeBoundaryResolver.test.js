@@ -8,6 +8,7 @@ const {
   candidateNameMatches,
   countryCodeFromPlace,
   normalizedCore,
+  providerCircuitHealth,
 } = require('../src/utils/administrativeBoundaryResolver');
 
 function jsonResponse(value, status = 200) {
@@ -64,6 +65,38 @@ describe('redundant administrative-boundary resolver', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  test('simplifies a high-vertex official boundary within a bounded metre-based error budget', async () => {
+    const uniquePoints = Array.from({ length: 1200 }, (_, index) => {
+      const angle = (Math.PI * 2 * index) / 1200;
+      return [36.8172 + 0.1 * Math.cos(angle), -1.2864 + 0.1 * Math.sin(angle)];
+    });
+    const denseRing = [...uniquePoints, [...uniquePoints[0]]];
+    const denseFeatureCollection = {
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        properties: { shapeName: 'Nairobi City County', shapeID: 'KEN-ADM1-NAIROBI-DENSE' },
+        geometry: { type: 'Polygon', coordinates: [denseRing] },
+      }],
+    };
+    global.fetch.mockImplementation(async (url) => {
+      const value = String(url);
+      if (value.startsWith('https://nominatim.openstreetmap.org/search?')) return jsonResponse(osmPlaceOnly);
+      if (value === 'https://www.geoboundaries.org/api/current/gbOpen/KEN/ADM1/') return jsonResponse(geoBoundaryMetadata);
+      if (value === geoBoundaryMetadata.simplifiedGeometryGeoJSON) return jsonResponse(denseFeatureCollection);
+      throw new Error('Unexpected request: ' + value);
+    });
+
+    const resolved = await resolveAdministrativeBoundary('Nairobi');
+
+    expect(resolved.source_original_vertex_count).toBe(1200);
+    expect(resolved.simplification_tolerance_m).toBeGreaterThan(0);
+    expect(resolved.simplification_tolerance_m).toBeLessThanOrEqual(250);
+    expect(resolved.geometry.coordinates[0].length - 1).toBeLessThanOrEqual(500);
+    expect(resolved.geometry.coordinates[0][0]).toEqual(resolved.geometry.coordinates[0].at(-1));
+    expect(resolved.location.simplification_method).toContain('Douglas–Peucker');
   });
 
   test('does not accept a different, larger administrative boundary from Nominatim', async () => {
@@ -204,4 +237,28 @@ describe('redundant administrative-boundary resolver', () => {
 
     await expect(resolveAdministrativeBoundary('Nairobi')).rejects.toThrow(/No geofence was created|geoBoundaries fallback did not resolve/);
   });
+  test('opens provider circuit breakers after repeated transient failures and avoids hammering the source', async () => {
+    global.fetch.mockImplementation(async (url) => {
+      const requested = String(url);
+      if (requested.startsWith('https://nominatim.openstreetmap.org/search?')) {
+        throw new Error('Nominatim connection timeout');
+      }
+      if (requested.startsWith('https://www.geoboundaries.org/api/current/gbOpen/KEN/')) {
+        return jsonResponse({ error: 'upstream unavailable' }, 503);
+      }
+      throw new Error('Unexpected request: ' + requested);
+    });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(resolveAdministrativeBoundary('Nairobi')).rejects.toThrow(/No geofence was created|geoBoundaries fallback did not resolve/);
+    }
+
+    expect(providerCircuitHealth('nominatim')).toMatchObject({ state: 'open', failures: 0 });
+    expect(providerCircuitHealth('geoBoundaries')).toMatchObject({ state: 'open', failures: 0 });
+    const countAfterOpening = global.fetch.mock.calls.length;
+
+    await expect(resolveAdministrativeBoundary('Nairobi')).rejects.toThrow(/circuit breaker is open/);
+    expect(global.fetch).toHaveBeenCalledTimes(countAfterOpening);
+  });
+
 });

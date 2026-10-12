@@ -1102,6 +1102,9 @@ async function toolCreateGeofence(input, userId, orgId) {
       let geometrySource;
       let precisionUsed;
       let simplificationToleranceDegrees = null;
+      let simplificationToleranceM = null;
+      let sourceOriginalVertexCount = null;
+      let sourceSimplificationMethod = null;
       let radius_m = null;
 
       if (shape === 'boundary') {
@@ -1109,13 +1112,19 @@ async function toolCreateGeofence(input, userId, orgId) {
         g = { ...resolved.location, cache_hit: resolved.cache_hit, stale_fallback: resolved.stale_fallback, stale_warning: resolved.stale_warning };
         geometry = normalizeBoundaryGeometry(resolved.geometry);
         simplificationToleranceDegrees = resolved.simplification_tolerance_degrees;
+        simplificationToleranceM = resolved.simplification_tolerance_m;
+        sourceOriginalVertexCount = resolved.source_original_vertex_count;
+        sourceSimplificationMethod = resolved.simplification_method;
         const sourceName = g.source || 'source-backed administrative-boundary provider';
         const sourceYear = g.source_year ? ', dataset year ' + g.source_year : '';
         const license = g.license ? ', licence ' + g.license : '';
-        const toleranceText = Number.isFinite(simplificationToleranceDegrees)
-          ? ', topology-preserving simplification tolerance ' + simplificationToleranceDegrees + ' degrees'
+        const toleranceText = Number.isFinite(simplificationToleranceM)
+          ? ', Sonalit simplification max-deviation tolerance ' + simplificationToleranceM + ' m'
           : '';
-        geometrySource = sourceName + (sourceName.toLowerCase().includes('administrative boundary') ? '' : ' administrative boundary') + sourceYear + license + toleranceText;
+        const providerToleranceText = Number.isFinite(simplificationToleranceDegrees)
+          ? ', provider simplification threshold ' + simplificationToleranceDegrees + ' degrees'
+          : '';
+        geometrySource = sourceName + (sourceName.toLowerCase().includes('administrative boundary') ? '' : ' administrative boundary') + sourceYear + license + toleranceText + providerToleranceText;
         precisionUsed = 'source-backed-administrative-boundary';
       } else {
         g = await geocodePrecise(location);
@@ -1136,6 +1145,9 @@ async function toolCreateGeofence(input, userId, orgId) {
         precision: precisionUsed,
         geometry_source: geometrySource,
         source_simplification_tolerance_degrees: simplificationToleranceDegrees,
+        source_simplification_tolerance_m: simplificationToleranceM,
+        source_original_vertex_count: sourceOriginalVertexCount,
+        source_simplification_method: sourceSimplificationMethod,
         source_url: g.source_url || null,
         source_year: g.source_year || null,
         source_license: g.license || null,
@@ -1200,7 +1212,8 @@ async function toolCreateGeofence(input, userId, orgId) {
       const message = isBoundary
         ? 'Source-backed administrative boundary geofence "' + name + '" created from ' + (g.source || 'a verified administrative-boundary provider') + ' at ' + locationLabel + ', with ' + vertexCount + ' verified vertices'
           + (g.source_year ? ' (source dataset year ' + g.source_year + ')' : '')
-          + (Number.isFinite(simplificationToleranceDegrees) ? ' (topology-preserving simplification tolerance ' + simplificationToleranceDegrees + ' degrees)' : '')
+          + (Number.isFinite(simplificationToleranceM) ? ' (Sonalit simplified ' + Number(sourceOriginalVertexCount || vertexCount) + ' source vertices to ' + vertexCount + ' vertices with max-deviation tolerance ' + simplificationToleranceM + ' m)' : '')
+          + (Number.isFinite(simplificationToleranceDegrees) ? ' (provider polygon threshold ' + simplificationToleranceDegrees + ' degrees)' : '')
           + (g.attribution ? '. Attribution: ' + g.attribution : '.')
           + (resolvedCacheHit(shape, g) ? ' Reused cached source-backed geometry.' : '')
           + (g.stale_warning ? ' Warning: ' + g.stale_warning : '')
@@ -1220,6 +1233,9 @@ async function toolCreateGeofence(input, userId, orgId) {
         precision: precisionUsed,
         geometry_source: geometrySource,
         source_simplification_tolerance_degrees: simplificationToleranceDegrees,
+        source_simplification_tolerance_m: simplificationToleranceM,
+        source_original_vertex_count: sourceOriginalVertexCount,
+        source_simplification_method: sourceSimplificationMethod,
         source_url: g.source_url || null,
         source_year: g.source_year || null,
         source_license: g.license || null,

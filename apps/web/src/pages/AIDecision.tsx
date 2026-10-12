@@ -31,6 +31,11 @@ interface CreatedOperation {
   risk_zone_id?: string;
   fence_type?: string;
   geometry_source?: string;
+  source_simplification_tolerance_m?: number | null;
+  source_original_vertex_count?: number | null;
+  source_simplification_method?: string | null;
+  source_year?: string | null;
+  source_license?: string | null;
   precision?: string;
   requested_precision?: string;
   vertex_count?: number;
@@ -322,6 +327,11 @@ export default function AIDecision() {
                 {item.risk_zone_id && <div><dt className="text-slate-500">Risk-zone ID</dt><dd className="mt-0.5 break-all font-mono text-slate-200">{item.risk_zone_id}</dd></div>}
                 {item.location && <div><dt className="text-slate-500">Resolved location</dt><dd className="mt-0.5 text-slate-200">{item.location}</dd></div>}
                 {item.geometry_source && <div><dt className="text-slate-500">Geometry provenance</dt><dd className="mt-0.5 text-slate-200">{item.geometry_source}</dd></div>}
+                {item.source_year && <div><dt className="text-slate-500">Boundary dataset year</dt><dd className="mt-0.5 text-slate-200">{item.source_year}</dd></div>}
+                {item.source_license && <div><dt className="text-slate-500">Boundary licence</dt><dd className="mt-0.5 text-slate-200">{item.source_license}</dd></div>}
+                {item.source_original_vertex_count != null && <div><dt className="text-slate-500">Source boundary vertices</dt><dd className="mt-0.5 text-slate-200">{item.source_original_vertex_count}</dd></div>}
+                {item.source_simplification_tolerance_m != null && <div><dt className="text-slate-500">Simplification error budget</dt><dd className="mt-0.5 text-slate-200">≤ {item.source_simplification_tolerance_m} m</dd></div>}
+                {item.source_simplification_method && <div><dt className="text-slate-500">Simplification method</dt><dd className="mt-0.5 text-slate-200">{item.source_simplification_method}</dd></div>}
                 {item.precision && <div><dt className="text-slate-500">Geometry status</dt><dd className="mt-0.5 text-slate-200">{item.precision}</dd></div>}
                 {item.vertex_count != null && <div><dt className="text-slate-500">Vertices</dt><dd className="mt-0.5 text-slate-200">{item.vertex_count}</dd></div>}
                 {item.radius_m != null && <div><dt className="text-slate-500">Radius</dt><dd className="mt-0.5 text-slate-200">{item.radius_m} m</dd></div>}

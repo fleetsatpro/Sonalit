@@ -8,10 +8,18 @@ const BOUNDARY_STALE_CACHE_TTL_SECONDS = 180 * 24 * 60 * 60;
 const LAYER_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MAX_JSON_CHARS = 30 * 1024 * 1024;
 const REDIS_TIMEOUT_MS = 350;
+const MAX_BOUNDARY_INPUT_VERTICES = 50000;
+const MAX_BOUNDARY_SIMPLIFICATION_COMPARISONS = 3000000;
+const MAX_BOUNDARY_SIMPLIFICATION_TOLERANCE_M = 250;
+const BOUNDARY_SIMPLIFICATION_TOLERANCES_M = Object.freeze([10, 20, 35, 50, 75, 100, 150, 200, 250]);
+const PROVIDER_CIRCUIT_FAILURE_THRESHOLD = 3;
+const PROVIDER_CIRCUIT_BASE_COOLDOWN_MS = 30000;
+const PROVIDER_CIRCUIT_MAX_COOLDOWN_MS = 5 * 60 * 1000;
 
 const boundaryMemoryCache = new Map();
 const layerMemoryCache = new Map();
 const inFlightBoundary = new Map();
+const providerCircuits = new Map();
 let lastNominatimRequestAt = 0;
 
 const ISO2_TO_ISO3 = Object.freeze({
@@ -169,12 +177,85 @@ async function redisWrite(key, value, ttlSeconds) {
   }
 }
 
+function getProviderCircuit(provider) {
+  if (!providerCircuits.has(provider)) {
+    providerCircuits.set(provider, {
+      failures: 0,
+      openUntil: 0,
+      cooldownMs: PROVIDER_CIRCUIT_BASE_COOLDOWN_MS,
+      lastFailureAt: null,
+      lastSuccessAt: null,
+      lastError: null,
+    });
+  }
+  return providerCircuits.get(provider);
+}
+
+function providerCircuitHealth(provider) {
+  const state = getProviderCircuit(provider);
+  const open = state.openUntil > Date.now();
+  return {
+    provider,
+    state: open ? 'open' : 'closed',
+    retry_in_ms: open ? state.openUntil - Date.now() : 0,
+    failures: state.failures,
+    last_failure_at: state.lastFailureAt,
+    last_success_at: state.lastSuccessAt,
+    last_error: state.lastError,
+  };
+}
+
+function ensureProviderCircuitClosed(provider) {
+  const state = getProviderCircuit(provider);
+  if (state.openUntil > Date.now()) {
+    throw new Error(provider + ' circuit breaker is open for another ' + Math.ceil((state.openUntil - Date.now()) / 1000) + ' seconds.');
+  }
+  if (state.openUntil && state.openUntil <= Date.now()) state.openUntil = 0;
+}
+
+function isTransientProviderError(error) {
+  const status = Number(error?.status || String(error?.message || '').match(/HTTP (\d{3})/)?.[1] || 0);
+  if (status) return status === 408 || status === 425 || status === 429 || status >= 500;
+  return true;
+}
+
+async function requestProviderJson(provider, url, options = {}) {
+  ensureProviderCircuitClosed(provider);
+  try {
+    const result = await requestJson(url, options);
+    const state = getProviderCircuit(provider);
+    state.failures = 0;
+    state.openUntil = 0;
+    state.cooldownMs = PROVIDER_CIRCUIT_BASE_COOLDOWN_MS;
+    state.lastSuccessAt = new Date().toISOString();
+    state.lastError = null;
+    return result;
+  } catch (error) {
+    const state = getProviderCircuit(provider);
+    state.lastFailureAt = new Date().toISOString();
+    state.lastError = String(error?.message || error).slice(0, 220);
+    if (isTransientProviderError(error)) {
+      state.failures += 1;
+      if (state.failures >= PROVIDER_CIRCUIT_FAILURE_THRESHOLD) {
+        state.openUntil = Date.now() + state.cooldownMs;
+        state.cooldownMs = Math.min(PROVIDER_CIRCUIT_MAX_COOLDOWN_MS, state.cooldownMs * 2);
+        state.failures = 0;
+      }
+    }
+    throw error;
+  }
+}
+
 async function requestJson(url, { timeoutMs = 9000, headers = {} } = {}) {
   const response = await fetch(url, {
     headers,
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) throw new Error('HTTP ' + response.status);
+  if (!response.ok) {
+    const error = new Error('HTTP ' + response.status);
+    error.status = response.status;
+    throw error;
+  }
   const declaredSize = Number(response.headers?.get?.('content-length') || 0);
   if (declaredSize > MAX_JSON_CHARS) throw new Error('Response exceeded the boundary-data size limit.');
   const text = await response.text();
@@ -244,10 +325,180 @@ function candidateNameMatches(place, feature) {
   return requestedCores.some(core => cores.includes(core));
 }
 
+function projectedMetres(point, referenceLatitude) {
+  const earthRadius = 6371008.8;
+  const radians = Math.PI / 180;
+  const latitudeScale = Math.cos(referenceLatitude * radians);
+  return [
+    earthRadius * Number(point[0]) * radians * latitudeScale,
+    earthRadius * Number(point[1]) * radians,
+  ];
+}
+
+function segmentDistanceMetres(point, start, end, referenceLatitude) {
+  const p = projectedMetres(point, referenceLatitude);
+  const a = projectedMetres(start, referenceLatitude);
+  const b = projectedMetres(end, referenceLatitude);
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const denominator = dx * dx + dy * dy;
+  const t = denominator > 0
+    ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / denominator))
+    : 0;
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+function simplifyOpenBoundaryArc(points, toleranceM, referenceLatitude, budget) {
+  if (points.length <= 2) return points.slice();
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack = [[0, points.length - 1]];
+  while (stack.length) {
+    const [first, last] = stack.pop();
+    if (last <= first + 1) continue;
+    let farthest = -1;
+    let maxDistance = toleranceM;
+    for (let i = first + 1; i < last; i += 1) {
+      budget.comparisons += 1;
+      if (budget.comparisons > MAX_BOUNDARY_SIMPLIFICATION_COMPARISONS) {
+        throw new RangeError('Administrative boundary is too complex to simplify within the computation budget.');
+      }
+      const distance = segmentDistanceMetres(points[i], points[first], points[last], referenceLatitude);
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        farthest = i;
+      }
+    }
+    if (farthest >= 0) {
+      keep[farthest] = 1;
+      stack.push([first, farthest], [farthest, last]);
+    }
+  }
+  return points.filter((_, index) => keep[index]);
+}
+
+function ringEquals(a, b) {
+  return Array.isArray(a) && Array.isArray(b)
+    && Number(a[0]) === Number(b[0]) && Number(a[1]) === Number(b[1]);
+}
+
+function simplifyAdministrativePolygon(geometry) {
+  const source = geometry?.type === 'Feature' ? geometry.geometry : geometry;
+  if (!source || source.type !== 'Polygon' || !Array.isArray(source.coordinates)) {
+    throw new TypeError('The source did not return one administrative Polygon.');
+  }
+  if (source.coordinates.length !== 1) {
+    throw new RangeError('This administrative boundary contains holes or multiple rings and cannot be simplified as one safe ring.');
+  }
+  const raw = source.coordinates[0];
+  if (!Array.isArray(raw) || raw.length < 4 || raw.length > MAX_BOUNDARY_INPUT_VERTICES + 1) {
+    throw new RangeError('Administrative boundary must contain at least 3 and no more than ' + MAX_BOUNDARY_INPUT_VERTICES + ' source vertices.');
+  }
+  const points = [];
+  let minLatitude = Infinity, maxLatitude = -Infinity;
+  let minLongitude = Infinity, maxLongitude = -Infinity;
+  for (let index = 0; index < raw.length; index += 1) {
+    const point = raw[index];
+    if (!Array.isArray(point) || point.length < 2 ||
+        !Number.isFinite(Number(point[0])) || !Number.isFinite(Number(point[1]))) {
+      throw new TypeError('Administrative boundary has a non-numeric coordinate at source vertex ' + (index + 1) + '.');
+    }
+    const lng = Number(point[0]);
+    const lat = Number(point[1]);
+    if (Math.abs(lng) > 180 || Math.abs(lat) > 85) {
+      throw new RangeError('Administrative boundary has a coordinate outside supported map bounds.');
+    }
+    minLatitude = Math.min(minLatitude, lat);
+    maxLatitude = Math.max(maxLatitude, lat);
+    minLongitude = Math.min(minLongitude, lng);
+    maxLongitude = Math.max(maxLongitude, lng);
+    const normalizedPoint = [lng, lat];
+    if (!points.length || !ringEquals(points[points.length - 1], normalizedPoint)) points.push(normalizedPoint);
+  }
+  if (points.length > 1 && ringEquals(points[0], points[points.length - 1])) points.pop();
+  if (points.length < 3) throw new RangeError('Administrative boundary contains fewer than 3 distinct vertices.');
+
+  if (maxLongitude - minLongitude > 180) {
+    throw new RangeError('Administrative boundary crosses the antimeridian; this single-ring simplifier will not distort it.');
+  }
+  const originalVertexCount = points.length;
+  if (originalVertexCount <= 500) {
+    const normalized = normalizeBoundaryGeometry({ type: 'Polygon', coordinates: [points] });
+    return {
+      geometry: normalized,
+      vertex_count: normalized.coordinates[0].length - 1,
+      source_original_vertex_count: originalVertexCount,
+      simplification_tolerance_m: null,
+      simplification_method: 'none; source ring fits Sonalit geometry limits',
+    };
+  }
+
+  const referenceLatitude = (minLatitude + maxLatitude) / 2;
+  // Split the closed ring at an approximate diameter into two open arcs. This
+  // avoids the degenerate equal-endpoint problem when applying Douglas–Peucker
+  // to a closed polygon boundary.
+  let anchorA = 0;
+  let anchorB = 1;
+  let maximumDistance = -1;
+  const origin = projectedMetres(points[anchorA], referenceLatitude);
+  for (let index = 1; index < points.length; index += 1) {
+    const projected = projectedMetres(points[index], referenceLatitude);
+    const distance = Math.hypot(projected[0] - origin[0], projected[1] - origin[1]);
+    if (distance > maximumDistance) {
+      maximumDistance = distance;
+      anchorB = index;
+    }
+  }
+  const arcOne = [];
+  for (let index = anchorA; ; index = (index + 1) % points.length) {
+    arcOne.push(points[index]);
+    if (index === anchorB) break;
+  }
+  const arcTwo = [];
+  for (let index = anchorB; ; index = (index + 1) % points.length) {
+    arcTwo.push(points[index]);
+    if (index === anchorA) break;
+  }
+
+  let lastError = null;
+  for (const toleranceM of BOUNDARY_SIMPLIFICATION_TOLERANCES_M) {
+    const budget = { comparisons: 0 };
+    try {
+      const first = simplifyOpenBoundaryArc(arcOne, toleranceM, referenceLatitude, budget);
+      const second = simplifyOpenBoundaryArc(arcTwo, toleranceM, referenceLatitude, budget);
+      const simplified = first.concat(second.slice(1, -1));
+      if (simplified.length > 500) continue;
+      const closed = simplified.map(point => [point[0], point[1]]);
+      closed.push([...closed[0]]);
+      const normalized = normalizeBoundaryGeometry({ type: 'Polygon', coordinates: [closed] });
+      return {
+        geometry: normalized,
+        vertex_count: normalized.coordinates[0].length - 1,
+        source_original_vertex_count: originalVertexCount,
+        simplification_tolerance_m: toleranceM,
+        simplification_method: 'closed-ring Douglas–Peucker simplification in a local metre projection; result topology validated',
+      };
+    } catch (error) {
+      lastError = error;
+      if (error instanceof RangeError && /computation budget/.test(String(error.message))) {
+        // Higher tolerances generally prune at least as much geometry, but the
+        // input is still expensive to scan. Continue only within the fixed
+        // set of bounded tolerance passes.
+        continue;
+      }
+    }
+  }
+  const detail = lastError?.message ? ' Last validation: ' + String(lastError.message).slice(0, 180) : '';
+  throw new RangeError(
+    'Administrative boundary has ' + originalVertexCount + ' source vertices and could not be reduced to 500 or fewer vertices '
+    + 'within the ' + MAX_BOUNDARY_SIMPLIFICATION_TOLERANCE_M + ' m maximum simplification budget. No coarse or substituted geofence was created.'
+    + detail,
+  );
+}
+
 function validateBoundaryPayload(geometry) {
-  const normalized = normalizeBoundaryGeometry(geometry);
-  const ring = normalized.coordinates[0];
-  return { geometry: normalized, vertexCount: ring.length - 1 };
+  return simplifyAdministrativePolygon(geometry);
 }
 
 function makeBoundaryResult({ geometry, locationName, latitude, longitude, admin1, country, source, sourceUrl, sourceYear, license, attribution, osmType, osmId, simplificationToleranceDegrees, sourceId }) {
@@ -299,7 +550,9 @@ function boundaryCenter(geometry) {
 
 function resultFromGeoBoundaryFeature(feature, metadata, url) {
   const geometry = feature?.geometry;
-  const { geometry: normalized, vertexCount } = validateBoundaryPayload(geometry);
+  const validated = validateBoundaryPayload(geometry);
+  const normalized = validated.geometry;
+  const vertexCount = validated.vertex_count;
   const center = boundaryCenter(normalized);
   const properties = feature.properties || {};
   const sourceName = properties.shapeName || properties.name || properties.NAME_1 || properties.NAME_2;
@@ -308,6 +561,9 @@ function resultFromGeoBoundaryFeature(feature, metadata, url) {
   return {
     geometry: normalized,
     simplification_tolerance_degrees: null,
+    simplification_tolerance_m: validated.simplification_tolerance_m,
+    source_original_vertex_count: validated.source_original_vertex_count,
+    simplification_method: validated.simplification_method,
     location: {
       latitude: center.latitude,
       longitude: center.longitude,
@@ -323,6 +579,9 @@ function resultFromGeoBoundaryFeature(feature, metadata, url) {
       source_id: String(properties.shapeID || properties.shapeISO || properties.shapeName || ''),
       fetched_at: new Date().toISOString(),
       vertex_count: vertexCount,
+      source_original_vertex_count: validated.source_original_vertex_count,
+      simplification_tolerance_m: validated.simplification_tolerance_m,
+      simplification_method: validated.simplification_method,
     },
   };
 }
@@ -397,14 +656,14 @@ async function fetchGeoBoundaryLayer(countryIso3, level) {
   }
 
   const metadataUrl = 'https://www.geoboundaries.org/api/current/gbOpen/' + countryIso3 + '/' + level + '/';
-  const metadata = await requestJson(metadataUrl, { timeoutMs: 10000 });
+  const metadata = await requestProviderJson('geoBoundaries', metadataUrl, { timeoutMs: 10000 });
   const downloadUrl = metadata.simplifiedGeometryGeoJSON || metadata.gjDownloadURL;
   if (!downloadUrl) throw new Error('geoBoundaries metadata did not provide a GeoJSON download URL.');
   const parsedUrl = new URL(downloadUrl);
   if (parsedUrl.protocol !== 'https:' || !['github.com', 'raw.githubusercontent.com', 'media.githubusercontent.com'].includes(parsedUrl.hostname)) {
     throw new Error('geoBoundaries returned an unsupported geometry host.');
   }
-  const collection = await requestJson(parsedUrl.toString(), { timeoutMs: 12000 });
+  const collection = await requestProviderJson('geoBoundaries', parsedUrl.toString(), { timeoutMs: 12000 });
   if (!collection || collection.type !== 'FeatureCollection' || !Array.isArray(collection.features)) {
     throw new Error('geoBoundaries returned an invalid FeatureCollection.');
   }
@@ -491,7 +750,8 @@ function nominatimCandidateMatches(place, item) {
 }
 
 function resultFromNominatimCandidate(candidate, place, tolerance) {
-  const geometry = normalizeBoundaryGeometry(candidate.geojson || candidate.geometry);
+  const validated = validateBoundaryPayload(candidate.geojson || candidate.geometry);
+  const geometry = validated.geometry;
   const latitude = Number(candidate.lat);
   const longitude = Number(candidate.lon);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
@@ -501,6 +761,9 @@ function resultFromNominatimCandidate(candidate, place, tolerance) {
   return {
     geometry,
     simplification_tolerance_degrees: tolerance,
+    simplification_tolerance_m: validated.simplification_tolerance_m,
+    source_original_vertex_count: validated.source_original_vertex_count,
+    simplification_method: validated.simplification_method,
     location: {
       latitude,
       longitude,
@@ -518,6 +781,9 @@ function resultFromNominatimCandidate(candidate, place, tolerance) {
       osm_id: candidate.osm_id || null,
       fetched_at: new Date().toISOString(),
       vertex_count: geometry.coordinates[0].length - 1,
+      source_original_vertex_count: validated.source_original_vertex_count,
+      simplification_tolerance_m: validated.simplification_tolerance_m,
+      simplification_method: validated.simplification_method,
     },
   };
 }
@@ -532,26 +798,38 @@ async function acquireNominatimSlot() {
           redis.set('sonalit:geo:nominatim:public-rate-limit', token, 'PX', 1100, 'NX'),
           REDIS_TIMEOUT_MS,
         );
-        if (reserved === 'OK') return;
+        if (reserved === 'OK') return true;
       } catch (_) {
-        break;
+        // If shared coordination is unhealthy, skip Nominatim rather than
+        // risk breaching its application-wide usage policy across replicas.
+        return false;
       }
       await new Promise(resolve => setTimeout(resolve, 150));
     }
+    return false;
   }
+  // Process-local limiter is only used when shared Redis is deliberately absent.
   const waitMs = Math.max(0, 1100 - (Date.now() - lastNominatimRequestAt));
   if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
   lastNominatimRequestAt = Date.now();
+  return true;
 }
 
 async function lookupNominatim(place) {
-  // The public OSMF endpoint is rate-limited at application scope. Coordinate
-  // requests through Redis when available and retain a process-local fallback.
-  await acquireNominatimSlot();
+  const rateSlotAvailable = await acquireNominatimSlot();
+  if (!rateSlotAvailable) {
+    return {
+      result: null,
+      countryIso2: countryCodeFromPlace(place),
+      candidates: [],
+      reason: 'Nominatim was skipped because its shared rate-limit slot was unavailable; the independent geoBoundaries provider will be tried.',
+    };
+  }
+  ensureProviderCircuitClosed('nominatim');
   const tolerance = 0.0001;
   const endpoint = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&polygon_geojson=1&polygon_threshold='
     + tolerance + '&limit=5&q=' + encodeURIComponent(place);
-  const candidates = await requestJson(endpoint, {
+  const candidates = await requestProviderJson('nominatim', endpoint, {
     timeoutMs: 9000,
     headers: {
       'User-Agent': 'Sonalit-CommandCenter/1.0 (ops@sonalit.io)',
@@ -653,6 +931,7 @@ function clearBoundaryResolverCache() {
   boundaryMemoryCache.clear();
   layerMemoryCache.clear();
   inFlightBoundary.clear();
+  providerCircuits.clear();
   lastNominatimRequestAt = 0;
 }
 
@@ -667,4 +946,5 @@ module.exports = {
   nominatimCandidateMatches,
   placeNameVariants,
   fetchGeoBoundaryLayer,
+  providerCircuitHealth,
 };
