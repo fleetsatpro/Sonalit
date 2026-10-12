@@ -14,6 +14,7 @@ const { createRadiusPolygon, normalizeBoundaryGeometry } = require('../utils/geo
 const { invalidateGeofenceCache } = require('../utils/geofenceEngine');
 const { inferGeofenceTask } = require('../utils/geofenceCommandIntent');
 const { inferRiskZoneTask } = require('../utils/riskZoneCommandIntent');
+const { resolveAdministrativeBoundary } = require('../utils/administrativeBoundaryResolver');
 const {
   ACTION_POLICIES,
   READ_ONLY_TOOLS,
@@ -677,66 +678,12 @@ async function geocodePrecise(locationName) {
   return { ...g, precision: 'place-fallback', source: 'open-meteo' };
 }
 
+function resolvedCacheHit(shape, location) {
+  return shape === 'boundary' && Boolean(location && location.cache_hit);
+}
+
 async function geocodeAdministrativeBoundary(locationName) {
-  const place = String(locationName || '').trim().slice(0, 200);
-  if (!place) throw new Error('Specify a named place for the administrative boundary.');
-
-  const simplificationToleranceDegrees = 0.0001;
-  const endpoint = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&polygon_geojson=1&polygon_threshold=' + simplificationToleranceDegrees + '&limit=5&q=' + encodeURIComponent(place);
-  const response = await fetch(endpoint, {
-    headers: { 'User-Agent': 'Sonalit-CommandCenter/1.0 (ops@sonalit.io)', 'Accept-Language': 'en' },
-    signal: AbortSignal.timeout(9000),
-  });
-  if (!response.ok) {
-    throw new Error('OpenStreetMap boundary lookup failed (HTTP ' + response.status + '). No geofence was created.');
-  }
-  const candidates = await response.json();
-  if (!Array.isArray(candidates)) {
-    throw new Error('OpenStreetMap returned an invalid boundary response. No geofence was created.');
-  }
-
-  const administrative = candidates
-    .filter(item => item
-      && String(item.class || '').toLowerCase() === 'boundary'
-      && String(item.type || '').toLowerCase() === 'administrative')
-    .sort((a, b) => Number(b.importance || 0) - Number(a.importance || 0));
-
-  let lastGeometryError = null;
-  for (const candidate of administrative.slice(0, 5)) {
-    try {
-      const geometry = normalizeBoundaryGeometry(candidate.geojson || candidate.geometry);
-      const latitude = Number(candidate.lat);
-      const longitude = Number(candidate.lon);
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
-          || Math.abs(latitude) > 85 || Math.abs(longitude) > 180) {
-        throw new Error('Boundary location coordinates were invalid.');
-      }
-      return {
-        geometry,
-        simplification_tolerance_degrees: simplificationToleranceDegrees,
-        location: {
-          latitude,
-          longitude,
-          name: candidate.display_name || place,
-          admin1: candidate.address?.state || candidate.address?.county || null,
-          country: candidate.address?.country || null,
-          precision: 'source-backed-administrative-boundary',
-          source: 'nominatim',
-          osm_type: candidate.osm_type || null,
-          osm_id: candidate.osm_id || null,
-        },
-      };
-    } catch (error) {
-      lastGeometryError = error;
-    }
-  }
-
-  const detail = lastGeometryError?.message ? ' ' + String(lastGeometryError.message).slice(0, 220) : '';
-  throw new Error(
-    'OpenStreetMap did not provide a usable single-ring administrative boundary for "' + place
-      + '". No geofence was created; request a radius-based polygon instead or choose a supported boundary.'
-      + detail,
-  );
+  return resolveAdministrativeBoundary(locationName);
 }
 
 function toLatLngPath(osrmCoordinates) {
@@ -1155,14 +1102,29 @@ async function toolCreateGeofence(input, userId, orgId) {
       let geometrySource;
       let precisionUsed;
       let simplificationToleranceDegrees = null;
+      let simplificationToleranceM = null;
+      let sourceOriginalVertexCount = null;
+      let sourceSimplificationMethod = null;
       let radius_m = null;
 
       if (shape === 'boundary') {
         const resolved = await geocodeAdministrativeBoundary(location);
-        g = resolved.location;
+        g = { ...resolved.location, cache_hit: resolved.cache_hit, stale_fallback: resolved.stale_fallback, stale_warning: resolved.stale_warning };
         geometry = normalizeBoundaryGeometry(resolved.geometry);
         simplificationToleranceDegrees = resolved.simplification_tolerance_degrees;
-        geometrySource = 'OpenStreetMap Nominatim administrative boundary (topology-preserving simplification tolerance ' + simplificationToleranceDegrees + ' degrees)';
+        simplificationToleranceM = resolved.simplification_tolerance_m;
+        sourceOriginalVertexCount = resolved.source_original_vertex_count;
+        sourceSimplificationMethod = resolved.simplification_method;
+        const sourceName = g.source || 'source-backed administrative-boundary provider';
+        const sourceYear = g.source_year ? ', dataset year ' + g.source_year : '';
+        const license = g.license ? ', licence ' + g.license : '';
+        const toleranceText = Number.isFinite(simplificationToleranceM)
+          ? ', Sonalit simplification max-deviation tolerance ' + simplificationToleranceM + ' m'
+          : '';
+        const providerToleranceText = Number.isFinite(simplificationToleranceDegrees)
+          ? ', provider simplification threshold ' + simplificationToleranceDegrees + ' degrees'
+          : '';
+        geometrySource = sourceName + (sourceName.toLowerCase().includes('administrative boundary') ? '' : ' administrative boundary') + sourceYear + license + toleranceText + providerToleranceText;
         precisionUsed = 'source-backed-administrative-boundary';
       } else {
         g = await geocodePrecise(location);
@@ -1183,9 +1145,19 @@ async function toolCreateGeofence(input, userId, orgId) {
         precision: precisionUsed,
         geometry_source: geometrySource,
         source_simplification_tolerance_degrees: simplificationToleranceDegrees,
+        source_simplification_tolerance_m: simplificationToleranceM,
+        source_original_vertex_count: sourceOriginalVertexCount,
+        source_simplification_method: sourceSimplificationMethod,
+        source_url: g.source_url || null,
+        source_year: g.source_year || null,
+        source_license: g.license || null,
+        source_attribution: g.attribution || null,
+        source_id: g.source_id || null,
+        source_fetched_at: g.fetched_at || null,
+        boundary_cache_hit: resolvedCacheHit(shape, g),
         vertex_count: ring.length - 1,
         geocoding: {
-          source: g.source || (shape === 'boundary' ? 'nominatim-boundary' : 'unknown'),
+          source: g.source || (shape === 'boundary' ? 'source-backed-boundary' : 'unknown'),
           precision: g.precision || precisionUsed,
           osm_type: g.osm_type || null,
           osm_id: g.osm_id || null,
@@ -1238,7 +1210,13 @@ async function toolCreateGeofence(input, userId, orgId) {
       const isBoundary = shape === 'boundary';
       const vertexCount = stored.persistedRing.length - 1;
       const message = isBoundary
-        ? 'Source-backed administrative boundary geofence "' + name + '" created from OpenStreetMap geometry at ' + locationLabel + ', with ' + vertexCount + ' verified vertices (topology-preserving simplification tolerance ' + simplificationToleranceDegrees + ' degrees).'
+        ? 'Source-backed administrative boundary geofence "' + name + '" created from ' + (g.source || 'a verified administrative-boundary provider') + ' at ' + locationLabel + ', with ' + vertexCount + ' verified vertices'
+          + (g.source_year ? ' (source dataset year ' + g.source_year + ')' : '')
+          + (Number.isFinite(simplificationToleranceM) ? ' (Sonalit simplified ' + Number(sourceOriginalVertexCount || vertexCount) + ' source vertices to ' + vertexCount + ' vertices with max-deviation tolerance ' + simplificationToleranceM + ' m)' : '')
+          + (Number.isFinite(simplificationToleranceDegrees) ? ' (provider polygon threshold ' + simplificationToleranceDegrees + ' degrees)' : '')
+          + (g.attribution ? '. Attribution: ' + g.attribution : '.')
+          + (resolvedCacheHit(shape, g) ? ' Reused cached source-backed geometry.' : '')
+          + (g.stale_warning ? ' Warning: ' + g.stale_warning : '')
         : 'Autonomously created a ' + vertexCount + '-vertex polygon geofence approximating a ' + radius_m + ' m radius around ' + locationLabel + '. This is a radius approximation, not an official place boundary.';
 
       return {
@@ -1255,6 +1233,17 @@ async function toolCreateGeofence(input, userId, orgId) {
         precision: precisionUsed,
         geometry_source: geometrySource,
         source_simplification_tolerance_degrees: simplificationToleranceDegrees,
+        source_simplification_tolerance_m: simplificationToleranceM,
+        source_original_vertex_count: sourceOriginalVertexCount,
+        source_simplification_method: sourceSimplificationMethod,
+        source_url: g.source_url || null,
+        source_year: g.source_year || null,
+        source_license: g.license || null,
+        source_attribution: g.attribution || null,
+        source_id: g.source_id || null,
+        source_fetched_at: g.fetched_at || null,
+        boundary_cache_hit: resolvedCacheHit(shape, g),
+        stale_source_fallback: Boolean(g.stale_fallback),
         vertex_count: vertexCount,
         geometry_verification: { vertices: vertexCount, persisted: true },
         message,
