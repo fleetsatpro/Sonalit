@@ -37,6 +37,7 @@ async function persistCopilotDecision({ orgId, userId, command, result, requestI
         "ON CONFLICT (org_id, request_id) WHERE request_id IS NOT NULL\n" +
         "DO UPDATE SET user_id=EXCLUDED.user_id, command=EXCLUDED.command, decision=EXCLUDED.decision, risk_level=EXCLUDED.risk_level,\n" +
         "confidence=EXCLUDED.confidence, answer=EXCLUDED.answer, result=EXCLUDED.result, completed_at=NOW()\n" +
+        "WHERE public.copilot_decisions.user_id IS NOT DISTINCT FROM EXCLUDED.user_id\n" +
         "RETURNING id",
         [orgId, userId || null, command, result.decision || 'HUMAN_REVIEW_REQUIRED', result.risk_level || 'HIGH', Number(result.confidence || 0), result.answer || '', JSON.stringify(result), requestId],
       );
@@ -1620,8 +1621,11 @@ router.post('/decision/:decisionId/feedback', async (req, res) => {
     const outcome = String(req.body?.outcome || '').trim();
     const notes = req.body?.notes ? String(req.body.notes).slice(0, 4000) : null;
     const allowed = new Set(['correct', 'incorrect', 'partially_correct', 'superseded', 'unknown']);
-    if (!orgId || !allowed.has(outcome)) return res.status(400).json({ error: 'Valid organisation and outcome required' });
-    const exists = await query('SELECT id FROM public.copilot_decisions WHERE id = $1 AND org_id = $2', [req.params.decisionId, orgId]);
+    if (!orgId || !userId || !allowed.has(outcome)) return res.status(400).json({ error: 'Valid organisation, user and outcome required' });
+    const exists = await query(
+      'SELECT id FROM public.copilot_decisions WHERE id = $1 AND org_id = $2 AND user_id = $3',
+      [req.params.decisionId, orgId, userId]
+    );
     if (!exists.rows.length) return res.status(404).json({ error: 'Decision not found' });
     await query(
       `INSERT INTO public.copilot_decision_feedback (decision_id, org_id, user_id, outcome, notes)
@@ -1631,8 +1635,8 @@ router.post('/decision/:decisionId/feedback', async (req, res) => {
     await query(
       `UPDATE public.copilot_decisions
        SET outcome=$1, outcome_notes=$2, outcome_recorded_at=NOW()
-       WHERE id=$3 AND org_id=$4`,
-      [outcome, notes, req.params.decisionId, orgId]
+       WHERE id=$3 AND org_id=$4 AND user_id=$5`,
+      [outcome, notes, req.params.decisionId, orgId, userId]
     );
     return res.json({ ok: true, decision_id: req.params.decisionId, outcome });
   } catch (err) {

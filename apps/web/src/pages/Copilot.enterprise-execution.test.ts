@@ -44,6 +44,8 @@ describe('enterprise Copilot execution contract', () => {
   it('keeps conversation history scoped to both tenant and requesting user', () => {
     expect(aiRoutes).toContain('WHERE org_id = $1 AND user_id = $2');
     expect(aiRoutes).toContain('request_id');
+    expect(aiRoutes).toContain('IS NOT DISTINCT FROM EXCLUDED.user_id');
+    expect(aiRoutes).toContain('AND user_id=$5');
     expect(copilot).toContain("'/ai/decision/history?limit=12'");
     expect(copilot).toContain('historyRef.current = rows.flatMap');
   });
