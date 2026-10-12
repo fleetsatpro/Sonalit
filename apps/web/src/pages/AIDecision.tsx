@@ -364,7 +364,7 @@ export default function AIDecision() {
           </div>
           {confirmActionMutation.isError && <p className="text-sm text-rose-300">{confirmErrorMessage}</p>}
         </section>
-      )}
+      ))}
 
       {dispatchMutation.data?.swarm && (
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
