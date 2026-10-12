@@ -230,6 +230,76 @@ describe('Copilot dispatch tool execution contract', () => {
     expect(mockAiClient.createMessage).not.toHaveBeenCalled();
   });
 
+  test("creates the requested Nairobi administrative boundary from the action lane", async () => {
+    const previousFetch = global.fetch;
+    let persistedCoordinates = null;
+    mockQuery.mockImplementation(async (sql, params) => {
+      if (/INSERT INTO geofences/i.test(String(sql))) {
+        persistedCoordinates = JSON.parse(params[2]);
+        return { rows: [{ id: 'geofence-boundary-test' }] };
+      }
+      if (/SELECT type, coordinates FROM geofences/i.test(String(sql))) {
+        return { rows: [{ type: 'polygon', coordinates: persistedCoordinates }] };
+      }
+      return { rows: [] };
+    });
+    global.fetch = jest.fn(async (url) => {
+      if (!String(url).startsWith('https://nominatim.openstreetmap.org/search?')) {
+        throw new Error('Unexpected upstream request: ' + String(url));
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{
+          class: 'boundary',
+          type: 'administrative',
+          lat: '-1.2864',
+          lon: '36.8172',
+          importance: 0.95,
+          display_name: 'Nairobi, Kenya',
+          osm_type: 'relation',
+          osm_id: 12345,
+          address: { county: 'Nairobi County', country: 'Kenya' },
+          geojson: {
+            type: 'Polygon',
+            coordinates: [[
+              [36.70, -1.35],
+              [36.95, -1.35],
+              [36.95, -1.15],
+              [36.70, -1.15],
+              [36.70, -1.35],
+            ]],
+          },
+        }],
+      };
+    });
+
+    try {
+      const response = await request(app).post('/ai/dispatch').send({
+        command: "Create a geofence matching Nairobi's official administrative boundary",
+        history: [],
+        request_id: '55555555-5555-4555-8555-555555555555',
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.task).toMatchObject({ type: 'geofence', completed: true });
+      expect(response.body.created[0]).toMatchObject({
+        type: 'geofence',
+        geofence_id: 'geofence-boundary-test',
+        fence_type: 'boundary',
+        precision: 'source-backed-administrative-boundary',
+        geometry_source: expect.stringContaining('OpenStreetMap Nominatim'),
+      });
+      expect(response.body.created[0].vertex_count).toBeGreaterThanOrEqual(3);
+      expect(response.body.action_receipt).toMatchObject({ status: 'succeeded', tool_name: 'create_geofence' });
+      expect(mockAiClient.createMessage).not.toHaveBeenCalled();
+      expect(runDecisionFabric).not.toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      global.fetch = previousFetch;
+    }
+  });
+
   test('tutorial questions never trigger a geofence write', async () => {
     runDecisionFabric.mockResolvedValue({
       answer: 'To create a geofence, specify a location and a supported radius.',

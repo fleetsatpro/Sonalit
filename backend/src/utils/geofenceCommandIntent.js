@@ -59,6 +59,25 @@ function inferGeofenceTask(command) {
     };
   }
 
+  // Natural phrasing used in the field: "match Nairobi's official boundary"
+  // or "match the official administrative boundary of Nairobi". Resolve the
+  // place name explicitly; never treat the whole sentence as a geocoding query.
+  const possessiveBoundary = raw.match(/\b(?:matching|match|follow|following|use|using)\s+(?:the\s+)?(.+?)(?:['’]s)\s+(?:(?:official|administrative|municipal|county|city|town|district)\s+)*boundary\b/i);
+  const boundaryOfPlace = raw.match(/\b(?:matching|match|follow|following|use|using)\s+(?:the\s+)?(?:(?:official|administrative|municipal|county|city|town|district)\s+)+boundary\s+of\s+(.+?)(?:[.;!?]|$)/i);
+  const namedBoundary = raw.match(/\b(?:matching|match|follow|following|use|using)\s+(.+?)\s+(?:official|administrative|municipal|county|city|town|district)\s+boundary\b/i);
+  const matchedBoundaryLocation = quote(
+    possessiveBoundary ? possessiveBoundary[1] : boundaryOfPlace ? boundaryOfPlace[1] : namedBoundary ? namedBoundary[1] : ''
+  ).replace(/^the\s+/i, '').replace(/[.,;!?]+$/, '').trim();
+  if (matchedBoundaryLocation) {
+    return {
+      task: 'create_geofence',
+      name: name || 'Sonalit Administrative Boundary — ' + matchedBoundaryLocation,
+      location: matchedBoundaryLocation,
+      shape: 'boundary',
+      precision: 'maximum',
+    };
+  }
+
   const coordinateMatch = raw.match(/(?:around|at|near|in|within)\s+(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/i);
   if (coordinateMatch) {
     const latitude = Number(coordinateMatch[1]);

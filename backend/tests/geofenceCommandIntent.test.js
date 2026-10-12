@@ -34,6 +34,23 @@ describe('deterministic Copilot geofence command intent', () => {
     });
   });
 
+  test('resolves possessive and of-phrasing official boundary commands', () => {
+    expect(inferGeofenceTask("Create a geofence matching Nairobi's official administrative boundary")).toMatchObject({
+      task: 'create_geofence',
+      location: 'Nairobi',
+      shape: 'boundary',
+      precision: 'maximum',
+    });
+    expect(inferGeofenceTask('Create a geofence matching the official administrative boundary of Nairobi')).toMatchObject({
+      location: 'Nairobi',
+      shape: 'boundary',
+    });
+    expect(inferGeofenceTask('Create a geofence matching Mombasa County boundary')).toMatchObject({
+      location: 'Mombasa',
+      shape: 'boundary',
+    });
+  });
+
   test('preserves route corridors, buffer values and route endpoints', () => {
     expect(inferGeofenceTask('Create a corridor geofence from Nairobi to Mombasa with 500m buffer')).toMatchObject({
       location: 'Nairobi', route_end: 'Mombasa', buffer_m: 500,

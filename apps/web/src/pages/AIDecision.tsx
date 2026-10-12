@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useState, useCallback, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { Bot, Send, Loader2, AlertCircle } from 'lucide-react';
+import { Bot, Send, Loader2, AlertCircle, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react';
 
 interface Anomaly {
   id: string;
@@ -12,11 +12,48 @@ interface Anomaly {
   registration: string | null;
 }
 
+interface PendingAction {
+  action_id: string;
+  request_id?: string;
+  confirmation_token: string;
+  tool_name: string;
+  title: string;
+  summary: string;
+  risk_level: string;
+  expires_at?: string | null;
+}
+
+interface CreatedOperation {
+  type: string;
+  name?: string;
+  location?: string;
+  geofence_id?: string;
+  risk_zone_id?: string;
+  fence_type?: string;
+  geometry_source?: string;
+  precision?: string;
+  requested_precision?: string;
+  vertex_count?: number;
+  radius_m?: number | null;
+  buffer_m?: number;
+  route_distance_km?: number | string;
+  fallback_used?: boolean;
+  geometry_verification?: { start_drift_m?: number; end_drift_m?: number; persisted_path_points?: number; persisted_vertices?: number; vertices?: number; persisted?: boolean };
+  message?: string;
+  error?: string;
+}
+
 interface DispatchResponse {
   response?: string;
   answer?: string;
   actions?: string[];
   source?: string;
+  request_id?: string;
+  decision_id?: string | null;
+  task?: { type?: string; completed?: boolean };
+  created?: CreatedOperation[];
+  pending_actions?: PendingAction[];
+  action_receipt?: { id?: string; request_id?: string; tool_name?: string; risk_level?: string; status?: string; created_at?: string; completed_at?: string | null };
   decision?: string;
   risk_level?: string;
   id?: string;
@@ -58,6 +95,17 @@ export default function AIDecision() {
   const [lastResponse, setLastResponse] = useState('');
   const [history, setHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const [feedbackSent, setFeedbackSent] = useState('');
+  const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
+  const [lastActionOutcome, setLastActionOutcome] = useState<DispatchResponse | null>(null);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let active = true;
+    api.get<{ pending_actions?: PendingAction[] }>('/ai/dispatch/pending')
+      .then(({ data }) => { if (active) setPendingActions(data.pending_actions || []); })
+      .catch(() => { /* Existing server versions may not expose persisted approvals yet. */ });
+    return () => { active = false; };
+  }, []);
 
   const { data: anomalies, isLoading: anomaliesLoading } = useQuery<Anomaly[]>({
     queryKey: ['ai-anomalies'],
@@ -70,14 +118,78 @@ export default function AIDecision() {
 
   const dispatchMutation = useMutation<DispatchResponse, Error, string>({
     mutationFn: async (command) => {
-      const res = await api.post<DispatchResponse>('/ai/decision', { command, history: history.slice(-10) });
+      // The backend classifies the request and selects the governed execution
+      // lane. This page must not bypass operational dispatch with /ai/decision.
+      const res = await api.post<DispatchResponse>('/ai/dispatch', {
+        command,
+        history: history.slice(-10),
+        request_id: crypto.randomUUID(),
+      });
       return res.data;
     },
     onSuccess: (data, command) => {
-      const answer = data.answer ?? data.response ?? 'No decision response received.';
+      const answer = data.answer ?? data.response ?? 'No result was returned by Copilot.';
       setLastResponse(answer);
+      if (data.task || data.created?.length || data.action_receipt || data.pending_actions?.length) {
+        setLastActionOutcome(data);
+      } else {
+        setLastActionOutcome(null);
+      }
+      setPendingActions((current) => {
+        const byId = new Map<string, PendingAction>(current.map(action => [action.action_id, action] as const));
+        for (const action of data.pending_actions || []) byId.set(action.action_id, action);
+        return [...byId.values()].slice(-10);
+      });
+      const createdTypes = new Set((data.created || []).map(item => item.type));
+      if (createdTypes.has('geofence')) {
+        queryClient.invalidateQueries({ queryKey: ['geofences'] });
+        queryClient.invalidateQueries({ queryKey: ['geofences-list'] });
+        queryClient.invalidateQueries({ queryKey: ['geofence-map-data'] });
+      }
+      if (createdTypes.has('risk_zone')) {
+        queryClient.invalidateQueries({ queryKey: ['risk-zones'] });
+        queryClient.invalidateQueries({ queryKey: ['risk-zones-list'] });
+      }
       setHistory((items) => [...items, { role: 'user' as const, content: command }, { role: 'assistant' as const, content: answer }].slice(-12));
       setQuery('');
+    },
+  });
+
+  const confirmActionMutation = useMutation<
+    DispatchResponse,
+    Error,
+    { action: PendingAction; approved: boolean }
+  >({
+    mutationFn: async ({ action, approved }) => {
+      const res = await api.post<DispatchResponse>('/ai/dispatch/confirm', {
+        action_id: action.action_id,
+        confirmation_token: action.confirmation_token,
+        approved,
+      });
+      return res.data;
+    },
+    onSuccess: (data, variables) => {
+      setPendingActions((current) => current.filter(action => action.action_id !== variables.action.action_id));
+      setLastActionOutcome(data);
+      const answer = data.answer ?? data.response ?? 'The action request has been resolved.';
+      const receipt = data.action_receipt?.id
+        ? '\n\nAction receipt: ' + data.action_receipt.id + ' · ' + (data.action_receipt.status || 'recorded')
+        : '';
+      setLastResponse(answer + receipt);
+      setHistory((items) => [...items, {
+        role: 'assistant' as const,
+        content: answer + receipt,
+      }].slice(-12));
+      const createdTypes = new Set((data.created || []).map(item => item.type));
+      if (createdTypes.has('geofence')) {
+        queryClient.invalidateQueries({ queryKey: ['geofences'] });
+        queryClient.invalidateQueries({ queryKey: ['geofences-list'] });
+        queryClient.invalidateQueries({ queryKey: ['geofence-map-data'] });
+      }
+      if (createdTypes.has('risk_zone')) {
+        queryClient.invalidateQueries({ queryKey: ['risk-zones'] });
+        queryClient.invalidateQueries({ queryKey: ['risk-zones-list'] });
+      }
     },
   });
 
@@ -91,7 +203,7 @@ export default function AIDecision() {
 
   const feedbackMutation = useMutation<{ ok: boolean }, Error, { outcome: string; notes?: string }>({
     mutationFn: async ({ outcome, notes }) => {
-      const decisionId = (dispatchMutation.data as DispatchResponse & { id?: string })?.id;
+      const decisionId = dispatchMutation.data?.decision_id || (dispatchMutation.data as DispatchResponse & { id?: string })?.id;
       if (!decisionId) throw new Error('Decision identifier unavailable');
       const res = await api.post<{ ok: boolean }>(`/ai/decision/${decisionId}/feedback`, { outcome, notes });
       return res.data;
@@ -153,13 +265,90 @@ export default function AIDecision() {
         </button>
       </div>
 
-      {dispatchMutation.data && (
+      {dispatchMutation.data && (dispatchMutation.data.decision || dispatchMutation.data.risk_level || dispatchMutation.data.confidence != null || dispatchMutation.data.swarm?.length) && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <div className="bg-slate-900 border border-slate-700 rounded-lg p-3"><div className="text-[10px] uppercase text-slate-500">Decision</div><div className="text-sm font-semibold text-cyan-300 mt-1">{dispatchMutation.data.decision ?? '—'}</div></div>
           <div className="bg-slate-900 border border-slate-700 rounded-lg p-3"><div className="text-[10px] uppercase text-slate-500">Risk</div><div className="text-sm font-semibold text-orange-300 mt-1">{dispatchMutation.data.risk_level ?? '—'}</div></div>
           <div className="bg-slate-900 border border-slate-700 rounded-lg p-3"><div className="text-[10px] uppercase text-slate-500">Confidence</div><div className="text-sm font-semibold text-emerald-300 mt-1">{dispatchMutation.data.confidence != null ? Math.round(dispatchMutation.data.confidence * 100) + '%' : '—'}</div></div>
           <div className="bg-slate-900 border border-slate-700 rounded-lg p-3"><div className="text-[10px] uppercase text-slate-500">Swarm</div><div className="text-sm font-semibold text-violet-300 mt-1">{dispatchMutation.data.meta?.agent_count ?? dispatchMutation.data.swarm?.length ?? 0} agents</div></div>
         </div>
+      )}
+
+      {lastActionOutcome && (
+        <section className="rounded-xl border border-slate-700 bg-slate-950 p-4 space-y-3" aria-label="Operational action result">
+          <div className="flex items-center gap-3">
+            {lastActionOutcome.task?.completed
+              ? <CheckCircle2 size={20} className="text-emerald-400" />
+              : lastActionOutcome.pending_actions?.length
+                ? <ShieldCheck size={20} className="text-amber-300" />
+                : <XCircle size={20} className="text-rose-400" />}
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-extrabold text-slate-100">
+                {lastActionOutcome.pending_actions?.length
+                  ? 'Awaiting operator confirmation'
+                  : lastActionOutcome.task?.completed
+                    ? 'Operational action completed'
+                    : 'Operational action not completed'}
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-400">
+                {lastActionOutcome.source || 'dispatch'}{lastActionOutcome.request_id ? ' · Request ' + lastActionOutcome.request_id : ''}
+              </p>
+            </div>
+          </div>
+          {(lastActionOutcome.created || []).map((item, index) => (
+            <div key={(item.geofence_id || item.risk_zone_id || item.type) + '-' + index} className="rounded-lg border border-slate-800 bg-slate-900 p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-bold text-slate-100">{item.name || item.type.replace(/_/g, ' ')}</span>
+                <span className="rounded border border-emerald-800 bg-emerald-950 px-2 py-1 text-[10px] font-bold uppercase text-emerald-300">Persisted result</span>
+              </div>
+              {item.message && <p className="text-sm leading-relaxed text-slate-300">{item.message}</p>}
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                {item.geofence_id && <div><dt className="text-slate-500">Geofence ID</dt><dd className="mt-0.5 break-all font-mono text-slate-200">{item.geofence_id}</dd></div>}
+                {item.risk_zone_id && <div><dt className="text-slate-500">Risk-zone ID</dt><dd className="mt-0.5 break-all font-mono text-slate-200">{item.risk_zone_id}</dd></div>}
+                {item.location && <div><dt className="text-slate-500">Resolved location</dt><dd className="mt-0.5 text-slate-200">{item.location}</dd></div>}
+                {item.geometry_source && <div><dt className="text-slate-500">Geometry provenance</dt><dd className="mt-0.5 text-slate-200">{item.geometry_source}</dd></div>}
+                {item.precision && <div><dt className="text-slate-500">Geometry status</dt><dd className="mt-0.5 text-slate-200">{item.precision}</dd></div>}
+                {item.vertex_count != null && <div><dt className="text-slate-500">Vertices</dt><dd className="mt-0.5 text-slate-200">{item.vertex_count}</dd></div>}
+                {item.radius_m != null && <div><dt className="text-slate-500">Radius</dt><dd className="mt-0.5 text-slate-200">{item.radius_m} m</dd></div>}
+                {item.buffer_m != null && <div><dt className="text-slate-500">Corridor buffer</dt><dd className="mt-0.5 text-slate-200">{item.buffer_m} m</dd></div>}
+                {item.route_distance_km != null && <div><dt className="text-slate-500">Road distance</dt><dd className="mt-0.5 text-slate-200">{item.route_distance_km} km</dd></div>}
+                {item.geometry_verification && <div><dt className="text-slate-500">Geometry verification</dt><dd className="mt-0.5 text-slate-200">{item.geometry_verification.persisted_vertices ?? item.geometry_verification.persisted_path_points ?? 'verified persisted geometry'}</dd></div>}
+                {item.fallback_used && <div><dt className="text-amber-300">Precision warning</dt><dd className="mt-0.5 text-amber-200">Fallback geometry used. Review before operational use.</dd></div>}
+              </dl>
+            </div>
+          ))}
+          {lastActionOutcome.action_receipt && (
+            <div className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs">
+              <div className="font-bold uppercase tracking-wide text-slate-400">Durable action receipt</div>
+              <div className="mt-1 break-all font-mono text-slate-200">{lastActionOutcome.action_receipt.id}</div>
+              <div className="mt-1 text-slate-400">Status: {lastActionOutcome.action_receipt.status || 'recorded'}</div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {pendingActions.map((action) => (
+        <section key={action.action_id} className="rounded-xl border border-amber-400/40 bg-amber-950/20 p-4 space-y-3" aria-label="Operational approval required">
+          <div className="flex items-center gap-3">
+            <ShieldCheck size={20} className="text-amber-300" />
+            <div>
+              <h2 className="text-sm font-extrabold text-amber-50">Approval required · {action.risk_level} risk</h2>
+              <p className="mt-1 text-sm font-bold text-white">{action.title}</p>
+              <p className="mt-1 text-sm text-amber-50/80">{action.summary}</p>
+              {action.expires_at && <p className="mt-1 text-xs text-amber-200/70">Expires {new Date(action.expires_at).toLocaleString()}</p>}
+              <p className="mt-2 text-xs font-semibold text-amber-100">Nothing has been executed yet.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => confirmActionMutation.mutate({ action, approved: true })} disabled={confirmActionMutation.isPending} className="rounded-lg bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 disabled:opacity-50">
+              Confirm and execute
+            </button>
+            <button type="button" onClick={() => confirmActionMutation.mutate({ action, approved: false })} disabled={confirmActionMutation.isPending} className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-bold text-slate-100 disabled:opacity-50">
+              Decline
+            </button>
+          </div>
+          {confirmActionMutation.isError && <p className="text-sm text-rose-300">Confirmation failed. Verify the action receipt before retrying.</p>}
+        </section>
       )}
 
       {dispatchMutation.data?.swarm && (
