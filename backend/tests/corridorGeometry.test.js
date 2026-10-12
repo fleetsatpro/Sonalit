@@ -85,6 +85,10 @@ describe('validated corridor geometry', () => {
     expect(maximumErrorM).toBeLessThanOrEqual(10.5);
   });
 
+  test('rejects a requested tolerance wider than the operation-specific ceiling', () => {
+    expect(() => simplifyPath([[0, 0], [0, 0.01]], 10, 5)).toThrow(/configured 5 m ceiling/i);
+  });
+
   test('adaptively widens tolerance for long, dense routes while preserving endpoints and the error bound', () => {
     const path = [];
     // A deliberately dense, high-frequency centreline: a 10 m pass needs
