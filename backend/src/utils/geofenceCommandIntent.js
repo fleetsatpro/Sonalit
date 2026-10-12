@@ -2,7 +2,7 @@
 
 function inferGeofenceTask(command) {
   const raw = String(command || '').trim();
-  if (!/\b(draw|sketch|outline|create|make|build|set up|define|establish|mark)\b[\s\S]{0,100}\b(geo[- ]?fence|corridor|geofence|polygon|boundary|zone)\b/i.test(raw)) return null;
+  if (!/\b(draw|sketch|outline|create|make|build|set up|define|establish|mark)\b[\s\S]{0,100}\b(geo[- ]?fence|corridor|geofence|polygon|boundary|zone|area)\b/i.test(raw)) return null;
 
   const quote = value => String(value || '').replace(/^["']|["']$/g, '').trim();
   const nameMatch = raw.match(/\b(?:named|called|name(?:d)?\s+as)\s+["']?([^"']+?)["']?(?:\s*$|\s+(?:around|from|between|at|near|within|in|for)\b)/i);
@@ -26,7 +26,7 @@ function inferGeofenceTask(command) {
 
   const asksOfficialBoundary = /\b(?:official|administrative|municipal|county|city|town|district)\s+boundary\b|\b(?:city|county|municipal)\s+limits\b/i.test(raw);
   const shape = asksOfficialBoundary ? 'boundary'
-    : /\b(polygon|polygonal|custom\s+(?:shape|boundary|area)|area\s+boundary)\b/i.test(raw) ? 'polygon'
+    : /\b(polygon|polygonal|boundary|area|custom\s+shape)\b/i.test(raw) ? 'polygon'
       : 'circle';
 
   const route = raw.match(/\b(?:from|between)\s+(.+?)\s+(?:to|and)\s+(.+?)(?:\s+(?:with|using)\s+(?:a\s+)?\d+(?:\.\d+)?\s*(?:km|m|meters|metres)\s*(?:buffer|corridor|deviation)|\s+named\b|[.;]|$)/i)
