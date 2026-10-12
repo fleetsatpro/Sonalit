@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
-const { buildCorridorPolygon, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
+const { MAX_SIMPLIFICATION_TOLERANCE_M, buildCorridorPolygon, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 const { validateToolInput } = require('../utils/aiToolInputValidation');
 const { normalizePolygonGeometry } = require('../utils/geofenceGeometry');
 const { createRadiusPolygon, normalizeBoundaryGeometry } = require('../utils/geofenceAutoGeometry');
@@ -977,10 +977,12 @@ async function toolCreateGeofence(input, userId, orgId) {
       // Simplify only to a documented geometric error bound, never to an
       // arbitrary point count. Preserve both endpoints and refuse a route that
       // cannot be represented safely within the algorithm's complexity budget.
-      const pathSimplification = simplifyPath(pathLatLng, 10);
+      const geometryToleranceCeilingM = Math.min(MAX_SIMPLIFICATION_TOLERANCE_M, buffer_m / 3);
+      const requestedGeometryToleranceM = Math.min(10, geometryToleranceCeilingM);
+      const pathSimplification = simplifyPath(pathLatLng, requestedGeometryToleranceM, geometryToleranceCeilingM);
       pathLatLng = pathSimplification.path;
       const simplificationSummary = pathSimplification.toleranceEscalated
-        ? 'centreline tolerance adaptively increased from ' + pathSimplification.requestedToleranceM + 'm to ' + pathSimplification.toleranceM + 'm to remain within the documented 100m ceiling'
+        ? 'centreline tolerance adaptively increased from ' + pathSimplification.requestedToleranceM + 'm to ' + pathSimplification.toleranceM + 'm within the buffer-relative ' + geometryToleranceCeilingM + 'm ceiling'
         : pathSimplification.toleranceM
           ? 'centreline simplified within ' + pathSimplification.toleranceM + 'm tolerance'
           : 'routed centreline retained without simplification';
@@ -1006,6 +1008,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         path_points: pathLatLng.length,
         source_path_points: pathSimplification.originalPointCount,
         path_simplification_requested_tolerance_m: pathSimplification.requestedToleranceM,
+        path_simplification_tolerance_ceiling_m: geometryToleranceCeilingM,
         path_simplification_tolerance_m: pathSimplification.toleranceM,
         path_simplification_escalated: pathSimplification.toleranceEscalated,
         path_simplification_method: pathSimplification.method,
@@ -1089,6 +1092,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         path_points: pathLatLng.length,
         source_path_points: pathSimplification.originalPointCount,
         path_simplification_requested_tolerance_m: pathSimplification.requestedToleranceM,
+        path_simplification_tolerance_ceiling_m: geometryToleranceCeilingM,
         path_simplification_tolerance_m: pathSimplification.toleranceM,
         path_simplification_escalated: pathSimplification.toleranceEscalated,
         path_simplification_method: pathSimplification.method,
