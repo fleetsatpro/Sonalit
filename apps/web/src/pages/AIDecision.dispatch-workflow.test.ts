@@ -15,6 +15,8 @@ describe('AIDecision operational dispatch contract', () => {
     expect(page).toContain('Operational action completed');
     expect(page).toContain('Geometry provenance');
     expect(page).toContain('Durable action receipt');
+    expect(page).toContain('response?.data?.message');
+    expect(page).toContain('No operation is reported as completed');
     expect(page).toContain('Confirm and execute');
     expect(page).toContain("'/ai/dispatch/confirm'");
     expect(page).toContain("'/ai/dispatch/pending'");

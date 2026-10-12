@@ -211,6 +211,21 @@ export default function AIDecision() {
     onSuccess: (_, vars) => setFeedbackSent(vars.outcome),
   });
 
+  const dispatchError = dispatchMutation.error as (Error & {
+    response?: { data?: { error?: string; message?: string } };
+  }) | null;
+  const confirmError = confirmActionMutation.error as (Error & {
+    response?: { data?: { error?: string; message?: string } };
+  }) | null;
+  const dispatchErrorMessage = dispatchError?.response?.data?.message
+    || dispatchError?.response?.data?.error
+    || dispatchError?.message
+    || 'Copilot could not complete this request.';
+  const confirmErrorMessage = confirmError?.response?.data?.message
+    || confirmError?.response?.data?.error
+    || confirmError?.message
+    || 'Check the durable action receipt before retrying.';
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -252,7 +267,7 @@ export default function AIDecision() {
         {dispatchMutation.isError && (
           <div className="flex items-center gap-2 text-red-400 text-sm">
             <AlertCircle size={14} />
-            <span>Failed to get response. Please try again.</span>
+            <span>{dispatchErrorMessage} No operation is reported as completed unless the result panel confirms it.</span>
           </div>
         )}
         <button
@@ -347,7 +362,7 @@ export default function AIDecision() {
               Decline
             </button>
           </div>
-          {confirmActionMutation.isError && <p className="text-sm text-rose-300">Confirmation failed. Verify the action receipt before retrying.</p>}
+          {confirmActionMutation.isError && <p className="text-sm text-rose-300">{confirmErrorMessage}</p>}
         </section>
       )}
 
