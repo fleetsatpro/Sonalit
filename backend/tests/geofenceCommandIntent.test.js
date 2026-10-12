@@ -15,6 +15,13 @@ describe('deterministic Copilot geofence command intent', () => {
     });
   });
 
+  test('rejects explicit radii, buffers and coordinates outside operational bounds', () => {
+    expect(inferGeofenceTask('Create a geofence around Nairobi with radius 200 km')).toBeNull();
+    expect(inferGeofenceTask('Create a geofence around Nairobi with radius 0 m')).toBeNull();
+    expect(inferGeofenceTask('Create a corridor geofence from Nairobi to Mombasa with 8 km buffer')).toBeNull();
+    expect(inferGeofenceTask('Create a geofence around 95, 200')).toBeNull();
+  });
+
   test('distinguishes a requested official boundary from an approximation', () => {
     expect(inferGeofenceTask('Create the official administrative boundary around Nairobi')).toMatchObject({
       location: 'Nairobi', shape: 'boundary',

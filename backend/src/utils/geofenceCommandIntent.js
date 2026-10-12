@@ -15,18 +15,27 @@ function inferGeofenceTask(command) {
   const measureToM = match => {
     if (!match) return undefined;
     const amount = Number(match[1]);
-    return Number.isFinite(amount) ? amount * (/km/i.test(match[2]) ? 1000 : 1) : undefined;
+    return Number.isFinite(amount) ? amount * (/^(?:km|kilometer|kilometre)/i.test(match[2]) ? 1000 : 1) : undefined;
   };
 
   const buffer_m = measureToM(
-    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*(?:buffer|corridor|deviation(?:\s+limit)?)/i)
-    || raw.match(/(?:buffer|corridor|deviation(?:\s+limit)?)\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i)
+    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|kilometers?|kilometres?|m|meters?|metres?)\s*(?:buffer|corridor|deviation(?:\s+limit)?)/i)
+    || raw.match(/(?:buffer|corridor|deviation(?:\s+limit)?)\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|kilometers?|kilometres?|m|meters?|metres?)\b/i)
   );
   const radius_m = measureToM(
-    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*radius\b/i)
-    || raw.match(/radius\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i)
-    || raw.match(/\b(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*(?:polygon|geofence|zone)\b/i)
+    raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|kilometers?|kilometres?|m|meters?|metres?)\s*radius\b/i)
+    || raw.match(/radius\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|kilometers?|kilometres?|m|meters?|metres?)\b/i)
+    || raw.match(/\b(\d+(?:\.\d+)?)\s*(km|kilometers?|kilometres?|m|meters?|metres?)\s*(?:polygon|geofence|zone)\b/i)
   );
+
+  const radiusMentioned = /\bradius\b/i.test(raw)
+    || /\b\d+(?:\.\d+)?\s*(?:km|kilometers?|kilometres?|m|meters?|metres?)\s*(?:polygon|geofence|zone)\b/i.test(raw);
+  if ((radiusMentioned && !Number.isFinite(radius_m))
+    || (Number.isFinite(radius_m) && (radius_m < 10 || radius_m > 100000))) return null;
+
+  const bufferMentioned = /\b(?:buffer|deviation(?:\s+limit)?)\b/i.test(raw);
+  if ((bufferMentioned && !Number.isFinite(buffer_m))
+    || (Number.isFinite(buffer_m) && (buffer_m < 10 || buffer_m > 5000))) return null;
 
   const asksOfficialBoundary = /\b(?:official|administrative|municipal|county|city|town|district)\s+boundary\b|\b(?:city|county|municipal)\s+limits\b/i.test(raw);
   const shape = asksOfficialBoundary ? 'boundary'
@@ -45,18 +54,21 @@ function inferGeofenceTask(command) {
       name: name || 'Sonalit Corridor — ' + start + ' → ' + end,
       location: start,
       route_end: end,
-      buffer_m: Number.isFinite(buffer_m) ? Math.max(10, Math.min(buffer_m, 5000)) : 300,
+      buffer_m: Number.isFinite(buffer_m) ? buffer_m : 300,
       precision: 'maximum',
     };
   }
 
   const coordinateMatch = raw.match(/(?:around|at|near|in|within)\s+(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/i);
   if (coordinateMatch) {
-    const location = coordinateMatch[1] + ',' + coordinateMatch[2];
+    const latitude = Number(coordinateMatch[1]);
+    const longitude = Number(coordinateMatch[2]);
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+    const location = latitude + ',' + longitude;
     return {
       task: 'create_geofence',
       name: name || 'Sonalit Geofence — ' + location,
-      radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
+      radius_m: Number.isFinite(radius_m) ? radius_m : 3000,
       location,
       shape,
       precision: 'maximum',
@@ -72,7 +84,7 @@ function inferGeofenceTask(command) {
     task: 'create_geofence',
     name: name || 'Sonalit Geofence — ' + location,
     location,
-    radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
+    radius_m: Number.isFinite(radius_m) ? radius_m : 3000,
     shape,
     precision: 'maximum',
   };

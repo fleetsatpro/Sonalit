@@ -253,6 +253,32 @@ describe('Copilot dispatch tool execution contract', () => {
     expect(mockQuery.mock.calls.some(([sql]) => /INSERT INTO geofences/i.test(String(sql)))).toBe(false);
   });
 
+  test('does not clamp an invalid geofence radius or ask the model to reinterpret it', async () => {
+    const response = await request(app).post('/ai/dispatch').send({
+      command: 'Create a geofence around Nairobi with radius 200 km',
+      history: [],
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('geofence_request_not_understood');
+    expect(response.body.message).toContain('will not silently change');
+    expect(mockAiClient.createMessage).not.toHaveBeenCalled();
+    expect(mockActionLedger.createActionRun).not.toHaveBeenCalled();
+    expect(mockQuery.mock.calls.some(([sql]) => /INSERT INTO geofences/i.test(String(sql)))).toBe(false);
+  });
+
+  test('does not create a geofence for impossible latitude/longitude coordinates', async () => {
+    const response = await request(app).post('/ai/dispatch').send({
+      command: 'Create a geofence around 95, 200',
+      history: [],
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('geofence_request_not_understood');
+    expect(mockAiClient.createMessage).not.toHaveBeenCalled();
+    expect(mockActionLedger.createActionRun).not.toHaveBeenCalled();
+  });
+
   test('does not let the model reinterpret an invalid high-risk radius', async () => {
     const response = await request(app).post('/ai/dispatch').send({
       command: 'Create a high-risk zone around Nairobi with radius 200 km',

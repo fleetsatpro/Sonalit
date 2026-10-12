@@ -1816,6 +1816,17 @@ router.post('/dispatch', async (req, res) => {
     return res.json(outcome);
   }
 
+  if (explicitMutation === 'create_geofence' && !geofenceTask) {
+    return res.status(400).json({
+      error: 'geofence_request_not_understood',
+      message: 'No geofence was created. Specify one unambiguous place or valid latitude/longitude pair, and choose a radius between 10 m and 100 km. Corridor buffers must be between 10 m and 5 km. Copilot will not silently change invalid geometry dimensions.',
+      request_id: requestId,
+      actions: [],
+      created: [],
+      source: 'deterministic-intent-validation',
+    });
+  }
+
   if (explicitMutation === 'create_risk_zone' && !riskZoneTask) {
     return res.status(400).json({
       error: 'risk_zone_request_not_understood',
