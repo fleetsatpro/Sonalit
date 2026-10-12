@@ -43,6 +43,9 @@ describe('deterministic Copilot geofence command intent', () => {
 
   test('ignores informational questions and requests without actionable location text', () => {
     expect(inferGeofenceTask('Which geofence covers Nairobi?')).toBeNull();
+    expect(inferGeofenceTask('How do I create a geofence around Nairobi?')).toBeNull();
+    expect(inferGeofenceTask('Create a risk zone around Nairobi')).toBeNull();
+    expect(inferGeofenceTask('Mark Nairobi as a high-risk area')).toBeNull();
     expect(inferGeofenceTask('Draw a polygon')).toBeNull();
     expect(inferGeofenceTask('')).toBeNull();
   });

@@ -2,6 +2,10 @@
 
 function inferGeofenceTask(command) {
   const raw = String(command || '').trim();
+  if (/^\s*(?:how\s+(?:do\s+i|can\s+i|to)|tell\s+me\s+how|explain|teach\s+me|what\s+(?:is|are|does)\b)/i.test(raw)) return null;
+  const riskZoneRequest = /\b(?:risk\s+zone|high[- ]?risk\s+(?:zone|area)|hazard\s+zone|danger\s+zone|banditry\s+zone|conflict\s+zone|strike\s+(?:area|zone)|roadblock\s+zone|security\s+hotspot)\b/i.test(raw);
+  const explicitlyGeofence = /\b(?:geo[- ]?fence|fence|polygon|corridor\s+geofence|administrative\s+boundary)\b/i.test(raw);
+  if (riskZoneRequest && !explicitlyGeofence) return null;
   if (!/\b(draw|sketch|outline|create|make|build|set up|define|establish|mark)\b[\s\S]{0,100}\b(geo[- ]?fence|corridor|geofence|polygon|boundary|zone|area)\b/i.test(raw)) return null;
 
   const quote = value => String(value || '').replace(/^["']|["']$/g, '').trim();

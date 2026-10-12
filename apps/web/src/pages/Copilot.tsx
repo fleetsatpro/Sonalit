@@ -23,6 +23,22 @@ interface DecisionResponse {
   task?: { type?: string; precision?: string; completed?: boolean };
   actions?: string[];
   source?: string;
+  request_id?: string;
+  decision_id?: string | null;
+  pending_actions?: PendingAction[];
+  action_receipt?: { id?: string; request_id?: string; tool_name?: string; risk_level?: string; status?: string; created_at?: string; completed_at?: string | null };
+}
+
+interface PendingAction {
+  action_id: string;
+  request_id?: string;
+  confirmation_token: string;
+  tool_name: string;
+  title: string;
+  summary: string;
+  risk_level: string;
+  expires_at?: string | null;
+  preview?: Record<string, unknown>;
 }
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
@@ -177,12 +193,51 @@ export default function Copilot() {
   const [isLoading, setIsLoading] = useState(false);
   const [showDraw, setShowDraw] = useState(false);
   const [telemetry, setTelemetry] = useState<DecisionResponse['meta'] & { confidence?: number; risk?: string; safety?: string; evidence?: number }>({});
-  const [responseStatus, setResponseStatus] = useState<'NOT_CHECKED' | 'RESPONDED' | 'DEGRADED' | 'FAILED' | 'COMPLETED'>('NOT_CHECKED');
-  const responseDotClass = responseStatus === 'RESPONDED' || responseStatus === 'COMPLETED' ? 'bg-emerald-400' : responseStatus === 'DEGRADED' ? 'bg-amber-400' : responseStatus === 'FAILED' ? 'bg-rose-400' : 'bg-slate-500';
+  const [responseStatus, setResponseStatus] = useState<'NOT_CHECKED' | 'RESPONDED' | 'DEGRADED' | 'FAILED' | 'COMPLETED' | 'AWAITING_APPROVAL'>('NOT_CHECKED');
+  const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
+  const [confirmingActionId, setConfirmingActionId] = useState<string | null>(null);
+  const responseDotClass = responseStatus === 'RESPONDED' || responseStatus === 'COMPLETED' ? 'bg-emerald-400' : responseStatus === 'DEGRADED' || responseStatus === 'AWAITING_APPROVAL' ? 'bg-amber-400' : responseStatus === 'FAILED' ? 'bg-rose-400' : 'bg-slate-500';
   const bottomRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryEntry[]>([]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  // Restore the user's own persisted requests and any still-live action approvals.
+  // Pending confirmation tokens are only held in component state and are re-issued
+  // by the backend when the authenticated operator reloads the page.
+  useEffect(() => {
+    let active = true;
+    const restore = async () => {
+      const historyPromise = api.get<{ data?: Array<{ id: string; request_id?: string | null; command: string; answer: string; created_at: string }> }>('/ai/decision/history?limit=12')
+        .catch(() => ({ data: { data: [] } } as { data: { data: Array<{ id: string; request_id?: string | null; command: string; answer: string; created_at: string }> } }));
+      const pendingPromise = api.get<{ pending_actions?: PendingAction[] }>('/ai/dispatch/pending')
+        .catch(() => ({ data: { pending_actions: [] } } as { data: { pending_actions: PendingAction[] } }));
+      const [historyResponse, pendingResponse] = await Promise.all([historyPromise, pendingPromise]);
+      if (!active) return;
+
+      const rows = Array.isArray(historyResponse.data?.data) ? historyResponse.data.data.slice().reverse() : [];
+      const restored: ChatMessage[] = rows.flatMap((entry) => {
+        const timestamp = Date.parse(entry.created_at) || Date.now();
+        return [
+          { id: 'history-user-' + entry.id, role: 'user' as const, content: entry.command, timestamp },
+          { id: entry.request_id ? 'request-' + entry.request_id : 'history-assistant-' + entry.id, role: 'assistant' as const, content: entry.answer, timestamp },
+        ];
+      });
+      if (restored.length) {
+        setMessages([INITIAL_MESSAGE, ...restored]);
+        historyRef.current = rows.flatMap((entry) => [
+          { role: 'user' as const, content: entry.command },
+          { role: 'assistant' as const, content: entry.answer },
+        ]).slice(-12);
+      }
+
+      const pending = Array.isArray(pendingResponse.data?.pending_actions) ? pendingResponse.data.pending_actions : [];
+      setPendingActions(pending);
+      if (pending.length) setResponseStatus('AWAITING_APPROVAL');
+    };
+    void restore();
+    return () => { active = false; };
+  }, []);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
@@ -202,23 +257,41 @@ export default function Copilot() {
         setMessages((prev) => [...prev, assistantMsg]);
         return;
       }
-      // Action language goes through the agentic task executor so Copilot can
-      // actually perform supported operations; evidence questions stay on the
-      // lower-cost, quota-resilient Decision Fabric.
-      const isAction = /\b(draw|sketch|outline|create|make|build|set up|mark|define|establish|acknowledge|resolve|dispatch|schedule|reroute|approve|send|execute)\b/i.test(text)
-        && /\b(geofence|corridor|zone|boundary|polygon|area|alert|incident|route|convoy|message|task|operation|risk)\b/i.test(text);
-      const endpoint = isAction ? '/ai/dispatch' : '/ai/decision';
-      const res = await api.post<DecisionResponse>(endpoint, { command: text, history });
+      // The backend owns classification, tool policy, evidence collection,
+      // approvals and durable receipts. The client never authorizes a write.
+      const res = await api.post<DecisionResponse>('/ai/dispatch', {
+        command: text,
+        history,
+        request_id: crypto.randomUUID(),
+      });
       const d = res.data;
-      const responseText = d?.answer ?? d?.response ?? d?.message ?? d?.decision?.summary ?? 'The operational agent returned no readable result.';
-      if (d?.task?.completed && d?.created?.some(item => item.type === 'geofence')) {
+      const baseResponseText = d?.answer ?? d?.response ?? d?.message ?? d?.decision?.summary ?? 'The operational agent returned no readable result.';
+      const receiptSuffix = d?.action_receipt?.id ? `\n\nAction receipt: ${d.action_receipt.id} · ${d.action_receipt.status || 'recorded'}` : '';
+      const responseText = baseResponseText + receiptSuffix;
+      const createdTypes = new Set((d?.created || []).map(item => item.type));
+      if (createdTypes.has('geofence')) {
         queryClient.invalidateQueries({ queryKey: ['geofences'] });
         queryClient.invalidateQueries({ queryKey: ['geofences-list'] });
         queryClient.invalidateQueries({ queryKey: ['geofence-map-data'] });
       }
-      const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
+      if (createdTypes.has('risk_zone')) {
+        queryClient.invalidateQueries({ queryKey: ['risk-zones'] });
+        queryClient.invalidateQueries({ queryKey: ['risk-zones-list'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      }
+      if (d?.pending_actions?.length) {
+        setPendingActions((current) => {
+          const byId = new Map(current.map(action => [action.action_id, action]));
+          for (const action of d.pending_actions || []) byId.set(action.action_id, action);
+          return [...byId.values()].slice(-10);
+        });
+      }
+      const pendingActionId = d?.pending_actions?.[0]?.action_id;
+      const pendingRequestId = d?.request_id || d?.pending_actions?.[0]?.request_id;
+      const assistantMsg: ChatMessage = { id: pendingActionId ? (pendingRequestId ? 'request-' + pendingRequestId : 'action-' + pendingActionId) : `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
       setTelemetry({ ...(d.meta || {}), confidence: d.confidence, risk: d.risk_level, safety: d.assurance?.safety_gate, evidence: d.assurance?.evidence_health?.succeeded, agent_count: d.task?.completed ? 0 : d.meta?.agent_count });
-      if (d.task) setResponseStatus(d.task.completed === true ? 'COMPLETED' : 'FAILED');
+      if (d?.pending_actions?.length) setResponseStatus('AWAITING_APPROVAL');
+      else if (d.task) setResponseStatus(d.task.completed === true ? 'COMPLETED' : 'FAILED');
       else if (d.meta?.fatal) setResponseStatus('FAILED');
       else if (d.meta?.degraded || ['error', 'unconfigured', 'groq-fallback', 'geofence-error', 'geofence-validation'].includes(String(d.source || ''))) setResponseStatus('DEGRADED');
       else setResponseStatus('RESPONDED');
@@ -233,6 +306,75 @@ export default function Copilot() {
       setIsLoading(false);
     }
   }, [input, isLoading, queryClient]);
+
+  const handleActionDecision = useCallback(async (action: PendingAction, approved: boolean) => {
+    if (confirmingActionId) return;
+    setConfirmingActionId(action.action_id);
+    try {
+      const result = await api.post<DecisionResponse>('/ai/dispatch/confirm', {
+        action_id: action.action_id,
+        confirmation_token: action.confirmation_token,
+        approved,
+      });
+      const d = result.data;
+      const responseText = d?.answer ?? d?.response ?? (approved ? 'Action completed.' : 'Action declined.');
+      setPendingActions((current) => current.filter(item => item.action_id !== action.action_id));
+      const createdTypes = new Set((d?.created || []).map(item => item.type));
+      if (createdTypes.has('geofence')) {
+        queryClient.invalidateQueries({ queryKey: ['geofences'] });
+        queryClient.invalidateQueries({ queryKey: ['geofences-list'] });
+        queryClient.invalidateQueries({ queryKey: ['geofence-map-data'] });
+      }
+      if (createdTypes.has('risk_zone')) {
+        queryClient.invalidateQueries({ queryKey: ['risk-zones'] });
+        queryClient.invalidateQueries({ queryKey: ['risk-zones-list'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      }
+
+      const receiptSuffix = d?.action_receipt?.id ? '\n\nAction receipt: ' + d.action_receipt.id + ' · ' + (d.action_receipt.status || 'recorded') : '';
+      const finalContent = responseText + receiptSuffix;
+      setMessages((current) => {
+        let replaced = false;
+        const next = current.map((message) => {
+          if (
+            (action.request_id && message.id === 'request-' + action.request_id)
+            || message.id === 'action-' + action.action_id
+          ) {
+            replaced = true;
+            return { ...message, content: finalContent, timestamp: Date.now() };
+          }
+          return message;
+        });
+        return replaced ? next : [...next, {
+          id: 'action-result-' + action.action_id,
+          role: 'assistant',
+          content: finalContent,
+          timestamp: Date.now(),
+        }];
+      });
+
+      // Replace the pending answer in the working context so future turns reason
+      // from the actual outcome rather than a stale "awaiting confirmation" state.
+      const last = historyRef.current[historyRef.current.length - 1];
+      if (last && last.role === 'assistant' && /awaiting|prepared but has not been executed/i.test(last.content)) {
+        historyRef.current = [...historyRef.current.slice(0, -1), { role: 'assistant', content: finalContent }].slice(-12);
+      } else {
+        historyRef.current = [...historyRef.current, { role: 'assistant', content: finalContent }].slice(-12);
+      }
+      setResponseStatus(d?.task?.completed === true ? 'COMPLETED' : 'RESPONDED');
+    } catch (error: any) {
+      const detail = error?.response?.data?.message || error?.response?.data?.error;
+      setMessages((current) => [...current, {
+        id: 'action-error-' + Date.now(),
+        role: 'assistant',
+        content: detail || 'The confirmation could not be completed. Check the action status before submitting a new command.',
+        timestamp: Date.now(),
+      }]);
+      setResponseStatus('FAILED');
+    } finally {
+      setConfirmingActionId(null);
+    }
+  }, [confirmingActionId, queryClient]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -289,6 +431,31 @@ export default function Copilot() {
             <Radar size={12} className="text-cyan-300" /> COPILOT RESPONSE STATUS <span className={`ml-auto font-mono ${responseDotClass.replace('bg-', 'text-')}`}>● {responseStatus.replaceAll('_', ' ')}</span>
           </div>
           {messages.map((m) => <ChatBubble key={m.id} message={m} />)}
+          {pendingActions.map((action) => (
+            <section key={action.action_id} className="mx-auto w-full max-w-2xl rounded-2xl border border-amber-400/35 bg-amber-950/25 p-4 shadow-lg shadow-black/20" aria-label="Action approval required">
+              <div className="flex items-start gap-3">
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-amber-300/30 bg-amber-300/10">
+                  <ShieldCheck size={17} className="text-amber-200" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-extrabold text-amber-50">Approval required</h2>
+                    <span className="rounded-md border border-amber-300/25 bg-amber-300/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">{action.risk_level} risk</span>
+                  </div>
+                  <p className="mt-1 text-sm font-bold text-white">{action.title}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-amber-50/80">{action.summary}</p>
+                  {action.expires_at && <p className="mt-2 text-xs text-amber-200/70">Approval expires {new Date(action.expires_at).toLocaleString()}</p>}
+                  <p className="mt-2 text-xs font-semibold text-amber-100/80">Nothing has been executed yet.</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button onClick={() => handleActionDecision(action, true)} disabled={Boolean(confirmingActionId)} className="min-h-10 rounded-lg border border-amber-200/40 bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:cursor-wait disabled:opacity-50">
+                      {confirmingActionId === action.action_id ? 'Verifying…' : 'Confirm and execute'}
+                    </button>
+                    <button onClick={() => handleActionDecision(action, false)} disabled={Boolean(confirmingActionId)} className="min-h-10 rounded-lg border border-slate-500/70 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-800 disabled:cursor-wait disabled:opacity-50">Decline</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          ))}
           {isLoading && (
             <div className="flex gap-3">
               <div className="grid h-8 w-8 place-items-center rounded-lg border border-cyan-300/20 bg-cyan-300/5"><Loader2 size={14} className="animate-spin text-cyan-200" /></div>

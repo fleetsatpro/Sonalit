@@ -6,6 +6,7 @@
 export function shouldOpenManualPolygonDrawing(command: string): boolean {
   const text = String(command || '').trim();
   if (!text) return false;
+  if (/^\s*(?:how\s+(?:do\s+i|can\s+i|to)|tell\s+me\s+how|explain|teach\s+me|what\s+(?:is|are|does)\b)/i.test(text)) return false;
 
   // Explicit editor/vertex-placement requests should work even when the user
   // does not repeat the word "geofence" in that message.
