@@ -281,7 +281,7 @@ export default function Copilot() {
       }
       if (d?.pending_actions?.length) {
         setPendingActions((current) => {
-          const byId = new Map(current.map(action => [action.action_id, action]));
+          const byId = new Map<string, PendingAction>(current.map(action => [action.action_id, action] as const));
           for (const action of d.pending_actions || []) byId.set(action.action_id, action);
           return [...byId.values()].slice(-10);
         });
