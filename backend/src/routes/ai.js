@@ -640,7 +640,8 @@ async function geocodeAdministrativeBoundary(locationName) {
   const place = String(locationName || '').trim().slice(0, 200);
   if (!place) throw new Error('Specify a named place for the administrative boundary.');
 
-  const endpoint = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&polygon_geojson=1&polygon_threshold=0.002&limit=5&q=' + encodeURIComponent(place);
+  const simplificationToleranceDegrees = 0.0001;
+  const endpoint = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&polygon_geojson=1&polygon_threshold=' + simplificationToleranceDegrees + '&limit=5&q=' + encodeURIComponent(place);
   const response = await fetch(endpoint, {
     headers: { 'User-Agent': 'Sonalit-CommandCenter/1.0 (ops@sonalit.io)', 'Accept-Language': 'en' },
     signal: AbortSignal.timeout(9000),
@@ -671,6 +672,7 @@ async function geocodeAdministrativeBoundary(locationName) {
       }
       return {
         geometry,
+        simplification_tolerance_degrees: simplificationToleranceDegrees,
         location: {
           latitude,
           longitude,
@@ -1111,13 +1113,15 @@ async function toolCreateGeofence(input, userId, orgId) {
       let geometry;
       let geometrySource;
       let precisionUsed;
+      let simplificationToleranceDegrees = null;
       let radius_m = null;
 
       if (shape === 'boundary') {
         const resolved = await geocodeAdministrativeBoundary(location);
         g = resolved.location;
         geometry = normalizeBoundaryGeometry(resolved.geometry);
-        geometrySource = 'OpenStreetMap Nominatim administrative boundary';
+        simplificationToleranceDegrees = resolved.simplification_tolerance_degrees;
+        geometrySource = 'OpenStreetMap Nominatim administrative boundary (topology-preserving simplification tolerance ' + simplificationToleranceDegrees + ' degrees)';
         precisionUsed = 'source-backed-administrative-boundary';
       } else {
         g = await geocodePrecise(location);
@@ -1137,6 +1141,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         radius_m,
         precision: precisionUsed,
         geometry_source: geometrySource,
+        source_simplification_tolerance_degrees: simplificationToleranceDegrees,
         vertex_count: ring.length - 1,
         geocoding: {
           source: g.source || (shape === 'boundary' ? 'nominatim-boundary' : 'unknown'),
@@ -1192,7 +1197,7 @@ async function toolCreateGeofence(input, userId, orgId) {
       const isBoundary = shape === 'boundary';
       const vertexCount = stored.persistedRing.length - 1;
       const message = isBoundary
-        ? 'Source-backed administrative boundary geofence "' + name + '" created from OpenStreetMap geometry at ' + locationLabel + ', with ' + vertexCount + ' verified vertices.'
+        ? 'Source-backed administrative boundary geofence "' + name + '" created from OpenStreetMap geometry at ' + locationLabel + ', with ' + vertexCount + ' verified vertices (topology-preserving simplification tolerance ' + simplificationToleranceDegrees + ' degrees).'
         : 'Autonomously created a ' + vertexCount + '-vertex polygon geofence approximating a ' + radius_m + ' m radius around ' + locationLabel + '. This is a radius approximation, not an official place boundary.';
 
       return {
@@ -1208,6 +1213,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         location: locationLabel,
         precision: precisionUsed,
         geometry_source: geometrySource,
+        source_simplification_tolerance_degrees: simplificationToleranceDegrees,
         vertex_count: vertexCount,
         geometry_verification: { vertices: vertexCount, persisted: true },
         message,
