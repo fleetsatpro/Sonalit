@@ -66,6 +66,33 @@ describe('redundant administrative-boundary resolver', () => {
     jest.restoreAllMocks();
   });
 
+  test('does not accept a different, larger administrative boundary from Nominatim', async () => {
+    const wrongBoundary = [{
+      class: 'boundary',
+      type: 'administrative',
+      lat: '0',
+      lon: '37',
+      importance: 0.99,
+      display_name: 'Kenya',
+      address: { country: 'Kenya', country_code: 'ke' },
+      geojson: { type: 'Polygon', coordinates: [ring] },
+    }];
+    global.fetch.mockImplementation(async (url) => {
+      const value = String(url);
+      if (value.startsWith('https://nominatim.openstreetmap.org/search?')) return jsonResponse(wrongBoundary);
+      if (value === 'https://www.geoboundaries.org/api/current/gbOpen/KEN/ADM1/') return jsonResponse(geoBoundaryMetadata);
+      if (value === geoBoundaryMetadata.simplifiedGeometryGeoJSON) return jsonResponse(geoBoundaryCollection);
+      throw new Error('Unexpected request: ' + value);
+    });
+
+    const resolved = await resolveAdministrativeBoundary('Nairobi');
+
+    expect(resolved.location.source).toContain('geoBoundaries');
+    expect(resolved.location.source_id).toBe('KEN-ADM1-NAIROBI');
+    expect(resolved.location.name).toContain('Nairobi City County');
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
   test('uses geoBoundaries when Nominatim geocodes a place but returns no administrative geometry', async () => {
     global.fetch.mockImplementation(async (url) => {
       const value = String(url);
@@ -177,3 +204,4 @@ describe('redundant administrative-boundary resolver', () => {
 
     await expect(resolveAdministrativeBoundary('Nairobi')).rejects.toThrow(/No geofence was created|geoBoundaries fallback did not resolve/);
   });
+});

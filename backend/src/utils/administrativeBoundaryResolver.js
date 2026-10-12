@@ -466,6 +466,30 @@ function isAdministrativeCandidate(item) {
     && (item.geojson || item.geometry);
 }
 
+function nominatimCandidateMatches(place, item) {
+  const wanted = placeNameVariants(place);
+  const address = item?.address || {};
+  const names = [
+    item?.name,
+    ...(Array.isArray(item?.display_name) ? item.display_name : String(item?.display_name || '').split(',')),
+    item?.namedetails?.name,
+    address.city,
+    address.municipality,
+    address.town,
+    address.village,
+    address.county,
+    address.state_district,
+    address.state,
+    address.province,
+    address.district,
+    address.region,
+  ].flatMap(value => Array.isArray(value) ? value : [value]).map(normalizeName).filter(Boolean);
+  const wantedCores = [...new Set(wanted.map(normalizedCore).filter(Boolean))];
+  const nameCores = names.map(normalizedCore).filter(Boolean);
+  return wanted.some(name => names.includes(name))
+    || wantedCores.some(core => nameCores.includes(core));
+}
+
 function resultFromNominatimCandidate(candidate, place, tolerance) {
   const geometry = normalizeBoundaryGeometry(candidate.geojson || candidate.geometry);
   const latitude = Number(candidate.lat);
@@ -537,7 +561,7 @@ async function lookupNominatim(place) {
   if (!Array.isArray(candidates)) throw new Error('Nominatim returned an invalid search response.');
   const countryIso2 = countryCodeFromCandidates(candidates);
   const administrative = candidates
-    .filter(isAdministrativeCandidate)
+    .filter(item => isAdministrativeCandidate(item) && nominatimCandidateMatches(place, item))
     .sort((a, b) => Number(b.importance || 0) - Number(a.importance || 0));
 
   let lastGeometryError = null;
@@ -559,7 +583,9 @@ async function lookupNominatim(place) {
     candidates,
     reason: lastGeometryError
       ? String(lastGeometryError.message || lastGeometryError).slice(0, 220)
-      : 'Nominatim did not return a matching boundary=administrative geometry.',
+      : administrative.length === 0
+        ? 'Nominatim did not return an exact-name boundary=administrative geometry for the requested place.'
+        : 'Nominatim did not return a usable single-ring boundary=administrative geometry.',
   };
 }
 
@@ -638,6 +664,7 @@ module.exports = {
   countryCodeFromPlace,
   countryCodeFromCandidates,
   candidateNameMatches,
+  nominatimCandidateMatches,
   placeNameVariants,
   fetchGeoBoundaryLayer,
 };
