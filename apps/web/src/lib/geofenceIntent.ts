@@ -1,7 +1,7 @@
 /**
- * Decides whether Copilot should open the interactive polygon editor instead of
- * issuing a location/routing action. A named place or origin/destination stays
- * on the deterministic geofence executor unless a custom polygon is explicit.
+ * Route only deliberately manual or unanchored drawing requests to the click-map
+ * editor. A named place or route should be executed autonomously; polygon wording
+ * alone must not force the user to place vertices by hand.
  */
 export function shouldOpenManualPolygonDrawing(command: string): boolean {
   const text = String(command || '').trim();
@@ -10,9 +10,10 @@ export function shouldOpenManualPolygonDrawing(command: string): boolean {
   const hasGeofenceIntent = /\b(geo[- ]?fence|fence|zone|boundary|area|polygon)\b/i.test(text);
   if (!hasDrawVerb || !hasGeofenceIntent) return false;
 
-  const explicitlyCustomShape = /\b(polygon|custom\s+(?:shape|boundary|area)|area\s+boundary)\b/i.test(text);
-  const hasLocationOrRoute = /\b(?:around|near|at|from|between|along)\s+\S+/i.test(text)
-    || /\b-?\d{1,2}\.\d+\s*,\s*-?\d{1,3}\.\d+\b/.test(text);
+  const explicitlyManual = /\b(manually|manual|by hand|click\s+(?:the\s+)?map|place\s+(?:the\s+)?vertices|let me draw|open the drawing editor|interactive drawing)\b/i.test(text);
+  if (explicitlyManual) return true;
 
-  return explicitlyCustomShape || !hasLocationOrRoute;
+  const hasLocationOrRoute = /\b(?:around|near|at|from|between|along|within)\s+\S+/i.test(text)
+    || /\b-?\d{1,2}\.\d+\s*,\s*-?\d{1,3}\.\d+\b/.test(text);
+  return !hasLocationOrRoute;
 }
