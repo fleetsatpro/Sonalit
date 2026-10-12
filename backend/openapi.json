@@ -6625,6 +6625,26 @@
           }
         }
       }
+    },
+    "/api/v1/ai/dispatch/pending": {
+      "get": {
+        "operationId": "get_api_v1_ai_dispatch_pending",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/dispatch/confirm": {
+      "post": {
+        "operationId": "post_api_v1_ai_dispatch_confirm",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

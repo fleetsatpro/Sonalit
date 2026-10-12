@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const router = require('express').Router();
 const aiClient = require('../utils/aiClient');
 const { authenticate } = require('../middleware/auth');
@@ -12,22 +13,51 @@ const { normalizePolygonGeometry } = require('../utils/geofenceGeometry');
 const { createRadiusPolygon, normalizeBoundaryGeometry } = require('../utils/geofenceAutoGeometry');
 const { invalidateGeofenceCache } = require('../utils/geofenceEngine');
 const { inferGeofenceTask } = require('../utils/geofenceCommandIntent');
+const { inferRiskZoneTask } = require('../utils/riskZoneCommandIntent');
+const {
+  ACTION_POLICIES,
+  READ_ONLY_TOOLS,
+  authorizeCopilotTool,
+  classifyCopilotCommand,
+  hasExplicitActionIntent,
+  signActionConfirmation,
+  validatePolicyCoverage,
+  verifyActionConfirmation,
+} = require('../services/copilotActionPolicy');
+const actionLedger = require('../services/copilotActionLedger');
 
-async function persistCopilotDecision({ orgId, userId, command, result }) {
+async function persistCopilotDecision({ orgId, userId, command, result, requestId }) {
   if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
   return withOrg(orgId, async (client) => {
-    const decisionRow = await client.query(
-      `INSERT INTO public.copilot_decisions (org_id, user_id, command, decision, risk_level, confidence, answer, result, completed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) RETURNING id`,
-      [orgId, userId || null, command, result.decision || 'HUMAN_REVIEW_REQUIRED', result.risk_level || 'HIGH', Number(result.confidence || 0), result.answer || '', JSON.stringify(result)]
-    );
-    const decisionId = decisionRow.rows?.[0]?.id;
+    let decisionRow;
+    if (requestId) {
+      decisionRow = await client.query(
+        "INSERT INTO public.copilot_decisions (org_id, user_id, command, decision, risk_level, confidence, answer, result, completed_at, request_id)\n" +
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),$9)\n" +
+        "ON CONFLICT (org_id, request_id) WHERE request_id IS NOT NULL\n" +
+        "DO UPDATE SET user_id=EXCLUDED.user_id, command=EXCLUDED.command, decision=EXCLUDED.decision, risk_level=EXCLUDED.risk_level,\n" +
+        "confidence=EXCLUDED.confidence, answer=EXCLUDED.answer, result=EXCLUDED.result, completed_at=NOW()\n" +
+        "WHERE public.copilot_decisions.user_id IS NOT DISTINCT FROM EXCLUDED.user_id\n" +
+        "RETURNING id",
+        [orgId, userId || null, command, result.decision || 'HUMAN_REVIEW_REQUIRED', result.risk_level || 'HIGH', Number(result.confidence || 0), result.answer || '', JSON.stringify(result), requestId],
+      );
+    } else {
+      decisionRow = await client.query(
+        "INSERT INTO public.copilot_decisions (org_id, user_id, command, decision, risk_level, confidence, answer, result, completed_at)\n" +
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) RETURNING id",
+        [orgId, userId || null, command, result.decision || 'HUMAN_REVIEW_REQUIRED', result.risk_level || 'HIGH', Number(result.confidence || 0), result.answer || '', JSON.stringify(result)],
+      );
+    }
+    const decisionId = decisionRow.rows && decisionRow.rows[0] && decisionRow.rows[0].id;
     if (!decisionId) throw new Error('Copilot decision insert returned no identifier');
+    if (requestId) {
+      await client.query('DELETE FROM public.copilot_decision_agents WHERE decision_id=$1 AND org_id=$2', [decisionId, orgId]);
+    }
     for (const agent of result.swarm || []) {
       await client.query(
-        `INSERT INTO public.copilot_decision_agents (decision_id, org_id, agent_id, status, confidence, provider, finding, dissent, tools, provenance)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [decisionId, orgId, agent.id, agent.status || 'uncertain', Number(agent.confidence || 0), agent.provider || null, agent.finding || '', agent.dissent || '', JSON.stringify(agent.tools || []), JSON.stringify(agent.provenance || [])]
+        "INSERT INTO public.copilot_decision_agents (decision_id, org_id, agent_id, status, confidence, provider, finding, dissent, tools, provenance)\n" +
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        [decisionId, orgId, agent.id, agent.status || 'uncertain', Number(agent.confidence || 0), agent.provider || null, agent.finding || '', agent.dissent || '', JSON.stringify(agent.tools || []), JSON.stringify(agent.provenance || [])],
       );
     }
     return decisionId;
@@ -35,6 +65,8 @@ async function persistCopilotDecision({ orgId, userId, command, result }) {
 }
 
 router.use(authenticate);
+
+const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function validateCopilotRequest(body, historyLimit = 12) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, error: 'request body must be an object' };
@@ -49,7 +81,11 @@ function validateCopilotRequest(body, historyLimit = 12) {
       return { status: 400, error: 'history entry ' + i + ' is invalid or too large' };
     }
   }
-  return { command: body.command.trim(), history: history.slice(-Math.max(0, Math.min(12, historyLimit))) };
+  const requestId = body.request_id === undefined ? crypto.randomUUID() : body.request_id;
+  if (typeof requestId !== 'string' || !REQUEST_ID_PATTERN.test(requestId)) {
+    return { status: 400, error: 'request_id must be a UUID' };
+  }
+  return { command: body.command.trim(), history: history.slice(-Math.max(0, Math.min(12, historyLimit))), requestId };
 }
 
 const MODEL = 'claude-opus-4-7';
@@ -330,12 +366,17 @@ const TOOLS = [
         risk_level: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'Risk severity level' },
         zone_type: { type: 'string', enum: ['security', 'construction', 'flood', 'banditry', 'conflict', 'police_checkpoint', 'strike', 'general'], description: 'Nature of the risk' },
         description: { type: 'string', description: 'Details about the hazard, e.g. "Armed robbery incidents reported on A109 near km 234"' },
-        radius_km: { type: 'number', description: 'Radius in km (default 5)' },
+        radius_km: { type: 'number', minimum: 0.1, maximum: 100, description: 'Radius in km (default 5; bounded to 0.1–100 km).' },
       },
       required: ['name', 'location', 'risk_level'],
     },
   },
 ];
+
+const toolPolicyCoverage = validatePolicyCoverage(TOOLS.map(tool => tool.name));
+if (!toolPolicyCoverage.valid) {
+  throw new Error('Copilot tool policy is incomplete: ' + toolPolicyCoverage.unclassified_tools.join(', '));
+}
 
 // ── Tool implementations ───────────────────────────────────────────────────
 async function toolQueryVehicles(input, orgId) {
@@ -1298,7 +1339,10 @@ async function toolCreateRiskZone(input, userId, orgId) {
 
   try {
     await ensureRiskZones();
-    const g = await geocode(location);
+    const explicitCoordinates = parseCoordinatePair(location);
+    const g = explicitCoordinates
+      ? { ...explicitCoordinates, name: 'Explicit coordinates', admin1: null, country: null }
+      : await geocode(location);
     const desc = description || `${zone_type} risk zone near ${location}`;
 
     const r = await query(
@@ -1445,6 +1489,106 @@ async function runTool(name, input, context = {}) {
 }
 
 
+async function recordCopilotToolTraceBestEffort(trace) {
+  try {
+    return await actionLedger.recordToolTrace(trace);
+  } catch (error) {
+    logger.warn('Copilot tool trace persistence failed: ' + String(error && error.message || error).slice(0, 180));
+    return null;
+  }
+}
+
+async function persistCopilotReceiptBestEffort({ orgId, userId, command, result, requestId }) {
+  try {
+    return await persistCopilotDecision({ orgId, userId, command, result, requestId });
+  } catch (error) {
+    logger.warn('Copilot request receipt persistence failed: ' + String(error && error.message || error).slice(0, 180));
+    return null;
+  }
+}
+
+function buildCopilotActionOutcome({ toolName, result, run, requestId, source, replayed = false }) {
+  const succeeded = Boolean(result && result.created === true);
+  const entityType = toolName === 'create_risk_zone' ? 'risk_zone' : 'geofence';
+  const responseText = result && (result.message || result.error)
+    ? String(result.message || result.error)
+    : (succeeded ? 'The requested operation completed.' : 'The requested operation was not completed.');
+  return {
+    response: responseText,
+    answer: responseText,
+    actions: succeeded ? [toolName] : [],
+    created: succeeded ? [{ type: entityType, ...result }] : [],
+    task: { type: entityType, completed: succeeded },
+    action_receipt: actionLedger.makeActionReceipt(run),
+    request_id: requestId,
+    source,
+    ...(replayed ? { replayed: true } : {}),
+  };
+}
+
+function makePendingActionView(run, token) {
+  const input = run && run.action_input && typeof run.action_input === 'object' ? run.action_input : {};
+  const location = typeof input.location === 'string' ? input.location : '';
+  const description = typeof input.description === 'string' ? input.description : '';
+  const details = [];
+  if (location) details.push('Location: ' + location);
+  if (description) details.push(description);
+  if (input.zone_type) details.push('Type: ' + String(input.zone_type));
+  if (input.risk_level) details.push('Risk level: ' + String(input.risk_level));
+  if (Number.isFinite(Number(input.radius_km))) details.push('Radius: ' + String(input.radius_km) + ' km');
+  return {
+    action_id: run.id,
+    request_id: run.request_id,
+    confirmation_token: token,
+    tool_name: run.tool_name,
+    title: String(input.name || 'Review operational action').slice(0, 160),
+    summary: details.join(' • ').slice(0, 700) || 'Review the operation details before confirming.',
+    risk_level: run.risk_level,
+    preview: actionLedger.summarizeToolInput(input),
+    created_at: run.created_at,
+    expires_at: run.expires_at,
+  };
+}
+
+async function runCopilotEvidenceFallback({ command, history, userId, orgId, requestId }) {
+  let ordinal = 0;
+  const result = await runDecisionFabric({
+    command,
+    history,
+    userId,
+    orgId,
+    executeTool: async (name, input) => {
+      if (!READ_ONLY_TOOLS.includes(name)) return { error: 'tool_policy_missing', tool: name };
+      const started = Date.now();
+      let value;
+      let errorCode = null;
+      try {
+        value = await runTool(name, input || {}, { userId, orgId });
+      } catch (error) {
+        errorCode = 'tool_execution_failed';
+        value = { error: errorCode, message: String(error && error.message || error).slice(0, 250) };
+      }
+      await recordCopilotToolTraceBestEffort({
+        orgId, userId, requestId, ordinal: ordinal++, toolName: name,
+        status: value && value.error ? 'failed' : 'succeeded',
+        input, result: value, latencyMs: Date.now() - started,
+        provider: 'decision-fabric', errorCode,
+      });
+      return value;
+    },
+    persistDecision: (args) => persistCopilotDecision({ ...args, requestId }),
+  });
+  const answer = result.answer || 'No decision narrative was returned.';
+  return {
+    ...result,
+    answer,
+    response: answer,
+    request_id: requestId,
+    decision_id: result.id || null,
+    source: result.meta && result.meta.degraded ? 'decision-fabric-fallback' : 'decision-fabric',
+  };
+}
+
 // ── POST /ai/decision — unified Decision Intelligence Fabric ──────────────
 // Conversation + decision support share one resilient swarm. The legacy
 // /dispatch endpoint remains intact for existing tool-execution workflows.
@@ -1452,14 +1596,16 @@ router.get('/decision/history', async (req, res) => {
   try {
     const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id;
     if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+    const userId = req.user?.id || null;
+    if (!userId) return res.status(403).json({ error: 'User context required' });
     const limit = Math.min(Math.max(Number(req.query.limit || 12), 1), 50);
     const r = await query(
-      `SELECT id, command, decision, risk_level, confidence, answer, created_at, outcome, outcome_notes
+      `SELECT id, request_id, command, decision, risk_level, confidence, answer, created_at, outcome, outcome_notes
        FROM public.copilot_decisions
-       WHERE org_id = $1
+       WHERE org_id = $1 AND user_id = $2
        ORDER BY created_at DESC
-       LIMIT $2`,
-      [orgId, limit]
+       LIMIT $3`,
+      [orgId, userId, limit]
     );
     return res.json({ data: r.rows });
   } catch (err) {
@@ -1475,8 +1621,11 @@ router.post('/decision/:decisionId/feedback', async (req, res) => {
     const outcome = String(req.body?.outcome || '').trim();
     const notes = req.body?.notes ? String(req.body.notes).slice(0, 4000) : null;
     const allowed = new Set(['correct', 'incorrect', 'partially_correct', 'superseded', 'unknown']);
-    if (!orgId || !allowed.has(outcome)) return res.status(400).json({ error: 'Valid organisation and outcome required' });
-    const exists = await query('SELECT id FROM public.copilot_decisions WHERE id = $1 AND org_id = $2', [req.params.decisionId, orgId]);
+    if (!orgId || !userId || !allowed.has(outcome)) return res.status(400).json({ error: 'Valid organisation, user and outcome required' });
+    const exists = await query(
+      'SELECT id FROM public.copilot_decisions WHERE id = $1 AND org_id = $2 AND user_id = $3',
+      [req.params.decisionId, orgId, userId]
+    );
     if (!exists.rows.length) return res.status(404).json({ error: 'Decision not found' });
     await query(
       `INSERT INTO public.copilot_decision_feedback (decision_id, org_id, user_id, outcome, notes)
@@ -1486,8 +1635,8 @@ router.post('/decision/:decisionId/feedback', async (req, res) => {
     await query(
       `UPDATE public.copilot_decisions
        SET outcome=$1, outcome_notes=$2, outcome_recorded_at=NOW()
-       WHERE id=$3 AND org_id=$4`,
-      [outcome, notes, req.params.decisionId, orgId]
+       WHERE id=$3 AND org_id=$4 AND user_id=$5`,
+      [outcome, notes, req.params.decisionId, orgId, userId]
     );
     return res.json({ ok: true, decision_id: req.params.decisionId, outcome });
   } catch (err) {
@@ -1512,7 +1661,7 @@ router.post('/decision', async (req, res) => {
       executeTool: (name, input, context) => runTool(name, input, context),
       userId: req.user?.id || null,
       orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null,
-      persistDecision: persistCopilotDecision,
+      persistDecision: (args) => persistCopilotDecision({ ...args, requestId: request.requestId }),
     });
 
     return res.json({
@@ -1537,65 +1686,321 @@ router.post('/decision', async (req, res) => {
 router.post('/dispatch', async (req, res) => {
   const request = validateCopilotRequest(req.body, 6);
   if (request.error) return res.status(request.status).json({ error: request.error });
-  const { command, history } = request;
+  const { command, history, requestId } = request;
+  const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id || null;
+  const userId = req.user?.id || null;
+  const user = { ...(req.user || {}), id: userId, org_id: orgId };
+  const classification = classifyCopilotCommand(command);
+  const geofenceTask = classification.kind === 'action' && hasExplicitActionIntent(command, 'create_geofence')
+    ? inferGeofenceTask(command)
+    : null;
+  const riskZoneTask = classification.kind === 'action' && hasExplicitActionIntent(command, 'create_risk_zone')
+    ? inferRiskZoneTask(command)
+    : null;
 
-  // High-confidence geofence commands bypass the model completely. This keeps
-  // a core operational drawing task available even during provider outages and
-  // prevents an LLM from inventing route geometry.
-  const geofenceTask = inferGeofenceTask(command);
-  if (geofenceTask) {
-    try {
-      const { task: _taskName, ...geofenceInput } = geofenceTask;
-      const definition = TOOLS.find(tool => tool.name === 'create_geofence');
-      const check = definition ? validateToolInput(definition.input_schema, geofenceInput) : { valid: false, errors: [] };
-      if (!check.valid) return res.status(400).json({ error: 'invalid_geofence_request', details: check.errors });
-      const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id || null;
-      const userId = req.user?.id || null;
-      const result = await toolCreateGeofence(geofenceInput, userId, orgId);
-      return res.json({
-        response: result.message || (result.error ? result.error : 'Geofence task completed.'),
-        actions: result.created ? ['create_geofence'] : [],
-        created: result.created ? [{ type: 'geofence', ...result }] : [],
-        task: { type: 'geofence', precision: result.precision || 'maximum', completed: result.created === true },
-        source: result.created ? 'deterministic-geofence' : 'geofence-validation',
+  // Authorization happens before provider/model calls so a disallowed user
+  // cannot ask a model to launder a prohibited action through tool selection.
+  const explicitMutation = Object.keys(ACTION_POLICIES).find(toolName => hasExplicitActionIntent(command, toolName));
+  if (explicitMutation) {
+    const authorization = authorizeCopilotTool({ toolName: explicitMutation, command, user });
+    if (!authorization.allowed) {
+      return res.status(403).json({
+        error: authorization.code || 'action_not_authorized',
+        message: authorization.reason || 'This operation is not authorized.',
+        minimum_role: authorization.minimum_role,
+        request_id: requestId,
       });
-    } catch (err) {
-      return res.status(200).json({ response: `Geofence task failed safely: ${err.message}`, actions: [], created: [], task: { type: 'geofence', completed: false }, source: 'geofence-error' });
+    }
+  }
+
+  // Geofence geometry must come from the deterministic, validated geospatial
+  // builder. We never permit the model to invent or directly persist vertices.
+  if (geofenceTask) {
+    const authorization = authorizeCopilotTool({ toolName: 'create_geofence', command, user });
+    if (!authorization.allowed) {
+      return res.status(403).json({ error: authorization.code, message: authorization.reason, request_id: requestId });
+    }
+
+    const { task: _taskName, ...geofenceInput } = geofenceTask;
+    const definition = TOOLS.find(tool => tool.name === 'create_geofence');
+    const check = definition ? validateToolInput(definition.input_schema, geofenceInput) : { valid: false, errors: [] };
+    if (!check.valid) return res.status(400).json({ error: 'invalid_geofence_request', details: check.errors, request_id: requestId });
+
+    let actionCreated;
+    try {
+      actionCreated = await actionLedger.createActionRun({
+        orgId, userId, requestId, command, toolName: 'create_geofence',
+        input: geofenceInput, riskLevel: authorization.risk_level, status: 'executing',
+      });
+    } catch (error) {
+      logger.error('Copilot geofence audit reservation failed: ' + String(error && error.message || error).slice(0, 180));
+      return res.status(503).json({
+        error: String(error && error.message || error) === 'idempotency_conflict' ? 'idempotency_conflict' : 'action_audit_unavailable',
+        message: 'The geofence was not created because a durable action receipt could not be reserved.',
+        request_id: requestId,
+      });
+    }
+
+    const actionRun = actionCreated.run;
+    if (actionCreated.duplicate) {
+      if (actionRun.status === 'succeeded') {
+        return res.json(buildCopilotActionOutcome({
+          toolName: 'create_geofence', result: actionRun.result || {}, run: actionRun,
+          requestId, source: 'action-replay', replayed: true,
+        }));
+      }
+      return res.status(409).json({
+        error: actionRun.status === 'executing' ? 'action_in_progress' : 'idempotent_request_already_resolved',
+        message: 'This request ID already belongs to a geofence action. Use a new request ID for a new operation.',
+        action_receipt: actionLedger.makeActionReceipt(actionRun),
+        request_id: requestId,
+      });
+    }
+
+    const started = Date.now();
+    let result;
+    try {
+      result = await toolCreateGeofence(geofenceInput, userId, orgId);
+    } catch (error) {
+      result = { created: false, error: 'Geofence task failed safely: ' + String(error && error.message || error).slice(0, 250) };
+    }
+
+    let finished;
+    try {
+      finished = await actionLedger.finishActionRun({
+        orgId, actionId: actionRun.id,
+        status: result && result.created === true ? 'succeeded' : 'failed',
+        result,
+        errorCode: result && result.created === true ? null : 'geofence_creation_failed',
+      });
+    } catch (error) {
+      logger.error('Copilot geofence result ledger update failed: ' + String(error && error.message || error).slice(0, 180));
+    }
+    await recordCopilotToolTraceBestEffort({
+      orgId, userId, requestId, ordinal: 0, toolName: 'create_geofence',
+      status: result && result.created === true ? 'succeeded' : 'failed',
+      input: geofenceInput, result, latencyMs: Date.now() - started,
+      provider: 'deterministic-geofence',
+      errorCode: result && result.created === true ? null : 'geofence_creation_failed',
+    });
+
+    const runForReceipt = finished || {
+      ...actionRun,
+      status: result && result.created === true ? 'executing' : 'failed',
+      result,
+    };
+    const outcome = buildCopilotActionOutcome({
+      toolName: 'create_geofence', result, run: runForReceipt,
+      requestId, source: result && result.created === true ? 'deterministic-geofence' : 'geofence-validation',
+    });
+    if (result && result.created === true && !finished) {
+      const warning = ' The geofence was created, but the action ledger could not finalise its receipt. Verify the geofence before retrying this request.';
+      outcome.response += warning;
+      outcome.answer = outcome.response;
+      outcome.source = 'action-ledger-degraded';
+    }
+    await persistCopilotReceiptBestEffort({
+      orgId, userId, command,
+      result: {
+        decision: result && result.created === true ? 'ACT_NOW' : 'HUMAN_REVIEW_REQUIRED',
+        risk_level: 'MEDIUM',
+        confidence: result && result.created === true ? 0.98 : 0.5,
+        answer: outcome.response,
+        evidence: ['create_geofence', 'persisted_geometry_verification'],
+        missing_data: [],
+        risks: result && result.created === true ? [] : [{ risk: 'Geofence was not created', severity: 'medium' }],
+        swarm: [],
+      },
+      requestId,
+    });
+    return res.json(outcome);
+  }
+
+  if (explicitMutation === 'create_geofence' && !geofenceTask) {
+    return res.status(400).json({
+      error: 'geofence_request_not_understood',
+      message: 'No geofence was created. Specify one unambiguous place or valid latitude/longitude pair, and choose a radius between 10 m and 100 km. Corridor buffers must be between 10 m and 5 km. Copilot will not silently change invalid geometry dimensions.',
+      request_id: requestId,
+      actions: [],
+      created: [],
+      source: 'deterministic-intent-validation',
+    });
+  }
+
+  if (explicitMutation === 'create_risk_zone' && !riskZoneTask) {
+    return res.status(400).json({
+      error: 'risk_zone_request_not_understood',
+      message: 'No risk zone was staged. Specify one unambiguous place or valid latitude/longitude pair and, when needed, a radius from 0.1 to 100 km. Use an explicit radius such as “radius 5 km”; Copilot will not guess or silently change the requested geometry.',
+      request_id: requestId,
+      actions: [],
+      created: [],
+      source: 'deterministic-intent-validation',
+    });
+  }
+
+  // Deterministic risk-zone intent stages high-risk writes even if every model
+  // provider is down. The write itself remains impossible until the user
+  // approves a signed, tenant-bound, expiring confirmation receipt.
+  if (riskZoneTask) {
+    const authorization = authorizeCopilotTool({ toolName: 'create_risk_zone', command, user });
+    if (!authorization.allowed || !authorization.requires_confirmation) {
+      return res.status(403).json({
+        error: authorization.code || 'confirmation_policy_invalid',
+        message: authorization.reason || 'Risk-zone confirmation policy is unavailable.',
+        request_id: requestId,
+      });
+    }
+    const { task: _taskName, ...riskZoneInput } = riskZoneTask;
+    const definition = TOOLS.find(tool => tool.name === 'create_risk_zone');
+    const check = definition ? validateToolInput(definition.input_schema, riskZoneInput) : { valid: false, errors: [] };
+    if (!check.valid) return res.status(400).json({ error: 'invalid_risk_zone_request', details: check.errors, request_id: requestId });
+
+    let staged;
+    try {
+      staged = await actionLedger.createActionRun({
+        orgId, userId, requestId, command, toolName: 'create_risk_zone',
+        input: riskZoneInput, riskLevel: authorization.risk_level, status: 'pending_confirmation',
+      });
+    } catch (error) {
+      const conflict = String(error && error.message || error) === 'idempotency_conflict';
+      return res.status(conflict ? 409 : 503).json({
+        error: conflict ? 'idempotency_conflict' : 'action_audit_unavailable',
+        message: conflict
+          ? 'This request ID already belongs to a different action. Submit a fresh request.'
+          : 'The risk zone was not created or staged because a durable approval record could not be saved.',
+        request_id: requestId,
+      });
+    }
+
+    const actionRun = staged.run;
+    if (staged.duplicate && actionRun.status === 'succeeded') {
+      return res.json(buildCopilotActionOutcome({
+        toolName: 'create_risk_zone', result: actionRun.result || {}, run: actionRun,
+        requestId, source: 'action-replay', replayed: true,
+      }));
+    }
+    if (actionRun.status !== 'pending_confirmation') {
+      return res.status(409).json({
+        error: actionRun.status === 'executing' ? 'action_in_progress' : 'idempotent_request_already_resolved',
+        response: 'This request ID already belongs to an action that is not awaiting approval.',
+        action_receipt: actionLedger.makeActionReceipt(actionRun),
+        request_id: requestId,
+      });
+    }
+
+    let confirmationToken;
+    try {
+      confirmationToken = signActionConfirmation({
+        actionId: actionRun.id, orgId, userId, expiresAt: actionRun.expires_at,
+      });
+    } catch (error) {
+      if (!staged.duplicate) {
+        try { await actionLedger.declineActionRun({ orgId, actionId: actionRun.id, userId }); } catch (_) {}
+      }
+      logger.error('Copilot deterministic risk-zone approval signing failed: ' + String(error && error.message || error).slice(0, 160));
+      return res.status(503).json({
+        error: 'confirmation_signing_unavailable',
+        response: 'The high-risk action was not staged because confirmation signing is unavailable.',
+        request_id: requestId,
+      });
+    }
+
+    const pendingAction = makePendingActionView(actionRun, confirmationToken);
+    const pendingText = 'A high-risk risk-zone action is prepared but has not been executed. Review its exact location, radius and severity, then explicitly confirm it below.';
+    await recordCopilotToolTraceBestEffort({
+      orgId, userId, requestId, ordinal: 0, toolName: 'create_risk_zone',
+      status: 'pending_confirmation', input: riskZoneInput,
+      result: { pending_confirmation: true, action_id: actionRun.id, risk_level: actionRun.risk_level },
+      latencyMs: 0, provider: 'deterministic-intent',
+    });
+    await persistCopilotReceiptBestEffort({
+      orgId, userId, command,
+      result: {
+        decision: 'APPROVAL_REQUIRED',
+        risk_level: 'HIGH',
+        confidence: 0.95,
+        answer: pendingText,
+        evidence: ['deterministic_action_intent', 'action_policy', 'durable_confirmation_record'],
+        missing_data: [],
+        risks: [{ risk: 'High-risk operational write is awaiting explicit operator confirmation', severity: 'high' }],
+        swarm: [],
+        pending_action_id: actionRun.id,
+      },
+      requestId,
+    });
+    return res.json({
+      response: pendingText,
+      answer: pendingText,
+      actions: [],
+      created: [],
+      pending_actions: [pendingAction],
+      action_receipt: actionLedger.makeActionReceipt(actionRun),
+      request_id: requestId,
+      source: 'approval-required',
+    });
+  }
+
+  const runFallback = async () => runCopilotEvidenceFallback({ command, history, userId, orgId, requestId });
+
+  // One public endpoint, two server-selected lanes: investigation turns keep
+  // the Decision Fabric's evidence plan, deterministic safety gate and synthesis.
+  // The browser never picks a less-governed execution path with regex keywords.
+  if (classification.kind === 'investigation') {
+    try {
+      return res.json(await runFallback());
+    } catch (error) {
+      logger.error('Copilot investigation failed: ' + String(error && error.message || error).slice(0, 200));
+      return res.status(503).json({
+        error: 'copilot_unavailable',
+        response: 'Copilot could not complete its evidence-backed investigation. No operational write was performed.',
+        request_id: requestId,
+        source: 'error',
+      });
     }
   }
 
   if (!aiClient.hasAnthropic() && !aiClient.hasGroqFallback()) {
-    return res.json({
-      response: 'AI dispatch is not configured — set ANTHROPIC_API_KEY (or GROQ_API_KEY as a fallback) on the backend to enable it.',
-      actions: [],
-      source: 'unconfigured',
-    });
+    if (hasExplicitActionIntent(command, 'create_risk_zone')) {
+      return res.status(503).json({
+        error: 'ai_provider_unavailable',
+        response: 'No high-risk zone was created. Copilot needs an available reasoning provider to prepare a confirmable action.',
+        request_id: requestId,
+        actions: [],
+        created: [],
+        source: 'unconfigured',
+      });
+    }
+    try {
+      return res.json(await runFallback());
+    } catch (error) {
+      logger.error('Copilot evidence fallback failed: ' + String(error && error.message || error));
+      return res.status(503).json({
+        error: 'copilot_unavailable',
+        response: 'Copilot could not access its reasoning provider or evidence fallback. No operational write was performed.',
+        request_id: requestId,
+        source: 'error',
+      });
+    }
   }
 
   try {
     await ensureColumns();
     await ensureRiskZones();
-    const userId = req.user?.id || null;
-
     const messages = [
       ...history.slice(-6)
         .filter(h => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
         .map(h => ({ role: h.role, content: h.content })),
-      { role: 'user', content: command.trim() },
+      { role: 'user', content: command },
     ];
-
     const toolsUsed = [];
     const actionsCreated = [];
+    const policyBlockedActions = [];
     let finalText = '';
     let lastProvider = 'anthropic';
+    let toolOrdinal = 0;
+    let mutationAttempted = false;
 
-    // Falls back to Groq (open-weight model) mid-conversation if Anthropic
-    // is rate-limited, out of quota, or down — see aiClient.js. Best-effort:
-    // sustained multi-turn tool use is meaningfully less reliable on an
-    // open-weight model than Claude, so a Groq-served response here is a
-    // degraded mode, not a like-for-like swap — flagged via `source` below
-    // so the frontend can show that distinction if it wants to.
-    for (let turn = 0; turn < 6; turn++) {
+    for (let turn = 0; turn < 6; turn += 1) {
       const response = await aiClient.createMessage({
         model: MODEL,
         max_tokens: 8000,
@@ -1612,35 +2017,178 @@ router.post('/dispatch', async (req, res) => {
         const toolResults = [];
         for (const block of response.content) {
           if (block.type !== 'tool_use') continue;
+          const ordinal = toolOrdinal++;
           toolsUsed.push(block.name);
-          let result, isError = false;
           const definition = TOOLS.find(tool => tool.name === block.name);
           const argumentCheck = definition
             ? validateToolInput(definition.input_schema, block.input)
             : { valid: false, errors: [{ path: 'input', code: 'unknown_tool', message: 'Tool is not registered.' }] };
+          let result;
+          let isError = false;
+          let traceStatus = 'succeeded';
+          let errorCode = null;
+          const started = Date.now();
+
           if (!argumentCheck.valid) {
-            // Invalid model arguments are never passed to tool implementations.
-            // Give the model a structured rejection so it can correct or
-            // explain the failure without triggering a side effect.
             result = { error: 'invalid_tool_input', details: argumentCheck.errors };
             isError = true;
+            traceStatus = 'denied';
+            errorCode = 'invalid_tool_input';
+          } else if (ACTION_POLICIES[block.name]) {
+            const authorization = authorizeCopilotTool({ toolName: block.name, command, user });
+            if (!authorization.allowed) {
+              result = { error: authorization.code || 'action_not_authorized', message: authorization.reason || 'Action not authorized.' };
+              isError = true;
+              traceStatus = 'denied';
+              errorCode = authorization.code || 'action_not_authorized';
+              policyBlockedActions.push({ tool_name: block.name, code: errorCode });
+            } else if (block.name === 'create_geofence') {
+              // If the deterministic parser did not recognise the user's
+              // request, do not let model-generated arguments write geometry.
+              result = {
+                error: 'deterministic_geofence_parser_required',
+                message: 'No geofence was written. Rephrase the request with an explicit named location or coordinates and a supported radius or route corridor.',
+              };
+              isError = true;
+              traceStatus = 'denied';
+              errorCode = 'deterministic_geofence_parser_required';
+              policyBlockedActions.push({ tool_name: block.name, code: errorCode });
+            } else if (authorization.requires_confirmation && mutationAttempted) {
+              result = { error: 'multiple_mutations_per_request', message: 'Only one mutating operation may be staged per Copilot request.' };
+              isError = true;
+              traceStatus = 'denied';
+              errorCode = 'multiple_mutations_per_request';
+              policyBlockedActions.push({ tool_name: block.name, code: errorCode });
+            } else if (authorization.requires_confirmation) {
+              mutationAttempted = true;
+              let staged;
+              try {
+                staged = await actionLedger.createActionRun({
+                  orgId, userId, requestId, command,
+                  toolName: block.name, input: block.input,
+                  riskLevel: authorization.risk_level, status: 'pending_confirmation',
+                });
+              } catch (error) {
+                const failureCode = String(error && error.message || error) === 'idempotency_conflict' ? 'idempotency_conflict' : 'action_audit_unavailable';
+                const statusCode = failureCode === 'idempotency_conflict' ? 409 : 503;
+                logger.error('Copilot confirmation staging failed: ' + String(error && error.message || error).slice(0, 180));
+                return res.status(statusCode).json({
+                  error: failureCode,
+                  response: failureCode === 'idempotency_conflict'
+                    ? 'This request ID already belongs to a different action. Submit a fresh request rather than retrying with a reused ID.'
+                    : 'The high-risk action was not executed because its approval record could not be saved.',
+                  request_id: requestId,
+                  source: 'action-control-plane',
+                });
+              }
+
+              const actionRun = staged.run;
+              if (staged.duplicate && actionRun.status === 'succeeded') {
+                return res.json(buildCopilotActionOutcome({
+                  toolName: block.name,
+                  result: actionRun.result || {},
+                  run: actionRun,
+                  requestId,
+                  source: 'action-replay',
+                  replayed: true,
+                }));
+              }
+              if (!['pending_confirmation'].includes(actionRun.status)) {
+                return res.status(409).json({
+                  error: actionRun.status === 'executing' ? 'action_in_progress' : 'idempotent_request_already_resolved',
+                  response: 'This request ID already belongs to an action that is no longer awaiting approval.',
+                  request_id: requestId,
+                  action_receipt: actionLedger.makeActionReceipt(actionRun),
+                });
+              }
+              if (!actionRun.expires_at || new Date(actionRun.expires_at).getTime() <= Date.now()) {
+                await actionLedger.claimActionRun({ orgId, actionId: actionRun.id, userId });
+                return res.status(409).json({
+                  error: 'confirmation_expired',
+                  response: 'The approval window expired. Submit a new request to prepare another action.',
+                  request_id: requestId,
+                });
+              }
+
+              let confirmationToken;
+              try {
+                confirmationToken = signActionConfirmation({
+                  actionId: actionRun.id, orgId, userId, expiresAt: actionRun.expires_at,
+                });
+              } catch (error) {
+                if (!staged.duplicate) {
+                  try { await actionLedger.declineActionRun({ orgId, actionId: actionRun.id, userId }); } catch (_) {}
+                }
+                logger.error('Copilot approval token unavailable: ' + String(error && error.message || error).slice(0, 160));
+                return res.status(503).json({
+                  error: 'confirmation_signing_unavailable',
+                  response: 'The high-risk action was not staged for execution because confirmation signing is unavailable.',
+                  request_id: requestId,
+                });
+              }
+
+              const pendingAction = makePendingActionView(actionRun, confirmationToken);
+              const pendingText = 'A high-risk action is prepared but has not been executed. Review its details and explicitly confirm it below.';
+              await recordCopilotToolTraceBestEffort({
+                orgId, userId, requestId, ordinal, toolName: block.name,
+                status: 'pending_confirmation', input: block.input,
+                result: { pending_confirmation: true, action_id: actionRun.id, risk_level: actionRun.risk_level },
+                latencyMs: Date.now() - started, provider: lastProvider,
+              });
+              await persistCopilotReceiptBestEffort({
+                orgId, userId, command,
+                result: {
+                  decision: 'APPROVAL_REQUIRED',
+                  risk_level: 'HIGH',
+                  confidence: 0.9,
+                  answer: pendingText,
+                  evidence: ['action_policy', 'durable_confirmation_record'],
+                  missing_data: [],
+                  risks: [{ risk: 'High-risk operational write is awaiting explicit confirmation', severity: 'high' }],
+                  swarm: [],
+                  pending_action_id: actionRun.id,
+                },
+                requestId,
+              });
+              return res.json({
+                response: pendingText,
+                answer: pendingText,
+                actions: [],
+                created: [],
+                pending_actions: [pendingAction],
+                action_receipt: actionLedger.makeActionReceipt(actionRun),
+                request_id: requestId,
+                source: 'approval-required',
+              });
+            } else {
+              result = { error: 'confirmation_policy_missing', message: 'The mutation is blocked because its confirmation policy is incomplete.' };
+              isError = true;
+              traceStatus = 'denied';
+              errorCode = 'confirmation_policy_missing';
+              policyBlockedActions.push({ tool_name: block.name, code: errorCode });
+            }
           } else {
             try {
-              result = await runTool(block.name, block.input, { userId, orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null });
-              // Track map-mutating actions only after their authoritative handler succeeds.
-              if (block.name === 'create_geofence' && result?.created === true) {
-                actionsCreated.push({ type: 'geofence', ...result });
+              result = await runTool(block.name, block.input, { userId, orgId });
+              if (result && typeof result === 'object' && result.error) {
+                isError = true;
+                traceStatus = 'failed';
+                errorCode = String(result.code || result.error).slice(0, 100);
               }
-              if (block.name === 'create_risk_zone' && result?.created === true) {
-                actionsCreated.push({ type: 'risk_zone', ...result });
-              }
-              if (result && typeof result === 'object' && result.error) isError = true;
-            } catch (e) {
-              result = { error: 'tool_execution_failed', message: String(e?.message || 'Unknown tool failure').slice(0, 300) };
+            } catch (error) {
+              result = { error: 'tool_execution_failed', message: String(error && error.message || 'Unknown tool failure').slice(0, 300) };
               isError = true;
-              logger.warn(`AI tool ${block.name} failed: ${String(e?.message || 'unknown').slice(0, 180)}`);
+              traceStatus = 'failed';
+              errorCode = 'tool_execution_failed';
+              logger.warn('Copilot read tool ' + block.name + ' failed: ' + String(error && error.message || error).slice(0, 180));
             }
           }
+
+          await recordCopilotToolTraceBestEffort({
+            orgId, userId, requestId, ordinal, toolName: block.name,
+            status: traceStatus, input: block.input, result,
+            latencyMs: Date.now() - started, provider: lastProvider, errorCode,
+          });
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
@@ -1652,49 +2200,237 @@ router.post('/dispatch', async (req, res) => {
         continue;
       }
 
-      finalText = response.content
-        .filter(b => b.type === 'text')
-        .map(b => b.text)
+      finalText = (response.content || [])
+        .filter(block => block.type === 'text')
+        .map(block => block.text)
         .join('\n')
         .trim();
       break;
     }
 
+    if (policyBlockedActions.length) {
+      finalText = (finalText || 'I could not complete the requested operation.') +
+        '\n\n**Execution safeguard:** No blocked write was executed. ' +
+        policyBlockedActions.map(item => item.tool_name + ': ' + item.code).join('; ');
+    }
+    const responseText = finalText || 'I could not produce a response — please rephrase your request.';
+    const receipt = await persistCopilotReceiptBestEffort({
+      orgId, userId, command,
+      result: {
+        decision: policyBlockedActions.length ? 'HUMAN_REVIEW_REQUIRED' : 'MONITOR',
+        risk_level: policyBlockedActions.length ? 'HIGH' : 'LOW',
+        confidence: policyBlockedActions.length ? 0.5 : 0.7,
+        answer: responseText,
+        evidence: toolsUsed,
+        missing_data: [],
+        risks: policyBlockedActions.map(item => ({ risk: item.code, severity: 'high' })),
+        swarm: [],
+      },
+      requestId,
+    });
     return res.json({
-      response: finalText || 'I could not produce a response — please rephrase your request.',
+      response: responseText,
+      answer: responseText,
       actions: [...new Set(toolsUsed)],
+      tools_used: [...new Set(toolsUsed)],
       created: actionsCreated,
+      decision_id: receipt || null,
+      request_id: requestId,
       source: lastProvider === 'groq' ? 'groq-fallback' : 'claude',
     });
-  } catch (err) {
-    // By the time an error reaches here, aiClient.createMessage has already
-    // tried the Groq fallback (if configured) and that failed too — this is
-    // a genuine "no AI provider could answer" case, not just an Anthropic
-    // hiccup.
-    if (err?.status === 401) {
-      logger.warn('AI dispatch: ANTHROPIC_API_KEY rejected by Anthropic (401)');
+  } catch (error) {
+    logger.error('Copilot dispatch error: ' + String(error && error.message || error).slice(0, 250));
+    try {
+      const fallback = await runFallback();
       return res.json({
-        response: 'AI dispatch is misconfigured — the ANTHROPIC_API_KEY on the backend was rejected. Set a valid key (from console.anthropic.com) and redeploy.',
-        actions: [],
-        source: 'unconfigured',
+        ...fallback,
+        meta: { ...(fallback.meta || {}), degraded: true, fallback_reason: 'agent_execution_failed' },
       });
-    }
-    if (aiClient.isRetryableAnthropicError(err)) {
-      logger.warn('AI dispatch: AI provider(s) overloaded after retries' + (aiClient.hasGroqFallback() ? ' (including Groq fallback)' : ''));
-      return res.json({
-        response: 'The AI engine is temporarily overloaded — please try again in a few seconds.',
-        actions: [],
+    } catch (fallbackError) {
+      logger.error('Copilot fallback after dispatch failure failed: ' + String(fallbackError && fallbackError.message || fallbackError).slice(0, 180));
+      return res.status(503).json({
+        error: 'copilot_unavailable',
+        response: 'Copilot could not complete its reasoning or evidence fallback. No further operational write was attempted.',
+        request_id: requestId,
         source: 'error',
       });
     }
-    logger.error('AI dispatch error: ' + err.message);
-    return res.json({
-      response: 'AI engine error — please try again.',
-      actions: [],
-      source: 'error',
-    });
   }
 });
+
+router.get('/dispatch/pending', async (req, res) => {
+  const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id || null;
+  const userId = req.user?.id || null;
+  if (!orgId || !userId) return res.status(403).json({ error: 'Tenant and user context required' });
+  try {
+    const runs = await actionLedger.listPendingActionRuns({ orgId, userId, limit: 15 });
+    const pendingActions = runs.map(run => {
+      const token = signActionConfirmation({
+        actionId: run.id, orgId, userId, expiresAt: run.expires_at,
+      });
+      return makePendingActionView(run, token);
+    });
+    return res.json({ pending_actions: pendingActions });
+  } catch (error) {
+    logger.error('Copilot pending action list failed: ' + String(error && error.message || error).slice(0, 180));
+    return res.status(503).json({ error: 'pending_actions_unavailable', pending_actions: [] });
+  }
+});
+
+router.post('/dispatch/confirm', async (req, res) => {
+  const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id || null;
+  const userId = req.user?.id || null;
+  if (!orgId || !userId) return res.status(403).json({ error: 'Tenant and user context required' });
+  const actionId = req.body?.action_id;
+  const confirmationToken = req.body?.confirmation_token;
+  const approved = req.body?.approved;
+  if (typeof actionId !== 'string' || !REQUEST_ID_PATTERN.test(actionId) || typeof approved !== 'boolean' || typeof confirmationToken !== 'string' || confirmationToken.length > 4096) {
+    return res.status(400).json({ error: 'valid action_id UUID, confirmation_token and boolean approved are required' });
+  }
+
+  try {
+    const run = await actionLedger.getActionRun({ orgId, actionId });
+    if (!run) return res.status(404).json({ error: 'action_not_found' });
+    if (String(run.user_id) !== String(userId)) return res.status(403).json({ error: 'action_owner_mismatch' });
+
+    // A retry after a successful operation returns its durable result without
+    // requiring a still-live token and without executing the write again.
+    if (run.status === 'succeeded') {
+      return res.json(buildCopilotActionOutcome({
+        toolName: run.tool_name, result: run.result || {}, run,
+        requestId: run.request_id, source: 'action-replay', replayed: true,
+      }));
+    }
+    if (run.status !== 'pending_confirmation') {
+      return res.status(409).json({
+        error: run.status === 'executing' ? 'action_in_progress' : 'action_not_pending',
+        action_receipt: actionLedger.makeActionReceipt(run),
+      });
+    }
+
+    const verified = verifyActionConfirmation(confirmationToken);
+    if (!verified.valid) return res.status(403).json({ error: verified.code || 'invalid_confirmation_token' });
+    const tokenPayload = verified.payload;
+    if (
+      tokenPayload.action_id !== run.id
+      || tokenPayload.org_id !== String(orgId)
+      || tokenPayload.user_id !== String(userId)
+    ) {
+      return res.status(403).json({ error: 'confirmation_identity_mismatch' });
+    }
+
+    if (!approved) {
+      const declined = await actionLedger.declineActionRun({ orgId, actionId, userId });
+      if (!declined) return res.status(409).json({ error: 'action_already_resolved' });
+      await recordCopilotToolTraceBestEffort({
+        orgId, userId, requestId: run.request_id, ordinal: 9999,
+        toolName: run.tool_name, status: 'denied',
+        input: run.action_input, result: { declined: true },
+        latencyMs: 0, provider: 'operator-confirmation', errorCode: 'operator_declined',
+      });
+      const responseText = 'The proposed action was declined. No operational write was performed.';
+      await persistCopilotReceiptBestEffort({
+        orgId, userId, command: run.command,
+        result: { decision: 'NO_ACTION', risk_level: run.risk_level.toUpperCase(), confidence: 1, answer: responseText, evidence: ['operator_declined'], missing_data: [], risks: [], swarm: [] },
+        requestId: run.request_id,
+      });
+      return res.json({
+        response: responseText,
+        answer: responseText,
+        action_receipt: actionLedger.makeActionReceipt(declined),
+        request_id: run.request_id,
+        source: 'operator-declined',
+      });
+    }
+
+    const authorization = authorizeCopilotTool({
+      toolName: run.tool_name,
+      command: run.command,
+      user: { ...req.user, id: userId, org_id: orgId },
+    });
+    if (!authorization.allowed || !authorization.requires_confirmation) {
+      return res.status(403).json({
+        error: authorization.code || 'confirmation_policy_invalid',
+        message: authorization.reason || 'The action is no longer eligible for this confirmation workflow.',
+      });
+    }
+    const definition = TOOLS.find(tool => tool.name === run.tool_name);
+    const argumentCheck = definition
+      ? validateToolInput(definition.input_schema, run.action_input)
+      : { valid: false, errors: [{ path: 'tool_name', code: 'unknown_tool', message: 'Tool is not registered.' }] };
+    if (!argumentCheck.valid) return res.status(400).json({ error: 'stored_action_invalid', details: argumentCheck.errors });
+
+    const claim = await actionLedger.claimActionRun({ orgId, actionId, userId });
+    if (claim.mode === 'replay') {
+      return res.json(buildCopilotActionOutcome({
+        toolName: run.tool_name, result: claim.run.result || {}, run: claim.run,
+        requestId: run.request_id, source: 'action-replay', replayed: true,
+      }));
+    }
+    if (claim.mode !== 'claimed' || !claim.run) {
+      return res.status(claim.mode === 'forbidden' ? 403 : claim.mode === 'not_found' ? 404 : 409).json({
+        error: claim.mode === 'in_progress' ? 'action_in_progress' : claim.mode,
+        action_receipt: actionLedger.makeActionReceipt(claim.run),
+      });
+    }
+
+    const started = Date.now();
+    let result;
+    try {
+      result = await runTool(run.tool_name, claim.run.action_input, { userId, orgId });
+    } catch (error) {
+      result = { created: false, error: String(error && error.message || error).slice(0, 250) };
+    }
+    const succeeded = Boolean(result && result.created === true && !result.error);
+    let finished;
+    try {
+      finished = await actionLedger.finishActionRun({
+        orgId, actionId,
+        status: succeeded ? 'succeeded' : 'failed',
+        result,
+        errorCode: succeeded ? null : 'confirmed_tool_execution_failed',
+      });
+    } catch (error) {
+      logger.error('Copilot action completion ledger update failed: ' + String(error && error.message || error).slice(0, 180));
+    }
+    await recordCopilotToolTraceBestEffort({
+      orgId, userId, requestId: run.request_id, ordinal: 9999,
+      toolName: run.tool_name, status: succeeded ? 'succeeded' : 'failed',
+      input: claim.run.action_input, result, latencyMs: Date.now() - started,
+      provider: 'operator-confirmation', errorCode: succeeded ? null : 'confirmed_tool_execution_failed',
+    });
+    const responseRun = finished || { ...claim.run, status: succeeded ? 'executing' : 'failed', result };
+    const outcome = buildCopilotActionOutcome({
+      toolName: run.tool_name, result, run: responseRun,
+      requestId: run.request_id, source: succeeded ? 'confirmed-action' : 'action-failed',
+    });
+    if (succeeded && !finished) {
+      const warning = ' The operation appears to have completed, but its final receipt could not be persisted. Do not repeat it blindly; verify the operational record first.';
+      outcome.response += warning;
+      outcome.answer = outcome.response;
+      outcome.source = 'action-ledger-degraded';
+    }
+    await persistCopilotReceiptBestEffort({
+      orgId, userId, command: run.command,
+      result: {
+        decision: succeeded ? 'ACT_NOW' : 'HUMAN_REVIEW_REQUIRED',
+        risk_level: run.risk_level.toUpperCase(),
+        confidence: succeeded ? 1 : 0.4,
+        answer: outcome.response,
+        evidence: ['operator_confirmation', run.tool_name, 'durable_action_receipt'],
+        missing_data: [],
+        risks: succeeded ? [] : [{ risk: 'Confirmed action did not complete', severity: 'high' }],
+        swarm: [],
+      },
+      requestId: run.request_id,
+    });
+    return res.json(outcome);
+  } catch (error) {
+    logger.error('Copilot action confirmation failed: ' + String(error && error.message || error).slice(0, 200));
+    return res.status(503).json({ error: 'confirmation_execution_unavailable', message: 'The action result could not be verified. Check the durable action receipt before attempting a new request.' });
+  }
+});
+
 
 router.get('/anomalies', async (req, res, next) => {
   try {

@@ -22,7 +22,9 @@ describe('Copilot geofence end-to-end geometry contract', () => {
     expect(copilot).not.toContain("if (/draw.*(geofence|zone|area)|create.*(geofence|zone)/i.test(input)) setShowDraw(true)");
     expect(geofenceIntent).toContain('export function shouldOpenManualPolygonDrawing');
     expect(geofenceIntent).toContain('if (explicitlyManual) return true');
-    expect(copilot).toContain('boundary|polygon|area');
+    expect(copilot).toContain("api.post<DecisionResponse>('/ai/dispatch'");
+    expect(copilot).toContain('request_id: crypto.randomUUID()');
+    expect(copilot).not.toContain('const isAction =');
     expect(aiRoutes).toContain('inferGeofenceTask(command)');
     expect(aiRoutes).toContain('shape === \'polygon\' || shape === \'boundary\'');
     expect(aiRoutes).toContain('normalizePolygonGeometry(persisted)');

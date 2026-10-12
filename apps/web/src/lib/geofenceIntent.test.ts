@@ -19,6 +19,11 @@ describe('Copilot geofence intent routing', () => {
     expect(shouldOpenManualPolygonDrawing('Build a polygon in Nairobi')).toBe(false);
   });
 
+  it('does not open a drawing editor for instructional questions', () => {
+    expect(shouldOpenManualPolygonDrawing('How do I create a geofence around Nairobi?')).toBe(false);
+    expect(shouldOpenManualPolygonDrawing('Explain how to draw a polygon')).toBe(false);
+  });
+
   it('keeps explicit manual drawing requests on the interactive editor', () => {
     expect(shouldOpenManualPolygonDrawing('Manually draw a polygon around Nairobi')).toBe(true);
     expect(shouldOpenManualPolygonDrawing('Open the drawing editor so I can place the vertices')).toBe(true);
