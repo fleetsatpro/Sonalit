@@ -6,11 +6,17 @@
 export function shouldOpenManualPolygonDrawing(command: string): boolean {
   const text = String(command || '').trim();
   if (!text) return false;
+
+  // Explicit editor/vertex-placement requests should work even when the user
+  // does not repeat the word "geofence" in that message.
+  const explicitlyOpeningEditor = /\b(open\s+(?:the\s+)?drawing editor|interactive drawing|place\s+(?:the\s+)?vertices|let me draw)\b/i.test(text);
+  if (explicitlyOpeningEditor) return true;
+
   const hasDrawVerb = /\b(draw|sketch|outline|create|make|build|define|set\s+up)\b/i.test(text);
   const hasGeofenceIntent = /\b(geo[- ]?fence|fence|zone|boundary|area|polygon)\b/i.test(text);
   if (!hasDrawVerb || !hasGeofenceIntent) return false;
 
-  const explicitlyManual = /\b(manually|manual|by hand|click\s+(?:the\s+)?map|place\s+(?:the\s+)?vertices|let me draw|open the drawing editor|interactive drawing)\b/i.test(text);
+  const explicitlyManual = /\b(manually|manual|by hand|click\s+(?:the\s+)?map)\b/i.test(text);
   if (explicitlyManual) return true;
 
   const hasLocationOrRoute = /\b(?:around|near|at|from|between|along|within|in|for)\s+\S+/i.test(text)
