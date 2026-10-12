@@ -13,7 +13,7 @@ export function shouldOpenManualPolygonDrawing(command: string): boolean {
   const explicitlyManual = /\b(manually|manual|by hand|click\s+(?:the\s+)?map|place\s+(?:the\s+)?vertices|let me draw|open the drawing editor|interactive drawing)\b/i.test(text);
   if (explicitlyManual) return true;
 
-  const hasLocationOrRoute = /\b(?:around|near|at|from|between|along|within)\s+\S+/i.test(text)
+  const hasLocationOrRoute = /\b(?:around|near|at|from|between|along|within|in|for)\s+\S+/i.test(text)
     || /\b-?\d{1,2}\.\d+\s*,\s*-?\d{1,3}\.\d+\b/.test(text);
   return !hasLocationOrRoute;
 }
