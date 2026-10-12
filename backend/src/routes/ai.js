@@ -1526,7 +1526,7 @@ router.post('/decision', async (req, res) => {
 
 function inferGeofenceTask(command) {
   const raw = String(command || '').trim();
-  if (!/\b(draw|create|make|set up|define|establish|mark|build)\b[\s\S]{0,100}\b(geo[- ]?fence|corridor|geofence)\b/i.test(raw)) return null;
+  if (!/\b(draw|sketch|outline|create|make|build|set up|define|establish|mark)\b[\s\S]{0,100}\b(geo[- ]?fence|corridor|geofence|polygon|boundary|zone)\b/i.test(raw)) return null;
 
   const quote = (v) => String(v || '').replace(/^["']|["']$/g, '').trim();
   const nameMatch = raw.match(/\b(?:named|called|name(?:d)?\s+as)\s+["']?([^"']+?)["']?(?:\s*$|\s+(?:around|from|between|at|near)\b)/i);
@@ -1544,7 +1544,12 @@ function inferGeofenceTask(command) {
   const radius_m = measureToM(
     raw.match(/(?:with\s+(?:a\s+)?)?(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*radius\b/i)
     || raw.match(/radius\s*(?:of|=|:)??\s*(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\b/i)?.slice?.(0)
+    || raw.match(/\b(\d+(?:\.\d+)?)\s*(km|m|meters|metres)\s*(?:polygon|geofence|zone)\b/i)
   );
+  const asksOfficialBoundary = /\b(?:official|administrative|municipal|county|city|town|district)\s+boundary\b|\b(?:city|county|municipal)\s+limits\b/i.test(raw);
+  const shape = asksOfficialBoundary ? 'boundary'
+    : /\b(polygon|polygonal|custom\s+(?:shape|boundary|area)|area\s+boundary)\b/i.test(raw) ? 'polygon'
+      : 'circle';
 
   const route = raw.match(/\b(?:from|between)\s+(.+?)\s+(?:to|and)\s+(.+?)(?:\s+(?:with|using)\s+(?:a\s+)?\d+(?:\.\d+)?\s*(?:km|m|meters|metres)\s*(?:buffer|corridor|deviation)|\s+named\b|[.;]|$)/i)
     || raw.match(/\balong\s+(.+?)\s+to\s+(.+?)(?:\s+with\b|\s+named\b|[.;]|$)/i);
@@ -1571,6 +1576,7 @@ function inferGeofenceTask(command) {
       name: name || `Sonalit Geofence — ${location}`,
       radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
       location,
+      shape,
       precision: 'maximum',
     };
   }
@@ -1582,8 +1588,9 @@ function inferGeofenceTask(command) {
   return {
     task: 'create_geofence',
     name: name || `Sonalit Geofence — ${location}`,
-    location,
+    location: location.replace(/[.,;!?]+$/, ''),
     radius_m: Number.isFinite(radius_m) ? Math.max(10, Math.min(radius_m, 100000)) : 3000,
+    shape,
     precision: 'maximum',
   };
 }
