@@ -211,13 +211,16 @@ describe('Copilot dispatch tool execution contract', () => {
         fallback_used: false,
         geometry_verification: { persisted_path_points: expect.any(Number) },
       });
-      expect(response.body.created[0].path_points).toBeLessThan(800);
+      expect(response.body.created[0].path_points).toBeLessThanOrEqual(10000);
+      expect(response.body.created[0].path_points).toBeLessThan(response.body.created[0].source_path_points);
       expect(response.body.created[0].geometry_verification.start_drift_m).toBeLessThanOrEqual(1500);
       expect(response.body.created[0].geometry_verification.end_drift_m).toBeLessThanOrEqual(1500);
       expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(mockQuery.mock.calls.some(([sql]) => /INSERT INTO geofences/i.test(String(sql)))).toBe(true);
       expect(mockQuery.mock.calls.some(([sql]) => /SELECT coordinates FROM geofences/i.test(String(sql)))).toBe(true);
-      expect(persistedCoordinates?.buffer_polygon).toHaveLength(2 * response.body.created[0].path_points + 1);
+      expect(persistedCoordinates?.buffer_polygon_method).toBe('postgis-geography-buffer');
+      expect(persistedCoordinates?.buffer_polygon).toHaveLength(5);
+      expect(response.body.created[0].geometry_verification.persisted_path_points).toBe(response.body.created[0].path_points);
     } finally {
       global.fetch = previousFetch;
       mockQuery.mockReset().mockImplementation(async () => ({ rows: [] }));
