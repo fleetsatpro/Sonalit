@@ -57,71 +57,53 @@ describe('validated corridor geometry', () => {
     expect(distanceM(path[0], midpoint)).toBeCloseTo(totalLengthM / 2, 0);
   });
 
-  test('bounds dense route vertices without exceeding the declared metre tolerance', () => {
+  test('retains useful source detail well above the former 800-point cap', () => {
     const path = [];
     for (let i = 0; i <= 1600; i++) {
       path.push([0.00018 * Math.sin((Math.PI * 80 * i) / 1600), i / 1600]);
     }
     const result = simplifyPath(path, 10);
     expect(result.originalPointCount).toBe(1601);
-    expect(result.path.length).toBeLessThanOrEqual(800);
-    expect(result.path.length).toBeGreaterThan(2);
-    expect(result.toleranceM).toBe(10);
+    expect(result.path).toHaveLength(1601);
+    expect(result.toleranceM).toBe(0);
     expect(result.path[0]).toEqual(path[0]);
     expect(result.path[result.path.length - 1]).toEqual(path[path.length - 1]);
-
-    const sourceIndexes = new Map(path.map((point, index) => [point.join(','), index]));
-    const retained = result.path.map(point => sourceIndexes.get(point.join(',')));
-    let maximumErrorM = 0;
-    for (let segment = 0; segment < retained.length - 1; segment++) {
-      const first = retained[segment];
-      const last = retained[segment + 1];
-      expect(first).toBeDefined();
-      expect(last).toBeDefined();
-      for (let i = first; i <= last; i++) {
-        maximumErrorM = Math.max(maximumErrorM, pointToSegmentDistanceM(path[i], path[first], path[last]));
-      }
-    }
-    expect(maximumErrorM).toBeLessThanOrEqual(10.5);
   });
 
   test('rejects a requested tolerance wider than the operation-specific ceiling', () => {
     expect(() => simplifyPath([[0, 0], [0, 0.01]], 10, 5)).toThrow(/configured 5 m ceiling/i);
   });
 
-  test('adaptively widens tolerance for long, dense routes while preserving endpoints and the error bound', () => {
+  test('simplifies oversized straight routes within the requested metre tolerance', () => {
     const path = [];
-    // A deliberately dense, high-frequency centreline: a 10 m pass needs
-    // more than 800 vertices, while a bounded ~20 m tolerance is sufficient.
-    for (let i = 0; i <= 1600; i++) {
-      path.push([0.00015 * Math.sin((Math.PI * 800 * i) / 1600), i / 100000]);
-    }
-
+    // 12,001 closely spaced samples over a long route: the route input budget
+    // can carry this data, while a near-straight centreline should simplify to
+    // its endpoints rather than fail because of the old 800-point output cap.
+    for (let i = 0; i <= 12000; i++) path.push([0, i / 100000]);
     const result = simplifyPath(path, 10);
-    expect(result.originalPointCount).toBe(1601);
-    expect(result.path.length).toBeLessThanOrEqual(800);
-    expect(result.path.length).toBeGreaterThanOrEqual(2);
-    expect(result.path[0]).toEqual(path[0]);
-    expect(result.path[result.path.length - 1]).toEqual(path[path.length - 1]);
-    expect(result.requestedToleranceM).toBe(10);
-    expect(result.toleranceEscalated).toBe(true);
-    expect(result.toleranceM).toBeGreaterThan(10);
-    expect(result.toleranceM).toBeLessThanOrEqual(20);
-    expect(result.method).toBe('douglas-peucker-adaptive');
 
-    let maximumErrorM = 0;
-    for (const point of path) {
-      let nearest = Infinity;
-      for (let i = 0; i < result.path.length - 1; i++) {
-        nearest = Math.min(nearest, pointToSegmentDistanceM(point, result.path[i], result.path[i + 1]));
-      }
-      maximumErrorM = Math.max(maximumErrorM, nearest);
-    }
-    expect(maximumErrorM).toBeLessThanOrEqual(result.toleranceM + 0.5);
-
+    expect(result.originalPointCount).toBe(12001);
+    expect(result.path).toEqual([path[0], path[path.length - 1]]);
+    expect(result.toleranceM).toBe(10);
+    expect(result.toleranceEscalated).toBe(false);
+    expect(result.method).toBe('douglas-peucker');
     const polygon = buildCorridorPolygon(result.path, 300);
-    expect(polygon).toHaveLength(result.path.length * 2 + 1);
+    expect(polygon).toHaveLength(5);
     expect(validateCorridorGeometry(result.path, polygon, 300)).toMatchObject({ valid: true });
+  });
+
+  test('validates a corridor with thousands of centreline points without quadratic all-pairs work', () => {
+    const path = [];
+    for (let i = 0; i <= 5000; i++) path.push([0, i * 0.00009]);
+    const polygon = buildCorridorPolygon(path, 300);
+
+    expect(path.length).toBeGreaterThan(800);
+    expect(polygon).toHaveLength(10003);
+    expect(validateCorridorGeometry(path, polygon, 300)).toMatchObject({
+      valid: true,
+      pathPoints: 5001,
+      polygonPoints: 10003,
+    });
   });
 
   test('handles the distance midpoint across the antimeridian', () => {

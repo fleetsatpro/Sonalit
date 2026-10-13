@@ -3,7 +3,8 @@
 const R = 6371008.8;
 const MIN_BUFFER_M = 10;
 const MAX_BUFFER_M = 5000;
-const MAX_PATH_POINTS = 800;
+const MAX_PATH_POINTS = 10000;
+const MAX_RING_VALIDATION_COMPARISONS = 5000000;
 const MAX_MITER_RATIO = 2.5;
 
 function distanceM(a, b) {
@@ -14,9 +15,11 @@ function distanceM(a, b) {
   const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h)));
 }
-const MAX_INPUT_PATH_POINTS = 20000;
-const MAX_SIMPLIFICATION_COMPARISONS = 2000000;
-const MAX_SIMPLIFICATION_TOTAL_COMPARISONS = 8000000;
+const MAX_INPUT_PATH_POINTS = 50000;
+const MAX_SIMPLIFICATION_COMPARISONS = 5000000;
+const MAX_SIMPLIFICATION_TOTAL_COMPARISONS = 25000000;
+// This is an accuracy guard, not a vertex-count substitute. Long routes retain
+// up to 10,000 centreline points before metre-bounded simplification is needed.
 const MAX_SIMPLIFICATION_TOLERANCE_M = 100;
 
 function wrappedDeltaDegrees(delta) {
@@ -296,6 +299,13 @@ function onSegment(a,b,p) {
     p[1]>=Math.min(a[1],b[1])-e && p[1]<=Math.max(a[1],b[1])+e;
 }
 function intersects(a,b,c,d) {
+  const boxEpsilon = 1e-6;
+  // Reject disjoint segment bounds before orientation math. This also makes
+  // sparse/large rings much cheaper to verify.
+  if (Math.max(a[0], b[0]) < Math.min(c[0], d[0]) - boxEpsilon ||
+      Math.max(c[0], d[0]) < Math.min(a[0], b[0]) - boxEpsilon ||
+      Math.max(a[1], b[1]) < Math.min(c[1], d[1]) - boxEpsilon ||
+      Math.max(c[1], d[1]) < Math.min(a[1], b[1]) - boxEpsilon) return false;
   const e=1e-7, o1=cross(a,b,c), o2=cross(a,b,d), o3=cross(c,d,a), o4=cross(c,d,b);
   if (((o1>e&&o2< -e)||(o1< -e&&o2>e)) && ((o3>e&&o4< -e)||(o3< -e&&o4>e))) return true;
   return (Math.abs(o1)<=e&&onSegment(a,b,c)) || (Math.abs(o2)<=e&&onSegment(a,b,d)) ||
@@ -314,9 +324,55 @@ function validateRingXY(points) {
   }
   if(Math.abs(area)<0.01) return {valid:false,reason:'Polygon area is negligible.'};
   const count=points.length-1;
-  for(let i=0;i<count;i++) for(let j=i+1;j<count;j++) {
-    if(j===i+1||(i===0&&j===count-1)) continue;
-    if(intersects(points[i],points[i+1],points[j],points[j+1])) return {valid:false,reason:'Polygon ring self-intersects.'};
+  // Sweep along the ring's longer bounding-box axis. The previous all-pairs
+  // scan was O(n²), effectively forcing the corridor cap to ~800 vertices.
+  // A bounded sweep only compares edges whose bounds overlap in both axes.
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  const segments=[];
+  for(let i=0;i<count;i++) {
+    const a=points[i], b=points[i+1];
+    const segment={
+      index:i, a, b,
+      minX:Math.min(a[0],b[0]), maxX:Math.max(a[0],b[0]),
+      minY:Math.min(a[1],b[1]), maxY:Math.max(a[1],b[1]),
+    };
+    minX=Math.min(minX,segment.minX); maxX=Math.max(maxX,segment.maxX);
+    minY=Math.min(minY,segment.minY); maxY=Math.max(maxY,segment.maxY);
+    segments.push(segment);
+  }
+  const sweepX=(maxX-minX)>=(maxY-minY);
+  for(const segment of segments) {
+    segment.sweepMin=sweepX?segment.minX:segment.minY;
+    segment.sweepMax=sweepX?segment.maxX:segment.maxY;
+    segment.crossMin=sweepX?segment.minY:segment.minX;
+    segment.crossMax=sweepX?segment.maxY:segment.maxX;
+  }
+  segments.sort((a,b)=>a.sweepMin-b.sweepMin||a.sweepMax-b.sweepMax);
+  let active=[], comparisons=0;
+  const epsilon=1e-6;
+  for(const segment of segments) {
+    // Count active-set scans as work too, not only true candidate intersections.
+    // This keeps pathological overlapping bounds from bypassing the CPU budget.
+    const retained=[];
+    for(const other of active) {
+      if(++comparisons>MAX_RING_VALIDATION_COMPARISONS) {
+        return {valid:false,reason:'Polygon exceeds the safe edge-intersection validation budget.'};
+      }
+      if(other.sweepMax>=segment.sweepMin-epsilon) retained.push(other);
+    }
+    active=retained;
+    for(const other of active) {
+      if(other.crossMax<segment.crossMin-epsilon||segment.crossMax<other.crossMin-epsilon) continue;
+      const i=Math.min(segment.index,other.index), j=Math.max(segment.index,other.index);
+      if(j===i+1||(i===0&&j===count-1)) continue;
+      if(++comparisons>MAX_RING_VALIDATION_COMPARISONS) {
+        return {valid:false,reason:'Polygon exceeds the safe edge-intersection validation budget.'};
+      }
+      if(intersects(segment.a,segment.b,other.a,other.b)) {
+        return {valid:false,reason:'Polygon ring self-intersects.'};
+      }
+    }
+    active.push(segment);
   }
   return {valid:true};
 }

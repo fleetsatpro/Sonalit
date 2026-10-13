@@ -690,12 +690,12 @@ function toLatLngPath(osrmCoordinates) {
   if (!Array.isArray(osrmCoordinates) || osrmCoordinates.length < 2) {
     throw new RangeError('OSRM returned no usable route geometry.');
   }
-  // Bound untrusted upstream payload size before allocating a large converted
-  // array. Dense routes are simplified later with an explicit metre tolerance;
-  // don't invoke normalizePath here because it intentionally caps final
-  // operational geometry at 800 vertices.
-  if (osrmCoordinates.length > 20000) {
-    throw new RangeError('OSRM route geometry exceeds the safe input vertex limit.');
+  // Bound untrusted upstream payload size before allocating a converted
+  // array. Long intercity corridors may legitimately contain tens of thousands
+  // of road-following points; the geometry module applies its own 10,000-point
+  // final budget and metre-bounded simplification.
+  if (osrmCoordinates.length > 50000) {
+    throw new RangeError('OSRM route geometry exceeds the 50,000-point safe input limit.');
   }
   return osrmCoordinates.map((point, index) => {
     if (!Array.isArray(point) || point.length < 2 ||
