@@ -6,6 +6,7 @@ import {
   Camera,
   Car,
   ChevronLeft,
+  CloudLightning,
   ChevronRight,
   CloudSun,
   Focus,
@@ -24,7 +25,7 @@ import {
 import { api } from '../lib/api.js'
 import { imageryAiBadge, imageryAiSupported } from '../lib/imageryAi.js'
 import { fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
-import type { WorldContextLayer } from '../lib/spatialClient.js'
+import type { SpatialWorldEntity, WorldContextLayer } from '../lib/spatialClient.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import FleetMap from '../features/live-fleet/components/FleetMap.js'
 import CorridorGlobe from '../components/geofences/CorridorGlobe.js'
@@ -84,6 +85,7 @@ export default function GodsEyeView() {
   const [externalVisible, setExternalVisible] = useState(true)
   const [cctvOpen, setCctvOpen] = useState(false)
   const [mapNavigationExpanded, setMapNavigationExpanded] = useState(false)
+  const [weatherAnimationEnabled, setWeatherAnimationEnabled] = useState(false)
   const [clock, setClock] = useState(() => new Date())
 
   const chromeExpanded = overviewOpen || intelligenceOpen
@@ -140,6 +142,20 @@ export default function GodsEyeView() {
   const worldViewportRef = useRef(worldViewport)
   const worldViewportSeededRef = useRef(false)
   worldViewportRef.current = worldViewport
+  const weatherBounds = useMemo<[number, number, number, number]>(() => {
+    if (worldViewport.bbox && worldViewport.bbox.length === 4 && worldViewport.bbox.every(Number.isFinite)
+      && worldViewport.bbox[0] < worldViewport.bbox[2] && worldViewport.bbox[1] < worldViewport.bbox[3]) return worldViewport.bbox
+    const radius = Math.min(250000, Math.max(1000, worldViewport.radiusM || 100000))
+    const latitudeDelta = radius / 111320
+    const cosine = Math.max(0.087, Math.abs(Math.cos(worldViewport.latitude * Math.PI / 180)))
+    const longitudeDelta = Math.min(180, radius / (111320 * cosine))
+    return [
+      Math.max(-180, worldViewport.longitude - longitudeDelta),
+      Math.max(-90, worldViewport.latitude - latitudeDelta),
+      Math.min(180, worldViewport.longitude + longitudeDelta),
+      Math.min(90, worldViewport.latitude + latitudeDelta),
+    ]
+  }, [worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox])
   const positionedVehicles = useMemo(() => allVehicles.filter(v => v.lat != null && v.lng != null), [allVehicles])
 
   useEffect(() => {
@@ -148,7 +164,7 @@ export default function GodsEyeView() {
   }, [])
 
   const { data: worldContext, isFetching: worldFetching, isError: worldError } = useQuery({
-    queryKey: ['gev-3d-world-context', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM],
+    queryKey: ['gev-3d-world-context', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox?.join(',')],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
       center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
       radiusM: Math.min(100000, worldViewport.radiusM),
@@ -162,6 +178,34 @@ export default function GodsEyeView() {
     retry: 1,
   })
 
+  const { data: weatherGridContext, isFetching: weatherGridFetching, isError: weatherGridError } = useQuery({
+    queryKey: ['gev-weather-animation-grid', ...weatherBounds.map(value => Math.round(value * 100) / 100)],
+    queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
+      center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
+      radiusM: Math.min(250000, Math.max(1000, worldViewport.radiusM)),
+      layers: ['weather'],
+      maxEntitiesPerLayer: 36,
+      weatherGrid: true,
+      weatherBounds,
+      signal,
+    }),
+    enabled: weatherAnimationEnabled,
+    staleTime: 90_000,
+    refetchInterval: 180_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  })
+
+  const animatedWeatherEntities = useMemo(
+    () => weatherAnimationEnabled
+      ? worldContextEntities(weatherGridContext).filter(entity =>
+          entity.entityType === 'weather' &&
+          Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude) &&
+          entity.latitude >= -90 && entity.latitude <= 90 &&
+          entity.longitude >= -180 && entity.longitude <= 180)
+      : [],
+    [weatherAnimationEnabled, weatherGridContext],
+  )
   const externalEntities = useMemo(
     () => worldContextEntities(worldContext).filter(entity => !['vehicle', 'guardian_device'].includes(entity.entityType)),
     [worldContext],
@@ -207,12 +251,13 @@ export default function GodsEyeView() {
   )
 
   const allExternalEntities = useMemo(() => {
-    if (!cctvOpen) return externalEntities
     const byId = new Map<string, SpatialWorldEntity>()
     for (const entity of externalEntities) byId.set(entity.id, entity)
-    for (const entity of cctvEntities) byId.set(entity.id, entity)
+    // Grid samples override any overlapping single-point weather observation only while the animation layer is enabled.
+    for (const entity of animatedWeatherEntities) byId.set(entity.id, entity)
+    if (cctvOpen) for (const entity of cctvEntities) byId.set(entity.id, entity)
     return Array.from(byId.values())
-  }, [externalEntities, cctvEntities, cctvOpen])
+  }, [externalEntities, animatedWeatherEntities, cctvEntities, cctvOpen])
   const renderableExternalEntities = useMemo(() => {
     if (!externalVisible) return []
     const filtered = allExternalEntities.filter(entity => {
@@ -309,6 +354,29 @@ export default function GodsEyeView() {
           <button type="button" className="gev-cctv-trigger" aria-pressed={cctvOpen} onClick={toggleCctv} title="Open CCTV camera viewer">
             <Camera size={13} /> CCTV <span>{cctvEntities.length || layerCounts.cameras || '—'}</span>
           </button>
+          <button
+            type="button"
+            className="gev-segment gev-weather-toggle"
+            aria-pressed={weatherAnimationEnabled}
+            title={weatherAnimationEnabled
+              ? 'Turn off animated weather grid points. Animation is visual only; points are provider-returned model grid locations, not radar footprints.'
+              : 'Animate sourced weather model-grid observations across the current map viewport.'}
+            onClick={() => {
+              setWeatherAnimationEnabled(enabled => {
+                const next = !enabled
+                if (next) {
+                  setExternalVisible(true)
+                  setVisibleLayers(current => current.has('weather') ? current : new Set([...current, 'weather']))
+                  setIntelligenceOpen(true)
+                }
+                return next
+              })
+            }}
+          >
+            <CloudLightning size={13} />
+            WEATHER
+            <span>{weatherAnimationEnabled ? (weatherGridFetching ? 'SYNC' : String(animatedWeatherEntities.length)) : 'OFF'}</span>
+          </button>
         </div>
 
         <div className="gev-topright">
@@ -334,6 +402,10 @@ export default function GodsEyeView() {
               vehicles={allVehicles}
               selectedId={selected?.id ?? null}
               onSelect={vehicle => { setSelected(vehicle); setSelectedExternalId(null) }}
+              weatherAnimationEnabled={weatherAnimationEnabled}
+              weatherEvents={animatedWeatherEntities}
+              onWeatherSelect={entity => { setSelectedExternalId(entity.id); setSelected(null); setIntelligenceOpen(true) }}
+              onViewportChange={setWorldViewport}
             />
           ) : (
             <CorridorGlobe
@@ -349,6 +421,7 @@ export default function GodsEyeView() {
               showMapControls
               onNavigationExpandedChange={setMapNavigationExpanded}
               worldEntities={renderableExternalEntities}
+              weatherAnimationEnabled={weatherAnimationEnabled}
               selectedExternalId={selectedExternalId}
               onExternalSelect={id => {
                 setSelectedExternalId(id)
@@ -518,13 +591,45 @@ export default function GodsEyeView() {
                     <div className="gev-mini"><div className="gev-mini-label">Altitude</div><span className="gev-mini-value">{selectedExternal.altitudeM != null ? Math.round(selectedExternal.altitudeM / 10) * 10 + ' m' : 'GROUND'}</span></div>
                     <div className="gev-mini"><div className="gev-mini-label">Confidence</div><span className="gev-mini-value">{selectedExternal.observationConfidence != null ? Math.round(selectedExternal.observationConfidence * 100) + '%' : '—'}</span></div>
                   </div>
-                  <div className="gev-detail-callout" style={{ marginTop: 9, border: '1px solid rgba(184,166,255,.10)', borderRadius: 10 }}>
-                    <div className="gev-detail-label">{selectedExternal.entityType === 'satellite' ? 'Modelled orbital position' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Camera observation' : selectedExternal.telemetryLive === true ? 'Live external telemetry' : 'External observation'}</div>
-                    <div className="gev-detail-note">{selectedExternal.entityType === 'satellite' ? 'Not live telemetry · not an imaging or tasking claim.' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Geometry indicates possible visibility only. Approved camera media is opened in the CCTV viewer.' : 'Source and quality controls remain visible to the operator.'}</div>
-                    {(selectedExternal.entityType === 'camera' || selectedExternal.entityType === 'spatial_camera') && (
-                      <button type="button" className="gev-cctv-inline-action" onClick={openCctv}><Camera size={12} /> OPEN CCTV VIEWER</button>
-                    )}
-                  </div>
+                  {selectedExternal.entityType === 'weather' ? (
+                    <div className="gev-weather-observation-card" aria-label="Weather observation detail">
+                      <div className="gev-weather-observation-head">
+                        <CloudLightning size={17} />
+                        <div>
+                          <div className="gev-weather-condition">{String(selectedExternal.attributes?.conditions ?? 'unknown').replaceAll('_', ' ')}</div>
+                          <div className="gev-weather-subcondition">{String(selectedExternal.attributes?.severity ?? selectedExternal.status ?? 'unclassified').toUpperCase()} · MODEL GRID POINT</div>
+                        </div>
+                      </div>
+                      <div className="gev-weather-detail-grid">
+                        <div><span>Temperature</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.temperatureC)) ? Number(selectedExternal.attributes?.temperatureC).toFixed(1) + ' °C' : '—'}</strong></div>
+                        <div><span>Humidity</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.humidityPct)) ? Math.round(Number(selectedExternal.attributes?.humidityPct)) + '%' : '—'}</strong></div>
+                        <div><span>Precipitation</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.precipitationMm)) ? Number(selectedExternal.attributes?.precipitationMm).toFixed(1) + ' mm' : '—'}</strong></div>
+                        <div><span>Wind</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.windSpeedKmh)) ? Number(selectedExternal.attributes?.windSpeedKmh).toFixed(1) + ' km/h' : '—'}</strong></div>
+                        <div><span>Visibility</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.visibilityM)) ? (Number(selectedExternal.attributes?.visibilityM) >= 1000 ? (Number(selectedExternal.attributes?.visibilityM) / 1000).toFixed(1) + ' km' : Math.round(Number(selectedExternal.attributes?.visibilityM)) + ' m') : '—'}</strong></div>
+                        <div><span>Weather code</span><strong>{selectedExternal.attributes?.weatherCode != null ? String(selectedExternal.attributes.weatherCode) : '—'}</strong></div>
+                      </div>
+                      <div className="gev-weather-location">
+                        <div><span>Provider grid coordinate</span><strong>{selectedExternal.latitude.toFixed(4)}°, {selectedExternal.longitude.toFixed(4)}°</strong></div>
+                        <div><span>Grid snap from sample centre</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.gridCellDistanceM)) ? Math.round(Number(selectedExternal.attributes?.gridCellDistanceM)) + ' m' : '—'}</strong></div>
+                        <div><span>Observed at</span><strong>{selectedExternal.observedAt ? new Date(selectedExternal.observedAt).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : 'Time unavailable'}</strong></div>
+                        <div><span>Source / freshness</span><strong>{String(selectedExternal.source ?? 'unknown')} · {String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
+                      </div>
+                      <div className="gev-weather-footnote">
+                        Animation illustrates the reported condition at this provider grid point. It does not represent a radar return, exact storm boundary, or guaranteed on-ground measurement.
+                        {Array.isArray(selectedExternal.attributes?.hazards) && selectedExternal.attributes.hazards.length > 0
+                          ? ' Indicators: ' + (selectedExternal.attributes.hazards as unknown[]).map(String).join(', ').replaceAll('_', ' ')
+                          : ''}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="gev-detail-callout" style={{ marginTop: 9, border: '1px solid rgba(184,166,255,.10)', borderRadius: 10 }}>
+                      <div className="gev-detail-label">{selectedExternal.entityType === 'satellite' ? 'Modelled orbital position' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Camera observation' : selectedExternal.telemetryLive === true ? 'Live external telemetry' : 'External observation'}</div>
+                      <div className="gev-detail-note">{selectedExternal.entityType === 'satellite' ? 'Not live telemetry · not an imaging or tasking claim.' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Geometry indicates possible visibility only. Approved camera media is opened in the CCTV viewer.' : 'Source and quality controls remain visible to the operator.'}</div>
+                      {(selectedExternal.entityType === 'camera' || selectedExternal.entityType === 'spatial_camera') && (
+                        <button type="button" className="gev-cctv-inline-action" onClick={openCctv}><Camera size={12} /> OPEN CCTV VIEWER</button>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : selected ? (
                 <div className="gev-entity-hero">
@@ -577,6 +682,7 @@ export default function GodsEyeView() {
               <span className="gev-ribbon-item">Viewport <strong>{Math.round(worldViewport.radiusM / 1000)} km</strong></span>
               <span className="gev-ribbon-sep" />
               <span className="gev-ribbon-item">Signals <strong>{renderableExternalEntities.length}</strong></span>
+              {weatherAnimationEnabled && <><span className="gev-ribbon-sep" /><span className="gev-ribbon-item">Weather grid <strong>{animatedWeatherEntities.length}/36</strong> <strong>{weatherGridError ? 'DEGRADED' : weatherGridFetching ? 'SYNCING' : 'POINT SAMPLES'}</strong></span></>}
               <span className="gev-ribbon-sep" />
               <span className="gev-ribbon-item">UTC <strong>{formatUtcClock(clock)}</strong></span>
               <span className="gev-ribbon-sep" />
