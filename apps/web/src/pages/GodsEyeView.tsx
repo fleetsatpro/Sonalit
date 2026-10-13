@@ -377,7 +377,7 @@ export default function GodsEyeView() {
           >
             <CloudLightning size={13} />
             WEATHER
-            <span>{weatherAnimationEnabled ? (weatherGridFetching ? 'SYNC' : String(animatedWeatherEntities.length)) : 'OFF'}</span>
+            <span>{weatherAnimationEnabled ? (weatherGridFetching ? 'SYNC' : weatherGridError ? 'ERROR' : String(animatedWeatherEntities.length)) : 'OFF'}</span>
           </button>
         </div>
 
@@ -684,7 +684,7 @@ export default function GodsEyeView() {
               <span className="gev-ribbon-item">Viewport <strong>{Math.round(worldViewport.radiusM / 1000)} km</strong></span>
               <span className="gev-ribbon-sep" />
               <span className="gev-ribbon-item">Signals <strong>{renderableExternalEntities.length}</strong></span>
-              {weatherAnimationEnabled && <><span className="gev-ribbon-sep" /><span className="gev-ribbon-item">Weather grid <strong>{animatedWeatherEntities.length}/36</strong> <strong>{weatherGridError ? 'DEGRADED' : weatherGridFetching ? 'SYNCING' : 'POINT SAMPLES'}</strong></span></>}
+              {weatherAnimationEnabled && <><span className="gev-ribbon-sep" /><span className="gev-ribbon-item">Weather grid <strong>{animatedWeatherEntities.length} GRID POINTS</strong> <strong>{weatherGridError ? 'DEGRADED' : weatherGridFetching ? 'SYNCING' : String(weatherGridContext?.layerHealth?.find(health => health.layerId === 'weather')?.status ?? 'POINT SAMPLES')}</strong></span></>}
               <span className="gev-ribbon-sep" />
               <span className="gev-ribbon-item">UTC <strong>{formatUtcClock(clock)}</strong></span>
               <span className="gev-ribbon-sep" />
