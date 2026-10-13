@@ -239,7 +239,7 @@ function weatherSvg(color: string, selected: boolean, code: number) {
         : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
           ? '<path d="M22 39 18 49M33 39 29 51M44 39 40 49" fill="none" stroke="#${color}" stroke-width="3.5" stroke-linecap="round"/>'
           : '<path d="M21 38h23a10 10 0 0 0 1-20A13 13 0 0 0 17 22a8 8 0 0 0 4 16Z" fill="none" stroke="#${color}" stroke-width="3" stroke-linejoin="round"/>';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><filter id="wg"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><circle cx="32" cy="32" r="27" fill="#050a13" fill-opacity=".96" stroke="${stroke}" stroke-width="${selected ? 3.5 : 2.4}"/><circle cx="32" cy="32" r="21" fill="${color}" fill-opacity=".09" stroke="${color}" stroke-opacity=".55" stroke-width="1.3"/><g filter="url(#wg)">${glyph}</g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><filter id="wg"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><circle cx="32" cy="32" r="27" fill="#050a13" fill-opacity=".96" stroke="${stroke}" stroke-width="${selected ? 3.5 : 2.4}"/><circle cx="32" cy="32" r="21" fill="${color}" fill-opacity=".09" stroke="${color}" stroke-opacity=".55" stroke-width="1.3"/><g filter="url(#wg)">${glyph.replaceAll('#${color}', color)}</g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
