@@ -155,7 +155,10 @@ export function useGeofenceMap(opts: Options) {
         paint: {
           'line-color': '#38bdf8',
           'line-opacity': 0.16,
-          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 0, ['get', 'buffer_width_zoom_zero'], 22, ['*', ['get', 'buffer_width_zoom_zero'], 4194304]],
+          // Cap the visual stroke at 512 screen pixels. At very close zooms a
+          // kilometre-scale corridor can be wider than the viewport; avoid
+          // submitting unbounded line widths to the renderer.
+          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 0, ['get', 'buffer_width_zoom_zero'], 22, ['min', 512, ['*', ['get', 'buffer_width_zoom_zero'], 4194304]],],
         },
       });
       m.addSource('gf-corridor-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorFeatures } });
