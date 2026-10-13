@@ -216,6 +216,42 @@ function normalizePath(path) {
   if (out.length < 2) throw new RangeError('The route has no measurable length.');
   return out;
 }
+/**
+ * Validate the PostGIS-free route-centreline model. Segments are bounded to
+ * 500 km because the operational point-to-segment distance uses an
+ * equirectangular local projection that is not reliable for continent-scale
+ * single segments. Road-routed OSRM paths naturally satisfy this bound; an
+ * unexpectedly sparse or malformed route fails closed instead of creating a
+ * false operational geofence.
+ */
+function validateCorridorPath(path, bufferM) {
+  try {
+    const buffer = Number(bufferM);
+    if (!Number.isFinite(buffer) || buffer < MIN_BUFFER_M || buffer > MAX_BUFFER_M) {
+      return { valid: false, reason: 'Invalid metre buffer.' };
+    }
+    if (!Array.isArray(path) || path.length < 2) {
+      return { valid: false, reason: 'A corridor needs at least two route points.' };
+    }
+    const route = normalizePath(path);
+    if (route.length !== path.length) {
+      return { valid: false, reason: 'Route contains duplicate or collapsed segments.' };
+    }
+    for (let i = 0; i < route.length - 1; i++) {
+      const lengthM = distanceM(route[i], route[i + 1]);
+      if (!Number.isFinite(lengthM) || lengthM < 0.05) {
+        return { valid: false, reason: 'Route contains an unmeasurable segment.' };
+      }
+      if (lengthM > 500000) {
+        return { valid: false, reason: 'Route segment exceeds the 500 km safe distance-calculation limit.' };
+      }
+    }
+    return { valid: true, pathPoints: route.length, bufferM: buffer, method: 'route-centreline-distance-v1' };
+  } catch (error) {
+    return { valid: false, reason: String(error && error.message || 'Invalid corridor centreline.') };
+  }
+}
+
 function wrapLongitude(lng) {
   return ((lng + 180) % 360 + 360) % 360 - 180;
 }
@@ -580,4 +616,4 @@ function isRecoverableOffsetError(error) {
     .test(String(error && error.message || ''));
 }
 
-module.exports={MAX_PATH_POINTS,MAX_SIMPLIFICATION_TOLERANCE_M,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorGeometry,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,simplifyPath,validateCorridorGeometry};
+module.exports={MAX_PATH_POINTS,MAX_SIMPLIFICATION_TOLERANCE_M,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorGeometry,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,simplifyPath,validateCorridorGeometry,validateCorridorPath};

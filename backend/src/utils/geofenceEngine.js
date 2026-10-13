@@ -100,7 +100,30 @@ function isPointInGeofence(lat, lng, fence) {
     try { coordinates = JSON.parse(coordinates); } catch (_) { return false; }
   }
   const type = String(fence.type || '').toLowerCase();
-  // Prefer explicit stored geometry for polygons and buffered corridors.
+  // A corridor can be stored as a routed centreline plus an explicit metre
+  // threshold. This is authoritative for the PostGIS-free model; never ray-cast
+  // an open LineString as if it were a closed polygon ring.
+  if (type === 'corridor' && Array.isArray(coordinates?.path) &&
+      (!Array.isArray(coordinates?.buffer_polygon) || coordinates.buffer_polygon.length < 4)) {
+    const bufferM = Number(coordinates.buffer_m ??
+      (fence.corridor_width_km == null ? NaN : Number(fence.corridor_width_km) * 1000));
+    if (!Number.isFinite(bufferM) || bufferM < 10 || bufferM > 5000 ||
+        coordinates.path.length < 2) return false;
+    let minimumDistanceKm = Infinity;
+    for (let i = 0; i < coordinates.path.length - 1; i++) {
+      const a = coordinates.path[i], b = coordinates.path[i + 1];
+      if (!Array.isArray(a) || !Array.isArray(b) || a.length < 2 || b.length < 2) return false;
+      const [aLat, aLng, bLat, bLng] = [Number(a[0]), Number(a[1]), Number(b[0]), Number(b[1])];
+      if (![aLat, aLng, bLat, bLng].every(Number.isFinite) ||
+          Math.abs(aLat) > 85 || Math.abs(bLat) > 85 ||
+          Math.abs(aLng) > 180 || Math.abs(bLng) > 180) return false;
+      minimumDistanceKm = Math.min(minimumDistanceKm,
+        distanceToSegment(Number(lat), Number(lng), aLat, aLng, bLat, bLng));
+    }
+    return Number.isFinite(minimumDistanceKm) && minimumDistanceKm * 1000 <= bufferM;
+  }
+
+  // Prefer explicit stored geometry for polygons and legacy buffered corridors.
   const ring = extractRing(coordinates);
   if (ring && ring.length >= 3) return isPointInPolygon(Number(lat), Number(lng), coordinates);
 

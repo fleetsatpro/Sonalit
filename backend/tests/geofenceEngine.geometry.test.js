@@ -10,8 +10,16 @@ jest.mock('../src/utils/logger', () => ({
 }));
 
 const { isPointInPolygon, isPointInGeofence } = require('../src/utils/geofenceEngine');
+const { validateCorridorPath } = require('../src/utils/corridorGeometry');
 
 describe('geofence engine corridor-envelope containment', () => {
+  test('validates metre-buffer centreline model without requiring a polygon ring', () => {
+    expect(validateCorridorPath([[0, 0], [0, 1]], 300)).toMatchObject({
+      valid: true, pathPoints: 2, bufferM: 300, method: 'route-centreline-distance-v1',
+    });
+    expect(validateCorridorPath([[0, 0], [0, 1]], 0).valid).toBe(false);
+    expect(validateCorridorPath([[0, 0], [0, 179]], 300).valid).toBe(false);
+  });
   const corridor = {
     type: 'corridor',
     // The real centreline for a two-point OSRM route is not a polygon.
@@ -30,6 +38,33 @@ describe('geofence engine corridor-envelope containment', () => {
   test('uses the stored buffer envelope for a two-point route', () => {
     expect(isPointInPolygon(0.005, 0.5, corridor)).toBe(true);
     expect(isPointInPolygon(0.02, 0.5, corridor)).toBe(false);
+  });
+
+  test('uses metre-based route-centreline containment when a buffer polygon is absent', () => {
+    const model = {
+      type: 'corridor',
+      coordinates: {
+        type: 'corridor',
+        path: [[0, 0], [0, 1]],
+        buffer_m: 1000,
+        buffer_polygon: null,
+        corridor_geometry_method: 'route-centreline-distance-v1',
+      },
+    };
+    expect(isPointInGeofence(0.005, 0.5, model)).toBe(true);
+    expect(isPointInGeofence(0.02, 0.5, model)).toBe(false);
+    expect(isPointInGeofence(0, 1.01, model)).toBe(false);
+  });
+
+  test('fails closed for a malformed centreline-distance corridor', () => {
+    expect(isPointInGeofence(0, 0, {
+      type: 'corridor',
+      coordinates: { type: 'corridor', path: [[0, 0], [91, 1]], buffer_m: 1000, buffer_polygon: null },
+    })).toBe(false);
+    expect(isPointInGeofence(0, 0, {
+      type: 'corridor',
+      coordinates: { type: 'corridor', path: [[0, 0], [0, 1]], buffer_m: 0, buffer_polygon: null },
+    })).toBe(false);
   });
 
   test('keeps ordinary custom [lat, lng] polygon handling intact', () => {
