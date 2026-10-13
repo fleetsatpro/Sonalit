@@ -16,6 +16,8 @@ import ZoneCard from '../components/geofences/ZoneCard.js';
 import CreateGeofenceModal from '../components/geofences/CreateGeofenceModal.js';
 import { formatArea, polygonAreaM2, polygonValidationError, toGeoJsonPolygon } from '../lib/geofenceGeometry.js';
 import { useGeofenceMap } from '../components/geofences/useGeofenceMap.js';
+import { buildCorridorSignalOverlay } from '../components/geofences/geofenceSegmentSignals.js';
+import { fetchWorldContext, worldContextEntities } from '../lib/spatialClient.js';
 import {
   STATUS_COLOR, REGIONS, REGION_BOUNDS, EA_CENTER, EA_ZOOM, EVENT_LABEL, EVENT_COLOR, SEVERITY_COLOR, SEVERITY_WEIGHT,
 } from '../components/geofences/types.js';
@@ -51,6 +53,7 @@ export default function Geofences() {
   const [eventTypeFilter, setEventTypeFilter] = useState('all');
   const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
   const [expanded, setExpanded] = useState(false);
+  const [mapViewport, setMapViewport] = useState<{ latitude: number; longitude: number; radiusM: number } | null>(null);
 
   const mapQ = useQuery<MapData>({ queryKey: ['geofence-map-data'], queryFn: async () => (await api.get<MapData>('/dashboard/map')).data, refetchInterval: 15_000 });
   const geofencesQ = useQuery<{ data: Geofence[] }>({ queryKey: ['geofences-list'], queryFn: () => api.get('/geofences').then(r => ({ data: Array.isArray(r.data) ? r.data : r.data?.data ?? [] })) });
@@ -75,6 +78,31 @@ export default function Geofences() {
   const telemetry = telemetryQ.data?.data ?? [];
   const alerts = alertsQ.data?.data ?? [];
   const allAlerts = allAlertsQ.data?.data ?? [];
+
+  const hasCorridors = mapGeofences.some(g => String(g.type).toLowerCase() === 'corridor' && (g.path?.length ?? 0) >= 2);
+  const spatialContextQ = useQuery({
+    queryKey: ['geofence-signal-context', mapViewport?.latitude ?? null, mapViewport?.longitude ?? null, mapViewport?.radiusM ?? null],
+    queryFn: ({ signal }) => fetchWorldContext({
+      center: { latitude: mapViewport!.latitude, longitude: mapViewport!.longitude },
+      radiusM: mapViewport!.radiusM,
+      layers: ['weather', 'traffic', 'hazards', 'security', 'incidents', 'alerts'],
+      maxEntitiesPerLayer: 75,
+      signal,
+    }),
+    enabled: Boolean(mapViewport) && hasCorridors,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+  const spatialEntities = useMemo(() => worldContextEntities(spatialContextQ.data), [spatialContextQ.data]);
+  const signalRoutes = useMemo(
+    () => mapGeofences.filter(g => String(g.type).toLowerCase() === 'corridor' && (g.path?.length ?? 0) >= 2),
+    [mapGeofences],
+  );
+  const corridorSignalOverlay = useMemo(
+    () => buildCorridorSignalOverlay(signalRoutes, spatialEntities),
+    [signalRoutes, spatialEntities],
+  );
 
   const regionVehicleIds = useMemo(() => regionFilter === 'all' ? null : new Set(vehiclesMeta.filter(v => v.region === regionFilter).map(v => v.id)), [vehiclesMeta, regionFilter]);
   const visibleVehicles = useMemo(() => regionVehicleIds ? vehicles.filter(v => regionVehicleIds.has(v.id)) : vehicles, [vehicles, regionVehicleIds]);
@@ -141,6 +169,7 @@ export default function Geofences() {
     onDrawPoint: pt => setDrawPath(prev => [...prev, pt]),
     onVehiclePicked: id => { setSelectedVehicleId(id); setTab('mission'); },
     vehicles, visibleVehicles, devices, mapGeofences, visibleZones, regionFilter, expanded, mapStyle,
+    corridorSignalOverlay, onViewportChange: setMapViewport,
   });
 
   const startDraw = useCallback((mode: DrawMode) => {
@@ -304,6 +333,26 @@ export default function Geofences() {
           <LegendRow color={STATUS_COLOR['warn']!} label="Warning" />
           <LegendRow color={STATUS_COLOR['alert']!} label="Alert / Panic" />
           <LegendRow color={STATUS_COLOR['offline']!} label="Offline" />
+          <div className="mt-1 border-t border-white/10 pt-1.5 flex flex-col gap-1.5">
+            <div className="text-[10px] font-extrabold tracking-[0.12em] text-cyan-100">CORRIDOR INTELLIGENCE</div>
+            <LegendRow color="#22d3ee" label="Verified route baseline" />
+            <LegendRow color="#facc15" label="Traffic observation" />
+            <LegendRow color="#a78bfa" label="Weather observation" />
+            <LegendRow color="#ef4444" label="Security / hazard signal" />
+            <LegendRow color="#94a3b8" label="Stale or unverified data" />
+            <div role="status" aria-live="polite" className="max-w-[220px] text-[10px] font-bold leading-relaxed text-gray-200">
+              {spatialContextQ.isError
+                ? 'EVIDENCE FEED UNAVAILABLE · ROUTE STATUS UNKNOWN'
+                : spatialContextQ.isFetching
+                  ? 'SYNCING NEAR-ROUTE EVIDENCE…'
+                  : corridorSignalOverlay.summary.affectedSegments > 0
+                    ? corridorSignalOverlay.summary.affectedSegments + ' affected route segments · ' + corridorSignalOverlay.summary.dataPoints + ' nearby observations'
+                    : hasCorridors
+                      ? 'No correlated segments in current evidence · coverage is not proof of clear roads'
+                      : 'Signal overlay activates for saved route corridors'}
+            </div>
+            <div className="max-w-[220px] text-[9px] font-semibold leading-relaxed text-gray-400">Signal bands show proximity to sourced observations, not precise hazard footprints. The saved geofence and metre threshold are unchanged.</div>
+          </div>
         </div>
 
         <Compass heading={selectedVehicle?.pos?.heading ?? null} label={selectedVehicle?.meta?.registration ?? selectedVehicle?.pos?.registration ?? 'No vehicle selected'} />

@@ -1,9 +1,11 @@
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js'
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
+import { fetchWorldContext, worldContextEntities } from '../../lib/spatialClient.js';
+import { buildCorridorSignalOverlay, type CorridorSignalOverlay } from '../geofences/geofenceSegmentSignals.js';
 import { fetchOpticalRecon, installOpticalReconMapLibreProtocol, reconStyle, type OpticalReconResult } from '../../lib/opticalRecon.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
 import {
@@ -79,6 +81,8 @@ function setupMapLayers(map: maplibregl.Map) {
   map.addSource('sv-vehicles',  { type: 'geojson', data: empty });
   map.addSource('sv-devices',   { type: 'geojson', data: empty });
   map.addSource('sv-geofences', { type: 'geojson', data: empty });
+  map.addSource('sv-geofence-signal-segments', { type: 'geojson', data: empty });
+  map.addSource('sv-geofence-signal-points', { type: 'geojson', data: empty });
   map.addSource('sv-risk',      { type: 'geojson', data: empty });
   map.addSource('sv-alerts',    { type: 'geojson', data: empty });
 
@@ -100,15 +104,39 @@ function setupMapLayers(map: maplibregl.Map) {
     filter: ['==', ['geometry-type'], 'Polygon'],
     paint: { 'line-color': '#00ffcc', 'line-width': 1.8, 'line-opacity': 0.85, 'line-dasharray': [6, 3] },
   });
+  map.addLayer({ id: 'sv-geofences-corridor-casing', type: 'line', source: 'sv-geofences',
+    filter: ['==', ['geometry-type'], 'LineString'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#020617', 'line-width': 10, 'line-opacity': 0.72, 'line-translate': [0, 2], 'line-translate-anchor': 'viewport' },
+  });
   map.addLayer({ id: 'sv-geofences-corridor-bg', type: 'line', source: 'sv-geofences',
     filter: ['==', ['geometry-type'], 'LineString'],
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#38bdf8', 'line-width': 12, 'line-opacity': 0.18 },
+    paint: { 'line-color': '#38bdf8', 'line-width': 18, 'line-opacity': 0.26 },
   });
   map.addLayer({ id: 'sv-geofences-corridor-line', type: 'line', source: 'sv-geofences',
     filter: ['==', ['geometry-type'], 'LineString'],
-    layout: { 'line-cap': 'round' },
-    paint: { 'line-color': '#38bdf8', 'line-width': 2.5, 'line-opacity': 0.9, 'line-dasharray': [4, 2] },
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#a5f3fc', 'line-width': 4.2, 'line-opacity': 0.98, 'line-dasharray': [4, 2] },
+  });
+  // Nearby, sourced evidence highlights only the affected centreline runs.
+  map.addLayer({ id: 'sv-geofence-signal-shadow', type: 'line', source: 'sv-geofence-signal-segments',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#020617', 'line-width': 12, 'line-opacity': 0.72, 'line-translate': [0, 3], 'line-translate-anchor': 'viewport' },
+  });
+  map.addLayer({ id: 'sv-geofence-signal-glow', type: 'line', source: 'sv-geofence-signal-segments',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': ['get', 'signal_color'], 'line-width': 18, 'line-opacity': 0.3, 'line-blur': 2.2 },
+  });
+  map.addLayer({ id: 'sv-geofence-signal-line', type: 'line', source: 'sv-geofence-signal-segments',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': ['get', 'signal_color'], 'line-width': 5.5, 'line-opacity': 0.98 },
+  });
+  map.addLayer({ id: 'sv-geofence-signal-points-glow', type: 'circle', source: 'sv-geofence-signal-points',
+    paint: { 'circle-radius': 10, 'circle-color': ['get', 'signal_color'], 'circle-opacity': 0.22, 'circle-blur': 0.85 },
+  });
+  map.addLayer({ id: 'sv-geofence-signal-points', type: 'circle', source: 'sv-geofence-signal-points',
+    paint: { 'circle-radius': 5, 'circle-color': ['get', 'signal_color'], 'circle-opacity': 0.98, 'circle-stroke-color': '#f8fafc', 'circle-stroke-width': 1.5 },
   });
   map.addLayer({ id: 'sv-geofences-label', type: 'symbol', source: 'sv-geofences', layout: {
     'text-field': ['get', 'name'],
@@ -165,6 +193,14 @@ function setupMapLayers(map: maplibregl.Map) {
   }, paint: {
     'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.5,
   }});
+}
+
+
+function setCorridorSignalData(map: maplibregl.Map, overlay: CorridorSignalOverlay) {
+  const segments = map.getSource('sv-geofence-signal-segments') as maplibregl.GeoJSONSource | undefined;
+  const points = map.getSource('sv-geofence-signal-points') as maplibregl.GeoJSONSource | undefined;
+  segments?.setData(overlay.segments as GeoJSON.FeatureCollection);
+  points?.setData(overlay.markers as GeoJSON.FeatureCollection);
 }
 
 function updateMapData(map: maplibregl.Map, data: MapData) {
@@ -271,6 +307,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
   const [reconVersion, setReconVersion] = useState(0);
   const [trafficOn, setTrafficOn] = useState(false);
   const [bbox, setBbox] = useState<string | null>(null);
+  const [worldViewport, setWorldViewport] = useState<{ latitude: number; longitude: number; radiusM: number } | null>(null);
   const currentDataRef = useRef<MapData | null>(null);
   const trafficOnRef = useRef(trafficOn);
   trafficOnRef.current = trafficOn;
@@ -300,6 +337,29 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
     staleTime: 15000, refetchInterval: 30000,
   });
 
+  const { data: worldContext } = useQuery({
+    queryKey: ['tactical-map-corridor-context', worldViewport?.latitude ?? null, worldViewport?.longitude ?? null, worldViewport?.radiusM ?? null],
+    queryFn: ({ signal }) => fetchWorldContext({
+      center: { latitude: worldViewport!.latitude, longitude: worldViewport!.longitude },
+      radiusM: worldViewport!.radiusM,
+      layers: ['weather', 'traffic', 'hazards', 'security', 'incidents', 'alerts'],
+      maxEntitiesPerLayer: 75,
+      signal,
+    }),
+    enabled: Boolean(worldViewport),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+  const corridorSignalOverlay = useMemo(() => buildCorridorSignalOverlay(
+    (mapData?.geofences ?? [])
+      .filter(g => String(g.type).toLowerCase() === 'corridor' && (g.path?.length ?? 0) >= 2)
+      .map(g => ({ id: g.id, name: g.name, path: g.path, buffer_m: g.buffer_m })),
+    worldContextEntities(worldContext),
+  ), [mapData?.geofences, worldContext]);
+  const corridorSignalOverlayRef = useRef(corridorSignalOverlay);
+  corridorSignalOverlayRef.current = corridorSignalOverlay;
+
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
     const map = new maplibregl.Map({
@@ -312,14 +372,40 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
       transformRequest: trafficTransformRequest,
     });
     map.on('error', () => {});
+    const syncWorldViewport = () => {
+      const center = map.getCenter();
+      const bounds = map.getBounds();
+      const corners = [
+        [bounds.getNorth(), bounds.getEast()],
+        [bounds.getNorth(), bounds.getWest()],
+        [bounds.getSouth(), bounds.getEast()],
+        [bounds.getSouth(), bounds.getWest()],
+      ];
+      const toRadians = (value: number) => value * Math.PI / 180;
+      const cornerDistanceM = (lat: number, lng: number) => {
+        const dLat = toRadians(lat - center.lat);
+        const dLng = toRadians(lng - center.lng);
+        const a = Math.sin(dLat / 2) ** 2
+          + Math.cos(toRadians(center.lat)) * Math.cos(toRadians(lat)) * Math.sin(dLng / 2) ** 2;
+        return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+      };
+      const radiusM = Math.max(15000, Math.min(250000, Math.ceil(Math.max(...corners.map(([lat, lng]) => cornerDistanceM(lat, lng))) * 1.2 / 25000) * 25000));
+      setWorldViewport({
+        latitude: Math.round(center.lat * 10) / 10,
+        longitude: Math.round(center.lng * 10) / 10,
+        radiusM,
+      });
+    };
     map.on('load', () => {
       setupMapLayers(map);
       addTrafficLayers(map, trafficOnRef.current);
       setBbox(bboxFromMap(map));
       mapReadyRef.current = true;
       if (pendingDataRef.current) { updateMapData(map, pendingDataRef.current); pendingDataRef.current = null; }
+      setCorridorSignalData(map, corridorSignalOverlayRef.current);
+      syncWorldViewport();
     });
-    map.on('moveend', () => setBbox(bboxFromMap(map)));
+    map.on('moveend', () => { setBbox(bboxFromMap(map)); syncWorldViewport(); });
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; mapReadyRef.current = false; };
   }, []);
@@ -354,6 +440,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
       if (trafficFCRef.current) setTrafficIncidents(map, trafficFCRef.current);
       mapReadyRef.current = true;
       if (currentDataRef.current) updateMapData(map, currentDataRef.current);
+      setCorridorSignalData(map, corridorSignalOverlayRef.current);
     };
     map.once('style.load', onLoad);
     return () => { map.off('style.load', onLoad); };
@@ -368,6 +455,35 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
   useEffect(() => {
     if (mapStyle === 'latest' && opticalReconError) setMapStyle('street');
   }, [mapStyle, opticalReconError]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current) return;
+    setCorridorSignalData(map, corridorSignalOverlay);
+  }, [corridorSignalOverlay]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)) return;
+    let frame = 0;
+    let last = 0;
+    const animate = (time: number) => {
+      if (time - last >= 84) {
+        last = time;
+        const pulse = (Math.sin(time / 620) + 1) / 2;
+        try {
+          if (map.getLayer('sv-geofence-signal-glow')) map.setPaintProperty('sv-geofence-signal-glow', 'line-opacity', 0.2 + pulse * 0.2);
+          if (map.getLayer('sv-geofence-signal-points-glow')) {
+            map.setPaintProperty('sv-geofence-signal-points-glow', 'circle-radius', 8 + pulse * 4);
+            map.setPaintProperty('sv-geofence-signal-points-glow', 'circle-opacity', 0.12 + pulse * 0.18);
+          }
+        } catch { /* style reload can remove layers mid-frame */ }
+      }
+      frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   // traffic visibility toggle — instant (setLayoutProperty), no re-fetch
   useEffect(() => {
