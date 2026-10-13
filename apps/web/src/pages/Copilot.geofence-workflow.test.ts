@@ -5,6 +5,8 @@ const copilot = readFileSync(new URL('./Copilot.tsx', import.meta.url), 'utf8');
 const geofenceIntent = readFileSync(new URL('../lib/geofenceIntent.ts', import.meta.url), 'utf8');
 const geofencesPage = readFileSync(new URL('./Geofences.tsx', import.meta.url), 'utf8');
 const mapRenderer = readFileSync(new URL('../components/geofences/useGeofenceMap.ts', import.meta.url), 'utf8');
+const fleetMap = readFileSync(new URL('../features/live-fleet/components/FleetMap.tsx', import.meta.url), 'utf8');
+const tacticalMap = readFileSync(new URL('../components/dashboard/TacticalMap.tsx', import.meta.url), 'utf8');
 const serverCreate = readFileSync(new URL('../../../../backend/src/routes/geofences.js', import.meta.url), 'utf8');
 const aiRoutes = readFileSync(new URL('../../../../backend/src/routes/ai.js', import.meta.url), 'utf8');
 const autoGeometry = readFileSync(new URL('../../../../backend/src/utils/geofenceAutoGeometry.js', import.meta.url), 'utf8');
@@ -55,6 +57,11 @@ describe('Copilot geofence end-to-end geometry contract', () => {
     expect(geofencesPage).toContain("layers: ['weather', 'traffic', 'hazards', 'security', 'incidents', 'alerts']");
     expect(geofencesPage).toContain('Signal bands show proximity to sourced observations');
     expect(geofencesPage).toContain('coverage is not proof of clear roads');
+    expect(fleetMap).toContain('gf-signal-glow');
+    expect(fleetMap).toContain('worldContextEntities(worldContext)');
+    expect(tacticalMap).toContain('sv-geofence-signal-glow');
+    expect(tacticalMap).toContain("layers: ['weather', 'traffic', 'hazards', 'security', 'incidents', 'alerts']");
+    expect(tacticalMap).toContain('setCorridorSignalData(map, corridorSignalOverlayRef.current)');
   });
 
 });
