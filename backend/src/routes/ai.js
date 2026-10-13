@@ -713,6 +713,11 @@ function toLatLngPath(osrmCoordinates) {
 
 
 async function buildCorridorPolygonWithPostGIS(pathLatLng, bufferM, orgId) {
+  // A single geography buffer over a multi-thousand-kilometre line can force
+  // PostGIS to use one inappropriate projection for the entire route. Segment
+  // the route geodesically, buffer short overlapping chunks, then union them.
+  // The 1 km segmentization bounds each chunk's geographic span even where an
+  // upstream router supplied very sparse vertices. Chunks share an endpoint.
   const sql = `
     WITH route_input AS (
       SELECT ST_SetSRID(
@@ -724,67 +729,85 @@ async function buildCorridorPolygonWithPostGIS(pathLatLng, bufferM, orgId) {
       ) AS line
       FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS points(vertex, ordinal)
     ),
-    buffered AS (
-      SELECT
-        line,
-        ST_Buffer(
-          line::geography,
-          $2::double precision,
-          'quad_segs=8 endcap=round join=round'
-        )::geometry AS area
+    segmented_route AS (
+      SELECT ST_Segmentize(line::geography, 1000::double precision)::geometry AS line
       FROM route_input
+    ),
+    route_points AS (
+      SELECT (dumped).path[1]::integer AS ordinal, (dumped).geom AS point
+      FROM segmented_route
+      CROSS JOIN LATERAL ST_DumpPoints(line) AS dumped
+    ),
+    route_bounds AS (
+      SELECT MAX(ordinal)::integer AS point_count FROM route_points
+    ),
+    chunk_starts AS (
+      SELECT generate_series(1, GREATEST(point_count - 1, 1), 15)::integer AS start_ordinal
+      FROM route_bounds
+    ),
+    route_chunks AS (
+      SELECT starts.start_ordinal, ST_MakeLine(points.point ORDER BY points.ordinal) AS line
+      FROM chunk_starts AS starts
+      JOIN route_points AS points
+        ON points.ordinal BETWEEN starts.start_ordinal AND starts.start_ordinal + 15
+      GROUP BY starts.start_ordinal
+      HAVING COUNT(*) >= 2
+    ),
+    buffered_chunks AS (
+      SELECT ST_Buffer(
+        line::geography,
+        ($2::double precision + 0.5),
+        'quad_segs=16 endcap=round join=round'
+      )::geometry AS area
+      FROM route_chunks
+    ),
+    merged AS (
+      SELECT ST_UnaryUnion(ST_Collect(area)) AS area
+      FROM buffered_chunks
     )
     SELECT
-      ST_AsGeoJSON(area)::jsonb AS geojson,
-      ST_IsValid(area) AS geometry_valid,
-      ST_Covers(area, line) AS covers_centerline,
-      ST_GeometryType(area) AS geometry_type
-    FROM buffered
+      ST_AsGeoJSON(merged.area)::jsonb AS geojson,
+      ST_IsValid(merged.area) AS geometry_valid,
+      ST_Covers(merged.area, route_input.line) AS covers_centerline,
+      ST_GeometryType(merged.area) AS geometry_type
+    FROM merged
+    CROSS JOIN route_input
   `;
-  try {
-    const result = await withOrg(orgId, (client) => client.query(sql, [JSON.stringify(pathLatLng), Number(bufferM)]));
-    const row = result.rows && result.rows[0];
-    if (!row) return null;
+  const result = await withOrg(orgId, (client) => client.query(sql, [JSON.stringify(pathLatLng), Number(bufferM)]));
+  const row = result.rows && result.rows[0];
+  if (!row) throw new Error('PostGIS returned no buffered corridor geometry.');
 
-    let geojson = row.geojson;
-    if (typeof geojson === 'string') {
-      try { geojson = JSON.parse(geojson); } catch (_) { geojson = null; }
-    }
-    if (row.geometry_valid !== true || row.covers_centerline !== true) {
-      throw new Error('PostGIS corridor buffer failed validity or centreline-coverage verification.');
-    }
-    if (!geojson || geojson.type !== 'Polygon' || !Array.isArray(geojson.coordinates) ||
-        geojson.coordinates.length !== 1 ||
-        !Array.isArray(geojson.coordinates[0]) || geojson.coordinates[0].length < 4) {
-      // The legacy buffer_polygon schema stores one exterior ring. Do not
-      // silently fill holes if a route loops back and encloses a real interior.
-      throw new Error('PostGIS corridor buffer returned a polygon with unsupported interior rings or geometry type.');
-    }
-
-    // Persist the exterior ring in Sonalit's established [latitude, longitude]
-    // shape. ST_Buffer(geography) handles overlapping bends/road segments with
-    // GEOS, rather than concatenating two offsets that can cross themselves.
-    const exteriorRing = geojson.coordinates[0].map((coordinate, index) => {
-      if (!Array.isArray(coordinate) || coordinate.length < 2 ||
-          !Number.isFinite(Number(coordinate[0])) || !Number.isFinite(Number(coordinate[1])) ||
-          Math.abs(Number(coordinate[1])) > 90 || Math.abs(Number(coordinate[0])) > 180) {
-        throw new Error('PostGIS corridor buffer returned invalid coordinate at ring index ' + index + '.');
-      }
-      return [Number(coordinate[1]), Number(coordinate[0])];
-    });
-    const checked = validateCorridorGeometry(pathLatLng, exteriorRing, bufferM, { method: 'postgis-geography-buffer' });
-    if (!checked.valid) {
-      throw new Error('PostGIS corridor buffer failed application-level validation: ' + checked.reason);
-    }
-    return exteriorRing;
-  } catch (error) {
-    const code = String(error && error.code || '');
-    const message = String(error && error.message || '');
-    const postgisUnavailable = ['42883', '42704', '0A000', '3F000'].includes(code) &&
-      /postgis|st_buffer|st_makeline|st_makepoint|geography|function|type/i.test(message);
-    if (postgisUnavailable) return null;
-    throw error;
+  let geojson = row.geojson;
+  if (typeof geojson === 'string') {
+    try { geojson = JSON.parse(geojson); } catch (_) { geojson = null; }
   }
+  if (row.geometry_valid !== true || row.covers_centerline !== true) {
+    throw new Error('Chunked PostGIS corridor buffer failed validity or full-centreline coverage verification.');
+  }
+  if (!geojson || geojson.type !== 'Polygon' || !Array.isArray(geojson.coordinates) ||
+      geojson.coordinates.length !== 1 ||
+      !Array.isArray(geojson.coordinates[0]) || geojson.coordinates[0].length < 4) {
+    // The legacy buffer_polygon schema stores one exterior ring. Do not
+    // silently erase interior holes or flatten a disconnected MultiPolygon.
+    throw new Error('Chunked PostGIS buffer returned unsupported geometry ('
+      + String(geojson && geojson.type || row.geometry_type || 'unknown')
+      + ', ' + String(geojson && Array.isArray(geojson.coordinates) ? geojson.coordinates.length : 0)
+      + ' rings/components); no unsafe polygon substitution attempted.');
+  }
+
+  const exteriorRing = geojson.coordinates[0].map((coordinate, index) => {
+    if (!Array.isArray(coordinate) || coordinate.length < 2 ||
+        !Number.isFinite(Number(coordinate[0])) || !Number.isFinite(Number(coordinate[1])) ||
+        Math.abs(Number(coordinate[1])) > 90 || Math.abs(Number(coordinate[0])) > 180) {
+      throw new Error('PostGIS corridor buffer returned invalid coordinate at ring index ' + index + '.');
+    }
+    return [Number(coordinate[1]), Number(coordinate[0])];
+  });
+  const checked = validateCorridorGeometry(pathLatLng, exteriorRing, bufferM, { method: 'postgis-geography-buffer' });
+  if (!checked.valid) {
+    throw new Error('Chunked PostGIS corridor buffer failed application-level validation: ' + checked.reason);
+  }
+  return exteriorRing;
 }
 
 // Haversine distance in metres between two lat/lng points
@@ -1057,23 +1080,31 @@ async function toolCreateGeofence(input, userId, orgId) {
       const requestedGeometryToleranceM = Math.min(10, geometryToleranceCeilingM);
       const initialSimplification = simplifyPath(pathLatLng, requestedGeometryToleranceM, geometryToleranceCeilingM);
       let corridorGeometry = null;
+      let postgisFailure = null;
       try {
         const robustPolygon = await buildCorridorPolygonWithPostGIS(initialSimplification.path, buffer_m, orgId);
-        if (robustPolygon) {
-          corridorGeometry = {
-            path: initialSimplification.path,
-            polygon: robustPolygon,
-            simplification: initialSimplification,
-            recoveryUsed: false,
-            recoveryReason: null,
-            bufferPolygonMethod: 'postgis-geography-buffer',
-          };
-        }
+        corridorGeometry = {
+          path: initialSimplification.path,
+          polygon: robustPolygon,
+          simplification: initialSimplification,
+          recoveryUsed: false,
+          recoveryReason: null,
+          bufferPolygonMethod: 'postgis-chunked-geography-buffer',
+        };
       } catch (error) {
-        logger.warn('Robust PostGIS corridor buffering failed; trying bounded local recovery: ' + String(error.message || error));
+        postgisFailure = String(error && error.message || error).slice(0, 300);
+        logger.warn('Chunked PostGIS corridor buffering failed; trying bounded local recovery: ' + postgisFailure);
       }
       if (!corridorGeometry) {
-        corridorGeometry = buildCorridorGeometry(pathLatLng, buffer_m, requestedGeometryToleranceM, geometryToleranceCeilingM);
+        try {
+          corridorGeometry = buildCorridorGeometry(pathLatLng, buffer_m, requestedGeometryToleranceM, geometryToleranceCeilingM);
+        } catch (fallbackError) {
+          const fallbackMessage = String(fallbackError && fallbackError.message || fallbackError);
+          throw new RangeError(
+            'Robust corridor buffer failed (' + (postgisFailure || 'PostGIS returned no usable geometry') +
+            '); bounded local recovery also failed (' + fallbackMessage + '). No geofence was created.'
+          );
+        }
       }
       pathLatLng = corridorGeometry.path;
       const pathSimplification = corridorGeometry.simplification;
