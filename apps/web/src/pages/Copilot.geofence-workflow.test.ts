@@ -46,4 +46,15 @@ describe('Copilot geofence end-to-end geometry contract', () => {
     expect(mapResponse).toContain("type: 'polygon'");
     expect(mapResponse).toContain('polygon: ring');
   });
+  it('keeps corridor overlays visible after satellite style reload and attaches evidence-derived signal bands', () => {
+    expect(mapRenderer).toContain("map.on('style.load', redrawAfterStyleLoad)");
+    expect(mapRenderer).toContain('gf-corridor-signal-glow');
+    expect(mapRenderer).toContain("['max', 7");
+    expect(mapRenderer).toContain('renderRef.current?.()');
+    expect(geofencesPage).toContain('buildCorridorSignalOverlay');
+    expect(geofencesPage).toContain("layers: ['weather', 'traffic', 'hazards', 'security', 'incidents', 'alerts']");
+    expect(geofencesPage).toContain('Signal bands show proximity to sourced observations');
+    expect(geofencesPage).toContain('coverage is not proof of clear roads');
+  });
+
 });
