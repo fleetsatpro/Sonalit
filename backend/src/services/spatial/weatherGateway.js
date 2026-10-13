@@ -76,7 +76,7 @@ function makeObservation(requested, data, receivedAt) {
   const quality = buildQuality(freshness, observedAt ? undefined : 'provider returned no observation timestamp');
 
   return {
-    id: 'open-meteo:weather:' + requested.key,
+    id: 'open-meteo:weather:grid:' + keyFor(latitude, longitude),
     entityType: 'weather',
     source: 'open-meteo',
     sourceReference: requested.key,
