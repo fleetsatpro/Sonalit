@@ -1,6 +1,6 @@
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../../lib/spatialRendering.js'
 import { STREET_STYLE } from '../../../lib/mapStyles.js'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -13,7 +13,8 @@ import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 import '../../../styles/spatial-command.css'
 
 installOpticalReconMapLibreProtocol()
-import { externalWorldFeatures, fetchWorldContext, WORLD_CONTEXT_LAYERS } from '../../../lib/spatialClient.js'
+import { externalWorldFeatures, fetchWorldContext, worldContextEntities, WORLD_CONTEXT_LAYERS } from '../../../lib/spatialClient.js'
+import { buildCorridorSignalOverlay } from '../../../components/geofences/geofenceSegmentSignals.js'
 import { fetchOpticalRecon, installOpticalReconMapLibreProtocol, reconStyle, type OpticalReconResult } from '../../../lib/opticalRecon.js'
 
 const SATELLITE_STYLE: maplibregl.StyleSpecification = {
@@ -58,6 +59,7 @@ const STATUS_COLOR: Record<LiveStatus, string> = {
 interface Geofence {
   id: string; name: string; type: string
   coordinates: unknown
+  corridor_width_km?: number | null
   radius: number | null; lat: number | null; lng: number | null
 }
 interface RiskZone {
@@ -106,6 +108,19 @@ function coordsToPoints(c: any): [number, number][] | null {
 function isCorridor(g: Geofence): boolean {
   const t = (g.type ?? '').toLowerCase()
   return t === 'corridor' || t === 'linear' || t === 'line' || t === 'linestring' || t === 'route'
+}
+
+function corridorBufferMetres(g: Geofence): number {
+  let coordinates: unknown = g.coordinates
+  if (typeof coordinates === 'string') {
+    try { coordinates = JSON.parse(coordinates) } catch { coordinates = null }
+  }
+  if (coordinates && typeof coordinates === 'object' && !Array.isArray(coordinates)) {
+    const value = Number((coordinates as Record<string, unknown>).buffer_m)
+    if (Number.isFinite(value) && value > 0) return value
+  }
+  const width = Number(g.corridor_width_km)
+  return Number.isFinite(width) && width > 0 ? width * 1000 : 300
 }
 
 
@@ -233,6 +248,25 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     staleTime: 60_000, refetchInterval: 60_000,
   })
 
+  const signalEntities = useMemo(
+    () => worldSpatialOn ? worldContextEntities(worldContext) : [],
+    [worldContext, worldSpatialOn],
+  )
+  const corridorSignalOverlay = useMemo(() => buildCorridorSignalOverlay(
+    (geofences ?? [])
+      .filter(g => String(g.type).toLowerCase() === 'corridor')
+      .map(g => {
+        const points = coordsToPoints(g.coordinates)
+        return {
+          id: g.id,
+          name: g.name,
+          path: points?.map(([lng, lat]) => [lat, lng] as [number, number]) ?? null,
+          buffer_m: corridorBufferMetres(g),
+        }
+      }),
+    signalEntities,
+  ), [geofences, signalEntities])
+
   // init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -354,10 +388,67 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       map.addSource('gf-lines', { type: 'geojson', data: { type: 'FeatureCollection', features: lineFeats } } as any)
-      map.addLayer({ id: 'gf-line-buffer', type: 'line', source: 'gf-lines', paint: { 'line-color': '#22d3ee', 'line-width': 16, 'line-opacity': 0.12 } })
-      map.addLayer({ id: 'gf-line-center', type: 'line', source: 'gf-lines', paint: { 'line-color': '#22d3ee', 'line-width': 2.5, 'line-opacity': 0.9, 'line-dasharray': [6, 3] } })
+      map.addLayer({ id: 'gf-line-casing', type: 'line', source: 'gf-lines', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#020617', 'line-width': 10, 'line-opacity': 0.7, 'line-translate': [0, 2], 'line-translate-anchor': 'viewport' } })
+      map.addLayer({ id: 'gf-line-buffer', type: 'line', source: 'gf-lines', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#22d3ee', 'line-width': 18, 'line-opacity': 0.26 } })
+      map.addLayer({ id: 'gf-line-center', type: 'line', source: 'gf-lines', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#a5f3fc', 'line-width': 4.2, 'line-opacity': 0.98, 'line-dasharray': [6, 3] } })
     }
-  }, [mapReady, geofences])
+
+    const segmentData = corridorSignalOverlay.segments as GeoJSON.FeatureCollection
+    const markerData = corridorSignalOverlay.markers as GeoJSON.FeatureCollection
+    const segmentSource = map.getSource('gf-signal-segments') as maplibregl.GeoJSONSource | undefined
+    if (segmentSource) segmentSource.setData(segmentData)
+    else map.addSource('gf-signal-segments', { type: 'geojson', data: segmentData })
+    const markerSource = map.getSource('gf-signal-points') as maplibregl.GeoJSONSource | undefined
+    if (markerSource) markerSource.setData(markerData)
+    else map.addSource('gf-signal-points', { type: 'geojson', data: markerData })
+
+    if (!map.getLayer('gf-signal-shadow')) map.addLayer({
+      id: 'gf-signal-shadow', type: 'line', source: 'gf-signal-segments',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#020617', 'line-width': 12, 'line-opacity': 0.72, 'line-translate': [0, 3], 'line-translate-anchor': 'viewport' },
+    })
+    if (!map.getLayer('gf-signal-glow')) map.addLayer({
+      id: 'gf-signal-glow', type: 'line', source: 'gf-signal-segments',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ['get', 'signal_color'], 'line-width': 18, 'line-opacity': 0.3, 'line-blur': 2.2 },
+    })
+    if (!map.getLayer('gf-signal-line')) map.addLayer({
+      id: 'gf-signal-line', type: 'line', source: 'gf-signal-segments',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ['get', 'signal_color'], 'line-width': 5.5, 'line-opacity': 0.98 },
+    })
+    if (!map.getLayer('gf-signal-points-glow')) map.addLayer({
+      id: 'gf-signal-points-glow', type: 'circle', source: 'gf-signal-points',
+      paint: { 'circle-radius': 10, 'circle-color': ['get', 'signal_color'], 'circle-opacity': 0.22, 'circle-blur': 0.85 },
+    })
+    if (!map.getLayer('gf-signal-points')) map.addLayer({
+      id: 'gf-signal-points', type: 'circle', source: 'gf-signal-points',
+      paint: { 'circle-radius': 5, 'circle-color': ['get', 'signal_color'], 'circle-opacity': 0.98, 'circle-stroke-color': '#f8fafc', 'circle-stroke-width': 1.5 },
+    })
+  }, [mapReady, geofences, corridorSignalOverlay])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)) return
+    let frame = 0
+    let last = 0
+    const animate = (time: number) => {
+      if (time - last >= 84) {
+        last = time
+        const pulse = (Math.sin(time / 620) + 1) / 2
+        try {
+          if (map.getLayer('gf-signal-glow')) map.setPaintProperty('gf-signal-glow', 'line-opacity', 0.2 + pulse * 0.2)
+          if (map.getLayer('gf-signal-points-glow')) {
+            map.setPaintProperty('gf-signal-points-glow', 'circle-radius', 8 + pulse * 4)
+            map.setPaintProperty('gf-signal-points-glow', 'circle-opacity', 0.12 + pulse * 0.18)
+          }
+        } catch { /* style reload can remove layers mid-frame */ }
+      }
+      frame = requestAnimationFrame(animate)
+    }
+    frame = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(frame)
+  }, [])
 
   // traffic overlay — added once per style load (satellite toggle wipes and
   // re-triggers mapReady, same as the geofence/risk-zone overlays above)
