@@ -3,6 +3,7 @@
 const {
   buildCorridorGeometry,
   buildCorridorPolygon,
+  buildCorridorPolygonTopologyUnion,
   distanceM,
   midpointOnPath,
   simplifyPath,
@@ -129,6 +130,38 @@ describe('validated corridor geometry', () => {
       maximumDeviationM = Math.max(maximumDeviationM, nearest);
     }
     expect(maximumDeviationM).toBeLessThanOrEqual(recovered.simplification.toleranceM + 0.5);
+  });
+
+  test('topology union buffers a tight looping route without a self-intersecting ring', () => {
+    const path = [[0, 0], [0, 0.0004], [0.00005, 0.0004], [0.00005, 0]];
+    const bufferM = 300;
+    const polygon = buildCorridorPolygonTopologyUnion(path, bufferM);
+
+    expect(polygon.length).toBeGreaterThan(20);
+    expect(polygon[0]).toEqual(polygon[polygon.length - 1]);
+    expect(polygon.every(point => point.length === 2 && point.every(Number.isFinite))).toBe(true);
+    expect(validateCorridorGeometry(path, polygon, bufferM, {
+      method: 'topology-union-buffer',
+      projectedCoverageVerified: true,
+    })).toMatchObject({ valid: true, containsCenterline: true });
+  });
+
+  test('topology union keeps a 300 m corridor metre-bounded on an ordinary road segment', () => {
+    const path = [[-0.05, 34.75], [-0.05, 34.80], [-0.052, 34.85]];
+    const polygon = buildCorridorPolygonTopologyUnion(path, 300);
+
+    expect(polygon.length).toBeGreaterThan(30);
+    expect(polygon[0]).toEqual(polygon[polygon.length - 1]);
+    expect(polygon.every(point => point.every(Number.isFinite))).toBe(true);
+    expect(validateCorridorGeometry(path, polygon, 300, {
+      method: 'topology-union-buffer',
+      projectedCoverageVerified: true,
+    })).toMatchObject({ valid: true, containsCenterline: true });
+  });
+
+  test('topology union fails closed for routes beyond its safe projection extent', () => {
+    expect(() => buildCorridorPolygonTopologyUnion([[0, -25], [0, 25]], 300))
+      .toThrow(/safe 20-degree corridor projection extent|safe 12000-segment topology budget/i);
   });
 
   test('validates robust external-buffer rings without requiring one vertex per centreline point', () => {

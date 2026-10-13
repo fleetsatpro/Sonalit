@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
-const { MAX_SIMPLIFICATION_TOLERANCE_M, buildCorridorGeometry, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
+const { MAX_SIMPLIFICATION_TOLERANCE_M, buildCorridorGeometry, buildCorridorPolygonTopologyUnion, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 const { validateToolInput } = require('../utils/aiToolInputValidation');
 const { normalizePolygonGeometry } = require('../utils/geofenceGeometry');
 const { createRadiusPolygon, normalizeBoundaryGeometry } = require('../utils/geofenceAutoGeometry');
@@ -712,159 +712,6 @@ function toLatLngPath(osrmCoordinates) {
 }
 
 
-async function configurePostGISCorridorFunctions(client) {
-  // PostGIS can be installed into a provider-managed schema such as "extensions".
-  // A SET ROLE may change the effective search_path, so resolve the extension's
-  // authoritative namespace inside this tenant transaction instead of assuming
-  // that ST_* functions live in public.
-  const extensionResult = await client.query(`
-    SELECT namespace.nspname AS schema_name
-    FROM pg_catalog.pg_extension AS extension
-    JOIN pg_catalog.pg_namespace AS namespace
-      ON namespace.oid = extension.extnamespace
-    WHERE extension.extname = 'postgis'
-  `);
-  const schemaName = String(extensionResult.rows?.[0]?.schema_name || '').trim();
-  if (!schemaName) {
-    throw new Error('PostGIS extension is not installed; apply migration 20261013_001_route_corridor_postgis_requirement.sql before creating route corridors.');
-  }
-
-  await client.query(
-    `SELECT pg_catalog.set_config(
-      'search_path',
-      pg_catalog.quote_ident($1) || ', pg_catalog, public',
-      true
-    ) AS search_path`,
-    [schemaName],
-  );
-
-  const functionsResult = await client.query(`
-    SELECT
-      to_regprocedure('st_makepoint(double precision,double precision)') IS NOT NULL AS st_makepoint_available,
-      to_regprocedure('st_segmentize(geography,double precision)') IS NOT NULL AS st_segmentize_available,
-      to_regprocedure('st_buffer(geography,double precision,text)') IS NOT NULL AS st_buffer_available,
-      to_regprocedure('st_unaryunion(geometry,double precision)') IS NOT NULL AS st_unaryunion_available,
-      to_regprocedure('st_covers(geometry,geometry)') IS NOT NULL AS st_covers_available,
-      to_regprocedure('st_isvalid(geometry)') IS NOT NULL AS st_isvalid_available
-  `);
-  const available = functionsResult.rows?.[0] || {};
-  const required = [
-    ['st_makepoint_available', 'ST_MakePoint(double precision, double precision)'],
-    ['st_segmentize_available', 'ST_Segmentize(geography, double precision)'],
-    ['st_buffer_available', 'ST_Buffer(geography, double precision, text)'],
-    ['st_unaryunion_available', 'ST_UnaryUnion(geometry, double precision)'],
-    ['st_covers_available', 'ST_Covers(geometry, geometry)'],
-    ['st_isvalid_available', 'ST_IsValid(geometry)'],
-  ];
-  const missing = required.filter(([key]) => available[key] !== true).map(([, name]) => name);
-  if (missing.length) {
-    throw new Error(
-      'PostGIS corridor functions unavailable from extension schema "' + schemaName + '": ' + missing.join(', ')
-    );
-  }
-}
-
-async function buildCorridorPolygonWithPostGIS(pathLatLng, bufferM, orgId) {
-  // A single geography buffer over a multi-thousand-kilometre line can force
-  // PostGIS to use one inappropriate projection for the entire route. Segment
-  // the route geodesically, buffer short overlapping chunks, then union them.
-  // The 1 km segmentization bounds each chunk's geographic span even where an
-  // upstream router supplied very sparse vertices. Chunks share an endpoint.
-  const sql = `
-    WITH route_input AS (
-      SELECT ST_SetSRID(
-        ST_MakeLine(
-          ST_MakePoint((vertex ->> 1)::double precision, (vertex ->> 0)::double precision)
-          ORDER BY ordinal
-        ),
-        4326
-      ) AS line
-      FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS points(vertex, ordinal)
-    ),
-    segmented_route AS (
-      SELECT ST_Segmentize(line::geography, 1000::double precision)::geometry AS line
-      FROM route_input
-    ),
-    route_points AS (
-      SELECT (dumped).path[1]::integer AS ordinal, (dumped).geom AS point
-      FROM segmented_route
-      CROSS JOIN LATERAL ST_DumpPoints(line) AS dumped
-    ),
-    route_bounds AS (
-      SELECT MAX(ordinal)::integer AS point_count FROM route_points
-    ),
-    chunk_starts AS (
-      SELECT generate_series(1, GREATEST(point_count - 1, 1), 15)::integer AS start_ordinal
-      FROM route_bounds
-    ),
-    route_chunks AS (
-      SELECT starts.start_ordinal, ST_MakeLine(points.point ORDER BY points.ordinal) AS line
-      FROM chunk_starts AS starts
-      JOIN route_points AS points
-        ON points.ordinal BETWEEN starts.start_ordinal AND starts.start_ordinal + 15
-      GROUP BY starts.start_ordinal
-      HAVING COUNT(*) >= 2
-    ),
-    buffered_chunks AS (
-      SELECT ST_Buffer(
-        line::geography,
-        ($2::double precision + 0.5),
-        'quad_segs=16 endcap=round join=round'
-      )::geometry AS area
-      FROM route_chunks
-    ),
-    merged AS (
-      SELECT ST_UnaryUnion(ST_Collect(area)) AS area
-      FROM buffered_chunks
-    )
-    SELECT
-      ST_AsGeoJSON(merged.area)::jsonb AS geojson,
-      ST_IsValid(merged.area) AS geometry_valid,
-      ST_Covers(merged.area, route_input.line) AS covers_centerline,
-      ST_GeometryType(merged.area) AS geometry_type
-    FROM merged
-    CROSS JOIN route_input
-  `;
-  const result = await withOrg(orgId, async (client) => {
-    await configurePostGISCorridorFunctions(client);
-    return client.query(sql, [JSON.stringify(pathLatLng), Number(bufferM)]);
-  });
-  const row = result.rows && result.rows[0];
-  if (!row) throw new Error('PostGIS returned no buffered corridor geometry.');
-
-  let geojson = row.geojson;
-  if (typeof geojson === 'string') {
-    try { geojson = JSON.parse(geojson); } catch (_) { geojson = null; }
-  }
-  if (row.geometry_valid !== true || row.covers_centerline !== true) {
-    throw new Error('Chunked PostGIS corridor buffer failed validity or full-centreline coverage verification.');
-  }
-  if (!geojson || geojson.type !== 'Polygon' || !Array.isArray(geojson.coordinates) ||
-      geojson.coordinates.length !== 1 ||
-      !Array.isArray(geojson.coordinates[0]) || geojson.coordinates[0].length < 4) {
-    // The legacy buffer_polygon schema stores one exterior ring. Do not
-    // silently erase interior holes or flatten a disconnected MultiPolygon.
-    throw new Error('Chunked PostGIS buffer returned unsupported geometry ('
-      + String(geojson && geojson.type || row.geometry_type || 'unknown')
-      + ', ' + String(geojson && Array.isArray(geojson.coordinates) ? geojson.coordinates.length : 0)
-      + ' rings/components); no unsafe polygon substitution attempted.');
-  }
-
-  const exteriorRing = geojson.coordinates[0].map((coordinate, index) => {
-    if (!Array.isArray(coordinate) || coordinate.length < 2 ||
-        !Number.isFinite(Number(coordinate[0])) || !Number.isFinite(Number(coordinate[1])) ||
-        Math.abs(Number(coordinate[1])) > 90 || Math.abs(Number(coordinate[0])) > 180) {
-      throw new Error('PostGIS corridor buffer returned invalid coordinate at ring index ' + index + '.');
-    }
-    return [Number(coordinate[1]), Number(coordinate[0])];
-  });
-  const checked = validateCorridorGeometry(pathLatLng, exteriorRing, bufferM, { method: 'postgis-geography-buffer' });
-  if (!checked.valid) {
-    throw new Error('Chunked PostGIS corridor buffer failed application-level validation: ' + checked.reason);
-  }
-  return exteriorRing;
-}
-
 // Haversine distance in metres between two lat/lng points
 function haversineM(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -1135,20 +982,20 @@ async function toolCreateGeofence(input, userId, orgId) {
       const requestedGeometryToleranceM = Math.min(10, geometryToleranceCeilingM);
       const initialSimplification = simplifyPath(pathLatLng, requestedGeometryToleranceM, geometryToleranceCeilingM);
       let corridorGeometry = null;
-      let postgisFailure = null;
+      let topologyFailure = null;
       try {
-        const robustPolygon = await buildCorridorPolygonWithPostGIS(initialSimplification.path, buffer_m, orgId);
+        const robustPolygon = buildCorridorPolygonTopologyUnion(initialSimplification.path, buffer_m);
         corridorGeometry = {
           path: initialSimplification.path,
           polygon: robustPolygon,
           simplification: initialSimplification,
           recoveryUsed: false,
           recoveryReason: null,
-          bufferPolygonMethod: 'postgis-chunked-geography-buffer',
+          bufferPolygonMethod: 'javascript-topology-union-buffer',
         };
       } catch (error) {
-        postgisFailure = String(error && error.message || error).slice(0, 300);
-        logger.warn('Chunked PostGIS corridor buffering failed; trying bounded local recovery: ' + postgisFailure);
+        topologyFailure = String(error && error.message || error).slice(0, 300);
+        logger.warn('Topology-aware corridor union failed; trying bounded legacy recovery: ' + topologyFailure);
       }
       if (!corridorGeometry) {
         try {
@@ -1156,8 +1003,8 @@ async function toolCreateGeofence(input, userId, orgId) {
         } catch (fallbackError) {
           const fallbackMessage = String(fallbackError && fallbackError.message || fallbackError);
           throw new RangeError(
-            'Robust corridor buffer failed (' + (postgisFailure || 'PostGIS returned no usable geometry') +
-            '); bounded local recovery also failed (' + fallbackMessage + '). No geofence was created.'
+            'Topology-aware corridor union failed (' + (topologyFailure || 'no usable geometry returned') +
+            '); bounded legacy recovery also failed (' + fallbackMessage + '). No geofence was created.'
           );
         }
       }

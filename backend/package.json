@@ -54,13 +54,14 @@
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.15.0",
     "pg": "^8.11.3",
+    "polygon-clipping": "^0.15.7",
+    "satellite.js": "^6.0.2",
     "sharp": "^0.35.4",
     "socket.io": "^4.7.2",
     "telegram": "^2.26.22",
     "tesseract.js": "^7.0.0",
     "uuid": "^9.0.0",
-    "winston": "^3.11.0",
-    "satellite.js": "^6.0.2"
+    "winston": "^3.11.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

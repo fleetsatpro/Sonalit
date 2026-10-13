@@ -1,5 +1,7 @@
 'use strict';
 
+const polygonClipping = require('polygon-clipping');
+
 const R = 6371008.8;
 const MIN_BUFFER_M = 10;
 const MAX_BUFFER_M = 5000;
@@ -391,11 +393,279 @@ function pointInRingXY(point, ring) {
   return inside;
 }
 
+
+const MAX_BUFFER_SEGMENTS = 12000;
+const MAX_BUFFER_BATCH_SIZE = 32;
+const MAX_BUFFER_ARC_SEGMENTS = 16;
+const MAX_BUFFER_SEGMENT_LENGTH_M = 500;
+const MAX_AEQD_ANGLE_RAD = 20 * Math.PI / 180;
+
+function interpolateGeodesicPoint(start, end, fraction) {
+  const lat1 = Number(start[0]) * Math.PI / 180;
+  const lat2 = Number(end[0]) * Math.PI / 180;
+  const lng1 = Number(start[1]) * Math.PI / 180;
+  const lng2 = Number(end[1]) * Math.PI / 180;
+  const deltaLng = wrappedDeltaDegrees((lng2 - lng1) * 180 / Math.PI) * Math.PI / 180;
+  const cosAngle = Math.max(-1, Math.min(1,
+    Math.sin(lat1) * Math.sin(lat2) + Math.cos(lat1) * Math.cos(lat2) * Math.cos(deltaLng)
+  ));
+  const angle = Math.acos(cosAngle);
+
+  if (angle < 1e-8) {
+    return [
+      Number(start[0]) + (Number(end[0]) - Number(start[0])) * fraction,
+      wrapLongitude(Number(start[1]) + wrappedDeltaDegrees(Number(end[1]) - Number(start[1])) * fraction),
+    ];
+  }
+  const sinAngle = Math.sin(angle);
+  if (Math.abs(sinAngle) < 1e-10) {
+    throw new RangeError('A route segment is too close to antipodal for safe corridor buffering.');
+  }
+  const a = Math.sin((1 - fraction) * angle) / sinAngle;
+  const b = Math.sin(fraction * angle) / sinAngle;
+  const x = a * Math.cos(lat1) * Math.cos(lng1) + b * Math.cos(lat2) * Math.cos(lng2);
+  const y = a * Math.cos(lat1) * Math.sin(lng1) + b * Math.cos(lat2) * Math.sin(lng2);
+  const z = a * Math.sin(lat1) + b * Math.sin(lat2);
+  const norm = Math.hypot(x, y, z);
+  if (!Number.isFinite(norm) || norm < 1e-12) {
+    throw new RangeError('Route interpolation produced a degenerate geographic point.');
+  }
+  return [
+    Math.atan2(z, Math.hypot(x, y)) * 180 / Math.PI,
+    wrapLongitude(Math.atan2(y, x) * 180 / Math.PI),
+  ];
+}
+
+function makeAzimuthalEquidistantProjection(center) {
+  const phi0 = Number(center[0]) * Math.PI / 180;
+  const lambda0 = Number(center[1]) * Math.PI / 180;
+  const sinPhi0 = Math.sin(phi0);
+  const cosPhi0 = Math.cos(phi0);
+
+  function forward(point) {
+    const phi = Number(point[0]) * Math.PI / 180;
+    const lambda = Number(point[1]) * Math.PI / 180;
+    let deltaLambda = lambda - lambda0;
+    while (deltaLambda > Math.PI) deltaLambda -= 2 * Math.PI;
+    while (deltaLambda < -Math.PI) deltaLambda += 2 * Math.PI;
+
+    const sinHalfPhi = Math.sin((phi - phi0) / 2);
+    const sinHalfLambda = Math.sin(deltaLambda / 2);
+    const haversine = Math.max(0, Math.min(1,
+      sinHalfPhi * sinHalfPhi + Math.cos(phi0) * Math.cos(phi) * sinHalfLambda * sinHalfLambda
+    ));
+    const angle = 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(Math.max(0, 1 - haversine)));
+    if (angle > MAX_AEQD_ANGLE_RAD) {
+      throw new RangeError('Route exceeds the safe 20-degree corridor projection extent; no geofence was created.');
+    }
+    if (angle < 1e-10) return { xy: [0, 0], angle };
+    const sinAngle = Math.sin(angle);
+    if (Math.abs(sinAngle) < 1e-10) {
+      throw new RangeError('Route reaches a singular point in the corridor projection; no geofence was created.');
+    }
+    const scale = R * angle / sinAngle;
+    return {
+      xy: [
+        scale * Math.cos(phi) * Math.sin(deltaLambda),
+        scale * (cosPhi0 * Math.sin(phi) - sinPhi0 * Math.cos(phi) * Math.cos(deltaLambda)),
+      ],
+      angle,
+    };
+  }
+
+  function inverse(xy) {
+    const [x, y] = xy;
+    const rho = Math.hypot(x, y);
+    if (!Number.isFinite(rho)) throw new RangeError('Corridor union contains a non-finite projected coordinate.');
+    if (rho < 1e-8) return [Number(center[0]), wrapLongitude(Number(center[1]))];
+
+    const angle = rho / R;
+    if (angle >= Math.PI) {
+      throw new RangeError('Corridor buffer exceeds the safe inverse projection domain.');
+    }
+    const sinAngle = Math.sin(angle);
+    const cosAngle = Math.cos(angle);
+    const phi = Math.asin(Math.max(-1, Math.min(1,
+      cosAngle * sinPhi0 + (y * sinAngle * cosPhi0) / rho
+    )));
+    const lambda = lambda0 + Math.atan2(
+      x * sinAngle,
+      rho * cosPhi0 * cosAngle - y * sinPhi0 * sinAngle
+    );
+    const result = [
+      phi * 180 / Math.PI,
+      wrapLongitude(lambda * 180 / Math.PI),
+    ];
+    if (!result.every(Number.isFinite) || Math.abs(result[0]) > 90 || Math.abs(result[1]) > 180) {
+      throw new RangeError('Corridor inverse projection produced an invalid geographic coordinate.');
+    }
+    return result;
+  }
+
+  return { forward, inverse };
+}
+
+function makeCapsulePolygon(start, end, radiusM) {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const length = Math.hypot(dx, dy);
+  if (!Number.isFinite(length) || length < 1e-5) {
+    throw new RangeError('Projected route contains a degenerate segment; no geofence was created.');
+  }
+
+  const heading = Math.atan2(dy, dx);
+  const ring = [];
+  const addArc = (center, startAngle) => {
+    for (let i = 0; i <= MAX_BUFFER_ARC_SEGMENTS; i++) {
+      const angle = startAngle + Math.PI * i / MAX_BUFFER_ARC_SEGMENTS;
+      ring.push([
+        center[0] + radiusM * Math.cos(angle),
+        center[1] + radiusM * Math.sin(angle),
+      ]);
+    }
+  };
+  addArc(end, heading - Math.PI / 2);
+  addArc(start, heading + Math.PI / 2);
+  ring.push([...ring[0]]);
+  return [ring];
+}
+
+function asMultiPolygonCoordinates(geometryCoordinates) {
+  if (!Array.isArray(geometryCoordinates) || geometryCoordinates.length === 0) {
+    throw new RangeError('Topology union returned empty corridor geometry.');
+  }
+  // Polygon coordinates are [ring, ...holes]; MultiPolygon coordinates are
+  // [[ring, ...holes], ...polygons]. A lone Polygon gains one outer array.
+  const firstRingOrPolygon = geometryCoordinates[0];
+  const firstCoordinate = firstRingOrPolygon && firstRingOrPolygon[0];
+  if (Array.isArray(firstCoordinate) && typeof firstCoordinate[0] === 'number') {
+    return [geometryCoordinates];
+  }
+  return geometryCoordinates;
+}
+
+function mergeCorridorPolygonBatch(batch) {
+  if (batch.length === 0) throw new RangeError('No corridor buffer pieces were generated.');
+  if (batch.length === 1) return asMultiPolygonCoordinates(batch[0]);
+  return polygonClipping.union(...batch);
+}
+
+/**
+ * Build a conservative metre-accurate corridor as a union of valid segment
+ * capsules. Unlike a miter-offset ring, each capsule is individually simple;
+ * polygon-clipping then resolves tight turns, road loops and segment crossings.
+ * No native PostgreSQL/PostGIS extension is needed.
+ *
+ * Geometry is built in an azimuthal-equidistant metric projection centred on
+ * the route midpoint. Routes extending beyond 20 degrees from that centre fail
+ * closed rather than creating a buffer with uncontrolled scale distortion.
+ */
+function buildCorridorPolygonTopologyUnion(path, bufferM) {
+  const route = normalizePath(path);
+  const buffer = Number(bufferM);
+  if (!Number.isFinite(buffer) || buffer < MIN_BUFFER_M || buffer > MAX_BUFFER_M) {
+    throw new RangeError('Corridor buffer must be between 10 and 5000 metres.');
+  }
+
+  const center = midpointOnPath(route);
+  const metricProjection = makeAzimuthalEquidistantProjection(center);
+  const projectedPath = [];
+  let maxAngularDistance = 0;
+
+  for (let i = 0; i < route.length - 1; i++) {
+    const segmentLength = distanceM(route[i], route[i + 1]);
+    if (!Number.isFinite(segmentLength) || segmentLength <= 0) {
+      throw new RangeError('Route contains a segment with no measurable length.');
+    }
+    const divisions = Math.max(1, Math.ceil(segmentLength / MAX_BUFFER_SEGMENT_LENGTH_M));
+    for (let j = i === 0 ? 0 : 1; j <= divisions; j++) {
+      if (projectedPath.length >= MAX_BUFFER_SEGMENTS + 1) {
+        throw new RangeError(
+          'Corridor exceeds the safe ' + MAX_BUFFER_SEGMENTS + '-segment topology budget; no geofence was created.'
+        );
+      }
+      const point = j === 0 ? route[i] : interpolateGeodesicPoint(route[i], route[i + 1], j / divisions);
+      const projected = metricProjection.forward(point);
+      maxAngularDistance = Math.max(maxAngularDistance, projected.angle);
+      projectedPath.push(projected.xy);
+    }
+  }
+  const finalProjected = metricProjection.forward(route[route.length - 1]);
+  maxAngularDistance = Math.max(maxAngularDistance, finalProjected.angle);
+  if (projectedPath.length < 2) throw new RangeError('Corridor needs at least two distinct projected route points.');
+
+  const maximumExtent = maxAngularDistance + (buffer + 0.05) / R;
+  if (maximumExtent >= MAX_AEQD_ANGLE_RAD) {
+    throw new RangeError('Route and buffer exceed the safe 20-degree corridor projection extent; no geofence was created.');
+  }
+  const projectionScale = maximumExtent > 1e-8 ? maximumExtent / Math.sin(maximumExtent) : 1;
+  const radiusM = ((buffer + 0.05) * projectionScale) /
+    Math.cos(Math.PI / (2 * MAX_BUFFER_ARC_SEGMENTS));
+
+  let level = [];
+  let batch = [];
+  for (let i = 0; i < projectedPath.length - 1; i++) {
+    batch.push(makeCapsulePolygon(projectedPath[i], projectedPath[i + 1], radiusM));
+    if (batch.length >= MAX_BUFFER_BATCH_SIZE) {
+      level.push(mergeCorridorPolygonBatch(batch));
+      batch = [];
+    }
+  }
+  if (batch.length) level.push(mergeCorridorPolygonBatch(batch));
+
+  while (level.length > 1) {
+    const next = [];
+    for (let i = 0; i < level.length; i += MAX_BUFFER_BATCH_SIZE) {
+      next.push(mergeCorridorPolygonBatch(level.slice(i, i + MAX_BUFFER_BATCH_SIZE)));
+    }
+    level = next;
+  }
+
+  const multiPolygon = level[0];
+  if (!Array.isArray(multiPolygon) || multiPolygon.length !== 1 ||
+      !Array.isArray(multiPolygon[0]) || multiPolygon[0].length !== 1) {
+    throw new RangeError(
+      'Topology union produced a disconnected corridor or interior hole that cannot be represented by one geofence ring; no geofence was created.'
+    );
+  }
+  const exteriorXY = multiPolygon[0][0];
+  if (!Array.isArray(exteriorXY) || exteriorXY.length < 4) {
+    throw new RangeError('Topology union returned an invalid corridor exterior ring.');
+  }
+  const first = exteriorXY[0];
+  const last = exteriorXY[exteriorXY.length - 1];
+  if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 0.01) {
+    throw new RangeError('Topology union returned an open corridor ring.');
+  }
+
+  // Check the centreline in the same projected metric plane used for clipping.
+  const routeStride = Math.max(1, Math.ceil(projectedPath.length / 512));
+  for (let i = 0; i < projectedPath.length; i += routeStride) {
+    if (!pointInRingXY(projectedPath[i], exteriorXY)) {
+      throw new RangeError('Topology-unioned corridor failed centreline coverage verification.');
+    }
+  }
+  if (!pointInRingXY(projectedPath[projectedPath.length - 1], exteriorXY)) {
+    throw new RangeError('Topology-unioned corridor failed endpoint coverage verification.');
+  }
+
+  const polygon = exteriorXY.map(metricProjection.inverse);
+  const validation = validateCorridorGeometry(route, polygon, buffer, {
+    method: 'topology-union-buffer',
+    projectedCoverageVerified: true,
+  });
+  if (!validation.valid) {
+    throw new RangeError('Topology-unioned corridor failed coordinate validation: ' + validation.reason);
+  }
+  return polygon;
+}
+
 function validateCorridorGeometry(path, polygon, bufferM, options = {}) {
   try {
     const route=normalizePath(path), buffer=Number(bufferM);
     if(!Number.isFinite(buffer)||buffer<MIN_BUFFER_M||buffer>MAX_BUFFER_M) return {valid:false,reason:'Invalid metre buffer.'};
-    const arbitraryBufferRing = options && typeof options.method === 'string' && options.method.startsWith('postgis-');
+    const arbitraryBufferRing = options && typeof options.method === 'string' &&
+      (options.method.startsWith('postgis-') || options.method.startsWith('topology-'));
     if(!Array.isArray(polygon)||polygon.length<4||(!arbitraryBufferRing&&polygon.length!==2*route.length+1)) return {valid:false,reason:'Polygon vertex count does not match the centreline.'};
     const ring=polygon.map((p,i)=>{
       if(!Array.isArray(p)||p.length<2||!Number.isFinite(Number(p[0]))||!Number.isFinite(Number(p[1]))||Math.abs(Number(p[0]))>90||Math.abs(Number(p[1]))>180) throw new RangeError('Invalid polygon coordinate at index '+i+'.');
@@ -405,28 +675,27 @@ function validateCorridorGeometry(path, polygon, bufferM, options = {}) {
     const proj=projection(ring);
     proj.xy[proj.xy.length-1]=[...proj.xy[0]];
     if (arbitraryBufferRing) {
-      // The database builder has already run ST_IsValid/GEOS against the full
-      // geographic buffer. Do not run the local miter validator's single
-      // equirectangular projection over a continent-scale exterior ring: that
-      // projection can fold distant edges together and report a false
-      // self-intersection. Recheck coordinate finiteness/closure above and
-      // verify route coverage here; the SQL independently uses ST_Covers on
-      // the complete, unsampled route before accepting the polygon.
-      const unwrappedRing = unwrap(ring.slice(0, -1).map(point => [...point]));
-      const meanLng = unwrappedRing.reduce((sum, point) => sum + point[1], 0) / unwrappedRing.length;
-      const routeProjected = route.map(point => {
-        let lng = point[1];
-        lng += 360 * Math.round((meanLng - lng) / 360);
-        return proj.toXY([point[0], lng]);
-      });
-      const stride = Math.max(1, Math.ceil(routeProjected.length / 512));
-      for (let i = 0; i < routeProjected.length; i += stride) {
-        if (!pointInRingXY(routeProjected[i], proj.xy)) {
-          return {valid:false,reason:'Buffered polygon does not contain a sampled centreline point.'};
+      // The clipping engine checks topology, and the JS union path verifies
+      // centreline coverage in its original metric projection before inverse
+      // projection. Avoid re-projecting a long exterior ring into one planar
+      // approximation here, which can introduce false intersections.
+      if (options.projectedCoverageVerified !== true) {
+        const unwrappedRing = unwrap(ring.slice(0, -1).map(point => [...point]));
+        const meanLng = unwrappedRing.reduce((sum, point) => sum + point[1], 0) / unwrappedRing.length;
+        const routeProjected = route.map(point => {
+          let lng = point[1];
+          lng += 360 * Math.round((meanLng - lng) / 360);
+          return proj.toXY([point[0], lng]);
+        });
+        const stride = Math.max(1, Math.ceil(routeProjected.length / 512));
+        for (let i = 0; i < routeProjected.length; i += stride) {
+          if (!pointInRingXY(routeProjected[i], proj.xy)) {
+            return {valid:false,reason:'Buffered polygon does not contain a sampled centreline point.'};
+          }
         }
-      }
-      if (!pointInRingXY(routeProjected[routeProjected.length - 1], proj.xy)) {
-        return {valid:false,reason:'Buffered polygon does not contain the route endpoint.'};
+        if (!pointInRingXY(routeProjected[routeProjected.length - 1], proj.xy)) {
+          return {valid:false,reason:'Buffered polygon does not contain the route endpoint.'};
+        }
       }
       return {valid:true,pathPoints:route.length,polygonPoints:ring.length,containsCenterline:true};
     }
@@ -580,4 +849,4 @@ function isRecoverableOffsetError(error) {
     .test(String(error && error.message || ''));
 }
 
-module.exports={MAX_PATH_POINTS,MAX_SIMPLIFICATION_TOLERANCE_M,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorGeometry,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,simplifyPath,validateCorridorGeometry};
+module.exports={MAX_PATH_POINTS,MAX_SIMPLIFICATION_TOLERANCE_M,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorGeometry,buildCorridorPolygon,buildCorridorPolygonTopologyUnion,distanceM,midpointOnPath,normalizePath,simplifyPath,validateCorridorGeometry};

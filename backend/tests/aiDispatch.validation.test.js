@@ -154,39 +154,6 @@ describe('Copilot dispatch tool execution contract', () => {
     ]);
 
     mockQuery.mockImplementation(async (sql, params = []) => {
-      if (/FROM pg_catalog\.pg_extension/i.test(String(sql))) {
-        return { rows: [{ schema_name: 'extensions' }] };
-      }
-      if (/pg_catalog\.set_config/i.test(String(sql))) {
-        return { rows: [{ search_path: '"extensions", pg_catalog, public' }] };
-      }
-      if (/to_regprocedure\(/i.test(String(sql))) {
-        return { rows: [{
-          st_makepoint_available: true,
-          st_segmentize_available: true,
-          st_buffer_available: true,
-          st_unaryunion_available: true,
-          st_covers_available: true,
-          st_isvalid_available: true,
-        }] };
-      }
-      if (/WITH route_input AS/i.test(String(sql)) && /ST_Buffer\(/i.test(String(sql))) {
-        return { rows: [{
-          geojson: {
-            type: 'Polygon',
-            coordinates: [[
-              [-0.01, -0.01],
-              [1.01, -0.01],
-              [1.01, 0.01],
-              [-0.01, 0.01],
-              [-0.01, -0.01],
-            ]],
-          },
-          geometry_valid: true,
-          covers_centerline: true,
-          geometry_type: 'ST_Polygon',
-        }] };
-      }
       if (/INSERT INTO geofences/i.test(String(sql))) {
         persistedCoordinates = JSON.parse(params[2]);
         return { rows: [{ id: 'geo-route-test-1' }] };
@@ -223,7 +190,7 @@ describe('Copilot dispatch tool execution contract', () => {
         geofence_id: 'geo-route-test-1',
         source_path_points: 12001,
         path_simplification_tolerance_m: 10,
-        buffer_polygon_method: 'postgis-chunked-geography-buffer',
+        buffer_polygon_method: 'javascript-topology-union-buffer',
         fallback_used: false,
         geometry_verification: { persisted_path_points: expect.any(Number) },
       });
@@ -232,16 +199,10 @@ describe('Copilot dispatch tool execution contract', () => {
       expect(response.body.created[0].geometry_verification.start_drift_m).toBeLessThanOrEqual(1500);
       expect(response.body.created[0].geometry_verification.end_drift_m).toBeLessThanOrEqual(1500);
       expect(global.fetch).toHaveBeenCalledTimes(1);
-      const bufferSqlCall = mockQuery.mock.calls.find(([sql]) => String(sql).includes('ST_Buffer('));
-      expect(bufferSqlCall).toBeDefined();
-      expect(mockQuery.mock.calls.some(([sql]) => /FROM pg_catalog\.pg_extension/i.test(String(sql)))).toBe(true);
-      expect(mockQuery.mock.calls.some(([sql, params]) =>
-        /pg_catalog\.set_config/i.test(String(sql)) && params?.[0] === 'extensions'
-      )).toBe(true);
-      expect(String(bufferSqlCall[0])).toContain('ST_MakePoint');
-      expect(String(bufferSqlCall[0])).toContain('ST_Segmentize');
-      expect(String(bufferSqlCall[0])).toContain('ST_UnaryUnion');
-      expect(String(bufferSqlCall[0])).toContain('ST_Covers');
+      expect(mockQuery.mock.calls.some(([sql]) => /FROM pg_catalog\.pg_extension/i.test(String(sql)))).toBe(false);
+      expect(mockQuery.mock.calls.some(([sql]) => /ST_Buffer\(/i.test(String(sql)))).toBe(false);
+      expect(persistedCoordinates?.buffer_polygon_method).toBe('javascript-topology-union-buffer');
+      expect(persistedCoordinates?.buffer_polygon?.length).toBeGreaterThan(4);
       expect(mockQuery.mock.calls.some(([sql]) => /INSERT INTO geofences/i.test(String(sql)))).toBe(true);
       expect(mockQuery.mock.calls.some(([sql]) => /SELECT coordinates FROM geofences/i.test(String(sql)))).toBe(true);
       expect(persistedCoordinates?.buffer_polygon_method).toBe('postgis-chunked-geography-buffer');
