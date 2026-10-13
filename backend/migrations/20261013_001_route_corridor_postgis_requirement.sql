@@ -1,13 +1,33 @@
--- Ensure the production database has the PostGIS functions required for
--- robust, chunked geodesic route-corridor construction. An earlier bootstrap
--- migration treated PostGIS as optional and swallowed all CREATE EXTENSION
--- errors; that allowed the API to silently fall back to a fragile offset ring.
+-- Ensure production has the PostGIS functions required for robust,
+-- chunked geodesic corridor creation. Earlier bootstrap DDL treated PostGIS
+-- as optional and swallowed install failures, silently enabling a fragile ring.
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 DO $$
+DECLARE
+  postgis_schema text;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis') THEN
+  SELECT namespace.nspname
+    INTO postgis_schema
+    FROM pg_catalog.pg_extension AS extension
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = extension.extnamespace
+   WHERE extension.extname = 'postgis';
+
+  IF postgis_schema IS NULL THEN
     RAISE EXCEPTION 'PostGIS is required for safe route-corridor polygon generation';
+  END IF;
+
+  -- Do not assume the provider installs PostGIS in public. Subsequent function
+  -- resolution in this transaction must use the namespace recorded by pg_extension.
+  PERFORM pg_catalog.set_config(
+    'search_path',
+    pg_catalog.quote_ident(postgis_schema) || ', pg_catalog, public',
+    true
+  );
+
+  IF to_regprocedure('st_makepoint(double precision,double precision)') IS NULL THEN
+    RAISE EXCEPTION 'Required PostGIS function ST_MakePoint(double precision, double precision) is unavailable';
   END IF;
 
   IF to_regprocedure('st_segmentize(geography,double precision)') IS NULL THEN
