@@ -154,7 +154,7 @@ describe('Copilot dispatch tool execution contract', () => {
     ]);
 
     mockQuery.mockImplementation(async (sql, params = []) => {
-      if (/ST_Buffer\\(/i.test(String(sql))) {
+      if (/ST_Buffer\(/i.test(String(sql))) {
         return { rows: [{
           geojson: {
             type: 'Polygon',
