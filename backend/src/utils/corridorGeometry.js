@@ -78,9 +78,11 @@ function simplifyRawPath(raw, toleranceM, comparisonBudget) {
   return raw.filter((_, index) => keep[index]);
 }
 
-function simplifyPath(path, toleranceM = 10, maxToleranceM = MAX_SIMPLIFICATION_TOLERANCE_M) {
+function simplifyPath(path, toleranceM = 10, maxToleranceM = MAX_SIMPLIFICATION_TOLERANCE_M, options = {}) {
   if (!Array.isArray(path) || path.length < 2) throw new TypeError('A corridor needs at least two route points.');
   if (path.length > MAX_INPUT_PATH_POINTS) throw new RangeError('Route geometry exceeds the safe input vertex limit.');
+  const simplifyOptions = options && typeof options === 'object' ? options : {};
+  const forceSimplification = simplifyOptions.force === true;
   const requestedToleranceM = Number(toleranceM);
   const toleranceCeilingM = Number(maxToleranceM);
   if (!Number.isFinite(toleranceCeilingM) || toleranceCeilingM < 1 || toleranceCeilingM > MAX_SIMPLIFICATION_TOLERANCE_M) {
@@ -102,7 +104,7 @@ function simplifyPath(path, toleranceM = 10, maxToleranceM = MAX_SIMPLIFICATION_
     if (!raw.length || distanceM(raw[raw.length - 1], normalized) >= 0.05) raw.push(normalized);
   }
   if (raw.length < 2) throw new RangeError('The route has no measurable length.');
-  if (raw.length <= MAX_PATH_POINTS) {
+  if (raw.length <= MAX_PATH_POINTS && !forceSimplification) {
     const normalized = normalizePath(raw);
     return {
       path: normalized,
@@ -125,7 +127,9 @@ function simplifyPath(path, toleranceM = 10, maxToleranceM = MAX_SIMPLIFICATION_
     candidates.push(next);
   }
 
-  const comparisonBudget = { total: 0 };
+  const comparisonBudget = simplifyOptions.comparisonBudget && Number.isFinite(simplifyOptions.comparisonBudget.total)
+    ? simplifyOptions.comparisonBudget
+    : { total: 0 };
   let lastUnsuccessfulToleranceM = requestedToleranceM;
   let lastFailure = 'vertex limit';
   for (const candidateToleranceM of candidates) {
@@ -376,11 +380,23 @@ function validateRingXY(points) {
   }
   return {valid:true};
 }
-function validateCorridorGeometry(path, polygon, bufferM) {
+function pointInRingXY(point, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    const crosses = ((a[1] > point[1]) !== (b[1] > point[1])) &&
+      (point[0] < (b[0] - a[0]) * (point[1] - a[1]) / ((b[1] - a[1]) || Number.EPSILON) + a[0]);
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
+function validateCorridorGeometry(path, polygon, bufferM, options = {}) {
   try {
     const route=normalizePath(path), buffer=Number(bufferM);
     if(!Number.isFinite(buffer)||buffer<MIN_BUFFER_M||buffer>MAX_BUFFER_M) return {valid:false,reason:'Invalid metre buffer.'};
-    if(!Array.isArray(polygon)||polygon.length!==2*route.length+1) return {valid:false,reason:'Polygon vertex count does not match the centreline.'};
+    const arbitraryBufferRing = options && options.method === 'postgis-geography-buffer';
+    if(!Array.isArray(polygon)||polygon.length<4||(!arbitraryBufferRing&&polygon.length!==2*route.length+1)) return {valid:false,reason:'Polygon vertex count does not match the centreline.'};
     const ring=polygon.map((p,i)=>{
       if(!Array.isArray(p)||p.length<2||!Number.isFinite(Number(p[0]))||!Number.isFinite(Number(p[1]))||Math.abs(Number(p[0]))>90||Math.abs(Number(p[1]))>180) throw new RangeError('Invalid polygon coordinate at index '+i+'.');
       return [Number(p[0]),Number(p[1])];
@@ -390,6 +406,29 @@ function validateCorridorGeometry(path, polygon, bufferM) {
     proj.xy[proj.xy.length-1]=[...proj.xy[0]];
     const valid=validateRingXY(proj.xy);
     if(!valid.valid) return valid;
+    if (arbitraryBufferRing) {
+      // PostGIS/GEOS creates a true line buffer whose vertices do not correspond
+      // one-to-one with centreline vertices. Verify a bounded set of centreline
+      // samples remains inside the persisted exterior ring; the generating SQL
+      // separately verifies ST_Covers(buffer, complete_route).
+      const unwrappedRing = unwrap(ring.slice(0, -1).map(point => [...point]));
+      const meanLng = unwrappedRing.reduce((sum, point) => sum + point[1], 0) / unwrappedRing.length;
+      const routeProjected = route.map(point => {
+        let lng = point[1];
+        lng += 360 * Math.round((meanLng - lng) / 360);
+        return proj.toXY([point[0], lng]);
+      });
+      const stride = Math.max(1, Math.ceil(routeProjected.length / 512));
+      for (let i = 0; i < routeProjected.length; i += stride) {
+        if (!pointInRingXY(routeProjected[i], proj.xy)) {
+          return {valid:false,reason:'Buffered polygon does not contain a sampled centreline point.'};
+        }
+      }
+      if (!pointInRingXY(routeProjected[routeProjected.length - 1], proj.xy)) {
+        return {valid:false,reason:'Buffered polygon does not contain the route endpoint.'};
+      }
+      return {valid:true,pathPoints:route.length,polygonPoints:ring.length,containsCenterline:true};
+    }
     const offsets=[], n=route.length;
     for(let i=0;i<n;i++) {
       const left=distanceM(route[i],ring[i]), right=distanceM(route[i],ring[2*n-1-i]);
@@ -435,4 +474,107 @@ function buildCorridorPolygon(path, bufferM) {
   if(!verified.valid) throw new RangeError(verified.reason);
   return polygon;
 }
-module.exports={MAX_PATH_POINTS,MAX_SIMPLIFICATION_TOLERANCE_M,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,simplifyPath,validateCorridorGeometry};
+
+// Recover from a mitered offset ring that crosses itself on tight bends or
+// closely spaced road segments. Never drop route endpoints or exceed the
+// buffer-relative deviation ceiling. Each retry is measured against the
+// original routed centreline, not against a previously simplified derivative.
+function buildCorridorGeometry(path, bufferM, requestedToleranceM = 10, maxToleranceM = MAX_SIMPLIFICATION_TOLERANCE_M) {
+  const buffer = Number(bufferM);
+  if (!Number.isFinite(buffer) || buffer < MIN_BUFFER_M || buffer > MAX_BUFFER_M) {
+    throw new RangeError('Corridor buffer must be between 10 and 5000 metres.');
+  }
+  const ceiling = Math.min(Number(maxToleranceM), buffer / 3);
+  const requested = Math.min(Number(requestedToleranceM), ceiling);
+  if (!Number.isFinite(requested) || requested < 1 || !Number.isFinite(ceiling) || ceiling < requested) {
+    throw new RangeError('Corridor recovery tolerance must be between 1 m and the buffer-relative ceiling.');
+  }
+
+  const initial = simplifyPath(path, requested, ceiling);
+  let initialError;
+  try {
+    return {
+      path: initial.path,
+      polygon: buildCorridorPolygon(initial.path, buffer),
+      simplification: initial,
+      recoveryUsed: false,
+      recoveryReason: null,
+      bufferPolygonMethod: 'validated-miter-offset',
+    };
+  } catch (error) {
+    if (!isRecoverableOffsetError(error)) throw error;
+    initialError = error;
+  }
+
+  const candidates = [requested];
+  while (candidates.length < 8 && candidates[candidates.length - 1] < ceiling) {
+    const previous = candidates[candidates.length - 1];
+    const next = Math.min(ceiling, previous * 2);
+    if (next <= previous) break;
+    candidates.push(next);
+  }
+  const comparisonBudget = { total: 0 };
+  let lastError = initialError;
+  let lastTriedToleranceM = initial.toleranceM || 0;
+
+  for (const candidateToleranceM of candidates) {
+    // The initial geometry already tried this tolerance (or a higher one).
+    if (initial.toleranceM > 0 && candidateToleranceM <= initial.toleranceM) continue;
+    let trial;
+    try {
+      trial = simplifyPath(path, candidateToleranceM, ceiling, {
+        force: true,
+        comparisonBudget,
+      });
+    } catch (error) {
+      lastError = error;
+      if (/computation budget/i.test(String(error.message || ''))) break;
+      continue;
+    }
+    lastTriedToleranceM = Math.max(lastTriedToleranceM, trial.toleranceM || candidateToleranceM);
+    if (trial.path.length >= initial.path.length &&
+        trial.path.every((point, index) => point[0] === initial.path[index]?.[0] && point[1] === initial.path[index]?.[1])) {
+      continue;
+    }
+
+    try {
+      const polygon = buildCorridorPolygon(trial.path, buffer);
+      const actualToleranceM = trial.toleranceM || 0;
+      const recoveredSimplification = {
+        ...trial,
+        requestedToleranceM: requested,
+        toleranceEscalated: actualToleranceM > requested,
+        method: actualToleranceM > requested
+          ? 'douglas-peucker-adaptive-corridor-recovery'
+          : actualToleranceM > 0
+            ? 'douglas-peucker-corridor-recovery'
+            : 'none',
+      };
+      return {
+        path: trial.path,
+        polygon,
+        simplification: recoveredSimplification,
+        recoveryUsed: true,
+        recoveryReason: initialError.message,
+        bufferPolygonMethod: 'validated-miter-offset-recovered',
+      };
+    } catch (error) {
+      lastError = error;
+      if (!isRecoverableOffsetError(error)) throw error;
+    }
+  }
+
+  throw new RangeError(
+    'Corridor polygon remains invalid after bounded route simplification up to '
+    + Math.min(ceiling, Math.max(lastTriedToleranceM, requested)).toFixed(1)
+    + ' m; no geofence was created. Last geometry error: '
+    + String(lastError && lastError.message || initialError.message)
+  );
+}
+
+function isRecoverableOffsetError(error) {
+  return /polygon ring self-intersects|route reverses direction too sharply|corridor miter is numerically unstable|polygon offset is inconsistent/i
+    .test(String(error && error.message || ''));
+}
+
+module.exports={MAX_PATH_POINTS,MAX_SIMPLIFICATION_TOLERANCE_M,MAX_BUFFER_M,MIN_BUFFER_M,buildCorridorGeometry,buildCorridorPolygon,distanceM,midpointOnPath,normalizePath,simplifyPath,validateCorridorGeometry};

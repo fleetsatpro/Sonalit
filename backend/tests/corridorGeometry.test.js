@@ -1,6 +1,7 @@
 'use strict';
 
 const {
+  buildCorridorGeometry,
   buildCorridorPolygon,
   distanceM,
   midpointOnPath,
@@ -104,6 +105,45 @@ describe('validated corridor geometry', () => {
       pathPoints: 5001,
       polygonPoints: 10003,
     });
+  });
+
+  test('recovers a self-intersecting tight loop only within the corridor-relative tolerance ceiling', () => {
+    const path = [[0, 0], [0, 0.0004], [0.00005, 0.0004], [0.00005, 0]];
+    const bufferM = 300;
+
+    expect(() => buildCorridorPolygon(path, bufferM)).toThrow(/self-intersects/i);
+    const recovered = buildCorridorGeometry(path, bufferM, 10, 100);
+
+    expect(recovered.recoveryUsed).toBe(true);
+    expect(recovered.bufferPolygonMethod).toBe('validated-miter-offset-recovered');
+    expect(recovered.simplification.toleranceM).toBeLessThanOrEqual(bufferM / 3);
+    expect(recovered.path[0]).toEqual(path[0]);
+    expect(recovered.path[recovered.path.length - 1]).toEqual(path[path.length - 1]);
+    expect(validateCorridorGeometry(recovered.path, recovered.polygon, bufferM)).toMatchObject({ valid: true });
+    let maximumDeviationM = 0;
+    for (const point of path) {
+      let nearest = Infinity;
+      for (let i = 0; i < recovered.path.length - 1; i++) {
+        nearest = Math.min(nearest, pointToSegmentDistanceM(point, recovered.path[i], recovered.path[i + 1]));
+      }
+      maximumDeviationM = Math.max(maximumDeviationM, nearest);
+    }
+    expect(maximumDeviationM).toBeLessThanOrEqual(recovered.simplification.toleranceM + 0.5);
+  });
+
+  test('validates robust external-buffer rings without requiring one vertex per centreline point', () => {
+    const path = [[0, 0], [0, 0.01], [0.01, 0.01]];
+    const exteriorRing = [
+      [-0.003, -0.003],
+      [-0.003, 0.013],
+      [0.013, 0.013],
+      [0.013, -0.003],
+      [-0.003, -0.003],
+    ];
+
+    expect(exteriorRing).toHaveLength(5);
+    expect(validateCorridorGeometry(path, exteriorRing, 300, { method: 'postgis-geography-buffer' }))
+      .toMatchObject({ valid: true, containsCenterline: true, pathPoints: 3, polygonPoints: 5 });
   });
 
   test('handles the distance midpoint across the antimeridian', () => {
