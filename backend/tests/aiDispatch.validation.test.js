@@ -154,7 +154,23 @@ describe('Copilot dispatch tool execution contract', () => {
     ]);
 
     mockQuery.mockImplementation(async (sql, params = []) => {
-      if (/ST_Buffer\(/i.test(String(sql))) {
+      if (/FROM pg_catalog\.pg_extension/i.test(String(sql))) {
+        return { rows: [{ schema_name: 'extensions' }] };
+      }
+      if (/pg_catalog\.set_config/i.test(String(sql))) {
+        return { rows: [{ search_path: '"extensions", pg_catalog, public' }] };
+      }
+      if (/to_regprocedure\(/i.test(String(sql))) {
+        return { rows: [{
+          st_makepoint_available: true,
+          st_segmentize_available: true,
+          st_buffer_available: true,
+          st_unaryunion_available: true,
+          st_covers_available: true,
+          st_isvalid_available: true,
+        }] };
+      }
+      if (/WITH route_input AS/i.test(String(sql)) && /ST_Buffer\(/i.test(String(sql))) {
         return { rows: [{
           geojson: {
             type: 'Polygon',
@@ -218,6 +234,11 @@ describe('Copilot dispatch tool execution contract', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
       const bufferSqlCall = mockQuery.mock.calls.find(([sql]) => String(sql).includes('ST_Buffer('));
       expect(bufferSqlCall).toBeDefined();
+      expect(mockQuery.mock.calls.some(([sql]) => /FROM pg_catalog\.pg_extension/i.test(String(sql)))).toBe(true);
+      expect(mockQuery.mock.calls.some(([sql, params]) =>
+        /pg_catalog\.set_config/i.test(String(sql)) && params?.[0] === 'extensions'
+      )).toBe(true);
+      expect(String(bufferSqlCall[0])).toContain('ST_MakePoint');
       expect(String(bufferSqlCall[0])).toContain('ST_Segmentize');
       expect(String(bufferSqlCall[0])).toContain('ST_UnaryUnion');
       expect(String(bufferSqlCall[0])).toContain('ST_Covers');

@@ -167,6 +167,25 @@ async function executeMigration(client, file, rawSql, { reconciliation = false }
 }
 
 async function run() {
+  const onlyArguments = process.argv.slice(2).filter((arg) => arg.startsWith('--only='));
+  if (onlyArguments.length > 1) {
+    throw new Error('Use at most one --only=<migration-filename> argument');
+  }
+  const requestedMigration = onlyArguments.length ? onlyArguments[0].slice('--only='.length) : null;
+  if (requestedMigration && path.basename(requestedMigration) !== requestedMigration) {
+    throw new Error('--only must be a migration filename, not a path');
+  }
+  const availableFiles = fs.readdirSync(MIGRATIONS_DIR).filter((file) => file.endsWith('.sql')).sort();
+  if (requestedMigration && !availableFiles.includes(requestedMigration)) {
+    throw new Error('Unknown migration requested by --only: ' + requestedMigration);
+  }
+  const files = requestedMigration
+    ? availableFiles.filter((file) => file === requestedMigration)
+    : availableFiles;
+  if (requestedMigration) {
+    console.log('[db-migrate] targeted mode: ' + requestedMigration + ' (unrelated migrations will not run)');
+  }
+
   const client = await pool.connect();
   try {
     // The production schema gate certifies `public`. Make the migration
@@ -185,7 +204,7 @@ async function run() {
     const applied = new Set(
       (await client.query('SELECT filename FROM public.schema_migrations')).rows.map(r => r.filename)
     );
-    const files = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
+
     let ran = 0;
     let reconciled = 0;
 

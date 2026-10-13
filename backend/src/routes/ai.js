@@ -712,6 +712,58 @@ function toLatLngPath(osrmCoordinates) {
 }
 
 
+async function configurePostGISCorridorFunctions(client) {
+  // PostGIS can be installed into a provider-managed schema such as "extensions".
+  // A SET ROLE may change the effective search_path, so resolve the extension's
+  // authoritative namespace inside this tenant transaction instead of assuming
+  // that ST_* functions live in public.
+  const extensionResult = await client.query(`
+    SELECT namespace.nspname AS schema_name
+    FROM pg_catalog.pg_extension AS extension
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = extension.extnamespace
+    WHERE extension.extname = 'postgis'
+  `);
+  const schemaName = String(extensionResult.rows?.[0]?.schema_name || '').trim();
+  if (!schemaName) {
+    throw new Error('PostGIS extension is not installed; apply migration 20261013_001_route_corridor_postgis_requirement.sql before creating route corridors.');
+  }
+
+  await client.query(
+    `SELECT pg_catalog.set_config(
+      'search_path',
+      pg_catalog.quote_ident($1) || ', pg_catalog, public',
+      true
+    ) AS search_path`,
+    [schemaName],
+  );
+
+  const functionsResult = await client.query(`
+    SELECT
+      to_regprocedure('st_makepoint(double precision,double precision)') IS NOT NULL AS st_makepoint_available,
+      to_regprocedure('st_segmentize(geography,double precision)') IS NOT NULL AS st_segmentize_available,
+      to_regprocedure('st_buffer(geography,double precision,text)') IS NOT NULL AS st_buffer_available,
+      to_regprocedure('st_unaryunion(geometry,double precision)') IS NOT NULL AS st_unaryunion_available,
+      to_regprocedure('st_covers(geometry,geometry)') IS NOT NULL AS st_covers_available,
+      to_regprocedure('st_isvalid(geometry)') IS NOT NULL AS st_isvalid_available
+  `);
+  const available = functionsResult.rows?.[0] || {};
+  const required = [
+    ['st_makepoint_available', 'ST_MakePoint(double precision, double precision)'],
+    ['st_segmentize_available', 'ST_Segmentize(geography, double precision)'],
+    ['st_buffer_available', 'ST_Buffer(geography, double precision, text)'],
+    ['st_unaryunion_available', 'ST_UnaryUnion(geometry, double precision)'],
+    ['st_covers_available', 'ST_Covers(geometry, geometry)'],
+    ['st_isvalid_available', 'ST_IsValid(geometry)'],
+  ];
+  const missing = required.filter(([key]) => available[key] !== true).map(([, name]) => name);
+  if (missing.length) {
+    throw new Error(
+      'PostGIS corridor functions unavailable from extension schema "' + schemaName + '": ' + missing.join(', ')
+    );
+  }
+}
+
 async function buildCorridorPolygonWithPostGIS(pathLatLng, bufferM, orgId) {
   // A single geography buffer over a multi-thousand-kilometre line can force
   // PostGIS to use one inappropriate projection for the entire route. Segment
@@ -773,7 +825,10 @@ async function buildCorridorPolygonWithPostGIS(pathLatLng, bufferM, orgId) {
     FROM merged
     CROSS JOIN route_input
   `;
-  const result = await withOrg(orgId, (client) => client.query(sql, [JSON.stringify(pathLatLng), Number(bufferM)]));
+  const result = await withOrg(orgId, async (client) => {
+    await configurePostGISCorridorFunctions(client);
+    return client.query(sql, [JSON.stringify(pathLatLng), Number(bufferM)]);
+  });
   const row = result.rows && result.rows[0];
   if (!row) throw new Error('PostGIS returned no buffered corridor geometry.');
 
