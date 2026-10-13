@@ -1195,6 +1195,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         path_simplification_tolerance_m: pathSimplification.toleranceM,
         path_simplification_escalated: pathSimplification.toleranceEscalated,
         path_simplification_method: pathSimplification.method,
+        buffer_polygon_method: coordinates.buffer_polygon_method,
         road_distance_km: (distM / 1000).toFixed(2),
         buffer_m,
         precision: effectivePrecision,
