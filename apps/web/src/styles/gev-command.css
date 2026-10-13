@@ -180,6 +180,22 @@
   box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 24px rgba(184,166,255,.07);
 }
 
+.gev-weather-toggle[aria-pressed="true"] {
+  color: #d8fbff;
+  border-color: rgba(98,231,255,.48);
+  background: linear-gradient(180deg, rgba(45,212,191,.17), rgba(8,145,178,.07));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 0 26px rgba(34,211,238,.13);
+}
+.gev-weather-toggle[aria-pressed="true"] > span {
+  color: #67e8f9;
+  border-color: rgba(103,232,249,.18);
+  background: rgba(8,47,73,.72);
+}
+.gev-weather-toggle:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 3px;
+}
+
 .gev-topright {
   justify-self: end;
   display: flex;
@@ -751,6 +767,80 @@
   color: #94a0af;
 }
 
+.gev-weather-observation-card {
+  margin-top: 9px;
+  padding: 11px;
+  border: 1px solid rgba(98,231,255,.19);
+  border-radius: 12px;
+  background: radial-gradient(circle at 0 0, rgba(34,211,238,.08), transparent 46%), linear-gradient(180deg, rgba(7,17,27,.96), rgba(5,10,17,.93));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 10px 30px rgba(0,0,0,.16);
+}
+.gev-weather-observation-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #67e8f9;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.gev-weather-condition {
+  color: #f0fbff;
+  font: 800 15px/1.05 "Barlow Condensed", sans-serif;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.gev-weather-subcondition {
+  margin-top: 4px;
+  color: #7dd3fc;
+  font: 700 7px/1.2 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .1em;
+}
+.gev-weather-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 9px 0;
+}
+.gev-weather-detail-grid > div,
+.gev-weather-location > div {
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid rgba(255,255,255,.055);
+  border-radius: 7px;
+  background: rgba(255,255,255,.018);
+}
+.gev-weather-detail-grid span,
+.gev-weather-location span {
+  display: block;
+  color: #7f8e9e;
+  font: 700 7px/1.25 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.gev-weather-detail-grid strong,
+.gev-weather-location strong {
+  display: block;
+  margin-top: 4px;
+  color: #e6f8ff;
+  overflow-wrap: anywhere;
+  font: 700 10px/1.3 "IBM Plex Mono", ui-monospace, monospace;
+}
+.gev-weather-location {
+  display: grid;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+.gev-weather-location > div {
+  border: 0;
+  background: rgba(4,9,15,.45);
+}
+.gev-weather-footnote {
+  margin-top: 8px;
+  color: #8fa3b5;
+  font: 500 7px/1.5 "IBM Plex Mono", ui-monospace, monospace;
+}
+
 .gev-detail-body {
   padding: 10px 12px 12px;
 }
@@ -808,7 +898,17 @@
   .gev-workspace { height: calc(100% - 64px); }
   .gev-subtitle { display: none; }
   .gev-title { font-size: 18px; }
-  .gev-topcenter { display: none; }
+  .gev-topcenter {
+    display: flex;
+    position: absolute;
+    top: calc(100% + 7px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 80;
+  }
+  .gev-topcenter > .gev-segment:not(.gev-weather-toggle),
+  .gev-topcenter > .gev-cctv-trigger { display: none; }
+  .gev-weather-toggle { height: 33px; padding: 0 11px; font-size: 8px; }
   .gev-left-rail {
     left: 10px;
     top: 10px;
