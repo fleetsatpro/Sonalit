@@ -143,12 +143,14 @@ describe('Copilot dispatch tool execution contract', () => {
     expect(mockAiClient.createMessage).not.toHaveBeenCalled();
   });
 
-  test('simplifies a dense routed corridor within a stated tolerance and verifies persisted geometry', async () => {
+  test('simplifies an oversized dense routed corridor within a stated tolerance and verifies persisted geometry', async () => {
     const previousFetch = global.fetch;
     let persistedCoordinates = null;
-    const osrmCoordinates = Array.from({ length: 1601 }, (_, index) => [
-      index / 1600,
-      0.00018 * Math.sin((Math.PI * 80 * index) / 1600),
+    // Keep the same road-like curve but sample it densely enough to cross the
+    // new 10,000-point cap and exercise metre-bounded simplification end-to-end.
+    const osrmCoordinates = Array.from({ length: 12001 }, (_, index) => [
+      index / 12000,
+      0.00018 * Math.sin((Math.PI * 160 * index) / 12000),
     ]);
 
     mockQuery.mockImplementation(async (sql, params = []) => {
@@ -186,7 +188,7 @@ describe('Copilot dispatch tool execution contract', () => {
       expect(response.body.created).toHaveLength(1);
       expect(response.body.created[0]).toMatchObject({
         geofence_id: 'geo-route-test-1',
-        source_path_points: 1601,
+        source_path_points: 12001,
         path_simplification_tolerance_m: 10,
         fallback_used: false,
         geometry_verification: { persisted_path_points: expect.any(Number) },
