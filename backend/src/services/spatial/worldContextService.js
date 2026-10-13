@@ -60,6 +60,37 @@ function bboxFromCenterRadius(lat, lng, radiusM) {
   ];
 }
 
+// Weather animations are opt-in and sample provider model-grid points across
+// the visible map. They never imply a precipitation footprint or radar contour.
+function buildWeatherGridPoints(bounds, center, radiusM, maxPoints) {
+  let extent = Array.isArray(bounds) && bounds.length === 4 ? bounds.map(Number) : null;
+  if (!extent || extent.some(value => !Number.isFinite(value)) ||
+      extent[0] < -180 || extent[2] > 180 || extent[1] < -90 || extent[3] > 90 ||
+      extent[0] >= extent[2] || extent[1] >= extent[3]) {
+    extent = bboxFromCenterRadius(center.latitude, center.longitude, Math.min(250000, Math.max(1000, Number(radiusM) || 100000)));
+  }
+  const [west, south, east, north] = extent;
+  const budget = Math.max(4, Math.min(36, Number(maxPoints) || 36));
+  const longitudeSpan = east - west;
+  const latitudeSpan = north - south;
+  const midpointLatitude = (south + north) / 2;
+  const aspect = Math.max(0.2, longitudeSpan * Math.max(0.2, Math.cos(midpointLatitude * Math.PI / 180)) / Math.max(0.01, latitudeSpan));
+  let columns = Math.max(2, Math.min(6, Math.round(Math.sqrt(budget * aspect))));
+  let rows = Math.max(2, Math.min(6, Math.floor(budget / columns)));
+  while (columns * rows > budget && rows > 2) rows -= 1;
+  while (columns * rows > budget && columns > 2) columns -= 1;
+  const points = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      points.push({
+        latitude: south + ((row + 0.5) / rows) * latitudeSpan,
+        longitude: west + ((column + 0.5) / columns) * longitudeSpan,
+      });
+    }
+  }
+  return points;
+}
+
 function distanceM(aLat, aLng, bLat, bLng) {
   return haversineKm(aLat, aLng, bLat, bLng) * 1000;
 }
@@ -1092,21 +1123,31 @@ async function buildWorldContext(opts) {
     }
   }
   if (layers.includes('weather') && resolvedCenter) {
-    const sampled = routeQueryPlan?.samplePoints?.length
-      ? routeQueryPlan.samplePoints.slice(0, 8)
-      : routeInfo.route.length >= 2
-        ? sampleRoutePoints(routeInfo.route, 8)
-        : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
+    const weatherGrid = input.weatherGrid === true;
+    const sampled = weatherGrid
+      ? buildWeatherGridPoints(input.weatherBounds, resolvedCenter, boundedRadiusM, Math.min(36, maxEntitiesPerLayer))
+      : routeQueryPlan?.samplePoints?.length
+        ? routeQueryPlan.samplePoints.slice(0, 8)
+        : routeInfo.route.length >= 2
+          ? sampleRoutePoints(routeInfo.route, 8)
+          : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
     const points = sampled.length ? sampled : [resolvedCenter];
-    const results = await Promise.allSettled(points.map(function(p) {
-      return spatialProviderManager.query('weather', {
-        latitude: p.latitude,
-        longitude: p.longitude,
-        orgId,
-        requestId: input.requestId,
-        signal: input.signal
-      });
-    }));
+    const results = weatherGrid
+      ? await Promise.allSettled([spatialProviderManager.query('weather', {
+          points,
+          orgId,
+          requestId: input.requestId,
+          signal: input.signal
+        })])
+      : await Promise.allSettled(points.map(function(p) {
+          return spatialProviderManager.query('weather', {
+            latitude: p.latitude,
+            longitude: p.longitude,
+            orgId,
+            requestId: input.requestId,
+            signal: input.signal
+          });
+        }));
 
     const environmentById = new Map();
     let successfulSamples = 0;
@@ -1116,29 +1157,58 @@ async function buildWorldContext(opts) {
     results.forEach(function(result, index) {
       if (result.status === 'rejected') {
         failedSamples.push({
-          index,
+          index: weatherGrid ? 'batch' : index,
           failureClass: String(result.reason?.failureClass || result.reason?.class || 'unknown'),
-          message: String(result.reason?.message || result.reason || 'weather sample failed')
+          message: String(result.reason?.message || result.reason || 'weather sample failed'),
+          count: weatherGrid ? points.length : 1
         });
         return;
       }
-      successfulSamples += 1;
-      statuses.push(String(result.value?.health?.status || 'UNKNOWN').toUpperCase());
-      for (const observation of (result.value.observations || [])) {
-        if (observation && observation.id) environmentById.set(observation.id, observation);
+
+      const observations = (result.value.observations || []).filter(observation => observation && observation.id);
+      for (const observation of observations) environmentById.set(observation.id, observation);
+      if (weatherGrid) {
+        successfulSamples += Math.min(points.length, Math.max(0, Number(result.value.coverage?.successfulSamples ?? observations.length)));
+        for (const observation of observations) {
+          statuses.push(String(observation.quality?.freshnessClass || result.value.health?.status || 'UNKNOWN').toUpperCase());
+        }
+        const missing = Math.max(0, points.length - Number(result.value.coverage?.successfulSamples ?? observations.length));
+        if (missing > 0) {
+          failedSamples.push({
+            index: 'batch-partial',
+            failureClass: 'missing_observation',
+            message: 'Weather provider returned fewer grid-point observations than requested.',
+            count: missing
+          });
+        }
+      } else if (observations.length) {
+        successfulSamples += 1;
+        statuses.push(String(result.value.health?.status || observations[0]?.quality?.freshnessClass || 'UNKNOWN').toUpperCase());
+      } else {
+        failedSamples.push({
+          index,
+          failureClass: String(result.value.error || 'missing_observation').toLowerCase(),
+          message: 'Weather provider returned no observation for this sample.',
+          count: 1
+        });
       }
     });
 
     environment.push.apply(environment, Array.from(environmentById.values()));
 
     const attemptedSamples = points.length;
-    const freshnessComplete = statuses.length === attemptedSamples &&
-      statuses.every(s => s === 'LIVE' || s === 'DELAYED');
+    const freshnessClasses = Array.from(environmentById.values()).map(observation =>
+      String(observation.quality?.freshnessClass || 'UNKNOWN').toUpperCase()
+    );
+    const freshnessComplete = freshnessClasses.length === attemptedSamples &&
+      freshnessClasses.every(s => s === 'LIVE' || s === 'DELAYED');
     const coverageComplete = successfulSamples === attemptedSamples &&
-      environment.length >= successfulSamples &&
+      environmentById.size >= successfulSamples &&
       freshnessComplete;
-    const hasLive = statuses.includes('LIVE');
-    const hasDelayed = statuses.includes('DELAYED');
+    const hasLive = freshnessClasses.includes('LIVE') || statuses.includes('LIVE');
+    const hasDelayed = freshnessClasses.includes('DELAYED') || statuses.includes('DELAYED');
+    const hasStale = freshnessClasses.includes('STALE') || statuses.includes('STALE') || freshnessClasses.includes('UNKNOWN');
+    const failedSampleCount = failedSamples.reduce((sum, sample) => sum + (Number(sample.count) || 1), 0);
     let status;
     if (!successfulSamples) {
       status = failedSamples.length
@@ -1150,7 +1220,7 @@ async function buildWorldContext(opts) {
       status = 'LIVE';
     } else if (hasDelayed) {
       status = 'DELAYED';
-    } else if (statuses.includes('STALE')) {
+    } else if (hasStale) {
       status = 'STALE';
     } else {
       status = 'PARTIAL';
@@ -1165,7 +1235,7 @@ async function buildWorldContext(opts) {
       uncertainty.push(
         'Weather coverage is incomplete: ' +
         String(successfulSamples) + '/' + String(attemptedSamples) +
-        ' route samples succeeded.'
+        (weatherGrid ? ' visible-map grid samples succeeded.' : ' route samples succeeded.')
       );
       for (const failure of failedSamples.slice(0, 3)) {
         warnings.push('weather_provider_' + failure.failureClass);
@@ -1176,7 +1246,12 @@ async function buildWorldContext(opts) {
       complete: coverageComplete,
       sampleCount: attemptedSamples,
       successfulSamples,
-      failedSamples: failedSamples.length
+      failedSamples: failedSampleCount,
+      ...(weatherGrid ? {
+        mode: 'bounded_model_grid_points',
+        bounds: input.weatherBounds || bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, boundedRadiusM),
+        footprintSemantics: 'point_samples_only_not_radar_or_precipitation_footprints'
+      } : {})
     };
     layerHealth.push({
       layerId: 'weather',
@@ -1186,14 +1261,15 @@ async function buildWorldContext(opts) {
         : undefined,
       recordCount: environment.length,
       acceptedCount: environment.length,
-      rejectedCount: 0,
+      rejectedCount: failedSampleCount,
       reason: failedSamples.length
-        ? failedSamples.map(f => f.failureClass + ': ' + f.message).join('; ')
+        ? failedSamples.slice(0, 3).map(f => f.failureClass + ': ' + f.message).join('; ')
         : undefined,
       sampleCount: attemptedSamples,
       successfulSamples,
-      failedSamples: failedSamples.length,
-      coverageComplete
+      failedSamples: failedSampleCount,
+      coverageComplete,
+      ...(weatherGrid ? { mode: 'bounded_model_grid_points' } : {})
     });
   }
   if (layers.includes('cameras') && (bbox || routeQueryPlan?.aois?.length || resolvedCenter)) {
