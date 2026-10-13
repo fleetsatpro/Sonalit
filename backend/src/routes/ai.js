@@ -995,6 +995,11 @@ async function toolCreateGeofence(input, userId, orgId) {
         };
       } catch (error) {
         topologyFailure = String(error && error.message || error).slice(0, 300);
+        if (/safe 20-degree corridor projection extent|safe 12000-segment topology budget|disconnected corridor or interior hole|topology-unioned corridor failed|topology union returned|no geofence was created|antipodal|singular point|inverse projection domain/i.test(topologyFailure)) {
+          // Do not let the legacy miter builder bypass an explicit topology,
+          // representation, containment or computation-budget safety rejection.
+          throw new RangeError(topologyFailure);
+        }
         logger.warn('Topology-aware corridor union failed; trying bounded legacy recovery: ' + topologyFailure);
       }
       if (!corridorGeometry) {
