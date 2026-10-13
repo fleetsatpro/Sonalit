@@ -272,6 +272,8 @@ export default function GodsEyeView() {
     const priorityLayers: WorldContextLayer[] = ['hazards', 'alerts', 'security', 'incidents', 'traffic', 'aircraft', 'maritime', 'satellites', 'infrastructure', 'weather']
     const ordered = [
       ...(selectedEntity ? [selectedEntity] : []),
+      // Keep the explicit weather viewport grid visible even when other world layers are dense.
+      ...(weatherAnimationEnabled ? animatedWeatherEntities : []),
       ...cameras,
       ...priorityLayers.flatMap(layer => filtered.filter(entity => spatialEntityLayer(entity) === layer)),
     ]
@@ -281,7 +283,7 @@ export default function GodsEyeView() {
       seen.add(entity.id)
       return true
     }).slice(0, MAX_RENDER_MARKERS)
-  }, [allExternalEntities, visibleLayers, externalVisible, selectedExternalId])
+  }, [allExternalEntities, visibleLayers, externalVisible, selectedExternalId, weatherAnimationEnabled, animatedWeatherEntities])
 
   useEffect(() => {
     if (view !== '3D' || positionedVehicles.length === 0 || worldViewportSeededRef.current) return
@@ -617,7 +619,7 @@ export default function GodsEyeView() {
                       <div className="gev-weather-footnote">
                         Animation illustrates the reported condition at this provider grid point. It does not represent a radar return, exact storm boundary, or guaranteed on-ground measurement.
                         {Array.isArray(selectedExternal.attributes?.hazards) && selectedExternal.attributes.hazards.length > 0
-                          ? ' Indicators: ' + (selectedExternal.attributes.hazards as unknown[]).map(String).join(', ').replaceAll('_', ' ')
+                          ? ' Indicators: ' + (selectedExternal.attributes?.hazards as unknown[]).map(String).join(', ').replaceAll('_', ' ')
                           : ''}
                       </div>
                     </div>
