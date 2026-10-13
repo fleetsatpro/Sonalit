@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
-const { MAX_SIMPLIFICATION_TOLERANCE_M, buildCorridorPolygon, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
+const { MAX_SIMPLIFICATION_TOLERANCE_M, buildCorridorGeometry, midpointOnPath, simplifyPath, validateCorridorGeometry } = require('../utils/corridorGeometry');
 const { validateToolInput } = require('../utils/aiToolInputValidation');
 const { normalizePolygonGeometry } = require('../utils/geofenceGeometry');
 const { createRadiusPolygon, normalizeBoundaryGeometry } = require('../utils/geofenceAutoGeometry');
@@ -711,6 +711,79 @@ function toLatLngPath(osrmCoordinates) {
   });
 }
 
+
+async function buildCorridorPolygonWithPostGIS(pathLatLng, bufferM, orgId) {
+  const sql = `
+    WITH route_input AS (
+      SELECT ST_SetSRID(
+        ST_MakeLine(
+          ST_MakePoint((vertex ->> 1)::double precision, (vertex ->> 0)::double precision)
+          ORDER BY ordinal
+        ),
+        4326
+      ) AS line
+      FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS points(vertex, ordinal)
+    ),
+    buffered AS (
+      SELECT
+        line,
+        ST_Buffer(
+          line::geography,
+          $2::double precision,
+          'quad_segs=8 endcap=round join=round'
+        )::geometry AS area
+      FROM route_input
+    )
+    SELECT
+      ST_AsGeoJSON(area)::jsonb AS geojson,
+      ST_IsValid(area) AS geometry_valid,
+      ST_Covers(area, line) AS covers_centerline,
+      ST_GeometryType(area) AS geometry_type
+    FROM buffered
+  `;
+  try {
+    const result = await withOrg(orgId, (client) => client.query(sql, [JSON.stringify(pathLatLng), Number(bufferM)]));
+    const row = result.rows && result.rows[0];
+    if (!row) return null;
+
+    let geojson = row.geojson;
+    if (typeof geojson === 'string') {
+      try { geojson = JSON.parse(geojson); } catch (_) { geojson = null; }
+    }
+    if (row.geometry_valid !== true || row.covers_centerline !== true) {
+      throw new Error('PostGIS corridor buffer failed validity or centreline-coverage verification.');
+    }
+    if (!geojson || geojson.type !== 'Polygon' || !Array.isArray(geojson.coordinates) ||
+        !Array.isArray(geojson.coordinates[0]) || geojson.coordinates[0].length < 4) {
+      throw new Error('PostGIS corridor buffer returned an unsupported polygon geometry.');
+    }
+
+    // Persist the exterior ring in Sonalit's established [latitude, longitude]
+    // shape. ST_Buffer(geography) handles overlapping bends/road segments with
+    // GEOS, rather than concatenating two offsets that can cross themselves.
+    const exteriorRing = geojson.coordinates[0].map((coordinate, index) => {
+      if (!Array.isArray(coordinate) || coordinate.length < 2 ||
+          !Number.isFinite(Number(coordinate[0])) || !Number.isFinite(Number(coordinate[1])) ||
+          Math.abs(Number(coordinate[1])) > 90 || Math.abs(Number(coordinate[0])) > 180) {
+        throw new Error('PostGIS corridor buffer returned invalid coordinate at ring index ' + index + '.');
+      }
+      return [Number(coordinate[1]), Number(coordinate[0])];
+    });
+    const checked = validateCorridorGeometry(pathLatLng, exteriorRing, bufferM, { method: 'postgis-geography-buffer' });
+    if (!checked.valid) {
+      throw new Error('PostGIS corridor buffer failed application-level validation: ' + checked.reason);
+    }
+    return exteriorRing;
+  } catch (error) {
+    const code = String(error && error.code || '');
+    const message = String(error && error.message || '');
+    const postgisUnavailable = ['42883', '42704', '0A000', '3F000'].includes(code) &&
+      /postgis|st_buffer|st_makeline|st_makepoint|geography|function|type/i.test(message);
+    if (postgisUnavailable) return null;
+    throw error;
+  }
+}
+
 // Haversine distance in metres between two lat/lng points
 function haversineM(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -979,18 +1052,40 @@ async function toolCreateGeofence(input, userId, orgId) {
       // cannot be represented safely within the algorithm's complexity budget.
       const geometryToleranceCeilingM = Math.min(MAX_SIMPLIFICATION_TOLERANCE_M, buffer_m / 3);
       const requestedGeometryToleranceM = Math.min(10, geometryToleranceCeilingM);
-      const pathSimplification = simplifyPath(pathLatLng, requestedGeometryToleranceM, geometryToleranceCeilingM);
-      pathLatLng = pathSimplification.path;
-      const simplificationSummary = pathSimplification.toleranceEscalated
-        ? 'centreline tolerance adaptively increased from ' + pathSimplification.requestedToleranceM + 'm to ' + pathSimplification.toleranceM + 'm within the buffer-relative ' + geometryToleranceCeilingM + 'm ceiling'
-        : pathSimplification.toleranceM
-          ? 'centreline simplified within ' + pathSimplification.toleranceM + 'm tolerance'
-          : 'routed centreline retained without simplification';
+      const initialSimplification = simplifyPath(pathLatLng, requestedGeometryToleranceM, geometryToleranceCeilingM);
+      let corridorGeometry = null;
+      try {
+        const robustPolygon = await buildCorridorPolygonWithPostGIS(initialSimplification.path, buffer_m, orgId);
+        if (robustPolygon) {
+          corridorGeometry = {
+            path: initialSimplification.path,
+            polygon: robustPolygon,
+            simplification: initialSimplification,
+            recoveryUsed: false,
+            recoveryReason: null,
+            bufferPolygonMethod: 'postgis-geography-buffer',
+          };
+        }
+      } catch (error) {
+        logger.warn('Robust PostGIS corridor buffering failed; trying bounded local recovery: ' + String(error.message || error));
+      }
+      if (!corridorGeometry) {
+        corridorGeometry = buildCorridorGeometry(pathLatLng, buffer_m, requestedGeometryToleranceM, geometryToleranceCeilingM);
+      }
+      pathLatLng = corridorGeometry.path;
+      const pathSimplification = corridorGeometry.simplification;
+      const bufferPolygon = corridorGeometry.polygon;
+      const simplificationSummary = corridorGeometry.recoveryUsed
+        ? 'centreline tolerance increased within ' + geometryToleranceCeilingM + 'm buffer-relative ceiling to recover a valid corridor polygon'
+        : pathSimplification.toleranceEscalated
+          ? 'centreline tolerance adaptively increased from ' + pathSimplification.requestedToleranceM + 'm to ' + pathSimplification.toleranceM + 'm within the buffer-relative ' + geometryToleranceCeilingM + 'm ceiling'
+          : pathSimplification.toleranceM
+            ? 'centreline simplified within ' + pathSimplification.toleranceM + 'm tolerance'
+            : 'routed centreline retained without simplification';
       const mid = midpointOnPath(pathLatLng);
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;
       const approxRadius = Math.round(distM / 2) + buffer_m;
-      const bufferPolygon = buildCorridorPolygon(pathLatLng, buffer_m);
 
       // IMPORTANT: the operational engine uses [lat,lng] path order. OSRM
       // returns [lng,lat], so normalization happens exactly once here.
@@ -1001,6 +1096,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         path: pathLatLng,
         buffer_m,
         buffer_polygon: bufferPolygon,
+        buffer_polygon_method: corridorGeometry.bufferPolygonMethod,
         precision,
         geometry_source: routeProvider === 'OSRM' ? 'OpenStreetMap via OSRM' : 'geocoded straight-line explicit fallback',
         route_provider: routeProvider,
@@ -1043,7 +1139,7 @@ async function toolCreateGeofence(input, userId, orgId) {
         const first = persistedPath[0], last = persistedPath[persistedPath.length - 1];
         const startDriftM = first ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1])) : Infinity;
         const endDriftM = last ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1])) : Infinity;
-        const shape = validateCorridorGeometry(persistedPath, persisted?.buffer_polygon, persisted?.buffer_m);
+        const shape = validateCorridorGeometry(persistedPath, persisted?.buffer_polygon, persisted?.buffer_m, { method: persisted?.buffer_polygon_method });
         const valid = shape.valid && persisted?.type === 'corridor' &&
           persistedPath.length === pathLatLng.length && startDriftM <= 1500 && endDriftM <= 1500;
         if (!valid) {
