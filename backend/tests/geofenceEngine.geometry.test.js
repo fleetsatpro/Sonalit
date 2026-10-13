@@ -54,6 +54,10 @@ describe('geofence engine corridor-envelope containment', () => {
     expect(isPointInGeofence(0.005, 0.5, model)).toBe(true);
     expect(isPointInGeofence(0.02, 0.5, model)).toBe(false);
     expect(isPointInGeofence(0, 1.01, model)).toBe(false);
+    expect(isPointInGeofence(0, 90, {
+      type: 'corridor',
+      coordinates: { type: 'corridor', path: [[0, 0], [0, 179]], buffer_m: 1000, buffer_polygon: null },
+    })).toBe(false);
   });
 
   test('fails closed for a malformed centreline-distance corridor', () => {

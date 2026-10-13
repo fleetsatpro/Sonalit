@@ -998,13 +998,11 @@ async function toolCreateGeofence(input, userId, orgId) {
       pathLatLng = corridorGeometry.path;
       const pathSimplification = corridorGeometry.simplification;
       const bufferPolygon = corridorGeometry.polygon;
-      const simplificationSummary = corridorGeometry.recoveryUsed
-        ? 'centreline tolerance increased within ' + geometryToleranceCeilingM + 'm buffer-relative ceiling to recover a valid corridor polygon'
-        : pathSimplification.toleranceEscalated
-          ? 'centreline tolerance adaptively increased from ' + pathSimplification.requestedToleranceM + 'm to ' + pathSimplification.toleranceM + 'm within the buffer-relative ' + geometryToleranceCeilingM + 'm ceiling'
-          : pathSimplification.toleranceM
-            ? 'centreline simplified within ' + pathSimplification.toleranceM + 'm tolerance'
-            : 'routed centreline retained without simplification';
+      const simplificationSummary = pathSimplification.toleranceEscalated
+        ? 'centreline tolerance adaptively increased from ' + pathSimplification.requestedToleranceM + 'm to ' + pathSimplification.toleranceM + 'm within the buffer-relative ' + geometryToleranceCeilingM + 'm ceiling'
+        : pathSimplification.toleranceM
+          ? 'centreline simplified within ' + pathSimplification.toleranceM + 'm tolerance'
+          : 'routed centreline retained without simplification';
       const mid = midpointOnPath(pathLatLng);
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name || location} → ${gEnd.name || route_end}`;

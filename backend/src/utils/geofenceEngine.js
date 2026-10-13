@@ -116,7 +116,8 @@ function isPointInGeofence(lat, lng, fence) {
       const [aLat, aLng, bLat, bLng] = [Number(a[0]), Number(a[1]), Number(b[0]), Number(b[1])];
       if (![aLat, aLng, bLat, bLng].every(Number.isFinite) ||
           Math.abs(aLat) > 85 || Math.abs(bLat) > 85 ||
-          Math.abs(aLng) > 180 || Math.abs(bLng) > 180) return false;
+          Math.abs(aLng) > 180 || Math.abs(bLng) > 180 ||
+          haversine(aLat, aLng, bLat, bLng) > 500) return false;
       minimumDistanceKm = Math.min(minimumDistanceKm,
         distanceToSegment(Number(lat), Number(lng), aLat, aLng, bLat, bLng));
     }
