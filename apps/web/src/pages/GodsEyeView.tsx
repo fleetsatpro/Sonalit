@@ -252,12 +252,15 @@ export default function GodsEyeView() {
 
   const allExternalEntities = useMemo(() => {
     const byId = new Map<string, SpatialWorldEntity>()
-    for (const entity of externalEntities) byId.set(entity.id, entity)
-    // Grid samples override any overlapping single-point weather observation only while the animation layer is enabled.
+    for (const entity of externalEntities) {
+      // When the explicit viewport grid is active, replace rather than duplicate the base context's coarser weather samples.
+      if (weatherAnimationEnabled && entity.entityType === 'weather') continue
+      byId.set(entity.id, entity)
+    }
     for (const entity of animatedWeatherEntities) byId.set(entity.id, entity)
     if (cctvOpen) for (const entity of cctvEntities) byId.set(entity.id, entity)
     return Array.from(byId.values())
-  }, [externalEntities, animatedWeatherEntities, cctvEntities, cctvOpen])
+  }, [externalEntities, animatedWeatherEntities, cctvEntities, cctvOpen, weatherAnimationEnabled])
   const renderableExternalEntities = useMemo(() => {
     if (!externalVisible) return []
     const filtered = allExternalEntities.filter(entity => {
