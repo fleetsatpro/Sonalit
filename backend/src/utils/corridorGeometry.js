@@ -351,9 +351,16 @@ function validateRingXY(points) {
   let active=[], comparisons=0;
   const epsilon=1e-6;
   for(const segment of segments) {
-    // Expired edges can no longer intersect this or any later edge in sweep
-    // order. Choosing the dominant axis prevents vertical-route blowups.
-    active=active.filter(other=>other.sweepMax>=segment.sweepMin-epsilon);
+    // Count active-set scans as work too, not only true candidate intersections.
+    // This keeps pathological overlapping bounds from bypassing the CPU budget.
+    const retained=[];
+    for(const other of active) {
+      if(++comparisons>MAX_RING_VALIDATION_COMPARISONS) {
+        return {valid:false,reason:'Polygon exceeds the safe edge-intersection validation budget.'};
+      }
+      if(other.sweepMax>=segment.sweepMin-epsilon) retained.push(other);
+    }
+    active=retained;
     for(const other of active) {
       if(other.crossMax<segment.crossMin-epsilon||segment.crossMax<other.crossMin-epsilon) continue;
       const i=Math.min(segment.index,other.index), j=Math.max(segment.index,other.index);
