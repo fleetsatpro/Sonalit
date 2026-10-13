@@ -1062,9 +1062,38 @@ async function toolCreateGeofence(input, userId, orgId) {
         const startDriftM = first ? haversineM(gStart.latitude, gStart.longitude, Number(first[0]), Number(first[1])) : Infinity;
         const endDriftM = last ? haversineM(gEnd.latitude, gEnd.longitude, Number(last[0]), Number(last[1])) : Infinity;
         const shape = validateCorridorPath(persistedPath, persisted?.buffer_m);
+        let maxPathDriftM = 0;
+        let pathMismatchIndex = null;
+        if (persistedPath.length !== pathLatLng.length) {
+          pathMismatchIndex = Math.min(persistedPath.length, pathLatLng.length);
+          maxPathDriftM = Infinity;
+        } else {
+          for (let index = 0; index < persistedPath.length; index++) {
+            const persistedPoint = persistedPath[index];
+            if (!Array.isArray(persistedPoint) || persistedPoint.length < 2) {
+              pathMismatchIndex = index;
+              maxPathDriftM = Infinity;
+              break;
+            }
+            const driftM = haversineM(
+              Number(pathLatLng[index][0]), Number(pathLatLng[index][1]),
+              Number(persistedPoint[0]), Number(persistedPoint[1])
+            );
+            if (!Number.isFinite(driftM)) {
+              pathMismatchIndex = index;
+              maxPathDriftM = Infinity;
+              break;
+            }
+            maxPathDriftM = Math.max(maxPathDriftM, driftM);
+            if (driftM > 0.5 && pathMismatchIndex == null) pathMismatchIndex = index;
+          }
+        }
+        const persistedBufferM = Number(persisted?.buffer_m);
+        const bufferMatches = Number.isFinite(persistedBufferM) && Math.abs(persistedBufferM - buffer_m) <= 0.01;
         const valid = shape.valid && persisted?.type === 'corridor' &&
           persisted?.corridor_geometry_method === 'route-centreline-distance-v1' &&
           persisted?.buffer_polygon == null && persistedPath.length === pathLatLng.length &&
+          pathMismatchIndex == null && maxPathDriftM <= 0.5 && bufferMatches &&
           startDriftM <= 1500 && endDriftM <= 1500;
         if (!valid) {
           await client.query('DELETE FROM geofences WHERE id = $1 AND org_id = $2', [geofenceId, orgId]);
@@ -1075,11 +1104,16 @@ async function toolCreateGeofence(input, userId, orgId) {
               expected_path_points: pathLatLng.length,
               start_drift_m: Number.isFinite(startDriftM) ? Math.round(startDriftM) : null,
               end_drift_m: Number.isFinite(endDriftM) ? Math.round(endDriftM) : null,
+              max_path_drift_m: Number.isFinite(maxPathDriftM) ? Number(maxPathDriftM.toFixed(3)) : null,
+              path_mismatch_index: pathMismatchIndex,
+              persisted_buffer_m: Number.isFinite(persistedBufferM) ? persistedBufferM : null,
+              expected_buffer_m: buffer_m,
+              buffer_matches: bufferMatches,
               shape_reason: shape.reason || null,
             },
           };
         }
-        return { valid: true, geofenceId, persistedPath, startDriftM, endDriftM };
+        return { valid: true, geofenceId, persistedPath, startDriftM, endDriftM, maxPathDriftM };
       });
       if (!stored.valid) {
         return {
@@ -1125,7 +1159,14 @@ async function toolCreateGeofence(input, userId, orgId) {
         route_provider: routeProvider,
         geometry_source: coordinates.geometry_source,
         geocode_precision: { start: gStart.precision, end: gEnd.precision },
-        geometry_verification: { start_drift_m: Math.round(startDriftM), end_drift_m: Math.round(endDriftM), persisted_path_points: persistedPath.length },
+        geometry_verification: {
+          start_drift_m: Math.round(startDriftM),
+          end_drift_m: Math.round(endDriftM),
+          max_path_drift_m: Number(stored.maxPathDriftM.toFixed(3)),
+          persisted_path_points: persistedPath.length,
+          buffer_m_verified: true,
+          corridor_geometry_method: coordinates.corridor_geometry_method,
+        },
         fallback_used: routeProvider !== 'OSRM',
         message: routeProvider === 'OSRM'
           ? `Corridor "${name}" created on routed road geometry: ${(distM / 1000).toFixed(2)} km, ${pathLatLng.length} verified centreline vertices, ${buffer_m}m centreline-distance threshold; ${simplificationSummary}.`
