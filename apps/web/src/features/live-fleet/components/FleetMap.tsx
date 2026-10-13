@@ -197,6 +197,7 @@ function makeWeatherMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialW
   const marker = document.createElement('button')
   marker.type = 'button'
   marker.className = 'lf-weather-marker'
+  marker.dataset.freshness = String(item.quality?.freshnessClass ?? 'UNKNOWN').toUpperCase()
   marker.style.setProperty('--weather-color', color)
   marker.title = `${condition}${tempLabel ? ' · ' + tempLabel : ''} · ${item.source ?? 'unknown source'} · ${item.quality?.freshnessClass ?? 'UNKNOWN'}`
   marker.setAttribute('aria-label', `Inspect weather: ${condition}${tempLabel ? ', ' + tempLabel : ''}`)
@@ -824,6 +825,8 @@ export default function FleetMap({
       .lf-weather-label b{max-width:112px;overflow:hidden;text-overflow:ellipsis}
       .lf-weather-label i{font-style:normal;color:#fbbf24}
       .lf-weather-labels-visible .lf-weather-label,.lf-weather-marker:hover .lf-weather-label,.lf-weather-marker:focus-visible .lf-weather-label{opacity:1;transform:translate(-50%,0)}
+      .lf-weather-marker[data-freshness="STALE"] .lf-weather-core,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-core,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-core,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-core{animation:none;filter:none;opacity:.66}
+      .lf-weather-marker[data-freshness="STALE"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-ripple,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-ripple{animation:none;opacity:.12}
       @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple{animation:none!important}.lf-weather-ripple{opacity:.35}}
     `
     document.head.appendChild(s)
