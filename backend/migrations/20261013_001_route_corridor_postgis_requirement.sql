@@ -18,8 +18,10 @@ BEGIN
     RAISE EXCEPTION 'Required PostGIS function ST_Buffer(geography, double precision, text) is unavailable';
   END IF;
 
-  IF to_regprocedure('st_unaryunion(geometry)') IS NULL THEN
-    RAISE EXCEPTION 'Required PostGIS function ST_UnaryUnion(geometry) is unavailable';
+  -- PostGIS exposes the grid-size overload with a default value, so the
+  -- callable single-argument SQL form resolves to this two-argument signature.
+  IF to_regprocedure('st_unaryunion(geometry,double precision)') IS NULL THEN
+    RAISE EXCEPTION 'Required PostGIS function ST_UnaryUnion(geometry, double precision) is unavailable';
   END IF;
 
   IF to_regprocedure('st_covers(geometry,geometry)') IS NULL OR
