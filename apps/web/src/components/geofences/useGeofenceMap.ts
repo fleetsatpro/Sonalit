@@ -4,6 +4,7 @@ import { geoCircle } from '../../lib/geoMath.js';
 import { STREET_STYLE, SAT_STYLE } from '../../lib/mapStyles.js';
 import { STATUS_COLOR, EA_CENTER, EA_ZOOM } from './types.js';
 import type { MapVehicle, MapDevice, MapGeofence, Geofence } from './types.js';
+import type { CorridorSignalOverlay } from './geofenceSegmentSignals.js';
 
 type DrawMode = 'circle' | 'polygon' | 'linear' | 'corridor' | null;
 
@@ -23,6 +24,8 @@ interface Options {
   regionFilter: string;
   expanded: boolean;
   mapStyle: 'street' | 'satellite';
+  corridorSignalOverlay: CorridorSignalOverlay;
+  onViewportChange: (viewport: { latitude: number; longitude: number; radiusM: number }) => void;
 }
 
 // Owns the imperative MapLibre instance for the Geofences page: base style
@@ -34,23 +37,63 @@ export function useGeofenceMap(opts: Options) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mapReadyRef = useRef(false);
-  const styleAppliedRef = useRef(false);
+  const mapStyleRef = useRef<'street' | 'satellite'>('street');
+  const renderRef = useRef<(() => void) | null>(null);
+  const onViewportChangeRef = useRef(opts.onViewportChange);
+  onViewportChangeRef.current = opts.onViewportChange;
 
   useEffect(() => {
     if (!mapEl.current || mapRef.current) return;
     const map = new maplibregl.Map({ container: mapEl.current, style: STREET_STYLE, center: EA_CENTER, zoom: EA_ZOOM });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-    // The custom layer/fullscreen buttons are overlaid at top-3 right-3 in
-    // Geofences.tsx, in the same top-right corner MapLibre reserves for its
-    // own controls (.maplibregl-ctrl-top-right has z-index:2, so it paints
-    // over anything at that position with the default stacking order) —
-    // push the native zoom control down below that button row instead of
-    // letting the two occupy the same space.
     const topRightCtrl = map.getContainer().querySelector<HTMLElement>('.maplibregl-ctrl-top-right');
     if (topRightCtrl) topRightCtrl.style.marginTop = '52px';
-    map.on('load', () => { mapReadyRef.current = true; });
+
+    const publishViewport = () => {
+      if (mapRef.current !== map) return;
+      const center = map.getCenter();
+      const bounds = map.getBounds();
+      const corners: [number, number][] = [
+        [bounds.getNorth(), bounds.getEast()],
+        [bounds.getNorth(), bounds.getWest()],
+        [bounds.getSouth(), bounds.getEast()],
+        [bounds.getSouth(), bounds.getWest()],
+      ];
+      const toRadians = (value: number) => value * Math.PI / 180;
+      const radiusFor = (lat: number, lng: number) => {
+        const dLat = toRadians(lat - center.lat);
+        const dLng = toRadians(lng - center.lng);
+        const a = Math.sin(dLat / 2) ** 2
+          + Math.cos(toRadians(center.lat)) * Math.cos(toRadians(lat)) * Math.sin(dLng / 2) ** 2;
+        return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+      };
+      const radiusM = Math.max(15000, Math.min(250000, Math.ceil(Math.max(...corners.map(([lat, lng]) => radiusFor(lat, lng))) * 1.2 / 25000) * 25000));
+      onViewportChangeRef.current({
+        latitude: Math.round(center.lat * 10) / 10,
+        longitude: Math.round(center.lng * 10) / 10,
+        radiusM,
+      });
+    };
+    const redrawAfterStyleLoad = () => {
+      mapReadyRef.current = true;
+      publishViewport();
+      requestAnimationFrame(() => {
+        if (mapRef.current === map && map.isStyleLoaded()) renderRef.current?.();
+      });
+    };
+    map.on('load', redrawAfterStyleLoad);
+    map.on('style.load', redrawAfterStyleLoad);
+    map.on('moveend', publishViewport);
     mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; mapReadyRef.current = false; };
+    return () => {
+      map.off('load', redrawAfterStyleLoad);
+      map.off('style.load', redrawAfterStyleLoad);
+      map.off('moveend', publishViewport);
+      map.remove();
+      mapRef.current = null;
+      mapReadyRef.current = false;
+      renderRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -59,10 +102,10 @@ export function useGeofenceMap(opts: Options) {
 
   useEffect(() => {
     const m = mapRef.current;
-    if (!m) return;
-    if (!styleAppliedRef.current) { styleAppliedRef.current = true; return; }
+    if (!m || mapStyleRef.current === opts.mapStyle) return;
+    mapStyleRef.current = opts.mapStyle;
+    mapReadyRef.current = false;
     m.setStyle(opts.mapStyle === 'satellite' ? SAT_STYLE : STREET_STYLE);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.mapStyle]);
 
   useEffect(() => {
@@ -94,9 +137,9 @@ export function useGeofenceMap(opts: Options) {
     const m = mapRef.current;
     if (!m) return;
     const render = () => {
-      ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-polygon-fill', 'gf-polygon-line', 'gf-polygon-label', 'gf-corridor-buffer-fill', 'gf-corridor-buffer-line', 'gf-corridor-buffer-distance', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line', 'gf-draw-vertices']
+      ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-polygon-fill', 'gf-polygon-line', 'gf-polygon-label', 'gf-corridor-buffer-fill', 'gf-corridor-buffer-line', 'gf-corridor-buffer-distance', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-signal-shadow', 'gf-corridor-signal-glow', 'gf-corridor-signal-line', 'gf-corridor-signal-points-glow', 'gf-corridor-signal-points', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line', 'gf-draw-vertices']
         .forEach(id => { if (m.getLayer(id)) m.removeLayer(id); });
-      ['gf-zone-src', 'gf-polygon-src', 'gf-corridor-buffer-src', 'gf-corridor-src', 'gf-linear-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
+      ['gf-zone-src', 'gf-polygon-src', 'gf-corridor-buffer-src', 'gf-corridor-src', 'gf-corridor-signal-src', 'gf-corridor-signal-points-src', 'gf-linear-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
 
       const circleFeatures: GeoJSON.Feature[] = [];
       const polygonFeatures: GeoJSON.Feature[] = [];
@@ -141,8 +184,8 @@ export function useGeofenceMap(opts: Options) {
       m.addLayer({ id: 'gf-polygon-label', type: 'symbol', source: 'gf-polygon-src', layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-font': LABEL_FONT, 'text-anchor': 'center', 'text-allow-overlap': false, 'text-optional': true }, paint: { 'text-color': '#ddd6fe', 'text-halo-color': '#080b12', 'text-halo-width': 2 } });
       // Corridors get a wide translucent buffer band; linear geofences are a plain route line with no buffer.
       m.addSource('gf-corridor-buffer-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorBufferFeatures } });
-      m.addLayer({ id: 'gf-corridor-buffer-fill', type: 'fill', source: 'gf-corridor-buffer-src', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.055 } });
-      m.addLayer({ id: 'gf-corridor-buffer-line', type: 'line', source: 'gf-corridor-buffer-src', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'line-color': '#38bdf8', 'line-width': 1, 'line-opacity': 0.45 } });
+      m.addLayer({ id: 'gf-corridor-buffer-fill', type: 'fill', source: 'gf-corridor-buffer-src', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.10 } });
+      m.addLayer({ id: 'gf-corridor-buffer-line', type: 'line', source: 'gf-corridor-buffer-src', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'line-color': '#7dd3fc', 'line-width': 1.8, 'line-opacity': 0.78 } });
       // For the centreline-distance model, express the metre buffer as a
       // zoom-scaled MapLibre stroke. This keeps the visible band consistent
       // with its persisted operational threshold without inventing a polygon.
@@ -154,16 +197,44 @@ export function useGeofenceMap(opts: Options) {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': '#38bdf8',
-          'line-opacity': 0.16,
+          // The 7 px minimum above is an overview-scale visibility floor, not a change to the saved metre threshold.
+          'line-opacity': 0.27,
           // Cap the visual stroke at 512 screen pixels. At very close zooms a
           // kilometre-scale corridor can be wider than the viewport; avoid
           // submitting unbounded line widths to the renderer.
-          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 0, ['get', 'buffer_width_zoom_zero'], 22, ['min', 512, ['*', ['get', 'buffer_width_zoom_zero'], 4194304]],],
+          'line-width': ['max', 7, ['interpolate', ['exponential', 2], ['zoom'], 0, ['get', 'buffer_width_zoom_zero'], 22, ['min', 512, ['*', ['get', 'buffer_width_zoom_zero'], 4194304]]]],
         },
       });
       m.addSource('gf-corridor-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorFeatures } });
       m.addLayer({ id: 'gf-corridor-glow', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 14, 'line-opacity': 0.15 } });
       m.addLayer({ id: 'gf-corridor-line', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 2.5, 'line-dasharray': [3, 2] } });
+      // Evidence-backed route signals are a separate visual layer over the unchanged operational centreline.
+      // Shadow + broad glow + crisp core create restrained pseudo-3D depth without changing stored geometry.
+      m.addSource('gf-corridor-signal-src', { type: 'geojson', data: opts.corridorSignalOverlay.segments });
+      m.addLayer({
+        id: 'gf-corridor-signal-shadow', type: 'line', source: 'gf-corridor-signal-src',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#020617', 'line-width': 12, 'line-opacity': 0.72, 'line-translate': [0, 3], 'line-translate-anchor': 'viewport' },
+      });
+      m.addLayer({
+        id: 'gf-corridor-signal-glow', type: 'line', source: 'gf-corridor-signal-src',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ['get', 'signal_color'], 'line-width': 18, 'line-opacity': 0.28, 'line-blur': 2.2 },
+      });
+      m.addLayer({
+        id: 'gf-corridor-signal-line', type: 'line', source: 'gf-corridor-signal-src',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ['get', 'signal_color'], 'line-width': 5.5, 'line-opacity': 0.98 },
+      });
+      m.addSource('gf-corridor-signal-points-src', { type: 'geojson', data: opts.corridorSignalOverlay.markers });
+      m.addLayer({
+        id: 'gf-corridor-signal-points-glow', type: 'circle', source: 'gf-corridor-signal-points-src',
+        paint: { 'circle-radius': 11, 'circle-color': ['get', 'signal_color'], 'circle-opacity': 0.22, 'circle-blur': 0.85 },
+      });
+      m.addLayer({
+        id: 'gf-corridor-signal-points', type: 'circle', source: 'gf-corridor-signal-points-src',
+        paint: { 'circle-radius': 5.5, 'circle-color': ['get', 'signal_color'], 'circle-opacity': 0.98, 'circle-stroke-color': '#f8fafc', 'circle-stroke-width': 1.6 },
+      });
       m.addLayer({ id: 'gf-corridor-label', type: 'symbol', source: 'gf-corridor-src', layout: {
         'text-field': ['get', 'name'], 'text-size': 10, 'text-font': LABEL_FONT, 'symbol-placement': 'line-center',
         'text-allow-overlap': false, 'text-optional': true,
@@ -204,11 +275,36 @@ export function useGeofenceMap(opts: Options) {
       m.addLayer({ id: 'gf-draw-line', type: 'line', source: 'gf-draw-src', paint: { 'line-color': '#ffb36b', 'line-width': 3, 'line-opacity': 0.95 } });
       m.addLayer({ id: 'gf-draw-vertices', type: 'circle', source: 'gf-draw-src', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 5, 'circle-color': '#ff8a30', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
     };
-    if (mapReadyRef.current) render(); else m.once('load', render);
-    m.on('style.load', render);
-    return () => { m.off('style.load', render); };
+    renderRef.current = render;
+    if (mapReadyRef.current && m.isStyleLoaded()) render();
+    return () => { if (renderRef.current === render) renderRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.visibleVehicles, opts.devices, opts.mapGeofences, opts.visibleZones, opts.regionFilter, opts.drawMode, opts.drawCenter, opts.drawPath, opts.drawRadiusM]);
+  }, [opts.visibleVehicles, opts.devices, opts.mapGeofences, opts.visibleZones, opts.regionFilter, opts.drawMode, opts.drawCenter, opts.drawPath, opts.drawRadiusM, opts.corridorSignalOverlay]);
+
+  // A low-frequency pulse supplies depth on the signal overlay without an
+  // expensive per-feature animation. Respect reduced-motion accessibility.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)) return;
+    let frame = 0;
+    let lastUpdate = 0;
+    const animate = (time: number) => {
+      if (time - lastUpdate >= 84) {
+        lastUpdate = time;
+        const pulse = (Math.sin(time / 620) + 1) / 2;
+        try {
+          if (map.getLayer('gf-corridor-signal-glow')) map.setPaintProperty('gf-corridor-signal-glow', 'line-opacity', 0.20 + pulse * 0.20);
+          if (map.getLayer('gf-corridor-signal-points-glow')) {
+            map.setPaintProperty('gf-corridor-signal-points-glow', 'circle-radius', 8 + pulse * 5);
+            map.setPaintProperty('gf-corridor-signal-points-glow', 'circle-opacity', 0.12 + pulse * 0.18);
+          }
+        } catch { /* style may be swapping while the animation frame runs */ }
+      }
+      frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   return { mapEl, mapRef };
 }
