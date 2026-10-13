@@ -216,6 +216,33 @@ function fitPoints(route: LatLng[], members: GlobeMember[], trail?: LatLng[], zo
   ].map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.altitudeM));
 }
 
+function weatherColorFor(item: SpatialWorldEntity) {
+  const freshness = String(item.quality?.freshnessClass || '').toUpperCase();
+  if (freshness === 'STALE' || freshness === 'UNKNOWN' || freshness === 'EXPIRED' || freshness === 'UNAVAILABLE') return '#94a3b8';
+  const code = Number(item.attributes?.weatherCode);
+  if (Number.isFinite(code) && code >= 95) return '#c4b5fd';
+  if (Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)) return '#67e8f9';
+  if (Number.isFinite(code) && (code === 45 || code === 48)) return '#cbd5e1';
+  if (Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) ) return '#60a5fa';
+  if (Number.isFinite(code) && (code === 0 || code === 1)) return '#fbbf24';
+  return '#5eead4';
+}
+
+function weatherSvg(color: string, selected: boolean, code: number) {
+  const stroke = selected ? '#ffffff' : color;
+  const glyph = Number.isFinite(code) && code >= 95
+    ? '<path d="M35 14 23 34h10l-4 16 15-24H33z" fill="#${color}" stroke="none"/>'
+    : Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)
+      ? '<path d="M32 15v34M17 23l30 18M17 41l30-18M26 18l6 6 6-6M26 46l6-6 6 6" fill="none" stroke="#${color}" stroke-width="3" stroke-linecap="round"/>'
+      : Number.isFinite(code) && (code === 45 || code === 48)
+        ? '<path d="M14 27h36M9 34h30M16 41h35" fill="none" stroke="#${color}" stroke-width="3" stroke-linecap="round"/>'
+        : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
+          ? '<path d="M22 39 18 49M33 39 29 51M44 39 40 49" fill="none" stroke="#${color}" stroke-width="3.5" stroke-linecap="round"/>'
+          : '<path d="M21 38h23a10 10 0 0 0 1-20A13 13 0 0 0 17 22a8 8 0 0 0 4 16Z" fill="none" stroke="#${color}" stroke-width="3" stroke-linejoin="round"/>';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><filter id="wg"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><circle cx="32" cy="32" r="27" fill="#050a13" fill-opacity=".96" stroke="${stroke}" stroke-width="${selected ? 3.5 : 2.4}"/><circle cx="32" cy="32" r="21" fill="${color}" fill-opacity=".09" stroke="${color}" stroke-opacity=".55" stroke-width="1.3"/><g filter="url(#wg)">${glyph}</g></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 function cameraSvg(color: string, selected: boolean) {
   const stroke = selected ? '#ffffff' : color;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="25" fill="#061014" fill-opacity=".94" stroke="${stroke}" stroke-width="3"/><path d="M18 25h22l6-6h5v26h-5l-6-6H18z" fill="${color}" fill-opacity=".30" stroke="${color}" stroke-width="2"/><circle cx="28" cy="32" r="7" fill="#04080c" stroke="${stroke}" stroke-width="2.5"/><circle cx="28" cy="32" r="3" fill="${color}"/></svg>`;
@@ -301,6 +328,7 @@ export default function CorridorWorldScene({
   onExternalSelect,
   selectedExternalId = null,
   worldEntities = [],
+  weatherAnimationEnabled = false,
   onViewportChange,
   fill = false,
   globalView = false,
@@ -318,7 +346,8 @@ export default function CorridorWorldScene({
   onExternalSelect?: (id: string | null) => void;
   selectedExternalId?: string | null;
   worldEntities?: SpatialWorldEntity[];
-  onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number }) => void;
+  weatherAnimationEnabled?: boolean;
+  onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number; bbox?: [number, number, number, number] }) => void;
   fill?: boolean;
   globalView?: boolean;
   showMapControls?: boolean;
@@ -337,6 +366,7 @@ export default function CorridorWorldScene({
   const selectRef = useRef(onSelect);
   const externalSelectRef = useRef(onExternalSelect);
   const onViewportChangeRef = useRef(onViewportChange);
+  const weatherPhaseRef = useRef(0);
   const fittedRouteSignatureRef = useRef<string | null>(null);
   // Data refreshes must never steal the operator's camera. GEV performs one
   // initial fit after the first usable world state, then only explicit
@@ -1092,20 +1122,26 @@ export default function CorridorWorldScene({
       const layer = spatialEntityLayer(item);
       if (!layer) continue;
       const id = `ext:${item.id}`;
-      const color = WORLD_LAYER_COLOR[layer] ?? '#94a3b8';
       const selected = item.id === selectedExternalId;
       const type = String(item.entityType || '').toLowerCase();
+      const isWeather = type === 'weather';
+      const weatherAnimated = weatherAnimationEnabled && isWeather;
+      const weatherFreshness = String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase();
+      const weatherMayPulse = weatherFreshness === 'LIVE' || weatherFreshness === 'DELAYED';
+      const color = weatherAnimated ? weatherColorFor(item) : (WORLD_LAYER_COLOR[layer] ?? '#94a3b8');
       const altitude = externalAltitude(item);
       const position = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, altitude ?? 0);
       const ground = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, 0);
       const label = externalLabel(item);
       const existing = externalEntityMapRef.current.get(item.id);
       const isCamera = type === 'camera' || type === 'spatial_camera';
-      const pointSize = selected ? 16 : (type === 'satellite' || type === 'aircraft' ? 10 : isCamera ? 11 : 8);
+      const pointSize: number | Cesium.CallbackProperty = weatherAnimated
+        ? new Cesium.CallbackProperty(() => selected ? 17 : (weatherMayPulse ? 8.5 + ((Math.sin(weatherPhaseRef.current * 2.2) + 1) / 2) * 3.2 : 7.5), false)
+        : selected ? 16 : (type === 'satellite' || type === 'aircraft' ? 10 : isCamera ? 11 : 8);
       const maxLabelDistance = type === 'satellite' ? 30000000 : isCamera ? 750000 : 3500000;
       const point = new Cesium.PointGraphics({
         pixelSize: pointSize,
-        color: css(color, item.quality?.freshnessClass === 'MODELLED' ? 0.58 : 0.92),
+        color: css(color, weatherAnimated && weatherFreshness === 'STALE' ? 0.48 : item.quality?.freshnessClass === 'MODELLED' ? 0.58 : 0.92),
         outlineColor: selected ? Cesium.Color.WHITE : css(color, 0.9),
         outlineWidth: selected ? 3 : 1,
         heightReference: altitude == null ? Cesium.HeightReference.CLAMP_TO_GROUND : Cesium.HeightReference.NONE,
@@ -1141,6 +1177,13 @@ export default function CorridorWorldScene({
           verticalOrigin: Cesium.VerticalOrigin.CENTER,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           scaleByDistance: new Cesium.NearFarScalar(250, selected ? 1.15 : 1, 750000, 0.68),
+        } : weatherAnimated ? {
+          image: weatherSvg(color, selected, Number(item.attributes?.weatherCode)),
+          width: selected ? 58 : 46,
+          height: selected ? 58 : 46,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scale: new Cesium.CallbackProperty(() => selected ? 1.12 : (weatherMayPulse ? 0.88 + ((Math.sin(weatherPhaseRef.current * 1.8) + 1) / 2) * 0.22 : 0.9), false),
         } : undefined,
         properties: new Cesium.PropertyBag({
           entityId: item.id, layer, entityType: item.entityType, source: item.source ?? 'unknown',
@@ -1172,7 +1215,34 @@ export default function CorridorWorldScene({
       }
     }
     viewer.scene.requestRender();
-  }, [worldEntities, selectedExternalId]);
+  }, [worldEntities, selectedExternalId, weatherAnimationEnabled]);
+
+  // Cesium is configured for request-driven rendering, so animated weather
+  // explicitly requests a modest frame cadence only while the layer is active.
+  // Provider freshness controls whether a marker pulses; stale/unknown points stay muted.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+    const reduceMotion = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!weatherAnimationEnabled || reduceMotion) {
+      weatherPhaseRef.current = 0;
+      viewer.scene.requestRender();
+      return;
+    }
+    let frame = 0;
+    let lastRender = 0;
+    const animate = (time: number) => {
+      if (time - lastRender >= 80) {
+        weatherPhaseRef.current = time / 1000;
+        viewer.scene.requestRender();
+        lastRender = time;
+      }
+      frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [weatherAnimationEnabled, surfaceQuality]);
 
   if (initFailed) {
     return (
