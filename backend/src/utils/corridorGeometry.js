@@ -404,13 +404,14 @@ function validateCorridorGeometry(path, polygon, bufferM, options = {}) {
     if(distanceM(ring[0],ring[ring.length-1])>1) return {valid:false,reason:'Polygon ring is not closed within one metre.'};
     const proj=projection(ring);
     proj.xy[proj.xy.length-1]=[...proj.xy[0]];
-    const valid=validateRingXY(proj.xy);
-    if(!valid.valid) return valid;
     if (arbitraryBufferRing) {
-      // PostGIS/GEOS creates a true line buffer whose vertices do not correspond
-      // one-to-one with centreline vertices. Verify a bounded set of centreline
-      // samples remains inside the persisted exterior ring; the generating SQL
-      // separately verifies ST_Covers(buffer, complete_route).
+      // The database builder has already run ST_IsValid/GEOS against the full
+      // geographic buffer. Do not run the local miter validator's single
+      // equirectangular projection over a continent-scale exterior ring: that
+      // projection can fold distant edges together and report a false
+      // self-intersection. Recheck coordinate finiteness/closure above and
+      // verify route coverage here; the SQL independently uses ST_Covers on
+      // the complete, unsampled route before accepting the polygon.
       const unwrappedRing = unwrap(ring.slice(0, -1).map(point => [...point]));
       const meanLng = unwrappedRing.reduce((sum, point) => sum + point[1], 0) / unwrappedRing.length;
       const routeProjected = route.map(point => {
@@ -429,6 +430,8 @@ function validateCorridorGeometry(path, polygon, bufferM, options = {}) {
       }
       return {valid:true,pathPoints:route.length,polygonPoints:ring.length,containsCenterline:true};
     }
+    const valid=validateRingXY(proj.xy);
+    if(!valid.valid) return valid;
     const offsets=[], n=route.length;
     for(let i=0;i<n;i++) {
       const left=distanceM(route[i],ring[i]), right=distanceM(route[i],ring[2*n-1-i]);
