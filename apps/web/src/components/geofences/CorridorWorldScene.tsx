@@ -1225,7 +1225,11 @@ export default function CorridorWorldScene({
     if (!viewer || viewer.isDestroyed()) return;
     const reduceMotion = typeof window !== 'undefined'
       && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (!weatherAnimationEnabled || reduceMotion) {
+    const hasFreshWeather = weatherAnimationEnabled && worldEntities.some(item =>
+      item.entityType === 'weather' &&
+      ['LIVE', 'DELAYED'].includes(String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase())
+    );
+    if (!hasFreshWeather || reduceMotion) {
       weatherPhaseRef.current = 0;
       viewer.scene.requestRender();
       return;
@@ -1242,7 +1246,7 @@ export default function CorridorWorldScene({
     };
     frame = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frame);
-  }, [weatherAnimationEnabled, surfaceQuality]);
+  }, [weatherAnimationEnabled, surfaceQuality, worldEntities]);
 
   if (initFailed) {
     return (
