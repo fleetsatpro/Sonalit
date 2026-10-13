@@ -395,7 +395,7 @@ function validateCorridorGeometry(path, polygon, bufferM, options = {}) {
   try {
     const route=normalizePath(path), buffer=Number(bufferM);
     if(!Number.isFinite(buffer)||buffer<MIN_BUFFER_M||buffer>MAX_BUFFER_M) return {valid:false,reason:'Invalid metre buffer.'};
-    const arbitraryBufferRing = options && options.method === 'postgis-geography-buffer';
+    const arbitraryBufferRing = options && typeof options.method === 'string' && options.method.startsWith('postgis-');
     if(!Array.isArray(polygon)||polygon.length<4||(!arbitraryBufferRing&&polygon.length!==2*route.length+1)) return {valid:false,reason:'Polygon vertex count does not match the centreline.'};
     const ring=polygon.map((p,i)=>{
       if(!Array.isArray(p)||p.length<2||!Number.isFinite(Number(p[0]))||!Number.isFinite(Number(p[1]))||Math.abs(Number(p[0]))>90||Math.abs(Number(p[1]))>180) throw new RangeError('Invalid polygon coordinate at index '+i+'.');
