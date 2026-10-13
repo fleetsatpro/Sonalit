@@ -754,8 +754,11 @@ async function buildCorridorPolygonWithPostGIS(pathLatLng, bufferM, orgId) {
       throw new Error('PostGIS corridor buffer failed validity or centreline-coverage verification.');
     }
     if (!geojson || geojson.type !== 'Polygon' || !Array.isArray(geojson.coordinates) ||
+        geojson.coordinates.length !== 1 ||
         !Array.isArray(geojson.coordinates[0]) || geojson.coordinates[0].length < 4) {
-      throw new Error('PostGIS corridor buffer returned an unsupported polygon geometry.');
+      // The legacy buffer_polygon schema stores one exterior ring. Do not
+      // silently fill holes if a route loops back and encloses a real interior.
+      throw new Error('PostGIS corridor buffer returned a polygon with unsupported interior rings or geometry type.');
     }
 
     // Persist the exterior ring in Sonalit's established [latitude, longitude]
