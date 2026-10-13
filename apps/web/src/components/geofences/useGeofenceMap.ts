@@ -41,6 +41,8 @@ export function useGeofenceMap(opts: Options) {
   const renderRef = useRef<(() => void) | null>(null);
   const onViewportChangeRef = useRef(opts.onViewportChange);
   onViewportChangeRef.current = opts.onViewportChange;
+  const corridorSignalOverlayRef = useRef(opts.corridorSignalOverlay);
+  corridorSignalOverlayRef.current = opts.corridorSignalOverlay;
 
   useEffect(() => {
     if (!mapEl.current || mapRef.current) return;
@@ -210,7 +212,7 @@ export function useGeofenceMap(opts: Options) {
       m.addLayer({ id: 'gf-corridor-line', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 2.5, 'line-dasharray': [3, 2] } });
       // Evidence-backed route signals are a separate visual layer over the unchanged operational centreline.
       // Shadow + broad glow + crisp core create restrained pseudo-3D depth without changing stored geometry.
-      m.addSource('gf-corridor-signal-src', { type: 'geojson', data: opts.corridorSignalOverlay.segments });
+      m.addSource('gf-corridor-signal-src', { type: 'geojson', data: corridorSignalOverlayRef.current.segments as GeoJSON.FeatureCollection });
       m.addLayer({
         id: 'gf-corridor-signal-shadow', type: 'line', source: 'gf-corridor-signal-src',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
@@ -226,7 +228,7 @@ export function useGeofenceMap(opts: Options) {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': ['get', 'signal_color'], 'line-width': 5.5, 'line-opacity': 0.98 },
       });
-      m.addSource('gf-corridor-signal-points-src', { type: 'geojson', data: opts.corridorSignalOverlay.markers });
+      m.addSource('gf-corridor-signal-points-src', { type: 'geojson', data: corridorSignalOverlayRef.current.markers as GeoJSON.FeatureCollection });
       m.addLayer({
         id: 'gf-corridor-signal-points-glow', type: 'circle', source: 'gf-corridor-signal-points-src',
         paint: { 'circle-radius': 11, 'circle-color': ['get', 'signal_color'], 'circle-opacity': 0.22, 'circle-blur': 0.85 },
@@ -279,7 +281,18 @@ export function useGeofenceMap(opts: Options) {
     if (mapReadyRef.current && m.isStyleLoaded()) render();
     return () => { if (renderRef.current === render) renderRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.visibleVehicles, opts.devices, opts.mapGeofences, opts.visibleZones, opts.regionFilter, opts.drawMode, opts.drawCenter, opts.drawPath, opts.drawRadiusM, opts.corridorSignalOverlay]);
+  }, [opts.visibleVehicles, opts.devices, opts.mapGeofences, opts.visibleZones, opts.regionFilter, opts.drawMode, opts.drawCenter, opts.drawPath, opts.drawRadiusM]);
+
+  // Evidence refreshes update just the two dedicated GeoJSON sources. Do not rebuild
+  // the vehicles/devices/drawing layers every time a weather or traffic feed polls.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current || !map.isStyleLoaded()) return;
+    const segments = map.getSource('gf-corridor-signal-src') as maplibregl.GeoJSONSource | undefined;
+    const markers = map.getSource('gf-corridor-signal-points-src') as maplibregl.GeoJSONSource | undefined;
+    segments?.setData(opts.corridorSignalOverlay.segments as GeoJSON.FeatureCollection);
+    markers?.setData(opts.corridorSignalOverlay.markers as GeoJSON.FeatureCollection);
+  }, [opts.corridorSignalOverlay]);
 
   // A low-frequency pulse supplies depth on the signal overlay without an
   // expensive per-feature animation. Respect reduced-motion accessibility.
