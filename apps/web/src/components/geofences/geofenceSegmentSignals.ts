@@ -5,6 +5,7 @@ export type CorridorSignalKind = 'traffic' | 'weather' | 'security' | 'hazard';
 export interface CorridorSignalRoute {
   id: string;
   name: string;
+  type?: string;
   path?: [number, number][] | null;
   buffer_m?: number | null;
 }
@@ -215,8 +216,9 @@ export function buildCorridorSignalOverlay(
   };
 
   for (const route of routes) {
-    const path = (route.path ?? []).filter(finiteCoordinate);
-    if (path.length < 2) continue;
+    const rawPath = route.path ?? [];
+    if (rawPath.length < 2 || rawPath.some(point => !finiteCoordinate(point))) continue;
+    const path = rawPath;
     const bufferM = Math.max(0, Math.min(5000, Number(route.buffer_m) || 0));
     let current: {
       kind: CorridorSignalKind;
