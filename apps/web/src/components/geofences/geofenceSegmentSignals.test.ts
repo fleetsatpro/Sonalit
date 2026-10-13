@@ -40,7 +40,7 @@ describe('evidence-backed corridor signal segments', () => {
     });
 
     const overlay = buildCorridorSignalOverlay([
-      { id: 'route-1', name: 'Kisumu to Tunduma', type: 'corridor', path: routePath(), buffer_m: 300 } as never,
+      { id: 'route-1', name: 'Kisumu to Tunduma', type: 'corridor', path: routePath(), buffer_m: 300 },
     ], [traffic, weather], now);
 
     expect(overlay.summary.totalSegments).toBe(50);
