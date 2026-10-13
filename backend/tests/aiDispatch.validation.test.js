@@ -207,7 +207,7 @@ describe('Copilot dispatch tool execution contract', () => {
         geofence_id: 'geo-route-test-1',
         source_path_points: 12001,
         path_simplification_tolerance_m: 10,
-        buffer_polygon_method: 'postgis-geography-buffer',
+        buffer_polygon_method: 'postgis-chunked-geography-buffer',
         fallback_used: false,
         geometry_verification: { persisted_path_points: expect.any(Number) },
       });
@@ -216,9 +216,14 @@ describe('Copilot dispatch tool execution contract', () => {
       expect(response.body.created[0].geometry_verification.start_drift_m).toBeLessThanOrEqual(1500);
       expect(response.body.created[0].geometry_verification.end_drift_m).toBeLessThanOrEqual(1500);
       expect(global.fetch).toHaveBeenCalledTimes(1);
+      const bufferSqlCall = mockQuery.mock.calls.find(([sql]) => String(sql).includes('ST_Buffer('));
+      expect(bufferSqlCall).toBeDefined();
+      expect(String(bufferSqlCall[0])).toContain('ST_Segmentize');
+      expect(String(bufferSqlCall[0])).toContain('ST_UnaryUnion');
+      expect(String(bufferSqlCall[0])).toContain('ST_Covers');
       expect(mockQuery.mock.calls.some(([sql]) => /INSERT INTO geofences/i.test(String(sql)))).toBe(true);
       expect(mockQuery.mock.calls.some(([sql]) => /SELECT coordinates FROM geofences/i.test(String(sql)))).toBe(true);
-      expect(persistedCoordinates?.buffer_polygon_method).toBe('postgis-geography-buffer');
+      expect(persistedCoordinates?.buffer_polygon_method).toBe('postgis-chunked-geography-buffer');
       expect(persistedCoordinates?.buffer_polygon).toHaveLength(5);
       expect(response.body.created[0].geometry_verification.persisted_path_points).toBe(response.body.created[0].path_points);
     } finally {
