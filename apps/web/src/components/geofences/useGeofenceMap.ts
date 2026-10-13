@@ -94,7 +94,7 @@ export function useGeofenceMap(opts: Options) {
     const m = mapRef.current;
     if (!m) return;
     const render = () => {
-      ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-polygon-fill', 'gf-polygon-line', 'gf-polygon-label', 'gf-corridor-buffer-fill', 'gf-corridor-buffer-line', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line', 'gf-draw-vertices']
+      ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-polygon-fill', 'gf-polygon-line', 'gf-polygon-label', 'gf-corridor-buffer-fill', 'gf-corridor-buffer-line', 'gf-corridor-buffer-distance', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line', 'gf-draw-vertices']
         .forEach(id => { if (m.getLayer(id)) m.removeLayer(id); });
       ['gf-zone-src', 'gf-polygon-src', 'gf-corridor-buffer-src', 'gf-corridor-src', 'gf-linear-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
 
@@ -113,6 +113,14 @@ export function useGeofenceMap(opts: Options) {
           corridorFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'LineString', coordinates: g.path.map(([lat, lng]) => [lng, lat]) } });
           if (g.buffer_polygon && g.buffer_polygon.length >= 4) {
             corridorBufferFeatures.push({ type: 'Feature', properties: { name: g.name, buffer_m: g.buffer_m || 0 }, geometry: { type: 'Polygon', coordinates: [g.buffer_polygon.map(([lat, lng]) => [lng, lat])] } });
+          } else if (Number.isFinite(Number(g.buffer_m)) && Number(g.buffer_m) > 0) {
+            const meanLat = g.path.reduce((sum, point) => sum + point[0], 0) / g.path.length;
+            const metresPerPixelAtZoomZero = 156543.03392 * Math.max(0.087, Math.cos(meanLat * Math.PI / 180));
+            corridorBufferFeatures.push({
+              type: 'Feature',
+              properties: { name: g.name, buffer_m: Number(g.buffer_m), buffer_width_zoom_zero: 2 * Number(g.buffer_m) / metresPerPixelAtZoomZero },
+              geometry: { type: 'LineString', coordinates: g.path.map(([lat, lng]) => [lng, lat]) },
+            });
           }
         } else if (g.lat != null && g.lng != null) {
           circleFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'Polygon', coordinates: [geoCircle(g.lat, g.lng, (g.radius_m || 1000) / 1000)] } });
@@ -133,8 +141,26 @@ export function useGeofenceMap(opts: Options) {
       m.addLayer({ id: 'gf-polygon-label', type: 'symbol', source: 'gf-polygon-src', layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-font': LABEL_FONT, 'text-anchor': 'center', 'text-allow-overlap': false, 'text-optional': true }, paint: { 'text-color': '#ddd6fe', 'text-halo-color': '#080b12', 'text-halo-width': 2 } });
       // Corridors get a wide translucent buffer band; linear geofences are a plain route line with no buffer.
       m.addSource('gf-corridor-buffer-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorBufferFeatures } });
-      m.addLayer({ id: 'gf-corridor-buffer-fill', type: 'fill', source: 'gf-corridor-buffer-src', paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.055 } });
-      m.addLayer({ id: 'gf-corridor-buffer-line', type: 'line', source: 'gf-corridor-buffer-src', paint: { 'line-color': '#38bdf8', 'line-width': 1, 'line-opacity': 0.45 } });
+      m.addLayer({ id: 'gf-corridor-buffer-fill', type: 'fill', source: 'gf-corridor-buffer-src', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.055 } });
+      m.addLayer({ id: 'gf-corridor-buffer-line', type: 'line', source: 'gf-corridor-buffer-src', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'line-color': '#38bdf8', 'line-width': 1, 'line-opacity': 0.45 } });
+      // For the centreline-distance model, express the metre buffer as a
+      // zoom-scaled MapLibre stroke. This keeps the visible band consistent
+      // with its persisted operational threshold without inventing a polygon.
+      m.addLayer({
+        id: 'gf-corridor-buffer-distance',
+        type: 'line',
+        source: 'gf-corridor-buffer-src',
+        filter: ['==', ['geometry-type'], 'LineString'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#38bdf8',
+          'line-opacity': 0.16,
+          // Cap the visual stroke at 512 screen pixels. At very close zooms a
+          // kilometre-scale corridor can be wider than the viewport; avoid
+          // submitting unbounded line widths to the renderer.
+          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 0, ['get', 'buffer_width_zoom_zero'], 22, ['min', 512, ['*', ['get', 'buffer_width_zoom_zero'], 4194304]],],
+        },
+      });
       m.addSource('gf-corridor-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorFeatures } });
       m.addLayer({ id: 'gf-corridor-glow', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 14, 'line-opacity': 0.15 } });
       m.addLayer({ id: 'gf-corridor-line', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 2.5, 'line-dasharray': [3, 2] } });

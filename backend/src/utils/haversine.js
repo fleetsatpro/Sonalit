@@ -33,8 +33,9 @@ function distanceToSegment(pLat, pLng, aLat, aLng, bLat, bLng) {
   const cosLat = Math.cos((aLatR + bLatR) / 2);
 
   const ax = 0, ay = 0;
-  const bx = (bLngR - aLngR) * cosLat, by = bLatR - aLatR;
-  const px = (pLngR - aLngR) * cosLat, py = pLatR - aLatR;
+  const shortestDeltaRadians = (delta) => ((delta + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+  const bx = shortestDeltaRadians(bLngR - aLngR) * cosLat, by = bLatR - aLatR;
+  const px = shortestDeltaRadians(pLngR - aLngR) * cosLat, py = pLatR - aLatR;
 
   const segLenSq = bx * bx + by * by;
 
