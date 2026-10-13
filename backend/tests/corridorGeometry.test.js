@@ -142,7 +142,7 @@ describe('validated corridor geometry', () => {
     ];
 
     expect(exteriorRing).toHaveLength(5);
-    expect(validateCorridorGeometry(path, exteriorRing, 300, { method: 'postgis-geography-buffer' }))
+    expect(validateCorridorGeometry(path, exteriorRing, 300, { method: 'postgis-chunked-geography-buffer' }))
       .toMatchObject({ valid: true, containsCenterline: true, pathPoints: 3, polygonPoints: 5 });
   });
 
