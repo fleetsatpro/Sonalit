@@ -15,6 +15,7 @@ export * from './schemas/convoy.js';
 export * from './schemas/cfo-photo.js';
 export * from './schemas/guardian.js';
 export * from './schemas/telemetry.js';
+export * from './schemas/device-events.js';
 export * from './schemas/alert.js';
 export * from './schemas/incident.js';
 export * from './schemas/message.js';

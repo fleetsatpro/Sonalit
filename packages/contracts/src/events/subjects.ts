@@ -7,6 +7,7 @@ import { CommandSchema } from '../schemas/guardian.js';
 import { AuditLogWriteSchema } from '../schemas/audit.js';
 import { ConvoySchema } from '../schemas/convoy.js';
 import { CfoPhotoSchema } from '../schemas/cfo-photo.js';
+import { DeviceEventIngestedSchema } from '../schemas/device-events.js';
 import { OutboxChannelSchema } from '../schemas/outbox.js';
 
 // ---------------------------------------------------------------------------
@@ -32,6 +33,11 @@ export const NATS_SUBJECTS = {
   events_geofence_breach: (orgId: string) =>
     `events.geofence.breach.${orgId}` as const,
   events_geofence_breach_pattern: 'events.geofence.breach.*',
+
+  // Device events — published once a signed Sentinel event is stored. Matched by
+  // the existing EVENTS stream pattern `events.*.*`.
+  events_device: (orgId: string) => `events.device.${orgId}` as const,
+  events_device_pattern: 'events.device.*',
 
   // Commands — published by Command service, consumed by device gateway
   commands: (deviceId: string) => `commands.${deviceId}` as const,
@@ -73,6 +79,10 @@ export const PanicEventSchema = PanicRequestSchema.extend({
   assigned_user_id: UuidSchema.nullable(),
 });
 export type PanicEvent = z.infer<typeof PanicEventSchema>;
+
+// events.device.<org>
+export const DeviceEventPublishedSchema = DeviceEventIngestedSchema;
+export type DeviceEventPublished = z.infer<typeof DeviceEventPublishedSchema>;
 
 // events.alert.<org>
 export const AlertEventSchema = AlertSchema;
