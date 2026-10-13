@@ -154,6 +154,23 @@ describe('Copilot dispatch tool execution contract', () => {
     ]);
 
     mockQuery.mockImplementation(async (sql, params = []) => {
+      if (/ST_Buffer\\(/i.test(String(sql))) {
+        return { rows: [{
+          geojson: {
+            type: 'Polygon',
+            coordinates: [[
+              [-0.01, -0.01],
+              [1.01, -0.01],
+              [1.01, 0.01],
+              [-0.01, 0.01],
+              [-0.01, -0.01],
+            ]],
+          },
+          geometry_valid: true,
+          covers_centerline: true,
+          geometry_type: 'ST_Polygon',
+        }] };
+      }
       if (/INSERT INTO geofences/i.test(String(sql))) {
         persistedCoordinates = JSON.parse(params[2]);
         return { rows: [{ id: 'geo-route-test-1' }] };
@@ -190,6 +207,7 @@ describe('Copilot dispatch tool execution contract', () => {
         geofence_id: 'geo-route-test-1',
         source_path_points: 12001,
         path_simplification_tolerance_m: 10,
+        buffer_polygon_method: 'postgis-geography-buffer',
         fallback_used: false,
         geometry_verification: { persisted_path_points: expect.any(Number) },
       });
