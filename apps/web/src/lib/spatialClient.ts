@@ -98,6 +98,10 @@ export interface WorldContextQuery {
   radiusM: number
   layers?: string[]
   maxEntitiesPerLayer?: number
+  /** Explicit high-detail mode: request a bounded grid of weather model points across the visible map. */
+  weatherGrid?: boolean
+  /** [west, south, east, north] map viewport bounds; kept separate from strict provider AOI bounds. */
+  weatherBounds?: [number, number, number, number]
   subject?: SpatialSubject
   signal?: AbortSignal
 }
@@ -111,6 +115,8 @@ export async function fetchWorldContext(input: WorldContextQuery): Promise<Spati
       radiusM: Math.min(Math.max(input.radiusM, 1000), 250000),
       layers: (input.layers ?? [...WORLD_CONTEXT_LAYERS]).join(','),
       maxEntitiesPerLayer: Math.min(Math.max(input.maxEntitiesPerLayer ?? 75, 1), 250),
+      ...(input.weatherGrid ? { weatherGrid: true } : {}),
+      ...(input.weatherBounds ? { weatherBounds: input.weatherBounds.join(',') } : {}),
       ...(input.subject ? { subject: JSON.stringify(input.subject) } : {}),
     },
   }
