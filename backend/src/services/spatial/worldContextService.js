@@ -80,12 +80,16 @@ function buildWeatherGridPoints(bounds, center, radiusM, maxPoints) {
   while (columns * rows > budget && rows > 2) rows -= 1;
   while (columns * rows > budget && columns > 2) columns -= 1;
   const points = [];
+  const seenGridCentres = new Set();
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
-      points.push({
-        latitude: south + ((row + 0.5) / rows) * latitudeSpan,
-        longitude: west + ((column + 0.5) / columns) * longitudeSpan,
-      });
+      const latitude = south + ((row + 0.5) / rows) * latitudeSpan;
+      const longitude = west + ((column + 0.5) / columns) * longitudeSpan;
+      // The gateway cache uses 0.001-degree keys; do not spend provider calls on duplicated rounded requests.
+      const key = latitude.toFixed(3) + ',' + longitude.toFixed(3);
+      if (seenGridCentres.has(key)) continue;
+      seenGridCentres.add(key);
+      points.push({ latitude, longitude });
     }
   }
   return points;
@@ -1200,10 +1204,14 @@ async function buildWorldContext(opts) {
     const freshnessClasses = Array.from(environmentById.values()).map(observation =>
       String(observation.quality?.freshnessClass || 'UNKNOWN').toUpperCase()
     );
-    const freshnessComplete = freshnessClasses.length === attemptedSamples &&
+    // Several requested centers can snap to the same upstream model cell. Those are
+    // one unique rendered point, not missing data; provider call coverage stays separate.
+    const freshnessComplete = (weatherGrid
+      ? freshnessClasses.length > 0
+      : freshnessClasses.length === attemptedSamples) &&
       freshnessClasses.every(s => s === 'LIVE' || s === 'DELAYED');
     const coverageComplete = successfulSamples === attemptedSamples &&
-      environmentById.size >= successfulSamples &&
+      (weatherGrid ? environmentById.size > 0 : environmentById.size >= successfulSamples) &&
       freshnessComplete;
     const hasLive = freshnessClasses.includes('LIVE') || statuses.includes('LIVE');
     const hasDelayed = freshnessClasses.includes('DELAYED') || statuses.includes('DELAYED');
@@ -1248,6 +1256,7 @@ async function buildWorldContext(opts) {
       successfulSamples,
       failedSamples: failedSampleCount,
       ...(weatherGrid ? {
+        uniqueModelGridPoints: environmentById.size,
         mode: 'bounded_model_grid_points',
         bounds: input.weatherBounds || bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, boundedRadiusM),
         footprintSemantics: 'point_samples_only_not_radar_or_precipitation_footprints'
