@@ -63,7 +63,7 @@ function distanceMeters(aLat, aLng, bLat, bLng) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
 }
 
-function makeObservation(requested, data, receivedAt, cachedAt) {
+function makeObservation(requested, data, receivedAt) {
   const current = data && data.current || {};
   const observedAt = current.time
     ? new Date(String(current.time).endsWith('Z') ? String(current.time) : String(current.time) + 'Z').toISOString()
@@ -162,9 +162,13 @@ async function getCurrentWeatherBatch(input) {
         '&longitude=' + encodeURIComponent(missing.map(p => p.longitude).join(',')) +
         '&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,visibility' +
         '&timezone=UTC&forecast_days=1';
+      const timeoutSignal = AbortSignal.timeout(7000);
+      const requestSignal = input && input.signal && typeof AbortSignal.any === 'function'
+        ? AbortSignal.any([input.signal, timeoutSignal])
+        : timeoutSignal;
       const response = await fetch(url, {
         headers: { Accept: 'application/json', 'X-Request-ID': String(input && input.requestId || '') },
-        signal: input && input.signal ? input.signal : AbortSignal.timeout(7000),
+        signal: requestSignal,
       });
       if (!response.ok) {
         throw Object.assign(new Error('Open-Meteo HTTP ' + response.status), {
@@ -176,7 +180,7 @@ async function getCurrentWeatherBatch(input) {
       rows.forEach((row, index) => {
         const point = missing[index];
         if (!point || !row || !row.current) return;
-        const observation = makeObservation(point, row, receivedAt, now);
+        const observation = makeObservation(point, row, receivedAt);
         observationsByKey.set(point.key, observation);
         cache.set(point.key, { observation, cachedAt: now, expiresAt: now + CACHE_TTL_MS });
       });
