@@ -796,38 +796,44 @@ export default function FleetMap({
   }, [mapReady, weatherAnimationEnabled, weatherEvents])
 
 
-  // The animated halo marks only the catalogue epicentre, never a shaking footprint.
+  // The halo marks the catalogue epicentre only; zoom-aware thinning keeps the map legible at global scale.
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    for (const marker of naturalEventMarkersRef.current.values()) marker.remove()
-    naturalEventMarkersRef.current.clear()
-    if (!mapReady || !weatherAnimationEnabled) return
+    const renderEvents = () => {
+      for (const marker of naturalEventMarkersRef.current.values()) marker.remove()
+      naturalEventMarkersRef.current.clear()
+      if (!mapReady || !weatherAnimationEnabled) return
 
-    const valid = naturalEvents.filter(item =>
-      (item.entityType === 'earthquake' || item.entityType === 'volcano') &&
-      Number.isFinite(item.latitude) && Number.isFinite(item.longitude) &&
-      item.latitude >= -90 && item.latitude <= 90 &&
-      item.longitude >= -180 && item.longitude <= 180
-    )
-    const sorted = [...valid].sort((a, b) => {
-      const aEarthquake = a.entityType === 'earthquake'
-      const bEarthquake = b.entityType === 'earthquake'
-      if (aEarthquake !== bEarthquake) return aEarthquake ? -1 : 1
-      const ma = Number(a.attributes?.magnitude)
-      const mb = Number(b.attributes?.magnitude)
-      return (Number.isFinite(mb) ? mb : 0) - (Number.isFinite(ma) ? ma : 0)
-    }).slice(0, 240)
+      const valid = naturalEvents.filter(item =>
+        (item.entityType === 'earthquake' || item.entityType === 'volcano') &&
+        Number.isFinite(item.latitude) && Number.isFinite(item.longitude) &&
+        item.latitude >= -90 && item.latitude <= 90 &&
+        item.longitude >= -180 && item.longitude <= 180
+      )
+      const volcanoes = valid.filter(item => item.entityType === 'volcano')
+      const earthquakes = valid.filter(item => item.entityType === 'earthquake').sort((a, b) => {
+        const ma = Number(a.attributes?.magnitude)
+        const mb = Number(b.attributes?.magnitude)
+        return (Number.isFinite(mb) ? mb : 0) - (Number.isFinite(ma) ? ma : 0)
+      })
+      const zoom = map.getZoom()
+      const earthquakeLimit = zoom < 2 ? 24 : zoom < 4 ? 48 : 100
+      const visible = [...volcanoes, ...earthquakes.slice(0, earthquakeLimit)]
 
-    for (const item of sorted) {
-      const element = makeNaturalEventMarker(item, entity => onNaturalEventSelectRef.current?.(entity))
-      const marker = new maplibregl.Marker({ element, anchor: 'center' })
-        .setLngLat([item.longitude, item.latitude])
-        .addTo(map)
-      marker.getElement().style.zIndex = item.entityType === 'earthquake' ? '72' : '68'
-      naturalEventMarkersRef.current.set(item.id, marker)
+      for (const item of visible) {
+        const element = makeNaturalEventMarker(item, entity => onNaturalEventSelectRef.current?.(entity))
+        const marker = new maplibregl.Marker({ element, anchor: 'center' })
+          .setLngLat([item.longitude, item.latitude])
+          .addTo(map)
+        marker.getElement().style.zIndex = item.entityType === 'earthquake' ? '72' : '68'
+        naturalEventMarkersRef.current.set(item.id, marker)
+      }
     }
+    renderEvents()
+    map.on('zoomend', renderEvents)
     return () => {
+      map.off('zoomend', renderEvents)
       for (const marker of naturalEventMarkersRef.current.values()) marker.remove()
       naturalEventMarkersRef.current.clear()
     }
