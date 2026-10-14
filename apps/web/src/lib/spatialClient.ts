@@ -162,7 +162,7 @@ export function spatialEntityLayer(item: SpatialWorldEntity): WorldContextLayer 
   const type = String(item.entityType || '').toLowerCase()
   if (type === 'aircraft') return 'aircraft'
   if (type === 'weather') return 'weather'
-  if (type === 'earthquake' || type === 'volcano' || type === 'volcanic_activity') return 'hazards'
+  if (type === 'earthquake' || type === 'volcano' || type === 'volcanic_activity' || type === 'natural_event') return 'hazards'
   if (type === 'vessel') return 'maritime'
   if (type.startsWith('traffic_') || type === 'traffic') return 'traffic'
   if (type === 'natural_hazard' || type === 'hazard') return 'hazards'
