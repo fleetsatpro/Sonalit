@@ -2847,6 +2847,9 @@
 .gev-simulation-summary i[data-tone="quake"] { background: #e6a66f; }
 .gev-simulation-summary i[data-tone="volcano"] { background: #e99a9a; }
 .gev-simulation-footnote { margin-top: 8px; color: #778698; font: 500 7px/1.45 "IBM Plex Mono", ui-monospace, monospace; }
+.gev-simulation-footnote a { color: #b8cfdf; text-decoration: underline; text-underline-offset: 2px; }
+.gev-simulation-config-warning { display: block; margin-top: 5px; color: #e7b58c; font-weight: 800; letter-spacing: .025em; }
+
 
 .gev-natural-event-card { margin-top: 9px; padding: 11px; border: 1px solid rgba(230,166,111,.18); border-radius: 11px; background: linear-gradient(165deg, rgba(30,23,21,.84), rgba(6,10,16,.95)); }
 .gev-natural-event-card[data-event-type="volcano"] { border-color: rgba(233,154,154,.19); }
