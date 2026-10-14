@@ -6645,6 +6645,16 @@
           }
         }
       }
+    },
+    "/api/v1/spatial/live-events": {
+      "get": {
+        "operationId": "get_api_v1_spatial_live_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
