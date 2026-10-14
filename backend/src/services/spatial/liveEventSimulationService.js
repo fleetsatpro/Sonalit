@@ -6,6 +6,7 @@ const WEATHER_CACHE_TTL_MS = 10 * 60 * 1000;
 const EARTHQUAKE_CACHE_TTL_MS = 60 * 1000;
 const VOLCANO_CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 const VOLCANO_REPORT_TTL_MS = 30 * 60 * 1000;
+const USGS_VOLCANO_ALERT_TTL_MS = 60 * 1000;
 const MAX_WEATHER_POINTS = 36;
 const MAX_EARTHQUAKES = 300;
 
@@ -570,16 +571,85 @@ function volcanoEntity(report, volcano, receivedAt, stale) {
   };
 }
 
+async function loadUsgsElevatedVolcanoes() {
+  const url = 'https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes';
+  const payload = await fetchJson(url, 'USGS elevated volcano alerts', 9000);
+  const alerts = asArray(payload).filter(alert => alert && (alert.vnum || alert.volcano_name));
+  return { alerts, receivedAt: new Date().toISOString(), sourceUrl: url };
+}
+
+function usgsElevatedVolcanoEntity(alert, volcano, receivedAt, stale) {
+  const number = String(alert.vnum ?? volcano.volcanoNumber ?? '');
+  const alertLevel = String(alert.alert_level ?? 'UNKNOWN').toUpperCase();
+  const colorCode = String(alert.color_code ?? 'UNKNOWN').toUpperCase();
+  const noticeDate = toIsoUtc(alert.sent_utc) || (Number.isFinite(Number(alert.sent_unixtime)) ? new Date(Number(alert.sent_unixtime) * 1000).toISOString() : null);
+  const currentAlert = {
+    alertLevel,
+    colorCode,
+    noticeType: String(alert.notice_type_cd ?? ''),
+    noticeIdentifier: String(alert.notice_identifier ?? ''),
+    noticeIssuedAt: noticeDate,
+    noticeUrl: String(alert.notice_url ?? 'https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes'),
+    noticeDataUrl: String(alert.notice_data ?? ''),
+    observatory: String(alert.obs_fullname ?? ''),
+    sourceStatus: stale ? 'STALE_CACHE_FALLBACK' : 'CURRENT_ELEVATED_STATUS_FEED',
+    sourceReceivedAt: receivedAt,
+  };
+  return {
+    id: 'usgs:volcano-alert:' + (number || normaliseName(volcano.name).replace(/\s/g, '-')),
+    entityType: 'volcano',
+    source: 'USGS Volcano Hazards Program',
+    sourceReference: number || volcano.name,
+    latitude: volcano.latitude,
+    longitude: volcano.longitude,
+    observedAt: noticeDate,
+    receivedAt,
+    status: 'USGS_ELEVATED_ALERT_' + alertLevel,
+    attributes: {
+      name: volcano.name,
+      title: volcano.name + ' — USGS ' + alertLevel + ' / ' + colorCode,
+      country: volcano.country,
+      region: volcano.region,
+      elevationM: volcano.elevationM,
+      volcanoNumber: number || volcano.volcanoNumber,
+      reportType: 'USGS_ELEVATED_ALERT',
+      reportingCadence: 'elevated_status_feed',
+      usgsCurrentAlert: currentAlert,
+      reportUrl: currentAlert.noticeUrl,
+      visualizationSemantics: 'current_usgs_elevated_alert_beacon_not_an_ash_plume_or_eruption_footprint',
+    },
+    provenance: {
+      sourceName: 'USGS Volcano Hazards Program — Elevated Volcano Alerts',
+      sourceUrl: 'https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes',
+      observationType: 'current_elevated_volcano_alert',
+      sourceReceivedAt: receivedAt,
+      noticeIssuedAt: noticeDate,
+      noticeUrl: currentAlert.noticeUrl,
+      observatory: currentAlert.observatory,
+    },
+    quality: {
+      state: stale ? 'stale' : 'good',
+      freshnessClass: stale ? 'STALE' : 'LIVE',
+      reason: stale
+        ? 'The USGS elevated-alert feed could not be refreshed; this alert is from a previously cached feed.'
+        : 'Currently listed as an elevated volcano status by USGS. The notice timestamp is the issue time, not a sensor sample time.',
+    },
+  };
+}
+
 async function loadVolcanoEvents() {
-  const [catalogResult, reportResult] = await Promise.allSettled([
+  const [catalogResult, reportResult, alertResult] = await Promise.allSettled([
     loadCachedSource('gvp-volcano-catalog', VOLCANO_CATALOG_TTL_MS, loadVolcanoCatalog),
     loadCachedSource('gvp-weekly-activity', VOLCANO_REPORT_TTL_MS, loadVolcanoActivity),
+    loadCachedSource('usgs-elevated-volcano-alerts', USGS_VOLCANO_ALERT_TTL_MS, loadUsgsElevatedVolcanoes),
   ]);
   const warnings = [];
   let catalog = [];
   let reportData = { items: [], feedDate: null };
+  let alerts = [];
   let catalogStale = false;
   let reportStale = false;
+  let alertStale = false;
 
   if (catalogResult.status === 'fulfilled') {
     catalog = catalogResult.value.value.volcanoes || [];
@@ -593,6 +663,12 @@ async function loadVolcanoEvents() {
   } else {
     warnings.push('volcano_activity_report_unavailable: ' + String(reportResult.reason && reportResult.reason.message || reportResult.reason));
   }
+  if (alertResult.status === 'fulfilled') {
+    alerts = alertResult.value.value.alerts || [];
+    alertStale = alertResult.value.stale;
+  } else {
+    warnings.push('usgs_current_volcano_alerts_unavailable: ' + String(alertResult.reason && alertResult.reason.message || alertResult.reason));
+  }
 
   const now = new Date().toISOString();
   const entities = [];
@@ -605,23 +681,58 @@ async function loadVolcanoEvents() {
     }
     entities.push(volcanoEntity(report, volcano, now, catalogStale || reportStale));
   }
+
+  let matchedElevatedAlerts = 0;
+  let unmatchedElevatedAlerts = 0;
+  for (const alert of alerts) {
+    const volcanoNumber = String(alert.vnum ?? '');
+    const volcano = catalog.find(item => volcanoNumber && String(item.volcanoNumber) === volcanoNumber)
+      || matchVolcanoReport({ normalisedName: normaliseName(alert.volcano_name) }, catalog);
+    if (!volcano) {
+      unmatchedElevatedAlerts += 1;
+      continue;
+    }
+    matchedElevatedAlerts += 1;
+    const alertEntity = usgsElevatedVolcanoEntity(alert, volcano, now, alertStale || catalogStale);
+    const existing = entities.find(entity => String(entity.attributes?.volcanoNumber ?? '') === String(volcano.volcanoNumber ?? ''));
+    if (existing) {
+      existing.attributes = Object.assign({}, existing.attributes, {
+        usgsCurrentAlert: alertEntity.attributes.usgsCurrentAlert,
+        usgsAlertTitle: alertEntity.attributes.title,
+      });
+      existing.provenance = Object.assign({}, existing.provenance, {
+        elevatedAlertSource: alertEntity.provenance.sourceUrl,
+        elevatedAlertNoticeUrl: alertEntity.attributes.usgsCurrentAlert.noticeUrl,
+        elevatedAlertReceivedAt: now,
+      });
+      existing.source = 'Smithsonian GVP / USGS WVAR + USGS elevated alert';
+    } else {
+      entities.push(alertEntity);
+    }
+  }
+
   return {
     entities,
     health: {
-      source: 'smithsonian-gvp-usgs-wvar',
-      status: warnings.length ? entities.length ? 'PARTIAL' : 'UNAVAILABLE' : 'DELAYED',
+      source: 'smithsonian-gvp-usgs-wvar+usgs-elevated-alerts',
+      status: warnings.length ? entities.length ? 'PARTIAL' : 'UNAVAILABLE' : !alertStale && matchedElevatedAlerts > 0 ? 'LIVE' : 'DELAYED',
       catalogueCount: catalog.length,
       reportCount: (reportData.items || []).length,
-      matchedReportCount: entities.length,
+      matchedReportCount: (reportData.items || []).length - unmatchedReports,
       unmatchedReportCount: unmatchedReports,
       reportFeedDate: reportData.feedDate || null,
       reportCacheStale: reportStale,
       catalogueCacheStale: catalogStale,
+      elevatedAlertCount: alerts.length,
+      matchedElevatedAlertCount: matchedElevatedAlerts,
+      unmatchedElevatedAlertCount: unmatchedElevatedAlerts,
+      elevatedAlertCacheStale: alertStale,
     },
     warnings,
     sources: {
       catalogue: 'https://volcano.si.edu/database/webservices.cfm',
       activity: 'https://volcano.si.edu/news/WeeklyVolcanoRSS.xml',
+      usgsElevatedAlerts: 'https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes',
     },
   };
 }
