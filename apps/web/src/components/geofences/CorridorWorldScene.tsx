@@ -1247,9 +1247,18 @@ export default function CorridorWorldScene({
           scaleByDistance: new Cesium.NearFarScalar(250, selected ? 1.04 : 1, 750000, 0.68),
           scale: new Cesium.CallbackProperty(() => {
             if (selected) return 1.04;
-            const phase = weatherPhaseRef.current * (isEarthquake ? 0.9 : 0.26) + weatherPhase;
-            const amplitude = isEarthquake ? 0.045 : 0.018;
-            return (isEarthquake || isVolcano) ? 0.99 + ((Math.sin(phase) + 1) / 2) * amplitude : 0.98;
+            const freshness = String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase();
+            const alert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined;
+            const alertIsCurrent = Boolean(alert) && String(alert.sourceStatus ?? '') !== 'STALE_CACHE_FALLBACK';
+            const canAnimate = isEarthquake
+              ? freshness === 'LIVE' || freshness === 'DELAYED'
+              : isVolcano
+                ? alertIsCurrent || freshness === 'LIVE' || freshness === 'DELAYED'
+                : isEonetEvent && (freshness === 'LIVE' || freshness === 'DELAYED');
+            if (!canAnimate) return 0.98;
+            const phase = weatherPhaseRef.current * (isEarthquake ? 0.9 : isVolcano ? 0.26 : 0.34) + weatherPhase;
+            const amplitude = isEarthquake ? 0.045 : isVolcano ? 0.018 : 0.022;
+            return 0.99 + ((Math.sin(phase) + 1) / 2) * amplitude;
           }, false),
         } : undefined,
         properties: new Cesium.PropertyBag({
