@@ -74,6 +74,21 @@ function formatUtcClock(date: Date) {
   return date.toISOString().slice(11, 19) + 'Z'
 }
 
+function formatForecastTime(value?: string): string | null {
+  if (!value) return null
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return null
+  const date = new Date(timestamp)
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  const month = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][date.getUTCMonth()]
+  return day + ' ' + month + ' · ' + date.toISOString().slice(11, 16) + ' UTC'
+}
+
+function formatForecastTick(value?: string): string | null {
+  const label = formatForecastTime(value)
+  return label ? label.replace(' · ', ' ').replace(' UTC', 'Z') : null
+}
+
 function safeExternalUrl(value: unknown, fallback: string): string {
   try {
     const url = new URL(String(value ?? ''))
@@ -535,13 +550,12 @@ export default function GodsEyeView() {
               <span className="gev-simulation-status-dot" data-state={liveSimulationError || liveSimulationResult?.health?.status === 'UNAVAILABLE' ? 'error' : liveSimulationFetching || liveSimulationResult?.health?.status === 'PARTIAL' ? 'sync' : 'ready'} />
               <div>
                 <div className="gev-simulation-eyebrow">LIVE EVENT SIMULATION{liveSimulationResult?.health?.status ? ' · ' + String(liveSimulationResult.health.status) : ''}</div>
-                <div className="gev-simulation-time">{selectedForecastTime
-                  ? new Date(selectedForecastTime).toISOString().slice(11, 16) + ' UTC'
-                  : liveSimulationFetching
+                <div className="gev-simulation-time">{formatForecastTime(selectedForecastTime)
+                  ?? (liveSimulationFetching
                     ? 'SYNCING FORECAST'
                     : liveSimulationResult?.health?.weather?.status === 'UNAVAILABLE'
                       ? 'FORECAST UNAVAILABLE'
-                      : 'FORECAST TIME N/A'}</div>
+                      : 'FORECAST TIME N/A')}</div>
               </div>
             </div>
             <div className="gev-simulation-actions">
@@ -553,9 +567,9 @@ export default function GodsEyeView() {
             </div>
           </div>
           <div className="gev-simulation-timeline-row">
-            <span className="gev-simulation-timeline-label">NOW</span>
-            <input className="gev-simulation-range" type="range" min={0} max={Math.max(0, simulationForecastSteps.length - 1)} step={1} disabled={simulationForecastSteps.length < 2} value={Math.min(forecastStepIndex, Math.max(0, simulationForecastSteps.length - 1))} onChange={event => { setForecastStepIndex(Number(event.target.value)); setSimulationPlaying(false) }} aria-label="Weather forecast time step" />
-            <span className="gev-simulation-timeline-label">+{Math.max(0, simulationForecastSteps.length - 1)}H</span>
+            <span className="gev-simulation-timeline-label">{formatForecastTick(simulationForecastSteps[0]?.validAt) ?? 'START'}</span>
+            <input className="gev-simulation-range" type="range" min={0} max={Math.max(0, simulationForecastSteps.length - 1)} step={1} disabled={simulationForecastSteps.length < 2} value={Math.min(forecastStepIndex, Math.max(0, simulationForecastSteps.length - 1))} onChange={event => { setForecastStepIndex(Number(event.target.value)); setSimulationPlaying(false) }} aria-label="Weather forecast valid time; drag to select an hourly model step" />
+            <span className="gev-simulation-timeline-label">{formatForecastTick(simulationForecastSteps[simulationForecastSteps.length - 1]?.validAt) ?? 'END'}</span>
           </div>
           <div className="gev-simulation-summary">
             <span><i data-tone="weather" />{simulationWeatherEntities.length} MODEL POINTS</span>
