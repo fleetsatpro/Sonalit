@@ -108,6 +108,51 @@ describe('GEV live event simulation data normalization', () => {
     expect(__testables.matchVolcanoReport(report.items[0], catalogue)).toBe(catalogue[0]);
   });
 
+  it('normalizes current USGS elevated-volcano alert levels separately from bulletin report dates', () => {
+    const volcano = {
+      volcanoNumber: '311120',
+      name: 'Great Sitkin',
+      latitude: 52.076,
+      longitude: -176.13,
+      country: 'United States',
+      region: 'Aleutian Ridge',
+    };
+    const receivedAt = new Date().toISOString();
+    const entity = __testables.usgsElevatedVolcanoEntity({
+      vnum: '311120',
+      volcano_name: 'Great Sitkin',
+      alert_level: 'WATCH',
+      color_code: 'ORANGE',
+      sent_utc: '2026-10-14 08:00:00',
+      notice_identifier: 'DOI-USGS-AVO-2026-10-14T08:00:00+00:00',
+      notice_url: 'https://volcanoes.usgs.gov/hans-public/notice/example',
+      notice_data: 'https://volcanoes.usgs.gov/hans-public/api/notice/getNotice/example',
+      obs_fullname: 'Alaska Volcano Observatory',
+    }, volcano, receivedAt, false);
+
+    expect(entity).toMatchObject({
+      id: 'usgs:volcano-alert:311120',
+      entityType: 'volcano',
+      source: 'USGS Volcano Hazards Program',
+      latitude: 52.076,
+      longitude: -176.13,
+      status: 'USGS_ELEVATED_ALERT_WATCH',
+      attributes: {
+        reportType: 'USGS_ELEVATED_ALERT',
+        reportingCadence: 'elevated_status_feed',
+        usgsCurrentAlert: {
+          alertLevel: 'WATCH',
+          colorCode: 'ORANGE',
+          sourceStatus: 'CURRENT_ELEVATED_STATUS_FEED',
+          observatory: 'Alaska Volcano Observatory',
+        },
+      },
+      provenance: { observationType: 'current_elevated_volcano_alert' },
+      quality: { freshnessClass: 'LIVE' },
+    });
+    expect(entity.attributes.usgsCurrentAlert.noticeIssuedAt).toBe('2026-10-14T08:00:00.000Z');
+  });
+
   it('handles a missing or unmatched volcano report without inventing coordinates', () => {
     const matched = __testables.matchVolcanoReport({
       volcanoNumber: null,
