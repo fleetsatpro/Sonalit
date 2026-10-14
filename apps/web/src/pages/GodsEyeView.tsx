@@ -750,6 +750,39 @@ export default function GodsEyeView() {
                           : ''}
                       </div>
                     </div>
+                  ) : selectedExternal.entityType === 'earthquake' ? (
+                    <div className="gev-natural-event-card" data-event-type="earthquake" aria-label="Earthquake event details">
+                      <div className="gev-natural-event-title">{String(selectedExternal.attributes?.title ?? selectedExternal.attributes?.place ?? 'Earthquake')}</div>
+                      <div className="gev-natural-event-note">USGS-catalogued earthquake epicentre. The marker is a symbolic event locator, not a measured shaking footprint or a prediction of damage.</div>
+                      <div className="gev-natural-event-meta">
+                        <div><span>Magnitude</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.magnitude)) ? 'M' + Number(selectedExternal.attributes?.magnitude).toFixed(1) : '—'}</strong></div>
+                        <div><span>Depth</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.depthKm)) ? Number(selectedExternal.attributes?.depthKm).toFixed(1) + ' km' : '—'}</strong></div>
+                        <div><span>Event time (UTC)</span><strong>{selectedExternal.observedAt ? new Date(selectedExternal.observedAt).toISOString().slice(0, 19).replace('T', ' ') : '—'}</strong></div>
+                        <div><span>Tsunami flag</span><strong>{selectedExternal.attributes?.tsunami === true ? 'YES · CHECK OFFICIAL ALERTS' : 'NOT FLAGGED'}</strong></div>
+                        <div><span>Location</span><strong>{String(selectedExternal.attributes?.place ?? 'Unknown')}</strong></div>
+                        <div><span>Catalog freshness</span><strong>{String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
+                      </div>
+                      <div className="gev-natural-event-source">SOURCE: USGS COMCAT · EVENT RECORD<br />
+                        <a href={String(selectedExternal.attributes?.detailUrl ?? 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php')} target="_blank" rel="noreferrer">OPEN USGS EVENT DETAILS ↗</a>
+                      </div>
+                    </div>
+                  ) : selectedExternal.entityType === 'volcano' || selectedExternal.entityType === 'volcanic_activity' ? (
+                    <div className="gev-natural-event-card" data-event-type="volcano" aria-label="Volcano report details">
+                      <div className="gev-natural-event-title">{String(selectedExternal.attributes?.name ?? 'Volcano activity report')}</div>
+                      <div className="gev-natural-event-note">{String(selectedExternal.attributes?.reportText ?? 'No report summary was supplied by the provider.')}</div>
+                      <div className="gev-natural-event-meta">
+                        <div><span>Reported activity</span><strong>{String(selectedExternal.attributes?.reportType ?? selectedExternal.status ?? 'REPORTED').replaceAll('_', ' ')}</strong></div>
+                        <div><span>Country / region</span><strong>{[selectedExternal.attributes?.country, selectedExternal.attributes?.region].filter(Boolean).map(String).join(' · ') || '—'}</strong></div>
+                        <div><span>Report date (UTC)</span><strong>{selectedExternal.observedAt ? new Date(selectedExternal.observedAt).toISOString().slice(0, 19).replace('T', ' ') : '—'}</strong></div>
+                        <div><span>Reporting cadence</span><strong>{String(selectedExternal.attributes?.reportingCadence ?? 'weekly').toUpperCase()}</strong></div>
+                        <div><span>Elevation</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.elevationM)) ? Math.round(Number(selectedExternal.attributes?.elevationM)) + ' m' : '—'}</strong></div>
+                        <div><span>Report quality</span><strong>{String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
+                      </div>
+                      <div className="gev-natural-event-source">SMITHSONIAN GLOBAL VOLCANISM PROGRAM / USGS<br />
+                        This is a reported activity marker from a weekly bulletin, not a live vent camera, real-time ash plume, or full real-time monitoring status.<br />
+                        <a href={String(selectedExternal.attributes?.reportUrl ?? 'https://volcano.si.edu/reports_weekly.cfm')} target="_blank" rel="noreferrer">OPEN SOURCE REPORT ↗</a>
+                      </div>
+                    </div>
                   ) : (
                     <div className="gev-detail-callout" style={{ marginTop: 9, border: '1px solid rgba(184,166,255,.10)', borderRadius: 10 }}>
                       <div className="gev-detail-label">{selectedExternal.entityType === 'satellite' ? 'Modelled orbital position' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Camera observation' : selectedExternal.telemetryLive === true ? 'Live external telemetry' : 'External observation'}</div>
