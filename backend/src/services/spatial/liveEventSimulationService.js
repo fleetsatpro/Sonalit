@@ -230,7 +230,6 @@ function makeWeatherSimulationEntity(requested, row, receivedAt) {
   if (!isValidLatLon(latitude, longitude)) return null;
   const key = latitude.toFixed(3) + ',' + longitude.toFixed(3);
   const first = steps[0];
-  const modelRunAt = toIsoUtc(row.generationtime_ms ? Date.now() : receivedAt);
   return {
     id: 'open-meteo:forecast-grid:' + key,
     entityType: 'weather',
@@ -264,7 +263,7 @@ function makeWeatherSimulationEntity(requested, row, receivedAt) {
       sourceUrl: 'https://open-meteo.com/en/docs',
       observationType: 'hourly_numerical_weather_forecast_grid_point',
       sourceReference: key,
-      modelRunAt: modelRunAt,
+      providerReceivedAt: receivedAt,
     },
     quality: {
       state: 'modelled',
