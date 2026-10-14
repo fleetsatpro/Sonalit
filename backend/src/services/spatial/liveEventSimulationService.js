@@ -1,6 +1,7 @@
 'use strict';
 
 const { XMLParser } = require('fast-xml-parser');
+const { getOpenMeteoAccess } = require('./weatherProviderAccess');
 
 const WEATHER_CACHE_TTL_MS = 10 * 60 * 1000;
 const EARTHQUAKE_CACHE_TTL_MS = 60 * 1000;
@@ -293,9 +294,9 @@ function haversineMeters(aLat, aLng, bLat, bLng) {
 
 async function loadWeatherForecast(bounds, center, radiusM, signal) {
   const plan = buildForecastGrid(bounds, center, radiusM, MAX_WEATHER_POINTS);
-  const customerApiKey = String(process.env.OPEN_METEO_API_KEY || '').trim();
-  const allowFreeNonCommercial = process.env.OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL === 'true';
-  if (!customerApiKey && !allowFreeNonCommercial) {
+  const access = getOpenMeteoAccess();
+  const customerApiKey = access.apiKey;
+  if (!access.allowed) {
     return {
       entities: [],
       error: 'commercial_api_key_not_configured',
@@ -322,7 +323,7 @@ async function loadWeatherForecast(bounds, center, radiusM, signal) {
   }
 
   if (requested.length) {
-    const apiBase = String(process.env.OPEN_METEO_API_BASE || (customerApiKey ? 'https://customer-api.open-meteo.com/v1/forecast' : 'https://api.open-meteo.com/v1/forecast'));
+    const apiBase = access.apiBase;
     const url = apiBase + '?latitude='
       + encodeURIComponent(requested.map(point => point.latitude).join(','))
       + '&longitude=' + encodeURIComponent(requested.map(point => point.longitude).join(','))
