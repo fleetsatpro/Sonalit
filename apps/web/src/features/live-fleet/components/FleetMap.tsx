@@ -171,12 +171,12 @@ function weatherConditionLabel(item: SpatialWorldEntity): string {
 
 function weatherColor(item: SpatialWorldEntity): string {
   const code = Number(item.attributes?.weatherCode)
-  if (Number.isFinite(code) && code >= 95) return '#c4b5fd'
-  if (Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)) return '#67e8f9'
-  if (Number.isFinite(code) && (code === 45 || code === 48)) return '#cbd5e1'
-  if (Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))) return '#60a5fa'
-  if (Number.isFinite(code) && (code === 0 || code === 1)) return '#fbbf24'
-  return '#5eead4'
+  if (Number.isFinite(code) && code >= 95) return '#ff957a'
+  if (Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)) return '#a6def4'
+  if (Number.isFinite(code) && (code === 45 || code === 48)) return '#a9b7c7'
+  if (Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))) return '#73b5ff'
+  if (Number.isFinite(code) && (code === 0 || code === 1)) return '#f4ca76'
+  return '#8bd9ca'
 }
 
 function makeWeatherMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialWorldEntity) => void): HTMLButtonElement {
@@ -199,11 +199,12 @@ function makeWeatherMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialW
   marker.className = 'lf-weather-marker'
   marker.dataset.freshness = String(item.quality?.freshnessClass ?? 'UNKNOWN').toUpperCase()
   marker.style.setProperty('--weather-color', color)
+  const phase = Array.from(String(item.id)).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 58
+  marker.style.setProperty('--weather-delay', `${(-phase / 10).toFixed(2)}s`)
   marker.title = `${condition}${tempLabel ? ' · ' + tempLabel : ''} · ${item.source ?? 'unknown source'} · ${item.quality?.freshnessClass ?? 'UNKNOWN'}`
   marker.setAttribute('aria-label', `Inspect weather: ${condition}${tempLabel ? ', ' + tempLabel : ''}`)
   marker.innerHTML = `
-    <span class="lf-weather-ripple lf-weather-ripple-a"></span>
-    <span class="lf-weather-ripple lf-weather-ripple-b"></span>
+    <span class="lf-weather-ripple" aria-hidden="true"></span>
     <span class="lf-weather-core"><svg viewBox="0 0 24 24" aria-hidden="true">${glyph}</svg></span>
     <span class="lf-weather-label"><b>${condition}</b>${tempLabel ? `<i>${tempLabel}</i>` : ''}</span>
   `
@@ -735,11 +736,6 @@ export default function FleetMap({
       .filter(item => item.entityType === 'weather' && Number.isFinite(item.latitude) && Number.isFinite(item.longitude)
         && item.latitude >= -90 && item.latitude <= 90 && item.longitude >= -180 && item.longitude <= 180)
       .slice(0, 36)
-    const applyLabelVisibility = () => {
-      const visible = map.getZoom() >= 5.5
-      weatherMarkersRef.current.forEach(marker => marker.getElement().classList.toggle('lf-weather-labels-visible', visible))
-    }
-
     for (const item of events) {
       const element = makeWeatherMarker(item, entity => onWeatherSelectRef.current?.(entity))
       const marker = new maplibregl.Marker({ element, anchor: 'center' })
@@ -748,10 +744,7 @@ export default function FleetMap({
       marker.getElement().style.zIndex = '60'
       weatherMarkersRef.current.set(item.id, marker)
     }
-    applyLabelVisibility()
-    map.on('zoom', applyLabelVisibility)
     return () => {
-      map.off('zoom', applyLabelVisibility)
       for (const marker of weatherMarkersRef.current.values()) marker.remove()
       weatherMarkersRef.current.clear()
     }
@@ -810,24 +803,24 @@ export default function FleetMap({
     if (document.getElementById('lf-map-styles')) return
     const s = document.createElement('style'); s.id = 'lf-map-styles'
     s.textContent = `
-      @keyframes lf-mping{0%{transform:scale(1);opacity:.7}100%{transform:scale(2.2);opacity:0}}
-      @keyframes lf-sos-ring{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.5);opacity:.2}}
-      @keyframes lf-recon-spin{to{transform:rotate(360deg)}}
-      @keyframes lf-sos-marker{0%,100%{box-shadow:0 0 12px #ef444466,0 2px 8px rgba(0,0,0,.8)}50%{box-shadow:0 0 24px #ef4444cc,0 2px 8px rgba(0,0,0,.8)}}
-      @keyframes lf-weather-orbit{0%{transform:scale(.55);opacity:.75}100%{transform:scale(1.85);opacity:0}}
-      @keyframes lf-weather-breath{0%,100%{transform:scale(.96);filter:drop-shadow(0 0 6px color-mix(in srgb,var(--weather-color) 42%,transparent))}50%{transform:scale(1.06);filter:drop-shadow(0 0 12px color-mix(in srgb,var(--weather-color) 76%,transparent))}}
-      .lf-weather-marker{position:relative;width:46px;height:46px;border:0;background:transparent;color:var(--weather-color);display:grid;place-items:center;padding:0;overflow:visible;cursor:pointer;isolation:isolate}
-      .lf-weather-core{position:relative;z-index:2;display:grid;place-items:center;width:31px;height:31px;border-radius:50%;background:radial-gradient(circle at 35% 25%,rgba(255,255,255,.16),rgba(4,10,20,.97) 72%);border:1px solid color-mix(in srgb,var(--weather-color) 86%,white 8%);box-shadow:0 0 16px color-mix(in srgb,var(--weather-color) 35%,transparent),inset 0 0 8px color-mix(in srgb,var(--weather-color) 16%,transparent);animation:lf-weather-breath 2.2s ease-in-out infinite}
-      .lf-weather-core svg{width:21px;height:21px;filter:drop-shadow(0 0 3px currentColor)}
-      .lf-weather-ripple{position:absolute;z-index:1;inset:7px;border:1px solid color-mix(in srgb,var(--weather-color) 85%,transparent);border-radius:50%;pointer-events:none;animation:lf-weather-orbit 2.6s ease-out infinite}
-      .lf-weather-ripple-b{animation-delay:1.3s}
-      .lf-weather-label{position:absolute;top:38px;left:50%;transform:translate(-50%,-3px);opacity:0;display:flex;align-items:center;gap:5px;max-width:165px;padding:3px 6px;border:1px solid color-mix(in srgb,var(--weather-color) 40%,rgba(255,255,255,.1));border-radius:5px;background:rgba(3,7,14,.94);box-shadow:0 5px 16px rgba(0,0,0,.3);font:700 8px/1.1 "IBM Plex Mono",monospace;white-space:nowrap;pointer-events:none;transition:opacity .15s ease,transform .15s ease}
-      .lf-weather-label b{max-width:112px;overflow:hidden;text-overflow:ellipsis}
-      .lf-weather-label i{font-style:normal;color:#fbbf24}
-      .lf-weather-labels-visible .lf-weather-label,.lf-weather-marker:hover .lf-weather-label,.lf-weather-marker:focus-visible .lf-weather-label{opacity:1;transform:translate(-50%,0)}
-      .lf-weather-marker[data-freshness="STALE"] .lf-weather-core,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-core,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-core,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-core{animation:none;filter:none;opacity:.66}
-      .lf-weather-marker[data-freshness="STALE"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-ripple,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-ripple{animation:none;opacity:.12}
-      @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple{animation:none!important}.lf-weather-ripple{opacity:.35}}
+      @keyframes lf-weather-signal{0%{transform:scale(.88);opacity:0}12%{opacity:.20}42%{opacity:.11}100%{transform:scale(1.52);opacity:0}}
+      .lf-weather-marker{position:relative;width:40px;height:40px;display:grid;place-items:center;padding:0;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--weather-color);overflow:visible;cursor:pointer;isolation:isolate;appearance:none;-webkit-tap-highlight-color:transparent;transition:background .18s ease,transform .18s ease}
+      .lf-weather-marker:hover{background:rgba(4,9,17,.12)}
+      .lf-weather-marker:focus-visible{outline:2px solid color-mix(in srgb,var(--weather-color) 82%,white 18%);outline-offset:2px}
+      .lf-weather-core{position:relative;z-index:2;display:grid;place-items:center;width:27px;height:27px;border-radius:9px;background:linear-gradient(155deg,rgba(17,26,39,.97),rgba(4,8,15,.98));border:1px solid rgba(231,241,252,.24);box-shadow:0 2px 6px rgba(0,0,0,.43),inset 0 1px 0 rgba(255,255,255,.12);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+      .lf-weather-core:before{content:"";position:absolute;inset:2px;border:1px solid color-mix(in srgb,var(--weather-color) 30%,transparent);border-radius:6px;pointer-events:none}
+      .lf-weather-core svg{position:relative;width:16px;height:16px;color:var(--weather-color);filter:none;overflow:visible}
+      .lf-weather-marker:hover .lf-weather-core,.lf-weather-marker:focus-visible .lf-weather-core{transform:translateY(-1px);border-color:color-mix(in srgb,var(--weather-color) 64%,white 14%);box-shadow:0 4px 10px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.16)}
+      .lf-weather-ripple{position:absolute;z-index:1;inset:0;border:1px solid color-mix(in srgb,var(--weather-color) 54%,transparent);border-radius:13px;pointer-events:none;opacity:0;transform-origin:center;animation:lf-weather-signal 5.8s cubic-bezier(.16,1,.3,1) infinite;animation-delay:var(--weather-delay,0s)}
+      .lf-weather-marker[data-freshness="DELAYED"] .lf-weather-ripple{animation-duration:8.2s;border-style:dashed}
+      .lf-weather-label{position:absolute;z-index:4;top:32px;left:50%;transform:translate(-50%,3px);opacity:0;display:flex;align-items:center;gap:7px;max-width:180px;padding:5px 8px;border:1px solid color-mix(in srgb,var(--weather-color) 30%,rgba(255,255,255,.12));border-radius:8px;background:rgba(4,9,16,.96);box-shadow:0 8px 24px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px);font:700 8px/1.15 "IBM Plex Mono",monospace;white-space:nowrap;pointer-events:none;transition:opacity .16s ease,transform .16s ease}
+      .lf-weather-label b{max-width:115px;overflow:hidden;text-overflow:ellipsis;color:#e7edf5;letter-spacing:.045em}
+      .lf-weather-label i{font-style:normal;padding-left:7px;border-left:1px solid rgba(255,255,255,.16);color:#f2d38b;font-weight:800}
+      .lf-weather-marker:hover .lf-weather-label,.lf-weather-marker:focus-visible .lf-weather-label{opacity:1;transform:translate(-50%,0)}
+      .lf-weather-marker[data-freshness="STALE"] .lf-weather-core,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-core,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-core,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-core{opacity:.58;border-color:rgba(219,228,239,.13);box-shadow:0 1px 3px rgba(0,0,0,.28)}
+      .lf-weather-marker[data-freshness="STALE"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-ripple,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-ripple{animation:none;opacity:0}
+      .lf-weather-marker[data-freshness="DELAYED"] .lf-weather-core{border-style:dashed}
+      @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple,.lf-weather-marker,.lf-weather-label{animation:none!important;transition:none!important}.lf-weather-ripple{display:none}}
     `
     document.head.appendChild(s)
   }, [])
