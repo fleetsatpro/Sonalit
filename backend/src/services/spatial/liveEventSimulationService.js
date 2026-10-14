@@ -10,11 +10,18 @@ const VOLCANO_REPORT_TTL_MS = 30 * 60 * 1000;
 const USGS_VOLCANO_ALERT_TTL_MS = 60 * 1000;
 const NASA_EONET_TTL_MS = 2 * 60 * 1000;
 const MAX_WEATHER_POINTS = 36;
+const METNO_MAX_WEATHER_POINTS = 12;
+const METNO_CACHE_FALLBACK_MS = 30 * 60 * 1000;
+const METNO_MIN_REQUEST_SPACING_MS = 250;
 const MAX_EARTHQUAKES = 300;
 
 const sourceCache = new Map();
 const sourceInflight = new Map();
 const weatherCache = new Map();
+const metNoWeatherCache = new Map();
+const metNoWeatherInflight = new Map();
+let metNoRequestQueue = Promise.resolve();
+let metNoLastRequestStartedAt = 0;
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -292,24 +299,249 @@ function haversineMeters(aLat, aLng, bLat, bLng) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
 }
 
-async function loadWeatherForecast(bounds, center, radiusM, signal) {
-  const plan = buildForecastGrid(bounds, center, radiusM, MAX_WEATHER_POINTS);
-  const access = getOpenMeteoAccess();
-  const customerApiKey = access.apiKey;
-  if (!access.allowed) {
-    return {
-      entities: [],
-      error: 'commercial_api_key_not_configured',
-      health: {
-        source: 'open-meteo',
-        status: 'UNAVAILABLE',
-        requestedSamples: plan.points.length,
-        successfulSamples: 0,
-        failedSamples: plan.points.length,
-        reason: 'Open-Meteo free service is restricted to non-commercial use. Configure OPEN_METEO_API_KEY for the paid customer API; OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL=true is for explicitly non-commercial deployments only.',
-      },
-    };
+function metNoWeatherCode(rawSymbol) {
+  const symbol = String(rawSymbol || '').toLowerCase();
+  if (symbol.includes('thunder')) return symbol.includes('hail') ? 96 : 95;
+  if (symbol.includes('snow') || symbol.includes('sleet')) {
+    return symbol.includes('heavy') ? 75 : symbol.includes('light') ? 71 : 73;
   }
+  if (symbol.includes('fog')) return 45;
+  if (symbol.includes('showers')) return symbol.includes('heavy') ? 82 : symbol.includes('light') ? 80 : 81;
+  if (symbol.includes('drizzle')) return symbol.includes('heavy') ? 55 : symbol.includes('light') ? 51 : 53;
+  if (symbol.includes('heavyrain')) return 65;
+  if (symbol.includes('lightrain')) return 61;
+  if (symbol.includes('rain')) return 63;
+  if (symbol.includes('partlycloudy')) return 2;
+  if (symbol.includes('cloudy') || symbol.includes('overcast')) return 3;
+  if (symbol.includes('fair')) return 1;
+  if (symbol.includes('clearsky')) return 0;
+  return 2;
+}
+
+function metNoCacheExpiry(response, now = Date.now()) {
+  const cacheControl = String(response && response.headers && response.headers.get('cache-control') || '');
+  const maxAge = cacheControl.match(/(?:^|,)\s*max-age=(\d+)/i);
+  if (maxAge) return now + Math.max(1, Number(maxAge[1])) * 1000;
+  const expires = Date.parse(String(response && response.headers && response.headers.get('expires') || ''));
+  if (Number.isFinite(expires) && expires > now) return expires;
+  // The provider asks clients to respect its Expires/cache headers and avoid
+  // repetitive requests. If none are supplied, cache conservatively for 30m.
+  return now + METNO_CACHE_FALLBACK_MS;
+}
+
+async function acquireMetNoRequestSlot(signal) {
+  let release;
+  const previous = metNoRequestQueue;
+  metNoRequestQueue = new Promise(resolve => { release = resolve; });
+  await previous.catch(() => {});
+  try {
+    if (signal && signal.aborted) throw Object.assign(new Error('MET Norway request aborted before dispatch'), { name: 'AbortError' });
+    const waitMs = Math.max(0, METNO_MIN_REQUEST_SPACING_MS - (Date.now() - metNoLastRequestStartedAt));
+    if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+    if (signal && signal.aborted) throw Object.assign(new Error('MET Norway request aborted before dispatch'), { name: 'AbortError' });
+    metNoLastRequestStartedAt = Date.now();
+  } finally {
+    release();
+  }
+}
+
+function metNoForecastSteps(payload) {
+  const timeseries = payload && payload.properties && payload.properties.timeseries;
+  if (!Array.isArray(timeseries)) return [];
+  return timeseries.slice(0, 7).map(entry => {
+    const instant = entry && entry.data && entry.data.instant && entry.data.instant.details || {};
+    const period = entry && entry.data || {};
+    const nextHour = period.next_1_hours || period.next_6_hours || period.next_12_hours || {};
+    const summary = nextHour.summary || {};
+    const details = nextHour.details || {};
+    const validAt = toIsoUtc(entry && entry.time);
+    if (!validAt) return null;
+    const symbol = String(summary.symbol_code || 'cloudy');
+    const weatherCode = metNoWeatherCode(symbol);
+    const precipitationMm = numberOrNull(details.precipitation_amount) ?? 0;
+    const temperatureC = numberOrNull(instant.air_temperature);
+    const windSpeedMs = numberOrNull(instant.wind_speed);
+    const windSpeedKmh = windSpeedMs == null ? null : windSpeedMs * 3.6;
+    const cloudCoverPct = numberOrNull(instant.cloud_area_fraction);
+    const conditions = WMO_CONDITIONS[weatherCode] || 'unknown';
+    const showersMm = symbol.includes('showers') ? precipitationMm : 0;
+    const rainMm = symbol.includes('rain') || symbol.includes('drizzle') ? precipitationMm : 0;
+    const snowfallCm = symbol.includes('snow') ? null : 0;
+    const severity = weatherCode >= 95 ? 'THUNDERSTORM'
+      : precipitationMm >= 7.5 ? 'HEAVY_PRECIPITATION'
+        : precipitationMm >= 2.5 ? 'MODERATE_PRECIPITATION'
+          : precipitationMm > 0 ? 'LIGHT_PRECIPITATION'
+            : symbol.includes('snow') || symbol.includes('sleet') ? 'SNOW' : 'GENERAL';
+    return {
+      validAt,
+      weatherCode,
+      conditions,
+      severity,
+      temperatureC,
+      precipitationMm,
+      rainMm,
+      showersMm,
+      snowfallCm,
+      windSpeedKmh,
+      windDirectionDeg: numberOrNull(instant.wind_from_direction),
+      cloudCoverPct,
+      humidityPct: numberOrNull(instant.relative_humidity),
+      visibilityM: null,
+      symbolCode: symbol,
+      intervalHours: period.next_1_hours ? 1 : period.next_6_hours ? 6 : period.next_12_hours ? 12 : null,
+    };
+  }).filter(Boolean);
+}
+
+function makeMetNoWeatherSimulationEntity(requested, payload, receivedAt) {
+  const properties = payload && payload.properties || {};
+  const coordinates = payload && payload.geometry && Array.isArray(payload.geometry.coordinates) ? payload.geometry.coordinates : [];
+  const latitude = numberOrNull(coordinates[1]) ?? requested.latitude;
+  const longitude = numberOrNull(coordinates[0]) ?? requested.longitude;
+  if (!isValidLatLon(latitude, longitude)) return null;
+  const steps = metNoForecastSteps(payload);
+  if (!steps.length) return null;
+  const first = steps[0];
+  const key = latitude.toFixed(4) + ',' + longitude.toFixed(4);
+  return {
+    id: 'met-no:forecast-grid:' + key,
+    entityType: 'weather',
+    source: 'MET Norway',
+    sourceReference: requested.key,
+    latitude,
+    longitude,
+    observedAt: null,
+    receivedAt,
+    status: 'MODELLED_FORECAST',
+    observationConfidence: 0.72,
+    operationalConfidence: null,
+    attributes: Object.assign({}, first, {
+      name: 'Weather forecast',
+      modelGridPoint: true,
+      simulationMode: 'hourly_forecast',
+      simulationSemantics: 'met_no_global_numerical_forecast_not_live_radar',
+      forecastSteps: steps,
+      forecastStepCount: steps.length,
+      forecastHorizonHours: Math.max(0, steps.length - 1),
+      gridCellDistanceM: Math.round(haversineMeters(requested.latitude, requested.longitude, latitude, longitude)),
+      requestedLatitude: requested.latitude,
+      requestedLongitude: requested.longitude,
+      timezone: 'UTC',
+      modelReceivedAt: receivedAt,
+    }),
+    provenance: {
+      sourceName: 'MET Norway Locationforecast',
+      sourceUrl: 'https://api.met.no/weatherapi/locationforecast/2.0/documentation',
+      observationType: 'global_numerical_weather_forecast_grid_point',
+      sourceReference: key,
+      providerReceivedAt: receivedAt,
+    },
+    quality: {
+      state: 'modelled',
+      freshnessClass: 'MODELLED',
+      reason: 'Global numerical weather forecast. Model point samples are not radar returns or guaranteed on-ground observations.',
+    },
+    coverage: {
+      complete: false,
+      bounded: true,
+      queryScope: 'met-no-forecast-grid-point:' + key,
+      footprintSemantics: 'sampled_model_grid_points_not_radar_or_precipitation_footprints',
+    },
+  };
+}
+
+async function loadMetNoForecastPoint(point, signal) {
+  const key = Number(point.latitude).toFixed(4) + ',' + Number(point.longitude).toFixed(4);
+  const cached = metNoWeatherCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.entity;
+  if (metNoWeatherInflight.has(key)) return metNoWeatherInflight.get(key);
+
+  const task = (async () => {
+    try {
+      const url = 'https://api.met.no/weatherapi/locationforecast/2.0/compact?lat='
+        + encodeURIComponent(Number(point.latitude).toFixed(4))
+        + '&lon=' + encodeURIComponent(Number(point.longitude).toFixed(4));
+      const timeout = AbortSignal.timeout(10000);
+      const requestSignal = signal && typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, timeout]) : timeout;
+      await acquireMetNoRequestSlot(requestSignal);
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Sonalit-GEV/4.0 (+https://sonalit.com)',
+          'X-Request-ID': 'gev-live-simulation-met-no',
+        },
+        signal: requestSignal,
+      });
+      if (!response.ok) throw new Error('MET Norway Locationforecast HTTP ' + response.status);
+      const payload = await response.json();
+      const receivedAt = new Date().toISOString();
+      const entity = makeMetNoWeatherSimulationEntity(point, payload, receivedAt);
+      if (!entity) throw new Error('MET Norway response did not contain usable forecast steps');
+      metNoWeatherCache.set(key, {
+        entity,
+        expiresAt: metNoCacheExpiry(response),
+      });
+      while (metNoWeatherCache.size > 512) metNoWeatherCache.delete(metNoWeatherCache.keys().next().value);
+      return entity;
+    } catch (error) {
+      const existing = metNoWeatherCache.get(key);
+      if (existing) {
+        return Object.assign({}, existing.entity, {
+          quality: {
+            state: 'stale',
+            freshnessClass: 'STALE',
+            reason: 'MET Norway refresh failed; serving the previously cached forecast point.',
+          },
+        });
+      }
+      throw error;
+    } finally {
+      metNoWeatherInflight.delete(key);
+    }
+  })();
+  metNoWeatherInflight.set(key, task);
+  return task;
+}
+
+async function loadMetNoWeatherForecast(bounds, center, radiusM, signal) {
+  const plan = buildForecastGrid(bounds, center, radiusM, METNO_MAX_WEATHER_POINTS);
+  const points = plan.points.map(point => {
+    const latitude = Number(point.latitude.toFixed(4));
+    const longitude = Number(point.longitude.toFixed(4));
+    return { latitude, longitude, key: latitude.toFixed(4) + ',' + longitude.toFixed(4) };
+  });
+  const uniquePoints = Array.from(new Map(points.map(point => [point.key, point])).values());
+  const results = await Promise.allSettled(uniquePoints.map(point => loadMetNoForecastPoint(point, signal)));
+  const entities = results.filter(result => result.status === 'fulfilled').map(result => result.value).slice(0, METNO_MAX_WEATHER_POINTS);
+  const staleCount = entities.filter(entity => entity.quality && entity.quality.freshnessClass === 'STALE').length;
+  const stepCount = entities.reduce((minimum, entity) => Math.min(minimum, Number(entity.attributes.forecastStepCount) || 0), 7);
+  return {
+    entities,
+    error: entities.length ? undefined : 'met_no_forecast_unavailable',
+    health: {
+      source: 'met-no',
+      status: !entities.length ? 'UNAVAILABLE' : entities.length !== uniquePoints.length || staleCount ? 'PARTIAL' : 'MODELLED',
+      provider: 'MET Norway Locationforecast',
+      requestedSamples: uniquePoints.length,
+      successfulSamples: entities.length,
+      failedSamples: uniquePoints.length - entities.length,
+      staleSamples: staleCount,
+      forecastStepCount: stepCount,
+      horizonHours: Math.max(0, stepCount - 1),
+      bounds: plan.bounds,
+      grid: { rows: plan.rows, columns: plan.columns },
+      reason: 'Worldwide numerical forecast under MET Norway open-data licensing; requests are throttled, coordinates truncated to four decimals, and provider cache expiry is respected.',
+    },
+  };
+}
+
+async function loadWeatherForecast(bounds, center, radiusM, signal) {
+  const access = getOpenMeteoAccess();
+  if (!access.allowed) {
+    return loadMetNoWeatherForecast(bounds, center, radiusM, signal);
+  }
+  const plan = buildForecastGrid(bounds, center, radiusM, MAX_WEATHER_POINTS);
+  const customerApiKey = access.apiKey;
   const now = Date.now();
   const requested = [];
   const outputByKey = new Map();
@@ -1054,7 +1286,9 @@ async function getLiveEventSimulation(input) {
       volcanoSemantics: 'reported_activity_marker_not_live_eruption_video_or_measured_ash_plume',
     },
     sources: {
-      weather: 'https://open-meteo.com/en/docs',
+      weather: weather.health && weather.health.source === 'met-no'
+        ? 'https://api.met.no/weatherapi/locationforecast/2.0/documentation'
+        : 'https://open-meteo.com/en/docs',
       earthquakes: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php',
       volcanoes: 'https://volcano.si.edu/reports_weekly.cfm',
       volcanoCatalogue: 'https://volcano.si.edu/database/webservices.cfm',
@@ -1074,6 +1308,10 @@ module.exports = {
     makeWeatherSimulationEntity,
     earthquakeEntity,
     parseVolcanoReportItems,
+    metNoWeatherCode,
+    metNoForecastSteps,
+    makeMetNoWeatherSimulationEntity,
+    metNoCacheExpiry,
     nasaEonetEntity,
     eventGeometryCentre,
     matchVolcanoReport,
