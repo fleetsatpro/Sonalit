@@ -89,16 +89,13 @@ function freshnessOf(entity: SpatialWorldEntity): string {
 function safeSourceUrl(value: unknown): string | null {
   try { const url = new URL(String(value ?? '')); return url.protocol === 'https:' ? url.toString() : null; } catch { return null; }
 }
-function makeMarker(entity: SpatialWorldEntity, onSelect: () => void): HTMLButtonElement {
+function applyMarkerState(button: HTMLButtonElement, entity: SpatialWorldEntity) {
   const meta = metaFor(entity);
   const freshness = freshnessOf(entity);
   const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const freshnessAllowsMotion = entity.entityType === 'weather'
     ? ['LIVE', 'DELAYED', 'MODELLED'].includes(freshness)
     : ['LIVE', 'DELAYED'].includes(freshness);
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'wx-marker';
   button.dataset.entityType = String(entity.entityType || 'event').toLowerCase();
   button.dataset.freshness = freshness;
   button.dataset.glyph = meta.glyph;
@@ -107,6 +104,12 @@ function makeMarker(entity: SpatialWorldEntity, onSelect: () => void): HTMLButto
   button.setAttribute('aria-label', 'Inspect ' + meta.label + ': ' + textAttr(entity.attributes, ['name', 'title', 'place', 'categoryTitle'], entity.id));
   button.title = meta.label + ' · ' + freshness + ' · ' + String(entity.source || 'Source not recorded');
   button.innerHTML = '<span class="wx-marker__signal" aria-hidden="true"></span><span class="wx-marker__icon">' + glyphSvg(meta.glyph, meta.color) + '</span><span class="wx-marker__particles" aria-hidden="true"><i></i><i></i><i></i></span>';
+}
+function makeMarker(entity: SpatialWorldEntity, onSelect: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'wx-marker';
+  applyMarkerState(button, entity);
   button.addEventListener('click', event => { event.stopPropagation(); onSelect(); });
   return button;
 }
@@ -126,6 +129,7 @@ export default function WeatherStudio() {
 
   const liveQuery = useQuery<LiveEventSimulationResponse>({
     queryKey: ['weather-studio-live-events', ...roundedBounds],
+    enabled: mapReady,
     queryFn: ({ signal }) => fetchLiveEventSimulation({ center: { latitude: viewport.latitude, longitude: viewport.longitude }, radiusM: Math.min(250000, Math.max(1000, viewport.radiusM)), bounds: viewport.bounds, signal }),
     staleTime: 45000,
     refetchInterval: 120000,
@@ -227,15 +231,7 @@ export default function WeatherStudio() {
       const existing = markerRefs.current.get(key);
       if (existing) {
         existing.marker.setLngLat([entity.longitude, entity.latitude]);
-        const fresh = makeMarker(entity, () => setSelectedKey(key));
-        existing.element.dataset.freshness = fresh.dataset.freshness;
-        existing.element.dataset.glyph = fresh.dataset.glyph;
-        existing.element.dataset.animate = fresh.dataset.animate;
-        existing.element.dataset.entityType = fresh.dataset.entityType;
-        existing.element.style.setProperty('--wx-color', fresh.style.getPropertyValue('--wx-color'));
-        existing.element.setAttribute('aria-label', fresh.getAttribute('aria-label') ?? 'Inspect event');
-        existing.element.title = fresh.title;
-        existing.element.innerHTML = fresh.innerHTML;
+        applyMarkerState(existing.element, entity);
       } else {
         const element = makeMarker(entity, () => setSelectedKey(key));
         const marker = new maplibregl.Marker({ element, anchor: 'center' }).setLngLat([entity.longitude, entity.latitude]).addTo(map);
