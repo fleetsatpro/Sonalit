@@ -91,6 +91,8 @@ function safeSourceUrl(value: unknown): string | null {
 }
 function applyMarkerState(button: HTMLButtonElement, entity: SpatialWorldEntity) {
   const meta = metaFor(entity);
+  const previousGlyph = button.dataset.glyph;
+  const previousColor = button.style.getPropertyValue('--wx-color');
   const freshness = freshnessOf(entity);
   const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const freshnessAllowsMotion = entity.entityType === 'weather'
@@ -103,7 +105,11 @@ function applyMarkerState(button: HTMLButtonElement, entity: SpatialWorldEntity)
   button.style.setProperty('--wx-color', meta.color);
   button.setAttribute('aria-label', 'Inspect ' + meta.label + ': ' + textAttr(entity.attributes, ['name', 'title', 'place', 'categoryTitle'], entity.id));
   button.title = meta.label + ' · ' + freshness + ' · ' + String(entity.source || 'Source not recorded');
-  button.innerHTML = '<span class="wx-marker__signal" aria-hidden="true"></span><span class="wx-marker__icon">' + glyphSvg(meta.glyph, meta.color) + '</span><span class="wx-marker__particles" aria-hidden="true"><i></i><i></i><i></i></span>';
+  // Preserve running CSS keyframes on forecast-time changes; rebuild the inner
+  // glyph only when the condition actually changes.
+  if (previousGlyph !== meta.glyph || previousColor !== meta.color || !button.querySelector('.wx-marker__icon')) {
+    button.innerHTML = '<span class="wx-marker__signal" aria-hidden="true"></span><span class="wx-marker__icon">' + glyphSvg(meta.glyph, meta.color) + '</span><span class="wx-marker__particles" aria-hidden="true"><i></i><i></i><i></i></span>';
+  }
 }
 function makeMarker(entity: SpatialWorldEntity, onSelect: () => void): HTMLButtonElement {
   const button = document.createElement('button');
@@ -120,6 +126,7 @@ export default function WeatherStudio() {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRefs = useRef(new Map<string, { marker: maplibregl.Marker; element: HTMLButtonElement }>());
   const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
   const [viewport, setViewport] = useState<Viewport>({ latitude: 0, longitude: 28, radiusM: 100000, bounds: [12, -28, 62, 34] });
   const [stepIndex, setStepIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -208,7 +215,11 @@ export default function WeatherStudio() {
       const radiusM = Math.min(250000, Math.max(10000, Math.hypot(latitudeDelta, longitudeDelta) * 1.2));
       setViewport({ latitude: center.lat, longitude: center.lng, radiusM, bounds: [Math.max(-180, west), south, Math.min(180, east), north] });
     };
-    map.on('load', () => { if (!mounted) return; setMapReady(true); syncViewport(); });
+    map.on('style.load', () => { if (!mounted) return; setMapError(null); setMapReady(true); syncViewport(); });
+    map.on('error', event => {
+      if (!mounted || map.isStyleLoaded()) return;
+      setMapError(event.error?.message ?? 'Map resources could not be loaded.');
+    });
     map.on('moveend', syncViewport);
     mapRef.current = map;
     const observer = new ResizeObserver(() => map.resize());
@@ -278,7 +289,8 @@ export default function WeatherStudio() {
         <section className="wx-map-panel" aria-label="Interactive weather and natural event map">
           <div className="wx-map-context"><div><span className="wx-map-kicker">SYNOPTIC VIEW</span><b>ATMOSPHERIC SIGNAL MAP</b><small>Source-backed point markers; no synthetic radar field.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
           <div className="wx-map-canvas" ref={mapContainerRef} />
-          {!mapReady && <div className="wx-map-loading"><LoaderCircle size={18} className="wx-spin" /><span>Initialising map renderer</span></div>}
+          {!mapReady && !mapError && <div className="wx-map-loading"><LoaderCircle size={18} className="wx-spin" /><span>Initialising map renderer</span></div>}
+          {!mapReady && mapError && <div className="wx-map-failure" role="alert"><AlertTriangle size={16} /><b>Map renderer could not initialise</b><span>{mapError}</span><button type="button" onClick={() => { setMapError(null); setMapReady(false); mapRef.current?.setStyle(STREET_STYLE); }}>RETRY MAP</button></div>}
           {mapReady && liveQuery.isError && <div className="wx-map-notice" role="status"><AlertTriangle size={14} /> Source request failed. Coverage is unknown; refresh to retry.</div>}
           <div className="wx-map-legend"><span><i style={{ background: '#f3cb78' }} /> CLEAR</span><span><i style={{ background: '#7cbcff' }} /> RAIN</span><span><i style={{ background: '#ff897d' }} /> THUNDER</span><span><i style={{ background: '#93d8f1' }} /> SNOW</span><span><i style={{ background: '#ff9a78' }} /> SEISMIC</span></div>
           <div className="wx-timeline">
