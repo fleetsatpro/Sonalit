@@ -560,8 +560,8 @@ export default function GodsEyeView() {
               selectedId={selected?.id ?? null}
               onSelect={vehicle => { setSelected(vehicle); setSelectedExternalId(null) }}
               weatherAnimationEnabled={weatherAnimationEnabled || liveSimulationEnabled}
-              weatherEvents={liveSimulationEnabled ? simulationWeatherEntities : animatedWeatherEntities}
-              naturalEvents={liveSimulationEnabled ? simulationNaturalEvents : []}
+              weatherEvents={liveSimulationEnabled ? (visibleLayers.has('weather') ? simulationWeatherEntities : []) : (visibleLayers.has('weather') ? animatedWeatherEntities : [])}
+              naturalEvents={liveSimulationEnabled && visibleLayers.has('hazards') ? simulationNaturalEvents : []}
               onNaturalEventSelect={entity => { setSelectedExternalId(entity.id); setSelected(null); setIntelligenceOpen(true) }}
               onWeatherSelect={entity => { setSelectedExternalId(entity.id); setSelected(null); setIntelligenceOpen(true) }}
               onViewportChange={setWorldViewport}
