@@ -212,6 +212,44 @@ function makeWeatherMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialW
   return marker
 }
 
+function naturalEventColor(item: SpatialWorldEntity): string {
+  if (item.entityType === 'earthquake') {
+    const magnitude = Number(item.attributes?.magnitude)
+    return Number.isFinite(magnitude) && magnitude >= 5.5 ? '#ff9b79' : '#e6a66f'
+  }
+  const reportType = String(item.attributes?.reportType ?? item.status ?? '')
+  return reportType.includes('ERUPTIVE') ? '#e99a9a' : '#d9a67e'
+}
+
+function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialWorldEntity) => void): HTMLButtonElement {
+  const isEarthquake = item.entityType === 'earthquake'
+  const color = naturalEventColor(item)
+  const magnitude = Number(item.attributes?.magnitude)
+  const magnitudeLabel = Number.isFinite(magnitude) ? 'M' + magnitude.toFixed(1) : 'M—'
+  const detail = isEarthquake
+    ? magnitudeLabel + ' · ' + String(item.attributes?.place ?? 'Earthquake')
+    : String(item.attributes?.reportType ?? 'ACTIVITY REPORTED').replaceAll('_', ' ') + ' · ' + String(item.attributes?.country ?? '')
+  const marker = document.createElement('button')
+  marker.type = 'button'
+  marker.className = 'lf-natural-event-marker'
+  marker.dataset.eventType = isEarthquake ? 'earthquake' : 'volcano'
+  marker.dataset.freshness = String(item.quality?.freshnessClass ?? 'UNKNOWN').toUpperCase()
+  marker.style.setProperty('--event-color', color)
+  const phase = Array.from(String(item.id)).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 48
+  marker.style.setProperty('--event-delay', String(-phase / 8) + 's')
+  marker.title = detail + ' · ' + String(item.source ?? 'unknown source') + ' · ' + String(item.quality?.freshnessClass ?? 'UNKNOWN')
+  marker.setAttribute('aria-label', 'Inspect ' + (isEarthquake ? 'earthquake: ' : 'volcanic activity: ') + detail)
+  const earthquakeGlyph = '<path d="M2 12h4l2.2-5.5 3.4 11 3.1-9 2.1 3.5H22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+  const volcanoGlyph = '<path d="M3.5 19.5 10.2 6.8l2.1 4.1 1.8-2.5 6.4 11.1Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M11.4 4.2c-.7 1-.2 1.8.7 2.1M15.1 3c-.7 1-.4 1.7.2 2.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
+  const category = isEarthquake ? 'EARTHQUAKE' : 'VOLCANO REPORT'
+  const tag = isEarthquake ? magnitudeLabel : (item.quality?.freshnessClass === 'STALE' ? 'STALE' : 'REPORTED')
+  marker.innerHTML = '<span class="lf-natural-event-pulse" aria-hidden="true"></span>' +
+    '<span class="lf-natural-event-core"><svg viewBox="0 0 24 24" aria-hidden="true">' + (isEarthquake ? earthquakeGlyph : volcanoGlyph) + '</svg></span>' +
+    '<span class="lf-natural-event-label"><b>' + category + '</b><i>' + tag + '</i></span>'
+  marker.addEventListener('click', event => { event.stopPropagation(); onSelect(item) })
+  return marker
+}
+
 function makeEl(v: LiveVehicle): HTMLElement {
   const isOfficer = v.kind === 'guardian'
   // For a field officer, "online at all" is the signal that matters most —
@@ -257,7 +295,9 @@ interface Props {
   trackedId?: string | null;
   weatherAnimationEnabled?: boolean;
   weatherEvents?: SpatialWorldEntity[];
+  naturalEvents?: SpatialWorldEntity[];
   onWeatherSelect?: (entity: SpatialWorldEntity) => void;
+  onNaturalEventSelect?: (entity: SpatialWorldEntity) => void;
   onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number; bbox?: [number, number, number, number] }) => void;
 }
 
@@ -268,16 +308,21 @@ export default function FleetMap({
   trackedId = null,
   weatherAnimationEnabled = false,
   weatherEvents = [],
+  naturalEvents = [],
   onWeatherSelect,
+  onNaturalEventSelect,
   onViewportChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const weatherMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const naturalEventMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const onWeatherSelectRef = useRef(onWeatherSelect)
+  const onNaturalEventSelectRef = useRef(onNaturalEventSelect)
   const onViewportChangeRef = useRef(onViewportChange)
   onWeatherSelectRef.current = onWeatherSelect
+  onNaturalEventSelectRef.current = onNaturalEventSelect
   onViewportChangeRef.current = onViewportChange
   const coordsRef = useRef<HTMLSpanElement>(null)
   const animRef = useRef(0)
@@ -750,6 +795,44 @@ export default function FleetMap({
     }
   }, [mapReady, weatherAnimationEnabled, weatherEvents])
 
+
+  // The animated halo marks only the catalogue epicentre, never a shaking footprint.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    for (const marker of naturalEventMarkersRef.current.values()) marker.remove()
+    naturalEventMarkersRef.current.clear()
+    if (!mapReady || !weatherAnimationEnabled) return
+
+    const valid = naturalEvents.filter(item =>
+      (item.entityType === 'earthquake' || item.entityType === 'volcano') &&
+      Number.isFinite(item.latitude) && Number.isFinite(item.longitude) &&
+      item.latitude >= -90 && item.latitude <= 90 &&
+      item.longitude >= -180 && item.longitude <= 180
+    )
+    const sorted = [...valid].sort((a, b) => {
+      const aEarthquake = a.entityType === 'earthquake'
+      const bEarthquake = b.entityType === 'earthquake'
+      if (aEarthquake !== bEarthquake) return aEarthquake ? -1 : 1
+      const ma = Number(a.attributes?.magnitude)
+      const mb = Number(b.attributes?.magnitude)
+      return (Number.isFinite(mb) ? mb : 0) - (Number.isFinite(ma) ? ma : 0)
+    }).slice(0, 240)
+
+    for (const item of sorted) {
+      const element = makeNaturalEventMarker(item, entity => onNaturalEventSelectRef.current?.(entity))
+      const marker = new maplibregl.Marker({ element, anchor: 'center' })
+        .setLngLat([item.longitude, item.latitude])
+        .addTo(map)
+      marker.getElement().style.zIndex = item.entityType === 'earthquake' ? '72' : '68'
+      naturalEventMarkersRef.current.set(item.id, marker)
+    }
+    return () => {
+      for (const marker of naturalEventMarkersRef.current.values()) marker.remove()
+      naturalEventMarkersRef.current.clear()
+    }
+  }, [mapReady, weatherAnimationEnabled, naturalEvents])
+
   // sync vehicle markers
   useEffect(() => {
     const map = mapRef.current; if (!map) return
@@ -824,6 +907,19 @@ export default function FleetMap({
       .lf-weather-marker[data-freshness="STALE"] .lf-weather-core,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-core,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-core,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-core{opacity:.58;border-color:rgba(219,228,239,.13);box-shadow:0 1px 3px rgba(0,0,0,.28)}
       .lf-weather-marker[data-freshness="STALE"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-ripple,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-ripple{animation:none;opacity:0}
       .lf-weather-marker[data-freshness="DELAYED"] .lf-weather-core{border-style:dashed}
+      @keyframes lf-natural-event-pulse{0%{transform:scale(.9);opacity:0}15%{opacity:.18}48%{opacity:.08}100%{transform:scale(1.5);opacity:0}}
+      .lf-natural-event-marker{position:relative;width:38px;height:38px;display:grid;place-items:center;padding:0;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--event-color);overflow:visible;cursor:pointer;isolation:isolate;appearance:none;-webkit-tap-highlight-color:transparent}
+      .lf-natural-event-marker:focus-visible{outline:2px solid color-mix(in srgb,var(--event-color) 82%,white 18%);outline-offset:2px}
+      .lf-natural-event-core{position:relative;z-index:2;display:grid;place-items:center;width:26px;height:26px;border-radius:9px;background:linear-gradient(155deg,rgba(17,25,36,.97),rgba(4,8,14,.98));border:1px solid color-mix(in srgb,var(--event-color) 44%,rgba(255,255,255,.28));box-shadow:0 2px 6px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.1)}
+      .lf-natural-event-core svg{width:17px;height:17px;color:var(--event-color)}
+      .lf-natural-event-pulse{position:absolute;inset:0;border:1px solid color-mix(in srgb,var(--event-color) 62%,transparent);border-radius:12px;opacity:0;pointer-events:none;animation:lf-natural-event-pulse 6.4s cubic-bezier(.16,1,.3,1) infinite;animation-delay:var(--event-delay,0s)}
+      .lf-natural-event-marker[data-event-type="volcano"] .lf-natural-event-pulse{animation-duration:9s;border-style:dashed}
+      .lf-natural-event-label{position:absolute;z-index:4;top:32px;left:50%;transform:translate(-50%,3px);opacity:0;display:flex;align-items:center;gap:6px;max-width:210px;padding:5px 7px;border:1px solid color-mix(in srgb,var(--event-color) 26%,rgba(255,255,255,.12));border-radius:7px;background:rgba(4,9,16,.96);box-shadow:0 8px 24px rgba(0,0,0,.32);font:700 8px/1.15 "IBM Plex Mono",monospace;white-space:nowrap;pointer-events:none;transition:opacity .16s ease,transform .16s ease}
+      .lf-natural-event-label b{color:#e7edf5;letter-spacing:.045em}
+      .lf-natural-event-label i{font-style:normal;padding-left:6px;border-left:1px solid rgba(255,255,255,.15);color:var(--event-color)}
+      .lf-natural-event-marker:hover .lf-natural-event-label,.lf-natural-event-marker:focus-visible .lf-natural-event-label{opacity:1;transform:translate(-50%,0)}
+      .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-core{opacity:.5}
+      @media(prefers-reduced-motion:reduce){.lf-natural-event-pulse,.lf-natural-event-marker,.lf-natural-event-label{animation:none!important;transition:none!important}.lf-natural-event-pulse{display:none}}
       @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple,.lf-weather-marker,.lf-weather-label{animation:none!important;transition:none!important}.lf-weather-ripple{display:none}}
     `
     document.head.appendChild(s)
