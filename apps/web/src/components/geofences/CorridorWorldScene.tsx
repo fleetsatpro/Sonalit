@@ -220,26 +220,28 @@ function weatherColorFor(item: SpatialWorldEntity) {
   const freshness = String(item.quality?.freshnessClass || '').toUpperCase();
   if (freshness === 'STALE' || freshness === 'UNKNOWN' || freshness === 'EXPIRED' || freshness === 'UNAVAILABLE') return '#94a3b8';
   const code = Number(item.attributes?.weatherCode);
-  if (Number.isFinite(code) && code >= 95) return '#c4b5fd';
-  if (Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)) return '#67e8f9';
-  if (Number.isFinite(code) && (code === 45 || code === 48)) return '#cbd5e1';
-  if (Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) ) return '#60a5fa';
-  if (Number.isFinite(code) && (code === 0 || code === 1)) return '#fbbf24';
-  return '#5eead4';
+  if (Number.isFinite(code) && code >= 95) return '#ff957a';
+  if (Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)) return '#a6def4';
+  if (Number.isFinite(code) && (code === 45 || code === 48)) return '#a9b7c7';
+  if (Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) ) return '#73b5ff';
+  if (Number.isFinite(code) && (code === 0 || code === 1)) return '#f4ca76';
+  return '#8bd9ca';
 }
 
 function weatherSvg(color: string, selected: boolean, code: number) {
-  const stroke = selected ? '#ffffff' : color;
+  const stroke = selected ? '#f8fafc' : color;
   const glyph = Number.isFinite(code) && code >= 95
-    ? '<path d="M35 14 23 34h10l-4 16 15-24H33z" fill="#${color}" stroke="none"/>'
+    ? `<path d="M35 14 23 34h10l-4 16 15-24H33z" fill="${color}" stroke="none"/>`
     : Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)
-      ? '<path d="M32 15v34M17 23l30 18M17 41l30-18M26 18l6 6 6-6M26 46l6-6 6 6" fill="none" stroke="#${color}" stroke-width="3" stroke-linecap="round"/>'
+      ? `<path d="M32 15v34M17 23l30 18M17 41l30-18M26 18l6 6 6-6M26 46l6-6 6 6" fill="none" stroke="${color}" stroke-width="2.7" stroke-linecap="round"/>`
       : Number.isFinite(code) && (code === 45 || code === 48)
-        ? '<path d="M14 27h36M9 34h30M16 41h35" fill="none" stroke="#${color}" stroke-width="3" stroke-linecap="round"/>'
+        ? `<path d="M14 27h36M9 34h30M16 41h35" fill="none" stroke="${color}" stroke-width="2.7" stroke-linecap="round"/>`
         : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
-          ? '<path d="M22 39 18 49M33 39 29 51M44 39 40 49" fill="none" stroke="#${color}" stroke-width="3.5" stroke-linecap="round"/>'
-          : '<path d="M21 38h23a10 10 0 0 0 1-20A13 13 0 0 0 17 22a8 8 0 0 0 4 16Z" fill="none" stroke="#${color}" stroke-width="3" stroke-linejoin="round"/>';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><filter id="wg"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><circle cx="32" cy="32" r="27" fill="#050a13" fill-opacity=".96" stroke="${stroke}" stroke-width="${selected ? 3.5 : 2.4}"/><circle cx="32" cy="32" r="21" fill="${color}" fill-opacity=".09" stroke="${color}" stroke-opacity=".55" stroke-width="1.3"/><g filter="url(#wg)">${glyph.replaceAll('#${color}', color)}</g></svg>`;
+          ? `<path d="M22 39 18 49M33 39 29 51M44 39 40 49" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`
+          : `<path d="M21 38h23a10 10 0 0 0 1-20A13 13 0 0 0 17 22a8 8 0 0 0 4 16Z" fill="none" stroke="${color}" stroke-width="2.7" stroke-linejoin="round"/>`;
+  // One crisp instrument-grade bezel. No Gaussian bloom or stacked rings: those
+  // made all 36 model-grid symbols compete with the underlying map.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="23.5" fill="#06101b" fill-opacity=".96" stroke="${stroke}" stroke-width="${selected ? 2.5 : 1.65}"/><g>${glyph}</g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
@@ -1128,6 +1130,7 @@ export default function CorridorWorldScene({
       const weatherAnimated = weatherAnimationEnabled && isWeather;
       const weatherFreshness = String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase();
       const weatherMayPulse = weatherFreshness === 'LIVE' || weatherFreshness === 'DELAYED';
+      const weatherPhase = (item.id.split('').reduce((hash, character) => (hash * 33 + character.charCodeAt(0)) >>> 0, 5381) % 360) * Math.PI / 180;
       const color = weatherAnimated ? weatherColorFor(item) : (WORLD_LAYER_COLOR[layer] ?? '#94a3b8');
       const altitude = externalAltitude(item);
       const position = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, altitude ?? 0);
@@ -1135,11 +1138,10 @@ export default function CorridorWorldScene({
       const label = externalLabel(item);
       const existing = externalEntityMapRef.current.get(item.id);
       const isCamera = type === 'camera' || type === 'spatial_camera';
-      const pointSize: number | Cesium.CallbackProperty = weatherAnimated
-        ? new Cesium.CallbackProperty(() => selected ? 17 : (weatherMayPulse ? 8.5 + ((Math.sin(weatherPhaseRef.current * 2.2) + 1) / 2) * 3.2 : 7.5), false)
-        : selected ? 16 : (type === 'satellite' || type === 'aircraft' ? 10 : isCamera ? 11 : 8);
+      const pointSize: number = weatherAnimated ? 0 : selected ? 16 : (type === 'satellite' || type === 'aircraft' ? 10 : isCamera ? 11 : 8);
       const maxLabelDistance = type === 'satellite' ? 30000000 : isCamera ? 750000 : 3500000;
       const point = new Cesium.PointGraphics({
+        show: !weatherAnimated,
         pixelSize: pointSize,
         color: css(color, weatherAnimated && weatherFreshness === 'STALE' ? 0.48 : item.quality?.freshnessClass === 'MODELLED' ? 0.58 : 0.92),
         outlineColor: selected ? Cesium.Color.WHITE : css(color, 0.9),
@@ -1179,11 +1181,12 @@ export default function CorridorWorldScene({
           scaleByDistance: new Cesium.NearFarScalar(250, selected ? 1.15 : 1, 750000, 0.68),
         } : weatherAnimated ? {
           image: weatherSvg(color, selected, Number(item.attributes?.weatherCode)),
-          width: selected ? 58 : 46,
-          height: selected ? 58 : 46,
+          width: selected ? 40 : 34,
+          height: selected ? 40 : 34,
           verticalOrigin: Cesium.VerticalOrigin.CENTER,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          scale: new Cesium.CallbackProperty(() => selected ? 1.12 : (weatherMayPulse ? 0.88 + ((Math.sin(weatherPhaseRef.current * 1.8) + 1) / 2) * 0.22 : 0.9), false),
+          scaleByDistance: new Cesium.NearFarScalar(250, selected ? 1.05 : 1, 750000, 0.68),
+          scale: new Cesium.CallbackProperty(() => selected ? 1.045 : (weatherMayPulse ? 0.985 + ((Math.sin(weatherPhaseRef.current * 0.72 + weatherPhase) + 1) / 2) * 0.03 : 0.92), false),
         } : undefined,
         properties: new Cesium.PropertyBag({
           entityId: item.id, layer, entityType: item.entityType, source: item.source ?? 'unknown',
