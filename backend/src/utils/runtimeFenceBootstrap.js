@@ -51,6 +51,12 @@ function classifyFenceStart({
   return 'refuse';
 }
 
+// A zero-row heartbeat update is the expected signal that a replacement runtime
+// acquired the lease. It is not equivalent to a database/heartbeat failure.
+function classifyFenceHeartbeat(rowCount) {
+  return rowCount === 1 ? 'owned' : 'superseded';
+}
+
 function installCronGate() {
   if (cronGateInstalled || !isProduction || isStandby || isClaimChild) return;
   const Module = require('module');
@@ -210,6 +216,7 @@ if (isClaimChild) {
     shouldTakeOver,
     classifyFenceStart,
     isFenceActive: () => true,
+    classifyFenceHeartbeat,
   };
 } else {
   const childEnv = {
@@ -268,10 +275,15 @@ if (isClaimChild) {
             SET heartbeat_at = NOW()
             WHERE id = 1 AND owner_id = $1
           `, [ownerId]);
-          if (rowCount !== 1) {
-            console.error("SONALIT runtime fence: ownership was lost; terminating active runtime");
+          if (classifyFenceHeartbeat(rowCount) === 'superseded') {
+            console.warn("SONALIT runtime fence: lease transferred or removed; gracefully retiring superseded runtime");
             await deactivateFence();
-            process.exit(78);
+            // Stop the heartbeat and close this owner's client. stopFence only
+            // deletes a lease still owned by this process, so it cannot remove
+            // the replacement runtime's record.
+            await stopFence();
+            process.exit(0);
+            return;
           }
         } catch (err) {
           console.error(`SONALIT runtime fence: heartbeat failed: ${err.message || String(err)}`);
@@ -295,5 +307,6 @@ if (isClaimChild) {
     staleSeconds: FENCE_STALE_SECONDS,
     deploymentId: railwayDeploymentId,
     isFenceActive: () => fenceActive,
+    classifyFenceHeartbeat,
   };
 }
