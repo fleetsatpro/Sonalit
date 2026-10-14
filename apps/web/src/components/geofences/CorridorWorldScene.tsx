@@ -251,11 +251,32 @@ function weatherSvg(color: string, selected: boolean, code: number) {
 }
 
 
-function naturalEventSvg(type: string, color: string, selected: boolean) {
+function weatherColorForNaturalCategory(category: string) {
+  const key = String(category || '').toLowerCase();
+  if (key.includes('wildfire') || key.includes('fire')) return '#ef996d';
+  if (key.includes('storm') || key.includes('hurricane') || key.includes('cyclone')) return '#df8588';
+  if (key.includes('flood')) return '#76b9ed';
+  if (key.includes('landslide')) return '#c79b78';
+  if (key.includes('dust') || key.includes('haze')) return '#d6bf7d';
+  return '#a8bfcc';
+}
+
+function naturalEventSvg(type: string, color: string, selected: boolean, category = '') {
   const stroke = selected ? '#f8fafc' : color;
+  const categoryKey = String(category || '').toLowerCase();
   const glyph = type === 'earthquake'
     ? '<path d="M10 36h8l5-12 8 25 7-21 5 8h8" fill="none" stroke="' + color + '" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>'
-    : '<path d="M12 49 25 21l8 14 5-7 15 21Z" fill="none" stroke="' + color + '" stroke-width="3" stroke-linejoin="round"/><path d="M28 14c-3 2-2 5 1 6M38 10c-2 3-1 5 2 7" fill="none" stroke="' + color + '" stroke-width="2.3" stroke-linecap="round"/>';
+    : type === 'volcano' || type === 'volcanic_activity'
+      ? '<path d="M12 49 25 21l8 14 5-7 15 21Z" fill="none" stroke="' + color + '" stroke-width="3" stroke-linejoin="round"/><path d="M28 14c-3 2-2 5 1 6M38 10c-2 3-1 5 2 7" fill="none" stroke="' + color + '" stroke-width="2.3" stroke-linecap="round"/>'
+      : categoryKey.includes('wildfire') || categoryKey.includes('fire')
+        ? '<path d="M32 51c12 0 17-9 14-18-1.5-4.3-5.4-8-10.6-13 .3 7-2.6 10-5.4 11.5 1-9.4-5-17-10.2-21.5C22.5 22 11 28 12 39c.7 7 7.4 12 20 12Z" fill="none" stroke="' + color + '" stroke-width="3" stroke-linejoin="round"/>'
+        : categoryKey.includes('storm') || categoryKey.includes('hurricane') || categoryKey.includes('cyclone')
+          ? '<path d="M13 34h29a9 9 0 0 0 .5-18A15 15 0 0 0 14 22a6 6 0 0 0-1 12Z" fill="none" stroke="' + color + '" stroke-width="2.8" stroke-linejoin="round"/><path d="m31 34-8 14h8l-3 9 14-17h-8l4-6" fill="none" stroke="' + color + '" stroke-width="2.6" stroke-linejoin="round"/>'
+          : categoryKey.includes('flood')
+            ? '<path d="M8 22c4-4 8 4 12 0s8 4 12 0 8 4 12 0 8 4 12 0M8 33c4-4 8 4 12 0s8 4 12 0 8 4 12 0 8 4 12 0M8 44c4-4 8 4 12 0s8 4 12 0 8 4 12 0 8 4 12 0" fill="none" stroke="' + color + '" stroke-width="2.7" stroke-linecap="round"/>'
+            : categoryKey.includes('landslide')
+              ? '<path d="M8 48 22 20l9 16 5-8 18 20Z" fill="none" stroke="' + color + '" stroke-width="2.8" stroke-linejoin="round"/><path d="m24 44 7-6 5 4" fill="none" stroke="' + color + '" stroke-width="2.3" stroke-linecap="round"/>'
+              : '<path d="M8 22h27M8 32h40M8 42h27M36 17l8 5-8 5" fill="none" stroke="' + color + '" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>';
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">' +
     '<circle cx="32" cy="32" r="23.5" fill="#06101b" fill-opacity=".97" stroke="' + stroke + '" stroke-width="' + (selected ? '2.5' : '1.65') + '"/>' +
     glyph + '</svg>';
@@ -1146,7 +1167,8 @@ export default function CorridorWorldScene({
       const isWeather = type === 'weather';
       const isEarthquake = type === 'earthquake';
       const isVolcano = type === 'volcano' || type === 'volcanic_activity';
-      const isNaturalEvent = isEarthquake || isVolcano;
+      const isEonetEvent = type === 'natural_event';
+      const isNaturalEvent = isEarthquake || isVolcano || isEonetEvent;
       const weatherAnimated = weatherAnimationEnabled && isWeather;
       const eventAnimated = weatherAnimationEnabled && isNaturalEvent;
       const weatherFreshness = String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase();
@@ -1158,7 +1180,9 @@ export default function CorridorWorldScene({
       const volcanoAlertColor = volcanoAlertLevel === 'WARNING' || volcanoColorCode === 'RED' ? '#f17878'
         : volcanoAlertLevel === 'WATCH' || volcanoColorCode === 'ORANGE' ? '#e99c72'
           : volcanoAlertLevel === 'ADVISORY' || volcanoColorCode === 'YELLOW' ? '#e2c16f' : '#e99a9a';
-      const color = weatherAnimated ? weatherColorFor(item) : isEarthquake ? '#e6a66f' : isVolcano ? volcanoAlertColor : (WORLD_LAYER_COLOR[layer] ?? '#94a3b8');
+      const eonetCategory = String(item.attributes?.categoryId ?? '') + ' ' + String(item.attributes?.categoryTitle ?? '');
+      const eonetColor = weatherColorForNaturalCategory(eonetCategory);
+      const color = weatherAnimated ? weatherColorFor(item) : isEarthquake ? '#e6a66f' : isVolcano ? volcanoAlertColor : isEonetEvent ? eonetColor : (WORLD_LAYER_COLOR[layer] ?? '#94a3b8');
       const altitude = externalAltitude(item);
       const position = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, altitude ?? 0);
       const ground = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, 0);
@@ -1215,7 +1239,7 @@ export default function CorridorWorldScene({
           scaleByDistance: new Cesium.NearFarScalar(250, selected ? 1.05 : 1, 750000, 0.68),
           scale: new Cesium.CallbackProperty(() => selected ? 1.045 : (weatherMayPulse ? 0.985 + ((Math.sin(weatherPhaseRef.current * 0.72 + weatherPhase) + 1) / 2) * 0.03 : 0.92), false),
         } : eventAnimated ? {
-          image: naturalEventSvg(type, color, selected),
+          image: naturalEventSvg(type, color, selected, eonetCategory),
           width: selected ? 39 : 33,
           height: selected ? 39 : 33,
           verticalOrigin: Cesium.VerticalOrigin.CENTER,
@@ -1270,7 +1294,7 @@ export default function CorridorWorldScene({
       && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const hasAnimatedSignals = weatherAnimationEnabled && worldEntities.some(item =>
       (item.entityType === 'weather' && ['LIVE', 'DELAYED', 'MODELLED'].includes(String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase())) ||
-      item.entityType === 'earthquake' || item.entityType === 'volcano' || item.entityType === 'volcanic_activity'
+      item.entityType === 'earthquake' || item.entityType === 'volcano' || item.entityType === 'volcanic_activity' || item.entityType === 'natural_event'
     );
     if (!hasAnimatedSignals || reduceMotion) {
       weatherPhaseRef.current = 0;
