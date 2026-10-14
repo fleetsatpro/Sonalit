@@ -1004,6 +1004,7 @@ export default function FleetMap({
       .lf-natural-event-label i{font-style:normal;padding-left:6px;border-left:1px solid rgba(255,255,255,.15);color:var(--event-color)}
       .lf-natural-event-marker:hover .lf-natural-event-label,.lf-natural-event-marker:focus-visible .lf-natural-event-label{opacity:1;transform:translate(-50%,0)}
       .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-core{opacity:.5}
+      .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-pulse{animation:none;opacity:0}
       @media(prefers-reduced-motion:reduce){.lf-natural-event-pulse,.lf-natural-event-marker,.lf-natural-event-label{animation:none!important;transition:none!important}.lf-natural-event-pulse{display:none}}
       @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple,.lf-weather-marker,.lf-weather-label,.lf-weather-fx,.lf-weather-fx *{animation:none!important;transition:none!important}.lf-weather-ripple,.lf-weather-fx{display:none}}
     `
