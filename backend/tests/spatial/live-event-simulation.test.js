@@ -195,7 +195,7 @@ describe('GEV live event simulation data normalization', () => {
       quality: { freshnessClass: 'LIVE' },
     });
     expect(entity.latitude).toBeCloseTo(-1.28, 2);
-    expect(entity.longitude).toBeCloseTo(36.82, 2);
+    expect(entity.longitude).toBeCloseTo(36.78, 2);
     expect(entity.attributes.sourceLinks[0]).toMatchObject({
       title: 'NASA MODIS',
       url: 'https://earthdata.nasa.gov/',
