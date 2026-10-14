@@ -215,7 +215,9 @@ function makeWeatherMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialW
         ? '<span class="lf-weather-fx lf-weather-fx-snow" aria-hidden="true"><i></i><i></i><i></i></span>'
         : Number.isFinite(code) && (code === 45 || code === 48)
           ? '<span class="lf-weather-fx lf-weather-fx-fog" aria-hidden="true"><i></i><i></i></span>'
-          : ''
+          : Number.isFinite(code) && (code === 0 || code === 1)
+            ? '<span class="lf-weather-fx lf-weather-fx-sun" aria-hidden="true"></span>'
+            : ''
   marker.innerHTML = `
     <span class="lf-weather-ripple" aria-hidden="true"></span>
     <span class="lf-weather-core"><svg viewBox="0 0 24 24" aria-hidden="true">${glyph}</svg>${weatherEffect}</span>
@@ -985,6 +987,10 @@ export default function FleetMap({
       .lf-weather-fx-fog i:first-child{top:11px}
       .lf-weather-fx-fog i:last-child{top:18px;animation-delay:-2.2s}
       .lf-weather-fx-storm{inset:2px;border-radius:7px;background:rgba(255,235,195,.12);opacity:0;animation:lf-weather-storm-flash 7.6s steps(1,end) infinite}
+      .lf-weather-fx-sun{inset:-4px;z-index:0;overflow:visible;border:1px solid rgba(244,202,118,.38);border-radius:50%;box-shadow:0 0 10px rgba(244,202,118,.14);opacity:.12;animation:lf-weather-sun-breathe 5.8s ease-in-out infinite}
+      .lf-weather-marker[data-weather-code="51"] .lf-weather-fx-rain i,.lf-weather-marker[data-weather-code="53"] .lf-weather-fx-rain i,.lf-weather-marker[data-weather-code="55"] .lf-weather-fx-rain i{animation-duration:1.9s;opacity:.56}
+      .lf-weather-marker[data-weather-code="65"] .lf-weather-fx-rain i{animation-duration:.78s;opacity:.86}
+      @keyframes lf-weather-sun-breathe{0%,100%{transform:scale(.94);opacity:.06}50%{transform:scale(1.08);opacity:.22}}
       @keyframes lf-weather-rain-drop{0%{transform:translateY(-5px) rotate(18deg);opacity:0}22%{opacity:.62}100%{transform:translateY(9px) rotate(18deg);opacity:0}}
       @keyframes lf-weather-snow-drift{0%{transform:translate(0,-4px);opacity:0}28%{opacity:.8}100%{transform:translate(3px,11px);opacity:0}}
       @keyframes lf-weather-fog-drift{0%,100%{transform:translateX(-3px);opacity:.13}50%{transform:translateX(4px);opacity:.46}}
@@ -999,7 +1005,9 @@ export default function FleetMap({
       .lf-weather-marker:hover .lf-weather-label,.lf-weather-marker:focus-visible .lf-weather-label{opacity:1;transform:translate(-50%,0)}
       .lf-weather-marker[data-freshness="STALE"] .lf-weather-core,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-core,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-core,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-core{opacity:.58;border-color:rgba(219,228,239,.13);box-shadow:0 1px 3px rgba(0,0,0,.28)}
       .lf-weather-marker[data-freshness="STALE"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-ripple,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-ripple{animation:none;opacity:0}
+      .lf-weather-marker[data-freshness="STALE"] .lf-weather-fx,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-fx,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-fx,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-fx{display:none;animation:none}
       .lf-weather-marker[data-freshness="DELAYED"] .lf-weather-core{border-style:dashed}
+      .lf-weather-marker[data-freshness="DELAYED"] .lf-weather-fx-rain i{animation-duration:1.8s}
       @keyframes lf-natural-event-pulse{0%{transform:scale(.9);opacity:0}15%{opacity:.18}48%{opacity:.08}100%{transform:scale(1.5);opacity:0}}
       .lf-natural-event-marker{position:relative;width:38px;height:38px;display:grid;place-items:center;padding:0;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--event-color);overflow:visible;cursor:pointer;isolation:isolate;appearance:none;-webkit-tap-highlight-color:transparent}
       .lf-natural-event-marker:focus-visible{outline:2px solid color-mix(in srgb,var(--event-color) 82%,white 18%);outline-offset:2px}
@@ -1012,8 +1020,9 @@ export default function FleetMap({
       .lf-natural-event-label b{color:#e7edf5;letter-spacing:.045em}
       .lf-natural-event-label i{font-style:normal;padding-left:6px;border-left:1px solid rgba(255,255,255,.15);color:var(--event-color)}
       .lf-natural-event-marker:hover .lf-natural-event-label,.lf-natural-event-marker:focus-visible .lf-natural-event-label{opacity:1;transform:translate(-50%,0)}
-      .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-core{opacity:.5}
-      .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-pulse{animation:none;opacity:0}
+      .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-core,.lf-natural-event-marker[data-freshness="UNKNOWN"] .lf-natural-event-core,.lf-natural-event-marker[data-freshness="EXPIRED"] .lf-natural-event-core,.lf-natural-event-marker[data-freshness="UNAVAILABLE"] .lf-natural-event-core{opacity:.5}
+      .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-pulse,.lf-natural-event-marker[data-freshness="UNKNOWN"] .lf-natural-event-pulse,.lf-natural-event-marker[data-freshness="EXPIRED"] .lf-natural-event-pulse,.lf-natural-event-marker[data-freshness="UNAVAILABLE"] .lf-natural-event-pulse,.lf-natural-event-marker[data-freshness="MODELLED"] .lf-natural-event-pulse{animation:none;opacity:0}
+      .lf-natural-event-marker[data-freshness="DELAYED"] .lf-natural-event-pulse{animation-duration:10s;border-style:dashed}
       @media(prefers-reduced-motion:reduce){.lf-natural-event-pulse,.lf-natural-event-marker,.lf-natural-event-label{animation:none!important;transition:none!important}.lf-natural-event-pulse{display:none}}
       @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple,.lf-weather-marker,.lf-weather-label,.lf-weather-fx,.lf-weather-fx *{animation:none!important;transition:none!important}.lf-weather-ripple,.lf-weather-fx{display:none}}
     `

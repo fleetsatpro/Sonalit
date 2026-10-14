@@ -51,6 +51,16 @@ function classifyFenceStart({
   return 'refuse';
 }
 
+// A zero-row heartbeat update is the expected signal that a replacement runtime
+// acquired the lease. It is not equivalent to a database/heartbeat failure.
+function classifyFenceHeartbeat(rowCount) {
+  return rowCount === 1 ? 'owned' : 'superseded';
+}
+
+function shouldRefuseRetiredDeployment({ candidateIsRetired, takeoverRequested, currentLeaseStale }) {
+  return Boolean(candidateIsRetired) && !takeoverRequested && !currentLeaseStale;
+}
+
 function installCronGate() {
   if (cronGateInstalled || !isProduction || isStandby || isClaimChild) return;
   const Module = require('module');
@@ -101,6 +111,161 @@ async function deactivateFence() {
   } catch (_) {}
 }
 
+async function installFenceDeploymentGuard(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS public.sonalit_runtime_fence_authority (
+      id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      deployment_id TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      stale_after_seconds INTEGER NOT NULL DEFAULT 60
+    )
+  `);
+  await client.query(`
+    ALTER TABLE public.sonalit_runtime_fence_authority
+      ADD COLUMN IF NOT EXISTS stale_after_seconds INTEGER NOT NULL DEFAULT 60
+  `);
+  await client.query(`
+    INSERT INTO public.sonalit_runtime_fence_authority (id, deployment_id)
+    VALUES (1, NULL)
+    ON CONFLICT (id) DO NOTHING
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS public.sonalit_runtime_fence_retired_deployments (
+      deployment_id TEXT PRIMARY KEY,
+      retired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      superseded_by TEXT
+    )
+  `);
+  await client.query(`
+    CREATE OR REPLACE FUNCTION public.sonalit_runtime_fence_authority_guard()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $sonalit$
+    DECLARE
+      authorized_deployment_id TEXT;
+      lease_ttl_seconds INTEGER;
+      active_heartbeat_at TIMESTAMPTZ;
+    BEGIN
+      SELECT deployment_id, stale_after_seconds
+        INTO authorized_deployment_id, lease_ttl_seconds
+        FROM public.sonalit_runtime_fence_authority
+       WHERE id = 1;
+
+      -- A retired deployment cannot displace a live owner. If the current lease
+      -- is genuinely stale, permit failover and atomically revive that identity.
+      IF NEW.deployment_id IS NOT NULL AND EXISTS (
+        SELECT 1
+          FROM public.sonalit_runtime_fence_retired_deployments
+         WHERE deployment_id = NEW.deployment_id
+      ) THEN
+        SELECT heartbeat_at
+          INTO active_heartbeat_at
+          FROM public.sonalit_runtime_fence
+         WHERE id = 1;
+
+        IF active_heartbeat_at IS NOT NULL
+           AND active_heartbeat_at > NOW() - make_interval(secs => GREATEST(30, COALESCE(lease_ttl_seconds, 60))) THEN
+          RAISE EXCEPTION
+            'SONALIT runtime fence rejected retired deployment % while the current lease is live',
+            NEW.deployment_id
+            USING ERRCODE = '55000';
+        END IF;
+
+        DELETE FROM public.sonalit_runtime_fence_retired_deployments
+         WHERE deployment_id = NEW.deployment_id;
+        UPDATE public.sonalit_runtime_fence_authority
+           SET deployment_id = NEW.deployment_id,
+               updated_at = NOW()
+         WHERE id = 1;
+        authorized_deployment_id := NEW.deployment_id;
+      END IF;
+
+      IF NEW.deployment_id IS NOT NULL
+         AND authorized_deployment_id IS NOT NULL
+         AND NEW.deployment_id IS DISTINCT FROM authorized_deployment_id THEN
+        RAISE EXCEPTION
+          'SONALIT runtime fence rejected superseded deployment %; authority belongs to %',
+          NEW.deployment_id, authorized_deployment_id
+          USING ERRCODE = '55000';
+      END IF;
+
+      RETURN NEW;
+    END;
+    $sonalit$
+  `);
+
+  const { rowCount } = await client.query(`
+    SELECT 1
+      FROM pg_trigger
+     WHERE tgname = 'sonalit_runtime_fence_authority_guard'
+       AND tgrelid = 'public.sonalit_runtime_fence'::regclass
+       AND NOT tgisinternal
+  `);
+  if (rowCount === 0) {
+    await client.query(`
+      CREATE TRIGGER sonalit_runtime_fence_authority_guard
+      BEFORE UPDATE ON public.sonalit_runtime_fence
+      FOR EACH ROW
+      EXECUTE FUNCTION public.sonalit_runtime_fence_authority_guard()
+    `);
+  }
+
+  await client.query(`
+    CREATE OR REPLACE FUNCTION public.sonalit_runtime_fence_authority_write_guard()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $authority$
+    DECLARE
+      lease_ttl_seconds INTEGER;
+      active_heartbeat_at TIMESTAMPTZ;
+    BEGIN
+      IF NEW.deployment_id IS NOT NULL AND EXISTS (
+        SELECT 1
+          FROM public.sonalit_runtime_fence_retired_deployments
+         WHERE deployment_id = NEW.deployment_id
+      ) THEN
+        SELECT stale_after_seconds
+          INTO lease_ttl_seconds
+          FROM public.sonalit_runtime_fence_authority
+         WHERE id = 1;
+        SELECT heartbeat_at
+          INTO active_heartbeat_at
+          FROM public.sonalit_runtime_fence
+         WHERE id = 1;
+
+        IF active_heartbeat_at IS NOT NULL
+           AND active_heartbeat_at > NOW() - make_interval(secs => GREATEST(30, COALESCE(lease_ttl_seconds, 60))) THEN
+          RAISE EXCEPTION
+            'SONALIT runtime fence refused re-authorizing retired deployment % while the current lease is live',
+            NEW.deployment_id
+            USING ERRCODE = '55000';
+        END IF;
+
+        DELETE FROM public.sonalit_runtime_fence_retired_deployments
+         WHERE deployment_id = NEW.deployment_id;
+      END IF;
+      RETURN NEW;
+    END;
+    $authority$
+  `);
+
+  const authorityTrigger = await client.query(`
+    SELECT 1
+      FROM pg_trigger
+     WHERE tgname = 'sonalit_runtime_fence_authority_write_guard'
+       AND tgrelid = 'public.sonalit_runtime_fence_authority'::regclass
+       AND NOT tgisinternal
+  `);
+  if (authorityTrigger.rowCount === 0) {
+    await client.query(`
+      CREATE TRIGGER sonalit_runtime_fence_authority_write_guard
+      BEFORE INSERT OR UPDATE ON public.sonalit_runtime_fence_authority
+      FOR EACH ROW
+      EXECUTE FUNCTION public.sonalit_runtime_fence_authority_write_guard()
+    `);
+  }
+}
+
 async function claimInChild() {
   if (!process.env.DATABASE_URL) {
     console.error("SONALIT runtime fence: DATABASE_URL is required");
@@ -138,6 +303,11 @@ async function claimInChild() {
 
     await client.query("SELECT pg_advisory_lock(hashtext('sonalit-runtime-fence'))");
     try {
+      // Install the DB guard while holding the same advisory lock used by lease
+      // claims. This blocks a legacy container from reclaiming authority after a
+      // newer deployment starts, even before Railway finishes stopping old replicas.
+      await installFenceDeploymentGuard(client);
+
       const { rows } = await client.query(`
         SELECT owner_id,
                deployment_id,
@@ -148,6 +318,22 @@ async function claimInChild() {
       `);
       const current = rows[0] || {};
       const stale = !current.owner_id || current.age_seconds == null || Number(current.age_seconds) >= FENCE_STALE_SECONDS;
+      if (railwayDeploymentId) {
+        const retiredCandidate = await client.query(`
+          SELECT 1
+            FROM public.sonalit_runtime_fence_retired_deployments
+           WHERE deployment_id = $1
+        `, [railwayDeploymentId]);
+        if (shouldRefuseRetiredDeployment({
+          candidateIsRetired: retiredCandidate.rowCount > 0,
+          takeoverRequested: takeover,
+          currentLeaseStale: stale,
+        })) {
+          console.error(`SONALIT runtime fence: deployment ${railwayDeploymentId} was previously superseded while the current lease is live; refusing automatic rollback takeover`);
+          process.exitCode = 78;
+          return;
+        }
+      }
       const startMode = classifyFenceStart({
         production: isProduction,
         standby: isStandby,
@@ -182,14 +368,47 @@ async function claimInChild() {
         );
       }
 
-      await client.query(`
-        UPDATE sonalit_runtime_fence
-        SET owner_id = $1,
-            acquired_at = NOW(),
-            heartbeat_at = NOW(),
-            deployment_id = $2
-        WHERE id = 1
-      `, [ownerId, railwayDeploymentId]);
+      await client.query("BEGIN");
+      try {
+        if (railwayDeploymentId && (takeover || stale)) {
+          await client.query(`
+            DELETE FROM public.sonalit_runtime_fence_retired_deployments
+             WHERE deployment_id = $1
+          `, [railwayDeploymentId]);
+        }
+        // Publish the accepted deployment identity before changing the lease,
+        // atomically. A legacy process can then neither heartbeat nor take over
+        // the fence after this commit.
+        if (railwayDeploymentId) {
+          if (current.deployment_id && current.deployment_id !== railwayDeploymentId) {
+            await client.query(`
+              INSERT INTO public.sonalit_runtime_fence_retired_deployments (deployment_id, superseded_by)
+              VALUES ($1, $2)
+              ON CONFLICT (deployment_id) DO NOTHING
+            `, [current.deployment_id, railwayDeploymentId]);
+          }
+          await client.query(`
+            INSERT INTO public.sonalit_runtime_fence_authority (id, deployment_id, updated_at, stale_after_seconds)
+            VALUES (1, $1, NOW(), $2)
+            ON CONFLICT (id) DO UPDATE
+              SET deployment_id = EXCLUDED.deployment_id,
+                  updated_at = NOW(),
+                  stale_after_seconds = EXCLUDED.stale_after_seconds
+          `, [railwayDeploymentId, FENCE_STALE_SECONDS]);
+        }
+        await client.query(`
+          UPDATE sonalit_runtime_fence
+          SET owner_id = $1,
+              acquired_at = NOW(),
+              heartbeat_at = NOW(),
+              deployment_id = $2
+          WHERE id = 1
+        `, [ownerId, railwayDeploymentId]);
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw err;
+      }
     } finally {
       await client.query("SELECT pg_advisory_unlock(hashtext('sonalit-runtime-fence'))");
     }
@@ -210,6 +429,8 @@ if (isClaimChild) {
     shouldTakeOver,
     classifyFenceStart,
     isFenceActive: () => true,
+    classifyFenceHeartbeat,
+    shouldRefuseRetiredDeployment,
   };
 } else {
   const childEnv = {
@@ -268,10 +489,15 @@ if (isClaimChild) {
             SET heartbeat_at = NOW()
             WHERE id = 1 AND owner_id = $1
           `, [ownerId]);
-          if (rowCount !== 1) {
-            console.error("SONALIT runtime fence: ownership was lost; terminating active runtime");
+          if (classifyFenceHeartbeat(rowCount) === 'superseded') {
+            console.warn("SONALIT runtime fence: lease transferred or removed; gracefully retiring superseded runtime");
             await deactivateFence();
-            process.exit(78);
+            // Stop the heartbeat and close this owner's client. stopFence only
+            // deletes a lease still owned by this process, so it cannot remove
+            // the replacement runtime's record.
+            await stopFence();
+            process.exit(0);
+            return;
           }
         } catch (err) {
           console.error(`SONALIT runtime fence: heartbeat failed: ${err.message || String(err)}`);
@@ -295,5 +521,7 @@ if (isClaimChild) {
     staleSeconds: FENCE_STALE_SECONDS,
     deploymentId: railwayDeploymentId,
     isFenceActive: () => fenceActive,
+    classifyFenceHeartbeat,
+    shouldRefuseRetiredDeployment,
   };
 }

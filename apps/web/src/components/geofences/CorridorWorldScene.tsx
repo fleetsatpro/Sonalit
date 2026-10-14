@@ -1173,6 +1173,12 @@ export default function CorridorWorldScene({
       const eventAnimated = weatherAnimationEnabled && isNaturalEvent;
       const weatherFreshness = String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase();
       const weatherMayPulse = weatherFreshness === 'LIVE' || weatherFreshness === 'DELAYED' || weatherFreshness === 'MODELLED';
+      const weatherCode = Number(item.attributes?.weatherCode);
+      const weatherMotionAmplitude = !Number.isFinite(weatherCode) ? 0.03
+        : weatherCode >= 95 ? 0.075
+          : ((weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 71 && weatherCode <= 86) || (weatherCode >= 80 && weatherCode <= 82)) ? 0.055
+            : weatherCode === 0 || weatherCode === 1 ? 0.04
+              : weatherCode === 45 || weatherCode === 48 ? 0.022 : 0.03;
       const weatherPhase = (item.id.split('').reduce((hash, character) => (hash * 33 + character.charCodeAt(0)) >>> 0, 5381) % 360) * Math.PI / 180;
       const currentVolcanoAlert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined;
       const volcanoAlertLevel = String(currentVolcanoAlert?.alertLevel ?? '').toUpperCase();
@@ -1237,7 +1243,7 @@ export default function CorridorWorldScene({
           verticalOrigin: Cesium.VerticalOrigin.CENTER,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           scaleByDistance: new Cesium.NearFarScalar(250, selected ? 1.05 : 1, 750000, 0.68),
-          scale: new Cesium.CallbackProperty(() => selected ? 1.045 : (weatherMayPulse ? 0.985 + ((Math.sin(weatherPhaseRef.current * 0.72 + weatherPhase) + 1) / 2) * 0.03 : 0.92), false),
+          scale: new Cesium.CallbackProperty(() => selected ? 1.045 : (weatherMayPulse ? 0.975 + ((Math.sin(weatherPhaseRef.current * 0.72 + weatherPhase) + 1) / 2) * weatherMotionAmplitude : 0.92), false),
         } : eventAnimated ? {
           image: naturalEventSvg(type, color, selected, eonetCategory),
           width: selected ? 39 : 33,
@@ -1257,8 +1263,8 @@ export default function CorridorWorldScene({
                 : isEonetEvent && (freshness === 'LIVE' || freshness === 'DELAYED');
             if (!canAnimate) return 0.98;
             const phase = weatherPhaseRef.current * (isEarthquake ? 0.9 : isVolcano ? 0.26 : 0.34) + weatherPhase;
-            const amplitude = isEarthquake ? 0.045 : isVolcano ? 0.018 : 0.022;
-            return 0.99 + ((Math.sin(phase) + 1) / 2) * amplitude;
+            const amplitude = isEarthquake ? 0.075 : isVolcano ? 0.032 : 0.038;
+            return 0.985 + ((Math.sin(phase) + 1) / 2) * amplitude;
           }, false),
         } : undefined,
         properties: new Cesium.PropertyBag({
@@ -1301,10 +1307,17 @@ export default function CorridorWorldScene({
     if (!viewer || viewer.isDestroyed()) return;
     const reduceMotion = typeof window !== 'undefined'
       && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const hasAnimatedSignals = weatherAnimationEnabled && worldEntities.some(item =>
-      (item.entityType === 'weather' && ['LIVE', 'DELAYED', 'MODELLED'].includes(String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase())) ||
-      item.entityType === 'earthquake' || item.entityType === 'volcano' || item.entityType === 'volcanic_activity' || item.entityType === 'natural_event'
-    );
+    const hasAnimatedSignals = weatherAnimationEnabled && worldEntities.some(item => {
+      const type = String(item.entityType || '').toLowerCase();
+      const freshness = String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase();
+      const alert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined;
+      const alertIsCurrent = Boolean(alert) && String(alert.sourceStatus ?? '') !== 'STALE_CACHE_FALLBACK';
+      if (type === 'weather') return ['LIVE', 'DELAYED', 'MODELLED'].includes(freshness);
+      if (type === 'earthquake') return freshness === 'LIVE' || freshness === 'DELAYED';
+      if (type === 'volcano' || type === 'volcanic_activity') return alertIsCurrent || freshness === 'LIVE' || freshness === 'DELAYED';
+      if (type === 'natural_event') return freshness === 'LIVE' || freshness === 'DELAYED';
+      return false;
+    });
     if (!hasAnimatedSignals || reduceMotion) {
       weatherPhaseRef.current = 0;
       viewer.scene.requestRender();

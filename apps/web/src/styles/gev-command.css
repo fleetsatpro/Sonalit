@@ -2837,8 +2837,8 @@
 .gev-simulation-play:hover:not(:disabled),
 .gev-simulation-close:hover { border-color: rgba(215,225,239,.3); background: rgba(255,255,255,.07); }
 .gev-simulation-play:disabled { opacity: .38; cursor: not-allowed; }
-.gev-simulation-timeline-row { display: grid; grid-template-columns: 34px minmax(0,1fr) 38px; align-items: center; gap: 10px; margin-top: 13px; }
-.gev-simulation-timeline-label { color: #7e8b9a; font: 800 7px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.gev-simulation-timeline-row { display: grid; grid-template-columns: 70px minmax(0,1fr) 70px; align-items: center; gap: 8px; margin-top: 13px; }
+.gev-simulation-timeline-label { color: #9ba9b9; font: 800 7px/1.15 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .025em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .gev-simulation-timeline-label:last-child { text-align: right; }
 .gev-simulation-range { width: 100%; height: 16px; margin: 0; accent-color: #9cb7c9; cursor: pointer; }
 .gev-simulation-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 15px; margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,.06); }
@@ -2872,7 +2872,8 @@
 @media (max-width: 430px) {
   .gev-topcenter { gap: 5px; }
   .gev-topcenter > .gev-segment { padding: 0 8px; font-size: 7px; }
-  .gev-simulation-timeline-row { gap: 6px; }
+  .gev-simulation-timeline-row { grid-template-columns: 62px minmax(0,1fr) 62px; gap: 5px; }
+  .gev-simulation-timeline-label { font-size: 6.5px; letter-spacing: 0; }
   .gev-simulation-summary { display: grid; grid-template-columns: 1fr; gap: 6px; }
   .gev-natural-event-meta { grid-template-columns: 1fr; }
 }

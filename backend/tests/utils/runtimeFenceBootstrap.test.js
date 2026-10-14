@@ -1,9 +1,30 @@
 process.env.NODE_ENV = 'test';
 delete process.env.SONALIT_STANDBY;
 
-const { shouldTakeOver, classifyFenceStart } = require('../../src/utils/runtimeFenceBootstrap');
+const { shouldTakeOver, classifyFenceStart, classifyFenceHeartbeat, shouldRefuseRetiredDeployment } = require('../../src/utils/runtimeFenceBootstrap');
 
 describe('runtime fence deployment handover policy', () => {
+  test('treats a successful heartbeat update as retained ownership', () => {
+    expect(classifyFenceHeartbeat(1)).toBe('owned');
+  });
+
+  test('treats a zero-row heartbeat update as an expected handover, not a failed heartbeat', () => {
+    expect(classifyFenceHeartbeat(0)).toBe('superseded');
+  });
+
+  test('refuses a retired deployment while the current lease is live', () => {
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: false, currentLeaseStale: false })).toBe(true);
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: false, takeoverRequested: false, currentLeaseStale: false })).toBe(false);
+  });
+
+  test('allows automatic recovery of a retired deployment only after the current lease is stale', () => {
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: false, currentLeaseStale: true })).toBe(false);
+  });
+
+  test('permits explicit retired-deployment recovery when takeover is requested', () => {
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: true, currentLeaseStale: false })).toBe(false);
+  });
+
   test('allows a new Railway deployment to replace an older deployment', () => {
     expect(shouldTakeOver({
       takeoverRequested: false,
