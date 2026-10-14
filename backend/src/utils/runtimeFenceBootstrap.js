@@ -124,7 +124,7 @@ async function installFenceDeploymentGuard(client) {
     CREATE OR REPLACE FUNCTION public.sonalit_runtime_fence_authority_guard()
     RETURNS trigger
     LANGUAGE plpgsql
-    AS $
+    AS $sonalit$
     DECLARE
       authorized_deployment_id TEXT;
     BEGIN
@@ -147,7 +147,7 @@ async function installFenceDeploymentGuard(client) {
 
       RETURN NEW;
     END;
-    $
+    $sonalit$
   `);
 
   const { rowCount } = await client.query(`
