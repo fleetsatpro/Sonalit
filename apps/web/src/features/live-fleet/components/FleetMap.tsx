@@ -803,6 +803,10 @@ export default function FleetMap({
     if (document.getElementById('lf-map-styles')) return
     const s = document.createElement('style'); s.id = 'lf-map-styles'
     s.textContent = `
+      @keyframes lf-mping{0%{transform:scale(1);opacity:.7}100%{transform:scale(2.2);opacity:0}}
+      @keyframes lf-sos-ring{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.5);opacity:.2}}
+      @keyframes lf-recon-spin{to{transform:rotate(360deg)}}
+      @keyframes lf-sos-marker{0%,100%{box-shadow:0 0 12px #ef444466,0 2px 8px rgba(0,0,0,.8)}50%{box-shadow:0 0 24px #ef4444cc,0 2px 8px rgba(0,0,0,.8)}}
       @keyframes lf-weather-signal{0%{transform:scale(.88);opacity:0}12%{opacity:.20}42%{opacity:.11}100%{transform:scale(1.52);opacity:0}}
       .lf-weather-marker{position:relative;width:40px;height:40px;display:grid;place-items:center;padding:0;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--weather-color);overflow:visible;cursor:pointer;isolation:isolate;appearance:none;-webkit-tap-highlight-color:transparent;transition:background .18s ease,transform .18s ease}
       .lf-weather-marker:hover{background:rgba(4,9,17,.12)}
