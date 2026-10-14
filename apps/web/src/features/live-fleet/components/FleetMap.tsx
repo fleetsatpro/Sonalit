@@ -230,6 +230,15 @@ function naturalEventColor(item: SpatialWorldEntity): string {
     const magnitude = Number(item.attributes?.magnitude)
     return Number.isFinite(magnitude) && magnitude >= 5.5 ? '#ff9b79' : '#e6a66f'
   }
+  if (item.entityType === 'natural_event') {
+    const category = (String(item.attributes?.categoryId ?? '') + ' ' + String(item.attributes?.categoryTitle ?? '')).toLowerCase()
+    if (category.includes('wildfire') || category.includes('fire')) return '#ef996d'
+    if (category.includes('storm') || category.includes('hurricane') || category.includes('cyclone')) return '#df8588'
+    if (category.includes('flood')) return '#76b9ed'
+    if (category.includes('landslide')) return '#c79b78'
+    if (category.includes('dust') || category.includes('haze')) return '#d6bf7d'
+    return '#a8bfcc'
+  }
   const currentAlert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined
   const alertLevel = String(currentAlert?.alertLevel ?? '').toUpperCase()
   const colorCode = String(currentAlert?.colorCode ?? '').toUpperCase()
@@ -242,21 +251,27 @@ function naturalEventColor(item: SpatialWorldEntity): string {
 
 function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialWorldEntity) => void): HTMLButtonElement {
   const isEarthquake = item.entityType === 'earthquake'
+  const isVolcano = item.entityType === 'volcano' || item.entityType === 'volcanic_activity'
+  const isEonetEvent = item.entityType === 'natural_event'
   const color = naturalEventColor(item)
   const magnitude = Number(item.attributes?.magnitude)
   const magnitudeLabel = Number.isFinite(magnitude) ? 'M' + magnitude.toFixed(1) : 'M—'
   const currentAlert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined
   const alertLevel = String(currentAlert?.alertLevel ?? '').toUpperCase()
   const colorCode = String(currentAlert?.colorCode ?? '').toUpperCase()
+  const categoryTitle = String(item.attributes?.categoryTitle ?? item.attributes?.categoryId ?? 'NATURAL EVENT')
   const detail = isEarthquake
     ? magnitudeLabel + ' · ' + String(item.attributes?.place ?? 'Earthquake')
-    : currentAlert
+    : isVolcano && currentAlert
       ? 'USGS ' + alertLevel + ' / ' + colorCode + ' · ' + String(item.attributes?.name ?? '')
-      : String(item.attributes?.reportType ?? 'ACTIVITY REPORTED').replaceAll('_', ' ') + ' · ' + String(item.attributes?.country ?? '')
+      : isVolcano
+        ? String(item.attributes?.reportType ?? 'ACTIVITY REPORTED').replaceAll('_', ' ') + ' · ' + String(item.attributes?.country ?? '')
+        : categoryTitle.toUpperCase() + ' · ' + String(item.attributes?.title ?? item.attributes?.name ?? 'Open event')
   const marker = document.createElement('button')
   marker.type = 'button'
   marker.className = 'lf-natural-event-marker'
-  marker.dataset.eventType = isEarthquake ? 'earthquake' : 'volcano'
+  marker.dataset.eventType = isEarthquake ? 'earthquake' : isVolcano ? 'volcano' : 'natural-event'
+  marker.dataset.naturalCategory = String(item.attributes?.categoryId ?? 'natural-event').toLowerCase()
   marker.dataset.alertLevel = alertLevel || 'NONE'
   marker.dataset.freshness = currentAlert
     ? (String(currentAlert.sourceStatus ?? '') === 'STALE_CACHE_FALLBACK' ? 'STALE' : 'LIVE')
@@ -265,14 +280,24 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
   const phase = Array.from(String(item.id)).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 48
   marker.style.setProperty('--event-delay', String(-phase / 8) + 's')
   marker.title = detail + ' · ' + String(item.source ?? 'unknown source') + ' · ' + String(item.quality?.freshnessClass ?? 'UNKNOWN')
-  marker.setAttribute('aria-label', 'Inspect ' + (isEarthquake ? 'earthquake: ' : 'volcanic activity: ') + detail)
+  marker.setAttribute('aria-label', 'Inspect ' + (isEarthquake ? 'earthquake: ' : isVolcano ? 'volcanic activity: ' : 'natural event: ') + detail)
   const earthquakeGlyph = '<path d="M2 12h4l2.2-5.5 3.4 11 3.1-9 2.1 3.5H22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
   const volcanoGlyph = '<path d="M3.5 19.5 10.2 6.8l2.1 4.1 1.8-2.5 6.4 11.1Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M11.4 4.2c-.7 1-.2 1.8.7 2.1M15.1 3c-.7 1-.4 1.7.2 2.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
-  const category = isEarthquake ? 'EARTHQUAKE' : currentAlert ? 'VOLCANO ALERT' : 'VOLCANO REPORT'
-  const tag = isEarthquake ? magnitudeLabel : currentAlert ? alertLevel : (item.quality?.freshnessClass === 'STALE' ? 'STALE' : 'REPORTED')
+  const categoryId = (String(item.attributes?.categoryId ?? '') + ' ' + String(item.attributes?.categoryTitle ?? '')).toLowerCase()
+  const eonetGlyph = categoryId.includes('wildfire') || categoryId.includes('fire')
+    ? '<path d="M12 22c5 0 8-3.3 7-7.4-.6-2.4-2.3-4.2-4.7-6.8.2 2.8-.9 3.8-2 4.5.2-4-2.2-7.1-4.3-9.3C8.8 8 4.8 10.1 5 15c.1 4.1 3 7 7 7Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>'
+    : categoryId.includes('storm') || categoryId.includes('hurricane') || categoryId.includes('cyclone')
+      ? '<path d="M5 15.5h11a4 4 0 0 0 .2-8A5.3 5.3 0 0 0 6 9.2a3.2 3.2 0 0 0-1 6.3ZM14 15l-3 5h3l-2 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>'
+      : categoryId.includes('flood')
+        ? '<path d="M3 8c2.5-3 4.5 3 7 0s4.5 3 7 0 4.5 3 4 0M3 14c2.5-3 4.5 3 7 0s4.5 3 7 0 4.5 3 4 0M3 20c2.5-3 4.5 3 7 0s4.5 3 7 0 4.5 3 4 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+        : categoryId.includes('landslide')
+          ? '<path d="M3 20 11 5l4 7 2-3 4 11Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m8 20 5-4 3 2" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+          : '<path d="M3 9h10M5 13h14M3 17h10M16 7l4 2-4 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+  const category = isEarthquake ? 'EARTHQUAKE' : isVolcano ? currentAlert ? 'VOLCANO ALERT' : 'VOLCANO REPORT' : categoryTitle.toUpperCase()
+  const tag = isEarthquake ? magnitudeLabel : isVolcano ? currentAlert ? alertLevel : (item.quality?.freshnessClass === 'STALE' ? 'STALE' : 'REPORTED') : 'OPEN'
   marker.innerHTML = '<span class="lf-natural-event-pulse" aria-hidden="true"></span>' +
-    '<span class="lf-natural-event-core"><svg viewBox="0 0 24 24" aria-hidden="true">' + (isEarthquake ? earthquakeGlyph : volcanoGlyph) + '</svg></span>' +
-    '<span class="lf-natural-event-label"><b>' + category + '</b><i>' + tag + '</i></span>'
+    '<span class="lf-natural-event-core"><svg viewBox="0 0 24 24" aria-hidden="true">' + (isEarthquake ? earthquakeGlyph : isVolcano ? volcanoGlyph : eonetGlyph) + '</svg></span>' +
+    '<span class="lf-natural-event-label"><b>' + category + '</b><i>' + tag + '</i></span>
   marker.addEventListener('click', event => { event.stopPropagation(); onSelect(item) })
   return marker
 }
@@ -833,12 +858,17 @@ export default function FleetMap({
       if (!mapReady || !weatherAnimationEnabled) return
 
       const valid = naturalEvents.filter(item =>
-        (item.entityType === 'earthquake' || item.entityType === 'volcano') &&
+        (item.entityType === 'earthquake' || item.entityType === 'volcano' || item.entityType === 'natural_event') &&
         Number.isFinite(item.latitude) && Number.isFinite(item.longitude) &&
         item.latitude >= -90 && item.latitude <= 90 &&
         item.longitude >= -180 && item.longitude <= 180
       )
       const volcanoes = valid.filter(item => item.entityType === 'volcano')
+      const globalEvents = valid.filter(item => item.entityType === 'natural_event').sort((a, b) => {
+        const dateA = Date.parse(String(a.attributes?.eventDate ?? a.observedAt ?? '')) || 0
+        const dateB = Date.parse(String(b.attributes?.eventDate ?? b.observedAt ?? '')) || 0
+        return dateB - dateA
+      })
       const earthquakes = valid.filter(item => item.entityType === 'earthquake').sort((a, b) => {
         const ma = Number(a.attributes?.magnitude)
         const mb = Number(b.attributes?.magnitude)
@@ -846,14 +876,15 @@ export default function FleetMap({
       })
       const zoom = map.getZoom()
       const earthquakeLimit = zoom < 2 ? 24 : zoom < 4 ? 48 : 100
-      const visible = [...volcanoes, ...earthquakes.slice(0, earthquakeLimit)]
+      const globalEventLimit = zoom < 2 ? 12 : zoom < 4 ? 26 : 50
+      const visible = [...volcanoes, ...globalEvents.slice(0, globalEventLimit), ...earthquakes.slice(0, earthquakeLimit)]
 
       for (const item of visible) {
         const element = makeNaturalEventMarker(item, entity => onNaturalEventSelectRef.current?.(entity))
         const marker = new maplibregl.Marker({ element, anchor: 'center' })
           .setLngLat([item.longitude, item.latitude])
           .addTo(map)
-        marker.getElement().style.zIndex = item.entityType === 'earthquake' ? '72' : '68'
+        marker.getElement().style.zIndex = item.entityType === 'earthquake' ? '72' : item.entityType === 'natural_event' ? '66' : '68'
         naturalEventMarkersRef.current.set(item.id, marker)
       }
     }
@@ -967,6 +998,7 @@ export default function FleetMap({
       .lf-natural-event-core svg{width:17px;height:17px;color:var(--event-color)}
       .lf-natural-event-pulse{position:absolute;inset:0;border:1px solid color-mix(in srgb,var(--event-color) 62%,transparent);border-radius:12px;opacity:0;pointer-events:none;animation:lf-natural-event-pulse 6.4s cubic-bezier(.16,1,.3,1) infinite;animation-delay:var(--event-delay,0s)}
       .lf-natural-event-marker[data-event-type="volcano"] .lf-natural-event-pulse{animation-duration:9s;border-style:dashed}
+      .lf-natural-event-marker[data-event-type="natural-event"] .lf-natural-event-pulse{animation-duration:8s;border-style:dotted}
       .lf-natural-event-label{position:absolute;z-index:4;top:32px;left:50%;transform:translate(-50%,3px);opacity:0;display:flex;align-items:center;gap:6px;max-width:210px;padding:5px 7px;border:1px solid color-mix(in srgb,var(--event-color) 26%,rgba(255,255,255,.12));border-radius:7px;background:rgba(4,9,16,.96);box-shadow:0 8px 24px rgba(0,0,0,.32);font:700 8px/1.15 "IBM Plex Mono",monospace;white-space:nowrap;pointer-events:none;transition:opacity .16s ease,transform .16s ease}
       .lf-natural-event-label b{color:#e7edf5;letter-spacing:.045em}
       .lf-natural-event-label i{font-style:normal;padding-left:6px;border-left:1px solid rgba(255,255,255,.15);color:var(--event-color)}
