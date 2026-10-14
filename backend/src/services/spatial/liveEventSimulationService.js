@@ -7,6 +7,7 @@ const EARTHQUAKE_CACHE_TTL_MS = 60 * 1000;
 const VOLCANO_CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 const VOLCANO_REPORT_TTL_MS = 30 * 60 * 1000;
 const USGS_VOLCANO_ALERT_TTL_MS = 60 * 1000;
+const NASA_EONET_TTL_MS = 2 * 60 * 1000;
 const MAX_WEATHER_POINTS = 36;
 const MAX_EARTHQUAKES = 300;
 
@@ -737,6 +738,142 @@ async function loadVolcanoEvents() {
   };
 }
 
+function collectGeometryPositions(geometry, out = []) {
+  if (!geometry || typeof geometry !== 'object') return out;
+  if (Array.isArray(geometry.coordinates)) {
+    collectCoordinatePairs(geometry.coordinates, out);
+  }
+  if (Array.isArray(geometry.geometries)) {
+    for (const child of geometry.geometries) collectGeometryPositions(child, out);
+  }
+  return out;
+}
+
+function collectCoordinatePairs(value, out) {
+  if (!Array.isArray(value)) return out;
+  if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
+    if (isValidLatLon(value[1], value[0])) out.push([value[0], value[1]]);
+    return out;
+  }
+  for (const child of value) collectCoordinatePairs(child, out);
+  return out;
+}
+
+function eventGeometryCentre(geometry) {
+  const positions = collectGeometryPositions(geometry);
+  if (!positions.length) return null;
+  const latitude = positions.reduce((sum, position) => sum + position[1], 0) / positions.length;
+  // Circular mean avoids putting a dateline-crossing source geometry in the wrong hemisphere.
+  const sine = positions.reduce((sum, position) => sum + Math.sin(position[0] * Math.PI / 180), 0);
+  const cosine = positions.reduce((sum, position) => sum + Math.cos(position[0] * Math.PI / 180), 0);
+  const longitude = Math.atan2(sine, cosine) * 180 / Math.PI;
+  return {
+    latitude,
+    longitude,
+    sourceGeometryType: String(geometry && geometry.type || 'unknown'),
+    sourceCoordinateCount: positions.length,
+  };
+}
+
+function nasaEonetEntity(feature, receivedAt) {
+  const properties = feature && feature.properties || {};
+  const geometry = feature && feature.geometry;
+  const centre = eventGeometryCentre(geometry);
+  if (!centre || !isValidLatLon(centre.latitude, centre.longitude)) return null;
+  const id = String(properties.id || feature.id || '');
+  if (!id) return null;
+  const categories = asArray(properties.categories).map(category => ({
+    id: String(category && category.id || ''),
+    title: String(category && category.title || category && category.id || 'Natural event'),
+  }));
+  const primaryCategory = categories[0] || { id: 'naturalEvent', title: 'Natural event' };
+  const dateValues = Array.isArray(properties.geometryDates) ? properties.geometryDates : [];
+  const dateValue = dateValues.length ? dateValues[dateValues.length - 1] : properties.date;
+  const eventDate = toIsoUtc(dateValue);
+  const ageMs = eventDate ? Math.max(0, Date.now() - Date.parse(eventDate)) : Number.POSITIVE_INFINITY;
+  const freshnessClass = !eventDate ? 'UNKNOWN'
+    : ageMs <= 6 * 60 * 60 * 1000 ? 'LIVE'
+      : ageMs <= 3 * 24 * 60 * 60 * 1000 ? 'DELAYED' : 'STALE';
+  const sources = asArray(properties.sources).map(item => ({
+    id: String(item && item.id || ''),
+    title: String(item && item.title || item && item.id || 'Source'),
+    url: String(item && (item.url || item.source || item.link) || ''),
+  })).filter(item => item.url);
+  const eventLink = String(properties.link || feature.id && ('https://eonet.gsfc.nasa.gov/api/v3/events/' + feature.id) || 'https://eonet.gsfc.nasa.gov/');
+  return {
+    id: 'nasa-eonet:' + id,
+    entityType: 'natural_event',
+    source: 'NASA EONET',
+    sourceReference: id,
+    latitude: centre.latitude,
+    longitude: centre.longitude,
+    observedAt: eventDate,
+    receivedAt,
+    status: properties.closed ? 'CLOSED' : 'OPEN',
+    attributes: {
+      name: String(properties.title || primaryCategory.title || 'Natural event'),
+      title: String(properties.title || primaryCategory.title || 'Natural event'),
+      description: String(properties.description || ''),
+      naturalCategory: primaryCategory.id,
+      categoryId: primaryCategory.id,
+      categoryTitle: primaryCategory.title,
+      categories,
+      eventId: id,
+      eventOpen: properties.closed == null,
+      closedAt: toIsoUtc(properties.closed),
+      eventLink,
+      sourceLinks: sources,
+      magnitudeValue: numberOrNull(properties.magnitudeValue),
+      magnitudeUnit: String(properties.magnitudeUnit || ''),
+      magnitudeDescription: String(properties.magnitudeDescription || ''),
+      eventDate,
+      sourceGeometryType: centre.sourceGeometryType,
+      sourceCoordinateCount: centre.sourceCoordinateCount,
+      locationSemantics: centre.sourceGeometryType === 'Point' && centre.sourceCoordinateCount === 1
+        ? 'source_point_location'
+        : 'centroid_of_source_event_geometry_not_a_rendered_hazard_perimeter',
+      visualizationSemantics: 'open_curated_natural_event_locator_not_a_live_sensor_video_or_measured_damage_footprint',
+    },
+    provenance: {
+      sourceName: 'NASA Earth Observatory Natural Event Tracker (EONET)',
+      sourceUrl: eventLink,
+      feedUrl: 'https://eonet.gsfc.nasa.gov/api/v3/events/geojson?status=open&limit=200',
+      observationType: 'open_curated_natural_event_metadata',
+      sourceReceivedAt: receivedAt,
+      eventDate,
+      sourceLinks: sources,
+    },
+    quality: {
+      state: freshnessClass === 'STALE' ? 'stale' : freshnessClass === 'UNKNOWN' ? 'unknown' : 'good',
+      freshnessClass,
+      reason: centre.sourceGeometryType === 'Point'
+        ? 'NASA-curated event location; event date and source references are available in detail.'
+        : 'Marker is the centre of source-provided event geometry. The source footprint is not drawn and this symbol does not claim to show the event boundary.',
+    },
+    coverage: {
+      queryScope: 'nasa-eonet-open-global-events',
+      sourceGeometryType: centre.sourceGeometryType,
+      sourceCoordinateCount: centre.sourceCoordinateCount,
+    },
+  };
+}
+
+async function loadNasaEonetEvents() {
+  const url = 'https://eonet.gsfc.nasa.gov/api/v3/events/geojson?status=open&limit=200';
+  const feed = await fetchJson(url, 'NASA EONET open events', 10000);
+  const receivedAt = new Date().toISOString();
+  const features = asArray(feed && feed.features);
+  const entities = features.map(feature => nasaEonetEntity(feature, receivedAt)).filter(Boolean);
+  entities.sort((a, b) => Date.parse(b.observedAt || 0) - Date.parse(a.observedAt || 0));
+  return {
+    entities: entities.slice(0, 200),
+    generatedAt: receivedAt,
+    sourceUrl: url,
+    returnedFeatures: features.length,
+    acceptedEvents: entities.length,
+  };
+}
+
 async function getLiveEventSimulation(input) {
   const options = input || {};
   const center = {
@@ -750,6 +887,7 @@ async function getLiveEventSimulation(input) {
     loadWeatherForecast(bounds, center, radiusM, options.signal),
     loadCachedSource('usgs-earthquakes-m2-5-day', EARTHQUAKE_CACHE_TTL_MS, loadEarthquakes),
     loadVolcanoEvents(),
+    loadCachedSource('nasa-eonet-open-events', NASA_EONET_TTL_MS, loadNasaEonetEvents),
   ]);
   const weather = results[0].status === 'fulfilled' ? results[0].value : { entities: [], health: { source: 'open-meteo', status: 'UNAVAILABLE' }, error: String(results[0].reason && results[0].reason.message || results[0].reason) };
   const earthquakesResult = results[1];
@@ -761,22 +899,30 @@ async function getLiveEventSimulation(input) {
     ? volcanoesResult.value
     : { entities: [], health: { source: 'smithsonian-gvp-usgs-wvar', status: 'UNAVAILABLE' }, warnings: [String(volcanoesResult.reason && volcanoesResult.reason.message || volcanoesResult.reason)] };
 
+  const eonetResult = results[3];
+  const eonet = eonetResult.status === 'fulfilled'
+    ? eonetResult.value.value
+    : { entities: [], sourceUrl: 'https://eonet.gsfc.nasa.gov/api/v3/events/geojson?status=open&limit=200', returnedFeatures: 0 };
+
   const entities = [
     ...(weather.entities || []),
     ...(earthquakes.entities || []),
     ...(volcanoes.entities || []),
+    ...(eonet.entities || []),
   ];
   const sourceStatuses = [
     weather.health && weather.health.status,
     earthquakesResult.status === 'fulfilled' ? (earthquakesResult.value.stale ? 'STALE' : 'LIVE') : 'UNAVAILABLE',
     volcanoes.health && volcanoes.health.status,
+    eonetResult.status === 'fulfilled' ? (eonetResult.value.stale ? 'STALE_FALLBACK' : 'LIVE') : 'UNAVAILABLE',
   ];
   const successCount = sourceStatuses.filter(status => !['UNAVAILABLE', 'ERROR'].includes(String(status))).length;
-  const overallStatus = successCount === 3 ? 'AVAILABLE' : successCount ? 'PARTIAL' : 'UNAVAILABLE';
+  const overallStatus = successCount === sourceStatuses.length ? 'AVAILABLE' : successCount ? 'PARTIAL' : 'UNAVAILABLE';
   const warnings = [
     ...(weather.error ? ['weather_forecast_unavailable: ' + weather.error] : []),
     ...(earthquakesResult.status === 'rejected' ? ['earthquake_feed_unavailable: ' + String(earthquakesResult.reason && earthquakesResult.reason.message || earthquakesResult.reason)] : []),
     ...(volcanoes.warnings || []),
+    ...(eonetResult.status === 'rejected' ? ['nasa_eonet_unavailable: ' + String(eonetResult.reason && eonetResult.reason.message || eonetResult.reason)] : []),
   ];
 
   return {
@@ -793,6 +939,12 @@ async function getLiveEventSimulation(input) {
         sourceUrl: earthquakes.sourceUrl || 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php',
       },
       volcanoes: volcanoes.health || { status: 'UNAVAILABLE' },
+      eonet: {
+        status: eonetResult.status === 'fulfilled' ? (eonetResult.value.stale ? 'STALE_FALLBACK' : 'LIVE') : 'UNAVAILABLE',
+        recordCount: (eonet.entities || []).length,
+        returnedFeatures: eonet.returnedFeatures || 0,
+        sourceUrl: eonet.sourceUrl || 'https://eonet.gsfc.nasa.gov/api/v3/events/geojson?status=open&limit=200',
+      },
     },
     coverage: {
       weatherForecastPoints: (weather.entities || []).length,
@@ -800,6 +952,8 @@ async function getLiveEventSimulation(input) {
       volcanoActivityReports: (volcanoes.entities || []).length,
       earthquakesAreM25PlusPastDay: true,
       volcanoReportCadence: 'weekly',
+      globalOpenNaturalEvents: (eonet.entities || []).length,
+      naturalEventGeometrySemantics: 'source points plus centroid markers for source geometries; no unverified hazard boundary is drawn',
       forecastHours: weather.health && weather.health.horizonHours || 0,
       forecastSemantics: 'hourly_model_forecast_not_observed_weather_radar',
       earthquakePulseSemantics: 'symbolic_epicentre_pulse_not_ground_shaking_or_damage_footprint',
@@ -810,6 +964,8 @@ async function getLiveEventSimulation(input) {
       earthquakes: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php',
       volcanoes: 'https://volcano.si.edu/reports_weekly.cfm',
       volcanoCatalogue: 'https://volcano.si.edu/database/webservices.cfm',
+      usgsVolcanoAlerts: 'https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes',
+      eonet: 'https://eonet.gsfc.nasa.gov/docs/v3',
     },
     warnings,
   };
@@ -824,6 +980,8 @@ module.exports = {
     makeWeatherSimulationEntity,
     earthquakeEntity,
     parseVolcanoReportItems,
+    nasaEonetEntity,
+    eventGeometryCentre,
     matchVolcanoReport,
     volcanoEntity,
     usgsElevatedVolcanoEntity,
