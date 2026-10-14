@@ -1,9 +1,17 @@
 process.env.NODE_ENV = 'test';
 delete process.env.SONALIT_STANDBY;
 
-const { shouldTakeOver, classifyFenceStart } = require('../../src/utils/runtimeFenceBootstrap');
+const { shouldTakeOver, classifyFenceStart, classifyFenceHeartbeat } = require('../../src/utils/runtimeFenceBootstrap');
 
 describe('runtime fence deployment handover policy', () => {
+  test('treats a successful heartbeat update as retained ownership', () => {
+    expect(classifyFenceHeartbeat(1)).toBe('owned');
+  });
+
+  test('treats a zero-row heartbeat update as an expected handover, not a failed heartbeat', () => {
+    expect(classifyFenceHeartbeat(0)).toBe('superseded');
+  });
+
   test('allows a new Railway deployment to replace an older deployment', () => {
     expect(shouldTakeOver({
       takeoverRequested: false,
