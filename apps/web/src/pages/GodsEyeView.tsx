@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -840,7 +840,7 @@ export default function GodsEyeView() {
                           return links.slice(0, 3).map((item, index) => {
                             const url = String(item.url ?? '')
                             if (!/^https?:\/\//i.test(url)) return null
-                            return <React.Fragment key={url + index}><br /><a href={url} target="_blank" rel="noreferrer">OPEN {String(item.title ?? item.id ?? 'SOURCE').toUpperCase()} ↗</a></React.Fragment>
+                            return <Fragment key={url + index}><br /><a href={url} target="_blank" rel="noreferrer">OPEN {String(item.title ?? item.id ?? 'SOURCE').toUpperCase()} ↗</a></Fragment>
                           })
                         })()}
                       </div>
