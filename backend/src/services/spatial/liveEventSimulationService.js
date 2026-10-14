@@ -778,18 +778,93 @@ function collectCoordinatePairs(value, out) {
   return out;
 }
 
+function polygonRingCentroid(rawRing) {
+  if (!Array.isArray(rawRing)) return null;
+  const ring = rawRing
+    .filter(point => Array.isArray(point) && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1])))
+    .map(point => [Number(point[0]), Number(point[1])]);
+  if (ring.length > 1 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]) ring.pop();
+  if (ring.length < 3) return null;
+
+  // Unwrap longitude around the first vertex before planar polygon maths so a
+  // small polygon crossing the date line does not get a centroid near zero.
+  const anchor = ring[0][0];
+  const unwrapped = ring.map(([longitude, latitude]) => {
+    const offset = ((longitude - anchor + 540) % 360) - 180;
+    return [anchor + offset, latitude];
+  });
+  let twiceArea = 0;
+  let centroidXNumerator = 0;
+  let centroidYNumerator = 0;
+  for (let index = 0; index < unwrapped.length; index += 1) {
+    const [x1, y1] = unwrapped[index];
+    const [x2, y2] = unwrapped[(index + 1) % unwrapped.length];
+    const cross = x1 * y2 - x2 * y1;
+    twiceArea += cross;
+    centroidXNumerator += (x1 + x2) * cross;
+    centroidYNumerator += (y1 + y2) * cross;
+  }
+  if (Math.abs(twiceArea) < 1e-12) {
+    const positions = unwrapped;
+    return {
+      longitude: positions.reduce((sum, point) => sum + point[0], 0) / positions.length,
+      latitude: positions.reduce((sum, point) => sum + point[1], 0) / positions.length,
+      weight: 1,
+    };
+  }
+  const longitude = centroidXNumerator / (3 * twiceArea);
+  const latitude = centroidYNumerator / (3 * twiceArea);
+  return { longitude: ((longitude + 540) % 360) - 180, latitude, weight: Math.abs(twiceArea) / 2 };
+}
+
 function eventGeometryCentre(geometry) {
+  if (!geometry || typeof geometry !== 'object') return null;
   const positions = collectGeometryPositions(geometry);
   if (!positions.length) return null;
-  const latitude = positions.reduce((sum, position) => sum + position[1], 0) / positions.length;
-  // Circular mean avoids putting a dateline-crossing source geometry in the wrong hemisphere.
-  const sine = positions.reduce((sum, position) => sum + Math.sin(position[0] * Math.PI / 180), 0);
-  const cosine = positions.reduce((sum, position) => sum + Math.cos(position[0] * Math.PI / 180), 0);
-  const longitude = Math.atan2(sine, cosine) * 180 / Math.PI;
+  const type = String(geometry.type || 'unknown');
+
+  let representatives = [];
+  if (type === 'Polygon' && Array.isArray(geometry.coordinates)) {
+    const outer = polygonRingCentroid(geometry.coordinates[0]);
+    if (outer) representatives = [outer];
+  } else if (type === 'MultiPolygon' && Array.isArray(geometry.coordinates)) {
+    representatives = geometry.coordinates
+      .map(polygon => polygonRingCentroid(Array.isArray(polygon) ? polygon[0] : null))
+      .filter(Boolean);
+  } else if (type === 'GeometryCollection' && Array.isArray(geometry.geometries)) {
+    representatives = geometry.geometries
+      .map(child => eventGeometryCentre(child))
+      .filter(Boolean)
+      .map(child => ({
+        longitude: child.longitude,
+        latitude: child.latitude,
+        weight: Math.max(1, Number(child.sourceCoordinateCount) || 1),
+      }));
+  }
+
+  if (!representatives.length) {
+    // Point/multipoint/line geometries are locators, not areas. Keep a stable
+    // circular-mean longitude so dateline-crossing lines stay in the right region.
+    const latitude = positions.reduce((sum, position) => sum + position[1], 0) / positions.length;
+    const sine = positions.reduce((sum, position) => sum + Math.sin(position[0] * Math.PI / 180), 0);
+    const cosine = positions.reduce((sum, position) => sum + Math.cos(position[0] * Math.PI / 180), 0);
+    return {
+      latitude,
+      longitude: Math.atan2(sine, cosine) * 180 / Math.PI,
+      sourceGeometryType: type,
+      sourceCoordinateCount: positions.length,
+    };
+  }
+
+  const totalWeight = representatives.reduce((sum, item) => sum + Math.max(item.weight, 1e-9), 0);
+  const latitude = representatives.reduce((sum, item) => sum + item.latitude * Math.max(item.weight, 1e-9), 0) / totalWeight;
+  // Circular longitude mean also handles multipolygons that straddle the dateline.
+  const sine = representatives.reduce((sum, item) => sum + Math.sin(item.longitude * Math.PI / 180) * Math.max(item.weight, 1e-9), 0);
+  const cosine = representatives.reduce((sum, item) => sum + Math.cos(item.longitude * Math.PI / 180) * Math.max(item.weight, 1e-9), 0);
   return {
     latitude,
-    longitude,
-    sourceGeometryType: String(geometry && geometry.type || 'unknown'),
+    longitude: Math.atan2(sine, cosine) * 180 / Math.PI,
+    sourceGeometryType: type,
     sourceCoordinateCount: positions.length,
   };
 }
