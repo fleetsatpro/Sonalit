@@ -826,5 +826,6 @@ module.exports = {
     parseVolcanoReportItems,
     matchVolcanoReport,
     volcanoEntity,
+    usgsElevatedVolcanoEntity,
   },
 };
