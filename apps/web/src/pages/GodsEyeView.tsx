@@ -15,6 +15,8 @@ import {
   Maximize2,
   Minimize2,
   Orbit,
+  Pause,
+  Play,
   RadioTower,
   Satellite,
   Ship,
@@ -26,6 +28,7 @@ import { api } from '../lib/api.js'
 import { imageryAiBadge, imageryAiSupported } from '../lib/imageryAi.js'
 import { fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
 import type { SpatialWorldEntity, WorldContextLayer } from '../lib/spatialClient.js'
+import { fetchLiveEventSimulation } from '../lib/spatialClient.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import FleetMap from '../features/live-fleet/components/FleetMap.js'
 import CorridorGlobe from '../components/geofences/CorridorGlobe.js'
@@ -86,6 +89,9 @@ export default function GodsEyeView() {
   const [cctvOpen, setCctvOpen] = useState(false)
   const [mapNavigationExpanded, setMapNavigationExpanded] = useState(false)
   const [weatherAnimationEnabled, setWeatherAnimationEnabled] = useState(false)
+  const [liveSimulationEnabled, setLiveSimulationEnabled] = useState(false)
+  const [simulationPlaying, setSimulationPlaying] = useState(false)
+  const [forecastStepIndex, setForecastStepIndex] = useState(0)
   const [clock, setClock] = useState(() => new Date())
 
   const chromeExpanded = overviewOpen || intelligenceOpen
@@ -178,6 +184,63 @@ export default function GodsEyeView() {
     retry: 1,
   })
 
+  const { data: liveSimulationResult, isFetching: liveSimulationFetching, isError: liveSimulationError } = useQuery({
+    queryKey: ['gev-live-event-simulation', ...weatherBounds.map(value => Math.round(value * 100) / 100)],
+    queryFn: ({ signal }: { signal: AbortSignal }) => fetchLiveEventSimulation({
+      center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
+      radiusM: Math.min(250000, Math.max(1000, worldViewport.radiusM)),
+      bounds: weatherBounds,
+      signal,
+    }),
+    enabled: liveSimulationEnabled,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    retry: 1,
+  })
+
+  const simulationForecastSteps = useMemo(() => {
+    const first = liveSimulationResult?.data.find(entity =>
+      entity.entityType === 'weather' && Array.isArray(entity.attributes?.forecastSteps)
+    )
+    return (first?.attributes?.forecastSteps as Array<{ validAt?: string }> | undefined) ?? []
+  }, [liveSimulationResult])
+
+  const simulationWeatherEntities = useMemo(() => {
+    if (!liveSimulationEnabled) return []
+    return (liveSimulationResult?.data ?? [])
+      .filter(entity => entity.entityType === 'weather')
+      .map(entity => {
+        const steps = entity.attributes?.forecastSteps as Array<Record<string, unknown>> | undefined
+        const selectedStep = steps?.[Math.min(forecastStepIndex, Math.max(0, (steps?.length ?? 1) - 1))]
+        if (!selectedStep) return entity
+        return {
+          ...entity,
+          attributes: { ...entity.attributes, ...selectedStep, name: 'Weather forecast', simulationMode: 'hourly_forecast' },
+        } as SpatialWorldEntity
+      })
+  }, [liveSimulationEnabled, liveSimulationResult, forecastStepIndex])
+
+  const simulationNaturalEvents = useMemo(() => {
+    if (!liveSimulationEnabled) return []
+    return (liveSimulationResult?.data ?? []).filter(entity => entity.entityType === 'earthquake' || entity.entityType === 'volcano')
+  }, [liveSimulationEnabled, liveSimulationResult])
+
+  const liveSimulationEntities = useMemo(
+    () => [...simulationWeatherEntities, ...simulationNaturalEvents],
+    [simulationWeatherEntities, simulationNaturalEvents],
+  )
+
+  const selectedForecastTime = simulationForecastSteps[Math.min(forecastStepIndex, Math.max(0, simulationForecastSteps.length - 1))]?.validAt
+
+  useEffect(() => {
+    if (!liveSimulationEnabled || !simulationPlaying || simulationForecastSteps.length < 2) return
+    const timer = window.setInterval(() => {
+      setForecastStepIndex(index => (index + 1) % simulationForecastSteps.length)
+    }, 1700)
+    return () => window.clearInterval(timer)
+  }, [liveSimulationEnabled, simulationPlaying, simulationForecastSteps.length])
+
   const { data: weatherGridContext, isFetching: weatherGridFetching, isError: weatherGridError } = useQuery({
     queryKey: ['gev-weather-animation-grid', ...weatherBounds.map(value => Math.round(value * 100) / 100)],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
@@ -254,13 +317,14 @@ export default function GodsEyeView() {
     const byId = new Map<string, SpatialWorldEntity>()
     for (const entity of externalEntities) {
       // When the explicit viewport grid is active, replace rather than duplicate the base context's coarser weather samples.
-      if (weatherAnimationEnabled && entity.entityType === 'weather') continue
+      if ((weatherAnimationEnabled || liveSimulationEnabled) && entity.entityType === 'weather') continue
       byId.set(entity.id, entity)
     }
-    for (const entity of animatedWeatherEntities) byId.set(entity.id, entity)
+    if (weatherAnimationEnabled && !liveSimulationEnabled) for (const entity of animatedWeatherEntities) byId.set(entity.id, entity)
+    for (const entity of liveSimulationEntities) byId.set(entity.id, entity)
     if (cctvOpen) for (const entity of cctvEntities) byId.set(entity.id, entity)
     return Array.from(byId.values())
-  }, [externalEntities, animatedWeatherEntities, cctvEntities, cctvOpen, weatherAnimationEnabled])
+  }, [externalEntities, animatedWeatherEntities, liveSimulationEntities, cctvEntities, cctvOpen, weatherAnimationEnabled, liveSimulationEnabled])
   const renderableExternalEntities = useMemo(() => {
     if (!externalVisible) return []
     const filtered = allExternalEntities.filter(entity => {
@@ -276,7 +340,8 @@ export default function GodsEyeView() {
     const ordered = [
       ...(selectedEntity ? [selectedEntity] : []),
       // Keep the explicit weather viewport grid visible even when other world layers are dense.
-      ...(weatherAnimationEnabled ? animatedWeatherEntities : []),
+      ...(weatherAnimationEnabled && !liveSimulationEnabled ? animatedWeatherEntities : []),
+      ...(liveSimulationEnabled ? liveSimulationEntities : []),
       ...cameras,
       ...priorityLayers.flatMap(layer => filtered.filter(entity => spatialEntityLayer(entity) === layer)),
     ]
@@ -286,7 +351,7 @@ export default function GodsEyeView() {
       seen.add(entity.id)
       return true
     }).slice(0, MAX_RENDER_MARKERS)
-  }, [allExternalEntities, visibleLayers, externalVisible, selectedExternalId, weatherAnimationEnabled, animatedWeatherEntities])
+  }, [allExternalEntities, visibleLayers, externalVisible, selectedExternalId, weatherAnimationEnabled, animatedWeatherEntities, liveSimulationEnabled, liveSimulationEntities])
 
   useEffect(() => {
     if (view !== '3D' || positionedVehicles.length === 0 || worldViewportSeededRef.current) return
@@ -296,12 +361,12 @@ export default function GodsEyeView() {
 
   const layerCounts = useMemo(() => {
     const result = Object.fromEntries(WORLD_CONTEXT_LAYERS.map(layer => [layer, 0])) as Record<WorldContextLayer, number>
-    for (const entity of externalEntities) {
+    for (const entity of [...externalEntities, ...liveSimulationEntities]) {
       const layer = spatialEntityLayer(entity)
       if (layer) result[layer] += 1
     }
     return result
-  }, [externalEntities])
+  }, [externalEntities, liveSimulationEntities])
 
   const selectedExternal = useMemo(
     () => allExternalEntities.find(entity => entity.id === selectedExternalId) ?? null,
@@ -367,6 +432,8 @@ export default function GodsEyeView() {
               ? 'Turn off animated weather grid points. Animation is visual only; points are provider-returned model grid locations, not radar footprints.'
               : 'Animate sourced weather model-grid observations across the current map viewport.'}
             onClick={() => {
+              setLiveSimulationEnabled(false)
+              setSimulationPlaying(false)
               setWeatherAnimationEnabled(enabled => {
                 const next = !enabled
                 if (next) {
@@ -381,6 +448,29 @@ export default function GodsEyeView() {
             <CloudLightning size={13} />
             WEATHER
             <span>{weatherAnimationEnabled ? (weatherGridFetching ? 'SYNC' : weatherGridError ? 'ERROR' : String(animatedWeatherEntities.length)) : 'OFF'}</span>
+          </button>
+          <button
+            type="button"
+            className="gev-segment gev-live-sim-toggle"
+            aria-pressed={liveSimulationEnabled}
+            title={liveSimulationEnabled
+              ? 'Stop the forecast timeline and live earthquake / reported volcano overlays.'
+              : 'Show hourly model weather evolution plus USGS earthquake events and Smithsonian / USGS volcano reports.'}
+            onClick={() => {
+              const next = !liveSimulationEnabled
+              setLiveSimulationEnabled(next)
+              setWeatherAnimationEnabled(false)
+              setSimulationPlaying(false)
+              setForecastStepIndex(0)
+              if (next) {
+                setExternalVisible(true)
+                setIntelligenceOpen(true)
+                setVisibleLayers(current => new Set([...current, 'weather', 'hazards']))
+              }
+            }}
+          >
+            <Activity size={13} /> LIVE SIM
+            <span>{liveSimulationEnabled ? (liveSimulationFetching ? 'SYNC' : liveSimulationError ? 'ERROR' : String(simulationNaturalEvents.length)) : 'OFF'}</span>
           </button>
         </div>
 
@@ -400,6 +490,38 @@ export default function GodsEyeView() {
         </div>
       </header>
 
+      {liveSimulationEnabled && (
+        <section className="gev-simulation-console" aria-label="Live event simulation controls">
+          <div className="gev-simulation-console-head">
+            <div className="gev-simulation-heading">
+              <span className="gev-simulation-status-dot" data-state={liveSimulationError ? 'error' : liveSimulationFetching ? 'sync' : 'ready'} />
+              <div>
+                <div className="gev-simulation-eyebrow">LIVE EVENT SIMULATION</div>
+                <div className="gev-simulation-time">{selectedForecastTime ? new Date(selectedForecastTime).toISOString().slice(11, 16) + ' UTC' : 'Weather timeline syncing'}</div>
+              </div>
+            </div>
+            <div className="gev-simulation-actions">
+              <button type="button" className="gev-simulation-play" onClick={() => setSimulationPlaying(value => !value)} disabled={simulationForecastSteps.length < 2} aria-label={simulationPlaying ? 'Pause forecast timeline' : 'Play forecast timeline'} title={simulationPlaying ? 'Pause simulation' : 'Play simulation'}>
+                {simulationPlaying ? <Pause size={13} /> : <Play size={13} />}
+                <span>{simulationPlaying ? 'PAUSE' : 'PLAY'}</span>
+              </button>
+              <button type="button" className="gev-simulation-close" onClick={() => { setLiveSimulationEnabled(false); setSimulationPlaying(false) }} aria-label="Close live simulation" title="Close live simulation"><X size={14} /></button>
+            </div>
+          </div>
+          <div className="gev-simulation-timeline-row">
+            <span className="gev-simulation-timeline-label">NOW</span>
+            <input className="gev-simulation-range" type="range" min={0} max={Math.max(0, simulationForecastSteps.length - 1)} step={1} value={Math.min(forecastStepIndex, Math.max(0, simulationForecastSteps.length - 1))} onChange={event => { setForecastStepIndex(Number(event.target.value)); setSimulationPlaying(false) }} aria-label="Weather forecast time step" />
+            <span className="gev-simulation-timeline-label">+{Math.max(0, simulationForecastSteps.length - 1)}H</span>
+          </div>
+          <div className="gev-simulation-summary">
+            <span><i data-tone="weather" />{simulationWeatherEntities.length} MODEL POINTS</span>
+            <span><i data-tone="quake" />{simulationNaturalEvents.filter(entity => entity.entityType === 'earthquake').length} M2.5+ QUAKES / 24H</span>
+            <span><i data-tone="volcano" />{simulationNaturalEvents.filter(entity => entity.entityType === 'volcano').length} VOLCANO REPORTS</span>
+          </div>
+          <div className="gev-simulation-footnote">Forecast is modelled, earthquakes are USGS catalogue events, and volcano activity uses weekly Smithsonian/USGS reports. Visual pulses are not hazard footprints.</div>
+        </section>
+      )}
+
       <main className="gev-workspace">
         <section className="gev-stage" aria-label="Sonalit God’s Eye View map">
           {view === '2D' ? (
@@ -407,8 +529,10 @@ export default function GodsEyeView() {
               vehicles={allVehicles}
               selectedId={selected?.id ?? null}
               onSelect={vehicle => { setSelected(vehicle); setSelectedExternalId(null) }}
-              weatherAnimationEnabled={weatherAnimationEnabled}
-              weatherEvents={animatedWeatherEntities}
+              weatherAnimationEnabled={weatherAnimationEnabled || liveSimulationEnabled}
+              weatherEvents={liveSimulationEnabled ? simulationWeatherEntities : animatedWeatherEntities}
+              naturalEvents={liveSimulationEnabled ? simulationNaturalEvents : []}
+              onNaturalEventSelect={entity => { setSelectedExternalId(entity.id); setSelected(null); setIntelligenceOpen(true) }}
               onWeatherSelect={entity => { setSelectedExternalId(entity.id); setSelected(null); setIntelligenceOpen(true) }}
               onViewportChange={setWorldViewport}
             />
@@ -426,7 +550,7 @@ export default function GodsEyeView() {
               showMapControls
               onNavigationExpandedChange={setMapNavigationExpanded}
               worldEntities={renderableExternalEntities}
-              weatherAnimationEnabled={weatherAnimationEnabled}
+              weatherAnimationEnabled={weatherAnimationEnabled || liveSimulationEnabled}
               selectedExternalId={selectedExternalId}
               onExternalSelect={id => {
                 setSelectedExternalId(id)
