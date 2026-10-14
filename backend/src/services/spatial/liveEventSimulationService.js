@@ -172,11 +172,13 @@ function buildForecastGrid(bounds, center, radiusM, maxPoints) {
 
 function toIsoUtc(value) {
   if (value == null || value === '') return null;
-  const raw = String(value);
-  const date = new Date(/[zZ]$|[+-]\d{2}:\d{2}$/.test(raw) ? raw : raw + 'Z');
+  const raw = String(value).trim();
+  // Forecast hour strings are timezone-less UTC; RSS feeds often use RFC-822
+  // timestamps ending in GMT. Do not append a second zone marker to those.
+  const hasZone = /(?:[zZ]|\\bGMT|\\bUTC|[+-]\\d{2}:?\\d{2})$/.test(raw);
+  const date = new Date(hasZone ? raw : raw + 'Z');
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
-
 function numberOrNull(value) {
   if (value == null || value === '') return null;
   const parsed = Number(value);
