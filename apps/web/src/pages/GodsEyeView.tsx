@@ -26,9 +26,8 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { imageryAiBadge, imageryAiSupported } from '../lib/imageryAi.js'
-import { fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
+import { fetchLiveEventSimulation, fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
 import type { SpatialWorldEntity, WorldContextLayer } from '../lib/spatialClient.js'
-import { fetchLiveEventSimulation } from '../lib/spatialClient.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import FleetMap from '../features/live-fleet/components/FleetMap.js'
 import CorridorGlobe from '../components/geofences/CorridorGlobe.js'
@@ -375,12 +374,14 @@ export default function GodsEyeView() {
 
   const layerCounts = useMemo(() => {
     const result = Object.fromEntries(WORLD_CONTEXT_LAYERS.map(layer => [layer, 0])) as Record<WorldContextLayer, number>
-    for (const entity of [...externalEntities, ...liveSimulationEntities]) {
+    const baseEntities = externalEntities.filter(entity => !((weatherAnimationEnabled || liveSimulationEnabled) && entity.entityType === 'weather'))
+    const renderedWeather = weatherAnimationEnabled && !liveSimulationEnabled ? animatedWeatherEntities : []
+    for (const entity of [...baseEntities, ...renderedWeather, ...liveSimulationEntities]) {
       const layer = spatialEntityLayer(entity)
       if (layer) result[layer] += 1
     }
     return result
-  }, [externalEntities, liveSimulationEntities])
+  }, [externalEntities, liveSimulationEntities, weatherAnimationEnabled, liveSimulationEnabled, animatedWeatherEntities])
 
   const selectedExternal = useMemo(
     () => allExternalEntities.find(entity => entity.id === selectedExternalId) ?? null,
@@ -508,9 +509,9 @@ export default function GodsEyeView() {
         <section className="gev-simulation-console" aria-label="Live event simulation controls">
           <div className="gev-simulation-console-head">
             <div className="gev-simulation-heading">
-              <span className="gev-simulation-status-dot" data-state={liveSimulationError ? 'error' : liveSimulationFetching ? 'sync' : 'ready'} />
+              <span className="gev-simulation-status-dot" data-state={liveSimulationError || liveSimulationResult?.health?.status === 'UNAVAILABLE' ? 'error' : liveSimulationFetching || liveSimulationResult?.health?.status === 'PARTIAL' ? 'sync' : 'ready'} />
               <div>
-                <div className="gev-simulation-eyebrow">LIVE EVENT SIMULATION</div>
+                <div className="gev-simulation-eyebrow">LIVE EVENT SIMULATION{liveSimulationResult?.health?.status ? ' · ' + String(liveSimulationResult.health.status) : ''}</div>
                 <div className="gev-simulation-time">{selectedForecastTime ? new Date(selectedForecastTime).toISOString().slice(11, 16) + ' UTC' : 'Weather timeline syncing'}</div>
               </div>
             </div>
