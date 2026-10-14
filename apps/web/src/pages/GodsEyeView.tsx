@@ -549,7 +549,7 @@ export default function GodsEyeView() {
             <span><i data-tone="natural" />{Number(liveSimulationResult?.health?.eonet?.recordCount ?? simulationNaturalEvents.filter(entity => entity.entityType === 'natural_event').length)} OPEN EONET EVENTS</span>
           </div>
           <div className="gev-simulation-footnote">
-            Forecast is modelled, earthquakes are USGS catalogue events, USGS alert statuses are current feed listings, and the global volcano bulletin is weekly. Visual pulses are not hazard footprints.
+            Weather model data by <a href="https://open-meteo.com/en/docs" target="_blank" rel="noreferrer">Open-Meteo</a> · earthquakes from USGS ComCat · volcano alerts from USGS · global volcano bulletins from Smithsonian GVP. The forecast is modelled and visual pulses are not hazard footprints.
             {liveSimulationResult?.warnings?.some(warning => warning.includes('commercial_api_key_not_configured')) && (
               <strong className="gev-simulation-config-warning"> WEATHER FORECAST DISABLED: configure the licensed OPEN_METEO_API_KEY on the backend. Do not enable the free API for commercial use.</strong>
             )}
