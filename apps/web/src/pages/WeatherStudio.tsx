@@ -61,7 +61,16 @@ function metaFor(entity: SpatialWorldEntity): MarkerMeta {
     if (Number.isFinite(code) && (code === 45 || code === 48)) return { label: 'FOG', color: '#b5c5d1', glyph: 'fog' };
     if (Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))) return { label: 'RAIN / SHOWERS', color: '#7cbcff', glyph: 'rain' };
     if (Number.isFinite(code) && (code === 0 || code === 1)) return { label: 'CLEAR / MOSTLY CLEAR', color: '#f3cb78', glyph: 'sun' };
-    return { label: textAttr(attrs, ['conditions', 'condition', 'description'], 'CLOUD COVER').toUpperCase(), color: '#a7d9d2', glyph: 'cloud' };
+    // If a provider omits its numeric code, keep the icon/color consistent
+    // with its descriptive condition instead of labelling rain as cloud.
+    const description = textAttr(attrs, ['conditions', 'condition', 'description'], 'CLOUD COVER');
+    const normalized = description.toLowerCase();
+    if (/(thunder|lightning|storm)/.test(normalized)) return { label: description.toUpperCase(), color: '#ff897d', glyph: 'storm' };
+    if (/(snow|sleet|freezing rain)/.test(normalized)) return { label: description.toUpperCase(), color: '#93d8f1', glyph: 'snow' };
+    if (/(drizzle|rain|shower|precipitation)/.test(normalized)) return { label: description.toUpperCase(), color: '#7cbcff', glyph: 'rain' };
+    if (/(fog|mist|haze)/.test(normalized)) return { label: description.toUpperCase(), color: '#b5c5d1', glyph: 'fog' };
+    if (/(clear|sunny|fair)/.test(normalized)) return { label: description.toUpperCase(), color: '#f3cb78', glyph: 'sun' };
+    return { label: description.toUpperCase(), color: '#a7d9d2', glyph: 'cloud' };
   }
   if (type === 'earthquake') return { label: 'EARTHQUAKE', color: '#ff9a78', glyph: 'quake' };
   if (type === 'volcano' || type === 'volcanic_activity') return { label: 'VOLCANIC ACTIVITY', color: '#e8a16b', glyph: 'volcano' };
@@ -200,7 +209,12 @@ export default function WeatherStudio() {
   const naturalCount = rawEntities.filter(entity => entity.entityType === 'natural_event').length;
   const sourceMeta = response?.health?.weather ?? {};
   const sourceName = String(sourceMeta.source ?? 'Weather provider');
-  const fallbackWeatherUrl = sourceName.toLowerCase().includes('met') ? 'https://api.met.no/weatherapi/locationforecast/2.0/documentation' : 'https://open-meteo.com/en/docs';
+  const normalizedSourceName = sourceName.toLowerCase();
+  const fallbackWeatherUrl = normalizedSourceName.includes('open-meteo')
+    ? 'https://open-meteo.com/en/docs'
+    : normalizedSourceName.includes('met.no') || normalizedSourceName.includes('met norway') || normalizedSourceName === 'met-no'
+      ? 'https://api.met.no/weatherapi/locationforecast/2.0/documentation'
+      : null;
   const sourceUrl = safeSourceUrl(response?.sources?.weather) ?? fallbackWeatherUrl;
   const status = liveQuery.isError || response?.health?.status === 'UNAVAILABLE' ? 'degraded'
     : liveQuery.isFetching || response?.health?.status === 'PARTIAL' ? 'syncing' : response ? 'available' : 'syncing';
@@ -318,7 +332,7 @@ export default function WeatherStudio() {
               <div className="wx-provenance"><div><small>SOURCE</small><b>{selectedEntity.source || 'Source identifier not supplied'}</b></div><div><small>OBSERVED / VALID</small><b>{detailTime ? formatValidTime(detailTime) : 'Timestamp not supplied'}</b></div><div><small>POSITION</small><b>{Number(selectedEntity.latitude).toFixed(4)}°, {Number(selectedEntity.longitude).toFixed(4)}°</b></div></div>{detailSource && <a className="wx-source-link" href={detailSource} target="_blank" rel="noreferrer">OPEN SOURCE RECORD <ChevronDown size={12} /></a>}{selectedEntity.entityType === 'weather' && <p className="wx-semantic-note">Numerical forecast at a provider model-grid coordinate. Marker motion illustrates the selected condition—not a radar return, precipitation footprint, or storm boundary.</p>}</div> : <div className="wx-empty-detail"><Crosshair size={22} /><p>Select a weather point or natural-event marker to inspect values, timing, source and freshness.</p></div>}
           </section>
 
-          <section className="wx-card wx-source-card"><div className="wx-card-heading"><div><span>03 / DATA LINEAGE</span><h2>Source integrity</h2></div><CheckCircle2 size={15} /></div><div className="wx-source-row"><span>WEATHER MODEL</span><a href={sourceUrl} target="_blank" rel="noreferrer">{sourceName}</a></div><div className="wx-source-row"><span>EARTHQUAKES</span><b>USGS ComCat</b></div><div className="wx-source-row"><span>VOLCANO ALERTS / REPORTS</span><b>USGS · Smithsonian GVP</b></div><div className="wx-source-row"><span>OPEN NATURAL EVENTS</span><b>NASA EONET</b></div><p className="wx-source-disclaimer">Source status and timestamps are retained wherever supplied. Missing or degraded coverage is not proof of clear weather or no hazard. Weather forecasts are modelled; earthquake symbols locate catalogue epicentres only.</p></section>
+          <section className="wx-card wx-source-card"><div className="wx-card-heading"><div><span>03 / DATA LINEAGE</span><h2>Source integrity</h2></div><CheckCircle2 size={15} /></div><div className="wx-source-row"><span>WEATHER MODEL</span>{sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer">{sourceName}</a> : <b>{sourceName}</b>}</div><div className="wx-source-row"><span>EARTHQUAKES</span><b>USGS ComCat</b></div><div className="wx-source-row"><span>VOLCANO ALERTS / REPORTS</span><b>USGS · Smithsonian GVP</b></div><div className="wx-source-row"><span>OPEN NATURAL EVENTS</span><b>NASA EONET</b></div><p className="wx-source-disclaimer">Source status and timestamps are retained wherever supplied. Missing or degraded coverage is not proof of clear weather or no hazard. Weather forecasts are modelled; earthquake symbols locate catalogue epicentres only.</p></section>
         </aside>
       </main>
       <footer className="wx-footer"><span>SONALIT WEATHER STUDIO</span><span>MODEL-LED FORECASTS · SOURCE-ATTRIBUTED EVENTS · NO FABRICATED HAZARD GEOMETRY</span><button type="button" onClick={() => void navigate({ to: '/gev' })}>OPEN GOD’S EYE VIEW <MapPin size={12} /></button></footer>
