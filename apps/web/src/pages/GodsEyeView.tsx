@@ -484,7 +484,7 @@ export default function GodsEyeView() {
             aria-pressed={liveSimulationEnabled}
             title={liveSimulationEnabled
               ? 'Stop the forecast timeline and live earthquake / reported volcano overlays.'
-              : 'Show hourly model weather evolution plus USGS earthquake events and Smithsonian / USGS volcano reports.'}
+              : 'Show the hourly weather-model timeline, USGS earthquakes, Smithsonian/USGS global volcano reports, current USGS elevated volcano alerts, and NASA EONET natural events.'}
             onClick={() => {
               const next = !liveSimulationEnabled
               setLiveSimulationEnabled(next)
@@ -548,7 +548,15 @@ export default function GodsEyeView() {
             <span><i data-tone="volcano" />{simulationNaturalEvents.filter(entity => entity.entityType === 'volcano').length} VOLCANO SIGNALS</span>
             <span><i data-tone="natural" />{Number(liveSimulationResult?.health?.eonet?.recordCount ?? simulationNaturalEvents.filter(entity => entity.entityType === 'natural_event').length)} OPEN EONET EVENTS</span>
           </div>
-          <div className="gev-simulation-footnote">Forecast is modelled, earthquakes are USGS catalogue events, and volcano activity uses weekly Smithsonian/USGS reports. Visual pulses are not hazard footprints.</div>
+          <div className="gev-simulation-footnote">
+            Forecast is modelled, earthquakes are USGS catalogue events, USGS alert statuses are current feed listings, and the global volcano bulletin is weekly. Visual pulses are not hazard footprints.
+            {liveSimulationResult?.warnings?.some(warning => warning.includes('commercial_api_key_not_configured')) && (
+              <strong className="gev-simulation-config-warning"> WEATHER FORECAST DISABLED: configure the licensed OPEN_METEO_API_KEY on the backend. Do not enable the free API for commercial use.</strong>
+            )}
+            {liveSimulationResult?.warnings?.filter(warning => !warning.includes('commercial_api_key_not_configured')).slice(0, 2).map((warning, index) => (
+              <span key={warning + index}> · SOURCE WARNING: {warning.replaceAll('_', ' ')}</span>
+            ))}
+          </div>
         </section>
       )}
 
