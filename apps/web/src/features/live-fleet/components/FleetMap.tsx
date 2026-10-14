@@ -230,6 +230,12 @@ function naturalEventColor(item: SpatialWorldEntity): string {
     const magnitude = Number(item.attributes?.magnitude)
     return Number.isFinite(magnitude) && magnitude >= 5.5 ? '#ff9b79' : '#e6a66f'
   }
+  const currentAlert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined
+  const alertLevel = String(currentAlert?.alertLevel ?? '').toUpperCase()
+  const colorCode = String(currentAlert?.colorCode ?? '').toUpperCase()
+  if (alertLevel === 'WARNING' || colorCode === 'RED') return '#f17878'
+  if (alertLevel === 'WATCH' || colorCode === 'ORANGE') return '#e99c72'
+  if (alertLevel === 'ADVISORY' || colorCode === 'YELLOW') return '#e2c16f'
   const reportType = String(item.attributes?.reportType ?? item.status ?? '')
   return reportType.includes('ERUPTIVE') ? '#e99a9a' : '#d9a67e'
 }
@@ -239,14 +245,22 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
   const color = naturalEventColor(item)
   const magnitude = Number(item.attributes?.magnitude)
   const magnitudeLabel = Number.isFinite(magnitude) ? 'M' + magnitude.toFixed(1) : 'M—'
+  const currentAlert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined
+  const alertLevel = String(currentAlert?.alertLevel ?? '').toUpperCase()
+  const colorCode = String(currentAlert?.colorCode ?? '').toUpperCase()
   const detail = isEarthquake
     ? magnitudeLabel + ' · ' + String(item.attributes?.place ?? 'Earthquake')
-    : String(item.attributes?.reportType ?? 'ACTIVITY REPORTED').replaceAll('_', ' ') + ' · ' + String(item.attributes?.country ?? '')
+    : currentAlert
+      ? 'USGS ' + alertLevel + ' / ' + colorCode + ' · ' + String(item.attributes?.name ?? '')
+      : String(item.attributes?.reportType ?? 'ACTIVITY REPORTED').replaceAll('_', ' ') + ' · ' + String(item.attributes?.country ?? '')
   const marker = document.createElement('button')
   marker.type = 'button'
   marker.className = 'lf-natural-event-marker'
   marker.dataset.eventType = isEarthquake ? 'earthquake' : 'volcano'
-  marker.dataset.freshness = String(item.quality?.freshnessClass ?? 'UNKNOWN').toUpperCase()
+  marker.dataset.alertLevel = alertLevel || 'NONE'
+  marker.dataset.freshness = currentAlert
+    ? (String(currentAlert.sourceStatus ?? '') === 'STALE_CACHE_FALLBACK' ? 'STALE' : 'LIVE')
+    : String(item.quality?.freshnessClass ?? 'UNKNOWN').toUpperCase()
   marker.style.setProperty('--event-color', color)
   const phase = Array.from(String(item.id)).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 48
   marker.style.setProperty('--event-delay', String(-phase / 8) + 's')
@@ -254,8 +268,8 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
   marker.setAttribute('aria-label', 'Inspect ' + (isEarthquake ? 'earthquake: ' : 'volcanic activity: ') + detail)
   const earthquakeGlyph = '<path d="M2 12h4l2.2-5.5 3.4 11 3.1-9 2.1 3.5H22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
   const volcanoGlyph = '<path d="M3.5 19.5 10.2 6.8l2.1 4.1 1.8-2.5 6.4 11.1Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M11.4 4.2c-.7 1-.2 1.8.7 2.1M15.1 3c-.7 1-.4 1.7.2 2.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
-  const category = isEarthquake ? 'EARTHQUAKE' : 'VOLCANO REPORT'
-  const tag = isEarthquake ? magnitudeLabel : (item.quality?.freshnessClass === 'STALE' ? 'STALE' : 'REPORTED')
+  const category = isEarthquake ? 'EARTHQUAKE' : currentAlert ? 'VOLCANO ALERT' : 'VOLCANO REPORT'
+  const tag = isEarthquake ? magnitudeLabel : currentAlert ? alertLevel : (item.quality?.freshnessClass === 'STALE' ? 'STALE' : 'REPORTED')
   marker.innerHTML = '<span class="lf-natural-event-pulse" aria-hidden="true"></span>' +
     '<span class="lf-natural-event-core"><svg viewBox="0 0 24 24" aria-hidden="true">' + (isEarthquake ? earthquakeGlyph : volcanoGlyph) + '</svg></span>' +
     '<span class="lf-natural-event-label"><b>' + category + '</b><i>' + tag + '</i></span>'
