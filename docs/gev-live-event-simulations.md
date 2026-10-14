@@ -10,7 +10,7 @@ The imagery is an operational visualization, not a substitute for official hazar
 
 | Layer | Source | Backend cache | Data semantics |
 |---|---|---:|---|
-| Weather | Open-Meteo Forecast API | 10 minutes per grid point | Hourly numerical forecast, up to 7 steps. Model point samples are not radar returns, exact storm boundaries, or guaranteed on-ground measurements. |
+| Weather | Licensed Open-Meteo customer API when `OPEN_METEO_API_KEY` is configured; otherwise MET Norway Locationforecast | Open-Meteo cache: 10 minutes per grid point; MET Norway: provider cache headers / 30-minute fallback | Global numerical forecast, up to 7 steps. Model point samples are not radar returns, exact storm boundaries, or guaranteed on-ground measurements. |
 | Earthquakes | USGS ComCat GeoJSON M2.5+ past-day feed | 60 seconds | Catalogued epicentres with event time, magnitude, and depth. Pulse is not a shaking or damage footprint. |
 | US volcano alerts | USGS Volcano Hazards Program elevated-volcano feed | 60 seconds | Current set of volcanoes in elevated alert states; notice time is retained separately from feed retrieval time. |
 | Global volcano activity | Smithsonian Global Volcanism Program / USGS Weekly Volcanic Activity Report | 30 minutes; catalogue 24 hours | Global weekly reports matched to the Smithsonian volcano catalogue. This is not a global real-time sensor feed. |
@@ -20,7 +20,7 @@ Provider records retain source identifiers, links, timestamps, freshness, and se
 
 ## Commercial weather API configuration
 
-Open-Meteo's free API is restricted to non-commercial use. A production Sonalit deployment must configure a licensed customer API key in the **backend** environment:
+Open-Meteo's free API is restricted to non-commercial use. A production Sonalit deployment should configure a licensed customer API key in the **backend** environment to get Open-Meteo's batched, dedicated service. If no key is present, GEV uses MET Norway's worldwide Locationforecast as the no-key provider; its data is available under NLOD 2.0 / CC BY 4.0 with attribution, and the implementation identifies Sonalit in its User-Agent, limits request rate, truncates coordinates to four decimals, and respects cache-expiry headers.
 
 - `OPEN_METEO_API_KEY`: required for commercial use; requests use `customer-api.open-meteo.com`.
 - `OPEN_METEO_API_BASE`: optional explicit provider endpoint override for approved deployments.
@@ -28,7 +28,7 @@ Open-Meteo's free API is restricted to non-commercial use. A production Sonalit 
 
 When neither the licensed key nor the explicit non-commercial opt-in is available, the weather provider returns `UNAVAILABLE` with `commercial_api_key_not_configured`. The UI must communicate that state rather than fabricating or silently substituting weather.
 
-Open-Meteo data attribution is required under CC BY 4.0. Keep the provider link visible wherever weather-model values are displayed.
+Open-Meteo data attribution is required under CC BY 4.0. MET Norway data requires attribution to the Norwegian Meteorological Institute under NLOD 2.0 / CC BY 4.0; its public API has no SLA and must not be overloaded. Keep the correct provider link visible wherever weather-model values are displayed. Do not enable the Open-Meteo free non-commercial override for Sonalit production.
 
 ## Visual and operational rules
 

@@ -202,6 +202,95 @@ describe('GEV live event simulation data normalization', () => {
     });
   });
 
+  it('maps MET Norway global forecast symbols and hourly values into modelled weather grid points', () => {
+    expect(__testables.metNoWeatherCode('clearsky_day')).toBe(0);
+    expect(__testables.metNoWeatherCode('lightrain')).toBe(61);
+    expect(__testables.metNoWeatherCode('lightrainandthunder')).toBe(95);
+    expect(__testables.metNoWeatherCode('heavysnow')).toBe(75);
+
+    const receivedAt = new Date().toISOString();
+    const entity = __testables.makeMetNoWeatherSimulationEntity({
+      key: '36.8000,-1.3000',
+      latitude: -1.3,
+      longitude: 36.8,
+    }, {
+      geometry: { type: 'Point', coordinates: [36.8, -1.3, 1500] },
+      properties: {
+        timeseries: [
+          {
+            time: '2026-10-14T12:00:00Z',
+            data: {
+              instant: { details: {
+                air_temperature: 24.5,
+                relative_humidity: 81,
+                wind_speed: 3.2,
+                wind_from_direction: 248,
+                cloud_area_fraction: 90,
+              } },
+              next_1_hours: {
+                summary: { symbol_code: 'lightrainandthunder' },
+                details: { precipitation_amount: 8.4 },
+              },
+            },
+          },
+          {
+            time: '2026-10-14T13:00:00Z',
+            data: {
+              instant: { details: { air_temperature: 24, wind_speed: 2.5 } },
+              next_1_hours: {
+                summary: { symbol_code: 'clearsky_day' },
+                details: { precipitation_amount: 0 },
+              },
+            },
+          },
+        ],
+      },
+    }, receivedAt);
+
+    expect(entity).toMatchObject({
+      entityType: 'weather',
+      source: 'MET Norway',
+      latitude: -1.3,
+      longitude: 36.8,
+      status: 'MODELLED_FORECAST',
+      attributes: {
+        simulationMode: 'hourly_forecast',
+        simulationSemantics: 'met_no_global_numerical_forecast_not_live_radar',
+        forecastStepCount: 2,
+        weatherCode: 95,
+        conditions: 'thunderstorm',
+        temperatureC: 24.5,
+        precipitationMm: 8.4,
+        humidityPct: 81,
+        windDirectionDeg: 248,
+        cloudCoverPct: 90,
+      },
+      provenance: {
+        sourceName: 'MET Norway Locationforecast',
+        observationType: 'global_numerical_weather_forecast_grid_point',
+      },
+      quality: {
+        freshnessClass: 'MODELLED',
+      },
+    });
+    expect(entity.attributes.forecastSteps[1]).toMatchObject({
+      validAt: '2026-10-14T13:00:00.000Z',
+      weatherCode: 0,
+      conditions: 'clear',
+      temperatureC: 24,
+    });
+  });
+
+  it('respects the MET Norway cache headers when setting forecast expiry', () => {
+    const now = Date.parse('2026-10-14T10:00:00.000Z');
+    const response = {
+      headers: {
+        get: name => name.toLowerCase() === 'cache-control' ? 'public, max-age=900' : null,
+      },
+    };
+    expect(__testables.metNoCacheExpiry(response, now)).toBe(now + 15 * 60 * 1000);
+  });
+
   it('handles a missing or unmatched volcano report without inventing coordinates', () => {
     const matched = __testables.matchVolcanoReport({
       volcanoNumber: null,
