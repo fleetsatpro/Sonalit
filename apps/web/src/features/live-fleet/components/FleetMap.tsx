@@ -193,19 +193,32 @@ function makeWeatherMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialW
         ? '<path d="M3 8h18M1 12h16M4 16h17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'
         : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
           ? '<path d="M8 15 6 19M13 15l-2 5M18 15l-2 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'
-          : '<path d="M7.5 17.5h9a4.3 4.3 0 0 0 .4-8.6A5.5 5.5 0 0 0 6.4 9.8a3.9 3.9 0 0 0 1.1 7.7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
+          : Number.isFinite(code) && (code === 0 || code === 1)
+            ? '<circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+            : '<path d="M7.5 17.5h9a4.3 4.3 0 0 0 .4-8.6A5.5 5.5 0 0 0 6.4 9.8a3.9 3.9 0 0 0 1.1 7.7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
   const marker = document.createElement('button')
   marker.type = 'button'
   marker.className = 'lf-weather-marker'
+  marker.dataset.weatherCode = Number.isFinite(code) ? String(code) : 'unknown'
+  marker.dataset.condition = String(item.attributes?.conditions ?? 'unknown')
   marker.dataset.freshness = String(item.quality?.freshnessClass ?? 'UNKNOWN').toUpperCase()
   marker.style.setProperty('--weather-color', color)
   const phase = Array.from(String(item.id)).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 58
   marker.style.setProperty('--weather-delay', `${(-phase / 10).toFixed(2)}s`)
   marker.title = `${condition}${tempLabel ? ' · ' + tempLabel : ''} · ${item.source ?? 'unknown source'} · ${item.quality?.freshnessClass ?? 'UNKNOWN'}`
   marker.setAttribute('aria-label', `Inspect weather: ${condition}${tempLabel ? ', ' + tempLabel : ''}`)
+  const weatherEffect = Number.isFinite(code) && code >= 95
+    ? '<span class="lf-weather-fx lf-weather-fx-storm" aria-hidden="true"></span>'
+    : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
+      ? '<span class="lf-weather-fx lf-weather-fx-rain" aria-hidden="true"><i></i><i></i><i></i></span>'
+      : Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)
+        ? '<span class="lf-weather-fx lf-weather-fx-snow" aria-hidden="true"><i></i><i></i><i></i></span>'
+        : Number.isFinite(code) && (code === 45 || code === 48)
+          ? '<span class="lf-weather-fx lf-weather-fx-fog" aria-hidden="true"><i></i><i></i></span>'
+          : ''
   marker.innerHTML = `
     <span class="lf-weather-ripple" aria-hidden="true"></span>
-    <span class="lf-weather-core"><svg viewBox="0 0 24 24" aria-hidden="true">${glyph}</svg></span>
+    <span class="lf-weather-core"><svg viewBox="0 0 24 24" aria-hidden="true">${glyph}</svg>${weatherEffect}</span>
     <span class="lf-weather-label"><b>${condition}</b>${tempLabel ? `<i>${tempLabel}</i>` : ''}</span>
   `
   marker.addEventListener('click', event => { event.stopPropagation(); onSelect(item) })
@@ -903,6 +916,26 @@ export default function FleetMap({
       .lf-weather-core{position:relative;z-index:2;display:grid;place-items:center;width:27px;height:27px;border-radius:9px;background:linear-gradient(155deg,rgba(17,26,39,.97),rgba(4,8,15,.98));border:1px solid rgba(231,241,252,.24);box-shadow:0 2px 6px rgba(0,0,0,.43),inset 0 1px 0 rgba(255,255,255,.12);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
       .lf-weather-core:before{content:"";position:absolute;inset:2px;border:1px solid color-mix(in srgb,var(--weather-color) 30%,transparent);border-radius:6px;pointer-events:none}
       .lf-weather-core svg{position:relative;width:16px;height:16px;color:var(--weather-color);filter:none;overflow:visible}
+      .lf-weather-core svg{z-index:1}
+      .lf-weather-fx{position:absolute;z-index:2;inset:0;overflow:hidden;border-radius:9px;pointer-events:none}
+      .lf-weather-fx-rain i{position:absolute;top:10px;width:1.5px;height:5px;border-radius:2px;background:var(--weather-color);opacity:0;animation:lf-weather-rain-drop 1.05s linear infinite}
+      .lf-weather-fx-rain i:nth-child(1){left:6px;animation-delay:-.6s}
+      .lf-weather-fx-rain i:nth-child(2){left:13px;animation-delay:-.12s}
+      .lf-weather-fx-rain i:nth-child(3){left:20px;animation-delay:-.82s}
+      .lf-weather-marker[data-condition*="drizzle"] .lf-weather-fx-rain i{animation-duration:1.9s;opacity:.56}
+      .lf-weather-fx-snow i{position:absolute;top:8px;width:2.5px;height:2.5px;border-radius:50%;background:#e3f4ff;opacity:0;animation:lf-weather-snow-drift 2.2s ease-in-out infinite}
+      .lf-weather-fx-snow i:nth-child(1){left:7px;animation-delay:-.8s}
+      .lf-weather-fx-snow i:nth-child(2){left:14px;animation-delay:-1.6s}
+      .lf-weather-fx-snow i:nth-child(3){left:21px;animation-delay:-.25s}
+      .lf-weather-fx-fog i{position:absolute;left:-4px;width:35px;height:1px;background:color-mix(in srgb,var(--weather-color) 68%,white);opacity:0;animation:lf-weather-fog-drift 4.4s ease-in-out infinite}
+      .lf-weather-fx-fog i:first-child{top:11px}
+      .lf-weather-fx-fog i:last-child{top:18px;animation-delay:-2.2s}
+      .lf-weather-fx-storm{inset:2px;border-radius:7px;background:rgba(255,235,195,.12);opacity:0;animation:lf-weather-storm-flash 7.6s steps(1,end) infinite}
+      @keyframes lf-weather-rain-drop{0%{transform:translateY(-5px) rotate(18deg);opacity:0}22%{opacity:.62}100%{transform:translateY(9px) rotate(18deg);opacity:0}}
+      @keyframes lf-weather-snow-drift{0%{transform:translate(0,-4px);opacity:0}28%{opacity:.8}100%{transform:translate(3px,11px);opacity:0}}
+      @keyframes lf-weather-fog-drift{0%,100%{transform:translateX(-3px);opacity:.13}50%{transform:translateX(4px);opacity:.46}}
+      @keyframes lf-weather-storm-flash{0%,9%,100%{opacity:0}9.3%{opacity:.28}10%{opacity:.04}10.3%{opacity:.18}11%{opacity:0}}
+
       .lf-weather-marker:hover .lf-weather-core,.lf-weather-marker:focus-visible .lf-weather-core{transform:translateY(-1px);border-color:color-mix(in srgb,var(--weather-color) 64%,white 14%);box-shadow:0 4px 10px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.16)}
       .lf-weather-ripple{position:absolute;z-index:1;inset:0;border:1px solid color-mix(in srgb,var(--weather-color) 54%,transparent);border-radius:13px;pointer-events:none;opacity:0;transform-origin:center;animation:lf-weather-signal 5.8s cubic-bezier(.16,1,.3,1) infinite;animation-delay:var(--weather-delay,0s)}
       .lf-weather-marker[data-freshness="DELAYED"] .lf-weather-ripple{animation-duration:8.2s;border-style:dashed}
@@ -926,7 +959,7 @@ export default function FleetMap({
       .lf-natural-event-marker:hover .lf-natural-event-label,.lf-natural-event-marker:focus-visible .lf-natural-event-label{opacity:1;transform:translate(-50%,0)}
       .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-core{opacity:.5}
       @media(prefers-reduced-motion:reduce){.lf-natural-event-pulse,.lf-natural-event-marker,.lf-natural-event-label{animation:none!important;transition:none!important}.lf-natural-event-pulse{display:none}}
-      @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple,.lf-weather-marker,.lf-weather-label{animation:none!important;transition:none!important}.lf-weather-ripple{display:none}}
+      @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple,.lf-weather-marker,.lf-weather-label,.lf-weather-fx,.lf-weather-fx *{animation:none!important;transition:none!important}.lf-weather-ripple,.lf-weather-fx{display:none}}
     `
     document.head.appendChild(s)
   }, [])
