@@ -792,10 +792,13 @@ export default function GodsEyeView() {
                         <div><span>Reporting cadence</span><strong>{String(selectedExternal.attributes?.reportingCadence ?? 'weekly').toUpperCase()}</strong></div>
                         <div><span>Elevation</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.elevationM)) ? Math.round(Number(selectedExternal.attributes?.elevationM)) + ' m' : '—'}</strong></div>
                         <div><span>Report quality</span><strong>{String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
+                        <div><span>USGS alert / aviation code</span><strong>{String((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.alertLevel ?? 'NO ELEVATED ALERT')} · {String((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.colorCode ?? '—')}</strong></div>
+                        <div><span>USGS notice time (UTC)</span><strong>{(selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.noticeIssuedAt ? new Date(String((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown>).noticeIssuedAt)).toISOString().slice(0, 19).replace('T', ' ') : '—'}</strong></div>
                       </div>
                       <div className="gev-natural-event-source">SMITHSONIAN GLOBAL VOLCANISM PROGRAM / USGS<br />
-                        This is a reported activity marker from a weekly bulletin, not a live vent camera, real-time ash plume, or full real-time monitoring status.<br />
-                        <a href={String(selectedExternal.attributes?.reportUrl ?? 'https://volcano.si.edu/reports_weekly.cfm')} target="_blank" rel="noreferrer">OPEN SOURCE REPORT ↗</a>
+                        {selectedExternal.attributes?.usgsCurrentAlert ? 'USGS currently lists this volcano in an elevated alert state. The issue timestamp shown above identifies the notice that established the alert; it is not the time of a fresh sensor measurement.' : 'Global activity comes from the weekly bulletin; no current elevated USGS alert was returned for this volcano.'} The weekly bulletin itself is not a real-time vent camera, ash plume, or complete global monitoring feed.<br />
+                        {(selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.noticeUrl && <><a href={String((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown>).noticeUrl)} target="_blank" rel="noreferrer">OPEN USGS CURRENT ALERT ↗</a><br /></>}
+                        <a href={String(selectedExternal.attributes?.reportUrl ?? 'https://volcano.si.edu/reports_weekly.cfm')} target="_blank" rel="noreferrer">OPEN VOLCANO SOURCE REPORT ↗</a>
                       </div>
                     </div>
                   ) : (
