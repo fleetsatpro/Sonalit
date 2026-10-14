@@ -223,7 +223,21 @@ export default function GodsEyeView() {
 
   const simulationNaturalEvents = useMemo(() => {
     if (!liveSimulationEnabled) return []
-    return (liveSimulationResult?.data ?? []).filter(entity => entity.entityType === 'earthquake' || entity.entityType === 'volcano')
+    const events = (liveSimulationResult?.data ?? []).filter(entity =>
+      entity.entityType === 'earthquake' || entity.entityType === 'volcano'
+    )
+    // Guarantee that the smaller volcano bulletin is not starved by a large
+    // earthquake feed under the scene's bounded marker budget. Keep a compact,
+    // impact-sorted earthquake set for the visible globe.
+    const volcanoReports = events.filter(entity => entity.entityType === 'volcano')
+    const earthquakes = events.filter(entity => entity.entityType === 'earthquake')
+      .sort((a, b) => {
+        const magnitudeA = Number(a.attributes?.magnitude)
+        const magnitudeB = Number(b.attributes?.magnitude)
+        return (Number.isFinite(magnitudeB) ? magnitudeB : 0) - (Number.isFinite(magnitudeA) ? magnitudeA : 0)
+      })
+      .slice(0, 100)
+    return [...volcanoReports, ...earthquakes]
   }, [liveSimulationEnabled, liveSimulationResult])
 
   const liveSimulationEntities = useMemo(
@@ -515,7 +529,7 @@ export default function GodsEyeView() {
           </div>
           <div className="gev-simulation-summary">
             <span><i data-tone="weather" />{simulationWeatherEntities.length} MODEL POINTS</span>
-            <span><i data-tone="quake" />{simulationNaturalEvents.filter(entity => entity.entityType === 'earthquake').length} M2.5+ QUAKES / 24H</span>
+            <span><i data-tone="quake" />{Number(liveSimulationResult?.health?.earthquakes?.recordCount ?? simulationNaturalEvents.filter(entity => entity.entityType === 'earthquake').length)} M2.5+ QUAKES / 24H</span>
             <span><i data-tone="volcano" />{simulationNaturalEvents.filter(entity => entity.entityType === 'volcano').length} VOLCANO REPORTS</span>
           </div>
           <div className="gev-simulation-footnote">Forecast is modelled, earthquakes are USGS catalogue events, and volcano activity uses weekly Smithsonian/USGS reports. Visual pulses are not hazard footprints.</div>
@@ -740,11 +754,11 @@ export default function GodsEyeView() {
                       <div className="gev-weather-location">
                         <div><span>Provider grid coordinate</span><strong>{selectedExternal.latitude.toFixed(4)}°, {selectedExternal.longitude.toFixed(4)}°</strong></div>
                         <div><span>Grid snap from sample centre</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.gridCellDistanceM)) ? Math.round(Number(selectedExternal.attributes?.gridCellDistanceM)) + ' m' : '—'}</strong></div>
-                        <div><span>Observed at</span><strong>{selectedExternal.observedAt ? new Date(selectedExternal.observedAt).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : 'Time unavailable'}</strong></div>
+                        <div><span>{selectedExternal.attributes?.simulationMode === 'hourly_forecast' ? 'Forecast valid at' : 'Observed at'}</span><strong>{selectedExternal.attributes?.simulationMode === 'hourly_forecast' && selectedExternal.attributes?.validAt ? new Date(String(selectedExternal.attributes.validAt)).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : selectedExternal.observedAt ? new Date(selectedExternal.observedAt).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : 'Time unavailable'}</strong></div>
                         <div><span>Source / freshness</span><strong>{String(selectedExternal.source ?? 'unknown')} · {String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
                       </div>
                       <div className="gev-weather-footnote">
-                        Animation illustrates the reported condition at this provider grid point. It does not represent a radar return, exact storm boundary, or guaranteed on-ground measurement.
+                        {selectedExternal.attributes?.simulationMode === 'hourly_forecast' ? 'Animation steps through a numerical weather forecast for this grid point, valid at the selected timeline time. It is not observed weather, a radar return, or an exact storm boundary.' : 'Animation illustrates the reported condition at this provider grid point. It does not represent a radar return, exact storm boundary, or guaranteed on-ground measurement.'}
                         {Array.isArray(selectedExternal.attributes?.hazards) && selectedExternal.attributes.hazards.length > 0
                           ? ' Indicators: ' + (selectedExternal.attributes?.hazards as unknown[]).map(String).join(', ').replaceAll('_', ' ')
                           : ''}
