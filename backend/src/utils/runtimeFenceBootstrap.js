@@ -57,6 +57,10 @@ function classifyFenceHeartbeat(rowCount) {
   return rowCount === 1 ? 'owned' : 'superseded';
 }
 
+function shouldRefuseRetiredDeployment({ candidateIsRetired, takeoverRequested }) {
+  return Boolean(candidateIsRetired) && !takeoverRequested;
+}
+
 function installCronGate() {
   if (cronGateInstalled || !isProduction || isStandby || isClaimChild) return;
   const Module = require('module');
@@ -121,6 +125,13 @@ async function installFenceDeploymentGuard(client) {
     ON CONFLICT (id) DO NOTHING
   `);
   await client.query(`
+    CREATE TABLE IF NOT EXISTS public.sonalit_runtime_fence_retired_deployments (
+      deployment_id TEXT PRIMARY KEY,
+      retired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      superseded_by TEXT
+    )
+  `);
+  await client.query(`
     CREATE OR REPLACE FUNCTION public.sonalit_runtime_fence_authority_guard()
     RETURNS trigger
     LANGUAGE plpgsql
@@ -133,9 +144,19 @@ async function installFenceDeploymentGuard(client) {
         FROM public.sonalit_runtime_fence_authority
        WHERE id = 1;
 
-      -- Containers predating this guard may restart after a deployment switch.
-      -- Once a Railway deployment owns authority, an older deployment identity
-      -- cannot overwrite the row even if its legacy bootstrap attempts takeover.
+      -- A retired identity remains denied even if an older bootstrap manages to
+      -- write the authority row. The separate authority trigger protects that row.
+      IF NEW.deployment_id IS NOT NULL AND EXISTS (
+        SELECT 1
+          FROM public.sonalit_runtime_fence_retired_deployments
+         WHERE deployment_id = NEW.deployment_id
+      ) THEN
+        RAISE EXCEPTION
+          'SONALIT runtime fence rejected retired deployment %',
+          NEW.deployment_id
+          USING ERRCODE = '55000';
+      END IF;
+
       IF NEW.deployment_id IS NOT NULL
          AND authorized_deployment_id IS NOT NULL
          AND NEW.deployment_id IS DISTINCT FROM authorized_deployment_id THEN
@@ -163,6 +184,43 @@ async function installFenceDeploymentGuard(client) {
       BEFORE UPDATE ON public.sonalit_runtime_fence
       FOR EACH ROW
       EXECUTE FUNCTION public.sonalit_runtime_fence_authority_guard()
+    `);
+  }
+
+  await client.query(`
+    CREATE OR REPLACE FUNCTION public.sonalit_runtime_fence_authority_write_guard()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $authority$
+    BEGIN
+      IF NEW.deployment_id IS NOT NULL AND EXISTS (
+        SELECT 1
+          FROM public.sonalit_runtime_fence_retired_deployments
+         WHERE deployment_id = NEW.deployment_id
+      ) THEN
+        RAISE EXCEPTION
+          'SONALIT runtime fence refused re-authorizing retired deployment %',
+          NEW.deployment_id
+          USING ERRCODE = '55000';
+      END IF;
+      RETURN NEW;
+    END;
+    $authority$
+  `);
+
+  const authorityTrigger = await client.query(`
+    SELECT 1
+      FROM pg_trigger
+     WHERE tgname = 'sonalit_runtime_fence_authority_write_guard'
+       AND tgrelid = 'public.sonalit_runtime_fence_authority'::regclass
+       AND NOT tgisinternal
+  `);
+  if (authorityTrigger.rowCount === 0) {
+    await client.query(`
+      CREATE TRIGGER sonalit_runtime_fence_authority_write_guard
+      BEFORE INSERT OR UPDATE ON public.sonalit_runtime_fence_authority
+      FOR EACH ROW
+      EXECUTE FUNCTION public.sonalit_runtime_fence_authority_write_guard()
     `);
   }
 }
@@ -218,6 +276,27 @@ async function claimInChild() {
         FOR UPDATE
       `);
       const current = rows[0] || {};
+      if (railwayDeploymentId) {
+        const retiredCandidate = await client.query(`
+          SELECT 1
+            FROM public.sonalit_runtime_fence_retired_deployments
+           WHERE deployment_id = $1
+        `, [railwayDeploymentId]);
+        if (shouldRefuseRetiredDeployment({
+          candidateIsRetired: retiredCandidate.rowCount > 0,
+          takeoverRequested: takeover,
+        })) {
+          console.error(`SONALIT runtime fence: deployment ${railwayDeploymentId} was previously superseded; refusing automatic rollback takeover`);
+          process.exitCode = 78;
+          return;
+        }
+        if (retiredCandidate.rowCount > 0 && takeover) {
+          await client.query(`
+            DELETE FROM public.sonalit_runtime_fence_retired_deployments
+             WHERE deployment_id = $1
+          `, [railwayDeploymentId]);
+        }
+      }
       const stale = !current.owner_id || current.age_seconds == null || Number(current.age_seconds) >= FENCE_STALE_SECONDS;
       const startMode = classifyFenceStart({
         production: isProduction,
@@ -259,6 +338,13 @@ async function claimInChild() {
         // atomically. A legacy process can then neither heartbeat nor take over
         // the fence after this commit.
         if (railwayDeploymentId) {
+          if (current.deployment_id && current.deployment_id !== railwayDeploymentId) {
+            await client.query(`
+              INSERT INTO public.sonalit_runtime_fence_retired_deployments (deployment_id, superseded_by)
+              VALUES ($1, $2)
+              ON CONFLICT (deployment_id) DO NOTHING
+            `, [current.deployment_id, railwayDeploymentId]);
+          }
           await client.query(`
             INSERT INTO public.sonalit_runtime_fence_authority (id, deployment_id, updated_at)
             VALUES (1, $1, NOW())
@@ -301,6 +387,7 @@ if (isClaimChild) {
     classifyFenceStart,
     isFenceActive: () => true,
     classifyFenceHeartbeat,
+    shouldRefuseRetiredDeployment,
   };
 } else {
   const childEnv = {
@@ -392,5 +479,6 @@ if (isClaimChild) {
     deploymentId: railwayDeploymentId,
     isFenceActive: () => fenceActive,
     classifyFenceHeartbeat,
+    shouldRefuseRetiredDeployment,
   };
 }
