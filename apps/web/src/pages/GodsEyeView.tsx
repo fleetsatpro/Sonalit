@@ -223,20 +223,34 @@ export default function GodsEyeView() {
   const simulationNaturalEvents = useMemo(() => {
     if (!liveSimulationEnabled) return []
     const events = (liveSimulationResult?.data ?? []).filter(entity =>
-      entity.entityType === 'earthquake' || entity.entityType === 'volcano'
+      entity.entityType === 'earthquake' || entity.entityType === 'volcano' || entity.entityType === 'natural_event'
     )
-    // Guarantee that the smaller volcano bulletin is not starved by a large
-    // earthquake feed under the scene's bounded marker budget. Keep a compact,
-    // impact-sorted earthquake set for the visible globe.
+    // Keep official volcano alerts/reports and a bounded set of source-backed
+    // global events before earthquakes consume the map's marker budget.
     const volcanoReports = events.filter(entity => entity.entityType === 'volcano')
+    const globalNaturalEvents = events.filter(entity => {
+      if (entity.entityType !== 'natural_event') return false
+      const categories = (entity.attributes?.categories as Array<Record<string, unknown>> | undefined) ?? []
+      const names = [
+        String(entity.attributes?.categoryId ?? ''),
+        String(entity.attributes?.categoryTitle ?? ''),
+        ...categories.flatMap(category => [String(category.id ?? ''), String(category.title ?? '')]),
+      ].map(value => value.toLowerCase())
+      // Dedicated USGS/Smithsonian feeds provide better volcano and earthquake records.
+      return !names.some(name => name.includes('volcano') || name.includes('earthquake'))
+    }).sort((a, b) => {
+      const dateA = Date.parse(String(a.attributes?.eventDate ?? a.observedAt ?? '')) || 0
+      const dateB = Date.parse(String(b.attributes?.eventDate ?? b.observedAt ?? '')) || 0
+      return dateB - dateA
+    }).slice(0, 50)
     const earthquakes = events.filter(entity => entity.entityType === 'earthquake')
       .sort((a, b) => {
         const magnitudeA = Number(a.attributes?.magnitude)
         const magnitudeB = Number(b.attributes?.magnitude)
         return (Number.isFinite(magnitudeB) ? magnitudeB : 0) - (Number.isFinite(magnitudeA) ? magnitudeA : 0)
       })
-      .slice(0, 100)
-    return [...volcanoReports, ...earthquakes]
+      .slice(0, 60)
+    return [...volcanoReports, ...globalNaturalEvents, ...earthquakes]
   }, [liveSimulationEnabled, liveSimulationResult])
 
   const liveSimulationEntities = useMemo(
@@ -531,7 +545,8 @@ export default function GodsEyeView() {
           <div className="gev-simulation-summary">
             <span><i data-tone="weather" />{simulationWeatherEntities.length} MODEL POINTS</span>
             <span><i data-tone="quake" />{Number(liveSimulationResult?.health?.earthquakes?.recordCount ?? simulationNaturalEvents.filter(entity => entity.entityType === 'earthquake').length)} M2.5+ QUAKES / 24H</span>
-            <span><i data-tone="volcano" />{simulationNaturalEvents.filter(entity => entity.entityType === 'volcano').length} VOLCANO REPORTS</span>
+            <span><i data-tone="volcano" />{simulationNaturalEvents.filter(entity => entity.entityType === 'volcano').length} VOLCANO SIGNALS</span>
+            <span><i data-tone="natural" />{Number(liveSimulationResult?.health?.eonet?.recordCount ?? simulationNaturalEvents.filter(entity => entity.entityType === 'natural_event').length)} OPEN EONET EVENTS</span>
           </div>
           <div className="gev-simulation-footnote">Forecast is modelled, earthquakes are USGS catalogue events, and volcano activity uses weekly Smithsonian/USGS reports. Visual pulses are not hazard footprints.</div>
         </section>
