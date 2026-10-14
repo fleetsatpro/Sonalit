@@ -816,6 +816,35 @@ export default function GodsEyeView() {
                         <a href={String(selectedExternal.attributes?.reportUrl ?? 'https://volcano.si.edu/reports_weekly.cfm')} target="_blank" rel="noreferrer">OPEN VOLCANO SOURCE REPORT ↗</a>
                       </div>
                     </div>
+                  ) : selectedExternal.entityType === 'natural_event' ? (
+                    <div className="gev-natural-event-card" data-event-type="natural-event" aria-label="NASA EONET natural event details">
+                      <div className="gev-natural-event-title">{String(selectedExternal.attributes?.categoryTitle ?? selectedExternal.attributes?.categoryId ?? 'Natural event')}</div>
+                      <div className="gev-entity-title" style={{ fontSize: 18, marginTop: 7 }}>{String(selectedExternal.attributes?.title ?? selectedExternal.attributes?.name ?? 'Open natural event')}</div>
+                      <div className="gev-natural-event-note">{String(selectedExternal.attributes?.description ?? 'NASA EONET did not include an event description.')}</div>
+                      <div className="gev-natural-event-meta">
+                        <div><span>Event state</span><strong>{String(selectedExternal.status ?? 'OPEN').toUpperCase()}</strong></div>
+                        <div><span>Category</span><strong>{String(selectedExternal.attributes?.categoryId ?? '—')}</strong></div>
+                        <div><span>Event geometry</span><strong>{String(selectedExternal.attributes?.sourceGeometryType ?? 'UNKNOWN').toUpperCase()}</strong></div>
+                        <div><span>Geometry points</span><strong>{String(selectedExternal.attributes?.sourceCoordinateCount ?? '—')}</strong></div>
+                        <div><span>Event date (UTC)</span><strong>{selectedExternal.attributes?.eventDate ? new Date(String(selectedExternal.attributes.eventDate)).toISOString().slice(0, 19).replace('T', ' ') : '—'}</strong></div>
+                        <div><span>Feed freshness</span><strong>{String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
+                        <div><span>Marker coordinate</span><strong>{selectedExternal.latitude.toFixed(4)}°, {selectedExternal.longitude.toFixed(4)}°</strong></div>
+                        <div><span>Location semantics</span><strong>{String(selectedExternal.attributes?.locationSemantics ?? 'SOURCE EVENT LOCATOR').replaceAll('_', ' ')}</strong></div>
+                      </div>
+                      <div className="gev-natural-event-source">
+                        NASA EARTH OBSERVATORY NATURAL EVENT TRACKER (EONET)<br />
+                        The map marker is the source point or a centre calculated from source geometry. It is not a substitute for the original event boundary, live sensor stream, or measured damage footprint.<br />
+                        <a href={String(selectedExternal.attributes?.eventLink ?? 'https://eonet.gsfc.nasa.gov/')} target="_blank" rel="noreferrer">OPEN NASA EONET EVENT ↗</a>
+                        {(() => {
+                          const links = (selectedExternal.attributes?.sourceLinks as Array<Record<string, unknown>> | undefined) ?? []
+                          return links.slice(0, 3).map((item, index) => {
+                            const url = String(item.url ?? '')
+                            if (!/^https?:\/\//i.test(url)) return null
+                            return <React.Fragment key={url + index}><br /><a href={url} target="_blank" rel="noreferrer">OPEN {String(item.title ?? item.id ?? 'SOURCE').toUpperCase()} ↗</a></React.Fragment>
+                          })
+                        })()}
+                      </div>
+                    </div>
                   ) : (
                     <div className="gev-detail-callout" style={{ marginTop: 9, border: '1px solid rgba(184,166,255,.10)', borderRadius: 10 }}>
                       <div className="gev-detail-label">{selectedExternal.entityType === 'satellite' ? 'Modelled orbital position' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Camera observation' : selectedExternal.telemetryLive === true ? 'Live external telemetry' : 'External observation'}</div>
