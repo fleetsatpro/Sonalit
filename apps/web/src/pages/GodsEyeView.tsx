@@ -74,6 +74,15 @@ function formatUtcClock(date: Date) {
   return date.toISOString().slice(11, 19) + 'Z'
 }
 
+function safeExternalUrl(value: unknown, fallback: string): string {
+  try {
+    const url = new URL(String(value ?? ''))
+    return url.protocol === 'https:' ? url.toString() : fallback
+  } catch {
+    return fallback
+  }
+}
+
 export default function GodsEyeView() {
   const navigate = useNavigate()
   const { groups, counts } = useLiveFleet()
@@ -526,7 +535,13 @@ export default function GodsEyeView() {
               <span className="gev-simulation-status-dot" data-state={liveSimulationError || liveSimulationResult?.health?.status === 'UNAVAILABLE' ? 'error' : liveSimulationFetching || liveSimulationResult?.health?.status === 'PARTIAL' ? 'sync' : 'ready'} />
               <div>
                 <div className="gev-simulation-eyebrow">LIVE EVENT SIMULATION{liveSimulationResult?.health?.status ? ' · ' + String(liveSimulationResult.health.status) : ''}</div>
-                <div className="gev-simulation-time">{selectedForecastTime ? new Date(selectedForecastTime).toISOString().slice(11, 16) + ' UTC' : 'Weather timeline syncing'}</div>
+                <div className="gev-simulation-time">{selectedForecastTime
+                  ? new Date(selectedForecastTime).toISOString().slice(11, 16) + ' UTC'
+                  : liveSimulationFetching
+                    ? 'SYNCING FORECAST'
+                    : liveSimulationResult?.health?.weather?.status === 'UNAVAILABLE'
+                      ? 'FORECAST UNAVAILABLE'
+                      : 'FORECAST TIME N/A'}</div>
               </div>
             </div>
             <div className="gev-simulation-actions">
@@ -539,7 +554,7 @@ export default function GodsEyeView() {
           </div>
           <div className="gev-simulation-timeline-row">
             <span className="gev-simulation-timeline-label">NOW</span>
-            <input className="gev-simulation-range" type="range" min={0} max={Math.max(0, simulationForecastSteps.length - 1)} step={1} value={Math.min(forecastStepIndex, Math.max(0, simulationForecastSteps.length - 1))} onChange={event => { setForecastStepIndex(Number(event.target.value)); setSimulationPlaying(false) }} aria-label="Weather forecast time step" />
+            <input className="gev-simulation-range" type="range" min={0} max={Math.max(0, simulationForecastSteps.length - 1)} step={1} disabled={simulationForecastSteps.length < 2} value={Math.min(forecastStepIndex, Math.max(0, simulationForecastSteps.length - 1))} onChange={event => { setForecastStepIndex(Number(event.target.value)); setSimulationPlaying(false) }} aria-label="Weather forecast time step" />
             <span className="gev-simulation-timeline-label">+{Math.max(0, simulationForecastSteps.length - 1)}H</span>
           </div>
           <div className="gev-simulation-summary">
@@ -801,7 +816,7 @@ export default function GodsEyeView() {
                         <div><span>Catalog freshness</span><strong>{String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
                       </div>
                       <div className="gev-natural-event-source">SOURCE: USGS COMCAT · EVENT RECORD<br />
-                        <a href={String(selectedExternal.attributes?.detailUrl ?? 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php')} target="_blank" rel="noreferrer">OPEN USGS EVENT DETAILS ↗</a>
+                        <a href={safeExternalUrl(selectedExternal.attributes?.detailUrl, 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php')} target="_blank" rel="noreferrer">OPEN USGS EVENT DETAILS ↗</a>
                       </div>
                     </div>
                   ) : selectedExternal.entityType === 'volcano' || selectedExternal.entityType === 'volcanic_activity' ? (
@@ -820,8 +835,8 @@ export default function GodsEyeView() {
                       </div>
                       <div className="gev-natural-event-source">SMITHSONIAN GLOBAL VOLCANISM PROGRAM / USGS<br />
                         {selectedExternal.attributes?.usgsCurrentAlert ? 'USGS currently lists this volcano in an elevated alert state. The issue timestamp shown above identifies the notice that established the alert; it is not the time of a fresh sensor measurement.' : 'Global activity comes from the weekly bulletin; no current elevated USGS alert was returned for this volcano.'} The weekly bulletin itself is not a real-time vent camera, ash plume, or complete global monitoring feed.<br />
-                        {(selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.noticeUrl && <><a href={String((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown>).noticeUrl)} target="_blank" rel="noreferrer">OPEN USGS CURRENT ALERT ↗</a><br /></>}
-                        <a href={String(selectedExternal.attributes?.reportUrl ?? 'https://volcano.si.edu/reports_weekly.cfm')} target="_blank" rel="noreferrer">OPEN VOLCANO SOURCE REPORT ↗</a>
+                        {(selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.noticeUrl && <><a href={safeExternalUrl((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown>).noticeUrl, 'https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes')} target="_blank" rel="noreferrer">OPEN USGS CURRENT ALERT ↗</a><br /></>}
+                        <a href={safeExternalUrl(selectedExternal.attributes?.reportUrl, 'https://volcano.si.edu/reports_weekly.cfm')} target="_blank" rel="noreferrer">OPEN VOLCANO SOURCE REPORT ↗</a>
                       </div>
                     </div>
                   ) : selectedExternal.entityType === 'natural_event' ? (
@@ -842,12 +857,12 @@ export default function GodsEyeView() {
                       <div className="gev-natural-event-source">
                         NASA EARTH OBSERVATORY NATURAL EVENT TRACKER (EONET)<br />
                         The map marker is the source point or a centre calculated from source geometry. It is not a substitute for the original event boundary, live sensor stream, or measured damage footprint.<br />
-                        <a href={String(selectedExternal.attributes?.eventLink ?? 'https://eonet.gsfc.nasa.gov/')} target="_blank" rel="noreferrer">OPEN NASA EONET EVENT ↗</a>
+                        <a href={safeExternalUrl(selectedExternal.attributes?.eventLink, 'https://eonet.gsfc.nasa.gov/')} target="_blank" rel="noreferrer">OPEN NASA EONET EVENT ↗</a>
                         {(() => {
                           const links = (selectedExternal.attributes?.sourceLinks as Array<Record<string, unknown>> | undefined) ?? []
                           return links.slice(0, 3).map((item, index) => {
-                            const url = String(item.url ?? '')
-                            if (!/^https?:\/\//i.test(url)) return null
+                            const url = safeExternalUrl(item.url, '')
+                            if (!url) return null
                             return <Fragment key={url + index}><br /><a href={url} target="_blank" rel="noreferrer">OPEN {String(item.title ?? item.id ?? 'SOURCE').toUpperCase()} ↗</a></Fragment>
                           })
                         })()}
