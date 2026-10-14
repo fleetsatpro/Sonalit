@@ -153,6 +153,55 @@ describe('GEV live event simulation data normalization', () => {
     expect(entity.attributes.usgsCurrentAlert.noticeIssuedAt).toBe('2026-10-14T08:00:00.000Z');
   });
 
+  it('normalizes open NASA EONET natural events and preserves geometry semantics and source links', () => {
+    const now = new Date().toISOString();
+    const entity = __testables.nasaEonetEntity({
+      id: 'EONET_12345',
+      properties: {
+        id: 'EONET_12345',
+        title: 'Wildfire activity near Test Reserve',
+        description: 'Curated open event metadata.',
+        link: 'https://eonet.gsfc.nasa.gov/api/v3/events/EONET_12345',
+        closed: null,
+        date: now,
+        categories: [{ id: 'wildfires', title: 'Wildfires' }],
+        sources: [{ id: 'MODIS', title: 'NASA MODIS', url: 'https://earthdata.nasa.gov/' }],
+        geometryDates: [now],
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [36.7, -1.2], [36.9, -1.2], [36.9, -1.4], [36.7, -1.4], [36.7, -1.2],
+        ]],
+      },
+    }, now);
+
+    expect(entity).toMatchObject({
+      id: 'nasa-eonet:EONET_12345',
+      entityType: 'natural_event',
+      source: 'NASA EONET',
+      attributes: {
+        title: 'Wildfire activity near Test Reserve',
+        categoryId: 'wildfires',
+        categoryTitle: 'Wildfires',
+        eventOpen: true,
+        sourceGeometryType: 'Polygon',
+        locationSemantics: 'centroid_of_source_event_geometry_not_a_rendered_hazard_perimeter',
+      },
+      provenance: {
+        observationType: 'open_curated_natural_event_metadata',
+        sourceName: 'NASA Earth Observatory Natural Event Tracker (EONET)',
+      },
+      quality: { freshnessClass: 'LIVE' },
+    });
+    expect(entity.latitude).toBeCloseTo(-1.28, 2);
+    expect(entity.longitude).toBeCloseTo(36.82, 2);
+    expect(entity.attributes.sourceLinks[0]).toMatchObject({
+      title: 'NASA MODIS',
+      url: 'https://earthdata.nasa.gov/',
+    });
+  });
+
   it('handles a missing or unmatched volcano report without inventing coordinates', () => {
     const matched = __testables.matchVolcanoReport({
       volcanoNumber: null,
