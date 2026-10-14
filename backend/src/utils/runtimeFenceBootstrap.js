@@ -290,12 +290,8 @@ async function claimInChild() {
           process.exitCode = 78;
           return;
         }
-        if (retiredCandidate.rowCount > 0 && takeover) {
-          await client.query(`
-            DELETE FROM public.sonalit_runtime_fence_retired_deployments
-             WHERE deployment_id = $1
-          `, [railwayDeploymentId]);
-        }
+        // Explicit recovery is applied transactionally below so a failed
+        // takeover cannot accidentally un-retire an identity.
       }
       const stale = !current.owner_id || current.age_seconds == null || Number(current.age_seconds) >= FENCE_STALE_SECONDS;
       const startMode = classifyFenceStart({
@@ -334,6 +330,12 @@ async function claimInChild() {
 
       await client.query("BEGIN");
       try {
+        if (railwayDeploymentId && takeover) {
+          await client.query(`
+            DELETE FROM public.sonalit_runtime_fence_retired_deployments
+             WHERE deployment_id = $1
+          `, [railwayDeploymentId]);
+        }
         // Publish the accepted deployment identity before changing the lease,
         // atomically. A legacy process can then neither heartbeat nor take over
         // the fence after this commit.
