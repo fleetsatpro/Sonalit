@@ -1,5 +1,7 @@
 'use strict';
 
+const { getOpenMeteoAccess } = require('./weatherProviderAccess');
+
 const CACHE_TTL_MS = 90_000;
 const MAX_CACHE_ENTRIES = 128;
 
@@ -137,9 +139,9 @@ async function getCurrentWeatherBatch(input) {
     };
   }
 
-  const customerApiKey = String(process.env.OPEN_METEO_API_KEY || '').trim();
-  const allowFreeNonCommercial = process.env.OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL === 'true';
-  if (!customerApiKey && !allowFreeNonCommercial) {
+  const access = getOpenMeteoAccess();
+  const customerApiKey = access.apiKey;
+  if (!access.allowed) {
     health = Object.assign({}, health, {
       status: 'UNAVAILABLE',
       lastErrorClass: 'commercial_api_key_not_configured',
@@ -178,9 +180,7 @@ async function getCurrentWeatherBatch(input) {
       lastAttemptAt: receivedAt,
     });
     try {
-      const apiBase = String(process.env.OPEN_METEO_API_BASE || (customerApiKey
-        ? 'https://customer-api.open-meteo.com/v1/forecast'
-        : 'https://api.open-meteo.com/v1/forecast'));
+      const apiBase = access.apiBase;
       const url = apiBase + '?latitude=' + encodeURIComponent(missing.map(p => p.latitude).join(',')) +
         '&longitude=' + encodeURIComponent(missing.map(p => p.longitude).join(',')) +
         '&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,visibility' +
