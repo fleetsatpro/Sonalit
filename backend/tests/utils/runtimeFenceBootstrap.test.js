@@ -1,7 +1,7 @@
 process.env.NODE_ENV = 'test';
 delete process.env.SONALIT_STANDBY;
 
-const { shouldTakeOver, classifyFenceStart, classifyFenceHeartbeat } = require('../../src/utils/runtimeFenceBootstrap');
+const { shouldTakeOver, classifyFenceStart, classifyFenceHeartbeat, shouldRefuseRetiredDeployment } = require('../../src/utils/runtimeFenceBootstrap');
 
 describe('runtime fence deployment handover policy', () => {
   test('treats a successful heartbeat update as retained ownership', () => {
@@ -10,6 +10,15 @@ describe('runtime fence deployment handover policy', () => {
 
   test('treats a zero-row heartbeat update as an expected handover, not a failed heartbeat', () => {
     expect(classifyFenceHeartbeat(0)).toBe('superseded');
+  });
+
+  test('refuses a previously superseded deployment from reclaiming authority automatically', () => {
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: false })).toBe(true);
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: false, takeoverRequested: false })).toBe(false);
+  });
+
+  test('permits retired-deployment recovery only when takeover is explicitly requested', () => {
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: true })).toBe(false);
   });
 
   test('allows a new Railway deployment to replace an older deployment', () => {
