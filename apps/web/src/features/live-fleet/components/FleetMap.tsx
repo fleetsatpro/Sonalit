@@ -225,6 +225,15 @@ function makeWeatherMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialW
   return marker
 }
 
+function escapeMarkerText(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function naturalEventColor(item: SpatialWorldEntity): string {
   if (item.entityType === 'earthquake') {
     const magnitude = Number(item.attributes?.magnitude)
@@ -297,7 +306,7 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
   const tag = isEarthquake ? magnitudeLabel : isVolcano ? currentAlert ? alertLevel : (item.quality?.freshnessClass === 'STALE' ? 'STALE' : 'REPORTED') : 'OPEN'
   marker.innerHTML = '<span class="lf-natural-event-pulse" aria-hidden="true"></span>' +
     '<span class="lf-natural-event-core"><svg viewBox="0 0 24 24" aria-hidden="true">' + (isEarthquake ? earthquakeGlyph : isVolcano ? volcanoGlyph : eonetGlyph) + '</svg></span>' +
-    '<span class="lf-natural-event-label"><b>' + category + '</b><i>' + tag + '</i></span>'
+    '<span class="lf-natural-event-label"><b>' + escapeMarkerText(category) + '</b><i>' + escapeMarkerText(tag) + '</i></span>'
   marker.addEventListener('click', event => { event.stopPropagation(); onSelect(item) })
   return marker
 }
