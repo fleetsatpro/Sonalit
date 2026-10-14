@@ -116,7 +116,10 @@ function cameraViewport(viewer: Cesium.Viewer): { latitude:number; longitude:num
 
 function externalLabel(item: SpatialWorldEntity) {
   const attrs = item.attributes ?? {};
-  const value = attrs.callsign ?? attrs.name ?? attrs.title ?? attrs.categoryTitle ?? attrs.description ?? attrs.label ?? item.id;
+  const currentAlert = attrs.usgsCurrentAlert as Record<string, unknown> | undefined;
+  const value = item.entityType === 'volcano' && currentAlert
+    ? String(attrs.name ?? 'Volcano') + ' · USGS ' + String(currentAlert.alertLevel ?? 'ELEVATED')
+    : attrs.callsign ?? attrs.name ?? attrs.title ?? attrs.categoryTitle ?? attrs.description ?? attrs.label ?? item.id;
   const freshness = item.quality?.freshnessClass ?? (item.entityType === 'satellite' ? 'MODELLED' : 'UNKNOWN');
   return String(value) + ' · ' + String(freshness);
 }
@@ -1149,7 +1152,13 @@ export default function CorridorWorldScene({
       const weatherFreshness = String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase();
       const weatherMayPulse = weatherFreshness === 'LIVE' || weatherFreshness === 'DELAYED' || weatherFreshness === 'MODELLED';
       const weatherPhase = (item.id.split('').reduce((hash, character) => (hash * 33 + character.charCodeAt(0)) >>> 0, 5381) % 360) * Math.PI / 180;
-      const color = weatherAnimated ? weatherColorFor(item) : isEarthquake ? '#e6a66f' : isVolcano ? '#e99a9a' : (WORLD_LAYER_COLOR[layer] ?? '#94a3b8');
+      const currentVolcanoAlert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined;
+      const volcanoAlertLevel = String(currentVolcanoAlert?.alertLevel ?? '').toUpperCase();
+      const volcanoColorCode = String(currentVolcanoAlert?.colorCode ?? '').toUpperCase();
+      const volcanoAlertColor = volcanoAlertLevel === 'WARNING' || volcanoColorCode === 'RED' ? '#f17878'
+        : volcanoAlertLevel === 'WATCH' || volcanoColorCode === 'ORANGE' ? '#e99c72'
+          : volcanoAlertLevel === 'ADVISORY' || volcanoColorCode === 'YELLOW' ? '#e2c16f' : '#e99a9a';
+      const color = weatherAnimated ? weatherColorFor(item) : isEarthquake ? '#e6a66f' : isVolcano ? volcanoAlertColor : (WORLD_LAYER_COLOR[layer] ?? '#94a3b8');
       const altitude = externalAltitude(item);
       const position = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, altitude ?? 0);
       const ground = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, 0);
