@@ -107,6 +107,66 @@ async function deactivateFence() {
   } catch (_) {}
 }
 
+async function installFenceDeploymentGuard(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS public.sonalit_runtime_fence_authority (
+      id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      deployment_id TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await client.query(`
+    INSERT INTO public.sonalit_runtime_fence_authority (id, deployment_id)
+    VALUES (1, NULL)
+    ON CONFLICT (id) DO NOTHING
+  `);
+  await client.query(`
+    CREATE OR REPLACE FUNCTION public.sonalit_runtime_fence_authority_guard()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $
+    DECLARE
+      authorized_deployment_id TEXT;
+    BEGIN
+      SELECT deployment_id
+        INTO authorized_deployment_id
+        FROM public.sonalit_runtime_fence_authority
+       WHERE id = 1;
+
+      -- Containers predating this guard may restart after a deployment switch.
+      -- Once a Railway deployment owns authority, an older deployment identity
+      -- cannot overwrite the row even if its legacy bootstrap attempts takeover.
+      IF NEW.deployment_id IS NOT NULL
+         AND authorized_deployment_id IS NOT NULL
+         AND NEW.deployment_id IS DISTINCT FROM authorized_deployment_id THEN
+        RAISE EXCEPTION
+          'SONALIT runtime fence rejected superseded deployment %; authority belongs to %',
+          NEW.deployment_id, authorized_deployment_id
+          USING ERRCODE = '55000';
+      END IF;
+
+      RETURN NEW;
+    END;
+    $
+  `);
+
+  const { rowCount } = await client.query(`
+    SELECT 1
+      FROM pg_trigger
+     WHERE tgname = 'sonalit_runtime_fence_authority_guard'
+       AND tgrelid = 'public.sonalit_runtime_fence'::regclass
+       AND NOT tgisinternal
+  `);
+  if (rowCount === 0) {
+    await client.query(`
+      CREATE TRIGGER sonalit_runtime_fence_authority_guard
+      BEFORE UPDATE ON public.sonalit_runtime_fence
+      FOR EACH ROW
+      EXECUTE FUNCTION public.sonalit_runtime_fence_authority_guard()
+    `);
+  }
+}
+
 async function claimInChild() {
   if (!process.env.DATABASE_URL) {
     console.error("SONALIT runtime fence: DATABASE_URL is required");
@@ -144,6 +204,11 @@ async function claimInChild() {
 
     await client.query("SELECT pg_advisory_lock(hashtext('sonalit-runtime-fence'))");
     try {
+      // Install the DB guard while holding the same advisory lock used by lease
+      // claims. This blocks a legacy container from reclaiming authority after a
+      // newer deployment starts, even before Railway finishes stopping old replicas.
+      await installFenceDeploymentGuard(client);
+
       const { rows } = await client.query(`
         SELECT owner_id,
                deployment_id,
@@ -188,14 +253,33 @@ async function claimInChild() {
         );
       }
 
-      await client.query(`
-        UPDATE sonalit_runtime_fence
-        SET owner_id = $1,
-            acquired_at = NOW(),
-            heartbeat_at = NOW(),
-            deployment_id = $2
-        WHERE id = 1
-      `, [ownerId, railwayDeploymentId]);
+      await client.query("BEGIN");
+      try {
+        // Publish the accepted deployment identity before changing the lease,
+        // atomically. A legacy process can then neither heartbeat nor take over
+        // the fence after this commit.
+        if (railwayDeploymentId) {
+          await client.query(`
+            INSERT INTO public.sonalit_runtime_fence_authority (id, deployment_id, updated_at)
+            VALUES (1, $1, NOW())
+            ON CONFLICT (id) DO UPDATE
+              SET deployment_id = EXCLUDED.deployment_id,
+                  updated_at = NOW()
+          `, [railwayDeploymentId]);
+        }
+        await client.query(`
+          UPDATE sonalit_runtime_fence
+          SET owner_id = $1,
+              acquired_at = NOW(),
+              heartbeat_at = NOW(),
+              deployment_id = $2
+          WHERE id = 1
+        `, [ownerId, railwayDeploymentId]);
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw err;
+      }
     } finally {
       await client.query("SELECT pg_advisory_unlock(hashtext('sonalit-runtime-fence'))");
     }
