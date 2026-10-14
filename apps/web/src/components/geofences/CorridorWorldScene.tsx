@@ -238,7 +238,9 @@ function weatherSvg(color: string, selected: boolean, code: number) {
         ? `<path d="M14 27h36M9 34h30M16 41h35" fill="none" stroke="${color}" stroke-width="2.7" stroke-linecap="round"/>`
         : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
           ? `<path d="M22 39 18 49M33 39 29 51M44 39 40 49" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`
-          : `<path d="M21 38h23a10 10 0 0 0 1-20A13 13 0 0 0 17 22a8 8 0 0 0 4 16Z" fill="none" stroke="${color}" stroke-width="2.7" stroke-linejoin="round"/>`;
+          : Number.isFinite(code) && (code === 0 || code === 1)
+            ? `<circle cx="32" cy="32" r="8" fill="none" stroke="${color}" stroke-width="2.5"/><path d="M32 15v5M32 44v5M15 32h5M44 32h5M20 20l4 4M40 40l4 4M44 20l-4 4M24 40l-4 4" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>`
+            : `<path d="M21 38h23a10 10 0 0 0 1-20A13 13 0 0 0 17 22a8 8 0 0 0 4 16Z" fill="none" stroke="${color}" stroke-width="2.7" stroke-linejoin="round"/>`;
   // One crisp instrument-grade bezel. No Gaussian bloom or stacked rings: those
   // made all 36 model-grid symbols compete with the underlying map.
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="23.5" fill="#06101b" fill-opacity=".96" stroke="${stroke}" stroke-width="${selected ? 2.5 : 1.65}"/><g>${glyph}</g></svg>`;
