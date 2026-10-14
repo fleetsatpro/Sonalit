@@ -12,13 +12,17 @@ describe('runtime fence deployment handover policy', () => {
     expect(classifyFenceHeartbeat(0)).toBe('superseded');
   });
 
-  test('refuses a previously superseded deployment from reclaiming authority automatically', () => {
-    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: false })).toBe(true);
-    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: false, takeoverRequested: false })).toBe(false);
+  test('refuses a retired deployment while the current lease is live', () => {
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: false, currentLeaseStale: false })).toBe(true);
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: false, takeoverRequested: false, currentLeaseStale: false })).toBe(false);
   });
 
-  test('permits retired-deployment recovery only when takeover is explicitly requested', () => {
-    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: true })).toBe(false);
+  test('allows automatic recovery of a retired deployment only after the current lease is stale', () => {
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: false, currentLeaseStale: true })).toBe(false);
+  });
+
+  test('permits explicit retired-deployment recovery when takeover is requested', () => {
+    expect(shouldRefuseRetiredDeployment({ candidateIsRetired: true, takeoverRequested: true, currentLeaseStale: false })).toBe(false);
   });
 
   test('allows a new Railway deployment to replace an older deployment', () => {
