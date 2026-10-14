@@ -175,7 +175,7 @@ function toIsoUtc(value) {
   const raw = String(value).trim();
   // Forecast hour strings are timezone-less UTC; RSS feeds often use RFC-822
   // timestamps ending in GMT. Do not append a second zone marker to those.
-  const hasZone = /(?:[zZ]|GMT|UTC|[+-]\\d{2}:?\\d{2})$/i.test(raw);
+  const hasZone = /(?:[zZ]|GMT|UTC|[+-]\d{2}:?\d{2})$/i.test(raw);
   const date = new Date(hasZone ? raw : raw + 'Z');
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
