@@ -864,7 +864,7 @@ async function loadNasaEonetEvents() {
   const receivedAt = new Date().toISOString();
   const features = asArray(feed && feed.features);
   const entities = features.map(feature => nasaEonetEntity(feature, receivedAt)).filter(Boolean);
-  entities.sort((a, b) => Date.parse(b.observedAt || 0) - Date.parse(a.observedAt || 0));
+  entities.sort((a, b) => (Date.parse(b.observedAt || '') || 0) - (Date.parse(a.observedAt || '') || 0));
   return {
     entities: entities.slice(0, 200),
     generatedAt: receivedAt,
