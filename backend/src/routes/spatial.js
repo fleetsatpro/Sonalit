@@ -19,6 +19,7 @@ const {
   bboxFromCenterRadius,
 } = require('../services/spatial/worldContextService');
 const { publish } = require('../realtime/centrifugo');
+const { getLiveEventSimulation } = require('../services/spatial/liveEventSimulationService');
 
 router.use(authenticate, attachOrgDb);
 
@@ -28,6 +29,7 @@ const MAX_RESULT = 250;
 const SUBJECT_KINDS = new Set(['convoy','vehicle','location','route','corridor','incident','checkpoint','port','none']);
 const opticalReconLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => String(req.user?.org_id || 'no-org') + ':' + String(req.user?.id || req.ip), handler: (_req, res) => res.status(429).json({ error: 'optical_recon_rate_limit_exceeded' }) });
 const opticalTileLimiter = rateLimit({ windowMs: 60 * 1000, max: 240, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => String(req.user?.org_id || 'no-org') + ':' + String(req.user?.id || req.ip), handler: (_req, res) => res.status(429).json({ error: 'optical_tile_rate_limit_exceeded' }) });
+const liveEventSimulationLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => String(req.user?.org_id || 'no-org') + ':' + String(req.user?.id || req.ip), handler: (_req, res) => res.status(429).json({ error: 'live_event_simulation_rate_limit_exceeded' }) });
 
 function parseBbox(raw) {
   if (!raw || typeof raw !== 'string') return null;
@@ -143,6 +145,32 @@ router.get('/optical-recon/tile', opticalTileLimiter, asyncHandler(async (req, r
   res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
   res.setHeader('X-Sonalit-Imagery-Source', source);
   return res.send(result.buffer);
+}));
+
+router.get('/live-events', liveEventSimulationLimiter, asyncHandler(async (req, res) => {
+  const orgId = req.user?.org_id;
+  if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+
+  const bounds = parseWeatherBounds(req.query.bbox ?? req.query.weatherBounds);
+  if ((req.query.bbox != null || req.query.weatherBounds != null) && !bounds) {
+    return res.status(400).json({ error: 'Invalid bounds; expected west,south,east,north within geographic limits' });
+  }
+
+  const center = parseCenter({ latitude: req.query.lat ?? 0, longitude: req.query.lng ?? 0 });
+  if (!center) return res.status(400).json({ error: 'Invalid map centre coordinates' });
+
+  const result = await getLiveEventSimulation({
+    bounds,
+    center,
+    radiusM: boundedRadius(req.query.radiusM),
+    signal: req.signal,
+    requestId: req.id || req.headers['x-request-id'],
+  });
+
+  // Dynamic weather forecast payloads are viewport-specific; event catalogue
+  // sources remain internally cached by their source-specific refresh cadence.
+  res.setHeader('Cache-Control', 'private, max-age=20, stale-while-revalidate=60');
+  res.json({ data: result });
 }));
 
 router.get(

@@ -1,5 +1,7 @@
 'use strict';
 
+const { getOpenMeteoAccess } = require('./weatherProviderAccess');
+
 const CACHE_TTL_MS = 90_000;
 const MAX_CACHE_ENTRIES = 128;
 
@@ -137,6 +139,27 @@ async function getCurrentWeatherBatch(input) {
     };
   }
 
+  const access = getOpenMeteoAccess();
+  const customerApiKey = access.apiKey;
+  if (!access.allowed) {
+    health = Object.assign({}, health, {
+      status: 'UNAVAILABLE',
+      lastErrorClass: 'commercial_api_key_not_configured',
+      lastErrorMessage: 'Open-Meteo free service is restricted to non-commercial use. Configure OPEN_METEO_API_KEY for the paid customer API.',
+    });
+    return {
+      observations: [],
+      health: Object.assign({}, health),
+      error: 'commercial_api_key_not_configured',
+      coverage: {
+        complete: false,
+        sampleCount: requested.length,
+        successfulSamples: 0,
+        failedSamples: requested.length,
+      },
+    };
+  }
+
   const now = Date.now();
   const observationsByKey = new Map();
   const missing = [];
@@ -157,11 +180,12 @@ async function getCurrentWeatherBatch(input) {
       lastAttemptAt: receivedAt,
     });
     try {
-      const url =
-        'https://api.open-meteo.com/v1/forecast?latitude=' + encodeURIComponent(missing.map(p => p.latitude).join(',')) +
+      const apiBase = access.apiBase;
+      const url = apiBase + '?latitude=' + encodeURIComponent(missing.map(p => p.latitude).join(',')) +
         '&longitude=' + encodeURIComponent(missing.map(p => p.longitude).join(',')) +
         '&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,visibility' +
-        '&timezone=UTC&forecast_days=1';
+        '&timezone=UTC&forecast_days=1' +
+        (customerApiKey ? '&apikey=' + encodeURIComponent(customerApiKey) : '');
       const timeoutSignal = AbortSignal.timeout(7000);
       const requestSignal = input && input.signal && typeof AbortSignal.any === 'function'
         ? AbortSignal.any([input.signal, timeoutSignal])

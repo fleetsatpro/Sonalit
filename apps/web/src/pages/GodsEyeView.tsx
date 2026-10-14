@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -15,6 +15,8 @@ import {
   Maximize2,
   Minimize2,
   Orbit,
+  Pause,
+  Play,
   RadioTower,
   Satellite,
   Ship,
@@ -24,7 +26,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { imageryAiBadge, imageryAiSupported } from '../lib/imageryAi.js'
-import { fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
+import { fetchLiveEventSimulation, fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
 import type { SpatialWorldEntity, WorldContextLayer } from '../lib/spatialClient.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import FleetMap from '../features/live-fleet/components/FleetMap.js'
@@ -72,6 +74,15 @@ function formatUtcClock(date: Date) {
   return date.toISOString().slice(11, 19) + 'Z'
 }
 
+function safeExternalUrl(value: unknown, fallback: string): string {
+  try {
+    const url = new URL(String(value ?? ''))
+    return url.protocol === 'https:' ? url.toString() : fallback
+  } catch {
+    return fallback
+  }
+}
+
 export default function GodsEyeView() {
   const navigate = useNavigate()
   const { groups, counts } = useLiveFleet()
@@ -86,6 +97,9 @@ export default function GodsEyeView() {
   const [cctvOpen, setCctvOpen] = useState(false)
   const [mapNavigationExpanded, setMapNavigationExpanded] = useState(false)
   const [weatherAnimationEnabled, setWeatherAnimationEnabled] = useState(false)
+  const [liveSimulationEnabled, setLiveSimulationEnabled] = useState(false)
+  const [simulationPlaying, setSimulationPlaying] = useState(false)
+  const [forecastStepIndex, setForecastStepIndex] = useState(0)
   const [clock, setClock] = useState(() => new Date())
 
   const chromeExpanded = overviewOpen || intelligenceOpen
@@ -178,6 +192,91 @@ export default function GodsEyeView() {
     retry: 1,
   })
 
+  const { data: liveSimulationResult, isFetching: liveSimulationFetching, isError: liveSimulationError } = useQuery({
+    queryKey: ['gev-live-event-simulation', ...weatherBounds.map(value => Math.round(value * 100) / 100)],
+    queryFn: ({ signal }: { signal: AbortSignal }) => fetchLiveEventSimulation({
+      center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
+      radiusM: Math.min(250000, Math.max(1000, worldViewport.radiusM)),
+      bounds: weatherBounds,
+      signal,
+    }),
+    enabled: liveSimulationEnabled,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    retry: 1,
+  })
+
+  const simulationForecastSteps = useMemo(() => {
+    const first = liveSimulationResult?.data.find(entity =>
+      entity.entityType === 'weather' && Array.isArray(entity.attributes?.forecastSteps)
+    )
+    return (first?.attributes?.forecastSteps as Array<{ validAt?: string }> | undefined) ?? []
+  }, [liveSimulationResult])
+
+  const simulationWeatherEntities = useMemo(() => {
+    if (!liveSimulationEnabled) return []
+    return (liveSimulationResult?.data ?? [])
+      .filter(entity => entity.entityType === 'weather')
+      .map(entity => {
+        const steps = entity.attributes?.forecastSteps as Array<Record<string, unknown>> | undefined
+        const selectedStep = steps?.[Math.min(forecastStepIndex, Math.max(0, (steps?.length ?? 1) - 1))]
+        if (!selectedStep) return entity
+        return {
+          ...entity,
+          attributes: { ...entity.attributes, ...selectedStep, name: 'Weather forecast', simulationMode: 'hourly_forecast' },
+        } as SpatialWorldEntity
+      })
+  }, [liveSimulationEnabled, liveSimulationResult, forecastStepIndex])
+
+  const simulationNaturalEvents = useMemo(() => {
+    if (!liveSimulationEnabled) return []
+    const events = (liveSimulationResult?.data ?? []).filter(entity =>
+      entity.entityType === 'earthquake' || entity.entityType === 'volcano' || entity.entityType === 'natural_event'
+    )
+    // Keep official volcano alerts/reports and a bounded set of source-backed
+    // global events before earthquakes consume the map's marker budget.
+    const volcanoReports = events.filter(entity => entity.entityType === 'volcano')
+    const globalNaturalEvents = events.filter(entity => {
+      if (entity.entityType !== 'natural_event') return false
+      const categories = (entity.attributes?.categories as Array<Record<string, unknown>> | undefined) ?? []
+      const names = [
+        String(entity.attributes?.categoryId ?? ''),
+        String(entity.attributes?.categoryTitle ?? ''),
+        ...categories.flatMap(category => [String(category.id ?? ''), String(category.title ?? '')]),
+      ].map(value => value.toLowerCase())
+      // Dedicated USGS/Smithsonian feeds provide better volcano and earthquake records.
+      return !names.some(name => name.includes('volcano') || name.includes('earthquake'))
+    }).sort((a, b) => {
+      const dateA = Date.parse(String(a.attributes?.eventDate ?? a.observedAt ?? '')) || 0
+      const dateB = Date.parse(String(b.attributes?.eventDate ?? b.observedAt ?? '')) || 0
+      return dateB - dateA
+    }).slice(0, 50)
+    const earthquakes = events.filter(entity => entity.entityType === 'earthquake')
+      .sort((a, b) => {
+        const magnitudeA = Number(a.attributes?.magnitude)
+        const magnitudeB = Number(b.attributes?.magnitude)
+        return (Number.isFinite(magnitudeB) ? magnitudeB : 0) - (Number.isFinite(magnitudeA) ? magnitudeA : 0)
+      })
+      .slice(0, 60)
+    return [...volcanoReports, ...globalNaturalEvents, ...earthquakes]
+  }, [liveSimulationEnabled, liveSimulationResult])
+
+  const liveSimulationEntities = useMemo(
+    () => [...simulationWeatherEntities, ...simulationNaturalEvents],
+    [simulationWeatherEntities, simulationNaturalEvents],
+  )
+
+  const selectedForecastTime = simulationForecastSteps[Math.min(forecastStepIndex, Math.max(0, simulationForecastSteps.length - 1))]?.validAt
+
+  useEffect(() => {
+    if (!liveSimulationEnabled || !simulationPlaying || simulationForecastSteps.length < 2) return
+    const timer = window.setInterval(() => {
+      setForecastStepIndex(index => (index + 1) % simulationForecastSteps.length)
+    }, 1700)
+    return () => window.clearInterval(timer)
+  }, [liveSimulationEnabled, simulationPlaying, simulationForecastSteps.length])
+
   const { data: weatherGridContext, isFetching: weatherGridFetching, isError: weatherGridError } = useQuery({
     queryKey: ['gev-weather-animation-grid', ...weatherBounds.map(value => Math.round(value * 100) / 100)],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
@@ -254,13 +353,14 @@ export default function GodsEyeView() {
     const byId = new Map<string, SpatialWorldEntity>()
     for (const entity of externalEntities) {
       // When the explicit viewport grid is active, replace rather than duplicate the base context's coarser weather samples.
-      if (weatherAnimationEnabled && entity.entityType === 'weather') continue
+      if ((weatherAnimationEnabled || liveSimulationEnabled) && entity.entityType === 'weather') continue
       byId.set(entity.id, entity)
     }
-    for (const entity of animatedWeatherEntities) byId.set(entity.id, entity)
+    if (weatherAnimationEnabled && !liveSimulationEnabled) for (const entity of animatedWeatherEntities) byId.set(entity.id, entity)
+    for (const entity of liveSimulationEntities) byId.set(entity.id, entity)
     if (cctvOpen) for (const entity of cctvEntities) byId.set(entity.id, entity)
     return Array.from(byId.values())
-  }, [externalEntities, animatedWeatherEntities, cctvEntities, cctvOpen, weatherAnimationEnabled])
+  }, [externalEntities, animatedWeatherEntities, liveSimulationEntities, cctvEntities, cctvOpen, weatherAnimationEnabled, liveSimulationEnabled])
   const renderableExternalEntities = useMemo(() => {
     if (!externalVisible) return []
     const filtered = allExternalEntities.filter(entity => {
@@ -276,7 +376,8 @@ export default function GodsEyeView() {
     const ordered = [
       ...(selectedEntity ? [selectedEntity] : []),
       // Keep the explicit weather viewport grid visible even when other world layers are dense.
-      ...(weatherAnimationEnabled ? animatedWeatherEntities : []),
+      ...(weatherAnimationEnabled && !liveSimulationEnabled ? animatedWeatherEntities : []),
+      ...(liveSimulationEnabled ? liveSimulationEntities : []),
       ...cameras,
       ...priorityLayers.flatMap(layer => filtered.filter(entity => spatialEntityLayer(entity) === layer)),
     ]
@@ -286,7 +387,7 @@ export default function GodsEyeView() {
       seen.add(entity.id)
       return true
     }).slice(0, MAX_RENDER_MARKERS)
-  }, [allExternalEntities, visibleLayers, externalVisible, selectedExternalId, weatherAnimationEnabled, animatedWeatherEntities])
+  }, [allExternalEntities, visibleLayers, externalVisible, selectedExternalId, weatherAnimationEnabled, animatedWeatherEntities, liveSimulationEnabled, liveSimulationEntities])
 
   useEffect(() => {
     if (view !== '3D' || positionedVehicles.length === 0 || worldViewportSeededRef.current) return
@@ -296,12 +397,14 @@ export default function GodsEyeView() {
 
   const layerCounts = useMemo(() => {
     const result = Object.fromEntries(WORLD_CONTEXT_LAYERS.map(layer => [layer, 0])) as Record<WorldContextLayer, number>
-    for (const entity of externalEntities) {
+    const baseEntities = externalEntities.filter(entity => !((weatherAnimationEnabled || liveSimulationEnabled) && entity.entityType === 'weather'))
+    const renderedWeather = weatherAnimationEnabled && !liveSimulationEnabled ? animatedWeatherEntities : []
+    for (const entity of [...baseEntities, ...renderedWeather, ...liveSimulationEntities]) {
       const layer = spatialEntityLayer(entity)
       if (layer) result[layer] += 1
     }
     return result
-  }, [externalEntities])
+  }, [externalEntities, liveSimulationEntities, weatherAnimationEnabled, liveSimulationEnabled, animatedWeatherEntities])
 
   const selectedExternal = useMemo(
     () => allExternalEntities.find(entity => entity.id === selectedExternalId) ?? null,
@@ -367,6 +470,8 @@ export default function GodsEyeView() {
               ? 'Turn off animated weather grid points. Animation is visual only; points are provider-returned model grid locations, not radar footprints.'
               : 'Animate sourced weather model-grid observations across the current map viewport.'}
             onClick={() => {
+              setLiveSimulationEnabled(false)
+              setSimulationPlaying(false)
               setWeatherAnimationEnabled(enabled => {
                 const next = !enabled
                 if (next) {
@@ -381,6 +486,29 @@ export default function GodsEyeView() {
             <CloudLightning size={13} />
             WEATHER
             <span>{weatherAnimationEnabled ? (weatherGridFetching ? 'SYNC' : weatherGridError ? 'ERROR' : String(animatedWeatherEntities.length)) : 'OFF'}</span>
+          </button>
+          <button
+            type="button"
+            className="gev-segment gev-live-sim-toggle"
+            aria-pressed={liveSimulationEnabled}
+            title={liveSimulationEnabled
+              ? 'Stop the forecast timeline and live earthquake / reported volcano overlays.'
+              : 'Show the hourly weather-model timeline, USGS earthquakes, Smithsonian/USGS global volcano reports, current USGS elevated volcano alerts, and NASA EONET natural events.'}
+            onClick={() => {
+              const next = !liveSimulationEnabled
+              setLiveSimulationEnabled(next)
+              setWeatherAnimationEnabled(false)
+              setSimulationPlaying(false)
+              setForecastStepIndex(0)
+              if (next) {
+                setExternalVisible(true)
+                setIntelligenceOpen(true)
+                setVisibleLayers(current => new Set([...current, 'weather', 'hazards']))
+              }
+            }}
+          >
+            <Activity size={13} /> LIVE SIM
+            <span>{liveSimulationEnabled ? (liveSimulationFetching ? 'SYNC' : liveSimulationError ? 'ERROR' : String(simulationNaturalEvents.length)) : 'OFF'}</span>
           </button>
         </div>
 
@@ -400,6 +528,53 @@ export default function GodsEyeView() {
         </div>
       </header>
 
+      {liveSimulationEnabled && (
+        <section className="gev-simulation-console" aria-label="Live event simulation controls">
+          <div className="gev-simulation-console-head">
+            <div className="gev-simulation-heading">
+              <span className="gev-simulation-status-dot" data-state={liveSimulationError || liveSimulationResult?.health?.status === 'UNAVAILABLE' ? 'error' : liveSimulationFetching || liveSimulationResult?.health?.status === 'PARTIAL' ? 'sync' : 'ready'} />
+              <div>
+                <div className="gev-simulation-eyebrow">LIVE EVENT SIMULATION{liveSimulationResult?.health?.status ? ' · ' + String(liveSimulationResult.health.status) : ''}</div>
+                <div className="gev-simulation-time">{selectedForecastTime
+                  ? new Date(selectedForecastTime).toISOString().slice(11, 16) + ' UTC'
+                  : liveSimulationFetching
+                    ? 'SYNCING FORECAST'
+                    : liveSimulationResult?.health?.weather?.status === 'UNAVAILABLE'
+                      ? 'FORECAST UNAVAILABLE'
+                      : 'FORECAST TIME N/A'}</div>
+              </div>
+            </div>
+            <div className="gev-simulation-actions">
+              <button type="button" className="gev-simulation-play" onClick={() => setSimulationPlaying(value => !value)} disabled={simulationForecastSteps.length < 2} aria-label={simulationPlaying ? 'Pause forecast timeline' : 'Play forecast timeline'} title={simulationPlaying ? 'Pause simulation' : 'Play simulation'}>
+                {simulationPlaying ? <Pause size={13} /> : <Play size={13} />}
+                <span>{simulationPlaying ? 'PAUSE' : 'PLAY'}</span>
+              </button>
+              <button type="button" className="gev-simulation-close" onClick={() => { setLiveSimulationEnabled(false); setSimulationPlaying(false) }} aria-label="Close live simulation" title="Close live simulation"><X size={14} /></button>
+            </div>
+          </div>
+          <div className="gev-simulation-timeline-row">
+            <span className="gev-simulation-timeline-label">NOW</span>
+            <input className="gev-simulation-range" type="range" min={0} max={Math.max(0, simulationForecastSteps.length - 1)} step={1} disabled={simulationForecastSteps.length < 2} value={Math.min(forecastStepIndex, Math.max(0, simulationForecastSteps.length - 1))} onChange={event => { setForecastStepIndex(Number(event.target.value)); setSimulationPlaying(false) }} aria-label="Weather forecast time step" />
+            <span className="gev-simulation-timeline-label">+{Math.max(0, simulationForecastSteps.length - 1)}H</span>
+          </div>
+          <div className="gev-simulation-summary">
+            <span><i data-tone="weather" />{simulationWeatherEntities.length} MODEL POINTS</span>
+            <span><i data-tone="quake" />{Number(liveSimulationResult?.health?.earthquakes?.recordCount ?? simulationNaturalEvents.filter(entity => entity.entityType === 'earthquake').length)} M2.5+ QUAKES / 24H</span>
+            <span><i data-tone="volcano" />{simulationNaturalEvents.filter(entity => entity.entityType === 'volcano').length} VOLCANO SIGNALS</span>
+            <span><i data-tone="natural" />{Number(liveSimulationResult?.health?.eonet?.recordCount ?? simulationNaturalEvents.filter(entity => entity.entityType === 'natural_event').length)} OPEN EONET EVENTS</span>
+          </div>
+          <div className="gev-simulation-footnote">
+            Weather model data by <a href={safeExternalUrl(liveSimulationResult?.sources?.weather, liveSimulationResult?.health?.weather?.source === 'met-no' ? 'https://api.met.no/weatherapi/locationforecast/2.0/documentation' : 'https://open-meteo.com/en/docs')} target="_blank" rel="noreferrer">{liveSimulationResult?.health?.weather?.source === 'met-no' ? 'MET Norway' : 'Open-Meteo'}</a> · earthquakes from USGS ComCat · volcano alerts from USGS · global volcano bulletins from Smithsonian GVP. The forecast is modelled and visual pulses are not hazard footprints.
+            {liveSimulationResult?.warnings?.some(warning => warning.includes('commercial_api_key_not_configured')) && (
+              <strong className="gev-simulation-config-warning"> WEATHER FORECAST DISABLED: configure the licensed OPEN_METEO_API_KEY on the backend. Do not enable the free API for commercial use.</strong>
+            )}
+            {liveSimulationResult?.warnings?.filter(warning => !warning.includes('commercial_api_key_not_configured')).slice(0, 2).map((warning, index) => (
+              <span key={warning + index}> · SOURCE WARNING: {warning.replaceAll('_', ' ')}</span>
+            ))}
+          </div>
+        </section>
+      )}
+
       <main className="gev-workspace">
         <section className="gev-stage" aria-label="Sonalit God’s Eye View map">
           {view === '2D' ? (
@@ -407,8 +582,10 @@ export default function GodsEyeView() {
               vehicles={allVehicles}
               selectedId={selected?.id ?? null}
               onSelect={vehicle => { setSelected(vehicle); setSelectedExternalId(null) }}
-              weatherAnimationEnabled={weatherAnimationEnabled}
-              weatherEvents={animatedWeatherEntities}
+              weatherAnimationEnabled={weatherAnimationEnabled || liveSimulationEnabled}
+              weatherEvents={liveSimulationEnabled ? (visibleLayers.has('weather') ? simulationWeatherEntities : []) : (visibleLayers.has('weather') ? animatedWeatherEntities : [])}
+              naturalEvents={liveSimulationEnabled && visibleLayers.has('hazards') ? simulationNaturalEvents : []}
+              onNaturalEventSelect={entity => { setSelectedExternalId(entity.id); setSelected(null); setIntelligenceOpen(true) }}
               onWeatherSelect={entity => { setSelectedExternalId(entity.id); setSelected(null); setIntelligenceOpen(true) }}
               onViewportChange={setWorldViewport}
             />
@@ -426,7 +603,7 @@ export default function GodsEyeView() {
               showMapControls
               onNavigationExpandedChange={setMapNavigationExpanded}
               worldEntities={renderableExternalEntities}
-              weatherAnimationEnabled={weatherAnimationEnabled}
+              weatherAnimationEnabled={weatherAnimationEnabled || liveSimulationEnabled}
               selectedExternalId={selectedExternalId}
               onExternalSelect={id => {
                 setSelectedExternalId(id)
@@ -616,14 +793,79 @@ export default function GodsEyeView() {
                       <div className="gev-weather-location">
                         <div><span>Provider grid coordinate</span><strong>{selectedExternal.latitude.toFixed(4)}°, {selectedExternal.longitude.toFixed(4)}°</strong></div>
                         <div><span>Grid snap from sample centre</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.gridCellDistanceM)) ? Math.round(Number(selectedExternal.attributes?.gridCellDistanceM)) + ' m' : '—'}</strong></div>
-                        <div><span>Observed at</span><strong>{selectedExternal.observedAt ? new Date(selectedExternal.observedAt).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : 'Time unavailable'}</strong></div>
+                        <div><span>{selectedExternal.attributes?.simulationMode === 'hourly_forecast' ? 'Forecast valid at' : 'Observed at'}</span><strong>{selectedExternal.attributes?.simulationMode === 'hourly_forecast' && selectedExternal.attributes?.validAt ? new Date(String(selectedExternal.attributes.validAt)).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : selectedExternal.observedAt ? new Date(selectedExternal.observedAt).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : 'Time unavailable'}</strong></div>
                         <div><span>Source / freshness</span><strong>{String(selectedExternal.source ?? 'unknown')} · {String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
                       </div>
                       <div className="gev-weather-footnote">
-                        Animation illustrates the reported condition at this provider grid point. It does not represent a radar return, exact storm boundary, or guaranteed on-ground measurement.
+                        {selectedExternal.attributes?.simulationMode === 'hourly_forecast' ? 'Animation steps through a numerical weather forecast for this grid point, valid at the selected timeline time. It is not observed weather, a radar return, or an exact storm boundary.' : 'Animation illustrates the reported condition at this provider grid point. It does not represent a radar return, exact storm boundary, or guaranteed on-ground measurement.'}
                         {Array.isArray(selectedExternal.attributes?.hazards) && selectedExternal.attributes.hazards.length > 0
                           ? ' Indicators: ' + (selectedExternal.attributes?.hazards as unknown[]).map(String).join(', ').replaceAll('_', ' ')
                           : ''}
+                      </div>
+                    </div>
+                  ) : selectedExternal.entityType === 'earthquake' ? (
+                    <div className="gev-natural-event-card" data-event-type="earthquake" aria-label="Earthquake event details">
+                      <div className="gev-natural-event-title">{String(selectedExternal.attributes?.title ?? selectedExternal.attributes?.place ?? 'Earthquake')}</div>
+                      <div className="gev-natural-event-note">USGS-catalogued earthquake epicentre. The marker is a symbolic event locator, not a measured shaking footprint or a prediction of damage.</div>
+                      <div className="gev-natural-event-meta">
+                        <div><span>Magnitude</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.magnitude)) ? 'M' + Number(selectedExternal.attributes?.magnitude).toFixed(1) : '—'}</strong></div>
+                        <div><span>Depth</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.depthKm)) ? Number(selectedExternal.attributes?.depthKm).toFixed(1) + ' km' : '—'}</strong></div>
+                        <div><span>Event time (UTC)</span><strong>{selectedExternal.observedAt ? new Date(selectedExternal.observedAt).toISOString().slice(0, 19).replace('T', ' ') : '—'}</strong></div>
+                        <div><span>Tsunami flag</span><strong>{selectedExternal.attributes?.tsunami === true ? 'YES · CHECK OFFICIAL ALERTS' : 'NOT FLAGGED'}</strong></div>
+                        <div><span>Location</span><strong>{String(selectedExternal.attributes?.place ?? 'Unknown')}</strong></div>
+                        <div><span>Catalog freshness</span><strong>{String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
+                      </div>
+                      <div className="gev-natural-event-source">SOURCE: USGS COMCAT · EVENT RECORD<br />
+                        <a href={safeExternalUrl(selectedExternal.attributes?.detailUrl, 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php')} target="_blank" rel="noreferrer">OPEN USGS EVENT DETAILS ↗</a>
+                      </div>
+                    </div>
+                  ) : selectedExternal.entityType === 'volcano' || selectedExternal.entityType === 'volcanic_activity' ? (
+                    <div className="gev-natural-event-card" data-event-type="volcano" aria-label="Volcano report details">
+                      <div className="gev-natural-event-title">{String(selectedExternal.attributes?.name ?? 'Volcano activity report')}</div>
+                      <div className="gev-natural-event-note">{String(selectedExternal.attributes?.reportText ?? 'No report summary was supplied by the provider.')}</div>
+                      <div className="gev-natural-event-meta">
+                        <div><span>Reported activity</span><strong>{String(selectedExternal.attributes?.reportType ?? selectedExternal.status ?? 'REPORTED').replaceAll('_', ' ')}</strong></div>
+                        <div><span>Country / region</span><strong>{[selectedExternal.attributes?.country, selectedExternal.attributes?.region].filter(Boolean).map(String).join(' · ') || '—'}</strong></div>
+                        <div><span>Report date (UTC)</span><strong>{selectedExternal.observedAt ? new Date(selectedExternal.observedAt).toISOString().slice(0, 19).replace('T', ' ') : '—'}</strong></div>
+                        <div><span>Reporting cadence</span><strong>{String(selectedExternal.attributes?.reportingCadence ?? 'weekly').toUpperCase()}</strong></div>
+                        <div><span>Elevation</span><strong>{Number.isFinite(Number(selectedExternal.attributes?.elevationM)) ? Math.round(Number(selectedExternal.attributes?.elevationM)) + ' m' : '—'}</strong></div>
+                        <div><span>Report quality</span><strong>{String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
+                        <div><span>USGS alert / aviation code</span><strong>{String((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.alertLevel ?? 'NO ELEVATED ALERT')} · {String((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.colorCode ?? '—')}</strong></div>
+                        <div><span>USGS notice time (UTC)</span><strong>{(selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.noticeIssuedAt ? new Date(String((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown>).noticeIssuedAt)).toISOString().slice(0, 19).replace('T', ' ') : '—'}</strong></div>
+                      </div>
+                      <div className="gev-natural-event-source">SMITHSONIAN GLOBAL VOLCANISM PROGRAM / USGS<br />
+                        {selectedExternal.attributes?.usgsCurrentAlert ? 'USGS currently lists this volcano in an elevated alert state. The issue timestamp shown above identifies the notice that established the alert; it is not the time of a fresh sensor measurement.' : 'Global activity comes from the weekly bulletin; no current elevated USGS alert was returned for this volcano.'} The weekly bulletin itself is not a real-time vent camera, ash plume, or complete global monitoring feed.<br />
+                        {(selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined)?.noticeUrl && <><a href={safeExternalUrl((selectedExternal.attributes?.usgsCurrentAlert as Record<string, unknown>).noticeUrl, 'https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes')} target="_blank" rel="noreferrer">OPEN USGS CURRENT ALERT ↗</a><br /></>}
+                        <a href={safeExternalUrl(selectedExternal.attributes?.reportUrl, 'https://volcano.si.edu/reports_weekly.cfm')} target="_blank" rel="noreferrer">OPEN VOLCANO SOURCE REPORT ↗</a>
+                      </div>
+                    </div>
+                  ) : selectedExternal.entityType === 'natural_event' ? (
+                    <div className="gev-natural-event-card" data-event-type="natural-event" aria-label="NASA EONET natural event details">
+                      <div className="gev-natural-event-title">{String(selectedExternal.attributes?.categoryTitle ?? selectedExternal.attributes?.categoryId ?? 'Natural event')}</div>
+                      <div className="gev-entity-title" style={{ fontSize: 18, marginTop: 7 }}>{String(selectedExternal.attributes?.title ?? selectedExternal.attributes?.name ?? 'Open natural event')}</div>
+                      <div className="gev-natural-event-note">{String(selectedExternal.attributes?.description ?? 'NASA EONET did not include an event description.')}</div>
+                      <div className="gev-natural-event-meta">
+                        <div><span>Event state</span><strong>{String(selectedExternal.status ?? 'OPEN').toUpperCase()}</strong></div>
+                        <div><span>Category</span><strong>{String(selectedExternal.attributes?.categoryId ?? '—')}</strong></div>
+                        <div><span>Event geometry</span><strong>{String(selectedExternal.attributes?.sourceGeometryType ?? 'UNKNOWN').toUpperCase()}</strong></div>
+                        <div><span>Geometry points</span><strong>{String(selectedExternal.attributes?.sourceCoordinateCount ?? '—')}</strong></div>
+                        <div><span>Event date (UTC)</span><strong>{selectedExternal.attributes?.eventDate ? new Date(String(selectedExternal.attributes.eventDate)).toISOString().slice(0, 19).replace('T', ' ') : '—'}</strong></div>
+                        <div><span>Feed freshness</span><strong>{String(selectedExternal.quality?.freshnessClass ?? 'UNKNOWN')}</strong></div>
+                        <div><span>Marker coordinate</span><strong>{selectedExternal.latitude.toFixed(4)}°, {selectedExternal.longitude.toFixed(4)}°</strong></div>
+                        <div><span>Location semantics</span><strong>{String(selectedExternal.attributes?.locationSemantics ?? 'SOURCE EVENT LOCATOR').replaceAll('_', ' ')}</strong></div>
+                      </div>
+                      <div className="gev-natural-event-source">
+                        NASA EARTH OBSERVATORY NATURAL EVENT TRACKER (EONET)<br />
+                        The map marker is the source point or a centre calculated from source geometry. It is not a substitute for the original event boundary, live sensor stream, or measured damage footprint.<br />
+                        <a href={safeExternalUrl(selectedExternal.attributes?.eventLink, 'https://eonet.gsfc.nasa.gov/')} target="_blank" rel="noreferrer">OPEN NASA EONET EVENT ↗</a>
+                        {(() => {
+                          const links = (selectedExternal.attributes?.sourceLinks as Array<Record<string, unknown>> | undefined) ?? []
+                          return links.slice(0, 3).map((item, index) => {
+                            const url = safeExternalUrl(item.url, '')
+                            if (!url) return null
+                            return <Fragment key={url + index}><br /><a href={url} target="_blank" rel="noreferrer">OPEN {String(item.title ?? item.id ?? 'SOURCE').toUpperCase()} ↗</a></Fragment>
+                          })
+                        })()}
                       </div>
                     </div>
                   ) : (

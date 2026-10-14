@@ -193,21 +193,120 @@ function makeWeatherMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialW
         ? '<path d="M3 8h18M1 12h16M4 16h17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'
         : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
           ? '<path d="M8 15 6 19M13 15l-2 5M18 15l-2 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'
-          : '<path d="M7.5 17.5h9a4.3 4.3 0 0 0 .4-8.6A5.5 5.5 0 0 0 6.4 9.8a3.9 3.9 0 0 0 1.1 7.7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
+          : Number.isFinite(code) && (code === 0 || code === 1)
+            ? '<circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+            : '<path d="M7.5 17.5h9a4.3 4.3 0 0 0 .4-8.6A5.5 5.5 0 0 0 6.4 9.8a3.9 3.9 0 0 0 1.1 7.7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
   const marker = document.createElement('button')
   marker.type = 'button'
   marker.className = 'lf-weather-marker'
+  marker.dataset.weatherCode = Number.isFinite(code) ? String(code) : 'unknown'
+  marker.dataset.condition = String(item.attributes?.conditions ?? 'unknown')
   marker.dataset.freshness = String(item.quality?.freshnessClass ?? 'UNKNOWN').toUpperCase()
   marker.style.setProperty('--weather-color', color)
   const phase = Array.from(String(item.id)).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 58
   marker.style.setProperty('--weather-delay', `${(-phase / 10).toFixed(2)}s`)
   marker.title = `${condition}${tempLabel ? ' · ' + tempLabel : ''} · ${item.source ?? 'unknown source'} · ${item.quality?.freshnessClass ?? 'UNKNOWN'}`
   marker.setAttribute('aria-label', `Inspect weather: ${condition}${tempLabel ? ', ' + tempLabel : ''}`)
+  const weatherEffect = Number.isFinite(code) && code >= 95
+    ? '<span class="lf-weather-fx lf-weather-fx-storm" aria-hidden="true"></span>'
+    : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
+      ? '<span class="lf-weather-fx lf-weather-fx-rain" aria-hidden="true"><i></i><i></i><i></i></span>'
+      : Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)
+        ? '<span class="lf-weather-fx lf-weather-fx-snow" aria-hidden="true"><i></i><i></i><i></i></span>'
+        : Number.isFinite(code) && (code === 45 || code === 48)
+          ? '<span class="lf-weather-fx lf-weather-fx-fog" aria-hidden="true"><i></i><i></i></span>'
+          : ''
   marker.innerHTML = `
     <span class="lf-weather-ripple" aria-hidden="true"></span>
-    <span class="lf-weather-core"><svg viewBox="0 0 24 24" aria-hidden="true">${glyph}</svg></span>
+    <span class="lf-weather-core"><svg viewBox="0 0 24 24" aria-hidden="true">${glyph}</svg>${weatherEffect}</span>
     <span class="lf-weather-label"><b>${condition}</b>${tempLabel ? `<i>${tempLabel}</i>` : ''}</span>
   `
+  marker.addEventListener('click', event => { event.stopPropagation(); onSelect(item) })
+  return marker
+}
+
+function escapeMarkerText(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function naturalEventColor(item: SpatialWorldEntity): string {
+  if (item.entityType === 'earthquake') {
+    const magnitude = Number(item.attributes?.magnitude)
+    return Number.isFinite(magnitude) && magnitude >= 5.5 ? '#ff9b79' : '#e6a66f'
+  }
+  if (item.entityType === 'natural_event') {
+    const category = (String(item.attributes?.categoryId ?? '') + ' ' + String(item.attributes?.categoryTitle ?? '')).toLowerCase()
+    if (category.includes('wildfire') || category.includes('fire')) return '#ef996d'
+    if (category.includes('storm') || category.includes('hurricane') || category.includes('cyclone')) return '#df8588'
+    if (category.includes('flood')) return '#76b9ed'
+    if (category.includes('landslide')) return '#c79b78'
+    if (category.includes('dust') || category.includes('haze')) return '#d6bf7d'
+    return '#a8bfcc'
+  }
+  const currentAlert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined
+  const alertLevel = String(currentAlert?.alertLevel ?? '').toUpperCase()
+  const colorCode = String(currentAlert?.colorCode ?? '').toUpperCase()
+  if (alertLevel === 'WARNING' || colorCode === 'RED') return '#f17878'
+  if (alertLevel === 'WATCH' || colorCode === 'ORANGE') return '#e99c72'
+  if (alertLevel === 'ADVISORY' || colorCode === 'YELLOW') return '#e2c16f'
+  const reportType = String(item.attributes?.reportType ?? item.status ?? '')
+  return reportType.includes('ERUPTIVE') ? '#e99a9a' : '#d9a67e'
+}
+
+function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialWorldEntity) => void): HTMLButtonElement {
+  const isEarthquake = item.entityType === 'earthquake'
+  const isVolcano = item.entityType === 'volcano' || item.entityType === 'volcanic_activity'
+  const isEonetEvent = item.entityType === 'natural_event'
+  const color = naturalEventColor(item)
+  const magnitude = Number(item.attributes?.magnitude)
+  const magnitudeLabel = Number.isFinite(magnitude) ? 'M' + magnitude.toFixed(1) : 'M—'
+  const currentAlert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined
+  const alertLevel = String(currentAlert?.alertLevel ?? '').toUpperCase()
+  const colorCode = String(currentAlert?.colorCode ?? '').toUpperCase()
+  const categoryTitle = String(item.attributes?.categoryTitle ?? item.attributes?.categoryId ?? 'NATURAL EVENT')
+  const detail = isEarthquake
+    ? magnitudeLabel + ' · ' + String(item.attributes?.place ?? 'Earthquake')
+    : isVolcano && currentAlert
+      ? 'USGS ' + alertLevel + ' / ' + colorCode + ' · ' + String(item.attributes?.name ?? '')
+      : isVolcano
+        ? String(item.attributes?.reportType ?? 'ACTIVITY REPORTED').replaceAll('_', ' ') + ' · ' + String(item.attributes?.country ?? '')
+        : categoryTitle.toUpperCase() + ' · ' + String(item.attributes?.title ?? item.attributes?.name ?? 'Open event')
+  const marker = document.createElement('button')
+  marker.type = 'button'
+  marker.className = 'lf-natural-event-marker'
+  marker.dataset.eventType = isEarthquake ? 'earthquake' : isVolcano ? 'volcano' : 'natural-event'
+  marker.dataset.naturalCategory = String(item.attributes?.categoryId ?? 'natural-event').toLowerCase()
+  marker.dataset.alertLevel = alertLevel || 'NONE'
+  marker.dataset.freshness = currentAlert
+    ? (String(currentAlert.sourceStatus ?? '') === 'STALE_CACHE_FALLBACK' ? 'STALE' : 'LIVE')
+    : String(item.quality?.freshnessClass ?? 'UNKNOWN').toUpperCase()
+  marker.style.setProperty('--event-color', color)
+  const phase = Array.from(String(item.id)).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 48
+  marker.style.setProperty('--event-delay', String(-phase / 8) + 's')
+  marker.title = detail + ' · ' + String(item.source ?? 'unknown source') + ' · ' + String(item.quality?.freshnessClass ?? 'UNKNOWN')
+  marker.setAttribute('aria-label', 'Inspect ' + (isEarthquake ? 'earthquake: ' : isVolcano ? 'volcanic activity: ' : 'natural event: ') + detail)
+  const earthquakeGlyph = '<path d="M2 12h4l2.2-5.5 3.4 11 3.1-9 2.1 3.5H22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+  const volcanoGlyph = '<path d="M3.5 19.5 10.2 6.8l2.1 4.1 1.8-2.5 6.4 11.1Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M11.4 4.2c-.7 1-.2 1.8.7 2.1M15.1 3c-.7 1-.4 1.7.2 2.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
+  const categoryId = (String(item.attributes?.categoryId ?? '') + ' ' + String(item.attributes?.categoryTitle ?? '')).toLowerCase()
+  const eonetGlyph = categoryId.includes('wildfire') || categoryId.includes('fire')
+    ? '<path d="M12 22c5 0 8-3.3 7-7.4-.6-2.4-2.3-4.2-4.7-6.8.2 2.8-.9 3.8-2 4.5.2-4-2.2-7.1-4.3-9.3C8.8 8 4.8 10.1 5 15c.1 4.1 3 7 7 7Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>'
+    : categoryId.includes('storm') || categoryId.includes('hurricane') || categoryId.includes('cyclone')
+      ? '<path d="M5 15.5h11a4 4 0 0 0 .2-8A5.3 5.3 0 0 0 6 9.2a3.2 3.2 0 0 0-1 6.3ZM14 15l-3 5h3l-2 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>'
+      : categoryId.includes('flood')
+        ? '<path d="M3 8c2.5-3 4.5 3 7 0s4.5 3 7 0 4.5 3 4 0M3 14c2.5-3 4.5 3 7 0s4.5 3 7 0 4.5 3 4 0M3 20c2.5-3 4.5 3 7 0s4.5 3 7 0 4.5 3 4 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+        : categoryId.includes('landslide')
+          ? '<path d="M3 20 11 5l4 7 2-3 4 11Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m8 20 5-4 3 2" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+          : '<path d="M3 9h10M5 13h14M3 17h10M16 7l4 2-4 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+  const category = isEarthquake ? 'EARTHQUAKE' : isVolcano ? currentAlert ? 'VOLCANO ALERT' : 'VOLCANO REPORT' : categoryTitle.toUpperCase()
+  const tag = isEarthquake ? magnitudeLabel : isVolcano ? currentAlert ? alertLevel : (item.quality?.freshnessClass === 'STALE' ? 'STALE' : 'REPORTED') : 'OPEN'
+  marker.innerHTML = '<span class="lf-natural-event-pulse" aria-hidden="true"></span>' +
+    '<span class="lf-natural-event-core"><svg viewBox="0 0 24 24" aria-hidden="true">' + (isEarthquake ? earthquakeGlyph : isVolcano ? volcanoGlyph : eonetGlyph) + '</svg></span>' +
+    '<span class="lf-natural-event-label"><b>' + escapeMarkerText(category) + '</b><i>' + escapeMarkerText(tag) + '</i></span>'
   marker.addEventListener('click', event => { event.stopPropagation(); onSelect(item) })
   return marker
 }
@@ -257,7 +356,9 @@ interface Props {
   trackedId?: string | null;
   weatherAnimationEnabled?: boolean;
   weatherEvents?: SpatialWorldEntity[];
+  naturalEvents?: SpatialWorldEntity[];
   onWeatherSelect?: (entity: SpatialWorldEntity) => void;
+  onNaturalEventSelect?: (entity: SpatialWorldEntity) => void;
   onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number; bbox?: [number, number, number, number] }) => void;
 }
 
@@ -268,16 +369,21 @@ export default function FleetMap({
   trackedId = null,
   weatherAnimationEnabled = false,
   weatherEvents = [],
+  naturalEvents = [],
   onWeatherSelect,
+  onNaturalEventSelect,
   onViewportChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const weatherMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const naturalEventMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const onWeatherSelectRef = useRef(onWeatherSelect)
+  const onNaturalEventSelectRef = useRef(onNaturalEventSelect)
   const onViewportChangeRef = useRef(onViewportChange)
   onWeatherSelectRef.current = onWeatherSelect
+  onNaturalEventSelectRef.current = onNaturalEventSelect
   onViewportChangeRef.current = onViewportChange
   const coordsRef = useRef<HTMLSpanElement>(null)
   const animRef = useRef(0)
@@ -750,6 +856,56 @@ export default function FleetMap({
     }
   }, [mapReady, weatherAnimationEnabled, weatherEvents])
 
+
+  // The halo marks the catalogue epicentre only; zoom-aware thinning keeps the map legible at global scale.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const renderEvents = () => {
+      for (const marker of naturalEventMarkersRef.current.values()) marker.remove()
+      naturalEventMarkersRef.current.clear()
+      if (!mapReady || !weatherAnimationEnabled) return
+
+      const valid = naturalEvents.filter(item =>
+        (item.entityType === 'earthquake' || item.entityType === 'volcano' || item.entityType === 'natural_event') &&
+        Number.isFinite(item.latitude) && Number.isFinite(item.longitude) &&
+        item.latitude >= -90 && item.latitude <= 90 &&
+        item.longitude >= -180 && item.longitude <= 180
+      )
+      const volcanoes = valid.filter(item => item.entityType === 'volcano')
+      const globalEvents = valid.filter(item => item.entityType === 'natural_event').sort((a, b) => {
+        const dateA = Date.parse(String(a.attributes?.eventDate ?? a.observedAt ?? '')) || 0
+        const dateB = Date.parse(String(b.attributes?.eventDate ?? b.observedAt ?? '')) || 0
+        return dateB - dateA
+      })
+      const earthquakes = valid.filter(item => item.entityType === 'earthquake').sort((a, b) => {
+        const ma = Number(a.attributes?.magnitude)
+        const mb = Number(b.attributes?.magnitude)
+        return (Number.isFinite(mb) ? mb : 0) - (Number.isFinite(ma) ? ma : 0)
+      })
+      const zoom = map.getZoom()
+      const earthquakeLimit = zoom < 2 ? 24 : zoom < 4 ? 48 : 100
+      const globalEventLimit = zoom < 2 ? 12 : zoom < 4 ? 26 : 50
+      const visible = [...volcanoes, ...globalEvents.slice(0, globalEventLimit), ...earthquakes.slice(0, earthquakeLimit)]
+
+      for (const item of visible) {
+        const element = makeNaturalEventMarker(item, entity => onNaturalEventSelectRef.current?.(entity))
+        const marker = new maplibregl.Marker({ element, anchor: 'center' })
+          .setLngLat([item.longitude, item.latitude])
+          .addTo(map)
+        marker.getElement().style.zIndex = item.entityType === 'earthquake' ? '72' : item.entityType === 'natural_event' ? '66' : '68'
+        naturalEventMarkersRef.current.set(item.id, marker)
+      }
+    }
+    renderEvents()
+    map.on('zoomend', renderEvents)
+    return () => {
+      map.off('zoomend', renderEvents)
+      for (const marker of naturalEventMarkersRef.current.values()) marker.remove()
+      naturalEventMarkersRef.current.clear()
+    }
+  }, [mapReady, weatherAnimationEnabled, naturalEvents])
+
   // sync vehicle markers
   useEffect(() => {
     const map = mapRef.current; if (!map) return
@@ -814,6 +970,26 @@ export default function FleetMap({
       .lf-weather-core{position:relative;z-index:2;display:grid;place-items:center;width:27px;height:27px;border-radius:9px;background:linear-gradient(155deg,rgba(17,26,39,.97),rgba(4,8,15,.98));border:1px solid rgba(231,241,252,.24);box-shadow:0 2px 6px rgba(0,0,0,.43),inset 0 1px 0 rgba(255,255,255,.12);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
       .lf-weather-core:before{content:"";position:absolute;inset:2px;border:1px solid color-mix(in srgb,var(--weather-color) 30%,transparent);border-radius:6px;pointer-events:none}
       .lf-weather-core svg{position:relative;width:16px;height:16px;color:var(--weather-color);filter:none;overflow:visible}
+      .lf-weather-core svg{z-index:1}
+      .lf-weather-fx{position:absolute;z-index:2;inset:0;overflow:hidden;border-radius:9px;pointer-events:none}
+      .lf-weather-fx-rain i{position:absolute;top:10px;width:1.5px;height:5px;border-radius:2px;background:var(--weather-color);opacity:0;animation:lf-weather-rain-drop 1.05s linear infinite}
+      .lf-weather-fx-rain i:nth-child(1){left:6px;animation-delay:-.6s}
+      .lf-weather-fx-rain i:nth-child(2){left:13px;animation-delay:-.12s}
+      .lf-weather-fx-rain i:nth-child(3){left:20px;animation-delay:-.82s}
+      .lf-weather-marker[data-condition*="drizzle"] .lf-weather-fx-rain i{animation-duration:1.9s;opacity:.56}
+      .lf-weather-fx-snow i{position:absolute;top:8px;width:2.5px;height:2.5px;border-radius:50%;background:#e3f4ff;opacity:0;animation:lf-weather-snow-drift 2.2s ease-in-out infinite}
+      .lf-weather-fx-snow i:nth-child(1){left:7px;animation-delay:-.8s}
+      .lf-weather-fx-snow i:nth-child(2){left:14px;animation-delay:-1.6s}
+      .lf-weather-fx-snow i:nth-child(3){left:21px;animation-delay:-.25s}
+      .lf-weather-fx-fog i{position:absolute;left:-4px;width:35px;height:1px;background:color-mix(in srgb,var(--weather-color) 68%,white);opacity:0;animation:lf-weather-fog-drift 4.4s ease-in-out infinite}
+      .lf-weather-fx-fog i:first-child{top:11px}
+      .lf-weather-fx-fog i:last-child{top:18px;animation-delay:-2.2s}
+      .lf-weather-fx-storm{inset:2px;border-radius:7px;background:rgba(255,235,195,.12);opacity:0;animation:lf-weather-storm-flash 7.6s steps(1,end) infinite}
+      @keyframes lf-weather-rain-drop{0%{transform:translateY(-5px) rotate(18deg);opacity:0}22%{opacity:.62}100%{transform:translateY(9px) rotate(18deg);opacity:0}}
+      @keyframes lf-weather-snow-drift{0%{transform:translate(0,-4px);opacity:0}28%{opacity:.8}100%{transform:translate(3px,11px);opacity:0}}
+      @keyframes lf-weather-fog-drift{0%,100%{transform:translateX(-3px);opacity:.13}50%{transform:translateX(4px);opacity:.46}}
+      @keyframes lf-weather-storm-flash{0%,9%,100%{opacity:0}9.3%{opacity:.28}10%{opacity:.04}10.3%{opacity:.18}11%{opacity:0}}
+
       .lf-weather-marker:hover .lf-weather-core,.lf-weather-marker:focus-visible .lf-weather-core{transform:translateY(-1px);border-color:color-mix(in srgb,var(--weather-color) 64%,white 14%);box-shadow:0 4px 10px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.16)}
       .lf-weather-ripple{position:absolute;z-index:1;inset:0;border:1px solid color-mix(in srgb,var(--weather-color) 54%,transparent);border-radius:13px;pointer-events:none;opacity:0;transform-origin:center;animation:lf-weather-signal 5.8s cubic-bezier(.16,1,.3,1) infinite;animation-delay:var(--weather-delay,0s)}
       .lf-weather-marker[data-freshness="DELAYED"] .lf-weather-ripple{animation-duration:8.2s;border-style:dashed}
@@ -824,7 +1000,22 @@ export default function FleetMap({
       .lf-weather-marker[data-freshness="STALE"] .lf-weather-core,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-core,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-core,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-core{opacity:.58;border-color:rgba(219,228,239,.13);box-shadow:0 1px 3px rgba(0,0,0,.28)}
       .lf-weather-marker[data-freshness="STALE"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-ripple,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-ripple{animation:none;opacity:0}
       .lf-weather-marker[data-freshness="DELAYED"] .lf-weather-core{border-style:dashed}
-      @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple,.lf-weather-marker,.lf-weather-label{animation:none!important;transition:none!important}.lf-weather-ripple{display:none}}
+      @keyframes lf-natural-event-pulse{0%{transform:scale(.9);opacity:0}15%{opacity:.18}48%{opacity:.08}100%{transform:scale(1.5);opacity:0}}
+      .lf-natural-event-marker{position:relative;width:38px;height:38px;display:grid;place-items:center;padding:0;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--event-color);overflow:visible;cursor:pointer;isolation:isolate;appearance:none;-webkit-tap-highlight-color:transparent}
+      .lf-natural-event-marker:focus-visible{outline:2px solid color-mix(in srgb,var(--event-color) 82%,white 18%);outline-offset:2px}
+      .lf-natural-event-core{position:relative;z-index:2;display:grid;place-items:center;width:26px;height:26px;border-radius:9px;background:linear-gradient(155deg,rgba(17,25,36,.97),rgba(4,8,14,.98));border:1px solid color-mix(in srgb,var(--event-color) 44%,rgba(255,255,255,.28));box-shadow:0 2px 6px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.1)}
+      .lf-natural-event-core svg{width:17px;height:17px;color:var(--event-color)}
+      .lf-natural-event-pulse{position:absolute;inset:0;border:1px solid color-mix(in srgb,var(--event-color) 62%,transparent);border-radius:12px;opacity:0;pointer-events:none;animation:lf-natural-event-pulse 6.4s cubic-bezier(.16,1,.3,1) infinite;animation-delay:var(--event-delay,0s)}
+      .lf-natural-event-marker[data-event-type="volcano"] .lf-natural-event-pulse{animation-duration:9s;border-style:dashed}
+      .lf-natural-event-marker[data-event-type="natural-event"] .lf-natural-event-pulse{animation-duration:8s;border-style:dotted}
+      .lf-natural-event-label{position:absolute;z-index:4;top:32px;left:50%;transform:translate(-50%,3px);opacity:0;display:flex;align-items:center;gap:6px;max-width:210px;padding:5px 7px;border:1px solid color-mix(in srgb,var(--event-color) 26%,rgba(255,255,255,.12));border-radius:7px;background:rgba(4,9,16,.96);box-shadow:0 8px 24px rgba(0,0,0,.32);font:700 8px/1.15 "IBM Plex Mono",monospace;white-space:nowrap;pointer-events:none;transition:opacity .16s ease,transform .16s ease}
+      .lf-natural-event-label b{color:#e7edf5;letter-spacing:.045em}
+      .lf-natural-event-label i{font-style:normal;padding-left:6px;border-left:1px solid rgba(255,255,255,.15);color:var(--event-color)}
+      .lf-natural-event-marker:hover .lf-natural-event-label,.lf-natural-event-marker:focus-visible .lf-natural-event-label{opacity:1;transform:translate(-50%,0)}
+      .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-core{opacity:.5}
+      .lf-natural-event-marker[data-freshness="STALE"] .lf-natural-event-pulse{animation:none;opacity:0}
+      @media(prefers-reduced-motion:reduce){.lf-natural-event-pulse,.lf-natural-event-marker,.lf-natural-event-label{animation:none!important;transition:none!important}.lf-natural-event-pulse{display:none}}
+      @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple,.lf-weather-marker,.lf-weather-label,.lf-weather-fx,.lf-weather-fx *{animation:none!important;transition:none!important}.lf-weather-ripple,.lf-weather-fx{display:none}}
     `
     document.head.appendChild(s)
   }, [])

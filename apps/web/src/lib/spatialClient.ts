@@ -106,6 +106,40 @@ export interface WorldContextQuery {
   signal?: AbortSignal
 }
 
+export interface LiveEventSimulationResponse {
+  data: SpatialWorldEntity[]
+  generatedAt: string
+  health: {
+    status: 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE' | string
+    weather?: Record<string, unknown>
+    earthquakes?: Record<string, unknown>
+    volcanoes?: Record<string, unknown>
+  }
+  coverage?: Record<string, unknown>
+  sources?: Record<string, string>
+  warnings?: string[]
+}
+
+export interface LiveEventSimulationQuery {
+  center: { latitude: number; longitude: number }
+  radiusM: number
+  bounds?: [number, number, number, number]
+  signal?: AbortSignal
+}
+
+export async function fetchLiveEventSimulation(input: LiveEventSimulationQuery): Promise<LiveEventSimulationResponse> {
+  const response = await api.get<{ data: LiveEventSimulationResponse }>('/spatial/live-events', {
+    signal: input.signal,
+    params: {
+      lat: input.center.latitude,
+      lng: input.center.longitude,
+      radiusM: Math.min(Math.max(input.radiusM, 1000), 250000),
+      ...(input.bounds ? { bbox: input.bounds.join(',') } : {}),
+    },
+  })
+  return response.data.data
+}
+
 export async function fetchWorldContext(input: WorldContextQuery): Promise<SpatialWorldContext> {
   const config: AxiosRequestConfig = {
     signal: input.signal,
@@ -128,6 +162,7 @@ export function spatialEntityLayer(item: SpatialWorldEntity): WorldContextLayer 
   const type = String(item.entityType || '').toLowerCase()
   if (type === 'aircraft') return 'aircraft'
   if (type === 'weather') return 'weather'
+  if (type === 'earthquake' || type === 'volcano' || type === 'volcanic_activity' || type === 'natural_event') return 'hazards'
   if (type === 'vessel') return 'maritime'
   if (type.startsWith('traffic_') || type === 'traffic') return 'traffic'
   if (type === 'natural_hazard' || type === 'hazard') return 'hazards'

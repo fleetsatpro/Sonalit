@@ -116,7 +116,10 @@ function cameraViewport(viewer: Cesium.Viewer): { latitude:number; longitude:num
 
 function externalLabel(item: SpatialWorldEntity) {
   const attrs = item.attributes ?? {};
-  const value = attrs.callsign ?? attrs.name ?? attrs.title ?? attrs.categoryTitle ?? attrs.description ?? attrs.label ?? item.id;
+  const currentAlert = attrs.usgsCurrentAlert as Record<string, unknown> | undefined;
+  const value = item.entityType === 'volcano' && currentAlert
+    ? String(attrs.name ?? 'Volcano') + ' · USGS ' + String(currentAlert.alertLevel ?? 'ELEVATED')
+    : attrs.callsign ?? attrs.name ?? attrs.title ?? attrs.categoryTitle ?? attrs.description ?? attrs.label ?? item.id;
   const freshness = item.quality?.freshnessClass ?? (item.entityType === 'satellite' ? 'MODELLED' : 'UNKNOWN');
   return String(value) + ' · ' + String(freshness);
 }
@@ -238,11 +241,46 @@ function weatherSvg(color: string, selected: boolean, code: number) {
         ? `<path d="M14 27h36M9 34h30M16 41h35" fill="none" stroke="${color}" stroke-width="2.7" stroke-linecap="round"/>`
         : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
           ? `<path d="M22 39 18 49M33 39 29 51M44 39 40 49" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`
-          : `<path d="M21 38h23a10 10 0 0 0 1-20A13 13 0 0 0 17 22a8 8 0 0 0 4 16Z" fill="none" stroke="${color}" stroke-width="2.7" stroke-linejoin="round"/>`;
+          : Number.isFinite(code) && (code === 0 || code === 1)
+            ? `<circle cx="32" cy="32" r="8" fill="none" stroke="${color}" stroke-width="2.5"/><path d="M32 15v5M32 44v5M15 32h5M44 32h5M20 20l4 4M40 40l4 4M44 20l-4 4M24 40l-4 4" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>`
+            : `<path d="M21 38h23a10 10 0 0 0 1-20A13 13 0 0 0 17 22a8 8 0 0 0 4 16Z" fill="none" stroke="${color}" stroke-width="2.7" stroke-linejoin="round"/>`;
   // One crisp instrument-grade bezel. No Gaussian bloom or stacked rings: those
   // made all 36 model-grid symbols compete with the underlying map.
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="23.5" fill="#06101b" fill-opacity=".96" stroke="${stroke}" stroke-width="${selected ? 2.5 : 1.65}"/><g>${glyph}</g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+
+function weatherColorForNaturalCategory(category: string) {
+  const key = String(category || '').toLowerCase();
+  if (key.includes('wildfire') || key.includes('fire')) return '#ef996d';
+  if (key.includes('storm') || key.includes('hurricane') || key.includes('cyclone')) return '#df8588';
+  if (key.includes('flood')) return '#76b9ed';
+  if (key.includes('landslide')) return '#c79b78';
+  if (key.includes('dust') || key.includes('haze')) return '#d6bf7d';
+  return '#a8bfcc';
+}
+
+function naturalEventSvg(type: string, color: string, selected: boolean, category = '') {
+  const stroke = selected ? '#f8fafc' : color;
+  const categoryKey = String(category || '').toLowerCase();
+  const glyph = type === 'earthquake'
+    ? '<path d="M10 36h8l5-12 8 25 7-21 5 8h8" fill="none" stroke="' + color + '" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>'
+    : type === 'volcano' || type === 'volcanic_activity'
+      ? '<path d="M12 49 25 21l8 14 5-7 15 21Z" fill="none" stroke="' + color + '" stroke-width="3" stroke-linejoin="round"/><path d="M28 14c-3 2-2 5 1 6M38 10c-2 3-1 5 2 7" fill="none" stroke="' + color + '" stroke-width="2.3" stroke-linecap="round"/>'
+      : categoryKey.includes('wildfire') || categoryKey.includes('fire')
+        ? '<path d="M32 51c12 0 17-9 14-18-1.5-4.3-5.4-8-10.6-13 .3 7-2.6 10-5.4 11.5 1-9.4-5-17-10.2-21.5C22.5 22 11 28 12 39c.7 7 7.4 12 20 12Z" fill="none" stroke="' + color + '" stroke-width="3" stroke-linejoin="round"/>'
+        : categoryKey.includes('storm') || categoryKey.includes('hurricane') || categoryKey.includes('cyclone')
+          ? '<path d="M13 34h29a9 9 0 0 0 .5-18A15 15 0 0 0 14 22a6 6 0 0 0-1 12Z" fill="none" stroke="' + color + '" stroke-width="2.8" stroke-linejoin="round"/><path d="m31 34-8 14h8l-3 9 14-17h-8l4-6" fill="none" stroke="' + color + '" stroke-width="2.6" stroke-linejoin="round"/>'
+          : categoryKey.includes('flood')
+            ? '<path d="M8 22c4-4 8 4 12 0s8 4 12 0 8 4 12 0 8 4 12 0M8 33c4-4 8 4 12 0s8 4 12 0 8 4 12 0 8 4 12 0M8 44c4-4 8 4 12 0s8 4 12 0 8 4 12 0 8 4 12 0" fill="none" stroke="' + color + '" stroke-width="2.7" stroke-linecap="round"/>'
+            : categoryKey.includes('landslide')
+              ? '<path d="M8 48 22 20l9 16 5-8 18 20Z" fill="none" stroke="' + color + '" stroke-width="2.8" stroke-linejoin="round"/><path d="m24 44 7-6 5 4" fill="none" stroke="' + color + '" stroke-width="2.3" stroke-linecap="round"/>'
+              : '<path d="M8 22h27M8 32h40M8 42h27M36 17l8 5-8 5" fill="none" stroke="' + color + '" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>';
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">' +
+    '<circle cx="32" cy="32" r="23.5" fill="#06101b" fill-opacity=".97" stroke="' + stroke + '" stroke-width="' + (selected ? '2.5' : '1.65') + '"/>' +
+    glyph + '</svg>';
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
 
 function cameraSvg(color: string, selected: boolean) {
@@ -1127,21 +1165,34 @@ export default function CorridorWorldScene({
       const selected = item.id === selectedExternalId;
       const type = String(item.entityType || '').toLowerCase();
       const isWeather = type === 'weather';
+      const isEarthquake = type === 'earthquake';
+      const isVolcano = type === 'volcano' || type === 'volcanic_activity';
+      const isEonetEvent = type === 'natural_event';
+      const isNaturalEvent = isEarthquake || isVolcano || isEonetEvent;
       const weatherAnimated = weatherAnimationEnabled && isWeather;
+      const eventAnimated = weatherAnimationEnabled && isNaturalEvent;
       const weatherFreshness = String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase();
-      const weatherMayPulse = weatherFreshness === 'LIVE' || weatherFreshness === 'DELAYED';
+      const weatherMayPulse = weatherFreshness === 'LIVE' || weatherFreshness === 'DELAYED' || weatherFreshness === 'MODELLED';
       const weatherPhase = (item.id.split('').reduce((hash, character) => (hash * 33 + character.charCodeAt(0)) >>> 0, 5381) % 360) * Math.PI / 180;
-      const color = weatherAnimated ? weatherColorFor(item) : (WORLD_LAYER_COLOR[layer] ?? '#94a3b8');
+      const currentVolcanoAlert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined;
+      const volcanoAlertLevel = String(currentVolcanoAlert?.alertLevel ?? '').toUpperCase();
+      const volcanoColorCode = String(currentVolcanoAlert?.colorCode ?? '').toUpperCase();
+      const volcanoAlertColor = volcanoAlertLevel === 'WARNING' || volcanoColorCode === 'RED' ? '#f17878'
+        : volcanoAlertLevel === 'WATCH' || volcanoColorCode === 'ORANGE' ? '#e99c72'
+          : volcanoAlertLevel === 'ADVISORY' || volcanoColorCode === 'YELLOW' ? '#e2c16f' : '#e99a9a';
+      const eonetCategory = String(item.attributes?.categoryId ?? '') + ' ' + String(item.attributes?.categoryTitle ?? '');
+      const eonetColor = weatherColorForNaturalCategory(eonetCategory);
+      const color = weatherAnimated ? weatherColorFor(item) : isEarthquake ? '#e6a66f' : isVolcano ? volcanoAlertColor : isEonetEvent ? eonetColor : (WORLD_LAYER_COLOR[layer] ?? '#94a3b8');
       const altitude = externalAltitude(item);
       const position = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, altitude ?? 0);
       const ground = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, 0);
       const label = externalLabel(item);
       const existing = externalEntityMapRef.current.get(item.id);
       const isCamera = type === 'camera' || type === 'spatial_camera';
-      const pointSize: number = weatherAnimated ? 0 : selected ? 16 : (type === 'satellite' || type === 'aircraft' ? 10 : isCamera ? 11 : 8);
+      const pointSize: number = (weatherAnimated || eventAnimated) ? 0 : selected ? 16 : (type === 'satellite' || type === 'aircraft' ? 10 : isCamera ? 11 : 8);
       const maxLabelDistance = type === 'satellite' ? 30000000 : isCamera ? 750000 : 3500000;
       const point = new Cesium.PointGraphics({
-        show: !weatherAnimated,
+        show: !weatherAnimated && !eventAnimated,
         pixelSize: pointSize,
         color: css(color, weatherAnimated && weatherFreshness === 'STALE' ? 0.48 : item.quality?.freshnessClass === 'MODELLED' ? 0.58 : 0.92),
         outlineColor: selected ? Cesium.Color.WHITE : css(color, 0.9),
@@ -1187,6 +1238,28 @@ export default function CorridorWorldScene({
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           scaleByDistance: new Cesium.NearFarScalar(250, selected ? 1.05 : 1, 750000, 0.68),
           scale: new Cesium.CallbackProperty(() => selected ? 1.045 : (weatherMayPulse ? 0.985 + ((Math.sin(weatherPhaseRef.current * 0.72 + weatherPhase) + 1) / 2) * 0.03 : 0.92), false),
+        } : eventAnimated ? {
+          image: naturalEventSvg(type, color, selected, eonetCategory),
+          width: selected ? 39 : 33,
+          height: selected ? 39 : 33,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(250, selected ? 1.04 : 1, 750000, 0.68),
+          scale: new Cesium.CallbackProperty(() => {
+            if (selected) return 1.04;
+            const freshness = String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase();
+            const alert = item.attributes?.usgsCurrentAlert as Record<string, unknown> | undefined;
+            const alertIsCurrent = Boolean(alert) && String(alert.sourceStatus ?? '') !== 'STALE_CACHE_FALLBACK';
+            const canAnimate = isEarthquake
+              ? freshness === 'LIVE' || freshness === 'DELAYED'
+              : isVolcano
+                ? alertIsCurrent || freshness === 'LIVE' || freshness === 'DELAYED'
+                : isEonetEvent && (freshness === 'LIVE' || freshness === 'DELAYED');
+            if (!canAnimate) return 0.98;
+            const phase = weatherPhaseRef.current * (isEarthquake ? 0.9 : isVolcano ? 0.26 : 0.34) + weatherPhase;
+            const amplitude = isEarthquake ? 0.045 : isVolcano ? 0.018 : 0.022;
+            return 0.99 + ((Math.sin(phase) + 1) / 2) * amplitude;
+          }, false),
         } : undefined,
         properties: new Cesium.PropertyBag({
           entityId: item.id, layer, entityType: item.entityType, source: item.source ?? 'unknown',
@@ -1228,11 +1301,11 @@ export default function CorridorWorldScene({
     if (!viewer || viewer.isDestroyed()) return;
     const reduceMotion = typeof window !== 'undefined'
       && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const hasFreshWeather = weatherAnimationEnabled && worldEntities.some(item =>
-      item.entityType === 'weather' &&
-      ['LIVE', 'DELAYED'].includes(String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase())
+    const hasAnimatedSignals = weatherAnimationEnabled && worldEntities.some(item =>
+      (item.entityType === 'weather' && ['LIVE', 'DELAYED', 'MODELLED'].includes(String(item.quality?.freshnessClass || 'UNKNOWN').toUpperCase())) ||
+      item.entityType === 'earthquake' || item.entityType === 'volcano' || item.entityType === 'volcanic_activity' || item.entityType === 'natural_event'
     );
-    if (!hasFreshWeather || reduceMotion) {
+    if (!hasAnimatedSignals || reduceMotion) {
       weatherPhaseRef.current = 0;
       viewer.scene.requestRender();
       return;

@@ -2,14 +2,28 @@
 
 describe('Open-Meteo bounded weather grid sampling', () => {
   const originalFetch = global.fetch;
+  const originalOpenMeteoKey = process.env.OPEN_METEO_API_KEY;
+  const originalOpenMeteoBase = process.env.OPEN_METEO_API_BASE;
+  const originalFreeNonCommercial = process.env.OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL;
 
   beforeEach(() => {
     jest.resetModules();
     global.fetch = jest.fn();
+    delete process.env.OPEN_METEO_API_KEY;
+    delete process.env.OPEN_METEO_API_BASE;
+    // The provider contract tests deliberately opt into the free endpoint only
+    // as non-commercial tests. Production paths require a licensed API key.
+    process.env.OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL = 'true';
   });
 
   afterAll(() => {
     global.fetch = originalFetch;
+    if (originalOpenMeteoKey == null) delete process.env.OPEN_METEO_API_KEY;
+    else process.env.OPEN_METEO_API_KEY = originalOpenMeteoKey;
+    if (originalOpenMeteoBase == null) delete process.env.OPEN_METEO_API_BASE;
+    else process.env.OPEN_METEO_API_BASE = originalOpenMeteoBase;
+    if (originalFreeNonCommercial == null) delete process.env.OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL;
+    else process.env.OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL = originalFreeNonCommercial;
   });
 
   function providerPoint(latitude, longitude, code, minuteOffset = 1) {
@@ -99,6 +113,41 @@ describe('Open-Meteo bounded weather grid sampling', () => {
     expect(second.observations).toHaveLength(1);
     expect(second.cache.hit).toBe(true);
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when commercial use is requested without a licensed API key', async () => {
+    process.env.OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL = 'false';
+    delete process.env.OPEN_METEO_API_KEY;
+    const { getCurrentWeather } = require('../../src/services/spatial/weatherGateway');
+    const result = await getCurrentWeather({ points: [{ latitude: -1.3, longitude: 36.8 }] });
+
+    expect(result.observations).toEqual([]);
+    expect(result.error).toBe('commercial_api_key_not_configured');
+    expect(result.health.status).toBe('UNAVAILABLE');
+    expect(result.coverage).toEqual({
+      complete: false,
+      sampleCount: 1,
+      successfulSamples: 0,
+      failedSamples: 1,
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses the licensed customer endpoint and API key for commercial weather sampling', async () => {
+    process.env.OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL = 'false';
+    process.env.OPEN_METEO_API_KEY = 'test-customer-key';
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => [providerPoint(-1.25, 36.75, 0)],
+    });
+    const { getCurrentWeather } = require('../../src/services/spatial/weatherGateway');
+    const result = await getCurrentWeather({ points: [{ latitude: -1.251, longitude: 36.751 }] });
+
+    const url = new URL(global.fetch.mock.calls[0][0]);
+    expect(url.hostname).toBe('customer-api.open-meteo.com');
+    expect(url.searchParams.get('apikey')).toBe('test-customer-key');
+    expect(result.observations).toHaveLength(1);
+    expect(result.observations[0].attributes.conditions).toBe('clear');
   });
 
   it('fails closed when no valid weather grid coordinates are supplied', async () => {

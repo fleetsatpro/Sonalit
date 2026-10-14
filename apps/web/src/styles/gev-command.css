@@ -906,7 +906,7 @@
     transform: translateX(-50%);
     z-index: 80;
   }
-  .gev-topcenter > .gev-segment:not(.gev-weather-toggle),
+  .gev-topcenter > .gev-segment:not(.gev-weather-toggle):not(.gev-live-sim-toggle),
   .gev-topcenter > .gev-cctv-trigger { display: none; }
   .gev-weather-toggle { height: 33px; padding: 0 11px; font-size: 8px; }
   .gev-left-rail {
@@ -2765,4 +2765,117 @@
   .gev-shell[data-navigation-expanded="true"] .gev-map-controls--global ~ .gev-map-info-popover {
     bottom: 14px;
   }
+}
+
+
+
+/* Live simulation controls: compact instrument panel, not a floating map obstruction. */
+.gev-live-sim-toggle[aria-pressed="true"] {
+  color: #f2d9d8;
+  border-color: rgba(230, 154, 154, .34);
+  background: linear-gradient(180deg, rgba(124, 45, 45, .17), rgba(46, 16, 23, .08));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+}
+.gev-live-sim-toggle[aria-pressed="true"] > span {
+  color: #e9b7ad;
+  border-color: rgba(233, 154, 154, .22);
+  background: rgba(55, 24, 28, .72);
+}
+.gev-live-sim-toggle:focus-visible { outline: 2px solid #e9b7ad; outline-offset: 3px; }
+
+.gev-simulation-console {
+  position: absolute;
+  z-index: 55;
+  left: 88px;
+  bottom: 58px;
+  width: min(620px, calc(100vw - 510px));
+  min-width: 320px;
+  padding: 12px 14px 11px;
+  border: 1px solid rgba(198, 213, 232, .13);
+  border-radius: 13px;
+  background: linear-gradient(155deg, rgba(9, 15, 24, .96), rgba(4, 8, 14, .94));
+  box-shadow: 0 18px 52px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.055);
+  backdrop-filter: blur(18px) saturate(118%);
+  color: #e8edf5;
+  pointer-events: auto;
+}
+.gev-simulation-console-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.gev-simulation-heading { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.gev-simulation-status-dot {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #75d9ba;
+  box-shadow: 0 0 0 3px rgba(117,217,186,.08);
+}
+.gev-simulation-status-dot[data-state="sync"] { background: #d6bd84; box-shadow: 0 0 0 3px rgba(214,189,132,.08); }
+.gev-simulation-status-dot[data-state="error"] { background: #e99a9a; box-shadow: 0 0 0 3px rgba(233,154,154,.08); }
+.gev-simulation-eyebrow { font: 800 8px/1.1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .14em; color: #93a5b8; }
+.gev-simulation-time { margin-top: 4px; font: 800 15px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: -.03em; color: #f2f5f9; font-variant-numeric: tabular-nums; }
+.gev-simulation-actions { display: flex; align-items: center; gap: 6px; }
+.gev-simulation-play,
+.gev-simulation-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 29px;
+  border: 1px solid rgba(215,225,239,.13);
+  border-radius: 7px;
+  color: #d8e1ec;
+  background: rgba(255,255,255,.035);
+  cursor: pointer;
+}
+.gev-simulation-play { padding: 0 9px; font: 800 8px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .07em; }
+.gev-simulation-close { width: 29px; padding: 0; }
+.gev-simulation-play:hover:not(:disabled),
+.gev-simulation-close:hover { border-color: rgba(215,225,239,.3); background: rgba(255,255,255,.07); }
+.gev-simulation-play:disabled { opacity: .38; cursor: not-allowed; }
+.gev-simulation-timeline-row { display: grid; grid-template-columns: 34px minmax(0,1fr) 38px; align-items: center; gap: 10px; margin-top: 13px; }
+.gev-simulation-timeline-label { color: #7e8b9a; font: 800 7px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.gev-simulation-timeline-label:last-child { text-align: right; }
+.gev-simulation-range { width: 100%; height: 16px; margin: 0; accent-color: #9cb7c9; cursor: pointer; }
+.gev-simulation-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 15px; margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,.06); }
+.gev-simulation-summary > span { display: inline-flex; align-items: center; gap: 6px; color: #aab6c5; font: 800 7px/1.2 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .035em; font-variant-numeric: tabular-nums; }
+.gev-simulation-summary i { display: inline-block; width: 6px; height: 6px; border-radius: 2px; background: #9bb7ca; }
+.gev-simulation-summary i[data-tone="quake"] { background: #e6a66f; }
+.gev-simulation-summary i[data-tone="volcano"] { background: #e99a9a; }
+.gev-simulation-footnote { margin-top: 8px; color: #778698; font: 500 7px/1.45 "IBM Plex Mono", ui-monospace, monospace; }
+.gev-simulation-footnote a { color: #b8cfdf; text-decoration: underline; text-underline-offset: 2px; }
+.gev-simulation-config-warning { display: block; margin-top: 5px; color: #e7b58c; font-weight: 800; letter-spacing: .025em; }
+
+
+.gev-natural-event-card { margin-top: 9px; padding: 11px; border: 1px solid rgba(230,166,111,.18); border-radius: 11px; background: linear-gradient(165deg, rgba(30,23,21,.84), rgba(6,10,16,.95)); }
+.gev-natural-event-card[data-event-type="volcano"] { border-color: rgba(233,154,154,.19); }
+.gev-natural-event-title { color: #f1d5be; font: 800 14px/1.1 "Barlow Condensed", sans-serif; letter-spacing: .055em; text-transform: uppercase; }
+.gev-natural-event-card[data-event-type="volcano"] .gev-natural-event-title { color: #efbbbb; }
+.gev-natural-event-note { margin-top: 7px; color: #9aa7b6; font: 500 8px/1.5 "IBM Plex Mono", ui-monospace, monospace; }
+.gev-natural-event-meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; margin-top: 9px; }
+.gev-natural-event-meta > div { min-width: 0; padding: 7px 8px; border-radius: 7px; background: rgba(255,255,255,.025); }
+.gev-natural-event-meta span { display: block; color: #788797; font: 800 7px/1.15 "IBM Plex Mono", ui-monospace, monospace; text-transform: uppercase; letter-spacing: .045em; }
+.gev-natural-event-meta strong { display: block; margin-top: 4px; color: #e5ebf2; font: 800 10px/1.3 "IBM Plex Mono", ui-monospace, monospace; overflow-wrap: anywhere; }
+.gev-natural-event-source { margin-top: 8px; color: #8c9aab; font: 600 7px/1.5 "IBM Plex Mono", ui-monospace, monospace; }
+.gev-natural-event-source a { color: #c0d6e6; text-decoration: underline; text-underline-offset: 2px; }
+
+@media (max-width: 860px) {
+  .gev-simulation-console { left: 10px; right: 10px; bottom: 54px; width: auto; min-width: 0; padding: 10px 11px; }
+  .gev-simulation-summary { gap: 8px 12px; }
+  .gev-simulation-summary > span { font-size: 6.5px; }
+  .gev-simulation-footnote { font-size: 6.5px; }
+}
+@media (max-width: 430px) {
+  .gev-topcenter { gap: 5px; }
+  .gev-topcenter > .gev-segment { padding: 0 8px; font-size: 7px; }
+  .gev-simulation-timeline-row { gap: 6px; }
+  .gev-simulation-summary { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .gev-natural-event-meta { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gev-simulation-console *, .gev-natural-event-card * { animation: none !important; transition: none !important; }
 }
