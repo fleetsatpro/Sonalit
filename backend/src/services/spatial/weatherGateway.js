@@ -53,6 +53,199 @@ function keyFor(lat, lng) {
   return Number(lat).toFixed(3) + ',' + Number(lng).toFixed(3);
 }
 
+function distanceMeters(aLat, aLng, bLat, bLng) {
+  const toRad = value => value * Math.PI / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const p1 = toRad(aLat);
+  const p2 = toRad(bLat);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+}
+
+function makeObservation(requested, data, receivedAt) {
+  const current = data && data.current || {};
+  const observedAt = current.time
+    ? new Date(String(current.time).endsWith('Z') ? String(current.time) : String(current.time) + 'Z').toISOString()
+    : null;
+  const freshness = observedAt ? classifyFreshness(observedAt, receivedAt) : 'UNKNOWN';
+  const weather = classifyCurrent(current);
+  const latitude = Number.isFinite(Number(data && data.latitude)) ? Number(data.latitude) : requested.latitude;
+  const longitude = Number.isFinite(Number(data && data.longitude)) ? Number(data.longitude) : requested.longitude;
+  const gridCellDistanceM = Math.round(distanceMeters(requested.latitude, requested.longitude, latitude, longitude));
+  const quality = buildQuality(freshness, observedAt ? undefined : 'provider returned no observation timestamp');
+
+  return {
+    id: 'open-meteo:weather:grid:' + keyFor(latitude, longitude),
+    entityType: 'weather',
+    source: 'open-meteo',
+    sourceReference: requested.key,
+    latitude,
+    longitude,
+    observedAt,
+    receivedAt,
+    freshnessMs: observedAt ? Math.max(0, Date.parse(receivedAt) - Date.parse(observedAt)) : undefined,
+    observationConfidence: 0.82,
+    interpretationConfidence: null,
+    operationalConfidence: null,
+    accuracyM: gridCellDistanceM,
+    confidence: 0.82,
+    headingDeg: null,
+    speedMps: null,
+    status: weather.severity,
+    attributes: Object.assign({}, weather, {
+      timezone: data && data.timezone || 'UTC',
+      requestedLatitude: requested.latitude,
+      requestedLongitude: requested.longitude,
+      gridCellDistanceM,
+      modelGridPoint: true,
+    }),
+    provenance: {
+      sourceName: 'Open-Meteo',
+      sourceUrl: 'https://open-meteo.com/',
+      observationType: 'current_weather_model_grid_point',
+      sourceReference: requested.key,
+    },
+    coverage: {
+      complete: false,
+      bounded: true,
+      queryScope: 'model-grid-point:' + requested.key,
+    },
+    quality,
+  };
+}
+
+async function getCurrentWeatherBatch(input) {
+  const requested = [];
+  const seen = new Set();
+  for (const raw of (Array.isArray(input && input.points) ? input.points : []).slice(0, 36)) {
+    const latitude = Number(raw && raw.latitude);
+    const longitude = Number(raw && raw.longitude);
+    if (!isValidLatLon(latitude, longitude)) continue;
+    const key = keyFor(latitude, longitude);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    requested.push({ latitude, longitude, key });
+  }
+
+  if (!requested.length) {
+    return {
+      observations: [],
+      health: Object.assign({}, health, { status: 'UNAVAILABLE' }),
+      error: 'invalid_weather_grid_points',
+      coverage: { complete: false, sampleCount: 0, successfulSamples: 0, failedSamples: 0 },
+    };
+  }
+
+  const now = Date.now();
+  const observationsByKey = new Map();
+  const missing = [];
+  for (const point of requested) {
+    const cached = cache.get(point.key);
+    if (cached && cached.expiresAt > now) {
+      observationsByKey.set(point.key, cached.observation);
+      health = Object.assign({}, health, { cacheHits: health.cacheHits + 1 });
+    } else {
+      missing.push(point);
+    }
+  }
+
+  const receivedAt = new Date().toISOString();
+  if (missing.length) {
+    health = Object.assign({}, health, {
+      requestCount: health.requestCount + 1,
+      lastAttemptAt: receivedAt,
+    });
+    try {
+      const url =
+        'https://api.open-meteo.com/v1/forecast?latitude=' + encodeURIComponent(missing.map(p => p.latitude).join(',')) +
+        '&longitude=' + encodeURIComponent(missing.map(p => p.longitude).join(',')) +
+        '&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,visibility' +
+        '&timezone=UTC&forecast_days=1';
+      const timeoutSignal = AbortSignal.timeout(7000);
+      const requestSignal = input && input.signal && typeof AbortSignal.any === 'function'
+        ? AbortSignal.any([input.signal, timeoutSignal])
+        : timeoutSignal;
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json', 'X-Request-ID': String(input && input.requestId || '') },
+        signal: requestSignal,
+      });
+      if (!response.ok) {
+        throw Object.assign(new Error('Open-Meteo HTTP ' + response.status), {
+          failureClass: response.status === 429 ? 'rate_limited' : 'http_error',
+        });
+      }
+      const payload = await response.json();
+      const rows = Array.isArray(payload) ? payload : [payload];
+      rows.forEach((row, index) => {
+        const point = missing[index];
+        if (!point || !row || !row.current) return;
+        const observation = makeObservation(point, row, receivedAt);
+        observationsByKey.set(point.key, observation);
+        cache.set(point.key, { observation, cachedAt: now, expiresAt: now + CACHE_TTL_MS });
+      });
+      trimCache();
+      health = Object.assign({}, health, {
+        status: observationsByKey.size === requested.length ? 'LIVE' : 'PARTIAL',
+        lastSuccessAt: receivedAt,
+        lastErrorClass: null,
+        lastErrorMessage: null,
+      });
+    } catch (error) {
+      const failureClass = error && error.failureClass
+        ? error.failureClass
+        : error && (error.name === 'TimeoutError' || error.name === 'AbortError') ? 'timeout' : 'unknown';
+      health = Object.assign({}, health, {
+        status: 'UNAVAILABLE',
+        lastErrorClass: failureClass,
+        lastErrorMessage: String(error && error.message || error),
+      });
+      for (const point of missing) {
+        const stale = cache.get(point.key);
+        if (stale) {
+          observationsByKey.set(point.key, Object.assign({}, stale.observation, {
+            quality: { state: 'stale', freshnessClass: 'STALE', reason: 'provider failed; serving cached model-grid observation' },
+          }));
+        }
+      }
+      const observations = requested.map(p => observationsByKey.get(p.key)).filter(Boolean);
+      return {
+        observations,
+        health: Object.assign({}, health, { status: observations.length ? 'STALE' : 'UNAVAILABLE' }),
+        coverage: {
+          complete: observations.length === requested.length,
+          sampleCount: requested.length,
+          successfulSamples: observations.length,
+          failedSamples: requested.length - observations.length,
+        },
+        warning: observations.length ? 'provider_failed_using_stale_cache' : undefined,
+        error: observations.length ? undefined : 'provider_unavailable',
+      };
+    }
+  }
+
+  const observations = requested.map(p => observationsByKey.get(p.key)).filter(Boolean);
+  const freshnessClasses = observations.map(o => String(o.quality && o.quality.freshnessClass || 'UNKNOWN').toUpperCase());
+  const complete = observations.length === requested.length && freshnessClasses.every(s => s === 'LIVE' || s === 'DELAYED');
+  const status = !observations.length
+    ? 'UNAVAILABLE'
+    : observations.length !== requested.length || freshnessClasses.some(s => s === 'STALE' || s === 'UNKNOWN')
+      ? 'PARTIAL'
+      : freshnessClasses.includes('LIVE') ? 'LIVE' : 'DELAYED';
+  health = Object.assign({}, health, { status });
+  return {
+    observations,
+    health: Object.assign({}, health),
+    coverage: {
+      complete,
+      sampleCount: requested.length,
+      successfulSamples: observations.length,
+      failedSamples: requested.length - observations.length,
+    },
+    cache: { hit: missing.length === 0 },
+  };
+}
+
 function trimCache() {
   while (cache.size > MAX_CACHE_ENTRIES) {
     const key = cache.keys().next().value;
@@ -90,6 +283,7 @@ function classifyCurrent(current) {
 }
 
 async function getCurrentWeather(input) {
+  if (input && Array.isArray(input.points)) return getCurrentWeatherBatch(input);
   const lat = Number(input && input.latitude);
   const lng = Number(input && input.longitude);
 
@@ -153,7 +347,7 @@ async function getCurrentWeather(input) {
       const data = await response.json();
       const current = data && data.current || {};
       const observedAt = current.time
-        ? new Date(String(current.time) + 'Z').toISOString()
+        ? new Date(String(current.time).endsWith('Z') ? String(current.time) : String(current.time) + 'Z').toISOString()
         : null;
 
       const freshness = observedAt
@@ -165,32 +359,39 @@ async function getCurrentWeather(input) {
         freshness,
         observedAt ? undefined : 'provider returned no observation timestamp',
       );
+      const observedLatitude = Number.isFinite(Number(data && data.latitude)) ? Number(data.latitude) : lat;
+      const observedLongitude = Number.isFinite(Number(data && data.longitude)) ? Number(data.longitude) : lng;
+      const gridCellDistanceM = Math.round(distanceMeters(lat, lng, observedLatitude, observedLongitude));
 
       const observation = {
         id: 'open-meteo:weather:' + key,
         entityType: 'weather',
         source: 'open-meteo',
         sourceReference: key,
-        latitude: lat,
-        longitude: lng,
+        latitude: observedLatitude,
+        longitude: observedLongitude,
         observedAt: observedAt,
         receivedAt: receivedAt,
         freshnessMs: observedAt ? Math.max(0, Date.parse(receivedAt) - Date.parse(observedAt)) : undefined,
         observationConfidence: 0.82,
         interpretationConfidence: null,
         operationalConfidence: null,
-        accuracyM: null,
+        accuracyM: gridCellDistanceM,
         confidence: 0.82,
         headingDeg: null,
         speedMps: null,
         status: weather.severity,
         attributes: Object.assign({}, weather, {
           timezone: data && data.timezone || 'UTC',
+          requestedLatitude: lat,
+          requestedLongitude: lng,
+          gridCellDistanceM,
+          modelGridPoint: true,
         }),
         provenance: {
           sourceName: 'Open-Meteo',
           sourceUrl: 'https://open-meteo.com/',
-          observationType: 'current_weather',
+          observationType: 'current_weather_model_grid_point',
           sourceReference: key,
         },
         coverage: {

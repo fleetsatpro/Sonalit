@@ -14,6 +14,7 @@ import '../../../styles/spatial-command.css'
 
 installOpticalReconMapLibreProtocol()
 import { externalWorldFeatures, fetchWorldContext, worldContextEntities, WORLD_CONTEXT_LAYERS } from '../../../lib/spatialClient.js'
+import type { SpatialWorldEntity } from '../../../lib/spatialClient.js'
 import { buildCorridorSignalOverlay } from '../../../components/geofences/geofenceSegmentSignals.js'
 import { fetchOpticalRecon, installOpticalReconMapLibreProtocol, reconStyle, type OpticalReconResult } from '../../../lib/opticalRecon.js'
 
@@ -164,6 +165,52 @@ const OFFICER_ICON = (color: string) =>
      <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
    </svg>`
 
+function weatherConditionLabel(item: SpatialWorldEntity): string {
+  return String(item.attributes?.conditions ?? 'weather').replaceAll('_', ' ').toUpperCase()
+}
+
+function weatherColor(item: SpatialWorldEntity): string {
+  const code = Number(item.attributes?.weatherCode)
+  if (Number.isFinite(code) && code >= 95) return '#c4b5fd'
+  if (Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)) return '#67e8f9'
+  if (Number.isFinite(code) && (code === 45 || code === 48)) return '#cbd5e1'
+  if (Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))) return '#60a5fa'
+  if (Number.isFinite(code) && (code === 0 || code === 1)) return '#fbbf24'
+  return '#5eead4'
+}
+
+function makeWeatherMarker(item: SpatialWorldEntity, onSelect: (entity: SpatialWorldEntity) => void): HTMLButtonElement {
+  const code = Number(item.attributes?.weatherCode)
+  const color = weatherColor(item)
+  const condition = weatherConditionLabel(item)
+  const temperature = Number(item.attributes?.temperatureC)
+  const tempLabel = Number.isFinite(temperature) ? `${Math.round(temperature)}°C` : ''
+  const glyph = Number.isFinite(code) && code >= 95
+    ? '<path d="M14 2 7 13h5l-2 9 8-13h-5z" fill="currentColor" stroke="none"/>'
+    : Number.isFinite(code) && ((code >= 71 && code <= 77) || code === 85 || code === 86)
+      ? '<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M8 4.5l4 3 4-3M8 19.5l4-3 4 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'
+      : Number.isFinite(code) && (code === 45 || code === 48)
+        ? '<path d="M3 8h18M1 12h16M4 16h17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'
+        : Number.isFinite(code) && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
+          ? '<path d="M8 15 6 19M13 15l-2 5M18 15l-2 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'
+          : '<path d="M7.5 17.5h9a4.3 4.3 0 0 0 .4-8.6A5.5 5.5 0 0 0 6.4 9.8a3.9 3.9 0 0 0 1.1 7.7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
+  const marker = document.createElement('button')
+  marker.type = 'button'
+  marker.className = 'lf-weather-marker'
+  marker.dataset.freshness = String(item.quality?.freshnessClass ?? 'UNKNOWN').toUpperCase()
+  marker.style.setProperty('--weather-color', color)
+  marker.title = `${condition}${tempLabel ? ' · ' + tempLabel : ''} · ${item.source ?? 'unknown source'} · ${item.quality?.freshnessClass ?? 'UNKNOWN'}`
+  marker.setAttribute('aria-label', `Inspect weather: ${condition}${tempLabel ? ', ' + tempLabel : ''}`)
+  marker.innerHTML = `
+    <span class="lf-weather-ripple lf-weather-ripple-a"></span>
+    <span class="lf-weather-ripple lf-weather-ripple-b"></span>
+    <span class="lf-weather-core"><svg viewBox="0 0 24 24" aria-hidden="true">${glyph}</svg></span>
+    <span class="lf-weather-label"><b>${condition}</b>${tempLabel ? `<i>${tempLabel}</i>` : ''}</span>
+  `
+  marker.addEventListener('click', event => { event.stopPropagation(); onSelect(item) })
+  return marker
+}
+
 function makeEl(v: LiveVehicle): HTMLElement {
   const isOfficer = v.kind === 'guardian'
   // For a field officer, "online at all" is the signal that matters most —
@@ -202,12 +249,35 @@ function makeEl(v: LiveVehicle): HTMLElement {
   return wrap
 }
 
-interface Props { vehicles: LiveVehicle[]; selectedId: string | null; onSelect: (v: LiveVehicle) => void; trackedId?: string | null }
+interface Props {
+  vehicles: LiveVehicle[];
+  selectedId: string | null;
+  onSelect: (v: LiveVehicle) => void;
+  trackedId?: string | null;
+  weatherAnimationEnabled?: boolean;
+  weatherEvents?: SpatialWorldEntity[];
+  onWeatherSelect?: (entity: SpatialWorldEntity) => void;
+  onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number; bbox?: [number, number, number, number] }) => void;
+}
 
-export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = null }: Props) {
+export default function FleetMap({
+  vehicles,
+  selectedId,
+  onSelect,
+  trackedId = null,
+  weatherAnimationEnabled = false,
+  weatherEvents = [],
+  onWeatherSelect,
+  onViewportChange,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const weatherMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const onWeatherSelectRef = useRef(onWeatherSelect)
+  const onViewportChangeRef = useRef(onViewportChange)
+  onWeatherSelectRef.current = onWeatherSelect
+  onViewportChangeRef.current = onViewportChange
   const coordsRef = useRef<HTMLSpanElement>(null)
   const animRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
@@ -282,7 +352,21 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     })
     const syncWorldViewport = () => {
       const center = m.getCenter()
-      setWorldViewport({ latitude: center.lat, longitude: center.lng, radiusM: spatialRadiusFromMap(m) })
+      const bounds = m.getBounds()
+      let west = bounds.getWest()
+      let east = bounds.getEast()
+      const south = bounds.getSouth()
+      const north = bounds.getNorth()
+      // MapLibre can expose inverted longitude bounds around the dateline; use the full longitude span in that case.
+      if (west >= east) { west = -180; east = 180 }
+      const viewport = {
+        latitude: center.lat,
+        longitude: center.lng,
+        radiusM: spatialRadiusFromMap(m),
+        bbox: [Math.max(-180, west), Math.max(-90, south), Math.min(180, east), Math.min(90, north)] as [number, number, number, number],
+      }
+      setWorldViewport({ latitude: viewport.latitude, longitude: viewport.longitude, radiusM: viewport.radiusM })
+      onViewportChangeRef.current?.(viewport)
     }
     m.on('moveend', () => {
       setBbox(bboxFromMap(m))
@@ -639,6 +723,40 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     return () => cancelAnimationFrame(animRef.current)
   }, [mapReady])
 
+  // Sourced animated model-grid samples. This is a bounded point overlay, not a fabricated radar footprint.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    for (const marker of weatherMarkersRef.current.values()) marker.remove()
+    weatherMarkersRef.current.clear()
+    if (!mapReady || !weatherAnimationEnabled) return
+
+    const events = weatherEvents
+      .filter(item => item.entityType === 'weather' && Number.isFinite(item.latitude) && Number.isFinite(item.longitude)
+        && item.latitude >= -90 && item.latitude <= 90 && item.longitude >= -180 && item.longitude <= 180)
+      .slice(0, 36)
+    const applyLabelVisibility = () => {
+      const visible = map.getZoom() >= 5.5
+      weatherMarkersRef.current.forEach(marker => marker.getElement().classList.toggle('lf-weather-labels-visible', visible))
+    }
+
+    for (const item of events) {
+      const element = makeWeatherMarker(item, entity => onWeatherSelectRef.current?.(entity))
+      const marker = new maplibregl.Marker({ element, anchor: 'center' })
+        .setLngLat([item.longitude, item.latitude])
+        .addTo(map)
+      marker.getElement().style.zIndex = '60'
+      weatherMarkersRef.current.set(item.id, marker)
+    }
+    applyLabelVisibility()
+    map.on('zoom', applyLabelVisibility)
+    return () => {
+      map.off('zoom', applyLabelVisibility)
+      for (const marker of weatherMarkersRef.current.values()) marker.remove()
+      weatherMarkersRef.current.clear()
+    }
+  }, [mapReady, weatherAnimationEnabled, weatherEvents])
+
   // sync vehicle markers
   useEffect(() => {
     const map = mapRef.current; if (!map) return
@@ -696,6 +814,20 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
       @keyframes lf-sos-ring{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.5);opacity:.2}}
       @keyframes lf-recon-spin{to{transform:rotate(360deg)}}
       @keyframes lf-sos-marker{0%,100%{box-shadow:0 0 12px #ef444466,0 2px 8px rgba(0,0,0,.8)}50%{box-shadow:0 0 24px #ef4444cc,0 2px 8px rgba(0,0,0,.8)}}
+      @keyframes lf-weather-orbit{0%{transform:scale(.55);opacity:.75}100%{transform:scale(1.85);opacity:0}}
+      @keyframes lf-weather-breath{0%,100%{transform:scale(.96);filter:drop-shadow(0 0 6px color-mix(in srgb,var(--weather-color) 42%,transparent))}50%{transform:scale(1.06);filter:drop-shadow(0 0 12px color-mix(in srgb,var(--weather-color) 76%,transparent))}}
+      .lf-weather-marker{position:relative;width:46px;height:46px;border:0;background:transparent;color:var(--weather-color);display:grid;place-items:center;padding:0;overflow:visible;cursor:pointer;isolation:isolate}
+      .lf-weather-core{position:relative;z-index:2;display:grid;place-items:center;width:31px;height:31px;border-radius:50%;background:radial-gradient(circle at 35% 25%,rgba(255,255,255,.16),rgba(4,10,20,.97) 72%);border:1px solid color-mix(in srgb,var(--weather-color) 86%,white 8%);box-shadow:0 0 16px color-mix(in srgb,var(--weather-color) 35%,transparent),inset 0 0 8px color-mix(in srgb,var(--weather-color) 16%,transparent);animation:lf-weather-breath 2.2s ease-in-out infinite}
+      .lf-weather-core svg{width:21px;height:21px;filter:drop-shadow(0 0 3px currentColor)}
+      .lf-weather-ripple{position:absolute;z-index:1;inset:7px;border:1px solid color-mix(in srgb,var(--weather-color) 85%,transparent);border-radius:50%;pointer-events:none;animation:lf-weather-orbit 2.6s ease-out infinite}
+      .lf-weather-ripple-b{animation-delay:1.3s}
+      .lf-weather-label{position:absolute;top:38px;left:50%;transform:translate(-50%,-3px);opacity:0;display:flex;align-items:center;gap:5px;max-width:165px;padding:3px 6px;border:1px solid color-mix(in srgb,var(--weather-color) 40%,rgba(255,255,255,.1));border-radius:5px;background:rgba(3,7,14,.94);box-shadow:0 5px 16px rgba(0,0,0,.3);font:700 8px/1.1 "IBM Plex Mono",monospace;white-space:nowrap;pointer-events:none;transition:opacity .15s ease,transform .15s ease}
+      .lf-weather-label b{max-width:112px;overflow:hidden;text-overflow:ellipsis}
+      .lf-weather-label i{font-style:normal;color:#fbbf24}
+      .lf-weather-labels-visible .lf-weather-label,.lf-weather-marker:hover .lf-weather-label,.lf-weather-marker:focus-visible .lf-weather-label{opacity:1;transform:translate(-50%,0)}
+      .lf-weather-marker[data-freshness="STALE"] .lf-weather-core,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-core,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-core,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-core{animation:none;filter:none;opacity:.66}
+      .lf-weather-marker[data-freshness="STALE"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNKNOWN"] .lf-weather-ripple,.lf-weather-marker[data-freshness="EXPIRED"] .lf-weather-ripple,.lf-weather-marker[data-freshness="UNAVAILABLE"] .lf-weather-ripple{animation:none;opacity:.12}
+      @media(prefers-reduced-motion:reduce){.lf-weather-core,.lf-weather-ripple{animation:none!important}.lf-weather-ripple{opacity:.35}}
     `
     document.head.appendChild(s)
   }, [])

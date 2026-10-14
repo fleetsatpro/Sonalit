@@ -43,6 +43,20 @@ function parseBbox(raw) {
   return [west, south, east, north];
 }
 
+function parseWeatherBounds(raw) {
+  if (raw == null || raw === '') return null;
+  const parts = Array.isArray(raw) ? raw.map(Number) : String(raw).split(',').map(Number);
+  if (parts.length !== 4 || parts.some(value => !Number.isFinite(value))) return null;
+  const [west, south, east, north] = parts;
+  if (west < -180 || east > 180 || south < -90 || north > 90) return null;
+  if (west >= east || south >= north) return null;
+  return [west, south, east, north];
+}
+
+function parseWeatherGrid(raw) {
+  return raw === true || String(raw ?? '').toLowerCase() === 'true' || String(raw ?? '') === '1';
+}
+
 function parseSubject(raw) {
   if (!raw) return { kind: 'none', id: 'context' };
   if (typeof raw === 'string') {
@@ -161,6 +175,11 @@ async function worldContextHandler(req, res, persistEvents, subjectOverride = nu
     if (!bbox) return res.status(400).json({ error: 'Invalid bbox' });
   }
 
+  const rawWeatherBounds = req.body?.weatherBounds ?? req.query.weatherBounds;
+  const weatherBounds = parseWeatherBounds(rawWeatherBounds);
+  if (rawWeatherBounds != null && !weatherBounds) return res.status(400).json({ error: 'Invalid weatherBounds; expected west,south,east,north within geographic limits' });
+  const weatherGrid = parseWeatherGrid(req.body?.weatherGrid ?? req.query.weatherGrid);
+
   const layers = req.body?.layers
     ? parseLayers(req.body.layers, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'])
     : parseLayers(req.query.layers ? String(req.query.layers).split(',') : null, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']);
@@ -178,6 +197,8 @@ async function worldContextHandler(req, res, persistEvents, subjectOverride = nu
     center,
     radiusM: boundedRadius(req.body?.radiusM ?? req.query.radiusM),
     bbox,
+    weatherGrid,
+    weatherBounds,
     layers,
     maxEntitiesPerLayer: maxEntities,
     requestId: req.id || req.headers['x-request-id'],
@@ -211,6 +232,8 @@ router.post(
       bbox = Array.isArray(body.bbox) ? validateBbox(body.bbox) : parseBbox(String(body.bbox));
       if (!bbox) return res.status(400).json({ error: 'Invalid bbox' });
     }
+    const weatherBounds = parseWeatherBounds(body.weatherBounds);
+    if (body.weatherBounds != null && !weatherBounds) return res.status(400).json({ error: 'Invalid weatherBounds; expected west,south,east,north within geographic limits' });
 
     const ctx = await buildWorldContext({
       orgId,
@@ -220,6 +243,8 @@ router.post(
       center,
       radiusM: boundedRadius(body.radiusM),
       bbox,
+      weatherGrid: parseWeatherGrid(body.weatherGrid),
+      weatherBounds,
       layers: parseLayers(body.layers, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']),
       maxEntitiesPerLayer: Math.min(MAX_RESULT, Math.max(1, Number(body.maxEntitiesPerLayer) || 100)),
       requestId: req.id || req.headers['x-request-id'],
