@@ -293,6 +293,22 @@ function haversineMeters(aLat, aLng, bLat, bLng) {
 
 async function loadWeatherForecast(bounds, center, radiusM, signal) {
   const plan = buildForecastGrid(bounds, center, radiusM, MAX_WEATHER_POINTS);
+  const customerApiKey = String(process.env.OPEN_METEO_API_KEY || '').trim();
+  const allowFreeNonCommercial = process.env.OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL === 'true';
+  if (!customerApiKey && !allowFreeNonCommercial) {
+    return {
+      entities: [],
+      error: 'commercial_api_key_not_configured',
+      health: {
+        source: 'open-meteo',
+        status: 'UNAVAILABLE',
+        requestedSamples: plan.points.length,
+        successfulSamples: 0,
+        failedSamples: plan.points.length,
+        reason: 'Open-Meteo free service is restricted to non-commercial use. Configure OPEN_METEO_API_KEY for the paid customer API; OPEN_METEO_ALLOW_FREE_NONCOMMERCIAL=true is for explicitly non-commercial deployments only.',
+      },
+    };
+  }
   const now = Date.now();
   const requested = [];
   const outputByKey = new Map();
@@ -306,11 +322,13 @@ async function loadWeatherForecast(bounds, center, radiusM, signal) {
   }
 
   if (requested.length) {
-    const url = 'https://api.open-meteo.com/v1/forecast?latitude='
+    const apiBase = String(process.env.OPEN_METEO_API_BASE || (customerApiKey ? 'https://customer-api.open-meteo.com/v1/forecast' : 'https://api.open-meteo.com/v1/forecast'));
+    const url = apiBase + '?latitude='
       + encodeURIComponent(requested.map(point => point.latitude).join(','))
       + '&longitude=' + encodeURIComponent(requested.map(point => point.longitude).join(','))
       + '&hourly=temperature_2m,precipitation,rain,showers,snowfall,weather_code,wind_speed_10m,wind_direction_10m,cloud_cover'
-      + '&forecast_hours=7&timezone=UTC';
+      + '&forecast_hours=7&timezone=UTC'
+      + (customerApiKey ? '&apikey=' + encodeURIComponent(customerApiKey) : '');
     const timeout = AbortSignal.timeout(9000);
     const requestSignal = signal && typeof AbortSignal.any === 'function'
       ? AbortSignal.any([signal, timeout]) : timeout;
