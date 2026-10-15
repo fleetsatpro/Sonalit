@@ -134,4 +134,17 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).not.toContain('position:absolute; top:12px; right:12px; left:auto;');
   });
 
+
+  it('renders the map-first three-zone operator desk with controls isolated from the map canvas', () => {
+    expect(page).toContain('wx-layer-rail');
+    expect(page).toContain('wx-workspace--desk');
+    expect(page).toContain('wx-toolbar-primary');
+    expect(page).toContain('wx-toolbar-secondary');
+    expect(page).toContain('wx-layer-button__copy');
+    expect(page).toContain('Source-first display');
+    expect(styles).toContain('grid-template-areas: "layers map right"');
+    expect(styles).toContain('.wx-layer-rail');
+    expect(styles).toContain('@media (max-width: 900px)');
+  });
+
 });

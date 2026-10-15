@@ -198,6 +198,8 @@ export default function WeatherStudio() {
   const [viewport, setViewport] = useState<Viewport>({ latitude: 0, longitude: 28, radiusM: 100000, bounds: [12, -28, 62, 34] });
   const [queryViewport, setQueryViewport] = useState(viewport);
   useEffect(() => {
+    // A short quiet window keeps pan-to-data feedback responsive. Spatial bounds
+    // snapping and the query key still coalesce small movements into one request.
     const timer = window.setTimeout(() => {
       setQueryViewport(current => {
         const sameBounds = current.bounds.every((value, index) => value === viewport.bounds[index]);
@@ -206,7 +208,7 @@ export default function WeatherStudio() {
           && current.radiusM === viewport.radiusM
           && sameBounds ? current : viewport;
       });
-    }, 3500);
+    }, 750);
     return () => window.clearTimeout(timer);
   }, [viewport]);
   const [stepIndex, setStepIndex] = useState(0);
@@ -542,7 +544,7 @@ export default function WeatherStudio() {
         <div className="wx-brand-row">
           <button type="button" className="wx-back" onClick={() => void navigate({ to: '/command' })} aria-label="Return to Command Centre" title="Return to Command Centre"><ArrowLeft size={15} /><span>COMMAND</span></button>
           <div className="wx-brand-mark" aria-hidden="true"><Globe2 size={19} /></div>
-          <div className="wx-brand-copy"><div className="wx-eyebrow">SONALIT INTELLIGENCE / ENVIRONMENTAL DESK</div><h1>Weather Studio</h1><p>Global forecasts, official warnings and environmental events.</p></div>
+          <div className="wx-brand-copy"><div className="wx-eyebrow">SONALIT INTELLIGENCE / ENVIRONMENTAL DESK</div><h1>Weather Studio</h1><p>Forecasts, hazards and earth observation in one operational view.</p></div>
         </div>
         <div className="wx-header-meta">
           <div className="wx-coverage-state" data-state={status}><span className="wx-state-dot" /><div><b>{status === 'available' ? 'SOURCES AVAILABLE' : status === 'syncing' ? 'SYNCHRONISING' : status === 'partial' ? 'PARTIAL COVERAGE' : 'DEGRADED COVERAGE'}</b><small>{response?.health?.status ?? (liveQuery.isError ? 'PROVIDER UNAVAILABLE' : 'CONNECTING TO SOURCES')}</small></div></div>
@@ -550,28 +552,9 @@ export default function WeatherStudio() {
         </div>
       </header>
 
-      <div className="wx-toolbar">
-        <div className="wx-toolbar-primary">
-          <div className="wx-toolbar-label"><span>FORECAST LAYERS</span><small>Environmental signals</small></div>
-          <div className="wx-layer-switches" role="group" aria-label="Map event layers">
-            {LAYERS.map(layer => { const Icon = layer.icon; const count = layer.id === 'weather' ? weatherCount : layer.id === 'earthquakes' ? earthquakeCount : layer.id === 'volcanoes' ? volcanoCount : naturalCount; return <button key={layer.id} type="button" className="wx-layer-button" data-active={filters[layer.id]} aria-pressed={filters[layer.id]} onClick={() => setLayer(layer.id)}><Icon size={14} /><span>{layer.label}</span><i>{count}</i></button>; })}
-          </div>
-          <div className="wx-map-presets"><button type="button" onClick={fitWorld}>GLOBAL</button><button type="button" onClick={focusEastAfrica}>E. AFRICA</button><button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in">+</button><button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out">−</button></div>
-        </div>
-        <div className="wx-toolbar-secondary">
-          <span className="wx-secondary-label">MAP PRODUCTS</span>
-          <div className="wx-layer-switches wx-motion-switches" role="group" aria-label="Forecast field motion"><button type="button" className="wx-layer-button" data-active={flowMotion} aria-pressed={flowMotion} disabled={windVectorCount < 2} onClick={() => setFlowMotion(value => !value)} title={windVectorCount < 2 ? "Wind flow needs at least two valid forecast wind vectors in the current response." : "Toggle source-derived wind-flow animation; it is model output, not radar."}><Waves size={14} /><span>Wind flow</span><i>{flowMotion ? "ON" : "OFF"}</i></button></div>
-          <div className="wx-layer-switches wx-observation-switches" role="group" aria-label="Earth observation products and verified official warning areas">
-            <button type="button" className="wx-layer-button" data-active={rasterLayers.satellite} aria-pressed={rasterLayers.satellite} onClick={() => toggleRaster('satellite')} title="NASA MODIS Aqua true-colour satellite imagery; latest available scene, swath gaps are not clear-weather evidence"><Satellite size={14} /><span>Satellite</span></button>
-            <button type="button" className="wx-layer-button" data-active={rasterLayers.precipitation} aria-pressed={rasterLayers.precipitation} onClick={() => toggleRaster('precipitation')} title="NASA GPM IMERG v7 near-real-time satellite-derived precipitation-rate estimate; not live ground radar"><CloudRain size={14} /><span>NASA Rain</span></button>
-            <button type="button" className="wx-layer-button" data-active={mapReady && showOfficialWarnings && mappedWarningCount > 0} aria-pressed={mapReady && showOfficialWarnings && mappedWarningCount > 0} disabled={!mapReady || mappedWarningCount === 0} onClick={() => setShowOfficialWarnings(value => !value)} title={!mapReady ? 'Map controls are unavailable until the cartographic renderer is ready; official warning messages remain available.' : mappedWarningCount === 0 ? 'No verified active or upcoming KMD CAP warning polygons are available to map.' : 'Toggle only verified active/upcoming KMD CAP warning polygons supplied by the official feed.'}><AlertTriangle size={14} /><span>KMD Alerts</span><i>{mappedWarningCount}</i></button>
-          </div>
-        </div>
-      </div>
-
-      <main className="wx-workspace">
+      <main className="wx-workspace wx-workspace--desk">
         <section className="wx-map-panel" aria-label="Interactive weather and natural event map">
-          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "RESILIENT BASE" : "ESRI CARTOGRAPHY"}</span></div><b>Global atmospheric field</b><small>Modelled wind flow · satellite-derived rainfall estimates · no radar imagery.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
+          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "RESILIENT BASE" : "ESRI CARTOGRAPHY"}</span></div><b>Atmospheric conditions</b><small>Forecast-grid signals, satellite-derived precipitation and source-attributed natural events.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
           <div className="wx-map-canvas">
             <div className="wx-map-instance" ref={mapContainerRef} />
             <WeatherFieldCanvas
@@ -602,7 +585,70 @@ export default function WeatherStudio() {
             <div className="wx-range-labels"><span>{formatValidTime(steps[0]?.validAt)}</span><span>{formatValidTime(steps[steps.length - 1]?.validAt)}</span></div>
             <div className="wx-timeline-note"><CalendarClock size={12} /> Forecast-valid times, not observed radar frames or historical playback.</div>
           </div>
-        </section>
+        </
+
+        <aside className="wx-layer-rail wx-toolbar" aria-label="Weather map controls">
+          <div className="wx-rail-intro">
+            <div className="wx-eyebrow">MAP CONTROL</div>
+            <h2>Layers &amp; fields</h2>
+            <p>Choose the signals displayed in the map.</p>
+          </div>
+          <section className="wx-toolbar-primary" aria-label="Environmental event layers">
+            <div className="wx-section-heading"><span>EVENT LAYERS</span><small>VISIBLE SIGNALS</small></div>
+            <div className="wx-layer-switches" role="group" aria-label="Map event layers">
+              {LAYERS.map(layer => {
+                const Icon = layer.icon;
+                const count = layer.id === 'weather' ? weatherCount : layer.id === 'earthquakes' ? earthquakeCount : layer.id === 'volcanoes' ? volcanoCount : naturalCount;
+                const caption = layer.id === 'weather' ? 'Forecast grid' : layer.id === 'earthquakes' ? 'USGS catalogue' : layer.id === 'volcanoes' ? 'Volcano reports' : 'NASA open events';
+                return <button key={layer.id} type="button" className="wx-layer-button wx-event-layer" data-active={filters[layer.id]} aria-pressed={filters[layer.id]} onClick={() => setLayer(layer.id)}>
+                  <span className="wx-layer-button__icon"><Icon size={17} /></span>
+                  <span className="wx-layer-button__copy"><span>{layer.label}</span><small>{caption}</small></span>
+                  <i>{count}</i>
+                </button>;
+              })}
+            </div>
+          </section>
+          <section className="wx-toolbar-secondary" aria-label="Forecast fields and observation products">
+            <div className="wx-section-heading"><span>FORECAST &amp; OBSERVATION</span><small>OPTIONAL OVERLAYS</small></div>
+            <div className="wx-layer-switches wx-motion-switches" role="group" aria-label="Forecast field motion">
+              <button type="button" className="wx-layer-button wx-product-layer" data-active={flowMotion} aria-pressed={flowMotion} disabled={windVectorCount < 2} onClick={() => setFlowMotion(value => !value)} title={windVectorCount < 2 ? "Wind flow needs at least two valid forecast wind vectors in the current response." : "Toggle source-derived wind-flow animation; it is model output, not radar."}>
+                <span className="wx-layer-button__icon"><Waves size={17} /></span>
+                <span className="wx-layer-button__copy"><span>Wind flow</span><small>Model-derived motion</small></span>
+                <i>{flowMotion ? 'ON' : 'OFF'}</i>
+              </button>
+            </div>
+            <div className="wx-layer-switches wx-observation-switches" role="group" aria-label="Satellite and verified official warning products">
+              <button type="button" className="wx-layer-button wx-product-layer" data-active={rasterLayers.satellite} aria-pressed={rasterLayers.satellite} onClick={() => toggleRaster('satellite')} title="NASA MODIS Aqua true-colour satellite imagery; latest available scene, swath gaps are not clear-weather evidence">
+                <span className="wx-layer-button__icon"><Satellite size={17} /></span>
+                <span className="wx-layer-button__copy"><span>Satellite</span><small>NASA MODIS Aqua</small></span>
+                <i>{rasterLayers.satellite ? 'ON' : 'OFF'}</i>
+              </button>
+              <button type="button" className="wx-layer-button wx-product-layer" data-active={rasterLayers.precipitation} aria-pressed={rasterLayers.precipitation} onClick={() => toggleRaster('precipitation')} title="NASA GPM IMERG v7 near-real-time satellite-derived precipitation-rate estimate; not live ground radar">
+                <span className="wx-layer-button__icon"><CloudRain size={17} /></span>
+                <span className="wx-layer-button__copy"><span>NASA Rain</span><small>IMERG precipitation estimate</small></span>
+                <i>{rasterLayers.precipitation ? 'ON' : 'OFF'}</i>
+              </button>
+              <button type="button" className="wx-layer-button wx-product-layer" data-active={mapReady && showOfficialWarnings && mappedWarningCount > 0} aria-pressed={mapReady && showOfficialWarnings && mappedWarningCount > 0} disabled={!mapReady || mappedWarningCount === 0} onClick={() => setShowOfficialWarnings(value => !value)} title={!mapReady ? 'Map controls are unavailable until the cartographic renderer is ready; official warning messages remain available.' : mappedWarningCount === 0 ? 'No verified active or upcoming KMD CAP warning polygons are available to map.' : 'Toggle only verified active/upcoming KMD CAP warning polygons supplied by the official feed.'}>
+                <span className="wx-layer-button__icon wx-layer-button__icon--amber"><AlertTriangle size={17} /></span>
+                <span className="wx-layer-button__copy"><span>KMD Alerts</span><small>Verified warning polygons</small></span>
+                <i>{mappedWarningCount}</i>
+              </button>
+            </div>
+          </section>
+          <section className="wx-rail-map-controls" aria-label="Map navigation">
+            <div className="wx-section-heading"><span>MAP NAVIGATION</span></div>
+            <div className="wx-map-presets">
+              <button type="button" onClick={fitWorld}>GLOBAL</button>
+              <button type="button" onClick={focusEastAfrica}>E. AFRICA</button>
+              <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in">+</button>
+              <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out">−</button>
+            </div>
+          </section>
+          <div className="wx-layer-rail-foot">
+            <span className="wx-layer-rail-foot__icon"><Globe2 size={15} /></span>
+            <div><strong>Source-first display</strong><p>Forecasts remain modelled. Observation gaps never imply clear conditions; hazard boundaries are shown only when supplied and verified.</p></div>
+          </div>
+        </aside>section>
 
         <aside className="wx-right-column">
           <section className="wx-card wx-warning-card" aria-label="Official weather early-warning feed">

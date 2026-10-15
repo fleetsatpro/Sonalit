@@ -295,4 +295,23 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(sourceDisclosure.getByText('USGS ComCat')).toBeVisible();
   });
 
+
+  test('uses a dedicated layer rail beside the live map and preserves map controls', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    await expect(page.locator('.wx-layer-rail')).toBeVisible();
+    await expect(page.locator('.wx-map-panel')).toBeVisible();
+    await expect(page.locator('.wx-right-column')).toBeVisible();
+    const layout = await page.evaluate(() => {
+      const left = document.querySelector('.wx-layer-rail')?.getBoundingClientRect();
+      const map = document.querySelector('.wx-map-panel')?.getBoundingClientRect();
+      const right = document.querySelector('.wx-right-column')?.getBoundingClientRect();
+      return { leftRight: left?.right ?? 0, mapLeft: map?.left ?? 0, mapRight: map?.right ?? 0, rightLeft: right?.left ?? 0 };
+    });
+    expect(layout.leftRight).toBeLessThan(layout.mapLeft);
+    expect(layout.mapRight).toBeLessThan(layout.rightLeft);
+    await expect(page.getByRole('button', { name: /weather models/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /wind flow/i })).toBeEnabled();
+  });
+
 });
