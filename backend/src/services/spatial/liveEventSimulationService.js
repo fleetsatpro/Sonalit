@@ -2,6 +2,7 @@
 
 const { XMLParser } = require('fast-xml-parser');
 const { getOpenMeteoAccess } = require('./weatherProviderAccess');
+const { getOfficialWeatherWarnings } = require('./officialWeatherWarningsService');
 
 const WEATHER_CACHE_TTL_MS = 10 * 60 * 1000;
 const EARTHQUAKE_CACHE_TTL_MS = 60 * 1000;
@@ -1214,6 +1215,7 @@ async function getLiveEventSimulation(input) {
     loadCachedSource('usgs-earthquakes-m2-5-day', EARTHQUAKE_CACHE_TTL_MS, loadEarthquakes),
     loadVolcanoEvents(),
     loadCachedSource('nasa-eonet-open-events', NASA_EONET_TTL_MS, loadNasaEonetEvents),
+    getOfficialWeatherWarnings(),
   ]);
   const weather = results[0].status === 'fulfilled' ? results[0].value : { entities: [], health: { source: 'open-meteo', status: 'UNAVAILABLE' }, error: String(results[0].reason && results[0].reason.message || results[0].reason) };
   const earthquakesResult = results[1];
@@ -1229,6 +1231,14 @@ async function getLiveEventSimulation(input) {
   const eonet = eonetResult.status === 'fulfilled'
     ? eonetResult.value.value
     : { entities: [], sourceUrl: 'https://eonet.gsfc.nasa.gov/api/v3/events/geojson?status=open&limit=200', returnedFeatures: 0 };
+  const weatherAlertsResult = results[4];
+  const weatherAlerts = weatherAlertsResult.status === 'fulfilled' ? weatherAlertsResult.value : {
+    source: 'Kenya Meteorological Department CAP feed',
+    sourceUrl: 'https://meteo.go.ke/api/cap/rss.xml',
+    scope: 'Kenya national meteorological warning feed; this is not global alert coverage',
+    receivedAt: null, status: 'UNAVAILABLE', recordCount: 0, activeCount: 0, scheduledCount: 0,
+    alerts: [], semantics: 'No current feed payload could be verified.',
+  };
 
   const entities = [
     ...(weather.entities || []),
@@ -1241,6 +1251,7 @@ async function getLiveEventSimulation(input) {
     earthquakesResult.status === 'fulfilled' ? (earthquakesResult.value.stale ? 'STALE' : 'LIVE') : 'UNAVAILABLE',
     volcanoes.health && volcanoes.health.status,
     eonetResult.status === 'fulfilled' ? (eonetResult.value.stale ? 'STALE_FALLBACK' : 'LIVE') : 'UNAVAILABLE',
+    weatherAlerts.status === 'UNAVAILABLE' ? 'UNAVAILABLE' : weatherAlerts.status,
   ];
   const successCount = sourceStatuses.filter(status => !['UNAVAILABLE', 'ERROR'].includes(String(status))).length;
   const overallStatus = successCount === sourceStatuses.length ? 'AVAILABLE' : successCount ? 'PARTIAL' : 'UNAVAILABLE';
@@ -1249,6 +1260,8 @@ async function getLiveEventSimulation(input) {
     ...(earthquakesResult.status === 'rejected' ? ['earthquake_feed_unavailable: ' + String(earthquakesResult.reason && earthquakesResult.reason.message || earthquakesResult.reason)] : []),
     ...(volcanoes.warnings || []),
     ...(eonetResult.status === 'rejected' ? ['nasa_eonet_unavailable: ' + String(eonetResult.reason && eonetResult.reason.message || eonetResult.reason)] : []),
+    ...(weatherAlerts.status === 'UNAVAILABLE' ? ['kenya_kmd_cap_feed_unavailable: ' + String(weatherAlerts.error || 'source unavailable')] : []),
+    ...(weatherAlerts.status === 'STALE_FALLBACK' ? ['kenya_kmd_cap_feed_stale_fallback: showing previously retrieved official warning records'] : []),
   ];
 
   return {
@@ -1271,6 +1284,15 @@ async function getLiveEventSimulation(input) {
         returnedFeatures: eonet.returnedFeatures || 0,
         sourceUrl: eonet.sourceUrl || 'https://eonet.gsfc.nasa.gov/api/v3/events/geojson?status=open&limit=200',
       },
+      weatherAlerts: {
+        status: weatherAlerts.status,
+        recordCount: weatherAlerts.recordCount,
+        activeCount: weatherAlerts.activeCount,
+        scheduledCount: weatherAlerts.scheduledCount,
+        receivedAt: weatherAlerts.receivedAt || null,
+        sourceUrl: weatherAlerts.sourceUrl,
+        scope: weatherAlerts.scope,
+      },
     },
     coverage: {
       weatherForecastPoints: (weather.entities || []).length,
@@ -1279,13 +1301,18 @@ async function getLiveEventSimulation(input) {
       earthquakesAreM25PlusPastDay: true,
       volcanoReportCadence: 'weekly',
       globalOpenNaturalEvents: (eonet.entities || []).length,
+      officialWeatherWarningRecords: weatherAlerts.recordCount,
+      verifiedActiveWeatherWarnings: weatherAlerts.activeCount,
+      weatherWarningCoverage: 'Kenya Meteorological Department CAP feed only; not global warning coverage',
       naturalEventGeometrySemantics: 'source points plus centroid markers for source geometries; no unverified hazard boundary is drawn',
       forecastHours: weather.health && weather.health.horizonHours || 0,
       forecastSemantics: 'hourly_model_forecast_not_observed_weather_radar',
       earthquakePulseSemantics: 'symbolic_epicentre_pulse_not_ground_shaking_or_damage_footprint',
       volcanoSemantics: 'reported_activity_marker_not_live_eruption_video_or_measured_ash_plume',
     },
+    weatherAlerts,
     sources: {
+      weatherAlerts: weatherAlerts.sourceUrl,
       weather: weather.health && weather.health.source === 'met-no'
         ? 'https://api.met.no/weatherapi/locationforecast/2.0/documentation'
         : 'https://open-meteo.com/en/docs',

@@ -55,5 +55,14 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).toContain('.wx-map-canvas');
     expect(styles).toContain('.wx-map-legend');
     expect(styles).toContain('.wx-field-label');
+    expect(page).toContain('NASA_RASTER_PRODUCTS');
+    expect(page).toContain('IMERG_Precipitation_Rate_v7_NRT');
+    expect(page).toContain('MODIS_Aqua_CorrectedReflectance_TrueColor');
+    expect(page).toContain('syncNasaRasterLayers');
+    expect(page).toContain('weatherAlerts');
+    expect(page).toContain('Kenya · Official alerts');
+    expect(page).toContain('not global alert coverage');
+    expect(styles).toContain('.wx-warning-card');
+    expect(styles).toContain('.wx-observation-note');
   });
 });

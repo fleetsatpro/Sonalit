@@ -622,6 +622,7 @@ export default function GodsEyeView() {
               onExternalSelect={id => {
                 setSelectedExternalId(id)
                 setSelected(null)
+                if (id) setIntelligenceOpen(true)
                 const entity = allExternalEntities.find(candidate => candidate.id === id)
                 if (entity?.entityType === 'camera' || entity?.entityType === 'spatial_camera') setCctvOpen(true)
               }}

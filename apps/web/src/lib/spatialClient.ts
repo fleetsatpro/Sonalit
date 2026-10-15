@@ -106,14 +106,53 @@ export interface WorldContextQuery {
   signal?: AbortSignal
 }
 
+export interface OfficialWeatherWarning {
+  id: string
+  title: string
+  description?: string | null
+  event?: string | null
+  urgency?: string | null
+  severity?: string | null
+  certainty?: string | null
+  status?: string | null
+  messageType?: string | null
+  scope?: string | null
+  sentAt?: string | null
+  effectiveAt?: string | null
+  expiresAt?: string | null
+  activeState: 'ACTIVE' | 'UPCOMING' | 'DETAILS_UNVERIFIED' | string
+  verifiedCap: boolean
+  senderName?: string | null
+  areas?: Array<{ description?: string | null; polygons: number[][][] }>
+  url?: string | null
+  source: string
+}
+
+export interface OfficialWeatherWarningFeed {
+  source: string
+  sourceUrl: string
+  scope: string
+  status: 'AVAILABLE' | 'STALE_FALLBACK' | 'UNAVAILABLE' | string
+  receivedAt?: string | null
+  cacheReceivedAt?: string | null
+  error?: string | null
+  recordCount: number
+  activeCount: number
+  scheduledCount: number
+  alerts: OfficialWeatherWarning[]
+  semantics: string
+}
+
 export interface LiveEventSimulationResponse {
   data: SpatialWorldEntity[]
+  weatherAlerts?: OfficialWeatherWarningFeed
   generatedAt: string
   health: {
     status: 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE' | string
     weather?: Record<string, unknown>
     earthquakes?: Record<string, unknown>
     volcanoes?: Record<string, unknown>
+    weatherAlerts?: Record<string, unknown>
   }
   coverage?: Record<string, unknown>
   sources?: Record<string, string>
