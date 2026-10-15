@@ -147,4 +147,18 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).toContain('@media (max-width: 900px)');
   });
 
+
+  it('locks in the broadcast-console visual system and preserves map instruments', () => {
+    expect(styles).toContain('--wx-bg: #071019');
+    expect(styles).toContain('--wx-cyan: #69dce7');
+    expect(styles).toContain('--wx-red: #ff625e');
+    expect(styles).toContain('.wx-marker__icon');
+    expect(styles).toContain('.wx-field-overlay {');
+    expect(styles).toContain('.wx-map-legend {');
+    expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(styles).not.toContain('radial-gradient');
+    expect(styles).not.toContain('--sp-violet');
+    expect(styles).not.toContain('wx-marker__signal');
+    expect(styles).not.toContain('wx-marker__particles');
+  });
 });
