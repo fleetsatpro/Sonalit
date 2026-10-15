@@ -49,6 +49,14 @@ describe("God's Eye View interaction contract", () => {
     expect(source).toContain('onSelect');
   });
 
+  it('debounces expensive weather requests and retains the last source snapshot', () => {
+    expect(source).toContain('setWeatherQueryViewport');
+    expect(source).toContain('snapSpatialBounds');
+    expect(source).toContain('retry: shouldRetrySpatialRequest');
+    expect(source).toContain('placeholderData: previousData => previousData');
+    expect(source).toContain('refetchOnWindowFocus: false');
+  });
+
   it('keeps the GEV surface operationally authoritative over external context', () => {
     expect(source).toContain('local telemetry remains authoritative');
     expect(source).toContain('External world context is enrichment only');
