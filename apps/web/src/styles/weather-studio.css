@@ -17,13 +17,16 @@
 .wx-header-meta{display:flex;align-items:center;gap:11px}
 .wx-coverage-state{display:flex;align-items:center;gap:9px;min-width:150px;padding:9px 12px;border:1px solid rgba(115,208,168,.16);border-radius:7px;background:rgba(68,147,111,.055)}
 .wx-coverage-state[data-state="syncing"]{border-color:rgba(223,187,109,.2);background:rgba(173,121,38,.05)}
+.wx-coverage-state[data-state="partial"]{border-color:rgba(223,187,109,.28);background:rgba(173,121,38,.075)}
 .wx-coverage-state[data-state="degraded"]{border-color:rgba(236,129,129,.23);background:rgba(161,52,52,.055)}
 .wx-state-dot{width:7px;height:7px;border-radius:50%;background:#79ddb1;box-shadow:0 0 10px rgba(121,221,177,.4)}
 .wx-coverage-state[data-state="syncing"] .wx-state-dot{background:#e5c37c;box-shadow:none}
+.wx-coverage-state[data-state="partial"] .wx-state-dot{background:#e5c37c;box-shadow:none}
 .wx-coverage-state[data-state="degraded"] .wx-state-dot{background:#f08d8d;box-shadow:none}
 .wx-coverage-state b,.wx-coverage-state small{display:block;font-family:'IBM Plex Mono',monospace}
 .wx-coverage-state b{color:#c9ecdc;font-size:8px;letter-spacing:.07em}
 .wx-coverage-state[data-state="syncing"] b{color:#e8d7a8}
+.wx-coverage-state[data-state="partial"] b{color:#f0d19a}
 .wx-coverage-state[data-state="degraded"] b{color:#f2b2b2}
 .wx-coverage-state small{margin-top:4px;color:#748596;font-size:7px;letter-spacing:.05em}
 .wx-icon-button{display:grid;place-items:center;width:35px;height:35px;color:#a8b7c5;border:1px solid var(--wx-line);border-radius:7px;background:rgba(255,255,255,.025);cursor:pointer}
@@ -122,6 +125,7 @@
 .wx-card-status{padding:4px 6px;color:#96c7b0;border:1px solid rgba(124,209,168,.16);border-radius:4px;font:700 7px/1 'IBM Plex Mono',monospace}
 .wx-card-status[data-state="degraded"]{color:#eeb2a6;border-color:rgba(236,129,129,.22)}
 .wx-card-status[data-state="syncing"]{color:#e0c889;border-color:rgba(223,187,109,.18)}
+.wx-card-status[data-state="partial"]{color:#f0d19a;border-color:rgba(223,187,109,.28)}
 .wx-stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:11px}
 .wx-stat-grid>div{min-width:0;padding:10px;border:1px solid rgba(190,211,232,.07);border-radius:6px;background:rgba(255,255,255,.016)}
 .wx-stat-grid svg{display:block;color:#82b9c8}

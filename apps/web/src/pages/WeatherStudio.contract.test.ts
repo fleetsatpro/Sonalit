@@ -13,6 +13,9 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(page).toContain('bounds: roundedBounds');
     expect(page).toContain('center: queryCenter');
     expect(page).toContain('queryRadiusM');
+    expect(page).toContain("response.health?.status === 'PARTIAL' ? 'partial'");
+    expect(page).toContain("status === 'partial' ? 'PARTIAL COVERAGE'");
+    expect(styles).toContain('.wx-coverage-state[data-state="partial"]');
     expect(page).toContain('forecastSteps');
     expect(page).toContain('validAt');
     expect(page).toContain('this is not a measured historical replay');

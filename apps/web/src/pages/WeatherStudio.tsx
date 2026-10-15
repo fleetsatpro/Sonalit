@@ -280,7 +280,8 @@ export default function WeatherStudio() {
       : null;
   const sourceUrl = safeSourceUrl(response?.sources?.weather) ?? fallbackWeatherUrl;
   const status = liveQuery.isError || response?.health?.status === 'UNAVAILABLE' ? 'degraded'
-    : liveQuery.isFetching || response?.health?.status === 'PARTIAL' ? 'syncing' : response ? 'available' : 'syncing';
+    : liveQuery.isFetching || !response ? 'syncing'
+      : response.health?.status === 'PARTIAL' ? 'partial' : 'available';
   const attrs = selectedEntity?.attributes ?? {};
   const detailSource = selectedEntity
     ? safeSourceUrl(selectedEntity.sourceReference)
@@ -383,7 +384,7 @@ export default function WeatherStudio() {
           <div className="wx-brand-copy"><div className="wx-eyebrow">SONALIT INTELLIGENCE / ENVIRONMENTAL DESK</div><h1>WEATHER STUDIO</h1><p>Forecast evolution · sourced natural events · operational context</p></div>
         </div>
         <div className="wx-header-meta">
-          <div className="wx-coverage-state" data-state={status}><span className="wx-state-dot" /><div><b>{status === 'available' ? 'SOURCE LINKED' : status === 'syncing' ? 'SYNCHRONISING' : 'DEGRADED COVERAGE'}</b><small>{response?.health?.status ?? (liveQuery.isError ? 'PROVIDER UNAVAILABLE' : 'CONNECTING TO SOURCES')}</small></div></div>
+          <div className="wx-coverage-state" data-state={status}><span className="wx-state-dot" /><div><b>{status === 'available' ? 'SOURCES AVAILABLE' : status === 'syncing' ? 'SYNCHRONISING' : status === 'partial' ? 'PARTIAL COVERAGE' : 'DEGRADED COVERAGE'}</b><small>{response?.health?.status ?? (liveQuery.isError ? 'PROVIDER UNAVAILABLE' : 'CONNECTING TO SOURCES')}</small></div></div>
           <button type="button" className="wx-icon-button" onClick={refresh} disabled={liveQuery.isFetching} aria-label="Refresh weather and event sources" title="Refresh sources">{liveQuery.isFetching ? <LoaderCircle size={15} className="wx-spin" /> : <RefreshCw size={15} />}</button>
         </div>
       </header>
