@@ -290,7 +290,7 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(page.locator('.wx-tile-sync')).toHaveCount(0, { timeout: 10000 });
   });
 
-  test('uses shipped display fonts and keeps mobile operational labels readable', async ({ page }) =>
+  test('uses shipped display fonts and keeps mobile operational labels readable', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openWeatherStudio(page, 'AVAILABLE');
     const typography = await page.evaluate(() => {
