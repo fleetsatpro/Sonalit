@@ -309,7 +309,7 @@ test.describe('Weather Studio route and operational controls', () => {
     expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
   });
 
-  test('remains usable without horizontal overflow on a mobile viewport', async ({ page }) =>
+  test('remains usable without horizontal overflow on a mobile viewport', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openWeatherStudio(page, 'AVAILABLE');
     await expect(page.getByRole('heading', { name: /weather studio/i })).toBeVisible();
