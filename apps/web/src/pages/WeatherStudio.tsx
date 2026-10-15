@@ -246,6 +246,10 @@ export default function WeatherStudio() {
     placeholderData: previousData => previousData,
   });
   const response = liveQuery.data;
+  const viewportQueryPending = viewport.latitude !== queryViewport.latitude
+    || viewport.longitude !== queryViewport.longitude
+    || viewport.radiusM !== queryViewport.radiusM
+    || viewport.bounds.some((value, index) => value !== queryViewport.bounds[index]);
   const warningFeed = response?.weatherAlerts;
   const warningAreas = useMemo(() => buildOfficialWarningAreaCollection(warningFeed), [warningFeed]);
   const mappedWarningCount = useMemo(
@@ -554,7 +558,7 @@ export default function WeatherStudio() {
 
       <main className="wx-workspace wx-workspace--desk">
         <section className="wx-map-panel" aria-label="Interactive weather and natural event map">
-          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "RESILIENT BASE" : "ESRI CARTOGRAPHY"}</span></div><b>Atmospheric conditions</b><small>Forecast-grid signals, satellite-derived precipitation and source-attributed natural events.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
+          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "RESILIENT BASE" : "ESRI CARTOGRAPHY"}</span>{(viewportQueryPending || liveQuery.isFetching) && <span className="wx-area-sync" data-state={liveQuery.isError ? 'degraded' : 'syncing'} role="status" aria-live="polite"><LoaderCircle size={11} className="wx-spin" />{viewportQueryPending ? 'AREA CHANGED' : response ? 'REFRESHING DATA' : 'LOADING DATA'}</span>}</div><b>Atmospheric conditions</b><small>Forecast-grid signals, satellite-derived precipitation and source-attributed natural events.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
           <div className="wx-map-canvas">
             <div className="wx-map-instance" ref={mapContainerRef} />
             <WeatherFieldCanvas

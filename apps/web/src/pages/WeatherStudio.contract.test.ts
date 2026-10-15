@@ -80,7 +80,7 @@ describe('Weather Studio evidence and interaction contract', () => {
   });
 
   it('keeps the layout responsive and the forecast map legible on small screens', () => {
-    expect(styles).toContain('@media (max-width: 900px)');
+    expect(styles).toContain('@media (max-width: 1024px)');
     expect(styles).toContain('@media (max-width: 620px)');
     expect(styles).toContain('.wx-map-canvas');
     expect(styles).toContain('.wx-map-legend');
@@ -137,6 +137,8 @@ describe('Weather Studio evidence and interaction contract', () => {
 
   it('renders the map-first three-zone operator desk with controls isolated from the map canvas', () => {
     expect(page).toContain('wx-layer-rail');
+    expect(page).toContain('viewportQueryPending');
+    expect(page).toContain('wx-area-sync');
     expect(page).toContain('wx-workspace--desk');
     expect(page).toContain('wx-toolbar-primary');
     expect(page).toContain('wx-toolbar-secondary');
@@ -144,7 +146,7 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(page).toContain('Source-first display');
     expect(styles).toContain('grid-template-areas: "layers map right"');
     expect(styles).toContain('.wx-layer-rail');
-    expect(styles).toContain('@media (max-width: 900px)');
+    expect(styles).toContain('@media (max-width: 1024px)');
   });
 
 
@@ -152,8 +154,12 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).toContain('--wx-bg: #071019');
     expect(styles).toContain('--wx-cyan: #69dce7');
     expect(styles).toContain('--wx-red: #ff625e');
-    expect(styles).toContain("'Barlow Condensed', Inter, sans-serif");
-    expect(styles).toContain("'JetBrains Mono'");
+    expect(styles).toContain("'Sora', Inter, sans-serif");
+    expect(styles).toContain("'IBM Plex Mono'");
+    expect(page).toContain("@fontsource/sora/800.css");
+    expect(page).toContain("@fontsource/ibm-plex-mono/700.css");
+    expect(styles).not.toContain("'Barlow Condensed'");
+    expect(styles).not.toContain("'JetBrains Mono'");
 
     expect(styles).toContain('.wx-marker__icon');
     expect(styles).toContain('.wx-field-overlay {');
@@ -164,4 +170,12 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).not.toContain('wx-marker__signal');
     expect(styles).not.toContain('wx-marker__particles');
   });
+  
+  it('makes the viewport refresh state visible while the requested area is pending', () => {
+    expect(page).toContain('viewportQueryPending');
+    expect(page).toContain('wx-area-sync');
+    expect(page).toContain("'AREA CHANGED'");
+    expect(page).toContain("'REFRESHING DATA'");
+  });
+
 });

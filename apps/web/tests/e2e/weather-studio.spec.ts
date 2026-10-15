@@ -265,7 +265,51 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(page.getByRole('button', { name: /Inspect CLEAR \/ MOSTLY CLEAR: Weather Studio test forecast/i })).toBeVisible();
   });
 
-  test('remains usable without horizontal overflow on a mobile viewport', async ({ page }) => {
+  test('uses shipped display fonts and keeps mobile operational labels readable', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    const typography = await page.evaluate(() => {
+      const read = (selector: string) => {
+        const element = document.querySelector(selector);
+        if (!element) throw new Error(`Missing typography target: ${selector}`);
+        const style = getComputedStyle(element);
+        return { size: Number.parseFloat(style.fontSize), family: style.fontFamily };
+      };
+      return {
+        heading: read('.wx-brand-copy h1'),
+        layerLabel: read('.wx-layer-button__copy > span'),
+        layerCaption: read('.wx-layer-button__copy > small'),
+        mapProvider: read('.wx-map-provider'),
+      };
+    });
+    expect(typography.heading.family.toLowerCase()).toContain('sora');
+    expect(typography.layerLabel.size).toBeGreaterThanOrEqual(11);
+    expect(typography.layerCaption.size).toBeGreaterThanOrEqual(9);
+    expect(typography.mapProvider.size).toBeGreaterThanOrEqual(9);
+  });
+
+  test('switches to a map-first tablet layout before the three-zone desk gets cramped', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    const geometry = await page.evaluate(() => {
+      const map = document.querySelector('.wx-map-panel')?.getBoundingClientRect();
+      const layers = document.querySelector('.wx-layer-rail')?.getBoundingClientRect();
+      const right = document.querySelector('.wx-right-column')?.getBoundingClientRect();
+      return {
+        map: { top: map?.top ?? 0, width: map?.width ?? 0 },
+        layersTop: layers?.top ?? 0,
+        rightTop: right?.top ?? 0,
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      };
+    });
+    expect(geometry.map.width).toBeGreaterThanOrEqual(900);
+    expect(geometry.layersTop).toBeGreaterThan(geometry.map.top);
+    expect(geometry.rightTop).toBeGreaterThan(geometry.layersTop);
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+  });
+
+  test('remains usable without horizontal overflow on a mobile viewport', async ({ page }) =>
     await page.setViewportSize({ width: 390, height: 844 });
     await openWeatherStudio(page, 'AVAILABLE');
     await expect(page.getByRole('heading', { name: /weather studio/i })).toBeVisible();
