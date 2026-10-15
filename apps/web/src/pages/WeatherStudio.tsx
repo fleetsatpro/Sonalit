@@ -12,7 +12,7 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import '@fontsource/ibm-plex-mono/700.css';
 import { Activity, AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, CloudSun, Crosshair, Flame, Globe2, LoaderCircle, MapPin, Pause, Play, RefreshCw, Thermometer, Droplets, Wind, Eye, Waves, X, Satellite, CloudRain } from 'lucide-react';
-import { fetchLiveEventSimulation } from '../lib/spatialClient.js';
+import { fetchLiveEventSimulation, snapSpatialBounds, shouldRetrySpatialRequest } from '../lib/spatialClient.js';
 import type { LiveEventSimulationResponse, SpatialWorldEntity } from '../lib/spatialClient.js';
 import { FALLBACK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
 import { buildOfficialWarningAreaCollection, syncOfficialWarningLayers } from '../lib/weatherWarningGeometry.js';
@@ -196,6 +196,19 @@ export default function WeatherStudio() {
   const baseStyleRef = useRef<'esri' | 'fallback'>('esri');
   const baseTileFailuresRef = useRef(0);
   const [viewport, setViewport] = useState<Viewport>({ latitude: 0, longitude: 28, radiusM: 100000, bounds: [12, -28, 62, 34] });
+  const [queryViewport, setQueryViewport] = useState(viewport);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setQueryViewport(current => {
+        const sameBounds = current.bounds.every((value, index) => value === viewport.bounds[index]);
+        return current.latitude === viewport.latitude
+          && current.longitude === viewport.longitude
+          && current.radiusM === viewport.radiusM
+          && sameBounds ? current : viewport;
+      });
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [viewport]);
   const [stepIndex, setStepIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [flowMotion, setFlowMotion] = useState(false);
@@ -207,15 +220,17 @@ export default function WeatherStudio() {
   const [showOfficialWarnings, setShowOfficialWarnings] = useState(true);
   const [warningOverlayError, setWarningOverlayError] = useState<string | null>(null);
   // Keep each query-cache bucket tied to the exact normalized request it represents.
+  const roundedBounds = useMemo(() => snapSpatialBounds(queryViewport.bounds), [queryViewport.bounds]);
   const queryCenter = useMemo(() => ({
-    latitude: Math.round(viewport.latitude * 10) / 10,
-    longitude: Math.round(viewport.longitude * 10) / 10,
-  }), [viewport.latitude, viewport.longitude]);
-  const queryRadiusM = Math.min(250000, Math.max(1000, Math.round(viewport.radiusM / 5000) * 5000));
-  const roundedBounds = useMemo(
-    () => viewport.bounds.map(value => Math.round(value * 10) / 10) as Viewport['bounds'],
-    [viewport.bounds],
-  );
+    latitude: Number(((roundedBounds[1] + roundedBounds[3]) / 2).toFixed(4)),
+    longitude: Number(((roundedBounds[0] + roundedBounds[2]) / 2).toFixed(4)),
+  }), [roundedBounds]);
+  const queryRadiusM = useMemo(() => {
+    const latitudeHalfM = (roundedBounds[3] - roundedBounds[1]) * 111320 / 2;
+    const longitudeHalfM = (roundedBounds[2] - roundedBounds[0]) * 111320
+      * Math.max(0.087, Math.abs(Math.cos(queryCenter.latitude * Math.PI / 180))) / 2;
+    return Math.min(250000, Math.max(1000, Math.round(Math.hypot(latitudeHalfM, longitudeHalfM) / 5000) * 5000));
+  }, [roundedBounds, queryCenter.latitude]);
 
   const liveQuery = useQuery<LiveEventSimulationResponse>({
     queryKey: ['weather-studio-live-events', queryCenter.latitude, queryCenter.longitude, queryRadiusM, ...roundedBounds],
@@ -224,8 +239,9 @@ export default function WeatherStudio() {
     queryFn: ({ signal }) => fetchLiveEventSimulation({ center: queryCenter, radiusM: queryRadiusM, bounds: roundedBounds, signal }),
     staleTime: 45000,
     refetchInterval: 120000,
-    refetchOnWindowFocus: true,
-    retry: 1,
+    refetchOnWindowFocus: false,
+    retry: shouldRetrySpatialRequest,
+    placeholderData: previousData => previousData,
   });
   const response = liveQuery.data;
   const warningFeed = response?.weatherAlerts;
@@ -294,9 +310,11 @@ export default function WeatherStudio() {
       ? 'https://api.met.no/weatherapi/locationforecast/2.0/documentation'
       : null;
   const sourceUrl = safeSourceUrl(response?.sources?.weather) ?? fallbackWeatherUrl;
-  const status = liveQuery.isError || response?.health?.status === 'UNAVAILABLE' ? 'degraded'
+  const requestStatus = (liveQuery.error as { response?: { status?: number } } | null)?.response?.status;
+  const isRateLimited = requestStatus === 429;
+  const status = (!response && liveQuery.isError) || response?.health?.status === 'UNAVAILABLE' ? 'degraded'
     : liveQuery.isFetching || !response ? 'syncing'
-      : response.health?.status === 'PARTIAL' ? 'partial' : 'available';
+      : response.health?.status === 'PARTIAL' ? 'partial' : liveQuery.isError ? 'partial' : 'available';
   const attrs = selectedEntity?.attributes ?? {};
   const detailSource = selectedEntity
     ? safeSourceUrl(selectedEntity.sourceReference)
@@ -565,7 +583,7 @@ export default function WeatherStudio() {
           {!mapReady && !mapError && <div className="wx-map-loading"><LoaderCircle size={18} className="wx-spin" /><span>Initialising map renderer</span></div>}
           {mapReady && mapNotice && <div className="wx-map-notice wx-map-notice--info" role="status"><Globe2 size={14} /> {mapNotice}</div>}
           {!mapReady && mapError && <div className="wx-map-failure" role="alert"><AlertTriangle size={18} /><span className="wx-map-failure__eyebrow">CARTOGRAPHY STATUS</span><b>Map unavailable</b><span>{mapError}</span><button type="button" onClick={retryMap}><RefreshCw size={14} /> RETRY MAP INITIALISATION</button></div>}
-          {mapReady && liveQuery.isError && <div className="wx-map-notice" role="status"><AlertTriangle size={14} /> Source request failed. Coverage is unknown; refresh to retry.</div>}
+          {mapReady && liveQuery.isError && <div className="wx-map-notice" role="status"><AlertTriangle size={14} /> {isRateLimited ? 'Weather refresh is throttled. The last successful snapshot is retained; the next scheduled refresh will retry.' : response ? 'The latest refresh failed. The last successful snapshot is retained; current-area coverage may be partial.' : 'Source request failed. Coverage is unknown; wait before retrying.'}</div>}
           <div className="wx-map-legend" aria-label="Map condition and event legend"><strong>CONDITION KEY</strong><span><i style={{ background: '#f3cb78' }} /> CLEAR</span><span><i style={{ background: '#7cbcff' }} /> RAIN</span><span><i style={{ background: '#ff897d' }} /> STORM</span><span><i style={{ background: '#93d8f1' }} /> SNOW</span><span><i style={{ background: '#ff9a78' }} /> SEISMIC</span><span><i style={{ background: '#e8a16b' }} /> VOLCANO</span><span><i style={{ background: '#b1c3d2' }} /> NATURAL EVENT</span>{showOfficialWarnings && warningAreas.features.length > 0 && <span><i style={{ background: '#e7a75c', borderRadius: 2 }} /> KMD WARNING AREA</span>}</div>
           {(rasterLayers.satellite || rasterLayers.precipitation) && <div className="wx-observation-note" role="status">
             {rasterLayers.satellite && <span>NASA MODIS Aqua · latest available scene</span>}
