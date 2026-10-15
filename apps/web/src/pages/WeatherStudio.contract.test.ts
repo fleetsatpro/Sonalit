@@ -152,6 +152,9 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).toContain('--wx-bg: #071019');
     expect(styles).toContain('--wx-cyan: #69dce7');
     expect(styles).toContain('--wx-red: #ff625e');
+    expect(styles).toContain("'Barlow Condensed', Inter, sans-serif");
+    expect(styles).toContain("'JetBrains Mono'");
+
     expect(styles).toContain('.wx-marker__icon');
     expect(styles).toContain('.wx-field-overlay {');
     expect(styles).toContain('.wx-map-legend {');
