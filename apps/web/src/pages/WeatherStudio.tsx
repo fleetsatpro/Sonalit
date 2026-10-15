@@ -585,7 +585,7 @@ export default function WeatherStudio() {
             <div className="wx-range-labels"><span>{formatValidTime(steps[0]?.validAt)}</span><span>{formatValidTime(steps[steps.length - 1]?.validAt)}</span></div>
             <div className="wx-timeline-note"><CalendarClock size={12} /> Forecast-valid times, not observed radar frames or historical playback.</div>
           </div>
-        </
+        </section>
 
         <aside className="wx-layer-rail wx-toolbar" aria-label="Weather map controls">
           <div className="wx-rail-intro">
@@ -648,7 +648,7 @@ export default function WeatherStudio() {
             <span className="wx-layer-rail-foot__icon"><Globe2 size={15} /></span>
             <div><strong>Source-first display</strong><p>Forecasts remain modelled. Observation gaps never imply clear conditions; hazard boundaries are shown only when supplied and verified.</p></div>
           </div>
-        </aside>section>
+        </aside>
 
         <aside className="wx-right-column">
           <section className="wx-card wx-warning-card" aria-label="Official weather early-warning feed">
