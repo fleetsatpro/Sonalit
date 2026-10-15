@@ -525,9 +525,7 @@ export default function WeatherStudio() {
               entities={renderEntities.filter(entity => entity.entityType === 'weather')}
               active={mapReady && filters.weather && flowMotion}
             />
-            {mapReady && filters.weather && weather.some(entity =>
-              entity.attributes?.windDirectionDeg != null && entity.attributes?.windSpeedKmh != null
-            ) && (
+            {mapReady && filters.weather && flowMotion && windVectorCount >= 2 && (
               <div className="wx-field-label" aria-label="Interpolated numerical forecast wind flow">
                 <span aria-hidden="true" /> WIND FLOW <small>MODEL-DERIVED · FORECAST GRID</small>
               </div>

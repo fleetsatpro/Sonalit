@@ -108,6 +108,16 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(page.getByRole('heading', { name: 'CLEAR / MOSTLY CLEAR' })).toBeVisible();
     await expect(page.getByText('25°C', { exact: true })).toBeVisible();
 
+    const windFlow = page.getByRole('button', { name: /wind flow/i });
+    await expect(windFlow).toBeEnabled();
+    await expect(page.locator('.wx-field-label')).toHaveCount(0);
+    await windFlow.click();
+    await expect(windFlow).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.wx-field-label')).toBeVisible();
+    await windFlow.click();
+    await expect(windFlow).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('.wx-field-label')).toHaveCount(0);
+
     const weatherLayer = page.getByRole('button', { name: /weather models/i });
     await weatherLayer.click();
     await expect(weatherLayer).toHaveAttribute('aria-pressed', 'false');
