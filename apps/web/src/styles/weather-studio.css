@@ -78,7 +78,7 @@
 .wx-marker:hover .wx-marker__icon,.wx-marker:focus-visible .wx-marker__icon{transform:translateY(-1px) scale(1.04);border-color:var(--wx-color)}
 .wx-marker__particles{position:absolute;inset:2px;z-index:3;overflow:hidden;border-radius:9px;pointer-events:none;display:none}
 .wx-marker__particles i{position:absolute;width:1.5px;height:5px;top:4px;background:var(--wx-color);opacity:0}
-.wx-marker[data-glyph="rain"] .wx-marker__particles,.wx-marker[data-glyph="snow"] .wx-marker__particles,.wx-marker[data-glyph="fog"] .wx-marker__particles,.wx-marker[data-glyph="storm"] .wx-marker__particles{display:block}
+.wx-marker[data-glyph="rain"] .wx-marker__particles,.wx-marker[data-glyph="snow"] .wx-marker__particles,.wx-marker[data-glyph="fog"] .wx-marker__particles{display:block}
 .wx-marker[data-glyph="rain"] .wx-marker__particles i{animation:wx-rain 1.4s linear infinite;transform:rotate(16deg)}
 .wx-marker[data-glyph="rain"] .wx-marker__particles i:nth-child(1){left:6px;animation-delay:-.8s}
 .wx-marker[data-glyph="rain"] .wx-marker__particles i:nth-child(2){left:14px;animation-delay:-.3s}
@@ -91,7 +91,6 @@
 .wx-marker[data-glyph="fog"] .wx-marker__particles i:nth-child(1){top:10px}
 .wx-marker[data-glyph="fog"] .wx-marker__particles i:nth-child(2){top:17px;animation-delay:-2.4s}
 .wx-marker[data-glyph="fog"] .wx-marker__particles i:nth-child(3){top:23px;animation-delay:-1.2s}
-.wx-marker[data-glyph="storm"] .wx-marker__particles{background:rgba(255,227,185,.045);animation:wx-flash 7.8s steps(1,end) infinite}
 .wx-marker[data-glyph="sun"] .wx-marker__signal{border-color:rgba(243,203,120,.5)}
 .wx-marker[data-freshness="STALE"] .wx-marker__icon,.wx-marker[data-freshness="UNKNOWN"] .wx-marker__icon,.wx-marker[data-freshness="EXPIRED"] .wx-marker__icon,.wx-marker[data-freshness="UNAVAILABLE"] .wx-marker__icon{opacity:.48;filter:grayscale(.4)}
 .wx-marker[data-animate="false"] .wx-marker__signal,.wx-marker[data-animate="false"] .wx-marker__particles{display:none;animation:none}
@@ -101,7 +100,6 @@
 @keyframes wx-rain{0%{transform:translateY(-3px) rotate(16deg);opacity:0}25%{opacity:.7}100%{transform:translateY(8px) rotate(16deg);opacity:0}}
 @keyframes wx-snow{0%{transform:translate(0,-4px);opacity:0}30%{opacity:.7}100%{transform:translate(2px,8px);opacity:0}}
 @keyframes wx-fog{0%,100%{transform:translateX(-3px);opacity:.08}50%{transform:translateX(3px);opacity:.44}}
-@keyframes wx-flash{0%,91%,100%{opacity:0}92%{opacity:.3}92.5%{opacity:.03}93%{opacity:.19}94%{opacity:0}}
 .wx-timeline{flex:0 0 auto;padding:14px 15px 12px;border-top:1px solid var(--wx-line);background:linear-gradient(180deg,#09131d,#071019)}
 .wx-player-row{display:flex;align-items:center;gap:11px}
 .wx-play-button{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;color:#d4f0f4;border:1px solid rgba(125,204,219,.3);border-radius:7px;background:rgba(68,157,178,.1);cursor:pointer}

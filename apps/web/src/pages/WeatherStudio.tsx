@@ -202,12 +202,21 @@ export default function WeatherStudio() {
   const [rasterLayers, setRasterLayers] = useState<NasaRasterState>({ satellite: false, precipitation: false });
   const rasterLayersRef = useRef<NasaRasterState>(rasterLayers);
   const [rasterError, setRasterError] = useState<string | null>(null);
-  const roundedBounds = useMemo(() => viewport.bounds.map(value => Math.round(value * 10) / 10), [viewport.bounds]);
+  // Keep each query-cache bucket tied to the exact normalized request it represents.
+  const queryCenter = useMemo(() => ({
+    latitude: Math.round(viewport.latitude * 10) / 10,
+    longitude: Math.round(viewport.longitude * 10) / 10,
+  }), [viewport.latitude, viewport.longitude]);
+  const queryRadiusM = Math.min(250000, Math.max(1000, Math.round(viewport.radiusM / 5000) * 5000));
+  const roundedBounds = useMemo(
+    () => viewport.bounds.map(value => Math.round(value * 10) / 10) as Viewport['bounds'],
+    [viewport.bounds],
+  );
 
   const liveQuery = useQuery<LiveEventSimulationResponse>({
-    queryKey: ['weather-studio-live-events', Math.round(viewport.latitude * 10) / 10, Math.round(viewport.longitude * 10) / 10, Math.round(viewport.radiusM / 5000) * 5000, ...roundedBounds],
+    queryKey: ['weather-studio-live-events', queryCenter.latitude, queryCenter.longitude, queryRadiusM, ...roundedBounds],
     enabled: mapReady,
-    queryFn: ({ signal }) => fetchLiveEventSimulation({ center: { latitude: viewport.latitude, longitude: viewport.longitude }, radiusM: Math.min(250000, Math.max(1000, viewport.radiusM)), bounds: viewport.bounds, signal }),
+    queryFn: ({ signal }) => fetchLiveEventSimulation({ center: queryCenter, radiusM: queryRadiusM, bounds: roundedBounds, signal }),
     staleTime: 45000,
     refetchInterval: 120000,
     refetchOnWindowFocus: true,

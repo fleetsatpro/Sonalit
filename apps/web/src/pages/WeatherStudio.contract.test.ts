@@ -10,7 +10,9 @@ const windField = readFileSync(new URL('../components/weather/WeatherFieldCanvas
 describe('Weather Studio evidence and interaction contract', () => {
   it('uses the existing source-backed event API and forecast-valid timestamps', () => {
     expect(page).toContain('fetchLiveEventSimulation');
-    expect(page).toContain('bounds: viewport.bounds');
+    expect(page).toContain('bounds: roundedBounds');
+    expect(page).toContain('center: queryCenter');
+    expect(page).toContain('queryRadiusM');
     expect(page).toContain('forecastSteps');
     expect(page).toContain('validAt');
     expect(page).toContain('this is not a measured historical replay');
@@ -65,4 +67,12 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).toContain('.wx-warning-card');
     expect(styles).toContain('.wx-observation-note');
   });
+
+  it('does not synthesize strike-like flashes for a storm-condition marker', () => {
+    expect(styles).not.toContain('wx-flash');
+    expect(styles).not.toContain('.wx-marker[data-glyph="storm"] .wx-marker__particles{background');
+    expect(page).toContain("label: 'THUNDERSTORM'");
+  });
+
+
 });
