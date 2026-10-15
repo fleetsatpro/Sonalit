@@ -74,7 +74,7 @@ async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL') {
     body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/VN0AAAAASUVORK5CYII=', 'base64'),
   }));
   await page.goto('/weather-studio');
-  await expect(page.getByRole('heading', { name: 'WEATHER STUDIO' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /weather studio/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Inspect CLEAR \/ MOSTLY CLEAR: Weather Studio test forecast/i })).toBeVisible({ timeout: 15000 });
 }
 
@@ -109,10 +109,21 @@ test.describe('Weather Studio route and operational controls', () => {
     await page.getByRole('button', { name: 'Pause forecast timeline' }).click();
   });
  
+
+  test('uses readable type hierarchy and puts official warnings before secondary panels', async ({ page }) => {
+    await openWeatherStudio(page, 'AVAILABLE');
+    const titleSize = Number.parseFloat(await page.locator('.wx-brand-copy h1').evaluate(el => getComputedStyle(el).fontSize));
+    const controlSize = Number.parseFloat(await page.getByRole('button', { name: /weather models/i }).evaluate(el => getComputedStyle(el).fontSize));
+    expect(titleSize).toBeGreaterThanOrEqual(26);
+    expect(controlSize).toBeGreaterThanOrEqual(12);
+    const cardTitles = await page.locator('.wx-right-column .wx-card-heading h2').allTextContents();
+    expect(cardTitles[0]).toContain('Kenya · Official alerts');
+  });
+
   test('remains usable without horizontal overflow on a mobile viewport', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openWeatherStudio(page, 'AVAILABLE');
-    await expect(page.getByRole('heading', { name: 'WEATHER STUDIO' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /weather studio/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /weather models/i })).toBeVisible();
     await expect(page.getByRole('slider', { name: /select forecast valid time/i })).toBeVisible();
     const dimensions = await page.evaluate(() => ({
