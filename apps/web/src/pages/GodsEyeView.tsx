@@ -522,7 +522,7 @@ export default function GodsEyeView() {
           >
             <CloudLightning size={13} />
             WEATHER
-            <span>{weatherAnimationEnabled ? (weatherGridFetching ? 'SYNC' : weatherGridError ? 'ERROR' : String(animatedWeatherEntities.length)) : 'OFF'}</span>
+            <span>{weatherAnimationEnabled ? (weatherGridFetching ? 'SYNC' : weatherGridError ? (weatherGridContext ? 'CACHED' : 'ERROR') : String(animatedWeatherEntities.length)) : 'OFF'}</span>
           </button>
           <button
             type="button"
@@ -545,7 +545,7 @@ export default function GodsEyeView() {
             }}
           >
             <Activity size={13} /> LIVE SIM
-            <span>{liveSimulationEnabled ? (liveSimulationFetching ? 'SYNC' : liveSimulationError ? 'ERROR' : String(simulationNaturalEvents.length)) : 'OFF'}</span>
+            <span>{liveSimulationEnabled ? (liveSimulationFetching ? 'SYNC' : liveSimulationError ? (liveSimulationResult ? 'CACHED' : 'ERROR') : String(simulationNaturalEvents.length)) : 'OFF'}</span>
           </button>
         </div>
 
