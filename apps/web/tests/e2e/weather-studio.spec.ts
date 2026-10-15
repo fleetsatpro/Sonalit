@@ -84,7 +84,7 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(page.locator('.wx-coverage-state')).toHaveAttribute('data-state', 'partial');
     await expect(page.getByText('PARTIAL COVERAGE', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /weather models/i })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByText('Kenya Meteorological Department warning', { exact: false })).toBeVisible();
+    await expect(page.getByText(/official feed could not be verified/i)).toBeVisible();
   });
 
   test('forecast point inspection, layer toggling and hourly playback work', async ({ page }) => {
@@ -101,10 +101,25 @@ test.describe('Weather Studio route and operational controls', () => {
 
     const slider = page.getByRole('slider', { name: /select forecast valid time/i });
     await expect(slider).toBeEnabled();
-    await slider.fill('1');
+    await slider.focus();
+    await slider.press('End');
     await expect(page.getByText('22°C', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Play forecast timeline' }).click();
     await expect(page.getByRole('button', { name: 'Pause forecast timeline' })).toBeVisible();
     await page.getByRole('button', { name: 'Pause forecast timeline' }).click();
   });
+ 
+  test('remains usable without horizontal overflow on a mobile viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    await expect(page.getByRole('heading', { name: 'WEATHER STUDIO' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /weather models/i })).toBeVisible();
+    await expect(page.getByRole('slider', { name: /select forecast valid time/i })).toBeVisible();
+    const dimensions = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+  });
+
 });
