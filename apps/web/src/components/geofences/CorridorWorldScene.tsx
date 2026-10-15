@@ -1323,18 +1323,48 @@ export default function CorridorWorldScene({
       viewer.scene.requestRender();
       return;
     }
-    let frame = 0;
-    let lastRender = 0;
-    const animate = (time: number) => {
-      if (time - lastRender >= 80) {
-        weatherPhaseRef.current = time / 1000;
-        viewer.scene.requestRender();
-        lastRender = time;
-      }
-      frame = requestAnimationFrame(animate);
+    // Do not run a permanent 60 FPS JavaScript loop for a demand-rendered globe.
+    // One bounded timer + one RAF renders only at the intended weather cadence.
+    let frame: number | null = null;
+    let timer: number | null = null;
+    let disposed = false;
+    const scheduleNext = () => {
+      if (disposed || viewer.isDestroyed()) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        if (disposed || viewer.isDestroyed()) return;
+        if (document.visibilityState === 'visible') {
+          frame = window.requestAnimationFrame(time => {
+            frame = null;
+            if (disposed || viewer.isDestroyed()) return;
+            weatherPhaseRef.current = time / 1000;
+            viewer.scene.requestRender();
+            scheduleNext();
+          });
+        } else {
+          // Background tabs do not need animated frames; keep only a low-frequency
+          // wake-up so the loop naturally resumes if the tab becomes visible again.
+          scheduleNext();
+        }
+      }, document.visibilityState === 'visible' ? 80 : 900);
     };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
+    const handleVisibilityChange = () => {
+      if (disposed || viewer.isDestroyed()) return;
+      if (document.visibilityState === 'visible') {
+        weatherPhaseRef.current = performance.now() / 1000;
+        viewer.scene.requestRender();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    weatherPhaseRef.current = performance.now() / 1000;
+    viewer.scene.requestRender();
+    scheduleNext();
+    return () => {
+      disposed = true;
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      if (timer !== null) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [weatherAnimationEnabled, surfaceQuality, worldEntities]);
 
   if (initFailed) {

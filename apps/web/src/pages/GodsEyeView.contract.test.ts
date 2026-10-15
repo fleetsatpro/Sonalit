@@ -45,6 +45,7 @@ describe("God's Eye View interaction contract", () => {
     expect(source).toContain('setOverviewOpen(open => !open)');
     expect(source).toContain('setIntelligenceOpen(open => !open)');
     expect(source).toContain('onExternalSelect');
+    expect(source).toContain('if (id) setIntelligenceOpen(true)');
     expect(source).toContain('onSelect');
   });
 

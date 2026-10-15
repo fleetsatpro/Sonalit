@@ -105,8 +105,8 @@ export default function GodsEyeView() {
   const [selected, setSelected] = useState<LiveVehicle | null>(null)
   const [selectedExternalId, setSelectedExternalId] = useState<string | null>(null)
   const [visibleLayers, setVisibleLayers] = useState<Set<WorldContextLayer>>(() => new Set(WORLD_CONTEXT_LAYERS))
-  const [overviewOpen, setOverviewOpen] = useState(true)
-  const [intelligenceOpen, setIntelligenceOpen] = useState(true)
+  const [overviewOpen, setOverviewOpen] = useState(false)
+  const [intelligenceOpen, setIntelligenceOpen] = useState(false)
   const [layersOpen, setLayersOpen] = useState(true)
   const [externalVisible, setExternalVisible] = useState(true)
   const [cctvOpen, setCctvOpen] = useState(false)
@@ -532,9 +532,9 @@ export default function GodsEyeView() {
             <span className="gev-ai-badge-dot" />
             {imageryAiSupported() ? imageryAiBadge() : 'SOURCE IMAGE'}
           </div>
-          <div className="gev-health">
+          <div className="gev-health" data-state={syncState} aria-live="polite">
             <span className="gev-health-dot" />
-            <span className="gev-health-label">Operational link</span>
+            <span className="gev-health-label">{worldError ? 'Context degraded' : worldFetching ? 'Context syncing' : 'Context ready'}</span>
           </div>
           <div className="gev-clock" aria-label="UTC time">
             <span>UTC {formatUtcClock(clock)}</span>
@@ -622,6 +622,7 @@ export default function GodsEyeView() {
               onExternalSelect={id => {
                 setSelectedExternalId(id)
                 setSelected(null)
+                if (id) setIntelligenceOpen(true)
                 const entity = allExternalEntities.find(candidate => candidate.id === id)
                 if (entity?.entityType === 'camera' || entity?.entityType === 'spatial_camera') setCctvOpen(true)
               }}
