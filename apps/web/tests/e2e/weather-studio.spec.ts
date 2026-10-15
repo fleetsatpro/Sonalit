@@ -122,6 +122,18 @@ test.describe('Weather Studio route and operational controls', () => {
   });
  
 
+  test('fills the desktop viewport with a substantial map workspace', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    const geometry = await page.evaluate(() => {
+      const studio = document.querySelector('.wx-studio')?.getBoundingClientRect();
+      const map = document.querySelector('.wx-map-canvas')?.getBoundingClientRect();
+      return { viewportHeight: window.innerHeight, studioHeight: studio?.height ?? 0, mapHeight: map?.height ?? 0 };
+    });
+    expect(Math.abs(geometry.studioHeight - geometry.viewportHeight)).toBeLessThanOrEqual(2);
+    expect(geometry.mapHeight).toBeGreaterThanOrEqual(420);
+  });
+
   test('uses readable type hierarchy and puts official warnings before secondary panels', async ({ page }) => {
     await openWeatherStudio(page, 'AVAILABLE');
     const titleSize = Number.parseFloat(await page.locator('.wx-brand-copy h1').evaluate(el => getComputedStyle(el).fontSize));
