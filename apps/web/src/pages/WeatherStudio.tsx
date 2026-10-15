@@ -403,7 +403,7 @@ export default function WeatherStudio() {
 
       <main className="wx-workspace">
         <section className="wx-map-panel" aria-label="Interactive weather and natural event map">
-          <div className="wx-map-context"><div><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><b>Global atmospheric field</b><small>Modelled wind flow · satellite-derived precipitation · attributed natural events.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
+          <div className="wx-map-context"><div><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><b>Global atmospheric field</b><small>Modelled wind flow · satellite-derived rainfall estimates · no radar imagery.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
           <div className="wx-map-canvas">
             <div className="wx-map-instance" ref={mapContainerRef} />
             <WeatherFieldCanvas
