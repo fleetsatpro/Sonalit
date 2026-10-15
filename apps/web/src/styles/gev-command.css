@@ -2880,3 +2880,93 @@
 @media (prefers-reduced-motion: reduce) {
   .gev-simulation-console *, .gev-natural-event-card * { animation: none !important; transition: none !important; }
 }
+
+
+/* Compact instrument layout: let the world occupy the centre of the screen. */
+.gev-health[data-state="sync"] {
+  border-color: rgba(246,200,102,.22);
+  background: rgba(246,200,102,.055);
+}
+.gev-health[data-state="sync"] .gev-health-dot {
+  background: var(--gev-amber);
+  box-shadow: 0 0 10px rgba(246,200,102,.35);
+}
+.gev-health[data-state="sync"] .gev-health-label { color: #e9d19a; }
+.gev-health[data-state="degraded"] {
+  border-color: rgba(255,111,125,.25);
+  background: rgba(255,111,125,.06);
+}
+.gev-health[data-state="degraded"] .gev-health-dot {
+  background: var(--gev-red);
+  box-shadow: 0 0 10px rgba(255,111,125,.32);
+}
+.gev-health[data-state="degraded"] .gev-health-label { color: #ffb3ba; }
+
+/* Keep surface and camera controls in a compact edge dock, never over the map centre. */
+.gev-shell .gev-map-controls--global {
+  z-index: 18;
+  top: auto;
+  right: auto;
+  bottom: 70px;
+  left: 94px;
+  width: max-content;
+  max-width: calc(100% - 120px);
+  padding: 0;
+  transform: none;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.gev-shell .gev-map-controls--global .spatial-control-rail > span { display: none; }
+.gev-shell .gev-map-controls--global .spatial-control-rail {
+  gap: 3px;
+  padding: 4px;
+  border-radius: 12px;
+  border-color: rgba(226,235,247,.14);
+  background: rgba(5,10,17,.88);
+  box-shadow: 0 12px 34px rgba(0,0,0,.24);
+}
+.gev-shell .gev-map-controls--global .spatial-control-rail > button {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+.gev-shell .gev-map-controls--global .gev-nav-dock {
+  border-radius: 12px;
+  border-color: rgba(226,235,247,.14);
+  background: rgba(5,10,17,.88);
+  box-shadow: 0 12px 34px rgba(0,0,0,.24);
+}
+.gev-shell .gev-map-controls--global .gev-nav-button {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 8px;
+}
+@media (max-width: 1180px) {
+  .gev-shell .gev-map-controls--global { max-width: calc(100% - 112px); }
+}
+@media (max-width: 860px) {
+  .gev-shell .gev-map-controls--global {
+    left: 10px;
+    right: auto;
+    bottom: calc(min(39vh, 335px) + 18px);
+    max-width: min(380px, calc(100vw - 20px));
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  .gev-shell .gev-map-controls--global .spatial-control-rail > button,
+  .gev-shell .gev-map-controls--global .gev-nav-button {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gev-shell .gev-map-controls--global,
+  .gev-shell .gev-map-controls--global * {
+    transition-duration: 0s !important;
+  }
+}
