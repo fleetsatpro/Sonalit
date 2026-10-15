@@ -1,6 +1,33 @@
 import type { AxiosRequestConfig } from 'axios'
 import { api } from './api.js'
 
+export type SpatialBounds = [number, number, number, number]
+
+/**
+ * Expand weather bounds outward to stable quarter-degree buckets. Small pans
+ * reuse the same forecast request, and snapped bounds still contain the view.
+ */
+export function snapSpatialBounds(bounds: SpatialBounds, stepDegrees = 0.25): SpatialBounds {
+  if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(Number.isFinite)
+    || bounds[0] >= bounds[2] || bounds[1] >= bounds[3]) return bounds
+  const step = Number.isFinite(stepDegrees) && stepDegrees > 0 && stepDegrees <= 5 ? stepDegrees : 0.25
+  const down = (value: number) => Number((Math.floor(value / step + 1e-9) * step).toFixed(4))
+  const up = (value: number) => Number((Math.ceil(value / step - 1e-9) * step).toFixed(4))
+  const snapped: SpatialBounds = [
+    Math.max(-180, down(bounds[0])),
+    Math.max(-90, down(bounds[1])),
+    Math.min(180, up(bounds[2])),
+    Math.min(90, up(bounds[3])),
+  ]
+  return snapped[0] < snapped[2] && snapped[1] < snapped[3] ? snapped : bounds
+}
+
+/** Do not retry HTTP 429 responses: immediate retries worsen a rate-limit storm. */
+export function shouldRetrySpatialRequest(failureCount: number, error: unknown): boolean {
+  const status = (error as { response?: { status?: number } } | null)?.response?.status
+  return status !== 429 && failureCount < 1
+}
+
 export const WORLD_CONTEXT_LAYERS = [
   'aircraft', 'weather', 'maritime', 'traffic', 'hazards', 'security',
   'infrastructure', 'incidents', 'alerts', 'cameras', 'satellites',
