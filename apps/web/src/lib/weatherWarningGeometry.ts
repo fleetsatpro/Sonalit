@@ -19,6 +19,42 @@ export type OfficialWarningAreaCollection = GeoJSON.FeatureCollection<GeoJSON.Po
 const EMPTY_COLLECTION: OfficialWarningAreaCollection = { type: 'FeatureCollection', features: [] };
 const MAX_WARNING_POLYGONS = 200;
 
+
+const GEOMETRY_EPSILON = 1e-10;
+
+function orientation(a: GeoJSON.Position, b: GeoJSON.Position, c: GeoJSON.Position): number {
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+}
+
+function onSegment(a: GeoJSON.Position, b: GeoJSON.Position, point: GeoJSON.Position): boolean {
+  return point[0] >= Math.min(a[0], b[0]) - GEOMETRY_EPSILON
+    && point[0] <= Math.max(a[0], b[0]) + GEOMETRY_EPSILON
+    && point[1] >= Math.min(a[1], b[1]) - GEOMETRY_EPSILON
+    && point[1] <= Math.max(a[1], b[1]) + GEOMETRY_EPSILON;
+}
+
+function segmentsIntersect(a: GeoJSON.Position, b: GeoJSON.Position, c: GeoJSON.Position, d: GeoJSON.Position): boolean {
+  const o1 = orientation(a, b, c), o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a), o4 = orientation(c, d, b);
+  if (((o1 > GEOMETRY_EPSILON && o2 < -GEOMETRY_EPSILON) || (o1 < -GEOMETRY_EPSILON && o2 > GEOMETRY_EPSILON))
+    && ((o3 > GEOMETRY_EPSILON && o4 < -GEOMETRY_EPSILON) || (o3 < -GEOMETRY_EPSILON && o4 > GEOMETRY_EPSILON))) return true;
+  return (Math.abs(o1) <= GEOMETRY_EPSILON && onSegment(a, b, c))
+    || (Math.abs(o2) <= GEOMETRY_EPSILON && onSegment(a, b, d))
+    || (Math.abs(o3) <= GEOMETRY_EPSILON && onSegment(c, d, a))
+    || (Math.abs(o4) <= GEOMETRY_EPSILON && onSegment(c, d, b));
+}
+
+function isSimpleRing(ring: GeoJSON.Position[]): boolean {
+  const edgeCount = ring.length - 1;
+  for (let firstEdge = 0; firstEdge < edgeCount; firstEdge += 1) {
+    for (let secondEdge = firstEdge + 1; secondEdge < edgeCount; secondEdge += 1) {
+      if (secondEdge === firstEdge + 1 || (firstEdge === 0 && secondEdge === edgeCount - 1)) continue;
+      if (segmentsIntersect(ring[firstEdge], ring[firstEdge + 1], ring[secondEdge], ring[secondEdge + 1])) return false;
+    }
+  }
+  return true;
+}
+
 function validRing(input: number[][]): GeoJSON.Position[] | null {
   if (!Array.isArray(input) || input.length < 4) return null;
   const ring: GeoJSON.Position[] = [];
@@ -33,7 +69,14 @@ function validRing(input: number[][]): GeoJSON.Position[] | null {
   const last = ring[ring.length - 1];
   if (Math.abs(first[0] - last[0]) > 1e-8 || Math.abs(first[1] - last[1]) > 1e-8) return null;
   const uniqueVertices = new Set(ring.slice(0, -1).map(point => `${point[0]},${point[1]}`));
-  return uniqueVertices.size >= 3 ? ring : null;
+  if (uniqueVertices.size < 3 || !isSimpleRing(ring)) return null;
+  let signedArea = 0;
+  for (let index = 0; index < ring.length - 1; index += 1) {
+    const current = ring[index], next = ring[index + 1];
+    signedArea += current[0] * next[1] - next[0] * current[1];
+  }
+  // Normalise exterior rings to GeoJSON's counter-clockwise winding order.
+  return signedArea < 0 ? [...ring].reverse() : ring;
 }
 
 /**

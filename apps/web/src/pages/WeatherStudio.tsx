@@ -219,7 +219,8 @@ export default function WeatherStudio() {
 
   const liveQuery = useQuery<LiveEventSimulationResponse>({
     queryKey: ['weather-studio-live-events', queryCenter.latitude, queryCenter.longitude, queryRadiusM, ...roundedBounds],
-    enabled: mapReady,
+    // Fetch the source feed independently of WebGL/cartographic initialisation so warnings remain available if the map fails.
+    enabled: true,
     queryFn: ({ signal }) => fetchLiveEventSimulation({ center: queryCenter, radiusM: queryRadiusM, bounds: roundedBounds, signal }),
     staleTime: 45000,
     refetchInterval: 120000,
@@ -540,7 +541,7 @@ export default function WeatherStudio() {
         <div className="wx-layer-switches wx-observation-switches" role="group" aria-label="Earth observation products and verified official warning areas">
           <button type="button" className="wx-layer-button" data-active={rasterLayers.satellite} aria-pressed={rasterLayers.satellite} onClick={() => toggleRaster('satellite')} title="NASA MODIS Aqua true-colour satellite imagery; latest available scene, swath gaps are not clear-weather evidence"><Satellite size={14} /><span>Satellite</span></button>
           <button type="button" className="wx-layer-button" data-active={rasterLayers.precipitation} aria-pressed={rasterLayers.precipitation} onClick={() => toggleRaster('precipitation')} title="NASA GPM IMERG v7 near-real-time satellite-derived precipitation-rate estimate; not live ground radar"><CloudRain size={14} /><span>NASA Rain</span></button>
-          <button type="button" className="wx-layer-button" data-active={showOfficialWarnings && mappedWarningCount > 0} aria-pressed={showOfficialWarnings && mappedWarningCount > 0} disabled={mappedWarningCount === 0} onClick={() => setShowOfficialWarnings(value => !value)} title={mappedWarningCount === 0 ? 'No verified active or upcoming KMD CAP warning polygons are available to map.' : 'Toggle only verified active/upcoming KMD CAP warning polygons supplied by the official feed.'}><AlertTriangle size={14} /><span>KMD Alerts</span><i>{mappedWarningCount}</i></button>
+          <button type="button" className="wx-layer-button" data-active={mapReady && showOfficialWarnings && mappedWarningCount > 0} aria-pressed={mapReady && showOfficialWarnings && mappedWarningCount > 0} disabled={!mapReady || mappedWarningCount === 0} onClick={() => setShowOfficialWarnings(value => !value)} title={!mapReady ? 'Map controls are unavailable until the cartographic renderer is ready; official warning messages remain available.' : mappedWarningCount === 0 ? 'No verified active or upcoming KMD CAP warning polygons are available to map.' : 'Toggle only verified active/upcoming KMD CAP warning polygons supplied by the official feed.'}><AlertTriangle size={14} /><span>KMD Alerts</span><i>{mappedWarningCount}</i></button>
         </div>
         <div className="wx-map-presets"><button type="button" onClick={fitWorld}>GLOBAL</button><button type="button" onClick={focusEastAfrica}>E. AFRICA</button><button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in">+</button><button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out">−</button></div>
       </div>

@@ -76,13 +76,23 @@ function fixture(overallStatus: 'AVAILABLE' | 'PARTIAL') {
 // Valid full-size PNG test tile. A truncated IDAT stream makes MapLibre reject mocked 200 responses and falsely exercise provider fallback.
 const TILE_MOCK_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAEGUlEQVR42u3cTWrbUBSG4eMgBEEIzzzwGrwC738tmRtjAh5lUDAmNEqQLF1dnecZtdCfm+Z7fRVad3c4nQOyaiLifrvW+wG0Xe/8zj/68G9eA8hMAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACQAAgABAACAAEAAIAAYAAQACwQU1EtF1f9cfg/M4/KYD77Vr1n77zO//ow3sEwtcAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIADK2B+P++OxumM3PnO8ZP3fvnH5+BAAudb/PPrn22DNMQiASd73/X9X/vju86PRCksQAC9+7f9m5deCAJhx/T/FsJ5rQQBMWv/n5Trip6/nWhAAk177266f+KuVvRYEwOxPPmu+FgRA+ekXvBYEwOrWv+S1IADWu/4FrgUBUMf6Z7oWBEBl63/ttSAAKl7/9GtBAGxh/QPXwvCP9H4Atrb+n64FAZBr/X8hAPKuXwCkXn9E7A6ns0888fTWlnH/wLNSTUTcbxV/wG3XO3/B1/6q//zbrvcIRMYnH18DYP0CsP7c6w9/E2z6aafvBrD+7OsXgPWHALB+AWD9AsD6BYD1CwDrFwDWLwCsXwBYvwCwfgFg/QLA+gWA9QsA66+b9wOYvhsA6xcA1i8ArF8AWL8AsH4BYP0CwPoFgPULAOsXANYvAKxfAFi/ALB+AWD9AsD66+P9AKbvBtjWeh4Dsn5y3QCP9Qw3sNptWb8AZl/P8BVRcHnWL4Al1jPwA359fJpvmtYvgPLrmXJ1TPndrV8A473v+2XWM9OT1WLnZ4MBrOe1c8qTlfULYMtPDr9eHdZf0Fvt6/+8XKv+BNR+fgF47UcA1o8ArB8BWD8CsH4EMAfrJ2MAVf8LZwTg4QcBWD8CsH4EYP0IwPoRgPUjAOtHANZP8gCsn7wBWD9F7A6nc/FDPN4Y7u1RLKyJiPut5Owmvva3XV/2/BM5f9nDF34E8uRD3q8BrJ+8AVg/eQOwfvIGYP3kDcD6yRuA9ZM3AOsnbwDWT94ArJ+8AVg/eQOwfvIGYP14BLJ+UgbgPzMkbwAefsgbgPWTNwDrJ28A1k/eAKyfvAFYP3kDsH7yBmD95A3A+skbgPWTNwDrJ28A1k/qAP7t3vrJ+whk/WT/IhgEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAA/FUTEW3XV/0xOL/zj/YFz0cKjZ3T9OYAAAAASUVORK5CYII=', 'base64');
 
-async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', options: { primaryTilesFail?: boolean } = {}) {
-  await page.addInitScript(() => {
+async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', options: { primaryTilesFail?: boolean; mapRendererUnavailable?: boolean } = {}) {
+  await page.addInitScript((rendererUnavailable) => {
     localStorage.setItem('sonalit-auth', JSON.stringify({
       state: { user: { id: 'weather-e2e-user', name: 'Weather QA', email: 'weather-qa@sonalit.test', role: 'admin', org_id: 'weather-e2e-org' } },
       version: 0,
     }));
-  });
+    if (rendererUnavailable) {
+      const canvasPrototype = HTMLCanvasElement.prototype as unknown as {
+        getContext: (contextId: string, ...args: unknown[]) => unknown;
+      };
+      const originalGetContext = canvasPrototype.getContext;
+      canvasPrototype.getContext = function (this: HTMLCanvasElement, contextId: string, ...args: unknown[]) {
+        if (['webgl', 'webgl2', 'experimental-webgl'].includes(contextId)) return null;
+        return originalGetContext.apply(this, [contextId, ...args]);
+      };
+    }
+  }, options.mapRendererUnavailable ?? false);
   await page.route(url => url.toString().includes('/spatial/live-events'), route => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -98,7 +108,9 @@ async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', op
   }));
   await page.goto('/weather-studio');
   await expect(page.getByRole('heading', { name: /weather studio/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Inspect CLEAR \/ MOSTLY CLEAR: Weather Studio test forecast/i })).toBeVisible({ timeout: 15000 });
+  if (!options.mapRendererUnavailable) {
+    await expect(page.getByRole('button', { name: /Inspect CLEAR \/ MOSTLY CLEAR: Weather Studio test forecast/i })).toBeVisible({ timeout: 15000 });
+  }
 }
 
 test.describe('Weather Studio route and operational controls', () => {
@@ -110,6 +122,15 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(page.locator('.wx-map-provider')).toContainText('ESRI CARTOGRAPHY');
     await expect(page.getByRole('button', { name: /wind flow/i })).toBeEnabled();
     await expect(page.getByText(/official feed could not be verified/i)).toBeVisible();
+  });
+
+  test('keeps source-backed warnings available when the map renderer cannot initialise', async ({ page }) => {
+    await openWeatherStudio(page, 'AVAILABLE', { mapRendererUnavailable: true });
+    await expect(page.getByText('Map unavailable', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: 'Kenya · Official alerts' })).toBeVisible();
+    await expect(page.getByText('Test-only severe rainfall warning', { exact: true })).toBeVisible();
+    await expect(page.locator('.wx-coverage-state')).toHaveAttribute('data-state', 'available');
+    await expect(page.getByRole('button', { name: /KMD Alerts/i })).toBeDisabled();
   });
 
   test('maps verified CAP warning geometry and exposes an independent on/off control', async ({ page }) => {
