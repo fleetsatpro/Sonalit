@@ -43,7 +43,7 @@
 .wx-spin { animation:wx-spin 1.15s linear infinite; }
 @keyframes wx-spin { to { transform:rotate(360deg); } }
 /* The layer instrument, map and decision rail are distinct zones. */
-.wx-workspace { display:grid; grid-template-areas:"layers map right"; grid-template-columns:minmax(218px,238px) minmax(0,1fr) minmax(310px,355px); gap:12px; flex:1 1 auto; min-height:0; padding:12px clamp(10px,1.1vw,16px); }
+.wx-workspace { display:grid; grid-template-areas: "layers map right"; grid-template-columns:minmax(218px,238px) minmax(0,1fr) minmax(310px,355px); gap:12px; flex:1 1 auto; min-height:0; padding:12px clamp(10px,1.1vw,16px); }
 .wx-layer-rail { grid-area:layers; display:flex; flex-direction:column; align-items:stretch; gap:16px; min-width:0; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:15px 12px 12px; border:1px solid rgba(205,214,229,.13); border-radius:15px; background:radial-gradient(400px 180px at 0% 0%,rgba(196,181,253,.07),transparent 70%),linear-gradient(180deg,rgba(11,15,25,.97),rgba(6,9,16,.97)); box-shadow:0 18px 48px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.035); scrollbar-width:thin; scrollbar-color:#303747 transparent; }
 .wx-toolbar { min-width:0; }
 .wx-rail-intro { padding:1px 3px 13px; border-bottom:1px solid var(--sp-line); }
@@ -255,7 +255,7 @@
 .wx-footer button { display:inline-flex; align-items:center; gap:7px; min-height:31px; padding:0 10px; color:#d0c9ff; border:1px solid rgba(196,181,253,.22); border-radius:8px; background:rgba(196,181,253,.045); font:750 9px/1 'IBM Plex Mono',monospace; letter-spacing:.05em; cursor:pointer; }
 .wx-footer button:hover { border-color:rgba(196,181,253,.4); background:rgba(196,181,253,.09); }
 @media (min-width:1600px) { .wx-workspace { grid-template-columns:minmax(226px,244px) minmax(0,1fr) minmax(335px,370px); gap:13px; } .wx-map-context { min-height:70px; } }
-@media (max-width:1280px) {
+@media (max-width: 1280px) {
   .wx-workspace { grid-template-columns:minmax(200px,218px) minmax(0,1fr) minmax(292px,318px); gap:9px; padding:9px; }
   .wx-layer-rail { padding-inline:10px; gap:13px; }
   .wx-layer-button { grid-template-columns:30px minmax(0,1fr) auto; gap:7px; padding-inline:6px; }
@@ -265,7 +265,7 @@
   .wx-map-context { padding-inline:12px; }
   .wx-card-heading { padding-inline:12px; }
 }
-@media (max-width:1050px) {
+@media (max-width: 1050px) {
   .wx-header { padding-inline:12px; }
   .wx-workspace { grid-template-columns:minmax(190px,205px) minmax(0,1fr) minmax(275px,295px); gap:8px; padding:8px; }
   .wx-rail-intro h2 { font-size:19px; }
@@ -273,7 +273,7 @@
   .wx-map-context small { font-size:10px; }
   .wx-map-legend { gap:8px; padding-inline:10px; }
 }
-@media (max-width:900px) {
+@media (max-width: 900px) {
   .wx-studio { height:auto; min-height:100dvh; overflow:visible; }
   .wx-header { min-height:70px; }
   .wx-workspace { grid-template-areas:"map" "layers" "right"; grid-template-columns:minmax(0,1fr); min-height:auto; gap:10px; padding:10px; }
@@ -291,7 +291,7 @@
   .wx-warning-card, .wx-source-card { grid-column:1/-1; }
   .wx-footer { align-items:flex-start; }
 }
-@media (max-width:620px) {
+@media (max-width: 620px) {
   .wx-header { flex-wrap:wrap; align-items:flex-start; gap:10px; padding:11px 12px; }
   .wx-brand-row { flex:1 1 100%; gap:9px; }
   .wx-back { min-height:34px; padding-inline:9px; }
@@ -367,7 +367,7 @@
   .wx-footer span:nth-child(2) { line-height:1.5; }
   .wx-footer button { min-height:35px; font-size:9px; }
 }
-@media (max-height:820px) and (min-width:901px) {
+@media (max-height: 820px) and (min-width:901px) {
   .wx-header { min-height:65px; padding-block:7px; }
   .wx-workspace { padding-block:8px; }
   .wx-layer-rail { gap:11px; padding-block:11px; }
