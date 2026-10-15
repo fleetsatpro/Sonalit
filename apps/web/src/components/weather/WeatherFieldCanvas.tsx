@@ -12,6 +12,30 @@ type ProjectedSample = Sample & { x: number; y: number };
 type Particle = { x: number; y: number; phase: number };
 type Flow = { dx: number; dy: number; speed: number };
 
+/**
+ * Estimate local support from forecast-grid spacing. Flow remains transparent
+ * outside the neighbours' local footprints instead of extrapolating sparse
+ * samples across an entire viewport.
+ */
+export function calculateWindSupportRadiusPx(points: ReadonlyArray<{ x: number; y: number }>): number {
+  if (points.length < 2) return 0;
+  const nearestDistances = points.map((point, index) => {
+    let nearest = Number.POSITIVE_INFINITY;
+    for (let otherIndex = 0; otherIndex < points.length; otherIndex += 1) {
+      if (otherIndex === index) continue;
+      nearest = Math.min(nearest, Math.hypot(points[otherIndex].x - point.x, points[otherIndex].y - point.y));
+    }
+    return nearest;
+  }).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!nearestDistances.length) return 0;
+  const middle = Math.floor(nearestDistances.length / 2);
+  const medianSpacing = nearestDistances.length % 2
+    ? nearestDistances[middle]
+    : (nearestDistances[middle - 1] + nearestDistances[middle]) / 2;
+  return Math.min(100, Math.max(18, medianSpacing * 0.55));
+}
+
+
 function readNumber(value: unknown): number | null {
   if (value == null || value === '') return null;
   const result = Number(value);
@@ -99,7 +123,7 @@ export default function WeatherFieldCanvas({ map, entities, active }: Props) {
       && point.x > -width && point.x < width * 2
       && point.y > -height && point.y < height * 2
     );
-    const flowAt = (x: number, y: number, points: ProjectedSample[]): Flow | null => {
+    const flowAt = (x: number, y: number, points: ProjectedSample[], supportRadiusPx: number): Flow | null => {
       const nearest: Array<{ point: ProjectedSample; d2: number }> = [];
       for (const point of points) {
         const dx = point.x - x;
@@ -110,7 +134,7 @@ export default function WeatherFieldCanvas({ map, entities, active }: Props) {
         nearest.splice(index, 0, { point, d2 });
         if (nearest.length > 4) nearest.pop();
       }
-      if (!nearest.length || nearest[0].d2 > Math.pow(Math.max(width, height) * 0.82, 2)) return null;
+      if (!nearest.length || nearest[0].d2 > supportRadiusPx * supportRadiusPx) return null;
       let weightTotal = 0;
       let vectorX = 0;
       let vectorY = 0;
@@ -132,12 +156,13 @@ export default function WeatherFieldCanvas({ map, entities, active }: Props) {
       clear();
       if (!stateRef.current.active || moving || document.visibilityState !== 'visible') return;
       const points = projectedSamples();
-      if (!points.length) return;
+      const supportRadiusPx = calculateWindSupportRadiusPx(points);
+      if (supportRadiusPx <= 0) return;
       context.save();
       context.globalCompositeOperation = 'lighter';
       context.lineCap = 'round';
       for (const particle of particles) {
-        const flow = flowAt(particle.x, particle.y, points);
+        const flow = flowAt(particle.x, particle.y, points, supportRadiusPx);
         if (!flow) continue;
         const speed = Math.min(120, flow.speed);
         const stride = 0.25 + speed * 0.019;

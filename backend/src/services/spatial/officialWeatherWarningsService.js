@@ -66,14 +66,16 @@ function normalizeAlert(alertNode, item, nowMs) {
   const scopeLower = String(scope || '').toLowerCase();
   const sentAt = isoDate(childText(alertNode, 'sent') || childText(item, 'pubDate'));
   const effectiveAt = isoDate(childText(info, 'effective'));
-  const expiresAt = isoDate(childText(info, 'expires'));
+  const rawExpiresAt = childText(info, 'expires');
+  const expiresAt = isoDate(rawExpiresAt);
   if (status && statusLower !== 'actual') return null;
   if (scope && scopeLower !== 'public') return null;
   if (['cancel', 'test', 'exercise', 'draft', 'ack', 'error'].includes(typeLower)) return null;
   if (expiresAt && Date.parse(expiresAt) <= nowMs) return null;
   const headline = childText(info, 'headline') || childText(info, 'event') || childText(item, 'title');
   const description = childText(info, 'description') || childText(item, 'description');
-  const verifiedCap = Boolean(statusLower === 'actual' && scopeLower === 'public' && ['alert', 'update'].includes(typeLower));
+  const verifiedCap = Boolean(statusLower === 'actual' && scopeLower === 'public' && ['alert', 'update'].includes(typeLower)
+    && (!rawExpiresAt || Boolean(expiresAt)));
   const effectiveMs = effectiveAt ? Date.parse(effectiveAt) : null;
   const activeState = verifiedCap ? (effectiveMs != null && effectiveMs > nowMs ? 'UPCOMING' : 'ACTIVE') : 'DETAILS_UNVERIFIED';
   const rawAreas = child(info, 'area');
@@ -128,6 +130,39 @@ function parseFeed(xml, receivedAt = new Date().toISOString(), nowMs = Date.now(
     semantics: 'Only messages marked Actual + Public + Alert/Update count as verified active CAP warnings. Missing fields remain unknown.',
   };
 }
+
+/**
+ * Re-evaluate a cached alert feed against the current clock before exposing it.
+ * Cache age and alert validity are separate: a recently retrieved feed can still
+ * contain notices whose explicit expiry has passed since the last successful pull.
+ */
+function revalidateFeedTime(feed, nowMs = Date.now(), status = feed.status, error = null) {
+  const alerts = (feed.alerts || []).flatMap(alert => {
+    const expiryMs = alert.expiresAt ? Date.parse(alert.expiresAt) : null;
+    if (Number.isFinite(expiryMs) && expiryMs <= nowMs) return [];
+
+    const sentMs = alert.sentAt ? Date.parse(alert.sentAt) : NaN;
+    const effectiveMs = alert.effectiveAt ? Date.parse(alert.effectiveAt) : NaN;
+    const verifiedCap = Boolean(alert.verifiedCap)
+      && Number.isFinite(sentMs)
+      && !(alert.expiresAt && !Number.isFinite(expiryMs));
+    const activeState = verifiedCap
+      ? (Number.isFinite(effectiveMs) && effectiveMs > nowMs ? 'UPCOMING' : 'ACTIVE')
+      : 'DETAILS_UNVERIFIED';
+    return [{ ...alert, verifiedCap, activeState }];
+  });
+
+  return {
+    ...feed,
+    status,
+    ...(error ? { error } : {}),
+    alerts,
+    recordCount: alerts.length,
+    activeCount: alerts.filter(alert => alert.verifiedCap && alert.activeState === 'ACTIVE').length,
+    scheduledCount: alerts.filter(alert => alert.activeState === 'UPCOMING').length,
+  };
+}
+
 async function fetchFeed() {
   const response = await fetch(FEED_URL, {
     headers: { Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.5', 'User-Agent': 'Sonalit-Weather-Warnings/1.0 (official-source-attributed)' },
@@ -139,7 +174,7 @@ async function fetchFeed() {
   return parseFeed(body, new Date().toISOString(), Date.now());
 }
 async function getOfficialWeatherWarnings() {
-  if (cache && Date.now() - cacheFetchedAt < CACHE_TTL_MS) return { ...cache, status: 'AVAILABLE', cacheReceivedAt: cacheReceivedAt || cache.receivedAt };
+  if (cache && Date.now() - cacheFetchedAt < CACHE_TTL_MS) return revalidateFeedTime({ ...cache, cacheReceivedAt: cacheReceivedAt || cache.receivedAt }, Date.now(), 'AVAILABLE');
   if (inflight) return inflight;
   inflight = (async () => {
     try {
@@ -147,9 +182,9 @@ async function getOfficialWeatherWarnings() {
       cache = value;
       cacheFetchedAt = Date.now();
       cacheReceivedAt = value.receivedAt;
-      return { ...value, status: 'AVAILABLE', cacheReceivedAt };
+      return revalidateFeedTime({ ...value, cacheReceivedAt }, Date.now(), 'AVAILABLE');
     } catch (error) {
-      if (cache) return { ...cache, status: 'STALE_FALLBACK', cacheReceivedAt, error: String(error && error.message || error) };
+      if (cache) return revalidateFeedTime({ ...cache, cacheReceivedAt }, Date.now(), 'STALE_FALLBACK', String(error && error.message || error));
       return {
         source: 'Kenya Meteorological Department CAP feed', sourceUrl: FEED_URL,
         scope: 'Kenya national meteorological warning feed; this is not global alert coverage',
@@ -161,4 +196,4 @@ async function getOfficialWeatherWarnings() {
   })();
   return inflight;
 }
-module.exports = { getOfficialWeatherWarnings, __testables: { parseFeed, parsePolygon, safeKmdUrl } };
+module.exports = { getOfficialWeatherWarnings, __testables: { parseFeed, parsePolygon, safeKmdUrl, revalidateFeedTime } };

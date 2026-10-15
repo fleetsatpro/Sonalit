@@ -51,4 +51,39 @@ describe('Kenya official CAP warning normalisation', () => {
     expect(feed.alerts[0].verifiedCap).toBe(false);
     expect(feed.alerts[0].url).toBeNull();
   });
+
+  it('removes a cached warning after its validity window expires', () => {
+    const now = Date.parse('2026-10-15T07:00:00.000Z');
+    const xml = '<rss><channel><item><title>Short-lived rain warning</title>'
+      + '<cap:alert><cap:identifier>KE-KMD-EXPIRING</cap:identifier><cap:sent>2026-10-15T06:59:00Z</cap:sent>'
+      + '<cap:status>Actual</cap:status><cap:msgType>Alert</cap:msgType><cap:scope>Public</cap:scope>'
+      + '<cap:info><cap:headline>Short-lived rain warning</cap:headline><cap:effective>2026-10-15T06:59:00Z</cap:effective>'
+      + '<cap:expires>2026-10-15T07:01:00Z</cap:expires></cap:info></cap:alert>'
+      + '</item></channel></rss>';
+    const parsed = __testables.parseFeed(xml, new Date(now).toISOString(), now);
+    expect(parsed.activeCount).toBe(1);
+
+    const stale = __testables.revalidateFeedTime(parsed, Date.parse('2026-10-15T07:02:00.000Z'), 'STALE_FALLBACK');
+    expect(stale.status).toBe('STALE_FALLBACK');
+    expect(stale.alerts).toHaveLength(0);
+    expect(stale.recordCount).toBe(0);
+    expect(stale.activeCount).toBe(0);
+    expect(parsed.alerts).toHaveLength(1);
+    expect(parsed.activeCount).toBe(1);
+  });
+
+  it('does not treat an alert with an unparseable supplied expiry as verified active', () => {
+    const now = Date.parse('2026-10-15T07:00:00.000Z');
+    const xml = '<rss><channel><item><title>Unclear expiry</title>'
+      + '<cap:alert><cap:identifier>KE-KMD-BAD-EXPIRY</cap:identifier><cap:sent>2026-10-15T06:59:00Z</cap:sent>'
+      + '<cap:status>Actual</cap:status><cap:msgType>Alert</cap:msgType><cap:scope>Public</cap:scope>'
+      + '<cap:info><cap:headline>Unclear expiry</cap:headline><cap:expires>not-a-date</cap:expires></cap:info>'
+      + '</cap:alert></item></channel></rss>';
+    const parsed = __testables.parseFeed(xml, new Date(now).toISOString(), now);
+    const checked = __testables.revalidateFeedTime(parsed, now, 'AVAILABLE');
+    expect(checked.alerts[0].verifiedCap).toBe(false);
+    expect(checked.alerts[0].activeState).toBe('DETAILS_UNVERIFIED');
+    expect(checked.activeCount).toBe(0);
+  });
+
 });
