@@ -51,6 +51,8 @@ describe("God's Eye View interaction contract", () => {
 
   it('debounces expensive weather requests and retains the last source snapshot', () => {
     expect(source).toContain('setWeatherQueryViewport');
+    expect(source).toContain("queryKey: ['gev-3d-world-context', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')]");
+    expect(source).toContain("queryKey: ['gev-cctv-catalog', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')]");
     expect(source).toContain('snapSpatialBounds');
     expect(source).toContain('retry: shouldRetrySpatialRequest');
     expect(source).toContain('placeholderData: previousData => previousData');
