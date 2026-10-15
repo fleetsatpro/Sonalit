@@ -63,6 +63,8 @@ function fixture(overallStatus: 'AVAILABLE' | 'PARTIAL') {
   };
 }
 
+const TILE_MOCK_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB/0lEQVR42u3TMQ0AQAjAwOdHFLDj3yMzGriT0KSR1Q+u+hJgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAANgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADwDZ+ugJFlUL4SgAAAABJRU5ErkJggg==', 'base64');
+
 async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', options: { primaryTilesFail?: boolean } = {}) {
   await page.addInitScript(() => {
     localStorage.setItem('sonalit-auth', JSON.stringify({
@@ -78,10 +80,10 @@ async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', op
   // Deterministic primary/fallback tile behavior exercises MapLibre's real error path.
   await page.route('https://services.arcgisonline.com/**', route => options.primaryTilesFail
     ? route.fulfill({ status: 503, contentType: 'text/plain', body: 'Simulated primary tile outage' })
-    : route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/VN0AAAAASUVORK5CYII=', 'base64') }));
+    : route.fulfill({ status: 200, contentType: 'image/png', body: TILE_MOCK_PNG }));
   await page.route('https://basemaps.cartocdn.com/**', route => route.fulfill({
     status: 200, contentType: 'image/png',
-    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC0lEQVR42mP8/x8AAwMCAO+/VN0AAAAASUVORK5CYII=', 'base64'),
+    body: TILE_MOCK_PNG,
   }));
   await page.goto('/weather-studio');
   await expect(page.getByRole('heading', { name: /weather studio/i })).toBeVisible();

@@ -18,7 +18,7 @@
 .wx-brand-mark svg { width:22px; height:22px; }
 .wx-brand-copy { min-width:0; }
 .wx-eyebrow, .wx-map-kicker, .wx-card-heading>div>span { display:block; color:#9bd8e3; font:700 9px/1.4 'IBM Plex Mono',monospace; letter-spacing:.13em; text-transform:uppercase; }
-.wx-brand-copy h1 { margin:4px 0 0; color:#f4f9fb; font:800 clamp(24px,2vw,31px)/1.06 Sora,sans-serif; letter-spacing:-.045em; }
+.wx-brand-copy h1 { margin:4px 0 0; color:#f4f9fb; font:800 clamp(26px,2vw,31px)/1.06 Sora,sans-serif; letter-spacing:-.045em; }
 .wx-brand-copy p { margin:7px 0 0; max-width:620px; color:#a6b8c4; font-size:12px; line-height:1.45; }
 .wx-header-meta { display:flex; align-items:center; gap:10px; }
 .wx-coverage-state { display:flex; align-items:center; gap:9px; min-width:174px; padding:11px 13px; border:1px solid rgba(108,208,160,.19); border-radius:11px; background:linear-gradient(140deg,rgba(48,118,91,.12),rgba(255,255,255,.015)); }
