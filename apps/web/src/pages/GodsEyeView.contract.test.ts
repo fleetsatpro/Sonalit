@@ -26,12 +26,12 @@ describe("God's Eye View interaction contract", () => {
     expect(source).toContain('fixedView="3D"');
     expect(source).toContain('CctvViewerPanel');
     expect(source).toContain('gev-cctv-trigger');
-    expect(source).toContain("queryKey: ['gev-cctv-catalog', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox?.join(',')]");
+    expect(source).toContain("queryKey: ['gev-cctv-catalog', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')]");
     expect(source).toContain("'/cctv/cameras'");
     expect(source).toContain('publicTotal={cctvPublicTotal}');
-    expect(source).toContain('radiusM: Math.min(100000, worldViewport.radiusM)');
-    expect(source).toContain('worldViewport.bbox?.join(\',\')');
-    expect(source).toContain('{ bbox: worldViewport.bbox.join(\',\') }');
+    expect(source).toContain('radiusM: Math.min(100000, weatherQueryViewport.radiusM)');
+    expect(source).toContain('weatherQueryViewport.bbox?.join(\',\')');
+    expect(source).toContain('{ bbox: weatherQueryViewport.bbox.join(\',\') }');
     expect(source).toContain('limit: 180');
     expect(source).toContain('MAX_RENDER_MARKERS = 180');
   });
