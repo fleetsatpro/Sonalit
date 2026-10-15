@@ -72,7 +72,7 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).toContain('.wx-warning-card');
     expect(styles).toContain('.wx-observation-note');
     expect(page).toContain('FALLBACK_STREET_STYLE');
-    expect(page).toContain('maplibregl.supported()');
+    expect(page).toContain('typeof rendererSupportCheck === \'function\'');
     expect(page).toContain('setMapAttempt(value => value + 1)');
     expect(page).toContain('wx-map-provider');
     expect(page).toContain('flowMotion');

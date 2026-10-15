@@ -314,7 +314,11 @@ export default function WeatherStudio() {
     baseStyleRef.current = 'esri';
     baseTileFailuresRef.current = 0;
 
-    if (!maplibregl.supported()) {
+    // Some package entry points expose Map as the default namespace but do not
+    // expose the static supported() helper. Use it only when present; otherwise
+    // let the constructor perform actual context creation and catch its failure.
+    const rendererSupportCheck = (maplibregl as unknown as { supported?: () => boolean }).supported;
+    if (typeof rendererSupportCheck === 'function' && !rendererSupportCheck.call(maplibregl)) {
       setMapError('This browser or graphics environment cannot start the accelerated map renderer. Enable hardware acceleration or retry in a browser with WebGL support.');
       return () => { mounted = false; };
     }
