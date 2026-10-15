@@ -281,6 +281,29 @@
 .wx-map-canvas { position: relative; flex: 1 1 auto; min-height: 310px; overflow: hidden; background: #08131c; }
 .wx-map-canvas .wx-map-instance, .wx-map-canvas .maplibregl-map { position: absolute; inset: 0; width: 100%; height: 100%; }
 .wx-map-canvas .maplibregl-canvas { outline: none; }
+
+/* Source-derived, static event markers. Their condition glyphs change only with data. */
+.wx-field-overlay { position: absolute; inset: 0; z-index: 1; display: block; width: 100%; height: 100%; pointer-events: none; }
+.wx-marker {
+  position: relative; display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
+  overflow: visible; color: var(--wx-color); border: 0; border-radius: 50%; background: transparent;
+  cursor: pointer; isolation: isolate; -webkit-tap-highlight-color: transparent;
+}
+.wx-marker:focus-visible { outline: 2px solid var(--wx-color); outline-offset: 3px; }
+.wx-marker__icon {
+  position: relative; z-index: 2; display: grid; place-items: center; width: 29px; height: 29px;
+  border: 1px solid color-mix(in srgb, var(--wx-color) 76%, #dfeaf0);
+  border-radius: 4px; background: #0a1822; box-shadow: 0 2px 8px rgba(0,0,0,.44);
+}
+.wx-marker__icon svg { display: block; width: 17px; height: 17px; overflow: visible; }
+.wx-marker:hover .wx-marker__icon, .wx-marker:focus-visible .wx-marker__icon {
+  border-color: var(--wx-color); background: #122832;
+}
+.wx-marker[data-freshness="STALE"] .wx-marker__icon,
+.wx-marker[data-freshness="UNKNOWN"] .wx-marker__icon,
+.wx-marker[data-freshness="EXPIRED"] .wx-marker__icon,
+.wx-marker[data-freshness="UNAVAILABLE"] .wx-marker__icon { opacity: .58; filter: grayscale(.35); }
+.wx-marker[data-freshness="DELAYED"] .wx-marker__icon { border-style: dashed; }
 .wx-map-canvas .maplibregl-ctrl-attrib { color: #b6c8d0; border-radius: 2px 0 0 0; background: rgba(5, 12, 18, .9); font-size: 9px; }
 .wx-map-canvas .maplibregl-ctrl-attrib a { color: var(--wx-cyan); text-decoration: none; }
 .wx-map-canvas .maplibregl-ctrl-group {
