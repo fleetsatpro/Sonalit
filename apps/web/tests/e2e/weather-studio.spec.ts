@@ -73,8 +73,62 @@ function fixture(overallStatus: 'AVAILABLE' | 'PARTIAL') {
   };
 }
 
-// Valid full-size PNG test tile. A truncated IDAT stream makes MapLibre reject mocked 200 responses and falsely exercise provider fallback.
-const TILE_MOCK_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAEGUlEQVR42u3cTWrbUBSG4eMgBEEIzzzwGrwC738tmRtjAh5lUDAmNEqQLF1dnecZtdCfm+Z7fRVad3c4nQOyaiLifrvW+wG0Xe/8zj/68G9eA8hMAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACQAAgABAACAAEAAIAAYAAQACwQU1EtF1f9cfg/M4/KYD77Vr1n77zO//ow3sEwtcAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIADK2B+P++OxumM3PnO8ZP3fvnH5+BAAudb/PPrn22DNMQiASd73/X9X/vju86PRCksQAC9+7f9m5deCAJhx/T/FsJ5rQQBMWv/n5Trip6/nWhAAk177266f+KuVvRYEwOxPPmu+FgRA+ekXvBYEwOrWv+S1IADWu/4FrgUBUMf6Z7oWBEBl63/ttSAAKl7/9GtBAGxh/QPXwvCP9H4Atrb+n64FAZBr/X8hAPKuXwCkXn9E7A6ns0888fTWlnH/wLNSTUTcbxV/wG3XO3/B1/6q//zbrvcIRMYnH18DYP0CsP7c6w9/E2z6aafvBrD+7OsXgPWHALB+AWD9AsD6BYD1CwDrFwDWLwCsXwBYvwCwfgFg/QLA+gWA9QsA66+b9wOYvhsA6xcA1i8ArF8AWL8AsH4BYP0CwPoFgPULAOsXANYvAKxfAFi/ALB+AWD9AsD66+P9AKbvBtjWeh4Dsn5y3QCP9Qw3sNptWb8AZl/P8BVRcHnWL4Al1jPwA359fJpvmtYvgPLrmXJ1TPndrV8A473v+2XWM9OT1WLnZ4MBrOe1c8qTlfULYMtPDr9eHdZf0Fvt6/+8XKv+BNR+fgF47UcA1o8ArB8BWD8CsH4EMAfrJ2MAVf8LZwTg4QcBWD8CsH4EYP0IwPoRgPUjAOtHANZP8gCsn7wBWD9F7A6nc/FDPN4Y7u1RLKyJiPut5Owmvva3XV/2/BM5f9nDF34E8uRD3q8BrJ+8AVg/eQOwfvIGYP3kDcD6yRuA9ZM3AOsnbwDWT94ArJ+8AVg/eQOwfvIGYP14BLJ+UgbgPzMkbwAefsgbgPWTNwDrJ28A1k/eAKyfvAFYP3kDsH7yBmD95A3A+skbgPWTNwDrJ28A1k/qAP7t3vrJ+whk/WT/IhgEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAA/FUTEW3XV/0xOL/zj/YFz0cKjZ3T9OYAAAAASUVORK5CYII=', 'base64');
+// Build a standards-valid 256×256 RGBA PNG in-process. This avoids static fixtures with mismatched IDAT/CRC data,
+// which Chromium accepts as HTTP 200 bytes but MapLibre correctly rejects as undecodable map tiles.
+import { deflateSync } from 'node:zlib';
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function pngCrc32(data: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc & 1) ? ((crc >>> 1) ^ 0xedb88320) : (crc >>> 1);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: 'IHDR' | 'IDAT' | 'IEND', data: Buffer): Buffer {
+  const typeBytes = Buffer.from(type, 'ascii');
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(pngCrc32(Buffer.concat([typeBytes, data])), 0);
+  return Buffer.concat([length, typeBytes, data, crc]);
+}
+
+function createMockMapTile(): Buffer {
+  const width = 256, height = 256;
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8; // 8 bits per channel
+  header[9] = 6; // RGBA
+  header[10] = 0; header[11] = 0; header[12] = 0;
+
+  const stride = width * 4;
+  const raw = Buffer.alloc(height * (stride + 1));
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (stride + 1);
+    raw[row] = 0; // PNG filter: None
+    for (let x = 0; x < width; x += 1) {
+      const pixel = row + 1 + x * 4;
+      const isRoad = (x % 64 < 2) || (y % 64 < 2) || (Math.abs(((x + y) % 128) - 64) < 1);
+      raw[pixel] = isRoad ? 39 : 8;
+      raw[pixel + 1] = isRoad ? 60 : 20;
+      raw[pixel + 2] = isRoad ? 73 : 30;
+      raw[pixel + 3] = 255;
+    }
+  }
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(raw, { level: 9 })),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+const TILE_MOCK_PNG = createMockMapTile();
 
 async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', options: { primaryTilesFail?: boolean; mapRendererUnavailable?: boolean } = {}) {
   await page.addInitScript((rendererUnavailable) => {

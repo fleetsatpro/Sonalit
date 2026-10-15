@@ -75,6 +75,7 @@ function validRing(input: number[][]): GeoJSON.Position[] | null {
     const current = ring[index], next = ring[index + 1];
     signedArea += current[0] * next[1] - next[0] * current[1];
   }
+  if (Math.abs(signedArea) <= GEOMETRY_EPSILON) return null;
   // Normalise exterior rings to GeoJSON's counter-clockwise winding order.
   return signedArea < 0 ? [...ring].reverse() : ring;
 }

@@ -59,6 +59,7 @@ describe('official weather warning map geometry', () => {
       [[35, -1], [181, -1], [37, 1], [35, -1]],
       [[35, -1], [35, -1], [35, -1], [35, -1]],
       [[35, -1], [37, 1], [35, 1], [37, -1], [35, -1]], // self-intersecting bow-tie
+      [[35, -1], [36, 0], [37, 1], [35, -1]], // zero-area collinear ring
     ] }] }] });
     expect(buildOfficialWarningAreaCollection(invalid).features).toHaveLength(0);
   });
