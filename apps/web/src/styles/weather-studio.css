@@ -43,7 +43,7 @@
 .wx-toolbar-label small { color:#93a9b6; font-size:9px; font-weight:500; letter-spacing:.025em; }
 .wx-live-indicator { width:7px; height:7px; flex:0 0 7px; border-radius:50%; background:#82d8b6; }
 .wx-layer-switches { display:flex; align-items:center; flex-wrap:wrap; gap:7px; }
-.wx-layer-button { display:inline-flex; align-items:center; gap:9px; min-height:41px; min-width:0; padding:0 12px; color:#b1c2cd; border:1px solid rgba(180,210,228,.15); border-radius:10px; background:linear-gradient(145deg,rgba(255,255,255,.04),rgba(255,255,255,.012)); font:650 11px/1 Inter,system-ui,sans-serif; letter-spacing:-.012em; }
+.wx-layer-button { display:inline-flex; align-items:center; gap:9px; min-height:41px; min-width:0; padding:0 12px; color:#b1c2cd; border:1px solid rgba(180,210,228,.15); border-radius:10px; background:linear-gradient(145deg,rgba(255,255,255,.04),rgba(255,255,255,.012)); font:650 12px/1 Inter,system-ui,sans-serif; letter-spacing:-.012em; }
 .wx-layer-button:hover:not(:disabled) { color:#f5fbff; border-color:rgba(155,218,234,.37); background:rgba(255,255,255,.045); transform:translateY(-1px); }
 .wx-layer-button:disabled { opacity:.47; cursor:not-allowed; }
 .wx-layer-button span { white-space:nowrap; }
@@ -232,7 +232,7 @@
   .wx-header { align-items:flex-start; gap:10px; padding:14px 12px; } .wx-brand-row { gap:9px; } .wx-back { min-height:35px; padding:0 9px; } .wx-brand-mark { display:none; }
   .wx-eyebrow { font-size:8px; letter-spacing:.085em; } .wx-brand-copy h1 { margin-top:5px; font-size:24px; } .wx-brand-copy p { max-width:245px; font-size:11px; line-height:1.5; }
   .wx-coverage-state { min-width:0; gap:7px; padding:8px 9px; } .wx-coverage-state b { max-width:125px; font-size:8px; line-height:1.35; } .wx-coverage-state small { display:none; } .wx-icon-button { width:36px; height:36px; }
-  .wx-toolbar { gap:10px; padding:12px; } .wx-layer-switches { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; } .wx-layer-button { width:100%; min-width:0; min-height:43px; justify-content:flex-start; padding:0 9px; gap:7px; font-size:11px; } .wx-layer-button span { overflow:hidden; text-overflow:ellipsis; } .wx-layer-button i { margin-left:auto; }
+  .wx-toolbar { gap:10px; padding:12px; } .wx-layer-switches { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; } .wx-layer-button { width:100%; min-width:0; min-height:43px; justify-content:flex-start; padding:0 9px; gap:7px; font-size:12px; } .wx-layer-button span { overflow:hidden; text-overflow:ellipsis; } .wx-layer-button i { margin-left:auto; }
   .wx-map-presets { display:grid; grid-template-columns:1fr 1fr 42px 42px; width:100%; gap:6px; } .wx-map-presets button { min-height:40px; }
   .wx-workspace { padding:8px; gap:10px; } .wx-map-panel { min-height:700px; border-radius:14px; } .wx-map-context { align-items:flex-start; min-height:100px; padding:13px; gap:9px; }
   .wx-map-context b { max-width:235px; font-size:15px; line-height:1.25; } .wx-map-context small { max-width:230px; font-size:10px; line-height:1.45; } .wx-map-heading-line { gap:7px; } .wx-map-kicker { font-size:8px; letter-spacing:.08em; } .wx-map-provider { min-height:21px; padding-inline:6px; font-size:7px; }
