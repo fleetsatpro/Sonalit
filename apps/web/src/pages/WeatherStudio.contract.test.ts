@@ -21,6 +21,7 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(page).toContain("response.health?.status === 'PARTIAL' ? 'partial'");
     expect(page).toContain("liveQuery.isError ? 'partial' : 'available'");
     expect(page).toContain('The last successful snapshot is retained');
+    expect(page).toContain('disabled={liveQuery.isFetching || isRateLimited}');
     expect(page).toContain("status === 'partial' ? 'PARTIAL COVERAGE'");
     expect(styles).toContain('.wx-coverage-state[data-state="partial"]');
     expect(page).toContain('forecastSteps');
