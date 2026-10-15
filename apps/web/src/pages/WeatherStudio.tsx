@@ -11,7 +11,7 @@ import '@fontsource/sora/800.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import '@fontsource/ibm-plex-mono/700.css';
-import { Activity, AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, CloudSun, Crosshair, Flame, Globe2, LoaderCircle, MapPin, Pause, Play, RefreshCw, Thermometer, Droplets, Wind, Eye, Waves, X, Satellite, CloudRain } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarClock, ChevronDown, CloudSun, Crosshair, Flame, Globe2, LoaderCircle, MapPin, Pause, Play, RefreshCw, Thermometer, Droplets, Wind, Eye, Waves, X, Satellite, CloudRain } from 'lucide-react';
 import { fetchLiveEventSimulation, snapSpatialBounds, shouldRetrySpatialRequest } from '../lib/spatialClient.js';
 import type { LiveEventSimulationResponse, SpatialWorldEntity } from '../lib/spatialClient.js';
 import { FALLBACK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
@@ -189,6 +189,8 @@ export default function WeatherStudio() {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRefs = useRef(new Map<string, { marker: maplibregl.Marker; element: HTMLButtonElement }>());
   const [mapReady, setMapReady] = useState(false);
+  const [baseTilesLoading, setBaseTilesLoading] = useState(true);
+  const [baseTilesStalled, setBaseTilesStalled] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
   const [mapAttempt, setMapAttempt] = useState(0);
@@ -198,6 +200,8 @@ export default function WeatherStudio() {
   const [viewport, setViewport] = useState<Viewport>({ latitude: 0, longitude: 28, radiusM: 100000, bounds: [12, -28, 62, 34] });
   const [queryViewport, setQueryViewport] = useState(viewport);
   useEffect(() => {
+    // A short quiet window keeps pan-to-data feedback responsive. Spatial bounds
+    // snapping and the query key still coalesce small movements into one request.
     const timer = window.setTimeout(() => {
       setQueryViewport(current => {
         const sameBounds = current.bounds.every((value, index) => value === viewport.bounds[index]);
@@ -206,7 +210,7 @@ export default function WeatherStudio() {
           && current.radiusM === viewport.radiusM
           && sameBounds ? current : viewport;
       });
-    }, 3500);
+    }, 750);
     return () => window.clearTimeout(timer);
   }, [viewport]);
   const [stepIndex, setStepIndex] = useState(0);
@@ -244,6 +248,10 @@ export default function WeatherStudio() {
     placeholderData: previousData => previousData,
   });
   const response = liveQuery.data;
+  const viewportQueryPending = viewport.latitude !== queryViewport.latitude
+    || viewport.longitude !== queryViewport.longitude
+    || viewport.radiusM !== queryViewport.radiusM
+    || viewport.bounds.some((value, index) => value !== queryViewport.bounds[index]);
   const warningFeed = response?.weatherAlerts;
   const warningAreas = useMemo(() => buildOfficialWarningAreaCollection(warningFeed), [warningFeed]);
   const mappedWarningCount = useMemo(
@@ -330,14 +338,36 @@ export default function WeatherStudio() {
     if (!container) return;
     let mounted = true;
     let styleLoaded = false;
+    let fallbackReason: 'tile-error' | 'tile-timeout' = 'tile-error';
     let map: maplibregl.Map | null = null;
     let loadTimer: number | null = null;
+    let tileIdleTimer: number | null = null;
+    const styleLoadTimeoutMs = 12000;
+    const tileIdleTimeoutMs = 8000;
+    const clearTileIdleTimer = () => {
+      if (tileIdleTimer !== null) window.clearTimeout(tileIdleTimer);
+      tileIdleTimer = null;
+    };
+    const armStyleLoadTimeout = (message: string) => {
+      if (loadTimer !== null) window.clearTimeout(loadTimer);
+      loadTimer = window.setTimeout(() => {
+        loadTimer = null;
+        if (!mounted || styleLoaded) return;
+        clearTileIdleTimer();
+        setMapReady(false);
+        setBaseTilesLoading(false);
+        setBaseTilesStalled(false);
+        setMapError(message);
+      }, styleLoadTimeoutMs);
+    };
     let observer: ResizeObserver | null = null;
     let mapCanvas: HTMLCanvasElement | null = null;
     let contextLostHandler: ((event: Event) => void) | null = null;
     let contextRestoredHandler: (() => void) | null = null;
 
     setMapReady(false);
+    setBaseTilesLoading(true);
+    setBaseTilesStalled(false);
     setMapError(null);
     setMapNotice(null);
     setRasterError(null);
@@ -380,17 +410,43 @@ export default function WeatherStudio() {
     }
     mapRef.current = map;
     const instance = map;
-    const switchToFallback = () => {
+    const switchToFallback = (reason: 'tile-error' | 'tile-timeout' = 'tile-error') => {
       if (!mounted || baseStyleRef.current === 'fallback') return;
+      clearTileIdleTimer();
+      fallbackReason = reason;
+      styleLoaded = false;
       baseStyleRef.current = 'fallback';
       baseTileFailuresRef.current = 0;
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
       setMapProvider('fallback');
-      setMapNotice('The primary map tile source failed. Switched to an independent cartographic provider.');
+      setMapError(null);
+      setMapNotice(reason === 'tile-timeout'
+        ? 'Primary map tiles timed out; switching to independent fallback cartography.'
+        : 'The primary map tile source failed; switching to independent cartography.');
+      armStyleLoadTimeout('The fallback base-map style did not initialise within 12 seconds. Weather/event feeds remain separate from the map renderer; retry map initialisation.');
       try { instance.setStyle(FALLBACK_STREET_STYLE); }
       catch (_) {
+        if (loadTimer !== null) { window.clearTimeout(loadTimer); loadTimer = null; }
+        clearTileIdleTimer();
         setMapReady(false);
+        setBaseTilesLoading(false);
+        setBaseTilesStalled(false);
         setMapError('The primary base map failed and the fallback could not be selected. Retry the map when connectivity is restored.');
       }
+    };
+    const armTileIdleWatchdog = () => {
+      clearTileIdleTimer();
+      tileIdleTimer = window.setTimeout(() => {
+        tileIdleTimer = null;
+        if (!mounted || !styleLoaded) return;
+        if (baseStyleRef.current === 'esri') {
+          switchToFallback('tile-timeout');
+          return;
+        }
+        setBaseTilesLoading(false);
+        setBaseTilesStalled(true);
+      }, tileIdleTimeoutMs);
     };
 
     instance.on('style.load', () => {
@@ -408,9 +464,16 @@ export default function WeatherStudio() {
         setWarningOverlayError('Verified official warning boundaries could not be drawn. Warning messages remain available from the source feed.');
       }
       setMapError(null);
-      setMapNotice(baseStyleRef.current === 'fallback' ? 'Using independent fallback cartography.' : null);
+      setMapNotice(baseStyleRef.current === 'fallback'
+        ? fallbackReason === 'tile-timeout'
+          ? 'Primary tiles timed out; using independent fallback cartography.'
+          : 'Using independent fallback cartography.'
+        : null);
       setMapReady(true);
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
       syncViewport(instance);
+      armTileIdleWatchdog();
       window.setTimeout(() => { if (mounted) instance.resize(); }, 0);
     });
 
@@ -432,6 +495,9 @@ export default function WeatherStudio() {
       if (isFallbackTiles && baseStyleRef.current === 'fallback') {
         baseTileFailuresRef.current += 1;
         if (baseTileFailuresRef.current >= 3) {
+          clearTileIdleTimer();
+          setBaseTilesLoading(false);
+          setBaseTilesStalled(false);
           setMapReady(false);
           setMapNotice(null);
           setMapError('Both primary and fallback base-map tile sources are failing. Check network access, then retry. Weather/event data and source records remain separate from the map renderer.');
@@ -448,6 +514,9 @@ export default function WeatherStudio() {
     contextLostHandler = (event: Event) => {
       event.preventDefault();
       if (!mounted) return;
+      clearTileIdleTimer();
+      setBaseTilesLoading(false);
+      setBaseTilesStalled(false);
       setMapReady(false);
       setMapError('The browser lost the map graphics context, commonly when GPU resources are exhausted. Retry to create a fresh map instance.');
     };
@@ -455,22 +524,44 @@ export default function WeatherStudio() {
       if (!mounted || !instance.isStyleLoaded()) return;
       setMapError(null);
       setMapReady(true);
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
+      armTileIdleWatchdog();
       instance.resize();
     };
     mapCanvas.addEventListener('webglcontextlost', contextLostHandler);
     mapCanvas.addEventListener('webglcontextrestored', contextRestoredHandler);
-    instance.on('moveend', () => syncViewport(instance));
+    const onMapIdle = () => {
+      if (!mounted || !styleLoaded) return;
+      clearTileIdleTimer();
+      setBaseTilesLoading(false);
+      setBaseTilesStalled(false);
+    };
+    const onMapMoveStart = () => {
+      if (!mounted || !styleLoaded) return;
+      clearTileIdleTimer();
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
+    };
+    const onMapMoveEnd = () => {
+      if (!mounted) return;
+      syncViewport(instance);
+      if (!styleLoaded) return;
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
+      armTileIdleWatchdog();
+    };
+    instance.on('idle', onMapIdle);
+    instance.on('movestart', onMapMoveStart);
+    instance.on('moveend', onMapMoveEnd);
     observer = new ResizeObserver(() => instance.resize());
     observer.observe(container);
-    loadTimer = window.setTimeout(() => {
-      if (!mounted || styleLoaded) return;
-      setMapReady(false);
-      setMapError('The base map style did not initialise in 12 seconds. This is a renderer/source timeout, not proof that weather conditions are clear.');
-    }, 12000);
+    armStyleLoadTimeout('The base map style did not initialise in 12 seconds. This is a renderer/source timeout, not proof that weather conditions are clear.');
 
     return () => {
       mounted = false;
       if (loadTimer !== null) window.clearTimeout(loadTimer);
+      clearTileIdleTimer();
       observer?.disconnect();
       if (mapCanvas && contextLostHandler) mapCanvas.removeEventListener('webglcontextlost', contextLostHandler);
       if (mapCanvas && contextRestoredHandler) mapCanvas.removeEventListener('webglcontextrestored', contextRestoredHandler);
@@ -542,7 +633,7 @@ export default function WeatherStudio() {
         <div className="wx-brand-row">
           <button type="button" className="wx-back" onClick={() => void navigate({ to: '/command' })} aria-label="Return to Command Centre" title="Return to Command Centre"><ArrowLeft size={15} /><span>COMMAND</span></button>
           <div className="wx-brand-mark" aria-hidden="true"><Globe2 size={19} /></div>
-          <div className="wx-brand-copy"><div className="wx-eyebrow">SONALIT INTELLIGENCE / ENVIRONMENTAL DESK</div><h1>Weather Studio</h1><p>Forecasts with provenance. Warnings with authority. Decisions with context.</p></div>
+          <div className="wx-brand-copy"><div className="wx-eyebrow">SONALIT INTELLIGENCE / ENVIRONMENTAL DESK</div><h1>Weather Studio</h1><p>Forecasts, hazards and earth observation in one operational view.</p></div>
         </div>
         <div className="wx-header-meta">
           <div className="wx-coverage-state" data-state={status}><span className="wx-state-dot" /><div><b>{status === 'available' ? 'SOURCES AVAILABLE' : status === 'syncing' ? 'SYNCHRONISING' : status === 'partial' ? 'PARTIAL COVERAGE' : 'DEGRADED COVERAGE'}</b><small>{response?.health?.status ?? (liveQuery.isError ? 'PROVIDER UNAVAILABLE' : 'CONNECTING TO SOURCES')}</small></div></div>
@@ -550,23 +641,9 @@ export default function WeatherStudio() {
         </div>
       </header>
 
-      <div className="wx-toolbar">
-        <div className="wx-toolbar-label"><span className="wx-live-indicator" /> EVENT LAYERS <small>MAP OVERLAYS</small></div>
-        <div className="wx-layer-switches" role="group" aria-label="Map event layers">
-          {LAYERS.map(layer => { const Icon = layer.icon; const count = layer.id === 'weather' ? weatherCount : layer.id === 'earthquakes' ? earthquakeCount : layer.id === 'volcanoes' ? volcanoCount : naturalCount; return <button key={layer.id} type="button" className="wx-layer-button" data-active={filters[layer.id]} aria-pressed={filters[layer.id]} onClick={() => setLayer(layer.id)}><Icon size={14} /><span>{layer.label}</span><i>{count}</i></button>; })}
-        </div>
-        <div className="wx-layer-switches wx-motion-switches" role="group" aria-label="Forecast field motion"><button type="button" className="wx-layer-button" data-active={flowMotion} aria-pressed={flowMotion} disabled={windVectorCount < 2} onClick={() => setFlowMotion(value => !value)} title={windVectorCount < 2 ? "Wind flow needs at least two valid forecast wind vectors in the current response." : "Toggle source-derived wind-flow animation; it is model output, not radar."}><Waves size={14} /><span>Wind flow</span><i>{flowMotion ? "ON" : "OFF"}</i></button></div>
-        <div className="wx-layer-switches wx-observation-switches" role="group" aria-label="Earth observation products and verified official warning areas">
-          <button type="button" className="wx-layer-button" data-active={rasterLayers.satellite} aria-pressed={rasterLayers.satellite} onClick={() => toggleRaster('satellite')} title="NASA MODIS Aqua true-colour satellite imagery; latest available scene, swath gaps are not clear-weather evidence"><Satellite size={14} /><span>Satellite</span></button>
-          <button type="button" className="wx-layer-button" data-active={rasterLayers.precipitation} aria-pressed={rasterLayers.precipitation} onClick={() => toggleRaster('precipitation')} title="NASA GPM IMERG v7 near-real-time satellite-derived precipitation-rate estimate; not live ground radar"><CloudRain size={14} /><span>NASA Rain</span></button>
-          <button type="button" className="wx-layer-button" data-active={mapReady && showOfficialWarnings && mappedWarningCount > 0} aria-pressed={mapReady && showOfficialWarnings && mappedWarningCount > 0} disabled={!mapReady || mappedWarningCount === 0} onClick={() => setShowOfficialWarnings(value => !value)} title={!mapReady ? 'Map controls are unavailable until the cartographic renderer is ready; official warning messages remain available.' : mappedWarningCount === 0 ? 'No verified active or upcoming KMD CAP warning polygons are available to map.' : 'Toggle only verified active/upcoming KMD CAP warning polygons supplied by the official feed.'}><AlertTriangle size={14} /><span>KMD Alerts</span><i>{mappedWarningCount}</i></button>
-        </div>
-        <div className="wx-map-presets"><button type="button" onClick={fitWorld}>GLOBAL</button><button type="button" onClick={focusEastAfrica}>E. AFRICA</button><button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in">+</button><button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out">−</button></div>
-      </div>
-
-      <main className="wx-workspace">
+      <main className="wx-workspace wx-workspace--desk">
         <section className="wx-map-panel" aria-label="Interactive weather and natural event map">
-          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "RESILIENT BASE" : "ESRI CARTOGRAPHY"}</span></div><b>Global atmospheric field</b><small>Modelled wind flow · satellite-derived rainfall estimates · no radar imagery.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
+          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "RESILIENT BASE" : "ESRI CARTOGRAPHY"}</span>{mapReady && (baseTilesLoading || baseTilesStalled) && <span className="wx-area-sync wx-tile-sync" data-state={baseTilesStalled ? 'degraded' : 'syncing'} role="status" aria-live="polite" aria-label={baseTilesStalled ? 'Base map tile loading delayed' : 'Base map tiles are loading'}>{baseTilesStalled ? <AlertTriangle size={11} /> : <LoaderCircle size={11} className="wx-spin" />}{baseTilesStalled ? 'MAP TILE DELAY' : mapProvider === 'fallback' ? 'LOADING FALLBACK' : 'LOADING MAP TILES'}</span>}{(viewportQueryPending || liveQuery.isFetching) && <span className="wx-area-sync" data-state={liveQuery.isError ? 'degraded' : 'syncing'} role="status" aria-live="polite"><LoaderCircle size={11} className="wx-spin" />{viewportQueryPending ? 'AREA CHANGED' : response ? 'REFRESHING DATA' : 'LOADING DATA'}</span>}</div><b>Atmospheric conditions</b><small>Forecast-grid signals, satellite-derived precipitation and source-attributed natural events.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
           <div className="wx-map-canvas">
             <div className="wx-map-instance" ref={mapContainerRef} />
             <WeatherFieldCanvas
@@ -579,25 +656,88 @@ export default function WeatherStudio() {
                 <span aria-hidden="true" /> WIND FLOW <small>MODEL-DERIVED · FORECAST GRID</small>
               </div>
             )}
-          </div>
-          {!mapReady && !mapError && <div className="wx-map-loading"><LoaderCircle size={18} className="wx-spin" /><span>Initialising map renderer</span></div>}
-          {mapReady && mapNotice && <div className="wx-map-notice wx-map-notice--info" role="status"><Globe2 size={14} /> {mapNotice}</div>}
-          {!mapReady && mapError && <div className="wx-map-failure" role="alert"><AlertTriangle size={18} /><span className="wx-map-failure__eyebrow">CARTOGRAPHY STATUS</span><b>Map unavailable</b><span>{mapError}</span><button type="button" onClick={retryMap}><RefreshCw size={14} /> RETRY MAP INITIALISATION</button></div>}
-          {mapReady && liveQuery.isError && <div className="wx-map-notice" role="status"><AlertTriangle size={14} /> {isRateLimited ? 'Weather refresh is throttled. The last successful snapshot is retained; the next scheduled refresh will retry.' : response ? 'The latest refresh failed. The last successful snapshot is retained; current-area coverage may be partial.' : 'Source request failed. Coverage is unknown; wait before retrying.'}</div>}
-          <div className="wx-map-legend" aria-label="Map condition and event legend"><strong>CONDITION KEY</strong><span><i style={{ background: '#f3cb78' }} /> CLEAR</span><span><i style={{ background: '#7cbcff' }} /> RAIN</span><span><i style={{ background: '#ff897d' }} /> STORM</span><span><i style={{ background: '#93d8f1' }} /> SNOW</span><span><i style={{ background: '#ff9a78' }} /> SEISMIC</span><span><i style={{ background: '#e8a16b' }} /> VOLCANO</span><span><i style={{ background: '#b1c3d2' }} /> NATURAL EVENT</span>{showOfficialWarnings && warningAreas.features.length > 0 && <span><i style={{ background: '#e7a75c', borderRadius: 2 }} /> KMD WARNING AREA</span>}</div>
           {(rasterLayers.satellite || rasterLayers.precipitation) && <div className="wx-observation-note" role="status">
             {rasterLayers.satellite && <span>NASA MODIS Aqua · latest available scene</span>}
             {rasterLayers.precipitation && <span>NASA GPM IMERG · near-real-time precipitation estimate</span>}
             <small>Earth-observation products have acquisition and processing latency. Missing pixels, swaths or coverage gaps do not indicate clear conditions.</small>
           </div>}
           {rasterError && <div className="wx-map-notice wx-raster-notice" role="status"><AlertTriangle size={14} /> {rasterError}</div>}
+          </div>
+          {!mapReady && !mapError && <div className="wx-map-loading"><LoaderCircle size={18} className="wx-spin" /><span>Initialising map renderer</span></div>}
+          {mapReady && mapNotice && <div className="wx-map-notice wx-map-notice--info" role="status"><Globe2 size={14} /> {mapNotice}</div>}
+          {!mapReady && mapError && <div className="wx-map-failure" role="alert"><AlertTriangle size={18} /><span className="wx-map-failure__eyebrow">CARTOGRAPHY STATUS</span><b>Map unavailable</b><span>{mapError}</span><button type="button" onClick={retryMap}><RefreshCw size={14} /> RETRY MAP INITIALISATION</button></div>}
+          {mapReady && liveQuery.isError && <div className="wx-map-notice" role="status"><AlertTriangle size={14} /> {isRateLimited ? 'Weather refresh is throttled. The last successful snapshot is retained; the next scheduled refresh will retry.' : response ? 'The latest refresh failed. The last successful snapshot is retained; current-area coverage may be partial.' : 'Source request failed. Coverage is unknown; wait before retrying.'}</div>}
+          <div className="wx-map-legend" aria-label="Map condition and event legend"><strong>MAP KEY</strong><span><i style={{ background: '#f3cb78' }} /> CLEAR</span><span><i style={{ background: '#7cbcff' }} /> RAIN</span><span><i style={{ background: '#ff897d' }} /> STORM</span><span><i style={{ background: '#93d8f1' }} /> SNOW</span><span><i style={{ background: '#ff9a78' }} /> SEISMIC</span><span><i style={{ background: '#e8a16b' }} /> VOLCANO</span><span><i style={{ background: '#b1c3d2' }} /> NATURAL EVENT</span>{showOfficialWarnings && warningAreas.features.length > 0 && <span><i style={{ background: '#e7a75c', borderRadius: 2 }} /> KMD WARNING AREA</span>}</div>
           <div className="wx-timeline">
             <div className="wx-player-row"><button type="button" className="wx-play-button" onClick={() => setPlaying(value => !value)} disabled={steps.length < 2} aria-label={playing ? 'Pause forecast timeline' : 'Play forecast timeline'} title={playing ? 'Pause forecast timeline' : 'Play forecast timeline'}>{playing ? <Pause size={14} /> : <Play size={14} />}</button><div className="wx-timeline-caption"><small>HOURLY MODEL PLAYBACK</small><b>{formatValidTime(selectedForecastTime)}</b></div><div className="wx-step-count">{steps.length ? String(stepIndex + 1).padStart(2, '0') + ' / ' + String(steps.length).padStart(2, '0') : '— / —'}</div></div>
             <input className="wx-range" type="range" min={0} max={Math.max(0, steps.length - 1)} step={1} value={Math.min(stepIndex, Math.max(0, steps.length - 1))} disabled={steps.length < 2} onChange={event => { setStepIndex(Number(event.target.value)); setPlaying(false); }} aria-label="Select forecast valid time; this is not a measured historical replay" />
             <div className="wx-range-labels"><span>{formatValidTime(steps[0]?.validAt)}</span><span>{formatValidTime(steps[steps.length - 1]?.validAt)}</span></div>
             <div className="wx-timeline-note"><CalendarClock size={12} /> Forecast-valid times, not observed radar frames or historical playback.</div>
           </div>
-        </section>
+          </section>
+
+        <aside className="wx-layer-rail wx-toolbar" aria-label="Weather map controls">
+          <div className="wx-rail-intro">
+            <div className="wx-eyebrow">MAP CONTROL</div>
+            <h2>Layers &amp; fields</h2>
+            <p>Choose the signals displayed in the map.</p>
+          </div>
+          <section className="wx-toolbar-primary" aria-label="Environmental event layers">
+            <div className="wx-section-heading"><span>EVENT LAYERS</span><small>VISIBLE SIGNALS</small></div>
+            <div className="wx-layer-switches" role="group" aria-label="Map event layers">
+              {LAYERS.map(layer => {
+                const Icon = layer.icon;
+                const count = layer.id === 'weather' ? weatherCount : layer.id === 'earthquakes' ? earthquakeCount : layer.id === 'volcanoes' ? volcanoCount : naturalCount;
+                const caption = layer.id === 'weather' ? 'Forecast grid' : layer.id === 'earthquakes' ? 'USGS catalogue' : layer.id === 'volcanoes' ? 'Volcano reports' : 'NASA open events';
+                return <button key={layer.id} type="button" className="wx-layer-button wx-event-layer" data-active={filters[layer.id]} aria-pressed={filters[layer.id]} onClick={() => setLayer(layer.id)}>
+                  <span className="wx-layer-button__icon"><Icon size={17} /></span>
+                  <span className="wx-layer-button__copy"><span>{layer.label}</span><small>{caption}</small></span>
+                  <i>{count}</i>
+                </button>;
+              })}
+            </div>
+          </section>
+          <section className="wx-toolbar-secondary" aria-label="Forecast fields and observation products">
+            <div className="wx-section-heading"><span>FORECAST &amp; OBSERVATION</span><small>OPTIONAL OVERLAYS</small></div>
+            <div className="wx-layer-switches wx-motion-switches" role="group" aria-label="Forecast field motion">
+              <button type="button" className="wx-layer-button wx-product-layer" data-active={flowMotion} aria-pressed={flowMotion} disabled={windVectorCount < 2} onClick={() => setFlowMotion(value => !value)} title={windVectorCount < 2 ? "Wind flow needs at least two valid forecast wind vectors in the current response." : "Toggle source-derived wind-flow animation; it is model output, not radar."}>
+                <span className="wx-layer-button__icon"><Waves size={17} /></span>
+                <span className="wx-layer-button__copy"><span>Wind flow</span><small>Model-derived motion</small></span>
+                <i>{flowMotion ? 'ON' : 'OFF'}</i>
+              </button>
+            </div>
+            <div className="wx-layer-switches wx-observation-switches" role="group" aria-label="Satellite and verified official warning products">
+              <button type="button" className="wx-layer-button wx-product-layer" data-active={rasterLayers.satellite} aria-pressed={rasterLayers.satellite} onClick={() => toggleRaster('satellite')} title="NASA MODIS Aqua true-colour satellite imagery; latest available scene, swath gaps are not clear-weather evidence">
+                <span className="wx-layer-button__icon"><Satellite size={17} /></span>
+                <span className="wx-layer-button__copy"><span>Satellite</span><small>NASA MODIS Aqua</small></span>
+                <i>{rasterLayers.satellite ? 'ON' : 'OFF'}</i>
+              </button>
+              <button type="button" className="wx-layer-button wx-product-layer" data-active={rasterLayers.precipitation} aria-pressed={rasterLayers.precipitation} onClick={() => toggleRaster('precipitation')} title="NASA GPM IMERG v7 near-real-time satellite-derived precipitation-rate estimate; not live ground radar">
+                <span className="wx-layer-button__icon"><CloudRain size={17} /></span>
+                <span className="wx-layer-button__copy"><span>NASA Rain</span><small>IMERG precipitation estimate</small></span>
+                <i>{rasterLayers.precipitation ? 'ON' : 'OFF'}</i>
+              </button>
+              <button type="button" className="wx-layer-button wx-product-layer" data-active={mapReady && showOfficialWarnings && mappedWarningCount > 0} aria-pressed={mapReady && showOfficialWarnings && mappedWarningCount > 0} disabled={!mapReady || mappedWarningCount === 0} onClick={() => setShowOfficialWarnings(value => !value)} title={!mapReady ? 'Map controls are unavailable until the cartographic renderer is ready; official warning messages remain available.' : mappedWarningCount === 0 ? 'No verified active or upcoming KMD CAP warning polygons are available to map.' : 'Toggle only verified active/upcoming KMD CAP warning polygons supplied by the official feed.'}>
+                <span className="wx-layer-button__icon wx-layer-button__icon--amber"><AlertTriangle size={17} /></span>
+                <span className="wx-layer-button__copy"><span>KMD Alerts</span><small>Verified warning polygons</small></span>
+                <i>{mappedWarningCount}</i>
+              </button>
+            </div>
+          </section>
+          <section className="wx-rail-map-controls" aria-label="Map navigation">
+            <div className="wx-section-heading"><span>MAP NAVIGATION</span></div>
+            <div className="wx-map-presets">
+              <button type="button" onClick={fitWorld}>GLOBAL</button>
+              <button type="button" onClick={focusEastAfrica}>E. AFRICA</button>
+              <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in">+</button>
+              <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out">−</button>
+            </div>
+          </section>
+          <div className="wx-layer-rail-foot">
+            <span className="wx-layer-rail-foot__icon"><Globe2 size={15} /></span>
+            <div><strong>Source-first display</strong><p>Forecasts remain modelled. Observation gaps never imply clear conditions; hazard boundaries are shown only when supplied and verified.</p></div>
+          </div>
+        </aside>
 
         <aside className="wx-right-column">
           <section className="wx-card wx-warning-card" aria-label="Official weather early-warning feed">
@@ -645,16 +785,16 @@ export default function WeatherStudio() {
           <section className="wx-card wx-detail-card"><div className="wx-card-heading"><div><span>03 / SELECTED SIGNAL</span><h2>{selectedEntity ? metaFor(selectedEntity).label : 'Inspect the map'}</h2></div>{selectedEntity && <button type="button" className="wx-clear-selection" onClick={() => setSelectedKey(null)} aria-label="Clear selected signal"><X size={13} /></button>}</div>
             {selectedEntity ? <div className="wx-detail-body"><div className="wx-detail-title">{textAttr(attrs, ['name', 'title', 'place', 'categoryTitle'], selectedEntity.entityType === 'weather' ? 'Forecast grid point' : selectedEntity.id)}</div><div className="wx-detail-subtitle">{String(selectedEntity.entityType).replaceAll('_', ' ').toUpperCase()} · {freshnessOf(selectedEntity)}</div>
               {selectedEntity.entityType === 'weather' ? <div className="wx-metric-grid"><div><Thermometer size={13} /><small>TEMPERATURE</small><b>{numberAttr(attrs, ['temperatureC', 'temperature', 'tempC', 'temp_c']) != null ? numberAttr(attrs, ['temperatureC', 'temperature', 'tempC', 'temp_c']) + '°C' : '—'}</b></div><div><Droplets size={13} /><small>PRECIPITATION</small><b>{numberAttr(attrs, ['precipitationMm', 'precipitation', 'precip_mm']) != null ? numberAttr(attrs, ['precipitationMm', 'precipitation', 'precip_mm']) + ' mm' : '—'}</b></div><div><Wind size={13} /><small>WIND</small><b>{numberAttr(attrs, ['windSpeedKmh', 'windSpeed', 'wind_kmh']) != null ? numberAttr(attrs, ['windSpeedKmh', 'windSpeed', 'wind_kmh']) + ' km/h' : '—'}</b></div><div><Eye size={13} /><small>VISIBILITY</small><b>{numberAttr(attrs, ['visibilityKm', 'visibility', 'visibility_km']) != null ? numberAttr(attrs, ['visibilityKm', 'visibility', 'visibility_km']) + ' km' : '—'}</b></div></div> : <div className="wx-event-facts">{selectedEntity.entityType === 'earthquake' && <p><b>MAGNITUDE</b><span>{numberAttr(attrs, ['magnitude']) != null ? 'M' + numberAttr(attrs, ['magnitude']) : 'Not recorded'}</span></p>}{(selectedEntity.entityType === 'volcano' || selectedEntity.entityType === 'volcanic_activity') && <p><b>REPORT / ALERT</b><span>{textAttr(attrs, ['reportType', 'alertLevel', 'colorCode'], 'See official source')}</span></p>}<p><b>LOCATION</b><span>{Number(selectedEntity.latitude).toFixed(3)}°, {Number(selectedEntity.longitude).toFixed(3)}°</span></p><p><b>EVENT TIME</b><span>{detailTime ? formatValidTime(detailTime) : 'Not supplied by source'}</span></p></div>}
-              <div className="wx-provenance"><div><small>SOURCE</small><b>{selectedEntity.source || 'Source identifier not supplied'}</b></div><div><small>OBSERVED / VALID</small><b>{detailTime ? formatValidTime(detailTime) : 'Timestamp not supplied'}</b></div><div><small>POSITION</small><b>{Number(selectedEntity.latitude).toFixed(4)}°, {Number(selectedEntity.longitude).toFixed(4)}°</b></div></div>{detailSource && <a className="wx-source-link" href={detailSource} target="_blank" rel="noreferrer">{selectedEntity?.entityType === 'weather' ? 'SOURCE METHODOLOGY' : 'OPEN SOURCE RECORD'} <ChevronDown size={12} /></a>}{selectedEntity.entityType === 'weather' && <p className="wx-semantic-note">Numerical forecast at a provider model-grid coordinate. Marker motion illustrates the selected condition—not a radar return, precipitation footprint, or storm boundary.</p>}</div> : <div className="wx-empty-detail"><Crosshair size={22} /><p>Select a weather point or natural-event marker to inspect values, timing, source and freshness.</p></div>}
+              <div className="wx-provenance"><div><small>SOURCE</small><b>{selectedEntity.source || 'Source identifier not supplied'}</b></div><div><small>OBSERVED / VALID</small><b>{detailTime ? formatValidTime(detailTime) : 'Timestamp not supplied'}</b></div><div><small>POSITION</small><b>{Number(selectedEntity.latitude).toFixed(4)}°, {Number(selectedEntity.longitude).toFixed(4)}°</b></div></div>{detailSource && <a className="wx-source-link" href={detailSource} target="_blank" rel="noreferrer">{selectedEntity?.entityType === 'weather' ? 'SOURCE METHODOLOGY' : 'OPEN SOURCE RECORD'} <ChevronDown size={12} /></a>}{selectedEntity.entityType === 'weather' && <p className="wx-semantic-note">Numerical forecast at a provider model-grid coordinate. Marker motion illustrates the selected condition—not a radar return or a measured precipitation footprint; no radar imagery is represented, and the shape is not a storm boundary.</p>}</div> : <div className="wx-empty-detail"><Crosshair size={22} /><p>Select a weather point or natural-event marker to inspect values, timing, source and freshness.</p></div>}
           </section>
 
 
 
-          <section className="wx-card wx-source-card"><div className="wx-card-heading"><div><span>04 / DATA LINEAGE</span><h2>Source integrity</h2></div><CheckCircle2 size={15} /></div><div className="wx-source-row"><span>WEATHER MODEL</span>{sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer">{sourceName}</a> : <b>{sourceName}</b>}</div><div className="wx-source-row"><span>EARTHQUAKES</span><b>USGS ComCat</b></div><div className="wx-source-row"><span>VOLCANO ALERTS / REPORTS</span><b>USGS · Smithsonian GVP</b></div><div className="wx-source-row"><span>OPEN NATURAL EVENTS</span><b>NASA EONET</b></div>
+          <details className="wx-card wx-source-card" aria-label="Source integrity and data lineage"><summary className="wx-card-heading wx-source-summary"><div><span>04 / DATA LINEAGE</span><h2>Source integrity</h2></div><span className="wx-source-expand-label">View sources</span><ChevronDown size={15} className="wx-source-chevron" /></summary><div className="wx-source-row"><span>WEATHER MODEL</span>{sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer">{sourceName}</a> : <b>{sourceName}</b>}</div><div className="wx-source-row"><span>EARTHQUAKES</span><b>USGS ComCat</b></div><div className="wx-source-row"><span>VOLCANO ALERTS / REPORTS</span><b>USGS · Smithsonian GVP</b></div><div className="wx-source-row"><span>OPEN NATURAL EVENTS</span><b>NASA EONET</b></div>
           <div className="wx-source-row"><span>SATELLITE IMAGERY</span><a href="https://nasa-gibs.github.io/gibs-api-docs/" target="_blank" rel="noreferrer">NASA GIBS / MODIS Aqua</a></div>
           <div className="wx-source-row"><span>PRECIPITATION ESTIMATE</span><a href="https://gpm.nasa.gov/data/imerg" target="_blank" rel="noreferrer">NASA GPM IMERG v7 NRT</a></div>
           <div className="wx-source-row"><span>OFFICIAL WARNINGS</span><a href="https://alertingauthority.wmo.int/authorities.php?recId=80" target="_blank" rel="noreferrer">KMD CAP · WMO register</a></div>
-          <p className="wx-source-disclaimer">Source status and timestamps are retained wherever supplied. Missing or degraded coverage is not proof of clear weather or no hazard. Numerical forecasts are modelled; NASA GPM IMERG is a satellite-derived precipitation estimate with processing latency, not live ground radar. Earthquake symbols locate catalogue epicentres only.</p></section>
+          <p className="wx-source-disclaimer">Source status and timestamps are retained wherever supplied. Missing or degraded coverage is not proof of clear weather or no hazard. Numerical forecasts are modelled; NASA GPM IMERG is a satellite-derived precipitation estimate with processing latency, not live ground radar. Earthquake symbols locate catalogue epicentres only.</p></details>
         </aside>
       </main>
       <footer className="wx-footer"><span>SONALIT / WEATHER INTELLIGENCE</span><span>MODEL-LED FORECASTS · SOURCE-ATTRIBUTED EVENTS · NO FABRICATED HAZARD GEOMETRY</span><button type="button" onClick={() => void navigate({ to: '/gev' })}>OPEN GOD’S EYE VIEW <MapPin size={12} /></button></footer>

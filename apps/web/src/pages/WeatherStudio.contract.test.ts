@@ -80,7 +80,7 @@ describe('Weather Studio evidence and interaction contract', () => {
   });
 
   it('keeps the layout responsive and the forecast map legible on small screens', () => {
-    expect(styles).toContain('@media (max-width: 900px)');
+    expect(styles).toContain('@media (max-width: 1024px)');
     expect(styles).toContain('@media (max-width: 620px)');
     expect(styles).toContain('.wx-map-canvas');
     expect(styles).toContain('.wx-map-legend');
@@ -109,5 +109,83 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(page).toContain("label: 'THUNDERSTORM'");
   });
 
+
+
+  it('separates forecast controls and makes detailed source lineage available on demand', () => {
+    expect(page).toContain('wx-toolbar-primary');
+    expect(page).toContain('wx-toolbar-secondary');
+    expect(page).toContain('<details className="wx-card wx-source-card"');
+    expect(page).toContain('wx-source-summary');
+    expect(styles).toContain('.wx-warning-card .wx-warning-list');
+    expect(styles).toContain('.wx-toolbar-secondary');
+  });
+
+
+  it('keeps the map key outside the map viewport and observation notices inside the canvas', () => {
+    const canvasStart = page.indexOf('<div className="wx-map-canvas">');
+    const canvasEnd = page.indexOf('          </div>\n          {!mapReady && !mapError', canvasStart);
+    const keyPosition = page.indexOf('<div className="wx-map-legend"');
+    expect(canvasStart).toBeGreaterThanOrEqual(0);
+    expect(canvasEnd).toBeGreaterThan(canvasStart);
+    expect(keyPosition).toBeGreaterThan(canvasEnd);
+    expect(page.slice(canvasStart, canvasEnd)).toContain('className="wx-observation-note"');
+    expect(page.slice(canvasStart, canvasEnd)).toContain('className="wx-map-notice wx-raster-notice"');
+    expect(styles).toContain('.wx-map-legend {');
+    expect(styles).not.toContain('position:absolute; top:12px; right:12px; left:auto;');
+  });
+
+
+  it('renders the map-first three-zone operator desk with controls isolated from the map canvas', () => {
+    expect(page).toContain('wx-layer-rail');
+    expect(page).toContain('viewportQueryPending');
+    expect(page).toContain('wx-area-sync');
+    expect(page).toContain('wx-workspace--desk');
+    expect(page).toContain('wx-toolbar-primary');
+    expect(page).toContain('wx-toolbar-secondary');
+    expect(page).toContain('wx-layer-button__copy');
+    expect(page).toContain('Source-first display');
+    expect(styles).toContain('grid-template-areas: "layers map right"');
+    expect(styles).toContain('.wx-layer-rail');
+    expect(styles).toContain('@media (max-width: 1024px)');
+  });
+
+
+  it('locks in the broadcast-console visual system and preserves map instruments', () => {
+    expect(styles).toContain('--wx-bg: #071019');
+    expect(styles).toContain('--wx-cyan: #69dce7');
+    expect(styles).toContain('--wx-red: #ff625e');
+    expect(styles).toContain("'Sora', Inter, sans-serif");
+    expect(styles).toContain("'IBM Plex Mono'");
+    expect(page).toContain("@fontsource/sora/800.css");
+    expect(page).toContain("@fontsource/ibm-plex-mono/700.css");
+    expect(styles).not.toContain("'Barlow Condensed'");
+    expect(styles).not.toContain("'JetBrains Mono'");
+
+    expect(styles).toContain('.wx-marker__icon');
+    expect(styles).toContain('.wx-field-overlay {');
+    expect(styles).toContain('.wx-map-legend {');
+    expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(styles).not.toContain('radial-gradient');
+    expect(styles).not.toContain('--sp-violet');
+    expect(styles).not.toContain('wx-marker__signal');
+    expect(styles).not.toContain('wx-marker__particles');
+  });
+  
+  it('makes the viewport refresh state visible while the requested area is pending', () => {
+    expect(page).toContain('viewportQueryPending');
+    expect(page).toContain('wx-area-sync');
+    expect(page).toContain("'AREA CHANGED'");
+    expect(page).toContain("'REFRESHING DATA'");
+  });
+
+  
+  it('tracks base tile idle state separately from style readiness and falls back on timeout', () => {
+    expect(page).toContain('baseTilesLoading');
+    expect(page).toContain('baseTilesStalled');
+    expect(page).toContain('tileIdleTimeoutMs = 8000');
+    expect(page).toContain("instance.on('idle', onMapIdle)");
+    expect(page).toContain("switchToFallback('tile-timeout')");
+    expect(page).toContain('wx-tile-sync');
+  });
 
 });
