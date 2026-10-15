@@ -213,18 +213,20 @@ export default function GodsEyeView() {
   }, [])
 
   const { data: worldContext, isFetching: worldFetching, isError: worldError } = useQuery({
-    queryKey: ['gev-3d-world-context', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox?.join(',')],
+    queryKey: ['gev-3d-world-context', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
-      center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
-      radiusM: Math.min(100000, worldViewport.radiusM),
+      center: { latitude: weatherQueryViewport.latitude, longitude: weatherQueryViewport.longitude },
+      radiusM: Math.min(100000, weatherQueryViewport.radiusM),
       layers: [...WORLD_CONTEXT_LAYERS],
       maxEntitiesPerLayer: 30,
       signal,
     }),
     enabled: view === '3D',
-    staleTime: 15000,
-    refetchInterval: 30000,
-    retry: 1,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+    retry: shouldRetrySpatialRequest,
+    placeholderData: previousData => previousData,
   })
 
   const { data: liveSimulationResult, isFetching: liveSimulationFetching, isError: liveSimulationError } = useQuery({
@@ -353,7 +355,7 @@ export default function GodsEyeView() {
     coverage?: { complete?: boolean; bounded?: boolean; queryScope?: string; providers?: Record<string, { status?: string; recordCount?: number; total?: number | null; free?: number | null }> }
     warnings?: string[]
   }>({
-    queryKey: ['gev-cctv-catalog', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox?.join(',')],
+    queryKey: ['gev-cctv-catalog', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')],
     queryFn: async () => {
       const response = await api.get<{
         data: SpatialWorldEntity[]
@@ -362,9 +364,9 @@ export default function GodsEyeView() {
         warnings?: string[]
       }>('/cctv/cameras', {
         params: {
-          ...(worldViewport.bbox
-            ? { bbox: worldViewport.bbox.join(',') }
-            : { lat: worldViewport.latitude, lng: worldViewport.longitude, radiusM: Math.min(100000, worldViewport.radiusM) }),
+          ...(weatherQueryViewport.bbox
+            ? { bbox: weatherQueryViewport.bbox.join(',') }
+            : { lat: weatherQueryViewport.latitude, lng: weatherQueryViewport.longitude, radiusM: Math.min(100000, weatherQueryViewport.radiusM) }),
           limit: 180,
         },
       })
@@ -374,7 +376,8 @@ export default function GodsEyeView() {
     staleTime: 45_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: shouldRetrySpatialRequest,
+    placeholderData: previousData => previousData,
   })
 
   const cctvCatalog = cctvResult?.data ?? []
