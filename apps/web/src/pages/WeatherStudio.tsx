@@ -546,7 +546,7 @@ export default function WeatherStudio() {
         </div>
         <div className="wx-header-meta">
           <div className="wx-coverage-state" data-state={status}><span className="wx-state-dot" /><div><b>{status === 'available' ? 'SOURCES AVAILABLE' : status === 'syncing' ? 'SYNCHRONISING' : status === 'partial' ? 'PARTIAL COVERAGE' : 'DEGRADED COVERAGE'}</b><small>{response?.health?.status ?? (liveQuery.isError ? 'PROVIDER UNAVAILABLE' : 'CONNECTING TO SOURCES')}</small></div></div>
-          <button type="button" className="wx-icon-button" onClick={refresh} disabled={liveQuery.isFetching} aria-label="Refresh weather and event sources" title="Refresh sources">{liveQuery.isFetching ? <LoaderCircle size={15} className="wx-spin" /> : <RefreshCw size={15} />}</button>
+          <button type="button" className="wx-icon-button" onClick={refresh} disabled={liveQuery.isFetching || isRateLimited} aria-label="Refresh weather and event sources" title={isRateLimited ? 'Refresh throttled; the scheduled retry will run automatically' : 'Refresh sources'}>{liveQuery.isFetching ? <LoaderCircle size={15} className="wx-spin" /> : <RefreshCw size={15} />}</button>
         </div>
       </header>
 
