@@ -61,7 +61,7 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(page).toContain('syncNasaRasterLayers');
     expect(page).toContain('weatherAlerts');
     expect(page).toContain('Kenya · Official alerts');
-    expect(page).toContain('not global alert coverage');
+    expect(page).toContain('National coverage only');
     expect(styles).toContain('.wx-warning-card');
     expect(styles).toContain('.wx-observation-note');
   });
