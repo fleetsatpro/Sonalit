@@ -120,4 +120,18 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).toContain('.wx-toolbar-secondary');
   });
 
+
+  it('keeps the map key outside the map viewport and observation notices inside the canvas', () => {
+    const canvasStart = page.indexOf('<div className="wx-map-canvas">');
+    const canvasEnd = page.indexOf('          </div>\\n          {!mapReady && !mapError', canvasStart);
+    const keyPosition = page.indexOf('<div className="wx-map-legend"');
+    expect(canvasStart).toBeGreaterThanOrEqual(0);
+    expect(canvasEnd).toBeGreaterThan(canvasStart);
+    expect(keyPosition).toBeGreaterThan(canvasEnd);
+    expect(page.slice(canvasStart, canvasEnd)).toContain('className="wx-observation-note"');
+    expect(page.slice(canvasStart, canvasEnd)).toContain('className="wx-raster-notice"');
+    expect(styles).toContain('.wx-map-legend {');
+    expect(styles).not.toContain('position:absolute; top:12px; right:12px; left:auto;');
+  });
+
 });

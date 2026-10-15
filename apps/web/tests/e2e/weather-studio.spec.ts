@@ -278,4 +278,21 @@ test.describe('Weather Studio route and operational controls', () => {
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
   });
 
+
+  test('keeps the map key below the map imagery and source lineage collapsed until requested', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    const rectangles = await page.evaluate(() => {
+      const map = document.querySelector('.wx-map-canvas')?.getBoundingClientRect();
+      const key = document.querySelector('.wx-map-legend')?.getBoundingClientRect();
+      return { mapBottom: map?.bottom ?? 0, keyTop: key?.top ?? 0 };
+    });
+    expect(rectangles.keyTop).toBeGreaterThanOrEqual(rectangles.mapBottom - 1);
+    const sourceDisclosure = page.locator('.wx-source-card');
+    await expect(sourceDisclosure).not.toHaveAttribute('open', '');
+    await sourceDisclosure.locator('summary').click();
+    await expect(sourceDisclosure).toHaveAttribute('open', '');
+    await expect(sourceDisclosure.getByText('USGS ComCat')).toBeVisible();
+  });
+
 });
