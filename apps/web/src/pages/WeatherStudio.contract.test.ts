@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { shouldRetrySpatialRequest, snapSpatialBounds } from '../lib/spatialClient.js';
 import { readFileSync } from 'node:fs';
 
 const page = readFileSync(new URL('./WeatherStudio.tsx', import.meta.url), 'utf8');
@@ -13,13 +14,35 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(page).toContain('bounds: roundedBounds');
     expect(page).toContain('center: queryCenter');
     expect(page).toContain('queryRadiusM');
+    expect(page).toContain('setQueryViewport');
+    expect(page).toContain('snapSpatialBounds');
+    expect(page).toContain('placeholderData: previousData => previousData');
+    expect(page).toContain('refetchOnWindowFocus: false');
     expect(page).toContain("response.health?.status === 'PARTIAL' ? 'partial'");
+    expect(page).toContain("liveQuery.isError ? 'partial' : 'available'");
+    expect(page).toContain('The last successful snapshot is retained');
+    expect(page).toContain('disabled={liveQuery.isFetching || isRateLimited}');
     expect(page).toContain("status === 'partial' ? 'PARTIAL COVERAGE'");
     expect(styles).toContain('.wx-coverage-state[data-state="partial"]');
     expect(page).toContain('forecastSteps');
     expect(page).toContain('validAt');
     expect(page).toContain('this is not a measured historical replay');
     expect(page).toContain('not a radar return');
+  });
+
+  it('stabilizes viewport bounds and does not retry API rate limits', () => {
+    const bounds: [number, number, number, number] = [36.61, -1.39, 37.01, -1.19];
+    const snapped = snapSpatialBounds(bounds);
+    expect(snapped).toEqual([36.5, -1.5, 37.25, -1]);
+    expect(snapped[0]).toBeLessThanOrEqual(bounds[0]);
+    expect(snapped[1]).toBeLessThanOrEqual(bounds[1]);
+    expect(snapped[2]).toBeGreaterThanOrEqual(bounds[2]);
+    expect(snapped[3]).toBeGreaterThanOrEqual(bounds[3]);
+    expect(snapSpatialBounds([36.61, -1.39, 37.01, -1.19]))
+      .toEqual(snapSpatialBounds([36.64, -1.36, 37.04, -1.16]));
+    expect(shouldRetrySpatialRequest(0, { response: { status: 429 } })).toBe(false);
+    expect(shouldRetrySpatialRequest(0, { response: { status: 503 } })).toBe(true);
+    expect(shouldRetrySpatialRequest(1, { response: { status: 503 } })).toBe(false);
   });
 
   it('offers separately controllable weather, earthquake, volcano and natural-event layers', () => {

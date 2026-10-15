@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { imageryAiBadge, imageryAiSupported } from '../lib/imageryAi.js'
-import { fetchLiveEventSimulation, fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
+import { fetchLiveEventSimulation, fetchWorldContext, snapSpatialBounds, shouldRetrySpatialRequest, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
 import type { SpatialWorldEntity, WorldContextLayer } from '../lib/spatialClient.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import FleetMap from '../features/live-fleet/components/FleetMap.js'
@@ -171,20 +171,40 @@ export default function GodsEyeView() {
   const worldViewportRef = useRef(worldViewport)
   const worldViewportSeededRef = useRef(false)
   worldViewportRef.current = worldViewport
+  // Keep the globe responsive while holding expensive weather requests until
+  // camera movement settles; the weather query uses its own stable viewport.
+  const [weatherQueryViewport, setWeatherQueryViewport] = useState(worldViewport)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setWeatherQueryViewport(current => {
+        const sameBounds = current.bbox?.join(',') === worldViewport.bbox?.join(',')
+        return current.latitude === worldViewport.latitude
+          && current.longitude === worldViewport.longitude
+          && current.radiusM === worldViewport.radiusM
+          && sameBounds ? current : worldViewport
+      })
+    }, 3500)
+    return () => window.clearTimeout(timer)
+  }, [worldViewport])
   const weatherBounds = useMemo<[number, number, number, number]>(() => {
-    if (worldViewport.bbox && worldViewport.bbox.length === 4 && worldViewport.bbox.every(Number.isFinite)
-      && worldViewport.bbox[0] < worldViewport.bbox[2] && worldViewport.bbox[1] < worldViewport.bbox[3]) return worldViewport.bbox
-    const radius = Math.min(250000, Math.max(1000, worldViewport.radiusM || 100000))
-    const latitudeDelta = radius / 111320
-    const cosine = Math.max(0.087, Math.abs(Math.cos(worldViewport.latitude * Math.PI / 180)))
-    const longitudeDelta = Math.min(180, radius / (111320 * cosine))
-    return [
-      Math.max(-180, worldViewport.longitude - longitudeDelta),
-      Math.max(-90, worldViewport.latitude - latitudeDelta),
-      Math.min(180, worldViewport.longitude + longitudeDelta),
-      Math.min(90, worldViewport.latitude + latitudeDelta),
-    ]
-  }, [worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox])
+    let bounds: [number, number, number, number]
+    if (weatherQueryViewport.bbox && weatherQueryViewport.bbox.length === 4 && weatherQueryViewport.bbox.every(Number.isFinite)
+      && weatherQueryViewport.bbox[0] < weatherQueryViewport.bbox[2] && weatherQueryViewport.bbox[1] < weatherQueryViewport.bbox[3]) {
+      bounds = weatherQueryViewport.bbox
+    } else {
+      const radius = Math.min(250000, Math.max(1000, weatherQueryViewport.radiusM || 100000))
+      const latitudeDelta = radius / 111320
+      const cosine = Math.max(0.087, Math.abs(Math.cos(weatherQueryViewport.latitude * Math.PI / 180)))
+      const longitudeDelta = Math.min(180, radius / (111320 * cosine))
+      bounds = [
+        Math.max(-180, weatherQueryViewport.longitude - longitudeDelta),
+        Math.max(-90, weatherQueryViewport.latitude - latitudeDelta),
+        Math.min(180, weatherQueryViewport.longitude + longitudeDelta),
+        Math.min(90, weatherQueryViewport.latitude + latitudeDelta),
+      ]
+    }
+    return snapSpatialBounds(bounds)
+  }, [weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox])
   const positionedVehicles = useMemo(() => allVehicles.filter(v => v.lat != null && v.lng != null), [allVehicles])
 
   useEffect(() => {
@@ -193,33 +213,36 @@ export default function GodsEyeView() {
   }, [])
 
   const { data: worldContext, isFetching: worldFetching, isError: worldError } = useQuery({
-    queryKey: ['gev-3d-world-context', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox?.join(',')],
+    queryKey: ['gev-3d-world-context', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
-      center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
-      radiusM: Math.min(100000, worldViewport.radiusM),
+      center: { latitude: weatherQueryViewport.latitude, longitude: weatherQueryViewport.longitude },
+      radiusM: Math.min(100000, weatherQueryViewport.radiusM),
       layers: [...WORLD_CONTEXT_LAYERS],
       maxEntitiesPerLayer: 30,
       signal,
     }),
     enabled: view === '3D',
-    staleTime: 15000,
-    refetchInterval: 30000,
-    retry: 1,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+    retry: shouldRetrySpatialRequest,
+    placeholderData: previousData => previousData,
   })
 
   const { data: liveSimulationResult, isFetching: liveSimulationFetching, isError: liveSimulationError } = useQuery({
     queryKey: ['gev-live-event-simulation', ...weatherBounds.map(value => Math.round(value * 100) / 100)],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchLiveEventSimulation({
-      center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
-      radiusM: Math.min(250000, Math.max(1000, worldViewport.radiusM)),
+      center: { latitude: weatherQueryViewport.latitude, longitude: weatherQueryViewport.longitude },
+      radiusM: Math.min(250000, Math.max(1000, weatherQueryViewport.radiusM)),
       bounds: weatherBounds,
       signal,
     }),
     enabled: liveSimulationEnabled,
     staleTime: 60_000,
     refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
-    retry: 1,
+    refetchOnWindowFocus: false,
+    retry: shouldRetrySpatialRequest,
+    placeholderData: previousData => previousData,
   })
 
   const simulationForecastSteps = useMemo(() => {
@@ -295,8 +318,8 @@ export default function GodsEyeView() {
   const { data: weatherGridContext, isFetching: weatherGridFetching, isError: weatherGridError } = useQuery({
     queryKey: ['gev-weather-animation-grid', ...weatherBounds.map(value => Math.round(value * 100) / 100)],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
-      center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
-      radiusM: Math.min(250000, Math.max(1000, worldViewport.radiusM)),
+      center: { latitude: weatherQueryViewport.latitude, longitude: weatherQueryViewport.longitude },
+      radiusM: Math.min(250000, Math.max(1000, weatherQueryViewport.radiusM)),
       layers: ['weather'],
       maxEntitiesPerLayer: 36,
       weatherGrid: true,
@@ -307,7 +330,8 @@ export default function GodsEyeView() {
     staleTime: 90_000,
     refetchInterval: 180_000,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: shouldRetrySpatialRequest,
+    placeholderData: previousData => previousData,
   })
 
   const animatedWeatherEntities = useMemo(
@@ -331,7 +355,7 @@ export default function GodsEyeView() {
     coverage?: { complete?: boolean; bounded?: boolean; queryScope?: string; providers?: Record<string, { status?: string; recordCount?: number; total?: number | null; free?: number | null }> }
     warnings?: string[]
   }>({
-    queryKey: ['gev-cctv-catalog', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox?.join(',')],
+    queryKey: ['gev-cctv-catalog', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')],
     queryFn: async () => {
       const response = await api.get<{
         data: SpatialWorldEntity[]
@@ -340,9 +364,9 @@ export default function GodsEyeView() {
         warnings?: string[]
       }>('/cctv/cameras', {
         params: {
-          ...(worldViewport.bbox
-            ? { bbox: worldViewport.bbox.join(',') }
-            : { lat: worldViewport.latitude, lng: worldViewport.longitude, radiusM: Math.min(100000, worldViewport.radiusM) }),
+          ...(weatherQueryViewport.bbox
+            ? { bbox: weatherQueryViewport.bbox.join(',') }
+            : { lat: weatherQueryViewport.latitude, lng: weatherQueryViewport.longitude, radiusM: Math.min(100000, weatherQueryViewport.radiusM) }),
           limit: 180,
         },
       })
@@ -352,7 +376,8 @@ export default function GodsEyeView() {
     staleTime: 45_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: shouldRetrySpatialRequest,
+    placeholderData: previousData => previousData,
   })
 
   const cctvCatalog = cctvResult?.data ?? []
@@ -500,7 +525,7 @@ export default function GodsEyeView() {
           >
             <CloudLightning size={13} />
             WEATHER
-            <span>{weatherAnimationEnabled ? (weatherGridFetching ? 'SYNC' : weatherGridError ? 'ERROR' : String(animatedWeatherEntities.length)) : 'OFF'}</span>
+            <span>{weatherAnimationEnabled ? (weatherGridFetching ? 'SYNC' : weatherGridError ? (weatherGridContext ? 'CACHED' : 'ERROR') : String(animatedWeatherEntities.length)) : 'OFF'}</span>
           </button>
           <button
             type="button"
@@ -523,7 +548,7 @@ export default function GodsEyeView() {
             }}
           >
             <Activity size={13} /> LIVE SIM
-            <span>{liveSimulationEnabled ? (liveSimulationFetching ? 'SYNC' : liveSimulationError ? 'ERROR' : String(simulationNaturalEvents.length)) : 'OFF'}</span>
+            <span>{liveSimulationEnabled ? (liveSimulationFetching ? 'SYNC' : liveSimulationError ? (liveSimulationResult ? 'CACHED' : 'ERROR') : String(simulationNaturalEvents.length)) : 'OFF'}</span>
           </button>
         </div>
 
@@ -547,7 +572,7 @@ export default function GodsEyeView() {
         <section className="gev-simulation-console" aria-label="Live event simulation controls">
           <div className="gev-simulation-console-head">
             <div className="gev-simulation-heading">
-              <span className="gev-simulation-status-dot" data-state={liveSimulationError || liveSimulationResult?.health?.status === 'UNAVAILABLE' ? 'error' : liveSimulationFetching || liveSimulationResult?.health?.status === 'PARTIAL' ? 'sync' : 'ready'} />
+              <span className="gev-simulation-status-dot" data-state={(liveSimulationError && !liveSimulationResult) || liveSimulationResult?.health?.status === 'UNAVAILABLE' ? 'error' : liveSimulationFetching || liveSimulationError || liveSimulationResult?.health?.status === 'PARTIAL' ? 'sync' : 'ready'} />
               <div>
                 <div className="gev-simulation-eyebrow">LIVE EVENT SIMULATION{liveSimulationResult?.health?.status ? ' · ' + String(liveSimulationResult.health.status) : ''}</div>
                 <div className="gev-simulation-time">{formatForecastTime(selectedForecastTime)

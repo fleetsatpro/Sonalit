@@ -26,12 +26,12 @@ describe("God's Eye View interaction contract", () => {
     expect(source).toContain('fixedView="3D"');
     expect(source).toContain('CctvViewerPanel');
     expect(source).toContain('gev-cctv-trigger');
-    expect(source).toContain("queryKey: ['gev-cctv-catalog', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM, worldViewport.bbox?.join(',')]");
+    expect(source).toContain("queryKey: ['gev-cctv-catalog', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')]");
     expect(source).toContain("'/cctv/cameras'");
     expect(source).toContain('publicTotal={cctvPublicTotal}');
-    expect(source).toContain('radiusM: Math.min(100000, worldViewport.radiusM)');
-    expect(source).toContain('worldViewport.bbox?.join(\',\')');
-    expect(source).toContain('{ bbox: worldViewport.bbox.join(\',\') }');
+    expect(source).toContain('radiusM: Math.min(100000, weatherQueryViewport.radiusM)');
+    expect(source).toContain('weatherQueryViewport.bbox?.join(\',\')');
+    expect(source).toContain('{ bbox: weatherQueryViewport.bbox.join(\',\') }');
     expect(source).toContain('limit: 180');
     expect(source).toContain('MAX_RENDER_MARKERS = 180');
   });
@@ -47,6 +47,18 @@ describe("God's Eye View interaction contract", () => {
     expect(source).toContain('onExternalSelect');
     expect(source).toContain('if (id) setIntelligenceOpen(true)');
     expect(source).toContain('onSelect');
+  });
+
+  it('debounces expensive weather requests and retains the last source snapshot', () => {
+    expect(source).toContain('setWeatherQueryViewport');
+    expect(source).toContain("queryKey: ['gev-3d-world-context', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')]");
+    expect(source).toContain("queryKey: ['gev-cctv-catalog', weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox?.join(',')]");
+    expect(source).toContain('snapSpatialBounds');
+    expect(source).toContain('retry: shouldRetrySpatialRequest');
+    expect(source).toContain('placeholderData: previousData => previousData');
+    expect(source).toContain('refetchOnWindowFocus: false');
+    expect(source).toContain("liveSimulationResult ? 'CACHED' : 'ERROR'");
+    expect(source).toContain("weatherGridContext ? 'CACHED' : 'ERROR'");
   });
 
   it('keeps the GEV surface operationally authoritative over external context', () => {
