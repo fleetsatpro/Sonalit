@@ -189,6 +189,8 @@ export default function WeatherStudio() {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRefs = useRef(new Map<string, { marker: maplibregl.Marker; element: HTMLButtonElement }>());
   const [mapReady, setMapReady] = useState(false);
+  const [baseTilesLoading, setBaseTilesLoading] = useState(true);
+  const [baseTilesStalled, setBaseTilesStalled] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
   const [mapAttempt, setMapAttempt] = useState(0);
@@ -336,14 +338,36 @@ export default function WeatherStudio() {
     if (!container) return;
     let mounted = true;
     let styleLoaded = false;
+    let fallbackReason: 'tile-error' | 'tile-timeout' = 'tile-error';
     let map: maplibregl.Map | null = null;
     let loadTimer: number | null = null;
+    let tileIdleTimer: number | null = null;
+    const styleLoadTimeoutMs = 12000;
+    const tileIdleTimeoutMs = 8000;
+    const clearTileIdleTimer = () => {
+      if (tileIdleTimer !== null) window.clearTimeout(tileIdleTimer);
+      tileIdleTimer = null;
+    };
+    const armStyleLoadTimeout = (message: string) => {
+      if (loadTimer !== null) window.clearTimeout(loadTimer);
+      loadTimer = window.setTimeout(() => {
+        loadTimer = null;
+        if (!mounted || styleLoaded) return;
+        clearTileIdleTimer();
+        setMapReady(false);
+        setBaseTilesLoading(false);
+        setBaseTilesStalled(false);
+        setMapError(message);
+      }, styleLoadTimeoutMs);
+    };
     let observer: ResizeObserver | null = null;
     let mapCanvas: HTMLCanvasElement | null = null;
     let contextLostHandler: ((event: Event) => void) | null = null;
     let contextRestoredHandler: (() => void) | null = null;
 
     setMapReady(false);
+    setBaseTilesLoading(true);
+    setBaseTilesStalled(false);
     setMapError(null);
     setMapNotice(null);
     setRasterError(null);
@@ -386,17 +410,43 @@ export default function WeatherStudio() {
     }
     mapRef.current = map;
     const instance = map;
-    const switchToFallback = () => {
+    const switchToFallback = (reason: 'tile-error' | 'tile-timeout' = 'tile-error') => {
       if (!mounted || baseStyleRef.current === 'fallback') return;
+      clearTileIdleTimer();
+      fallbackReason = reason;
+      styleLoaded = false;
       baseStyleRef.current = 'fallback';
       baseTileFailuresRef.current = 0;
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
       setMapProvider('fallback');
-      setMapNotice('The primary map tile source failed. Switched to an independent cartographic provider.');
+      setMapError(null);
+      setMapNotice(reason === 'tile-timeout'
+        ? 'Primary map tiles timed out; switching to independent fallback cartography.'
+        : 'The primary map tile source failed; switching to independent cartography.');
+      armStyleLoadTimeout('The fallback base-map style did not initialise within 12 seconds. Weather/event feeds remain separate from the map renderer; retry map initialisation.');
       try { instance.setStyle(FALLBACK_STREET_STYLE); }
       catch (_) {
+        if (loadTimer !== null) { window.clearTimeout(loadTimer); loadTimer = null; }
+        clearTileIdleTimer();
         setMapReady(false);
+        setBaseTilesLoading(false);
+        setBaseTilesStalled(false);
         setMapError('The primary base map failed and the fallback could not be selected. Retry the map when connectivity is restored.');
       }
+    };
+    const armTileIdleWatchdog = () => {
+      clearTileIdleTimer();
+      tileIdleTimer = window.setTimeout(() => {
+        tileIdleTimer = null;
+        if (!mounted || !styleLoaded) return;
+        if (baseStyleRef.current === 'esri') {
+          switchToFallback('tile-timeout');
+          return;
+        }
+        setBaseTilesLoading(false);
+        setBaseTilesStalled(true);
+      }, tileIdleTimeoutMs);
     };
 
     instance.on('style.load', () => {
@@ -414,9 +464,16 @@ export default function WeatherStudio() {
         setWarningOverlayError('Verified official warning boundaries could not be drawn. Warning messages remain available from the source feed.');
       }
       setMapError(null);
-      setMapNotice(baseStyleRef.current === 'fallback' ? 'Using independent fallback cartography.' : null);
+      setMapNotice(baseStyleRef.current === 'fallback'
+        ? fallbackReason === 'tile-timeout'
+          ? 'Primary tiles timed out; using independent fallback cartography.'
+          : 'Using independent fallback cartography.'
+        : null);
       setMapReady(true);
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
       syncViewport(instance);
+      armTileIdleWatchdog();
       window.setTimeout(() => { if (mounted) instance.resize(); }, 0);
     });
 
@@ -438,6 +495,9 @@ export default function WeatherStudio() {
       if (isFallbackTiles && baseStyleRef.current === 'fallback') {
         baseTileFailuresRef.current += 1;
         if (baseTileFailuresRef.current >= 3) {
+          clearTileIdleTimer();
+          setBaseTilesLoading(false);
+          setBaseTilesStalled(false);
           setMapReady(false);
           setMapNotice(null);
           setMapError('Both primary and fallback base-map tile sources are failing. Check network access, then retry. Weather/event data and source records remain separate from the map renderer.');
@@ -454,6 +514,9 @@ export default function WeatherStudio() {
     contextLostHandler = (event: Event) => {
       event.preventDefault();
       if (!mounted) return;
+      clearTileIdleTimer();
+      setBaseTilesLoading(false);
+      setBaseTilesStalled(false);
       setMapReady(false);
       setMapError('The browser lost the map graphics context, commonly when GPU resources are exhausted. Retry to create a fresh map instance.');
     };
@@ -461,22 +524,44 @@ export default function WeatherStudio() {
       if (!mounted || !instance.isStyleLoaded()) return;
       setMapError(null);
       setMapReady(true);
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
+      armTileIdleWatchdog();
       instance.resize();
     };
     mapCanvas.addEventListener('webglcontextlost', contextLostHandler);
     mapCanvas.addEventListener('webglcontextrestored', contextRestoredHandler);
-    instance.on('moveend', () => syncViewport(instance));
+    const onMapIdle = () => {
+      if (!mounted || !styleLoaded) return;
+      clearTileIdleTimer();
+      setBaseTilesLoading(false);
+      setBaseTilesStalled(false);
+    };
+    const onMapMoveStart = () => {
+      if (!mounted || !styleLoaded) return;
+      clearTileIdleTimer();
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
+    };
+    const onMapMoveEnd = () => {
+      if (!mounted) return;
+      syncViewport(instance);
+      if (!styleLoaded) return;
+      setBaseTilesLoading(true);
+      setBaseTilesStalled(false);
+      armTileIdleWatchdog();
+    };
+    instance.on('idle', onMapIdle);
+    instance.on('movestart', onMapMoveStart);
+    instance.on('moveend', onMapMoveEnd);
     observer = new ResizeObserver(() => instance.resize());
     observer.observe(container);
-    loadTimer = window.setTimeout(() => {
-      if (!mounted || styleLoaded) return;
-      setMapReady(false);
-      setMapError('The base map style did not initialise in 12 seconds. This is a renderer/source timeout, not proof that weather conditions are clear.');
-    }, 12000);
+    armStyleLoadTimeout('The base map style did not initialise in 12 seconds. This is a renderer/source timeout, not proof that weather conditions are clear.');
 
     return () => {
       mounted = false;
       if (loadTimer !== null) window.clearTimeout(loadTimer);
+      clearTileIdleTimer();
       observer?.disconnect();
       if (mapCanvas && contextLostHandler) mapCanvas.removeEventListener('webglcontextlost', contextLostHandler);
       if (mapCanvas && contextRestoredHandler) mapCanvas.removeEventListener('webglcontextrestored', contextRestoredHandler);
@@ -558,7 +643,7 @@ export default function WeatherStudio() {
 
       <main className="wx-workspace wx-workspace--desk">
         <section className="wx-map-panel" aria-label="Interactive weather and natural event map">
-          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "RESILIENT BASE" : "ESRI CARTOGRAPHY"}</span>{(viewportQueryPending || liveQuery.isFetching) && <span className="wx-area-sync" data-state={liveQuery.isError ? 'degraded' : 'syncing'} role="status" aria-live="polite"><LoaderCircle size={11} className="wx-spin" />{viewportQueryPending ? 'AREA CHANGED' : response ? 'REFRESHING DATA' : 'LOADING DATA'}</span>}</div><b>Atmospheric conditions</b><small>Forecast-grid signals, satellite-derived precipitation and source-attributed natural events.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
+          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "RESILIENT BASE" : "ESRI CARTOGRAPHY"}</span>{mapReady && (baseTilesLoading || baseTilesStalled) && <span className="wx-area-sync wx-tile-sync" data-state={baseTilesStalled ? 'degraded' : 'syncing'} role="status" aria-live="polite" aria-label={baseTilesStalled ? 'Base map tile loading delayed' : 'Base map tiles are loading'}>{baseTilesStalled ? <AlertTriangle size={11} /> : <LoaderCircle size={11} className="wx-spin" />}{baseTilesStalled ? 'MAP TILE DELAY' : mapProvider === 'fallback' ? 'LOADING FALLBACK' : 'LOADING MAP TILES'}</span>}{(viewportQueryPending || liveQuery.isFetching) && <span className="wx-area-sync" data-state={liveQuery.isError ? 'degraded' : 'syncing'} role="status" aria-live="polite"><LoaderCircle size={11} className="wx-spin" />{viewportQueryPending ? 'AREA CHANGED' : response ? 'REFRESHING DATA' : 'LOADING DATA'}</span>}</div><b>Atmospheric conditions</b><small>Forecast-grid signals, satellite-derived precipitation and source-attributed natural events.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
           <div className="wx-map-canvas">
             <div className="wx-map-instance" ref={mapContainerRef} />
             <WeatherFieldCanvas

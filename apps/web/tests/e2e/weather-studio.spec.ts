@@ -130,7 +130,7 @@ function createMockMapTile(): Buffer {
 
 const TILE_MOCK_PNG = createMockMapTile();
 
-async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', options: { primaryTilesFail?: boolean; mapRendererUnavailable?: boolean } = {}) {
+async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', options: { primaryTilesFail?: boolean; primaryTilesDelayMs?: number; mapRendererUnavailable?: boolean } = {}) {
   await page.addInitScript((rendererUnavailable) => {
     localStorage.setItem('sonalit-auth', JSON.stringify({
       state: { user: { id: 'weather-e2e-user', name: 'Weather QA', email: 'weather-qa@sonalit.test', role: 'admin', org_id: 'weather-e2e-org' } },
@@ -153,9 +153,21 @@ async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', op
     body: JSON.stringify({ data: fixture(status) }),
   }));
   // Deterministic primary/fallback tile behavior exercises MapLibre's real error path.
-  await page.route('https://services.arcgisonline.com/**', route => options.primaryTilesFail
-    ? route.fulfill({ status: 503, contentType: 'text/plain', body: 'Simulated primary tile outage' })
-    : route.fulfill({ status: 200, contentType: 'image/png', body: TILE_MOCK_PNG }));
+  await page.route('https://services.arcgisonline.com/**', async route => {
+    if (options.primaryTilesDelayMs) {
+      await new Promise(resolve => setTimeout(resolve, options.primaryTilesDelayMs));
+    }
+    try {
+      if (options.primaryTilesFail) {
+        await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Simulated primary tile outage' });
+      } else {
+        await route.fulfill({ status: 200, contentType: 'image/png', body: TILE_MOCK_PNG });
+      }
+    } catch {
+      // MapLibre may cancel the deliberately delayed primary request after falling back.
+      if (!options.primaryTilesDelayMs) throw new Error('Could not fulfill test map tile request.');
+    }
+  });
   await page.route('https://basemaps.cartocdn.com/**', route => route.fulfill({
     status: 200, contentType: 'image/png',
     body: TILE_MOCK_PNG,
@@ -265,7 +277,20 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(page.getByRole('button', { name: /Inspect CLEAR \/ MOSTLY CLEAR: Weather Studio test forecast/i })).toBeVisible();
   });
 
-  test('uses shipped display fonts and keeps mobile operational labels readable', async ({ page }) => {
+  test('keeps map tile activity visible until delayed tiles have reached idle', async ({ page }) => {
+    await openWeatherStudio(page, 'AVAILABLE', { primaryTilesDelayMs: 1600 });
+    await expect(page.locator('.wx-tile-sync')).toContainText('LOADING MAP TILES', { timeout: 10000 });
+    await expect(page.locator('.wx-tile-sync')).toHaveCount(0, { timeout: 10000 });
+  });
+
+  test('switches to independent cartography when primary tiles do not reach idle', async ({ page }) => {
+    await openWeatherStudio(page, 'AVAILABLE', { primaryTilesDelayMs: 9000 });
+    await expect(page.locator('.wx-map-provider')).toHaveAttribute('data-provider', 'fallback', { timeout: 15000 });
+    await expect(page.locator('.wx-map-provider')).toContainText('RESILIENT BASE');
+    await expect(page.locator('.wx-tile-sync')).toHaveCount(0, { timeout: 10000 });
+  });
+
+  test('uses shipped display fonts and keeps mobile operational labels readable', async ({ page }) =>
     await page.setViewportSize({ width: 390, height: 844 });
     await openWeatherStudio(page, 'AVAILABLE');
     const typography = await page.evaluate(() => {

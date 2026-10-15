@@ -178,4 +178,14 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(page).toContain("'REFRESHING DATA'");
   });
 
+  
+  it('tracks base tile idle state separately from style readiness and falls back on timeout', () => {
+    expect(page).toContain('baseTilesLoading');
+    expect(page).toContain('baseTilesStalled');
+    expect(page).toContain('tileIdleTimeoutMs = 8000');
+    expect(page).toContain("instance.on('idle', onMapIdle)");
+    expect(page).toContain("switchToFallback('tile-timeout')");
+    expect(page).toContain('wx-tile-sync');
+  });
+
 });
