@@ -183,7 +183,7 @@ export default function GodsEyeView() {
           && current.radiusM === worldViewport.radiusM
           && sameBounds ? current : worldViewport
       })
-    }, 1400)
+    }, 3500)
     return () => window.clearTimeout(timer)
   }, [worldViewport])
   const weatherBounds = useMemo<[number, number, number, number]>(() => {
