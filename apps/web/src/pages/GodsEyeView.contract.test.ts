@@ -55,6 +55,8 @@ describe("God's Eye View interaction contract", () => {
     expect(source).toContain('retry: shouldRetrySpatialRequest');
     expect(source).toContain('placeholderData: previousData => previousData');
     expect(source).toContain('refetchOnWindowFocus: false');
+    expect(source).toContain("liveSimulationResult ? 'CACHED' : 'ERROR'");
+    expect(source).toContain("weatherGridContext ? 'CACHED' : 'ERROR'");
   });
 
   it('keeps the GEV surface operationally authoritative over external context', () => {
