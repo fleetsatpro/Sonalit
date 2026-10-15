@@ -123,7 +123,7 @@ describe('Weather Studio evidence and interaction contract', () => {
 
   it('keeps the map key outside the map viewport and observation notices inside the canvas', () => {
     const canvasStart = page.indexOf('<div className="wx-map-canvas">');
-    const canvasEnd = page.indexOf('          </div>\\n          {!mapReady && !mapError', canvasStart);
+    const canvasEnd = page.indexOf('          </div>\n          {!mapReady && !mapError', canvasStart);
     const keyPosition = page.indexOf('<div className="wx-map-legend"');
     expect(canvasStart).toBeGreaterThanOrEqual(0);
     expect(canvasEnd).toBeGreaterThan(canvasStart);
