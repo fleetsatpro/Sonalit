@@ -15,6 +15,7 @@ import { Activity, AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, Chevro
 import { fetchLiveEventSimulation } from '../lib/spatialClient.js';
 import type { LiveEventSimulationResponse, SpatialWorldEntity } from '../lib/spatialClient.js';
 import { STREET_STYLE } from '../lib/mapStyles.js';
+import WeatherFieldCanvas from '../components/weather/WeatherFieldCanvas.js';
 import '../styles/weather-studio.css';
 
 type LayerKey = 'weather' | 'earthquakes' | 'volcanoes' | 'natural';
@@ -315,8 +316,22 @@ export default function WeatherStudio() {
 
       <main className="wx-workspace">
         <section className="wx-map-panel" aria-label="Interactive weather and natural event map">
-          <div className="wx-map-context"><div><span className="wx-map-kicker">SYNOPTIC VIEW</span><b>ATMOSPHERIC SIGNAL MAP</b><small>Source-backed point markers; no synthetic radar field.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
-          <div className="wx-map-canvas" ref={mapContainerRef} />
+          <div className="wx-map-context"><div><span className="wx-map-kicker">SYNOPTIC VIEW</span><b>ATMOSPHERIC SIGNAL MAP</b><small>Forecast grid points and interpolated wind flow; no radar imagery.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
+          <div className="wx-map-canvas">
+            <div className="wx-map-instance" ref={mapContainerRef} />
+            <WeatherFieldCanvas
+              map={mapReady ? mapRef.current : null}
+              entities={renderEntities.filter(entity => entity.entityType === 'weather')}
+              active={mapReady && filters.weather}
+            />
+            {mapReady && filters.weather && weather.some(entity =>
+              entity.attributes?.windDirectionDeg != null && entity.attributes?.windSpeedKmh != null
+            ) && (
+              <div className="wx-field-label" aria-label="Interpolated numerical forecast wind flow">
+                <span aria-hidden="true" /> WIND FLOW <small>MODEL-DERIVED</small>
+              </div>
+            )}
+          </div>
           {!mapReady && !mapError && <div className="wx-map-loading"><LoaderCircle size={18} className="wx-spin" /><span>Initialising map renderer</span></div>}
           {!mapReady && mapError && <div className="wx-map-failure" role="alert"><AlertTriangle size={16} /><b>Map renderer could not initialise</b><span>{mapError}</span><button type="button" onClick={() => { setMapError(null); setMapReady(false); mapRef.current?.setStyle(STREET_STYLE); }}>RETRY MAP</button></div>}
           {mapReady && liveQuery.isError && <div className="wx-map-notice" role="status"><AlertTriangle size={14} /> Source request failed. Coverage is unknown; refresh to retry.</div>}
