@@ -206,7 +206,7 @@ export default function WeatherStudio() {
           && current.radiusM === viewport.radiusM
           && sameBounds ? current : viewport;
       });
-    }, 1200);
+    }, 3500);
     return () => window.clearTimeout(timer);
   }, [viewport]);
   const [stepIndex, setStepIndex] = useState(0);
