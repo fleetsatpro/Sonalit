@@ -9,7 +9,6 @@ import type maplibregl from 'maplibre-gl';
 // tiles silently failing to load in a deployed app.
 export const STREET_STYLE: maplibregl.StyleSpecification = {
   version: 8,
-  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: { street: { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: '© Esri, HERE, Garmin, USGS, NGA, EPA, USDA' } },
   layers: [{ id: 'street-tiles', type: 'raster', source: 'street' as const, paint: { 'raster-opacity': 1 } }],
 };
@@ -32,5 +31,26 @@ export const SAT_STYLE: maplibregl.StyleSpecification = {
   layers: [
     { id: 'sat-tiles', type: 'raster', source: 'sat' as const, paint: { 'raster-opacity': 1 } },
     { id: 'sat-ref-tiles', type: 'raster', source: 'sat-ref' as const, paint: { 'raster-opacity': 0.9 } },
+  ],
+};
+
+/**
+ * Independent raster fallback for deployments where the primary tile host is
+ * blocked, rate-limited or unreachable. This is cartography fallback only: it
+ * never fabricates forecast or weather data.
+ */
+export const FALLBACK_STREET_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: {
+    'fallback-base': {
+      type: 'raster',
+      tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      maxzoom: 20,
+      attribution: '© OpenStreetMap contributors · © CARTO',
+    },
+  },
+  layers: [
+    { id: 'fallback-base-layer', type: 'raster', source: 'fallback-base', paint: { 'raster-opacity': 1, 'raster-fade-duration': 150 } },
   ],
 };

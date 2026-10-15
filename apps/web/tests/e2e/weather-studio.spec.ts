@@ -28,9 +28,17 @@ const WEATHER_POINT = {
   },
 };
 
+const SECOND_WEATHER_POINT = {
+  ...WEATHER_POINT,
+  id: 'weather-studio-e2e-point-2',
+  latitude: 1.2,
+  longitude: 29.4,
+  attributes: { ...WEATHER_POINT.attributes, name: 'Weather Studio secondary grid point', windSpeedKmh: 28, windDirectionDeg: 125 },
+};
+
 function fixture(overallStatus: 'AVAILABLE' | 'PARTIAL') {
   return {
-    data: [WEATHER_POINT],
+    data: [WEATHER_POINT, SECOND_WEATHER_POINT],
     generatedAt: '2026-10-15T07:00:00.000Z',
     health: {
       status: overallStatus,
@@ -55,7 +63,7 @@ function fixture(overallStatus: 'AVAILABLE' | 'PARTIAL') {
   };
 }
 
-async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL') {
+async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', options: { primaryTilesFail?: boolean } = {}) {
   await page.addInitScript(() => {
     localStorage.setItem('sonalit-auth', JSON.stringify({
       state: { user: { id: 'weather-e2e-user', name: 'Weather QA', email: 'weather-qa@sonalit.test', role: 'admin', org_id: 'weather-e2e-org' } },
@@ -67,11 +75,13 @@ async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL') {
     contentType: 'application/json',
     body: JSON.stringify({ data: fixture(status) }),
   }));
-  // Keep the map-style test deterministic without relying on a third-party tile CDN.
-  await page.route('https://services.arcgisonline.com/**', route => route.fulfill({
-    status: 200,
-    contentType: 'image/png',
-    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/VN0AAAAASUVORK5CYII=', 'base64'),
+  // Deterministic primary/fallback tile behavior exercises MapLibre's real error path.
+  await page.route('https://services.arcgisonline.com/**', route => options.primaryTilesFail
+    ? route.fulfill({ status: 503, contentType: 'text/plain', body: 'Simulated primary tile outage' })
+    : route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/VN0AAAAASUVORK5CYII=', 'base64') }));
+  await page.route('https://basemaps.cartocdn.com/**', route => route.fulfill({
+    status: 200, contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC0lEQVR42mP8/x8AAwMCAO+/VN0AAAAASUVORK5CYII=', 'base64'),
   }));
   await page.goto('/weather-studio');
   await expect(page.getByRole('heading', { name: /weather studio/i })).toBeVisible();
@@ -84,6 +94,8 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(page.locator('.wx-coverage-state')).toHaveAttribute('data-state', 'partial');
     await expect(page.getByText('PARTIAL COVERAGE', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /weather models/i })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.wx-map-provider')).toContainText('ESRI CARTOGRAPHY');
+    await expect(page.getByRole('button', { name: /wind flow/i })).toBeEnabled();
     await expect(page.getByText(/official feed could not be verified/i)).toBeVisible();
   });
 
@@ -118,6 +130,14 @@ test.describe('Weather Studio route and operational controls', () => {
     expect(controlSize).toBeGreaterThanOrEqual(12);
     const cardTitles = await page.locator('.wx-right-column .wx-card-heading h2').allTextContents();
     expect(cardTitles[0]).toContain('Kenya · Official alerts');
+  });
+
+
+  test('falls back to independent cartography when primary map tiles fail', async ({ page }) => {
+    await openWeatherStudio(page, 'AVAILABLE', { primaryTilesFail: true });
+    await expect(page.locator('.wx-map-provider')).toHaveAttribute('data-provider', 'fallback', { timeout: 15000 });
+    await expect(page.locator('.wx-map-provider')).toContainText('RESILIENT BASE');
+    await expect(page.getByRole('button', { name: /Inspect CLEAR \/ MOSTLY CLEAR: Weather Studio test forecast/i })).toBeVisible();
   });
 
   test('remains usable without horizontal overflow on a mobile viewport', async ({ page }) => {

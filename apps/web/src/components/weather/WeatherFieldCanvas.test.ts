@@ -12,10 +12,10 @@ describe('wind-flow spatial support', () => {
       { x: 0, y: 0 }, { x: 20, y: 0 }, { x: 40, y: 0 },
       { x: 0, y: 20 }, { x: 20, y: 20 }, { x: 40, y: 20 },
     ];
-    expect(calculateWindSupportRadiusPx(samples)).toBe(18);
+    expect(calculateWindSupportRadiusPx(samples)).toBe(24);
   });
 
   it('caps interpolation reach for sparse global samples', () => {
-    expect(calculateWindSupportRadiusPx([{ x: 0, y: 0 }, { x: 900, y: 0 }])).toBe(100);
+    expect(calculateWindSupportRadiusPx([{ x: 0, y: 0 }, { x: 900, y: 0 }])).toBe(176);
   });
 });

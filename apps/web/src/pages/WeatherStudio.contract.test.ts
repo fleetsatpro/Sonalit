@@ -29,11 +29,13 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(page).toContain('sourceReference');
   });
 
-  it('does not animate stale or unknown data and respects reduced motion', () => {
-    expect(page).toContain("'(prefers-reduced-motion: reduce)'");
-    expect(page).toContain("['LIVE', 'DELAYED', 'MODELLED'].includes(freshness)");
-    expect(styles).toContain('@media(prefers-reduced-motion:reduce)');
-    expect(styles).toContain('data-animate="false"');
+  it('keeps condition markers static and respects reduced motion for the source-derived field', () => {
+    expect(windField).toContain("window.matchMedia('(prefers-reduced-motion: reduce)')");
+    expect(page).toContain("button.innerHTML = '<span class=\"wx-marker__icon\">");
+    expect(page).not.toContain('data-animate');
+    expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(styles).not.toContain('wx-marker__signal');
+    expect(styles).not.toContain('wx-marker__particles');
   });
 
   it('is routed and discoverable through the app navigation', () => {
@@ -55,8 +57,8 @@ describe('Weather Studio evidence and interaction contract', () => {
   });
 
   it('keeps the layout responsive and the forecast map legible on small screens', () => {
-    expect(styles).toContain('@media(max-width:850px)');
-    expect(styles).toContain('@media(max-width:560px)');
+    expect(styles).toContain('@media (max-width: 900px)');
+    expect(styles).toContain('@media (max-width: 620px)');
     expect(styles).toContain('.wx-map-canvas');
     expect(styles).toContain('.wx-map-legend');
     expect(styles).toContain('.wx-field-label');
@@ -69,11 +71,18 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(page).toContain('National coverage only');
     expect(styles).toContain('.wx-warning-card');
     expect(styles).toContain('.wx-observation-note');
+    expect(page).toContain('FALLBACK_STREET_STYLE');
+    expect(page).toContain('maplibregl.supported()');
+    expect(page).toContain('setMapAttempt(value => value + 1)');
+    expect(page).toContain('wx-map-provider');
+    expect(page).toContain('flowMotion');
+    expect(styles).toContain('.wx-map-provider');
   });
 
-  it('does not synthesize strike-like flashes for a storm-condition marker', () => {
+  it('does not synthesize decorative storm flashes or marker particles', () => {
     expect(styles).not.toContain('wx-flash');
-    expect(styles).not.toContain('.wx-marker[data-glyph="storm"] .wx-marker__particles{background');
+    expect(styles).not.toContain('wx-marker__particles');
+    expect(styles).not.toContain('wx-marker__signal');
     expect(page).toContain("label: 'THUNDERSTORM'");
   });
 
