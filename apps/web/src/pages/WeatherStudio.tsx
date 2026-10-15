@@ -15,6 +15,7 @@ import { Activity, AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, Chevro
 import { fetchLiveEventSimulation } from '../lib/spatialClient.js';
 import type { LiveEventSimulationResponse, SpatialWorldEntity } from '../lib/spatialClient.js';
 import { FALLBACK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
+import { buildOfficialWarningAreaCollection, syncOfficialWarningLayers } from '../lib/weatherWarningGeometry.js';
 import WeatherFieldCanvas from '../components/weather/WeatherFieldCanvas.js';
 import '../styles/weather-studio.css';
 
@@ -203,6 +204,8 @@ export default function WeatherStudio() {
   const [rasterLayers, setRasterLayers] = useState<NasaRasterState>({ satellite: false, precipitation: false });
   const rasterLayersRef = useRef<NasaRasterState>(rasterLayers);
   const [rasterError, setRasterError] = useState<string | null>(null);
+  const [showOfficialWarnings, setShowOfficialWarnings] = useState(true);
+  const [warningOverlayError, setWarningOverlayError] = useState<string | null>(null);
   // Keep each query-cache bucket tied to the exact normalized request it represents.
   const queryCenter = useMemo(() => ({
     latitude: Math.round(viewport.latitude * 10) / 10,
@@ -225,6 +228,15 @@ export default function WeatherStudio() {
   });
   const response = liveQuery.data;
   const warningFeed = response?.weatherAlerts;
+  const warningAreas = useMemo(() => buildOfficialWarningAreaCollection(warningFeed), [warningFeed]);
+  const mappedWarningCount = useMemo(
+    () => new Set(warningAreas.features.map(feature => feature.properties.alertId)).size,
+    [warningAreas],
+  );
+  const warningAreasRef = useRef(warningAreas);
+  warningAreasRef.current = warningAreas;
+  const showOfficialWarningsRef = useRef(showOfficialWarnings);
+  showOfficialWarningsRef.current = showOfficialWarnings;
   const rawEntities = response?.data ?? [];
   const weather = useMemo(() => rawEntities.filter(entity => entity.entityType === 'weather'), [rawEntities]);
   const steps = useMemo(() => {
@@ -370,6 +382,12 @@ export default function WeatherStudio() {
       setMapProvider(baseStyleRef.current);
       try { syncNasaRasterLayers(instance, rasterLayersRef.current); setRasterError(null); }
       catch (_) { setRasterError('Earth-observation layers could not initialise; base cartography remains available.'); }
+      try {
+        syncOfficialWarningLayers(instance, warningAreasRef.current, showOfficialWarningsRef.current);
+        setWarningOverlayError(null);
+      } catch (_) {
+        setWarningOverlayError('Verified official warning boundaries could not be drawn. Warning messages remain available from the source feed.');
+      }
       setMapError(null);
       setMapNotice(baseStyleRef.current === 'fallback' ? 'Using independent fallback cartography.' : null);
       setMapReady(true);
@@ -447,6 +465,17 @@ export default function WeatherStudio() {
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!mapReady || !map || !map.isStyleLoaded()) return;
+    try {
+      syncOfficialWarningLayers(map, warningAreas, showOfficialWarnings);
+      setWarningOverlayError(null);
+    } catch (_) {
+      setWarningOverlayError('Verified official warning boundaries could not be drawn. Warning messages remain available from the source feed.');
+    }
+  }, [mapReady, warningAreas, showOfficialWarnings]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!mapReady || !map) return;
     const incoming = new Map<string, SpatialWorldEntity>(renderEntities.map(entity => [keyOf(entity), entity]));
     for (const [key, record] of markerRefs.current) {
@@ -508,9 +537,10 @@ export default function WeatherStudio() {
           {LAYERS.map(layer => { const Icon = layer.icon; const count = layer.id === 'weather' ? weatherCount : layer.id === 'earthquakes' ? earthquakeCount : layer.id === 'volcanoes' ? volcanoCount : naturalCount; return <button key={layer.id} type="button" className="wx-layer-button" data-active={filters[layer.id]} aria-pressed={filters[layer.id]} onClick={() => setLayer(layer.id)}><Icon size={14} /><span>{layer.label}</span><i>{count}</i></button>; })}
         </div>
         <div className="wx-layer-switches wx-motion-switches" role="group" aria-label="Forecast field motion"><button type="button" className="wx-layer-button" data-active={flowMotion} aria-pressed={flowMotion} disabled={windVectorCount < 2} onClick={() => setFlowMotion(value => !value)} title={windVectorCount < 2 ? "Wind flow needs at least two valid forecast wind vectors in the current response." : "Toggle source-derived wind-flow animation; it is model output, not radar."}><Waves size={14} /><span>Wind flow</span><i>{flowMotion ? "ON" : "OFF"}</i></button></div>
-        <div className="wx-layer-switches wx-observation-switches" role="group" aria-label="Satellite imagery and precipitation observation products">
+        <div className="wx-layer-switches wx-observation-switches" role="group" aria-label="Earth observation products and verified official warning areas">
           <button type="button" className="wx-layer-button" data-active={rasterLayers.satellite} aria-pressed={rasterLayers.satellite} onClick={() => toggleRaster('satellite')} title="NASA MODIS Aqua true-colour satellite imagery; latest available scene, swath gaps are not clear-weather evidence"><Satellite size={14} /><span>Satellite</span></button>
           <button type="button" className="wx-layer-button" data-active={rasterLayers.precipitation} aria-pressed={rasterLayers.precipitation} onClick={() => toggleRaster('precipitation')} title="NASA GPM IMERG v7 near-real-time satellite-derived precipitation-rate estimate; not live ground radar"><CloudRain size={14} /><span>NASA Rain</span></button>
+          <button type="button" className="wx-layer-button" data-active={showOfficialWarnings && mappedWarningCount > 0} aria-pressed={showOfficialWarnings && mappedWarningCount > 0} disabled={mappedWarningCount === 0} onClick={() => setShowOfficialWarnings(value => !value)} title={mappedWarningCount === 0 ? 'No verified active or upcoming KMD CAP warning polygons are available to map.' : 'Toggle only verified active/upcoming KMD CAP warning polygons supplied by the official feed.'}><AlertTriangle size={14} /><span>KMD Alerts</span><i>{mappedWarningCount}</i></button>
         </div>
         <div className="wx-map-presets"><button type="button" onClick={fitWorld}>GLOBAL</button><button type="button" onClick={focusEastAfrica}>E. AFRICA</button><button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in">+</button><button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out">−</button></div>
       </div>
@@ -535,7 +565,7 @@ export default function WeatherStudio() {
           {mapReady && mapNotice && <div className="wx-map-notice wx-map-notice--info" role="status"><Globe2 size={14} /> {mapNotice}</div>}
           {!mapReady && mapError && <div className="wx-map-failure" role="alert"><AlertTriangle size={18} /><span className="wx-map-failure__eyebrow">CARTOGRAPHY STATUS</span><b>Map unavailable</b><span>{mapError}</span><button type="button" onClick={retryMap}><RefreshCw size={14} /> RETRY MAP INITIALISATION</button></div>}
           {mapReady && liveQuery.isError && <div className="wx-map-notice" role="status"><AlertTriangle size={14} /> Source request failed. Coverage is unknown; refresh to retry.</div>}
-          <div className="wx-map-legend" aria-label="Map condition and event legend"><strong>CONDITION KEY</strong><span><i style={{ background: '#f3cb78' }} /> CLEAR</span><span><i style={{ background: '#7cbcff' }} /> RAIN</span><span><i style={{ background: '#ff897d' }} /> STORM</span><span><i style={{ background: '#93d8f1' }} /> SNOW</span><span><i style={{ background: '#ff9a78' }} /> SEISMIC</span><span><i style={{ background: '#e8a16b' }} /> VOLCANO</span><span><i style={{ background: '#b1c3d2' }} /> NATURAL EVENT</span></div>
+          <div className="wx-map-legend" aria-label="Map condition and event legend"><strong>CONDITION KEY</strong><span><i style={{ background: '#f3cb78' }} /> CLEAR</span><span><i style={{ background: '#7cbcff' }} /> RAIN</span><span><i style={{ background: '#ff897d' }} /> STORM</span><span><i style={{ background: '#93d8f1' }} /> SNOW</span><span><i style={{ background: '#ff9a78' }} /> SEISMIC</span><span><i style={{ background: '#e8a16b' }} /> VOLCANO</span><span><i style={{ background: '#b1c3d2' }} /> NATURAL EVENT</span>{showOfficialWarnings && warningAreas.features.length > 0 && <span><i style={{ background: '#e7a75c', borderRadius: 2 }} /> KMD WARNING AREA</span>}</div>
           {(rasterLayers.satellite || rasterLayers.precipitation) && <div className="wx-observation-note" role="status">
             {rasterLayers.satellite && <span>NASA MODIS Aqua · latest available scene</span>}
             {rasterLayers.precipitation && <span>NASA GPM IMERG · near-real-time precipitation estimate</span>}
@@ -554,9 +584,11 @@ export default function WeatherStudio() {
           <section className="wx-card wx-warning-card" aria-label="Official weather early-warning feed">
             <div className="wx-card-heading">
               <div><span>01 / OFFICIAL WARNINGS</span><h2>Kenya · Official alerts</h2></div>
-              <span className="wx-card-status" data-state={warningFeed?.status === 'UNAVAILABLE' ? 'degraded' : warningFeed?.status === 'STALE_FALLBACK' ? 'syncing' : 'available'}>{warningFeed?.status === 'UNAVAILABLE' ? 'UNAVAILABLE' : warningFeed?.status === 'STALE_FALLBACK' ? 'STALE CACHE' : warningFeed ? 'FEED AVAILABLE' : 'CONNECTING'}</span>
+              <span className="wx-card-status" data-state={!warningFeed ? 'syncing' : warningFeed.status === 'UNAVAILABLE' ? 'degraded' : warningFeed.status === 'STALE_FALLBACK' ? 'syncing' : warningFeed.status === 'AVAILABLE' ? 'available' : 'partial'}>{!warningFeed ? 'CONNECTING' : warningFeed.status === 'UNAVAILABLE' ? 'UNAVAILABLE' : warningFeed.status === 'STALE_FALLBACK' ? 'STALE CACHE' : warningFeed.status === 'AVAILABLE' ? 'FEED AVAILABLE' : 'STATUS UNKNOWN'}</span>
             </div>
             <p className="wx-warning-scope">Kenya Meteorological Department · Common Alerting Protocol feed. National coverage only.</p>
+            {warningOverlayError && <p className="wx-warning-empty" role="status"><AlertTriangle size={14} /> {warningOverlayError}</p>}
+            {warningFeed && warningFeed.status !== 'UNAVAILABLE' && warningFeed.alerts.length > 0 && mappedWarningCount === 0 && <p className="wx-warning-empty" role="status">Official notices are present, but none supplies a verified, usable area polygon. No warning boundary has been inferred.</p>}
             {warningFeed?.status === 'UNAVAILABLE' ? (
               <p className="wx-warning-empty" role="status"><AlertTriangle size={14} /> The official feed could not be verified. This is not evidence that no warning exists.</p>
             ) : !warningFeed ? (

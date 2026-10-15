@@ -54,8 +54,18 @@ function fixture(overallStatus: 'AVAILABLE' | 'PARTIAL') {
       scope: 'Kenya national meteorological warning feed; this is not global alert coverage',
       status: overallStatus === 'PARTIAL' ? 'UNAVAILABLE' : 'AVAILABLE',
       receivedAt: '2026-10-15T07:00:00.000Z',
-      recordCount: 0, activeCount: 0, scheduledCount: 0, alerts: [],
-      semantics: 'Test fixture only.',
+      recordCount: overallStatus === 'PARTIAL' ? 0 : 1, activeCount: overallStatus === 'PARTIAL' ? 0 : 1, scheduledCount: 0,
+      alerts: overallStatus === 'PARTIAL' ? [] : [{
+        id: 'weather-studio-e2e-cap-warning',
+        title: 'Test-only severe rainfall warning',
+        severity: 'Severe',
+        urgency: 'Immediate',
+        activeState: 'ACTIVE',
+        verifiedCap: true,
+        source: 'Kenya Meteorological Department',
+        areas: [{ description: 'Fixture-only western Kenya area', polygons: [[[18, -10], [40, -10], [40, 10], [18, 10], [18, -10]]] }],
+      }],
+      semantics: 'Test fixture only; polygon geometry is synthetic and never production data.',
     },
     coverage: { weatherForecastPoints: 1, forecastHours: 1 },
     sources: { weather: 'https://open-meteo.com/en/docs' },
@@ -100,6 +110,19 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(page.locator('.wx-map-provider')).toContainText('ESRI CARTOGRAPHY');
     await expect(page.getByRole('button', { name: /wind flow/i })).toBeEnabled();
     await expect(page.getByText(/official feed could not be verified/i)).toBeVisible();
+  });
+
+  test('maps verified CAP warning geometry and exposes an independent on/off control', async ({ page }) => {
+    await openWeatherStudio(page, 'AVAILABLE');
+    const warningLayer = page.getByRole('button', { name: /KMD Alerts/i });
+    await expect(warningLayer).toBeEnabled();
+    await expect(warningLayer).toHaveAttribute('aria-pressed', 'true');
+    await expect(warningLayer.locator('i')).toHaveText('1');
+    await expect(page.getByText('KMD WARNING AREA', { exact: true })).toBeVisible();
+    await warningLayer.click();
+    await expect(warningLayer).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByText('KMD WARNING AREA', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Kenya · Official alerts' })).toBeVisible();
   });
 
   test('forecast point inspection, layer toggling and hourly playback work', async ({ page }) => {
@@ -153,6 +176,8 @@ test.describe('Weather Studio route and operational controls', () => {
     const controlSize = Number.parseFloat(await page.getByRole('button', { name: /weather models/i }).evaluate(el => getComputedStyle(el).fontSize));
     expect(titleSize).toBeGreaterThanOrEqual(26);
     expect(controlSize).toBeGreaterThanOrEqual(12);
+    const mapProviderSize = Number.parseFloat(await page.locator('.wx-map-provider').evaluate(el => getComputedStyle(el).fontSize));
+    expect(mapProviderSize).toBeGreaterThanOrEqual(9);
     const cardTitles = await page.locator('.wx-right-column .wx-card-heading h2').allTextContents();
     expect(cardTitles[0]).toContain('Kenya · Official alerts');
   });

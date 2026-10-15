@@ -253,3 +253,31 @@
   .wx-studio *, .wx-studio *::before, .wx-studio *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-duration:.001ms !important; }
   .wx-spin { animation:none !important; } .wx-layer-button:hover, .wx-icon-button:hover:not(:disabled) { transform:none; }
 }
+
+
+/* Broadcast-desk legibility guardrails: retain the compact system without microtype. */
+.wx-eyebrow, .wx-map-kicker, .wx-card-heading>div>span,
+.wx-coverage-state b, .wx-coverage-state small, .wx-toolbar-label small,
+.wx-map-provider, .wx-map-context .wx-map-utc small, .wx-map-context .wx-map-utc b,
+.wx-map-legend strong, .wx-map-legend span, .wx-map-presets button,
+.wx-range-labels, .wx-timeline-caption small, .wx-card-status,
+.wx-stat-grid small, .wx-health-foot span, .wx-health-foot b, .wx-detail-subtitle,
+.wx-metric-grid small, .wx-event-facts b, .wx-provenance small,
+.wx-source-row span, .wx-source-row b, .wx-source-row a, .wx-footer,
+.wx-warning-severity, .wx-warning-urgency {
+  font-size: max(10px, 0.625rem);
+}
+
+@media (max-width: 620px) {
+  .wx-eyebrow, .wx-map-kicker, .wx-card-heading>div>span,
+  .wx-coverage-state b, .wx-coverage-state small, .wx-toolbar-label small,
+  .wx-map-provider, .wx-map-context .wx-map-utc small, .wx-map-context .wx-map-utc b,
+  .wx-map-legend strong, .wx-map-legend span, .wx-map-presets button,
+  .wx-range-labels, .wx-timeline-caption small, .wx-card-status,
+  .wx-stat-grid small, .wx-health-foot span, .wx-health-foot b, .wx-detail-subtitle,
+  .wx-metric-grid small, .wx-event-facts b, .wx-provenance small,
+  .wx-source-row span, .wx-source-row b, .wx-source-row a, .wx-footer,
+  .wx-warning-severity, .wx-warning-urgency {
+    font-size: max(9px, 0.5625rem);
+  }
+}
