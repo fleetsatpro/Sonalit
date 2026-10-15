@@ -110,4 +110,14 @@ describe('Weather Studio evidence and interaction contract', () => {
   });
 
 
+
+  it('separates forecast controls and makes detailed source lineage available on demand', () => {
+    expect(page).toContain('wx-toolbar-primary');
+    expect(page).toContain('wx-toolbar-secondary');
+    expect(page).toContain('<details className="wx-card wx-source-card"');
+    expect(page).toContain('wx-source-summary');
+    expect(styles).toContain('.wx-warning-card .wx-warning-list');
+    expect(styles).toContain('.wx-toolbar-secondary');
+  });
+
 });
