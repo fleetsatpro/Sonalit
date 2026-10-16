@@ -14,13 +14,17 @@ interface AnalyticsPayload {
     avg_transit_hours: number | null; trips_missing_vehicle: number; trips_missing_driver: number;
     trips_missing_container: number; trips_missing_lock: number; trips_missing_eta: number;
     total_containers: number; available_containers: number; containers_in_use: number;
-    container_utilization_pct: number | null; total_vehicles: number; available_vehicles: number;
+    containers_in_maintenance: number; damaged_containers: number; fair_condition_containers: number;
+    retired_containers: number; overdue_inspections: number; inspections_due_30_days: number;
+    containers_missing_location: number; container_utilization_pct: number | null; total_vehicles: number; available_vehicles: number;
     vehicles_in_use: number; vehicles_in_maintenance: number; vehicle_utilization_pct: number | null;
     total_locks: number; locks_needing_attention: number; low_battery_locks: number;
     tampered_locks: number; stale_lock_heartbeats: number; active_drivers: number;
     open_incidents: number; unacknowledged_alerts: number;
   };
   daily: Array<{ day: string; trips_started: number; deliveries_completed: number }>;
+  container_statuses: Array<{ status: string; count: number }>;
+  container_conditions: Array<{ condition: string; count: number }>;
   trip_statuses: Array<{ status: string; count: number }>;
   risk_mix: Array<{ risk: string; count: number }>;
   lock_statuses: Array<{ status: string; count: number; low_battery: number; tampered: number }>;
@@ -249,6 +253,25 @@ export default function Analytics() {
           <div className="flex items-start justify-between gap-3 mb-4"><div><h3 className="font-bold text-sm text-text-0">Operational data quality</h3><p className="text-[11px] text-text-2 mt-1">Open trip records checked for assignment and planning completeness.</p></div><span className={'text-[9px] uppercase tracking-wider font-mono ' + (hasQualityGaps ? 'text-amber-300' : 'text-emerald-300')}>{hasQualityGaps ? 'Review' : 'No gaps found'}</span></div>
           {qualityRows.map(row => <div key={row.name} className="flex justify-between items-center gap-3 py-2.5 border-b border-white/[.05] last:border-0 text-xs"><span className="text-text-1">{row.name}</span><span className={'font-mono font-bold ' + (row.count > 0 ? 'text-amber-300' : 'text-text-0')}>{fmt(row.count)}</span></div>)}
           {hasQualityGaps ? <p className="text-[10px] text-text-2 mt-3">An unassigned field may be appropriate in an early lifecycle state. Review the status before treating it as an exception.</p> : <p className="text-[10px] text-text-2 mt-3">No missing assignment fields were detected among current open trip records in these checks.</p>}
+        </Card>
+      </div>
+
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <Breakdown title="Container lifecycle" description="Current registered inventory by persisted operational status." rows={data.container_statuses.map(row => ({ status: row.status, count: row.count }))} keyName="status" />
+        <Breakdown title="Physical condition" description="Saved container condition; no modelled grades." rows={data.container_conditions.map(row => ({ status: row.condition, count: row.count }))} keyName="status" />
+        <Card className="p-4 min-w-0">
+          <h3 className="font-bold text-sm text-text-0">Inspection and location readiness</h3>
+          <p className="text-[11px] text-text-2 mt-1 mb-4">Current inventory flags derived from stored dates and location.</p>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Overdue inspection', value: summary.overdue_inspections, warn: summary.overdue_inspections > 0 },
+              { label: 'Due within 30 days', value: summary.inspections_due_30_days, warn: summary.inspections_due_30_days > 0 },
+              { label: 'No recorded location', value: summary.containers_missing_location, warn: summary.containers_missing_location > 0 },
+              { label: 'Damaged / retired', value: summary.damaged_containers + summary.retired_containers, warn: summary.damaged_containers + summary.retired_containers > 0 },
+            ].map(row => <div key={row.label} className="rounded-lg bg-white/[.025] border border-white/[.04] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">{row.label}</div><div className={'text-xl font-bold font-mono mt-1 ' + (row.warn ? 'text-amber-300' : 'text-text-0')}>{fmt(row.value)}</div></div>)}
+          </div>
+          <p className="text-[10px] text-text-2 mt-3">Missing next-inspection dates are not counted as overdue.</p>
         </Card>
       </div>
 

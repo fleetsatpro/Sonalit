@@ -477,6 +477,13 @@ export interface CDSAnalyticsSummary {
   total_containers: number;
   available_containers: number;
   containers_in_use: number;
+  containers_in_maintenance: number;
+  damaged_containers: number;
+  fair_condition_containers: number;
+  retired_containers: number;
+  overdue_inspections: number;
+  inspections_due_30_days: number;
+  containers_missing_location: number;
   container_utilization_pct: number | null;
   total_vehicles: number;
   available_vehicles: number;
@@ -497,6 +504,8 @@ export interface CDSAnalyticsPayload {
   meta: { window_days: CDSAnalyticsWindow; period_start: string; period_end: string; generated_at: string };
   summary: CDSAnalyticsSummary;
   daily: Array<{ day: string; trips_started: number; deliveries_completed: number }>;
+  container_statuses: Array<{ status: string; count: number }>;
+  container_conditions: Array<{ condition: string; count: number }>;
   trip_statuses: Array<{ status: string; count: number }>;
   risk_mix: Array<{ risk: string; count: number }>;
   lock_statuses: Array<{ status: string; count: number; low_battery: number; tampered: number }>;

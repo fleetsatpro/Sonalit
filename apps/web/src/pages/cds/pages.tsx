@@ -738,6 +738,33 @@ export function AnalyticsView() {
         </Card>
       </div>
 
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <Card className="p-4">
+          <h3 className="font-bold text-sm text-text-0 mb-1">Container lifecycle</h3>
+          <p className="text-[11px] text-text-2 mb-4">Current registered container records by persisted operational status.</p>
+          {breakdown(data.container_statuses.map(row => ({ label: label(row.status), value: row.count })), Math.max(1, ...data.container_statuses.map(row => row.count)))}
+        </Card>
+        <Card className="p-4">
+          <h3 className="font-bold text-sm text-text-0 mb-1">Physical condition</h3>
+          <p className="text-[11px] text-text-2 mb-4">Condition comes from the container inventory record, not a modelled score.</p>
+          {breakdown(data.container_conditions.map(row => ({ label: label(row.condition), value: row.count })), Math.max(1, ...data.container_conditions.map(row => row.count)))}
+        </Card>
+        <Card className="p-4">
+          <h3 className="font-bold text-sm text-text-0 mb-1">Inspection & location readiness</h3>
+          <p className="text-[11px] text-text-2 mb-4">Current inventory flags based on saved dates and location fields.</p>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Overdue inspection', value: s.overdue_inspections, warn: s.overdue_inspections > 0 },
+              { label: 'Due within 30 days', value: s.inspections_due_30_days, warn: s.inspections_due_30_days > 0 },
+              { label: 'No recorded location', value: s.containers_missing_location, warn: s.containers_missing_location > 0 },
+              { label: 'Damaged / retired', value: s.damaged_containers + s.retired_containers, warn: s.damaged_containers + s.retired_containers > 0 },
+            ].map(row => <div key={row.label} className="rounded-lg bg-white/[.025] border border-white/[.04] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">{row.label}</div><div className={'text-xl font-bold font-mono mt-1 ' + (row.warn ? 'text-amber-300' : 'text-text-0')}>{fmt(row.value)}</div></div>)}
+          </div>
+          <p className="text-[10px] text-text-2 mt-3">Containers with no next-inspection date are not counted as overdue; missing inspection scheduling should be reviewed separately.</p>
+        </Card>
+      </div>
+
       <Card className="p-4">
         <div className="flex items-start justify-between gap-3 mb-3"><div><h3 className="font-bold text-sm text-text-0">Priority alerts</h3><p className="text-[11px] text-text-2 mt-1">Unacknowledged alerts ordered by severity and recency. Acknowledge writes through to the backend.</p></div><span className="font-mono text-xs text-text-2">{fmt(s.unacknowledged_alerts)} open</span></div>
         <div className="max-h-[360px] overflow-y-auto">

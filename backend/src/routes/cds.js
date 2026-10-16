@@ -412,10 +412,18 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       FROM trip_rows t CROSS JOIN bounds b
     ),
     container_metrics AS (
-      SELECT COUNT(*)::int AS total_containers,
-             COUNT(*) FILTER (WHERE status = 'available')::int AS available_containers,
-             COUNT(*) FILTER (WHERE status IN ('booked', 'awaiting_pickup', 'in_transit', 'at_port'))::int AS containers_in_use
-        FROM cds_containers WHERE org_id = $2 AND deleted_at IS NULL
+      SELECT
+        COUNT(*)::int AS total_containers,
+        COUNT(*) FILTER (WHERE status = 'available')::int AS available_containers,
+        COUNT(*) FILTER (WHERE status IN ('booked', 'awaiting_pickup', 'in_transit', 'at_port'))::int AS containers_in_use,
+        COUNT(*) FILTER (WHERE status = 'maintenance')::int AS containers_in_maintenance,
+        COUNT(*) FILTER (WHERE condition = 'damaged')::int AS damaged_containers,
+        COUNT(*) FILTER (WHERE condition = 'fair')::int AS fair_condition_containers,
+        COUNT(*) FILTER (WHERE condition = 'retired')::int AS retired_containers,
+        COUNT(*) FILTER (WHERE next_inspection < CURRENT_DATE)::int AS overdue_inspections,
+        COUNT(*) FILTER (WHERE next_inspection >= CURRENT_DATE AND next_inspection < CURRENT_DATE + INTERVAL '31 days')::int AS inspections_due_30_days,
+        COUNT(*) FILTER (WHERE current_location IS NULL OR BTRIM(current_location) = '')::int AS containers_missing_location
+      FROM cds_containers WHERE org_id = $2 AND deleted_at IS NULL
     ),
     vehicle_metrics AS (
       SELECT COUNT(*) FILTER (WHERE status <> 'decommissioned')::int AS total_vehicles,
@@ -485,6 +493,22 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       LEFT JOIN trip_rows t ON t.risk = rv.risk AND t.status NOT IN ('completed', 'archived')
       GROUP BY rv.risk
     ),
+    container_status_values(status) AS (VALUES
+      ('available'), ('booked'), ('awaiting_pickup'), ('in_transit'), ('at_port'), ('delivered'), ('maintenance')
+    ),
+    container_statuses AS (
+      SELECT csv.status, COUNT(c.id)::int AS count
+        FROM container_status_values csv
+        LEFT JOIN cds_containers c ON c.status = csv.status AND c.org_id = $2 AND c.deleted_at IS NULL
+       GROUP BY csv.status
+    ),
+    container_condition_values(condition) AS (VALUES ('new'), ('good'), ('fair'), ('damaged'), ('retired')),
+    container_conditions AS (
+      SELECT ccv.condition, COUNT(c.id)::int AS count
+        FROM container_condition_values ccv
+        LEFT JOIN cds_containers c ON c.condition = ccv.condition AND c.org_id = $2 AND c.deleted_at IS NULL
+       GROUP BY ccv.condition
+    ),
     lock_status_values(status) AS (VALUES ('available'), ('assigned'), ('installed'), ('removed'), ('maintenance'), ('offline')),
     lock_statuses AS (
       SELECT lsv.status, COUNT(l.id)::int AS count,
@@ -529,6 +553,8 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       ),
       'summary', (SELECT to_jsonb(s) FROM summary s),
       'daily', COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.day) FROM daily d), '[]'::jsonb),
+      'container_statuses', COALESCE((SELECT jsonb_agg(to_jsonb(cs) ORDER BY cs.count DESC, cs.status) FROM container_statuses cs), '[]'::jsonb),
+      'container_conditions', COALESCE((SELECT jsonb_agg(to_jsonb(cc) ORDER BY cc.count DESC, cc.condition) FROM container_conditions cc), '[]'::jsonb),
       'trip_statuses', COALESCE((SELECT jsonb_agg(to_jsonb(ts) ORDER BY ts.count DESC, ts.status) FROM trip_statuses ts), '[]'::jsonb),
       'risk_mix', COALESCE((SELECT jsonb_agg(to_jsonb(rm) ORDER BY rm.risk) FROM risk_mix rm), '[]'::jsonb),
       'lock_statuses', COALESCE((SELECT jsonb_agg(to_jsonb(ls) ORDER BY ls.status) FROM lock_statuses ls), '[]'::jsonb),
