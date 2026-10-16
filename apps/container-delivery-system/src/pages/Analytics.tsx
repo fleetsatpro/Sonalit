@@ -240,7 +240,7 @@ export default function Analytics() {
           </div>
           <Breakdown title="Lock status" description="Current persisted lock status, including device exception counts." rows={data.lock_statuses.map(row => ({ status: row.status, count: row.count, low_battery: row.low_battery, tampered: row.tampered }))} keyName="status" />
           <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-white/[.06] text-center">
-            <div><div className="font-mono font-bold text-text-0">{fmt(summary.low_battery_locks)}</div><div className="text-[9px] uppercase text-text-2 mt-1">Low battery (<25%)</div></div>
+            <div><div className="font-mono font-bold text-text-0">{fmt(summary.low_battery_locks)}</div><div className="text-[9px] uppercase text-text-2 mt-1">Low battery (under 25%)</div></div>
             <div><div className="font-mono font-bold text-text-0">{fmt(summary.tampered_locks)}</div><div className="text-[9px] uppercase text-text-2 mt-1">Tampered</div></div>
             <div><div className="font-mono font-bold text-text-0">{fmt(summary.stale_lock_heartbeats)}</div><div className="text-[9px] uppercase text-text-2 mt-1">Stale heartbeat</div></div>
           </div>

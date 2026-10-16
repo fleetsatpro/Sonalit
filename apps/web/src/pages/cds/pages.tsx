@@ -723,7 +723,7 @@ export function AnalyticsView() {
           <div className="text-xs font-bold text-text-1 mb-3">Lock distribution</div>
           {breakdown(data.lock_statuses.map(row => ({ label: label(row.status), value: row.count, detail: row.low_battery || row.tampered ? fmt(row.low_battery) + ' low battery · ' + fmt(row.tampered) + ' tampered' : undefined })), Math.max(1, ...data.lock_statuses.map(row => row.count)))}
           <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-white/[.06] text-center">
-            <div><div className="font-mono font-bold text-text-0">{fmt(s.low_battery_locks)}</div><div className="text-[9px] uppercase text-text-2 mt-1">Low battery (<25%)</div></div>
+            <div><div className="font-mono font-bold text-text-0">{fmt(s.low_battery_locks)}</div><div className="text-[9px] uppercase text-text-2 mt-1">Low battery (under 25%)</div></div>
             <div><div className="font-mono font-bold text-text-0">{fmt(s.tampered_locks)}</div><div className="text-[9px] uppercase text-text-2 mt-1">Tampered</div></div>
             <div><div className="font-mono font-bold text-text-0">{fmt(s.stale_lock_heartbeats)}</div><div className="text-[9px] uppercase text-text-2 mt-1">Stale heartbeat</div></div>
           </div>
