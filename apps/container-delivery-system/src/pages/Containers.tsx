@@ -10,7 +10,6 @@ import { useContainers, useCreateContainer } from '@/hooks/useContainers.js';
 import { CONTAINER_TYPES } from '@/lib/constants.js';
 import type { Container, ContainerStatus } from '@/types/index.js';
 
-const s = (value: unknown) => String(value ?? '—');
 type Filter = 'all' | ContainerStatus;
 const STATUS_FILTERS: Filter[] = ['all', 'available', 'booked', 'awaiting_pickup', 'in_transit', 'at_port', 'delivered', 'maintenance'];
 const OWNERSHIPS: Array<Container['ownership']> = ['owned', 'leased', 'customer'];
