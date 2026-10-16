@@ -858,10 +858,19 @@ router.patch('/containers/:id', asyncHandler(async (req, res) => {
 // 4. Electronic Locks
 // ══════════════════════════════════════════════════════════════
 
+const LOCK_JOINS = `LEFT JOIN cds_containers c ON c.id=t.container_id AND c.org_id=t.org_id
+  LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=t.org_id`;
+const LOCK_COLS = `t.*, c.number AS container_number, v.registration AS truck`;
 router.get('/locks', asyncHandler(async (req, res) => {
-  await listRows(req, res, 'cds_electronic_locks', { searchCols: ['t.serial', 't.provider'] });
+  await listRows(req, res, 'cds_electronic_locks', {
+    joins: LOCK_JOINS,
+    selectCols: LOCK_COLS,
+    searchCols: ['t.serial', 't.provider', 'c.number', 'v.registration'],
+  });
 }));
-router.get('/locks/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_electronic_locks'); }));
+router.get('/locks/:id', asyncHandler(async (req, res) => {
+  await getRow(req, res, 'cds_electronic_locks', { joins: LOCK_JOINS, selectCols: LOCK_COLS });
+}));
 router.post('/locks', asyncHandler(async (req, res) => {
   await createRow(req, res, 'cds_electronic_locks',
     ['serial', 'provider', 'firmware_version', 'status', 'battery_level']);
