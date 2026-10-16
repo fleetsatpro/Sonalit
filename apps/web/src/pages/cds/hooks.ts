@@ -20,6 +20,20 @@ export function useDashboardKPIs() {
   });
 }
 
+
+export function useCDSAnalytics(days: 7 | 30 | 90 | 365) {
+  return useQuery<import('./types.js').CDSAnalyticsPayload>({
+    queryKey: ['cds', 'analytics', days],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/analytics', { params: { days } });
+      return data.data as import('./types.js').CDSAnalyticsPayload;
+    },
+    staleTime: 20_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+}
+
 export function useActivity(limit = 30) {
   return useQuery({
     queryKey: ['cds', 'activity', limit],

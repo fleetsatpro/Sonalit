@@ -347,14 +347,220 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
   res.json({ data: { ...kpis.rows[0], recent_activity: activity } });
 }));
 
+// CDS analytics: one tenant-scoped SQL snapshot shared by both CDS frontends.
+// Keeping the measures together prevents each dashboard from defining its own truth.
+const CDS_ANALYTICS_WINDOWS = [7, 30, 90, 365];
+
+router.get('/analytics', asyncHandler(async (req, res) => {
+  const rawDays = req.query.days;
+  const days = rawDays === undefined ? 30 : Number(rawDays);
+  if ((typeof rawDays !== 'undefined' && typeof rawDays !== 'string' && typeof rawDays !== 'number')
+    || !Number.isInteger(days) || !CDS_ANALYTICS_WINDOWS.includes(days)) {
+    return res.status(400).json({
+      error: 'invalid_analytics_window',
+      message: 'days must be one of: ' + CDS_ANALYTICS_WINDOWS.join(', '),
+      allowed_days: CDS_ANALYTICS_WINDOWS,
+    });
+  }
+
+  const orgId = req.user.org_id;
+  const result = await req.db(`
+    WITH bounds AS (
+      SELECT date_trunc('day', NOW()) - (($1::int - 1) * INTERVAL '1 day') AS start_at,
+             NOW() AS end_at,
+             (CURRENT_DATE - ($1::int - 1))::date AS period_start,
+             CURRENT_DATE::date AS period_end
+    ),
+    trip_rows AS (
+      SELECT t.* FROM cds_trips t
+       WHERE t.org_id = $2 AND t.deleted_at IS NULL
+    ),
+    trip_metrics AS (
+      SELECT
+        COUNT(*) FILTER (WHERE t.created_at >= b.start_at AND t.created_at < b.end_at)::int AS trips_started,
+        COUNT(*) FILTER (WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at)::int AS deliveries_completed,
+        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived'))::int AS active_trips,
+        COUNT(*) FILTER (WHERE t.status IN ('dispatched', 'checkpoint', 'delayed'))::int AS moving_trips,
+        COUNT(*) FILTER (WHERE t.status = 'delayed')::int AS delayed_trips,
+        COUNT(*) FILTER (
+          WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at
+            AND t.eta IS NOT NULL AND t.delivered_at <= t.eta
+        )::int AS eta_met,
+        COUNT(*) FILTER (
+          WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at AND t.eta IS NOT NULL
+        )::int AS eta_observed,
+        CASE
+          WHEN COUNT(*) FILTER (
+            WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at AND t.eta IS NOT NULL
+          ) > 0
+          THEN ROUND(100.0 * COUNT(*) FILTER (
+            WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at
+              AND t.eta IS NOT NULL AND t.delivered_at <= t.eta
+          ) / NULLIF(COUNT(*) FILTER (
+            WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at AND t.eta IS NOT NULL
+          ), 0), 1)
+          ELSE NULL
+        END AS eta_attainment_pct,
+        ROUND((AVG(EXTRACT(EPOCH FROM (t.delivered_at - t.departed_at)) / 3600.0)
+          FILTER (WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at
+            AND t.departed_at IS NOT NULL AND t.delivered_at IS NOT NULL))::numeric, 1) AS avg_transit_hours,
+        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.vehicle_id IS NULL)::int AS trips_missing_vehicle,
+        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.driver_id IS NULL)::int AS trips_missing_driver,
+        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.container_id IS NULL)::int AS trips_missing_container,
+        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.lock_id IS NULL)::int AS trips_missing_lock,
+        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.eta IS NULL)::int AS trips_missing_eta
+      FROM trip_rows t CROSS JOIN bounds b
+    ),
+    container_metrics AS (
+      SELECT COUNT(*)::int AS total_containers,
+             COUNT(*) FILTER (WHERE status = 'available')::int AS available_containers,
+             COUNT(*) FILTER (WHERE status IN ('booked', 'awaiting_pickup', 'in_transit', 'at_port'))::int AS containers_in_use
+        FROM cds_containers WHERE org_id = $2 AND deleted_at IS NULL
+    ),
+    vehicle_metrics AS (
+      SELECT COUNT(*) FILTER (WHERE status <> 'decommissioned')::int AS total_vehicles,
+             COUNT(*) FILTER (WHERE status = 'available')::int AS available_vehicles,
+             COUNT(*) FILTER (WHERE status = 'in_use')::int AS vehicles_in_use,
+             COUNT(*) FILTER (WHERE status = 'maintenance')::int AS vehicles_in_maintenance
+        FROM cds_vehicles WHERE org_id = $2 AND deleted_at IS NULL
+    ),
+    lock_metrics AS (
+      SELECT COUNT(*)::int AS total_locks,
+             COUNT(*) FILTER (WHERE status IN ('offline', 'maintenance') OR tamper_detected
+                OR battery_level < 20 OR signal_strength IN ('weak', 'offline'))::int AS locks_needing_attention,
+             COUNT(*) FILTER (WHERE battery_level < 20)::int AS low_battery_locks,
+             COUNT(*) FILTER (WHERE tamper_detected)::int AS tampered_locks,
+             COUNT(*) FILTER (WHERE status IN ('assigned', 'installed')
+                AND (last_heartbeat IS NULL OR last_heartbeat < NOW() - INTERVAL '15 minutes'))::int AS stale_lock_heartbeats
+        FROM cds_electronic_locks WHERE org_id = $2 AND deleted_at IS NULL
+    ),
+    driver_metrics AS (
+      SELECT COUNT(*) FILTER (WHERE status = 'active')::int AS active_drivers
+        FROM cds_drivers WHERE org_id = $2 AND deleted_at IS NULL
+    ),
+    incident_metrics AS (
+      SELECT COUNT(*) FILTER (WHERE status IN ('open', 'investigating'))::int AS open_incidents
+        FROM cds_incidents WHERE org_id = $2 AND deleted_at IS NULL
+    ),
+    summary AS (
+      SELECT tm.*, cm.total_containers, cm.available_containers, cm.containers_in_use,
+        CASE WHEN cm.total_containers > 0 THEN ROUND(100.0 * cm.containers_in_use / cm.total_containers, 1) ELSE NULL END AS container_utilization_pct,
+        vm.total_vehicles, vm.available_vehicles, vm.vehicles_in_use, vm.vehicles_in_maintenance,
+        CASE WHEN vm.available_vehicles + vm.vehicles_in_use > 0
+          THEN ROUND(100.0 * vm.vehicles_in_use / (vm.available_vehicles + vm.vehicles_in_use), 1)
+          ELSE NULL END AS vehicle_utilization_pct,
+        lm.total_locks, lm.locks_needing_attention, lm.low_battery_locks, lm.tampered_locks, lm.stale_lock_heartbeats,
+        dm.active_drivers, im.open_incidents,
+        (SELECT COUNT(*)::int FROM cds_alerts a WHERE a.org_id = $2 AND a.acknowledged = false) AS unacknowledged_alerts
+      FROM trip_metrics tm CROSS JOIN container_metrics cm CROSS JOIN vehicle_metrics vm
+      CROSS JOIN lock_metrics lm CROSS JOIN driver_metrics dm CROSS JOIN incident_metrics im
+    ),
+    daily_started AS (
+      SELECT t.created_at::date AS day, COUNT(*)::int AS count FROM trip_rows t CROSS JOIN bounds b
+       WHERE t.created_at >= b.start_at AND t.created_at < b.end_at GROUP BY t.created_at::date
+    ),
+    daily_delivered AS (
+      SELECT t.delivered_at::date AS day, COUNT(*)::int AS count FROM trip_rows t CROSS JOIN bounds b
+       WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at GROUP BY t.delivered_at::date
+    ),
+    daily AS (
+      SELECT series.day::date AS day, COALESCE(ds.count, 0)::int AS trips_started,
+             COALESCE(dd.count, 0)::int AS deliveries_completed
+        FROM bounds b
+        CROSS JOIN LATERAL generate_series(b.period_start::timestamp, b.period_end::timestamp, INTERVAL '1 day') AS series(day)
+        LEFT JOIN daily_started ds ON ds.day = series.day::date
+        LEFT JOIN daily_delivered dd ON dd.day = series.day::date
+    ),
+    status_values(status) AS (VALUES
+      ('created'), ('vehicle_assigned'), ('driver_assigned'), ('awaiting_lock'), ('locked'),
+      ('dispatched'), ('checkpoint'), ('delayed'), ('at_port'), ('delivered'), ('lock_removed'), ('completed'), ('archived')
+    ),
+    trip_statuses AS (
+      SELECT sv.status, COUNT(t.id)::int AS count FROM status_values sv
+      LEFT JOIN trip_rows t ON t.status = sv.status GROUP BY sv.status
+    ),
+    risk_values(risk) AS (VALUES ('low'), ('medium'), ('high'), ('critical')),
+    risk_mix AS (
+      SELECT rv.risk, COUNT(t.id)::int AS count FROM risk_values rv
+      LEFT JOIN trip_rows t ON t.risk = rv.risk AND t.status NOT IN ('completed', 'archived')
+      GROUP BY rv.risk
+    ),
+    lock_status_values(status) AS (VALUES ('available'), ('assigned'), ('installed'), ('removed'), ('maintenance'), ('offline')),
+    lock_statuses AS (
+      SELECT lsv.status, COUNT(l.id)::int AS count,
+             COUNT(l.id) FILTER (WHERE l.battery_level < 20)::int AS low_battery,
+             COUNT(l.id) FILTER (WHERE l.tamper_detected)::int AS tampered
+        FROM lock_status_values lsv
+        LEFT JOIN cds_electronic_locks l ON l.status = lsv.status AND l.org_id = $2 AND l.deleted_at IS NULL
+       GROUP BY lsv.status
+    ),
+    booking_status_values(status) AS (VALUES ('draft'), ('pending'), ('approved'), ('assigned'), ('in_progress'), ('delivered'), ('cancelled')),
+    booking_pipeline AS (
+      SELECT bsv.status, COUNT(b.id)::int AS count FROM booking_status_values bsv
+      LEFT JOIN cds_bookings b ON b.status = bsv.status AND b.org_id = $2 AND b.deleted_at IS NULL
+      GROUP BY bsv.status
+    ),
+    lane_rows AS (
+      SELECT COALESCE(NULLIF(BTRIM(t.origin), ''), 'Unspecified') AS origin,
+             COALESCE(NULLIF(BTRIM(t.destination), ''), 'Unspecified') AS destination,
+             COUNT(*)::int AS trips_started,
+             COUNT(*) FILTER (WHERE t.delivered_at IS NOT NULL)::int AS deliveries_completed,
+             COUNT(*) FILTER (WHERE t.status = 'delayed')::int AS currently_delayed,
+             ROUND((AVG(EXTRACT(EPOCH FROM (t.delivered_at - t.departed_at)) / 3600.0)
+               FILTER (WHERE t.delivered_at IS NOT NULL AND t.departed_at IS NOT NULL))::numeric, 1) AS avg_transit_hours
+        FROM trip_rows t CROSS JOIN bounds b
+       WHERE t.created_at >= b.start_at AND t.created_at < b.end_at
+       GROUP BY 1, 2
+       ORDER BY COUNT(*) DESC, origin ASC, destination ASC LIMIT 8
+    ),
+    open_alerts AS (
+      SELECT a.id, a.type, a.severity, a.title, a.message, a.entity_type, a.entity_id, a.created_at
+        FROM cds_alerts a WHERE a.org_id = $2 AND a.acknowledged = false
+       ORDER BY CASE a.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+                a.created_at DESC
+       LIMIT 10
+    )
+    SELECT jsonb_build_object(
+      'meta', jsonb_build_object(
+        'window_days', $1::int,
+        'period_start', to_char((SELECT period_start FROM bounds), 'YYYY-MM-DD'),
+        'period_end', to_char((SELECT period_end FROM bounds), 'YYYY-MM-DD'),
+        'generated_at', to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+      ),
+      'summary', (SELECT to_jsonb(s) FROM summary s),
+      'daily', COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.day) FROM daily d), '[]'::jsonb),
+      'trip_statuses', COALESCE((SELECT jsonb_agg(to_jsonb(ts) ORDER BY ts.count DESC, ts.status) FROM trip_statuses ts), '[]'::jsonb),
+      'risk_mix', COALESCE((SELECT jsonb_agg(to_jsonb(rm) ORDER BY rm.risk) FROM risk_mix rm), '[]'::jsonb),
+      'lock_statuses', COALESCE((SELECT jsonb_agg(to_jsonb(ls) ORDER BY ls.status) FROM lock_statuses ls), '[]'::jsonb),
+      'booking_pipeline', COALESCE((SELECT jsonb_agg(to_jsonb(bp) ORDER BY bp.status) FROM booking_pipeline bp), '[]'::jsonb),
+      'lanes', COALESCE((SELECT jsonb_agg(to_jsonb(lr) ORDER BY lr.trips_started DESC, lr.origin, lr.destination) FROM lane_rows lr), '[]'::jsonb),
+      'alerts', COALESCE((SELECT jsonb_agg(to_jsonb(oa) ORDER BY CASE oa.severity
+        WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+        oa.created_at DESC) FROM open_alerts oa), '[]'::jsonb)
+    ) AS analytics
+  `, [days, orgId]);
+
+  const analytics = result.rows[0] && result.rows[0].analytics;
+  if (!analytics) return res.status(503).json({
+    error: 'analytics_snapshot_unavailable',
+    message: 'The CDS analytics snapshot could not be assembled.',
+  });
+  res.json({ data: analytics });
+}));
+
 // ══════════════════════════════════════════════════════════════
 // 2. Trips
 // ══════════════════════════════════════════════════════════════
 
-const TRIP_JOINS = `LEFT JOIN cds_customers cu ON cu.id=t.customer_id
-  LEFT JOIN cds_drivers dr ON dr.id=t.driver_id
-  LEFT JOIN cds_vehicles ve ON ve.id=t.vehicle_id`;
-const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_name, dr.name AS "driverName", ve.registration AS "vehicleReg"`;
+const TRIP_JOINS = `LEFT JOIN cds_customers cu ON cu.id=t.customer_id AND cu.org_id=t.org_id
+  LEFT JOIN cds_drivers dr ON dr.id=t.driver_id AND dr.org_id=t.org_id
+  LEFT JOIN cds_vehicles ve ON ve.id=t.vehicle_id AND ve.org_id=t.org_id
+  LEFT JOIN cds_containers co ON co.id=t.container_id AND co.org_id=t.org_id
+  LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=t.org_id
+  LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=t.org_id`;
+const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_name,
+  dr.name AS "driverName", ve.registration AS "vehicleReg",
+  co.number AS container_number, el.serial AS lock_serial, tr.company_name AS transporter_name`;
 
 router.get('/trips', asyncHandler(async (req, res) => {
   await listRows(req, res, 'cds_trips', {

@@ -168,7 +168,7 @@ Common channel patterns:
 
 `pages/cds/` is a self-contained sub-app with its own:
 - Store: `store.ts` (CDSView, drawer, toasts, view mode)
-- Types: `types.ts` (23 ShipmentStatus states, ContainerStatus, LockStatus, etc.)
+- Types: `types.ts` (status unions must match database CHECK constraints; analytics is returned by the shared tenant-scoped CDS endpoint)
 - API: `api.ts`
 - Hooks: `hooks.ts`
 - Constants: `constants.ts`
