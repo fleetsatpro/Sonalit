@@ -64,11 +64,18 @@ export function useContainers(filters?: SearchFilters) {
   return useQuery<PaginatedResponse<Container>>({
     queryKey: ['containers', filters],
     queryFn: async () => {
-      const { data: body } = await api.get('/containers', { params: filters });
-      return {
-        data: (Array.isArray(body.data) ? body.data : []).map(toContainer),
-        total: Number(body.total ?? (Array.isArray(body.data) ? body.data.length : 0)),
+      const pageSize = Math.max(1, Math.min(200, filters?.pageSize ?? 200));
+      const page = Math.max(1, filters?.page ?? 1);
+      const params = {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        ...(filters?.status ? { status: filters.status } : {}),
+        ...(filters?.query ? { search: filters.query } : {}),
       };
+      const { data: body } = await api.get('/containers', { params });
+      const rows = (Array.isArray(body.data) ? body.data : []).map(toContainer);
+      const total = Number(body.total ?? rows.length);
+      return { data: rows, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
     },
     refetchInterval: 30_000,
   });

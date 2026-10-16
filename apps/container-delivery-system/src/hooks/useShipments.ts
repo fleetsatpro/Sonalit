@@ -87,9 +87,18 @@ export function useShipments(filters?: SearchFilters) {
   return useQuery<PaginatedResponse<Shipment>>({
     queryKey: ['shipments', filters],
     queryFn: async () => {
-      const { data: body } = await api.get('/trips', { params: filters });
-      const rows = Array.isArray(body.data) ? body.data : [];
-      return { data: rows.map(toShipment), total: Number(body.total ?? rows.length) };
+      const pageSize = Math.max(1, Math.min(200, filters?.pageSize ?? 200));
+      const page = Math.max(1, filters?.page ?? 1);
+      const params = {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        ...(filters?.status ? { status: filters.status } : {}),
+        ...(filters?.query ? { search: filters.query } : {}),
+      };
+      const { data: body } = await api.get('/trips', { params });
+      const rows = (Array.isArray(body.data) ? body.data : []).map(toShipment);
+      const total = Number(body.total ?? rows.length);
+      return { data: rows, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
     },
     refetchInterval: 30_000,
   });
