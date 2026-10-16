@@ -56,6 +56,7 @@ describe('GET /cds/analytics', () => {
     expect(captured[0].sql).toContain('trips_missing_vehicle');
     expect(captured[0].sql).toContain('battery_level < 25');
     expect(captured[0].sql).toContain("'archived'");
+    expect(captured[0].sql).toContain("'completed'), ('billed'), ('cancelled'");
   });
 
   it('passes the requested supported window through without changing tenant scope', async () => {

@@ -494,7 +494,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         LEFT JOIN cds_electronic_locks l ON l.status = lsv.status AND l.org_id = $2 AND l.deleted_at IS NULL
        GROUP BY lsv.status
     ),
-    booking_status_values(status) AS (VALUES ('draft'), ('pending'), ('approved'), ('assigned'), ('in_progress'), ('delivered'), ('cancelled')),
+    booking_status_values(status) AS (VALUES ('draft'), ('pending'), ('approved'), ('assigned'), ('in_progress'), ('delivered'), ('completed'), ('billed'), ('cancelled')),
     booking_pipeline AS (
       SELECT bsv.status, COUNT(b.id)::int AS count FROM booking_status_values bsv
       LEFT JOIN cds_bookings b ON b.status = bsv.status AND b.org_id = $2 AND b.deleted_at IS NULL
