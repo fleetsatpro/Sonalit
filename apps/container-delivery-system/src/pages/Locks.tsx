@@ -34,7 +34,7 @@ export default function Locks() {
   const createLock = useCreateLock();
   const updateLock = useUpdateLock();
 
-  const locks = (lockData?.data ?? []) as Record<string, unknown>[];
+  const locks = (lockData?.data ?? []) as unknown as Record<string, unknown>[];
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading e-lock inventory…</div></div>;
@@ -93,8 +93,8 @@ export default function Locks() {
           if (!cleanSerial) { addToast('Lock serial is required', 'error'); return; }
           createLock.mutate({
             serial: cleanSerial,
-            provider: provider.trim() || undefined,
-            firmware_version: firmware.trim() || undefined,
+            ...(provider.trim() ? { provider: provider.trim() } : {}),
+            ...(firmware.trim() ? { firmware_version: firmware.trim() } : {}),
             status: 'available',
             battery_level: Math.max(0, Math.min(100, Number(battery))),
           }, {

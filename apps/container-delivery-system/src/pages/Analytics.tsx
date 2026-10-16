@@ -36,7 +36,7 @@ interface AnalyticsPayload {
 const windows: WindowDays[] = [7, 30, 90, 365];
 const fmt = (value: number | null | undefined) => value == null ? '—' : new Intl.NumberFormat().format(value);
 const pct = (value: number | null | undefined) => value == null ? '—' : Number(value).toFixed(1) + '%';
-const label = (value: string) => value.replaceAll('_', ' ');
+const label = (value: string) => value.replace(/_/g, ' ');
 const dateText = (value: string) => {
   const date = new Date(value + (value.length === 10 ? 'T12:00:00' : ''));
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString([], { month: 'short', day: 'numeric' });

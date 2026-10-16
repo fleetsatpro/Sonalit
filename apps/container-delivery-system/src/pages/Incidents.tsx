@@ -102,7 +102,7 @@ export default function Incidents() {
                     </td>
                     <td className="px-3.5 py-3 text-text-0 max-w-[260px]">
                       <div className="truncate">{s(inc['title'])}</div>
-                      {inc['shipment_id'] && <div className="text-2xs text-text-2 mt-0.5 font-mono">{s(inc['shipment_id'])}</div>}
+                      {Boolean(inc['shipment_id']) && <div className="text-2xs text-text-2 mt-0.5 font-mono">{s(inc['shipment_id'])}</div>}
                     </td>
                     <td className="px-3.5 py-3 font-mono text-text-1 capitalize">{s(inc['type']).replace(/_/g, ' ')}</td>
                     <td className="px-3.5 py-3 text-text-1">{s(inc['location'] ?? inc['lat'])}</td>

@@ -143,7 +143,7 @@ export default function Alerts() {
         <div className="space-y-0">
           {filtered.map((row, index) => {
             const severity = s(row['severity']);
-            const style = severityStyles[severity] ?? severityStyles.info!;
+            const style = severityStyles[severity] ?? severityStyles['info']!;
             const acknowledged = isAcknowledged(row);
             const id = s(row['id']);
             return (

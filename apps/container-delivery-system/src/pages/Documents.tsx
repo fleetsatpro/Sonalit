@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
 import { Tabs } from '@/components/ui/Tabs.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
@@ -12,8 +11,6 @@ const s = (v: unknown) => String(v ?? '—');
 
 const typeIcons: Record<string, string> = { shipping: 'S', customs: 'C', inspection: 'I', insurance: 'N' };
 const typeColors: Record<string, string> = { shipping: '#ff7a00', customs: '#33d6a8', inspection: '#ffb020', insurance: '#6b7380' };
-const statusVariants: Record<string, 'ok' | 'warn' | 'neutral' | 'bad'> = { verified: 'ok', pending: 'warn', expired: 'bad', rejected: 'bad' };
-
 export default function Documents() {
   const [filter, setFilter] = useState<DocFilter>('all');
 

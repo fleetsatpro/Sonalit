@@ -85,7 +85,7 @@ export default function Containers() {
       containerSize: Number.parseInt(isoType, 10) || 20,
       ownership,
       manufacturer: manufacturer.trim(),
-      yearBuilt: yearBuilt ? Number(yearBuilt) : undefined,
+      ...(yearBuilt ? { yearBuilt: Number(yearBuilt) } : {}),
       condition,
       status,
     }, {
@@ -115,7 +115,7 @@ export default function Containers() {
             <label><span className={labelClass}>Container number *</span><input required maxLength={20} value={number} onChange={e => setNumber(e.target.value)} className={inputClass} placeholder="e.g. MSKU1234567" /></label>
             <label><span className={labelClass}>ISO type *</span><select value={isoType} onChange={e => setIsoType(e.target.value)} className={inputClass}>{CONTAINER_TYPES_LIST.map(type => <option key={type} value={type}>{type} · {CONTAINER_TYPES[type]}</option>)}</select></label>
             <label><span className={labelClass}>Ownership *</span><select value={ownership} onChange={e => setOwnership(e.target.value as Container['ownership'])} className={inputClass}>{OWNERSHIPS.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-            <label><span className={labelClass}>Operational status *</span><select value={status} onChange={e => setStatus(e.target.value as ContainerStatus)} className={inputClass}>{STATUS_FILTERS.filter(value => value !== 'all').map(value => <option key={value} value={value}>{value.replaceAll('_', ' ')}</option>)}</select></label>
+            <label><span className={labelClass}>Operational status *</span><select value={status} onChange={e => setStatus(e.target.value as ContainerStatus)} className={inputClass}>{STATUS_FILTERS.filter(value => value !== 'all').map(value => <option key={value} value={value}>{value.replace(/_/g, ' ')}</option>)}</select></label>
             <label><span className={labelClass}>Manufacturer</span><input value={manufacturer} onChange={e => setManufacturer(e.target.value)} maxLength={100} className={inputClass} /></label>
             <label><span className={labelClass}>Year built</span><input type="number" min="1950" max={new Date().getFullYear() + 1} value={yearBuilt} onChange={e => setYearBuilt(e.target.value)} className={inputClass} /></label>
             <label><span className={labelClass}>Physical condition *</span><select value={condition} onChange={e => setCondition(e.target.value as NonNullable<Container['condition']>)} className={inputClass}>{CONDITIONS.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
@@ -132,7 +132,7 @@ export default function Containers() {
         ].map(([title, value]) => <div key={String(title)} className="rounded-xl border border-white/[.07] bg-white/[.02] p-3"><div className="text-[9px] uppercase font-mono tracking-widest text-text-2">{title}</div><div className="text-xl font-bold font-mono text-text-0 mt-2">{value}</div></div>)}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        {STATUS_FILTERS.map(value => <FilterChip key={value} label={value === 'all' ? 'All' : value.replaceAll('_', ' ')} active={filter === value} onClick={() => setFilter(value)} />)}
+        {STATUS_FILTERS.map(value => <FilterChip key={value} label={value === 'all' ? 'All' : value.replace(/_/g, ' ')} active={filter === value} onClick={() => setFilter(value)} />)}
         <SearchInput value={search} onChange={setSearch} placeholder="Search number, type, ownership, location…" className="ml-auto" />
       </div>
       {isError ? <div className="rounded-lg border border-red-400/20 p-4 text-xs text-red-200">Container inventory could not be loaded. <button type="button" onClick={() => { void refetch(); }} className="underline ml-2">Retry</button></div> : null}

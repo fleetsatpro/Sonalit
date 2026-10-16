@@ -1,4 +1,3 @@
-import React from 'react';
 import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';

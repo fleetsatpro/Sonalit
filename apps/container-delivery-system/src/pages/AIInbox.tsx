@@ -1,4 +1,3 @@
-import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
@@ -11,15 +10,19 @@ export default function AIInbox() {
   const { data, isLoading } = useQuery<Record<string, unknown>[]>({
     queryKey: ['activity-feed'],
     queryFn: async () => {
-      const { data } = await api.get('/activity');
-      return data;
+      const { data: body } = await api.get('/activity');
+      if (Array.isArray(body)) return body as Record<string, unknown>[];
+      if (body && typeof body === 'object' && Array.isArray((body as Record<string, unknown>)['data'])) {
+        return (body as Record<string, unknown>)['data'] as Record<string, unknown>[];
+      }
+      return [];
     },
     refetchInterval: 15_000,
   });
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading…</div></div>;
 
-  const activities: Record<string, unknown>[] = Array.isArray(data) ? data : (data as Record<string, unknown>)?.data as Record<string, unknown>[] ?? [];
+  const activities = data ?? [];
 
   return (
     <div className="p-6 pb-10 animate-fade-in h-[calc(100vh-64px)]">

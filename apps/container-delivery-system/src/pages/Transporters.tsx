@@ -1,4 +1,3 @@
-import React from 'react';
 import { Button } from '@/components/ui/Button.js';
 import { ProgressBar } from '@/components/ui/ProgressBar.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';

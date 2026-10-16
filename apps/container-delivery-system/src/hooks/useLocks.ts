@@ -17,8 +17,6 @@ export function useLocks(filters?: SearchFilters) {
       const { data } = await api.get('/locks', { params });
       const rows = Array.isArray(data.data) ? data.data : [];
       const total = Number(data.total ?? rows.length);
-      const pageSize = Math.max(1, Number(filters?.pageSize ?? 200));
-      const page = Math.max(1, Number(filters?.page ?? 1));
       return { data: rows, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
     },
     refetchInterval: 30_000,
