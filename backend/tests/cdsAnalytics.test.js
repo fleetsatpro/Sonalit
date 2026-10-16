@@ -54,6 +54,7 @@ describe('GET /cds/analytics', () => {
     expect(captured[0].sql).toContain('generate_series');
     expect(captured[0].sql).toContain('eta_attainment_pct');
     expect(captured[0].sql).toContain('trips_missing_vehicle');
+    expect(captured[0].sql).toContain('battery_level < 25');
     expect(captured[0].sql).toContain("'archived'");
   });
 

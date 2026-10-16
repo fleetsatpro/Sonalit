@@ -427,8 +427,8 @@ router.get('/analytics', asyncHandler(async (req, res) => {
     lock_metrics AS (
       SELECT COUNT(*)::int AS total_locks,
              COUNT(*) FILTER (WHERE status IN ('offline', 'maintenance') OR tamper_detected
-                OR battery_level < 20 OR signal_strength IN ('weak', 'offline'))::int AS locks_needing_attention,
-             COUNT(*) FILTER (WHERE battery_level < 20)::int AS low_battery_locks,
+                OR battery_level < 25 OR signal_strength IN ('weak', 'offline'))::int AS locks_needing_attention,
+             COUNT(*) FILTER (WHERE battery_level < 25)::int AS low_battery_locks,
              COUNT(*) FILTER (WHERE tamper_detected)::int AS tampered_locks,
              COUNT(*) FILTER (WHERE status IN ('assigned', 'installed')
                 AND (last_heartbeat IS NULL OR last_heartbeat < NOW() - INTERVAL '15 minutes'))::int AS stale_lock_heartbeats
@@ -488,7 +488,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
     lock_status_values(status) AS (VALUES ('available'), ('assigned'), ('installed'), ('removed'), ('maintenance'), ('offline')),
     lock_statuses AS (
       SELECT lsv.status, COUNT(l.id)::int AS count,
-             COUNT(l.id) FILTER (WHERE l.battery_level < 20)::int AS low_battery,
+             COUNT(l.id) FILTER (WHERE l.battery_level < 25)::int AS low_battery,
              COUNT(l.id) FILTER (WHERE l.tamper_detected)::int AS tampered
         FROM lock_status_values lsv
         LEFT JOIN cds_electronic_locks l ON l.status = lsv.status AND l.org_id = $2 AND l.deleted_at IS NULL
