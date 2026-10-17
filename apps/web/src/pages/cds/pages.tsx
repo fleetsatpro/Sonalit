@@ -613,7 +613,7 @@ export function AnalyticsView() {
     { id: 'clamped', label: 'Containers clamped', value: fmt(s.containers_clamped), detail: 'Distinct containers · selected period', color: 'teal', target: '#cds-operators', series: data.daily.map(row => row.containers_clamped) },
     { id: 'locks', label: 'Locks in use', value: fmt(s.locks_in_use), detail: 'Assigned or installed now', color: 'blue', target: '#cds-bookings', series: [] as number[] },
     { id: 'unclamped', label: 'Containers unclamped', value: fmt(s.containers_unclamped), detail: 'Distinct containers · selected period', color: 'violet', target: '#cds-operators', series: data.daily.map(row => row.containers_unclamped) },
-    { id: 'over24', label: 'Clamped over 24 hours', value: fmt(s.containers_clamped_over_24h), detail: 'Still clamped · action required', color: s.containers_clamped_over_24h > 0 ? 'red' : 'amber', target: '#cds-overdue', series: [] as number[] },
+    { id: 'over24', label: 'Still clamped >24h', value: fmt(s.containers_clamped_over_24h), detail: 'Still clamped · action required', color: s.containers_clamped_over_24h > 0 ? 'red' : 'amber', target: '#cds-overdue', series: [] as number[] },
     { id: 'delayed', label: 'Delayed trips', value: fmt(s.delayed_trips), detail: 'Current persisted status', color: s.delayed_trips > 0 ? 'red' : 'amber', target: '#cds-trip-flow', series: [] as number[] },
   ];
   const tone: Record<string, { text: string; border: string; fill: string; dot: string }> = {
@@ -782,7 +782,12 @@ export function AnalyticsView() {
         </div>
         <div id="cds-overdue">
           <Card className="overflow-hidden min-w-0">
-            <div className="p-4 sm:p-5 border-b border-white/[.055] flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Clamped over 24 hours</h3><span className="rounded-md bg-red-300/10 text-red-300 px-2 py-1 font-mono text-xs">{fmt(s.containers_clamped_over_24h)}</span></div>
+            <div className="p-4 sm:p-5 border-b border-white/[.055] flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">24h+ clamp exceptions</h3><span className="rounded-md bg-red-300/10 text-red-300 px-2 py-1 font-mono text-xs">{fmt(s.containers_clamped_over_24h)}</span></div>
+            <div className="grid grid-cols-3 gap-px bg-white/[.05] border-b border-white/[.055]">
+              <div className="bg-[#11161b] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Active clamp</div><div className="text-xl font-semibold tabular-nums mt-1">{fmt(s.containers_currently_clamped)}</div></div>
+              <div className="bg-[#11161b] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Unclamped &gt;24h</div><div className="text-xl font-semibold tabular-nums mt-1">{fmt(s.unclamps_after_24h)}</div></div>
+              <div className="bg-[#11161b] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Avg clamp time</div><div className="text-xl font-semibold tabular-nums mt-1">{s.avg_clamp_duration_hours == null ? '—' : Number(s.avg_clamp_duration_hours).toFixed(1) + 'h'}</div></div>
+            </div>
             {data.overdue_clamps.length === 0 ? <div className="p-5"><div className="rounded-xl border border-dashed border-white/10 p-5 text-center"><div className="text-sm font-medium text-cds-teal">No overdue clamps</div><p className="text-[10px] text-text-2 mt-1">No manifest-recorded clamp has remained active beyond 24 hours.</p></div></div> : <div className="divide-y divide-white/[.05]">{data.overdue_clamps.slice(0, 8).map((row, index) => <div key={row.booking_number + '|' + row.container_number + '|' + index} className="p-3 sm:p-4 flex items-center gap-3"><div className="min-w-0 flex-1"><div className="text-xs font-semibold text-text-0 truncate">{row.container_number}</div><div className="text-[10px] text-text-2 mt-1">Booking {row.booking_number} · {row.clamp_operator}</div><div className="text-[9px] text-text-2 mt-1">Lock {row.lock_number} · {row.driver_name}</div></div><div className="text-right shrink-0"><div className="text-lg font-semibold font-mono text-red-300 tabular-nums">{Number(row.hours_clamped).toFixed(1)}h</div><div className="text-[9px] uppercase tracking-wider text-red-300">overdue</div></div></div>)}</div>}
           </Card>
         </div>
@@ -806,7 +811,7 @@ export function AnalyticsView() {
               <div className="min-h-[240px] flex flex-col justify-center items-center text-center"><div className="text-2xl text-text-2">—</div><div className="text-sm font-medium mt-2">No recorded operations</div></div>
             ) : (
               <div className="w-full">
-                <svg viewBox="0 0 1000 255" preserveAspectRatio="none" className="w-full h-[190px] sm:h-[250px]" role="img" aria-label="Daily trips initiated and deliveries recorded">
+                <svg viewBox="0 0 1000 255" preserveAspectRatio="none" className="w-full h-[190px] sm:h-[250px]" role="img" aria-label="Daily bookings, clamps, unclamps, trips and deliveries">
                   <title>Daily booking, clamp, unclamp, trip and delivery counts from persisted CDS timestamps.</title>
                   {[0, 1, 2, 3, 4].map(i => <g key={i}><line x1="0" x2="1000" y1={18 + i * 48} y2={18 + i * 48} stroke="rgba(255,255,255,.075)" strokeDasharray="3 7" /><text x="0" y={13 + i * 48} fill="rgba(255,255,255,.34)" fontSize="10">{Math.round(maxTrend * (4 - i) / 4)}</text></g>)}
                   {trendBuckets.map((row, index) => {
