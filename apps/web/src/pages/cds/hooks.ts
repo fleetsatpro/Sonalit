@@ -27,7 +27,11 @@ export function useCDSAnalytics(days: 7 | 30 | 90 | 365) {
     queryFn: async () => {
       // On the PR preview only, route analytics to its isolated backend. Production and
       // other deployments keep the established same-origin /api/v1/cds endpoint.
-      const analyticsBaseURL = import.meta.env['VITE_CDS_ANALYTICS_API_BASE_URL'] || '/api/v1/cds';
+      const previewApiBaseURL = 'https://cds-analytics-preview-production.up.railway.app/api/v1/cds';
+      const isBranchPreview = typeof window !== 'undefined'
+        && window.location.hostname === 'sonalit-git-feat-cds-live-analytics-onyari-s-projects.vercel.app';
+      const analyticsBaseURL = import.meta.env['VITE_CDS_ANALYTICS_API_BASE_URL']
+        || (isBranchPreview ? previewApiBaseURL : '/api/v1/cds');
       const { data } = await cdsApi.get('/analytics', {
         baseURL: analyticsBaseURL,
         params: { days },
