@@ -650,6 +650,44 @@ export function AnalyticsView() {
     </div>
   );
   const sectionLink = (id: string, text: string) => <a href={'#' + id} className="shrink-0 px-3 py-2 rounded-md text-[11px] text-text-2 hover:text-text-0 hover:bg-white/[.05] transition-colors">{text}</a>;
+  const donutPanel = (title: string, segments: Array<{ label: string; value: number; color: string }>) => {
+    const total = segments.reduce((sum, segment) => sum + segment.value, 0);
+    const circumference = 2 * Math.PI * 38;
+    let offset = 0;
+    const arcs = segments.map(segment => {
+      const length = total > 0 ? segment.value / total * circumference : 0;
+      const arc = { ...segment, length, offset };
+      offset += length;
+      return arc;
+    });
+    return (
+      <Card key={title} className="min-w-0 overflow-hidden">
+        <div className="p-4 pb-2"><h3 className="text-sm font-semibold">{title}</h3></div>
+        <div className="p-4 pt-1 flex items-center gap-4">
+          <div className="relative w-[118px] h-[118px] shrink-0">
+            <svg viewBox="0 0 104 104" className="w-full h-full -rotate-90" role="img" aria-label={title + ' distribution'}>
+              <circle cx="52" cy="52" r="38" fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="13" />
+              {arcs.map(arc => <circle key={arc.label} cx="52" cy="52" r="38" fill="none" stroke={arc.color} strokeWidth="13" strokeDasharray={arc.length + ' ' + (circumference - arc.length)} strokeDashoffset={-arc.offset} style={{ transition: 'stroke-dasharray 750ms cubic-bezier(.2,.7,.2,1), stroke-dashoffset 750ms ease' }} />)}
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span className="text-2xl font-semibold tracking-tight tabular-nums">{fmt(total)}</span>
+              <span className="text-[8px] uppercase tracking-[.14em] text-text-2">records</span>
+            </div>
+          </div>
+          <div className="flex-1 min-w-0 space-y-2">
+            {segments.map(segment => <div key={segment.label} className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: segment.color }} />
+              <span className="text-[10px] text-text-2 capitalize truncate flex-1">{segment.label}</span>
+              <span className="text-[11px] font-mono tabular-nums text-text-0">{fmt(segment.value)}</span>
+              <span className="text-[9px] text-text-2 w-8 text-right">{total ? Math.round(segment.value / total * 100) : 0}%</span>
+            </div>)}
+            {total === 0 ? <p className="text-[10px] text-text-2">No records</p> : null}
+          </div>
+        </div>
+      </Card>
+    );
+  };
+  const donutColors = ['#f59a3c', '#42cbb5', '#82b6eb', '#b69cff', '#f0c16c', '#ed8b8b', '#71b3a3', '#7e8c9d', '#5f6d7b'];
 
   return (
     <div className="mx-auto max-w-[1840px] p-3 sm:p-5 xl:p-6 space-y-5 text-text-0">
@@ -717,6 +755,36 @@ export function AnalyticsView() {
               </a>
             );
           })}
+        </div>
+      </section>
+
+      <section aria-label="Visual operations mix" className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
+        {donutPanel('Booking mix', data.booking_pipeline.map((row, index) => ({ label: label(row.status), value: row.count, color: donutColors[index % donutColors.length] })))}
+        {donutPanel('Lock inventory', data.lock_statuses.map(row => ({ label: label(row.status), value: row.count, color: ({ installed: '#42cbb5', assigned: '#82b6eb', available: '#f59a3c', removed: '#b69cff', maintenance: '#f0c16c', offline: '#ed8b8b' } as Record<string, string>)[row.status] || '#7e8c9d' })))}
+        {donutPanel('Container clamp cycle', data.clamp_state_mix.map(row => ({ label: label(row.state), value: row.count, color: ({ clamped: '#f59a3c', unclamped: '#42cbb5', awaiting_clamp: '#82b6eb', other: '#5f6d7b' } as Record<string, string>)[row.state] || '#7e8c9d' })))}
+      </section>
+
+      <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-3 sm:gap-4">
+        <div id="cds-operators">
+          <Card className="overflow-hidden min-w-0">
+            <div className="p-4 sm:p-5 border-b border-white/[.055] flex justify-between gap-3 items-center"><h3 className="text-sm font-semibold">Clamp / unclamp by operator</h3><span className="text-[9px] uppercase tracking-wider text-text-2">{days}D</span></div>
+            <div className="p-4 sm:p-5">
+              <div className="flex gap-4 text-[10px] text-text-2 mb-4"><span className="inline-flex items-center gap-2"><i className="w-2 h-2 rounded-sm bg-cds-orange" />Clamped</span><span className="inline-flex items-center gap-2"><i className="w-2 h-2 rounded-sm bg-cds-teal" />Unclamped</span></div>
+              {data.operator_leaderboard.length === 0 ? <div className="py-8 text-center text-xs text-text-2">No operator clamp/unclamp audit events in this period.</div> : <div className="space-y-4">{data.operator_leaderboard.slice(0, 8).map((operator, index) => {
+                const maximum = Math.max(1, ...data.operator_leaderboard.map(row => Math.max(row.containers_clamped, row.containers_unclamped)));
+                return <div key={operator.operator_id}>
+                  <div className="flex items-center gap-3 mb-1.5"><span className="w-5 text-[10px] font-mono text-text-2">{String(index + 1).padStart(2, '0')}</span><span className="text-xs font-medium text-text-0 truncate flex-1">{operator.operator_name}</span><span className="font-mono text-[10px] text-cds-orange">{fmt(operator.containers_clamped)}</span><span className="font-mono text-[10px] text-cds-teal">{fmt(operator.containers_unclamped)}</span></div>
+                  <div className="ml-8 grid grid-cols-2 gap-1.5"><div className="h-2 rounded-full bg-white/[.045] overflow-hidden"><div className="h-full rounded-full bg-cds-orange transition-[width] duration-700" style={{ width: (operator.containers_clamped / maximum * 100) + '%' }} /></div><div className="h-2 rounded-full bg-white/[.045] overflow-hidden"><div className="h-full rounded-full bg-cds-teal transition-[width] duration-700" style={{ width: (operator.containers_unclamped / maximum * 100) + '%' }} /></div></div>
+                </div>;
+              })}</div>}
+            </div>
+          </Card>
+        </div>
+        <div id="cds-overdue">
+          <Card className="overflow-hidden min-w-0">
+            <div className="p-4 sm:p-5 border-b border-white/[.055] flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Clamped over 24 hours</h3><span className="rounded-md bg-red-300/10 text-red-300 px-2 py-1 font-mono text-xs">{fmt(s.containers_clamped_over_24h)}</span></div>
+            {data.overdue_clamps.length === 0 ? <div className="p-5"><div className="rounded-xl border border-dashed border-white/10 p-5 text-center"><div className="text-sm font-medium text-cds-teal">No overdue clamps</div><p className="text-[10px] text-text-2 mt-1">No manifest-recorded clamp has remained active beyond 24 hours.</p></div></div> : <div className="divide-y divide-white/[.05]">{data.overdue_clamps.slice(0, 8).map((row, index) => <div key={row.booking_number + '|' + row.container_number + '|' + index} className="p-3 sm:p-4 flex items-center gap-3"><div className="min-w-0 flex-1"><div className="text-xs font-semibold text-text-0 truncate">{row.container_number}</div><div className="text-[10px] text-text-2 mt-1">Booking {row.booking_number} · {row.clamp_operator}</div><div className="text-[9px] text-text-2 mt-1">Lock {row.lock_number} · {row.driver_name}</div></div><div className="text-right shrink-0"><div className="text-lg font-semibold font-mono text-red-300 tabular-nums">{Number(row.hours_clamped).toFixed(1)}h</div><div className="text-[9px] uppercase tracking-wider text-red-300">overdue</div></div></div>)}</div>}
+          </Card>
         </div>
       </section>
 
