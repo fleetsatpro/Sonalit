@@ -547,6 +547,7 @@ export function AnalyticsView() {
   const [alertFilter, setAlertFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all');
   const [alertSearch, setAlertSearch] = useState('');
   const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const [activeTrend, setActiveTrend] = useState<number | null>(null);
   const { data, isLoading, isError, error, isFetching, refetch, dataUpdatedAt } = useCDSAnalytics(days);
   const acknowledge = useAcknowledgeAlert();
   const { addToast } = useCDSStore();
@@ -605,6 +606,8 @@ export function AnalyticsView() {
     bucket.delivered += row.deliveries_completed;
     return buckets;
   }, []);
+  const activeTrendIndex = activeTrend == null ? trendBuckets.length - 1 : Math.max(0, Math.min(activeTrend, trendBuckets.length - 1));
+  const activeTrendPoint = trendBuckets[activeTrendIndex];
   const maxTrend = Math.max(1, ...trendBuckets.flatMap(row => [row.bookings, row.clamped, row.unclamped, row.started, row.delivered]));
   const totalDataGaps = s.trips_missing_vehicle + s.trips_missing_driver + s.trips_missing_container + s.trips_missing_lock + s.trips_missing_eta;
   const exceptionCount = s.delayed_trips + s.locks_needing_attention + s.containers_clamped_over_24h + totalDataGaps + s.unacknowledged_alerts;
@@ -749,7 +752,7 @@ export function AnalyticsView() {
                 <div className={'mt-3 text-2xl sm:text-[28px] font-semibold leading-none tracking-[-.035em] tabular-nums ' + (k.color === 'red' && s.delayed_trips > 0 ? 'text-red-300' : 'text-text-0')}>{k.value}</div>
                 <p className="mt-2 min-h-[29px] text-[10px] leading-relaxed text-text-2">{k.detail}</p>
                 <div className="mt-2 h-8 opacity-70 group-hover:opacity-100">
-                  {k.series.length > 1 ? <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={'h-full w-full ' + t.text} role="img" aria-label={k.label + ' observed daily trend'}><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /></svg> : <div className={'h-[2px] mt-4 rounded-full ' + t.fill} />}
+                  {k.series.length > 1 ? <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={'h-full w-full ' + t.text} role="img" aria-label={k.label + ' observed daily trend'}><polygon points={'0,32 ' + points + ' 100,32'} fill="currentColor" opacity=".09" /><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /><circle cx="100" cy={29 - k.series[k.series.length - 1] / sparkMax * 25} r="2" fill="currentColor" /></svg> : <div className={'h-[2px] mt-4 rounded-full ' + t.fill} />}
                 </div>
                 <div className="mt-2 border-t border-white/[.055] pt-2 text-[9px] uppercase tracking-wider text-text-2 group-hover:text-text-1">Explore signal <span className="float-right">↗</span></div>
               </a>
@@ -793,7 +796,7 @@ export function AnalyticsView() {
         </div>
       </section>
 
-      <style>{'@keyframes cdsBarRise { from { transform: scaleY(.08); opacity: .3; } to { transform: scaleY(1); opacity: 1; } }'}</style>
+      <style>{'@keyframes cdsBarRise { from { transform: scaleY(.08); opacity: .3; } to { transform: scaleY(1); opacity: 1; } } @media (prefers-reduced-motion: reduce) { .cds-analytics-bar { animation: none !important; transition: none !important; } }'}</style>
       <section id="cds-throughput" className="scroll-mt-4 grid grid-cols-1 2xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.8fr)] gap-3 sm:gap-4">
         <Card className="min-w-0 overflow-hidden">
           <div className="flex flex-wrap justify-between gap-3 items-start p-4 sm:p-5 border-b border-white/[.055]">
@@ -816,8 +819,12 @@ export function AnalyticsView() {
                   {[0, 1, 2, 3, 4].map(i => <g key={i}><line x1="0" x2="1000" y1={18 + i * 48} y2={18 + i * 48} stroke="rgba(255,255,255,.075)" strokeDasharray="3 7" /><text x="0" y={13 + i * 48} fill="rgba(255,255,255,.34)" fontSize="10">{Math.round(maxTrend * (4 - i) / 4)}</text></g>)}
                   {trendBuckets.map((row, index) => {
                     const step = 990 / Math.max(1, trendBuckets.length);
-                    const x = 7 + index * step;
-                    const barWidth = Math.max(2, Math.min(7, step * .13));
+                    const groupAnchor = 7 + index * step;
+                    const barWidth = Math.max(4, Math.min(14, step * .13));
+                    const groupWidth = 5 * (barWidth + 1) - 1;
+                    const x = groupAnchor + Math.max(0, (step - groupWidth) / 2);
+                    const focusWidth = Math.max(groupWidth, step * .82);
+                    const focusX = Math.max(0, x - (focusWidth - groupWidth) / 2);
                     const series = [
                       { label: 'bookings', value: row.bookings, color: '#f59a3c' },
                       { label: 'clamped', value: row.clamped, color: '#42cbb5' },
@@ -825,12 +832,22 @@ export function AnalyticsView() {
                       { label: 'trips', value: row.started, color: '#b69cff' },
                       { label: 'delivered', value: row.delivered, color: '#f0c16c' },
                     ];
-                    return <g key={row.start}><title>{row.start} – {row.end}: {series.map(item => item.label + ' ' + item.value).join(' · ')}</title>{series.map((item, seriesIndex) => {
+                    return <g key={row.start} tabIndex={0} role="group" aria-label={row.start + ' through ' + row.end} onMouseEnter={() => setActiveTrend(index)} onMouseLeave={() => setActiveTrend(null)} onFocus={() => setActiveTrend(index)} onBlur={() => setActiveTrend(null)}><rect x={focusX} y="18" width={focusWidth} height="193" rx="4" fill={activeTrendIndex === index ? 'rgba(255,255,255,.045)' : 'transparent'} stroke={activeTrendIndex === index ? 'rgba(255,255,255,.08)' : 'transparent'} /><title>{row.start} – {row.end}: {series.map(item => item.label + ' ' + item.value).join(' · ')}</title>{series.map((item, seriesIndex) => {
                       const height = item.value / maxTrend * 178;
-                      return <rect key={item.label} x={x + seriesIndex * (barWidth + 1)} y={204 - height} width={barWidth} height={height} rx="1.5" fill={item.color} style={{ transformBox: 'fill-box', transformOrigin: 'center bottom', animation: 'cdsBarRise 650ms cubic-bezier(.2,.7,.2,1) both', animationDelay: (index * 8 + seriesIndex * 25) + 'ms', transition: 'height 600ms ease' }} />;
+                      return <rect className="cds-analytics-bar" key={item.label} x={x + seriesIndex * (barWidth + 1)} y={204 - height} width={barWidth} height={height} rx="1.5" fill={item.color} style={{ transformBox: 'fill-box', transformOrigin: 'center bottom', animation: 'cdsBarRise 650ms cubic-bezier(.2,.7,.2,1) both', animationDelay: (index * 8 + seriesIndex * 25) + 'ms', transition: 'height 600ms ease' }} />;
                     })}</g>;
                   })}
                 </svg>
+                <div aria-live="polite" className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-white/[.06] bg-white/[.025] px-3 py-2.5">
+                  {activeTrendPoint ? <><span className="text-[10px] font-mono text-text-2">{activeTrendPoint.start === activeTrendPoint.end ? dateLabel(activeTrendPoint.start) : dateLabel(activeTrendPoint.start) + ' — ' + dateLabel(activeTrendPoint.end)}</span>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-cds-orange" />Bookings <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.bookings)}</strong></span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-cds-teal" />Clamped <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.clamped)}</strong></span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-sky-300" />Unclamped <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.unclamped)}</strong></span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-violet-300" />Trips <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.started)}</strong></span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-amber-300" />Delivered <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.delivered)}</strong></span>
+                    </div></> : null}
+                </div>
                 <div className="flex justify-between gap-2 px-1 text-[9px] font-mono text-text-2"><span>{dateLabel(trendBuckets[0].start)}</span><span>{dateLabel(trendBuckets[Math.floor(trendBuckets.length / 2)].start)}</span><span>{dateLabel(trendBuckets[trendBuckets.length - 1].end)}</span></div>
               </div>
             )}
