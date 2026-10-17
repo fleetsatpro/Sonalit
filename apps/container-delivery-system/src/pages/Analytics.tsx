@@ -93,7 +93,16 @@ export default function Analytics() {
   const qc = useQueryClient();
   const query = useQuery<AnalyticsPayload>({
     queryKey: ['cds-analytics', days],
-    queryFn: async () => { const response = await api.get('/analytics', { params: { days } }); return response.data.data as AnalyticsPayload; },
+    queryFn: async () => {
+      // Keep the standalone CDS frontend on the same authenticated, read-only
+      // preview path as the web dashboard. The branch-only analytics contract
+      // is not exposed by the production API until this change is reviewed.
+      const usePreviewProxy = import.meta.env['VITE_CDS_ANALYTICS_PREVIEW_PROXY'] === 'true';
+      const response = usePreviewProxy
+        ? await api.get('/cds-analytics', { baseURL: '/api', params: { days } })
+        : await api.get('/analytics', { baseURL: '/api/v1/cds', params: { days } });
+      return response.data.data as AnalyticsPayload;
+    },
     staleTime: 20_000, refetchInterval: 60_000, retry: 1,
   });
   const acknowledge = useMutation({
