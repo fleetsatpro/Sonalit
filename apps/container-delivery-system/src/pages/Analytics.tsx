@@ -170,11 +170,11 @@ export default function Analytics() {
   }
 
   const qualityRows = [
-    { name: 'Open trips missing a vehicle', count: summary.trips_missing_vehicle },
-    { name: 'Open trips missing a driver', count: summary.trips_missing_driver },
-    { name: 'Open trips missing a container', count: summary.trips_missing_container },
-    { name: 'Open trips missing an e-lock', count: summary.trips_missing_lock },
-    { name: 'Open trips missing an ETA', count: summary.trips_missing_eta },
+    { name: 'Vehicle missing after lock preparation', count: summary.trips_missing_vehicle },
+    { name: 'Driver missing after lock preparation', count: summary.trips_missing_driver },
+    { name: 'Container missing after lock preparation', count: summary.trips_missing_container },
+    { name: 'E-lock missing after status Locked', count: summary.trips_missing_lock },
+    { name: 'ETA missing after status Locked', count: summary.trips_missing_eta },
   ];
   const hasQualityGaps = qualityRows.some(row => row.count > 0);
   const selectedWindow = windows;
@@ -250,9 +250,9 @@ export default function Analytics() {
           </div>
         </Card>
         <Card className="p-4 min-w-0">
-          <div className="flex items-start justify-between gap-3 mb-4"><div><h3 className="font-bold text-sm text-text-0">Operational data quality</h3><p className="text-[11px] text-text-2 mt-1">Open trip records checked for assignment and planning completeness.</p></div><span className={'text-[9px] uppercase tracking-wider font-mono ' + (hasQualityGaps ? 'text-amber-300' : 'text-emerald-300')}>{hasQualityGaps ? 'Review' : 'No gaps found'}</span></div>
+          <div className="flex items-start justify-between gap-3 mb-4"><div><h3 className="font-bold text-sm text-text-0">Operational data quality</h3><p className="text-[11px] text-text-2 mt-1">Missing-field checks start at the stage where each assignment is expected: vehicle, driver and container from awaiting_lock; e-lock and ETA from locked onward.</p></div><span className={'text-[9px] uppercase tracking-wider font-mono ' + (hasQualityGaps ? 'text-amber-300' : 'text-emerald-300')}>{hasQualityGaps ? 'Review' : 'No gaps found'}</span></div>
           {qualityRows.map(row => <div key={row.name} className="flex justify-between items-center gap-3 py-2.5 border-b border-white/[.05] last:border-0 text-xs"><span className="text-text-1">{row.name}</span><span className={'font-mono font-bold ' + (row.count > 0 ? 'text-amber-300' : 'text-text-0')}>{fmt(row.count)}</span></div>)}
-          {hasQualityGaps ? <p className="text-[10px] text-text-2 mt-3">An unassigned field may be appropriate in an early lifecycle state. Review the status before treating it as an exception.</p> : <p className="text-[10px] text-text-2 mt-3">No missing assignment fields were detected among current open trip records in these checks.</p>}
+          {hasQualityGaps ? <p className="text-[10px] text-text-2 mt-3">Only fields expected by the current lifecycle stage are counted; earlier-stage assignments are not treated as defects.</p> : <p className="text-[10px] text-text-2 mt-3">No missing fields were detected at the lifecycle stages where these assignments are required.</p>}
         </Card>
       </div>
 

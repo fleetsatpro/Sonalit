@@ -404,11 +404,11 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         ROUND((AVG(EXTRACT(EPOCH FROM (t.delivered_at - t.departed_at)) / 3600.0)
           FILTER (WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at
             AND t.departed_at IS NOT NULL AND t.delivered_at IS NOT NULL))::numeric, 1) AS avg_transit_hours,
-        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.vehicle_id IS NULL)::int AS trips_missing_vehicle,
-        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.driver_id IS NULL)::int AS trips_missing_driver,
-        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.container_id IS NULL)::int AS trips_missing_container,
-        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.lock_id IS NULL)::int AS trips_missing_lock,
-        COUNT(*) FILTER (WHERE t.status NOT IN ('completed', 'archived') AND t.eta IS NULL)::int AS trips_missing_eta
+        COUNT(*) FILTER (WHERE t.status IN ('awaiting_lock', 'locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.vehicle_id IS NULL)::int AS trips_missing_vehicle,
+        COUNT(*) FILTER (WHERE t.status IN ('awaiting_lock', 'locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.driver_id IS NULL)::int AS trips_missing_driver,
+        COUNT(*) FILTER (WHERE t.status IN ('awaiting_lock', 'locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.container_id IS NULL)::int AS trips_missing_container,
+        COUNT(*) FILTER (WHERE t.status IN ('locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.lock_id IS NULL)::int AS trips_missing_lock,
+        COUNT(*) FILTER (WHERE t.status IN ('locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.eta IS NULL)::int AS trips_missing_eta
       FROM trip_rows t CROSS JOIN bounds b
     ),
     container_metrics AS (
@@ -420,9 +420,9 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         COUNT(*) FILTER (WHERE condition = 'damaged')::int AS damaged_containers,
         COUNT(*) FILTER (WHERE condition = 'fair')::int AS fair_condition_containers,
         COUNT(*) FILTER (WHERE condition = 'retired')::int AS retired_containers,
-        COUNT(*) FILTER (WHERE next_inspection < CURRENT_DATE)::int AS overdue_inspections,
-        COUNT(*) FILTER (WHERE next_inspection >= CURRENT_DATE AND next_inspection < CURRENT_DATE + INTERVAL '31 days')::int AS inspections_due_30_days,
-        COUNT(*) FILTER (WHERE current_location IS NULL OR BTRIM(current_location) = '')::int AS containers_missing_location
+        COUNT(*) FILTER (WHERE next_inspection < NOW())::int AS overdue_inspections,
+        COUNT(*) FILTER (WHERE next_inspection >= NOW() AND next_inspection < NOW() + INTERVAL '30 days')::int AS inspections_due_30_days,
+        COUNT(*) FILTER (WHERE (current_location IS NULL OR BTRIM(current_location) = '') AND (lat IS NULL OR lng IS NULL))::int AS containers_missing_location
       FROM cds_containers WHERE org_id = $2 AND deleted_at IS NULL
     ),
     vehicle_metrics AS (

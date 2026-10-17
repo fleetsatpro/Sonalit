@@ -54,6 +54,11 @@ describe('GET /cds/analytics', () => {
     expect(captured[0].sql).toContain('generate_series');
     expect(captured[0].sql).toContain('eta_attainment_pct');
     expect(captured[0].sql).toContain('trips_missing_vehicle');
+    expect(captured[0].sql).toContain("t.status IN ('awaiting_lock', 'locked', 'dispatched'");
+    expect(captured[0].sql).toContain("t.status IN ('locked', 'dispatched', 'checkpoint'");
+    expect(captured[0].sql).toContain('next_inspection < NOW()');
+    expect(captured[0].sql).toContain('next_inspection >= NOW()');
+    expect(captured[0].sql).toContain('(lat IS NULL OR lng IS NULL)');
     expect(captured[0].sql).toContain('overdue_inspections');
     expect(captured[0].sql).toContain("('new'), ('good'), ('fair'), ('damaged'), ('retired')");
     expect(captured[0].sql).toContain("'container_statuses'");

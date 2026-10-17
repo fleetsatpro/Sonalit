@@ -570,11 +570,11 @@ export function AnalyticsView() {
   };
   const label = (value: string) => value.replaceAll('_', ' ');
   const dataQuality = [
-    { label: 'Open trips missing vehicle', value: s.trips_missing_vehicle },
-    { label: 'Open trips missing driver', value: s.trips_missing_driver },
-    { label: 'Open trips missing container', value: s.trips_missing_container },
-    { label: 'Open trips missing e-lock', value: s.trips_missing_lock },
-    { label: 'Open trips missing ETA', value: s.trips_missing_eta },
+    { label: 'Vehicle missing after lock preparation', value: s.trips_missing_vehicle },
+    { label: 'Driver missing after lock preparation', value: s.trips_missing_driver },
+    { label: 'Container missing after lock preparation', value: s.trips_missing_container },
+    { label: 'E-lock missing after status Locked', value: s.trips_missing_lock },
+    { label: 'ETA missing after status Locked', value: s.trips_missing_eta },
   ];
   const hasDataQualityGaps = dataQuality.some(row => row.value > 0);
   const trendMax = Math.max(1, ...data.daily.flatMap(row => [row.trips_started, row.deliveries_completed]));
@@ -734,7 +734,7 @@ export function AnalyticsView() {
             <Badge variant={hasDataQualityGaps ? 'warn' : 'ok'}>{hasDataQualityGaps ? 'REVIEW' : 'NO GAPS FOUND'}</Badge>
           </div>
           {dataQuality.map(row => <div key={row.label} className="flex items-center justify-between gap-3 py-2 border-b border-white/[.05] last:border-0 text-xs"><span className="text-text-1">{row.label}</span><span className={'font-mono font-bold ' + (row.value > 0 ? 'text-cds-amber' : 'text-text-0')}>{fmt(row.value)}</span></div>)}
-          {hasDataQualityGaps ? <p className="text-[10px] text-text-2 mt-3">A missing assignment may be legitimate in an early lifecycle state. Review the trip status before treating it as an exception.</p> : <p className="text-[10px] text-text-2 mt-3">No missing assignment fields were detected among current open trips in these checks.</p>}
+          {hasDataQualityGaps ? <p className="text-[10px] text-text-2 mt-3">Only fields expected by the current lifecycle stage are counted; earlier-stage assignments are not treated as defects.</p> : <p className="text-[10px] text-text-2 mt-3">No missing fields were detected at the lifecycle stages where these assignments are required.</p>}
         </Card>
       </div>
 
