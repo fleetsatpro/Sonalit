@@ -63,6 +63,14 @@ describe('GET /cds/analytics', () => {
     expect(captured[0].sql).toContain("('new'), ('good'), ('fair'), ('damaged'), ('retired')");
     expect(captured[0].sql).toContain("'container_statuses'");
     expect(captured[0].sql).toContain('battery_level < 25');
+    expect(captured[0].sql).toContain('bookings_received');
+    expect(captured[0].sql).toContain('clamp_action_events AS');
+    expect(captured[0].sql).toContain("a.action IN ('clamp', 'unclamp')");
+    expect(captured[0].sql).toContain('containers_clamped_over_24h');
+    expect(captured[0].sql).toContain('unclamps_after_24h');
+    expect(captured[0].sql).toContain('operator_leaderboard');
+    expect(captured[0].sql).toContain('overdue_clamps');
+    expect(captured[0].sql).toContain('bc.clamped_at <= NOW() - INTERVAL \'24 hours\'');
     expect(captured[0].sql).toContain("'archived'");
     expect(captured[0].sql).toContain("'completed'), ('billed'), ('cancelled'");
   });
