@@ -272,3 +272,20 @@
  .sonalit-public[data-page-kind="detail"] .cta{padding:1.4rem}
  .sonalit-public[data-page-kind="detail"] footer{padding:2.8rem 1rem 1.4rem}
 }
+
+/* Contrast refinement: separate readable text accents from decorative route accents. */
+.sonalit-public[data-page-kind="detail"]{--page-accent-readable:#2457ff}
+.sonalit-public[data-page-kind="detail"][data-page-tone="fleet"]{--page-accent-readable:#2457ff}
+.sonalit-public[data-page-kind="detail"][data-page-tone="convoy"]{--page-accent-readable:#006d77}
+.sonalit-public[data-page-kind="detail"][data-page-tone="container"]{--page-accent-readable:#b4470b}
+.sonalit-public[data-page-kind="detail"][data-page-tone="security"]{--page-accent-readable:#c2185b}
+.sonalit-public[data-page-kind="detail"] .section-label,
+.sonalit-public[data-page-kind="detail"] .inline-link,
+.sonalit-public[data-page-kind="detail"] .cap-link{color:var(--page-accent-readable,var(--page-accent))}
+.sonalit-public[data-page-kind="detail"] .cap-icon{color:var(--page-accent-readable,var(--page-accent))}
+.sonalit-public[data-page-kind="detail"] .cta .btn-primary,
+.sonalit-public[data-page-kind="detail"] .btn-primary{background:var(--page-accent-readable,var(--page-accent));border-color:var(--page-accent-readable,var(--page-accent));color:#fff}
+.sonalit-public[data-page-kind="detail"] .cta .btn-primary:hover,
+.sonalit-public[data-page-kind="detail"] .btn-primary:hover{filter:brightness(.94)}
+.sonalit-public .home-v6 .tone-convoy{--plane-accent:#087f8c;--feat-color:#087f8c}
+.sonalit-public .home-v6 .tone-container{--plane-accent:#b84a10;--feat-color:#b84a10}
