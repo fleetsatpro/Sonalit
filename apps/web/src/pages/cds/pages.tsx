@@ -610,9 +610,9 @@ export function AnalyticsView() {
   const exceptionCount = s.delayed_trips + s.locks_needing_attention + s.containers_clamped_over_24h + totalDataGaps + s.unacknowledged_alerts;
   const kpis = [
     { id: 'bookings', label: 'Bookings received', value: fmt(s.bookings_received), detail: days + ' day intake', color: 'orange', target: '#cds-bookings', series: data.daily.map(row => row.bookings_received) },
-    { id: 'clamped', label: 'Containers clamped', value: fmt(s.containers_clamped), detail: 'Distinct containers · selected period', color: 'teal', target: '#cds-clamp-flow', series: data.daily.map(row => row.containers_clamped) },
-    { id: 'locks', label: 'Locks in use', value: fmt(s.locks_in_use), detail: 'Assigned or installed now', color: 'blue', target: '#cds-locks', series: [] as number[] },
-    { id: 'unclamped', label: 'Containers unclamped', value: fmt(s.containers_unclamped), detail: 'Distinct containers · selected period', color: 'violet', target: '#cds-clamp-flow', series: data.daily.map(row => row.containers_unclamped) },
+    { id: 'clamped', label: 'Containers clamped', value: fmt(s.containers_clamped), detail: 'Distinct containers · selected period', color: 'teal', target: '#cds-operators', series: data.daily.map(row => row.containers_clamped) },
+    { id: 'locks', label: 'Locks in use', value: fmt(s.locks_in_use), detail: 'Assigned or installed now', color: 'blue', target: '#cds-bookings', series: [] as number[] },
+    { id: 'unclamped', label: 'Containers unclamped', value: fmt(s.containers_unclamped), detail: 'Distinct containers · selected period', color: 'violet', target: '#cds-operators', series: data.daily.map(row => row.containers_unclamped) },
     { id: 'over24', label: 'Clamped over 24 hours', value: fmt(s.containers_clamped_over_24h), detail: 'Still clamped · action required', color: s.containers_clamped_over_24h > 0 ? 'red' : 'amber', target: '#cds-overdue', series: [] as number[] },
     { id: 'delayed', label: 'Delayed trips', value: fmt(s.delayed_trips), detail: 'Current persisted status', color: s.delayed_trips > 0 ? 'red' : 'amber', target: '#cds-trip-flow', series: [] as number[] },
   ];
@@ -758,7 +758,7 @@ export function AnalyticsView() {
         </div>
       </section>
 
-      <section aria-label="Visual operations mix" className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
+      <section id="cds-bookings" aria-label="Visual operations mix" className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
         {donutPanel('Booking mix', data.booking_pipeline.map((row, index) => ({ label: label(row.status), value: row.count, color: donutColors[index % donutColors.length] })))}
         {donutPanel('Lock inventory', data.lock_statuses.map(row => ({ label: label(row.status), value: row.count, color: ({ installed: '#42cbb5', assigned: '#82b6eb', available: '#f59a3c', removed: '#b69cff', maintenance: '#f0c16c', offline: '#ed8b8b' } as Record<string, string>)[row.status] || '#7e8c9d' })))}
         {donutPanel('Container clamp cycle', data.clamp_state_mix.map(row => ({ label: label(row.state), value: row.count, color: ({ clamped: '#f59a3c', unclamped: '#42cbb5', awaiting_clamp: '#82b6eb', other: '#5f6d7b' } as Record<string, string>)[row.state] || '#7e8c9d' })))}
@@ -788,30 +788,42 @@ export function AnalyticsView() {
         </div>
       </section>
 
+      <style>{'@keyframes cdsBarRise { from { transform: scaleY(.08); opacity: .3; } to { transform: scaleY(1); opacity: 1; } }'}</style>
       <section id="cds-throughput" className="scroll-mt-4 grid grid-cols-1 2xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.8fr)] gap-3 sm:gap-4">
         <Card className="min-w-0 overflow-hidden">
           <div className="flex flex-wrap justify-between gap-3 items-start p-4 sm:p-5 border-b border-white/[.055]">
-            <div><div className="text-[9px] uppercase tracking-[.18em] font-mono text-text-2">PERIOD / DAILY SERIES</div><h3 className="text-base font-semibold mt-1">Throughput & delivery cadence</h3><p className="text-[11px] text-text-2 mt-1">Trip creation compared with delivery timestamps, grouped to keep longer periods readable.</p></div>
+            <div><div className="text-[9px] uppercase tracking-[.18em] font-mono text-text-2">DAILY OPERATIONS / SELECTED PERIOD</div><h3 className="text-base font-semibold mt-1">Bookings → clamp → unclamp</h3></div>
             <div className="flex flex-wrap gap-3 text-[10px] text-text-2">
-              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-cds-orange" />Trips initiated</span>
-              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-cds-teal" />Deliveries recorded</span>
+              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-cds-orange" />Bookings</span>
+              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-cds-teal" />Clamped</span>
+              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-sky-300" />Unclamped</span>
+              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-violet-300" />Trips</span>
+              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-amber-300" />Delivered</span>
             </div>
           </div>
           <div className="p-3 sm:p-5">
-            {trendBuckets.length === 0 || trendBuckets.every(row => !row.started && !row.delivered) ? (
-              <div className="min-h-[240px] flex flex-col justify-center items-center text-center"><div className="text-2xl text-text-2">—</div><div className="text-sm font-medium mt-2">No recorded throughput in this period</div><p className="text-[11px] text-text-2 mt-1">No trip starts or deliveries were returned for the selected reporting window.</p></div>
+            {trendBuckets.length === 0 || trendBuckets.every(row => !row.bookings && !row.clamped && !row.unclamped && !row.started && !row.delivered) ? (
+              <div className="min-h-[240px] flex flex-col justify-center items-center text-center"><div className="text-2xl text-text-2">—</div><div className="text-sm font-medium mt-2">No recorded operations</div></div>
             ) : (
               <div className="w-full">
                 <svg viewBox="0 0 1000 255" preserveAspectRatio="none" className="w-full h-[190px] sm:h-[250px]" role="img" aria-label="Daily trips initiated and deliveries recorded">
-                  <title>Daily CDS throughput. Bars are grouped for readability and are derived from persisted trip timestamps.</title>
+                  <title>Daily booking, clamp, unclamp, trip and delivery counts from persisted CDS timestamps.</title>
                   {[0, 1, 2, 3, 4].map(i => <g key={i}><line x1="0" x2="1000" y1={18 + i * 48} y2={18 + i * 48} stroke="rgba(255,255,255,.075)" strokeDasharray="3 7" /><text x="0" y={13 + i * 48} fill="rgba(255,255,255,.34)" fontSize="10">{Math.round(maxTrend * (4 - i) / 4)}</text></g>)}
                   {trendBuckets.map((row, index) => {
                     const step = 990 / Math.max(1, trendBuckets.length);
-                    const x = 12 + index * step;
-                    const barWidth = Math.max(2, Math.min(17, step * .27));
-                    const startedHeight = row.started / maxTrend * 178;
-                    const deliveredHeight = row.delivered / maxTrend * 178;
-                    return <g key={row.start}><title>{row.start} – {row.end}: {row.started} started; {row.delivered} delivered</title><rect x={x} y={204 - startedHeight} width={barWidth} height={startedHeight} rx="2" fill="#f59a3c" opacity=".92" /><rect x={x + barWidth + 2} y={204 - deliveredHeight} width={barWidth} height={deliveredHeight} rx="2" fill="#42cbb5" opacity=".92" /></g>;
+                    const x = 7 + index * step;
+                    const barWidth = Math.max(2, Math.min(7, step * .13));
+                    const series = [
+                      { label: 'bookings', value: row.bookings, color: '#f59a3c' },
+                      { label: 'clamped', value: row.clamped, color: '#42cbb5' },
+                      { label: 'unclamped', value: row.unclamped, color: '#82b6eb' },
+                      { label: 'trips', value: row.started, color: '#b69cff' },
+                      { label: 'delivered', value: row.delivered, color: '#f0c16c' },
+                    ];
+                    return <g key={row.start}><title>{row.start} – {row.end}: {series.map(item => item.label + ' ' + item.value).join(' · ')}</title>{series.map((item, seriesIndex) => {
+                      const height = item.value / maxTrend * 178;
+                      return <rect key={item.label} x={x + seriesIndex * (barWidth + 1)} y={204 - height} width={barWidth} height={height} rx="1.5" fill={item.color} style={{ transformBox: 'fill-box', transformOrigin: 'center bottom', animation: 'cdsBarRise 650ms cubic-bezier(.2,.7,.2,1) both', animationDelay: (index * 8 + seriesIndex * 25) + 'ms', transition: 'height 600ms ease' }} />;
+                    })}</g>;
                   })}
                 </svg>
                 <div className="flex justify-between gap-2 px-1 text-[9px] font-mono text-text-2"><span>{dateLabel(trendBuckets[0].start)}</span><span>{dateLabel(trendBuckets[Math.floor(trendBuckets.length / 2)].start)}</span><span>{dateLabel(trendBuckets[trendBuckets.length - 1].end)}</span></div>
