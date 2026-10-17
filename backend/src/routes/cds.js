@@ -411,6 +411,97 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         COUNT(*) FILTER (WHERE t.status IN ('locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.eta IS NULL)::int AS trips_missing_eta
       FROM trip_rows t CROSS JOIN bounds b
     ),
+    booking_metrics AS (
+      SELECT COUNT(*) FILTER (
+        WHERE b.created_at >= win.start_at AND b.created_at < win.end_at
+      )::int AS bookings_received
+        FROM cds_bookings b CROSS JOIN bounds win
+       WHERE b.org_id = $2 AND b.deleted_at IS NULL
+    ),
+    -- Container clamp/unclamp actions are written to the CDS audit log by both
+    -- the booking-container manifest flow and the legacy trip-level workflow.
+    -- Prefer manifest events where a trip is linked to a booking container to
+    -- avoid counting the same physical operation twice.
+    clamp_action_events AS (
+      SELECT a.id, a.action, a.user_id,
+             COALESCE(NULLIF(BTRIM(a.user_name), ''), 'Unattributed operator') AS operator_name,
+             COALESCE(a.user_id::text,
+                      'name:' || LOWER(NULLIF(BTRIM(a.user_name), '')),
+                      'unattributed') AS operator_key,
+             a.created_at, a.entity_id,
+             CASE WHEN a.entity_type = 'booking_container' THEN a.entity_id
+                  ELSE COALESCE(t.container_id, a.entity_id) END AS metric_entity_id
+        FROM cds_audit_logs a
+        LEFT JOIN cds_trips t
+          ON a.entity_type = 'trip' AND t.id = a.entity_id
+         AND t.org_id = $2 AND t.deleted_at IS NULL
+       WHERE a.org_id = $2
+         AND a.action IN ('clamp', 'unclamp')
+         AND (
+           (a.entity_type = 'booking_container' AND EXISTS (
+             SELECT 1 FROM cds_booking_containers bcx
+              WHERE bcx.id = a.entity_id AND bcx.org_id = $2 AND bcx.deleted_at IS NULL
+           ))
+           OR
+           (a.entity_type = 'trip' AND t.id IS NOT NULL AND NOT EXISTS (
+             SELECT 1 FROM cds_booking_containers bcx
+              WHERE bcx.trip_id = t.id AND bcx.org_id = $2 AND bcx.deleted_at IS NULL
+           ))
+         )
+    ),
+    clamp_metrics AS (
+      SELECT
+        (SELECT COUNT(DISTINCT e.metric_entity_id)::int
+           FROM clamp_action_events e CROSS JOIN bounds win
+          WHERE e.action = 'clamp' AND e.created_at >= win.start_at AND e.created_at < win.end_at) AS containers_clamped,
+        (SELECT COUNT(DISTINCT e.metric_entity_id)::int
+           FROM clamp_action_events e CROSS JOIN bounds win
+          WHERE e.action = 'unclamp' AND e.created_at >= win.start_at AND e.created_at < win.end_at) AS containers_unclamped,
+        (SELECT COUNT(*)::int FROM cds_booking_containers bc
+          JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
+         WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
+           AND bc.clamped_at IS NOT NULL
+           AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at)
+           AND bc.status NOT IN ('delivered', 'completed')) AS containers_currently_clamped,
+        (SELECT COUNT(*)::int FROM cds_booking_containers bc
+          JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
+         WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
+           AND bc.clamped_at IS NOT NULL AND bc.clamped_at <= NOW() - INTERVAL '24 hours'
+           AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at)
+           AND bc.status NOT IN ('delivered', 'completed')) AS containers_clamped_over_24h,
+        (SELECT COUNT(*)::int FROM cds_booking_containers bc
+          JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
+          CROSS JOIN bounds win
+         WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
+           AND bc.clamped_at IS NOT NULL AND bc.unclamped_at IS NOT NULL
+           AND bc.unclamped_at >= win.start_at AND bc.unclamped_at < win.end_at
+           AND bc.unclamped_at - bc.clamped_at > INTERVAL '24 hours') AS unclamps_after_24h,
+        (SELECT ROUND((AVG(EXTRACT(EPOCH FROM (bc.unclamped_at - bc.clamped_at)) / 3600.0))::numeric, 1)
+           FROM cds_booking_containers bc
+           JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
+          WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
+            AND bc.clamped_at IS NOT NULL AND bc.unclamped_at IS NOT NULL
+            AND bc.unclamped_at >= bc.clamped_at) AS avg_clamp_duration_hours
+    ),
+    container_clamp_rows AS (
+      SELECT CASE
+        WHEN bc.clamped_at IS NOT NULL AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at)
+          AND bc.status NOT IN ('delivered', 'completed') THEN 'clamped'
+        WHEN bc.unclamped_at IS NOT NULL AND (bc.clamped_at IS NULL OR bc.unclamped_at >= bc.clamped_at) THEN 'unclamped'
+        WHEN bc.clamped_at IS NULL AND bc.status IN ('pending', 'assigned') THEN 'awaiting_clamp'
+        ELSE 'other'
+      END AS state
+      FROM cds_booking_containers bc
+      JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
+      WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
+    ),
+    container_clamp_state_values(state) AS (VALUES ('clamped'), ('unclamped'), ('awaiting_clamp'), ('other')),
+    clamp_state_mix AS (
+      SELECT sc.state, COUNT(cr.state)::int AS count
+        FROM container_clamp_state_values sc
+        LEFT JOIN container_clamp_rows cr ON cr.state = sc.state
+       GROUP BY sc.state
+    ),
     container_metrics AS (
       SELECT
         COUNT(*)::int AS total_containers,
@@ -434,6 +525,8 @@ router.get('/analytics', asyncHandler(async (req, res) => {
     ),
     lock_metrics AS (
       SELECT COUNT(*)::int AS total_locks,
+             COUNT(*) FILTER (WHERE status IN ('assigned', 'installed'))::int AS locks_in_use,
+             COUNT(*) FILTER (WHERE status IN ('available', 'removed'))::int AS unclamped_locks,
              COUNT(*) FILTER (WHERE status IN ('offline', 'maintenance') OR tamper_detected
                 OR battery_level < 25 OR signal_strength IN ('weak', 'offline'))::int AS locks_needing_attention,
              COUNT(*) FILTER (WHERE battery_level < 25)::int AS low_battery_locks,
@@ -452,6 +545,10 @@ router.get('/analytics', asyncHandler(async (req, res) => {
     ),
     summary AS (
       SELECT tm.*,
+        bm.bookings_received,
+        opm.containers_clamped, opm.containers_unclamped,
+        opm.containers_currently_clamped, opm.containers_clamped_over_24h,
+        opm.unclamps_after_24h, opm.avg_clamp_duration_hours,
         cm.total_containers,
         cm.available_containers,
         cm.containers_in_use,
@@ -467,10 +564,12 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         CASE WHEN vm.available_vehicles + vm.vehicles_in_use > 0
           THEN ROUND(100.0 * vm.vehicles_in_use / (vm.available_vehicles + vm.vehicles_in_use), 1)
           ELSE NULL END AS vehicle_utilization_pct,
-        lm.total_locks, lm.locks_needing_attention, lm.low_battery_locks, lm.tampered_locks, lm.stale_lock_heartbeats,
+        lm.total_locks, lm.locks_in_use, lm.unclamped_locks,
+        lm.locks_needing_attention, lm.low_battery_locks, lm.tampered_locks, lm.stale_lock_heartbeats,
         dm.active_drivers, im.open_incidents,
         (SELECT COUNT(*)::int FROM cds_alerts a WHERE a.org_id = $2 AND a.acknowledged = false) AS unacknowledged_alerts
-      FROM trip_metrics tm CROSS JOIN container_metrics cm CROSS JOIN vehicle_metrics vm
+      FROM trip_metrics tm CROSS JOIN booking_metrics bm CROSS JOIN clamp_metrics opm
+      CROSS JOIN container_metrics cm CROSS JOIN vehicle_metrics vm
       CROSS JOIN lock_metrics lm CROSS JOIN driver_metrics dm CROSS JOIN incident_metrics im
     ),
     daily_started AS (
@@ -481,13 +580,33 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       SELECT t.delivered_at::date AS day, COUNT(*)::int AS count FROM trip_rows t CROSS JOIN bounds b
        WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at GROUP BY t.delivered_at::date
     ),
+    daily_bookings AS (
+      SELECT b.created_at::date AS day, COUNT(*)::int AS count
+        FROM cds_bookings b CROSS JOIN bounds win
+       WHERE b.org_id = $2 AND b.deleted_at IS NULL
+         AND b.created_at >= win.start_at AND b.created_at < win.end_at
+       GROUP BY b.created_at::date
+    ),
+    daily_clamp_actions AS (
+      SELECT e.created_at::date AS day,
+             COUNT(DISTINCT e.metric_entity_id) FILTER (WHERE e.action = 'clamp')::int AS containers_clamped,
+             COUNT(DISTINCT e.metric_entity_id) FILTER (WHERE e.action = 'unclamp')::int AS containers_unclamped
+        FROM clamp_action_events e CROSS JOIN bounds win
+       WHERE e.created_at >= win.start_at AND e.created_at < win.end_at
+       GROUP BY e.created_at::date
+    ),
     daily AS (
       SELECT series.day::date AS day, COALESCE(ds.count, 0)::int AS trips_started,
-             COALESCE(dd.count, 0)::int AS deliveries_completed
+             COALESCE(dd.count, 0)::int AS deliveries_completed,
+             COALESCE(db.count, 0)::int AS bookings_received,
+             COALESCE(dc.containers_clamped, 0)::int AS containers_clamped,
+             COALESCE(dc.containers_unclamped, 0)::int AS containers_unclamped
         FROM bounds b
         CROSS JOIN LATERAL generate_series(b.period_start::timestamp, b.period_end::timestamp, INTERVAL '1 day') AS series(day)
         LEFT JOIN daily_started ds ON ds.day = series.day::date
         LEFT JOIN daily_delivered dd ON dd.day = series.day::date
+        LEFT JOIN daily_bookings db ON db.day = series.day::date
+        LEFT JOIN daily_clamp_actions dc ON dc.day = series.day::date
     ),
     status_values(status) AS (VALUES
       ('created'), ('vehicle_assigned'), ('driver_assigned'), ('awaiting_lock'), ('locked'),
@@ -534,6 +653,50 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       LEFT JOIN cds_bookings b ON b.status = bsv.status AND b.org_id = $2 AND b.deleted_at IS NULL
       GROUP BY bsv.status
     ),
+    operator_activity AS (
+      SELECT e.operator_key,
+             MAX(e.operator_name) AS operator_name,
+             COUNT(DISTINCT e.metric_entity_id) FILTER (WHERE e.action = 'clamp')::int AS containers_clamped,
+             COUNT(DISTINCT e.metric_entity_id) FILTER (WHERE e.action = 'unclamp')::int AS containers_unclamped,
+             COUNT(*) FILTER (WHERE e.action = 'clamp')::int AS clamp_actions,
+             COUNT(*) FILTER (WHERE e.action = 'unclamp')::int AS unclamp_actions,
+             MAX(e.created_at) AS last_action_at
+        FROM clamp_action_events e CROSS JOIN bounds win
+       WHERE e.created_at >= win.start_at AND e.created_at < win.end_at
+       GROUP BY e.operator_key
+    ),
+    operator_leaderboard AS (
+      SELECT ROW_NUMBER() OVER (ORDER BY (oa.clamp_actions + oa.unclamp_actions) DESC, oa.operator_name ASC)::int AS rank,
+             oa.operator_key AS operator_id, oa.operator_name,
+             oa.containers_clamped, oa.containers_unclamped,
+             oa.clamp_actions, oa.unclamp_actions, oa.last_action_at
+        FROM operator_activity oa
+       ORDER BY (oa.clamp_actions + oa.unclamp_actions) DESC, oa.operator_name ASC
+       LIMIT 12
+    ),
+    overdue_clamps AS (
+      SELECT b.booking_number,
+             COALESCE(NULLIF(BTRIM(bc.container_number), ''), 'Container not labelled') AS container_number,
+             COALESCE(NULLIF(BTRIM(bc.lock_number), ''), 'Lock not recorded') AS lock_number,
+             COALESCE(NULLIF(BTRIM(bc.driver_name), ''), 'Driver not recorded') AS driver_name,
+             COALESCE(NULLIF(BTRIM(actor.user_name), ''), 'Operator not recorded') AS clamp_operator,
+             bc.clamped_at,
+             ROUND((EXTRACT(EPOCH FROM (NOW() - bc.clamped_at)) / 3600.0)::numeric, 1) AS hours_clamped
+        FROM cds_booking_containers bc
+        JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
+        LEFT JOIN LATERAL (
+          SELECT a.user_name FROM cds_audit_logs a
+           WHERE a.org_id = $2 AND a.entity_type = 'booking_container'
+             AND a.entity_id = bc.id AND a.action = 'clamp'
+           ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+        ) actor ON true
+       WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
+         AND bc.clamped_at IS NOT NULL AND bc.clamped_at <= NOW() - INTERVAL '24 hours'
+         AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at)
+         AND bc.status NOT IN ('delivered', 'completed')
+       ORDER BY bc.clamped_at ASC
+       LIMIT 20
+    ),
     lane_rows AS (
       SELECT COALESCE(NULLIF(BTRIM(t.origin), ''), 'Unspecified') AS origin,
              COALESCE(NULLIF(BTRIM(t.destination), ''), 'Unspecified') AS destination,
@@ -563,6 +726,9 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       ),
       'summary', (SELECT to_jsonb(s) FROM summary s),
       'daily', COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.day) FROM daily d), '[]'::jsonb),
+      'operator_leaderboard', COALESCE((SELECT jsonb_agg(to_jsonb(oa) ORDER BY oa.rank) FROM operator_leaderboard oa), '[]'::jsonb),
+      'overdue_clamps', COALESCE((SELECT jsonb_agg(to_jsonb(oc) ORDER BY oc.clamped_at ASC) FROM overdue_clamps oc), '[]'::jsonb),
+      'clamp_state_mix', COALESCE((SELECT jsonb_agg(to_jsonb(csm) ORDER BY csm.count DESC, csm.state) FROM clamp_state_mix csm), '[]'::jsonb),
       'container_statuses', COALESCE((SELECT jsonb_agg(to_jsonb(cs) ORDER BY cs.count DESC, cs.status) FROM container_statuses cs), '[]'::jsonb),
       'container_conditions', COALESCE((SELECT jsonb_agg(to_jsonb(cc) ORDER BY cc.count DESC, cc.condition) FROM container_conditions cc), '[]'::jsonb),
       'trip_statuses', COALESCE((SELECT jsonb_agg(to_jsonb(ts) ORDER BY ts.count DESC, ts.status) FROM trip_statuses ts), '[]'::jsonb),
