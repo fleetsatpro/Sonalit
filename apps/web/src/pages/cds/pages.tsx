@@ -593,24 +593,28 @@ export function AnalyticsView() {
   const ageMinutes = Number.isFinite(generatedAt.getTime()) ? Math.max(0, Math.round((Date.now() - generatedAt.getTime()) / 60000)) : null;
   const snapshotAge = ageMinutes == null ? 'Age unknown' : ageMinutes < 1 ? 'Generated less than a minute ago' : ageMinutes + ' min old';
   const trendStep = Math.max(1, Math.ceil(data.daily.length / 28));
-  const trendBuckets = data.daily.reduce<Array<{ label: string; start: string; end: string; started: number; delivered: number }>>((buckets, row, index) => {
+  const trendBuckets = data.daily.reduce<Array<{ label: string; start: string; end: string; bookings: number; clamped: number; unclamped: number; started: number; delivered: number }>>((buckets, row, index) => {
     const bucketIndex = Math.floor(index / trendStep);
-    if (!buckets[bucketIndex]) buckets[bucketIndex] = { label: dateLabel(row.day), start: row.day, end: row.day, started: 0, delivered: 0 };
-    buckets[bucketIndex].end = row.day;
-    buckets[bucketIndex].started += row.trips_started;
-    buckets[bucketIndex].delivered += row.deliveries_completed;
+    if (!buckets[bucketIndex]) buckets[bucketIndex] = { label: dateLabel(row.day), start: row.day, end: row.day, bookings: 0, clamped: 0, unclamped: 0, started: 0, delivered: 0 };
+    const bucket = buckets[bucketIndex];
+    bucket.end = row.day;
+    bucket.bookings += row.bookings_received;
+    bucket.clamped += row.containers_clamped;
+    bucket.unclamped += row.containers_unclamped;
+    bucket.started += row.trips_started;
+    bucket.delivered += row.deliveries_completed;
     return buckets;
   }, []);
-  const maxTrend = Math.max(1, ...trendBuckets.flatMap(row => [row.started, row.delivered]));
+  const maxTrend = Math.max(1, ...trendBuckets.flatMap(row => [row.bookings, row.clamped, row.unclamped, row.started, row.delivered]));
   const totalDataGaps = s.trips_missing_vehicle + s.trips_missing_driver + s.trips_missing_container + s.trips_missing_lock + s.trips_missing_eta;
-  const exceptionCount = s.delayed_trips + s.locks_needing_attention + s.overdue_inspections + s.containers_missing_location + totalDataGaps + s.unacknowledged_alerts;
+  const exceptionCount = s.delayed_trips + s.locks_needing_attention + s.containers_clamped_over_24h + totalDataGaps + s.unacknowledged_alerts;
   const kpis = [
-    { id: 'throughput', label: 'Trips initiated', value: fmt(s.trips_started), detail: 'Created within the selected period', color: 'orange', target: '#cds-throughput', series: data.daily.map(row => row.trips_started) },
-    { id: 'delivery', label: 'Deliveries recorded', value: fmt(s.deliveries_completed), detail: 'Delivery timestamps in this period', color: 'teal', target: '#cds-throughput', series: data.daily.map(row => row.deliveries_completed) },
-    { id: 'active', label: 'Active trips', value: fmt(s.active_trips), detail: fmt(s.moving_trips) + ' currently moving', color: 'blue', target: '#cds-trip-flow', series: data.daily.map(row => row.trips_started) },
-    { id: 'delay', label: 'Delayed now', value: fmt(s.delayed_trips), detail: s.delayed_trips > 0 ? 'Requires operational review' : 'No trips currently marked delayed', color: s.delayed_trips > 0 ? 'red' : 'teal', target: '#cds-exceptions', series: data.daily.map(row => row.deliveries_completed) },
-    { id: 'eta', label: 'ETA attainment', value: pct(s.eta_attainment_pct), detail: fmt(s.eta_met) + ' met of ' + fmt(s.eta_observed) + ' observed ETAs', color: 'violet', target: '#cds-throughput', series: data.daily.map(row => row.deliveries_completed) },
-    { id: 'utilisation', label: 'Container utilisation', value: pct(s.container_utilization_pct), detail: fmt(s.containers_in_use) + ' in use of ' + fmt(s.total_containers) + ' registered', color: 'amber', target: '#cds-assets', series: data.daily.map(row => row.trips_started) },
+    { id: 'bookings', label: 'Bookings received', value: fmt(s.bookings_received), detail: days + ' day intake', color: 'orange', target: '#cds-bookings', series: data.daily.map(row => row.bookings_received) },
+    { id: 'clamped', label: 'Containers clamped', value: fmt(s.containers_clamped), detail: 'Distinct containers · selected period', color: 'teal', target: '#cds-clamp-flow', series: data.daily.map(row => row.containers_clamped) },
+    { id: 'locks', label: 'Locks in use', value: fmt(s.locks_in_use), detail: 'Assigned or installed now', color: 'blue', target: '#cds-locks', series: [] as number[] },
+    { id: 'unclamped', label: 'Containers unclamped', value: fmt(s.containers_unclamped), detail: 'Distinct containers · selected period', color: 'violet', target: '#cds-clamp-flow', series: data.daily.map(row => row.containers_unclamped) },
+    { id: 'over24', label: 'Clamped over 24 hours', value: fmt(s.containers_clamped_over_24h), detail: 'Still clamped · action required', color: s.containers_clamped_over_24h > 0 ? 'red' : 'amber', target: '#cds-overdue', series: [] as number[] },
+    { id: 'delayed', label: 'Delayed trips', value: fmt(s.delayed_trips), detail: 'Current persisted status', color: s.delayed_trips > 0 ? 'red' : 'amber', target: '#cds-trip-flow', series: [] as number[] },
   ];
   const tone: Record<string, { text: string; border: string; fill: string; dot: string }> = {
     orange: { text: 'text-cds-orange', border: 'border-cds-orange/20', fill: 'bg-cds-orange', dot: 'bg-cds-orange' },
@@ -660,7 +664,7 @@ export function AnalyticsView() {
                 <span className="rounded-full border border-cds-teal/20 bg-cds-teal/[.07] px-2 py-1 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-cds-teal"><span className={'w-1.5 h-1.5 rounded-full ' + (isFetching ? 'bg-amber-300 animate-pulse' : 'bg-cds-teal')} />{isFetching ? 'Syncing snapshot' : 'Database snapshot'}</span>
               </div>
               <h2 className="text-2xl sm:text-3xl xl:text-[36px] leading-tight font-semibold tracking-[-.035em] text-text-0">Container operations, <span className="text-cds-orange">in command.</span></h2>
-              <p className="mt-3 text-xs sm:text-sm text-text-2 leading-relaxed max-w-2xl">A decision workspace for throughput, fleet capacity, container integrity, e-lock exposure and the exceptions that require action.</p>
+              <p className="mt-2 text-[11px] text-text-2">Live CDS operations · executive and coordinator view</p>
               <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] sm:text-[11px] text-text-2">
                 <span className="inline-flex items-center gap-2"><span className="text-text-1">PERIOD</span><span className="font-mono text-text-0">{dateLabel(data.meta.period_start)} — {dateLabel(data.meta.period_end)}</span></span>
                 <span className="hidden sm:block h-3 w-px bg-white/10" />
@@ -678,28 +682,7 @@ export function AnalyticsView() {
               <Button variant="ghost" disabled={isFetching} onClick={() => { void refetch(); }}>{isFetching ? 'Refreshing…' : 'Refresh snapshot'}</Button>
             </div>
           </div>
-          <div className="mt-6 grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
-            <div className="rounded-xl border border-white/[.06] bg-black/20 p-3 sm:p-4">
-              <div className="text-[9px] uppercase tracking-[.15em] text-text-2">Operational attention</div>
-              <div className={'mt-2 text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums ' + (exceptionCount ? 'text-amber-300' : 'text-cds-teal')}>{fmt(exceptionCount)}</div>
-              <div className="mt-1 text-[10px] text-text-2">Counted exception signals, not unique cases</div>
-            </div>
-            <div className="rounded-xl border border-white/[.06] bg-black/20 p-3 sm:p-4">
-              <div className="text-[9px] uppercase tracking-[.15em] text-text-2">Unacknowledged alerts</div>
-              <div className={'mt-2 text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums ' + (s.unacknowledged_alerts ? 'text-red-300' : 'text-cds-teal')}>{fmt(s.unacknowledged_alerts)}</div>
-              <div className="mt-1 text-[10px] text-text-2">{data.alerts.length} highest-priority records returned</div>
-            </div>
-            <div className="rounded-xl border border-white/[.06] bg-black/20 p-3 sm:p-4">
-              <div className="text-[9px] uppercase tracking-[.15em] text-text-2">Inventory footprint</div>
-              <div className="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{fmt(s.total_containers + s.total_vehicles)}</div>
-              <div className="mt-1 text-[10px] text-text-2">{fmt(s.total_containers)} containers · {fmt(s.total_vehicles)} vehicles</div>
-            </div>
-            <div className="rounded-xl border border-white/[.06] bg-black/20 p-3 sm:p-4">
-              <div className="text-[9px] uppercase tracking-[.15em] text-text-2">Fleet utilisation</div>
-              <div className="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{pct(s.vehicle_utilization_pct)}</div>
-              <div className="mt-1 text-[10px] text-text-2">{fmt(s.vehicles_in_use)} vehicles currently in use</div>
-            </div>
-          </div>
+
         </div>
       </section>
 
@@ -715,7 +698,7 @@ export function AnalyticsView() {
       <section aria-label="Key operational indicators">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
           <div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">01 / Performance indicators</div><h3 className="mt-1 text-base sm:text-lg font-semibold tracking-tight">The operating picture</h3></div>
-          <span className="text-[10px] text-text-2">Period activity and current inventory are labelled separately</span>
+
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-2 sm:gap-3">
           {kpis.map(k => {
@@ -728,7 +711,7 @@ export function AnalyticsView() {
                 <div className={'mt-3 text-2xl sm:text-[28px] font-semibold leading-none tracking-[-.035em] tabular-nums ' + (k.color === 'red' && s.delayed_trips > 0 ? 'text-red-300' : 'text-text-0')}>{k.value}</div>
                 <p className="mt-2 min-h-[29px] text-[10px] leading-relaxed text-text-2">{k.detail}</p>
                 <div className="mt-2 h-8 opacity-70 group-hover:opacity-100">
-                  {k.series.length > 1 ? <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={'h-full w-full ' + t.text} role="img" aria-label={k.label + ' observed daily trend'}><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /></svg> : <div className={'h-8 flex items-center text-[9px] uppercase tracking-widest ' + t.text}>No trend series</div>}
+                  {k.series.length > 1 ? <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={'h-full w-full ' + t.text} role="img" aria-label={k.label + ' observed daily trend'}><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /></svg> : <div className={'h-[2px] mt-4 rounded-full ' + t.fill} />}
                 </div>
                 <div className="mt-2 border-t border-white/[.055] pt-2 text-[9px] uppercase tracking-wider text-text-2 group-hover:text-text-1">Explore signal <span className="float-right">↗</span></div>
               </a>
