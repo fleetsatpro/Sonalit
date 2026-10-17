@@ -38,8 +38,8 @@ export default function AIInbox() {
         <Card className="p-0 overflow-y-auto">
           <div className="divide-y divide-hair">
             {activities.map((item, i) => {
-              const action = s(item.action ?? item.type);
-              const entity = s(item.entity_type ?? item.entity);
+              const action = s(item['action'] ?? item['type']);
+              const entity = s(item['entity_type'] ?? item['entity']);
               const detail = s(item['details'] ?? item['detail'] ?? item['message'] ?? item['text']);
               const user = s(item['user_name'] ?? item['user'] ?? item['actor']);
               const time = s(item['created_at'] ?? item['timestamp'] ?? item['time']);

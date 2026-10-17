@@ -273,6 +273,7 @@ export function useCreateBooking() {
       qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'analytics'] });
     },
   });
 }
