@@ -128,14 +128,30 @@ const INTELLIGENCE_LAYERS = [
 
 function HeroVisual(): React.ReactElement {
   return (
-    <div className="home-command-visual">
-      <WorldFabricVisual />
+    <div className="home-command-visual home-v6-hero-visual">
+      <OpsVisual priority note="REFERENCE IMAGERY · COPERNICUS SENTINEL-2" />
+      <div className="home-v6-visual-stamp mono">
+        <span>WORLD CONTEXT / 01</span>
+        <span>REFERENCE FRAME</span>
+      </div>
+      <div className="home-v6-visual-panel">
+        <div className="home-v6-visual-panel-head">
+          <span className="mono">SONALIT OPERATING MODEL</span>
+          <span aria-hidden="true">↗</span>
+        </div>
+        <p>From signal to defensible action.</p>
+        <div className="home-v6-visual-process mono" aria-label="Operational process">
+          <span>STATE</span><i aria-hidden="true" />
+          <span>CONTEXT</span><i aria-hidden="true" />
+          <span>EVIDENCE</span>
+        </div>
+      </div>
       <div className="home-command-meta">
         <div>
-          <span className="mono">SONALIT WORLD MODEL</span>
-          <strong>STATE → CONTEXT → DECISION → ACTION → EVIDENCE</strong>
+          <span className="mono">THE OPERATING FABRIC</span>
+          <strong>SPACE / TIME / IDENTITY / MOTION / EVIDENCE</strong>
         </div>
-        <span className="mono">ILLUSTRATIVE / NOT LIVE TELEMETRY</span>
+        <span className="mono">REFERENCE IMAGE · NOT LIVE TELEMETRY</span>
       </div>
     </div>
   );
@@ -171,37 +187,56 @@ export default function Home(): React.ReactElement {
 
   return (
     <MarketingLayout page={PAGE}>
+      <div className="home-v6">
       <header className="home-hero home-hero-v5" data-reveal="hero">
         <div className="home-hero-copy">
-          <p className="home-eyebrow mono">OPERATIONAL INTELLIGENCE / MOVEMENT · RISK · CUSTODY · RESPONSE</p>
+          <p className="home-eyebrow mono">GLOBAL LOGISTICS INTELLIGENCE / FLEET · CONVOY · CUSTODY · RESPONSE</p>
           <h1>
             Make movement
             <span> intelligible.</span>
           </h1>
           <p className="home-hero-lead">
-            Sonalit binds telemetry, route geometry, device state, cargo custody, field activity,
-            external-world context and evidence into one operational picture — then carries that
-            context from planning to response to proof.
+            Sonalit connects fleet and convoy signals, container custody, field response and spatial
+            context in one operational picture — helping teams interpret the situation, coordinate
+            the next move and preserve the evidence behind it.
           </p>
 
           <div className="hero-actions">
             <a href="/login" className="btn btn-primary">
-              Enter the operational workspace <span aria-hidden="true">↗</span>
+              Enter operational workspace <span aria-hidden="true">↗</span>
             </a>
             <a href="#capability-atlas" className="btn btn-ghost">
-              Read the platform map <span aria-hidden="true">↓</span>
+              Explore the operating fabric <span aria-hidden="true">↓</span>
             </a>
           </div>
 
           <div className="home-proof-line home-proof-line-kinetic home-v5-proof">
-            <span className="mono">7 OPERATIONAL PLANES</span>
-            <span>8D WORLD MODEL</span>
-            <span>ONE AUDITABLE STATE</span>
+            <span className="mono">7 CONNECTED OPERATING PLANES</span>
+            <span>8-DIMENSION WORLD MODEL</span>
+            <span>EVIDENCE-BACKED OPERATIONS</span>
           </div>
         </div>
 
         <HeroVisual />
       </header>
+
+      <section className="home-v6-signal-strip" aria-label="Sonalit operating sequence">
+        {[
+          ['01', 'Observe', 'Telemetry, device state and custody events.'],
+          ['02', 'Interpret', 'Route geometry, risk and external context.'],
+          ['03', 'Coordinate', 'Dispatch, field teams and response workflows.'],
+          ['04', 'Prove', 'Chronology, provenance and operational evidence.'],
+        ].map(([index, title, body]) => (
+          <article className="home-v6-signal-step" key={index}>
+            <span className="home-v6-signal-index mono">{index}</span>
+            <div>
+              <h2>{title}</h2>
+              <p>{body}</p>
+            </div>
+            <span className="home-v6-signal-arrow" aria-hidden="true">↗</span>
+          </article>
+        ))}
+      </section>
 
       <section className="home-v5-thesis" data-reveal="rise" aria-labelledby="thesis-heading">
         <div className="home-v5-thesis-index mono">THE THESIS / 01</div>
@@ -434,6 +469,7 @@ export default function Home(): React.ReactElement {
       />
 
       <RelatedPages currentPath="/" />
+      </div>
     </MarketingLayout>
   );
 }
