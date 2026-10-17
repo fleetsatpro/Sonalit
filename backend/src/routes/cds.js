@@ -451,7 +451,17 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         FROM cds_incidents WHERE org_id = $2 AND deleted_at IS NULL
     ),
     summary AS (
-      SELECT tm.*, cm.total_containers, cm.available_containers, cm.containers_in_use,
+      SELECT tm.*,
+        cm.total_containers,
+        cm.available_containers,
+        cm.containers_in_use,
+        cm.containers_in_maintenance,
+        cm.damaged_containers,
+        cm.fair_condition_containers,
+        cm.retired_containers,
+        cm.overdue_inspections,
+        cm.inspections_due_30_days,
+        cm.containers_missing_location,
         CASE WHEN cm.total_containers > 0 THEN ROUND(100.0 * cm.containers_in_use / cm.total_containers, 1) ELSE NULL END AS container_utilization_pct,
         vm.total_vehicles, vm.available_vehicles, vm.vehicles_in_use, vm.vehicles_in_maintenance,
         CASE WHEN vm.available_vehicles + vm.vehicles_in_use > 0
