@@ -25,17 +25,13 @@ export function useCDSAnalytics(days: 7 | 30 | 90 | 365) {
   return useQuery<import('./types.js').CDSAnalyticsPayload>({
     queryKey: ['cds', 'analytics', days],
     queryFn: async () => {
-      // On the PR preview only, route analytics to its isolated backend. Production and
-      // other deployments keep the established same-origin /api/v1/cds endpoint.
-      const previewApiBaseURL = 'https://cds-analytics-preview-production.up.railway.app/api/v1/cds';
-      const isBranchPreview = typeof window !== 'undefined'
-        && window.location.hostname === 'sonalit-git-feat-cds-live-analytics-onyari-s-projects.vercel.app';
-      const analyticsBaseURL = import.meta.env['VITE_CDS_ANALYTICS_API_BASE_URL']
-        || (isBranchPreview ? previewApiBaseURL : '/api/v1/cds');
-      const { data } = await cdsApi.get('/analytics', {
-        baseURL: analyticsBaseURL,
-        params: { days },
-      });
+      // The PR preview uses a same-origin Vercel function, which forwards only
+      // this authenticated GET to the isolated Railway analytics API. This avoids
+      // browser CORS while preserving production's canonical same-origin API path.
+      const usePreviewProxy = import.meta.env['VITE_CDS_ANALYTICS_PREVIEW_PROXY'] === 'true';
+      const { data } = usePreviewProxy
+        ? await cdsApi.get('/cds-analytics', { baseURL: '/api', params: { days } })
+        : await cdsApi.get('/analytics', { baseURL: '/api/v1/cds', params: { days } });
       return data.data as import('./types.js').CDSAnalyticsPayload;
     },
     staleTime: 20_000,
