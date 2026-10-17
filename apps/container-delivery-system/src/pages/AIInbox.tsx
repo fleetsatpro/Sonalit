@@ -40,11 +40,11 @@ export default function AIInbox() {
             {activities.map((item, i) => {
               const action = s(item.action ?? item.type);
               const entity = s(item.entity_type ?? item.entity);
-              const detail = s(item.details ?? item.detail ?? item.message ?? item.text);
-              const user = s(item.user_name ?? item.user ?? item.actor);
-              const time = s(item.created_at ?? item.timestamp ?? item.time);
+              const detail = s(item['details'] ?? item['detail'] ?? item['message'] ?? item['text']);
+              const user = s(item['user_name'] ?? item['user'] ?? item['actor']);
+              const time = s(item['created_at'] ?? item['timestamp'] ?? item['time']);
               return (
-                <div key={s(item.id ?? i)} className="flex gap-3 px-4 py-3.5 hover:bg-ink-2 transition-colors">
+                <div key={s(item['id'] ?? i)} className="flex gap-3 px-4 py-3.5 hover:bg-ink-2 transition-colors">
                   <div className="w-[30px] h-[30px] rounded-lg flex-none flex items-center justify-center bg-ink-3 text-cds-orange text-2xs font-bold">
                     {entity.charAt(0).toUpperCase()}
                   </div>
@@ -56,7 +56,7 @@ export default function AIInbox() {
                     </div>
                     <div className="text-2xs text-text-1 mt-0.5 truncate">{detail}</div>
                     {entity !== '—' && (
-                      <div className="text-2xs text-text-2 font-mono mt-0.5">{entity} {s(item.entity_id)}</div>
+                      <div className="text-2xs text-text-2 font-mono mt-0.5">{entity} {s(item['entity_id'])}</div>
                     )}
                   </div>
                 </div>

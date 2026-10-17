@@ -49,15 +49,15 @@ export default function LiveOperations() {
         <Card className="max-h-[480px] overflow-y-auto p-4">
           <div className="font-display font-bold text-[13px] mb-2.5">Trips in Motion</div>
           {activeTrips.map((t) => (
-            <div key={s(t.id)} className="flex gap-2.5 py-2.5 border-b border-hair last:border-b-0 cursor-pointer hover:bg-ink-2 rounded-lg px-2 -mx-2 transition-colors">
+            <div key={s(t['id'])} className="flex gap-2.5 py-2.5 border-b border-hair last:border-b-0 cursor-pointer hover:bg-ink-2 rounded-lg px-2 -mx-2 transition-colors">
               <div className="w-[26px] h-[26px] rounded-lg flex-none flex items-center justify-center bg-ink-3 text-cds-orange">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 12h13M13 6l7 6-7 6" /></svg>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-xs-tight text-text-0">{s(t.container_number)} <span className="text-text-2">{s(t.vehicle_reg)}</span></div>
-                <div className="text-2xs text-text-2 mt-0.5 font-mono">{s(t.origin)} → {s(t.destination)}</div>
+                <div className="text-xs-tight text-text-0">{s(t['container_number'])} <span className="text-text-2">{s(t['vehicle_reg'])}</span></div>
+                <div className="text-2xs text-text-2 mt-0.5 font-mono">{s(t['origin'])} → {s(t['destination'])}</div>
               </div>
-              <StatusBadge status={s(t.status)} />
+              <StatusBadge status={s(t['status'])} />
             </div>
           ))}
           {activeTrips.length === 0 && (

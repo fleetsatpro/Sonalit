@@ -89,15 +89,15 @@ export default function DeliveryOperations() {
               </thead>
               <tbody>
                 {queueItems.map((q) => {
-                  const status = s(q.status);
+                  const status = s(q['status']);
                   const sl = statusLabels[status];
                   return (
-                    <tr key={s(q.id)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
-                      <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{s(q.container_number)}</td>
-                      <td className="px-3.5 py-3 text-text-0">{s(q.origin)}</td>
-                      <td className="px-3.5 py-3 text-text-0">{s(q.destination)}</td>
-                      <td className="px-3.5 py-3 font-mono text-text-1">{s(q.vehicle_reg)}</td>
-                      <td className="px-3.5 py-3 text-text-0">{s(q.driver_name)}</td>
+                    <tr key={s(q['id'])} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
+                      <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{s(q['container_number'])}</td>
+                      <td className="px-3.5 py-3 text-text-0">{s(q['origin'])}</td>
+                      <td className="px-3.5 py-3 text-text-0">{s(q['destination'])}</td>
+                      <td className="px-3.5 py-3 font-mono text-text-1">{s(q['vehicle_reg'])}</td>
+                      <td className="px-3.5 py-3 text-text-0">{s(q['driver_name'])}</td>
                       <td className="px-3.5 py-3"><Badge variant={sl?.variant ?? 'neutral'}>{sl?.label ?? status.toUpperCase()}</Badge></td>
                       <td className="px-3.5 py-3">
                         <div className="flex gap-1.5">
@@ -127,12 +127,12 @@ export default function DeliveryOperations() {
               </thead>
               <tbody>
                 {completedItems.map((c) => (
-                  <tr key={s(c.id)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
-                    <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{s(c.container_number)}</td>
-                    <td className="px-3.5 py-3 text-text-0">{s(c.origin)}</td>
-                    <td className="px-3.5 py-3 text-text-0">{s(c.destination)}</td>
-                    <td className="px-3.5 py-3 font-mono text-text-1">{s(c.vehicle_reg)}</td>
-                    <td className="px-3.5 py-3 text-text-0">{s(c.driver_name)}</td>
+                  <tr key={s(c['id'])} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
+                    <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{s(c['container_number'])}</td>
+                    <td className="px-3.5 py-3 text-text-0">{s(c['origin'])}</td>
+                    <td className="px-3.5 py-3 text-text-0">{s(c['destination'])}</td>
+                    <td className="px-3.5 py-3 font-mono text-text-1">{s(c['vehicle_reg'])}</td>
+                    <td className="px-3.5 py-3 text-text-0">{s(c['driver_name'])}</td>
                     <td className="px-3.5 py-3"><Badge variant="ok">DELIVERED</Badge></td>
                   </tr>
                 ))}
