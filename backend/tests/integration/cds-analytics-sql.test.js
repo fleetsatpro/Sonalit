@@ -61,7 +61,24 @@ describeIfDb('CDS analytics SQL integration', () => {
     expect(res.body.data.booking_pipeline).toHaveLength(9);
     expect(res.body.data.lanes).toEqual(expect.any(Array));
     expect(res.body.data.alerts).toEqual(expect.any(Array));
+    expect(res.body.data.operator_leaderboard).toEqual(expect.any(Array));
+    expect(res.body.data.overdue_clamps).toEqual(expect.any(Array));
+    expect(res.body.data.clamp_state_mix).toHaveLength(4);
+    expect(res.body.data.daily[0]).toEqual(expect.objectContaining({
+      bookings_received: expect.any(Number),
+      containers_clamped: expect.any(Number),
+      containers_unclamped: expect.any(Number),
+    }));
     expect(res.body.data.summary).toEqual(expect.objectContaining({
+      bookings_received: expect.any(Number),
+      containers_clamped: expect.any(Number),
+      containers_unclamped: expect.any(Number),
+      containers_currently_clamped: expect.any(Number),
+      containers_clamped_over_24h: expect.any(Number),
+      unclamps_after_24h: expect.any(Number),
+      locks_in_use: expect.any(Number),
+      unclamped_locks: expect.any(Number),
+      avg_clamp_duration_hours: expect.anything(),
       total_containers: expect.any(Number),
       overdue_inspections: expect.any(Number),
       inspections_due_30_days: expect.any(Number),
