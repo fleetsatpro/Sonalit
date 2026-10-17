@@ -69,7 +69,7 @@ describeIfDb('CDS analytics SQL integration', () => {
       containers_clamped: expect.any(Number),
       containers_unclamped: expect.any(Number),
     }));
-    expect([null, expect.any(Number)]).toContainEqual(res.body.data.summary.avg_clamp_duration_hours);
+    expect(res.body.data.summary.avg_clamp_duration_hours === null || typeof res.body.data.summary.avg_clamp_duration_hours === 'number').toBe(true);
     expect(res.body.data.summary).toEqual(expect.objectContaining({
       bookings_received: expect.any(Number),
       containers_clamped: expect.any(Number),
