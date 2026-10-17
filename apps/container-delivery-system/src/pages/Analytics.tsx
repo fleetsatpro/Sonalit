@@ -55,7 +55,8 @@ function MiniTrend({ values, color }: { values: number[]; color: string }) {
   if (values.length < 2) return <div className="h-8 flex items-center"><span className="h-[2px] w-12 rounded-full" style={{ background: color }} /></div>;
   const valuesToPlot = values.slice(-28), max = Math.max(1, ...valuesToPlot);
   const points = valuesToPlot.map((v, i) => (i / Math.max(1, valuesToPlot.length - 1) * 100) + ',' + (28 - v / max * 24)).join(' ');
-  const lastY = 28 - valuesToPlot[valuesToPlot.length - 1] / max * 24;
+  const lastValue = valuesToPlot[valuesToPlot.length - 1] ?? 0;
+  const lastY = 28 - lastValue / max * 24;
   return <svg viewBox="0 0 100 32" preserveAspectRatio="none" className="h-8 w-full" role="img" aria-label="Observed daily trend"><polygon points={'0,32 ' + points + ' 100,32'} fill={color} opacity=".10" /><polyline points={points} fill="none" stroke={color} strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /><circle cx="100" cy={lastY} r="2" fill={color} /></svg>;
 }
 function DataBars({ rows, max }: { rows: Array<{ key: string; value: number; detail?: string | undefined }>; max: number }) {
