@@ -50,7 +50,7 @@ export default function Dashboard() {
   ];
 
   const activities = (Array.isArray(activityData) ? activityData : (d?.['recent_activity'] as unknown[] ?? [])) as Record<string, unknown>[];
-  const containers = (shipmentData?.data ?? [])
+  const activeTrips = (shipmentData?.data ?? [])
     .filter(row => row.status !== 'completed' && row.status !== 'archived') as unknown as Record<string, unknown>[];
   const liveTrips = liveData ?? [];
   const tripsWithPosition = liveTrips.filter(trip => trip['lat'] != null && trip['lng'] != null);
@@ -147,14 +147,14 @@ export default function Dashboard() {
             <table className="w-full border-collapse text-xs-tight">
               <thead>
                 <tr>
-                  {['Container', 'Status', 'Truck / Driver', 'Route', 'ETA'].map((h) => (
+                  {['Trip reference', 'Status', 'Vehicle / driver', 'Route', 'ETA'].map((h) => (
                     <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {containers.map((c, i) => (
-                  <tr key={s(c['number'] ?? c['id'] ?? i)} className="border-t border-hair hover:bg-ink-2 transition-colors">
+                {activeTrips.map((c, i) => (
+                  <tr key={s(c['reference'] ?? c['id'] ?? i)} className="border-t border-hair hover:bg-ink-2 transition-colors">
                     <td className="px-3.5 py-3 font-mono text-text-0"><Link to="/cds/shipments" className="hover:text-cds-orange">{s(c['reference'] ?? c['id'])}</Link></td>
                     <td className="px-3.5 py-3"><StatusBadge status={s(c['status'])} /></td>
                     <td className="px-3.5 py-3 text-text-0">{s(c['vehicleReg'])}<div className="text-2xs text-text-2 mt-0.5">{s(c['driverName'])}</div></td>
@@ -162,7 +162,7 @@ export default function Dashboard() {
                     <td className={`px-3.5 py-3 font-mono ${s(c['status']) === 'delayed' ? 'text-cds-red' : 'text-text-1'}`}>{s(c['eta'])}</td>
                   </tr>
                 ))}
-                {containers.length === 0 && <tr><td colSpan={5} className="px-3.5 py-8 text-center text-text-2">No active shipments.</td></tr>}
+                {activeTrips.length === 0 && <tr><td colSpan={5} className="px-3.5 py-8 text-center text-text-2">No active shipments.</td></tr>}
               </tbody>
             </table>
           </div>
