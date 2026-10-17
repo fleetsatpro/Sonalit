@@ -570,6 +570,7 @@ export function useAcknowledgeAlert() {
       // one has to refresh it or the KPI keeps showing the alert the operator
       // has just dealt with.
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'analytics'] });
     },
   });
 }
