@@ -25,7 +25,13 @@ export function useCDSAnalytics(days: 7 | 30 | 90 | 365) {
   return useQuery<import('./types.js').CDSAnalyticsPayload>({
     queryKey: ['cds', 'analytics', days],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/analytics', { params: { days } });
+      // On the PR preview only, route analytics to its isolated backend. Production and
+      // other deployments keep the established same-origin /api/v1/cds endpoint.
+      const analyticsBaseURL = import.meta.env['VITE_CDS_ANALYTICS_API_BASE_URL'] || '/api/v1/cds';
+      const { data } = await cdsApi.get('/analytics', {
+        baseURL: analyticsBaseURL,
+        params: { days },
+      });
       return data.data as import('./types.js').CDSAnalyticsPayload;
     },
     staleTime: 20_000,
