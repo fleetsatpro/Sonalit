@@ -196,3 +196,79 @@
 @media(prefers-reduced-motion:reduce){
  .sonalit-public .home-v6 *,.sonalit-public .home-v6 *:before,.sonalit-public .home-v6 *:after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+/* --------------------------------------------------------------------- */
+/* SECONDARY PUBLIC PAGES — ROUTE ACCENTS + SCIENTIFIC LIGHT SURFACES     */
+/* --------------------------------------------------------------------- */
+.sonalit-public[data-page-kind="detail"]{--page-accent:#2457ff}
+.sonalit-public[data-page-kind="detail"][data-page-tone="fleet"]{--page-accent:#2457ff}
+.sonalit-public[data-page-kind="detail"][data-page-tone="convoy"]{--page-accent:#087f8c}
+.sonalit-public[data-page-kind="detail"][data-page-tone="container"]{--page-accent:#e56822}
+.sonalit-public[data-page-kind="detail"][data-page-tone="security"]{--page-accent:#c2185b}
+.sonalit-public[data-page-kind="detail"] .bg-base{background:#0b132b}
+.sonalit-public[data-page-kind="detail"] main{background:#f5f9ff;color:#111c36}
+.sonalit-public[data-page-kind="detail"] .hero-compact{width:100%;max-width:none;min-height:0;margin:0;padding:clamp(8.7rem,11vw,10.5rem) max(1.15rem,calc((100vw - 1320px)/2)) clamp(4rem,6vw,6.5rem);background:#0b132b;color:#eaf2ff;border-bottom:1px solid rgba(223,247,255,.15);position:relative}
+.sonalit-public[data-page-kind="detail"] .hero-compact:before{content:"";display:block;width:42px;height:3px;margin-bottom:2rem;background:var(--page-accent)}
+.sonalit-public[data-page-kind="detail"] .hero-compact .hero-badge{margin-bottom:1.55rem;padding-left:.7rem;border-left:3px solid var(--page-accent);color:#b7c7e2;font-size:.6rem!important;letter-spacing:.1em}
+.sonalit-public[data-page-kind="detail"] .hero-compact .hero-badge i{background:var(--page-accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--page-accent) 18%,transparent)}
+.sonalit-public[data-page-kind="detail"] .hero-compact h1{max-width:15ch;margin-bottom:1.5rem;color:#f4f8ff;font-size:clamp(3.2rem,6.5vw,6.4rem);line-height:.94;letter-spacing:-.07em;text-wrap:balance}
+.sonalit-public[data-page-kind="detail"] .hero-compact .hero-lead{max-width:74ch;margin-bottom:0;color:#b8c6dc;font-size:clamp(.95rem,1.25vw,1.08rem);line-height:1.85}
+.sonalit-public[data-page-kind="detail"] main>.section{width:100%;max-width:none;margin:0;padding:clamp(3.5rem,6vw,6rem) max(1.15rem,calc((100vw - 1320px)/2));background:#f5f9ff;color:#111c36}
+.sonalit-public[data-page-kind="detail"] main>.section.section-tight{padding-top:clamp(3rem,5vw,4.7rem);padding-bottom:clamp(3.5rem,6vw,6rem);background:#e8f4ff}
+.sonalit-public[data-page-kind="detail"] main>.section:not(.section-tight){background:#f5f9ff}
+.sonalit-public[data-page-kind="detail"] main>.section>.feat{max-width:1320px;margin:0 auto;padding:clamp(1.4rem,2.8vw,2.6rem);background:#fff;border:1px solid rgba(11,19,43,.12);border-top:3px solid var(--page-accent);box-shadow:0 15px 38px rgba(11,19,43,.055)}
+.sonalit-public[data-page-kind="detail"] main>.section>.feat+.feat{margin-top:1.15rem}
+.sonalit-public[data-page-kind="detail"] .feat-copy h3{color:#111c36;font-size:clamp(2rem,3.4vw,3.5rem);line-height:1.02;letter-spacing:-.06em}
+.sonalit-public[data-page-kind="detail"] .feat-copy p{color:#4b5a73;font-size:.86rem;line-height:1.8}
+.sonalit-public[data-page-kind="detail"] .feat-list li{color:#33425c;font-size:.75rem;line-height:1.65}
+.sonalit-public[data-page-kind="detail"] .feat-list li:before{background:var(--page-accent)}
+.sonalit-public[data-page-kind="detail"] .feat-visual{border-color:rgba(11,19,43,.16);box-shadow:0 14px 32px rgba(11,19,43,.08)}
+.sonalit-public[data-page-kind="detail"] .feat-visual:before{background:var(--page-accent)}
+.sonalit-public[data-page-kind="detail"] .feat-visual-label{background:rgba(11,19,43,.94);border-left-color:var(--page-accent)}
+.sonalit-public[data-page-kind="detail"] .section-title{max-width:17ch;color:#111c36;font-size:clamp(2.4rem,4.6vw,4.7rem);line-height:.98;letter-spacing:-.065em}
+.sonalit-public[data-page-kind="detail"] .section-label{color:var(--page-accent)}
+.sonalit-public[data-page-kind="detail"] .section-desc{max-width:72ch;color:#536079;font-size:.88rem;line-height:1.8}
+.sonalit-public[data-page-kind="detail"] .cap-grid{max-width:1320px;margin-inline:auto;border-color:rgba(11,19,43,.14)}
+.sonalit-public[data-page-kind="detail"] .cap{min-height:180px;padding:1.4rem;background:#fff;color:#111c36;border-color:rgba(11,19,43,.14);box-shadow:none}
+.sonalit-public[data-page-kind="detail"] .cap:nth-child(4n+1){--cap-accent:#2457ff}
+.sonalit-public[data-page-kind="detail"][data-page-tone="convoy"] .cap:nth-child(4n+1){--cap-accent:#087f8c}
+.sonalit-public[data-page-kind="detail"][data-page-tone="container"] .cap:nth-child(4n+1){--cap-accent:#e56822}
+.sonalit-public[data-page-kind="detail"][data-page-tone="security"] .cap:nth-child(4n+1){--cap-accent:#c2185b}
+.sonalit-public[data-page-kind="detail"] .cap h3{color:#111c36;font-size:1.05rem}
+.sonalit-public[data-page-kind="detail"] .cap p{color:#526078;font-size:.76rem;line-height:1.7}
+.sonalit-public[data-page-kind="detail"] .cap-icon{color:var(--cap-accent,var(--page-accent));border-color:rgba(11,19,43,.12);background:#f3f7ff}
+.sonalit-public[data-page-kind="detail"] .cap-link{color:var(--page-accent)}
+.sonalit-public[data-page-kind="detail"] .cap:hover{background:#fff;border-color:color-mix(in srgb,var(--page-accent) 42%,#fff);box-shadow:0 13px 32px rgba(11,19,43,.065)}
+.sonalit-public[data-page-kind="detail"] .prose,.sonalit-public[data-page-kind="detail"] .prose-after{max-width:1320px;margin:0 auto;padding:clamp(2.8rem,5vw,5rem) max(1.15rem,calc((100vw - 1320px)/2));color:#34435e;background:#dff7ff}
+.sonalit-public[data-page-kind="detail"] .prose h2,.sonalit-public[data-page-kind="detail"] .prose h3{color:#111c36}
+.sonalit-public[data-page-kind="detail"] .prose p{color:#465671;line-height:1.85}
+.sonalit-public[data-page-kind="detail"] .inline-link{color:var(--page-accent)}
+.sonalit-public[data-page-kind="detail"] .cta-wrap{width:100%;max-width:none;margin:0;padding:clamp(3.4rem,6vw,6rem) max(1.15rem,calc((100vw - 1320px)/2));background:#dff7ff}
+.sonalit-public[data-page-kind="detail"] .cta{max-width:1320px;margin-inline:auto;padding:clamp(2rem,4.5vw,4.5rem);background:#0b132b;color:#f2f6ff;border-color:rgba(11,19,43,.22);box-shadow:0 22px 52px rgba(11,19,43,.12)}
+.sonalit-public[data-page-kind="detail"] .cta:before{color:rgba(223,247,255,.04)}
+.sonalit-public[data-page-kind="detail"] .cta h2{color:#f2f6ff}
+.sonalit-public[data-page-kind="detail"] .cta p{color:#b3c2da}
+.sonalit-public[data-page-kind="detail"] .cta .btn-primary{background:var(--page-accent);border-color:var(--page-accent);color:#fff}
+.sonalit-public[data-page-kind="detail"] .cta .btn-primary:hover{filter:brightness(.94)}
+.sonalit-public[data-page-kind="detail"] footer{max-width:none;padding-inline:max(1.15rem,calc((100vw - 1320px)/2));background:#071027;border-top-color:rgba(223,247,255,.14)}
+.sonalit-public[data-page-kind="detail"] .foot-brand p,.sonalit-public[data-page-kind="detail"] .foot-col a{color:#a8b8d1}
+.sonalit-public[data-page-kind="detail"] .foot-col h2{color:#8baaff}
+.sonalit-public[data-page-kind="detail"] .foot-bottom{border-top-color:rgba(223,247,255,.12)}
+.sonalit-public[data-page-kind="detail"] .foot-tag{color:#8292af}
+.sonalit-public[data-page-kind="detail"] .btn-primary{background:var(--page-accent);border-color:var(--page-accent)}
+.sonalit-public[data-page-kind="detail"] .btn-primary:hover{filter:brightness(.94)}
+@media(max-width:900px){
+ .sonalit-public[data-page-kind="detail"] .hero-compact{padding-top:7.8rem}
+ .sonalit-public[data-page-kind="detail"] main>.section{padding-inline:1.25rem}
+ .sonalit-public[data-page-kind="detail"] main>.section>.feat{padding:1.1rem}
+ .sonalit-public[data-page-kind="detail"] .cta-wrap{padding-inline:1rem}
+}
+@media(max-width:720px){
+ .sonalit-public[data-page-kind="detail"] .hero-compact{padding:7.5rem 1rem 3.2rem}
+ .sonalit-public[data-page-kind="detail"] .hero-compact h1{font-size:clamp(2.8rem,11vw,4.3rem)}
+ .sonalit-public[data-page-kind="detail"] main>.section{padding:3.5rem 1rem}
+ .sonalit-public[data-page-kind="detail"] main>.section>.feat{padding:.8rem;background:#fff}
+ .sonalit-public[data-page-kind="detail"] .prose,.sonalit-public[data-page-kind="detail"] .prose-after{padding:3.3rem 1rem}
+ .sonalit-public[data-page-kind="detail"] .cta{padding:1.4rem}
+ .sonalit-public[data-page-kind="detail"] footer{padding:2.8rem 1rem 1.4rem}
+}
