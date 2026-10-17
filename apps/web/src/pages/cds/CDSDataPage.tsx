@@ -16,7 +16,7 @@ export function ContainersView() {
 
   const all = (data?.data ?? []) as Row[];
   const rows = filter === 'all' ? all : all.filter(r => r['status'] === filter);
-  const statuses = ['all', 'available', 'assigned', 'in_transit', 'at_port', 'delivered', 'maintenance'];
+  const statuses = ['all', 'available', 'booked', 'awaiting_pickup', 'in_transit', 'at_port', 'delivered', 'maintenance'];
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">

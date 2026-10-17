@@ -1,4 +1,4 @@
-import { createRouter, createRoute, createRootRoute, redirect } from '@tanstack/react-router';
+import { createRouter, createRoute, createRootRoute } from '@tanstack/react-router';
 import React, { lazy, Suspense } from 'react';
 import { CDSAppShell } from './components/layout/AppShell.js';
 

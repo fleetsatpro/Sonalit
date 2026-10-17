@@ -38,7 +38,7 @@ export const STATUS_COLORS: Record<string, string> = {
   delayed: '#ff5c5c', offline: '#ff5c5c', tampered: '#ff5c5c', critical: '#ff5c5c',
   removed: '#a78bfa', unlocked: '#a78bfa',
   idle: '#64748b', retired: '#64748b', suspended: '#64748b', damaged: '#ff5c5c',
-  at_port: '#ffb020', arrived: '#33d6a8',
+  at_port: '#ffb020', arrived: '#33d6a8', booked: '#ff7a00', awaiting_pickup: '#ffb020',
   created: '#64748b', draft: '#64748b',
 };
 
@@ -72,6 +72,8 @@ export const STATUS_BADGE_STYLES: Record<
   active: { bg: 'bg-cds-teal-dim', color: 'text-cds-teal', label: 'ACTIVE' },
   idle: { bg: 'bg-ink-3', color: 'text-text-1', label: 'IDLE' },
   available: { bg: 'bg-cds-teal-dim', color: 'text-cds-teal', label: 'AVAILABLE' },
+  booked: { bg: 'bg-cds-orange-dim', color: 'text-cds-orange', label: 'BOOKED' },
+  awaiting_pickup: { bg: 'bg-cds-amber-dim', color: 'text-cds-amber', label: 'AWAITING PICKUP' },
   unlocked: { bg: 'bg-cds-amber-dim', color: 'text-cds-amber', label: 'UNLOCKED' },
   offline: { bg: 'bg-cds-red-dim', color: 'text-cds-red', label: 'OFFLINE' },
   tampered: { bg: 'bg-cds-red-dim', color: 'text-cds-red', label: 'TAMPERED' },

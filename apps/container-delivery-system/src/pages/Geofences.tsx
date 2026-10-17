@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
@@ -30,8 +30,8 @@ export default function Geofences() {
   if (isLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading…</div></div>;
 
   const rows = data?.data ?? [];
-  const filtered = filter === 'all' ? rows : rows.filter((g) => s(g.category) === filter);
-  const activeCount = rows.filter((g) => g.active === true).length;
+  const filtered = filter === 'all' ? rows : rows.filter((g) => s(g['category']) === filter);
+  const activeCount = rows.filter((g) => g['active'] === true).length;
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
@@ -78,21 +78,21 @@ export default function Geofences() {
 
           <div className="space-y-2 max-h-[360px] overflow-y-auto">
             {filtered.map((g) => {
-              const category = s(g.category);
-              const isActive = g.active === true;
+              const category = s(g['category']);
+              const isActive = g['active'] === true;
               return (
-                <Card key={s(g.id)} hover className="p-3">
+                <Card key={s(g['id'])} hover className="p-3">
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="text-xs-tight font-semibold text-text-0">{s(g.name)}</div>
+                      <div className="text-xs-tight font-semibold text-text-0">{s(g['name'])}</div>
                       <div className="text-2xs text-text-2 font-mono mt-0.5">
-                        <span className={categoryColors[category] ?? 'text-text-1'}>{category.toUpperCase()}</span> · {s(g.type)}
+                        <span className={categoryColors[category] ?? 'text-text-1'}>{category.toUpperCase()}</span> · {s(g['type'])}
                       </div>
                     </div>
                     {isActive ? <Badge variant="ok">ACTIVE</Badge> : <Badge variant="neutral">OFF</Badge>}
                   </div>
                   <div className="flex items-center justify-between mt-2 text-2xs text-text-2 font-mono">
-                    <span>Created {s(g.created_at)}</span>
+                    <span>Created {s(g['created_at'])}</span>
                   </div>
                 </Card>
               );

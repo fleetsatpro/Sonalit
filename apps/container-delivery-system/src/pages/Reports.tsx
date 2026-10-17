@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
@@ -61,7 +61,7 @@ export default function Reports() {
       {view === 'generate' && (
         <div className="grid grid-cols-3 gap-3 mt-4">
           {reportTypes.map((rt) => (
-            <Card key={rt.id} hover className="p-4 cursor-pointer group">
+            <Card key={rt['id']} hover className="p-4 cursor-pointer group">
               <div className="flex items-start gap-3">
                 <div
                   className="w-[36px] h-[36px] rounded-lg flex items-center justify-center text-sm-tight font-bold flex-none"
@@ -70,7 +70,7 @@ export default function Reports() {
                   {rt.icon}
                 </div>
                 <div className="flex-1">
-                  <div className="text-sm-tight font-semibold text-text-0 group-hover:text-cds-orange transition-colors">{rt.name}</div>
+                  <div className="text-sm-tight font-semibold text-text-0 group-hover:text-cds-orange transition-colors">{rt['name']}</div>
                   <div className="text-2xs text-text-2 mt-0.5 leading-relaxed">{rt.description}</div>
                 </div>
               </div>
@@ -102,13 +102,13 @@ export default function Reports() {
                 </thead>
                 <tbody>
                   {recentReports.map((r) => {
-                    const status = s(r.status);
+                    const status = s(r['status']);
                     return (
-                      <tr key={s(r.id)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
-                        <td className="px-3.5 py-3 text-text-0 font-medium">{s(r.name)}<div className="text-2xs text-text-2 font-mono mt-0.5">{s(r.id)}</div></td>
-                        <td className="px-3.5 py-3 text-text-1 capitalize">{s(r.type)}</td>
-                        <td className="px-3.5 py-3 text-text-0">{s(r.generated_by)}</td>
-                        <td className="px-3.5 py-3 font-mono text-text-2 text-2xs">{s(r.created_at)}</td>
+                      <tr key={s(r['id'])} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
+                        <td className="px-3.5 py-3 text-text-0 font-medium">{s(r['name'])}<div className="text-2xs text-text-2 font-mono mt-0.5">{s(r['id'])}</div></td>
+                        <td className="px-3.5 py-3 text-text-1 capitalize">{s(r['type'])}</td>
+                        <td className="px-3.5 py-3 text-text-0">{s(r['generated_by'])}</td>
+                        <td className="px-3.5 py-3 font-mono text-text-2 text-2xs">{s(r['created_at'])}</td>
                         <td className="px-3.5 py-3"><Badge variant={statusVariants[status] ?? 'neutral'}>{status.toUpperCase()}</Badge></td>
                         <td className="px-3.5 py-3">
                           <Button size="sm" variant="ghost">

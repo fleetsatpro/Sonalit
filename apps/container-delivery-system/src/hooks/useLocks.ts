@@ -6,9 +6,22 @@ export function useLocks(filters?: SearchFilters) {
   return useQuery<PaginatedResponse<ElectronicLock>>({
     queryKey: ['locks', filters],
     queryFn: async () => {
-      const { data } = await api.get('/locks', { params: filters });
-      return data;
+      const pageSize = Math.max(1, Math.min(200, Number(filters?.pageSize ?? 200)));
+      const page = Math.max(1, Number(filters?.page ?? 1));
+      const params = {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        ...(filters?.status ? { status: filters.status } : {}),
+        ...(filters?.query ? { search: filters.query } : {}),
+      };
+      const { data } = await api.get('/locks', { params });
+      const rows = Array.isArray(data.data) ? data.data : [];
+      const total = Number(data.total ?? rows.length);
+      return { data: rows, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
     },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+    retry: 1,
   });
 }
 
@@ -16,8 +29,8 @@ export function useLock(id: string) {
   return useQuery<ElectronicLock>({
     queryKey: ['lock', id],
     queryFn: async () => {
-      const { data } = await api.get(`/locks/${id}`);
-      return data;
+      const { data: body } = await api.get('/locks/' + id);
+      return (body.data ?? body) as ElectronicLock;
     },
     enabled: !!id,
   });
@@ -27,51 +40,37 @@ export function useLockEvents(lockId: string) {
   return useQuery<LockEvent[]>({
     queryKey: ['lock-events', lockId],
     queryFn: async () => {
-      const { data } = await api.get(`/locks/${lockId}/events`);
-      return data;
+      const { data: body } = await api.get('/locks/' + lockId + '/events');
+      return Array.isArray(body.data) ? body.data as LockEvent[] : [];
     },
     enabled: !!lockId,
   });
 }
 
-export function useAssignLock() {
+export function useCreateLock() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ lockId, containerId }: { lockId: string; containerId: string }) => {
-      const { data } = await api.post(`/locks/${lockId}/assign`, { containerId });
+    mutationFn: async (payload: { serial: string; provider?: string; firmware_version?: string; status: string; battery_level: number }) => {
+      const { data } = await api.post('/locks', payload);
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['locks'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['locks'] });
+    },
   });
 }
 
-export function useUnassignLock() {
+export function useUpdateLock() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (lockId: string) => {
-      const { data } = await api.post(`/locks/${lockId}/unassign`);
+    mutationFn: async ({ id, ...payload }: { id: string; serial?: string; provider?: string; firmware_version?: string; status?: string; battery_level?: number; container_id?: string | null; vehicle_id?: string | null; location?: string | null }) => {
+      const { data } = await api.patch('/locks/' + id, payload);
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['locks'] }),
+    onSuccess: (_data, variables) => {
+      void qc.invalidateQueries({ queryKey: ['locks'] });
+      void qc.invalidateQueries({ queryKey: ['lock', variables.id] });
+    },
   });
 }
 
-export function useRemoteLock() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ lockId, action }: { lockId: string; action: 'lock' | 'unlock' }) => {
-      const { data } = await api.post(`/locks/${lockId}/${action}`);
-      return data;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['locks'] }),
-  });
-}
-
-export function usePingLock() {
-  return useMutation({
-    mutationFn: async (lockId: string) => {
-      const { data } = await api.post(`/locks/${lockId}/ping`);
-      return data;
-    },
-  });
-}

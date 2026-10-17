@@ -1,81 +1,201 @@
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
 import { api } from '@/lib/api.js';
 
-const s = (v: unknown) => String(v ?? '—');
+type WindowDays = 7 | 30 | 90 | 365;
+type Severity = 'all' | 'critical' | 'high' | 'medium' | 'low';
+interface AnalyticsPayload {
+  meta: { window_days: WindowDays; period_start: string; period_end: string; generated_at: string };
+  summary: {
+    bookings_received: number; containers_clamped: number; containers_unclamped: number;
+    containers_currently_clamped: number; containers_clamped_over_24h: number; unclamps_after_24h: number;
+    avg_clamp_duration_hours: number | null;
+    trips_started: number; deliveries_completed: number; active_trips: number; moving_trips: number;
+    delayed_trips: number; eta_met: number; eta_observed: number; eta_attainment_pct: number | null;
+    avg_transit_hours: number | null; trips_missing_vehicle: number; trips_missing_driver: number;
+    trips_missing_container: number; trips_missing_lock: number; trips_missing_eta: number;
+    total_containers: number; available_containers: number; containers_in_use: number;
+    containers_in_maintenance: number; damaged_containers: number; fair_condition_containers: number;
+    retired_containers: number; overdue_inspections: number; inspections_due_30_days: number;
+    containers_missing_location: number; container_utilization_pct: number | null; total_vehicles: number;
+    available_vehicles: number; vehicles_in_use: number; vehicles_in_maintenance: number;
+    vehicle_utilization_pct: number | null; total_locks: number; locks_needing_attention: number;
+    locks_in_use: number; unclamped_locks: number;
+    low_battery_locks: number; tampered_locks: number; stale_lock_heartbeats: number;
+    active_drivers: number; open_incidents: number; unacknowledged_alerts: number;
+  };
+  daily: Array<{ day: string; bookings_received: number; containers_clamped: number; containers_unclamped: number; trips_started: number; deliveries_completed: number }>;
+  operator_leaderboard: Array<{ rank: number; operator_id: string; operator_name: string; containers_clamped: number; containers_unclamped: number; clamp_actions: number; unclamp_actions: number; last_action_at: string }>;
+  overdue_clamps: Array<{ booking_number: string; container_number: string; lock_number: string; driver_name: string; clamp_operator: string; clamped_at: string; hours_clamped: number }>;
+  clamp_state_mix: Array<{ state: 'clamped' | 'unclamped' | 'awaiting_clamp' | 'other'; count: number }>;
+  container_statuses: Array<{ status: string; count: number }>;
+  container_conditions: Array<{ condition: string; count: number }>;
+  trip_statuses: Array<{ status: string; count: number }>;
+  risk_mix: Array<{ risk: string; count: number }>;
+  lock_statuses: Array<{ status: string; count: number; low_battery: number; tampered: number }>;
+  booking_pipeline: Array<{ status: string; count: number }>;
+  lanes: Array<{ origin: string; destination: string; trips_started: number; deliveries_completed: number; currently_delayed: number; avg_transit_hours: number | null }>;
+  alerts: Array<{ id: string; type: string; severity: string; title: string; message: string; entity_type: string; entity_id: string; created_at: string }>;
+}
+const windows: WindowDays[] = [7, 30, 90, 365];
+const fmt = (v: number | null | undefined) => v == null ? '—' : new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(v);
+const pct = (v: number | null | undefined) => v == null ? '—' : Number(v).toFixed(1) + '%';
+const label = (v: string) => v.replace(/_/g, ' ');
+const dateText = (v: string) => { const d = new Date(v + (v.length === 10 ? 'T12:00:00' : '')); return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
+const palette = ['#f59a3c', '#42cbb5', '#82b6eb', '#b69cff', '#f0c16c', '#ed8b8b', '#71b3a3', '#7e8c9d', '#5f6d7b'];
+const statusTone = (key: string) => ['critical','high','delayed','tampered','offline','cancelled','damaged'].includes(key) ? 'bg-red-300' : ['medium','maintenance','at_port','awaiting_lock','low_battery','fair'].includes(key) ? 'bg-amber-300' : ['low','available','completed','delivered','online','healthy','good'].includes(key) ? 'bg-emerald-300' : 'bg-cds-orange';
 
-export default function Analytics() {
-  const { data, isLoading } = useQuery<Record<string, unknown>>({
-    queryKey: ['dashboard'],
-    queryFn: async () => {
-      const { data } = await api.get('/dashboard');
-      return data;
-    },
-    refetchInterval: 30_000,
+function EmptyPanel({ title, detail }: { title: string; detail: string }) {
+  return <div className="rounded-lg border border-dashed border-white/10 bg-black/[.08] py-8 px-4 text-center"><div className="text-sm font-medium text-text-1">{title}</div><p className="text-[11px] text-text-2 mt-1 leading-relaxed">{detail}</p></div>;
+}
+function MiniTrend({ values, color }: { values: number[]; color: string }) {
+  if (values.length < 2) return <div className="h-8 flex items-center"><span className="h-[2px] w-12 rounded-full" style={{ background: color }} /></div>;
+  const points = values.slice(-28), max = Math.max(1, ...points);
+  return <svg viewBox="0 0 100 32" preserveAspectRatio="none" className="h-8 w-full" role="img" aria-label="Observed daily trend"><polyline points={points.map((v,i) => (i / Math.max(1,points.length-1) * 100) + ',' + (28-v/max*24)).join(' ')} fill="none" stroke={color} strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /></svg>;
+}
+function DataBars({ rows, max }: { rows: Array<{ key: string; value: number; detail?: string | undefined }>; max: number }) {
+  if (!rows.length) return <EmptyPanel title="No persisted records" detail="The backend returned no rows for this breakdown." />;
+  return <div className="space-y-3">{rows.map(row => <div key={row.key}><div className="flex items-baseline justify-between gap-3 mb-1.5"><span className="capitalize truncate text-xs text-text-1">{label(row.key)}</span><span className="shrink-0 font-mono text-xs tabular-nums text-text-0">{fmt(row.value)}{row.detail ? <span className="ml-2 font-sans text-[10px] text-text-2">{row.detail}</span> : null}</span></div><div className="h-1.5 rounded-full bg-white/[.055] overflow-hidden"><div className={'h-full rounded-full transition-[width] duration-500 ' + statusTone(row.key)} style={{ width: Math.max(0,Math.min(100,row.value/Math.max(1,max)*100)) + '%' }} /></div></div>)}</div>;
+}
+function PanelTitle({ eyebrow, title, description, right }: { eyebrow: string; title: string; description?: string; right?: React.ReactNode }) {
+  return <div className="flex items-start justify-between gap-3 p-4 sm:p-5 border-b border-white/[.055]"><div><div className="text-[9px] uppercase tracking-[.17em] font-mono text-text-2">{eyebrow}</div><h3 className="font-semibold text-sm sm:text-base mt-1 text-text-0">{title}</h3>{description ? <p className="text-[11px] text-text-2 mt-1 leading-relaxed">{description}</p> : null}</div>{right}</div>;
+}
+
+type DonutSegment = { label: string; value: number; color: string };
+function DonutPanel({ title, segments }: { title: string; segments: DonutSegment[] }) {
+  const total = segments.reduce((sum, segment) => sum + segment.value, 0);
+  const circumference = 2 * Math.PI * 38;
+  let offset = 0;
+  const arcs = segments.map(segment => {
+    const length = total > 0 ? segment.value / total * circumference : 0;
+    const arc = { ...segment, length, offset };
+    offset += length;
+    return arc;
   });
+  return <Card className="min-w-0 overflow-hidden"><div className="p-4 pb-2"><h3 className="text-sm font-semibold">{title}</h3></div><div className="p-4 pt-1 flex items-center gap-4">
+    <div className="relative w-[118px] h-[118px] shrink-0"><svg viewBox="0 0 104 104" className="w-full h-full -rotate-90" role="img" aria-label={title + ' distribution'}><circle cx="52" cy="52" r="38" fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="13"/>{arcs.map(arc=><circle key={arc.label} cx="52" cy="52" r="38" fill="none" stroke={arc.color} strokeWidth="13" strokeDasharray={arc.length+' '+(circumference-arc.length)} strokeDashoffset={-arc.offset} style={{transition:'stroke-dasharray 750ms cubic-bezier(.2,.7,.2,1), stroke-dashoffset 750ms ease'}}/>)}</svg><div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"><span className="text-2xl font-semibold tabular-nums">{fmt(total)}</span><span className="text-[8px] uppercase tracking-[.14em] text-text-2">records</span></div></div>
+    <div className="flex-1 min-w-0 space-y-2">{segments.map(segment=><div key={segment.label} className="flex items-center gap-2 min-w-0"><span className="w-2 h-2 rounded-sm shrink-0" style={{background:segment.color}}/><span className="text-[10px] text-text-2 capitalize truncate flex-1">{segment.label}</span><span className="text-[11px] font-mono tabular-nums">{fmt(segment.value)}</span><span className="text-[9px] text-text-2 w-8 text-right">{total?Math.round(segment.value/total*100):0}%</span></div>)}{total===0?<p className="text-[10px] text-text-2">No records</p>:null}</div>
+  </div></Card>;
+}
+export default function Analytics() {
+  const [days, setDays] = useState<WindowDays>(30);
+  const [lens, setLens] = useState<'executive' | 'coordinator'>('executive');
+  const [severity, setSeverity] = useState<Severity>('all');
+  const [search, setSearch] = useState('');
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const qc = useQueryClient();
+  const query = useQuery<AnalyticsPayload>({
+    queryKey: ['cds-analytics', days],
+    queryFn: async () => { const response = await api.get('/analytics', { params: { days } }); return response.data.data as AnalyticsPayload; },
+    staleTime: 20_000, refetchInterval: 60_000, retry: 1,
+  });
+  const acknowledge = useMutation({
+    mutationFn: async (id: string) => api.post('/alerts/' + id + '/acknowledge'),
+    onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['cds-analytics'] }); },
+  });
+  const data = query.data, s = data?.summary;
+  if (query.isLoading) return <div className="p-4 sm:p-6 space-y-4"><div className="h-48 rounded-2xl bg-white/[.035] animate-pulse" /><div className="grid grid-cols-2 lg:grid-cols-6 gap-3">{Array.from({length:6},(_,i)=><div key={i} className="h-36 rounded-xl bg-white/[.035] animate-pulse" />)}</div><div className="h-80 rounded-xl bg-white/[.035] animate-pulse" /></div>;
+  if (!data || !s) return <div className="p-4 sm:p-6 max-w-[1800px] mx-auto"><PageHeader title="CDS operations intelligence" description="Tenant-scoped operational snapshot."/><Card className="overflow-hidden border border-red-300/20"><div className="h-1 bg-gradient-to-r from-red-300 via-amber-300 to-transparent"/><div className="p-6 sm:p-8"><div className="text-[10px] uppercase tracking-[.22em] font-mono text-red-300 mb-3">Data connection</div><h2 className="text-2xl font-semibold text-text-0">Analytics snapshot unavailable</h2><p className="text-sm text-text-2 mt-3 max-w-2xl">No sample figures are shown. The live CDS API did not return an authoritative analytics payload.</p>{query.error?<p className="text-[11px] text-red-300 mt-2">{query.error instanceof Error?query.error.message:'Unexpected server response.'}</p>:null}<button type="button" disabled={query.isFetching} onClick={()=>{void query.refetch();}} className="mt-5 rounded-lg bg-cds-orange px-4 py-2.5 text-xs font-semibold text-[#17110a] disabled:opacity-50">{query.isFetching?'Reconnecting…':'Retry snapshot'}</button></div></Card></div>;
 
-  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading…</div></div>;
-
+  const generated = new Date(data.meta.generated_at);
+  const ageMinutes = Number.isFinite(generated.getTime()) ? Math.max(0,Math.round((Date.now()-generated.getTime())/60000)) : null;
+  const snapshotAge = ageMinutes == null ? 'Age unknown' : ageMinutes < 1 ? 'Generated less than a minute ago' : ageMinutes + ' min old';
+  const trendStep = Math.max(1, Math.ceil(data.daily.length / 28));
+  const trends = data.daily.reduce<Array<{ start: string; end: string; bookings: number; clamped: number; unclamped: number; started: number; delivered: number }>>((rows, point, index) => {
+    const key = Math.floor(index / trendStep);
+    if (!rows[key]) rows[key] = { start: point.day, end: point.day, bookings: 0, clamped: 0, unclamped: 0, started: 0, delivered: 0 };
+    rows[key].end = point.day;
+    rows[key].bookings += point.bookings_received;
+    rows[key].clamped += point.containers_clamped;
+    rows[key].unclamped += point.containers_unclamped;
+    rows[key].started += point.trips_started;
+    rows[key].delivered += point.deliveries_completed;
+    return rows;
+  }, []);
+  const maxTrend = Math.max(1, ...trends.flatMap(row => [row.bookings, row.clamped, row.unclamped, row.started, row.delivered]));
+  const dataGaps = s.trips_missing_vehicle + s.trips_missing_driver + s.trips_missing_container + s.trips_missing_lock + s.trips_missing_eta;
   const kpis = [
-    { label: 'Active Containers', value: s(data?.active_containers) },
-    { label: 'In Transit', value: s(data?.in_transit) },
-    { label: 'Delivered Today', value: s(data?.delivered_today) },
-    { label: 'Active Locks', value: s(data?.active_locks) },
-    { label: 'Locks Removed', value: s(data?.locks_removed) },
-    { label: 'Pending Unclamp', value: s(data?.pending_unclamp) },
-    { label: 'Delayed Trips', value: s(data?.delayed_trips) },
-    { label: 'Avg Transit Hours', value: s(data?.avg_transit_hours) },
+    { name: 'Bookings received', value: fmt(s.bookings_received), detail: days + ' day intake', color: '#f59a3c', target: '#cds-bookings', series: data.daily.map(row => row.bookings_received) },
+    { name: 'Containers clamped', value: fmt(s.containers_clamped), detail: 'Distinct containers · selected period', color: '#42cbb5', target: '#cds-operators', series: data.daily.map(row => row.containers_clamped) },
+    { name: 'Locks in use', value: fmt(s.locks_in_use), detail: 'Assigned or installed now', color: '#82b6eb', target: '#cds-bookings', series: [] as number[] },
+    { name: 'Containers unclamped', value: fmt(s.containers_unclamped), detail: 'Distinct containers · selected period', color: '#b69cff', target: '#cds-operators', series: data.daily.map(row => row.containers_unclamped) },
+    { name: 'Clamped over 24h', value: fmt(s.containers_clamped_over_24h), detail: 'Still clamped · action required', color: s.containers_clamped_over_24h > 0 ? '#ed8b8b' : '#f0c16c', target: '#cds-overdue', series: [] as number[] },
+    { name: 'Delayed trips', value: fmt(s.delayed_trips), detail: 'Current persisted status', color: s.delayed_trips > 0 ? '#ed8b8b' : '#f0c16c', target: '#cds-flow', series: [] as number[] },
   ];
+  const maxBooking = Math.max(1,...data.booking_pipeline.map(row=>row.count));
+  const maxTripStatus = Math.max(1,...data.trip_statuses.map(row=>row.count));
+  const alerts = data.alerts.filter(a=>{const q=search.trim().toLowerCase(),sev=String(a.severity||'low').toLowerCase();return (severity==='all'||severity===sev)&&(!q||[a.title,a.message,a.type,a.entity_type,a.entity_id].some(v=>String(v||'').toLowerCase().includes(q)));});
+  const visibleAlerts = showAllAlerts?alerts:alerts.slice(0,5);
+  const sectionLink = (id:string,text:string) => <a href={'#'+id} className="shrink-0 rounded-md px-3 py-2 text-[11px] text-text-2 transition-colors hover:bg-white/[.05] hover:text-text-0">{text}</a>;
 
-  return (
-    <div className="p-6 pb-10 animate-fade-in">
-      <PageHeader
-        title="Analytics"
-        description="Fleet performance, delivery trends, and operational insights."
-      />
-
-      <div className="grid grid-cols-4 gap-3 mb-4">
-        {kpis.map((kpi) => (
-          <Card key={kpi.label} className="p-3.5">
-            <div className="text-2xs font-mono text-text-2 uppercase tracking-wider">{kpi.label}</div>
-            <div className="text-[22px] font-display font-bold text-text-0 mt-1">{kpi.value}</div>
-          </Card>
-        ))}
+  return <div className="mx-auto max-w-[1840px] p-3 sm:p-5 xl:p-6 pb-10 space-y-5 text-text-0">
+    <section className="relative overflow-hidden rounded-2xl border border-white/[.075] bg-[#101419]"><div className="absolute inset-0 pointer-events-none" style={{background:'radial-gradient(ellipse at 95% 0%, rgba(245,154,60,.16), transparent 34%), radial-gradient(ellipse at 65% 110%, rgba(66,203,181,.08), transparent 42%)'}}/><div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cds-orange via-cds-teal/75 to-transparent"/><div className="relative p-4 sm:p-6 xl:p-7">
+      <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-5"><div className="max-w-3xl min-w-0"><div className="flex flex-wrap items-center gap-2 mb-3"><span className="text-[9px] sm:text-[10px] uppercase tracking-[.24em] font-mono text-cds-orange">SONALIT / CDS INTELLIGENCE</span><span className="inline-flex items-center gap-1.5 rounded-full border border-cds-teal/20 bg-cds-teal/[.07] px-2 py-1 text-[9px] uppercase tracking-wider text-cds-teal"><span className={'w-1.5 h-1.5 rounded-full '+(query.isFetching?'bg-amber-300 animate-pulse':'bg-cds-teal')}/>{query.isFetching?'Syncing snapshot':'Database snapshot'}</span></div><h2 className="text-2xl sm:text-3xl xl:text-[36px] leading-tight font-semibold tracking-[-.035em]">Container operations, <span className="text-cds-orange">in command.</span></h2><p className="mt-3 text-xs sm:text-sm text-text-2 leading-relaxed max-w-2xl">A decision workspace for throughput, capacity, container integrity, e-lock exposure and exceptions requiring action.</p><div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] sm:text-[11px] text-text-2"><span><span className="text-text-1 mr-2">PERIOD</span><span className="font-mono text-text-0">{dateText(data.meta.period_start)} — {dateText(data.meta.period_end)}</span></span><span className="hidden sm:block h-3 w-px bg-white/10"/><span><span className="text-text-1 mr-2">GENERATED</span><span className="font-mono text-text-0">{generated.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span></span><span className="hidden sm:block h-3 w-px bg-white/10"/><span><span className="text-text-1 mr-2">AGE</span><span className={'font-mono '+(ageMinutes!=null&&ageMinutes>5?'text-amber-300':'text-cds-teal')}>{snapshotAge}</span></span></div></div>
+        <div className="flex flex-col sm:flex-row xl:flex-col gap-3 items-start sm:items-center xl:items-end"><div className="rounded-xl border border-white/[.08] bg-black/20 p-1 flex gap-1" role="group" aria-label="Reporting window">{windows.map(d=><button key={d} type="button" onClick={()=>setDays(d)} aria-pressed={days===d} className={'min-h-[36px] rounded-lg px-3 py-2 text-[11px] font-mono transition-all '+(days===d?'bg-cds-orange text-[#17110a] font-bold shadow-[0_4px_18px_rgba(245,143,44,.15)]':'text-text-2 hover:bg-white/[.04] hover:text-text-0')}>{d}D</button>)}</div><button type="button" disabled={query.isFetching} onClick={()=>{void query.refetch();}} className="px-3 py-2 rounded-lg border border-white/[.09] text-xs font-semibold text-text-1 hover:text-text-0 disabled:opacity-50">{query.isFetching?'Refreshing…':'Refresh snapshot'}</button></div>
       </div>
+      
+    </div></section>
+    <nav className="flex gap-1 overflow-x-auto rounded-xl border border-white/[.06] bg-[#101419] p-1" aria-label="Analytics sections">{sectionLink('cds-trend','01  Throughput')}{sectionLink('cds-flow','02  Flow & lanes')}{sectionLink('cds-assets','03  Assets & integrity')}{sectionLink('cds-alerts','04  Exceptions')}</nav>
+    {query.isError&&data?<div role="status" className="rounded-lg border border-amber-300/20 bg-amber-300/[.05] px-4 py-3 text-xs text-amber-100">The latest refresh failed. The last successful snapshot is retained and has not been replaced with sample data.</div>:null}
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <Card className="p-4">
-          <div className="font-display font-bold text-sm-tight mb-3">Delivery Trends</div>
-          <div className="flex items-center justify-center h-[160px] text-text-2 text-xs font-mono">
-            Data populates as operations run
-          </div>
-        </Card>
+    <section><div className="flex flex-wrap justify-between items-end gap-3 mb-3"><div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">01 / Performance indicators</div><h3 className="text-base sm:text-lg font-semibold mt-1">The operating picture</h3></div><span className="text-[10px] text-text-2">Period activity and current inventory are labelled separately</span></div><div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-2 sm:gap-3">{kpis.map(k=><a key={k.name} href={k.target} className="group relative min-w-0 overflow-hidden rounded-xl border border-white/[.075] bg-[#11161b] p-3 sm:p-4 transition-all hover:-translate-y-0.5 hover:bg-[#151b21]"><div className="flex items-start justify-between gap-2"><span className="text-[9px] sm:text-[10px] uppercase leading-relaxed tracking-[.11em] text-text-2">{k.name}</span><span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{background:k.color}}/></div><div className={'mt-3 text-2xl sm:text-[28px] font-semibold leading-none tracking-[-.035em] tabular-nums '+(k.name==='Delayed now'&&s.delayed_trips?'text-red-300':'text-text-0')}>{k.value}</div><p className="mt-2 min-h-[29px] text-[10px] leading-relaxed text-text-2">{k.detail}</p><div className="mt-2 h-8 opacity-75 group-hover:opacity-100"><MiniTrend values={k.series} color={k.color}/></div><div className="mt-2 border-t border-white/[.055] pt-2 text-[9px] uppercase tracking-wider text-text-2 group-hover:text-text-1">Explore signal <span className="float-right">↗</span></div></a>)}</div></section>
 
-        <Card className="p-4">
-          <div className="font-display font-bold text-sm-tight mb-4">Fleet Utilization</div>
-          <div className="flex items-center justify-center h-[140px] text-text-2 text-xs font-mono">
-            Data populates as operations run
-          </div>
-        </Card>
+    <section id="cds-bookings" aria-label="Visual operations mix" className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
+      <DonutPanel title="Booking mix" segments={data.booking_pipeline.map((row,i)=>({label:label(row.status),value:row.count,color:palette[i%palette.length]||'#7e8c9d'}))}/>
+      <DonutPanel title="Lock inventory" segments={data.lock_statuses.map(row=>({label:label(row.status),value:row.count,color:({installed:'#42cbb5',assigned:'#82b6eb',available:'#f59a3c',removed:'#b69cff',maintenance:'#f0c16c',offline:'#ed8b8b'} as Record<string,string>)[row.status]||'#7e8c9d'}))}/>
+      <DonutPanel title="Container clamp cycle" segments={data.clamp_state_mix.map(row=>({label:label(row.state),value:row.count,color:({clamped:'#f59a3c',unclamped:'#42cbb5',awaiting_clamp:'#82b6eb',other:'#5f6d7b'} as Record<string,string>)[row.state]||'#7e8c9d'}))}/>
+    </section>
+
+    <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-3 sm:gap-4">
+      <Card className="overflow-hidden min-w-0" ><PanelTitle eyebrow="OPERATOR OUTPUT" title="Clamp / unclamp by operator" description={days+' day window'} right={<span className="text-[10px] font-mono text-text-2">{data.operator_leaderboard.length} operators</span>}/>
+        <div className="p-4 sm:p-5"><div className="flex gap-4 text-[10px] text-text-2 mb-4"><span className="inline-flex items-center gap-2"><i className="w-2 h-2 rounded-sm bg-cds-orange"/>Clamped</span><span className="inline-flex items-center gap-2"><i className="w-2 h-2 rounded-sm bg-cds-teal"/>Unclamped</span></div>
+          {data.operator_leaderboard.length===0?<EmptyPanel title="No operator events recorded" detail="No clamp or unclamp audit events in this reporting period."/>:<div className="space-y-4">{data.operator_leaderboard.slice(0,8).map((op,index)=>{const maximum=Math.max(1,...data.operator_leaderboard.map(row=>Math.max(row.containers_clamped,row.containers_unclamped)));return <div key={op.operator_id}><div className="flex items-center gap-3 mb-1.5"><span className="w-5 text-[10px] font-mono text-text-2">{String(index+1).padStart(2,'0')}</span><span className="text-xs font-medium truncate flex-1">{op.operator_name}</span><span className="font-mono text-[10px] text-cds-orange">{fmt(op.containers_clamped)}</span><span className="font-mono text-[10px] text-cds-teal">{fmt(op.containers_unclamped)}</span></div><div className="ml-8 grid grid-cols-2 gap-1.5"><div className="h-2 rounded-full bg-white/[.045] overflow-hidden"><div className="h-full rounded-full bg-cds-orange transition-[width] duration-700" style={{width:op.containers_clamped/maximum*100+'%'}}/></div><div className="h-2 rounded-full bg-white/[.045] overflow-hidden"><div className="h-full rounded-full bg-cds-teal transition-[width] duration-700" style={{width:op.containers_unclamped/maximum*100+'%'}}/></div></div></div>;})}</div>}
+        </div>
+      </Card>
+      <Card className="overflow-hidden min-w-0"><PanelTitle eyebrow="LIVE EXCEPTIONS" title="24h+ clamp exceptions" right={<span className="rounded-md bg-red-300/10 text-red-300 px-2 py-1 font-mono text-xs">{fmt(s.containers_clamped_over_24h)}</span>}/>
+        <div className="grid grid-cols-3 gap-px bg-white/[.05] border-b border-white/[.055]">
+          <div className="bg-[#11161b] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Active clamp</div><div className="text-xl font-semibold tabular-nums mt-1">{fmt(s.containers_currently_clamped)}</div></div>
+          <div className="bg-[#11161b] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Unclamped &gt;24h</div><div className="text-xl font-semibold tabular-nums mt-1">{fmt(s.unclamps_after_24h)}</div></div>
+          <div className="bg-[#11161b] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Avg clamp time</div><div className="text-xl font-semibold tabular-nums mt-1">{s.avg_clamp_duration_hours==null?'—':Number(s.avg_clamp_duration_hours).toFixed(1)+'h'}</div></div>
+        </div>
+        {data.overdue_clamps.length===0?<div className="p-5"><EmptyPanel title="No overdue clamps" detail="No manifest-recorded clamp is still active beyond 24 hours."/></div>:<div className="divide-y divide-white/[.05]">{data.overdue_clamps.slice(0,8).map((row,index)=><div key={row.booking_number+'|'+row.container_number+'|'+index} className="p-3 sm:p-4 flex items-center gap-3"><div className="min-w-0 flex-1"><div className="text-xs font-semibold truncate">{row.container_number}</div><div className="text-[10px] text-text-2 mt-1">Booking {row.booking_number} · {row.clamp_operator}</div><div className="text-[9px] text-text-2 mt-1">Lock {row.lock_number} · {row.driver_name}</div></div><div className="text-right shrink-0"><div className="text-lg font-semibold font-mono text-red-300 tabular-nums">{Number(row.hours_clamped).toFixed(1)}h</div><div className="text-[9px] uppercase tracking-wider text-red-300">overdue</div></div></div>)}</div>}
+      </Card>
+    </section>
+    <style>{'@keyframes cdsBarRise { from { transform: scaleY(.08); opacity: .3; } to { transform: scaleY(1); opacity: 1; } }'}</style>
+    <section id="cds-trend" className="scroll-mt-4 grid grid-cols-1 2xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.8fr)] gap-3 sm:gap-4">
+      <Card className="min-w-0 overflow-hidden"><PanelTitle eyebrow="DAILY OPERATIONS / SELECTED PERIOD" title="Bookings → clamp → unclamp" right={<div className="flex flex-wrap gap-3 text-[10px] text-text-2"><span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-cds-orange"/>Bookings</span><span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-cds-teal"/>Clamped</span><span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-sky-300"/>Unclamped</span><span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-violet-300"/>Trips</span><span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-amber-300"/>Delivered</span></div>}/><div className="p-3 sm:p-5">{trends.length===0||trends.every(r=>!r.bookings&&!r.clamped&&!r.unclamped&&!r.started&&!r.delivered)?<EmptyPanel title="No recorded operations" detail="No booking, clamp, unclamp, trip or delivery events were returned for this period."/>:<div><svg viewBox="0 0 1000 255" preserveAspectRatio="none" className="w-full h-[190px] sm:h-[250px]" role="img" aria-label="Daily bookings, clamps, unclamps, trips and deliveries"><title>Daily operational counts grouped from persisted CDS timestamps.</title>{[0,1,2,3,4].map(i=><g key={i}><line x1="0" x2="1000" y1={18+i*48} y2={18+i*48} stroke="rgba(255,255,255,.075)" strokeDasharray="3 7"/><text x="0" y={13+i*48} fill="rgba(255,255,255,.34)" fontSize="10">{Math.round(maxTrend*(4-i)/4)}</text></g>)}{trends.map((row,i)=>{const step=990/Math.max(1,trends.length),x=7+i*step,w=Math.max(2,Math.min(7,step*.13));const series=[{label:'bookings',value:row.bookings,color:'#f59a3c'},{label:'clamped',value:row.clamped,color:'#42cbb5'},{label:'unclamped',value:row.unclamped,color:'#82b6eb'},{label:'trips',value:row.started,color:'#b69cff'},{label:'delivered',value:row.delivered,color:'#f0c16c'}];return <g key={row.start}><title>{row.start+' – '+row.end+': '+series.map(item=>item.label+' '+item.value).join(' · ')}</title>{series.map((item,j)=>{const h=item.value/maxTrend*178;return <rect key={item.label} x={x+j*(w+1)} y={204-h} width={w} height={h} rx="1.5" fill={item.color} style={{transformBox:'fill-box',transformOrigin:'center bottom',animation:'cdsBarRise 650ms cubic-bezier(.2,.7,.2,1) both',animationDelay:(i*8+j*25)+'ms'}}/>})}</g>;})}</svg><div className="flex justify-between gap-2 px-1 text-[9px] font-mono text-text-2"><span>{dateText(trends[0]?.start ?? data.meta.period_start)}</span><span>{dateText(trends[Math.floor(trends.length/2)]?.start ?? data.meta.period_start)}</span><span>{dateText(trends[trends.length-1]?.end ?? data.meta.period_end)}</span></div></div>}<div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">{[{label:'ETA attainment',value:pct(s.eta_attainment_pct),detail:fmt(s.eta_met)+' / '+fmt(s.eta_observed)+' known ETA'},{label:'Average transit',value:s.avg_transit_hours==null?'—':Number(s.avg_transit_hours).toFixed(1)+'h',detail:'Both timestamps required'},{label:'Active / moving',value:fmt(s.active_trips)+' / '+fmt(s.moving_trips),detail:'Current trip lifecycle'},{label:'Delayed now',value:fmt(s.delayed_trips),detail:'Current persisted status'}].map(row=><div key={row.label} className="rounded-lg border border-white/[.055] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">{row.label}</div><div className={'text-xl font-semibold mt-1 tabular-nums '+(row.label==='Delayed now'&&s.delayed_trips?'text-red-300':'text-text-0')}>{row.value}</div><div className="text-[10px] text-text-2 mt-1">{row.detail}</div></div>)}</div></div></Card>
+      <Card className="min-w-0 overflow-hidden"><PanelTitle eyebrow="CURRENT STATE / BOOKING FLOW" title="Demand pipeline" description="Persisted bookings grouped by lifecycle status."/><div className="p-4 sm:p-5"><div className="flex justify-between items-end mb-4"><div><div className="text-3xl font-semibold tracking-tight tabular-nums">{fmt(data.booking_pipeline.reduce((n,r)=>n+r.count,0))}</div><div className="text-[10px] text-text-2 mt-1">Bookings across returned states</div></div><div className="text-right"><div className="text-lg font-semibold tabular-nums">{fmt(s.active_trips)}</div><div className="text-[10px] text-text-2 mt-1">Active trips</div></div></div><div className="flex h-2 rounded-full overflow-hidden bg-white/[.045] mb-5">{data.booking_pipeline.map((r,i)=><div key={r.status} title={label(r.status)+': '+r.count} style={{width:(r.count/maxBooking*100)+'%',background:palette[i%palette.length]}}/>)}</div><DataBars max={maxBooking} rows={data.booking_pipeline.slice().sort((a,b)=>b.count-a.count).map(r=>({key:r.status,value:r.count}))}/></div></Card>
+    </section>
+
+    <section id="cds-flow" className="scroll-mt-4 space-y-3"><div className="flex flex-wrap justify-between items-end gap-3"><div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">02 / Movement analysis</div><h3 className="text-base sm:text-lg font-semibold mt-1">Flow, lanes & operational pressure</h3></div><div className="flex items-center gap-1 p-1 rounded-lg bg-[#101419] border border-white/[.06]" role="group" aria-label="Analytics lens"><button type="button" onClick={()=>setLens('executive')} aria-pressed={lens==='executive'} className={'px-3 py-2 rounded-md text-[10px] '+(lens==='executive'?'bg-white/[.09] text-text-0':'text-text-2 hover:text-text-0')}>Executive lens</button><button type="button" onClick={()=>setLens('coordinator')} aria-pressed={lens==='coordinator'} className={'px-3 py-2 rounded-md text-[10px] '+(lens==='coordinator'?'bg-cds-orange/15 text-cds-orange':'text-text-2 hover:text-text-0')}>Coordinator lens</button></div></div>
+      <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,.8fr)] gap-3 sm:gap-4"><Card className="min-w-0 overflow-hidden"><PanelTitle eyebrow="LANE PERFORMANCE" title="Highest-volume corridors" description="Ranked by trip creation. Transit requires departure and delivery timestamps." right={<span className="text-[10px] font-mono text-text-2">{data.lanes.length} corridors</span>}/>{data.lanes.length===0?<div className="p-8"><EmptyPanel title="No lanes to rank" detail="No trip-created corridors were returned for this period."/></div>:<div className="overflow-x-auto"><table className="w-full min-w-[570px] text-left"><thead><tr className="border-b border-white/[.06] text-[9px] uppercase tracking-wider text-text-2"><th className="p-3 sm:p-4 font-medium">Corridor</th><th className="p-3 font-medium text-right">Started</th><th className="p-3 font-medium text-right">Delivered</th><th className="p-3 font-medium text-right">Transit</th><th className="p-3 sm:p-4 font-medium text-right">Delayed</th></tr></thead><tbody>{data.lanes.map((r,i)=><tr key={r.origin+'|'+r.destination+'|'+i} className="border-b border-white/[.04] last:border-0 hover:bg-white/[.025]"><td className="p-3 sm:p-4"><div className="flex gap-3"><span className="font-mono text-[10px] text-text-2">{String(i+1).padStart(2,'0')}</span><div><div className="text-xs font-medium text-text-0">{r.origin}</div><div className="text-[10px] text-text-2 mt-1">to {r.destination}</div></div></div></td><td className="p-3 text-right font-mono text-xs tabular-nums">{fmt(r.trips_started)}</td><td className="p-3 text-right font-mono text-xs tabular-nums">{fmt(r.deliveries_completed)}</td><td className="p-3 text-right font-mono text-xs tabular-nums">{r.avg_transit_hours==null?'—':Number(r.avg_transit_hours).toFixed(1)+'h'}</td><td className="p-3 sm:p-4 text-right"><span className={'inline-flex min-w-7 justify-center rounded-md px-2 py-1 font-mono text-[11px] '+(r.currently_delayed?'bg-red-300/10 text-red-300':'bg-white/[.04] text-text-2')}>{fmt(r.currently_delayed)}</span></td></tr>)}</tbody></table></div>}</Card>
+        {lens === 'executive' ? (
+        <Card className="min-w-0 overflow-hidden"><PanelTitle eyebrow="PORTFOLIO / CURRENT STATE" title="Live trip portfolio" description="How workload is distributed across persisted lifecycle statuses."/><div className="p-4 sm:p-5"><div className="grid grid-cols-2 gap-2 mb-5"><div className="rounded-lg border border-white/[.06] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Active trips</div><div className="text-2xl font-semibold tabular-nums mt-1">{fmt(s.active_trips)}</div></div><div className="rounded-lg border border-red-300/15 bg-red-300/[.035] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Delayed now</div><div className="text-2xl font-semibold tabular-nums mt-1 text-red-300">{fmt(s.delayed_trips)}</div></div></div><DataBars max={maxTripStatus} rows={data.trip_statuses.map(r=>({key:r.status,value:r.count}))}/><div className="border-t border-white/[.055] pt-4 mt-5"><div className="text-[10px] uppercase tracking-wider text-text-2 mb-3">Risk exposure</div><DataBars max={Math.max(1,...data.risk_mix.map(r=>r.count))} rows={data.risk_mix.map(r=>({key:r.risk,value:r.count}))}/></div></div></Card>
+      ) : (
+        <Card className="min-w-0 overflow-hidden"><PanelTitle eyebrow="COORDINATOR / DISPATCH GATE" title="Readiness exceptions" description="Stage-aware gaps that can block a clean dispatch hand-off."/><div className="p-4 sm:p-5"><div className="grid grid-cols-2 gap-2 mb-5"><div className="rounded-lg border border-white/[.06] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Missing-field signals</div><div className={'text-2xl font-semibold tabular-nums mt-1 '+(dataGaps?'text-amber-300':'text-cds-teal')}>{fmt(dataGaps)}</div></div><div className="rounded-lg border border-white/[.06] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Open incidents</div><div className={'text-2xl font-semibold tabular-nums mt-1 '+(s.open_incidents?'text-red-300':'text-text-0')}>{fmt(s.open_incidents)}</div></div></div><DataBars max={Math.max(1,dataGaps)} rows={[{key:'vehicle_assignment_missing',value:s.trips_missing_vehicle},{key:'driver_assignment_missing',value:s.trips_missing_driver},{key:'container_assignment_missing',value:s.trips_missing_container},{key:'e_lock_missing_after_locked',value:s.trips_missing_lock},{key:'eta_missing_after_locked',value:s.trips_missing_eta}]}/><div className="border-t border-white/[.055] pt-4 mt-5"><div className="text-[10px] uppercase tracking-wider text-text-2 mb-3">Trip risk by classification</div><DataBars max={Math.max(1,...data.risk_mix.map(r=>r.count))} rows={data.risk_mix.map(r=>({key:r.risk,value:r.count}))}/></div></div></Card>
+      )}
       </div>
+    </section>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <Card className="p-4">
-          <div className="font-display font-bold text-sm-tight mb-4">Lock Health Distribution</div>
-          <div className="flex items-center justify-center h-[140px] text-text-2 text-xs font-mono">
-            Data populates as operations run
-          </div>
-        </Card>
-
-        <Card className="p-4">
-          <div className="font-display font-bold text-sm-tight mb-3">Route Performance</div>
-          <div className="flex items-center justify-center h-[140px] text-text-2 text-xs font-mono">
-            Data populates as operations run
-          </div>
-        </Card>
+    <section id="cds-assets" className="scroll-mt-4 space-y-3"><div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">03 / Fleet & container integrity</div><h3 className="text-base sm:text-lg font-semibold mt-1">Assets, utilisation & readiness</h3></div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
+        <Card className="min-w-0 overflow-hidden"><PanelTitle eyebrow="CONTAINER REGISTER" title="Availability & condition" description="Recorded inventory state; no modelled grades."/><div className="p-4 space-y-5"><div><div className="flex justify-between gap-2 items-end mb-2"><div><div className="text-2xl font-semibold tabular-nums">{fmt(s.total_containers)}</div><div className="text-[10px] text-text-2">Registered containers</div></div><div className="text-right"><div className="text-lg font-semibold tabular-nums">{pct(s.container_utilization_pct)}</div><div className="text-[10px] text-text-2">Utilisation</div></div></div><div className="flex h-2 rounded-full bg-white/[.05] overflow-hidden"><div className="bg-cds-orange" style={{width:(s.total_containers?s.containers_in_use/s.total_containers*100:0)+'%'}}/><div className="bg-cds-teal" style={{width:(s.total_containers?s.available_containers/s.total_containers*100:0)+'%'}}/><div className="bg-amber-300" style={{width:(s.total_containers?s.containers_in_maintenance/s.total_containers*100:0)+'%'}}/></div><div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[9px] text-text-2"><span><i className="inline-block w-1.5 h-1.5 rounded-full bg-cds-orange mr-1.5"/>In use {fmt(s.containers_in_use)}</span><span><i className="inline-block w-1.5 h-1.5 rounded-full bg-cds-teal mr-1.5"/>Available {fmt(s.available_containers)}</span><span><i className="inline-block w-1.5 h-1.5 rounded-full bg-amber-300 mr-1.5"/>Maintenance {fmt(s.containers_in_maintenance)}</span></div></div><div className="border-t border-white/[.055] pt-4"><div className="text-[10px] uppercase tracking-wider text-text-2 mb-3">Physical condition</div><DataBars max={Math.max(1,...data.container_conditions.map(r=>r.count))} rows={data.container_conditions.map(r=>({key:r.condition,value:r.count}))}/></div><div className="grid grid-cols-3 gap-2 border-t border-white/[.055] pt-4"><div><div className="text-lg font-semibold tabular-nums text-red-300">{fmt(s.damaged_containers)}</div><div className="text-[9px] text-text-2 mt-1">Damaged</div></div><div><div className="text-lg font-semibold tabular-nums text-amber-300">{fmt(s.fair_condition_containers)}</div><div className="text-[9px] text-text-2 mt-1">Fair condition</div></div><div><div className="text-lg font-semibold tabular-nums">{fmt(s.retired_containers)}</div><div className="text-[9px] text-text-2 mt-1">Retired</div></div></div></div></Card>
+        <Card className="min-w-0 overflow-hidden"><PanelTitle eyebrow="FLEET CAPACITY" title="Vehicles & driver coverage" description="Live registered fleet state at snapshot generation."/><div className="p-4"><div className="flex justify-between items-end"><div><div className="text-3xl font-semibold tracking-tight tabular-nums">{fmt(s.total_vehicles)}</div><div className="text-[10px] text-text-2 mt-1">Registered vehicles</div></div><div className="text-right"><div className="text-xl font-semibold tabular-nums">{pct(s.vehicle_utilization_pct)}</div><div className="text-[10px] text-text-2 mt-1">Utilisation</div></div></div><div className="mt-5"><DataBars max={Math.max(1,s.total_vehicles)} rows={[{key:'in_use',value:s.vehicles_in_use},{key:'available',value:s.available_vehicles},{key:'maintenance',value:s.vehicles_in_maintenance}]}/></div><div className="grid grid-cols-2 gap-2 mt-5"><div className="rounded-lg bg-white/[.025] border border-white/[.05] p-3"><div className="text-[9px] text-text-2 uppercase tracking-wider">Active drivers</div><div className="text-2xl font-semibold mt-1 tabular-nums">{fmt(s.active_drivers)}</div></div><div className="rounded-lg bg-white/[.025] border border-white/[.05] p-3"><div className="text-[9px] text-text-2 uppercase tracking-wider">Maintenance fleet</div><div className="text-2xl font-semibold mt-1 tabular-nums">{fmt(s.vehicles_in_maintenance)}</div></div></div><div className="mt-5 rounded-lg border border-white/[.06] p-3"><div className="text-xs font-medium">Capacity context</div><p className="mt-1 text-[10px] text-text-2 leading-relaxed">Utilisation describes persisted vehicle state, not a period productivity rate.</p></div></div></Card>
+        <Card className="min-w-0 overflow-hidden"><PanelTitle eyebrow="E-LOCK HEALTH" title="Security telemetry posture" description="Persisted lock state and reporting freshness."/><div className="p-4"><div className="grid grid-cols-2 gap-2">{[{label:'Total locks',value:s.total_locks,tone:'text-text-0'},{label:'Need attention',value:s.locks_needing_attention,tone:'text-red-300'},{label:'Battery below 25%',value:s.low_battery_locks,tone:'text-amber-300'},{label:'Stale heartbeat',value:s.stale_lock_heartbeats,tone:'text-text-0'}].map(r=><div key={r.label} className="rounded-lg border border-white/[.06] p-3"><div className="text-[9px] text-text-2 uppercase tracking-wider">{r.label}</div><div className={'text-xl font-semibold mt-1 tabular-nums '+r.tone}>{fmt(r.value)}</div></div>)}</div><div className="mt-5"><div className="text-[10px] uppercase tracking-wider text-text-2 mb-3">Lock state distribution</div><DataBars max={Math.max(1,...data.lock_statuses.map(r=>r.count))} rows={data.lock_statuses.map(r=>({key:r.status,value:r.count,detail:r.low_battery||r.tampered?fmt(r.low_battery)+' low batt · '+fmt(r.tampered)+' tamper':undefined}))}/></div><div className="mt-4 border-t border-white/[.055] pt-3 text-[10px] text-text-2">Tamper signals: <span className="text-red-300 font-mono">{fmt(s.tampered_locks)}</span> · Open incidents: <span className="text-text-0 font-mono">{fmt(s.open_incidents)}</span></div></div></Card>
       </div>
-    </div>
-  );
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4"><Card className="overflow-hidden min-w-0"><PanelTitle eyebrow="INSPECTION CONTROL" title="Inspection & location readiness" description="Current inventory flags from inspection dates and stored location fields."/><div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/[.05]">{[{label:'Overdue',value:s.overdue_inspections,tone:'text-red-300',note:'Inspection date passed'},{label:'Due in 30 days',value:s.inspections_due_30_days,tone:'text-amber-300',note:'Upcoming inspection'},{label:'No location',value:s.containers_missing_location,tone:'text-amber-300',note:'No recorded location'},{label:'Damaged + retired',value:s.damaged_containers+s.retired_containers,tone:'text-text-0',note:'Inventory flags'}].map(r=><div key={r.label} className="bg-[#11161b] p-3 sm:p-4"><div className="text-[9px] uppercase tracking-wider text-text-2">{r.label}</div><div className={'text-2xl font-semibold mt-2 tabular-nums '+r.tone}>{fmt(r.value)}</div><div className="text-[10px] text-text-2 mt-1">{r.note}</div></div>)}</div><div className="p-4 text-[10px] text-text-2 leading-relaxed">Containers without a scheduled next-inspection date are not counted as overdue; the absence of a date is separate.</div></Card>
+      <Card className="overflow-hidden min-w-0"><PanelTitle eyebrow="DATA COMPLETENESS" title="Assignment & planning integrity" description="Missing-field checks apply from the lifecycle stage where each field becomes required."/><div className="p-4 sm:p-5"><DataBars max={Math.max(1,s.trips_missing_vehicle,s.trips_missing_driver,s.trips_missing_container,s.trips_missing_lock,s.trips_missing_eta)} rows={[{key:'vehicle_missing',value:s.trips_missing_vehicle},{key:'driver_missing',value:s.trips_missing_driver},{key:'container_missing',value:s.trips_missing_container},{key:'e_lock_missing',value:s.trips_missing_lock},{key:'eta_missing',value:s.trips_missing_eta}]}/><div className={'mt-4 rounded-lg border p-3 text-[10px] leading-relaxed '+(dataGaps?'border-amber-300/20 bg-amber-300/[.04] text-amber-100':'border-cds-teal/15 bg-cds-teal/[.035] text-text-2')}>{dataGaps?fmt(dataGaps)+' missing-field signals were returned across stage-aware checks. Review assignment and readiness before dispatch.':'No missing assignment fields were returned for stages where these fields are required.'}</div></div></Card></div>
+    </section>
+
+    <section id="cds-alerts" className="scroll-mt-4 space-y-3"><div className="flex flex-wrap justify-between items-end gap-3"><div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">04 / Action queue</div><h3 className="text-base sm:text-lg font-semibold mt-1">Exceptions requiring attention</h3><p className="text-[11px] text-text-2 mt-1">Acknowledge writes through to the API; filters do not change alert state.</p></div><div className="rounded-lg border border-white/[.06] bg-[#101419] px-3 py-2"><span className="text-[9px] uppercase tracking-wider text-text-2">Open incidents</span><span className="ml-3 font-mono text-sm font-semibold">{fmt(s.open_incidents)}</span></div></div>
+      <Card className="overflow-hidden"><div className="p-3 sm:p-4 border-b border-white/[.055] flex flex-col lg:flex-row lg:items-center gap-3"><div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter alerts by severity">{(['all','critical','high','medium','low'] as const).map(level=><button key={level} type="button" aria-pressed={severity===level} onClick={()=>{setSeverity(level);setShowAllAlerts(false);}} className={'rounded-md px-3 py-2 text-[10px] capitalize border transition-colors '+(severity===level?'border-cds-orange/30 bg-cds-orange/10 text-cds-orange':'border-white/[.06] text-text-2 hover:text-text-0')}>{level==='all'?'All levels':level}</button>)}</div><input aria-label="Search alert records" value={search} onChange={e=>{setSearch(e.target.value);setShowAllAlerts(false);}} placeholder="Search alert, entity or type…" className="w-full lg:ml-auto lg:max-w-72 rounded-lg border border-white/[.08] bg-black/20 px-3 py-2.5 text-xs text-text-0 placeholder:text-text-2 outline-none focus:border-cds-orange/50"/></div>
+        <div className="divide-y divide-white/[.055]">{visibleAlerts.map(a=><div key={a.id} className="p-4 flex items-start gap-3 sm:gap-4 hover:bg-white/[.018]"><div className={'mt-1 w-1.5 h-10 rounded-full shrink-0 '+(['critical','high'].includes(String(a.severity).toLowerCase())?'bg-red-300':String(a.severity).toLowerCase()==='medium'?'bg-amber-300':'bg-cds-teal')}/><div className="flex-1 min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-xs sm:text-sm font-medium break-words">{a.title||a.message||'Untitled alert'}</span><span className="rounded-md px-2 py-1 bg-white/[.05] text-[9px] font-mono uppercase text-text-1">{label(a.severity)}</span></div><p className="text-[11px] text-text-2 mt-1.5 leading-relaxed">{a.message&&a.title?a.message:'No additional message recorded.'}</p><div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[9px] uppercase tracking-wider text-text-2"><span>{label(a.type||'alert')}</span><span>{a.entity_type?label(a.entity_type):'Unlinked entity'}</span><span>{new Date(a.created_at).toLocaleString()}</span>{a.entity_id?<span className="font-mono normal-case tracking-normal">ID {a.entity_id}</span>:null}</div>{acknowledge.isError?<div role="status" className="text-[10px] text-red-300 mt-2">Acknowledgement failed; the alert remains unacknowledged.</div>:null}</div><button type="button" disabled={acknowledge.isPending} onClick={()=>acknowledge.mutate(a.id)} className="shrink-0 rounded-md border border-white/[.08] px-3 py-2 text-[10px] font-semibold text-text-1 hover:text-text-0 hover:border-cds-orange/30 disabled:opacity-50">Acknowledge</button></div>)}
+        {visibleAlerts.length===0?<div className="p-10 text-center"><div className="text-sm font-medium">No alerts match this view</div><p className="text-[11px] text-text-2 mt-1">Try another severity or search term.</p></div>:null}</div>{alerts.length>5?<div className="p-3 border-t border-white/[.055] flex justify-center"><button type="button" onClick={()=>setShowAllAlerts(v=>!v)} className="px-4 py-2 rounded-md text-[11px] text-text-2 hover:text-text-0 hover:bg-white/[.04]">{showAllAlerts?'Show fewer alerts':'Show all '+alerts.length+' matching alerts'}</button></div>:null}</Card>
+    </section>
+
+    <footer className="rounded-xl border border-white/[.055] bg-[#101419] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><div className="text-[9px] uppercase tracking-[.18em] font-mono text-text-2">DATA & METHOD</div><p className="text-[10px] text-text-2 leading-relaxed mt-1 max-w-4xl">Period activity is timestamp-based. Inventory, booking, fleet and alert counts describe current persisted state. ETA attainment uses completed deliveries with a recorded ETA; transit time requires departure and delivery timestamps. No synthetic, projected or inferred metrics are included.</p></div><div className="shrink-0 text-[10px] sm:text-right text-text-2"><div>Snapshot generated</div><div className="font-mono text-text-1 mt-1">{generated.toLocaleString()}</div><div className="mt-1">Window: {data.meta.window_days} days</div></div></footer>
+  </div>;
 }

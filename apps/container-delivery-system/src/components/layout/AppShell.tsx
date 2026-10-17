@@ -1,4 +1,3 @@
-import React from 'react';
 import { Outlet, useMatches } from '@tanstack/react-router';
 import { Rail } from './Rail.js';
 import { Topbar } from './Topbar.js';

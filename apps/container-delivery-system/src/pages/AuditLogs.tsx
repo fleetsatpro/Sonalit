@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
@@ -32,7 +32,7 @@ export default function AuditLogs() {
 
   const rows = data?.data ?? [];
   const filtered = search
-    ? rows.filter((l) => s(l.action).includes(search.toLowerCase()) || s(l.details).toLowerCase().includes(search.toLowerCase()) || s(l.user_name).toLowerCase().includes(search.toLowerCase()))
+    ? rows.filter((l) => s(l['action']).includes(search.toLowerCase()) || s(l['details']).toLowerCase().includes(search.toLowerCase()) || s(l['user_name']).toLowerCase().includes(search.toLowerCase()))
     : rows;
 
   return (
@@ -63,23 +63,23 @@ export default function AuditLogs() {
             </thead>
             <tbody>
               {filtered.map((log) => {
-                const entityType = s(log.entity_type);
+                const entityType = s(log['entity_type']);
                 const color = actionColors[entityType] ?? '#6b7380';
                 return (
-                  <tr key={s(log.id)} className="border-t border-hair hover:bg-ink-2 transition-colors">
-                    <td className="px-3.5 py-2.5 font-mono text-text-2 text-2xs whitespace-nowrap">{s(log.created_at)}</td>
+                  <tr key={s(log['id'])} className="border-t border-hair hover:bg-ink-2 transition-colors">
+                    <td className="px-3.5 py-2.5 font-mono text-text-2 text-2xs whitespace-nowrap">{s(log['created_at'])}</td>
                     <td className="px-3.5 py-2.5">
                       <span
                         className="px-2 py-0.5 rounded text-2xs font-mono font-semibold"
                         style={{ background: `${color}18`, color }}
                       >
-                        {s(log.action)}
+                        {s(log['action'])}
                       </span>
                     </td>
-                    <td className="px-3.5 py-2.5 font-mono text-text-0 text-2xs">{s(log.entity_id)}</td>
-                    <td className="px-3.5 py-2.5 text-text-0">{s(log.user_name)}</td>
-                    <td className="px-3.5 py-2.5 text-text-1 max-w-[320px] truncate">{s(log.details)}</td>
-                    <td className="px-3.5 py-2.5 font-mono text-text-2 text-2xs">{s(log.ip_address)}</td>
+                    <td className="px-3.5 py-2.5 font-mono text-text-0 text-2xs">{s(log['entity_id'])}</td>
+                    <td className="px-3.5 py-2.5 text-text-0">{s(log['user_name'])}</td>
+                    <td className="px-3.5 py-2.5 text-text-1 max-w-[320px] truncate">{s(log['details'])}</td>
+                    <td className="px-3.5 py-2.5 font-mono text-text-2 text-2xs">{s(log['ip_address'])}</td>
                   </tr>
                 );
               })}

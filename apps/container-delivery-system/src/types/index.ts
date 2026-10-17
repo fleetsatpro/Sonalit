@@ -1,30 +1,20 @@
 export type ShipmentStatus =
   | 'created'
-  | 'customer_assigned'
-  | 'container_assigned'
   | 'vehicle_assigned'
   | 'driver_assigned'
   | 'awaiting_lock'
   | 'locked'
-  | 'lock_assigned'
-  | 'tracking_active'
   | 'dispatched'
-  | 'in_transit'
   | 'checkpoint'
   | 'delayed'
-  | 'border_crossing'
   | 'at_port'
-  | 'arrived'
-  | 'unlock_authorized'
   | 'delivered'
   | 'lock_removed'
   | 'completed'
-  | 'container_returned'
-  | 'closed'
   | 'archived';
 
-export type ContainerStatus = 'available' | 'assigned' | 'in_transit' | 'at_port' | 'delivered' | 'maintenance' | 'damaged' | 'retired';
-export type LockStatus = 'available' | 'assigned' | 'locked' | 'unlocked' | 'offline' | 'tampered' | 'maintenance';
+export type ContainerStatus = 'available' | 'booked' | 'awaiting_pickup' | 'in_transit' | 'at_port' | 'delivered' | 'maintenance';
+export type LockStatus = 'available' | 'assigned' | 'installed' | 'removed' | 'maintenance' | 'offline';
 export type DriverStatus = 'available' | 'active' | 'on_break' | 'off_duty' | 'suspended';
 export type VehicleStatus = 'available' | 'in_use' | 'maintenance' | 'decommissioned';
 export type AlertSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
@@ -70,8 +60,11 @@ export interface Container {
   id: string;
   number: string;
   isoType: string;
+  containerType?: string;
+  containerSize?: number;
   ownership: 'owned' | 'leased' | 'customer';
   status: ContainerStatus;
+  condition?: 'new' | 'good' | 'fair' | 'damaged' | 'retired';
   length: number;
   width: number;
   height: number;
@@ -82,6 +75,7 @@ export interface Container {
   currentLockId: string | null;
   lat: number | null;
   lng: number | null;
+  currentLocation?: string;
   lastInspection: string | null;
   nextInspection: string | null;
   manufacturer: string;
