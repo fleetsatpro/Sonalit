@@ -544,18 +544,27 @@ export function ReportsView() {
 export function AnalyticsView() {
   const [days, setDays] = useState<7 | 30 | 90 | 365>(30);
   const [lens, setLens] = useState<'executive' | 'coordinator'>('executive');
-  const { data, isLoading, isError, isFetching, refetch, dataUpdatedAt } = useCDSAnalytics(days);
+  const { data, isLoading, isError, error, isFetching, refetch, dataUpdatedAt } = useCDSAnalytics(days);
   const acknowledge = useAcknowledgeAlert();
   const { addToast } = useCDSStore();
 
   if (isLoading) return <LoadingState />;
   if (!data) {
+    const analyticsError = error && typeof error === 'object'
+      ? error as { response?: { status?: unknown }; code?: unknown }
+      : null;
+    const responseStatus = analyticsError?.response?.status;
+    const failureDetail = typeof responseStatus === 'number'
+      ? `The analytics API responded with HTTP ${responseStatus}. Check the session and server response; no sample figures are shown.`
+      : analyticsError?.code === 'ERR_NETWORK'
+        ? 'No HTTP response reached the browser. The preview API may be unreachable or the browser may have blocked the cross-origin request. No sample figures are shown.'
+        : 'The live analytics snapshot could not be loaded. No sample figures are shown.';
     return (
       <div className="p-5 max-w-[1600px] mx-auto">
         <Card className="p-6 border border-red-400/20">
           <div className="font-bold text-text-0 mb-2">CDS analytics unavailable</div>
-          <p className="text-xs text-text-2 mb-4">The live analytics snapshot could not be loaded. No sample figures are shown.</p>
-          <Button onClick={() => { void refetch(); }}>Retry analytics</Button>
+          <p role="status" className="text-xs text-text-2 mb-4">{failureDetail}</p>
+          <Button disabled={isFetching} onClick={() => { void refetch(); }}>{isFetching ? 'Retrying…' : 'Retry analytics'}</Button>
         </Card>
       </div>
     );
