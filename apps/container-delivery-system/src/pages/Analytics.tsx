@@ -87,18 +87,27 @@ export default function Analytics() {
   const generated = new Date(data.meta.generated_at);
   const ageMinutes = Number.isFinite(generated.getTime()) ? Math.max(0,Math.round((Date.now()-generated.getTime())/60000)) : null;
   const snapshotAge = ageMinutes == null ? 'Age unknown' : ageMinutes < 1 ? 'Generated less than a minute ago' : ageMinutes + ' min old';
-  const trendStep = Math.max(1,Math.ceil(data.daily.length/28));
-  const trends = data.daily.reduce<Array<{start:string;end:string;started:number;delivered:number}>>((rows,point,index)=>{const key=Math.floor(index/trendStep);if(!rows[key])rows[key]={start:point.day,end:point.day,started:0,delivered:0};rows[key].end=point.day;rows[key].started+=point.trips_started;rows[key].delivered+=point.deliveries_completed;return rows;},[]);
-  const maxTrend = Math.max(1,...trends.flatMap(row=>[row.started,row.delivered]));
-  const dataGaps = s.trips_missing_vehicle+s.trips_missing_driver+s.trips_missing_container+s.trips_missing_lock+s.trips_missing_eta;
-  const exceptions = s.delayed_trips+s.locks_needing_attention+s.overdue_inspections+s.containers_missing_location+dataGaps+s.unacknowledged_alerts;
+  const trendStep = Math.max(1, Math.ceil(data.daily.length / 28));
+  const trends = data.daily.reduce<Array<{ start: string; end: string; bookings: number; clamped: number; unclamped: number; started: number; delivered: number }>>((rows, point, index) => {
+    const key = Math.floor(index / trendStep);
+    if (!rows[key]) rows[key] = { start: point.day, end: point.day, bookings: 0, clamped: 0, unclamped: 0, started: 0, delivered: 0 };
+    rows[key].end = point.day;
+    rows[key].bookings += point.bookings_received;
+    rows[key].clamped += point.containers_clamped;
+    rows[key].unclamped += point.containers_unclamped;
+    rows[key].started += point.trips_started;
+    rows[key].delivered += point.deliveries_completed;
+    return rows;
+  }, []);
+  const maxTrend = Math.max(1, ...trends.flatMap(row => [row.bookings, row.clamped, row.unclamped, row.started, row.delivered]));
+  const dataGaps = s.trips_missing_vehicle + s.trips_missing_driver + s.trips_missing_container + s.trips_missing_lock + s.trips_missing_eta;
   const kpis = [
-    {name:'Trips initiated',value:fmt(s.trips_started),detail:'Created within selected period',color:'#f59a3c',target:'#cds-trend',series:data.daily.map(r=>r.trips_started)},
-    {name:'Deliveries recorded',value:fmt(s.deliveries_completed),detail:'Delivery timestamps in period',color:'#42cbb5',target:'#cds-trend',series:data.daily.map(r=>r.deliveries_completed)},
-    {name:'Active trips',value:fmt(s.active_trips),detail:fmt(s.moving_trips)+' currently moving',color:'#82b6eb',target:'#cds-flow',series:data.daily.map(r=>r.trips_started)},
-    {name:'Delayed now',value:fmt(s.delayed_trips),detail:s.delayed_trips?'Operational review needed':'None marked delayed',color:s.delayed_trips?'#ed8b8b':'#42cbb5',target:'#cds-alerts',series:data.daily.map(r=>r.deliveries_completed)},
-    {name:'ETA attainment',value:pct(s.eta_attainment_pct),detail:fmt(s.eta_met)+' of '+fmt(s.eta_observed)+' observed ETAs met',color:'#b69cff',target:'#cds-trend',series:data.daily.map(r=>r.deliveries_completed)},
-    {name:'Container utilisation',value:pct(s.container_utilization_pct),detail:fmt(s.containers_in_use)+' in use of '+fmt(s.total_containers),color:'#f0c16c',target:'#cds-assets',series:data.daily.map(r=>r.trips_started)},
+    { name: 'Bookings received', value: fmt(s.bookings_received), detail: days + ' day intake', color: '#f59a3c', target: '#cds-bookings', series: data.daily.map(row => row.bookings_received) },
+    { name: 'Containers clamped', value: fmt(s.containers_clamped), detail: 'Distinct containers · selected period', color: '#42cbb5', target: '#cds-operators', series: data.daily.map(row => row.containers_clamped) },
+    { name: 'Locks in use', value: fmt(s.locks_in_use), detail: 'Assigned or installed now', color: '#82b6eb', target: '#cds-bookings', series: [] as number[] },
+    { name: 'Containers unclamped', value: fmt(s.containers_unclamped), detail: 'Distinct containers · selected period', color: '#b69cff', target: '#cds-operators', series: data.daily.map(row => row.containers_unclamped) },
+    { name: 'Clamped over 24h', value: fmt(s.containers_clamped_over_24h), detail: 'Still clamped · action required', color: s.containers_clamped_over_24h > 0 ? '#ed8b8b' : '#f0c16c', target: '#cds-overdue', series: [] as number[] },
+    { name: 'Delayed trips', value: fmt(s.delayed_trips), detail: 'Current persisted status', color: s.delayed_trips > 0 ? '#ed8b8b' : '#f0c16c', target: '#cds-flow', series: [] as number[] },
   ];
   const maxBooking = Math.max(1,...data.booking_pipeline.map(row=>row.count));
   const maxTripStatus = Math.max(1,...data.trip_statuses.map(row=>row.count));
