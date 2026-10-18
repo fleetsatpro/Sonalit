@@ -38,10 +38,23 @@ export function useTrafficStatus() {
   })
 }
 
-export function useTrafficIncidents(bbox: string | null, enabled: boolean): UseQueryResult<GeoJSON.FeatureCollection> {
-  return useQuery<GeoJSON.FeatureCollection>({
+export interface TrafficIncidentCollection extends GeoJSON.FeatureCollection {
+  configured?: boolean
+  coverage?: { complete?: boolean; queryScope?: string }
+  health?: {
+    status?: string
+    providerStatus?: string
+    circuitState?: string
+    lastSuccessAt?: string | null
+    lastAttemptAt?: string | null
+    failureClass?: string
+  }
+}
+
+export function useTrafficIncidents(bbox: string | null, enabled: boolean): UseQueryResult<TrafficIncidentCollection> {
+  return useQuery<TrafficIncidentCollection>({
     queryKey: ['traffic-incidents', bbox],
-    queryFn: async () => (await api.get('/traffic/incidents', { params: { bbox } })).data as GeoJSON.FeatureCollection,
+    queryFn: async () => (await api.get('/traffic/incidents', { params: { bbox } })).data as TrafficIncidentCollection,
     enabled: enabled && !!bbox,
     staleTime: 90_000,
     refetchInterval: 120_000,
