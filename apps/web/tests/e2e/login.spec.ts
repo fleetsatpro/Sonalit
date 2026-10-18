@@ -49,9 +49,10 @@ test.describe('Login page', () => {
     test.slow();
     await page.goto('/', { waitUntil: 'commit' });
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      /make movement intelligible/i,
+      /movement,?\s*made\s*intelligible/i,
       { timeout: 60000 },
     );
+    await expect(page.getByText(/no live journey plotted/i)).toBeVisible();
     await expect(page).not.toHaveURL(/\/login/);
   });
 

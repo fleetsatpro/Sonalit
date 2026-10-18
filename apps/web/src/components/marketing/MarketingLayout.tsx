@@ -36,7 +36,11 @@ export default function MarketingLayout({
             : 'neutral';
 
   return (
-    <div className="sonalit-public" data-page-tone={pageTone}>
+    <div
+      className="sonalit-public"
+      data-page-tone={pageTone}
+      data-page-kind={page.path === '/' ? 'home' : 'detail'}
+    >
       <Seo page={page} />
       <div className="bg-base" aria-hidden="true" />
       <div className="bg-glow" aria-hidden="true" />
