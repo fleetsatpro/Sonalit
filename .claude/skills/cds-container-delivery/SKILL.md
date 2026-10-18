@@ -67,25 +67,24 @@ All `cds_*` tables have RLS enabled with the standard `org_id` + `current_settin
 
 ### Trip State Machine
 
-`cds_trips.status` follows this state machine (23 states):
+`cds_trips.status` is constrained by the database to these 13 persisted states:
 
-```
-created → customer_assigned → container_assigned → vehicle_assigned →
-driver_assigned → awaiting_lock → locked → lock_assigned →
-tracking_active → dispatched → in_transit → checkpoint | delayed |
-border_crossing | at_port → arrived → unlock_authorized → delivered →
-lock_removed → completed → container_returned → closed → archived
-```
+- Assignment: `created → vehicle_assigned ↔ driver_assigned → awaiting_lock → locked`
+- Movement: `locked → dispatched → checkpoint | delayed | at_port | delivered`
+- Delivery and closure: `at_port → delivered → lock_removed → completed → archived`
+- Recovery: `checkpoint → dispatched | delayed | at_port | delivered`; `delayed → dispatched | checkpoint`
+- `archived` is terminal. Departure is recorded through the dedicated `POST /trips/:id/depart` endpoint.
+- Persisted status values: `created`, `vehicle_assigned`, `driver_assigned`, `awaiting_lock`, `locked`, `dispatched`, `checkpoint`, `delayed`, `at_port`, `delivered`, `lock_removed`, `completed`, `archived`.
 
 Valid transitions defined in `TRIP_TRANSITIONS` map in `routes/cds.js`.
 
 ### Container Status
 
-`available` → `assigned` → `in_transit` → `at_port` → `delivered` → `maintenance` | `damaged` | `retired`
+`available` → `booked` → `awaiting_pickup` → `in_transit` → `at_port` → `delivered` → `maintenance` (damage/retirement belongs to the separate `condition` column)
 
 ### Lock Status
 
-`available` → `assigned` → `locked` → `unlocked` | `offline` | `tampered` | `maintenance`
+`available` → `assigned` → `installed` → `removed` | `offline` | `maintenance` (tamper is represented by `tamper_detected` and `tamper_status`)
 
 ## Backend API
 
@@ -128,7 +127,7 @@ The CDS frontend is a self-contained sub-app under `apps/web/src/pages/cds/`.
 | `BookingManifest.tsx` | Booking manifest view |
 | `CDSIntro.tsx`, `CDSIntroScene.tsx` | Onboarding/intro |
 | `store.ts` | Zustand store (CDSView, drawer, toasts, viewMode) |
-| `types.ts` | All CDS TypeScript types (23 ShipmentStatus, 8 ContainerStatus, 7 LockStatus) |
+| `types.ts` | CDS TypeScript contracts aligned to persisted status constraints and analytics payload |
 | `hooks.ts` | CDS data hooks |
 | `api.ts` | CDS API client |
 | `constants.ts` | CDS constants |

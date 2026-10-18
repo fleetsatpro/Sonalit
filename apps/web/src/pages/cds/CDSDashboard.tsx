@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import {
   Search, Bell, ChevronLeft, PanelLeftClose,
-  PanelLeft, Plus,
+  PanelLeft,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -19,6 +19,7 @@ import {
 } from './pages.js';
 import { useCDSStore, type CDSView } from './store.js';
 import { useCDSRealtime } from './useCDSRealtime.js';
+import cdsApi from './api.js';
 
 import type { LiveTrip } from './LiveFleetMap.js';
 
@@ -126,6 +127,11 @@ export default function CDSApp() {
     },
   });
   const [clock, setClock] = useState('');
+  const [headerQuery, setHeaderQuery] = useState('');
+  const [headerResults, setHeaderResults] = useState<Array<{ id: string; title: string; detail: string; target: CDSView; source: string }>>([]);
+  const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
+  const [headerSearching, setHeaderSearching] = useState(false);
+  const [headerSearchPartial, setHeaderSearchPartial] = useState(false);
   const [expanded, setExpanded] = useState(() => {
     try { return localStorage.getItem('cds-rail') !== '0'; } catch { return true; }
   });
@@ -143,6 +149,62 @@ export default function CDSApp() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
+  const runHeaderSearch = async () => {
+    const query = headerQuery.trim();
+    if (!query || headerSearching) return;
+    setHeaderSearching(true);
+    setHeaderSearchOpen(false);
+    setHeaderSearchPartial(false);
+    try {
+      const requests = await Promise.allSettled([
+        cdsApi.get('/trips', { params: { search: query, limit: 8 } }),
+        cdsApi.get('/containers', { params: { search: query, limit: 8 } }),
+        cdsApi.get('/locks', { params: { search: query, limit: 8 } }),
+      ]);
+      const results: Array<{ id: string; title: string; detail: string; target: CDSView; source: string }> = [];
+      const rows = (index: number): Record<string, unknown>[] => {
+        const result = requests[index];
+        if (result.status !== 'fulfilled') return [];
+        const body = result.value.data as { data?: unknown };
+        return Array.isArray(body.data) ? body.data as Record<string, unknown>[] : [];
+      };
+      rows(0).forEach(row => results.push({
+        id: String(row['id'] ?? ''),
+        title: String(row['trip_number'] ?? row['reference'] ?? row['id'] ?? 'Trip'),
+        detail: [row['status'], row['origin'] && row['destination'] ? String(row['origin']) + ' → ' + String(row['destination']) : null].filter(Boolean).join(' · '),
+        target: 'live',
+        source: 'Trip',
+      }));
+      rows(1).forEach(row => results.push({
+        id: String(row['id'] ?? ''),
+        title: String(row['number'] ?? row['id'] ?? 'Container'),
+        detail: [row['status'], row['current_location'] ?? row['container_type']].filter(Boolean).join(' · '),
+        target: 'containers',
+        source: 'Container',
+      }));
+      rows(2).forEach(row => results.push({
+        id: String(row['id'] ?? ''),
+        title: String(row['serial'] ?? row['id'] ?? 'E-lock'),
+        detail: [row['status'], row['truck'] ?? row['container_number']].filter(Boolean).join(' · '),
+        target: 'locks',
+        source: 'E-lock',
+      }));
+      setHeaderResults(results.slice(0, 12));
+      setHeaderSearchPartial(requests.some(result => result.status === 'rejected'));
+      setHeaderSearchOpen(true);
+      if (requests.every(result => result.status === 'rejected')) {
+        addToast('CDS search is unavailable; no source returned results.', 'error');
+      }
+    } catch {
+      setHeaderResults([]);
+      setHeaderSearchPartial(true);
+      setHeaderSearchOpen(true);
+      addToast('CDS search failed. No records were changed.', 'error');
+    } finally {
+      setHeaderSearching(false);
+    }
+  };
+
 
   const endIntro = () => {
     try { sessionStorage.setItem('cds-intro-seen', '1'); } catch { /* */ }
@@ -255,26 +317,64 @@ export default function CDSApp() {
             <div className="text-[10px] font-mono tracking-wider text-white/30 mt-0.5">{currentView?.sub ?? ''}</div>
           </div>
 
-          {activeView === 'bookings' && (
-            <button
-              onClick={() => { /* BookingsView handles own form */ }}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[12px] font-semibold border-none cursor-pointer transition-all hover:brightness-110"
-              style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}
-            >
-              <Plus size={14} strokeWidth={2.5} /> New Booking
-            </button>
-          )}
 
-          <div className="flex items-center gap-2 bg-white/[.04] border border-white/[.07] rounded-lg px-2.5 h-8">
+
+          <div className="relative flex items-center gap-2 bg-white/[.04] border border-white/[.07] rounded-lg px-2.5 h-8">
             <Search size={13} className="text-white/30 flex-shrink-0" />
-            <input placeholder="Search…" className="bg-transparent border-none outline-none text-white text-[12px] w-32 md:w-44" />
+            <input
+              value={headerQuery}
+              onChange={event => setHeaderQuery(event.target.value)}
+              onFocus={() => { if (headerResults.length) setHeaderSearchOpen(true); }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') { event.preventDefault(); void runHeaderSearch(); }
+                if (event.key === 'Escape') setHeaderSearchOpen(false);
+              }}
+              aria-label="Search CDS trips, containers and e-locks"
+              aria-expanded={headerSearchOpen}
+              placeholder="Search trips, containers, locks…"
+              className="bg-transparent border-none outline-none text-white text-[12px] w-32 md:w-44"
+            />
+            {headerSearching && <span className="text-[9px] text-white/40">Searching</span>}
+            {headerSearchOpen && (
+              <div role="listbox" aria-label="CDS search results" className="absolute z-[90] top-full right-0 mt-2 w-[min(420px,85vw)] max-h-[360px] overflow-y-auto rounded-xl border border-white/[.12] bg-[#0e1117] shadow-2xl">
+                <div className="px-3 py-2 text-[9px] uppercase tracking-widest font-mono text-white/45 border-b border-white/[.06]">
+                  {headerSearchPartial ? 'Partial results · one or more sources unavailable' : headerResults.length ? headerResults.length + ' matching records' : 'No matching records'}
+                </div>
+                {headerResults.map((result, index) => (
+                  <button key={result.source + ':' + result.id + ':' + index} type="button" role="option" aria-selected={false}
+                    onClick={() => {
+                      setActiveView(result.target);
+                      setHeaderSearchOpen(false);
+                      useCDSStore.getState().openDrawer(result.source + ' · ' + result.title, (
+                        <div className="space-y-3 text-xs">
+                          <div className="text-[10px] uppercase tracking-wider font-mono text-cds-orange">{result.source} record search result</div>
+                          <div className="font-bold text-text-0 break-all">{result.title}</div>
+                          <div className="text-text-2 break-words">{result.detail || 'No additional summary fields are recorded.'}</div>
+                          <div className="text-[10px] text-text-2">Record ID: {result.id || 'not returned by API'}</div>
+                          <div className="text-[10px] text-text-2">Search uses live tenant-scoped CDS API results. Open the {result.source.toLowerCase()} workspace to continue operational work.</div>
+                        </div>
+                      ));
+                    }}
+                    className="block w-full px-3 py-2.5 text-left border-b border-white/[.05] last:border-0 hover:bg-white/[.04]"
+                  >
+                    <div className="flex items-center justify-between gap-3"><span className="truncate text-xs font-semibold text-white/90">{result.title}</span><span className="text-[9px] uppercase font-mono tracking-wider text-cds-orange">{result.source}</span></div>
+                    <div className="text-[10px] text-white/45 mt-1 truncate">{result.detail || 'No secondary fields recorded'}</div>
+                  </button>
+                ))}
+                <button type="button" onClick={() => setHeaderSearchOpen(false)} className="w-full px-3 py-2 text-left text-[10px] text-white/45 hover:text-white/80">Close results · Esc</button>
+              </div>
+            )}
           </div>
 
           <div className="font-mono text-[12px] text-white/40 tracking-wider hidden sm:block">{clock}</div>
 
-          <button className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/40 cursor-pointer flex items-center justify-center hover:text-white/60 transition-colors">
-            <Bell size={15} />
-          </button>
+          <button
+            type="button"
+            title="Open Client Pulse and dispatch alerts"
+            aria-label="Open Client Pulse and dispatch alerts"
+            onClick={() => setActiveView('pulse')}
+            className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/55 cursor-pointer flex items-center justify-center hover:text-white transition-colors"
+          ><Bell size={15} /></button>
         </header>
 
         <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
