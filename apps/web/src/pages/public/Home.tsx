@@ -128,7 +128,7 @@ const INTELLIGENCE_LAYERS = [
 
 function HeroVisual(): React.ReactElement {
   return (
-    <div className="home-v7-stage">
+    <div className="home-v7-stage home-v8-stage">
       <OpsVisual priority note="ARCHIVAL SENTINEL-2 / NOT LIVE DATA" />
       <svg
         className="home-v7-route-layer"
@@ -196,8 +196,8 @@ function HeroVisual(): React.ReactElement {
       <div className="home-v7-stage-note">
         <span className="home-v7-stage-note-mark" aria-hidden="true" />
         <div>
-          <strong>One movement.</strong>
-          <p>Its route, risks, custody and proof—read together.</p>
+          <strong>From first signal to final proof.</strong>
+          <p>Route, risk, custody and response—connected.</p>
         </div>
       </div>
       <div className="home-v7-stage-foot mono">
@@ -238,18 +238,17 @@ export default function Home(): React.ReactElement {
 
   return (
     <MarketingLayout page={PAGE}>
-      <div className="home-v6 home-v7">
-      <header className="home-hero home-hero-v5 home-v7-hero" data-reveal="hero">
+      <div className="home-v6 home-v7 home-v8">
+      <header className="home-hero home-hero-v5 home-v7-hero home-v8-hero" data-reveal="hero">
         <div className="home-hero-copy">
           <p className="home-eyebrow mono">SONALIT / OPERATIONAL INTELLIGENCE</p>
-          <h1 className="home-v7-title" aria-label="The move. The why. The proof.">
-            <span className="home-v7-title-line"><span>THE MOVE.</span></span>
-            <span className="home-v7-title-line"><span>THE WHY.</span></span>
-            <span className="home-v7-title-line home-v7-title-accent"><span>THE PROOF.</span></span>
+          <h1 className="home-v7-title home-v8-title" aria-label="Movement, made intelligible.">
+            <span className="home-v7-title-line"><span>Movement, made</span></span>
+            <span className="home-v7-title-line home-v7-title-accent home-v8-title-accent"><span>intelligible.</span></span>
           </h1>
           <p className="home-hero-lead">
-            Fleet. Convoy. Container custody. Field response.
-            One operational picture—with evidence behind every decision.
+            See what’s moving, what’s changing, and what can be proved—across fleet, convoy,
+            container custody and security response.
           </p>
 
           <div className="hero-actions">
@@ -265,7 +264,7 @@ export default function Home(): React.ReactElement {
             <span>FLEET</span><i aria-hidden="true">/</i>
             <span>CONVOY</span><i aria-hidden="true">/</i>
             <span>CUSTODY</span><i aria-hidden="true">/</i>
-            <span>SECURITY</span>
+            <span>RESPONSE</span>
           </div>
         </div>
 
