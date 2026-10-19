@@ -56,6 +56,12 @@ export async function publishPendingOutboxBatch(
 
   for (const [orgId, ids] of byOrg) {
     const result = await withOrgContext(orgId, async (client: PoolClient) => {
+      // Serialize dispatch within one tenant across replicas. SKIP LOCKED below
+      // remains a second guard for any administrative worker using row claims.
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtext('sonalit_telemetry_outbox:' || $1))",
+        [orgId],
+      );
       const selected = await client.query<OutboxRow>(
         `SELECT id, org_id::text AS org_id, subject, payload, message_id, publish_attempts
            FROM telemetry_ingest_outbox
