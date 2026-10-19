@@ -198,13 +198,32 @@ paths:
                   total_gps_events:
                     type: integer
                   total_distance_km:
+                    type: [number, "null"]
+                    description: Measured from consecutive GPS coordinate pairs only when fix cadence and movement are plausible; null when no valid segments exist.
+                  distance_method:
+                    type: string
+                    enum: [gps_coordinate_segments]
+                  distance_valid_segments:
+                    type: integer
+                  distance_rejected_speed_segments:
+                    type: integer
+                  distance_gap_excluded_segments:
                     type: integer
                   active_hours:
-                    type: integer
+                    type: [integer, "null"]
                   fuel_events:
-                    type: integer
+                    type: [integer, "null"]
                   geofence_violations:
-                    type: integer
+                    type: [integer, "null"]
+                  metric_status:
+                    type: object
+                    additionalProperties:
+                      type: string
+                      enum: [measured, unavailable]
+                  metric_definitions:
+                    type: object
+                    additionalProperties:
+                      type: string
         '400':
           description: Invalid query parameters
           content:
@@ -249,17 +268,26 @@ paths:
                 type: object
                 properties:
                   fleet_utilization_pct:
-                    type: integer
-                    example: 72
+                    type: [integer, "null"]
+                    description: Percentage of the registered CDS fleet currently assigned to an operational trip; null when there is no registered fleet.
                   on_time_delivery_pct:
-                    type: integer
-                    example: 91
+                    type: [integer, "null"]
+                    description: Percentage of eligible deliveries in the last 8 weeks delivered at or before recorded ETA; null when no eligible deliveries exist.
                   safety_score:
-                    type: integer
-                    example: 84
+                    type: [integer, "null"]
+                    description: Null until an approved source-backed safety-scoring rule and evidence pipeline are available.
                   active_incidents:
-                    type: integer
-                    example: 0
+                    type: [integer, "null"]
+                    description: Current tenant-scoped incidents excluding resolved, closed, and deleted records.
+                  metric_status:
+                    type: object
+                    additionalProperties:
+                      type: string
+                      enum: [measured, unavailable]
+                  metric_definitions:
+                    type: object
+                    additionalProperties:
+                      type: string
                   weekly_trends:
                     type: array
                     items:

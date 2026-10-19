@@ -126,6 +126,12 @@ jobs:
       - name: Telemetry ingest unit tests
         run: pnpm --filter @sonalit/telemetry-ingest-svc test:unit
 
+      - name: Typecheck analytics service
+        run: pnpm --filter @sonalit/analytics-svc typecheck
+
+      - name: Analytics service unit tests
+        run: pnpm --filter @sonalit/analytics-svc test:unit
+
       - name: Build spatial intelligence
         run: pnpm --filter @sonalit/spatial-intelligence build
 
