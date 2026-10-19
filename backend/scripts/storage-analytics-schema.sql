@@ -4,6 +4,8 @@
 -- Read docs/architecture/storage-tiering-b-and-c.md before applying.
 -- This file creates empty catalog/aggregate tables only; it does not copy or delete production data.
 
+BEGIN;
+
 DO $guard$
 BEGIN
   IF current_database() <> 'sonalit_analytics' THEN
@@ -161,3 +163,5 @@ DROP POLICY IF EXISTS telemetry_daily_rollups_tenant_policy ON public.telemetry_
 CREATE POLICY telemetry_daily_rollups_tenant_policy ON public.telemetry_daily_rollups
   USING (tenant_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)
   WITH CHECK (tenant_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
+
+COMMIT;
