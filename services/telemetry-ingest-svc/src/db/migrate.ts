@@ -78,7 +78,10 @@ export async function migrate(): Promise<void> {
                org_id,
                COUNT(*)            AS fix_count,
                AVG(speed_kmh)      AS avg_speed_kmh,
-               SUM(speed_kmh * 0.00833) AS distance_km
+               -- Speed multiplied by a fixed interval invents distance when fix cadence varies.
+               -- Keep this legacy aggregate field unavailable; analytics-svc derives distance
+               -- from consecutive GPS coordinates with explicit gap/outlier checks.
+               NULL::double precision AS distance_km
         FROM gps_fixes
         GROUP BY 1, 2, 3
       WITH NO DATA;

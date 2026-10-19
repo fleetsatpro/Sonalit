@@ -128,13 +128,16 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
     const rejectedSpeedSegments = Number.parseInt(distance?.rejected_speed_segments ?? '0', 10);
     const gapExcludedSegments = Number.parseInt(distance?.gap_excluded_segments ?? '0', 10);
     const km = distance?.km == null ? null : Number.parseFloat(distance.km);
-    const distanceAvailable = validSegments > 0 && km !== null && Number.isFinite(km);
+    const totalDistanceKm = validSegments > 0 && km !== null && Number.isFinite(km)
+      ? Math.round(km * 10) / 10
+      : null;
+    const distanceAvailable = totalDistanceKm !== null;
 
     return reply.send({
       from,
       to,
       total_gps_events: Number.parseInt(gps?.total ?? '0', 10),
-      total_distance_km: distanceAvailable ? Math.round(km * 10) / 10 : null,
+      total_distance_km: totalDistanceKm,
       distance_method: 'gps_coordinate_segments',
       distance_valid_segments: validSegments,
       distance_rejected_speed_segments: rejectedSpeedSegments,

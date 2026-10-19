@@ -25,6 +25,11 @@ describe('telemetry tenant isolation schema', () => {
     expect(migration).toContain('CREATE POLICY telemetry_ingest_outbox_tenant_hardening');
   });
 
+  it('does not estimate distance using a guessed fixed GPS sampling interval', () => {
+    expect(migration).not.toContain('0.00833');
+    expect(migration).toContain('NULL::double precision AS distance_km');
+  });
+
   it('uses a stable, partition-compatible identity for replay protection', () => {
     expect(migration).toContain('gps_fixes_device_seq_time_uidx');
     expect(migration).toContain('UNIQUE (device_id, seq_no, time)');
