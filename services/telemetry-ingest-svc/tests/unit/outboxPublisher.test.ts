@@ -55,6 +55,7 @@ describe('durable telemetry outbox publisher', () => {
       [100],
     );
     expect(mocks.withOrgContext).toHaveBeenCalledWith(orgId, expect.any(Function));
+    expect(String(tenantClient.query.mock.calls[0]?.[0])).toContain('pg_advisory_xact_lock');
     const scopedSelect = tenantClient.query.mock.calls.find(call => String(call[0]).includes('SELECT id, org_id::text AS org_id, subject'));
     expect(scopedSelect?.[0]).toContain('org_id = $1');
     expect(scopedSelect?.[0]).toContain('FOR UPDATE SKIP LOCKED');
