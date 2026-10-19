@@ -61,31 +61,45 @@ SELECT current_database(),
 
 The SQL audit is wrapped in a READ ONLY transaction and reports large relations, bytea/media-candidate columns and partition metadata. If the primary is still unavailable, stop; do not try to repair it by deleting files or manipulating WAL. After the metadata audit, the optional payload scans in the SQL comments can be run separately during a low-load window. They can read many rows and should not be run while the database is failing or near full capacity.
 
-## 4. Apply the new analytics catalog (DDL only; no source data)
+## 4. Secondary analytics catalog — applied and verified
 
-The schema file has a database-name guard: it raises an error unless `current_database()` is exactly `sonalit_analytics`. It is wrapped in a transaction and creates empty tables/policies only.
+The `Postgres--wsQ` service is online in Railway production with a dedicated 5 GB volume and private endpoint `postgres-wsq`. The guarded SQL schema was applied successfully to `sonalit_analytics` via an ephemeral, private in-platform runner, then the runner was removed.
+
+Verified after bootstrap:
+- Target database name was exactly `sonalit_analytics`; the schema's database-name guard also enforces this.
+- All four catalog/rollup tables exist: `storage_archive_manifest`, `storage_job_runs`, `analytics_ingest_watermarks` and `telemetry_daily_rollups`.
+- All four tables have a `tenant_id`, Row Level Security is enabled and forced.
+- No production/source rows were copied; no Sonalit application variable points to this database.
+- The service has no public domain or TCP proxy.
+
+No data-moving worker or app adapter is wired yet. Do **not** set a service's `DATABASE_URL` to this database. The primary application DB is still the operational authority.
+
+For a manual read-only check from your private shell:
 
 ```bash
 railway connect "Postgres--wsQ" --environment production
 ```
 
-At the `psql` prompt, **first confirm the target**:
+Then run:
 
 ```psql
 SELECT current_database(), current_user,
        pg_size_pretty(pg_database_size(current_database())) AS database_size;
-```
-
-Proceed only if `current_database()` is `sonalit_analytics`. Then:
-
-```psql
-\i backend/scripts/storage-analytics-schema.sql
-\dt public.storage_*
-\dt public.analytics_*
+SELECT table_name, row_security, force_row_security
+FROM (
+  SELECT c.relname AS table_name,
+         c.relrowsecurity AS row_security,
+         c.relforcerowsecurity AS force_row_security
+  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='public'
+    AND c.relname IN ('storage_archive_manifest','storage_job_runs',
+                      'analytics_ingest_watermarks','telemetry_daily_rollups')
+) AS verified
+ORDER BY table_name;
 \q
 ```
 
-The script enables and forces tenant RLS on catalog/rollup tables but intentionally does not create login users or grant app permissions. Do not point the existing app at this database; the secondary schema is not wired into the application yet. A later dedicated role bootstrap and adapter must use transaction-local `app.current_org_id`, least privilege, and explicit failure isolation.
+The file `backend/scripts/storage-analytics-schema.sql` can recreate/complete the catalog if needed because it uses `IF NOT EXISTS`, transaction boundaries and a database-name guard. Inspect the selected database first and never run it against the operational Postgres database. App runtime roles and least-privilege grants remain intentionally unconfigured until a proper adapter is implemented and tested.
 
 ## 5. Next step after inventories
 
