@@ -5,10 +5,10 @@ import { requireAuth } from '../middleware/auth.js';
 import { AuthError } from '../lib/errors.js';
 
 const DateRangeSchema = z.object({
-  from: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).default(() => {
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(() => {
     const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10);
   }),
-  to: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).default(() => new Date().toISOString().slice(0, 10)),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(() => new Date().toISOString().slice(0, 10)),
 });
 
 type GpsDistanceStats = {
