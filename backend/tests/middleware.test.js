@@ -66,7 +66,7 @@ describe('requireIdempotencyKey middleware', () => {
   test('returns cached response when key already stored', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] }) // active non-expired key cannot be claimed
-      .mockResolvedValueOnce({ rows: [{ status_code: 201, response: { data: { id: 'abc' } } }] });
+      .mockResolvedValueOnce({ rows: [{ status_code: 201, response: { data: { id: 'abc' } }, request_hash: null, expired: false }] });
     const req = { headers: { 'x-idempotency-key': 'idem-key-1' }, user: { org_id: 'org-1' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     const next = jest.fn();
@@ -104,7 +104,7 @@ describe('requireIdempotencyKey middleware', () => {
   test('does not execute a mutation while the same idempotency key is in progress', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ status_code: 102, response: { state: 'in_progress' } }] });
+      .mockResolvedValueOnce({ rows: [{ status_code: 102, response: { state: 'in_progress' }, request_hash: null, expired: false }] });
     const req = { headers: { 'x-idempotency-key': 'idem-key-active' }, user: { org_id: 'org-1' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     const next = jest.fn();
@@ -131,6 +131,86 @@ describe('requireIdempotencyKey middleware', () => {
     await response;
     expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('UPDATE idempotency_keys'), expect.any(Array));
     expect(originalJson).toHaveBeenCalledWith({ data: { id: 'new' } });
+  });
+
+  test('rejects a key reused for a different request fingerprint', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{
+        status_code: 201,
+        response: { data: { id: 'previous' } },
+        request_hash: 'f'.repeat(64),
+        expired: false,
+      }] });
+    const req = {
+      method: 'POST',
+      originalUrl: '/api/cds/bookings/b1/containers/c1/clamp',
+      body: { lock_serial: 'LOCK-1' },
+      headers: { 'x-idempotency-key': 'idem-key-reuse' },
+      user: { org_id: 'org-1' },
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = jest.fn();
+    requireIdempotencyKey(req, res, next);
+    await new Promise(r => setTimeout(r, 20));
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      error: 'idempotency_key_reused_for_different_request',
+    }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('turns a 5xx into a permanent unknown-outcome receipt, never a released key', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ key: 'idem-key-unknown' }] })
+      .mockResolvedValueOnce({ rows: [{ key: 'idem-key-unknown' }], rowCount: 1 });
+    const req = {
+      method: 'POST',
+      originalUrl: '/api/cds/bookings/b1/containers/c1/unclamp',
+      body: { seal_intact: true },
+      headers: { 'x-idempotency-key': 'idem-key-unknown' },
+      user: { org_id: 'org-1' },
+    };
+    const originalJson = jest.fn();
+    const res = { statusCode: 500, json: originalJson };
+    const next = jest.fn();
+    requireIdempotencyKey(req, res, next);
+    await new Promise(r => setTimeout(r, 20));
+    const response = res.json({ error: 'server_failure' });
+    expect(originalJson).not.toHaveBeenCalled();
+    await response;
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining("expires_at = 'infinity'::timestamptz"),
+      expect.any(Array),
+    );
+    expect(mockQuery.mock.calls.some(call => String(call[0]).includes('DELETE FROM idempotency_keys'))).toBe(false);
+    expect(res.statusCode).toBe(409);
+    expect(originalJson).toHaveBeenCalledWith(expect.objectContaining({ error: 'idempotency_outcome_unknown' }));
+  });
+
+  test('an expired pending reservation stays fail-closed instead of being reclaimed', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{
+        status_code: 102,
+        response: { state: 'in_progress' },
+        request_hash: null,
+        expired: true,
+      }] });
+    const req = {
+      method: 'POST',
+      originalUrl: '/api/cds/bookings/b1/containers/c1/clamp',
+      body: { lock_serial: 'LOCK-1' },
+      headers: { 'x-idempotency-key': 'idem-key-expired-pending' },
+      user: { org_id: 'org-1' },
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = jest.fn();
+    requireIdempotencyKey(req, res, next);
+    await new Promise(r => setTimeout(r, 20));
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'idempotency_outcome_unknown' }));
+    expect(next).not.toHaveBeenCalled();
   });
 
 });

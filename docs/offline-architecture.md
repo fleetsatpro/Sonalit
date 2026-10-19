@@ -137,19 +137,25 @@ reserved atomically using the existing unique key; a concurrent retry does not
 enter the handler while the first request is in progress. It receives
 `409 idempotency_in_progress` and must retry with the **same** key.
 
-For a deterministic response, the middleware stores the status/body before
-sending the response to the client. A server-error response releases the
-pending reservation so a transaction that rolled back can be retried. The
-field app must not manufacture a new key after a timeout: the original request
-may already have committed.
+The middleware stores a SHA-256 fingerprint of the canonical method, URL and
+JSON body with the tenant/key reservation. Reusing the same key for a different
+request returns `409 idempotency_key_reused_for_different_request`; keys are not
+generic replay tokens shared across endpoints.
 
-This middleware reservation and the business transaction are separate
-transactions. If the process dies after the business transaction commits but
-before its response receipt commits, the key can remain in progress until the
-24-hour reservation expires. That is intentionally fail-closed against
-duplicate physical actions, but it is not equivalent to the stronger
-claim-and-result-in-one-transaction design below. Operational tooling should
-identify stale reservations before anyone attempts manual recovery.
+Deterministic success and client-error responses are stored before being sent.
+A 5xx does **not** prove that the business transaction rolled back, so it is
+converted into a permanent `idempotency_outcome_unknown` receipt rather than
+deleting the reservation. If the server dies while a request is pending, the
+key remains fail-closed after the 24-hour window; an expired in-progress row is
+never automatically reclaimed. Resolve such cases by inspecting domain state
+and reconciling the result before authorizing another physical action.
+
+The reservation and business transaction are still separate transactions.
+This conservative unknown-outcome state prevents silent duplicate actions, but
+recovery requires operational review until the claim, domain mutation and
+receipt can be committed in one transaction. The stronger transactional
+claim-and-result design below remains preferable where the route architecture
+permits it.
 
 For sync operations, the stronger `sync_operations` contract remains
 transactional:
