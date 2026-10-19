@@ -1,7 +1,7 @@
 import { StringCodec } from 'nats';
 import type { PoolClient } from 'pg';
 import { globalQuery, withOrgContext } from '../db.js';
-import { getJs } from '../nats.js';
+import { getJs, isNatsReady } from '../nats.js';
 
 interface OutboxCandidate {
   id: string | number;
@@ -34,6 +34,9 @@ async function publishRow(row: OutboxRow): Promise<void> {
 export async function publishPendingOutboxBatch(
   batchSize = DEFAULT_BATCH_SIZE,
 ): Promise<{ published: number; deferred: number }> {
+  // Broker outages should not consume retry budget or take database locks.
+  if (!(await isNatsReady())) return { published: 0, deferred: 0 };
+
   const candidates = await globalQuery<OutboxCandidate>(
     `SELECT id, org_id::text AS org_id
        FROM telemetry_ingest_outbox

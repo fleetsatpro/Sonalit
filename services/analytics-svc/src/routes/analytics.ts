@@ -4,13 +4,38 @@ import { query } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AuthError } from '../lib/errors.js';
 
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const MAX_ANALYTICS_RANGE_DAYS = 366;
+
 const DateRangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(() => {
     const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10);
   }),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(() => new Date().toISOString().slice(0, 10)),
-});
+}).superRefine((range, context) => {
+  const fromMs = Date.parse(`${range.from}T00:00:00.000Z`);
+  const toMs = Date.parse(`${range.to}T00:00:00.000Z`);
+  const fromValid = Number.isFinite(fromMs) && new Date(fromMs).toISOString().slice(0, 10) === range.from;
+  const toValid = Number.isFinite(toMs) && new Date(toMs).toISOString().slice(0, 10) === range.to;
 
+  if (!fromValid) context.addIssue({ code: 'custom', path: ['from'], message: 'from must be a valid calendar date' });
+  if (!toValid) context.addIssue({ code: 'custom', path: ['to'], message: 'to must be a valid calendar date' });
+  if (!fromValid || !toValid) return;
+
+  if (fromMs > toMs) {
+    context.addIssue({ code: 'custom', path: ['to'], message: 'to must be on or after from' });
+    return;
+  }
+
+  const inclusiveDays = Math.floor((toMs - fromMs) / MILLISECONDS_PER_DAY) + 1;
+  if (inclusiveDays > MAX_ANALYTICS_RANGE_DAYS) {
+    context.addIssue({
+      code: 'custom',
+      path: ['to'],
+      message: `date range cannot exceed ${MAX_ANALYTICS_RANGE_DAYS} days`,
+    });
+  }
+});
 type GpsDistanceStats = {
   km: string | null;
   valid_segments: string;

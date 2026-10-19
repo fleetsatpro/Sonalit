@@ -5,13 +5,14 @@ const mocks = vi.hoisted(() => ({
   withOrgContext: vi.fn(),
   publish: vi.fn(),
   getJs: vi.fn(),
+  isNatsReady: vi.fn(),
 }));
 
 vi.mock('../../src/db.js', () => ({
   globalQuery: mocks.globalQuery,
   withOrgContext: mocks.withOrgContext,
 }));
-vi.mock('../../src/nats.js', () => ({ getJs: mocks.getJs }));
+vi.mock('../../src/nats.js', () => ({ getJs: mocks.getJs, isNatsReady: mocks.isNatsReady }));
 
 import { publishPendingOutboxBatch } from '../../src/lib/outboxPublisher.js';
 
@@ -38,6 +39,7 @@ describe('durable telemetry outbox publisher', () => {
         return { rows: [], rowCount: 1 };
       }),
     };
+    mocks.isNatsReady.mockResolvedValue(true);
     mocks.globalQuery.mockResolvedValue([{ id: row.id, org_id: orgId }]);
     mocks.withOrgContext.mockImplementation(async (requestedOrg: string, callback: (client: unknown) => Promise<unknown>) => {
       if (requestedOrg !== orgId) throw new Error('unexpected_tenant');
@@ -45,6 +47,14 @@ describe('durable telemetry outbox publisher', () => {
     });
     mocks.publish.mockResolvedValue({ stream: 'TELEMETRY', seq: 1, duplicate: false });
     mocks.getJs.mockReturnValue({ publish: mocks.publish });
+  });
+
+  it('leaves durable rows untouched while NATS is unavailable', async () => {
+    mocks.isNatsReady.mockResolvedValue(false);
+    await expect(publishPendingOutboxBatch()).resolves.toEqual({ published: 0, deferred: 0 });
+    expect(mocks.globalQuery).not.toHaveBeenCalled();
+    expect(mocks.withOrgContext).not.toHaveBeenCalled();
+    expect(mocks.publish).not.toHaveBeenCalled();
   });
 
   it('discovers only due identities globally, then reads payload under tenant context', async () => {

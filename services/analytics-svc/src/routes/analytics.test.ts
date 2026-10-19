@@ -10,6 +10,7 @@ vi.mock('../middleware/auth.js', () => ({
   },
 }));
 
+import { analyticsErrorHandler } from '../lib/errorHandler.js';
 import { analyticsRoutes } from './analytics.js';
 
 describe('analytics data integrity', () => {
@@ -18,12 +19,36 @@ describe('analytics data integrity', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = Fastify({ logger: false });
+    app.setErrorHandler(analyticsErrorHandler);
     await app.register(analyticsRoutes);
     await app.ready();
   });
 
   afterEach(async () => {
     await app.close();
+  });
+
+  it('returns 400 for invalid calendar dates, reversed dates, and oversized ranges', async () => {
+    const invalidCalendarDate = await app.inject({ method: 'GET', url: '/v4/analytics/summary?from=2026-02-31&to=2026-03-01' });
+    expect(invalidCalendarDate.statusCode).toBe(400);
+    expect(invalidCalendarDate.json().code).toBe('VALIDATION_ERROR');
+
+    const reversedRange = await app.inject({ method: 'GET', url: '/v4/analytics/summary?from=2026-10-08&to=2026-10-07' });
+    expect(reversedRange.statusCode).toBe(400);
+    expect(reversedRange.json().issues[0].message).toContain('on or after');
+
+    const oversizedRange = await app.inject({ method: 'GET', url: '/v4/analytics/summary?from=2025-01-01&to=2026-01-02' });
+    expect(oversizedRange.statusCode).toBe(400);
+    expect(oversizedRange.json().issues[0].message).toContain('cannot exceed 366 days');
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it('does not expose SQL or database exception details to API clients', async () => {
+    mocks.query.mockRejectedValue(new Error('sensitive database connection detail'));
+    const response = await app.inject({ method: 'GET', url: '/v4/analytics/summary?from=2026-10-01&to=2026-10-07' });
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({ code: 'INTERNAL_ERROR', error: 'Internal server error' });
+    expect(response.body).not.toContain('sensitive database connection detail');
   });
 
   it('calculates distance from actual consecutive GPS coordinates and marks unsupported summary metrics unavailable', async () => {

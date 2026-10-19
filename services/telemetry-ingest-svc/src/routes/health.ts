@@ -24,10 +24,13 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
       nats: natsOk ? 'ok' : 'degraded',
     };
 
-    const allOk = databaseOk && redisOk && natsOk;
-    return reply.status(allOk ? 200 : 503).send({
-      status: allOk ? 'ready' : 'not_ready',
+    // PostgreSQL-backed acceptance remains safe while the dispatcher is degraded.
+    // Database persistence and Redis-backed auth/rate limiting define ingest readiness.
+    const persistenceReady = databaseOk && redisOk;
+    return reply.status(persistenceReady ? 200 : 503).send({
+      status: persistenceReady ? 'ready' : 'not_ready',
       checks,
+      telemetry_delivery: natsOk ? 'live' : 'durably_queued',
     });
   });
 
