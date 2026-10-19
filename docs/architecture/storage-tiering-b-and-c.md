@@ -70,6 +70,32 @@ The secondary DB should initially receive **derived, reproducible aggregates** p
 3. Map each Railway service to its intended bucket explicitly. Keep the existing `R2_BUCKET` compatibility path until all producers/consumers are migrated and verified.
 4. Introduce `R2_MEDIA_BUCKET`, `R2_PRIVATE_EVIDENCE_BUCKET`, `R2_PRIVATE_REPORTS_BUCKET` and `R2_ARCHIVE_BUCKET` only when the actual bucket inventory, permissions, domains and deployments are confirmed. Names here are a proposed config contract, not a claim that these buckets already exist.
 
+### Observed live R2 inventory — 2026-10-19
+
+A bounded, read-only listing against the existing Railway-configured R2 bucket completed successfully. No object bodies were downloaded, and full object keys were not emitted.
+
+| Bucket | Result | Objects listed | Bytes listed |
+|---|---|---:|---:|
+| `sonalit-convoy-photos` | Complete listing | 2,708 | 1,195,699,558 bytes (1,140.31 MiB) |
+
+First-level prefix totals in this bucket:
+
+| Prefix | Objects | Approximate size |
+|---|---:|---:|
+| `cfo/` | 319 | 646.41 MiB |
+| `intelligence-publications/` | 2,241 | 430.28 MiB |
+| `convoy-app/` | 50 | 30.06 MiB |
+| `reports/` | 89 | 23.26 MiB |
+| `handover-officer/` | 5 | 5.05 MiB |
+| `orgs/` | 3 | 4.14 MiB |
+| `comms/` | 1 | 1.10 MiB |
+
+The S3 `ListBuckets` API returned `AccessDenied`, so this is a complete listing of the configured bucket, **not** a complete account-wide bucket inventory. The configured credentials could not list bucket names derived from the current Terraform declaration (`sonalit-media-production`, `sonalit-reports-production`, `sonalit-media-prod`, `sonalit-reports-prod`, and staging equivalents; each returned `NoSuchBucket`). This is evidence that those names are not accessible at those exact endpoints to this credential, not proof of the full Cloudflare account state. Review Terraform remote state and Cloudflare dashboard before creating or changing buckets.
+
+This bucket is a mixed logical workload: convoy evidence, intelligence publication artifacts, reports and communications share one physical bucket. Its public-access configuration, custom domain and each object's access semantics were **not** established by object listing. Treat the entire bucket as sensitive until verified. Do not switch the whole bucket to public, add a public domain, rename it or change lifecycle rules as part of the storage migration. Bucket segregation must preserve every existing object and URL consumer, and sensitive reads must transition to authorized object-key lookups before any public URL is retired.
+
+The temporary inventory function has been removed after the measurement; its logs showed no body downloads, no public domains and no attached volume. No existing R2 object was changed.
+
 Recommended classes:
 
 - **Public media:** only assets explicitly approved for public distribution, served from a custom domain/cache. Separate from private objects.
