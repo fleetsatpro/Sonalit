@@ -65,14 +65,14 @@ describe('intelligence public-schema health certification', () => {
     expect(REQUIRED_TABLES).toContain('intel_publications');
   });
 
-  test('startup hooks do not rerun migrations from npm prestart', async () => {
+  test('startup runs migrations before intelligence schema certification', async () => {
     const fs = require('fs');
     const path = require('path');
     const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'));
     const migrateSource = fs.readFileSync(path.resolve(__dirname, '../scripts/db-migrate.js'), 'utf8');
     const gateSource = fs.readFileSync(path.resolve(__dirname, '../scripts/intelligence-schema-gate.js'), 'utf8');
 
-    expect(pkg.scripts.prestart).toBe('node scripts/intelligence-schema-gate.js');
+    expect(pkg.scripts.prestart).toBe('node scripts/db-migrate.js && node scripts/intelligence-schema-gate.js');
     expect(migrateSource).toContain('reconciliationAlreadySatisfied');
     expect(migrateSource).toContain("SET LOCAL lock_timeout = '8s'");
     expect(gateSource.indexOf('let result = await checkIntelligenceSchema'))

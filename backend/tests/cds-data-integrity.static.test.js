@@ -65,7 +65,7 @@ describe('CDS data-integrity regression guards', () => {
 
   test('legacy trip clamp/unclamp fail closed and identify the canonical booking-container route', () => {
     const clamp = routeBetween(source, "router.post('/trips/:id/clamp'", "router.post('/trips/:id/unclamp'");
-    const unclamp = routeBetween(source, "router.post('/trips/:id/unclamp'", '// ══════════════════════════════════════════════════════════════\\n// 9. Bookings');
+    const unclamp = routeBetween(source, "router.post('/trips/:id/unclamp'", "// 9. Bookings");
     for (const route of [clamp, unclamp]) {
       expect(route).toContain('requireIdempotencyKey');
       expect(route).toContain('booking_container_link_required');

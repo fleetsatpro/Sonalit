@@ -135,7 +135,7 @@ function requireIdempotencyKey(req, res, next) {
         WHERE key = $1 AND org_id = $2`,
       [key, orgId],
     );
-    if (!cachedRows.length) {
+    if (!cachedRows.rows?.length) {
       return res.status(409).json({
         error: 'idempotency_state_unavailable',
         retry_same_key: true,
@@ -143,7 +143,7 @@ function requireIdempotencyKey(req, res, next) {
       });
     }
 
-    const receipt = cachedRows[0];
+    const receipt = cachedRows.rows[0];
     if (receipt.request_hash && receipt.request_hash !== fingerprint) {
       return res.status(409).json({
         error: 'idempotency_key_reused_for_different_request',
