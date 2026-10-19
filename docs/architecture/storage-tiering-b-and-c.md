@@ -19,7 +19,7 @@ The Railway production Postgres logs show WAL recovery failing with `No space le
 
 **Do not run data migrations, attach the secondary database to application traffic, prune source rows or repeatedly restart the primary as a storage fix.** First obtain a consistent backup/recovery copy and verify that it can be restored. Confirm the primary can accept connections and pass integrity checks. Storage offload is not a substitute for repairing WAL recovery.
 
-The second database service is currently staged in Railway as a non-destructive resource creation; it is not live and no production application variables were changed. Review its staged diff before committing it. The new service must be configured and its connection tested privately before it is used.
+The secondary service `Postgres--wsQ` has now been provisioned in Railway production and its initial PostgreSQL deployment reports `SUCCESS` / `ready to accept connections`. It has its own 5,000 MB `postgres-volume-4Wke` and private endpoint `postgres-wsq`; there is no public domain or TCP proxy. No production application variables were changed, no source data was copied, and no application uses this database yet. The secondary database is an empty target; validate its private connection and apply the database-name-guarded schema only after checking the actual database name.
 
 ## Repository evidence and current gaps
 
