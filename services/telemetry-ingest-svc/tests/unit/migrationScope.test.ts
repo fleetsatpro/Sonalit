@@ -2,14 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const migration = readFileSync(new URL('../../src/db/migrate.ts', import.meta.url), 'utf8');
+const launcher = readFileSync(new URL('../../src/start.ts', import.meta.url), 'utf8');
 const packageManifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { scripts?: Record<string, string> };
 
 describe('telemetry tenant isolation schema', () => {
   it('uses the migration-gated launcher in production and development', () => {
     expect(packageManifest.scripts?.start).toBe('node dist/start.js');
     expect(packageManifest.scripts?.dev).toBe('tsx watch src/start.ts');
-    expect(migration).toContain('await migrate();');
-    expect(migration).toContain("await import('./index.js')");
+    expect(launcher).toContain('await migrate();');
+    expect(launcher).toContain("await import('./index.js')");
   });
 
   it('treats an absent or empty tenant context as NULL rather than malformed UUID text', () => {
