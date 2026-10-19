@@ -155,8 +155,26 @@ export function useClampTrip() {
 export function useUnclampTrip() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, notes }: { id: string; notes?: string }) => {
-      const { data } = await cdsApi.post(`/trips/${id}/unclamp`, { notes });
+    mutationFn: async ({
+      id: _tripId,
+      booking_id,
+      booking_container_id,
+      booking_container_link_count,
+      notes,
+    }: {
+      id: string;
+      booking_id?: string;
+      booking_container_id?: string;
+      booking_container_link_count?: number;
+      notes?: string;
+    }) => {
+      if (!booking_id || !booking_container_id || Number(booking_container_link_count) !== 1) {
+        throw new Error('Unclamp blocked: this trip has no unique booking-container link. Reconcile the booking before releasing the lock.');
+      }
+      const { data } = await cdsApi.post(
+        `/bookings/${booking_id}/containers/${booking_container_id}/unclamp`,
+        { notes },
+      );
       return data;
     },
     onSuccess: () => {
