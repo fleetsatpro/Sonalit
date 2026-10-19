@@ -45,5 +45,8 @@ UPDATE public.cds_transporters
    AND contact_person = company_name;
 
 -- New manual lock records do not imply SecuriSat integration or provider verification.
+-- Provider is a vendor identity, not a verification flag. Manual clamp does not
+-- establish which vendor supplied the physical lock, so unknown stays NULL.
 ALTER TABLE public.cds_electronic_locks
-  ALTER COLUMN provider SET DEFAULT 'unverified';
+  ALTER COLUMN provider DROP NOT NULL,
+  ALTER COLUMN provider DROP DEFAULT;

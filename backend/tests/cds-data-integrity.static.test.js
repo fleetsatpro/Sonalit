@@ -68,6 +68,8 @@ describe('CDS data-integrity regression guards', () => {
     expect(migration).toContain("WHERE upper(btrim(COALESCE(license_number, ''))) = 'PENDING'");
     expect(migration).toContain("UPDATE public.cds_drivers SET phone = NULL WHERE phone = '-'");
     expect(migration).toContain('license_verification_source');
+    expect(migration).toContain('ALTER COLUMN provider DROP NOT NULL');
+    expect(migration).toContain('ALTER COLUMN provider DROP DEFAULT');
   });
 
   test('custody chain write failures abort the enclosing transaction', () => {

@@ -820,7 +820,7 @@ router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
     const lk = existingLock;
     if (!lk.rows.length) {
       const createdLock = await req.db('INSERT INTO cds_electronic_locks (serial, provider, org_id) VALUES ($1,$2,$3) RETURNING id',
-        [lock_serial.trim(), 'unverified', orgId]);
+        [lock_serial.trim(), null, orgId]);
       lockId = createdLock.rows[0].id;
     } else {
       lockId = lk.rows[0].id;
@@ -1583,7 +1583,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   const lk = existingLock;
   const lockId = lk.rows.length ? lk.rows[0].id : (await req.db(
     `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [lock_serial.trim(), 'unverified', 'assigned', orgId]
+    [lock_serial.trim(), null, 'assigned', orgId]
   )).rows[0].id;
   // 'installed', matching cds_electronic_locks_status_check and the desktop
   // clamp handler above — 'locked' isn't a value the constraint allows.
