@@ -74,6 +74,7 @@ describe('CDS data-integrity regression guards', () => {
     expect(migration).toContain('ALTER TABLE public.cds_metric_reconciliation_archive ENABLE ROW LEVEL SECURITY');
     expect(migration).toContain('ALTER TABLE public.cds_metric_reconciliation_archive FORCE ROW LEVEL SECURITY');
     expect(migration).toContain('CREATE POLICY tenant_isolation_hardening');
+    expect(migration).toContain('CREATE POLICY tenant_base_fallback');
     const report = fs.readFileSync(path.join(__dirname, '../src/routes/reports.js'), 'utf8');
     expect(report).toContain('row.total_completed > 0 ? Math.round((row.on_time / row.total_completed) * 100) : null');
   });

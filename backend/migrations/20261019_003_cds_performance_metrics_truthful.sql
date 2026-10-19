@@ -82,24 +82,18 @@ UPDATE public.cds_transporters SET rating = NULL WHERE rating = 5.00;
 UPDATE public.cds_transporters SET performance_score = NULL WHERE performance_score = 100.00;
 
 -- This archive is for controlled reconciliation, never a tenant-facing API.
--- Keep the tenant boundary and FORCE RLS invariant identical to other public tenant tables.
+-- Restrictive tenant policy AND permissive grant policy are both required by PostgreSQL RLS.
 ALTER TABLE public.cds_metric_reconciliation_archive ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cds_metric_reconciliation_archive FORCE ROW LEVEL SECURITY;
-DO $
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname='public'
-      AND tablename='cds_metric_reconciliation_archive'
-      AND policyname='tenant_isolation_hardening'
-  ) THEN
-    EXECUTE $policy$
-      CREATE POLICY tenant_isolation_hardening
-        ON public.cds_metric_reconciliation_archive
-        AS RESTRICTIVE
-        FOR ALL
-        USING (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''))
-        WITH CHECK (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''))
-    $policy$;
-  END IF;
-END $;
+CREATE POLICY tenant_isolation_hardening
+  ON public.cds_metric_reconciliation_archive
+  AS RESTRICTIVE
+  FOR ALL
+  USING (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''))
+  WITH CHECK (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''));
+CREATE POLICY tenant_base_fallback
+  ON public.cds_metric_reconciliation_archive
+  AS PERMISSIVE
+  FOR ALL
+  USING (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''))
+  WITH CHECK (org_id::text = NULLIF(current_setting('app.current_org_id', true), ''));
