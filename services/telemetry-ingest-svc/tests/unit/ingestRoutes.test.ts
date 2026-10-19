@@ -186,6 +186,38 @@ describe('telemetry ingest durable acceptance contract', () => {
     }
   });
 
+  it('persists outbox events in device sequence order regardless of request order', async () => {
+    const app = await makeServer();
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/v4/telemetry/batch',
+        headers: { 'x-device-token': 'test-device-token' },
+        payload: {
+          device_id: mocks.deviceId,
+          org_id: mocks.orgId,
+          fixes: [
+            makeFix({ seq_no: 43, timestamp: '2026-10-19T00:00:03.000Z', lat: -1.23 }),
+            makeFix({ seq_no: 41, timestamp: '2026-10-19T00:00:01.000Z', lat: -1.21 }),
+            makeFix({ seq_no: 42, timestamp: '2026-10-19T00:00:02.000Z', lat: -1.22 }),
+          ],
+        },
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({ accepted: 3, duplicate: 0, durable: true });
+      expect(enqueuedRows.map((event) => event['seq_no'])).toEqual([41, 42, 43]);
+
+      const outboxInsert = mocks.clientQuery.mock.calls.find(
+        (call) => String(call[0]).includes('INSERT INTO telemetry_ingest_outbox'),
+      );
+      expect(String(outboxInsert?.[0])).toMatch(
+        /ORDER BY f\.seq_no,\s*f\.timestamp::timestamptz/i,
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
   it('rejects a replay that reuses an existing identity with changed measurements', async () => {
     insertedRows = [];
     conflicts = [{ seq_no: 42 }];
