@@ -47,8 +47,7 @@ export async function connectNats(): Promise<void> {
             if (nc !== monitoredConnection) return;
             if (status.type === 'disconnect'
               || status.type === 'reconnecting'
-              || status.type === 'staleConnection'
-              || status.type === 'close') {
+              || status.type === 'staleConnection') {
               connectionAvailable = false;
             } else if (status.type === 'reconnect') {
               connectionAvailable = true;
