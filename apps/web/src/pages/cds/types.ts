@@ -190,8 +190,8 @@ export interface Customer {
   id: string;
   company_name: string;
   code: string;
-  contact_person: string;
-  phone: string;
+  contact_person: string | null;
+  phone: string | null;
   email: string;
   address: string;
   city: string;
