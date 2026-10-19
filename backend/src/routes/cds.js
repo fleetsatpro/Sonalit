@@ -353,8 +353,17 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
 
 const TRIP_JOINS = `LEFT JOIN cds_customers cu ON cu.id=t.customer_id
   LEFT JOIN cds_drivers dr ON dr.id=t.driver_id
-  LEFT JOIN cds_vehicles ve ON ve.id=t.vehicle_id`;
-const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_name, dr.name AS "driverName", ve.registration AS "vehicleReg"`;
+  LEFT JOIN cds_vehicles ve ON ve.id=t.vehicle_id
+  LEFT JOIN LATERAL (
+    SELECT bc.id AS booking_container_id, COUNT(*) OVER () AS link_count
+      FROM cds_booking_containers bc
+     WHERE bc.trip_id=t.id AND bc.deleted_at IS NULL
+     ORDER BY bc.created_at ASC
+     LIMIT 1
+  ) booking_link ON TRUE`;
+const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_name, dr.name AS "driverName",
+  ve.registration AS "vehicleReg", booking_link.booking_container_id,
+  COALESCE(booking_link.link_count, 0) AS booking_container_link_count`;
 
 router.get('/trips', asyncHandler(async (req, res) => {
   await listRows(req, res, 'cds_trips', {
@@ -758,163 +767,78 @@ router.patch('/transporters/:id', asyncHandler(async (req, res) => {
 // Clamp / Unclamp — ground & port team workflows
 // ══════════════════════════════════════════════════════════════
 
-router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
-  const { container_number, lock_serial, host_vehicle, trailer_number,
-          driver_name, driver_phone, transporter_name, commodity, seal_number } = req.body || {};
-  if (!lock_serial) return res.status(400).json({ error: 'lock_serial is required' });
-
-  const operation = await req.dbTx(async () => {
-    const trip = await req.db('SELECT * FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [req.params.id]);
-    if (!trip.rows.length) return { response: { status: 404, body: { error: 'Trip not found' } } };
-    if (trip.rows[0].lock_id || ['locked','lock_assigned','tracking_active','dispatched','in_transit','checkpoint','delayed','at_port','delivered','completed','lock_removed','archived'].includes(trip.rows[0].status)) {
-      return { response: { status: 409, body: { error: 'Trip already has an active lock or is no longer eligible for clamping' } } };
-    }
-    await req.db('SELECT pg_advisory_xact_lock(hashtext($1))', [`${req.user.org_id}:cds-lock:${lock_serial.trim().toUpperCase()}`]);
-    const existingLock = await req.db(
-      'SELECT id, status, container_id FROM cds_electronic_locks WHERE upper(serial) = upper($1) AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
-      [lock_serial.trim()]
-    );
-    if (existingLock.rows.length && existingLock.rows[0].container_id) {
-      return { response: { status: 409, body: { error: 'Electronic lock is already assigned to a container' } } };
-    }
-
-  const orgId = req.user.org_id;
-  let driverId = null, vehicleId = null, containerId = null, lockId = null, transporterId = null;
-
-  if (transporter_name) {
-    let tr = await req.db('SELECT id FROM cds_transporters WHERE upper(company_name) = upper($1) AND deleted_at IS NULL LIMIT 1', [transporter_name.trim()]);
-    if (!tr.rows.length) {
-      tr = await req.db('INSERT INTO cds_transporters (company_name, code, org_id) VALUES ($1,$2,$3) RETURNING id',
-        [transporter_name.trim(), genCode('TR'), orgId]);
-    }
-    transporterId = tr.rows[0].id;
-  }
-
-  if (driver_name) {
-    let dr = await req.db('SELECT id FROM cds_drivers WHERE upper(name) = upper($1) AND deleted_at IS NULL LIMIT 1', [driver_name.trim()]);
-    if (!dr.rows.length) {
-      dr = await req.db('INSERT INTO cds_drivers (name, phone, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id',
-        [driver_name.trim(), driver_phone || null, transporterId, orgId]);
-    }
-    driverId = dr.rows[0].id;
-  }
-
-  if (host_vehicle) {
-    let ve = await req.db('SELECT id FROM cds_vehicles WHERE upper(registration) = upper($1) AND deleted_at IS NULL LIMIT 1', [host_vehicle.trim()]);
-    if (!ve.rows.length) {
-      ve = await req.db('INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id',
-        [host_vehicle.trim(), genCode('FL'), transporterId, orgId]);
-    }
-    vehicleId = ve.rows[0].id;
-  }
-
-  if (container_number) {
-    let co = await req.db('SELECT id FROM cds_containers WHERE upper(number) = upper($1) AND deleted_at IS NULL LIMIT 1', [container_number.trim()]);
-    if (!co.rows.length) {
-      co = await req.db('INSERT INTO cds_containers (number, org_id) VALUES ($1,$2) RETURNING id',
-        [container_number.trim(), orgId]);
-    }
-    containerId = co.rows[0].id;
-  }
-
-  if (lock_serial) {
-    const lk = existingLock;
-    if (!lk.rows.length) {
-      const createdLock = await req.db('INSERT INTO cds_electronic_locks (serial, provider, org_id) VALUES ($1,$2,$3) RETURNING id',
-        [lock_serial.trim(), null, orgId]);
-      lockId = createdLock.rows[0].id;
-    } else {
-      lockId = lk.rows[0].id;
-    }
-    // 'installed' — not 'locked', which isn't a value cds_electronic_locks_status_check
-    // allows. Matches the dashboard's active_locks KPI just below (status IN
-    // ('assigned','installed')), which already assumed this was the value in use.
-    await req.db('UPDATE cds_electronic_locks SET status=$1, container_id=$2, vehicle_id=$3, updated_at=NOW() WHERE id=$4',
-      ['installed', containerId, vehicleId, lockId]);
-  }
-
-  const trailerNote = trailer_number ? `Trailer: ${trailer_number.trim()}` : null;
-  const result = await req.db(
-    `UPDATE cds_trips SET status='locked', driver_id=$1, vehicle_id=$2, container_id=$3, lock_id=$4, transporter_id=$5,
-     commodity=COALESCE($6, commodity), seal_number=COALESCE($7, seal_number),
-     notes=COALESCE($8, notes), updated_at=NOW()
-     WHERE id=$9 RETURNING *`,
-    [driverId, vehicleId, containerId, lockId, transporterId,
-     commodity || null, seal_number || null, trailerNote, req.params.id]
-  );
-
-  await req.db(
-    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
-     VALUES ('clamp','trip',$1,$2,$3,$4,$5,$6)`,
-    [req.params.id, req.user.id, req.user.name || null,
-     JSON.stringify({ status: trip.rows[0].status }),
-     JSON.stringify({ status: 'locked', container_number, lock_serial, host_vehicle, driver_name }),
-     orgId]
-  );
-
-    return { trip: result.rows[0], fromStatus: trip.rows[0].status };
-  });
-
-  if (operation.response) return res.status(operation.response.status).json(operation.response.body);
-  const { trip: clampedTrip, fromStatus } = operation;
-
-  publishCds(req, 'cds.trip.updated', {
-    trip_id: clampedTrip.id,
-    trip_number: clampedTrip.trip_number,
-    booking_id: clampedTrip.booking_id,
-    from_status: fromStatus,
-    status: 'locked',
-  });
-
-  res.json({ data: clampedTrip });
-}));
-
-router.post('/trips/:id/unclamp', asyncHandler(async (req, res) => {
-  const operation = await req.dbTx(async () => {
-    const trip = await req.db('SELECT * FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [req.params.id]);
-    if (!trip.rows.length) return { response: { status: 404, body: { error: 'Trip not found' } } };
-    if (['lock_removed','delivered','completed','archived'].includes(trip.rows[0].status)) {
-      return { response: { status: 409, body: { error: 'Trip is already unclamped or complete' } } };
-    }
-
-  if (trip.rows[0].lock_id) {
-    await req.db('SELECT id FROM cds_electronic_locks WHERE id=$1 FOR UPDATE', [trip.rows[0].lock_id]);
-    await req.db(
-      `UPDATE cds_electronic_locks SET status='available', container_id=NULL, vehicle_id=NULL, updated_at=NOW() WHERE id=$1`,
-      [trip.rows[0].lock_id]
-    );
-  }
-
-  const result = await req.db(
-    `UPDATE cds_trips SET status='lock_removed', delivered_at=COALESCE(delivered_at, NOW()), updated_at=NOW()
-     WHERE id=$1 RETURNING *`,
+router.post('/trips/:id/clamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
+  const trip = await req.db(
+    'SELECT id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL',
     [req.params.id]
   );
+  if (!trip.rows.length) return res.status(404).json({ error: 'Trip not found' });
 
-  await req.db(
-    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
-     VALUES ('unclamp','trip',$1,$2,$3,$4,$5,$6)`,
-    [req.params.id, req.user.id, req.user.name || null,
-     JSON.stringify({ status: trip.rows[0].status }),
-     JSON.stringify({ status: 'lock_removed', notes: req.body.notes }),
-     req.user.org_id]
+  // This legacy endpoint cannot prove which booking-container custody chain it
+  // is updating, so it no longer mutates trip/lock rows directly. The booking
+  // container route is the single authoritative clamp transaction.
+  const linked = await req.db(
+    `SELECT id, booking_id FROM cds_booking_containers
+      WHERE trip_id=$1 AND deleted_at IS NULL
+      ORDER BY created_at ASC LIMIT 2`,
+    [req.params.id]
   );
-
-    return { trip: result.rows[0], fromStatus: trip.rows[0].status };
+  if (linked.rows.length > 1) {
+    return res.status(409).json({
+      error: 'booking_container_link_ambiguous',
+      message: 'This trip is linked to multiple booking containers. Reconcile the links before clamping.',
+    });
+  }
+  if (linked.rows.length === 1) {
+    return res.status(409).json({
+      error: 'canonical_route_required',
+      message: 'Use the booking-container clamp workflow so the manifest and custody chain commit together.',
+      booking_id: linked.rows[0].booking_id,
+      booking_container_id: linked.rows[0].id,
+      canonical_endpoint: `/bookings/${linked.rows[0].booking_id}/containers/${linked.rows[0].id}/clamp`,
+    });
+  }
+  return res.status(409).json({
+    error: 'booking_container_link_required',
+    message: 'Trip-level clamping is disabled because it cannot record booking-container custody. Reconcile the booking-container link, then use the booking-container clamp workflow.',
   });
+}));
 
-  if (operation.response) return res.status(operation.response.status).json(operation.response.body);
-  const { trip: unclampedTrip, fromStatus } = operation;
+router.post('/trips/:id/unclamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
+  const trip = await req.db(
+    'SELECT id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL',
+    [req.params.id]
+  );
+  if (!trip.rows.length) return res.status(404).json({ error: 'Trip not found' });
 
-  publishCds(req, 'cds.trip.updated', {
-    trip_id: unclampedTrip.id,
-    trip_number: unclampedTrip.trip_number,
-    booking_id: unclampedTrip.booking_id,
-    from_status: fromStatus,
-    status: 'lock_removed',
+  // Releasing a lock only on cds_trips leaves the booking manifest, lock record,
+  // delivery alerts and tamper-evident custody chain out of sync. Refuse that
+  // partial transition and provide the authoritative booking-container route.
+  const linked = await req.db(
+    `SELECT id, booking_id FROM cds_booking_containers
+      WHERE trip_id=$1 AND deleted_at IS NULL
+      ORDER BY created_at ASC LIMIT 2`,
+    [req.params.id]
+  );
+  if (linked.rows.length > 1) {
+    return res.status(409).json({
+      error: 'booking_container_link_ambiguous',
+      message: 'This trip is linked to multiple booking containers. Reconcile the links before unclamping.',
+    });
+  }
+  if (linked.rows.length === 1) {
+    return res.status(409).json({
+      error: 'canonical_route_required',
+      message: 'Use the booking-container unclamp workflow so the lock, manifest, alerts and custody chain commit together.',
+      booking_id: linked.rows[0].booking_id,
+      booking_container_id: linked.rows[0].id,
+      canonical_endpoint: `/bookings/${linked.rows[0].booking_id}/containers/${linked.rows[0].id}/unclamp`,
+    });
+  }
+  return res.status(409).json({
+    error: 'booking_container_link_required',
+    message: 'Trip-level unclamping is blocked because no booking-container custody chain is linked. Reconcile the trip/booking link before releasing the lock.',
   });
-
-  res.json({ data: unclampedTrip });
 }));
 
 // ══════════════════════════════════════════════════════════════
