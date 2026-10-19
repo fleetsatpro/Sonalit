@@ -38,6 +38,7 @@ describe('CDS data-integrity regression guards', () => {
     expect(route).toContain('SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('FOR UPDATE OF bc');
     expect(route).toContain('SELECT id, lock_id, container_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
+    expect(route).toContain('lockId,');
     expect(route).toContain('Cannot unclamp a container in state');
     expect(route).toContain('await appendCustodyEvent(req');
     expect(route).toContain('INSERT INTO cds_audit_logs');

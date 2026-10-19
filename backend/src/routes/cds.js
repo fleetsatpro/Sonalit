@@ -1919,12 +1919,13 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
 
     return {
       bc: bc.rows[0], expectedSeal, observed, sealVerdict, sealTampered, sealNote, now,
+      lockId,
       tripContainerId: unclampTrip?.container_id ?? null,
     };
   });
 
   if (operation.response) return res.status(operation.response.status).json(operation.response.body);
-  const { bc: bookingContainer, expectedSeal, observed, sealVerdict, sealTampered, sealNote, now, tripContainerId } = operation;
+  const { bc: bookingContainer, expectedSeal, observed, sealVerdict, sealTampered, sealNote, now, lockId, tripContainerId } = operation;
 
   try {
     if (tripContainerId) {
