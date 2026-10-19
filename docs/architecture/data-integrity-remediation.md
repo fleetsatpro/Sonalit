@@ -26,7 +26,8 @@
 
 - When a client supplies `X-Idempotency-Key`, the backend claims the key before executing the mutation.
 - Concurrent use of the same tenant/key cannot enter the handler in parallel. An active request returns an explicit `409 idempotency_in_progress` response to a retry.
-- Successful and deterministic client-error responses are persisted before being sent. Server-error responses release the pending claim for safe retry by transactional handlers.
+- Successful and deterministic client-error responses are persisted before being sent. A server error is treated as an unknown outcome: the key is retained with a non-expiring reconciliation receipt because the domain mutation may already have committed before the response failed. This intentionally prevents an automatic second physical action.
+- If receipt persistence itself fails, the reservation remains in progress and is not automatically reclaimed. Operators must reconcile the domain state before allowing another attempt.
 - Keyless requests remain compatible for older online clients. Field/offline callers must reuse the original key rather than generate a new key for retries.
 
 ## Required verification before production rollout
