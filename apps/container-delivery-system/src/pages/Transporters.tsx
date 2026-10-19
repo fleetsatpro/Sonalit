@@ -56,7 +56,7 @@ export default function Transporters() {
                     </td>
                     <td className="px-3.5 py-3 font-mono text-text-0">{(t['avg_clamp_time'] == null ? 'Not measured' : s(t['avg_clamp_time']))}</td>
                     <td className="px-3.5 py-3 font-mono text-text-0">{s(t['total_trips'])}</td>
-                    <td className="px-3.5 py-3 font-mono text-text-0">{{t['rating'] == null ? 'Not rated' : s(t['rating'])}</td>
+                    <td className="px-3.5 py-3 font-mono text-text-0">{t['rating'] == null ? 'Not rated' : s(t['rating'])}</td>
                   </tr>
                 );
               })}

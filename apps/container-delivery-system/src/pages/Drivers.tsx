@@ -49,7 +49,7 @@ export default function Drivers() {
                   <td className="px-3.5 py-3 text-text-0">{s(d['transporter_name'])}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{s(d['current_vehicle_registration'])}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{s(d['total_trips'])}</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{{d['rating'] == null ? 'Not rated' : s(d['rating'])}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{d['rating'] == null ? 'Not rated' : s(d['rating'])}</td>
                   <td className="px-3.5 py-3">{s(d['status']) === 'active' ? <Badge variant="ok">ACTIVE</Badge> : <Badge variant="neutral">IDLE</Badge>}</td>
                 </tr>
               ))}

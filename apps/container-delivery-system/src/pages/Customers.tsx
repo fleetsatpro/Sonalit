@@ -51,8 +51,8 @@ export default function Customers() {
                   <td className="px-3.5 py-3 text-text-0">{s(c['city'])}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{s(c['active_shipments'])}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{s(c['total_shipments'])}</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{{c['sla_compliance'] == null ? 'Not measured' : `${s(c['sla_compliance'])}%`}</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{{c['rating'] == null ? 'Not rated' : s(c['rating'])}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{c['sla_compliance'] == null ? 'Not measured' : `${s(c['sla_compliance'])}%`}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{c['rating'] == null ? 'Not rated' : s(c['rating'])}</td>
                   <td className="px-3.5 py-3"><Badge variant="ok">{String(c['status'] ?? 'active').toUpperCase()}</Badge></td>
                 </tr>
               ))}
