@@ -1491,6 +1491,13 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   }
 
   const operation = await req.dbTx(async () => {
+    // Serialize lifecycle transitions for sibling containers on the same booking.
+    const bookingRow = await req.db(
+      'SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
+      [bookingId]
+    );
+    if (!bookingRow.rows.length) return { response: { status: 404, body: { error: 'Booking not found' } } };
+
     const bc = await req.db(
       `SELECT bc.*, b.booking_number, b.customer_id, b.pickup_location, b.delivery_location, b.direction
          FROM cds_booking_containers bc
@@ -1751,8 +1758,15 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   const { notes, lat, lng, seal_intact, observed_seal } = req.body || {};
 
   const operation = await req.dbTx(async () => {
+    // Serialize sibling-container deliveries so the final-delivery count cannot race.
+    const bookingRow = await req.db(
+      'SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
+      [bookingId]
+    );
+    if (!bookingRow.rows.length) return { response: { status: 404, body: { error: 'Booking not found' } } };
+
     const bc = await req.db(
-      `SELECT bc.*, b.booking_number, t.id AS trip_id, t.lock_id, t.container_id AS trip_container_id
+      `SELECT bc.*, b.booking_number, t.id AS trip_id
          FROM cds_booking_containers bc
          JOIN cds_bookings b ON b.id = bc.booking_id
          LEFT JOIN cds_trips t ON t.id = bc.trip_id
@@ -1767,8 +1781,20 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     if (!['in_transit', 'at_port'].includes(bc.rows[0].status)) {
       return { response: { status: 409, body: { error: `Cannot unclamp a container in state ${bc.rows[0].status}` } } };
     }
-    if (bc.rows[0].lock_id) {
-      await req.db('SELECT id FROM cds_electronic_locks WHERE id=$1 FOR UPDATE', [bc.rows[0].lock_id]);
+    let unclampTrip = null;
+    if (bc.rows[0].trip_id) {
+      const tripResult = await req.db(
+        'SELECT id, lock_id, container_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
+        [bc.rows[0].trip_id]
+      );
+      if (!tripResult.rows.length) {
+        return { response: { status: 409, body: { error: 'Associated trip is missing; reconcile the booking before unclamping' } } };
+      }
+      unclampTrip = tripResult.rows[0];
+    }
+    const lockId = unclampTrip?.lock_id ?? null;
+    if (lockId) {
+      await req.db('SELECT id FROM cds_electronic_locks WHERE id=$1 FOR UPDATE', [lockId]);
     }
 
   // Seal verification. A seal is only worth anything if somebody compares it at
@@ -1790,12 +1816,12 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
 
   const now = new Date();
 
-  if (bc.rows[0].lock_id) {
+  if (lockId) {
     await req.db(
       `UPDATE cds_electronic_locks
           SET status='available', container_id=NULL, vehicle_id=NULL, updated_at=NOW()
         WHERE id=$1`,
-      [bc.rows[0].lock_id]
+      [lockId]
     );
   }
 
@@ -1857,11 +1883,11 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
        `${req.user.name || 'Port team'} reported a seal discrepancy unclamping ${bc.rows[0].container_number || bcId} on booking ${bc.rows[0].booking_number}. ${sealNote}`,
        bcId]
     );
-    if (bc.rows[0].lock_id) {
+    if (lockId) {
       await req.db(
         `INSERT INTO cds_lock_events (org_id, lock_id, type, lat, lng, data)
          VALUES ($1,$2,'tamper',$3,$4,$5)`,
-        [orgId, bc.rows[0].lock_id, lat ?? null, lng ?? null,
+        [orgId, lockId, lat ?? null, lng ?? null,
          JSON.stringify({
            source: 'seal_verification',
            expected_seal: expectedSeal, observed_seal: observed,
@@ -1893,7 +1919,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
 
     return {
       bc: bc.rows[0], expectedSeal, observed, sealVerdict, sealTampered, sealNote, now,
-      tripContainerId: bc.rows[0].trip_container_id,
+      tripContainerId: unclampTrip?.container_id ?? null,
     };
   });
 

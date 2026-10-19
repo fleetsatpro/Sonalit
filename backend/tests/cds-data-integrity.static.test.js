@@ -21,6 +21,7 @@ describe('CDS data-integrity regression guards', () => {
       "router.post('/bookings/:id/containers/:cid/clamp'",
       "router.post('/bookings/:id/containers/:cid/unclamp'");
     expect(route).toContain('req.dbTx(async () =>');
+    expect(route).toContain('SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('FOR UPDATE OF bc');
     expect(route).toContain('FOR UPDATE');
     expect(route).toContain('await appendCustodyEvent(req');
@@ -34,7 +35,9 @@ describe('CDS data-integrity regression guards', () => {
       "router.post('/bookings/:id/containers/:cid/unclamp'",
       '// ══════════════════════════════════════════════════════════════\n// 10. Alerts');
     expect(route).toContain('req.dbTx(async () =>');
+    expect(route).toContain('SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('FOR UPDATE OF bc');
+    expect(route).toContain('SELECT id, lock_id, container_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('Cannot unclamp a container in state');
     expect(route).toContain('await appendCustodyEvent(req');
     expect(route).toContain('INSERT INTO cds_audit_logs');
@@ -57,6 +60,7 @@ describe('CDS data-integrity regression guards', () => {
     expect(migration).toContain('license_number DROP NOT NULL');
     expect(migration).toContain("DEFAULT 'unverified'");
     expect(migration).toContain("WHERE upper(btrim(COALESCE(license_number, ''))) = 'PENDING'");
+    expect(migration).toContain("UPDATE public.cds_drivers SET phone = NULL WHERE phone = '-'");
     expect(migration).toContain('license_verification_source');
   });
 
