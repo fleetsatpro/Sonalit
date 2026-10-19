@@ -167,7 +167,6 @@ export function PortView() {
                   return;
                 }
                 unclamp.mutate({
-                  id: s(r['id']),
                   booking_id: bookingId,
                   booking_container_id: bookingContainerId,
                   booking_container_link_count: linkCount,

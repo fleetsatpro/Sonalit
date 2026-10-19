@@ -156,13 +156,11 @@ export function useUnclampTrip() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({
-      id: _tripId,
       booking_id,
       booking_container_id,
       booking_container_link_count,
       notes,
     }: {
-      id: string;
       booking_id?: string;
       booking_container_id?: string;
       booking_container_link_count?: number;
