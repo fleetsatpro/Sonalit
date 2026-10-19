@@ -10,11 +10,11 @@ const GpsFixSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   alt_m: z.number().optional(),
-  accuracy_m: z.number().optional(),
-  speed_kmh: z.number().optional(),
+  accuracy_m: z.number().min(0).max(100000).optional(),
+  speed_kmh: z.number().min(0).max(1000).optional(),
   heading_deg: z.number().min(0).max(360).optional(),
   timestamp: z.string().datetime(),
-  hdop: z.number().optional(),
+  hdop: z.number().min(0).max(1000).optional(),
   satellites: z.number().int().min(0).max(32767).optional(),
 });
 
@@ -58,10 +58,11 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const { device_id, fixes } = parseResult.data;
+      const { device_id, org_id: requestedOrgId, fixes } = parseResult.data;
       const authenticatedDevice = request.telemetryDevice;
       if (!authenticatedDevice) return reply.status(401).send({ code: 'AUTH_REQUIRED', message: 'Device authentication required' });
       if (device_id !== authenticatedDevice.id) return reply.status(403).send({ code: 'DEVICE_SCOPE_MISMATCH', message: 'device_id does not match authenticated device' });
+      if (requestedOrgId !== authenticatedDevice.org_id) return reply.status(403).send({ code: 'ORG_SCOPE_MISMATCH', message: 'org_id does not match authenticated device' });
       const org_id = authenticatedDevice.org_id;
 
       // Collapse identical retries inside this request. If one identity carries
