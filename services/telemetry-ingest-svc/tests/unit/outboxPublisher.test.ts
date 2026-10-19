@@ -20,6 +20,7 @@ const orgId = '11111111-1111-4111-8111-111111111111';
 const row = {
   id: '12',
   org_id: orgId,
+  device_id: '22222222-2222-4222-8222-222222222222',
   subject: `telemetry.gps.${orgId}.22222222-2222-4222-8222-222222222222`,
   payload: { seq_no: 42, lat: -1.2, lng: 36.8 },
   message_id: 'device-a:42:1770000000000000',
@@ -33,7 +34,7 @@ describe('durable telemetry outbox publisher', () => {
     vi.clearAllMocks();
     tenantClient = {
       query: vi.fn(async (sql: string) => {
-        if (sql.includes('SELECT id, org_id::text AS org_id, subject')) {
+        if (sql.includes('SELECT pending.id, pending.org_id::text AS org_id, pending.subject')) {
           return { rows: [row], rowCount: 1 };
         }
         return { rows: [], rowCount: 1 };
@@ -61,20 +62,27 @@ describe('durable telemetry outbox publisher', () => {
     await expect(publishPendingOutboxBatch()).resolves.toEqual({ published: 1, deferred: 0 });
 
     expect(mocks.globalQuery).toHaveBeenCalledWith(
-      expect.stringContaining('SELECT id, org_id::text AS org_id'),
+      expect.stringContaining('SELECT candidate.id, candidate.org_id::text AS org_id'),
       [100],
     );
+    const discoverySql = String(mocks.globalQuery.mock.calls[0]?.[0]);
+    expect(discoverySql).toContain('NOT EXISTS');
+    expect(discoverySql).toContain('earlier.device_id = candidate.device_id');
+    expect(discoverySql).toContain('earlier.next_attempt_at > NOW()');
+    expect(discoverySql).toContain('ORDER BY candidate.id');
     expect(mocks.withOrgContext).toHaveBeenCalledWith(orgId, expect.any(Function));
     expect(String(tenantClient.query.mock.calls[0]?.[0])).toContain('pg_advisory_xact_lock');
-    const scopedSelect = tenantClient.query.mock.calls.find(call => String(call[0]).includes('SELECT id, org_id::text AS org_id, subject'));
+    const scopedSelect = tenantClient.query.mock.calls.find(call => String(call[0]).includes('SELECT pending.id, pending.org_id::text AS org_id, pending.subject'));
     expect(scopedSelect?.[0]).toContain('org_id = $1');
-    expect(scopedSelect?.[0]).toContain('FOR UPDATE SKIP LOCKED');
+    expect(scopedSelect?.[0]).toContain('FOR UPDATE OF pending SKIP LOCKED');
+    expect(scopedSelect?.[0]).toContain('NOT EXISTS');
+    expect(scopedSelect?.[0]).toContain('earlier.next_attempt_at > NOW()');
     expect(mocks.publish).toHaveBeenCalledWith(row.subject, expect.any(Uint8Array), { msgID: row.message_id });
   });
 
   it('deletes a row only after JetStream acknowledges the event', async () => {
     await publishPendingOutboxBatch();
-    const publishIndex = tenantClient.query.mock.calls.findIndex(call => String(call[0]).includes('SELECT id, org_id::text AS org_id, subject'));
+    const publishIndex = tenantClient.query.mock.calls.findIndex(call => String(call[0]).includes('SELECT pending.id, pending.org_id::text AS org_id, pending.subject'));
     const deleteIndex = tenantClient.query.mock.calls.findIndex(call => String(call[0]).includes('DELETE FROM telemetry_ingest_outbox'));
     expect(deleteIndex).toBeGreaterThan(publishIndex);
     expect(tenantClient.query.mock.calls[deleteIndex]?.[0]).toContain('org_id = $2');
@@ -88,6 +96,45 @@ describe('durable telemetry outbox publisher', () => {
       [row.id, orgId, 1, 'broker unavailable'],
     );
     expect(tenantClient.query.mock.calls.some(call => String(call[0]).includes('DELETE FROM telemetry_ingest_outbox'))).toBe(false);
+  });
+
+  it('does not let later telemetry overtake a failed event for the same device', async () => {
+    const second = {
+      ...row,
+      id: '13',
+      message_id: 'device-a:43:1770000001000000',
+      payload: { seq_no: 43, lat: -1.21, lng: 36.81 },
+    };
+    const otherDevice = {
+      ...row,
+      id: '14',
+      device_id: '33333333-3333-4333-8333-333333333333',
+      subject: `telemetry.gps.${orgId}.33333333-3333-4333-8333-333333333333`,
+      message_id: 'device-b:1:1770000000000000',
+      payload: { seq_no: 1, lat: -1.3, lng: 36.9 },
+    };
+    mocks.globalQuery.mockResolvedValueOnce([
+      { id: row.id, org_id: orgId },
+      { id: second.id, org_id: orgId },
+      { id: otherDevice.id, org_id: orgId },
+    ]);
+    tenantClient.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT pending.id, pending.org_id::text AS org_id, pending.subject')) {
+        return { rows: [row, second, otherDevice], rowCount: 3 };
+      }
+      return { rows: [], rowCount: 1 };
+    });
+    mocks.publish.mockImplementation(async (_subject: string, _payload: Uint8Array, options: { msgID: string }) => {
+      if (options.msgID === row.message_id) throw new Error('broker unavailable');
+      return { stream: 'TELEMETRY', seq: 2, duplicate: false };
+    });
+
+    await expect(publishPendingOutboxBatch()).resolves.toEqual({ published: 1, deferred: 1 });
+    expect(mocks.publish.mock.calls.map(call => call[2].msgID)).toEqual([
+      row.message_id,
+      otherDevice.message_id,
+    ]);
+    expect(tenantClient.query.mock.calls.some(call => String(call[0]).includes('publish_attempts = publish_attempts + 1'))).toBe(true);
   });
 
   it('does not enter a tenant transaction when global candidate discovery fails', async () => {
@@ -104,7 +151,7 @@ describe('durable telemetry outbox publisher', () => {
       { id: second.id, org_id: orgId },
     ]);
     tenantClient.query.mockImplementation(async (sql: string) => {
-      if (sql.includes('SELECT id, org_id::text AS org_id, subject')) return { rows: [row, second], rowCount: 2 };
+      if (sql.includes('SELECT pending.id, pending.org_id::text AS org_id, pending.subject')) return { rows: [row, second], rowCount: 2 };
       return { rows: [], rowCount: 1 };
     });
 

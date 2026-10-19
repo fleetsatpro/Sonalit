@@ -9,6 +9,7 @@ interface OutboxCandidate {
 }
 
 interface OutboxRow extends OutboxCandidate {
+  device_id: string;
   subject: string;
   payload: unknown;
   message_id: string;
@@ -38,10 +39,18 @@ export async function publishPendingOutboxBatch(
   if (!(await isNatsReady())) return { published: 0, deferred: 0 };
 
   const candidates = await globalQuery<OutboxCandidate>(
-    `SELECT id, org_id::text AS org_id
-       FROM telemetry_ingest_outbox
-      WHERE next_attempt_at <= NOW()
-      ORDER BY next_attempt_at, id
+    `SELECT candidate.id, candidate.org_id::text AS org_id
+       FROM telemetry_ingest_outbox candidate
+      WHERE candidate.next_attempt_at <= NOW()
+        AND NOT EXISTS (
+          SELECT 1
+            FROM telemetry_ingest_outbox earlier
+           WHERE earlier.org_id = candidate.org_id
+             AND earlier.device_id = candidate.device_id
+             AND earlier.id < candidate.id
+             AND earlier.next_attempt_at > NOW()
+        )
+      ORDER BY candidate.id
       LIMIT $1`,
     [batchSize],
   );
@@ -66,21 +75,34 @@ export async function publishPendingOutboxBatch(
         [orgId],
       );
       const selected = await client.query<OutboxRow>(
-        `SELECT id, org_id::text AS org_id, subject, payload, message_id, publish_attempts
-           FROM telemetry_ingest_outbox
-          WHERE org_id = $1
-            AND id = ANY($2::bigint[])
-            AND next_attempt_at <= NOW()
-          ORDER BY id
-          FOR UPDATE SKIP LOCKED`,
+        `SELECT pending.id, pending.org_id::text AS org_id, pending.subject,
+                pending.payload, pending.message_id, pending.publish_attempts,
+                pending.device_id::text AS device_id
+           FROM telemetry_ingest_outbox pending
+          WHERE pending.org_id = $1
+            AND pending.id = ANY($2::bigint[])
+            AND pending.next_attempt_at <= NOW()
+            AND NOT EXISTS (
+              SELECT 1
+                FROM telemetry_ingest_outbox earlier
+               WHERE earlier.org_id = pending.org_id
+                 AND earlier.device_id = pending.device_id
+                 AND earlier.id < pending.id
+                 AND earlier.next_attempt_at > NOW()
+            )
+          ORDER BY pending.id
+          FOR UPDATE OF pending SKIP LOCKED`,
         [orgId, ids.map(String)],
       );
 
       let tenantPublished = 0;
       let tenantDeferred = 0;
-      // Keep per-tenant event order deterministic; parallel publishes can reorder
-      // successive fixes before a downstream consumer observes them.
+      const blockedDevices = new Set<string>();
+      // Publish each device's pending events in insertion order. If an earlier
+      // message fails, leave later messages queued rather than letting consumers
+      // observe a hole and then having to reconcile the device's event sequence.
       for (const row of selected.rows) {
+        if (blockedDevices.has(row.device_id)) continue;
         try {
           await publishRow(row);
           await client.query(
@@ -99,6 +121,7 @@ export async function publishPendingOutboxBatch(
             [row.id, orgId, delaySeconds, (err instanceof Error ? err.message : String(err)).slice(0, 500)],
           );
           tenantDeferred++;
+          blockedDevices.add(row.device_id);
         }
       }
 
