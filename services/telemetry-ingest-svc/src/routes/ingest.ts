@@ -1,15 +1,12 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { StringCodec } from 'nats';
 import { z } from 'zod';
-import { getJs } from '../nats.js';
-import { dedupFixes, type GpsFix } from '../lib/dedup.js';
-import { enqueueMessage } from '../lib/ringBuffer.js';
 import { config } from '../config.js';
 import { deviceAuth } from '../middleware/deviceAuth.js';
 import { withOrgContext } from '../db.js';
+import { withOrgContext } from '../db.js';
 
 const GpsFixSchema = z.object({
-  seq_no: z.number().int().nonnegative(),
+  seq_no: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   alt_m: z.number().optional(),
@@ -18,7 +15,7 @@ const GpsFixSchema = z.object({
   heading_deg: z.number().min(0).max(360).optional(),
   timestamp: z.string().datetime(),
   hdop: z.number().optional(),
-  satellites: z.number().int().optional(),
+  satellites: z.number().int().min(0).max(32767).optional(),
 });
 
 const BatchBodySchema = z.object({
@@ -29,25 +26,6 @@ const BatchBodySchema = z.object({
 
 type BatchBody = z.infer<typeof BatchBodySchema>;
 type GpsFixInput = z.infer<typeof GpsFixSchema>;
-
-const sc = StringCodec();
-
-async function publishFix(
-  orgId: string,
-  deviceId: string,
-  fix: GpsFixInput & GpsFix,
-): Promise<void> {
-  const subject = `telemetry.gps.${orgId}.${deviceId}`;
-  const payload = JSON.stringify({ device_id: deviceId, org_id: orgId, ...fix });
-  const msgId = `${deviceId}:${fix.seq_no}`;
-
-  try {
-    const js = getJs();
-    await js.publish(subject, sc.encode(payload), { msgID: msgId });
-  } catch {
-    enqueueMessage(subject, payload, msgId);
-  }
-}
 
 export async function ingestRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: BatchBody }>(
@@ -86,21 +64,76 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
       if (device_id !== authenticatedDevice.id) return reply.status(403).send({ code: 'DEVICE_SCOPE_MISMATCH', message: 'device_id does not match authenticated device' });
       const org_id = authenticatedDevice.org_id;
 
-      return withOrgContext(org_id, async () => {
-      const { accepted, duplicateCount } = await dedupFixes(
-        device_id,
-        fixes as (GpsFixInput & GpsFix)[],
-      );
-
-      await Promise.all(
-        accepted.map((fix) => publishFix(org_id, device_id, fix)),
-      );
-
-      return reply.status(202).send({
-        accepted: accepted.length,
-        duplicate: duplicateCount,
+      // Collapse identical retries inside this request. If one identity carries
+      // conflicting content, reject the batch rather than arbitrarily choosing a fix.
+      const byIdentity = new Map<string, GpsFixInput>();
+      let duplicateInRequest = 0;
+      for (const fix of fixes) {
+        const normalized = { ...fix, timestamp: new Date(fix.timestamp).toISOString() };
+        const identity = `${normalized.seq_no}:${normalized.timestamp}`;
+        const previous = byIdentity.get(identity);
+        if (previous) {
+          if (JSON.stringify(previous) !== JSON.stringify(normalized)) {
+            return reply.status(400).send({
+              code: 'CONFLICTING_DUPLICATE_FIX',
+              message: 'A device sequence/timestamp identity has conflicting telemetry in this batch',
+            });
+          }
+          duplicateInRequest++;
+          continue;
+        }
+        byIdentity.set(identity, normalized);
+      }
+      const uniqueFixes = [...byIdentity.values()];
+      const result = await withOrgContext(org_id, async (client) => {
+        // Raw observations and publication intent commit in one database transaction.
+        const persisted = await client.query<{ accepted: number | string }>(
+          `WITH input AS (
+             SELECT $1::uuid AS org_id, $2::uuid AS device_id,
+                    f.seq_no, f.lat, f.lng, f.alt_m, f.accuracy_m, f.speed_kmh,
+                    f.heading_deg, f.timestamp AS time, f.hdop, f.satellites
+             FROM jsonb_to_recordset($3::jsonb) AS f(
+               seq_no bigint, lat double precision, lng double precision,
+               alt_m real, accuracy_m real, speed_kmh real, heading_deg real,
+               timestamp timestamptz, hdop real, satellites smallint
+             )
+           ),
+           inserted AS (
+             INSERT INTO gps_fixes
+               (time, device_id, org_id, lat, lon, alt_m, accuracy_m, speed_kmh,
+                heading_deg, hdop, satellites, seq_no)
+             SELECT time, device_id, org_id, lat, lng, alt_m, accuracy_m, speed_kmh,
+                    heading_deg, hdop, satellites, seq_no
+               FROM input
+             ON CONFLICT (device_id, seq_no, time) DO NOTHING
+             RETURNING time, device_id, org_id, lat, lon, alt_m, accuracy_m,
+                       speed_kmh, heading_deg, hdop, satellites, seq_no
+           ),
+           enqueued AS (
+             INSERT INTO telemetry_ingest_outbox
+               (org_id, device_id, seq_no, time, subject, payload, message_id)
+             SELECT org_id, device_id, seq_no, time,
+                    'telemetry.gps.' || org_id::text || '.' || device_id::text,
+                    jsonb_build_object(
+                      'device_id', device_id, 'org_id', org_id, 'seq_no', seq_no,
+                      'lat', lat, 'lng', lon, 'alt_m', alt_m, 'accuracy_m', accuracy_m,
+                      'speed_kmh', speed_kmh, 'heading_deg', heading_deg,
+                      'timestamp', to_char(time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                      'hdop', hdop, 'satellites', satellites
+                    ),
+                    device_id::text || ':' || seq_no::text || ':' ||
+                      ((extract(epoch FROM time) * 1000000)::bigint)::text
+               FROM inserted
+             RETURNING id
+           )
+           SELECT COUNT(*)::int AS accepted FROM enqueued`,
+          [org_id, device_id, JSON.stringify(uniqueFixes)],
+        );
+        const accepted = Number(persisted.rows[0]?.accepted ?? 0);
+        return { accepted, duplicate: duplicateInRequest + uniqueFixes.length - accepted };
       });
-      });
+      // HTTP 202 is emitted only after PostgreSQL has committed the fix and outbox entry.
+      return reply.status(202).send({ ...result, durable: true });
     },
   );
 }
