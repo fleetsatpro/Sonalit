@@ -31,7 +31,7 @@ type BatchBody = z.infer<typeof BatchBodySchema>;
 function normalizeTimestamp(value: string): string {
   // PostgreSQL stores timestamps to microsecond precision. Preserve all allowed
   // digits instead of Date.toISOString(), which silently truncates microseconds.
-  const match = /^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.(\\d+))?Z$/.exec(value);
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?Z$/.exec(value);
   if (!match) return value; // Zod validation rejects unsupported timestamp forms first.
   return `${match[1]}.${(match[2] ?? '').padEnd(6, '0')}Z`;
 }
