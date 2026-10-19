@@ -4,6 +4,22 @@ This runbook applies to branch `feat/storage-tiering-b-c-preflight`. It delibera
 
 ## 0. Guardrails
 
+### Current primary incident status — October 19, 2026
+
+The primary database's 5 GB volume is full (roughly 4.5 GiB used; about 5.5 MiB free), and PostgreSQL stopped during WAL recovery. Read-only inspection established that its PG18 data directory is 4.5 GiB: `base` is ~4.4 GiB, `pg_wal` is ~129 MiB, and no `pg_wal/xlogtemp*` file was present. `pg_resetwal --dry-run` succeeded when run as the `postgres` OS user, but **no forced reset was executed**.
+
+Four detached volumes named with `restored` / previous PostgreSQL variants were inspected without starting PostgreSQL or writing their files. Their database system identifiers do not match the active primary's ID `7678021235882815543`; none is a safe drop-in recovery copy.
+
+The active `postgres-volume` has been reattached to service `Postgres`. To avoid another full-disk recovery loop, the service's current custom start command is deliberately `sleep infinity`. Its Railway deploy may therefore report `SUCCESS` even though the database is not running. The temporary inspection service is deleted; the four detached volumes remain detached and intact. No database bytes or R2 objects were changed.
+
+### Required manual recovery gate
+
+The connected Railway tools do not expose the Backups tab's snapshot-list/restore controls. In the Railway dashboard, open **Project `zucchini-creation` → production → service `Postgres` → Backups** and check for a volume backup from the same cluster ID. Restore a known-good snapshot to a new/restored volume in the same project/environment; verify it before cutover. If the backup UI offers no valid snapshot, contact Railway support before considering low-level WAL reset. PITR was not enabled on the primary (`WAL_ARCHIVE_*` variables are absent), so enabling it now cannot recover this incident retroactively.
+
+Because `sleep infinity` is currently set, restore the database service's normal PostgreSQL start command only when a valid restored volume is mounted, or when performing an explicitly approved last-resort recovery. On this image, the normal Docker command is `postgres`; confirm the template's current default before changing it.
+
+Do not run `pg_resetwal --force` merely to make the database start. Railway documents it as a last resort: it can discard committed transactions and leave inconsistent data. If the dashboard and support confirm there is no usable backup and the owner authorizes that risk, use a separately reviewed recovery procedure, immediately create a logical dump on any recovered server, build a new clean database and reconcile before application cutover.
+
 - The original `Postgres` database recently failed WAL recovery with `No space left on device`. Do not run write/migration/cleanup commands against it until recovery is established and a backup is restorable.
 - The second service `Postgres--wsQ` is provisioned, private-only, and intended for the `sonalit_analytics` database. It is currently empty; no operational application is configured to use it.
 - Do not attach/delete/repurpose any detached PostgreSQL volume until its provenance and contents are known.
