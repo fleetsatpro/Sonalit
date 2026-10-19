@@ -1414,7 +1414,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     driver_name: rawDriverName,
     driver_phone: rawDriverPhone,
     notes: rawNotes,
-    lat: clampLat, lng: clampLng,
+    lat, lng,
   } = req.body || {};
 
   if (typeof rawLockSerial !== 'string' || typeof rawTruckReg !== 'string' || typeof rawDriverName !== 'string') {
@@ -1425,9 +1425,9 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   if (rawDriverPhone != null && typeof rawDriverPhone !== 'string') return res.status(400).json({ error: 'driver_phone must be a string' });
   if (rawNotes != null && typeof rawNotes !== 'string') return res.status(400).json({ error: 'notes must be a string' });
 
-  const lock_serial = rawLockSerial.trim();
+  const lock_serial = rawLockSerial.trim().toUpperCase();
   const transporter_name = rawTransporterName == null ? null : rawTransporterName.trim();
-  const truck_reg = rawTruckReg.trim();
+  const truck_reg = rawTruckReg.trim().toUpperCase();
   const trailer_reg = rawTrailerReg == null ? null : rawTrailerReg.trim();
   const driver_name = rawDriverName.trim();
   const driver_phone = rawDriverPhone == null ? null : rawDriverPhone.trim();
@@ -1477,12 +1477,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       return { response: { status: 422, body: { error: 'Container number is required before clamping' } } };
     }
 
-    const containerNumber = String(bc.rows[0].container_number).trim();
+    const containerNumber = String(bc.rows[0].container_number).trim().toUpperCase();
     if (containerNumber.length > 20) {
       return { response: { status: 422, body: { error: 'Container number exceeds the inventory field limit' } } };
     }
     await req.db('SELECT pg_advisory_xact_lock(hashtext($1))', [
-      `${orgId}:cds-container:${containerNumber.toUpperCase()}`,
+      `cds-container:${containerNumber}`,
     ]);
     const matchingContainers = await req.db(
       `SELECT id, number, status, deleted_at
@@ -1510,9 +1510,14 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     } else {
       const insertedContainer = await req.db(
         `INSERT INTO cds_containers (number, iso_type, org_id)
-         VALUES ($1,$2,$3) RETURNING id, number, status, deleted_at`,
+         VALUES ($1,$2,$3)
+         ON CONFLICT DO NOTHING
+         RETURNING id, number, status, deleted_at`,
         [containerNumber, bc.rows[0].iso_type || '20GP', orgId]
       );
+      if (!insertedContainer.rows.length) {
+        return { response: { status: 409, body: { error: 'Container identity already exists; reconcile container ownership before clamping' } } };
+      }
       containerId = insertedContainer.rows[0].id;
     }
 
@@ -1537,7 +1542,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     }
 
     await req.db('SELECT pg_advisory_xact_lock(hashtext($1))', [
-      `${orgId}:cds-lock:${lock_serial.toUpperCase()}`,
+      `cds-lock:${lock_serial}`,
     ]);
     const existingLock = await req.db(
       `SELECT id, status, container_id, deleted_at
@@ -1557,6 +1562,25 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       || existingLock.rows[0].status !== 'available'
     )) {
       return { response: { status: 409, body: { error: 'Electronic lock is not available or is already assigned' } } };
+    }
+
+    let lockId;
+    if (existingLock.rows.length) {
+      lockId = existingLock.rows[0].id;
+    } else {
+      // A conflicting serial owned by another tenant must be a domain conflict,
+      // not an unhandled 500 or a partially-created driver/vehicle record.
+      const insertedLock = await req.db(
+        `INSERT INTO cds_electronic_locks (serial, provider, status, org_id)
+         VALUES ($1,NULL,'available',$2)
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        [lock_serial, orgId]
+      );
+      if (!insertedLock.rows.length) {
+        return { response: { status: 409, body: { error: 'Electronic-lock serial already exists; reconcile lock ownership before clamping' } } };
+      }
+      lockId = insertedLock.rows[0].id;
     }
 
   // The yard form records a company, not an individual contact. Missing values
@@ -1600,11 +1624,8 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   )).rows[0].id;
 
   // Upsert e-lock and put it into 'locked' state on this container/vehicle
-  const lk = existingLock;
-  const lockId = lk.rows.length ? lk.rows[0].id : (await req.db(
-    `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [lock_serial, null, 'assigned', orgId]
-  )).rows[0].id;
+  // E-lock identity was reserved before support records were created; no late
+  // unique-key failure can leave orphaned transporter, driver or vehicle rows.
   // 'installed', matching cds_electronic_locks_status_check and the desktop
   // clamp handler above — 'locked' isn't a value the constraint allows.
   await req.db(

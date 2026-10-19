@@ -29,6 +29,8 @@ describe('CDS data-integrity regression guards', () => {
     expect(route).toContain('upper(serial) = upper($1)');
     expect(route).toContain("status !== 'available'");
     expect(route).toContain('Container is already linked to an active trip');
+    expect(route).toContain('ON CONFLICT DO NOTHING');
+    expect(route).toContain('Electronic-lock serial already exists');
     expect(route).toContain("SET status='in_transit', current_location=$2");
     expect(route).toContain('FOR UPDATE');
     expect(route).toContain('await appendCustodyEvent(req');
