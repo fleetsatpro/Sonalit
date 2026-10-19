@@ -46,6 +46,7 @@ describe('CDS data-integrity regression guards', () => {
     expect(route).toContain('req.dbTx(async () =>');
     expect(route).toContain('SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('FOR UPDATE OF bc');
+    expect(route).toContain('SELECT bc.*, b.booking_number, b.delivery_location, t.id AS trip_id, t.container_id AS trip_container_id');
     expect(route).toContain('SELECT id, booking_id, status, lock_id, container_id, vehicle_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('SELECT id, status, container_id, vehicle_id FROM cds_electronic_locks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('Trip-to-booking-container link is missing or ambiguous');
