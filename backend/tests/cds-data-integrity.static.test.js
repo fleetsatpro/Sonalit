@@ -25,6 +25,8 @@ describe('CDS data-integrity regression guards', () => {
     expect(route).toContain('FOR UPDATE OF bc');
     expect(route).toContain('Container number is required before clamping');
     expect(route).toContain('Electronic lock is already assigned or active');
+    expect(route).toContain('pg_advisory_xact_lock(hashtext($1))');
+    expect(route).toContain('upper(serial) = upper($1)');
     expect(route).toContain('FOR UPDATE');
     expect(route).toContain('await appendCustodyEvent(req');
     expect(route.indexOf('await appendCustodyEvent(req')).toBeLessThan(route.indexOf('return { bc: bc.rows[0]'));
@@ -55,6 +57,8 @@ describe('CDS data-integrity regression guards', () => {
     const clamp = routeBetween(source, "router.post('/trips/:id/clamp'", "router.post('/trips/:id/unclamp'");
     const unclamp = routeBetween(source, "router.post('/trips/:id/unclamp'", '// ══════════════════════════════════════════════════════════════\n// 9. Bookings');
     expect(clamp).toContain('req.dbTx(async () =>');
+    expect(clamp).toContain('pg_advisory_xact_lock(hashtext($1))');
+    expect(clamp).toContain('upper(serial) = upper($1)');
     expect(clamp).toContain('FOR UPDATE');
     expect(unclamp).toContain('req.dbTx(async () =>');
     expect(unclamp).toContain('FOR UPDATE');

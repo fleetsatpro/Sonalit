@@ -769,8 +769,9 @@ router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
     if (trip.rows[0].lock_id || ['locked','lock_assigned','tracking_active','dispatched','in_transit','checkpoint','delayed','at_port','delivered','completed','lock_removed','archived'].includes(trip.rows[0].status)) {
       return { response: { status: 409, body: { error: 'Trip already has an active lock or is no longer eligible for clamping' } } };
     }
+    await req.db('SELECT pg_advisory_xact_lock(hashtext($1))', [`${req.user.org_id}:cds-lock:${lock_serial.trim().toUpperCase()}`]);
     const existingLock = await req.db(
-      'SELECT id, status, container_id FROM cds_electronic_locks WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+      'SELECT id, status, container_id FROM cds_electronic_locks WHERE upper(serial) = upper($1) AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
       [lock_serial.trim()]
     );
     if (existingLock.rows.length && existingLock.rows[0].container_id) {
@@ -781,7 +782,7 @@ router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
   let driverId = null, vehicleId = null, containerId = null, lockId = null, transporterId = null;
 
   if (transporter_name) {
-    let tr = await req.db('SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1', [transporter_name.trim()]);
+    let tr = await req.db('SELECT id FROM cds_transporters WHERE upper(company_name) = upper($1) AND deleted_at IS NULL LIMIT 1', [transporter_name.trim()]);
     if (!tr.rows.length) {
       tr = await req.db('INSERT INTO cds_transporters (company_name, code, org_id) VALUES ($1,$2,$3) RETURNING id',
         [transporter_name.trim(), genCode('TR'), orgId]);
@@ -790,7 +791,7 @@ router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
   }
 
   if (driver_name) {
-    let dr = await req.db('SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1', [driver_name.trim()]);
+    let dr = await req.db('SELECT id FROM cds_drivers WHERE upper(name) = upper($1) AND deleted_at IS NULL LIMIT 1', [driver_name.trim()]);
     if (!dr.rows.length) {
       dr = await req.db('INSERT INTO cds_drivers (name, phone, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id',
         [driver_name.trim(), driver_phone || null, transporterId, orgId]);
@@ -799,7 +800,7 @@ router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
   }
 
   if (host_vehicle) {
-    let ve = await req.db('SELECT id FROM cds_vehicles WHERE registration ILIKE $1 AND deleted_at IS NULL LIMIT 1', [host_vehicle.trim()]);
+    let ve = await req.db('SELECT id FROM cds_vehicles WHERE upper(registration) = upper($1) AND deleted_at IS NULL LIMIT 1', [host_vehicle.trim()]);
     if (!ve.rows.length) {
       ve = await req.db('INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id',
         [host_vehicle.trim(), genCode('FL'), transporterId, orgId]);
@@ -808,7 +809,7 @@ router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
   }
 
   if (container_number) {
-    let co = await req.db('SELECT id FROM cds_containers WHERE number ILIKE $1 AND deleted_at IS NULL LIMIT 1', [container_number.trim()]);
+    let co = await req.db('SELECT id FROM cds_containers WHERE upper(number) = upper($1) AND deleted_at IS NULL LIMIT 1', [container_number.trim()]);
     if (!co.rows.length) {
       co = await req.db('INSERT INTO cds_containers (number, org_id) VALUES ($1,$2) RETURNING id',
         [container_number.trim(), orgId]);
@@ -1514,9 +1515,10 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       return { response: { status: 422, body: { error: 'Container number is required before clamping' } } };
     }
 
+    await req.db('SELECT pg_advisory_xact_lock(hashtext($1))', [`${req.user.org_id}:cds-lock:${lock_serial.trim().toUpperCase()}`]);
     const existingLock = await req.db(
       `SELECT id, status, container_id FROM cds_electronic_locks
-        WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
+        WHERE upper(serial) = upper($1) AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
       [lock_serial.trim()]
     );
     if (existingLock.rows.length && (
@@ -1531,7 +1533,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   let transporterId = null;
   if (transporter_name) {
     const t = await req.db(
-      'SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+      'SELECT id FROM cds_transporters WHERE upper(company_name) = upper($1) AND deleted_at IS NULL LIMIT 1',
       [transporter_name.trim()]
     );
     if (t.rows.length) transporterId = t.rows[0].id;
@@ -1547,7 +1549,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   // The yard form identifies the driver but does not verify licensing. License
   // number and expiry remain NULL until independently verified.
   const dr = await req.db(
-    'SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+    'SELECT id FROM cds_drivers WHERE upper(name) = upper($1) AND deleted_at IS NULL LIMIT 1',
     [driver_name.trim()]
   );
   const driverId = dr.rows.length ? dr.rows[0].id : (await req.db(
@@ -1558,7 +1560,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
 
   // Upsert vehicle (truck horse)
   const ve = await req.db(
-    'SELECT id FROM cds_vehicles WHERE registration ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+    'SELECT id FROM cds_vehicles WHERE upper(registration) = upper($1) AND deleted_at IS NULL LIMIT 1',
     [truck_reg.trim()]
   );
   const vehicleId = ve.rows.length ? ve.rows[0].id : (await req.db(
@@ -1570,7 +1572,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   let containerId = null;
   if (bc.rows[0].container_number) {
     const co = await req.db(
-      'SELECT id FROM cds_containers WHERE number ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+      'SELECT id FROM cds_containers WHERE upper(number) = upper($1) AND deleted_at IS NULL LIMIT 1',
       [bc.rows[0].container_number]
     );
     containerId = co.rows.length ? co.rows[0].id : (await req.db(
