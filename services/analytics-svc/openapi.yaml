@@ -63,16 +63,34 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    enum: [VALIDATION_ERROR]
                   error:
                     type: string
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, message]
+                      properties:
+                        path:
+                          type: string
+                        message:
+                          type: string
         '401':
           description: Unauthorized
           content:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    example: AUTH_REQUIRED
                   error:
                     type: string
         '500':
@@ -81,7 +99,11 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    enum: [INTERNAL_ERROR]
                   error:
                     type: string
   /v4/analytics/alerts-by-type:
@@ -135,16 +157,34 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    enum: [VALIDATION_ERROR]
                   error:
                     type: string
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, message]
+                      properties:
+                        path:
+                          type: string
+                        message:
+                          type: string
         '401':
           description: Unauthorized
           content:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    example: AUTH_REQUIRED
                   error:
                     type: string
         '500':
@@ -153,7 +193,11 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    enum: [INTERNAL_ERROR]
                   error:
                     type: string
   /v4/analytics/summary:
@@ -230,16 +274,34 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    enum: [VALIDATION_ERROR]
                   error:
                     type: string
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, message]
+                      properties:
+                        path:
+                          type: string
+                        message:
+                          type: string
         '401':
           description: Unauthorized
           content:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    example: AUTH_REQUIRED
                   error:
                     type: string
         '500':
@@ -248,7 +310,11 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    enum: [INTERNAL_ERROR]
                   error:
                     type: string
   /v4/analytics/executive-summary:
@@ -314,7 +380,11 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    example: AUTH_REQUIRED
                   error:
                     type: string
         '500':
@@ -323,6 +393,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [code, error]
                 properties:
+                  code:
+                    type: string
+                    enum: [INTERNAL_ERROR]
                   error:
                     type: string
