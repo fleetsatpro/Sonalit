@@ -133,6 +133,24 @@ describe('requireIdempotencyKey middleware', () => {
     expect(originalJson).toHaveBeenCalledWith({ data: { id: 'new' } });
   });
 
+  test('fingerprint is stable to JSON key order but scoped to the authenticated actor and authorization', () => {
+    const base = {
+      method: 'POST',
+      originalUrl: '/api/cds/bookings/b1/containers/c1/clamp',
+      body: { lock_serial: 'LOCK-1', driver_name: 'A Driver' },
+      user: { id: 'user-a', org_id: 'org-1', role: 'operator' },
+    };
+    const sameRequest = {
+      ...base,
+      body: { driver_name: 'A Driver', lock_serial: 'LOCK-1' },
+    };
+    const anotherActor = { ...base, user: { id: 'user-b', org_id: 'org-1', role: 'operator' } };
+    const changedRole = { ...base, user: { id: 'user-a', org_id: 'org-1', role: 'viewer' } };
+    expect(requireIdempotencyKey.requestFingerprint(base)).toBe(requireIdempotencyKey.requestFingerprint(sameRequest));
+    expect(requireIdempotencyKey.requestFingerprint(base)).not.toBe(requireIdempotencyKey.requestFingerprint(anotherActor));
+    expect(requireIdempotencyKey.requestFingerprint(base)).not.toBe(requireIdempotencyKey.requestFingerprint(changedRole));
+  });
+
   test('rejects a key reused for a different request fingerprint', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] })

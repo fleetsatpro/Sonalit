@@ -19,6 +19,8 @@ describe('idempotency fingerprint schema', () => {
       'utf8',
     );
     expect(middleware).toContain('request_hash = EXCLUDED.request_hash');
+    expect(middleware).toContain('actor: String(req.user?.id');
+    expect(middleware).toContain('authorization: stableValue');
     expect(middleware).toContain('idempotency_keys.status_code <> $3');
     expect(middleware).toContain("expires_at = 'infinity'::timestamptz");
     expect(middleware).toContain('idempotency_key_reused_for_different_request');

@@ -137,8 +137,9 @@ reserved atomically using the existing unique key; a concurrent retry does not
 enter the handler while the first request is in progress. It receives
 `409 idempotency_in_progress` and must retry with the **same** key.
 
-The middleware stores a SHA-256 fingerprint of the canonical method, URL and
-JSON body with the tenant/key reservation. Reusing the same key for a different
+The middleware stores a SHA-256 fingerprint of the canonical method, URL,
+authenticated actor, authorization context and JSON body with the tenant/key
+reservation. Reusing the same key for a different
 request returns `409 idempotency_key_reused_for_different_request`; keys are not
 generic replay tokens shared across endpoints.
 

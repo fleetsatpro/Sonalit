@@ -21,6 +21,8 @@ function requestFingerprint(req) {
   const canonical = JSON.stringify({
     method: String(req.method || 'GET').toUpperCase(),
     url: String(req.originalUrl || req.url || ''),
+    actor: String(req.user?.id ?? req.user?.user_id ?? req.user?.sub ?? ''),
+    authorization: stableValue(req.user?.permissions ?? req.user?.roles ?? req.user?.role ?? null),
     body: stableValue(req.body == null ? null : req.body),
   });
   return crypto.createHash('sha256').update(canonical).digest('hex');
@@ -165,3 +167,4 @@ function requireIdempotencyKey(req, res, next) {
 }
 
 module.exports = requireIdempotencyKey;
+module.exports.requestFingerprint = requestFingerprint;
