@@ -35,6 +35,7 @@ if (!Number.isInteger(maxObjects) || maxObjects < 1 || maxObjects > 100000) {
 
 const payloadScan = argv.has('--payload-scan');
 const scanR2 = argv.has('--scan-r2');
+const r2Only = argv.has('--r2-only');
 const includeAnalytics = argv.has('--analytics');
 const selectedDb = includeAnalytics ? process.env.ANALYTICS_DATABASE_URL : process.env.DATABASE_URL;
 const selectedDbLabel = includeAnalytics ? 'analytics' : 'primary';
@@ -315,13 +316,16 @@ async function auditR2() {
     databaseTarget: selectedDbLabel,
     payloadScanEnabled: payloadScan,
     r2ScanEnabled: scanR2,
+    r2Only,
     maxObjectsPerBucket: maxObjects,
     readOnly: true,
   });
-  const dbResult = await auditDatabase(selectedDb, selectedDbLabel);
+  const dbResult = r2Only
+    ? { label: selectedDbLabel, status: 'skipped', reason: '--r2-only selected; no PostgreSQL connection attempted' }
+    : await auditDatabase(selectedDb, selectedDbLabel);
   print(`PostgreSQL ${selectedDbLabel}`, dbResult);
   if (scanR2) print('R2 object metadata inventory', await auditR2());
-  if (dbResult.status === 'error') process.exitCode = 1;
+  if (dbResult.status === 'error' && !r2Only) process.exitCode = 1;
 })().catch((error) => {
   console.error('Storage audit failed:', String(error.message || error).slice(0, 600));
   process.exitCode = 1;
