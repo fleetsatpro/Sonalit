@@ -23,7 +23,11 @@ async function start(): Promise<void> {
       if (await isNatsReady()) return;
       try {
         await connectNats();
-        app.log.info('NATS JetStream connected; durable telemetry outbox dispatch is active');
+        if (await isNatsReady()) {
+          app.log.info('NATS JetStream connected; durable telemetry outbox dispatch is active');
+        } else {
+          app.log.debug('NATS reconnect is in progress; accepted GPS fixes remain durably queued');
+        }
       } catch (err) {
         app.log.warn(
           { err },

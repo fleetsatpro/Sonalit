@@ -29,7 +29,7 @@ paths:
             type: string
             pattern: '^\d{4}-\d{2}-\d{2}$'
             example: '2025-01-01'
-          description: Start date (inclusive). Defaults to 7 days ago.
+          description: Start date (inclusive, valid calendar date). Defaults to 7 days ago; date ranges may span at most 366 days.
         - name: to
           in: query
           required: false
@@ -37,7 +37,7 @@ paths:
             type: string
             pattern: '^\d{4}-\d{2}-\d{2}$'
             example: '2025-01-07'
-          description: End date (inclusive). Defaults to today.
+          description: End date (inclusive, valid calendar date). Defaults to today; must be on or after from.
       responses:
         '200':
           description: Hourly GPS event counts
@@ -100,7 +100,7 @@ paths:
             type: string
             pattern: '^\d{4}-\d{2}-\d{2}$'
             example: '2025-01-01'
-          description: Start date (inclusive). Defaults to 7 days ago.
+          description: Start date (inclusive, valid calendar date). Defaults to 7 days ago; date ranges may span at most 366 days.
         - name: to
           in: query
           required: false
@@ -108,7 +108,7 @@ paths:
             type: string
             pattern: '^\d{4}-\d{2}-\d{2}$'
             example: '2025-01-07'
-          description: End date (inclusive). Defaults to today.
+          description: End date (inclusive, valid calendar date). Defaults to today; must be on or after from.
       responses:
         '200':
           description: Alert counts by type and severity
@@ -172,7 +172,7 @@ paths:
             type: string
             pattern: '^\d{4}-\d{2}-\d{2}$'
             example: '2025-01-01'
-          description: Start date (inclusive). Defaults to 7 days ago.
+          description: Start date (inclusive, valid calendar date). Defaults to 7 days ago; date ranges may span at most 366 days.
         - name: to
           in: query
           required: false
@@ -180,7 +180,7 @@ paths:
             type: string
             pattern: '^\d{4}-\d{2}-\d{2}$'
             example: '2025-01-07'
-          description: End date (inclusive). Defaults to today.
+          description: End date (inclusive, valid calendar date). Defaults to today; must be on or after from.
       responses:
         '200':
           description: Analytics summary

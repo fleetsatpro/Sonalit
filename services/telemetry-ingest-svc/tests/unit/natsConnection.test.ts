@@ -25,6 +25,9 @@ describe('NATS connection management', () => {
     };
     const connection = {
       isClosed: vi.fn(() => false),
+      status: vi.fn(() => ({
+        async *[Symbol.asyncIterator]() { /* no lifecycle events in the default fixture */ },
+      })),
       jetstreamManager: vi.fn().mockResolvedValue(streamManager),
       jetstream: vi.fn().mockReturnValue(jetStream),
       close: vi.fn().mockResolvedValue(undefined),
