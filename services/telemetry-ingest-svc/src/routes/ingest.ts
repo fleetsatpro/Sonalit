@@ -192,6 +192,13 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
             };
           });
 
+          // The dispatcher publishes by outbox ID. Make the source order explicit
+          // so an unordered INSERT ... SELECT cannot assign IDs in an arbitrary
+          // order and reverse device sequence for downstream consumers.
+          outboxEvents.sort((a, b) =>
+            a.seq_no - b.seq_no || a.timestamp.localeCompare(b.timestamp),
+          );
+
           const enqueued = await client.query(
             `INSERT INTO telemetry_ingest_outbox
                (org_id, device_id, seq_no, time, subject, payload, message_id)
@@ -203,6 +210,7 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
                FROM jsonb_to_recordset($3::jsonb) AS f(
                  seq_no bigint, timestamp text, payload jsonb
                )
+             ORDER BY f.seq_no, f.timestamp::timestamptz
              RETURNING id`,
             [org_id, device_id, JSON.stringify(outboxEvents)],
           );
