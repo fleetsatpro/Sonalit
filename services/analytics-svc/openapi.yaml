@@ -81,17 +81,19 @@ paths:
                         message:
                           type: string
         '401':
-          description: Unauthorized
+          description: Unauthorized. Detail is returned as error for route-level authorization failures or message for token/session middleware failures.
           content:
             application/json:
               schema:
                 type: object
-                required: [code, error]
+                required: [code]
                 properties:
                   code:
                     type: string
-                    example: AUTH_REQUIRED
+                    enum: [AUTH_REQUIRED, UNAUTHENTICATED]
                   error:
+                    type: string
+                  message:
                     type: string
         '500':
           description: Internal server error
@@ -175,17 +177,19 @@ paths:
                         message:
                           type: string
         '401':
-          description: Unauthorized
+          description: Unauthorized. Detail is returned as error for route-level authorization failures or message for token/session middleware failures.
           content:
             application/json:
               schema:
                 type: object
-                required: [code, error]
+                required: [code]
                 properties:
                   code:
                     type: string
-                    example: AUTH_REQUIRED
+                    enum: [AUTH_REQUIRED, UNAUTHENTICATED]
                   error:
+                    type: string
+                  message:
                     type: string
         '500':
           description: Internal server error
@@ -292,17 +296,19 @@ paths:
                         message:
                           type: string
         '401':
-          description: Unauthorized
+          description: Unauthorized. Detail is returned as error for route-level authorization failures or message for token/session middleware failures.
           content:
             application/json:
               schema:
                 type: object
-                required: [code, error]
+                required: [code]
                 properties:
                   code:
                     type: string
-                    example: AUTH_REQUIRED
+                    enum: [AUTH_REQUIRED, UNAUTHENTICATED]
                   error:
+                    type: string
+                  message:
                     type: string
         '500':
           description: Internal server error
@@ -366,16 +372,7 @@ paths:
                           type: string
                           description: Count as returned by the database
         '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '401':
-          description: Unauthorized
+          description: Invalid or malformed request
           content:
             application/json:
               schema:
@@ -384,8 +381,34 @@ paths:
                 properties:
                   code:
                     type: string
-                    example: AUTH_REQUIRED
                   error:
+                    type: string
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, message]
+                      properties:
+                        path:
+                          type: string
+                        message:
+                          type: string
+                  message:
+                    type: string
+        '401':
+          description: Unauthorized. Detail is returned as error for route-level authorization failures or message for token/session middleware failures.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code]
+                properties:
+                  code:
+                    type: string
+                    enum: [AUTH_REQUIRED, UNAUTHENTICATED]
+                  error:
+                    type: string
+                  message:
                     type: string
         '500':
           description: Internal server error
