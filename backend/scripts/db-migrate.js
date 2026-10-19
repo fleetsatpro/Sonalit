@@ -187,7 +187,10 @@ async function run() {
   }
 
   const client = await pool.connect();
+  let migrationLockAcquired = false;
   try {
+    await client.query("SELECT pg_advisory_lock(hashtext('sonalit_schema_migrations'))");
+    migrationLockAcquired = true;
     // The production schema gate certifies `public`. Make the migration
     // runner use that exact schema instead of inheriting a mutable DB role
     // search_path, which can silently create repaired objects elsewhere.
@@ -225,6 +228,13 @@ async function run() {
     if (ran === 0 && reconciled === 0) console.log('[db-migrate] Nothing to apply — schema up to date');
     else console.log(`[db-migrate] Applied ${ran} migration(s); reconciled ${reconciled} reconciliation(s)`);
   } finally {
+    if (migrationLockAcquired) {
+      try {
+        await client.query("SELECT pg_advisory_unlock(hashtext('sonalit_schema_migrations'))");
+      } catch (unlockErr) {
+        console.error('[db-migrate] failed to release migration advisory lock:', unlockErr.message);
+      }
+    }
     client.release();
     await pool.end();
   }
