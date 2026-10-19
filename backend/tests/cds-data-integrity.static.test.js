@@ -23,6 +23,8 @@ describe('CDS data-integrity regression guards', () => {
     expect(route).toContain('req.dbTx(async () =>');
     expect(route).toContain('SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('FOR UPDATE OF bc');
+    expect(route).toContain('Container number is required before clamping');
+    expect(route).toContain('Electronic lock is already assigned or active');
     expect(route).toContain('FOR UPDATE');
     expect(route).toContain('await appendCustodyEvent(req');
     expect(route.indexOf('await appendCustodyEvent(req')).toBeLessThan(route.indexOf('return { bc: bc.rows[0]'));
@@ -38,6 +40,9 @@ describe('CDS data-integrity regression guards', () => {
     expect(route).toContain('SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('FOR UPDATE OF bc');
     expect(route).toContain('SELECT id, lock_id, container_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
+    expect(route).toContain('SELECT id, status, container_id FROM cds_electronic_locks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
+    expect(route).toContain('Associated e-lock is not active');
+    expect(route).toContain('E-lock/container association is inconsistent');
     expect(route).toContain('lockId,');
     expect(route).toContain('Cannot unclamp a container in state');
     expect(route).toContain('await appendCustodyEvent(req');

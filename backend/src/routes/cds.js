@@ -1510,14 +1510,20 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     if (bc.rows[0].status !== 'pending' && bc.rows[0].status !== 'assigned') {
       return { response: { status: 409, body: { error: `Container already ${bc.rows[0].status}` } } };
     }
+    if (!String(bc.rows[0].container_number ?? '').trim()) {
+      return { response: { status: 422, body: { error: 'Container number is required before clamping' } } };
+    }
 
     const existingLock = await req.db(
       `SELECT id, status, container_id FROM cds_electronic_locks
         WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
       [lock_serial.trim()]
     );
-    if (existingLock.rows.length && existingLock.rows[0].container_id) {
-      return { response: { status: 409, body: { error: 'Electronic lock is already assigned to a container' } } };
+    if (existingLock.rows.length && (
+      existingLock.rows[0].container_id
+      || ['assigned', 'installed', 'locked'].includes(existingLock.rows[0].status)
+    )) {
+      return { response: { status: 409, body: { error: 'Electronic lock is already assigned or active' } } };
     }
 
   // The yard form records a company, not an individual contact. Missing values
@@ -1781,20 +1787,34 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     if (!['in_transit', 'at_port'].includes(bc.rows[0].status)) {
       return { response: { status: 409, body: { error: `Cannot unclamp a container in state ${bc.rows[0].status}` } } };
     }
-    let unclampTrip = null;
-    if (bc.rows[0].trip_id) {
-      const tripResult = await req.db(
-        'SELECT id, lock_id, container_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
-        [bc.rows[0].trip_id]
-      );
-      if (!tripResult.rows.length) {
-        return { response: { status: 409, body: { error: 'Associated trip is missing; reconcile the booking before unclamping' } } };
-      }
-      unclampTrip = tripResult.rows[0];
+    if (!bc.rows[0].trip_id) {
+      return { response: { status: 409, body: { error: 'Associated trip is missing; reconcile the booking before unclamping' } } };
     }
-    const lockId = unclampTrip?.lock_id ?? null;
-    if (lockId) {
-      await req.db('SELECT id FROM cds_electronic_locks WHERE id=$1 FOR UPDATE', [lockId]);
+    const tripResult = await req.db(
+      'SELECT id, lock_id, container_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
+      [bc.rows[0].trip_id]
+    );
+    if (!tripResult.rows.length) {
+      return { response: { status: 409, body: { error: 'Associated trip is missing; reconcile the booking before unclamping' } } };
+    }
+    const unclampTrip = tripResult.rows[0];
+    if (!unclampTrip.lock_id) {
+      return { response: { status: 409, body: { error: 'Associated e-lock is missing; reconcile the booking before unclamping' } } };
+    }
+    const lockId = unclampTrip.lock_id;
+    const lockResult = await req.db(
+      'SELECT id, status, container_id FROM cds_electronic_locks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
+      [lockId]
+    );
+    if (!lockResult.rows.length) {
+      return { response: { status: 409, body: { error: 'Associated e-lock record is missing; reconcile the booking before unclamping' } } };
+    }
+    const lockedLock = lockResult.rows[0];
+    if (!['assigned', 'installed'].includes(lockedLock.status)) {
+      return { response: { status: 409, body: { error: 'Associated e-lock is not active; reconcile before unclamping' } } };
+    }
+    if (!unclampTrip.container_id || lockedLock.container_id !== unclampTrip.container_id) {
+      return { response: { status: 409, body: { error: 'E-lock/container association is inconsistent; reconcile before unclamping' } } };
     }
 
   // Seal verification. A seal is only worth anything if somebody compares it at
