@@ -41,7 +41,7 @@ export interface HttpLikeError {
   status?: number | undefined;
   code?: string | undefined;
   message?: string | undefined;
-  body?: { error?: string; message?: string; code?: string } | undefined;
+  body?: { error?: string; message?: string; code?: string; retry_same_key?: boolean } | undefined;
 }
 
 function bodyMessage(e: HttpLikeError, fallback: string): string {
