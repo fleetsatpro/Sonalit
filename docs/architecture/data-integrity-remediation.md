@@ -13,12 +13,14 @@
 
 ### CDS lifecycle
 
-- Booking clamp/unclamp and legacy trip-level clamp/unclamp perform their core state writes inside tenant-scoped transactions.
-- Booking-container and electronic-lock rows are locked before lifecycle validation and mutation to prevent overlapping submissions from assigning the same resource twice.
+- Booking-container clamp/unclamp are the authoritative lifecycle mutations; they run inside tenant-scoped transactions and lock booking, container, trip and e-lock rows before changing state.
+- Legacy trip-level clamp/unclamp now fail closed and return the canonical booking-container route instead of mutating trip/lock rows without manifest and custody updates.
+- The control-room trip projection exposes a unique booking-container link; the port UI blocks release when the link is missing or ambiguous.
+- The trip-to-booking-container link has a partial index for bounded lookup as the trip history grows.
 - Custody evidence, audit rows, and core lifecycle writes commit or roll back together. A failed custody append cannot be reported as a successful handoff.
 - Realtime publication and secondary tracking termination happen after the database transaction.
 - Driver license verification is represented separately from driver presence. Missing license data remains NULL until verified. The migration clears only known `PENDING` license and paired transporter placeholders, and preserves all other license records.
-- Manually created lock records use provider `unverified`; the record does not falsely imply an active SecuriSat integration.
+- A manually entered lock has no provider value unless the vendor is independently known. The provider column is nullable and has no fabricated default; the UI/workflow must not infer SecuriSat integration from a clamp record.
 
 ### HTTP idempotency
 
@@ -32,8 +34,8 @@
 1. Pass backend unit and integration suites, web typecheck/build, telemetry typecheck and unit tests, schema/invariant tests, and the complete CI workflow.
 2. On staging or a restored database, confirm that the `gps_fixes` identity index can be created. If duplicates exist, inspect and classify them before remediation; do not delete raw GPS evidence to satisfy a constraint.
 3. Exercise NATS downtime, process restart, retry and recovery. Confirm every acknowledged GPS fix remains in `gps_fixes` and pending outbox rows eventually publish. Consumers must be tested for duplicate delivery.
-4. Inject failure after each clamp/unclamp write. Confirm that no partial trip/lock/manifest/custody/alert/audit state commits and no success response is produced without custody proof.
-5. Submit concurrent clamp requests for one booking-container and concurrent requests for one e-lock. Only one request may allocate the resource.
+4. Inject failure after each booking clamp/unclamp write. Confirm that no partial trip/lock/manifest/custody/alert/audit state commits and no success response is produced without custody proof.
+5. Submit concurrent clamp requests for one booking-container and concurrent requests for one e-lock. Only one request may allocate the resource. Exercise legacy trip routes and confirm they return an explicit canonical-route conflict without changing any row.
 6. Verify that new drivers with unknown credentials remain visibly `unverified`, and existing non-placeholder license records remain unchanged.
 7. Test tenant isolation with the runtime database role and request path. A privileged database connection alone is not proof of row-level security.
 

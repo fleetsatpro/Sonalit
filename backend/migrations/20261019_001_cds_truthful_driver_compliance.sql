@@ -50,3 +50,10 @@ UPDATE public.cds_transporters
 ALTER TABLE public.cds_electronic_locks
   ALTER COLUMN provider DROP NOT NULL,
   ALTER COLUMN provider DROP DEFAULT;
+
+
+-- The control room resolves each trip to its authoritative booking-container row.
+-- This partial index keeps that lookup bounded as the history grows.
+CREATE INDEX IF NOT EXISTS idx_cds_booking_containers_trip
+  ON public.cds_booking_containers(trip_id)
+  WHERE trip_id IS NOT NULL AND deleted_at IS NULL;

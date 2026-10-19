@@ -53,16 +53,33 @@ describe('CDS data-integrity regression guards', () => {
     expect(route.indexOf('T.onContainerDelivered')).toBeGreaterThan(route.indexOf('if (operation.response)'));
   });
 
-  test('legacy trip clamp/unclamp also use transaction and row locks', () => {
+  test('legacy trip clamp/unclamp fail closed and identify the canonical booking-container route', () => {
     const clamp = routeBetween(source, "router.post('/trips/:id/clamp'", "router.post('/trips/:id/unclamp'");
-    const unclamp = routeBetween(source, "router.post('/trips/:id/unclamp'", '// ══════════════════════════════════════════════════════════════\n// 9. Bookings');
-    expect(clamp).toContain('req.dbTx(async () =>');
-    expect(clamp).toContain('pg_advisory_xact_lock(hashtext($1))');
-    expect(clamp).toContain('upper(serial) = upper($1)');
-    expect(clamp).toContain('FOR UPDATE');
-    expect(unclamp).toContain('req.dbTx(async () =>');
-    expect(unclamp).toContain('FOR UPDATE');
-    expect(source).not.toContain("'SecuriSat'");
+    const unclamp = routeBetween(source, "router.post('/trips/:id/unclamp'", '// ══════════════════════════════════════════════════════════════\\n// 9. Bookings');
+    for (const route of [clamp, unclamp]) {
+      expect(route).toContain('requireIdempotencyKey');
+      expect(route).toContain('booking_container_link_required');
+      expect(route).toContain('canonical_route_required');
+      expect(route).toContain('SELECT id, booking_id FROM cds_booking_containers');
+      expect(route).not.toContain('UPDATE cds_trips');
+      expect(route).not.toContain('UPDATE cds_electronic_locks');
+      expect(route).not.toContain('INSERT INTO cds_audit_logs');
+    }
+
+    const tripProjection = source.slice(source.indexOf('const TRIP_JOINS'), source.indexOf("router.get('/trips'"));
+    expect(tripProjection).toContain('booking_container_id');
+    expect(tripProjection).toContain('booking_container_link_count');
+  });
+
+  test('port UI uses the canonical endpoint and blocks missing or ambiguous links', () => {
+    const pagePath = path.join(__dirname, '../../apps/web/src/pages/cds/pages.tsx');
+    const hookPath = path.join(__dirname, '../../apps/web/src/pages/cds/hooks.ts');
+    const page = fs.readFileSync(pagePath, 'utf8');
+    const hook = fs.readFileSync(hookPath, 'utf8');
+    expect(page).toContain("r['booking_container_link_count']");
+    expect(page).toContain('Unclamp blocked');
+    expect(hook).toContain('/bookings/\${booking_id}/containers/\${booking_container_id}/unclamp');
+    expect(hook).toContain('Number(booking_container_link_count) !== 1');
   });
 
   test('schema preserves missing compliance data rather than manufacturing facts', () => {
