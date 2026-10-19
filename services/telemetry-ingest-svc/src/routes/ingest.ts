@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { deviceAuth } from '../middleware/deviceAuth.js';
 import { withOrgContext } from '../db.js';
-import { withOrgContext } from '../db.js';
 
 const GpsFixSchema = z.object({
   seq_no: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
