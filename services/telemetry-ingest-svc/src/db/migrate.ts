@@ -87,6 +87,19 @@ export async function migrate(): Promise<void> {
       WITH NO DATA;
     `);
 
+    // Existing installations retain an IF NOT EXISTS continuous aggregate definition.
+    // Detect (but do not destructively rebuild) a legacy 30-second distance assumption:
+    // its materialized state may have consumers outside this repository.
+    const hourlyAggregateDefinition = await client.query<{ definition: string | null }>(
+      "SELECT pg_get_viewdef('public.gps_fixes_1h'::regclass, true) AS definition",
+    );
+    if ((hourlyAggregateDefinition.rows[0]?.definition ?? '').includes('0.00833')) {
+      process.stderr.write(
+        '[telemetry-migrate] WARNING: existing gps_fixes_1h still contains the legacy fixed-cadence distance formula. ' +
+        'The analytics API no longer reads this distance field; schedule a controlled aggregate rebuild before downstream consumers use it.\\n',
+      );
+    }
+
     await client.query(`
       ALTER TABLE gps_fixes ENABLE ROW LEVEL SECURITY;
       ALTER TABLE gps_fixes FORCE ROW LEVEL SECURITY;

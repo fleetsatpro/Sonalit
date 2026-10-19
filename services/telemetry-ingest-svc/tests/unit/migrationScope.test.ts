@@ -26,8 +26,10 @@ describe('telemetry tenant isolation schema', () => {
   });
 
   it('does not estimate distance using a guessed fixed GPS sampling interval', () => {
-    expect(migration).not.toContain('0.00833');
+    expect(migration).not.toContain('speed_kmh * 0.00833');
     expect(migration).toContain('NULL::double precision AS distance_km');
+    expect(migration).toContain("pg_get_viewdef('public.gps_fixes_1h'::regclass, true)");
+    expect(migration).toContain('schedule a controlled aggregate rebuild');
   });
 
   it('uses a stable, partition-compatible identity for replay protection', () => {
