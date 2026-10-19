@@ -91,7 +91,6 @@ describe('requireIdempotencyKey middleware', () => {
   });
 
   test('fails closed when req.user has no tenant identity', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
     const req = { headers: { 'x-idempotency-key': 'idem-key-3' } };
     const res = { status: jest.fn().mockReturnThis(), statusCode: 200, json: jest.fn() };
     const next = jest.fn();
@@ -117,7 +116,9 @@ describe('requireIdempotencyKey middleware', () => {
   });
 
   test('persists the final response before invoking the HTTP response sender', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ key: 'idem-key-save' }] });
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ key: 'idem-key-save' }] })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
     const req = { headers: { 'x-idempotency-key': 'idem-key-save' }, user: { org_id: 'org-1' } };
     const originalJson = jest.fn().mockReturnValue('sent');
     const res = { statusCode: 201, json: originalJson };
