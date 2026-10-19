@@ -143,6 +143,11 @@ describe('CDS data-integrity regression guards', () => {
     expect(migration).toContain('license_verification_source');
     expect(migration).toContain('ALTER COLUMN provider DROP NOT NULL');
     expect(migration).toContain('ALTER COLUMN provider DROP DEFAULT');
+    expect(migration).toContain('ALTER COLUMN contact_person DROP NOT NULL');
+    expect(migration).toContain('ALTER COLUMN phone DROP NOT NULL');
+    expect(migration).toContain('UPDATE public.cds_customers');
+    expect(migration).toContain("phone = '-'");
+    expect(source).toContain('[name, body.contact_person || null, body.phone || null, genCode(\'CU\'), req.user.org_id]');
     expect(migration).toContain('idx_cds_booking_containers_trip');
   });
 
