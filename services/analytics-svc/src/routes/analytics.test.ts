@@ -134,6 +134,13 @@ describe('analytics data integrity', () => {
     expect(body.safety_score).toBeNull();
     expect(body.active_incidents).toBe(3);
     expect(body.weekly_trends).toHaveLength(1);
+    const fleetQueryCall = mocks.query.mock.calls.find(([sql]) => String(sql).includes('COUNT(DISTINCT v.id)::text AS total_vehicles'));
+    expect(fleetQueryCall?.[1]?.[1]).toEqual([
+      'created', 'vehicle_assigned', 'driver_assigned', 'awaiting_lock', 'locked',
+      'dispatched', 'checkpoint', 'delayed', 'at_port',
+    ]);
+    expect(body.metric_definitions.fleet_utilization_pct).toContain('awaiting-lock');
+
     expect(body.metric_status).toMatchObject({
       fleet_utilization_pct: 'measured',
       on_time_delivery_pct: 'measured',

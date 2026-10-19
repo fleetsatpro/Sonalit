@@ -59,7 +59,7 @@ type IncidentStats = {
 
 const DISTANCE_MAX_GAP_SECONDS = 300;
 const DISTANCE_MAX_PLAUSIBLE_SPEED_KMH = 180;
-const ACTIVE_TRIP_STATUSES = ['locked', 'dispatched', 'checkpoint', 'delayed', 'at_port'];
+const ACTIVE_TRIP_STATUSES = ['created', 'vehicle_assigned', 'driver_assigned', 'awaiting_lock', 'locked', 'dispatched', 'checkpoint', 'delayed', 'at_port'];
 
 export const analyticsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
@@ -261,7 +261,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
         active_incidents: incidentStats ? 'measured' : 'unavailable',
       },
       metric_definitions: {
-        fleet_utilization_pct: 'Current snapshot: distinct registered CDS vehicles assigned to trips in locked, dispatched, checkpoint, delayed, or at-port states divided by non-deleted registered CDS vehicles.',
+        fleet_utilization_pct: 'Current snapshot: distinct registered CDS vehicles assigned to non-terminal CDS trips in created, vehicle-assigned, driver-assigned, awaiting-lock, locked, dispatched, checkpoint, delayed, or at-port states divided by non-deleted registered CDS vehicles.',
         on_time_delivery_pct: 'Of CDS trips delivered in the last 8 weeks with a recorded ETA, the percentage delivered at or before that recorded ETA.',
         safety_score: 'Unavailable until an approved, source-backed safety-scoring rule and evidence pipeline are configured.',
         active_incidents: 'Current tenant-scoped incident count excluding resolved, closed, and deleted records.',
