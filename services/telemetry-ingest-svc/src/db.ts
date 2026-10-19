@@ -55,3 +55,12 @@ export async function globalQuery<T extends object = object>(
   const result = await pool.query<T>(text, values);
   return result.rows;
 }
+
+export async function isDatabaseReady(): Promise<boolean> {
+  try {
+    await pool.query('SELECT 1');
+    return true;
+  } catch {
+    return false;
+  }
+}
