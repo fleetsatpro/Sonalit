@@ -146,12 +146,12 @@ export interface ElectronicLock {
 export interface Driver {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
   email: string | null;
-  licenseNumber: string;
-  licenseExpiry: string;
-  transporterId: string;
-  transporterName: string;
+  licenseNumber: string | null;
+  licenseExpiry: string | null;
+  transporterId: string | null;
+  transporterName: string | null;
   status: DriverStatus;
   currentVehicleId: string | null;
   currentVehicleReg: string | null;
@@ -192,9 +192,9 @@ export interface Customer {
   code: string;
   contact_person: string | null;
   phone: string | null;
-  email: string;
-  address: string;
-  city: string;
+  email: string | null;
+  address: string | null;
+  city: string | null;
   country: string;
   total_shipments: number;
   active_shipments: number;
@@ -209,9 +209,9 @@ export interface Transporter {
   id: string;
   company_name: string;
   code: string;
-  contact_person: string;
-  phone: string;
-  email: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
   total_trucks: number;
   active_trips: number;
   on_time_rate: number | null;
