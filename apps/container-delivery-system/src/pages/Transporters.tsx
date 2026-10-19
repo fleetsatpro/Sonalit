@@ -37,25 +37,26 @@ export default function Transporters() {
           <table className="w-full border-collapse text-xs-tight">
             <thead>
               <tr>
-                {['Transporter', 'Contact', 'Active Trucks', 'On-Time Rate', 'Avg Clamp Time', 'Trips (30d)', 'Rating'].map((h) => (
+                {['Transporter', 'Contact', 'Registered Trucks', 'On-Time Rate', 'Avg Clamp Time', 'Total Trips', 'Rating'].map((h) => (
                   <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {transporters.map((t, i) => {
-                const onTime = Number(t['on_time'] ?? 0);
+                const onTimeRaw = t['on_time_rate'];
+                const onTime = onTimeRaw == null || !Number.isFinite(Number(onTimeRaw)) ? null : Number(onTimeRaw);
                 return (
-                  <tr key={s(t['name'] ?? t['id'] ?? i)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
-                    <td className="px-3.5 py-3 text-text-0 font-semibold">{s(t['name'])}</td>
-                    <td className="px-3.5 py-3 text-text-0">{s(t['contact'])}<div className="text-2xs text-text-2 mt-0.5">{s(t['phone'])}</div></td>
-                    <td className="px-3.5 py-3 font-mono text-text-0">{s(t['trucks'])}</td>
+                  <tr key={s(t['company_name'] ?? t['id'] ?? i)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
+                    <td className="px-3.5 py-3 text-text-0 font-semibold">{s(t['company_name'])}</td>
+                    <td className="px-3.5 py-3 text-text-0">{s(t['contact_person'])}<div className="text-2xs text-text-2 mt-0.5">{s(t['phone'])}</div></td>
+                    <td className="px-3.5 py-3 font-mono text-text-0">{s(t['total_trucks'])}</td>
                     <td className="px-3.5 py-3">
-                      <ProgressBar value={onTime} width="w-[70px]" color={onTime >= 90 ? 'bg-cds-teal' : onTime >= 80 ? 'bg-cds-amber' : 'bg-cds-red'} showLabel />
+                      {onTime === null ? <span className="text-text-2">Not measured</span> : <ProgressBar value={onTime} width="w-[70px]" color={onTime >= 90 ? 'bg-cds-teal' : onTime >= 80 ? 'bg-cds-amber' : 'bg-cds-red'} showLabel />}
                     </td>
-                    <td className="px-3.5 py-3 font-mono text-text-0">{s(t['avg_clamp'])}</td>
-                    <td className="px-3.5 py-3 font-mono text-text-0">{s(t['trips'])}</td>
-                    <td className="px-3.5 py-3 font-mono text-text-0">{s(t['rating'])}</td>
+                    <td className="px-3.5 py-3 font-mono text-text-0">{(t['avg_clamp_time'] == null ? 'Not measured' : s(t['avg_clamp_time']))}</td>
+                    <td className="px-3.5 py-3 font-mono text-text-0">{s(t['total_trips'])}</td>
+                    <td className="px-3.5 py-3 font-mono text-text-0">{{t['rating'] == null ? 'Not rated' : s(t['rating'])}</td>
                   </tr>
                 );
               })}

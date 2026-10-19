@@ -128,7 +128,7 @@ export interface Driver {
   currentVehicleId: string | null;
   currentVehicleReg: string | null;
   totalTrips: number;
-  rating: number;
+  rating: number | null;
   photo: string | null;
   createdAt: string;
   updatedAt: string;
@@ -170,8 +170,8 @@ export interface Customer {
   country: string;
   total_shipments: number;
   active_shipments: number;
-  sla_compliance: number;
-  rating: number;
+  sla_compliance: number | null;
+  rating: number | null;
   status: 'active' | 'inactive' | 'suspended';
   created_at: string;
   updated_at: string;
@@ -186,10 +186,10 @@ export interface Transporter {
   email: string;
   total_trucks: number;
   active_trips: number;
-  on_time_rate: number;
-  avg_clamp_time: string;
+  on_time_rate: number | null;
+  avg_clamp_time: string | null;
   total_trips: number;
-  rating: number;
+  rating: number | null;
   status: 'active' | 'inactive' | 'suspended';
   created_at: string;
   updated_at: string;

@@ -46,10 +46,10 @@ export default function Drivers() {
               {drivers.map((d, i) => (
                 <tr key={s(d['id'] ?? d['name'] ?? i)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
                   <td className="px-3.5 py-3 text-text-0">{s(d['name'])}<div className="text-2xs text-text-2 mt-0.5">{s(d['phone'])}</div></td>
-                  <td className="px-3.5 py-3 text-text-0">{s(d['transporter'])}</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{s(d['truck'])}</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{s(d['trips'])}</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{s(d['rating'])}</td>
+                  <td className="px-3.5 py-3 text-text-0">{s(d['transporter_name'])}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{s(d['current_vehicle_registration'])}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{s(d['total_trips'])}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{{d['rating'] == null ? 'Not rated' : s(d['rating'])}</td>
                   <td className="px-3.5 py-3">{s(d['status']) === 'active' ? <Badge variant="ok">ACTIVE</Badge> : <Badge variant="neutral">IDLE</Badge>}</td>
                 </tr>
               ))}

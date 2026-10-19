@@ -715,7 +715,12 @@ router.patch('/vehicles/:id', asyncHandler(async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 router.get('/drivers', asyncHandler(async (req, res) => {
-  await listRows(req, res, 'cds_drivers', { searchCols: ['t.name', 't.phone', 't.license_number'] });
+  await listRows(req, res, 'cds_drivers', {
+    joins: `LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.deleted_at IS NULL
+      LEFT JOIN cds_vehicles ve ON ve.id=t.current_vehicle_id AND ve.deleted_at IS NULL`,
+    selectCols: 't.*, tr.company_name AS transporter_name, ve.registration AS current_vehicle_registration',
+    searchCols: ['t.name', 't.phone', 't.license_number'],
+  });
 }));
 router.get('/drivers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_drivers'); }));
 router.post('/drivers', asyncHandler(async (req, res) => {

@@ -5,6 +5,7 @@ const path = require('path');
 
 const routePath = path.join(__dirname, '../src/routes/cds.js');
 const migrationPath = path.join(__dirname, '../migrations/20261019_001_cds_truthful_driver_compliance.sql');
+const metricsMigrationPath = path.join(__dirname, '../migrations/20261019_003_cds_performance_metrics_truthful.sql');
 
 function routeBetween(source, start, end) {
   const a = source.indexOf(start);
@@ -39,6 +40,40 @@ describe('CDS data-integrity regression guards', () => {
     expect(route.indexOf('await appendCustodyEvent(req')).toBeLessThan(route.indexOf('return { bc: bc.rows[0]'));
     expect(route).not.toContain("'PENDING'");
     expect(route).not.toContain("'SecuriSat'");
+  });
+
+  test('CDS list APIs expose fields required by the legacy container-delivery client', () => {
+    const drivers = routeBetween(source, "router.get('/drivers'", "router.get('/drivers/:id'");
+    expect(drivers).toContain('LEFT JOIN cds_transporters tr');
+    expect(drivers).toContain('LEFT JOIN cds_vehicles ve');
+    expect(drivers).toContain('tr.company_name AS transporter_name');
+    expect(drivers).toContain('ve.registration AS current_vehicle_registration');
+
+    const legacyDir = path.join(__dirname, '../../apps/container-delivery-system/src/pages');
+    const driverPage = fs.readFileSync(path.join(legacyDir, 'Drivers.tsx'), 'utf8');
+    const customerPage = fs.readFileSync(path.join(legacyDir, 'Customers.tsx'), 'utf8');
+    const transporterPage = fs.readFileSync(path.join(legacyDir, 'Transporters.tsx'), 'utf8');
+    expect(driverPage).toContain("d['transporter_name']");
+    expect(driverPage).toContain("d['current_vehicle_registration']");
+    expect(driverPage).toContain("d['total_trips']");
+    expect(customerPage).toContain("c['company_name']");
+    expect(customerPage).toContain("c['sla_compliance']");
+    expect(transporterPage).toContain("t['on_time_rate']");
+    expect(transporterPage).toContain("t['avg_clamp_time']");
+    expect(transporterPage).toContain("t['total_trips']");
+  });
+
+  test('unverified default-shaped performance metrics are preserved for reconciliation, not shown as live data', () => {
+    const migration = fs.readFileSync(metricsMigrationPath, 'utf8');
+    expect(migration).toContain('cds_metric_reconciliation_archive');
+    expect(migration).toContain('ALTER COLUMN rating DROP DEFAULT');
+    expect(migration).toContain('ALTER COLUMN on_time_rate DROP DEFAULT');
+    expect(migration).toContain('ALTER COLUMN sla_compliance DROP DEFAULT');
+    expect(migration).toContain('UPDATE public.cds_drivers SET rating = NULL');
+    expect(migration).toContain('UPDATE public.cds_transporters SET on_time_rate = NULL');
+    expect(migration).toContain('ALTER TABLE public.cds_metric_reconciliation_archive ENABLE ROW LEVEL SECURITY');
+    const report = fs.readFileSync(path.join(__dirname, '../src/routes/reports.js'), 'utf8');
+    expect(report).toContain('row.total_completed > 0 ? Math.round((row.on_time / row.total_completed) * 100) : null');
   });
 
   test('booking unclamp commits lock, manifest, custody, tamper alert and audit together', () => {
