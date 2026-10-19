@@ -2,14 +2,13 @@
 
 ## Audit Log Archive — Restore Procedure
 
-Archived audit log rows are written as GZIP-compressed JSONL to Cloudflare R2 at:
+When enabled, the GDPR retention route archives eligible `guardian_audit_log` rows as GZIP-compressed JSONL objects in Cloudflare R2 under:
 
 ```
-audit-log-archive/YYYY-MM-DD.jsonl.gz
+audit-log-archive/<org_id>/YYYY-MM-DD.jsonl.gz
 ```
 
-Each file is created when `POST /api/v1/gdpr/run-retention` runs with
-`guardian_config.audit_log_archive_enabled = 1`.
+The archive is produced when `POST /api/v1/gdpr/run-retention` runs with `guardian_config.audit_log_archive_enabled = 1`. Verify that the feature flag, retention eligibility and R2 configuration are correct before using it.
 
 ### Enable archiving
 
@@ -29,111 +28,80 @@ curl -X PUT /api/v1/guardian/admin/config \
 ### List archive files (AWS CLI / rclone / wrangler)
 
 ```bash
-# Using AWS CLI pointed at R2
-aws s3 ls s3://$R2_BUCKET/audit-log-archive/ \
-  --endpoint-url https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com
+aws s3 ls "s3://$R2_BUCKET/audit-log-archive/<org_id>/" \
+  --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
 ```
 
 ### Download and inspect an archive
 
 ```bash
-# Download
-aws s3 cp s3://$R2_BUCKET/audit-log-archive/2026-01-15.jsonl.gz /tmp/audit.jsonl.gz \
-  --endpoint-url https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com
+aws s3 cp "s3://$R2_BUCKET/audit-log-archive/<org_id>/2026-01-15.jsonl.gz" /tmp/audit.jsonl.gz \
+  --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
 
-# Decompress and inspect
 gunzip -c /tmp/audit.jsonl.gz | head -20
 ```
 
 ### Restore rows to the database
 
-```bash
-gunzip -c /tmp/audit.jsonl.gz | while IFS= read -r line; do
-  psql "$DATABASE_URL" -c "
-    INSERT INTO guardian_audit_log
-      (id, actor_type, actor_id, action, target_type, target_id, payload, ip_address, created_at)
-    SELECT
-      (v->>'id')::bigint,
-      v->>'actor_type', (v->>'actor_id')::uuid,
-      v->>'action', v->>'target_type', (v->>'target_id')::uuid,
-      (v->>'payload')::jsonb, v->>'ip_address',
-      (v->>'created_at')::timestamptz
-    FROM (SELECT '\''$line'\''::jsonb AS v) sub
-    ON CONFLICT (id) DO NOTHING;
-  "
-done
-```
+Restore only to a recovery/staging database first. Validate the object, organization scope, row count and schema before importing. Do not execute per-row SQL interpolation with untrusted archive content in a production shell. Prefer decompression into a file, load with a parameter-safe staging process, reconcile counts, then insert with `ON CONFLICT DO NOTHING` if the target restore plan requires it.
 
-Or bulk-restore using a temporary table:
+The archive key includes the tenant ID, so verify the tenant scope before restoring. The existing archive format is a row snapshot; it is not a full PostgreSQL backup or WAL/PITR replacement.
+
+## Partition maintenance — understand before running
+
+The current scheduler in `backend/src/app.js` runs:
+- **Hourly:** `ensure_future_partitions(..., 3)` for `gps_logs`, `audit_logs` and `outbox`.
+- **Daily at 03:00 UTC:** calls `drop_old_partitions(table_name, retain_months)` for rows in `partition_retention`.
+
+Despite the code's log label saying "archival", the `archiveOldPartitions()` function shown in `app.js` does **not itself export the partition to R2 before dropping it**. Treat the current function as destructive partition cleanup, not a verified archival pipeline. Do not lower retention values or manually invoke partition deletion until the retention intent, table definitions and an independently verified archive/backup have been checked.
+
+### Inspect current partition layout
+
+Run read-only on a healthy database:
 
 ```sql
--- 1. Copy the decompressed file to the DB server (or use \copy from psql)
-CREATE TEMP TABLE audit_restore (row jsonb);
-\copy audit_restore FROM PROGRAM 'gunzip -c /tmp/audit.jsonl.gz' CSV QUOTE e'\x01' DELIMITER e'\x02';
-
--- 2. Insert, skipping duplicates
-INSERT INTO guardian_audit_log
-  (id, actor_type, actor_id, action, target_type, target_id, payload, ip_address, created_at)
-SELECT
-  (row->>'id')::bigint,
-  row->>'actor_type', (row->>'actor_id')::uuid,
-  row->>'action', row->>'target_type', (row->>'target_id')::uuid,
-  (row->>'payload')::jsonb, row->>'ip_address',
-  (row->>'created_at')::timestamptz
-FROM audit_restore
-ON CONFLICT (id) DO NOTHING;
-```
-
----
-
-## Partition Roller
-
-Runs daily at **02:00 UTC** via node-cron in `app.js` and as a startup task.
-
-Creates the next 3 months of partitions for `device_locations` and `device_health`,
-drops partitions older than `guardian_config.gdpr_retention_days_location` (default 90 days).
-
-**Manual run:**
-
-```bash
-cd backend && node scripts/partition-roller.js
-```
-
-**Check extant partitions:**
-
-```sql
-SELECT c.relname AS partition, p.relname AS parent
+SELECT pn.nspname AS schema_name,
+       p.relname AS parent_table,
+       c.relname AS partition_name,
+       pg_get_expr(c.relpartbound, c.oid) AS partition_bound,
+       pg_size_pretty(pg_total_relation_size(c.oid)) AS partition_size
 FROM pg_inherits i
 JOIN pg_class p ON p.oid = i.inhparent
+JOIN pg_namespace pn ON pn.oid = p.relnamespace
 JOIN pg_class c ON c.oid = i.inhrelid
-WHERE p.relname IN ('device_locations', 'device_health')
+WHERE pn.nspname = 'public'
 ORDER BY p.relname, c.relname;
 ```
 
----
+Inspect retention settings (read-only):
 
-## Base64 Photo Backfill
-
-Runs daily at **03:00 UTC** via node-cron. Migrates `field_reports` rows whose
-`photo_url` is a `data:` URI (created in the last 7 days) to R2 and replaces
-the column with the HTTPS public URL.
-
-Requires R2 environment variables: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET`.
-
-**Manual run:**
-
-```bash
-cd backend && node scripts/backfill-base64-photos.js
+```sql
+SELECT table_name, retain_months
+FROM partition_retention
+ORDER BY table_name;
 ```
 
----
+An archive-before-delete workflow must upload, verify count/range/checksum, write a durable archive manifest, validate a test restore, and only then release eligible source data. Retention must continue to respect the applicable data protection policy.
+
+## Base64 Photo Backfill — manual, limited scope
+
+The scheduled backfill was removed from `backend/src/app.js`. The existing script is a **manual backfill utility**, not an active daily cron. Run it from the repository/backend environment only after confirming the R2 target and having a database backup:
+
+```bash
+cd backend
+node scripts/backfill-base64-photos.js
+```
+
+Important limitations in the current script:
+- It scans `field_reports.photo_url` and `convoy_truck_photos.photo_url` data URIs created in the preceding seven days, not all historical rows.
+- Its existence does not establish that current production R2 credentials or bucket routes are configured.
+- It does not replace a full media inventory, an idempotent multi-batch migration manifest or a post-migration reconciliation.
+
+For a full historical storage migration, use the read-only inventory first and implement the bounded, resumable, checksummed process described in `docs/architecture/storage-tiering-b-and-c.md`. Do not delete original inline content before each object is verified and restore checks pass.
 
 ## DMS (Dead-Man Switch) Ceiling
 
-Maximum DMS interval enforced server-side via `guardian_config.dms_max_interval_minutes` (default 120).
-SettingsActivity caps the spinner at this value.
-
-**Change ceiling:**
+Maximum DMS interval is enforced server-side via `guardian_config.dms_max_interval_minutes` (default 120). The exact current setting should be checked before changing it.
 
 ```sql
 UPDATE guardian_config SET value_int = 120 WHERE key = 'dms_max_interval_minutes';
