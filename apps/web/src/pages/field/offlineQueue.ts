@@ -207,6 +207,13 @@ function isRetryable(err: AxiosError): boolean {
   const status = err.response?.status;
   if (status == null) return true;
   if (status === 401 || status === 408 || status === 429) return true;
+  if (status === 409) {
+    // A concurrent request holding the same idempotency key is not a business
+    // conflict. Keep the queued action and retry the SAME key after it settles.
+    const body = err.response?.data as { error?: string } | undefined;
+    return body?.error === 'idempotency_in_progress'
+      || body?.error === 'idempotency_state_unavailable';
+  }
   return status >= 500;
 }
 
