@@ -85,11 +85,16 @@ function requireIdempotencyKey(req, res, next) {
     if (!cached.rows.length) {
       // Fail closed if the reservation/result is unexpectedly absent. Do not
       // execute an untracked mutation when the idempotency state is ambiguous.
-      return res.status(409).json({ error: 'idempotency_state_unavailable', retry_same_key: true });
+      return res.status(409).json({
+        error: 'idempotency_state_unavailable',
+        retry_same_key: true,
+        message: 'The operation outcome is not yet available. Retry with the same key.',
+      });
     }
     if (cached.rows[0].status_code === RESERVATION_STATUS) {
       return res.status(409).json({
         error: 'idempotency_in_progress',
+        retry_same_key: true,
         message: 'A request with this key is already executing. Retry with the same key.',
       });
     }
