@@ -1841,7 +1841,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     if (!bookingRow.rows.length) return { response: { status: 404, body: { error: 'Booking not found' } } };
 
     const bc = await req.db(
-      `SELECT bc.*, b.booking_number, t.id AS trip_id, t.container_id AS trip_container_id
+      `SELECT bc.*, b.booking_number, b.delivery_location, t.id AS trip_id, t.container_id AS trip_container_id
          FROM cds_booking_containers bc
          JOIN cds_bookings b ON b.id = bc.booking_id
          LEFT JOIN cds_trips t ON t.id = bc.trip_id
