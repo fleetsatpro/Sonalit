@@ -34,6 +34,8 @@ describe('CDS data-integrity regression guards', () => {
     expect(route).toContain("SET status='in_transit', current_location=$2");
     expect(route).toContain('FOR UPDATE');
     expect(route).toContain('await appendCustodyEvent(req');
+    expect(route).toContain('sealIntact: null');
+    expect(route).not.toContain('sealIntact: true');
     expect(route.indexOf('await appendCustodyEvent(req')).toBeLessThan(route.indexOf('return { bc: bc.rows[0]'));
     expect(route).not.toContain("'PENDING'");
     expect(route).not.toContain("'SecuriSat'");

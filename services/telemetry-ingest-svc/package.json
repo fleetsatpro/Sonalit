@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/start.js",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/start.ts",
     "test": "pnpm test:unit && pnpm test:integration",
     "test:unit": "vitest run tests/unit src --passWithNoTests",
     "test:integration": "vitest run tests/integration --passWithNoTests",

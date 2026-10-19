@@ -1714,7 +1714,8 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     tripId: trip.rows[0].id,
     kind: 'clamped',
     sealNumber: bc.rows[0].seal_number,
-    sealIntact: true,
+    // A recorded seal number is an expected value, not evidence that its condition was inspected.
+    sealIntact: null,
     lockSerial: lock_serial,
     lat: clampLat, lng: clampLng,
     notes: `Clamped by ${req.user.name || 'yard team'} · ${truck_reg} / ${driver_name}`,
