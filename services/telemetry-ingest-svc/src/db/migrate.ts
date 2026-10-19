@@ -1,8 +1,12 @@
 import { pool } from '../db.js';
 
-async function migrate(): Promise<void> {
+export async function migrate(): Promise<void> {
   const client = await pool.connect();
+  let migrationLockAcquired = false;
   try {
+    await client.query("SELECT pg_advisory_lock(hashtext('sonalit_telemetry_ingest_migrations'))");
+    migrationLockAcquired = true;
+    await client.query('SET search_path TO public');
     await client.query('BEGIN');
 
     // Create gps_fixes table before converting to hypertable.
@@ -28,6 +32,13 @@ async function migrate(): Promise<void> {
       SELECT create_hypertable('gps_fixes', 'time',
         chunk_time_interval => INTERVAL '1 hour',
         if_not_exists => TRUE);
+    `);
+
+    // Replay-safe identity. Timescale unique indexes on a hypertable must include its time partition key.
+    // This fails closed if existing duplicates exist; reconcile them without discarding raw evidence.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS gps_fixes_device_seq_time_uidx
+        ON gps_fixes (device_id, seq_no, time);
     `);
 
     // Index for per-device lookups (most common query pattern).
@@ -67,23 +78,71 @@ async function migrate(): Promise<void> {
                org_id,
                COUNT(*)            AS fix_count,
                AVG(speed_kmh)      AS avg_speed_kmh,
-               SUM(speed_kmh * 0.00833) AS distance_km
+               -- Speed multiplied by a fixed interval invents distance when fix cadence varies.
+               -- Keep this legacy aggregate field unavailable; analytics-svc derives distance
+               -- from consecutive GPS coordinates with explicit gap/outlier checks.
+               NULL::double precision AS distance_km
         FROM gps_fixes
         GROUP BY 1, 2, 3
       WITH NO DATA;
     `);
+
+    // Existing installations retain an IF NOT EXISTS continuous aggregate definition.
+    // Detect (but do not destructively rebuild) a legacy 30-second distance assumption:
+    // its materialized state may have consumers outside this repository.
+    const hourlyAggregateDefinition = await client.query<{ definition: string | null }>(
+      "SELECT pg_get_viewdef('public.gps_fixes_1h'::regclass, true) AS definition",
+    );
+    if ((hourlyAggregateDefinition.rows[0]?.definition ?? '').includes('0.00833')) {
+      process.stderr.write(
+        '[telemetry-migrate] WARNING: existing gps_fixes_1h still contains the legacy fixed-cadence distance formula. ' +
+        'The analytics API no longer reads this distance field; schedule a controlled aggregate rebuild before downstream consumers use it.\\n',
+      );
+    }
 
     await client.query(`
       ALTER TABLE gps_fixes ENABLE ROW LEVEL SECURITY;
       ALTER TABLE gps_fixes FORCE ROW LEVEL SECURITY;
       DROP POLICY IF EXISTS tenant_isolation_service ON gps_fixes;
       CREATE POLICY tenant_isolation_service ON gps_fixes AS RESTRICTIVE FOR ALL
-        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid)
-        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid);
+        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)
+        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
       DROP POLICY IF EXISTS tenant_base_service ON gps_fixes;
       CREATE POLICY tenant_base_service ON gps_fixes AS PERMISSIVE FOR ALL
-        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid)
-        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '''')::uuid);
+        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)
+        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
+    `);
+    // Raw fixes and their event publication intent are committed together by the ingest handler.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS telemetry_ingest_outbox (
+        id BIGSERIAL PRIMARY KEY,
+        org_id UUID NOT NULL,
+        device_id UUID NOT NULL,
+        seq_no BIGINT NOT NULL,
+        time TIMESTAMPTZ NOT NULL,
+        subject TEXT NOT NULL,
+        payload JSONB NOT NULL,
+        message_id TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        publish_attempts INTEGER NOT NULL DEFAULT 0 CHECK (publish_attempts >= 0),
+        next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_error TEXT,
+        CONSTRAINT telemetry_ingest_outbox_identity UNIQUE (device_id, seq_no, time)
+      );
+      CREATE INDEX IF NOT EXISTS telemetry_ingest_outbox_pending_idx
+        ON telemetry_ingest_outbox (next_attempt_at, id);
+      ALTER TABLE telemetry_ingest_outbox ENABLE ROW LEVEL SECURITY;
+      DROP POLICY IF EXISTS telemetry_ingest_outbox_org_isolation ON telemetry_ingest_outbox;
+      DROP POLICY IF EXISTS telemetry_ingest_outbox_tenant_hardening ON telemetry_ingest_outbox;
+      CREATE POLICY telemetry_ingest_outbox_org_isolation ON telemetry_ingest_outbox AS PERMISSIVE FOR ALL
+        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)
+        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
+      CREATE POLICY telemetry_ingest_outbox_tenant_hardening ON telemetry_ingest_outbox AS RESTRICTIVE FOR ALL
+        USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)
+        WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
+      GRANT SELECT, INSERT ON gps_fixes TO sonalit_app;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON telemetry_ingest_outbox TO sonalit_app;
+      GRANT USAGE, SELECT ON SEQUENCE public.telemetry_ingest_outbox_id_seq TO sonalit_app;
     `);
     await client.query('COMMIT');
     process.stdout.write('telemetry-ingest-svc migrations complete\n');
@@ -91,11 +150,14 @@ async function migrate(): Promise<void> {
     await client.query('ROLLBACK');
     throw err;
   } finally {
+    if (migrationLockAcquired) {
+      try {
+        await client.query("SELECT pg_advisory_unlock(hashtext('sonalit_telemetry_ingest_migrations'))");
+      } catch (unlockErr) {
+        process.stderr.write(`Could not release telemetry migration lock: ${(unlockErr as Error).message}\\n`);
+      }
+    }
     client.release();
   }
 }
 
-migrate().catch((err: Error) => {
-  process.stderr.write(`Migration failed: ${err.message}\n`);
-  process.exit(1);
-});

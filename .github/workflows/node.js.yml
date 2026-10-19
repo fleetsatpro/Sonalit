@@ -116,6 +116,22 @@ jobs:
       - name: Build contracts
         run: pnpm --filter @sonalit/contracts build
 
+      - name: Bundle legacy Container Delivery System
+        # Bundle TSX/modules without blocking this data-integrity PR on the legacy app's unrelated TypeScript debt.
+        run: pnpm --filter @sonalit/container-delivery-system exec vite build
+
+      - name: Typecheck telemetry ingestion service
+        run: pnpm --filter @sonalit/telemetry-ingest-svc typecheck
+
+      - name: Telemetry ingest unit tests
+        run: pnpm --filter @sonalit/telemetry-ingest-svc test:unit
+
+      - name: Typecheck analytics service
+        run: pnpm --filter @sonalit/analytics-svc typecheck
+
+      - name: Analytics service unit tests
+        run: pnpm --filter @sonalit/analytics-svc test:unit
+
       - name: Build spatial intelligence
         run: pnpm --filter @sonalit/spatial-intelligence build
 

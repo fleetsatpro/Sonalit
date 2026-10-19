@@ -129,36 +129,50 @@ Enforcement is in three places, on purpose: the matrix refuses before anything
 is written locally, the server re-checks the role on every push, and RLS
 enforces tenant isolation underneath both.
 
-## 5. Idempotency: why a second mechanism exists
+## 5. Idempotency: one contract for keyed HTTP retries
 
-`backend/src/middleware/idempotency.js` caches a response **after** the handler
-has run. That is right for a browser double-click, but it leaves a window: two
-concurrent retries of the same key both find no cached response and both
-execute.
+`backend/src/middleware/idempotency.js` now claims a supplied
+`X-Idempotency-Key` **before** the route handler runs. The tenant/key pair is
+reserved atomically using the existing unique key; a concurrent retry does not
+enter the handler while the first request is in progress. It receives
+`409 idempotency_in_progress` and must retry with the **same** key.
 
-A field device retries precisely when it does not know whether the first attempt
-landed. A lost ACK on a 2G link is the normal case, not the exotic one — so that
-window is exactly the one that matters, and a second execution means a second
-trip, a second delivery, a second container movement.
+The middleware stores a SHA-256 fingerprint of the canonical method, URL,
+authenticated actor, authorization context and JSON body with the tenant/key
+reservation. Reusing the same key for a different
+request returns `409 idempotency_key_reused_for_different_request`; keys are not
+generic replay tokens shared across endpoints.
 
-`sync_operations` closes it by claiming **before** applying, in the same
-transaction:
+Deterministic success and client-error responses are stored before being sent.
+A 5xx does **not** prove that the business transaction rolled back, so it is
+converted into a permanent `idempotency_outcome_unknown` receipt rather than
+deleting the reservation. If the server dies while a request is pending, the
+key remains fail-closed after the 24-hour window; an expired in-progress row is
+never automatically reclaimed. Resolve such cases by inspecting domain state
+and reconciling the result before authorizing another physical action.
+
+The reservation and business transaction are still separate transactions.
+This conservative unknown-outcome state prevents silent duplicate actions, but
+recovery requires operational review until the claim, domain mutation and
+receipt can be committed in one transaction. The stronger transactional
+claim-and-result design below remains preferable where the route architecture
+permits it.
+
+For sync operations, the stronger `sync_operations` contract remains
+transactional:
 
 ```
 BEGIN
   INSERT INTO sync_operations (...) ON CONFLICT DO NOTHING   -- claim
   claim lost?  -> read the winner's recorded outcome, return it
-  claim won?   -> run the handler, record the outcome
+  claim won?   -> run handler, record outcome
 COMMIT
 ```
 
-A concurrent duplicate blocks on the unique index until the first transaction
-resolves, then either reads the committed outcome or wins the claim itself
-(if the first rolled back). If the handler throws, the claim rolls back with it,
-so a crash mid-flight leaves nothing to clean up and no permanently stuck row.
-
-**The existing middleware is untouched** and still governs the routes it always
-did. The clamp/unclamp path still uses it, via the outbox's `http` transport.
+Here the claim and business state transition can roll back together, so a crash
+mid-flight does not leave a permanent in-progress key. The existing offline
+HTTP outbox continues to call the established clamp/unclamp API, preserving its
+authentication, validation, and audit boundary.
 
 ## 6. Sync protocol
 

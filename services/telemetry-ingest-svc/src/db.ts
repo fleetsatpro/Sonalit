@@ -15,6 +15,9 @@ export async function withOrgContext<T>(
   orgId: string,
   fn: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
+  const currentOrg = tenantContext.getStore();
+  if (currentOrg && currentOrg !== orgId) throw new Error('tenant_context_switch_forbidden');
+
   return tenantContext.run(orgId, async () => {
   const client = await pool.connect();
   try {
@@ -38,11 +41,12 @@ export async function query<T extends object = object>(
   values?: unknown[],
 ): Promise<T[]> {
   const orgId = tenantContext.getStore();
-  if (orgId) {
-    const result = await withOrgContext(orgId, client => client.query<T>(text, values));
-    return result.rows;
+  if (!orgId) {
+    // Callers must make cross-tenant intent explicit rather than accidentally
+    // falling back to a connection that can bypass row-level security.
+    throw new Error('tenant_context_required_for_query');
   }
-  const result = await pool.query<T>(text, values);
+  const result = await withOrgContext(orgId, client => client.query<T>(text, values));
   return result.rows;
 }
 
@@ -54,4 +58,13 @@ export async function globalQuery<T extends object = object>(
   if (tenantContext.getStore()) throw new Error('global_query_forbidden_inside_tenant_context');
   const result = await pool.query<T>(text, values);
   return result.rows;
+}
+
+export async function isDatabaseReady(): Promise<boolean> {
+  try {
+    await pool.query('SELECT 1');
+    return true;
+  } catch {
+    return false;
+  }
 }

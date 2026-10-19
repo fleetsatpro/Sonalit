@@ -45,14 +45,14 @@ export default function Customers() {
             <tbody>
               {customers.map((c, i) => (
                 <tr key={s(c['code'] ?? c['id'] ?? i)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
-                  <td className="px-3.5 py-3 text-text-0 font-semibold">{s(c['name'])}</td>
+                  <td className="px-3.5 py-3 text-text-0 font-semibold">{s(c['company_name'])}</td>
                   <td className="px-3.5 py-3 font-mono text-text-1">{s(c['code'])}</td>
-                  <td className="px-3.5 py-3 text-text-0">{s(c['contact'])}<div className="text-2xs text-text-2 mt-0.5">{s(c['phone'])}</div></td>
+                  <td className="px-3.5 py-3 text-text-0">{s(c['contact_person'])}<div className="text-2xs text-text-2 mt-0.5">{s(c['phone'])}</div></td>
                   <td className="px-3.5 py-3 text-text-0">{s(c['city'])}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{s(c['active_shipments'])}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{s(c['total_shipments'])}</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{s(c['sla'])}%</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{s(c['rating'])}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{c['sla_compliance'] == null ? 'Not measured' : `${s(c['sla_compliance'])}%`}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{c['rating'] == null ? 'Not rated' : s(c['rating'])}</td>
                   <td className="px-3.5 py-3"><Badge variant="ok">{String(c['status'] ?? 'active').toUpperCase()}</Badge></td>
                 </tr>
               ))}
