@@ -159,9 +159,21 @@ export function PortView() {
               disabled={unclamp.isPending}
               onClick={(e) => {
                 e.stopPropagation();
-                unclamp.mutate({ id: s(r['id']) }, {
+                const bookingId = s(r['booking_id']);
+                const bookingContainerId = s(r['booking_container_id']);
+                const linkCount = Number(r['booking_container_link_count'] ?? 0);
+                if (!bookingId || !bookingContainerId || linkCount !== 1) {
+                  addToast(`Unclamp blocked: ${s(r['container_number'])} has no unique booking-container link. Reconcile before releasing the lock.`);
+                  return;
+                }
+                unclamp.mutate({
+                  id: s(r['id']),
+                  booking_id: bookingId,
+                  booking_container_id: bookingContainerId,
+                  booking_container_link_count: linkCount,
+                }, {
                   onSuccess: () => addToast(`Lock removed on ${s(r['container_number'])}`),
-                  onError: () => addToast(`Could not unclamp ${s(r['container_number'])} — try again`),
+                  onError: (error) => addToast(error instanceof Error ? error.message : `Could not unclamp ${s(r['container_number'])} — try again`),
                 });
               }}
             >
