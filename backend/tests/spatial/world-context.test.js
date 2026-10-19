@@ -464,6 +464,11 @@ describe('world context integration assembly', () => {
       expect(calls.every(args => args[0]?.orgId === ORG)).toBe(true);
     }
 
+    const vehicleQuery = calls.find(sql => sql.includes('FROM vehicles v') && sql.includes('gps_speed'));
+    expect(vehicleQuery).toBeDefined();
+    expect(vehicleQuery).not.toMatch(/\bv\.speed\b/);
+    expect(vehicleQuery).toContain('NULL::float AS speed');
+
     expect(ctx.subject.orgId).toBe(ORG);
     expect(ctx.mission.convoyId).toBe(CONVOY);
     expect(ctx.operational.vehicles).toHaveLength(1);

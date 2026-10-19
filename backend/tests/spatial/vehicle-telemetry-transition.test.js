@@ -32,6 +32,19 @@ function row(now, previousAgeMs) {
 }
 
 describe('spatial vehicle telemetry transitions', () => {
+  test('does not turn missing measured speed into zero or a stationary claim', () => {
+    const now = Date.now();
+    const missingSpeed = row(now, 45_000);
+    missingSpeed.speed = null;
+    missingSpeed.gps_speed = null;
+
+    const vehicle = makeVehicle(missingSpeed, null, { route: [], widthKm: 2 }, [], now);
+
+    expect(vehicle.speedKmh).toBeNull();
+    expect(vehicle.speedMps).toBeNull();
+    expect(vehicle.stationaryDurationMs).toBeNull();
+  });
+
   test('marks recovery only when previous observation was stale', () => {
     const now = Date.now();
     const recovered = makeVehicle(row(now, 10 * 60 * 1000), null, { route: [], widthKm: 2 }, [], now);
