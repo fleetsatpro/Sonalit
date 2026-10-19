@@ -21,6 +21,7 @@
  */
 import cdsApi from '../cds/api.js';
 import { isReachable, startConnectivity, subscribe as subscribeConnectivity } from '../../lib/offline/connectivity.js';
+import { classifyHttp } from '../../lib/offline/retryPolicy.js';
 
 import type { AxiosError } from 'axios';
 
@@ -196,25 +197,18 @@ function urlFor(a: QueuedAction): string {
 }
 
 /**
- * Whether a failed attempt is worth retrying later.
- *
- * Retryable: no response at all (offline//timeout), 401 (token expired — the
- * refresh interceptor will renew it), 408/429 (transient), any 5xx.
- * Permanent: the rest of 4xx — a 409 "already delivered" or a 404 will fail
- * identically forever, so retrying just burns battery.
+ * One shared error policy governs field queue retry decisions and the offline
+ * replication tests. In particular, only the two explicit idempotency-reservation
+ * 409s are retryable; business conflicts such as "already delivered" stay terminal.
  */
 function isRetryable(err: AxiosError): boolean {
-  const status = err.response?.status;
-  if (status == null) return true;
-  if (status === 401 || status === 408 || status === 429) return true;
-  if (status === 409) {
-    // A concurrent request holding the same idempotency key is not a business
-    // conflict. Keep the queued action and retry the SAME key after it settles.
-    const body = err.response?.data as { error?: string } | undefined;
-    return body?.error === 'idempotency_in_progress'
-      || body?.error === 'idempotency_state_unavailable';
-  }
-  return status >= 500;
+  const body = err.response?.data as { error?: string; message?: string; code?: string } | undefined;
+  return classifyHttp({
+    status: err.response?.status,
+    code: err.code,
+    message: err.message,
+    body,
+  }).retryable;
 }
 
 function describe(err: AxiosError): string {
