@@ -64,9 +64,9 @@ describe('requireIdempotencyKey middleware', () => {
   });
 
   test('returns cached response when key already stored', async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ status_code: 201, response: { data: { id: 'abc' } } }],
-    });
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // active non-expired key cannot be claimed
+      .mockResolvedValueOnce({ rows: [{ status_code: 201, response: { data: { id: 'abc' } } }] });
     const req = { headers: { 'x-idempotency-key': 'idem-key-1' }, user: { org_id: 'org-1' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     const next = jest.fn();
@@ -78,7 +78,7 @@ describe('requireIdempotencyKey middleware', () => {
   });
 
   test('calls next() and wraps res.json when key not in cache', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ key: 'idem-key-2' }] }); // This request owns the claim.
     const req = { headers: { 'x-idempotency-key': 'idem-key-2' }, user: { org_id: 'org-1' } };
     const origJson = jest.fn();
     const res = { statusCode: 200, json: origJson };
@@ -102,6 +102,36 @@ describe('requireIdempotencyKey middleware', () => {
     expect(next).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
   });
+  test('does not execute a mutation while the same idempotency key is in progress', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ status_code: 102, response: { state: 'in_progress' } }] });
+    const req = { headers: { 'x-idempotency-key': 'idem-key-active' }, user: { org_id: 'org-1' } };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = jest.fn();
+    requireIdempotencyKey(req, res, next);
+    await new Promise(r => setTimeout(r, 20));
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'idempotency_in_progress' }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('persists the final response before invoking the HTTP response sender', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ key: 'idem-key-save' }] });
+    const req = { headers: { 'x-idempotency-key': 'idem-key-save' }, user: { org_id: 'org-1' } };
+    const originalJson = jest.fn().mockReturnValue('sent');
+    const res = { statusCode: 201, json: originalJson };
+    const next = jest.fn();
+    requireIdempotencyKey(req, res, next);
+    await new Promise(r => setTimeout(r, 20));
+    expect(next).toHaveBeenCalled();
+    const response = res.json({ data: { id: 'new' } });
+    expect(originalJson).not.toHaveBeenCalled();
+    await response;
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('UPDATE idempotency_keys'), expect.any(Array));
+    expect(originalJson).toHaveBeenCalledWith({ data: { id: 'new' } });
+  });
+
 });
 
 // ─── csrf middleware ──────────────────────────────────────────────────────────
