@@ -3,14 +3,14 @@ import { config } from './config.js';
 import { connectNats, closeNats, getJs } from './nats.js';
 import { redisCluster } from './redis.js';
 import { buildServer } from './server.js';
-import { drainBuffer } from './lib/ringBuffer.js';
+import { startOutboxPublisher } from './lib/outboxPublisher.js';
+import { pool } from './db.js';
 
 async function start(): Promise<void> {
   await connectNats();
 
-  const js = getJs();
-  await drainBuffer(js);
-
+  getJs(); // Fail startup if NATS is unavailable.
+  const stopOutboxPublisher = startOutboxPublisher();
   const app = await buildServer();
 
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
@@ -18,9 +18,11 @@ async function start(): Promise<void> {
 
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'Graceful shutdown initiated');
+    await stopOutboxPublisher();
     await app.close();
     await closeNats();
     await redisCluster.quit();
+    await pool.end();
     process.exit(0);
   };
 
