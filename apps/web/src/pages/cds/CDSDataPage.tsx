@@ -69,7 +69,7 @@ export function DriversView() {
         columns={[
           { id: 'name', header: 'Name', accessor: (r: Row) => <span className="font-semibold text-text-0">{s(r['name'])}</span> },
           { id: 'phone', header: 'Phone', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['phone'])}</span> },
-          { id: 'license', header: 'License', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['license_number'])}</span> },
+          { id: 'license', header: 'License', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['license_number']) || 'Not recorded'}</span> },
           { id: 'license_verification', header: 'License Verification', accessor: (r: Row) => <StatusBadge status={s(r['license_verification_status'] ?? 'unverified')} /> },
           { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
           { id: 'trips', header: 'Total Trips', accessor: (r: Row) => s(r['total_trips']) },
@@ -94,7 +94,7 @@ export function DriversView() {
             <DrawerField label="Name" value={s(r['name'])} />
             <DrawerField label="Phone" value={s(r['phone'])} />
             <DrawerField label="Email" value={s(r['email'])} />
-            <DrawerField label="License" value={s(r['license_number'])} />
+            <DrawerField label="License" value={s(r['license_number']) || 'Not recorded'} />
             <DrawerField label="License Expiry" value={r['license_expiry'] ? new Date(s(r['license_expiry'])).toLocaleDateString() : '—'} />
             <DrawerField label="License Verification" value={s(r['license_verification_status'] ?? 'unverified')} />
             <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />

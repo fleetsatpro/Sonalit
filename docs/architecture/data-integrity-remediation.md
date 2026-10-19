@@ -17,7 +17,7 @@
 - Legacy trip-level clamp/unclamp now fail closed and return the canonical booking-container route instead of mutating trip/lock rows without manifest and custody updates.
 - The control-room trip projection exposes a unique booking-container link; the port UI blocks release when the link is missing or ambiguous.
 - The trip-to-booking-container link has a partial index for bounded lookup as the trip history grows.
-- Custody evidence, audit rows, and core lifecycle writes commit or roll back together. A failed custody append cannot be reported as a successful handoff.
+- Custody evidence, audit rows, and core lifecycle writes commit or roll back together. A failed custody append cannot be reported as a successful handoff. Seal verification is positive only when an expected and observed seal can be compared; a claimed "intact" flag without both values is recorded as unverified.
 - Realtime publication and secondary tracking termination happen after the database transaction.
 - Driver license verification is represented separately from driver presence. Missing license data remains NULL until verified. The migration clears only known `PENDING` license and paired transporter placeholders, and preserves all other license records.
 - A manually entered lock has no provider value unless the vendor is independently known. The provider column is nullable and has no fabricated default; the UI/workflow must not infer SecuriSat integration from a clamp record.

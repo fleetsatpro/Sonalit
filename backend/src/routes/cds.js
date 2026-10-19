@@ -1407,12 +1407,50 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
   const {
-    lock_serial, transporter_name, truck_reg, trailer_reg,
-    driver_name, driver_phone, notes, lat, lng,
+    lock_serial: rawLockSerial,
+    transporter_name: rawTransporterName,
+    truck_reg: rawTruckReg,
+    trailer_reg: rawTrailerReg,
+    driver_name: rawDriverName,
+    driver_phone: rawDriverPhone,
+    notes: rawNotes,
+    lat: clampLat, lng: clampLng,
   } = req.body || {};
+
+  if (typeof rawLockSerial !== 'string' || typeof rawTruckReg !== 'string' || typeof rawDriverName !== 'string') {
+    return res.status(400).json({ error: 'lock_serial, truck_reg and driver_name must be strings' });
+  }
+  if (rawTransporterName != null && typeof rawTransporterName !== 'string') return res.status(400).json({ error: 'transporter_name must be a string' });
+  if (rawTrailerReg != null && typeof rawTrailerReg !== 'string') return res.status(400).json({ error: 'trailer_reg must be a string' });
+  if (rawDriverPhone != null && typeof rawDriverPhone !== 'string') return res.status(400).json({ error: 'driver_phone must be a string' });
+  if (rawNotes != null && typeof rawNotes !== 'string') return res.status(400).json({ error: 'notes must be a string' });
+
+  const lock_serial = rawLockSerial.trim();
+  const transporter_name = rawTransporterName == null ? null : rawTransporterName.trim();
+  const truck_reg = rawTruckReg.trim();
+  const trailer_reg = rawTrailerReg == null ? null : rawTrailerReg.trim();
+  const driver_name = rawDriverName.trim();
+  const driver_phone = rawDriverPhone == null ? null : rawDriverPhone.trim();
+  const notes = rawNotes == null ? null : rawNotes.trim();
 
   if (!lock_serial || !truck_reg || !driver_name) {
     return res.status(400).json({ error: 'lock_serial, truck_reg and driver_name are required' });
+  }
+  if (lock_serial.length > 30 || truck_reg.length > 20 || driver_name.length > 255
+      || (driver_phone && driver_phone.length > 50) || (transporter_name && transporter_name.length > 255)
+      || (trailer_reg && trailer_reg.length > 50) || (notes && notes.length > 450)) {
+    return res.status(400).json({ error: 'One or more clamp fields exceed the supported length' });
+  }
+
+  const hasLat = lat !== undefined && lat !== null && !(typeof lat === 'string' && lat.trim() === '');
+  const hasLng = lng !== undefined && lng !== null && !(typeof lng === 'string' && lng.trim() === '');
+  if (hasLat !== hasLng) return res.status(400).json({ error: 'lat and lng must be supplied together' });
+  const clampLat = hasLat ? Number(lat) : null;
+  const clampLng = hasLng ? Number(lng) : null;
+  if (hasLat && ((typeof lat !== 'number' && typeof lat !== 'string') || (typeof lng !== 'number' && typeof lng !== 'string')
+      || !Number.isFinite(clampLat) || clampLat < -90 || clampLat > 90
+      || !Number.isFinite(clampLng) || clampLng < -180 || clampLng > 180)) {
+    return res.status(400).json({ error: 'Clamp coordinates are outside valid latitude/longitude ranges' });
   }
 
   const operation = await req.dbTx(async () => {
@@ -1439,17 +1477,86 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       return { response: { status: 422, body: { error: 'Container number is required before clamping' } } };
     }
 
-    await req.db('SELECT pg_advisory_xact_lock(hashtext($1))', [`${req.user.org_id}:cds-lock:${lock_serial.trim().toUpperCase()}`]);
-    const existingLock = await req.db(
-      `SELECT id, status, container_id FROM cds_electronic_locks
-        WHERE upper(serial) = upper($1) AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
-      [lock_serial.trim()]
+    const containerNumber = String(bc.rows[0].container_number).trim();
+    if (containerNumber.length > 20) {
+      return { response: { status: 422, body: { error: 'Container number exceeds the inventory field limit' } } };
+    }
+    await req.db('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `${orgId}:cds-container:${containerNumber.toUpperCase()}`,
+    ]);
+    const matchingContainers = await req.db(
+      `SELECT id, number, status, deleted_at
+         FROM cds_containers
+        WHERE upper(number) = upper($1)
+        ORDER BY id
+        LIMIT 2
+        FOR UPDATE`,
+      [containerNumber]
     );
+    if (matchingContainers.rows.length > 1) {
+      return { response: { status: 409, body: { error: 'Container inventory has duplicate case-insensitive numbers; reconcile before clamping' } } };
+    }
+
+    let containerId;
+    if (matchingContainers.rows.length) {
+      const inventory = matchingContainers.rows[0];
+      if (inventory.deleted_at) {
+        return { response: { status: 409, body: { error: 'Container inventory record is deleted; reconcile before clamping' } } };
+      }
+      if (!['available', 'booked', 'awaiting_pickup'].includes(inventory.status)) {
+        return { response: { status: 409, body: { error: `Container inventory is not available (state=${inventory.status})` } } };
+      }
+      containerId = inventory.id;
+    } else {
+      const insertedContainer = await req.db(
+        `INSERT INTO cds_containers (number, iso_type, org_id)
+         VALUES ($1,$2,$3) RETURNING id, number, status, deleted_at`,
+        [containerNumber, bc.rows[0].iso_type || '20GP', orgId]
+      );
+      containerId = insertedContainer.rows[0].id;
+    }
+
+    const activeTrip = await req.db(
+      `SELECT id, trip_number, status
+         FROM cds_trips
+        WHERE container_id=$1
+          AND deleted_at IS NULL
+          AND status NOT IN ('delivered','completed','archived','lock_removed')
+        ORDER BY created_at DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [containerId]
+    );
+    if (activeTrip.rows.length) {
+      return { response: { status: 409, body: {
+        error: 'Container is already linked to an active trip',
+        trip_id: activeTrip.rows[0].id,
+        trip_number: activeTrip.rows[0].trip_number,
+        trip_status: activeTrip.rows[0].status,
+      } } };
+    }
+
+    await req.db('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `${orgId}:cds-lock:${lock_serial.toUpperCase()}`,
+    ]);
+    const existingLock = await req.db(
+      `SELECT id, status, container_id, deleted_at
+         FROM cds_electronic_locks
+        WHERE upper(serial) = upper($1)
+        ORDER BY id
+        LIMIT 2
+        FOR UPDATE`,
+      [lock_serial]
+    );
+    if (existingLock.rows.length > 1) {
+      return { response: { status: 409, body: { error: 'Electronic-lock inventory has duplicate case-insensitive serials; reconcile before clamping' } } };
+    }
     if (existingLock.rows.length && (
-      existingLock.rows[0].container_id
-      || ['assigned', 'installed', 'locked'].includes(existingLock.rows[0].status)
+      existingLock.rows[0].deleted_at
+      || existingLock.rows[0].container_id
+      || existingLock.rows[0].status !== 'available'
     )) {
-      return { response: { status: 409, body: { error: 'Electronic lock is already assigned or active' } } };
+      return { response: { status: 409, body: { error: 'Electronic lock is not available or is already assigned' } } };
     }
 
   // The yard form records a company, not an individual contact. Missing values
@@ -1458,13 +1565,13 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   if (transporter_name) {
     const t = await req.db(
       'SELECT id FROM cds_transporters WHERE upper(company_name) = upper($1) AND deleted_at IS NULL LIMIT 1',
-      [transporter_name.trim()]
+      [transporter_name]
     );
     if (t.rows.length) transporterId = t.rows[0].id;
     else {
       const ins = await req.db(
         `INSERT INTO cds_transporters (company_name, contact_person, phone, code, org_id) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [transporter_name.trim(), null, null, genCode('TR'), orgId]
+        [transporter_name, null, null, genCode('TR'), orgId]
       );
       transporterId = ins.rows[0].id;
     }
@@ -1474,42 +1581,29 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   // number and expiry remain NULL until independently verified.
   const dr = await req.db(
     'SELECT id FROM cds_drivers WHERE upper(name) = upper($1) AND deleted_at IS NULL LIMIT 1',
-    [driver_name.trim()]
+    [driver_name]
   );
   const driverId = dr.rows.length ? dr.rows[0].id : (await req.db(
     `INSERT INTO cds_drivers (name, phone, license_number, license_expiry, transporter_id, org_id)
      VALUES ($1,$2,NULL,NULL,$3,$4) RETURNING id`,
-    [driver_name.trim(), driver_phone || null, transporterId, orgId]
+    [driver_name, driver_phone || null, transporterId, orgId]
   )).rows[0].id;
 
   // Upsert vehicle (truck horse)
   const ve = await req.db(
     'SELECT id FROM cds_vehicles WHERE upper(registration) = upper($1) AND deleted_at IS NULL LIMIT 1',
-    [truck_reg.trim()]
+    [truck_reg]
   );
   const vehicleId = ve.rows.length ? ve.rows[0].id : (await req.db(
     `INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [truck_reg.trim(), genCode('FL'), transporterId, orgId]
+    [truck_reg, genCode('FL'), transporterId, orgId]
   )).rows[0].id;
-
-  // Upsert physical container (in cds_containers) so it can be tracked on the map
-  let containerId = null;
-  if (bc.rows[0].container_number) {
-    const co = await req.db(
-      'SELECT id FROM cds_containers WHERE upper(number) = upper($1) AND deleted_at IS NULL LIMIT 1',
-      [bc.rows[0].container_number]
-    );
-    containerId = co.rows.length ? co.rows[0].id : (await req.db(
-      `INSERT INTO cds_containers (number, iso_type, org_id) VALUES ($1,$2,$3) RETURNING id`,
-      [bc.rows[0].container_number, bc.rows[0].iso_type || '20GP', orgId]
-    )).rows[0].id;
-  }
 
   // Upsert e-lock and put it into 'locked' state on this container/vehicle
   const lk = existingLock;
   const lockId = lk.rows.length ? lk.rows[0].id : (await req.db(
     `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [lock_serial.trim(), null, 'assigned', orgId]
+    [lock_serial, null, 'assigned', orgId]
   )).rows[0].id;
   // 'installed', matching cds_electronic_locks_status_check and the desktop
   // clamp handler above — 'locked' isn't a value the constraint allows.
@@ -1518,8 +1612,16 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     [containerId, vehicleId, lockId]
   );
 
+  await req.db(
+    `UPDATE cds_containers
+        SET status='in_transit', current_location=$2,
+            lat=COALESCE($3, lat), lng=COALESCE($4, lng), updated_at=NOW()
+      WHERE id=$1 AND deleted_at IS NULL`,
+    [containerId, bc.rows[0].pickup_location, clampLat, clampLng]
+  );
+
   // Create the trip and link it back to the booking container
-  const trailerNote = trailer_reg ? `Trailer: ${trailer_reg.trim()}${notes ? ' | ' + notes : ''}` : (notes || null);
+  const trailerNote = trailer_reg ? `Trailer: ${trailer_reg}${notes ? ' | ' + notes : ''}` : (notes || null);
   const trip = await req.db(
     `INSERT INTO cds_trips
       (trip_number, customer_id, driver_id, vehicle_id, container_id, lock_id, transporter_id,
@@ -1534,7 +1636,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       // which cannot be queried — so nothing could ask "has this truck moved
       // away from where it was clamped?". Nullable: a clamp with location
       // denied is still a valid clamp.
-      lat ?? null, lng ?? null,
+      clampLat, clampLng,
     ]
   );
 
@@ -1564,7 +1666,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       WHERE id=$2`,
     [
       trip.rows[0].id, bcId,
-      lock_serial.trim(),
+      lock_serial,
       transporter_name ? String(transporter_name).trim() : null,
       truck_reg ? String(truck_reg).trim() : null,
       trailer_reg ? String(trailer_reg).trim() : null,
@@ -1592,8 +1694,8 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     kind: 'clamped',
     sealNumber: bc.rows[0].seal_number,
     sealIntact: true,
-    lockSerial: lock_serial.trim(),
-    lat, lng,
+    lockSerial: lock_serial,
+    lat: clampLat, lng: clampLng,
     notes: `Clamped by ${req.user.name || 'yard team'} · ${truck_reg} / ${driver_name}`,
   });
 
@@ -1611,7 +1713,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
      VALUES ('clamp','booking_container',$1,$2,$3,$4,$5)`,
     [bcId, req.user.id, req.user.name || null,
-     JSON.stringify({ lock_serial, transporter_name, truck_reg, trailer_reg, driver_name, driver_phone, lat, lng }),
+     JSON.stringify({ lock_serial, transporter_name, truck_reg, trailer_reg, driver_name, driver_phone, lat: clampLat, lng: clampLng }),
      orgId]
   );
 
@@ -1671,12 +1773,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     container_number: bookingContainer.container_number,
     trip_id: clampedTrip.id,
     trip_number: clampedTrip.trip_number,
-    lock_serial: lock_serial.trim(),
+    lock_serial: lock_serial,
     truck_reg,
     driver_name,
     tracking_qr_issued: !!tracking,
-    lat: lat ?? null,
-    lng: lng ?? null,
+    lat: clampLat,
+    lng: clampLng,
   });
 
   res.json({ data: { trip: clampedTrip, booking_container_id: bcId, tracking } });
@@ -1687,7 +1789,27 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
 router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
-  const { notes, lat, lng, seal_intact, observed_seal } = req.body || {};
+  const { notes: rawNotes, lat, lng, seal_intact, observed_seal } = req.body || {};
+  if (rawNotes != null && (typeof rawNotes !== 'string' || rawNotes.trim().length > 400)) {
+    return res.status(400).json({ error: 'notes must be a string no longer than 400 characters' });
+  }
+  if (seal_intact !== undefined && seal_intact !== null && typeof seal_intact !== 'boolean') {
+    return res.status(400).json({ error: 'seal_intact must be a boolean when supplied' });
+  }
+  if (observed_seal != null && (typeof observed_seal !== 'string' || observed_seal.trim().length > 50)) {
+    return res.status(400).json({ error: 'observed_seal must be a string no longer than 50 characters' });
+  }
+  const notes = rawNotes == null ? null : rawNotes.trim();
+  const hasLat = lat !== undefined && lat !== null && !(typeof lat === 'string' && lat.trim() === '');
+  const hasLng = lng !== undefined && lng !== null && !(typeof lng === 'string' && lng.trim() === '');
+  if (hasLat !== hasLng) return res.status(400).json({ error: 'lat and lng must be supplied together' });
+  const unclampLat = hasLat ? Number(lat) : null;
+  const unclampLng = hasLng ? Number(lng) : null;
+  if (hasLat && ((typeof lat !== 'number' && typeof lat !== 'string') || (typeof lng !== 'number' && typeof lng !== 'string')
+      || !Number.isFinite(unclampLat) || unclampLat < -90 || unclampLat > 90
+      || !Number.isFinite(unclampLng) || unclampLng < -180 || unclampLng > 180)) {
+    return res.status(400).json({ error: 'Unclamp coordinates are outside valid latitude/longitude ranges' });
+  }
 
   const operation = await req.dbTx(async () => {
     // Serialize sibling-container deliveries so the final-delivery count cannot race.
@@ -1698,7 +1820,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     if (!bookingRow.rows.length) return { response: { status: 404, body: { error: 'Booking not found' } } };
 
     const bc = await req.db(
-      `SELECT bc.*, b.booking_number, t.id AS trip_id
+      `SELECT bc.*, b.booking_number, t.id AS trip_id, t.container_id AS trip_container_id
          FROM cds_booking_containers bc
          JOIN cds_bookings b ON b.id = bc.booking_id
          LEFT JOIN cds_trips t ON t.id = bc.trip_id
@@ -1716,20 +1838,54 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     if (!bc.rows[0].trip_id) {
       return { response: { status: 409, body: { error: 'Associated trip is missing; reconcile the booking before unclamping' } } };
     }
+    if (!bc.rows[0].trip_container_id) {
+      return { response: { status: 409, body: { error: 'Associated trip has no container inventory link; reconcile before unclamping' } } };
+    }
+    const containerResult = await req.db(
+      'SELECT id, number, status FROM cds_containers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
+      [bc.rows[0].trip_container_id]
+    );
+    if (!containerResult.rows.length) {
+      return { response: { status: 409, body: { error: 'Physical container inventory is missing; reconcile before unclamping' } } };
+    }
+    const inventory = containerResult.rows[0];
+    if (String(inventory.number).trim().toUpperCase() !== String(bc.rows[0].container_number || '').trim().toUpperCase()) {
+      return { response: { status: 409, body: { error: 'Trip container does not match the booking manifest; reconcile before unclamping' } } };
+    }
+    if (!['available', 'booked', 'awaiting_pickup', 'in_transit', 'at_port'].includes(inventory.status)) {
+      return { response: { status: 409, body: { error: `Container inventory state ${inventory.status} conflicts with delivery; reconcile before unclamping` } } };
+    }
+
     const tripResult = await req.db(
-      'SELECT id, lock_id, container_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
+      'SELECT id, booking_id, status, lock_id, container_id, vehicle_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
       [bc.rows[0].trip_id]
     );
     if (!tripResult.rows.length) {
       return { response: { status: 409, body: { error: 'Associated trip is missing; reconcile the booking before unclamping' } } };
     }
     const unclampTrip = tripResult.rows[0];
+    if (unclampTrip.booking_id !== bookingId || unclampTrip.container_id !== inventory.id) {
+      return { response: { status: 409, body: { error: 'Trip is not linked to this booking/container; reconcile before unclamping' } } };
+    }
+    if (['delivered', 'completed', 'archived', 'lock_removed'].includes(unclampTrip.status)) {
+      return { response: { status: 409, body: { error: `Trip is already in terminal state ${unclampTrip.status}` } } };
+    }
+    const linkedContainers = await req.db(
+      `SELECT id, booking_id FROM cds_booking_containers
+        WHERE trip_id=$1 AND deleted_at IS NULL
+        ORDER BY created_at ASC LIMIT 2`,
+      [unclampTrip.id]
+    );
+    if (linkedContainers.rows.length !== 1 || linkedContainers.rows[0].id !== bcId
+        || linkedContainers.rows[0].booking_id !== bookingId) {
+      return { response: { status: 409, body: { error: 'Trip-to-booking-container link is missing or ambiguous; reconcile before unclamping' } } };
+    }
     if (!unclampTrip.lock_id) {
       return { response: { status: 409, body: { error: 'Associated e-lock is missing; reconcile the booking before unclamping' } } };
     }
     const lockId = unclampTrip.lock_id;
     const lockResult = await req.db(
-      'SELECT id, status, container_id FROM cds_electronic_locks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
+      'SELECT id, status, container_id, vehicle_id FROM cds_electronic_locks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
       [lockId]
     );
     if (!lockResult.rows.length) {
@@ -1739,8 +1895,9 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     if (!['assigned', 'installed'].includes(lockedLock.status)) {
       return { response: { status: 409, body: { error: 'Associated e-lock is not active; reconcile before unclamping' } } };
     }
-    if (!unclampTrip.container_id || lockedLock.container_id !== unclampTrip.container_id) {
-      return { response: { status: 409, body: { error: 'E-lock/container association is inconsistent; reconcile before unclamping' } } };
+    if (!unclampTrip.container_id || lockedLock.container_id !== unclampTrip.container_id
+        || !unclampTrip.vehicle_id || lockedLock.vehicle_id !== unclampTrip.vehicle_id) {
+      return { response: { status: 409, body: { error: 'E-lock/container/vehicle association is inconsistent; reconcile before unclamping' } } };
     }
 
   // Seal verification. A seal is only worth anything if somebody compares it at
@@ -1749,14 +1906,13 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   // match the one recorded at clamp is a tamper. Older clients that send
   // neither field still work — the outcome is then simply unverified (null),
   // which is honest rather than a false "intact".
-  const expectedSeal = bc.rows[0].seal_number;
+  const expectedSeal = typeof bc.rows[0].seal_number === 'string' ? bc.rows[0].seal_number.trim() : null;
   const observed = typeof observed_seal === 'string' ? observed_seal.trim() : null;
-  let sealVerdict = null;                      // null = not checked
+  let sealVerdict = null; // null means no authoritative comparison was possible.
   if (seal_intact === false) {
     sealVerdict = false;
-  } else if (seal_intact === true) {
-    const mismatched = expectedSeal && observed && observed.toUpperCase() !== String(expectedSeal).toUpperCase();
-    sealVerdict = !mismatched;
+  } else if (expectedSeal && observed) {
+    sealVerdict = observed.toUpperCase() === expectedSeal.toUpperCase();
   }
   const sealTampered = sealVerdict === false;
 
@@ -1779,6 +1935,14 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
       [bc.rows[0].trip_id]
     );
   }
+
+  await req.db(
+    `UPDATE cds_containers
+        SET status='delivered', current_location=$2,
+            lat=COALESCE($3, lat), lng=COALESCE($4, lng), updated_at=NOW()
+      WHERE id=$1 AND deleted_at IS NULL`,
+    [inventory.id, bc.rows[0].delivery_location, unclampLat, unclampLng]
+  );
 
   // unclamped_at is the manifest's TIME UNCLAMPED column and had the same
   // problem clamped_at did — nothing ever set it, so the desk could not tell a
@@ -1812,7 +1976,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     kind: 'unclamped',
     sealNumber: observed || expectedSeal,
     sealIntact: sealVerdict,
-    lat, lng,
+    lat: unclampLat, lng: unclampLng,
     notes: `${sealNote}${notes ? ` Notes: ${notes}` : ''}`,
   });
 
@@ -1833,7 +1997,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
       await req.db(
         `INSERT INTO cds_lock_events (org_id, lock_id, type, lat, lng, data)
          VALUES ($1,$2,'tamper',$3,$4,$5)`,
-        [orgId, lockId, lat ?? null, lng ?? null,
+        [orgId, lockId, unclampLat, unclampLng,
          JSON.stringify({
            source: 'seal_verification',
            expected_seal: expectedSeal, observed_seal: observed,
@@ -1858,7 +2022,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
      VALUES ('unclamp','booking_container',$1,$2,$3,$4,$5)`,
     [bcId, req.user.id, req.user.name || null,
-     JSON.stringify({ notes, lat, lng, unclamped_at: now.toISOString(),
+     JSON.stringify({ notes, lat: unclampLat, lng: unclampLng, unclamped_at: now.toISOString(),
                      seal_expected: expectedSeal, seal_observed: observed, seal_intact: sealVerdict }),
      orgId]
   );
@@ -1897,8 +2061,8 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     seal_expected: expectedSeal || null,
     seal_observed: observed || null,
     tamper: sealTampered,
-    lat: lat ?? null,
-    lng: lng ?? null,
+    lat: unclampLat,
+    lng: unclampLng,
   });
 
   res.json({

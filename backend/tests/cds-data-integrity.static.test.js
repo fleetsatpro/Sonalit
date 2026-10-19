@@ -24,9 +24,12 @@ describe('CDS data-integrity regression guards', () => {
     expect(route).toContain('SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('FOR UPDATE OF bc');
     expect(route).toContain('Container number is required before clamping');
-    expect(route).toContain('Electronic lock is already assigned or active');
+    expect(route).toContain('Electronic lock is not available or is already assigned');
     expect(route).toContain('pg_advisory_xact_lock(hashtext($1))');
     expect(route).toContain('upper(serial) = upper($1)');
+    expect(route).toContain("status !== 'available'");
+    expect(route).toContain('Container is already linked to an active trip');
+    expect(route).toContain("SET status='in_transit', current_location=$2");
     expect(route).toContain('FOR UPDATE');
     expect(route).toContain('await appendCustodyEvent(req');
     expect(route.indexOf('await appendCustodyEvent(req')).toBeLessThan(route.indexOf('return { bc: bc.rows[0]'));
@@ -41,10 +44,15 @@ describe('CDS data-integrity regression guards', () => {
     expect(route).toContain('req.dbTx(async () =>');
     expect(route).toContain('SELECT id FROM cds_bookings WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
     expect(route).toContain('FOR UPDATE OF bc');
-    expect(route).toContain('SELECT id, lock_id, container_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
-    expect(route).toContain('SELECT id, status, container_id FROM cds_electronic_locks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
+    expect(route).toContain('SELECT id, booking_id, status, lock_id, container_id, vehicle_id FROM cds_trips WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
+    expect(route).toContain('SELECT id, status, container_id, vehicle_id FROM cds_electronic_locks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE');
+    expect(route).toContain('Trip-to-booking-container link is missing or ambiguous');
     expect(route).toContain('Associated e-lock is not active');
-    expect(route).toContain('E-lock/container association is inconsistent');
+    expect(route).toContain('E-lock/container/vehicle association is inconsistent');
+    expect(route).toContain("SET status='delivered', current_location=$2");
+    expect(route).toContain('sealVerdict = observed.toUpperCase() === expectedSeal.toUpperCase()');
+    expect(route).toContain('observed_seal must be a string no longer than 50 characters');
+    expect(route).toContain('Unclamp coordinates are outside valid latitude/longitude ranges');
     expect(route).toContain('lockId,');
     expect(route).toContain('Cannot unclamp a container in state');
     expect(route).toContain('await appendCustodyEvent(req');
@@ -91,6 +99,7 @@ describe('CDS data-integrity regression guards', () => {
     expect(migration).toContain('license_verification_source');
     expect(migration).toContain('ALTER COLUMN provider DROP NOT NULL');
     expect(migration).toContain('ALTER COLUMN provider DROP DEFAULT');
+    expect(migration).toContain('idx_cds_booking_containers_trip');
   });
 
   test('custody chain write failures abort the enclosing transaction', () => {
