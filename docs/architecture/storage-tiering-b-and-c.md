@@ -17,6 +17,38 @@ A second 5 GB volume creates another independent database disk; it does not exte
 
 The Railway production Postgres logs show WAL recovery failing with `No space left on device` while writing `pg_wal/xlogtemp.66`. This establishes an actual disk-exhaustion event; it does **not** prove there is no additional corruption or recovery issue.
 
+### Read-only forensic results — 2026-10-19
+
+The active primary volume was inspected offline in a temporary PostgreSQL 18 container using read-only filesystem commands and `pg_controldata`; the original volume was then reattached to the original service. No database file was written, deleted or reset during this inspection.
+
+| Active primary volume check | Observed result |
+|---|---|
+| Volume | `postgres-volume`, 5,000 MB, attached back to `Postgres` at `/var/lib/postgresql/data` |
+| PostgreSQL data version | 18 |
+| Database system identifier | `7678021235882815543` |
+| Cluster state | `in crash recovery` |
+| Latest checkpoint / REDO | `43/B854D5C8` / `43/B4FF6E68` |
+| Filesystem use | approximately 4.5 GiB used of 4.6 GiB available to the filesystem; 5.5 MiB free (100%) |
+| `pgdata/base` | approximately 4.4 GiB |
+| `pgdata/pg_wal` | approximately 129 MiB, eight 16 MiB WAL segments present |
+| `pg_wal/xlogtemp*` | none found during the read-only scan |
+| `pg_resetwal --dry-run` | dry-run completed when run as the `postgres` OS user; it proposed `0000000100000043000000BC` as the first segment after reset. No forced reset was executed. |
+
+Four detached volumes were inspected read-only. **None shares the active primary's database system identifier; do not treat them as a backup of this primary or swap them into production.**
+
+| Detached volume | PG version | System identifier | Data-directory size | Result |
+|---|---:|---:|---:|---|
+| `postgres-fucm-restored-Ktlg` | 18 | `7638032074900590630` | ~677 MiB | Different cluster |
+| `postgres-fucm-restored` | 18 | `7638032074900590630` | ~565 MiB | Different cluster; same ID as above |
+| `postgres-volume-fucm` | 15 | `7675897436097814563` | ~131 MiB | Different major version and cluster |
+| `postgres-volume-oJ8w` | 18 | `7677349464917008439` | ~143 MiB | Different cluster |
+
+All four volumes were detached after inspection. The temporary inspection service was removed. The active volume is reattached to `Postgres`; **the Postgres service's current start command is deliberately `sleep infinity`**, so the successful deployment status means the container is paused, not that the database is healthy. No API service was pointed at the secondary database.
+
+**Recovery blocker:** Railway's connected tools do not expose the Backups tab's volume-snapshot inventory/restore controls. The primary service has no `WAL_ARCHIVE_*` variables, so PITR was not enabled there and cannot restore this incident retroactively. Before restarting the database, check the Railway `Postgres` service's **Backups** tab for a usable volume snapshot from the same system identifier, or escalate to Railway support. Prefer a verified snapshot restore to an isolated/new volume. Do not force `pg_resetwal` without first establishing that no usable backup exists and explicitly accepting possible transaction loss/inconsistency. If no backup is usable, recovery requires a controlled last-resort procedure, followed immediately by a logical dump, new clean database, integrity checks, and cutover only after reconciliation.
+
+Official guidance: https://docs.railway.com/databases/troubleshooting/postgres-corrupted-wal and https://docs.railway.com/guides/postgres-backups-restores
+
 **Do not run data migrations, attach the secondary database to application traffic, prune source rows or repeatedly restart the primary as a storage fix.** First obtain a consistent backup/recovery copy and verify that it can be restored. Confirm the primary can accept connections and pass integrity checks. Storage offload is not a substitute for repairing WAL recovery.
 
 The secondary service `Postgres--wsQ` has been provisioned in Railway production and its PostgreSQL deployment reports `SUCCESS` / `ready to accept connections`. It has its own 5,000 MB `postgres-volume-4Wke` and private endpoint `postgres-wsq`; there is no public domain or TCP proxy. The database-name-guarded schema was applied with a temporary in-platform bootstrap runner and verified against the target database: all four expected catalog/rollup tables exist, each has `tenant_id`, Row Level Security is enabled and forced, and no operational source rows were copied. The bootstrap runner was deleted after success. No existing application variables were changed; no application points to this database yet.
