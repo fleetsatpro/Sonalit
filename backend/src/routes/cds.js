@@ -1074,7 +1074,7 @@ router.post('/bookings', asyncHandler(async (req, res) => {
       cu = await req.db(
         `INSERT INTO cds_customers (company_name, contact_person, phone, code, org_id)
          VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [name, body.contact_person || name, body.phone || '-', genCode('CU'), req.user.org_id]
+        [name, body.contact_person || null, body.phone || null, genCode('CU'), req.user.org_id]
       );
     }
     body.customer_id = cu.rows[0].id;
