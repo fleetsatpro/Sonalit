@@ -25,6 +25,7 @@ ALTER TABLE public.cds_transporters
   ALTER COLUMN on_time_rate DROP DEFAULT,
   ALTER COLUMN on_time_rate DROP NOT NULL,
   ALTER COLUMN avg_clamp_time DROP DEFAULT,
+  ALTER COLUMN avg_clamp_time DROP NOT NULL,
   ALTER COLUMN rating DROP DEFAULT,
   ALTER COLUMN rating DROP NOT NULL,
   ALTER COLUMN performance_score DROP DEFAULT,
