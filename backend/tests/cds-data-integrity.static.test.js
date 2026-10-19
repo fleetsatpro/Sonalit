@@ -68,6 +68,7 @@ describe('CDS data-integrity regression guards', () => {
     expect(migration).toContain('cds_metric_reconciliation_archive');
     expect(migration).toContain('ALTER COLUMN rating DROP DEFAULT');
     expect(migration).toContain('ALTER COLUMN on_time_rate DROP DEFAULT');
+    expect(migration).toContain('ALTER COLUMN avg_clamp_time DROP NOT NULL');
     expect(migration).toContain('ALTER COLUMN sla_compliance DROP DEFAULT');
     expect(migration).toContain('UPDATE public.cds_drivers SET rating = NULL');
     expect(migration).toContain('UPDATE public.cds_transporters SET on_time_rate = NULL');
