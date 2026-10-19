@@ -198,6 +198,38 @@ Each batch should be retryable/idempotent, resumable from durable state, rate-li
 - Restore test every archive type to an isolated staging schema. GDPR export/purge must cover hot database, secondary DB, R2 objects, derivative thumbnails/previews and cached data.
 - Apply lifecycle policies only to dedicated prefixes/buckets after legal retention review. Beware lifecycle rules are asynchronous (often within about 24 hours); do not make them the only mechanism for immediate deletion. Do not lock personal-data objects indefinitely if erasure is required.
 
+## Disaster recovery — mandatory before live cutover
+
+The storage redesign must not repeat the current single-volume failure mode.
+
+### Operational PostgreSQL (primary)
+
+Once a verified restore has brought the primary back and free space is healthy:
+
+1. Enable **Railway volume backups** on the primary service, with daily plus weekly/monthly retention appropriate to the business. Test a restore to a replacement volume before relying on the schedule.
+2. Enable Railway **PostgreSQL PITR** through the Backups tab after the service's custom start command has been returned to the supported/default PostgreSQL start path. PITR uses Railway's private storage bucket and pgBackRest WAL archiving; the restore range begins only after the first post-enable base backup, so it is not retroactive.
+3. Add an independently restorable logical backup (`pg_dump --format=custom --no-owner`) to a **verified private R2 backup bucket** only after bucket access/visibility is confirmed. Include the dump manifest, creation timestamp, PostgreSQL major version, schema/migration watermark, sizes, SHA-256 and test-restore result. Do not use the mixed `sonalit-convoy-photos` bucket for database dumps until privacy is confirmed.
+4. Perform scheduled restore drills to an isolated database, compare schema/migration version and representative tenant-scoped counts, then discard only verified disposable test data through the approved process.
+
+PITR is not a substitute for object-level backups, and R2 media archives are not a substitute for transaction-consistent database backups. Keep at least one restore path independent of the primary disk.
+
+### Secondary analytics/archive PostgreSQL
+
+The new `Postgres--wsQ` database contains only the four empty catalog/rollup tables at bootstrap. It is reproducible at the schema level, but once manifests and job state begin to accumulate it will need its own scheduled volume backups and an off-volume logical dump. The R2 objects themselves remain the payload authority; keep the catalog metadata backed up so object/tenant/date/checksum mappings survive a database loss.
+
+### Recovery controls
+
+- Alert at 70%, 80%, 90% and 95% disk usage on each Postgres volume, and at sustained growth rates forecast to breach 80% within the chosen recovery lead time.
+- Run read-only table/TOAST/index size inventory before enabling any migration, and include WAL usage and free-space headroom.
+- Do not reduce production retention, remove partitions, delete files under `PGDATA`, delete WAL segments, or force `pg_resetwal` as a routine disk-space management mechanism.
+- Every archive batch must have a durable cursor, error state, checksum/count reconciliation, restore drill, and an explicit rule for when source rows can be released.
+- Once recovered, prove a fresh backup restore before moving large payloads out of Postgres. Do not treat an upload attempt or a `SUCCESS` container deployment as proof that the database, backup or archive is healthy.
+
+Current official Railway backup guidance and constraints:
+- https://docs.railway.com/guides/postgres-backups-restores
+- https://docs.railway.com/volumes/point-in-time-recovery
+- https://docs.railway.com/volumes/backups
+
 ## Cost and capacity controls
 
 Cloudflare R2's current published Standard price is $0.015/GB-month after 10 GB-month free; the published free tier includes 1M Class A and 10M Class B operations/month. Internet egress has no R2 egress fee. Infrequent Access is $0.01/GB-month but adds retrieval charges and has a 30-day minimum; use only for infrequently read eligible archives after modelling requests/retrievals. Prices can change; use the current billing page before rollout:
