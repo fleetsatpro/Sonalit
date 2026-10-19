@@ -7,10 +7,10 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "node dist/start.js",
     "dev": "tsx watch src/index.ts",
     "test": "pnpm test:unit && pnpm test:integration",
-    "test:unit": "vitest run src --passWithNoTests",
+    "test:unit": "vitest run tests/unit src --passWithNoTests",
     "test:integration": "vitest run tests/integration --passWithNoTests",
     "lint": "eslint src tests --max-warnings=0",
     "typecheck": "tsc --noEmit",
