@@ -24,7 +24,10 @@ export function hasValidCoordinates<T extends CoordinateEvidence>(
     && Math.abs(trip.lat) <= 90
     && typeof trip.lng === 'number'
     && Number.isFinite(trip.lng)
-    && Math.abs(trip.lng) <= 180;
+    && Math.abs(trip.lng) <= 180
+    // Match Sonalit's existing map-coordinate guard: Null Island often means
+    // a default/unset GPS location rather than an observed vehicle position.
+    && !(Math.abs(trip.lat) < 0.000001 && Math.abs(trip.lng) < 0.000001);
 }
 
 export function freshnessLabel(trip: TrackingFreshnessEvidence): string {

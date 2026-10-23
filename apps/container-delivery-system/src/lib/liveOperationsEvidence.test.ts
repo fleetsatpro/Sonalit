@@ -13,7 +13,7 @@ describe('CDS live-operation evidence', () => {
     it('accepts finite coordinates within geographic bounds', () => {
       expect(hasValidCoordinates({ lat: -1.2864, lng: 36.8172 })).toBe(true);
       expect(hasValidCoordinates({ lat: 90, lng: 180 })).toBe(true);
-      expect(hasValidCoordinates({ lat: 0, lng: 0 })).toBe(true);
+      expect(hasValidCoordinates({ lat: 0, lng: 36.8172 })).toBe(true);
     });
 
     it('rejects missing, non-finite, or out-of-range coordinates', () => {
@@ -22,6 +22,8 @@ describe('CDS live-operation evidence', () => {
       expect(hasValidCoordinates({ lat: 1, lng: Number.POSITIVE_INFINITY })).toBe(false);
       expect(hasValidCoordinates({ lat: 91, lng: 36.8 })).toBe(false);
       expect(hasValidCoordinates({ lat: 1, lng: -181 })).toBe(false);
+      expect(hasValidCoordinates({ lat: 0, lng: 0 })).toBe(false);
+      expect(hasValidCoordinates({ lat: 0.0000002, lng: -0.0000002 })).toBe(false);
     });
   });
 
