@@ -2,21 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useRouter, useRouterState } from '@tanstack/react-router';
 import { ArrowLeft, Bell, LayoutGrid, Home, ShieldCheck, ShieldAlert, CircleHelp } from 'lucide-react';
+import { fetchSystemHealth, getOverallHealthState } from '../../lib/systemHealth.js';
 import { api } from '../../lib/api.js';
 import NotificationPanel from '../layout/NotificationPanel.js';
 
-interface SystemHealthCheck {
-  id: string;
-  label: string;
-  status: 'healthy' | 'degraded' | 'unavailable' | 'unknown';
-  checked_at: string | null;
-  detail: string;
-}
-interface HealthPayload {
-  status: 'ok' | 'degraded' | 'error' | string;
-  timestamp?: string;
-  checks?: SystemHealthCheck[];
-}
 interface TopbarProps { onMenuOpen: () => void; }
 
 const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
@@ -41,26 +30,14 @@ const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
     refetchInterval: 30000,
   });
 
-  const { data: systemHealth, isError: healthRequestFailed } = useQuery<HealthPayload>({
+  const { data: systemHealth, isError: healthRequestFailed } = useQuery({
     queryKey: ['system-health'],
-    queryFn: async () => {
-      // The health route intentionally returns 503 when a critical dependency
-      // fails; retain its payload so the UI can show degraded evidence instead
-      // of collapsing every non-2xx response into a generic network error.
-      const response = await api.get<{ data?: HealthPayload } & HealthPayload>('/health', { validateStatus: () => true });
-      return response.data?.data ?? response.data;
-    },
+    queryFn: fetchSystemHealth,
     refetchInterval: 15_000,
     staleTime: 5_000,
     retry: 1,
   });
-  const healthState = healthRequestFailed || !systemHealth
-    ? 'unknown'
-    : systemHealth.status === 'ok' && systemHealth.checks?.length && systemHealth.checks.every(check => check.status === 'healthy')
-      ? 'healthy'
-      : systemHealth.status === 'error' || systemHealth.status === 'degraded'
-        ? 'degraded'
-        : 'unknown';
+  const healthState = getOverallHealthState(systemHealth, healthRequestFailed);
   const healthLabel = healthState === 'healthy' ? 'OPERATIONAL' : healthState === 'degraded' ? 'DEGRADED' : 'STATUS UNKNOWN';
   const HealthIcon = healthState === 'healthy' ? ShieldCheck : healthState === 'degraded' ? ShieldAlert : CircleHelp;
   const toggleBell = useCallback(() => setBellOpen(o => !o), []);
