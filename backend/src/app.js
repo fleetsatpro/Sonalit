@@ -151,7 +151,7 @@ app.use((req, res, next) => {
 // ─── Health & metrics ─────────────────────────────────────────────────────────
 // One source of truth for platform probes. Keep this route dependency-aware:
 // missing or stale evidence is never silently promoted to healthy.
-app.get(["/health", "/api/v1/health"], async (req, res) => {
+const coreHealthHandler = async (req, res) => {
   const checkedAt = new Date().toISOString();
   const checks = [
     { id: "api", label: "API process", status: "healthy", checked_at: checkedAt, detail: "Health endpoint responded" },
@@ -257,7 +257,9 @@ app.get(["/health", "/api/v1/health"], async (req, res) => {
   // non-ready when either cannot be confirmed; partition uncertainty is reported
   // as degraded without falsely claiming that all checks passed.
   res.status(hasCriticalFailure ? 503 : 200).json(payload);
-});
+};
+app.get("/health", coreHealthHandler);
+app.get("/api/v1/health", coreHealthHandler);
 
 function requireMetricsAuth(req, res, next) {
   const configured = String(process.env.METRICS_TOKEN || '');
