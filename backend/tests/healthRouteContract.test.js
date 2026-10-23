@@ -5,6 +5,7 @@ process.env.JWT_SECRET = 'sonalit-health-route-test-secret';
 process.env.DATABASE_URL = 'postgresql://localhost/sonalit_health_route_test';
 
 const request = require('supertest');
+const jwt = require('jsonwebtoken');
 
 jest.mock('../src/config/database', () => ({
   pool: { end: jest.fn().mockResolvedValue(undefined) },
@@ -26,6 +27,8 @@ redisHealth.mockResolvedValue('ok');
 globalQuery.mockResolvedValue({ rows: [] });
 const { app } = require('../src/app');
 
+const healthToken = () => jwt.sign({ id: 'health-test-user' }, process.env.JWT_SECRET, { expiresIn: '5m' });
+
 describe('core health endpoint route contract', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -41,12 +44,47 @@ describe('core health endpoint route contract', () => {
     });
   });
 
-  test.each(['/health', '/api/v1/health'])('%s responds through the shared health handler', async (path) => {
-    const response = await request(app).get(path);
+  test('keeps the public platform probe compatible without exposing the component ledger', async () => {
+    const response = await request(app).get('/health');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      status: 'ok',
+      database: 'ok',
+      redis: 'ok',
+      partitions_ok: true,
+      uptime_seconds: expect.any(Number),
+      timestamp: expect.any(String),
+    });
+    expect(response.body).not.toHaveProperty('checks');
+    expect(response.body).not.toHaveProperty('coverage');
+    expect(response.body).not.toHaveProperty('scope');
+    expect(globalQuery).toHaveBeenCalledWith(
+      expect.stringContaining('FROM partition_health'),
+      [['gps_logs', 'audit_logs', 'outbox']],
+    );
+  });
+
+  test('requires a valid signed token for detailed API diagnostics', async () => {
+    const anonymous = await request(app).get('/api/v1/health');
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.body.error).toBe('health_auth_required');
+    expect(globalQuery).not.toHaveBeenCalled();
+
+    const invalid = await request(app)
+      .get('/api/v1/health')
+      .set('Authorization', 'Bearer not-a-valid-token');
+    expect(invalid.status).toBe(401);
+    expect(globalQuery).not.toHaveBeenCalled();
+  });
+
+  test('returns the detailed ledger to a valid Sonalit token', async () => {
+    const response = await request(app)
+      .get('/api/v1/health')
+      .set('Authorization', `Bearer ${healthToken()}`);
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe('ok');
-    expect(response.body.timestamp).toEqual(expect.any(String));
     expect(response.body.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'api', status: 'healthy' }),
       expect.objectContaining({ id: 'database', status: 'healthy' }),
@@ -55,16 +93,15 @@ describe('core health endpoint route contract', () => {
       expect.objectContaining({ id: 'partitions-audit_logs', status: 'healthy' }),
       expect.objectContaining({ id: 'partitions-outbox', status: 'healthy' }),
     ]));
-    expect(globalQuery).toHaveBeenCalledWith(
-      expect.stringContaining('FROM partition_health'),
-      [['gps_logs', 'audit_logs', 'outbox']],
-    );
+    expect(response.body.coverage.scope).toBe('core-api-dependencies');
   });
 
   test('keeps an unavailable database non-ready instead of returning an all-clear', async () => {
     databaseHealth.mockResolvedValue(false);
 
-    const response = await request(app).get('/api/v1/health');
+    const response = await request(app)
+      .get('/api/v1/health')
+      .set('Authorization', `Bearer ${healthToken()}`);
 
     expect(response.status).toBe(503);
     expect(response.body.status).toBe('error');
