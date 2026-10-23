@@ -4,6 +4,8 @@ import {
   formatAge,
   formatUptime,
   getOverallHealthState,
+  isFreshHealthCheckTimestamp,
+  isFreshHealthSnapshot,
 } from './systemHealth.js';
 
 vi.mock('./api.js', () => ({
@@ -75,6 +77,20 @@ describe('system health evidence contract', () => {
     } as never);
     await expect(fetchSystemHealth()).resolves.toMatchObject({ status: 'error' });
     expect(api.get).toHaveBeenCalledWith('/health', { validateStatus: expect.any(Function) });
+    const validateStatus = (vi.mocked(api.get).mock.calls[0]?.[1] as { validateStatus?: (status: number) => boolean } | undefined)?.validateStatus;
+    expect(validateStatus?.(200)).toBe(true);
+    expect(validateStatus?.(503)).toBe(true);
+    expect(validateStatus?.(401)).toBe(false);
+    expect(validateStatus?.(404)).toBe(false);
+    expect(validateStatus?.(500)).toBe(false);
+
+    // Even if a nonstandard Axios adapter resolves unexpectedly, a 404 cannot
+    // masquerade as a valid health response.
+    vi.mocked(api.get).mockResolvedValueOnce({
+      status: 404,
+      data: healthyPayload,
+    } as never);
+    await expect(fetchSystemHealth()).rejects.toThrow('HTTP 404');
   });
 
   it('rejects malformed health responses rather than inventing an all-clear', async () => {
@@ -85,6 +101,24 @@ describe('system health evidence contract', () => {
       data: { status: 'ok', timestamp: healthyPayload.timestamp, checks: [null] },
     } as never);
     await expect(fetchSystemHealth()).rejects.toThrow('invalid payload or check ledger');
+  });
+
+  it('requires fresh component timestamps before treating a fresh envelope as healthy', () => {
+    const staleChecks = {
+      ...healthyPayload,
+      checks: healthyPayload.checks.map(check => ({
+        ...check,
+        checked_at: '2026-10-23T05:58:00.000Z',
+      })),
+    };
+    expect(isFreshHealthSnapshot(staleChecks, TEST_NOW)).toBe(true);
+    expect(isFreshHealthCheckTimestamp('2026-10-23T05:58:00.000Z', TEST_NOW)).toBe(false);
+    expect(isFreshHealthCheckTimestamp(null, TEST_NOW)).toBe(false);
+    expect(getOverallHealthState(staleChecks, false, TEST_NOW)).toBe('unknown');
+    expect(getOverallHealthState({
+      ...healthyPayload,
+      checks: healthyPayload.checks.map(check => ({ ...check, checked_at: null })),
+    }, false, TEST_NOW)).toBe('unknown');
   });
 
   it('formats evidence age and uptime without fabricating missing values', () => {
