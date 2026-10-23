@@ -67,9 +67,13 @@ for (const { method, path: routePath } of rawRoutes) {
   // Convert Express :param notation to {param} for OpenAPI
   const oaPath = routePath.replace(/:([a-zA-Z_]+)/g, '{$1}');
   if (!paths[oaPath]) paths[oaPath] = {};
+  const responses = { '200': { description: 'OK' } };
+  if (method === 'GET' && (routePath === '/health' || routePath === '/api/v1/health')) {
+    responses['503'] = { description: 'Core API dependency unavailable or health evidence not ready' };
+  }
   paths[oaPath][method.toLowerCase()] = {
     operationId: `${method.toLowerCase()}_${oaPath.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')}`,
-    responses: { '200': { description: 'OK' } },
+    responses,
   };
 }
 
