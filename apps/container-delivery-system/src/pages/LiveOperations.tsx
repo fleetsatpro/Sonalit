@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/Card.js';
 import { StatusBadge } from '@/components/ui/Badge.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
 import { api } from '@/lib/api.js';
-import { ageLabel, freshnessLabel, getLiveFeedState, hasValidCoordinates } from '../lib/liveOperationsEvidence.js';
+import { ageLabel, freshnessLabel, getLiveFeedState, hasValidCoordinates, isValidLiveTripPayload } from '../lib/liveOperationsEvidence.js';
 
 function ActivityGlyph({ size = 14 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>;
@@ -41,8 +41,11 @@ export default function LiveOperations() {
   const { data, isPending, isError, dataUpdatedAt } = useQuery<{ data: LiveTrip[] }>({
     queryKey: ['trips', 'live'],
     queryFn: async () => {
-      const { data } = await api.get('/trips/live');
-      return data;
+      const response = await api.get<unknown>('/trips/live');
+      if (!isValidLiveTripPayload<LiveTrip>(response.data)) {
+        throw new Error('Tracking endpoint returned an invalid live-trip payload');
+      }
+      return response.data;
     },
     refetchInterval: 15_000,
   });
@@ -153,7 +156,13 @@ export default function LiveOperations() {
             </div>
           ))}
           {trips.length === 0 && (
-            <div className="text-center text-text-2 text-xs py-8 font-mono">No open trips returned by the tracking endpoint.</div>
+            <div className="text-center text-text-2 text-xs py-8 font-mono">
+              {isPending && !data
+                ? 'Checking for open trips…'
+                : isError
+                  ? 'Open-trip feed unavailable; no empty-state conclusion can be drawn.'
+                  : 'No open trips returned by the tracking endpoint.'}
+            </div>
           )}
         </Card>
       </div>
