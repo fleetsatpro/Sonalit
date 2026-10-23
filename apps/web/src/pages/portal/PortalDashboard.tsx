@@ -41,7 +41,11 @@ function isActive(s: ShipmentSummary): boolean {
 
 function freshness(s: ShipmentSummary): 'live' | 'recent' | 'stale' | 'offline' {
   if (!s.last_ping_at) return 'offline';
-  const age = Date.now() - new Date(s.last_ping_at).getTime();
+  const pingAt = new Date(s.last_ping_at).getTime();
+  if (!Number.isFinite(pingAt)) return 'offline';
+  const age = Date.now() - pingAt;
+  if (age < -30_000) return 'offline';
+  if (age < 0) return 'recent';
   if (age < 120000) return 'live';
   if (age < 900000) return 'recent';
   if (age < 3600000) return 'stale';
@@ -324,6 +328,7 @@ export default function PortalDashboard(): React.ReactElement {
   const navigate = useNavigate();
   const [shipments, setShipments] = useState<ShipmentSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [tab, setTab] = useState<Tab>('active');
   const [search, setSearch] = useState('');
@@ -331,6 +336,7 @@ export default function PortalDashboard(): React.ReactElement {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   const load = React.useCallback(() => {
+    setRefreshing(true);
     setErrorMsg('');
     fetch(API + '/portal/shipments', { credentials: 'include' })
       .then(async res => {
@@ -342,7 +348,7 @@ export default function PortalDashboard(): React.ReactElement {
         if (json) { setShipments(json.data ?? []); setLastRefresh(new Date()); }
       })
       .catch((e: Error) => setErrorMsg(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setRefreshing(false); });
   }, [navigate]);
 
   useEffect(() => {
@@ -360,11 +366,13 @@ export default function PortalDashboard(): React.ReactElement {
   const portfolioAgeMs = Date.now() - lastRefresh.getTime();
   const portfolioFeedState = loading
     ? 'CHECKING'
-    : errorMsg
-      ? shipments.length > 0 ? 'FEED DEGRADED' : 'FEED UNAVAILABLE'
-      : portfolioAgeMs > 120_000
-        ? 'FEED STALE'
-        : 'FEED CURRENT';
+    : refreshing
+      ? 'CHECKING UPDATE'
+      : errorMsg
+        ? shipments.length > 0 ? 'FEED DEGRADED' : 'FEED UNAVAILABLE'
+        : portfolioAgeMs > 120_000
+          ? 'FEED STALE'
+          : 'FEED CURRENT';
   const portfolioFeedClass = portfolioFeedState === 'FEED CURRENT'
     ? 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300'
     : portfolioFeedState === 'FEED DEGRADED'

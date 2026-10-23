@@ -138,6 +138,13 @@ jobs:
       - name: Build web
         run: pnpm --filter @sonalit/web build
 
+      # CDS is a separate workspace project; the web build does not typecheck it.
+      - name: Build Container Delivery System
+        run: pnpm --filter @sonalit/container-delivery-system build
+
+      - name: Container Delivery System unit tests
+        run: pnpm --filter @sonalit/container-delivery-system test:unit
+
       # The web package owns unit and contract tests for offline queues, auth,
       # health indicators, and feature capability claims. Typecheck/build alone
       # does not execute these behavioural regressions.

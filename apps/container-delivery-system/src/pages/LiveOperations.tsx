@@ -1,10 +1,21 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Clock3, MapPin, ShieldAlert } from 'lucide-react';
 import { Card } from '@/components/ui/Card.js';
 import { StatusBadge } from '@/components/ui/Badge.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
 import { api } from '@/lib/api.js';
+
+function ActivityGlyph({ size = 14 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>;
+}
+
+function MapPinGlyph({ size = 15 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>;
+}
+
+function AlertGlyph({ size = 19 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m12 3 10 18H2L12 3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>;
+}
 
 interface LiveTrip {
   id: string;
@@ -44,7 +55,9 @@ function ageLabel(iso: string | null): string {
   if (!iso) return 'Timestamp unavailable';
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return 'Timestamp invalid';
-  const ageSeconds = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  const ageSecondsRaw = (Date.now() - t) / 1000;
+  if (ageSecondsRaw < -30) return 'Timestamp in future';
+  const ageSeconds = Math.max(0, Math.floor(ageSecondsRaw));
   if (ageSeconds < 60) return ageSeconds <= 1 ? 'just now' : `${ageSeconds}s ago`;
   if (ageSeconds < 3600) return `${Math.floor(ageSeconds / 60)}m ago`;
   if (ageSeconds < 86400) return `${Math.floor(ageSeconds / 3600)}h ago`;
@@ -112,7 +125,7 @@ export default function LiveOperations() {
               <div key={trip.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-hair px-4 py-3 last:border-0">
                 <div className="min-w-0 flex gap-3">
                   <div className={`mt-0.5 w-8 h-8 shrink-0 rounded-md border flex items-center justify-center ${trip.position_is_live ? 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300' : 'border-white/[0.07] bg-white/[0.02] text-text-2'}`}>
-                    <MapPin size={15} strokeWidth={1.7} />
+                    <MapPinGlyph size={15} />
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -135,7 +148,7 @@ export default function LiveOperations() {
             {locatedTrips.length === 0 && (
               <div className="min-h-[300px] flex flex-col items-center justify-center gap-3 px-8 text-center">
                 <div className="h-11 w-11 rounded-xl border border-white/[0.07] bg-white/[0.02] flex items-center justify-center text-text-2">
-                  {isError ? <ShieldAlert size={19} strokeWidth={1.7} /> : <MapPin size={19} strokeWidth={1.7} />}
+                  {isError ? <AlertGlyph size={19} /> : <MapPinGlyph size={19} />}
                 </div>
                 <div className="font-display font-bold text-[13px] text-text-0">
                   {isPending && !data ? 'Checking GPS evidence' : isError ? 'GPS feed unavailable' : 'No verified GPS coordinates'}
@@ -158,7 +171,7 @@ export default function LiveOperations() {
           {trips.map(trip => (
             <div key={trip.id} className="flex gap-2.5 py-3 border-b border-hair last:border-b-0">
               <div className={`w-[26px] h-[26px] rounded-lg flex-none flex items-center justify-center ${trip.position_is_live ? 'bg-emerald-500/[0.05] text-emerald-300' : 'bg-ink-3 text-text-2'}`}>
-                <Activity size={14} strokeWidth={1.7} />
+                <ActivityGlyph size={14} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-xs-tight text-text-0">{s(trip.trip_number)} <span className="text-text-2">{s(trip.vehicle_reg)}</span></div>
