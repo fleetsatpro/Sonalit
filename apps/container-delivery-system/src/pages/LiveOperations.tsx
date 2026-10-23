@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/Card.js';
 import { StatusBadge } from '@/components/ui/Badge.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
 import { api } from '@/lib/api.js';
+import { ageLabel, freshnessLabel, getLiveFeedState, hasValidCoordinates } from '../lib/liveOperationsEvidence.js';
 
 function ActivityGlyph({ size = 14 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>;
@@ -35,33 +36,6 @@ interface LiveTrip {
 
 const s = (v: unknown) => String(v ?? '—');
 
-function hasValidCoordinates(trip: LiveTrip): trip is LiveTrip & { lat: number; lng: number } {
-  return typeof trip.lat === 'number'
-    && Number.isFinite(trip.lat)
-    && Math.abs(trip.lat) <= 90
-    && typeof trip.lng === 'number'
-    && Number.isFinite(trip.lng)
-    && Math.abs(trip.lng) <= 180;
-}
-
-function freshnessLabel(trip: LiveTrip): string {
-  if (trip.position_is_live) return 'LIVE FIX';
-  if (trip.tracking_health) return trip.tracking_health.replace(/_/g, ' ').toUpperCase();
-  return trip.last_seen ? 'LAST KNOWN' : 'NO FIX';
-}
-
-function ageLabel(iso: string | null): string {
-  if (!iso) return 'Timestamp unavailable';
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return 'Timestamp invalid';
-  const ageSecondsRaw = (Date.now() - t) / 1000;
-  if (ageSecondsRaw < -30) return 'Timestamp in future';
-  const ageSeconds = Math.max(0, Math.floor(ageSecondsRaw));
-  if (ageSeconds < 60) return ageSeconds <= 1 ? 'just now' : `${ageSeconds}s ago`;
-  if (ageSeconds < 3600) return `${Math.floor(ageSeconds / 60)}m ago`;
-  if (ageSeconds < 86400) return `${Math.floor(ageSeconds / 3600)}h ago`;
-  return `${Math.floor(ageSeconds / 86400)}d ago`;
-}
 
 export default function LiveOperations() {
   const { data, isPending, isError, dataUpdatedAt } = useQuery<{ data: LiveTrip[] }>({
@@ -76,14 +50,12 @@ export default function LiveOperations() {
   const trips = Array.isArray(data?.data) ? data.data : [];
   const locatedTrips = trips.filter(hasValidCoordinates);
   const liveFixes = locatedTrips.filter(t => t.position_is_live).length;
-  const feedAge = dataUpdatedAt > 0 ? Date.now() - dataUpdatedAt : Infinity;
-  const feedState = isPending && !data
-    ? 'CHECKING FEED'
-    : isError
-      ? data ? 'FEED DEGRADED' : 'FEED UNAVAILABLE'
-      : feedAge <= 45_000
-        ? 'FEED CURRENT'
-        : 'FEED STALE';
+  const feedState = getLiveFeedState({
+    isPending: isPending && !data,
+    isError,
+    hasData: Boolean(data),
+    dataUpdatedAt,
+  });
   const feedTone = feedState === 'FEED CURRENT'
     ? 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300'
     : feedState === 'FEED DEGRADED'
