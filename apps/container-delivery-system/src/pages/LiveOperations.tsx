@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/Card.js';
 import { StatusBadge } from '@/components/ui/Badge.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
 import { api } from '@/lib/api.js';
-import { ageLabel, freshnessLabel, getLiveFeedState, hasValidCoordinates, isValidLiveTripPayload } from '../lib/liveOperationsEvidence.js';
+import { ageLabel, freshnessLabel, getLiveFeedState, hasValidCoordinates, hasVerifiedLiveFix, isValidLiveTripPayload } from '../lib/liveOperationsEvidence.js';
 
 function ActivityGlyph({ size = 14 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>;
@@ -52,7 +52,7 @@ export default function LiveOperations() {
 
   const trips = Array.isArray(data?.data) ? data.data : [];
   const locatedTrips = trips.filter(hasValidCoordinates);
-  const liveFixes = locatedTrips.filter(t => t.position_is_live).length;
+  const liveFixes = locatedTrips.filter(hasVerifiedLiveFix).length;
   const feedState = getLiveFeedState({
     isPending: isPending && !data,
     isError,
@@ -98,7 +98,7 @@ export default function LiveOperations() {
             {locatedTrips.map(trip => (
               <div key={trip.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-hair px-4 py-3 last:border-0">
                 <div className="min-w-0 flex gap-3">
-                  <div className={`mt-0.5 w-8 h-8 shrink-0 rounded-md border flex items-center justify-center ${trip.position_is_live ? 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300' : 'border-white/[0.07] bg-white/[0.02] text-text-2'}`}>
+                  <div className={`mt-0.5 w-8 h-8 shrink-0 rounded-md border flex items-center justify-center ${hasVerifiedLiveFix(trip) ? 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300' : 'border-white/[0.07] bg-white/[0.02] text-text-2'}`}>
                     <MapPinGlyph size={15} />
                   </div>
                   <div className="min-w-0">
@@ -114,7 +114,7 @@ export default function LiveOperations() {
                     </div>
                   </div>
                 </div>
-                <div className={`self-start rounded-md border px-2 py-1 font-mono text-[9px] ${trip.position_is_live ? 'border-emerald-500/20 text-emerald-300' : 'border-white/10 text-text-2'}`}>
+                <div className={`self-start rounded-md border px-2 py-1 font-mono text-[9px] ${hasVerifiedLiveFix(trip) ? 'border-emerald-500/20 text-emerald-300' : 'border-white/10 text-text-2'}`}>
                   {freshnessLabel(trip)}
                 </div>
               </div>
@@ -142,19 +142,25 @@ export default function LiveOperations() {
         <Card className="max-h-[620px] overflow-y-auto p-4">
           <div className="font-display font-bold text-[13px] mb-1">Open Trips</div>
           <div className="text-2xs text-text-2 font-mono mb-2.5">Refreshed from the tracking endpoint every 15 seconds</div>
-          {trips.map(trip => (
-            <div key={trip.id} className="flex gap-2.5 py-3 border-b border-hair last:border-b-0">
-              <div className={`w-[26px] h-[26px] rounded-lg flex-none flex items-center justify-center ${trip.position_is_live ? 'bg-emerald-500/[0.05] text-emerald-300' : 'bg-ink-3 text-text-2'}`}>
-                <ActivityGlyph size={14} />
+          {trips.map(trip => {
+            const verifiedLiveFix = hasVerifiedLiveFix(trip);
+            const validPosition = hasValidCoordinates(trip);
+            return (
+              <div key={trip.id} className="flex gap-2.5 py-3 border-b border-hair last:border-b-0">
+                <div className={`w-[26px] h-[26px] rounded-lg flex-none flex items-center justify-center ${verifiedLiveFix ? 'bg-emerald-500/[0.05] text-emerald-300' : 'bg-ink-3 text-text-2'}`}>
+                  <ActivityGlyph size={14} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs-tight text-text-0">{s(trip.trip_number)} <span className="text-text-2">{s(trip.vehicle_reg)}</span></div>
+                  <div className="text-2xs text-text-2 mt-0.5 font-mono">{s(trip.origin)} → {s(trip.destination)}</div>
+                  <div className="mt-1 text-2xs text-text-2">
+                    {verifiedLiveFix ? 'Current GPS fix' : validPosition ? `Location ${ageLabel(trip.last_seen)}` : 'No verified GPS fix'}
+                  </div>
+                </div>
+                <StatusBadge status={s(trip.status)} />
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs-tight text-text-0">{s(trip.trip_number)} <span className="text-text-2">{s(trip.vehicle_reg)}</span></div>
-                <div className="text-2xs text-text-2 mt-0.5 font-mono">{s(trip.origin)} → {s(trip.destination)}</div>
-                <div className="mt-1 text-2xs text-text-2">{trip.position_is_live ? 'Current GPS fix' : `Location ${ageLabel(trip.last_seen)}`}</div>
-              </div>
-              <StatusBadge status={s(trip.status)} />
-            </div>
-          ))}
+            );
+          })}
           {trips.length === 0 && (
             <div className="text-center text-text-2 text-xs py-8 font-mono">
               {isPending && !data

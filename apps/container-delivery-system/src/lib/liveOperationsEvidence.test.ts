@@ -4,6 +4,7 @@ import {
   freshnessLabel,
   getLiveFeedState,
   hasValidCoordinates,
+  hasVerifiedLiveFix,
   isValidLiveTripPayload,
 } from './liveOperationsEvidence.js';
 
@@ -53,6 +54,23 @@ describe('CDS live-operation evidence', () => {
       expect(isValidLiveTripPayload({ data: { trips: [] } })).toBe(false);
       expect(isValidLiveTripPayload({ data: [{ ...validPayload.data[0], lat: '-1.2864' }] })).toBe(false);
       expect(isValidLiveTripPayload({ data: [{ ...validPayload.data[0], lng: undefined }] })).toBe(false);
+    });
+  });
+
+  describe('verified live fixes', () => {
+    const fix = {
+      lat: -1.2864,
+      lng: 36.8172,
+      position_is_live: true,
+      tracking_health: 'live',
+      last_seen: '2026-10-23T11:59:50.000Z',
+    };
+
+    it('requires both a live flag and a valid selected coordinate pair', () => {
+      expect(hasVerifiedLiveFix(fix)).toBe(true);
+      expect(hasVerifiedLiveFix({ ...fix, lat: 0, lng: 0 })).toBe(false);
+      expect(hasVerifiedLiveFix({ ...fix, lat: null, lng: null })).toBe(false);
+      expect(hasVerifiedLiveFix({ ...fix, position_is_live: false })).toBe(false);
     });
   });
 

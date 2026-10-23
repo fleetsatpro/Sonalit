@@ -66,6 +66,11 @@ export function hasValidCoordinates<T extends CoordinateEvidence>(
     && !(Math.abs(trip.lat) < 0.000001 && Math.abs(trip.lng) < 0.000001);
 }
 
+/** A live flag is only a current fix if the coordinates themselves are usable. */
+export function hasVerifiedLiveFix<T extends CoordinateEvidence & TrackingFreshnessEvidence>(trip: T): boolean {
+  return trip.position_is_live && hasValidCoordinates(trip);
+}
+
 export function freshnessLabel(trip: TrackingFreshnessEvidence): string {
   if (trip.position_is_live) return 'LIVE FIX';
   // The session may be live while the displayed coordinate came from a
