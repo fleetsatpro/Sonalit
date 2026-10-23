@@ -22,7 +22,7 @@ export interface SystemHealthPayload {
   coverage?: { scope?: string; not_monitored?: string[] };
 }
 
-export type OverallHealthState = 'healthy' | 'degraded' | 'unknown';
+export type OverallHealthState = 'healthy' | 'degraded' | 'unavailable' | 'unknown';
 
 export function getOverallHealthState(
   payload: SystemHealthPayload | undefined,
@@ -30,7 +30,8 @@ export function getOverallHealthState(
 ): OverallHealthState {
   if (requestFailed || !payload || !Array.isArray(payload.checks) || payload.checks.length === 0) return 'unknown';
   if (payload.status === 'ok' && payload.checks.every(check => check.status === 'healthy')) return 'healthy';
-  if (payload.status === 'degraded' || payload.status === 'error' || payload.checks.some(check => check.status === 'degraded' || check.status === 'unavailable')) return 'degraded';
+  if (payload.status === 'error' || payload.checks.some(check => check.status === 'unavailable')) return 'unavailable';
+  if (payload.status === 'degraded' || payload.checks.some(check => check.status === 'degraded')) return 'degraded';
   return 'unknown';
 }
 

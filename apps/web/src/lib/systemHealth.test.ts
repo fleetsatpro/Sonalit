@@ -44,7 +44,7 @@ describe('system health evidence contract', () => {
       ...healthyPayload,
       status: 'error',
       checks: [...healthyPayload.checks, { ...healthyPayload.checks[0], id: 'database', status: 'unavailable' }],
-    })).toBe('degraded');
+    })).toBe('unavailable');
     expect(getOverallHealthState(healthyPayload, true)).toBe('unknown');
   });
 

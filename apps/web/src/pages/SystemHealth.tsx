@@ -27,18 +27,20 @@ export default function SystemHealth() {
   const overall = getOverallHealthState(data, isError);
   const checks = Array.isArray(data?.checks) ? data.checks : [];
   const healthyCount = checks.filter(check => check.status === 'healthy').length;
-  const title = overall === 'healthy' ? 'Core checks pass' : overall === 'degraded' ? 'Degraded' : 'Status unknown';
+  const title = overall === 'healthy' ? 'Core checks pass' : overall === 'unavailable' ? 'Core dependency unavailable' : overall === 'degraded' ? 'Degraded' : 'Status unknown';
   const statusText = overall === 'healthy'
     ? 'Every check monitored by the core API health endpoint passed. This is not a claim that every Sonalit subsystem is healthy.'
-    : overall === 'degraded'
-      ? 'One or more core dependencies need attention or could not be fully verified.'
-      : 'A current, verifiable core health picture is unavailable. No healthy state is being assumed.';
+    : overall === 'unavailable'
+      ? 'A required core dependency is unavailable. Review the failed probe in the component ledger.'
+      : overall === 'degraded'
+        ? 'One or more core dependencies need attention or could not be fully verified.'
+        : 'A current, verifiable core health picture is unavailable. No healthy state is being assumed.';
   const coverageNote = data?.coverage?.not_monitored?.length
     ? `Not monitored by this endpoint: ${data.coverage.not_monitored.join(', ')}.`
     : 'This endpoint covers core API dependencies only; worker, realtime, delivery-provider, external-provider and frontend health are not asserted.';
-  const StateMark = overall === 'healthy' ? ShieldCheck : overall === 'degraded' ? ShieldAlert : CircleHelp;
-  const statusColor = overall === 'healthy' ? 'text-emerald-200' : overall === 'degraded' ? 'text-amber-200' : 'text-slate-300';
-  const statusBorder = overall === 'healthy' ? 'border-emerald-400/20' : overall === 'degraded' ? 'border-amber-400/20' : 'border-white/10';
+  const StateMark = overall === 'healthy' ? ShieldCheck : overall === 'unavailable' || overall === 'degraded' ? ShieldAlert : CircleHelp;
+  const statusColor = overall === 'healthy' ? 'text-emerald-200' : overall === 'unavailable' ? 'text-rose-200' : overall === 'degraded' ? 'text-amber-200' : 'text-slate-300';
+  const statusBorder = overall === 'healthy' ? 'border-emerald-400/20' : overall === 'unavailable' ? 'border-rose-400/25' : overall === 'degraded' ? 'border-amber-400/20' : 'border-white/10';
 
   return (
     <main className="min-h-full bg-[#070d16] px-4 py-6 text-slate-100 sm:px-6 lg:px-9 lg:py-8">
