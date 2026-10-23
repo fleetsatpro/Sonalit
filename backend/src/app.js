@@ -169,12 +169,26 @@ const coreHealthHandler = async (req, res) => {
     checked_at: dbCheckAt,
     detail: databaseHealthy ? "Connection query succeeded" : "Connection query failed",
   });
+  let redisStatus = "unknown";
+  let redisDetail = "Redis health could not be verified";
+  if (redisValue === "ok") {
+    redisStatus = "healthy";
+    redisDetail = "PING succeeded";
+  } else if (redisValue === "unreachable") {
+    redisStatus = "unavailable";
+    redisDetail = "Redis probe could not reach the service";
+  } else if (redisValue === "degraded") {
+    redisStatus = "degraded";
+    redisDetail = "Redis PING returned an unexpected response";
+  } else if (redisValue === "disabled") {
+    redisDetail = "Redis is disabled; health cannot be verified";
+  }
   checks.push({
     id: "redis",
     label: "Redis",
-    status: redisValue === "ok" ? "healthy" : redisValue === "disabled" ? "unknown" : "unavailable",
+    status: redisStatus,
     checked_at: new Date().toISOString(),
-    detail: redisValue === "ok" ? "PING succeeded" : redisValue === "disabled" ? "Redis is disabled; health cannot be verified" : "Redis probe failed",
+    detail: redisDetail,
   });
 
   const requiredPartitionTables = ["gps_logs", "audit_logs", "outbox"];
@@ -199,7 +213,10 @@ const coreHealthHandler = async (req, res) => {
     let detail = "No successful partition-check evidence";
     let checked_at = null;
     if (row) {
-      checked_at = row.checked_at ? new Date(row.checked_at).toISOString() : null;
+      const parsedCheckDate = row.checked_at == null ? null : new Date(row.checked_at);
+      checked_at = parsedCheckDate && Number.isFinite(parsedCheckDate.getTime())
+        ? parsedCheckDate.toISOString()
+        : null;
       const ageMs = checked_at ? Date.now() - new Date(checked_at).getTime() : Infinity;
       if (row.partitions_ok === false) {
         status = "degraded";
@@ -221,7 +238,11 @@ const coreHealthHandler = async (req, res) => {
     : partitionStatuses.some(check => check.status === "degraded")
       ? false
       : null;
-  const hasCriticalFailure = !databaseHealthy || redisValue !== "ok";
+  // Only confirmed outages produce the critical error state. Disabled or
+  // inconclusive Redis checks remain unknown; an explicit degraded Redis
+  // response is impaired but is not mislabeled as unreachable.
+  const hasCriticalFailure = !databaseHealthy || redisValue === "unreachable";
+  const isNotReady = hasCriticalFailure || redisValue === "degraded";
   const allHealthy = checks.every(check => check.status === "healthy");
   const status = allHealthy ? "ok" : hasCriticalFailure ? "error" : "degraded";
   const mem = process.memoryUsage();
@@ -253,10 +274,10 @@ const coreHealthHandler = async (req, res) => {
     },
     checks,
   };
-  // Database/Redis are required runtime dependencies. Keep the platform probe
-  // non-ready when either cannot be confirmed; partition uncertainty is reported
-  // as degraded without falsely claiming that all checks passed.
-  res.status(hasCriticalFailure ? 503 : 200).json(payload);
+  // PostgreSQL failure and a confirmed Redis outage are non-ready. A disabled
+  // Redis or stale partition evidence stays visibly unknown/degraded rather
+  // than being promoted to healthy or mislabeled as a confirmed outage.
+  res.status(isNotReady ? 503 : 200).json(payload);
 };
 app.get("/health", coreHealthHandler);
 app.get("/api/v1/health", coreHealthHandler);

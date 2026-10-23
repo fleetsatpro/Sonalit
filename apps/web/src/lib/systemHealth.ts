@@ -24,14 +24,31 @@ export interface SystemHealthPayload {
 
 export type OverallHealthState = 'healthy' | 'degraded' | 'unavailable' | 'unknown';
 
+const HEALTH_RESPONSE_MAX_AGE_MS = 60_000;
+const HEALTH_FUTURE_CLOCK_TOLERANCE_MS = 30_000;
+const VALID_CHECK_STATES: HealthCheckState[] = ['healthy', 'degraded', 'unavailable', 'unknown'];
+
 export function getOverallHealthState(
   payload: SystemHealthPayload | undefined,
   requestFailed = false,
+  now = Date.now(),
+  maxAgeMs = HEALTH_RESPONSE_MAX_AGE_MS,
 ): OverallHealthState {
-  if (requestFailed || !payload || !Array.isArray(payload.checks) || payload.checks.length === 0) return 'unknown';
-  if (payload.status === 'ok' && payload.checks.every(check => check.status === 'healthy')) return 'healthy';
-  if (payload.status === 'error' || payload.checks.some(check => check.status === 'unavailable')) return 'unavailable';
-  if (payload.status === 'degraded' || payload.checks.some(check => check.status === 'degraded')) return 'degraded';
+  const checks = payload?.checks;
+  if (requestFailed || !payload || !Array.isArray(checks) || checks.length === 0) return 'unknown';
+  if (typeof payload.timestamp !== 'string') return 'unknown';
+  const responseTime = new Date(payload.timestamp).getTime();
+  const responseAge = now - responseTime;
+  if (!Number.isFinite(responseTime) || responseAge < -HEALTH_FUTURE_CLOCK_TOLERANCE_MS || responseAge > maxAgeMs) return 'unknown';
+  if (checks.some(check => !check || !VALID_CHECK_STATES.includes(check.status))) return 'unknown';
+
+  // Explicit component evidence wins over the aggregate string. This prevents
+  // an inconsistent "error" envelope from turning an unknown probe into a
+  // claim that an outage has been confirmed.
+  if (checks.some(check => check.status === 'unavailable')) return 'unavailable';
+  if (checks.some(check => check.status === 'degraded')) return 'degraded';
+  if (checks.some(check => check.status === 'unknown')) return 'unknown';
+  if (payload.status === 'ok' && checks.every(check => check.status === 'healthy')) return 'healthy';
   return 'unknown';
 }
 
