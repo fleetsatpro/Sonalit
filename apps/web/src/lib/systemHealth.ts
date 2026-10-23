@@ -1,0 +1,83 @@
+import { api } from './api.js';
+
+export type HealthCheckState = 'healthy' | 'degraded' | 'unavailable' | 'unknown';
+
+export interface SystemHealthCheck {
+  id: string;
+  label: string;
+  status: HealthCheckState;
+  checked_at: string | null;
+  detail: string;
+}
+
+export interface SystemHealthPayload {
+  status: 'ok' | 'degraded' | 'error' | string;
+  timestamp?: string;
+  uptime_seconds?: number;
+  database?: string;
+  redis?: string;
+  partitions_ok?: boolean | null;
+  checks?: SystemHealthCheck[];
+}
+
+export type OverallHealthState = 'healthy' | 'degraded' | 'unknown';
+
+export function getOverallHealthState(
+  payload: SystemHealthPayload | undefined,
+  requestFailed = false,
+): OverallHealthState {
+  if (requestFailed || !payload || !Array.isArray(payload.checks) || payload.checks.length === 0) return 'unknown';
+  if (payload.status === 'ok' && payload.checks.every(check => check.status === 'healthy')) return 'healthy';
+  if (payload.status === 'degraded' || payload.status === 'error' || payload.checks.some(check => check.status === 'degraded' || check.status === 'unavailable')) return 'degraded';
+  return 'unknown';
+}
+
+export async function fetchSystemHealth(): Promise<SystemHealthPayload> {
+  // A 503 health response still carries useful dependency evidence. Accept the
+  // HTTP status here and let the typed payload drive the visual state.
+  const response = await api.get<{ data?: SystemHealthPayload } & SystemHealthPayload>(
+    '/health',
+    { validateStatus: () => true },
+  );
+  const body = response.data;
+  const payload = body && typeof body === 'object' && 'data' in body && body.data
+    ? body.data
+    : body;
+  if (!payload || typeof payload !== 'object' || typeof payload.status !== 'string') {
+    throw new Error('Health endpoint returned an invalid payload');
+  }
+  return payload;
+}
+
+export function formatAge(iso?: string | null, now = Date.now()): string {
+  if (!iso) return 'No check recorded';
+  const timestamp = new Date(iso).getTime();
+  if (!Number.isFinite(timestamp) || timestamp > now + 30_000) return 'Timestamp unavailable';
+  const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));
+  if (seconds < 60) return seconds <= 1 ? 'just now' : `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ${minutes % 60}m ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+export function formatUptime(seconds?: number): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return 'Not reported';
+  const total = Math.floor(seconds);
+  const days = Math.floor(total / 86_400);
+  const hours = Math.floor((total % 86_400) / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+export function checkStateLabel(state: HealthCheckState): string {
+  switch (state) {
+    case 'healthy': return 'Healthy';
+    case 'degraded': return 'Degraded';
+    case 'unavailable': return 'Unavailable';
+    default: return 'Unknown';
+  }
+}
