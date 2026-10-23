@@ -7,8 +7,8 @@
   },
   "servers": [
     {
-      "url": "/api/v1",
-      "description": "Current server"
+      "url": "/",
+      "description": "Current server origin"
     }
   ],
   "paths": {
@@ -6672,7 +6672,21 @@
           "503": {
             "description": "Core API dependency unavailable or health evidence not ready"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   }

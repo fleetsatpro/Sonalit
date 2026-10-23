@@ -74,10 +74,14 @@ for (const { method, path: routePath } of rawRoutes) {
   if (method === 'GET' && routePath === '/api/v1/health') {
     responses['401'] = { description: 'A valid signed Sonalit bearer token is required for detailed diagnostics' };
   }
-  paths[oaPath][method.toLowerCase()] = {
+  const operation = {
     operationId: `${method.toLowerCase()}_${oaPath.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')}`,
     responses,
   };
+  if (method === 'GET' && routePath === '/api/v1/health') {
+    operation.security = [{ bearerAuth: [] }];
+  }
+  paths[oaPath][method.toLowerCase()] = operation;
 }
 
 // ─── Assemble spec ────────────────────────────────────────────────────────────
@@ -88,7 +92,14 @@ const spec = {
     version: '2.1.0',
     description: 'Auto-generated from Express router introspection. Do not hand-edit — run generate-openapi.js.',
   },
-  servers: [{ url: '/api/v1', description: 'Current server' }],
+  // Express route paths are emitted exactly as registered (including /api/v1).
+  // Use the origin as the server base so generated clients do not double-prefix routes.
+  servers: [{ url: '/', description: 'Current server origin' }],
+  components: {
+    securitySchemes: {
+      bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+    },
+  },
   paths,
 };
 
