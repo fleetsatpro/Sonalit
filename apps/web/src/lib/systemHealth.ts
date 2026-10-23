@@ -41,6 +41,33 @@ function isValidHealthCheck(value: unknown): value is SystemHealthCheck {
     && (value.checked_at === null || typeof value.checked_at === 'string');
 }
 
+/** A fresh envelope cannot make old component evidence current. */
+export function isFreshHealthSnapshot(
+  payload: SystemHealthPayload | undefined,
+  now = Date.now(),
+  maxAgeMs = HEALTH_RESPONSE_MAX_AGE_MS,
+): boolean {
+  if (!payload || typeof payload.timestamp !== 'string') return false;
+  const responseTime = new Date(payload.timestamp).getTime();
+  const responseAge = now - responseTime;
+  return Number.isFinite(responseTime)
+    && responseAge >= -HEALTH_FUTURE_CLOCK_TOLERANCE_MS
+    && responseAge <= maxAgeMs;
+}
+
+export function isFreshHealthCheckTimestamp(
+  checkedAt: string | null | undefined,
+  now = Date.now(),
+  maxAgeMs = HEALTH_RESPONSE_MAX_AGE_MS,
+): boolean {
+  if (typeof checkedAt !== 'string') return false;
+  const checkedTime = new Date(checkedAt).getTime();
+  const checkedAge = now - checkedTime;
+  return Number.isFinite(checkedTime)
+    && checkedAge >= -HEALTH_FUTURE_CLOCK_TOLERANCE_MS
+    && checkedAge <= maxAgeMs;
+}
+
 export function getOverallHealthState(
   payload: SystemHealthPayload | undefined,
   requestFailed = false,
@@ -49,18 +76,16 @@ export function getOverallHealthState(
 ): OverallHealthState {
   const checks = payload?.checks;
   if (requestFailed || !payload || !Array.isArray(checks) || checks.length === 0) return 'unknown';
-  if (typeof payload.timestamp !== 'string') return 'unknown';
-  const responseTime = new Date(payload.timestamp).getTime();
-  const responseAge = now - responseTime;
-  if (!Number.isFinite(responseTime) || responseAge < -HEALTH_FUTURE_CLOCK_TOLERANCE_MS || responseAge > maxAgeMs) return 'unknown';
+  if (!isFreshHealthSnapshot(payload, now, maxAgeMs)) return 'unknown';
   if (checks.some(check => !check || !VALID_CHECK_STATES.includes(check.status))) return 'unknown';
 
-  // Explicit component evidence wins over the aggregate string. This prevents
-  // an inconsistent "error" envelope from turning an unknown probe into a
-  // claim that an outage has been confirmed.
+  // Explicit negative evidence wins over the aggregate string. A stale
+  // "healthy" claim, however, cannot qualify as current health evidence.
   if (checks.some(check => check.status === 'unavailable')) return 'unavailable';
   if (checks.some(check => check.status === 'degraded')) return 'degraded';
   if (checks.some(check => check.status === 'unknown')) return 'unknown';
+  if (checks.some(check => check.status === 'healthy'
+    && !isFreshHealthCheckTimestamp(check.checked_at, now, maxAgeMs))) return 'unknown';
   if (payload.status === 'ok' && checks.every(check => check.status === 'healthy')) return 'healthy';
   return 'unknown';
 }
@@ -70,7 +95,9 @@ export async function fetchSystemHealth(): Promise<SystemHealthPayload> {
   // HTTP status here and let the typed payload drive the visual state.
   const response = await api.get<{ data?: SystemHealthPayload } & SystemHealthPayload>(
     '/health',
-    { validateStatus: () => true },
+    // Preserve a structured 503 readiness payload, but let auth, routing and
+    // server errors reach the normal Axios interceptors instead of swallowing them.
+    { validateStatus: (status) => (status >= 200 && status < 300) || status === 503 },
   );
   const body: unknown = response.data;
   const payload: unknown = isRecord(body) && 'data' in body && body.data
