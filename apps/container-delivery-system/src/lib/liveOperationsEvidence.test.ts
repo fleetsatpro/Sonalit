@@ -4,6 +4,7 @@ import {
   freshnessLabel,
   getLiveFeedState,
   hasValidCoordinates,
+  isValidLiveTripPayload,
 } from './liveOperationsEvidence.js';
 
 const NOW = Date.parse('2026-10-23T12:00:00.000Z');
@@ -24,6 +25,34 @@ describe('CDS live-operation evidence', () => {
       expect(hasValidCoordinates({ lat: 1, lng: -181 })).toBe(false);
       expect(hasValidCoordinates({ lat: 0, lng: 0 })).toBe(false);
       expect(hasValidCoordinates({ lat: 0.0000002, lng: -0.0000002 })).toBe(false);
+    });
+  });
+
+  describe('runtime feed contract', () => {
+    const validPayload = {
+      data: [{
+        id: 't1',
+        status: 'dispatched',
+        phase: 'moving',
+        trip_number: 'CDS-1001',
+        origin: 'Nairobi',
+        destination: 'Mombasa',
+        eta: null,
+        vehicle_reg: 'KDA 101X',
+        lat: -1.2864,
+        lng: 36.8172,
+        last_seen: '2026-10-23T11:59:00.000Z',
+        position_is_live: false,
+        tracking_health: 'live',
+        position_source: 'device_telematics',
+      }],
+    };
+
+    it('requires an array envelope and numeric-or-null coordinates', () => {
+      expect(isValidLiveTripPayload(validPayload)).toBe(true);
+      expect(isValidLiveTripPayload({ data: { trips: [] } })).toBe(false);
+      expect(isValidLiveTripPayload({ data: [{ ...validPayload.data[0], lat: '-1.2864' }] })).toBe(false);
+      expect(isValidLiveTripPayload({ data: [{ ...validPayload.data[0], lng: undefined }] })).toBe(false);
     });
   });
 
@@ -52,6 +81,11 @@ describe('CDS live-operation evidence', () => {
         tracking_health: null,
         last_seen: null,
       })).toBe('NO FIX');
+      expect(freshnessLabel({
+        position_is_live: false,
+        tracking_health: 'live',
+        last_seen: '2026-10-23T11:59:00.000Z',
+      })).toBe('LAST KNOWN');
     });
   });
 
