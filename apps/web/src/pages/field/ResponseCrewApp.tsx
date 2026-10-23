@@ -161,6 +161,7 @@ export default function ResponseCrewApp() {
   const [ackingId, setAckingId] = useState<string | null>(null);
   const [dispatchFeedState, setDispatchFeedState] = useState<'checking' | 'current' | 'degraded' | 'stale' | 'unavailable'>('checking');
   const lastDispatchSuccessAt = useRef<number | null>(null);
+  const [lastDispatchSuccessDisplayAt, setLastDispatchSuccessDisplayAt] = useState<number | null>(null);
   const sirenActiveRef = useRef(false);
 
   // The control-room feed is only marked current after the real API poll succeeds.
@@ -171,8 +172,11 @@ export default function ResponseCrewApp() {
       try {
         const response = await fieldApi.get<{ data: DispatchAlert[] }>('/response-crew/dispatches');
         if (disposed) return;
-        setDispatches(response.data.data ?? []);
-        lastDispatchSuccessAt.current = Date.now();
+        if (!Array.isArray(response.data?.data)) throw new Error('Invalid dispatch-feed payload');
+        setDispatches(response.data.data);
+        const successAt = Date.now();
+        lastDispatchSuccessAt.current = successAt;
+        setLastDispatchSuccessDisplayAt(successAt);
         setDispatchFeedState('current');
       } catch {
         if (disposed) return;
@@ -286,7 +290,7 @@ export default function ResponseCrewApp() {
         <span
           role="status"
           aria-live="polite"
-          title={lastDispatchSuccessAt.current == null ? 'No successful dispatch-feed response has been recorded.' : `Last successful dispatch-feed response: ${new Date(lastDispatchSuccessAt.current).toLocaleTimeString()}.`}
+          title={lastDispatchSuccessDisplayAt == null ? 'No successful dispatch-feed response has been recorded.' : `Last successful dispatch-feed response: ${new Date(lastDispatchSuccessDisplayAt).toLocaleTimeString()}.`}
           className={`rounded-md border px-2 py-1 font-mono text-[9px] font-semibold tracking-[.06em] ${dispatchFeedState === 'current' ? 'border-emerald-500/20 text-emerald-300' : dispatchFeedState === 'degraded' ? 'border-amber-500/20 text-amber-300' : dispatchFeedState === 'stale' || dispatchFeedState === 'unavailable' ? 'border-red-500/20 text-red-300' : 'border-white/10 text-text-2'}`}
         >{dispatchFeedState === 'current' ? 'FEED CURRENT' : dispatchFeedState === 'degraded' ? 'FEED DEGRADED' : dispatchFeedState === 'stale' ? 'FEED STALE' : dispatchFeedState === 'unavailable' ? 'FEED UNAVAILABLE' : 'CHECKING FEED'}</span>
       </header>
