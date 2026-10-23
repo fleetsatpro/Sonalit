@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, ArrowUpRight, CircleHelp, Clock3, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Activity, CircleHelp, Clock3, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
 import {
   checkStateLabel,
   fetchSystemHealth,
@@ -15,12 +15,6 @@ const STATE_STYLES: Record<HealthCheckState, { text: string; border: string; mar
   unavailable: { text: 'text-rose-300', border: 'border-rose-400/25', mark: 'bg-rose-300' },
   unknown: { text: 'text-slate-400', border: 'border-slate-500/25', mark: 'bg-slate-500' },
 };
-
-function StateIcon({ state }: { state: 'healthy' | 'degraded' | 'unknown' }) {
-  if (state === 'healthy') return <ShieldCheck size={19} strokeWidth={1.7} />;
-  if (state === 'degraded') return <ShieldAlert size={19} strokeWidth={1.7} />;
-  return <CircleHelp size={19} strokeWidth={1.7} />;
-}
 
 export default function SystemHealth() {
   const { data, isPending, isFetching, isError, refetch, dataUpdatedAt } = useQuery({
