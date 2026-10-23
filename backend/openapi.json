@@ -6666,6 +6666,9 @@
           "200": {
             "description": "OK"
           },
+          "401": {
+            "description": "A valid signed Sonalit bearer token is required for detailed diagnostics"
+          },
           "503": {
             "description": "Core API dependency unavailable or health evidence not ready"
           }
