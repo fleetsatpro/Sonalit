@@ -144,37 +144,108 @@ app.use(morgan(":method :url :status :res[content-length] - :response-time ms re
 // it is routed. It may answer the platform health probe, but it must not expose
 // operational mutations while it is still waiting for the database runtime fence.
 app.use((req, res, next) => {
-  if (req.path === "/health" || isFenceActive()) return next();
+  if (req.path === "/health" || req.path === "/api/v1/health" || isFenceActive()) return next();
   return res.status(503).json({ status: "warming", error: "runtime handover in progress" });
 });
 
 // ─── Health & metrics ─────────────────────────────────────────────────────────
-app.get("/health", async (req, res) => {
-  try {
-    const [db, redis] = await Promise.all([dbHealth(), redisHealth()]);
-    let partitions_ok = true;
+// One source of truth for platform probes. Keep this route dependency-aware:
+// missing or stale evidence is never silently promoted to healthy.
+app.get(["/health", "/api/v1/health"], async (req, res) => {
+  const checkedAt = new Date().toISOString();
+  const checks = [
+    { id: "api", label: "API process", status: "healthy", checked_at: checkedAt, detail: "Health endpoint responded" },
+  ];
+
+  const [dbResult, redisResult] = await Promise.allSettled([dbHealth(), redisHealth()]);
+  const databaseHealthy = dbResult.status === "fulfilled" && Boolean(dbResult.value);
+  const redisValue = redisResult.status === "fulfilled" ? redisResult.value : "unreachable";
+  const dbCheckAt = new Date().toISOString();
+
+  checks.push({
+    id: "database",
+    label: "PostgreSQL",
+    status: databaseHealthy ? "healthy" : "unavailable",
+    checked_at: dbCheckAt,
+    detail: databaseHealthy ? "Connection query succeeded" : "Connection query failed",
+  });
+  checks.push({
+    id: "redis",
+    label: "Redis",
+    status: redisValue === "ok" ? "healthy" : redisValue === "disabled" ? "unknown" : "unavailable",
+    checked_at: new Date().toISOString(),
+    detail: redisValue === "ok" ? "PING succeeded" : redisValue === "disabled" ? "Redis is disabled; health cannot be verified" : "Redis probe failed",
+  });
+
+  const requiredPartitionTables = ["gps_logs", "audit_logs", "outbox"];
+  let partitionRows = null;
+  if (databaseHealthy) {
     try {
-      const ph = await dbQuery(`SELECT partitions_ok FROM partition_health WHERE partitions_ok = false LIMIT 1`);
-      if (ph.rows.length) partitions_ok = false;
-    } catch (_) {}
-    const mem = process.memoryUsage();
-    if (!db || !redis) {
-      return res.status(503).json({ status: "error", database: db ? "ok" : "error", redis });
+      const result = await dbQuery(
+        "SELECT table_name, checked_at, partitions_ok FROM partition_health WHERE table_name = ANY($1::text[])",
+        [requiredPartitionTables],
+      );
+      partitionRows = result.rows;
+    } catch (_) {
+      // Preserve uncertainty: a failed probe is not a passing partition check.
     }
-    const status = partitions_ok ? "ok" : "degraded";
-    res.status(200).json({
-      status,
-      database: db ? "ok" : "error",
-      redis,
-      partitions_ok,
-      uptime_seconds: Math.floor(process.uptime()),
-      version: "2.1.0-enterprise",
-      memory: { heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024), heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024), rss_mb: Math.round(mem.rss / 1024 / 1024) },
-      node_version: process.version,
-      pid: process.pid,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (e) { res.status(503).json({ status: "error", error: e.message }); }
+  }
+
+  const partitionByTable = new Map((partitionRows || []).map(row => [row.table_name, row]));
+  const partitionStatuses = [];
+  for (const tableName of requiredPartitionTables) {
+    const row = partitionByTable.get(tableName);
+    let status = "unknown";
+    let detail = "No successful partition-check evidence";
+    let checked_at = null;
+    if (row) {
+      checked_at = row.checked_at ? new Date(row.checked_at).toISOString() : null;
+      const ageMs = checked_at ? Date.now() - new Date(checked_at).getTime() : Infinity;
+      if (row.partitions_ok === false) {
+        status = "degraded";
+        detail = "Partition maintenance reported a failure";
+      } else if (!checked_at || !Number.isFinite(ageMs) || ageMs < 0 || ageMs > 2 * 60 * 60 * 1000) {
+        status = "unknown";
+        detail = "Partition-check evidence is stale or invalid";
+      } else {
+        status = "healthy";
+        detail = "Recent partition check passed";
+      }
+    }
+    partitionStatuses.push({ id: "partitions-" + tableName, label: "Partitions · " + tableName, status, checked_at, detail });
+  }
+  checks.push(...partitionStatuses);
+
+  const partitions_ok = partitionStatuses.every(check => check.status === "healthy")
+    ? true
+    : partitionStatuses.some(check => check.status === "degraded")
+      ? false
+      : null;
+  const hasCriticalFailure = !databaseHealthy || redisValue !== "ok";
+  const allHealthy = checks.every(check => check.status === "healthy");
+  const status = allHealthy ? "ok" : hasCriticalFailure ? "error" : "degraded";
+  const mem = process.memoryUsage();
+
+  const payload = {
+    status,
+    database: databaseHealthy ? "ok" : "error",
+    redis: redisValue,
+    partitions_ok,
+    uptime_seconds: Math.floor(process.uptime()),
+    version: process.env.SENTRY_RELEASE || process.env.RAILWAY_GIT_COMMIT_SHA || "unknown",
+    memory: {
+      heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
+      heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024),
+      rss_mb: Math.round(mem.rss / 1024 / 1024),
+    },
+    node_version: process.version,
+    timestamp: checkedAt,
+    checks,
+  };
+  // Database/Redis are required runtime dependencies. Keep the platform probe
+  // non-ready when either cannot be confirmed; partition uncertainty is reported
+  // as degraded without falsely claiming that all checks passed.
+  res.status(hasCriticalFailure ? 503 : 200).json(payload);
 });
 
 function requireMetricsAuth(req, res, next) {
