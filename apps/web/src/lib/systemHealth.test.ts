@@ -33,7 +33,7 @@ describe('system health evidence contract', () => {
     expect(getOverallHealthState({
       ...healthyPayload,
       checks: [...healthyPayload.checks, { ...healthyPayload.checks[0], id: 'redis', status: 'unknown' }],
-    })).toBe('unknown');
+    }, false, TEST_NOW)).toBe('unknown');
   });
 
   it('does not turn degraded or unavailable dependencies into a healthy overall state', () => {
@@ -80,6 +80,11 @@ describe('system health evidence contract', () => {
   it('rejects malformed health responses rather than inventing an all-clear', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ status: 200, data: { data: {} } } as never);
     await expect(fetchSystemHealth()).rejects.toThrow('invalid payload');
+    vi.mocked(api.get).mockResolvedValueOnce({
+      status: 200,
+      data: { status: 'ok', timestamp: healthyPayload.timestamp, checks: [null] },
+    } as never);
+    await expect(fetchSystemHealth()).rejects.toThrow('invalid payload or check ledger');
   });
 
   it('formats evidence age and uptime without fabricating missing values', () => {

@@ -76,7 +76,7 @@ export default function SystemHealth() {
             <p className="mt-2 max-w-md text-sm leading-5 text-slate-400">{statusText}</p>
             <div className="mt-5 border-t border-white/[.07] pt-3 text-[11px] text-slate-500">
               {checks.length ? `${healthyCount} of ${checks.length} checks healthy` : 'No check results available'}
-              {isError ? ' · Latest request failed' : ''}
+              {isError ? ' · Latest response unverified' : ''}
             </div>
           </article>
 
@@ -161,7 +161,7 @@ export default function SystemHealth() {
           <div role="alert" className="mt-5 flex items-start gap-3 rounded-lg border border-amber-400/20 bg-amber-400/[.04] p-4 text-sm text-amber-100/90">
             <CircleHelp size={17} className="mt-0.5 shrink-0" />
             <div>
-              <div className="font-medium">The latest status request failed.</div>
+              <div className="font-medium">The latest health response could not be verified.</div>
               <p className="mt-1 text-xs leading-5 text-amber-100/60">The header will show STATUS UNKNOWN until a valid, current health response is received.</p>
             </div>
           </div>

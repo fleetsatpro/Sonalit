@@ -59,11 +59,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build standby image
+      - name: Build standby image with the production registry
+        id: build-primary
+        continue-on-error: true
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.standby
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/fleetsatpro/sonalit-backend:standby
+            ghcr.io/fleetsatpro/sonalit-backend:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+
+      - name: Retry standby image with the official Node registry
+        if: steps.build-primary.outcome == 'failure'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.standby
+          build-args: SONALIT_NODE_IMAGE=node:22-slim
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/fleetsatpro/sonalit-backend:standby

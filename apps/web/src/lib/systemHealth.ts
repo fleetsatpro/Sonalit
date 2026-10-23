@@ -28,6 +28,19 @@ const HEALTH_RESPONSE_MAX_AGE_MS = 60_000;
 const HEALTH_FUTURE_CLOCK_TOLERANCE_MS = 30_000;
 const VALID_CHECK_STATES: HealthCheckState[] = ['healthy', 'degraded', 'unavailable', 'unknown'];
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isValidHealthCheck(value: unknown): value is SystemHealthCheck {
+  if (!isRecord(value)) return false;
+  return typeof value.id === 'string'
+    && typeof value.label === 'string'
+    && typeof value.detail === 'string'
+    && VALID_CHECK_STATES.includes(value.status as HealthCheckState)
+    && (value.checked_at === null || typeof value.checked_at === 'string');
+}
+
 export function getOverallHealthState(
   payload: SystemHealthPayload | undefined,
   requestFailed = false,
@@ -59,14 +72,20 @@ export async function fetchSystemHealth(): Promise<SystemHealthPayload> {
     '/health',
     { validateStatus: () => true },
   );
-  const body = response.data;
-  const payload = body && typeof body === 'object' && 'data' in body && body.data
+  const body: unknown = response.data;
+  const payload: unknown = isRecord(body) && 'data' in body && body.data
     ? body.data
     : body;
-  if (!payload || typeof payload !== 'object' || typeof payload.status !== 'string') {
-    throw new Error('Health endpoint returned an invalid payload');
+  if (
+    !isRecord(payload)
+    || typeof payload.status !== 'string'
+    || !Array.isArray(payload.checks)
+    || payload.checks.length === 0
+    || !payload.checks.every(isValidHealthCheck)
+  ) {
+    throw new Error('Health endpoint returned an invalid payload or check ledger');
   }
-  return payload;
+  return payload as unknown as SystemHealthPayload;
 }
 
 export function formatAge(iso?: string | null, now = Date.now()): string {
