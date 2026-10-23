@@ -38,7 +38,7 @@ const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
     retry: 1,
   });
   const healthState = getOverallHealthState(systemHealth, healthRequestFailed);
-  const healthLabel = healthState === 'healthy' ? 'OPERATIONAL' : healthState === 'degraded' ? 'DEGRADED' : 'STATUS UNKNOWN';
+  const healthLabel = healthState === 'healthy' ? 'CORE CHECKS PASS' : healthState === 'degraded' ? 'DEGRADED' : 'STATUS UNKNOWN';
   const HealthIcon = healthState === 'healthy' ? ShieldCheck : healthState === 'degraded' ? ShieldAlert : CircleHelp;
   const toggleBell = useCallback(() => setBellOpen(o => !o), []);
   const closeBell = useCallback(() => setBellOpen(false), []);

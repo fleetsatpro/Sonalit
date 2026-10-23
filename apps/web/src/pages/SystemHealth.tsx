@@ -27,12 +27,15 @@ export default function SystemHealth() {
   const overall = getOverallHealthState(data, isError);
   const checks = Array.isArray(data?.checks) ? data.checks : [];
   const healthyCount = checks.filter(check => check.status === 'healthy').length;
-  const title = overall === 'healthy' ? 'Operational' : overall === 'degraded' ? 'Degraded' : 'Status unknown';
+  const title = overall === 'healthy' ? 'Core checks pass' : overall === 'degraded' ? 'Degraded' : 'Status unknown';
   const statusText = overall === 'healthy'
-    ? 'All reported checks have recent successful evidence.'
+    ? 'Every check monitored by the core API health endpoint passed. This is not a claim that every Sonalit subsystem is healthy.'
     : overall === 'degraded'
-      ? 'One or more dependencies need attention or could not be fully verified.'
-      : 'A current, verifiable health picture is unavailable. No healthy state is being assumed.';
+      ? 'One or more core dependencies need attention or could not be fully verified.'
+      : 'A current, verifiable core health picture is unavailable. No healthy state is being assumed.';
+  const coverageNote = data?.coverage?.not_monitored?.length
+    ? `Not monitored by this endpoint: ${data.coverage.not_monitored.join(', ')}.`
+    : 'This endpoint covers core API dependencies only; worker, realtime, delivery-provider, external-provider and frontend health are not asserted.';
   const StateMark = overall === 'healthy' ? ShieldCheck : overall === 'degraded' ? ShieldAlert : CircleHelp;
   const statusColor = overall === 'healthy' ? 'text-emerald-200' : overall === 'degraded' ? 'text-amber-200' : 'text-slate-300';
   const statusBorder = overall === 'healthy' ? 'border-emerald-400/20' : overall === 'degraded' ? 'border-amber-400/20' : 'border-white/10';
@@ -47,7 +50,7 @@ export default function SystemHealth() {
             </div>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">System health</h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">
-              Evidence from the backend health endpoint. Missing, stale or failed checks are never displayed as healthy.
+              Core API dependency evidence only. Missing, stale or failed checks are never displayed as healthy.
             </p>
           </div>
           <button
@@ -97,6 +100,11 @@ export default function SystemHealth() {
             <p className="mt-2 text-xs leading-5 text-slate-500">Time since this API process started; not overall platform uptime.</p>
           </article>
         </section>
+
+        <p className="mt-4 rounded-lg border border-white/[.07] bg-white/[.02] px-4 py-3 text-xs leading-5 text-slate-400">
+          <span className="mr-2 font-mono text-[10px] uppercase tracking-[.14em] text-slate-500">Coverage boundary</span>
+          {coverageNote}
+        </p>
 
         <section className="mt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">

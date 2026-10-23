@@ -239,7 +239,18 @@ app.get(["/health", "/api/v1/health"], async (req, res) => {
       rss_mb: Math.round(mem.rss / 1024 / 1024),
     },
     node_version: process.version,
-    timestamp: checkedAt,
+    timestamp: new Date().toISOString(),
+    scope: "core-api-dependencies",
+    coverage: {
+      scope: "core-api-dependencies",
+      not_monitored: [
+        "background worker heartbeats",
+        "realtime gateway and websocket delivery",
+        "notification provider delivery",
+        "external data providers",
+        "frontend availability",
+      ],
+    },
     checks,
   };
   // Database/Redis are required runtime dependencies. Keep the platform probe

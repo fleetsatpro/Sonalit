@@ -18,6 +18,8 @@ export interface SystemHealthPayload {
   redis?: string;
   partitions_ok?: boolean | null;
   checks?: SystemHealthCheck[];
+  scope?: string;
+  coverage?: { scope?: string; not_monitored?: string[] };
 }
 
 export type OverallHealthState = 'healthy' | 'degraded' | 'unknown';
