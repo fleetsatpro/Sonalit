@@ -408,7 +408,7 @@ export default function PortalDashboard(): React.ReactElement {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="hidden md:inline text-[10px] text-white/25">Updated {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="hidden md:inline text-[10px] text-white/25">{lastRefresh ? `Updated ${lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not yet updated'}</span>
             <button onClick={load} className="p-2 rounded-lg border border-white/[0.07] text-white/40 hover:text-white hover:border-white/15 transition-colors" title="Refresh"><RefreshCw size={14} /></button>
             <button onClick={() => void navigate({ to: '/portal/notifications' })} className="p-2 rounded-lg border border-white/[0.07] text-white/40 hover:text-white hover:border-white/15 transition-colors"><Bell size={14} /></button>
           </div>
