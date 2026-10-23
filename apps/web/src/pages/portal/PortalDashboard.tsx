@@ -333,19 +333,23 @@ export default function PortalDashboard(): React.ReactElement {
   const [tab, setTab] = useState<Tab>('active');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const load = React.useCallback(() => {
     setRefreshing(true);
     setErrorMsg('');
     fetch(API + '/portal/shipments', { credentials: 'include' })
       .then(async res => {
-        if (res.status === 401) { void navigate({ to: '/portal/login' }); return null; }
+        if (res.status === 401) { setErrorMsg('Session expired; sign in again.'); void navigate({ to: '/portal/login' }); return null; }
         if (!res.ok) throw new Error((await res.json().catch(() => ({} as Record<string, string>)) as { error?: string }).error ?? ('Error ' + res.status));
         return res.json() as Promise<{ data: ShipmentSummary[] }>;
       })
       .then(json => {
-        if (json) { setShipments(json.data ?? []); setLastRefresh(new Date()); }
+        if (json) {
+          if (!Array.isArray(json.data)) throw new Error('Shipment feed returned an invalid payload');
+          setShipments(json.data);
+          setLastRefresh(new Date());
+        }
       })
       .catch((e: Error) => setErrorMsg(e.message))
       .finally(() => { setLoading(false); setRefreshing(false); });
@@ -363,16 +367,18 @@ export default function PortalDashboard(): React.ReactElement {
   const liveCount = shipments.filter(s => freshness(s) === 'live').length;
   const verifiedSeals = shipments.filter(s => s.seal_status === 'intact').length;
   const avgProgress = active.length ? Math.round(active.reduce((a, s) => a + (s.progress_pct ?? 0), 0) / active.length) : 0;
-  const portfolioAgeMs = Date.now() - lastRefresh.getTime();
-  const portfolioFeedState = loading
+  const portfolioAgeMs = lastRefresh ? Date.now() - lastRefresh.getTime() : Infinity;
+  const portfolioFeedState = loading && !lastRefresh
     ? 'CHECKING'
     : refreshing
       ? 'CHECKING UPDATE'
       : errorMsg
         ? shipments.length > 0 ? 'FEED DEGRADED' : 'FEED UNAVAILABLE'
-        : portfolioAgeMs > 120_000
-          ? 'FEED STALE'
-          : 'FEED CURRENT';
+        : !lastRefresh
+          ? 'FEED UNAVAILABLE'
+          : portfolioAgeMs > 120_000
+            ? 'FEED STALE'
+            : 'FEED CURRENT';
   const portfolioFeedClass = portfolioFeedState === 'FEED CURRENT'
     ? 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300'
     : portfolioFeedState === 'FEED DEGRADED'
