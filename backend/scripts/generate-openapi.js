@@ -71,6 +71,9 @@ for (const { method, path: routePath } of rawRoutes) {
   if (method === 'GET' && (routePath === '/health' || routePath === '/api/v1/health')) {
     responses['503'] = { description: 'Core API dependency unavailable or health evidence not ready' };
   }
+  if (method === 'GET' && routePath === '/api/v1/health') {
+    responses['401'] = { description: 'A valid signed Sonalit bearer token is required for detailed diagnostics' };
+  }
   paths[oaPath][method.toLowerCase()] = {
     operationId: `${method.toLowerCase()}_${oaPath.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')}`,
     responses,
