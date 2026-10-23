@@ -44,6 +44,7 @@ process.on("unhandledRejection", (reason) => {
 
 const express = require("express");
 const http = require("http");
+const jwt = require("jsonwebtoken");
 const helmet = require("helmet");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -241,6 +242,7 @@ const coreHealthHandler = async (req, res) => {
       rss_mb: Math.round(mem.rss / 1024 / 1024),
     },
     node_version: process.version,
+    pid: process.pid,
     timestamp: new Date().toISOString(),
     scope: "core-api-dependencies",
     coverage: {
@@ -255,13 +257,31 @@ const coreHealthHandler = async (req, res) => {
     },
     checks,
   };
-  // PostgreSQL failure and a confirmed Redis outage are non-ready. A disabled
-  // Redis or stale partition evidence stays visibly unknown/degraded rather
-  // than being promoted to healthy or mislabeled as a confirmed outage.
+  // Keep the platform probe compatible but don't expose the newly-added,
+  // per-component evidence ledger or monitoring blind spots to anonymous callers.
+  if (req.path === "/health") {
+    const { scope: _scope, coverage: _coverage, checks: _checks, ...compatibilityPayload } = payload;
+    return res.status(isNotReady ? 503 : 200).json(compatibilityPayload);
+  }
   res.status(isNotReady ? 503 : 200).json(payload);
 };
+
+// The dashboard needs detailed dependency checks, but a public probe does not.
+// Verify JWT signature/expiry without a database lookup so this diagnostic route
+// remains useful during a PostgreSQL outage. No user-specific data is returned.
+function requireSignedHealthToken(req, res, next) {
+  const header = String(req.headers.authorization || "");
+  const supplied = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!supplied) return res.status(401).json({ error: "health_auth_required" });
+  try {
+    jwt.verify(supplied, process.env.JWT_SECRET);
+    return next();
+  } catch (_) {
+    return res.status(401).json({ error: "health_auth_required" });
+  }
+}
 app.get("/health", coreHealthHandler);
-app.get("/api/v1/health", coreHealthHandler);
+app.get("/api/v1/health", requireSignedHealthToken, coreHealthHandler);
 
 function requireMetricsAuth(req, res, next) {
   const configured = String(process.env.METRICS_TOKEN || '');
