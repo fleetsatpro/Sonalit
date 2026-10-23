@@ -1,4 +1,3 @@
-import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card.js';
 import { StatusBadge } from '@/components/ui/Badge.js';
