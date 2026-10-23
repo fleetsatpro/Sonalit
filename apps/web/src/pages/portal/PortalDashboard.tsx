@@ -58,7 +58,9 @@ function hasValidLocation(location: ShipmentSummary['current_location']): locati
     && Number.isFinite(location.lat)
     && Number.isFinite(location.lng)
     && Math.abs(location.lat) <= 90
-    && Math.abs(location.lng) <= 180,
+    && Math.abs(location.lng) <= 180
+    // A zero/zero default is usually an unset device location, not a verified fix.
+    && !(Math.abs(location.lat) < 0.000001 && Math.abs(location.lng) < 0.000001),
   );
 }
 
