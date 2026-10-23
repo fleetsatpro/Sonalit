@@ -56,6 +56,7 @@ const responseEnvelope = require("./middleware/responseEnvelope");
 const { createQueues } = require("./config/queue");
 const { healthCheck: dbHealth, globalQuery: dbQuery } = require("./config/database");
 const { healthCheck: redisHealth } = require("./config/redis");
+const { classifyPartitionEvidence } = require("./utils/partitionHealthEvidence");
 const requestId = require("./middleware/requestId");
 const csrf = require("./middleware/csrf");
 const { isFenceActive } = require("./utils/runtimeFenceBootstrap");
@@ -206,31 +207,11 @@ const coreHealthHandler = async (req, res) => {
   }
 
   const partitionByTable = new Map((partitionRows || []).map(row => [row.table_name, row]));
-  const partitionStatuses = [];
-  for (const tableName of requiredPartitionTables) {
-    const row = partitionByTable.get(tableName);
-    let status = "unknown";
-    let detail = "No successful partition-check evidence";
-    let checked_at = null;
-    if (row) {
-      const parsedCheckDate = row.checked_at == null ? null : new Date(row.checked_at);
-      checked_at = parsedCheckDate && Number.isFinite(parsedCheckDate.getTime())
-        ? parsedCheckDate.toISOString()
-        : null;
-      const ageMs = checked_at ? Date.now() - new Date(checked_at).getTime() : Infinity;
-      if (row.partitions_ok === false) {
-        status = "degraded";
-        detail = "Partition maintenance reported a failure";
-      } else if (!checked_at || !Number.isFinite(ageMs) || ageMs < 0 || ageMs > 2 * 60 * 60 * 1000) {
-        status = "unknown";
-        detail = "Partition-check evidence is stale or invalid";
-      } else {
-        status = "healthy";
-        detail = "Recent partition check passed";
-      }
-    }
-    partitionStatuses.push({ id: "partitions-" + tableName, label: "Partitions · " + tableName, status, checked_at, detail });
-  }
+  const partitionStatuses = requiredPartitionTables.map(tableName => ({
+    id: "partitions-" + tableName,
+    label: "Partitions · " + tableName,
+    ...classifyPartitionEvidence(partitionByTable.get(tableName)),
+  }));
   checks.push(...partitionStatuses);
 
   const partitions_ok = partitionStatuses.every(check => check.status === "healthy")
