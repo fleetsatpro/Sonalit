@@ -115,6 +115,9 @@ export async function fetchSystemHealth(): Promise<SystemHealthPayload> {
   ) {
     throw new Error('Health endpoint returned an invalid payload or check ledger');
   }
+  if (response.status === 503 && payload.status === 'ok') {
+    throw new Error('Health endpoint returned HTTP 503 with an all-clear payload');
+  }
   return payload as unknown as SystemHealthPayload;
 }
 
