@@ -6,6 +6,8 @@ import {
   formatAge,
   formatUptime,
   getOverallHealthState,
+  isFreshHealthCheckTimestamp,
+  isFreshHealthSnapshot,
   type HealthCheckState,
 } from '../lib/systemHealth.js';
 
@@ -26,7 +28,16 @@ export default function SystemHealth() {
   });
   const overall = getOverallHealthState(data, isError);
   const checks = Array.isArray(data?.checks) ? data.checks : [];
-  const healthyCount = checks.filter(check => check.status === 'healthy').length;
+  const snapshotFresh = !isError && isFreshHealthSnapshot(data);
+  // Keep last-known detail visible, but never leave old green labels in place
+  // when this snapshot or a component timestamp can no longer be verified.
+  const displayedChecks = checks.map(check => (
+    !snapshotFresh || (check.status === 'healthy' && !isFreshHealthCheckTimestamp(check.checked_at))
+      ? { ...check, status: 'unknown' as const }
+      : check
+  ));
+  const showVerificationAlert = isError || (Boolean(data) && !snapshotFresh);
+  const healthyCount = displayedChecks.filter(check => check.status === 'healthy').length;
   const title = overall === 'healthy' ? 'Core checks pass' : overall === 'unavailable' ? 'Core dependency unavailable' : overall === 'degraded' ? 'Degraded' : 'Status unknown';
   const statusText = overall === 'healthy'
     ? 'Every check monitored by the core API health endpoint passed. This is not a claim that every Sonalit subsystem is healthy.'
@@ -123,7 +134,7 @@ export default function SystemHealth() {
             </div>
             {isPending && !data ? (
               <div className="px-5 py-10 text-sm text-slate-400">Waiting for the health endpoint to return evidence…</div>
-            ) : checks.length ? checks.map(check => {
+            ) : displayedChecks.length ? displayedChecks.map(check => {
               const styles = STATE_STYLES[check.status] ?? STATE_STYLES.unknown;
               return (
                 <div key={check.id} className="grid gap-3 border-b border-white/[.06] px-4 py-4 last:border-0 sm:px-5 md:grid-cols-[minmax(150px,1fr)_125px_minmax(150px,1.2fr)_minmax(120px,.8fr)] md:items-center md:gap-4">
@@ -157,7 +168,7 @@ export default function SystemHealth() {
           </div>
         </section>
 
-        {isError && (
+        {showVerificationAlert && (
           <div role="alert" className="mt-5 flex items-start gap-3 rounded-lg border border-amber-400/20 bg-amber-400/[.04] p-4 text-sm text-amber-100/90">
             <CircleHelp size={17} className="mt-0.5 shrink-0" />
             <div>
