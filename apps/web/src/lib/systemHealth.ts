@@ -99,6 +99,9 @@ export async function fetchSystemHealth(): Promise<SystemHealthPayload> {
     // server errors reach the normal Axios interceptors instead of swallowing them.
     { validateStatus: (status) => (status >= 200 && status < 300) || status === 503 },
   );
+  if (!((response.status >= 200 && response.status < 300) || response.status === 503)) {
+    throw new Error(`Health endpoint returned HTTP ${response.status}`);
+  }
   const body: unknown = response.data;
   const payload: unknown = isRecord(body) && 'data' in body && body.data
     ? body.data
