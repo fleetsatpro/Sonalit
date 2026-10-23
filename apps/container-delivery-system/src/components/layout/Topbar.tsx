@@ -44,10 +44,7 @@ export function Topbar({ title, subtitle }: TopbarProps) {
       </div>
 
       <div className="ml-auto flex items-center gap-3.5">
-        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-2xs font-mono font-medium border border-glass-border-strong text-text-1 whitespace-nowrap">
-          <span className="w-1.5 h-1.5 rounded-full bg-cds-teal shadow-glow-teal animate-pulse-dot" />
-          Live · Shift Bravo
-        </div>
+        <div className="rounded-md border border-glass-border px-2.5 py-1.5 text-2xs font-mono font-medium tracking-[.06em] text-text-2 whitespace-nowrap" aria-label="Container Delivery System">CDS OPERATIONS</div>
         <div className="font-mono text-2xs text-text-1 border border-glass-border-strong rounded-full px-2.5 py-1.5 whitespace-nowrap">
           {time}
         </div>

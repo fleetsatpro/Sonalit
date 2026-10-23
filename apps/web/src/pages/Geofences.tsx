@@ -68,6 +68,18 @@ export default function Geofences() {
   const coreQueries = [mapQ, geofencesQ, eventsQ, vehiclesMetaQ, alertsQ];
   const bootLoaded = coreQueries.filter(q => !q.isLoading).length;
   const bootReady = bootLoaded === coreQueries.length;
+  const mapFeedState = coreQueries.some(q => q.isError)
+    ? 'FEED DEGRADED'
+    : coreQueries.some(q => q.isPending)
+      ? 'CHECKING FEED'
+      : mapQ.dataUpdatedAt > 0 && Date.now() - mapQ.dataUpdatedAt <= 45_000
+        ? 'MAP FEED CURRENT'
+        : 'MAP FEED STALE';
+  const mapFeedClass = mapFeedState === 'MAP FEED CURRENT'
+    ? 'text-emerald-300 border-emerald-500/20 bg-emerald-500/[0.04]'
+    : mapFeedState === 'FEED DEGRADED'
+      ? 'text-amber-300 border-amber-500/20 bg-amber-500/[0.04]'
+      : 'text-slate-400 border-slate-500/20 bg-slate-500/[0.04]';
 
   const vehicles = mapQ.data?.vehicles ?? [];
   const devices = mapQ.data?.devices ?? [];
@@ -274,7 +286,7 @@ export default function Geofences() {
         <div className="flex items-center gap-2">
           <MapPin className="w-6 h-6 text-cyan-400" />
           <h1 className="text-2xl font-bold text-white">Geofences</h1>
-          <span className="flex items-center gap-1.5 text-xs font-bold text-green-400 ml-2"><span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" /> LIVE</span>
+          <span role="status" aria-live="polite" title="State is based on core Geofences query results and the latest map-feed response." className={`ml-2 inline-flex items-center rounded-md border px-2 py-1 font-mono text-[10px] font-semibold tracking-[0.08em] ${mapFeedClass}`}>{mapFeedState}</span>
           <span className="text-xs font-mono font-semibold text-gray-400">{utcClock}</span>
         </div>
         <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"><Plus className="w-4 h-4" /> New Geofence</button>

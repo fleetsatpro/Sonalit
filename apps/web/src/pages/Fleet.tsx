@@ -334,7 +334,7 @@ export default function Fleet(): React.ReactElement {
                       <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{v.type} · {v.region}</td>
                       <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{v.driver_name ?? <span className="text-gray-600">unassigned</span>}</td>
                       <td className={`px-4 py-3 whitespace-nowrap ${ping.cls}`}>
-                        {ping.live && <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse mr-1.5 align-middle" />}
+                        {ping.live && <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 mr-1.5 align-middle" />}
                         {ping.text}
                       </td>
                       <td className="px-4 py-3">
