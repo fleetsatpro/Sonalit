@@ -93,6 +93,14 @@ describe('system health evidence contract', () => {
     await expect(fetchSystemHealth()).rejects.toThrow('HTTP 404');
   });
 
+  it('rejects a 503 response whose payload claims every core check is healthy', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      status: 503,
+      data: healthyPayload,
+    } as never);
+    await expect(fetchSystemHealth()).rejects.toThrow('503 with an all-clear payload');
+  });
+
   it('rejects malformed health responses rather than inventing an all-clear', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ status: 200, data: { data: {} } } as never);
     await expect(fetchSystemHealth()).rejects.toThrow('invalid payload');
