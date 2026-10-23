@@ -16,6 +16,42 @@ export interface LiveFeedEvidence {
   dataUpdatedAt: number;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isCoordinateField(value: Record<string, unknown>, name: 'lat' | 'lng'): boolean {
+  if (!Object.prototype.hasOwnProperty.call(value, name)) return false;
+  const coordinate = value[name];
+  return coordinate === null || (typeof coordinate === 'number' && Number.isFinite(coordinate));
+}
+
+/** Validate the actual JSON contract before calling a successful feed current. */
+export function isValidLiveTripPayload<T>(value: unknown): value is { data: T[] } {
+  if (!isRecord(value) || !Array.isArray(value.data)) return false;
+  return value.data.every((item: unknown) => {
+    if (!isRecord(item)) return false;
+    return typeof item.id === 'string'
+      && typeof item.status === 'string'
+      && typeof item.phase === 'string'
+      && (item.trip_number === null || typeof item.trip_number === 'string')
+      && isNullableString(item.origin)
+      && isNullableString(item.destination)
+      && isNullableString(item.eta)
+      && isNullableString(item.vehicle_reg)
+      && isCoordinateField(item, 'lat')
+      && isCoordinateField(item, 'lng')
+      && isNullableString(item.last_seen)
+      && typeof item.position_is_live === 'boolean'
+      && isNullableString(item.tracking_health)
+      && isNullableString(item.position_source);
+  });
+}
+
 export function hasValidCoordinates<T extends CoordinateEvidence>(
   trip: T,
 ): trip is T & { lat: number; lng: number } {
@@ -32,7 +68,11 @@ export function hasValidCoordinates<T extends CoordinateEvidence>(
 
 export function freshnessLabel(trip: TrackingFreshnessEvidence): string {
   if (trip.position_is_live) return 'LIVE FIX';
-  if (trip.tracking_health) return trip.tracking_health.replace(/_/g, ' ').toUpperCase();
+  // The session may be live while the displayed coordinate came from a
+  // different, last-known source. Never derive "LIVE FIX" from health alone.
+  if (trip.tracking_health && trip.tracking_health !== 'live') {
+    return trip.tracking_health.replace(/_/g, ' ').toUpperCase();
+  }
   return trip.last_seen ? 'LAST KNOWN' : 'NO FIX';
 }
 
