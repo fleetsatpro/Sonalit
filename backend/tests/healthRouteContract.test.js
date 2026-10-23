@@ -19,6 +19,11 @@ jest.mock('../src/config/redis', () => ({
 
 const { healthCheck: databaseHealth, globalQuery } = require('../src/config/database');
 const { healthCheck: redisHealth } = require('../src/config/redis');
+// app.js performs a guarded startup write through globalQuery when imported.
+// Resolve its default mock before requiring the app to keep this test isolated.
+databaseHealth.mockResolvedValue(true);
+redisHealth.mockResolvedValue('ok');
+globalQuery.mockResolvedValue({ rows: [] });
 const { app } = require('../src/app');
 
 describe('core health endpoint route contract', () => {
