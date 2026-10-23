@@ -18,6 +18,9 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "503": {
+            "description": "Core API dependency unavailable or health evidence not ready"
           }
         }
       }
@@ -6662,6 +6665,9 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "503": {
+            "description": "Core API dependency unavailable or health evidence not ready"
           }
         }
       }
