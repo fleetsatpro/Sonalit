@@ -221,7 +221,7 @@ function renderDownloadScript() {
     '      renderApps(FALLBACK_APPS); setCatalogStatus("Could not verify releases","is-warn"); catalogFoot.textContent = "Try rechecking the release source";',
     '    } finally { grid.setAttribute("aria-busy","false"); refreshButton.disabled = false; refreshButton.textContent = "Recheck releases ↻"; }',
     '  }',
-    '  Array.prototype.forEach.call(document.querySelectorAll("[data-filter]"),function (button) { button.addEventListener("click",function () { activeFilter = button.dataset.filter; Array.prototype.forEach.call(document.querySelectorAll("[data-filter]"),function (item) { item.setAttribute("aria-pressed",item === button ? "true" : "false"); }); applyFilters(); }); });',
+    '  Array.prototype.forEach.call(document.querySelectorAll(".filter-btn[data-filter]"),function (button) { button.addEventListener("click",function () { activeFilter = button.dataset.filter; Array.prototype.forEach.call(document.querySelectorAll(".filter-btn[data-filter]"),function (item) { item.setAttribute("aria-pressed",item === button ? "true" : "false"); }); applyFilters(); }); });',
     '  search.addEventListener("input",applyFilters); refreshButton.addEventListener("click",function () { loadCatalog(true); });',
     '  renderApps(FALLBACK_APPS); loadCatalog(false);',
     '})();'
