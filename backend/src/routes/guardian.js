@@ -3,6 +3,7 @@ const { query, globalQuery } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
 const logger = require('../utils/logger');
+const { parseApkReleaseMetadata } = require('../utils/apkReleaseMetadata');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
@@ -3060,39 +3061,21 @@ async function resolveLatestApkInfo() {
   const rel = await resp.json();
   const asset = (rel.assets || []).find(a => a.name === 'app-debug.apk') || (rel.assets || [])[0];
   if (!asset || !asset.url) throw new Error('no APK asset on latest release');
-  // The build workflow embeds machine-readable APK metadata in an HTML comment
-  // in the release body. That metadata is extracted from the actual built APK,
-  // so the download page can distinguish Android app version from release tag.
-  const releaseBody = typeof rel.body === 'string' ? rel.body : '';
-  const metadataMatch = releaseBody.match(/<!--\s*SONALIT_APK_METADATA\s+([\s\S]*?)\s*-->/i);
-  let apkMetadata = {};
-  if (metadataMatch) {
-    try {
-      const parsed = JSON.parse(metadataMatch[1].trim());
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) apkMetadata = parsed;
-    } catch (metadataError) {
-      logger.warn(`Guardian APK metadata comment is malformed: ${metadataError.message}`);
-    }
-  }
-  const cleanNotes = releaseBody.replace(/<!--\s*SONALIT_APK_METADATA[\s\S]*?-->/i, '').trim() || null;
-  const versionCode = Number(apkMetadata.version_code);
-  const minSdk = Number(apkMetadata.min_sdk);
-  const packageName = typeof apkMetadata.package_name === 'string' && /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/.test(apkMetadata.package_name)
-    ? apkMetadata.package_name : null;
-  const sha256 = typeof apkMetadata.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(apkMetadata.sha256)
-    ? apkMetadata.sha256.toLowerCase() : null;
+  // Parse metadata extracted from the actual APK asset. Malformed release notes
+  // must never be treated as a verified Android version or fingerprint.
+  const apkMetadata = parseApkReleaseMetadata(rel.body);
   _latestApk = {
     info: {
       version: rel.tag_name || rel.name || null,
       name: rel.name || null,
       published_at: rel.published_at || null,
-      notes: cleanNotes,
+      notes: apkMetadata.notes,
       size: asset.size || null,
-      app_version: typeof apkMetadata.version_name === 'string' && apkMetadata.version_name.trim() ? apkMetadata.version_name.trim() : null,
-      version_code: Number.isSafeInteger(versionCode) && versionCode > 0 ? versionCode : null,
-      package_name: packageName,
-      min_sdk: Number.isSafeInteger(minSdk) && minSdk > 0 ? minSdk : null,
-      sha256,
+      app_version: apkMetadata.app_version,
+      version_code: apkMetadata.version_code,
+      package_name: apkMetadata.package_name,
+      min_sdk: apkMetadata.min_sdk,
+      sha256: apkMetadata.sha256,
       // Public browser URL — works only for public repos.
       url: asset.browser_download_url || null,
       // API asset URL — with a token this streams even for a PRIVATE repo.
