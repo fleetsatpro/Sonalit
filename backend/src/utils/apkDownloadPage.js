@@ -358,6 +358,9 @@ function renderDownloadScript() {
 
   function showUnconfirmed(message) {
     setStatus("Latest status unconfirmed", "is-warning");
+    warning.style.borderColor = "";
+    warning.style.color = "";
+    warning.style.background = "";
     warning.hidden = false;
     if (message) warning.textContent = message;
     setText("metadata-source", "Could not verify release metadata.");
@@ -420,13 +423,13 @@ function renderDownloadScript() {
 
       if (latestConfirmed) {
         setStatus("Latest release confirmed", "is-live");
-        warning.hidden = false;
-        warning.textContent = data.app_version
-          ? "This is the latest published release returned by the release feed. Confirm the app version and Android requirement above before installing."
-          : "The latest published release is identified, but its internal Android app version is not recorded. The release ID above is the published release identifier.";
-        warning.style.borderColor = data.app_version ? "rgba(99,230,177,.18)" : "";
-        warning.style.color = data.app_version ? "#a7ddc6" : "";
-        warning.style.background = data.app_version ? "rgba(99,230,177,.045)" : "";
+        warning.hidden = Boolean(data.app_version);
+        warning.style.borderColor = "";
+        warning.style.color = "";
+        warning.style.background = "";
+        if (!data.app_version) {
+          warning.textContent = "The latest published release is identified, but its internal Android app version is not recorded. The release ID above is the published release identifier.";
+        }
         setText("metadata-source", "Loaded from Sonalit's latest published release.");
       } else {
         showUnconfirmed("The download link is available, but the latest release details are incomplete. Do not treat an unverified version as the latest build.");
