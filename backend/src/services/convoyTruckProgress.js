@@ -2,7 +2,8 @@
 
 const { projectOntoRoute } = require('./geofence/corridor');
 
-const GPS_STALE_AFTER_SECONDS = 15 * 60;
+const GPS_LIVE_AFTER_SECONDS = 45;
+const GPS_STALE_AFTER_SECONDS = 5 * 60;
 const GPS_FUTURE_TOLERANCE_MS = 2 * 60 * 1000;
 
 function validCoordinatePair(lat, lng) {
@@ -94,7 +95,8 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
         // completion for a GPS point outside the accepted geometry tolerance.
       } else {
         progressPct = projectedPct;
-        state = ageSeconds > GPS_STALE_AFTER_SECONDS ? 'stale' : 'live';
+        state = ageSeconds <= GPS_LIVE_AFTER_SECONDS ? 'live'
+          : ageSeconds <= GPS_STALE_AFTER_SECONDS ? 'delayed' : 'stale';
       }
     }
   }
@@ -117,6 +119,7 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
 }
 
 module.exports = {
+  GPS_LIVE_AFTER_SECONDS,
   GPS_STALE_AFTER_SECONDS,
   GPS_FUTURE_TOLERANCE_MS,
   routePointList,
