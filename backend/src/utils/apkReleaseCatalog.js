@@ -1,0 +1,281 @@
+"use strict";
+
+const { parseApkReleaseMetadata } = require("./apkReleaseMetadata");
+
+const RELEASE_CACHE_MS = 120_000;
+const APPS = [
+  {
+    id: "sonalit",
+    name: "Sonalit",
+    shortName: "Sonalit",
+    category: "OPERATIONS",
+    audience: "Operations & management",
+    description: "Your main Sonalit workspace for fleet coordination, dispatch, monitoring and operational decisions.",
+    capabilities: ["Fleet operations", "Dispatch & oversight", "Live operational workspace"],
+    packageName: "io.sonalit.app",
+    tagPrefix: "sonalit-v",
+    assetNames: ["sonalit.apk"],
+    downloadPath: null,
+    icon: "command",
+    accent: "blue",
+    minimumSdkFallback: 24,
+    minimumAndroidFallback: "Android 7.0+",
+    order: 1
+  },
+  {
+    id: "field",
+    name: "Sonalit Field",
+    shortName: "Field",
+    category: "YARD & PORT",
+    audience: "Yard & port teams",
+    description: "A focused mobile workflow for container e-lock clamping, arrivals, unclamping and delivery updates.",
+    capabilities: ["Clamp e-locks", "Live transit view", "Record delivery"],
+    packageName: "io.sonalit.field",
+    tagPrefix: "sonalit-field-v",
+    assetNames: ["sonalit-field.apk"],
+    downloadPath: null,
+    icon: "container",
+    accent: "mint",
+    minimumSdkFallback: 24,
+    minimumAndroidFallback: "Android 7.0+",
+    order: 2
+  },
+  {
+    id: "handover",
+    name: "Sonalit Handover",
+    shortName: "Handover",
+    category: "SECURE HANDOVER",
+    audience: "Handover officers",
+    description: "Review convoys awaiting handover, complete signed truck or convoy handovers, and submit the required form.",
+    capabilities: ["Review pending handovers", "Truck-by-truck or convoy sign-off", "Submit signed forms"],
+    packageName: "io.sonalit.handover",
+    tagPrefix: "sonalit-handover-v",
+    assetNames: ["sonalit-handover.apk"],
+    downloadPath: null,
+    icon: "file-check",
+    accent: "amber",
+    minimumSdkFallback: 24,
+    minimumAndroidFallback: "Android 7.0+",
+    order: 3
+  },
+  {
+    id: "guardian",
+    name: "Sonalit Guardian",
+    shortName: "Guardian",
+    category: "FIELD SAFETY",
+    audience: "Field officers",
+    description: "The native Guardian companion for device enrolment, location and field-safety operations.",
+    capabilities: ["Device enrolment", "Field location", "Guardian safety workflows"],
+    packageName: "io.sonalit.guardian",
+    tagPrefix: "guardian-v",
+    assetNames: ["app-release.apk", "app-debug.apk"],
+    downloadPath: "/api/v1/guardian/apk/download",
+    icon: "shield-check",
+    accent: "violet",
+    minimumSdkFallback: 29,
+    minimumAndroidFallback: "Android 10+",
+    order: 4
+  }
+];
+
+let _releasesCache = null;
+let _releasesCacheAt = 0;
+let _inFlight = null;
+
+function getAppDefinitions() {
+  return APPS.map(({ tagPrefix, assetNames, downloadPath, minimumSdkFallback, minimumAndroidFallback, ...publicFields }) => ({
+    ...publicFields,
+    minimumAndroid: minimumAndroidFallback,
+    minimumSdk: minimumSdkFallback,
+    status: "unverified",
+    statusLabel: "Checking release",
+    releaseId: null,
+    releaseName: null,
+    appVersion: null,
+    versionCode: null,
+    publishedAt: null,
+    sizeBytes: null,
+    sizeLabel: null,
+    packageId: publicFields.packageName,
+    downloadUrl: null,
+    releaseNotes: null,
+    sha256: null
+  }));
+}
+
+function formatSize(size) {
+  const bytes = Number(size);
+  if (!Number.isFinite(bytes) || bytes <= 0) return null;
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+  return (bytes >= 100 * 1024 * 1024 ? Math.round(bytes / (1024 * 1024)) : (bytes / (1024 * 1024)).toFixed(1)) + " MB";
+}
+
+async function fetchReleases(forceRefresh = false) {
+  if (!forceRefresh && _releasesCache && Date.now() - _releasesCacheAt < RELEASE_CACHE_MS) {
+    return _releasesCache;
+  }
+  if (!forceRefresh && _inFlight) return _inFlight;
+
+  const request = (async () => {
+    const repo = process.env.APK_RELEASE_REPO || "fleetsatpro/Sonalit";
+    const headers = {
+      "User-Agent": "Sonalit-Download-Catalog",
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    };
+    const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+    if (token) headers.Authorization = "Bearer " + token;
+    const response = await fetch("https://api.github.com/repos/" + repo + "/releases?per_page=100", {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(12_000)
+    });
+    if (!response.ok) throw new Error("GitHub release catalog returned HTTP " + response.status);
+    const data = await response.json();
+    if (!Array.isArray(data)) throw new Error("GitHub release catalog had an unexpected shape");
+    _releasesCache = data;
+    _releasesCacheAt = Date.now();
+    return data;
+  })();
+
+  _inFlight = request;
+  try {
+    return await request;
+  } finally {
+    if (_inFlight === request) _inFlight = null;
+  }
+}
+
+function pickRelease(releases, definition) {
+  const candidates = releases.filter(release =>
+    release &&
+    typeof release.tag_name === "string" &&
+    release.tag_name.startsWith(definition.tagPrefix) &&
+    release.draft !== true &&
+    release.prerelease !== true &&
+    Array.isArray(release.assets) &&
+    release.assets.some(asset => asset && /\.apk$/i.test(String(asset.name || "")))
+  );
+
+  candidates.sort((a, b) => {
+    const aTime = Date.parse(a.published_at || a.created_at || "") || 0;
+    const bTime = Date.parse(b.published_at || b.created_at || "") || 0;
+    return bTime - aTime;
+  });
+  if (!candidates.length) return null;
+
+  for (const release of candidates) {
+    const preferred = definition.assetNames
+      .map(name => release.assets.find(asset => asset && asset.name === name))
+      .find(Boolean);
+    const asset = preferred || release.assets.find(item => item && /\.apk$/i.test(String(item.name || "")));
+    if (asset && Number(asset.size) > 0 && typeof asset.browser_download_url === "string") {
+      return { release, asset };
+    }
+  }
+  return null;
+}
+
+function serializeApp(definition, selected) {
+  const { tagPrefix, assetNames, downloadPath, minimumSdkFallback, minimumAndroidFallback, ...publicFields } = definition;
+  if (!selected) {
+    return {
+      ...publicFields,
+      minimumAndroid: minimumAndroidFallback,
+      minimumSdk: minimumSdkFallback,
+      status: "unavailable",
+      statusLabel: "No published APK found",
+      releaseId: null,
+      releaseName: null,
+      appVersion: null,
+      versionCode: null,
+      publishedAt: null,
+      sizeBytes: null,
+      sizeLabel: null,
+      packageId: publicFields.packageName,
+      downloadUrl: null,
+      releaseNotes: null,
+      sha256: null
+    };
+  }
+
+  const { release, asset } = selected;
+  const metadata = parseApkReleaseMetadata(release.body);
+  const minimumSdk = metadata.min_sdk || minimumSdkFallback;
+  const minimumAndroid = ({
+    24: "Android 7.0+",
+    25: "Android 7.1+",
+    26: "Android 8.0+",
+    27: "Android 8.1+",
+    28: "Android 9+",
+    29: "Android 10+",
+    30: "Android 11+",
+    31: "Android 12+",
+    32: "Android 12L+",
+    33: "Android 13+",
+    34: "Android 14+",
+    35: "Android 15+",
+    36: "Android 16+"
+  })[minimumSdk] || ("Android API " + minimumSdk + "+");
+
+  return {
+    ...publicFields,
+    minimumSdk,
+    minimumAndroid,
+    status: "available",
+    statusLabel: metadata.app_version ? "Latest release · verified app version" : "Latest published release",
+    releaseId: release.tag_name,
+    releaseName: release.name || release.tag_name,
+    appVersion: metadata.app_version,
+    versionCode: metadata.version_code,
+    publishedAt: release.published_at || release.created_at || null,
+    sizeBytes: Number(asset.size) || null,
+    sizeLabel: formatSize(asset.size) || "Unavailable",
+    packageId: metadata.package_name || publicFields.packageName,
+    downloadUrl: downloadPath || asset.browser_download_url,
+    releaseNotes: metadata.notes || null,
+    sha256: metadata.sha256 || null
+  };
+}
+
+async function getSonalitApkCatalog({ forceRefresh = false } = {}) {
+  const releases = await fetchReleases(forceRefresh);
+  return {
+    source: "github-releases",
+    checkedAt: new Date().toISOString(),
+    apps: APPS
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map(definition => serializeApp(definition, pickRelease(releases, definition)))
+  };
+}
+
+function createUnverifiedCatalog() {
+  return {
+    source: "unavailable",
+    checkedAt: new Date().toISOString(),
+    apps: getAppDefinitions()
+  };
+}
+
+async function getLatestAppRelease(appId, { forceRefresh = false } = {}) {
+  const definition = APPS.find(app => app.id === appId);
+  if (!definition) throw new Error("Unknown Sonalit APK application: " + appId);
+  const releases = await fetchReleases(forceRefresh);
+  const selected = pickRelease(releases, definition);
+  if (!selected) throw new Error("No published APK was found for " + appId);
+  return {
+    ...selected,
+    metadata: parseApkReleaseMetadata(selected.release.body),
+    definition
+  };
+}
+
+module.exports = {
+  getAppDefinitions,
+  getSonalitApkCatalog,
+  createUnverifiedCatalog,
+  getLatestAppRelease,
+  fetchReleases,
+  formatSize
+};
