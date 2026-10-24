@@ -223,7 +223,7 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
       clockSkewCount ? clockSkewCount + ' CLOCK SKEW' : '',
       waypointBasis ? 'WAYPOINT-LINE BASIS' : trucks.some(t => t.route_source === 'corridor') ? 'ROUTE-CORRIDOR BASIS' : '',
     ].filter(Boolean).join(' · ') || (trucks.length ? 'NO VALID GPS PROGRESS' : 'NO TRUCKS ASSIGNED')
-  const summaryColor = !trackingAvailable ? '#f5b544' : offRouteCount ? '#ff5964' : clockSkewCount || staleCount ? '#f5b544' : liveCount ? '#36e0c3' : '#66717d'
+  const summaryColor = !trackingAvailable ? '#f5b544' : offRouteCount ? '#ff5964' : waypointBasis || clockSkewCount || staleCount ? '#f5b544' : liveCount ? '#36e0c3' : '#66717d'
   const railMarkers = trackingAvailable ? layoutTruckMarkers(onRail) : []
   const railHeight = railMarkers.length ? (Math.max(...railMarkers.map(marker => marker.lane)) + 1) * 13 + 8 : 18
 
