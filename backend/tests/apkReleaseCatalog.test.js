@@ -35,6 +35,7 @@ describe("Sonalit app-specific APK release catalogue", () => {
   afterEach(() => {
     global.fetch = originalFetch;
     jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   test("selects each app's newest matching tag and its own APK asset", async () => {
@@ -114,6 +115,31 @@ describe("Sonalit app-specific APK release catalogue", () => {
 
     await expect(getAppReleaseById("field", "sonalit-v40")).rejects.toThrow("Release ID does not belong");
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("marks cached versions as last-known when a refresh fails after the cache expires", async () => {
+    const releases = [
+      makeRelease("sonalit-v41", "Sonalit v41", "io.sonalit.app", "1.0.41", 41, 24, "2026-10-24T20:00:00Z", "sonalit.apk"),
+      makeRelease("sonalit-field-v26", "Sonalit Field v26", "io.sonalit.field", "1.0.26", 26, 24, "2026-10-24T20:00:00Z", "sonalit-field.apk"),
+      makeRelease("sonalit-handover-v18", "Sonalit Handover v18", "io.sonalit.handover", "1.0.18", 18, 24, "2026-10-24T20:00:00Z", "sonalit-handover.apk"),
+      makeRelease("guardian-v981", "Sonalit Guardian 4.7.0", "io.sonalit.guardian", "4.7.0", 13, 29, "2026-10-24T20:00:00Z", "app-debug.apk")
+    ];
+    let fakeNow = Date.now();
+    jest.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => releases });
+    const { getSonalitApkCatalog } = require("../src/utils/apkReleaseCatalog");
+
+    const fresh = await getSonalitApkCatalog({ forceRefresh: true });
+    expect(fresh.stale).toBe(false);
+
+    fakeNow += 601_000;
+    global.fetch = jest.fn().mockRejectedValue(new Error("temporary GitHub outage"));
+    const stale = await getSonalitApkCatalog();
+
+    expect(stale.stale).toBe(true);
+    expect(stale.apps.find(app => app.id === "field").status).toBe("stale");
+    expect(stale.apps.find(app => app.id === "field").releaseId).toBe("sonalit-field-v26");
+    expect(stale.apps.find(app => app.id === "field").downloadUrl).toContain("/download-app/field/sonalit-field-v26");
   });
 
   test("cooldowns repeated upstream failures when no snapshot exists", async () => {
