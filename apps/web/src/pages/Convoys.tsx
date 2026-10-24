@@ -21,7 +21,8 @@ interface TruckProgress {
   id: string; vehicle_id: string | null; position: number
   registration: string | null; driver_name: string | null
   progress_pct: number | null; along_km: number | null; route_len_km: number | null
-  cross_track_km: number | null; last_fix_at: string | null; age_seconds: number | null
+  cross_track_km: number | null; route_source: 'corridor' | 'waypoints' | null
+  last_fix_at: string | null; age_seconds: number | null
   speed_kph: number | null; state: TruckProgressState
 }
 
@@ -105,7 +106,8 @@ function truckProgressTitle(truck: TruckProgress): string {
   const parts: string[] = [truck.registration || ('Truck ' + truck.position)]
   if (truck.driver_name) parts.push(truck.driver_name)
   if (typeof truck.progress_pct === 'number' && truck.along_km != null && truck.route_len_km != null) {
-    parts.push(truck.progress_pct + '% · ' + truck.along_km.toFixed(1) + ' / ' + truck.route_len_km.toFixed(1) + ' km')
+    const basis = truck.route_source === 'waypoints' ? 'waypoint-line estimate' : 'saved route corridor'
+    parts.push(truck.progress_pct + '% · ' + truck.along_km.toFixed(1) + ' / ' + truck.route_len_km.toFixed(1) + ' km · ' + basis)
   } else {
     parts.push(truckProgressStateLabel(truck.state))
   }
@@ -208,6 +210,7 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
   const offRouteCount = trucks.filter(t => t.state === 'off_route').length
   const noGpsCount = trucks.filter(t => t.state === 'no_fix').length
   const clockSkewCount = trucks.filter(t => t.state === 'clock_skew').length
+  const waypointBasis = trucks.some(t => t.route_source === 'waypoints')
   const origin = c.route_origin ?? c.region ?? '—'
   const dest = c.route_destination ?? '—'
   const summary = !trackingAvailable
@@ -218,6 +221,7 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
       offRouteCount ? offRouteCount + ' OFF ROUTE' : '',
       noGpsCount ? noGpsCount + ' NO GPS' : '',
       clockSkewCount ? clockSkewCount + ' CLOCK SKEW' : '',
+      waypointBasis ? 'WAYPOINT-LINE BASIS' : trucks.some(t => t.route_source === 'corridor') ? 'ROUTE-CORRIDOR BASIS' : '',
     ].filter(Boolean).join(' · ') || (trucks.length ? 'NO VALID GPS PROGRESS' : 'NO TRUCKS ASSIGNED')
   const summaryColor = !trackingAvailable ? '#f5b544' : offRouteCount ? '#ff5964' : clockSkewCount || staleCount ? '#f5b544' : liveCount ? '#36e0c3' : '#66717d'
   const railMarkers = trackingAvailable ? layoutTruckMarkers(onRail) : []
