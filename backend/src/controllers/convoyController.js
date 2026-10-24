@@ -235,7 +235,7 @@ const getConvoys = asyncHandler(async (req, res) => {
      LEFT JOIN cargo_clients cl ON cl.id = c.client_id
      WHERE c.org_id = $1 AND c.deleted_at IS NULL ${where}
      ORDER BY c.created_at DESC
-     LIMIT ${limitParamIndex} OFFSET ${offsetParamIndex}`,
+     LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`,
     params
   );
 
