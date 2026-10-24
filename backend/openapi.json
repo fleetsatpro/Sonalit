@@ -1826,6 +1826,25 @@
         }
       }
     },
+    "/api/v1/guardian/apk/download-app/{appId}/{releaseId}": {
+      "get": {
+        "operationId": "get_api_v1_guardian_apk_download_app_appId_releaseId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid Sonalit app release"
+          },
+          "404": {
+            "description": "Sonalit app release not found"
+          },
+          "503": {
+            "description": "Sonalit APK temporarily unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/apk/download": {
       "get": {
         "operationId": "get_api_v1_guardian_apk_download",
