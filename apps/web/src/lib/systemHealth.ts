@@ -87,6 +87,20 @@ export function isFreshHealthCheckTimestamp(
     && checkedAge <= maxAgeMs;
 }
 
+export function healthCheckEvidenceMaxAgeMs(checkId: string, defaultMaxAgeMs = HEALTH_RESPONSE_MAX_AGE_MS): number {
+  // Partition maintenance runs hourly; the backend considers a successful
+  // partition check current for two hours, so the UI must use the same contract.
+  return checkId.startsWith('partitions-') ? 2 * 60 * 60 * 1000 : defaultMaxAgeMs;
+}
+
+export function isFreshHealthCheck(check: SystemHealthCheck, now = Date.now(), defaultMaxAgeMs = HEALTH_RESPONSE_MAX_AGE_MS): boolean {
+  return isFreshHealthCheckTimestamp(
+    check.checked_at,
+    now,
+    healthCheckEvidenceMaxAgeMs(check.id, defaultMaxAgeMs),
+  );
+}
+
 export function getOverallHealthState(
   payload: SystemHealthPayload | undefined,
   requestFailed = false,
@@ -102,7 +116,7 @@ export function getOverallHealthState(
   if (checks.some(check => check.status === 'degraded')) return 'degraded';
   if (checks.some(check => check.status === 'unknown')) return 'unknown';
   if (checks.some(check => check.status === 'healthy'
-    && !isFreshHealthCheckTimestamp(check.checked_at, now, maxAgeMs))) return 'unknown';
+    && !isFreshHealthCheck(check, now, maxAgeMs))) return 'unknown';
   if (payload.status === 'ok' && checks.every(check => check.status === 'healthy')) return 'healthy';
   return 'unknown';
 }
