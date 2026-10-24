@@ -21,7 +21,8 @@ interface TruckProgress {
   id: string; vehicle_id: string | null; position: number
   registration: string | null; driver_name: string | null
   progress_pct: number | null; along_km: number | null; route_len_km: number | null
-  cross_track_km: number | null; route_source: 'corridor' | 'waypoints' | null
+  cross_track_km: number | null; cross_track_limit_km: number | null
+  route_source: 'corridor' | 'waypoints' | null
   last_fix_at: string | null; age_seconds: number | null
   speed_kph: number | null; state: TruckProgressState
 }
@@ -111,6 +112,9 @@ function truckProgressTitle(truck: TruckProgress): string {
     parts.push(truck.progress_pct + '% · ' + truck.along_km.toFixed(1) + ' / ' + truck.route_len_km.toFixed(1) + ' km · ' + basis)
   } else {
     parts.push(truckProgressStateLabel(truck.state))
+  }
+  if (truck.cross_track_km != null && truck.cross_track_limit_km != null) {
+    parts.push('cross-track ' + truck.cross_track_km.toFixed(1) + ' km / tolerance ' + truck.cross_track_limit_km.toFixed(1) + ' km')
   }
   if (truck.speed_kph != null) parts.push(Math.round(truck.speed_kph) + ' km/h')
   if (truck.last_fix_at) parts.push('Last GPS fix ' + fmtTime(truck.last_fix_at))
