@@ -124,6 +124,13 @@ async function fetchReleases(forceRefresh = false) {
   const now = Date.now();
   if (_inFlight) return _inFlight;
 
+  // Apply failure cooldowns even when a stale snapshot exists and its normal TTL
+  // has expired; otherwise each request would retry a failing upstream API.
+  if (_lastFetchError && now - _lastFetchAttemptAt < FAILURE_COOLDOWN_MS) {
+    if (_releasesCache) return _releasesCache;
+    throw new Error("Release catalogue refresh is temporarily rate-limited after a previous failure");
+  }
+
   if (_releasesCache) {
     const age = now - _releasesCacheAt;
     if (!forceRefresh && age < RELEASE_CACHE_MS) return _releasesCache;
