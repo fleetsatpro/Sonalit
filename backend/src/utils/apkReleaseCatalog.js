@@ -164,7 +164,7 @@ async function fetchReleases(forceRefresh = false) {
     _releasesCache = collected;
     _releasesCacheAt = Date.now();
     return collected;
-  })();;
+  })();
 
   _inFlight = request;
   try {
