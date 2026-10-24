@@ -286,7 +286,7 @@ function serializeApp(definition, selected) {
     sizeBytes: Number(asset.size) || null,
     sizeLabel: formatSize(asset.size) || "Unavailable",
     packageId: metadata.package_name || publicFields.packageName,
-    downloadUrl: downloadPath || asset.browser_download_url,
+    downloadUrl: `/api/v1/guardian/apk/download-app/${publicFields.id}/${encodeURIComponent(release.tag_name)}`,
     releaseNotes: metadata.notes ? metadata.notes.slice(0, 5000) : null,
     sha256: metadata.sha256 || null
   };
@@ -312,6 +312,43 @@ function createUnverifiedCatalog() {
   };
 }
 
+async function getAppReleaseById(appId, releaseId, { forceRefresh = false } = {}) {
+  const definition = APPS.find(app => app.id === appId);
+  if (!definition) throw new Error("Unknown Sonalit APK application: " + appId);
+  if (typeof releaseId !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(releaseId) ||
+      !releaseId.startsWith(definition.tagPrefix)) {
+    throw new Error("Release ID does not belong to the requested Sonalit app");
+  }
+
+  const releases = await fetchReleases(forceRefresh);
+  const release = releases.find(item =>
+    item &&
+    item.tag_name === releaseId &&
+    item.tag_name.startsWith(definition.tagPrefix) &&
+    item.draft !== true &&
+    item.prerelease !== true &&
+    Array.isArray(item.assets)
+  );
+  if (!release) throw new Error("Published release was not found for " + appId);
+
+  const preferred = definition.assetNames
+    .map(name => release.assets.find(asset => asset && asset.name === name))
+    .find(Boolean);
+  const asset = preferred || release.assets.find(item => item && /\.apk$/i.test(String(item.name || "")));
+  if (!asset || !(Number(asset.size) > 0) ||
+      typeof asset.browser_download_url !== "string" ||
+      typeof asset.url !== "string") {
+    throw new Error("Release does not contain a downloadable APK asset");
+  }
+
+  return {
+    release,
+    asset,
+    definition,
+    metadata: parseApkReleaseMetadata(release.body)
+  };
+}
+
 async function getLatestAppRelease(appId, { forceRefresh = false } = {}) {
   const definition = APPS.find(app => app.id === appId);
   if (!definition) throw new Error("Unknown Sonalit APK application: " + appId);
@@ -330,6 +367,7 @@ module.exports = {
   getSonalitApkCatalog,
   createUnverifiedCatalog,
   getLatestAppRelease,
+  getAppReleaseById,
   fetchReleases,
   formatSize
 };
