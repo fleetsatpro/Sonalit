@@ -27,6 +27,14 @@ export type OverallHealthState = 'healthy' | 'degraded' | 'unavailable' | 'unkno
 const HEALTH_RESPONSE_MAX_AGE_MS = 60_000;
 const HEALTH_FUTURE_CLOCK_TOLERANCE_MS = 30_000;
 const VALID_CHECK_STATES: HealthCheckState[] = ['healthy', 'degraded', 'unavailable', 'unknown'];
+const REQUIRED_HEALTH_CHECK_IDS = [
+  'api',
+  'database',
+  'redis',
+  'partitions-gps_logs',
+  'partitions-audit_logs',
+  'partitions-outbox',
+] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -35,10 +43,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isValidHealthCheck(value: unknown): value is SystemHealthCheck {
   if (!isRecord(value)) return false;
   return typeof value.id === 'string'
+    && value.id.trim().length > 0
     && typeof value.label === 'string'
     && typeof value.detail === 'string'
     && VALID_CHECK_STATES.includes(value.status as HealthCheckState)
     && (value.checked_at === null || typeof value.checked_at === 'string');
+}
+
+function hasCompleteHealthLedger(value: unknown): value is SystemHealthCheck[] {
+  if (!Array.isArray(value) || value.length < REQUIRED_HEALTH_CHECK_IDS.length) return false;
+  const ids = new Set<string>();
+  for (const item of value) {
+    if (!isValidHealthCheck(item) || ids.has(item.id)) return false;
+    ids.add(item.id);
+  }
+  return REQUIRED_HEALTH_CHECK_IDS.every(id => ids.has(id));
 }
 
 /** A fresh envelope cannot make old component evidence current. */
@@ -75,10 +94,8 @@ export function getOverallHealthState(
   maxAgeMs = HEALTH_RESPONSE_MAX_AGE_MS,
 ): OverallHealthState {
   const checks = payload?.checks;
-  if (requestFailed || !payload || !Array.isArray(checks) || checks.length === 0) return 'unknown';
+  if (requestFailed || !payload || !hasCompleteHealthLedger(checks)) return 'unknown';
   if (!isFreshHealthSnapshot(payload, now, maxAgeMs)) return 'unknown';
-  if (checks.some(check => !check || !VALID_CHECK_STATES.includes(check.status))) return 'unknown';
-
   // Explicit negative evidence wins over the aggregate string. A stale
   // "healthy" claim, however, cannot qualify as current health evidence.
   if (checks.some(check => check.status === 'unavailable')) return 'unavailable';
@@ -109,9 +126,7 @@ export async function fetchSystemHealth(): Promise<SystemHealthPayload> {
   if (
     !isRecord(payload)
     || typeof payload.status !== 'string'
-    || !Array.isArray(payload.checks)
-    || payload.checks.length === 0
-    || !payload.checks.every(isValidHealthCheck)
+    || !hasCompleteHealthLedger(payload.checks)
   ) {
     throw new Error('Health endpoint returned an invalid payload or check ledger');
   }
