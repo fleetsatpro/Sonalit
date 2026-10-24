@@ -477,14 +477,16 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
           <path d="M30 100 Q180 20 330 30" stroke="url(#rg)" strokeWidth="1.5" fill="none" strokeDasharray="6 4" opacity=".6"/>
           <circle cx="30" cy="100" r="4" fill="#22c55e"/>
           <circle cx="330" cy="30" r="4" fill="#f97316"/>
-          {progressTrucks.map(truck => {
+          {layoutTruckMarkers(progressTrucks).map(({ truck, lane }) => {
             const point = pointOnRoute(truck.progress_pct ?? 0)
+            const offsetY = lane === 0 ? 0 : (lane % 2 ? 1 : -1) * Math.ceil(lane / 2) * 7
+            const markerY = Math.max(15, Math.min(115, point.y + offsetY))
             const color = truckProgressColor(truck)
             return (
               <g key={truck.id} aria-label={truckProgressTitle(truck)}>
-                <circle cx={point.x} cy={point.y} r="7" fill={color} opacity=".18"/>
-                <circle cx={point.x} cy={point.y} r="4.5" fill={color} stroke="#0d1014" strokeWidth="1"/>
-                <text x={point.x} y={point.y + 2.5} fill="#071014" textAnchor="middle" fontSize="5.5" fontWeight="700">{truck.position}</text>
+                <circle cx={point.x} cy={markerY} r="7" fill={color} opacity=".18"/>
+                <circle cx={point.x} cy={markerY} r="4.5" fill={color} stroke="#0d1014" strokeWidth="1"/>
+                <text x={point.x} y={markerY + 2.5} fill="#071014" textAnchor="middle" fontSize="5.5" fontWeight="700">{truck.position}</text>
               </g>
             )
           })}
