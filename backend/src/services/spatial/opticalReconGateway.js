@@ -519,4 +519,5 @@ module.exports = {
   getVantorBasemapConfig,
   freshnessClass,
   resetOpticalReconCaches,
+  searchOam,
 };

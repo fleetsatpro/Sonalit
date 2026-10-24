@@ -5,6 +5,7 @@ const {
   getOpticalTile,
   getVantorBasemapConfig,
   resetOpticalReconCaches,
+  searchOam,
 } = require('../src/services/spatial/opticalReconGateway');
 
 describe('free optical reconnaissance gateway', () => {
@@ -124,6 +125,9 @@ describe('free optical reconnaissance gateway', () => {
       }] }) };
       throw new Error('unexpected fetch: ' + target);
     });
+    const catalogue = await searchOam(bboxFromCenter(8.1264, 34.5618, 18_000));
+    expect(catalogue.error).toBeNull();
+    expect(catalogue.items).toHaveLength(1);
     const result = await getOpticalRecon({ latitude: 8.1264, longitude: 34.5618, radiusM: 18_000 });
     expect(result.coverage.openAerialMapCandidates).toBe(1);
     expect(result.warnings).not.toContain('openaerialmap_catalog_unavailable');
@@ -148,6 +152,9 @@ describe('free optical reconnaissance gateway', () => {
       }
       throw new Error('unexpected fetch: ' + target);
     });
+    const catalogue = await searchOam(bboxFromCenter(8.1234, 34.5678, 18_000));
+    expect(catalogue.error).toBeNull();
+    expect(catalogue.items).toHaveLength(1);
     const result = await getOpticalRecon({ latitude: 8.1234, longitude: 34.5678, radiusM: 18_000 });
     expect(result.coverage.openAerialMapCandidates).toBe(1);
     expect(result.warnings).not.toContain('openaerialmap_catalog_unavailable');
