@@ -366,7 +366,7 @@ function renderDownloadScript() {
     setText("metadata-source", "Could not verify release metadata.");
   }
 
-  async function loadReleaseInfo() {
+  async function loadReleaseInfo(forceRefresh) {
     refreshButton.disabled = true;
     refreshButton.textContent = "Checking…";
     setStatus("Checking release…", "");
@@ -374,7 +374,7 @@ function renderDownloadScript() {
     setText("metadata-source", "Contacting release feed…");
 
     try {
-      var response = await fetch(infoUrl, {
+      var response = await fetch(forceRefresh ? infoUrl + "?refresh=1" : infoUrl, {
         method: "GET",
         headers: { "Accept": "application/json" },
         cache: "no-store",
@@ -448,7 +448,7 @@ function renderDownloadScript() {
     }
   }
 
-  refreshButton.addEventListener("click", loadReleaseInfo);
+  refreshButton.addEventListener("click", function () { loadReleaseInfo(true); });
 
   copyButton.addEventListener("click", async function () {
     if (!checksumInput.value) return;
@@ -464,7 +464,7 @@ function renderDownloadScript() {
     }
   });
 
-  loadReleaseInfo();
+  loadReleaseInfo(false);
 })();`;
 }
 
