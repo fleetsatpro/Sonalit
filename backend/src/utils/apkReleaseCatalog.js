@@ -3,6 +3,8 @@
 const { parseApkReleaseMetadata } = require("./apkReleaseMetadata");
 
 const RELEASE_CACHE_MS = 600_000;
+const MIN_REFRESH_INTERVAL_MS = 300_000;
+const FAILURE_COOLDOWN_MS = 60_000;
 const APPS = [
   {
     id: "sonalit",
@@ -87,6 +89,8 @@ const APPS = [
 let _releasesCache = null;
 let _releasesCacheAt = 0;
 let _inFlight = null;
+let _lastFetchAttemptAt = 0;
+let _lastFetchError = null;
 
 function getAppDefinitions() {
   return APPS.map(({ tagPrefix, assetNames, downloadPath, minimumSdkFallback, minimumAndroidFallback, ...publicFields }) => ({
@@ -117,11 +121,25 @@ function formatSize(size) {
 }
 
 async function fetchReleases(forceRefresh = false) {
-  if (!forceRefresh && _releasesCache && Date.now() - _releasesCacheAt < RELEASE_CACHE_MS) {
-    return _releasesCache;
-  }
-  if (!forceRefresh && _inFlight) return _inFlight;
+  const now = Date.now();
+  if (_inFlight) return _inFlight;
 
+  if (_releasesCache) {
+    const age = now - _releasesCacheAt;
+    if (!forceRefresh && age < RELEASE_CACHE_MS) return _releasesCache;
+
+    // A public refresh parameter must not let every visitor bypass the shared
+    // GitHub API budget. Reuse the current release snapshot until the minimum
+    // refresh interval has elapsed, even when the caller explicitly rechecks.
+    if (forceRefresh && now - _lastFetchAttemptAt < MIN_REFRESH_INTERVAL_MS) {
+      return _releasesCache;
+    }
+  } else if (_lastFetchError && now - _lastFetchAttemptAt < FAILURE_COOLDOWN_MS) {
+    // Avoid hammering GitHub when its API is unavailable and no snapshot exists.
+    throw new Error("Release catalogue refresh is temporarily rate-limited after a previous failure");
+  }
+
+  _lastFetchAttemptAt = now;
   const request = (async () => {
     const repo = process.env.APK_RELEASE_REPO || "fleetsatpro/Sonalit";
     const headers = {
@@ -165,17 +183,23 @@ async function fetchReleases(forceRefresh = false) {
 
     _releasesCache = collected;
     _releasesCacheAt = Date.now();
+    _lastFetchError = null;
     return collected;
   })();
 
   _inFlight = request;
   try {
     return await request;
+  } catch (error) {
+    _lastFetchError = error;
+    // Serve the last known-good snapshot on transient upstream errors; never
+    // replace it with fabricated data or make a burst of retries.
+    if (_releasesCache) return _releasesCache;
+    throw error;
   } finally {
     if (_inFlight === request) _inFlight = null;
   }
 }
-
 function pickRelease(releases, definition) {
   const candidates = releases.filter(release =>
     release &&
