@@ -179,9 +179,8 @@ export default function FieldHome() {
         )}
       </main>
 
-      <footer className="relative p-5 text-center text-[10px] font-mono text-text-2/70 flex items-center justify-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-cds-teal animate-pulse-dot" />
-        Real-time sync with CDS control room
+      <footer className="relative p-5 text-center text-[10px] font-mono text-text-2/70">
+        CDS CONTROL ROOM · FIELD OPERATIONS WORKSPACE
       </footer>
     </div>
   );
