@@ -11,6 +11,21 @@ Use Vantor Vivid Mosaic as the preferred high-detail basemap candidate. The firs
 - Authentication: backend-only maxar-api-key header. Never expose the key to browser JavaScript, query strings, logs, or telemetry.
 - Documentation: https://developers.maxar.com/docs/streaming-basemap/guides/wmts-basemap and https://vantor.com/product/vivid/mosaic/
 
+## Free/open imagery path
+
+The workstation also exposes **OPEN UHD**, a separate OpenAerialMap/HOTOSM global imagery mosaic. This avoids a commercial key and uses HOTOSM's documented XYZ endpoint:
+
+- `https://global.imagery.hotosm.org/{z}/{x}/{y}.png`
+- Zoom levels 0–13 show the global coverage grid, not imagery. Zoom 14+ serves contributed imagery where available.
+- Use the STAC catalogue (`https://api.imagery.hotosm.org/stac/search`) to discover individual scenes and the per-item TiTiler endpoint to render a selected item.
+- The imagery is contributor-supplied and heterogeneous. Do not claim a uniform native resolution, recent acquisition, or universal UHD coverage from the global mosaic. Prefer item-specific scene metadata when displaying a single image.
+- Item-specific catalogue candidates are not rendered unless an explicit, recognised item licence is present. Missing licence metadata is surfaced as unresolved rather than silently assuming CC-BY.
+- Tile responses must be images; an upstream HTML/XML error response is rejected rather than presented as imagery.
+
+### Open Cities archive
+
+The Open Cities AI Challenge dataset is a downloadable, fixed-footprint African drone-imagery archive hosted on Source Cooperative under ODbL-1.0; it is not a global live tile service. It is documented as a candidate for a future, separately catalogued archive layer after verifying coverage, file layout, attribution and ODbL obligations. Do not ingest it into live rendering or expose it as general commercial-use imagery without that review.
+
 ## Enablement gate
 Configure these backend environment variables only after the signed contract permits streaming/embedding imagery in the Sonalit multi-tenant product and the provider account has been provisioned:
 - VANTOR_API_KEY: API key from the provisioned Vantor Hub account.
@@ -32,7 +47,7 @@ A key alone must not enable commercial imagery. Missing or invalid settings keep
 - 15 cm must not imply global 15 cm coverage.
 - Sentinel-2 and MODIS remain dated/context imagery, not equivalent high-detail sources.
 - Live GPS remains operational authority; imagery is contextual evidence only.
-- Tests cover fail-closed configuration, licence gate, WMTS URL construction, secret-in-header behavior and non-caching of commercial tiles.
+- Tests cover OpenAerialMap global XYZ URL construction/caching, non-image rejection, missing item-licence rejection, Vantor fail-closed configuration, WMTS URL construction, secret-in-header behavior and non-caching of commercial tiles.
 
 ## Pre-production acceptance
 1. Procurement/legal confirmation of signed rights and per-tenant display/redistribution rules.
@@ -40,4 +55,4 @@ A key alone must not enable commercial imagery. Missing or invalid settings keep
 3. Confirm coverage, metadata, valid tile response, visual detail at intended zooms, latency, failures, request limits and expected cost.
 4. Compare imagery at identical zooms with Airbus archive imagery and a SkySat sample where each has coverage.
 5. Visual QA at 390×844, 768×1024, 1440×900 and 1920×1080.
-6. Keep disabled until all gates pass. Never report product GSD as native sensor resolution without source evidence.
+6. Keep Vantor disabled until all gates pass. Never report product GSD as native sensor resolution without source evidence. For OpenAerialMap, distinguish its low-zoom coverage grid from contributed imagery and do not promise global UHD.

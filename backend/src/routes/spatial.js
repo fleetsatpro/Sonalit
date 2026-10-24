@@ -139,7 +139,7 @@ router.get('/optical-recon', opticalReconLimiter, asyncHandler(async (req, res) 
 
 router.get('/optical-recon/tile', opticalTileLimiter, asyncHandler(async (req, res) => {
   const source = String(req.query.source || 'sentinel');
-  if (!['sentinel', 'oam', 'nasa', 'vantor'].includes(source)) return res.status(400).json({ error: 'Unsupported optical source' });
+  if (!['sentinel', 'oam', 'oam-global', 'nasa', 'vantor'].includes(source)) return res.status(400).json({ error: 'Unsupported optical source' });
   if (source === 'vantor' && !getVantorBasemapConfig().enabled) {
     return res.status(503).json({ error: 'vantor_ultrahd_not_configured', state: getVantorBasemapConfig().state });
   }

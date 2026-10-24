@@ -107,6 +107,63 @@ describe('free optical reconnaissance gateway', () => {
     expect(result.warnings).toContain('sentinel_catalog_unavailable');
   });
 
+  test('does not render an OpenAerialMap item when item-level licence metadata is absent', async () => {
+    global.fetch = jest.fn(async (url) => {
+      const target = String(url);
+      if (target.includes('explorer.digitalearth.africa/stac/search')) {
+        return { ok: true, json: async () => ({ features: [] }) };
+      }
+      if (target.includes('api.imagery.hotosm.org/stac/search')) {
+        return { ok: true, json: async () => ({ features: [{
+          id: 'no-license-item',
+          geometry: { type: 'Polygon', coordinates: [] },
+          properties: { datetime: '2026-09-20T10:00:00Z', gsd: 0.08 },
+        }] }) };
+      }
+      throw new Error('unexpected fetch: ' + target);
+    });
+    const result = await getOpticalRecon({ latitude: 8.1234, longitude: 34.5678, radiusM: 18_000 });
+    const candidate = result.candidates.find(item => item.id === 'oam:no-license-item');
+    expect(candidate).toMatchObject({
+      renderable: false,
+      licenceVerified: false,
+      licenceSource: 'missing_item_metadata',
+      render: null,
+      licence: 'Item-level licence metadata unavailable',
+      nativeResolutionM: 0.08,
+    });
+    expect(result.precisionAlternative).toBeNull();
+  });
+
+  test('requests and briefly caches the documented HOTOSM global XYZ mosaic tiles', async () => {
+    const requests = [];
+    global.fetch = jest.fn(async (url) => {
+      requests.push(String(url));
+      return {
+        ok: true,
+        headers: { get: () => 'image/png' },
+        arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer,
+      };
+    });
+    const args = { source: 'oam-global', date: 'mosaic', z: 14, x: 8299, y: 6377 };
+    const first = await getOpticalTile(args);
+    const second = await getOpticalTile(args);
+    expect(first.contentType).toBe('image/png');
+    expect(second.buffer).toBeInstanceOf(Buffer);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toBe('https://global.imagery.hotosm.org/14/8299/6377.png');
+  });
+
+  test('rejects a global open-imagery response that is not an image', async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'text/html' },
+      arrayBuffer: async () => new TextEncoder().encode('upstream error').buffer,
+    }));
+    await expect(getOpticalTile({ source: 'oam-global', z: 14, x: 8300, y: 6377, date: 'mosaic' }))
+      .rejects.toMatchObject({ failureClass: 'provider_invalid_response' });
+  });
+
   test('keeps Vantor disabled until enablement, API key and licence confirmation are all present', () => {
     delete process.env.VANTOR_VIVID_ENABLED;
     delete process.env.VANTOR_API_KEY;

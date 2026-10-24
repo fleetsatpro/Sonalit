@@ -22,6 +22,7 @@ const DEA_WMS = 'https://ows.digitalearth.africa/wms';
 const DEA_COLLECTION = 's2_l2a_c1';
 const OAM_STAC_SEARCH = 'https://api.imagery.hotosm.org/stac/search';
 const OAM_TILE_BASE = 'https://api.imagery.hotosm.org/raster/collections/openaerialmap/items';
+const OAM_GLOBAL_TILE_BASE = 'https://global.imagery.hotosm.org';
 const NASA_GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default';
 const VANTOR_BASEMAP_WMTS = 'https://api.maxar.com/basemaps/v1/ogc/gwc/service/wmts';
 const VANTOR_PRODUCTS = Object.freeze({
@@ -197,8 +198,12 @@ async function searchOam(bbox, signal) {
       const acquiredAt = isoDate(p.datetime || p.created || item.datetime);
       const gsdM = Number(p.gsd ?? p['gsd'] ?? p.resolution);
       const cloudPct = Number(p['eo:cloud_cover'] ?? p.cloud_cover);
-      const license = String(p.license || item.license || 'CC-BY 4.0');
-      const licenseOk = /cc[-_ ]?by/i.test(license) || /public/i.test(license);
+      const rawLicense = p.license || item.license || null;
+      const license = rawLicense ? String(rawLicense) : 'Item-level licence metadata unavailable';
+      const licenseText = license.toLowerCase();
+      const licenseOk = Boolean(rawLicense)
+        && /(?:cc[-_ ]?by(?:[-_ ]?sa)?|creativecommons\\.org\\/licenses\\/(?:by|by-sa)\\/|cc0|public[- ]domain)/i.test(licenseText)
+        && !/(?:non[- ]?commercial|cc[-_ ]?by[-_ ]?nc|no[-_ ]?derivatives|cc[-_ ]?by[-_ ]?nd)/i.test(licenseText);
       return {
         id: 'oam:' + String(item.id),
         provider: 'openaerialmap',
@@ -211,6 +216,8 @@ async function searchOam(bbox, signal) {
         nativeResolutionM: Number.isFinite(gsdM) ? gsdM : null,
         geometry: item.geometry || null,
         licence: license,
+        licenceVerified: Boolean(rawLicense),
+        licenceSource: rawLicense ? 'item_metadata' : 'missing_item_metadata',
         freshness: freshnessClass(acquiredAt),
         capabilities: ['high-detail', 'aerial', 'drone'],
         score: scoreCandidate({ acquiredAt, cloudPct, gsdM, licenceOk }),
@@ -372,7 +379,11 @@ async function getOpticalTile({ source = 'sentinel', date, z, x, y, itemId } = {
 
   let url;
   let headers = { Accept: 'image/png,image/jpeg,image/*', 'User-Agent': 'Sonalit-Optical-Recon/1.0' };
-  if (source === 'vantor') {
+  if (source === 'oam-global') {
+    // HOTOSM documents a coverage grid at z0–13 and contributed imagery
+    // from z14 onward; this is not a uniform-resolution global satellite map.
+    url = OAM_GLOBAL_TILE_BASE + '/' + zoom + '/' + tx + '/' + ty + '.png';
+  } else if (source === 'vantor') {
     const config = getVantorBasemapConfig();
     if (!config.enabled) {
       const error = new Error('Vantor high-resolution imagery is not licensed and configured');
@@ -422,8 +433,10 @@ async function getOpticalTile({ source = 'sentinel', date, z, x, y, itemId } = {
     throw error;
   }
   const upstreamContentType = response.headers.get('content-type');
-  if (source === 'vantor' && (!upstreamContentType || !/^image\//i.test(upstreamContentType))) {
-    const error = new Error('Vantor imagery service returned a non-image response');
+  if (!upstreamContentType || !/^image\//i.test(upstreamContentType)) {
+    const error = new Error(source === 'vantor'
+      ? 'Vantor imagery service returned a non-image response'
+      : 'Open imagery provider returned a non-image response');
     error.failureClass = 'provider_invalid_response';
     throw error;
   }
