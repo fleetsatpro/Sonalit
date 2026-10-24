@@ -6,6 +6,7 @@ const RELEASE_CACHE_MS = 120_000;
 const APPS = [
   {
     id: "sonalit",
+    filterKey: "operations",
     name: "Sonalit",
     shortName: "Sonalit",
     category: "OPERATIONS",
@@ -24,6 +25,7 @@ const APPS = [
   },
   {
     id: "field",
+    filterKey: "field",
     name: "Sonalit Field",
     shortName: "Field",
     category: "YARD & PORT",
@@ -42,6 +44,7 @@ const APPS = [
   },
   {
     id: "handover",
+    filterKey: "handover",
     name: "Sonalit Handover",
     shortName: "Handover",
     category: "SECURE HANDOVER",
@@ -60,6 +63,7 @@ const APPS = [
   },
   {
     id: "guardian",
+    filterKey: "safety",
     name: "Sonalit Guardian",
     shortName: "Guardian",
     category: "FIELD SAFETY",
