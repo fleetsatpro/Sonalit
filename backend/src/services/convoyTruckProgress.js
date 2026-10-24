@@ -95,8 +95,11 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
         // completion for a GPS point outside the accepted geometry tolerance.
       } else {
         progressPct = projectedPct;
-        state = ageSeconds <= GPS_LIVE_AFTER_SECONDS ? 'live'
-          : ageSeconds <= GPS_STALE_AFTER_SECONDS ? 'delayed' : 'stale';
+        // Use precise milliseconds for classification. age_seconds is
+        // intentionally floored for display only; using it for thresholds
+        // would misclassify 45.9s as LIVE and 300.9s as DELAYED.
+        state = ageMs <= GPS_LIVE_AFTER_SECONDS * 1000 ? 'live'
+          : ageMs <= GPS_STALE_AFTER_SECONDS * 1000 ? 'delayed' : 'stale';
       }
     }
   }
