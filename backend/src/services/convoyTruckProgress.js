@@ -58,6 +58,7 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
   let alongKm = null;
   let routeLenKm = null;
   let crossTrackKm = null;
+  let crossTrackLimitKm = null;
 
   if (!vehicleId) {
     state = 'unassigned';
@@ -76,10 +77,18 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
       routeLenKm = Math.round(projected.routeLenKm * 100) / 100;
       alongKm = Math.round(projected.alongKm * 100) / 100;
       crossTrackKm = Math.round(projected.crossTrackKm * 100) / 100;
-      if (projected.crossTrackKm > allowedCrossTrackKm) {
+      // A saved corridor is routed geometry and uses its configured width.
+      // Waypoint fallback may connect only named stops with straight segments;
+      // road curvature can legitimately place a truck farther from those
+      // chords. Relax the tolerance proportionally (4% of route length, capped
+      // at 25 km) while keeping that result explicitly labelled an estimate.
+      const waypointToleranceKm = route.source === 'waypoints'
+        ? Math.min(25, projected.routeLenKm * 0.04) : 0;
+      crossTrackLimitKm = Math.round(Math.max(allowedCrossTrackKm, waypointToleranceKm) * 100) / 100;
+      if (projected.crossTrackKm > crossTrackLimitKm) {
         state = 'off_route';
         // Preserve measured distance diagnostics, but do not imply route
-        // completion for a GPS point outside the configured route corridor.
+        // completion for a GPS point outside the accepted geometry tolerance.
       } else {
         progressPct = Math.max(0, Math.min(100,
           Math.round((projected.alongKm / projected.routeLenKm) * 100)));
@@ -95,6 +104,7 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
     along_km: alongKm,
     route_len_km: routeLenKm,
     cross_track_km: crossTrackKm,
+    cross_track_limit_km: crossTrackLimitKm,
     route_source: routeLenKm != null && routeLenKm > 0
       ? (route.source === 'waypoints' ? 'waypoints' : 'corridor') : null,
     last_fix_at: fixDate ? fixDate.toISOString() : null,
