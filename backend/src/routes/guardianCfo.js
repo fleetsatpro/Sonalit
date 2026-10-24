@@ -155,7 +155,9 @@ async function optionalDeviceAuth(req, _res, next) {
   try {
     const token = req.headers['x-device-token'];
     if (token) {
-      const result = await query(
+      // This lookup runs before the tenant is known; use the same explicit
+      // bootstrap path as deviceAuth, then bind all later queries to device.org_id.
+      const result = await globalQuery(
         `SELECT * FROM guardian_devices WHERE token = $1 AND deleted_at IS NULL`,
         [token]
       );
