@@ -99,6 +99,23 @@ describe("Sonalit app-specific APK release catalogue", () => {
     expect(field.releaseId).toBeNull();
   });
 
+  test("resolves only the exact requested release for the requested app", async () => {
+    const releases = [
+      makeRelease("sonalit-v41", "Sonalit v41", "io.sonalit.app", "1.0.41", 41, 24, "2026-10-24T20:00:00Z", "sonalit.apk"),
+      makeRelease("sonalit-v40", "Sonalit v40", "io.sonalit.app", "1.0.40", 40, 24, "2026-10-10T20:00:00Z", "sonalit.apk"),
+      makeRelease("sonalit-field-v26", "Sonalit Field v26", "io.sonalit.field", "1.0.26", 26, 24, "2026-10-24T20:00:00Z", "sonalit-field.apk")
+    ];
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => releases });
+    const { getAppReleaseById } = require("../src/utils/apkReleaseCatalog");
+
+    const olderExact = await getAppReleaseById("sonalit", "sonalit-v40", { forceRefresh: true });
+    expect(olderExact.release.tag_name).toBe("sonalit-v40");
+    expect(olderExact.asset.name).toBe("sonalit.apk");
+
+    await expect(getAppReleaseById("field", "sonalit-v40")).rejects.toThrow("Release ID does not belong");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   test("coalesces repeated public forced refreshes within the minimum interval", async () => {
     const releases = [
       makeRelease("sonalit-v41", "Sonalit v41", "io.sonalit.app", "1.0.41", 41, 24, "2026-10-24T20:00:00Z", "sonalit.apk"),
