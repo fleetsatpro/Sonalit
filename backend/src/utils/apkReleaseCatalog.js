@@ -73,7 +73,9 @@ const APPS = [
     packageName: "io.sonalit.guardian",
     tagPrefix: "guardian-v",
     assetNames: ["app-release.apk", "app-debug.apk"],
-    downloadPath: "/api/v1/guardian/apk/download",
+    // The hub uses the exact Guardian release asset selected with its metadata,
+    // avoiding a stable redirect/R2 object that may lag the published release.
+    downloadPath: null,
     icon: "shield-check",
     accent: "violet",
     minimumSdkFallback: 29,
