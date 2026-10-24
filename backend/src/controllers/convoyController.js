@@ -3,6 +3,8 @@ const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const { publish } = require('../realtime/centrifugo');
 const { evaluateConvoyOperationalState } = require('../services/convoyOperationalResilience');
+const { projectOntoRoute } = require('../services/geofence/corridor');
+const logger = require('../utils/logger');
 
 const VALID_TRANSITIONS = {
   planned: ['active', 'cancelled'],
@@ -48,6 +50,207 @@ function buildPagination(page, limit, total) {
   return { page: parseInt(page), limit: parseInt(limit), totalCount: parseInt(total), totalPages: Math.ceil(total / limit) };
 }
 
+function routePointList(raw) {
+  let value = raw;
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch { return []; }
+  }
+  if (!Array.isArray(value)) return [];
+  return value.map(point => ({
+    lat: point?.lat == null ? NaN : Number(point.lat),
+    lng: point?.lng == null ? NaN : Number(point.lng),
+  })).filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lng)
+    && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180);
+}
+
+/**
+ * Adds observed, per-truck route progress to convoy rows using the canonical
+ * convoy_trucks roster (falling back to convoy_assignments for legacy convoys),
+ * latest vehicle GPS fixes, and the planned route geometry. A clock/ETA
+ * estimate is deliberately never substituted for a missing GPS observation.
+ */
+async function attachTruckProgress(rows, orgId) {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+  const convoyIds = [...new Set(rows.map(row => row.id).filter(Boolean).map(String))];
+  if (convoyIds.length === 0) return rows;
+
+  try {
+    const [rosterResult, corridorResult, waypointResult] = await Promise.all([
+      query(
+        `WITH roster AS (
+           SELECT ct.convoy_id, ct.id AS convoy_truck_id, v.id AS vehicle_id,
+                  ct.position,
+                  COALESCE(NULLIF(ct.registration, ''), v.registration) AS registration,
+                  ct.driver_name
+             FROM convoy_trucks ct
+             JOIN convoys c ON c.id = ct.convoy_id
+                           AND c.org_id = $2 AND c.deleted_at IS NULL
+             LEFT JOIN vehicles v ON v.id = ct.vehicle_id
+                                  AND v.org_id = c.org_id AND v.deleted_at IS NULL
+            WHERE ct.convoy_id = ANY($1::uuid[])
+           UNION ALL
+           SELECT ca.convoy_id, NULL::uuid AS convoy_truck_id, v.id AS vehicle_id,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY ca.convoy_id
+                    ORDER BY ca.joined_at NULLS LAST, ca.vehicle_id
+                  )::int AS position,
+                  v.registration AS registration,
+                  NULL::text AS driver_name
+             FROM convoy_assignments ca
+             JOIN convoys c ON c.id = ca.convoy_id
+                           AND c.org_id = $2 AND c.deleted_at IS NULL
+             JOIN vehicles v ON v.id = ca.vehicle_id
+                            AND v.org_id = c.org_id AND v.deleted_at IS NULL
+            WHERE ca.convoy_id = ANY($1::uuid[])
+              AND NOT EXISTS (
+                SELECT 1 FROM convoy_trucks ct WHERE ct.convoy_id = ca.convoy_id
+              )
+         )
+         SELECT r.convoy_id, r.convoy_truck_id, r.vehicle_id, r.position,
+                r.registration, r.driver_name,
+                gps.lat AS gps_lat, gps.lng AS gps_lng,
+                gps.speed AS speed_kph, gps.last_fix_at
+           FROM roster r
+           LEFT JOIN LATERAL (
+             SELECT g.lat, g.lng, g.speed, g.timestamp AS last_fix_at
+               FROM gps_logs g
+              WHERE g.vehicle_id = r.vehicle_id
+              ORDER BY g.timestamp DESC, g.id DESC
+              LIMIT 1
+           ) gps ON r.vehicle_id IS NOT NULL
+          ORDER BY r.convoy_id, r.position`,
+        [convoyIds, orgId]
+      ),
+      query(
+        `SELECT crc.convoy_id, crc.route_line, crc.width_km
+           FROM convoy_route_corridors crc
+           JOIN convoys c ON c.id = crc.convoy_id
+                         AND c.org_id = $2 AND c.deleted_at IS NULL
+          WHERE crc.convoy_id = ANY($1::uuid[]) AND crc.active = true`,
+        [convoyIds, orgId]
+      ),
+      query(
+        `SELECT rw.convoy_id, rw.seq, rw.lat, rw.lng
+           FROM convoy_route_waypoints rw
+           JOIN convoys c ON c.id = rw.convoy_id
+                         AND c.org_id = $2 AND c.deleted_at IS NULL
+          WHERE rw.convoy_id = ANY($1::uuid[])
+            AND rw.lat IS NOT NULL AND rw.lng IS NOT NULL
+          ORDER BY rw.convoy_id, rw.seq`,
+        [convoyIds, orgId]
+      ),
+    ]);
+
+    const routes = new Map();
+    for (const row of corridorResult.rows || []) {
+      const points = routePointList(row.route_line);
+      if (points.length >= 2) {
+        const width = Number(row.width_km);
+        routes.set(String(row.convoy_id), {
+          points,
+          corridorKm: Number.isFinite(width) && width > 0 ? width : 2,
+        });
+      }
+    }
+
+    const waypointRoutes = new Map();
+    for (const row of waypointResult.rows || []) {
+      const key = String(row.convoy_id);
+      if (!waypointRoutes.has(key)) waypointRoutes.set(key, []);
+      waypointRoutes.get(key).push({
+        lat: row.lat == null ? NaN : Number(row.lat),
+        lng: row.lng == null ? NaN : Number(row.lng),
+      });
+    }
+    for (const [id, points] of waypointRoutes) {
+      if (!routes.has(id) && points.length >= 2
+          && points.every(point => Number.isFinite(point.lat) && Number.isFinite(point.lng)
+            && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180)) {
+        routes.set(id, { points, corridorKm: 2 });
+      }
+    }
+
+    const byConvoy = new Map(convoyIds.map(id => [id, []]));
+    const now = Date.now();
+    for (const row of rosterResult.rows || []) {
+      const convoyId = String(row.convoy_id);
+      const route = routes.get(convoyId);
+      const lat = row.gps_lat == null ? NaN : Number(row.gps_lat);
+      const lng = row.gps_lng == null ? NaN : Number(row.gps_lng);
+      const hasLocation = Number.isFinite(lat) && Number.isFinite(lng)
+        && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+      const fixDate = row.last_fix_at == null ? null : new Date(row.last_fix_at);
+      const validFixDate = fixDate && Number.isFinite(fixDate.getTime()) ? fixDate : null;
+      const ageSeconds = validFixDate ? Math.max(0, Math.floor((now - validFixDate.getTime()) / 1000)) : null;
+
+      let state = 'no_fix';
+      let progressPct = null;
+      let alongKm = null;
+      let routeLenKm = null;
+      let crossTrackKm = null;
+
+      if (!row.vehicle_id) {
+        state = 'unassigned';
+      } else if (!hasLocation || ageSeconds == null) {
+        state = 'no_fix';
+      } else if (!route || route.points.length < 2) {
+        state = 'no_route';
+      } else {
+        const projected = projectOntoRoute(route.points, lat, lng);
+        routeLenKm = Number.isFinite(projected.routeLenKm) ? Math.round(projected.routeLenKm * 100) / 100 : null;
+        alongKm = Number.isFinite(projected.alongKm) ? Math.round(projected.alongKm * 100) / 100 : null;
+        crossTrackKm = Number.isFinite(projected.crossTrackKm) ? Math.round(projected.crossTrackKm * 100) / 100 : null;
+        if (Number.isFinite(projected.routeLenKm) && projected.routeLenKm > 0
+            && Number.isFinite(projected.crossTrackKm) && projected.crossTrackKm <= route.corridorKm) {
+          progressPct = Math.max(0, Math.min(100, Math.round((projected.alongKm / projected.routeLenKm) * 100)));
+          state = ageSeconds > 15 * 60 ? 'stale' : 'live';
+        } else {
+          // A point far outside the planned corridor is not converted into a
+          // misleading route percentage; the operator sees OFF ROUTE instead.
+          state = 'off_route';
+        }
+      }
+
+      const position = Number(row.position) || 1;
+      const truck = {
+        id: row.convoy_truck_id ? String(row.convoy_truck_id) : convoyId + ':' + (row.vehicle_id ?? position),
+        vehicle_id: row.vehicle_id ? String(row.vehicle_id) : null,
+        position,
+        registration: row.registration ?? null,
+        driver_name: row.driver_name ?? null,
+        progress_pct: progressPct,
+        along_km: alongKm,
+        route_len_km: routeLenKm,
+        cross_track_km: crossTrackKm,
+        last_fix_at: validFixDate ? validFixDate.toISOString() : null,
+        age_seconds: ageSeconds,
+        speed_kph: row.speed_kph == null || !Number.isFinite(Number(row.speed_kph)) ? null : Number(row.speed_kph),
+        state,
+      };
+      if (byConvoy.has(convoyId)) byConvoy.get(convoyId).push(truck);
+    }
+
+    return rows.map(row => {
+      const truckProgress = byConvoy.get(String(row.id)) || [];
+      return {
+        ...row,
+        vehicle_count: truckProgress.length,
+        truck_progress: truckProgress,
+        truck_progress_available: true,
+      };
+    });
+  } catch (err) {
+    // Telemetry must not take the core convoy register offline.
+    logger.warn('[convoyProgress] live truck progress unavailable: ' + err.message);
+    return rows.map(row => ({
+      ...row,
+      truck_progress: [],
+      truck_progress_available: false,
+      vehicle_count: Number(row.vehicle_count) || 0,
+    }));
+  }
+}
+
 const getConvoys = asyncHandler(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, parseInt(req.query.limit) || 20);
@@ -69,26 +272,40 @@ const getConvoys = asyncHandler(async (req, res) => {
             u.name AS created_by_name,
             cl.name AS client_name,
             cl.company AS client_company,
-            COUNT(DISTINCT ca.vehicle_id) AS vehicle_count,
+            CASE WHEN EXISTS (SELECT 1 FROM convoy_trucks ct WHERE ct.convoy_id = c.id)
+                 THEN (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id)
+                 ELSE (SELECT COUNT(DISTINCT ca.vehicle_id)
+                         FROM convoy_assignments ca
+                         JOIN vehicles v ON v.id = ca.vehicle_id
+                                       AND v.org_id = c.org_id AND v.deleted_at IS NULL
+                        WHERE ca.convoy_id = c.id)
+            END AS vehicle_count,
             (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS open_alert_count,
             (SELECT COUNT(*) FROM incidents i WHERE i.convoy_id = c.id AND i.status NOT IN ('resolved','closed')) AS open_incident_count
      FROM convoys c
      LEFT JOIN users u ON u.id = c.created_by
      LEFT JOIN cargo_clients cl ON cl.id = c.client_id
-     LEFT JOIN convoy_assignments ca ON ca.convoy_id = c.id
      WHERE c.org_id = $1 AND c.deleted_at IS NULL ${where}
-     GROUP BY c.id, u.name, cl.name, cl.company
      ORDER BY c.created_at DESC
-     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+     LIMIT ${params.length - 1} OFFSET ${params.length}`,
     params
   );
 
-  res.json({ data: result.rows, pagination: buildPagination(page, limit, countResult.rows[0].count) });
+  const data = await attachTruckProgress(result.rows, req.user.org_id);
+  res.json({ data, pagination: buildPagination(page, limit, countResult.rows[0].count) });
 });
 
 const getConvoy = asyncHandler(async (req, res) => {
   const result = await query(
     `SELECT c.*, u.name AS created_by_name, cl.name AS client_name, cl.company AS client_company,
+            CASE WHEN EXISTS (SELECT 1 FROM convoy_trucks ct WHERE ct.convoy_id = c.id)
+                 THEN (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id)
+                 ELSE (SELECT COUNT(DISTINCT ca.vehicle_id)
+                         FROM convoy_assignments ca
+                         JOIN vehicles v ON v.id = ca.vehicle_id
+                                       AND v.org_id = c.org_id AND v.deleted_at IS NULL
+                        WHERE ca.convoy_id = c.id)
+            END AS vehicle_count,
             (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS open_alert_count,
             (SELECT COUNT(*) FROM incidents i WHERE i.convoy_id = c.id AND i.status NOT IN ('resolved','closed')) AS open_incident_count
      FROM convoys c
@@ -124,15 +341,15 @@ const getConvoy = asyncHandler(async (req, res) => {
     ),
   ]);
 
-  res.json({
-    data: {
-      ...result.rows[0],
-      vehicles: vehicles.rows,
-      trucks: trucks.rows,
-      cfos: cfos.rows,
-      cfo_truck_assignments: assignments.rows,
-    },
-  });
+  const [enriched] = await attachTruckProgress([{
+    ...result.rows[0],
+    vehicles: vehicles.rows,
+    trucks: trucks.rows,
+    cfos: cfos.rows,
+    cfo_truck_assignments: assignments.rows,
+  }], req.user.org_id);
+
+  res.json({ data: enriched });
 });
 
 const createConvoy = asyncHandler(async (req, res) => {
