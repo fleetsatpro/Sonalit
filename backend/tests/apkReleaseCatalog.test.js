@@ -76,7 +76,7 @@ describe("Sonalit app-specific APK release catalogue", () => {
     expect(byId.guardian.releaseId).toBe("guardian-v981");
     expect(byId.guardian.appVersion).toBe("4.7.0");
     expect(byId.guardian.packageId).toBe("io.sonalit.guardian");
-    expect(byId.guardian.downloadUrl).toBe("/api/v1/guardian/apk/download");
+    expect(byId.guardian.downloadUrl).toContain("/releases/download/guardian-v981/app-debug.apk");
     expect(byId.guardian.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
