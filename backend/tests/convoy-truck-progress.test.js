@@ -41,6 +41,7 @@ describe('calculateTruckRouteProgress', () => {
     expect(result.route_len_km).toBeGreaterThan(110);
     expect(result.speed_kph).toBe(42);
     expect(result.age_seconds).toBe(30);
+    expect(result.route_source).toBe('corridor');
   });
 
   test('returns no percentage when GPS is absent or coordinates are invalid', () => {
@@ -95,10 +96,11 @@ describe('calculateTruckRouteProgress', () => {
 
   test('uses a safe default for missing, invalid or absurd corridor widths', () => {
     const result = calculateTruckRouteProgress(base, {
-      points: ROUTE.points, corridorKm: 999,
+      points: ROUTE.points, corridorKm: 999, source: 'waypoints',
     }, NOW);
     expect(result.state).toBe('live');
     expect(result.progress_pct).not.toBeNull();
+    expect(result.route_source).toBe('waypoints');
   });
 
   test('does not accept a zero-length route as progress geometry', () => {
