@@ -20,7 +20,7 @@ type TruckProgressState = 'live' | 'stale' | 'off_route' | 'no_route' | 'no_fix'
 interface TruckProgress {
   id: string; vehicle_id: string | null; position: number
   registration: string | null; driver_name: string | null
-  progress_pct: number | null; along_km: number | null; route_len_km: number | null
+  progress_pct: number | null; projected_pct: number | null; along_km: number | null; route_len_km: number | null
   cross_track_km: number | null; cross_track_limit_km: number | null
   route_source: 'corridor' | 'waypoints' | null
   last_fix_at: string | null; age_seconds: number | null
@@ -89,18 +89,26 @@ function truckProgressStateLabel(state: TruckProgressState): string {
 // Layout each numbered truck into a collision-free lane when two GPS fixes
 // map to nearly the same route progress. With at most six trucks per convoy,
 // this remains deterministic and keeps every position individually legible.
-function layoutTruckMarkers(trucks: TruckProgress[]): Array<{ truck: TruckProgress; lane: number }> {
+function truckRailPosition(truck: TruckProgress): number | null {
+  if (typeof truck.progress_pct === 'number') return truck.progress_pct
+  // Off-route fixes have no validated progress percentage. Their red marker is
+  // the nearest route projection only, explicitly distinguished in the tooltip.
+  if (truck.state === 'off_route' && typeof truck.projected_pct === 'number') return truck.projected_pct
+  return null
+}
+
+function layoutTruckMarkers(trucks: TruckProgress[]): Array<{ truck: TruckProgress; lane: number; markerPct: number }> {
   const occupied: number[] = []
   const minGapPercent = 9
   return [...trucks]
-    .filter(truck => typeof truck.progress_pct === 'number')
-    .sort((a, b) => (a.progress_pct! - b.progress_pct!) || (a.position - b.position))
+    .filter(truck => truckRailPosition(truck) != null)
+    .sort((a, b) => (truckRailPosition(a)! - truckRailPosition(b)!) || (a.position - b.position))
     .map(truck => {
-      const pct = Math.max(0, Math.min(100, truck.progress_pct!))
+      const pct = Math.max(0, Math.min(100, truckRailPosition(truck)!))
       let lane = occupied.findIndex(lastPct => pct - lastPct >= minGapPercent)
       if (lane < 0) lane = occupied.length
       occupied[lane] = pct
-      return { truck, lane }
+      return { truck, lane, markerPct: pct }
     })
 }
 
@@ -110,6 +118,8 @@ function truckProgressTitle(truck: TruckProgress): string {
   if (typeof truck.progress_pct === 'number' && truck.along_km != null && truck.route_len_km != null) {
     const basis = truck.route_source === 'waypoints' ? 'waypoint-line estimate' : 'saved route corridor'
     parts.push(truck.progress_pct + '% · ' + truck.along_km.toFixed(1) + ' / ' + truck.route_len_km.toFixed(1) + ' km · ' + basis)
+  } else if (truck.state === 'off_route' && typeof truck.projected_pct === 'number') {
+    parts.push('OFF ROUTE · nearest route projection ' + truck.projected_pct + '% · not validated progress')
   } else {
     parts.push(truckProgressStateLabel(truck.state))
   }
@@ -208,8 +218,8 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
   const trucks = Array.isArray(c.truck_progress) ? c.truck_progress : []
   const truckCount = Math.max(0, Number(c.vehicle_count ?? trucks.length) || 0)
   const trackingAvailable = c.truck_progress_available === true
-  const onRail = trucks.filter(t => typeof t.progress_pct === 'number'
-    && (t.state === 'live' || t.state === 'stale'))
+  const onRail = trucks.filter(t => truckRailPosition(t) != null
+    && (t.state === 'live' || t.state === 'stale' || t.state === 'off_route'))
   const liveCount = trucks.filter(t => t.state === 'live').length
   const staleCount = trucks.filter(t => t.state === 'stale').length
   const offRouteCount = trucks.filter(t => t.state === 'off_route').length
@@ -251,13 +261,13 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
         <div style={{ position:'absolute', left:2, right:2, top:railHeight - 5, height:3, borderRadius:3, background:'rgba(255,255,255,.10)', boxShadow:'inset 0 1px 2px rgba(0,0,0,.4)' }} />
         <span style={{ position:'absolute', left:0, top:railHeight - 8, width:7, height:7, borderRadius:'50%', background:'#8de29d', boxShadow:'0 0 5px rgba(141,226,157,.45)' }} />
         <span style={{ position:'absolute', right:0, top:railHeight - 8, width:7, height:7, borderRadius:'50%', background:'#f97316', boxShadow:'0 0 5px rgba(249,115,22,.45)' }} />
-        {railMarkers.map(({ truck, lane }) => {
+        {railMarkers.map(({ truck, lane, markerPct }) => {
           const color = truckProgressColor(truck)
           return (
             <div
               key={truck.id}
               title={truckProgressTitle(truck)}
-              style={{ position:'absolute', left: 'clamp(9px, ' + truck.progress_pct + '%, calc(100% - 9px))', top:lane * 13, zIndex:4 + lane, transition:'left .5s ease, top .2s ease', cursor:'help' }}
+              style={{ position:'absolute', left: 'clamp(9px, ' + markerPct + '%, calc(100% - 9px))', top:lane * 13, zIndex:4 + lane, transition:'left .5s ease, top .2s ease', cursor:'help' }}
             >
               <span style={{
                 display:'inline-flex', alignItems:'center', justifyContent:'center',
@@ -445,7 +455,8 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
 
   const origin = c?.route_origin ?? c?.region ?? '—'
   const dest   = c?.route_destination ?? '—'
-  const progressTrucks = (c?.truck_progress ?? []).filter(truck => typeof truck.progress_pct === 'number')
+  const progressTrucks = (c?.truck_progress ?? []).filter(truck =>
+    typeof truck.progress_pct === 'number' || (truck.state === 'off_route' && typeof truck.projected_pct === 'number'))
   const truckCount = Number(c?.vehicle_count ?? c?.truck_progress?.length ?? c?.trucks?.length ?? c?.vehicles?.length ?? 0)
   const pointOnRoute = (percentage: number) => {
     const t = Math.max(0, Math.min(100, percentage)) / 100
@@ -487,7 +498,7 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
           <circle cx="30" cy="100" r="4" fill="#22c55e"/>
           <circle cx="330" cy="30" r="4" fill="#f97316"/>
           {layoutTruckMarkers(progressTrucks).map(({ truck, lane }) => {
-            const point = pointOnRoute(truck.progress_pct ?? 0)
+            const point = pointOnRoute(truck.progress_pct ?? truck.projected_pct ?? 0)
             const offsetY = lane === 0 ? 0 : (lane % 2 ? 1 : -1) * Math.ceil(lane / 2) * 7
             const markerY = Math.max(15, Math.min(115, point.y + offsetY))
             const color = truckProgressColor(truck)
