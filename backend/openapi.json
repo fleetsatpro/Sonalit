@@ -1826,6 +1826,16 @@
         }
       }
     },
+    "/api/v1/guardian/apk/download-app/{appId}/{releaseId}": {
+      "get": {
+        "operationId": "get_api_v1_guardian_apk_download_app_appId_releaseId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/apk/download": {
       "get": {
         "operationId": "get_api_v1_guardian_apk_download",
@@ -6411,6 +6421,26 @@
     "/download/apk": {
       "get": {
         "operationId": "get_download_apk",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/download/catalog.json": {
+      "get": {
+        "operationId": "get_download_catalog_json",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/download/release.js": {
+      "get": {
+        "operationId": "get_download_release_js",
         "responses": {
           "200": {
             "description": "OK"
