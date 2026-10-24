@@ -3045,9 +3045,9 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
 
 let _latestApk = { info: null, at: 0 };
 async function resolveLatestApkInfo() {
-  // Cache 10 min so a burst of downloads makes at most ~6 unauthenticated
-  // GitHub API calls/hour (well under the 60/hr limit).
-  if (_latestApk.info && Date.now() - _latestApk.at < 600_000) return _latestApk.info;
+  // Keep the release metadata fresh without exhausting GitHub's unauthenticated
+  // API budget. Two minutes means at most ~30 requests/hour per backend process.
+  if (_latestApk.info && Date.now() - _latestApk.at < 120_000) return _latestApk.info;
   const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
   // Authenticate the release lookup when a token is present — the unauthenticated
   // GitHub API is 60 req/hr per IP (shared on Railway), which runs out and makes
@@ -3060,13 +3060,39 @@ async function resolveLatestApkInfo() {
   const rel = await resp.json();
   const asset = (rel.assets || []).find(a => a.name === 'app-debug.apk') || (rel.assets || [])[0];
   if (!asset || !asset.url) throw new Error('no APK asset on latest release');
+  // The build workflow embeds machine-readable APK metadata in an HTML comment
+  // in the release body. That metadata is extracted from the actual built APK,
+  // so the download page can distinguish Android app version from release tag.
+  const releaseBody = typeof rel.body === 'string' ? rel.body : '';
+  const metadataMatch = releaseBody.match(/<!--\\s*SONALIT_APK_METADATA\\s+([\\s\\S]*?)\\s*-->/i);
+  let apkMetadata = {};
+  if (metadataMatch) {
+    try {
+      const parsed = JSON.parse(metadataMatch[1].trim());
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) apkMetadata = parsed;
+    } catch (metadataError) {
+      logger.warn(`Guardian APK metadata comment is malformed: ${metadataError.message}`);
+    }
+  }
+  const cleanNotes = releaseBody.replace(/<!--\\s*SONALIT_APK_METADATA[\\s\\S]*?-->/i, '').trim() || null;
+  const versionCode = Number(apkMetadata.version_code);
+  const minSdk = Number(apkMetadata.min_sdk);
+  const packageName = typeof apkMetadata.package_name === 'string' && /^[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+$/.test(apkMetadata.package_name)
+    ? apkMetadata.package_name : null;
+  const sha256 = typeof apkMetadata.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(apkMetadata.sha256)
+    ? apkMetadata.sha256.toLowerCase() : null;
   _latestApk = {
     info: {
       version: rel.tag_name || rel.name || null,
       name: rel.name || null,
       published_at: rel.published_at || null,
-      notes: rel.body || null,
+      notes: cleanNotes,
       size: asset.size || null,
+      app_version: typeof apkMetadata.version_name === 'string' && apkMetadata.version_name.trim() ? apkMetadata.version_name.trim() : null,
+      version_code: Number.isSafeInteger(versionCode) && versionCode > 0 ? versionCode : null,
+      package_name: packageName,
+      min_sdk: Number.isSafeInteger(minSdk) && minSdk > 0 ? minSdk : null,
+      sha256,
       // Public browser URL — works only for public repos.
       url: asset.browser_download_url || null,
       // API asset URL — with a token this streams even for a PRIVATE repo.
@@ -3167,8 +3193,19 @@ router.get('/apk/info', async (req, res) => {
   }
   try {
     const i = await resolveLatestApkInfo();
-    res.set('Cache-Control', 'public, max-age=300');
-    res.json({ version: i.version, name: i.name, published_at: i.published_at, size: i.size, notes: i.notes });
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
+    res.json({
+      version: i.version,
+      name: i.name,
+      published_at: i.published_at,
+      size: i.size,
+      notes: i.notes,
+      app_version: i.app_version || null,
+      version_code: i.version_code || null,
+      package_name: i.package_name || null,
+      min_sdk: i.min_sdk || null,
+      sha256: i.sha256 || null,
+    });
   } catch (err) {
     logger.warn(`APK info unavailable (${err.message})`);
     // Best-effort version from the stable redirect (no API, no rate limit): the
@@ -3183,7 +3220,11 @@ router.get('/apk/info', async (req, res) => {
       const m = loc.match(/\/tag\/([^/?#]+)/);
       if (m) version = decodeURIComponent(m[1]);
     } catch { /* leave version null */ }
-    res.status(200).json({ version, name: null, published_at: null, size: null, notes: null });
+    res.set('Cache-Control', 'no-store');
+    res.status(200).json({
+      version, name: null, published_at: null, size: null, notes: null,
+      app_version: null, version_code: null, package_name: null, min_sdk: null, sha256: null,
+    });
   }
 });
 
