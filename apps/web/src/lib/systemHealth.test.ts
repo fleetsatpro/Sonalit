@@ -22,6 +22,10 @@ const healthyPayload = {
   checks: [
     { id: 'api', label: 'API process', status: 'healthy', checked_at: '2026-10-23T06:00:00.000Z', detail: 'responded' },
     { id: 'database', label: 'PostgreSQL', status: 'healthy', checked_at: '2026-10-23T06:00:00.000Z', detail: 'query passed' },
+    { id: 'redis', label: 'Redis', status: 'healthy', checked_at: '2026-10-23T06:00:00.000Z', detail: 'ping passed' },
+    { id: 'partitions-gps_logs', label: 'GPS partitions', status: 'healthy', checked_at: '2026-10-23T06:00:00.000Z', detail: 'partition check passed' },
+    { id: 'partitions-audit_logs', label: 'Audit partitions', status: 'healthy', checked_at: '2026-10-23T06:00:00.000Z', detail: 'partition check passed' },
+    { id: 'partitions-outbox', label: 'Outbox partitions', status: 'healthy', checked_at: '2026-10-23T06:00:00.000Z', detail: 'partition check passed' },
   ],
 };
 
@@ -34,7 +38,15 @@ describe('system health evidence contract', () => {
     expect(getOverallHealthState(healthyPayload, false, TEST_NOW)).toBe('healthy');
     expect(getOverallHealthState({
       ...healthyPayload,
-      checks: [...healthyPayload.checks, { ...healthyPayload.checks[0], id: 'redis', status: 'unknown' }],
+      checks: healthyPayload.checks.filter(check => check.id !== 'redis'),
+    }, false, TEST_NOW)).toBe('unknown');
+    expect(getOverallHealthState({
+      ...healthyPayload,
+      checks: [...healthyPayload.checks, { ...healthyPayload.checks[0], id: 'extra', status: 'healthy' }],
+    }, false, TEST_NOW)).toBe('healthy');
+    expect(getOverallHealthState({
+      ...healthyPayload,
+      checks: [...healthyPayload.checks, { ...healthyPayload.checks[0], status: 'degraded' }],
     }, false, TEST_NOW)).toBe('unknown');
   });
 
@@ -42,22 +54,22 @@ describe('system health evidence contract', () => {
     expect(getOverallHealthState({
       ...healthyPayload,
       status: 'degraded',
-      checks: [...healthyPayload.checks, { ...healthyPayload.checks[0], id: 'redis', status: 'degraded' }],
+      checks: healthyPayload.checks.map(check => check.id === 'redis' ? { ...check, status: 'degraded' } : check),
     }, false, TEST_NOW)).toBe('degraded');
     expect(getOverallHealthState({
       ...healthyPayload,
       status: 'error',
-      checks: [...healthyPayload.checks, { ...healthyPayload.checks[0], id: 'database', status: 'unavailable' }],
+      checks: healthyPayload.checks.map(check => check.id === 'database' ? { ...check, status: 'unavailable' } : check),
     }, false, TEST_NOW)).toBe('unavailable');
     expect(getOverallHealthState({
       ...healthyPayload,
       status: 'error',
-      checks: [...healthyPayload.checks, { ...healthyPayload.checks[0], id: 'redis', status: 'unknown' }],
+      checks: healthyPayload.checks.map(check => check.id === 'redis' ? { ...check, status: 'unknown' } : check),
     }, false, TEST_NOW)).toBe('unknown');
     expect(getOverallHealthState({
       ...healthyPayload,
       status: 'degraded',
-      checks: [...healthyPayload.checks, { ...healthyPayload.checks[0], id: 'redis', status: 'unknown' }],
+      checks: healthyPayload.checks.map(check => check.id === 'redis' ? { ...check, status: 'unknown' } : check),
     }, false, TEST_NOW)).toBe('unknown');
     expect(getOverallHealthState({
       ...healthyPayload,
