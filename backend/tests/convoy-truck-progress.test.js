@@ -94,6 +94,28 @@ describe('calculateTruckRouteProgress', () => {
     expect(result.progress_pct).toBeNull();
   });
 
+  test('uses a clearly labelled wider tolerance for long straight waypoint fallbacks', () => {
+    const longRoute = {
+      points: [{ lat: 0, lng: 0 }, { lat: 0, lng: 5 }],
+      corridorKm: 2, source: 'waypoints',
+    };
+    const fix = { ...base, gps_lat: 0.1, gps_lng: 2.5 };
+
+    const estimate = calculateTruckRouteProgress(fix, longRoute, NOW);
+    expect(estimate.state).toBe('live');
+    expect(estimate.route_source).toBe('waypoints');
+    expect(estimate.cross_track_km).toBeGreaterThan(10);
+    expect(estimate.cross_track_limit_km).toBeGreaterThan(estimate.cross_track_km);
+    expect(estimate.progress_pct).toBeGreaterThanOrEqual(49);
+    expect(estimate.progress_pct).toBeLessThanOrEqual(51);
+
+    const strictCorridor = calculateTruckRouteProgress(fix, {
+      ...longRoute, source: 'corridor',
+    }, NOW);
+    expect(strictCorridor.state).toBe('off_route');
+    expect(strictCorridor.progress_pct).toBeNull();
+  });
+
   test('uses a safe default for missing, invalid or absurd corridor widths', () => {
     const result = calculateTruckRouteProgress(base, {
       points: ROUTE.points, corridorKm: 999, source: 'waypoints',
