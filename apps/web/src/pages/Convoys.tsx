@@ -272,9 +272,16 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
             <div
               key={truck.id}
               title={truckProgressTitle(truck)}
-              style={{ position:'absolute', left: 'clamp(9px, ' + markerPct + '%, calc(100% - 9px))', top:lane * 13, zIndex:4 + lane, transition:'left .5s ease, top .2s ease', cursor:'help' }}
+              style={{ position:'absolute', left: 'clamp(9px, ' + markerPct + '%, calc(100% - 9px))', top:lane * 13, transform:'translateX(-50%)', zIndex:4 + lane, transition:'left .5s ease, top .2s ease', cursor:'help' }}
             >
               <span style={{
+                position:'absolute', left:'50%', top:12, width:1,
+                height:Math.max(4, railHeight - 5 - (lane * 13 + 12)),
+                background:color, opacity:.55, transform:'translateX(-50%)',
+                pointerEvents:'none', zIndex:0,
+              }} />
+              <span style={{
+                position:'relative', zIndex:1,
                 display:'inline-flex', alignItems:'center', justifyContent:'center',
                 minWidth:18, height:12, padding:'0 2px', boxSizing:'border-box',
                 borderRadius:3, border:'1px solid ' + color, color,
