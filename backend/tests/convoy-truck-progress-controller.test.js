@@ -49,6 +49,32 @@ describe('attachTruckProgress', () => {
     }
   });
 
+  test('supports legacy convoys whose roster lives only in vehicle assignments', async () => {
+    setupQueries({
+      rosterRows: [{
+        convoy_id: CONVOY, convoy_truck_id: null, vehicle_id: 'legacy-vehicle-1',
+        position: 1, registration: 'KDA 456B', driver_name: null,
+        gps_lat: 0, gps_lng: 0.25, speed_kph: 0, last_fix_at: new Date().toISOString(),
+      }],
+      corridorRows: [{ convoy_id: CONVOY, route_line: ROUTE, width_km: 2 }],
+    });
+
+    const [result] = await attachTruckProgress([{ id: CONVOY, vehicle_count: 1 }], ORG);
+    expect(result.truck_progress).toHaveLength(1);
+    expect(result.truck_progress[0]).toMatchObject({
+      id: CONVOY + ':legacy-vehicle-1',
+      vehicle_id: 'legacy-vehicle-1',
+      registration: 'KDA 456B',
+      state: 'live',
+      progress_pct: 25,
+    });
+
+    const rosterSql = query.mock.calls.find(([sql]) => sql.includes('WITH roster AS'))[0];
+    expect(rosterSql).toContain('UNION ALL');
+    expect(rosterSql).toContain('FROM convoy_assignments ca');
+    expect(rosterSql).toContain('NOT EXISTS');
+  });
+
   test('uses persisted route waypoints when no active corridor exists', async () => {
     setupQueries({
       rosterRows: [{
