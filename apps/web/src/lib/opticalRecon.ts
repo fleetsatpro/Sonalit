@@ -17,7 +17,7 @@ export type OpticalCandidate = {
   capabilities: string[]
   score: number
   renderable: boolean
-  render?: { source: 'sentinel' | 'oam' | 'nasa'; date?: string | null; itemId?: string; layer?: string } | null
+  render?: { source: 'sentinel' | 'oam' | 'nasa' | 'vantor'; date?: string | null; itemId?: string; layer?: string } | null
   recommendation?: string
 }
 
@@ -43,6 +43,7 @@ export type OpticalReconResult = {
   }
   warnings: string[]
   semantics: string[]
+  premiumBasemap: { provider: string; enabled: boolean; state: string; product: string | null; productGsdM: number | null; productGsdLabel: string | null; resolutionSemantics: string }
 }
 
 let installed = false
@@ -76,12 +77,12 @@ function parse(url: string) {
   const cleaned = url.replace(/^sonalit-recon:\/\//, '')
   const parts = cleaned.split('/').filter(Boolean)
   if (parts.length < 5) return null
-  const source = parts[0] as 'sentinel' | 'oam' | 'nasa'
+  const source = parts[0] as 'sentinel' | 'oam' | 'nasa' | 'vantor'
   const date = decodeURIComponent(parts[1] || '')
   const z = Number(parts[2])
   const y = Number(parts[3])
   const x = Number(parts[4])
-  if (!['sentinel', 'oam', 'nasa'].includes(source) || ![z, y, x].every(Number.isFinite)) return null
+  if (!['sentinel', 'oam', 'nasa', 'vantor'].includes(source) || ![z, y, x].every(Number.isFinite)) return null
   const itemId = parts[5] ? decodeURIComponent(parts[5]) : undefined
   return { source, date, z, x, y, itemId }
 }
@@ -96,12 +97,14 @@ export function reconStyle(render: OpticalReconResult['render']): maplibregl.Sty
         type: 'raster',
         tiles: ['sonalit-recon://' + render.source + '/' + encodeURIComponent(String(render.date || '')) + '/{z}/{y}/{x}' + itemPart],
         tileSize: 256,
-        maxzoom: render.source === 'nasa' ? 9 : 19,
+        maxzoom: render.source === 'vantor' ? 21 : render.source === 'nasa' ? 9 : 19,
         attribution: render.source === 'sentinel'
           ? 'Copernicus Sentinel-2 · Digital Earth Africa'
           : render.source === 'oam'
             ? 'OpenAerialMap / HOTOSM'
-            : 'NASA EOSDIS GIBS',
+            : render.source === 'vantor'
+              ? 'Vantor Vivid Mosaic · product GSD subject to coverage and licence'
+              : 'NASA EOSDIS GIBS',
       },
       ref: {
         type: 'raster',

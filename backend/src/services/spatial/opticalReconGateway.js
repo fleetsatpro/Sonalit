@@ -23,12 +23,48 @@ const DEA_COLLECTION = 's2_l2a_c1';
 const OAM_STAC_SEARCH = 'https://api.imagery.hotosm.org/stac/search';
 const OAM_TILE_BASE = 'https://api.imagery.hotosm.org/raster/collections/openaerialmap/items';
 const NASA_GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default';
+const VANTOR_BASEMAP_WMTS = 'https://api.maxar.com/basemaps/v1/ogc/gwc/service/wmts';
+const VANTOR_PRODUCTS = Object.freeze({
+  VIVID_STANDARD_30: { productGsdM: 0.3, productGsdLabel: '30 cm product GSD' },
+  VIVID_ADVANCED_15: { productGsdM: 0.15, productGsdLabel: '15 cm HD product GSD' },
+});
 const MAX_RADIUS_M = 120_000;
 const CACHE_TTL_MS = 120_000;
 const CACHE_MAX = 96;
 const searchCache = new Map();
 const inflight = new Map();
 const tileCache = new Map();
+
+/**
+ * Commercial Vantor streaming is deliberately fail-closed.
+ * Enable only after the account is provisioned and the signed licence
+ * explicitly permits streaming/embedding in Sonalit's multi-tenant product.
+ * Never send VANTOR_API_KEY to the browser.
+ */
+function getVantorBasemapConfig() {
+  const requestedProduct = String(process.env.VANTOR_VIVID_PRODUCT || 'VIVID_STANDARD_30').trim().toUpperCase();
+  const product = VANTOR_PRODUCTS[requestedProduct] ? requestedProduct : null;
+  const enabledFlag = String(process.env.VANTOR_VIVID_ENABLED || '').toLowerCase() === 'true';
+  const licenseConfirmed = String(process.env.VANTOR_VIVID_LICENSE_CONFIRMED || '').toLowerCase() === 'true';
+  const apiKey = String(process.env.VANTOR_API_KEY || '').trim();
+  let state = 'disabled';
+  if (enabledFlag) {
+    if (!licenseConfirmed) state = 'license_confirmation_required';
+    else if (!product) state = 'invalid_product';
+    else if (!apiKey) state = 'api_key_required';
+    else state = 'ready';
+  }
+  const productSpec = product ? VANTOR_PRODUCTS[product] : null;
+  return {
+    provider: 'Vantor Vivid Mosaic',
+    enabled: state === 'ready',
+    state,
+    product,
+    productGsdM: productSpec?.productGsdM ?? null,
+    productGsdLabel: productSpec?.productGsdLabel ?? null,
+    resolutionSemantics: 'provider_product_gsd_not_native_sensor_resolution',
+  };
+}
 
 function validPoint(lat, lng) {
   return Number.isFinite(lat) && Number.isFinite(lng)
@@ -211,7 +247,7 @@ async function getOpticalRecon({ latitude, longitude, radiusM = 25_000, signal }
   const key = bbox.map(v => v.toFixed(3)).join(',');
   const cached = searchCache.get(key);
   if (cached && cached.expiresAt > Date.now()) {
-    return { ...cached.value, cache: { hit: true, ageMs: Date.now() - cached.createdAt } };
+    return { ...cached.value, premiumBasemap: getVantorBasemapConfig(), cache: { hit: true, ageMs: Date.now() - cached.createdAt } };
   }
   if (inflight.has(key)) return inflight.get(key);
 
@@ -239,6 +275,7 @@ async function getOpticalRecon({ latitude, longitude, radiusM = 25_000, signal }
       centre: { latitude: lat, longitude: lng },
       bbox,
       generatedAt: new Date().toISOString(),
+      premiumBasemap: getVantorBasemapConfig(),
       primary: s2.selected ? {
         ...s2.selected,
         recommendation: Number(s2.selected.cloudPct ?? 100) <= 20
@@ -319,19 +356,37 @@ async function getOpticalTile({ source = 'sentinel', date, z, x, y, itemId } = {
   const tx = Number(x);
   const ty = Number(y);
   const maxTile = 2 ** zoom;
-  if (![zoom, tx, ty].every(Number.isInteger) || zoom < 0 || zoom > 19 || tx < 0 || ty < 0 || tx >= maxTile || ty >= maxTile) {
+  if (![zoom, tx, ty].every(Number.isInteger) || zoom < 0 || zoom > 21 || tx < 0 || ty < 0 || tx >= maxTile || ty >= maxTile) {
     const error = new Error('Invalid optical tile coordinates');
     error.failureClass = 'malformed';
     throw error;
   }
 
   const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const key = [source, safeDate, itemId || '', zoom, tx, ty].join(':');
-  const cached = tileCache.get(key);
+  const cacheKey = [source, safeDate, itemId || '', zoom, tx, ty].join(':');
+  // Keep commercial Vantor imagery out of local caches until the provider
+  // licence explicitly establishes the permitted caching model.
+  const cacheable = source !== 'vantor';
+  const cached = cacheable ? tileCache.get(cacheKey) : null;
   if (cached && cached.expiresAt > Date.now()) return cached;
 
   let url;
-  if (source === 'oam' && /^[A-Za-z0-9._-]+$/.test(String(itemId || ''))) {
+  let headers = { Accept: 'image/png,image/jpeg,image/*', 'User-Agent': 'Sonalit-Optical-Recon/1.0' };
+  if (source === 'vantor') {
+    const config = getVantorBasemapConfig();
+    if (!config.enabled) {
+      const error = new Error('Vantor high-resolution imagery is not licensed and configured');
+      error.failureClass = 'provider_unconfigured';
+      throw error;
+    }
+    const params = new URLSearchParams({
+      service: 'WMTS', request: 'GetTile', version: '1.0.0', layer: 'Maxar:Imagery', style: 'raster',
+      tileMatrixSet: 'EPSG:3857', tileMatrix: 'EPSG:3857:' + zoom, tileCol: String(tx), tileRow: String(ty),
+      format: 'image/jpeg', cql_filter: "productName='" + config.product + "'",
+    });
+    url = VANTOR_BASEMAP_WMTS + '?' + params.toString();
+    headers['maxar-api-key'] = String(process.env.VANTOR_API_KEY).trim();
+  } else if (source === 'oam' && /^[A-Za-z0-9._-]+$/.test(String(itemId || ''))) {
     url = OAM_TILE_BASE + '/' + encodeURIComponent(String(itemId)) + '/tiles/WebMercatorQuad/' + zoom + '/' + tx + '/' + ty + '?assets=visual&nodata=0';
   } else if (source === 'nasa') {
     const n = Math.pow(2, zoom);
@@ -358,7 +413,7 @@ async function getOpticalTile({ source = 'sentinel', date, z, x, y, itemId } = {
   }
 
   const response = await fetch(url, {
-    headers: { Accept: 'image/png,image/jpeg,image/*', 'User-Agent': 'Sonalit-Optical-Recon/1.0' },
+    headers,
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
@@ -366,14 +421,18 @@ async function getOpticalTile({ source = 'sentinel', date, z, x, y, itemId } = {
     error.failureClass = response.status === 429 ? 'rate_limited' : 'http_error';
     throw error;
   }
+  const contentType = response.headers.get('content-type') || (source === 'nasa' || source === 'oam' || source === 'vantor' ? 'image/jpeg' : 'image/png');
+  if (source === 'vantor' && !/^image\\//i.test(contentType)) {
+    const error = new Error('Vantor imagery service returned a non-image response');
+    error.failureClass = 'provider_invalid_response';
+    throw error;
+  }
   const buffer = Buffer.from(await response.arrayBuffer());
-  const result = {
-    buffer,
-    contentType: response.headers.get('content-type') || (source === 'nasa' || source === 'oam' ? 'image/jpeg' : 'image/png'),
-    expiresAt: Date.now() + 5 * 60_000,
-  };
-  tileCache.set(key, result);
-  trim(tileCache, 256);
+  const result = { buffer, contentType, expiresAt: Date.now() + 5 * 60_000 };
+  if (cacheable) {
+    tileCache.set(cacheKey, result);
+    trim(tileCache, 256);
+  }
   return result;
 }
 
@@ -381,5 +440,6 @@ module.exports = {
   bboxFromCenter,
   getOpticalRecon,
   getOpticalTile,
+  getVantorBasemapConfig,
   freshnessClass,
 };

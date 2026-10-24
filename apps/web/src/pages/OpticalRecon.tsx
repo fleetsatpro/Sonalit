@@ -15,7 +15,7 @@ import { spatialCanvasContextAttributes, spatialPixelRatio } from '../lib/spatia
 
 installOpticalReconMapLibreProtocol()
 
-type MapMode = 'normal' | 'latest' | 'precision'
+type MapMode = 'normal' | 'latest' | 'precision' | 'ultra'
 
 const DEFAULT_AOI = { latitude: -1.286389, longitude: 36.817223 }
 
@@ -44,6 +44,7 @@ function sourceLabel(source?: string) {
   if (source === 'sentinel') return 'SENTINEL-2 / DE AFRICA'
   if (source === 'oam') return 'OPENAERIALMAP'
   if (source === 'nasa') return 'NASA GIBS / MODIS'
+  if (source === 'vantor') return 'VANTOR VIVID MOSAIC'
   return 'UNKNOWN SOURCE'
 }
 
@@ -101,6 +102,9 @@ export default function OpticalRecon() {
   const [aoiVersion, setAoiVersion] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [tileError, setTileError] = useState<string | null>(null)
+  const mapModeRef = useRef<MapMode>('normal')
+  mapModeRef.current = mapMode
 
   const opticalQ = useQuery<OpticalReconResult>({
     queryKey: ['optical-recon-workstation', centre.latitude, centre.longitude, aoiVersion],
@@ -160,6 +164,9 @@ export default function OpticalRecon() {
     })
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: false }), 'bottom-right')
     map.on('style.load', () => setMapReady(true))
+    map.on('error', event => {
+      if (mapModeRef.current === 'ultra' && event.error) setTileError('Vantor imagery stream failed. Verify account entitlement, coverage and provider service status.')
+    })
     map.on('click', event => {
       const next = { latitude: event.lngLat.lat, longitude: event.lngLat.lng }
       setCentre(next)
@@ -181,10 +188,17 @@ export default function OpticalRecon() {
   }, [])
 
   useEffect(() => {
-    if (!mapRef.current || !viewed?.render || mapMode === 'normal') return
-    setMapReady(false)
+    if (!mapRef.current || mapMode === 'normal') return
+    if (mapMode === 'ultra') {
+      if (!recon?.premiumBasemap.enabled) return
+      setMapReady(false); setTileError(null)
+      mapRef.current.setStyle(reconStyle({ source: 'vantor', date: 'mosaic' }))
+      return
+    }
+    if (!viewed?.render) return
+    setMapReady(false); setTileError(null)
     mapRef.current.setStyle(reconStyle(viewed.render))
-  }, [mapMode, viewed?.render?.source, viewed?.render?.date, viewed?.render?.itemId])
+  }, [mapMode, recon?.premiumBasemap.enabled, viewed?.render?.source, viewed?.render?.date, viewed?.render?.itemId])
 
   useEffect(() => {
     if (!mapRef.current || !opticalQ.error || mapMode === 'normal') return
@@ -262,6 +276,9 @@ export default function OpticalRecon() {
           }} disabled={!recon?.precisionAlternative}>
             <Maximize2 size={13} /> DETAIL SCENE
           </button>
+          <button type="button" className={mapMode === 'ultra' ? 'active ultra' : 'ultra'} onClick={() => { setSelectedId(null); setMapMode('ultra'); setTileError(null) }} disabled={!recon?.premiumBasemap.enabled} title={recon?.premiumBasemap.enabled ? 'Use the licensed Vantor Vivid Mosaic high-resolution basemap' : 'Requires Vantor API access, an approved imagery licence and explicit server configuration'}>
+            <Layers3 size={13} /> VANTOR ULTRA-HD
+          </button>
         </div>
         <div className="ore-aoi-readout">
           <Crosshair size={13} />
@@ -276,7 +293,7 @@ export default function OpticalRecon() {
         <aside className="ore-left">
           <section className="ore-panel ore-scene-card">
             <div className="ore-panel-title">
-              <div><span>SCENE BRIEF</span><strong>{missionLabel(viewed)}</strong></div>
+              <div><span>{mapMode === 'ultra' ? 'CATALOG SCENE · SEPARATE FROM MOSAIC' : 'SCENE BRIEF'}</span><strong>{missionLabel(viewed)}</strong></div>
               {viewed && <span className="ore-score">{scorePct(viewed)}%</span>}
             </div>
             <div className="ore-scene-line">
@@ -312,6 +329,11 @@ export default function OpticalRecon() {
               <em className={sourceState(recon, 'oam') === 'DEGRADED' ? 'warn' : 'ok'}>{sourceState(recon, 'oam')}</em>
             </div>
             <div className="ore-source">
+              <div className="ore-source-mark vantor"><Layers3 size={13} /></div>
+              <div className="ore-source-copy"><strong>Vantor Vivid Mosaic</strong><span>{recon?.premiumBasemap.productGsdLabel || '30 cm product GSD target'} · not native sensor GSD</span></div>
+              <em className={recon?.premiumBasemap.enabled ? 'ok' : 'warn'}>{recon?.premiumBasemap.enabled ? 'READY' : (recon?.premiumBasemap.state || 'not_configured').replaceAll('_', ' ').toUpperCase()}</em>
+            </div>
+            <div className="ore-source">
               <div className="ore-source-mark nasa"><Cloud size={13} /></div>
               <div className="ore-source-copy"><strong>NASA GIBS / MODIS</strong><span>rapid-observation fallback</span></div>
               <em className={sourceState(recon, 'nasa').includes('FALLBACK') ? 'fallback' : 'muted'}>{sourceState(recon, 'nasa')}</em>
@@ -340,14 +362,17 @@ export default function OpticalRecon() {
         <section className="ore-map-wrap">
           <div ref={containerRef} className="ore-map" />
           <div className="ore-map-top">
-            <div className="ore-map-badge"><i /> {mapMode === 'normal' ? 'OPERATIONAL SURFACE' : mapMode === 'precision' ? 'DETAIL OBSERVATION' : 'LATEST VALIDATED OBSERVATION'}</div>
-            <div className="ore-map-source">{viewed ? sourceLabel(viewed.render?.source) : 'SCENE SEARCH'}</div>
+            <div className="ore-map-badge"><i /> {mapMode === 'normal' ? 'OPERATIONAL SURFACE' : mapMode === 'precision' ? 'DETAIL OBSERVATION' : mapMode === 'ultra' ? 'VANTOR HIGH-RESOLUTION MOSAIC' : 'LATEST VALIDATED OBSERVATION'}</div>
+            <div className="ore-map-source">{mapMode === 'ultra' ? 'VANTOR VIVID MOSAIC' : viewed ? sourceLabel(viewed.render?.source) : 'SCENE SEARCH'}</div>
           </div>
           <div className="ore-map-bottom">
-            <span><b>ACQ</b> {dateLabel(viewed?.acquiredAt)}</span>
-            <span><b>RES</b> {viewed?.nativeResolutionM ? String(viewed.nativeResolutionM) + ' m' : '—'}</span>
-            <span><b>CLOUD</b> {viewed?.cloudPct != null ? viewed.cloudPct.toFixed(1) + '%' : '—'}</span>
-            <span><b>LICENCE</b> {viewed?.licence || '—'}</span>
+            {mapMode === 'ultra' ? <>
+              <span><b>SOURCE</b> Vantor Vivid Mosaic</span><span><b>PRODUCT GSD</b> {recon?.premiumBasemap.productGsdLabel || '—'}</span>
+              <span><b>ACQUISITION</b> Per-area mosaic date not provided by tile response</span><span><b>LICENCE</b> Server-confirmed Sonalit stream</span>
+            </> : <>
+              <span><b>ACQ</b> {dateLabel(viewed?.acquiredAt)}</span><span><b>RES</b> {viewed?.nativeResolutionM ? String(viewed.nativeResolutionM) + ' m' : '—'}</span>
+              <span><b>CLOUD</b> {viewed?.cloudPct != null ? viewed.cloudPct.toFixed(1) + '%' : '—'}</span><span><b>LICENCE</b> {viewed?.licence || '—'}</span>
+            </>}
           </div>
           <div className="ore-map-controls">
             <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in"><ZoomIn size={14} /></button>
@@ -359,6 +384,8 @@ export default function OpticalRecon() {
               <div><strong>ACQUIRING SCENE EVIDENCE</strong><span>Querying current optical catalogs for the active AOI</span></div>
             </div>
           )}
+          {tileError && mapMode === 'ultra' && <div className="ore-map-alert critical"><XCircle size={15} /><div><strong>ULTRA-HD STREAM UNAVAILABLE</strong><span>{tileError}</span></div><button type="button" onClick={() => { setTileError(null); mapRef.current?.setStyle(reconStyle({ source: 'vantor', date: 'mosaic' })) }}>RETRY</button></div>}
+          {mapMode === 'ultra' && <div className="ore-uhd-note">Product GSD describes the Vantor mosaic product, not native sensor GSD. Mosaic source dates can vary by location.</div>}
           {opticalQ.error && (
             <div className="ore-map-alert critical">
               <XCircle size={15} />
@@ -420,10 +447,10 @@ export default function OpticalRecon() {
           <section className="ore-panel">
             <div className="ore-panel-title compact"><div><span>ACQUISITION RECORD</span><strong>PROVENANCE</strong></div><Clock3 size={14} /></div>
             <div className="ore-record">
-              <div><span>MISSION</span><b>{missionLabel(viewed)}</b></div>
-              <div><span>PROVIDER</span><b>{viewed?.provider || '—'}</b></div>
-              <div><span>ACQUIRED UTC</span><b>{viewed?.acquiredAt || '—'}</b></div>
-              <div><span>LICENCE</span><b>{viewed?.licence || '—'}</b></div>
+              <div><span>MISSION</span><b>{mapMode === 'ultra' ? 'Vantor Vivid Mosaic (base layer)' : missionLabel(viewed)}</b></div>
+              <div><span>PROVIDER</span><b>{mapMode === 'ultra' ? 'Vantor Vivid Mosaic' : viewed?.provider || '—'}</b></div>
+              <div><span>ACQUIRED UTC</span><b>{mapMode === 'ultra' ? 'Not provided per tile / location' : viewed?.acquiredAt || '—'}</b></div>
+              <div><span>LICENCE</span><b>{mapMode === 'ultra' ? 'Commercial; explicit server entitlement required' : viewed?.licence || '—'}</b></div>
               <div><span>CAPABILITIES</span><b>{viewed?.capabilities?.join(' · ') || '—'}</b></div>
             </div>
           </section>

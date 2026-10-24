@@ -3,13 +3,24 @@ const {
   freshnessClass,
   getOpticalRecon,
   getOpticalTile,
+  getVantorBasemapConfig,
 } = require('../src/services/spatial/opticalReconGateway');
 
 describe('free optical reconnaissance gateway', () => {
   const originalFetch = global.fetch;
+  const originalVantorEnv = {
+    VANTOR_API_KEY: process.env.VANTOR_API_KEY,
+    VANTOR_VIVID_ENABLED: process.env.VANTOR_VIVID_ENABLED,
+    VANTOR_VIVID_LICENSE_CONFIRMED: process.env.VANTOR_VIVID_LICENSE_CONFIRMED,
+    VANTOR_VIVID_PRODUCT: process.env.VANTOR_VIVID_PRODUCT,
+  };
 
   afterEach(() => {
     global.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalVantorEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     jest.restoreAllMocks();
   });
 
@@ -94,6 +105,53 @@ describe('free optical reconnaissance gateway', () => {
     expect(result.primary.provider).toBe('nasa-gibs');
     expect(result.quality.state).toBe('provider_degraded_fallback');
     expect(result.warnings).toContain('sentinel_catalog_unavailable');
+  });
+
+  test('keeps Vantor disabled until enablement, API key and licence confirmation are all present', () => {
+    delete process.env.VANTOR_VIVID_ENABLED;
+    delete process.env.VANTOR_API_KEY;
+    delete process.env.VANTOR_VIVID_LICENSE_CONFIRMED;
+    expect(getVantorBasemapConfig()).toMatchObject({ enabled: false, state: 'disabled' });
+    process.env.VANTOR_VIVID_ENABLED = 'true';
+    process.env.VANTOR_API_KEY = 'unit-test-key';
+    process.env.VANTOR_VIVID_LICENSE_CONFIRMED = 'false';
+    expect(getVantorBasemapConfig()).toMatchObject({ enabled: false, state: 'license_confirmation_required' });
+    process.env.VANTOR_VIVID_LICENSE_CONFIRMED = 'true';
+    expect(getVantorBasemapConfig()).toMatchObject({ enabled: true, state: 'ready', product: 'VIVID_STANDARD_30', productGsdM: 0.3, productGsdLabel: '30 cm product GSD', resolutionSemantics: 'provider_product_gsd_not_native_sensor_resolution' });
+  });
+
+  test('requests Vantor Vivid tiles server-side and does not locally cache commercial tiles', async () => {
+    process.env.VANTOR_VIVID_ENABLED = 'true';
+    process.env.VANTOR_API_KEY = 'unit-test-key';
+    process.env.VANTOR_VIVID_LICENSE_CONFIRMED = 'true';
+    process.env.VANTOR_VIVID_PRODUCT = 'VIVID_STANDARD_30';
+    const requests = [];
+    global.fetch = jest.fn(async (url, init) => {
+      requests.push({ url: String(url), init });
+      return { ok: true, headers: { get: () => 'image/jpeg' }, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
+    });
+    const args = { source: 'vantor', z: 19, x: 83913, y: 202939, date: 'mosaic' };
+    const first = await getOpticalTile(args);
+    const second = await getOpticalTile(args);
+    const requestUrl = new URL(requests[0].url);
+    expect(first.contentType).toBe('image/jpeg');
+    expect(second.buffer).toBeInstanceOf(Buffer);
+    expect(requests).toHaveLength(2);
+    expect(requestUrl.pathname).toBe('/basemaps/v1/ogc/gwc/service/wmts');
+    expect(requestUrl.searchParams.get('layer')).toBe('Maxar:Imagery');
+    expect(requestUrl.searchParams.get('tileMatrix')).toBe('EPSG:3857:19');
+    expect(requestUrl.searchParams.get('tileCol')).toBe('83913');
+    expect(requestUrl.searchParams.get('tileRow')).toBe('202939');
+    expect(requestUrl.searchParams.get('cql_filter')).toBe("productName='VIVID_STANDARD_30'");
+    expect(requests[0].init.headers['maxar-api-key']).toBe('unit-test-key');
+    expect(requests[0].url).not.toContain('unit-test-key');
+  });
+
+  test('rejects unlicensed Vantor tiles before contacting the provider', async () => {
+    process.env.VANTOR_VIVID_ENABLED = 'true'; process.env.VANTOR_API_KEY = 'unit-test-key'; process.env.VANTOR_VIVID_LICENSE_CONFIRMED = 'false';
+    global.fetch = jest.fn();
+    await expect(getOpticalTile({ source: 'vantor', z: 4, x: 2, y: 3, date: 'mosaic' })).rejects.toMatchObject({ failureClass: 'provider_unconfigured' });
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   test('rejects malformed tile coordinates before touching an upstream provider', async () => {
