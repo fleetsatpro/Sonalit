@@ -3064,7 +3064,7 @@ async function resolveLatestApkInfo() {
   // in the release body. That metadata is extracted from the actual built APK,
   // so the download page can distinguish Android app version from release tag.
   const releaseBody = typeof rel.body === 'string' ? rel.body : '';
-  const metadataMatch = releaseBody.match(/<!--\\s*SONALIT_APK_METADATA\\s+([\\s\\S]*?)\\s*-->/i);
+  const metadataMatch = releaseBody.match(/<!--\s*SONALIT_APK_METADATA\s+([\s\S]*?)\s*-->/i);
   let apkMetadata = {};
   if (metadataMatch) {
     try {
@@ -3074,10 +3074,10 @@ async function resolveLatestApkInfo() {
       logger.warn(`Guardian APK metadata comment is malformed: ${metadataError.message}`);
     }
   }
-  const cleanNotes = releaseBody.replace(/<!--\\s*SONALIT_APK_METADATA[\\s\\S]*?-->/i, '').trim() || null;
+  const cleanNotes = releaseBody.replace(/<!--\s*SONALIT_APK_METADATA[\s\S]*?-->/i, '').trim() || null;
   const versionCode = Number(apkMetadata.version_code);
   const minSdk = Number(apkMetadata.min_sdk);
-  const packageName = typeof apkMetadata.package_name === 'string' && /^[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+$/.test(apkMetadata.package_name)
+  const packageName = typeof apkMetadata.package_name === 'string' && /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/.test(apkMetadata.package_name)
     ? apkMetadata.package_name : null;
   const sha256 = typeof apkMetadata.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(apkMetadata.sha256)
     ? apkMetadata.sha256.toLowerCase() : null;
