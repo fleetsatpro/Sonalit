@@ -301,13 +301,21 @@ function serializeApp(definition, selected) {
 
 async function getSonalitApkCatalog({ forceRefresh = false } = {}) {
   const releases = await fetchReleases(forceRefresh);
+  const sourceStale = Date.now() - _releasesCacheAt > RELEASE_CACHE_MS;
+  const apps = APPS
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map(definition => serializeApp(definition, pickRelease(releases, definition)))
+    .map(app => sourceStale && app.status === "available"
+      ? { ...app, status: "stale", statusLabel: "Last known release" }
+      : app);
+
   return {
     source: "github-releases",
     checkedAt: new Date().toISOString(),
-    apps: APPS
-      .slice()
-      .sort((a, b) => a.order - b.order)
-      .map(definition => serializeApp(definition, pickRelease(releases, definition)))
+    sourceCheckedAt: _releasesCacheAt ? new Date(_releasesCacheAt).toISOString() : null,
+    stale: sourceStale,
+    apps
   };
 }
 
