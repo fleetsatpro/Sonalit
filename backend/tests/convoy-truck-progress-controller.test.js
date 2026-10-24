@@ -4,7 +4,7 @@ jest.mock('../src/config/database', () => ({ query: jest.fn() }));
 jest.mock('../src/realtime/centrifugo', () => ({ publish: jest.fn() }));
 
 const { query } = require('../src/config/database');
-const { attachTruckProgress } = require('../src/controllers/convoyController');
+const { attachTruckProgress, getConvoys } = require('../src/controllers/convoyController');
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const CONVOY = '22222222-2222-4222-8222-222222222222';
@@ -107,5 +107,63 @@ describe('attachTruckProgress', () => {
   test('empty convoy pages do not run telemetry queries', async () => {
     expect(await attachTruckProgress([], ORG)).toEqual([]);
     expect(query).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('getConvoys pagination binding', () => {
+  beforeEach(() => query.mockReset());
+
+  function mockConvoyListQueries() {
+    const observed = [];
+    query.mockImplementation((sql, params = []) => {
+      observed.push({ sql, params: [...params] });
+      if (sql.includes('SELECT COUNT(*) FROM convoys c')) {
+        return Promise.resolve({ rows: [{ count: '1' }] });
+      }
+      if (sql.includes('SELECT c.*')) {
+        return Promise.resolve({ rows: [{ id: CONVOY, name: 'Test convoy', vehicle_count: 0 }] });
+      }
+      if (sql.includes('WITH roster AS')) return Promise.resolve({ rows: [] });
+      if (sql.includes('FROM convoy_route_corridors crc')) return Promise.resolve({ rows: [] });
+      if (sql.includes('FROM convoy_route_waypoints rw')) return Promise.resolve({ rows: [] });
+      return Promise.reject(new Error('Unexpected query in convoy-list pagination test'));
+    });
+    return observed;
+  }
+
+  async function callList(queryParams) {
+    const req = { query: queryParams, user: { org_id: ORG } };
+    const res = { json: jest.fn() };
+    const next = jest.fn();
+    await getConvoys(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+    return res.json.mock.calls[0][0];
+  }
+
+  test('binds default-filter page limit and offset as PostgreSQL placeholders', async () => {
+    const observed = mockConvoyListQueries();
+    const payload = await callList({ page: '1', limit: '100' });
+    const listCall = observed.find(call => call.sql.includes('SELECT c.*'));
+
+    expect(listCall.sql).toContain('LIMIT $2 OFFSET $3');
+    expect(listCall.params).toEqual([ORG, 100, 0]);
+    expect(payload.data).toHaveLength(1);
+    expect(payload.pagination).toBeDefined();
+  });
+
+  test('keeps pagination placeholders after optional convoy filters', async () => {
+    const observed = mockConvoyListQueries();
+    await callList({ page: '2', limit: '15', status: 'active', region: 'Kenya' });
+    const countCall = observed.find(call => call.sql.includes('SELECT COUNT(*) FROM convoys c'));
+    const listCall = observed.find(call => call.sql.includes('SELECT c.*'));
+
+    expect(countCall.sql).toContain('c.status = $2');
+    expect(countCall.sql).toContain('c.region = $3');
+    expect(listCall.sql).toContain('c.status = $2');
+    expect(listCall.sql).toContain('c.region = $3');
+    expect(listCall.sql).toContain('LIMIT $4 OFFSET $5');
+    expect(listCall.params).toEqual([ORG, 'active', 'Kenya', 15, 15]);
   });
 });
