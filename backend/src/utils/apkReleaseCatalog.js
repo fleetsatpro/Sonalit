@@ -2,7 +2,7 @@
 
 const { parseApkReleaseMetadata } = require("./apkReleaseMetadata");
 
-const RELEASE_CACHE_MS = 120_000;
+const RELEASE_CACHE_MS = 600_000;
 const APPS = [
   {
     id: "sonalit",
@@ -237,7 +237,7 @@ function serializeApp(definition, selected) {
     sizeLabel: formatSize(asset.size) || "Unavailable",
     packageId: metadata.package_name || publicFields.packageName,
     downloadUrl: downloadPath || asset.browser_download_url,
-    releaseNotes: metadata.notes || null,
+    releaseNotes: metadata.notes ? metadata.notes.slice(0, 5000) : null,
     sha256: metadata.sha256 || null
   };
 }
