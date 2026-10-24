@@ -213,6 +213,8 @@ const getConvoys = asyncHandler(async (req, res) => {
   const countResult = await query(`SELECT COUNT(*) FROM convoys c WHERE c.org_id = $1 AND c.deleted_at IS NULL ${where}`, params);
 
   params.push(limit, offset);
+  const limitParamIndex = params.length - 1;
+  const offsetParamIndex = params.length;
   const result = await query(
     `SELECT c.*,
             u.name AS created_by_name,
@@ -233,7 +235,7 @@ const getConvoys = asyncHandler(async (req, res) => {
      LEFT JOIN cargo_clients cl ON cl.id = c.client_id
      WHERE c.org_id = $1 AND c.deleted_at IS NULL ${where}
      ORDER BY c.created_at DESC
-     LIMIT ${params.length - 1} OFFSET ${params.length}`,
+     LIMIT ${limitParamIndex} OFFSET ${offsetParamIndex}`,
     params
   );
 
