@@ -6,7 +6,7 @@ import {
   formatAge,
   formatUptime,
   getOverallHealthState,
-  isFreshHealthCheckTimestamp,
+  isFreshHealthCheck,
   isFreshHealthSnapshot,
   type HealthCheckState,
 } from '../lib/systemHealth.js';
@@ -32,7 +32,7 @@ export default function SystemHealth() {
   // Keep last-known detail visible, but never leave old green labels in place
   // when this snapshot or a component timestamp can no longer be verified.
   const displayedChecks = checks.map(check => (
-    !snapshotFresh || (check.status === 'healthy' && !isFreshHealthCheckTimestamp(check.checked_at))
+    !snapshotFresh || (check.status === 'healthy' && !isFreshHealthCheck(check))
       ? { ...check, status: 'unknown' as const }
       : check
   ));
