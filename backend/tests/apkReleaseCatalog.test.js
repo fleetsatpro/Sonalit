@@ -91,6 +91,7 @@ describe("Sonalit app-specific APK release catalogue", () => {
       makeRelease("guardian-v981", "Sonalit Guardian 4.7.0", "io.sonalit.guardian", "4.7.0", 13, 29, "2026-10-24T20:00:00Z", "app-debug.apk")
     ];
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => releases });
+    const { getSonalitApkCatalog } = require("../src/utils/apkReleaseCatalog");
 
     const catalog = await getSonalitApkCatalog({ forceRefresh: true });
     const field = catalog.apps.find(app => app.id === "field");
