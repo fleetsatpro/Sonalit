@@ -1832,15 +1832,6 @@
         "responses": {
           "200": {
             "description": "OK"
-          },
-          "400": {
-            "description": "Invalid Sonalit app release"
-          },
-          "404": {
-            "description": "Sonalit app release not found"
-          },
-          "503": {
-            "description": "Sonalit APK temporarily unavailable"
           }
         }
       }
