@@ -13,6 +13,8 @@ export type OpticalCandidate = {
   cloudPct: number | null
   nativeResolutionM: number | null
   licence: string
+  licenceVerified?: boolean
+  licenceSource?: 'item_metadata' | 'missing_item_metadata'
   freshness: string
   capabilities: string[]
   score: number

@@ -107,6 +107,24 @@ describe('free optical reconnaissance gateway', () => {
     expect(result.warnings).toContain('sentinel_catalog_unavailable');
   });
 
+  test('recognises an explicit Creative Commons licence URL on an OpenAerialMap item', async () => {
+    global.fetch = jest.fn(async url => {
+      const target = String(url);
+      if (target.includes('explorer.digitalearth.africa/stac/search')) return { ok: true, json: async () => ({ features: [] }) };
+      if (target.includes('api.imagery.hotosm.org/stac/search')) return { ok: true, json: async () => ({ features: [{
+        id: 'licensed-item',
+        geometry: { type: 'Polygon', coordinates: [] },
+        properties: { datetime: '2026-10-10T10:00:00Z', gsd: 0.05, license: 'https://creativecommons.org/licenses/by/4.0/' },
+      }] }) };
+      throw new Error('unexpected fetch: ' + target);
+    });
+    const result = await getOpticalRecon({ latitude: 8.1264, longitude: 34.5618, radiusM: 18_000 });
+    const candidate = result.candidates.find(item => item.id === 'oam:licensed-item');
+    expect(candidate).toMatchObject({ renderable: true, licenceVerified: true, licenceSource: 'item_metadata' });
+    expect(candidate.render).toMatchObject({ source: 'oam', itemId: 'licensed-item' });
+    expect(result.precisionAlternative?.id).toBe('oam:licensed-item');
+  });
+
   test('does not render an OpenAerialMap item when item-level licence metadata is absent', async () => {
     global.fetch = jest.fn(async (url) => {
       const target = String(url);

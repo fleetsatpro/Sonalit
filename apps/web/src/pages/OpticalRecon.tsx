@@ -362,8 +362,8 @@ export default function OpticalRecon() {
             <div className="ore-list">
               {candidates.length === 0 && <div className="ore-empty"><Database size={16} /><span>{queryBusy ? 'Querying scene catalogs…' : 'No qualifying observations returned for this AOI.'}</span></div>}
               {candidates.slice(0, 8).map(candidate => (
-                <button type="button" key={candidate.id} className={'ore-log-row ' + (selectedId === candidate.id ? 'selected' : '')} onClick={() => selectCandidate(candidate)}>
-                  <div><strong>{missionLabel(candidate)}</strong><span>{candidate.provider}</span></div>
+                <button type="button" key={candidate.id} className={'ore-log-row ' + (selectedId === candidate.id ? 'selected' : '')} onClick={() => selectCandidate(candidate)} disabled={!candidate.render} title={candidate.licenceVerified === false ? 'Cannot render this scene until its item-level licence is verified' : 'View catalogue scene'}>
+                  <div><strong>{missionLabel(candidate)}</strong><span>{candidate.licenceVerified === false ? 'LICENCE UNVERIFIED' : candidate.provider}</span></div>
                   <div className="ore-log-meta"><b>{scorePct(candidate)}%</b><span>{candidate.nativeResolutionM ? String(candidate.nativeResolutionM) + 'm' : '—'}</span><ChevronRight size={12} /></div>
                 </button>
               ))}

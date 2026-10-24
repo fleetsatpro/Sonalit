@@ -202,7 +202,7 @@ async function searchOam(bbox, signal) {
       const license = rawLicense ? String(rawLicense) : 'Item-level licence metadata unavailable';
       const licenseText = license.toLowerCase();
       const licenseOk = Boolean(rawLicense)
-        && /(?:cc[-_ ]?by(?:[-_ ]?sa)?|creativecommons\\.org\\/licenses\\/(?:by|by-sa)\\/|cc0|public[- ]domain)/i.test(licenseText)
+        && /(?:cc[-_ ]?by(?:[-_ ]?sa)?|creativecommons\.org\/licenses\/(?:by|by-sa)\/|cc0|public[- ]domain)/i.test(licenseText)
         && !/(?:non[- ]?commercial|cc[-_ ]?by[-_ ]?nc|no[-_ ]?derivatives|cc[-_ ]?by[-_ ]?nd)/i.test(licenseText);
       return {
         id: 'oam:' + String(item.id),
