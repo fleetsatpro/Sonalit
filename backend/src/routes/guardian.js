@@ -3046,40 +3046,27 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
 
 let _latestApk = { info: null, at: 0 };
 async function resolveLatestApkInfo(forceRefresh = false) {
-  // Keep the release metadata fresh without exhausting GitHub's unauthenticated
-  // API budget. Two minutes means at most ~30 requests/hour per backend process.
+  // Resolve the newest *Guardian-tagged* release, not the repo-wide newest
+  // release (which may belong to Sonalit Field, Handover, or the operator app).
   if (!forceRefresh && _latestApk.info && Date.now() - _latestApk.at < 120_000) return _latestApk.info;
-  const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
-  // Authenticate the release lookup when a token is present — the unauthenticated
-  // GitHub API is 60 req/hr per IP (shared on Railway), which runs out and makes
-  // the version chips blank; a token raises it to 5000/hr.
-  const ghHeaders = { 'User-Agent': 'Sonalit-Guardian', 'Accept': 'application/vnd.github+json' };
-  const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-  if (ghToken) ghHeaders.Authorization = `Bearer ${ghToken}`;
-  const resp = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: ghHeaders });
-  if (!resp.ok) throw new Error(`releases API HTTP ${resp.status}`);
-  const rel = await resp.json();
-  const asset = (rel.assets || []).find(a => a.name === 'app-debug.apk') || (rel.assets || [])[0];
-  if (!asset || !asset.url) throw new Error('no APK asset on latest release');
-  // Parse metadata extracted from the actual APK asset. Malformed release notes
-  // must never be treated as a verified Android version or fingerprint.
-  const apkMetadata = parseApkReleaseMetadata(rel.body);
+  const { getLatestAppRelease } = require('../utils/apkReleaseCatalog');
+  const { release, asset, metadata } = await getLatestAppRelease('guardian', { forceRefresh });
   _latestApk = {
     info: {
-      version: rel.tag_name || rel.name || null,
-      name: rel.name || null,
-      published_at: rel.published_at || null,
-      notes: apkMetadata.notes,
+      version: release.tag_name || release.name || null,
+      name: release.name || null,
+      published_at: release.published_at || null,
+      notes: metadata.notes,
       size: asset.size || null,
-      app_version: apkMetadata.app_version,
-      version_code: apkMetadata.version_code,
-      package_name: apkMetadata.package_name,
-      min_sdk: apkMetadata.min_sdk,
-      sha256: apkMetadata.sha256,
-      // Public browser URL — works only for public repos.
+      app_version: metadata.app_version,
+      version_code: metadata.version_code,
+      package_name: metadata.package_name || 'io.sonalit.guardian',
+      min_sdk: metadata.min_sdk || 29,
+      sha256: metadata.sha256,
+      // Exact APK asset from the latest Guardian-tagged release.
       url: asset.browser_download_url || null,
       // API asset URL — with a token this streams even for a PRIVATE repo.
-      apiUrl: asset.url,
+      apiUrl: asset.url || null,
     },
     at: Date.now(),
   };
