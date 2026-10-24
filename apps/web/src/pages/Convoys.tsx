@@ -81,6 +81,7 @@ function truckProgressStateLabel(state: TruckProgressState): string {
   if (state === 'no_route') return 'NO ROUTE'
   if (state === 'no_fix') return 'NO GPS'
   if (state === 'unassigned') return 'NOT LINKED'
+  if (state === 'clock_skew') return 'CLOCK SKEW'
   return state.toUpperCase()
 }
 
