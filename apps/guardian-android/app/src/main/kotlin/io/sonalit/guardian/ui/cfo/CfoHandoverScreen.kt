@@ -83,6 +83,26 @@ fun CfoHandoverScreen(viewModel: CfoViewModel, onBack: () -> Unit) {
                 )
                 Spacer(Modifier.height(10.dp))
 
+                if (state.handoverUploading) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                state.handoverStage ?: "Submitting handover…",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "Keep Guardian open while the form is uploaded and verified.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 if (state.handoverError != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Warning, contentDescription = null,
