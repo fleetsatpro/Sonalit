@@ -116,6 +116,15 @@ describe("Sonalit app-specific APK release catalogue", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  test("cooldowns repeated upstream failures when no snapshot exists", async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error("temporary GitHub outage"));
+    const { getSonalitApkCatalog } = require("../src/utils/apkReleaseCatalog");
+
+    await expect(getSonalitApkCatalog({ forceRefresh: true })).rejects.toThrow("temporary GitHub outage");
+    await expect(getSonalitApkCatalog({ forceRefresh: true })).rejects.toThrow("temporarily rate-limited");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   test("coalesces repeated public forced refreshes within the minimum interval", async () => {
     const releases = [
       makeRelease("sonalit-v41", "Sonalit v41", "io.sonalit.app", "1.0.41", 41, 24, "2026-10-24T20:00:00Z", "sonalit.apk"),
