@@ -92,6 +92,11 @@ function computeHealth(session, now = Date.now()) {
   const last = session.last_location_at ? new Date(session.last_location_at).getTime() : 0;
   const ageSec = (now - last) / 1000;
 
+  // A materially future or malformed location timestamp is not fresh evidence.
+  // Allow up to 30 seconds of clock skew, consistent with client freshness
+  // validation; larger future timestamps must never promote a position to LIVE.
+  if (!Number.isFinite(last) || ageSec < -30) return 'offline';
+
   if (ageSec <= LIVE_SECONDS) return 'live';
   if (ageSec <= DELAYED_SECONDS) return 'delayed';
   if (ageSec <= SIGNAL_LOST_SECONDS) return 'signal_lost';
