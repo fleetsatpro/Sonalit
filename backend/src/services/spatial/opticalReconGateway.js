@@ -256,7 +256,7 @@ async function searchOam(bbox, signal) {
         licenceSource: rawLicense ? 'item_metadata' : 'missing_item_metadata',
         freshness: freshnessClass(acquiredAt),
         capabilities: ['high-detail', 'aerial', 'drone'],
-        score: scoreCandidate({ acquiredAt, cloudPct, gsdM, licenceOk }),
+        score: scoreCandidate({ acquiredAt, cloudPct, gsdM, licenceOk: licenseOk }),
         renderable: licenseOk,
         render: licenseOk ? {
           source: 'oam',
