@@ -4,6 +4,8 @@ import {
   formatAge,
   formatUptime,
   getOverallHealthState,
+  healthCheckEvidenceMaxAgeMs,
+  isFreshHealthCheck,
   isFreshHealthCheckTimestamp,
   isFreshHealthSnapshot,
 } from './systemHealth.js';
@@ -148,6 +150,28 @@ describe('system health evidence contract', () => {
       ...healthyPayload,
       checks: healthyPayload.checks.map(check => ({ ...check, checked_at: null })),
     }, false, TEST_NOW)).toBe('unknown');
+  });
+
+  it('uses a two-hour evidence window for hourly partition checks only', () => {
+    const partitionCheckedAt = new Date(TEST_NOW - 90 * 60_000).toISOString();
+    const snapshot = {
+      ...healthyPayload,
+      checks: healthyPayload.checks.map(check => check.id.startsWith('partitions-')
+        ? { ...check, checked_at: partitionCheckedAt }
+        : check),
+    };
+    expect(healthCheckEvidenceMaxAgeMs('partitions-gps_logs')).toBe(2 * 60 * 60 * 1000);
+    expect(healthCheckEvidenceMaxAgeMs('database')).toBe(60_000);
+    expect(isFreshHealthCheck(snapshot.checks.find(check => check.id === 'partitions-gps_logs')!, TEST_NOW)).toBe(true);
+    expect(getOverallHealthState(snapshot, false, TEST_NOW)).toBe('healthy');
+
+    const stalePartitions = {
+      ...snapshot,
+      checks: snapshot.checks.map(check => check.id.startsWith('partitions-')
+        ? { ...check, checked_at: new Date(TEST_NOW - 3 * 60 * 60_000).toISOString() }
+        : check),
+    };
+    expect(getOverallHealthState(stalePartitions, false, TEST_NOW)).toBe('unknown');
   });
 
   it('formats evidence age and uptime without fabricating missing values', () => {
