@@ -27,6 +27,8 @@ describe("Sonalit download hub", () => {
     expect(script).toContain("Sonalit Guardian");
     expect(script).toContain("Release check required");
     expect(script).toContain("No published APK available");
+    expect(script).toContain("LAST KNOWN RELEASE");
+    expect(script).toContain("Last-known releases · latest unconfirmed");
     expect(script).toContain('var catalogUrl = "/download/catalog.json"');
     expect(script).toContain('catalogUrl + "?refresh=1"');
     expect(script).toContain('querySelectorAll(".filter-btn[data-filter]")');
