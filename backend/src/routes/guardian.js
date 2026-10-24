@@ -3045,10 +3045,10 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
 //   APK_FILE_PATH    — local file fallback
 
 let _latestApk = { info: null, at: 0 };
-async function resolveLatestApkInfo() {
+async function resolveLatestApkInfo(forceRefresh = false) {
   // Keep the release metadata fresh without exhausting GitHub's unauthenticated
   // API budget. Two minutes means at most ~30 requests/hour per backend process.
-  if (_latestApk.info && Date.now() - _latestApk.at < 120_000) return _latestApk.info;
+  if (!forceRefresh && _latestApk.info && Date.now() - _latestApk.at < 120_000) return _latestApk.info;
   const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
   // Authenticate the release lookup when a token is present — the unauthenticated
   // GitHub API is 60 req/hr per IP (shared on Railway), which runs out and makes
@@ -3175,7 +3175,7 @@ router.get('/apk/info', async (req, res) => {
     return res.json({ probe: { r2_public_url_set: r2Set, apk_redirect_url_set: !!process.env.APK_REDIRECT_URL, github_token_set: !!ghToken, sources: [githubStable, githubApi, githubApiAuth, r2] } });
   }
   try {
-    const i = await resolveLatestApkInfo();
+    const i = await resolveLatestApkInfo(req.query.refresh === '1');
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
     res.json({
       version: i.version,
