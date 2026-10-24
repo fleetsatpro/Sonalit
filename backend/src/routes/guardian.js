@@ -3079,7 +3079,7 @@ async function resolveLatestApkUrl() { return (await resolveLatestApkInfo()).url
 // /releases/latest/download URL 404 without a browser session, but the asset API
 // honours a Bearer token. The API 302s to a short-lived signed CDN URL, which
 // must be fetched WITHOUT the Authorization header (the CDN rejects it).
-async function streamGithubAsset(res, apiAssetUrl) {
+async function streamGithubAsset(res, apiAssetUrl, filename = "SonalitGuardian.apk") {
   const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
   if (!ghToken) throw new Error('no GitHub token for authenticated asset');
   const meta = await fetch(apiAssetUrl, {
@@ -3102,7 +3102,7 @@ async function streamGithubAsset(res, apiAssetUrl) {
   }
   if (!upstream.ok || !upstream.body) throw new Error(`asset upstream HTTP ${upstream.status}`);
   res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-  res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
   const len = upstream.headers.get('content-length');
   if (len) res.setHeader('Content-Length', len);
   res.setHeader('Cache-Control', 'no-store');
@@ -3120,11 +3120,11 @@ function githubLatestApkUrl() {
 
 // Streams an upstream APK URL to the client with an exact Content-Length (a bare
 // 302 through GitHub's redirect chain makes mobile browsers hang at 100%).
-async function streamApk(res, url) {
+async function streamApk(res, url, filename = "SonalitGuardian.apk") {
   const upstream = await fetch(url, { headers: { 'User-Agent': 'Sonalit-Guardian' }, redirect: 'follow' });
   if (!upstream.ok || !upstream.body) throw new Error(`upstream HTTP ${upstream.status}`);
   res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-  res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
   const len = upstream.headers.get('content-length');
   if (len) res.setHeader('Content-Length', len);
   res.setHeader('Cache-Control', 'no-store');
@@ -3183,8 +3183,51 @@ router.get('/apk/info', async (req, res) => {
     // A failed app-specific lookup must be represented as unconfirmed metadata.
     res.set('Cache-Control', 'no-store');
     res.status(200).json({
-      version, name: null, published_at: null, size: null, notes: null,
+      version: null, name: null, published_at: null, size: null, notes: null,
       app_version: null, version_code: null, package_name: null, min_sdk: null, sha256: null,
+    });
+  }
+});
+
+router.get('/apk/download-app/:appId/:releaseId', async (req, res) => {
+  const appId = String(req.params.appId || '');
+  const releaseId = String(req.params.releaseId || '');
+  const allowedApps = new Set(['sonalit', 'field', 'handover', 'guardian']);
+  if (!allowedApps.has(appId) || !/^[A-Za-z0-9._-]{1,128}$/.test(releaseId)) {
+    return res.status(400).json({ error: 'Invalid Sonalit app release' });
+  }
+
+  try {
+    const { getAppReleaseById } = require('../utils/apkReleaseCatalog');
+    const { release, asset } = await getAppReleaseById(appId, releaseId);
+    const filename = 'Sonalit-' + appId + '-' + releaseId + '.apk';
+
+    // Validate the official GitHub URL before making any outbound request.
+    // The app and release in this URL must match the catalogue card exactly.
+    let assetUrl;
+    try { assetUrl = new URL(asset.browser_download_url); } catch {
+      throw new Error('Published APK asset URL is invalid');
+    }
+    const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
+    const expectedPrefix = '/' + repo + '/releases/download/' + release.tag_name + '/';
+    if (assetUrl.protocol !== 'https:' || assetUrl.hostname !== 'github.com' ||
+        !assetUrl.pathname.startsWith(expectedPrefix)) {
+      throw new Error('Published APK asset URL failed origin validation');
+    }
+
+    if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) {
+      return await streamGithubAsset(res, asset.url, filename);
+    }
+    return await streamApk(res, assetUrl.href, filename);
+  } catch (err) {
+    if (res.headersSent) return;
+    logger.warn('Sonalit app APK download failed (' + appId + '/' + releaseId + '): ' + err.message);
+    const notFound = /Unknown Sonalit APK application|Release ID does not belong|Published release was not found|does not contain a downloadable APK/i.test(err.message);
+    return res.status(notFound ? 404 : 503).json({
+      error: notFound ? 'Sonalit app release not found' : 'Sonalit APK temporarily unavailable',
+      message: notFound
+        ? 'That published release could not be found for this app. Recheck the download catalogue.'
+        : 'The release asset could not be retrieved. Please try again shortly.'
     });
   }
 });
