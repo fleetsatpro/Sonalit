@@ -121,6 +121,15 @@ describe('system health evidence contract', () => {
       data: { status: 'ok', timestamp: healthyPayload.timestamp, checks: [null] },
     } as never);
     await expect(fetchSystemHealth()).rejects.toThrow('invalid payload or check ledger');
+
+    vi.mocked(api.get).mockResolvedValueOnce({
+      status: 200,
+      data: {
+        ...healthyPayload,
+        checks: healthyPayload.checks.filter(check => check.id !== 'redis'),
+      },
+    } as never);
+    await expect(fetchSystemHealth()).rejects.toThrow('invalid payload or check ledger');
   });
 
   it('requires fresh component timestamps before treating a fresh envelope as healthy', () => {
