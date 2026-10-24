@@ -95,7 +95,8 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
     along_km: alongKm,
     route_len_km: routeLenKm,
     cross_track_km: crossTrackKm,
-    route_source: validRoute ? (route.source === 'waypoints' ? 'waypoints' : 'corridor') : null,
+    route_source: routeLenKm != null && routeLenKm > 0
+      ? (route.source === 'waypoints' ? 'waypoints' : 'corridor') : null,
     last_fix_at: fixDate ? fixDate.toISOString() : null,
     age_seconds: ageSeconds,
     speed_kph: Number.isFinite(speed) && speed >= 0 ? speed : null,
