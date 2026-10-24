@@ -366,36 +366,88 @@ class CfoViewModel @Inject constructor(
      *  hand, at the end of the day — worth surfacing a failure immediately so
      *  they can just retry, rather than silently queuing it for later. */
     fun uploadHandover(file: File, notes: String?) {
-        val ctx = _state.value.context ?: return
-        _state.update { it.copy(handoverUploading = true, handoverError = null) }
-        viewModelScope.launch {
-            runCatching {
-                val contentType = if (file.extension.equals("pdf", ignoreCase = true)) "application/pdf" else "image/jpeg"
-                val urlResp = api.cfoHandoverUploadUrl(deviceToken, HandoverUploadUrlRequest(ctx.convoy.id, contentType))
+        if (_state.value.handoverUploading) return
 
-                val putRequest = Request.Builder()
-                    .url(urlResp.upload_url)
-                    .put(file.asRequestBody(contentType.toMediaType()))
-                    .build()
-                withContext(Dispatchers.IO) {
-                    okHttp.newCall(putRequest).execute().use { resp ->
-                        if (!resp.isSuccessful) error("Upload failed: ${resp.code}")
+        val ctx = _state.value.context
+        if (ctx == null) {
+            _state.update { it.copy(handoverError = "Convoy context is unavailable. Return to the dashboard and refresh.") }
+            return
+        }
+        if (!file.isFile || !file.canRead() || file.length() <= 0L) {
+            _state.update { it.copy(handoverError = "The captured form is missing or unreadable. Retake the photo and try again.") }
+            return
+        }
+
+        _state.update {
+            it.copy(
+                handoverUploading = true,
+                handoverStage = "Preparing secure upload…",
+                handoverError = null,
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val response = withTimeout(HANDOVER_OPERATION_TIMEOUT_MS) {
+                    val contentType = if (file.extension.equals("pdf", ignoreCase = true)) "application/pdf" else "image/jpeg"
+                    _state.update { it.copy(handoverStage = "Requesting secure upload link…") }
+                    val urlResp = api.cfoHandoverUploadUrl(
+                        deviceToken,
+                        HandoverUploadUrlRequest(ctx.convoy.id, contentType),
+                    )
+
+                    _state.update { it.copy(handoverStage = "Uploading signed form securely…") }
+                    val putRequest = Request.Builder()
+                        .url(urlResp.upload_url)
+                        .put(file.asRequestBody(contentType.toMediaType()))
+                        .build()
+                    withContext(Dispatchers.IO) {
+                        storageUploadClient.newCall(putRequest).execute().use { resp ->
+                            if (!resp.isSuccessful) error("Secure storage upload failed (HTTP ${resp.code}).")
+                        }
                     }
+
+                    _state.update { it.copy(handoverStage = "Finalising convoy handover…") }
+                    api.cfoHandoverCommit(
+                        deviceToken,
+                        HandoverCommitRequest(ctx.convoy.id, urlResp.key, urlResp.public_url, notes),
+                    )
                 }
 
-                api.cfoHandoverCommit(
-                    deviceToken,
-                    HandoverCommitRequest(ctx.convoy.id, urlResp.key, urlResp.public_url, notes)
-                )
-            }.onSuccess { resp ->
-                _state.update { it.copy(handoverUploading = false, convoyEnded = resp.convoy_completed) }
-            }.onFailure { e ->
-                Log.w("CfoViewModel", "Handover upload failed: ${e.message}")
-                _state.update { it.copy(handoverUploading = false, handoverError = e.message ?: "Handover upload failed") }
+                if (response.convoy_completed) {
+                    _state.update { it.copy(convoyEnded = true, handoverError = null) }
+                } else {
+                    // A concurrent completion may win the status update after the
+                    // handover record has been saved. Do not blindly invite resubmission.
+                    _state.update {
+                        it.copy(handoverError = "The form was saved, but convoy completion was not confirmed. Return to the dashboard and refresh before retrying.")
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                val stage = _state.value.handoverStage
+                Log.w("CfoViewModel", "Handover timed out at stage=$stage")
+                val message = if (stage == "Finalising convoy handover…") {
+                    "The final handover response timed out. It may already be saved; return to the dashboard and refresh before retrying."
+                } else {
+                    "Handover timed out during ${stage ?: "upload"}. Check the connection and retry."
+                }
+                _state.update { it.copy(handoverError = message) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val stage = _state.value.handoverStage
+                Log.w("CfoViewModel", "Handover failed at stage=$stage: ${e.message}")
+                val message = if (stage == "Finalising convoy handover…") {
+                    "Could not confirm the final handover response. The server may have saved it; return to the dashboard and refresh before retrying."
+                } else {
+                    "${stage ?: "Handover upload"} failed: ${e.message ?: "Please try again."}"
+                }
+                _state.update { it.copy(handoverError = message) }
+            } finally {
+                _state.update { it.copy(handoverUploading = false, handoverStage = null) }
             }
         }
     }
-
     private fun refreshPendingCounts() {
         viewModelScope.launch {
             val ownerUserId = _state.value.loggedInUser?.user_id?.takeIf { it.isNotBlank() } ?: return@launch
