@@ -6418,6 +6418,26 @@
         }
       }
     },
+    "/download/catalog.json": {
+      "get": {
+        "operationId": "get_download_catalog_json",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/download/release.js": {
+      "get": {
+        "operationId": "get_download_release_js",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/download,/get": {
       "get": {
         "operationId": "get_download_get",
