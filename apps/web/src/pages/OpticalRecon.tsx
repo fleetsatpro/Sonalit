@@ -244,10 +244,29 @@ export default function OpticalRecon() {
     markerRef.current?.remove()
   }
 
+  const openArchiveScene = (scene: OpticalCandidate) => {
+    if (scene.render?.source !== 'open-cities') return
+    setSelectedId(scene.id)
+    setTileError(null)
+    setMapMode('archive')
+    const bbox = scene.footprintBbox
+    if (mapRef.current && Array.isArray(bbox) && bbox.length === 4) {
+      mapRef.current.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
+        padding: 48,
+        maxZoom: 15,
+        duration: 700,
+      })
+    }
+  }
+
   const selectCandidate = (candidate: OpticalCandidate) => {
+    if (candidate.render?.source === 'open-cities') {
+      openArchiveScene(candidate)
+      return
+    }
     setSelectedId(candidate.id)
     if (!candidate.render) return
-    setMapMode(candidate.render.source === 'oam' ? 'precision' : candidate.render.source === 'open-cities' ? 'archive' : 'latest')
+    setMapMode(candidate.render.source === 'oam' ? 'precision' : 'latest')
   }
 
   const returnNormal = () => {
@@ -301,7 +320,7 @@ export default function OpticalRecon() {
           </button>
           <button type="button" className={mapMode === 'archive' ? 'active precision' : 'precision'} onClick={() => {
             const scene = recon?.openCitiesScenes?.[0]
-            if (scene?.render) { setSelectedId(scene.id); setMapMode('archive'); setTileError(null) }
+            if (scene?.render) openArchiveScene(scene)
           }} disabled={!recon?.openCitiesScenes?.length} title={recon?.openCitiesScenes?.length ? 'View a verified historical Open Cities drone COG in the current AOI' : 'No indexed Open Cities archive footprint intersects this AOI'}>
             <Database size={13} /> OPEN CITIES ARCHIVE{recon?.openCitiesScenes?.length ? ' · ' + recon.openCitiesScenes.length : ''}
           </button>
@@ -499,7 +518,7 @@ export default function OpticalRecon() {
 
           {recon?.openCitiesScenes?.length ? <section className="ore-panel">
             <div className="ore-panel-title compact"><div><span>HISTORICAL DETAIL</span><strong>OPEN CITIES ARCHIVE</strong></div><Database size={14} /></div>
-            {recon.openCitiesScenes.map(scene => <button type="button" key={scene.id} className={'ore-log-row ' + (selectedId === scene.id ? 'selected' : '')} onClick={() => selectCandidate(scene)}>
+            {recon.openCitiesScenes.map(scene => <button type="button" key={scene.id} className={'ore-log-row ' + (selectedId === scene.id ? 'selected' : '')} onClick={() => openArchiveScene(scene)}>
               <div><strong>{scene.mission}</strong><span>{scene.date} · {scene.licence}</span></div>
               <div className="ore-log-meta"><span>GSD —</span><ChevronRight size={12} /></div>
             </button>)}

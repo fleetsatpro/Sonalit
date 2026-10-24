@@ -210,14 +210,14 @@ describe('free optical reconnaissance gateway', () => {
       requests.push({ url: String(url), init });
       return { ok: true, headers: { get: () => 'image/png' }, arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer };
     });
-    const first = await getOpticalTile({ source: 'open-cities', itemId: 'dar-5fe6fb', date: '2017-11-01', z: 18, x: 159616, y: 136032 });
+    const first = await getOpticalTile({ source: 'open-cities', itemId: 'dar-5fe6fb', date: '2017-11-01', z: 18, x: 159623, y: 136027 });
     expect(first.contentType).toBe('image/png');
     expect(first.licence).toBe('ODbL-1.0');
     expect(first.sourceMetadataUrl).toContain('/train_tier_2/dar/5fe6fb/5fe6fb.json');
     expect(requests).toHaveLength(1);
     const requestUrl = new URL(requests[0].url);
     expect(requestUrl.origin).toBe('https://tiler.example.test');
-    expect(requestUrl.pathname).toBe('/cog/tiles/WebMercatorQuad/18/159616/136032.png');
+    expect(requestUrl.pathname).toBe('/cog/tiles/WebMercatorQuad/18/159623/136027.png');
     expect(requestUrl.searchParams.get('url')).toBe('https://data.source.coop/open-cities/ai-challenge/train_tier_2/dar/5fe6fb/5fe6fb.tif');
     expect(requestUrl.searchParams.getAll('bidx')).toEqual(['1', '2', '3']);
     global.fetch = jest.fn();
