@@ -3178,18 +3178,9 @@ router.get('/apk/info', async (req, res) => {
     });
   } catch (err) {
     logger.warn(`APK info unavailable (${err.message})`);
-    // Best-effort version from the stable redirect (no API, no rate limit): the
-    // releases/latest page 302s to /releases/tag/guardian-vN.
-    let version = null;
-    try {
-      const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
-      const r = await fetch(`https://github.com/${repo}/releases/latest`, {
-        method: 'HEAD', redirect: 'manual', headers: { 'User-Agent': 'Sonalit-Guardian' },
-      });
-      const loc = r.headers.get('location') || '';
-      const m = loc.match(/\/tag\/([^/?#]+)/);
-      if (m) version = decodeURIComponent(m[1]);
-    } catch { /* leave version null */ }
+    // Do not infer Guardian's release ID from the repository-wide latest tag:
+    // a newer Sonalit Field/Handover/operator release may have been published.
+    // A failed app-specific lookup must be represented as unconfirmed metadata.
     res.set('Cache-Control', 'no-store');
     res.status(200).json({
       version, name: null, published_at: null, size: null, notes: null,
