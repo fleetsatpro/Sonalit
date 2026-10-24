@@ -1,6 +1,7 @@
 'use strict';
 
 const {
+  GPS_LIVE_AFTER_SECONDS,
   GPS_STALE_AFTER_SECONDS,
   GPS_FUTURE_TOLERANCE_MS,
   routePointList,
@@ -67,6 +68,23 @@ describe('calculateTruckRouteProgress', () => {
     const result = calculateTruckRouteProgress(base, null, NOW);
     expect(result.state).toBe('no_route');
     expect(result.progress_pct).toBeNull();
+  });
+
+  test('uses Sonalit freshness thresholds: live through 45 seconds, delayed through 5 minutes', () => {
+    const live = calculateTruckRouteProgress({
+      ...base, last_fix_at: new Date(NOW - GPS_LIVE_AFTER_SECONDS * 1000).toISOString(),
+    }, ROUTE, NOW);
+    const delayed = calculateTruckRouteProgress({
+      ...base, last_fix_at: new Date(NOW - (GPS_LIVE_AFTER_SECONDS + 1) * 1000).toISOString(),
+    }, ROUTE, NOW);
+    const staleBoundary = calculateTruckRouteProgress({
+      ...base, last_fix_at: new Date(NOW - GPS_STALE_AFTER_SECONDS * 1000).toISOString(),
+    }, ROUTE, NOW);
+
+    expect(live.state).toBe('live');
+    expect(delayed.state).toBe('delayed');
+    expect(delayed.progress_pct).not.toBeNull();
+    expect(staleBoundary.state).toBe('delayed');
   });
 
   test('flags stale GPS and retains measured position without calling it live', () => {
