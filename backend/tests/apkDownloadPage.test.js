@@ -14,9 +14,6 @@ describe("Sonalit download hub", () => {
     expect(html).toContain('data-filter="field"');
     expect(html).toContain('data-filter="handover"');
     expect(html).toContain('data-filter="safety"');
-    expect(html).toContain("Sonalit Field");
-    expect(html).toContain("Sonalit Handover");
-    expect(html).toContain("Sonalit Guardian");
     expect(html).toContain("Official release channel");
     expect(html).toContain('<script src="/download/release.js" defer></script>');
     expect(html).not.toMatch(/<script>[\s\S]*?<\/script>/i);
@@ -25,6 +22,9 @@ describe("Sonalit download hub", () => {
   test("download script is valid JavaScript and renders unknown releases safely", () => {
     const script = renderDownloadScript();
     expect(() => new vm.Script(script)).not.toThrow();
+    expect(script).toContain("Sonalit Field");
+    expect(script).toContain("Sonalit Handover");
+    expect(script).toContain("Sonalit Guardian");
     expect(script).toContain("Release check required");
     expect(script).toContain("No published APK available");
     expect(script).toContain('var catalogUrl = "/download/catalog.json"');
