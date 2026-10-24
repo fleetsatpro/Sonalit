@@ -31,6 +31,7 @@ describe("Sonalit download hub", () => {
     expect(script).toContain('catalogUrl + "?refresh=1"');
     expect(script).toContain('querySelectorAll(".filter-btn[data-filter]")');
     expect(script).toContain('hostname === "github.com"');
+    expect(script).toContain('/fleetsatpro/Sonalit/releases/download/');
   });
 
   test("reads APK metadata embedded in release notes and removes the comment", () => {
