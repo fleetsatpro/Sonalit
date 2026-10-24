@@ -128,6 +128,233 @@ jobs:
             echo "name=SonalitGuardian-debug" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Extract APK release metadata
+        id: apkmeta
+        env:
+          APK_PATH: ${{ steps.apk.outputs.path }}
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          if [ ! -x "$AAPT" ]; then
+            echo "::error::Android aapt binary not found at $AAPT"
+            exit 1
+          fi
+          BADGING="$("$AAPT" dump badging "$APK_PATH")"
+          PACKAGE_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          VERSION_CODE=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p")
+          VERSION_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p")
+          MIN_SDK=$(printf '%s\n' "$BADGING" | sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p")
+          SHA256=$(sha256sum "$APK_PATH" | cut -d ' ' -f 1)
+          for field in PACKAGE_NAME VERSION_CODE VERSION_NAME MIN_SDK SHA256; do
+            if [ -z "${!field}" ]; then
+              echo "::error::Missing APK metadata field: $field"
+              exit 1
+            fi
+          done
+          if ! printf '%s' "$SHA256" | grep -Eq '^[a-fA-F0-9]{64}
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 7
+
+      # Publish the APK to Cloudflare R2 (the same storage that already holds
+      # capture photos) so /download links to it directly — no GitHub release in
+      # the download path. The R2 credentials are read straight from Railway
+      # (where the backend already holds them) using RAILWAY_TOKEN, so there are
+      # NO duplicate GitHub secrets to maintain. Skips cleanly if they can't be
+      # resolved, in which case the Railway step below falls back to the release.
+      - name: Publish APK to Cloudflare R2
+        id: r2
+        if: github.ref == 'refs/heads/main' && github.event.inputs.upload_only != 'true'
+        continue-on-error: true
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          # Most robust: R2 creds straight from GitHub secrets. If these are set
+          # the Railway lookup below is skipped entirely.
+          GH_R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          GH_R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          GH_R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          GH_R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          GH_R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+        run: |
+          # Path 1 — R2 creds direct from GitHub secrets (preferred).
+          R2_ACCOUNT_ID="$GH_R2_ACCOUNT_ID"; R2_ACCESS_KEY="$GH_R2_ACCESS_KEY"
+          R2_SECRET_KEY="$GH_R2_SECRET_KEY"; R2_BUCKET="$GH_R2_BUCKET"; R2_PUBLIC_URL="$GH_R2_PUBLIC_URL"
+
+          # Path 2 — fall back to reading them off Railway via RAILWAY_TOKEN.
+          if [ -z "$R2_ACCESS_KEY" ] || [ -z "$R2_BUCKET" ] || [ -z "$R2_PUBLIC_URL" ]; then
+            if [ -z "$RAILWAY_TOKEN" ]; then
+              echo "::warning title=APK not published::No R2 creds — set R2_* GitHub secrets, or RAILWAY_TOKEN. get.sonalit.com can't serve the APK until one is present."
+              exit 0
+            fi
+            echo "R2_* GitHub secrets not set — resolving R2 creds from Railway via RAILWAY_TOKEN."
+            # Discover project / service / production-environment IDs.
+            #
+            # An expired RAILWAY_TOKEN answers 200 with {"errors":[...],"data":null},
+            # so `.…edges[]` iterates over null and jq exits 5. Under `bash -e` that
+            # kills the step before the guard below can print its warning, and
+            # continue-on-error then reports the step green. Null-safe extraction
+            # (same shape as pegagent-release.yml) keeps the guard reachable.
+            DISCOVER=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"query":"{ me { projects { edges { node { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } } } }"}') || true
+            PROJECT_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.id' 2>/dev/null || echo "")
+            SERVICE_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.services.edges[0].node.id' 2>/dev/null || echo "")
+            ENV_ID=$(echo "$DISCOVER" | jq -r '[.data.me.projects.edges[0].node.environments.edges[] | select(.node.name == "production")] | .[0].node.id' 2>/dev/null || echo "")
+            if [ "$ENV_ID" = "null" ] || [ -z "$ENV_ID" ]; then
+              ENV_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.environments.edges[0].node.id' 2>/dev/null || echo "")
+            fi
+            if [ "$PROJECT_ID" = "null" ] || [ -z "$PROJECT_ID" ]; then
+              echo "::warning title=APK not published::RAILWAY_TOKEN set but could not discover Railway project (bad/expired token?). Add R2_* GitHub secrets instead."
+              exit 0
+            fi
+            # Read the service's resolved env vars (includes the R2_* set).
+            PAYLOAD=$(jq -n --arg p "$PROJECT_ID" --arg e "$ENV_ID" --arg s "$SERVICE_ID" \
+              '{query:"query($p:String!,$e:String!,$s:String!){ variables(projectId:$p, environmentId:$e, serviceId:$s) }", variables:{p:$p,e:$e,s:$s}}')
+            VARS=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD")
+            R2_ACCOUNT_ID=$(echo "$VARS" | jq -r '.data.variables.R2_ACCOUNT_ID // empty')
+            R2_ACCESS_KEY=$(echo "$VARS" | jq -r '.data.variables.R2_ACCESS_KEY // empty')
+            R2_SECRET_KEY=$(echo "$VARS" | jq -r '.data.variables.R2_SECRET_KEY // empty')
+            R2_BUCKET=$(echo "$VARS" | jq -r '.data.variables.R2_BUCKET // empty')
+            R2_PUBLIC_URL=$(echo "$VARS" | jq -r '.data.variables.R2_PUBLIC_URL // empty')
+          fi
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY" ] || [ -z "$R2_BUCKET" ] || [ -z "$R2_PUBLIC_URL" ]; then
+            echo "::warning title=APK not published::R2 creds unresolved (Railway vars sealed?). Add R2_ACCOUNT_ID/ACCESS_KEY/SECRET_KEY/BUCKET/PUBLIC_URL as GitHub secrets."
+            exit 0
+          fi
+          echo "Resolved R2 creds — publishing APK."
+          # Keep the fetched secrets out of the logs.
+          echo "::add-mask::$R2_ACCOUNT_ID"; echo "::add-mask::$R2_ACCESS_KEY"; echo "::add-mask::$R2_SECRET_KEY"
+          APK="${{ steps.apk.outputs.path }}"
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_KEY"
+          export AWS_DEFAULT_REGION=auto
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          BASE="${R2_PUBLIC_URL%/}"
+          # Stable "latest" object the download link always points at, plus a
+          # versioned archive copy for history.
+          aws s3 cp "$APK" "s3://${R2_BUCKET}/apk/sonalit-guardian.apk" \
+            --endpoint-url "$ENDPOINT" \
+            --content-type application/vnd.android.package-archive \
+            --cache-control "public, max-age=60"
+          aws s3 cp "$APK" "s3://${R2_BUCKET}/apk/sonalit-guardian-v${{ github.run_number }}.apk" \
+            --endpoint-url "$ENDPOINT" \
+            --content-type application/vnd.android.package-archive
+          echo "apk_url=${BASE}/apk/sonalit-guardian.apk" >> "$GITHUB_OUTPUT"
+          echo "Published APK → ${BASE}/apk/sonalit-guardian.apk"
+
+      - name: Create Release (on main push)
+        id: release
+        if: github.ref == 'refs/heads/main' && github.event.inputs.upload_only != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: guardian-v${{ github.run_number }}
+          name: Sonalit Guardian ${{ steps.apkmeta.outputs.version_name }} (release ${{ github.run_number }})
+          body: |
+            Sonalit Guardian APK — auto-built from commit ${{ github.sha }}
+
+            **Android app version:** ${{ steps.apkmeta.outputs.version_name }} (version code ${{ steps.apkmeta.outputs.version_code }}).
+            **Package ID:** ${{ steps.apkmeta.outputs.package_name }}.
+            **Minimum Android API:** ${{ steps.apkmeta.outputs.min_sdk }}+.
+            **SHA-256:** ${{ steps.apkmeta.outputs.sha256 }}.
+
+            **Install**: Download and open on a compatible Android device (enable "Install unknown apps" in settings).
+            **Enroll**: Open the app and enter your badge number (operator code) — device appears as Pending in the Guardian dashboard for approval.
+
+            <!-- SONALIT_APK_METADATA {"version_name":"${{ steps.apkmeta.outputs.version_name }}","version_code":${{ steps.apkmeta.outputs.version_code }},"package_name":"${{ steps.apkmeta.outputs.package_name }}","min_sdk":${{ steps.apkmeta.outputs.min_sdk }},"sha256":"${{ steps.apkmeta.outputs.sha256 }}"} -->
+          files: ${{ steps.apk.outputs.path }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update APK_REDIRECT_URL on Railway
+        if: github.ref == 'refs/heads/main' && github.event.inputs.upload_only != 'true'
+        continue-on-error: true
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          # Prefer the R2-hosted copy (off GitHub); fall back to the release
+          # asset if R2 wasn't configured/published this run.
+          APK_URL="${{ steps.r2.outputs.apk_url }}"
+          if [ -z "$APK_URL" ]; then
+            APK_URL="https://github.com/fleetsatpro/Sonalit/releases/download/guardian-v${{ github.run_number }}/$(basename ${{ steps.apk.outputs.path }})"
+          fi
+          echo "Setting APK_REDIRECT_URL → $APK_URL"
+
+          # Null-safe for the same reason as the R2 step above: an expired token
+          # returns data:null, and an unguarded `.edges[]` exits 5 under `bash -e`
+          # before the guard below runs.
+          DISCOVER=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"{ me { projects { edges { node { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } } } }"}') || true
+
+          echo "Discovery response: $DISCOVER"
+
+          PROJECT_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.id' 2>/dev/null || echo "")
+          SERVICE_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.services.edges[0].node.id' 2>/dev/null || echo "")
+          ENV_ID=$(echo "$DISCOVER" | jq -r '[.data.me.projects.edges[0].node.environments.edges[] | select(.node.name == "production")] | .[0].node.id' 2>/dev/null || echo "")
+
+          if [ "$ENV_ID" = "null" ] || [ -z "$ENV_ID" ]; then
+            ENV_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.environments.edges[0].node.id' 2>/dev/null || echo "")
+          fi
+
+          if [ "$PROJECT_ID" = "null" ] || [ -z "$PROJECT_ID" ]; then
+            # This step is continue-on-error, so a bare echo is invisible in the
+            # run summary — the reason nobody noticed the download link going
+            # stale. An ::error annotation shows up whether or not the step is
+            # allowed to fail.
+            echo "::error title=APK redirect not updated::Could not discover Railway IDs — check the RAILWAY_TOKEN secret (the API answered Not Authorized). get.sonalit.com will keep serving the previous APK."
+            exit 1
+          fi
+
+          cat > /tmp/gql.json <<EOF
+          {
+            "query": "mutation variableUpsert(\$input: VariableUpsertInput!) { variableUpsert(input: \$input) }",
+            "variables": {
+              "input": {
+                "projectId": "$PROJECT_ID",
+                "environmentId": "$ENV_ID",
+                "serviceId": "$SERVICE_ID",
+                "name": "APK_REDIRECT_URL",
+                "value": "$APK_URL"
+              }
+            }
+          }
+          EOF
+
+          RESPONSE=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/gql.json)
+
+          echo "Upsert response: $RESPONSE"
+
+          if echo "$RESPONSE" | grep -q '"errors"'; then
+            echo "ERROR: Railway API returned errors"
+            exit 1
+          fi
+
+          echo "APK_REDIRECT_URL updated successfully on Railway"
+; then
+            echo "::error::APK SHA-256 did not validate"
+            exit 1
+          fi
+          {
+            echo "package_name=$PACKAGE_NAME"
+            echo "version_code=$VERSION_CODE"
+            echo "version_name=$VERSION_NAME"
+            echo "min_sdk=$MIN_SDK"
+            echo "sha256=$SHA256"
+          } >> "$GITHUB_OUTPUT"
+          echo "APK metadata: $PACKAGE_NAME v$VERSION_NAME (code $VERSION_CODE), min SDK $MIN_SDK"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         continue-on-error: true
