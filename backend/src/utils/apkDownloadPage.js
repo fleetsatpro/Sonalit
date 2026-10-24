@@ -1,471 +1,231 @@
 "use strict";
 
 function renderDownloadPage() {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#080d15">
-  <meta name="description" content="Official Sonalit Guardian Android download. Check the app version and release details before installing.">
-  <meta name="robots" content="noindex,nofollow">
-  <title>Download Sonalit Guardian for Android | Sonalit</title>
-  <style>
-    :root {
-      color-scheme: dark;
-      --bg: #080d15;
-      --panel: rgba(17, 25, 38, .88);
-      --panel-soft: rgba(255,255,255,.035);
-      --line: rgba(192, 208, 229, .13);
-      --text: #f3f6fb;
-      --muted: #a1aec0;
-      --quiet: #748398;
-      --gold: #f1b955;
-      --mint: #63e6b1;
-      --blue: #90c8ff;
-      --warning: #f5c56f;
-    }
-    * { box-sizing: border-box; }
-    html { min-width: 320px; background: var(--bg); }
-    body {
-      margin: 0; min-height: 100vh; padding: clamp(18px, 4.2vw, 46px);
-      color: var(--text);
-      background:
-        radial-gradient(ellipse at 8% 0%, rgba(39, 86, 133, .28), transparent 36rem),
-        radial-gradient(ellipse at 95% 20%, rgba(196, 137, 46, .11), transparent 34rem),
-        linear-gradient(155deg, #0a111c 0%, #080d15 54%, #0b121c 100%);
-      font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      -webkit-font-smoothing: antialiased;
-    }
-    body::before {
-      content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .13;
-      background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
-      background-size: 48px 48px;
-      mask-image: linear-gradient(to bottom, black, transparent 78%);
-    }
-    button, a { font: inherit; }
-    a { color: inherit; }
-    .page { position: relative; width: 100%; max-width: 1080px; margin: 0 auto; }
-    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: clamp(36px, 6vw, 70px); }
-    .brand { display: inline-flex; align-items: center; gap: 12px; min-width: 0; text-decoration: none; }
-    .brand-mark {
-      display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 42px;
-      border-radius: 13px; color: #10151c; background: linear-gradient(140deg, #ffe1a0, #d99a37);
-      box-shadow: 0 8px 28px rgba(217,154,55,.19);
-    }
-    .brand-word { font-size: 14px; font-weight: 850; letter-spacing: .22em; line-height: 1.2; }
-    .brand-caption { margin-top: 5px; color: var(--quiet); font-size: 10px; font-weight: 750; letter-spacing: .16em; }
-    .distribution-note { display: inline-flex; align-items: center; gap: 9px; color: #aebacc; font-size: 12px; }
-    .distribution-note svg { color: var(--mint); flex: 0 0 auto; }
-    .main-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, .92fr); align-items: center; gap: clamp(28px, 5vw, 64px); }
-    .eyebrow { display: flex; align-items: center; gap: 10px; color: var(--gold); font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
-    .eyebrow-line { width: 23px; height: 1px; background: currentColor; opacity: .85; }
-    h1 { max-width: 580px; margin: 20px 0 17px; font-size: clamp(38px, 5.2vw, 63px); font-weight: 780; letter-spacing: -.055em; line-height: 1.03; }
-    h1 span { color: #92caff; }
-    .intro { max-width: 480px; margin: 0; color: var(--muted); font-size: clamp(15px, 1.65vw, 17px); line-height: 1.8; }
-    .app-identity {
-      display: flex; align-items: center; gap: 16px; margin-top: 31px; padding: 17px;
-      border: 1px solid var(--line); border-radius: 18px;
-      background: linear-gradient(125deg, rgba(255,255,255,.06), rgba(255,255,255,.018));
-      box-shadow: inset 0 1px rgba(255,255,255,.035);
-    }
-    .app-icon {
-      display: grid; place-items: center; width: 62px; height: 62px; flex: 0 0 62px;
-      border: 1px solid rgba(241,185,85,.3); border-radius: 18px;
-      color: var(--gold); background: linear-gradient(145deg, rgba(241,185,85,.14), rgba(241,185,85,.045));
-    }
-    .app-title { margin: 0; font-size: 19px; font-weight: 760; letter-spacing: -.025em; }
-    .app-subtitle { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-    .package-id { margin-top: 7px; color: #788ba2; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
-    .apk-label { align-self: flex-start; margin-left: auto; padding: 5px 8px; border: 1px solid rgba(144,200,255,.22); border-radius: 8px; color: var(--blue); font-size: 10px; font-weight: 850; letter-spacing: .1em; }
-    .identity-note { display: flex; align-items: flex-start; gap: 10px; max-width: 490px; margin: 18px 0 0; color: var(--quiet); font-size: 12px; }
-    .identity-note svg { margin-top: 2px; flex: 0 0 auto; color: var(--mint); }
-    .release-card {
-      padding: clamp(20px, 3vw, 30px); border: 1px solid rgba(186,205,229,.17); border-radius: 24px;
-      background: linear-gradient(155deg, rgba(19,29,43,.97), rgba(12,19,29,.97));
-      box-shadow: 0 28px 80px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.045);
-    }
-    .release-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 21px; border-bottom: 1px solid var(--line); }
-    .release-head .eyebrow { color: #9caec2; font-size: 10px; letter-spacing: .15em; }
-    .status-pill { display: inline-flex; align-items: center; gap: 7px; max-width: 58%; padding: 6px 9px; border: 1px solid rgba(192,208,229,.15); border-radius: 999px; color: #c2ccd9; background: rgba(255,255,255,.035); font-size: 10px; font-weight: 800; line-height: 1.3; }
-    .status-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: #9aa7b7; }
-    .status-pill.is-live { color: var(--mint); border-color: rgba(99,230,177,.28); background: rgba(99,230,177,.075); }
-    .status-pill.is-live .status-dot { background: var(--mint); box-shadow: 0 0 12px rgba(99,230,177,.65); }
-    .status-pill.is-warning { color: var(--warning); border-color: rgba(245,197,111,.3); background: rgba(245,197,111,.065); }
-    .status-pill.is-warning .status-dot { background: var(--warning); }
-    .version-block { padding: 25px 0 23px; }
-    .field-label { color: #8c9bb0; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
-    .app-version { margin-top: 7px; font-size: clamp(30px, 4vw, 43px); font-weight: 780; letter-spacing: -.045em; line-height: 1.1; overflow-wrap: anywhere; }
-    .version-code { margin-top: 7px; color: #a0afc2; font-size: 12px; }
-    .release-id { display: flex; align-items: baseline; gap: 7px; margin-top: 13px; color: #8494a8; font-size: 12px; }
-    .release-id code { padding: 3px 7px; border: 1px solid rgba(192,208,229,.14); border-radius: 6px; color: #d2dbe6; background: rgba(255,255,255,.03); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 22px; border-top: 1px solid var(--line); }
-    .meta-item { min-width: 0; padding: 15px 12px 14px 0; border-bottom: 1px solid var(--line); }
-    .meta-item:nth-child(2n) { padding-left: 12px; padding-right: 0; border-left: 1px solid var(--line); }
-    .meta-item span { display: block; color: var(--quiet); font-size: 11px; }
-    .meta-item strong { display: block; margin-top: 4px; color: #e0e7f0; font-size: 12px; font-weight: 670; overflow-wrap: anywhere; }
-    .meta-item strong.mono { font: 10px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .download-button {
-      display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 58px;
-      padding: 15px 18px; border: 0; border-radius: 14px; color: #17130b; background: linear-gradient(105deg, #ffdc91, #f1b955 64%, #d99936);
-      box-shadow: 0 10px 30px rgba(217,153,54,.18), inset 0 1px rgba(255,255,255,.48);
-      text-align: center; text-decoration: none; font-size: 14px; font-weight: 850; transition: transform .18s ease, filter .18s ease, box-shadow .18s ease;
-    }
-    .download-button:hover { filter: brightness(1.05); transform: translateY(-1px); box-shadow: 0 14px 34px rgba(217,153,54,.25); }
-    .download-button:active { transform: translateY(1px); }
-    .download-button:focus-visible, a:focus-visible, button:focus-visible, summary:focus-visible { outline: 3px solid #92caff; outline-offset: 3px; }
-    .download-button svg { flex: 0 0 auto; }
-    .download-caption { display: flex; justify-content: center; align-items: center; gap: 7px; margin-top: 12px; color: var(--quiet); font-size: 10px; text-align: center; }
-    .download-caption svg { color: var(--mint); flex: 0 0 auto; }
-    .release-warning { margin-top: 15px; padding: 12px 13px; border: 1px solid rgba(245,197,111,.22); border-radius: 11px; color: #e3c891; background: rgba(245,197,111,.06); font-size: 12px; line-height: 1.65; }
-    .release-warning[hidden], .verification[hidden], .release-notes[hidden] { display: none; }
-    .secondary-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 15px; color: #73869c; font-size: 11px; }
-    .text-button { padding: 5px 0; border: 0; color: #a9c6e6; background: transparent; cursor: pointer; font-size: 11px; font-weight: 700; }
-    .text-button:hover { color: white; }
-    .text-button:disabled { cursor: wait; opacity: .6; }
-    .info-sections { display: grid; grid-template-columns: .82fr 1.18fr; gap: clamp(22px, 4vw, 46px); margin-top: clamp(38px, 6vw, 68px); padding-top: 27px; border-top: 1px solid var(--line); }
-    .section-title { margin: 0; font-size: 15px; font-weight: 750; letter-spacing: -.02em; }
-    .section-copy { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
-    .steps { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-top: 17px; }
-    .step { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.022); }
-    .step-no { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; color: var(--gold); background: rgba(241,185,85,.1); font-size: 10px; font-weight: 850; }
-    .step strong { display: block; margin-top: 10px; font-size: 12px; }
-    .step p { margin: 5px 0 0; color: var(--quiet); font-size: 11px; line-height: 1.65; }
-    .release-notes, .verification { margin-top: 14px; padding: 13px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-    details summary { width: fit-content; color: #a9c6e6; cursor: pointer; font-size: 12px; font-weight: 700; }
-    .notes-body { margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #aab7c8; font-size: 12px; line-height: 1.8; }
-    .verification-row { display: flex; align-items: center; gap: 10px; margin-top: 11px; }
-    .checksum { min-width: 0; flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: #aebed1; background: rgba(0,0,0,.2); font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .copy-button { padding: 9px 11px; border: 1px solid rgba(144,200,255,.22); border-radius: 8px; color: #bcdcff; background: rgba(144,200,255,.07); cursor: pointer; font-size: 11px; font-weight: 700; }
-    .copy-status { min-height: 18px; margin-top: 6px; color: var(--mint); font-size: 11px; }
-    .footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 38px; padding-top: 17px; border-top: 1px solid rgba(192,208,229,.09); color: #69798e; font-size: 10px; }
-    .footer a { color: #a4b8cf; text-decoration: none; }
-    .footer a:hover { text-decoration: underline; }
-    @media (max-width: 800px) {
-      body { padding: 23px 18px 25px; }
-      .topbar { margin-bottom: 36px; }
-      .main-grid { grid-template-columns: minmax(0,1fr); gap: 29px; }
-      h1 { max-width: 600px; font-size: clamp(39px, 9.3vw, 58px); }
-      .intro { max-width: 600px; }
-      .release-card { max-width: none; }
-      .info-sections { grid-template-columns: minmax(0,1fr); gap: 24px; margin-top: 34px; }
-      .steps { gap: 9px; }
-    }
-    @media (max-width: 480px) {
-      body { padding: 18px 14px 22px; }
-      .topbar { align-items: flex-start; margin-bottom: 32px; }
-      .distribution-note { max-width: 130px; align-items: flex-start; font-size: 10px; line-height: 1.5; }
-      .brand-mark { width: 38px; height: 38px; flex-basis: 38px; }
-      .brand { gap: 9px; }
-      .brand-word { font-size: 12px; }
-      .brand-caption { font-size: 8px; letter-spacing: .12em; }
-      .app-identity { gap: 12px; padding: 13px; }
-      .app-icon { width: 51px; height: 51px; flex-basis: 51px; border-radius: 15px; }
-      .app-title { font-size: 16px; }
-      .app-subtitle { font-size: 12px; }
-      .apk-label { padding: 4px 6px; font-size: 9px; }
-      .release-card { padding: 19px 16px; border-radius: 19px; }
-      .status-pill { max-width: 60%; font-size: 9px; }
-      .meta-item strong { font-size: 11px; }
-      .steps { grid-template-columns: minmax(0,1fr); }
-      .step { display: grid; grid-template-columns: 26px minmax(0,1fr); column-gap: 10px; align-items: start; padding: 12px; }
-      .step-no { grid-row: span 2; }
-      .step strong { margin-top: 0; }
-      .step p { margin-top: 3px; }
-      .secondary-actions { align-items: flex-start; }
-      .footer { flex-direction: column; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
-    }
-  </style>
-  <script src="/download/release.js" defer></script>
-</head>
-<body>
-  <div class="page">
-    <header class="topbar">
-      <a class="brand" href="https://sonalit.com" aria-label="Sonalit official website">
-        <span class="brand-mark" aria-hidden="true">
-          <svg width="25" height="25" viewBox="0 0 24 24" fill="none">
-            <path d="M19.5 5.5C15.5 4.1 8.2 4.4 5.2 8.1 2.1 12 5.9 15.7 9.7 14.1c2.8-1.2 3.5-4.5 1.7-5.8-1.3-1.3-3.5-.8-4.1.7" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
-            <path d="M4.5 18.5c4.1 1.2 10.9.9 14-3.2 2.5-3.3.3-6.1-2.3-6.1" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
-          </svg>
-        </span>
-        <span><span class="brand-word">SONALIT</span><span class="brand-caption" style="display:block">OFFICIAL APP DISTRIBUTION</span></span>
-      </a>
-      <div class="distribution-note">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 19 6v5.3c0 4.4-2.9 7.8-7 9.7-4.1-1.9-7-5.3-7-9.7V6l7-3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m8.8 12 2.1 2.1 4.3-4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Official Sonalit download channel</span>
-      </div>
-    </header>
-
-    <main>
-      <div class="main-grid">
-        <section aria-labelledby="page-title">
-          <div class="eyebrow"><span class="eyebrow-line"></span> SONALIT GUARDIAN / ANDROID</div>
-          <h1 id="page-title">The right app.<br><span>The right release.</span></h1>
-          <p class="intro">Get the official field officer app with the app identity, version and release status clearly shown before you install.</p>
-
-          <div class="app-identity">
-            <div class="app-icon" aria-hidden="true">
-              <svg width="31" height="31" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2.8 20 6v5.1c0 4.8-3.3 8.3-8 10.1-4.7-1.8-8-5.3-8-10.1V6l8-3.2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                <path d="M8.1 15.6V8.4h2.1l3.6 4.1V8.4h2.1v7.2h-2l-3.7-4.2v4.2H8.1Z" fill="currentColor"/>
-              </svg>
-            </div>
-            <div style="min-width:0">
-              <h2 class="app-title">Sonalit Guardian</h2>
-              <p class="app-subtitle">Field officer app · Android package</p>
-              <div class="package-id">io.sonalit.guardian</div>
-            </div>
-            <span class="apk-label">APK</span>
-          </div>
-          <p class="identity-note">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12.5 4.1 4L19 6.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>This page downloads Sonalit Guardian—not the Sonalit web dashboard or a different mobile app. Check the release details on the right before installing.</span>
-          </p>
-        </section>
-
-        <section class="release-card" aria-labelledby="release-card-title">
-          <div class="release-head">
-            <div class="eyebrow" id="release-card-title">CURRENT RELEASE</div>
-            <div class="status-pill" id="release-status" aria-live="polite"><span class="status-dot"></span><span id="release-status-text">Checking release…</span></div>
-          </div>
-
-          <div class="version-block">
-            <div class="field-label">Android app version</div>
-            <div class="app-version" id="app-version">Checking…</div>
-            <div class="version-code" id="version-code">Reading release metadata</div>
-            <div class="release-id"><span>Release ID</span><code id="release-version">Checking…</code></div>
-          </div>
-
-          <div class="meta-grid" aria-label="Download details">
-            <div class="meta-item"><span>Published</span><strong id="published">Checking…</strong></div>
-            <div class="meta-item"><span>APK size</span><strong id="size">Checking…</strong></div>
-            <div class="meta-item"><span>Android requirement</span><strong id="android-requirement">Checking…</strong></div>
-            <div class="meta-item"><span>Package ID</span><strong class="mono" id="package-name">io.sonalit.guardian</strong></div>
-          </div>
-
-          <a class="download-button" id="download-apk" href="/api/v1/guardian/apk/download" aria-label="Download Sonalit Guardian Android APK">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.8v10.1m0 0 4-4m-4 4-4-4M4.5 16.5v2.2c0 .8.6 1.4 1.4 1.4h12.2c.8 0 1.4-.6 1.4-1.4v-2.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Download Sonalit Guardian APK</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </a>
-          <div class="download-caption">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 19 6v5c0 4.7-3.2 8.2-7 10-3.8-1.8-7-5.3-7-10V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-            <span>Direct APK · Release status checked against the release feed</span>
-          </div>
-
-          <div class="release-warning" id="release-warning" role="status" aria-live="polite" hidden>
-            The download link is available, but the latest release and app version could not be confirmed. Recheck the details before installing if you need the exact current version.
-          </div>
-
-          <div class="secondary-actions">
-            <span id="metadata-source">Release metadata is loading.</span>
-            <button class="text-button" id="refresh-release" type="button">Recheck release ↻</button>
-          </div>
-
-          <details class="release-notes" id="release-notes" hidden>
-            <summary>Release notes &amp; install information</summary>
-            <p class="notes-body" id="release-notes-body"></p>
-          </details>
-
-          <details class="verification" id="verification" hidden>
-            <summary>APK integrity · SHA-256</summary>
-            <div class="verification-row">
-              <input class="checksum" id="checksum" aria-label="APK SHA-256 checksum" readonly>
-              <button class="copy-button" id="copy-checksum" type="button">Copy</button>
-            </div>
-            <div class="copy-status" id="copy-status" aria-live="polite"></div>
-            <p class="section-copy">Compare this fingerprint with the installed or downloaded APK using a trusted SHA-256 tool.</p>
-          </details>
-        </section>
-      </div>
-
-      <div class="info-sections">
-        <section>
-          <h2 class="section-title">A clear install. No guesswork.</h2>
-          <p class="section-copy">This is a direct Android APK download, not a Google Play Store listing. The release ID identifies the published build; the app version and version code identify the Android package itself.</p>
-          <p class="section-copy">Install only on organisation-authorised devices. If the release information cannot be confirmed, the page will say so rather than label an unknown build as latest.</p>
-        </section>
-        <section>
-          <h2 class="section-title">Install in three steps</h2>
-          <div class="steps">
-            <div class="step"><span class="step-no">01</span><strong>Download</strong><p>Tap the button to save the Sonalit Guardian APK.</p></div>
-            <div class="step"><span class="step-no">02</span><strong>Install</strong><p>Open the file. Android may ask you to allow installs from your browser.</p></div>
-            <div class="step"><span class="step-no">03</span><strong>Enrol</strong><p>Open Sonalit Guardian and use your assigned operator code.</p></div>
-          </div>
-        </section>
-      </div>
-    </main>
-
-    <footer class="footer">
-      <span>SONALIT · Official Android distribution</span>
-      <span>For organisation-issued devices · <a href="https://sonalit.com">sonalit.com</a></span>
-    </footer>
-  </div>
-</body>
-</html>`;
+  return [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '  <meta charset="utf-8">',
+    '  <meta name="viewport" content="width=device-width, initial-scale=1">',
+    '  <meta name="theme-color" content="#080d16">',
+    '  <meta name="description" content="Choose the official Sonalit Android app for your role. Check each release before downloading.">',
+    '  <meta name="robots" content="noindex,nofollow">',
+    '  <title>Sonalit App Hub · Official Android Downloads</title>',
+    '  <style>',
+    '    :root{color-scheme:dark;--bg:#080d16;--text:#f2f6fc;--muted:#a1afc2;--quiet:#718299;--line:rgba(193,211,235,.14);--glass:rgba(18,29,45,.64);--glass-strong:rgba(19,31,49,.86);--gold:#f2c16e;--mint:#71e4bc;--blue:#8fc5ff;--amber:#ffc57a;--violet:#c3a9ff}',
+    '    *{box-sizing:border-box}',
+    '    html{min-width:320px;background:var(--bg);scroll-behavior:smooth}',
+    '    body{margin:0;min-height:100vh;padding:clamp(16px,3.4vw,42px);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;background:radial-gradient(ellipse at 7% -3%,rgba(42,109,171,.24),transparent 37rem),radial-gradient(ellipse at 95% 14%,rgba(193,127,49,.15),transparent 32rem),radial-gradient(ellipse at 58% 80%,rgba(79,67,163,.08),transparent 38rem),linear-gradient(155deg,#0a1220 0%,#080d16 57%,#0a101b 100%);overflow-x:hidden}',
+    '    body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);background-size:46px 46px;mask-image:linear-gradient(to bottom,#000,transparent 82%)}',
+    '    body:after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;background:radial-gradient(1px 1px at 10% 17%,#fff 0,transparent 2px),radial-gradient(1px 1px at 78% 38%,#fff 0,transparent 2px),radial-gradient(1px 1px at 44% 71%,#fff 0,transparent 2px),radial-gradient(1px 1px at 91% 84%,#fff 0,transparent 2px);background-size:290px 240px}',
+    '    a,button,input{font:inherit}a{color:inherit}button{color:inherit}',
+    '    .page{position:relative;z-index:1;width:100%;max-width:1240px;margin:0 auto}',
+    '    .topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:0 0 clamp(42px,6vw,76px)}',
+    '    .brand{display:flex;align-items:center;gap:12px;min-width:0;text-decoration:none}',
+    '    .brand-mark{display:grid;place-items:center;width:43px;height:43px;flex:0 0 43px;border:1px solid rgba(255,224,164,.5);border-radius:14px;color:#16130d;background:linear-gradient(145deg,#ffdf9c,#d99637);box-shadow:0 8px 30px rgba(217,150,55,.2),inset 0 1px rgba(255,255,255,.6)}',
+    '    .brand-word{font-size:14px;font-weight:900;letter-spacing:.23em;line-height:1.1}.brand-sub{display:block;margin-top:6px;color:#8294aa;font-size:9px;font-weight:800;letter-spacing:.17em}',
+    '    .trust-tag{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid rgba(113,228,188,.21);border-radius:999px;color:#b6d9d1;background:rgba(48,139,112,.09);font-size:11px;font-weight:750;letter-spacing:.025em;white-space:nowrap;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}',
+    '    .trust-dot{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--mint);box-shadow:0 0 13px rgba(113,228,188,.65)}',
+    '    .hero{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(205px,.42fr);align-items:end;gap:28px;margin-bottom:31px}',
+    '    .eyebrow{display:flex;align-items:center;gap:10px;color:var(--gold);font-size:10px;font-weight:850;letter-spacing:.2em;text-transform:uppercase}.eyebrow-line{width:25px;height:1px;background:currentColor;opacity:.9}',
+    '    h1{max-width:820px;margin:19px 0 18px;font-size:clamp(39px,6.1vw,75px);font-weight:790;letter-spacing:-.064em;line-height:.99}',
+    '    h1 .shine{color:transparent;background:linear-gradient(100deg,#f1d6a2 1%,#b9d9ff 50%,#d4c1ff 91%);-webkit-background-clip:text;background-clip:text}',
+    '    .hero-copy{max-width:675px;margin:0;color:#a3b1c4;font-size:clamp(14px,1.6vw,17px);line-height:1.9}',
+    '    .hero-side{justify-self:end;width:min(100%,290px);padding:17px 18px;border:1px solid var(--line);border-radius:19px;background:linear-gradient(140deg,rgba(255,255,255,.07),rgba(255,255,255,.025));box-shadow:inset 0 1px rgba(255,255,255,.05);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}',
+    '    .hero-side-label{color:#8798ad;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.hero-stats{display:flex;align-items:baseline;gap:9px;margin-top:8px}.hero-count{font-size:36px;font-weight:780;letter-spacing:-.055em}.hero-count-label{color:#adbaca;font-size:12px}.hero-side-foot{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);color:#8192a8;font-size:10px}',
+    '    .hub-tools{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:35px 0 17px;padding:13px;border:1px solid rgba(183,204,232,.13);border-radius:20px;background:rgba(13,22,35,.6);box-shadow:0 14px 44px rgba(0,0,0,.12),inset 0 1px rgba(255,255,255,.035);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}',
+    '    .search-wrap{display:flex;align-items:center;gap:10px;min-width:200px;max-width:340px;flex:1;padding:0 10px;color:#899bb1}.search-wrap input{width:100%;min-width:0;padding:9px 0;border:0;outline:0;color:var(--text);background:transparent;font-size:12px}.search-wrap input::placeholder{color:#74849a}.search-wrap:focus-within{outline:1px solid rgba(143,197,255,.4);outline-offset:3px;border-radius:8px}',
+    '    .filters{display:flex;align-items:center;gap:6px;max-width:100%;overflow-x:auto;scrollbar-width:none}.filters::-webkit-scrollbar{display:none}',
+    '    .filter-btn{flex:0 0 auto;padding:8px 11px;border:1px solid transparent;border-radius:999px;color:#8495aa;background:transparent;cursor:pointer;font-size:10px;font-weight:800;transition:background .18s ease,color .18s ease,border-color .18s ease}',
+    '    .filter-btn:hover{color:#e8f1fb;background:rgba(255,255,255,.045)}.filter-btn[aria-pressed="true"]{border-color:rgba(143,197,255,.28);color:#d9eaff;background:rgba(76,136,197,.16)}',
+    '    .section-heading{display:flex;align-items:end;justify-content:space-between;gap:18px;margin:0 0 19px;padding:4px 3px}.section-heading h2{margin:0;font-size:19px;font-weight:750;letter-spacing:-.035em}.section-heading p{margin:5px 0 0;color:var(--quiet);font-size:11px}',
+    '    .catalog-status{display:flex;align-items:center;justify-content:flex-end;gap:8px;color:#8797ab;font-size:10px;text-align:right}.catalog-status .mini-dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:#8195aa}.catalog-status.is-good .mini-dot{background:var(--mint);box-shadow:0 0 9px rgba(113,228,188,.4)}.catalog-status.is-warn .mini-dot{background:var(--amber)}',
+    '    .app-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px}',
+    '    .app-card{--accent:var(--blue);--accent-rgb:143,197,255;position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;padding:clamp(18px,2.6vw,27px);border:1px solid rgba(189,208,235,.15);border-radius:23px;background:linear-gradient(148deg,rgba(24,38,58,.73),rgba(12,21,34,.69));box-shadow:0 19px 58px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.06);backdrop-filter:blur(28px) saturate(135%);-webkit-backdrop-filter:blur(28px) saturate(135%);transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease;isolation:isolate}',
+    '    .app-card:before{content:"";position:absolute;z-index:-1;top:-85px;right:-75px;width:225px;height:205px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.18),transparent 69%);pointer-events:none;transition:opacity .25s ease}',
+    '    .app-card:after{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:linear-gradient(125deg,rgba(255,255,255,.035),transparent 40%,rgba(var(--accent-rgb),.025));pointer-events:none}',
+    '    .app-card:hover{transform:translateY(-4px);border-color:rgba(var(--accent-rgb),.38);box-shadow:0 25px 65px rgba(0,0,0,.28),0 0 0 1px rgba(var(--accent-rgb),.04),inset 0 1px rgba(255,255,255,.08)}',
+    '    .app-card[data-accent="blue"]{--accent:var(--blue);--accent-rgb:143,197,255}.app-card[data-accent="mint"]{--accent:var(--mint);--accent-rgb:113,228,188}.app-card[data-accent="amber"]{--accent:var(--amber);--accent-rgb:255,197,122}.app-card[data-accent="violet"]{--accent:var(--violet);--accent-rgb:195,169,255}',
+    '    .card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.app-identity{display:flex;align-items:center;gap:13px;min-width:0}',
+    '    .app-icon{display:grid;place-items:center;width:55px;height:55px;flex:0 0 55px;border:1px solid rgba(var(--accent-rgb),.27);border-radius:17px;color:var(--accent);background:linear-gradient(145deg,rgba(var(--accent-rgb),.15),rgba(var(--accent-rgb),.045));box-shadow:inset 0 1px rgba(255,255,255,.07)}',
+    '    .app-icon svg{width:27px;height:27px}.app-category{margin-bottom:5px;color:var(--accent);font-size:9px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.app-name{margin:0;color:#f0f5fc;font-size:clamp(18px,2.4vw,23px);font-weight:780;letter-spacing:-.04em;line-height:1.16}.app-audience{margin-top:5px;color:#9fadc0;font-size:11px}',
+    '    .release-pill{display:inline-flex;align-items:center;gap:6px;max-width:150px;flex:0 0 auto;padding:6px 8px;border:1px solid rgba(190,208,231,.13);border-radius:999px;color:#a5b3c6;background:rgba(255,255,255,.035);font-size:9px;font-weight:850;line-height:1.25;text-align:center}',
+    '    .release-pill:before{content:"";width:5px;height:5px;flex:0 0 5px;border-radius:50%;background:#8291a4}.release-pill[data-status="available"]{border-color:rgba(113,228,188,.24);color:#a9e9d3;background:rgba(52,155,120,.08)}.release-pill[data-status="available"]:before{background:var(--mint);box-shadow:0 0 8px rgba(113,228,188,.38)}.release-pill[data-status="unavailable"],.release-pill[data-status="unverified"]{color:#e2c28d;border-color:rgba(255,197,122,.2);background:rgba(255,197,122,.055)}.release-pill[data-status="unavailable"]:before,.release-pill[data-status="unverified"]:before{background:var(--amber)}',
+    '    .app-desc{min-height:60px;margin:22px 0 15px;color:#aab7c8;font-size:12px;line-height:1.8}',
+    '    .capabilities{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 20px}.capability{padding:5px 8px;border:1px solid rgba(var(--accent-rgb),.13);border-radius:8px;color:#afbdd0;background:rgba(255,255,255,.022);font-size:9px;font-weight:650;line-height:1.35}',
+    '    .version-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:10px;margin:0 0 15px;padding:14px 0 13px;border-top:1px solid rgba(191,209,232,.12);border-bottom:1px solid rgba(191,209,232,.12)}',
+    '    .data-label{color:#7f91a8;font-size:9px;font-weight:850;letter-spacing:.13em;text-transform:uppercase}.version-value{margin-top:5px;color:#eef5ff;font-size:25px;font-weight:780;letter-spacing:-.045em;line-height:1.15;overflow-wrap:anywhere}.version-code{margin-top:5px;color:#8a9bb1;font-size:10px}.release-badge{justify-self:end;max-width:150px;padding:7px 9px;border:1px solid rgba(var(--accent-rgb),.18);border-radius:10px;color:var(--accent);background:rgba(var(--accent-rgb),.07);font:10px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere;text-align:right}',
+    '    .meta-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:13px 18px;margin:0 0 19px}.meta-cell{min-width:0}.meta-value{display:block;margin-top:5px;color:#dce6f2;font-size:11px;font-weight:650;overflow-wrap:anywhere}.meta-value.mono{font:10px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#adbed2}',
+    '    .card-actions{display:flex;align-items:center;gap:12px;margin-top:auto}.download-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:48px;padding:12px 13px;border:1px solid rgba(var(--accent-rgb),.4);border-radius:13px;color:#09121d;background:linear-gradient(105deg,rgba(var(--accent-rgb),1),rgba(var(--accent-rgb),.79));box-shadow:0 9px 26px rgba(var(--accent-rgb),.1),inset 0 1px rgba(255,255,255,.43);text-decoration:none;text-align:center;font-size:11px;font-weight:900;transition:filter .18s ease,transform .18s ease,box-shadow .18s ease}',
+    '    .download-btn:hover{filter:brightness(1.07);transform:translateY(-1px);box-shadow:0 13px 30px rgba(var(--accent-rgb),.16)}.download-btn svg{flex:0 0 auto}.download-btn.disabled{border-color:rgba(190,208,231,.13);color:#8c9cb0;background:rgba(255,255,255,.04);box-shadow:none;cursor:not-allowed;pointer-events:none}',
+    '    .card-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:11px;color:#71839a;font-size:9px}.card-foot span{min-width:0;overflow-wrap:anywhere}.more-link{border:0;padding:5px 0;color:#9cbfe4;background:none;cursor:pointer;font-size:10px;font-weight:800;white-space:nowrap}.more-link:hover{color:#e4f2ff}',
+    '    .release-details{margin-top:13px;padding-top:12px;border-top:1px solid rgba(191,209,232,.1)}.release-details summary{width:fit-content;color:#aac9ec;cursor:pointer;font-size:10px;font-weight:800}.notes-body{margin:9px 0 0;color:#a6b4c6;font-size:11px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}.checksum-row{display:flex;align-items:center;gap:7px;margin-top:10px}.checksum{min-width:0;flex:1;padding:8px;border:1px solid rgba(191,209,232,.12);border-radius:8px;color:#aebed1;background:rgba(0,0,0,.2);font:9px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}.copy-btn{padding:7px 8px;border:1px solid rgba(var(--accent-rgb),.24);border-radius:8px;color:var(--accent);background:rgba(var(--accent-rgb),.06);cursor:pointer;font-size:9px;font-weight:800}.copy-status{min-height:16px;margin-top:5px;color:var(--mint);font-size:10px}',
+    '    .empty-state{display:none;margin:14px 0;padding:34px 20px;border:1px dashed rgba(190,208,231,.19);border-radius:18px;color:#93a4ba;text-align:center;font-size:12px}.empty-state.is-visible{display:block}',
+    '    .guidance{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:24px;margin-top:37px;padding:24px;border:1px solid rgba(190,208,231,.13);border-radius:22px;background:linear-gradient(135deg,rgba(20,32,49,.63),rgba(13,22,35,.4));box-shadow:inset 0 1px rgba(255,255,255,.04);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}',
+    '    .guidance h2{margin:0;font-size:16px;letter-spacing:-.025em}.guidance p{margin:8px 0 0;color:#92a2b7;font-size:11px;line-height:1.85}.guide-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.guide-step{padding:12px;border:1px solid rgba(190,208,231,.1);border-radius:12px;background:rgba(255,255,255,.025)}.guide-num{color:var(--gold);font:800 10px ui-monospace,monospace}.guide-step strong{display:block;margin-top:9px;font-size:11px}.guide-step span{display:block;margin-top:4px;color:#8192a8;font-size:10px;line-height:1.65}',
+    '    .footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;margin-top:30px;padding:17px 2px 0;border-top:1px solid rgba(190,208,231,.09);color:#667990;font-size:10px}.footer a{color:#a4bad2;text-decoration:none}.footer a:hover{text-decoration:underline}',
+    '    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}',
+    '    a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid #a8d2ff;outline-offset:3px}',
+    '    @media(max-width:850px){.hero{grid-template-columns:minmax(0,1fr) 220px;gap:16px}.app-grid{gap:13px}.app-desc{min-height:76px}.app-name{font-size:20px}.release-pill{max-width:125px}.guidance{grid-template-columns:minmax(0,1fr)}.guide-steps{grid-template-columns:repeat(3,minmax(0,1fr))}}',
+    '    @media(max-width:640px){body{padding:17px 13px 22px}.topbar{margin-bottom:43px}.trust-tag{max-width:145px;white-space:normal;font-size:9px;line-height:1.35}.brand-mark{width:39px;height:39px;flex-basis:39px}.brand-word{font-size:12px}.brand-sub{font-size:8px}.hero{grid-template-columns:minmax(0,1fr);gap:21px}.hero-side{justify-self:stretch;width:100%;padding:14px 16px}.hero-stats{margin-top:4px}.hero-count{font-size:31px}h1{font-size:clamp(42px,12vw,61px)}.hub-tools{align-items:stretch;flex-direction:column;gap:10px;margin-top:28px;padding:11px;border-radius:16px}.search-wrap{max-width:none;min-width:0;border-bottom:1px solid rgba(190,208,231,.08);padding:0 4px 7px}.filters{padding-bottom:1px}.filter-btn{padding:8px 10px}.section-heading{align-items:flex-start;flex-direction:column;gap:10px}.catalog-status{justify-content:flex-start;text-align:left}.app-grid{grid-template-columns:minmax(0,1fr);gap:12px}.app-card{padding:19px;border-radius:20px}.app-desc{min-height:0;margin-top:19px}.version-value{font-size:28px}.release-pill{max-width:145px}.guidance{padding:18px;gap:18px}.guide-steps{grid-template-columns:minmax(0,1fr);gap:8px}.guide-step{display:grid;grid-template-columns:27px minmax(0,1fr);column-gap:9px;padding:11px}.guide-num{grid-row:span 2}.guide-step strong{margin-top:0}.guide-step span{margin-top:2px}.footer{flex-direction:column}}',
+    '    @media(min-width:641px) and (max-width:980px){.app-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.app-card{padding:18px}.card-top{align-items:flex-start}.app-icon{width:48px;height:48px;flex-basis:48px}.app-identity{gap:10px}.app-name{font-size:18px}.release-pill{font-size:8px;max-width:110px}}',
+    '    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}',
+    '  </style>',
+    '  <script src="/download/release.js" defer></script>',
+    '</head>',
+    '<body>',
+    '  <div class="page">',
+    '    <header class="topbar">',
+    '      <a class="brand" href="https://sonalit.com" aria-label="Sonalit official website">',
+    '        <span class="brand-mark" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M19.5 5.5C15.5 4.1 8.2 4.4 5.2 8.1 2.1 12 5.9 15.7 9.7 14.1c2.8-1.2 3.5-4.5 1.7-5.8-1.3-1.3-3.5-.8-4.1.7" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/><path d="M4.5 18.5c4.1 1.2 10.9.9 14-3.2 2.5-3.3.3-6.1-2.3-6.1" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg></span>',
+    '        <span><span class="brand-word">SONALIT</span><span class="brand-sub">OFFICIAL APP DISTRIBUTION</span></span>',
+    '      </a>',
+    '      <div class="trust-tag"><span class="trust-dot" aria-hidden="true"></span><span>Official release channel</span></div>',
+    '    </header>',
+    '    <main>',
+    '      <section class="hero" aria-labelledby="page-title">',
+    '        <div>',
+    '          <div class="eyebrow"><span class="eyebrow-line"></span> THE SONALIT APP HUB</div>',
+    '          <h1 id="page-title">Every tool.<br><span class="shine">One trusted download.</span></h1>',
+    '          <p class="hero-copy">Choose the Sonalit app built for your role. Each release card identifies the app, intended team, Android package, version and publication details before you install.</p>',
+    '        </div>',
+    '        <aside class="hero-side" aria-label="Release catalogue summary">',
+    '          <div class="hero-side-label">One ecosystem · Focused apps</div>',
+    '          <div class="hero-stats"><div class="hero-count" id="app-count">04</div><div class="hero-count-label">Android apps in the catalogue</div></div>',
+    '          <div class="hero-side-foot"><span class="trust-dot" aria-hidden="true"></span><span id="catalog-foot">Checking app-specific release feeds…</span></div>',
+    '        </aside>',
+    '      </section>',
+    '      <section aria-labelledby="apps-heading">',
+    '        <div class="hub-tools">',
+    '          <label class="search-wrap" for="app-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><input id="app-search" type="search" placeholder="Find by app, role or package ID…" autocomplete="off"><span class="sr-only">Search Sonalit apps</span></label>',
+    '          <div class="filters" role="group" aria-label="Filter apps by role">',
+    '            <button class="filter-btn" type="button" data-filter="all" aria-pressed="true">All apps</button>',
+    '            <button class="filter-btn" type="button" data-filter="operations" aria-pressed="false">Operations</button>',
+    '            <button class="filter-btn" type="button" data-filter="field" aria-pressed="false">Yard &amp; port</button>',
+    '            <button class="filter-btn" type="button" data-filter="handover" aria-pressed="false">Handover</button>',
+    '            <button class="filter-btn" type="button" data-filter="safety" aria-pressed="false">Safety</button>',
+    '          </div>',
+    '        </div>',
+    '        <div class="section-heading"><div><h2 id="apps-heading">Choose your Sonalit app</h2><p>Specific releases for different jobs. Each app can be installed alongside the others.</p></div><div class="catalog-status" id="catalog-status" aria-live="polite"><span class="mini-dot"></span><span id="catalog-status-text">Checking releases…</span></div></div>',
+    '        <div class="app-grid" id="app-grid" aria-live="polite" aria-busy="true"></div>',
+    '        <div class="empty-state" id="empty-state">No apps match this search. Try another name or role.</div>',
+    '      </section>',
+    '      <section class="guidance" aria-labelledby="install-heading">',
+    '        <div><h2 id="install-heading">Install with confidence.</h2><p>These are direct Android APK downloads, not Play Store listings. The release ID is different from the Android app version; use both fields to identify the exact build.</p><p>Release information is read from the app-specific published release. If that source cannot be confirmed, the page says so rather than pretending an unknown build is current.</p></div>',
+    '        <div class="guide-steps">',
+    '          <div class="guide-step"><span class="guide-num">01</span><strong>Choose your role</strong><span>Pick Operations, Field, Handover or Guardian.</span></div>',
+    '          <div class="guide-step"><span class="guide-num">02</span><strong>Check the release</strong><span>Review version, date, package ID and Android requirement.</span></div>',
+    '          <div class="guide-step"><span class="guide-num">03</span><strong>Download &amp; install</strong><span>Open the APK and allow your browser to install apps when Android asks.</span></div>',
+    '        </div>',
+    '      </section>',
+    '    </main>',
+    '    <footer class="footer"><span>SONALIT · Official Android app distribution</span><span>Use organisation-authorised devices · <a href="https://sonalit.com">sonalit.com</a> · <button class="text-button" id="refresh-catalog" type="button">Recheck releases ↻</button></span></footer>',
+    '  </div>',
+    '</body>',
+    '</html>'
+  ].join("\n");
 }
 
 function renderDownloadScript() {
-  return `(function () {
-  "use strict";
-
-  var infoUrl = "/api/v1/guardian/apk/info";
-  var statusPill = document.getElementById("release-status");
-  var statusText = document.getElementById("release-status-text");
-  var warning = document.getElementById("release-warning");
-  var refreshButton = document.getElementById("refresh-release");
-  var checksumInput = document.getElementById("checksum");
-  var copyButton = document.getElementById("copy-checksum");
-  var copyStatus = document.getElementById("copy-status");
-
-  function setText(id, value) {
-    var node = document.getElementById(id);
-    if (node) node.textContent = value == null || value === "" ? "Not recorded" : String(value);
-  }
-
-  function formatSize(value) {
-    var bytes = Number(value);
-    if (!Number.isFinite(bytes) || bytes <= 0) return "Unavailable";
-    if (bytes < 1048576) return Math.round(bytes / 1024) + " KB";
-    return (bytes >= 104857600 ? Math.round(bytes / 1048576) : (bytes / 1048576).toFixed(1)) + " MB";
-  }
-
-  function formatDate(value) {
-    if (!value) return "Unavailable";
-    var date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "Unavailable";
-    return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(date);
-  }
-
-  function androidRequirement(minSdk) {
-    var api = Number(minSdk);
-    if (!Number.isInteger(api) || api < 1) return "Not recorded";
-    var names = {
-      29: "Android 10+", 30: "Android 11+", 31: "Android 12+", 32: "Android 12L+",
-      33: "Android 13+", 34: "Android 14+", 35: "Android 15+", 36: "Android 16+"
-    };
-    return names[api] || ("Android API " + api + "+");
-  }
-
-  function setStatus(label, state) {
-    statusText.textContent = label;
-    statusPill.className = "status-pill " + state;
-  }
-
-  function showUnconfirmed(message) {
-    setStatus("Latest status unconfirmed", "is-warning");
-    warning.style.borderColor = "";
-    warning.style.color = "";
-    warning.style.background = "";
-    warning.hidden = false;
-    if (message) warning.textContent = message;
-    setText("metadata-source", "Could not verify release metadata.");
-  }
-
-  async function loadReleaseInfo(forceRefresh) {
-    refreshButton.disabled = true;
-    refreshButton.textContent = "Checking…";
-    setStatus("Checking release…", "");
-    warning.hidden = true;
-    setText("metadata-source", "Contacting release feed…");
-
-    try {
-      var response = await fetch(forceRefresh ? infoUrl + "?refresh=1" : infoUrl, {
-        method: "GET",
-        headers: { "Accept": "application/json" },
-        cache: "no-store",
-        credentials: "same-origin"
-      });
-      if (!response.ok) throw new Error("Release feed returned HTTP " + response.status);
-      var data = await response.json();
-      if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Release metadata was not valid JSON");
-
-      var releaseId = typeof data.version === "string" ? data.version.trim() : "";
-      var parsedDate = data.published_at ? new Date(data.published_at) : null;
-      var dateIsValid = parsedDate && !Number.isNaN(parsedDate.getTime());
-      var size = Number(data.size);
-      var sizeIsValid = Number.isFinite(size) && size > 0;
-      var latestConfirmed = Boolean(releaseId && dateIsValid && sizeIsValid);
-
-      setText("release-version", releaseId || "Unavailable");
-      setText("published", dateIsValid ? formatDate(data.published_at) : "Unavailable");
-      setText("size", sizeIsValid ? formatSize(size) : "Unavailable");
-      setText("package-name", data.package_name || "io.sonalit.guardian");
-      setText("android-requirement", androidRequirement(data.min_sdk));
-
-      if (data.app_version) {
-        setText("app-version", "v" + String(data.app_version));
-        setText("version-code", data.version_code != null ? "Android version code " + data.version_code : "Version code not recorded");
-      } else {
-        setText("app-version", "Not recorded");
-        setText("version-code", "This release does not expose the APK's internal version metadata.");
-      }
-
-      if (data.notes && String(data.notes).trim()) {
-        setText("release-notes-body", String(data.notes).trim().slice(0, 5000));
-        document.getElementById("release-notes").hidden = false;
-      } else {
-        document.getElementById("release-notes").hidden = true;
-      }
-
-      if (typeof data.sha256 === "string" && /^[a-f0-9]{64}$/i.test(data.sha256.trim())) {
-        checksumInput.value = data.sha256.trim().toLowerCase();
-        document.getElementById("verification").hidden = false;
-        copyStatus.textContent = "";
-      } else {
-        checksumInput.value = "";
-        document.getElementById("verification").hidden = true;
-      }
-
-      if (latestConfirmed) {
-        setStatus("Latest release confirmed", "is-live");
-        warning.hidden = Boolean(data.app_version);
-        warning.style.borderColor = "";
-        warning.style.color = "";
-        warning.style.background = "";
-        if (!data.app_version) {
-          warning.textContent = "The latest published release is identified, but its internal Android app version is not recorded. The release ID above is the published release identifier.";
-        }
-        setText("metadata-source", "Loaded from Sonalit's latest published release.");
-      } else {
-        showUnconfirmed("The download link is available, but the latest release details are incomplete. Do not treat an unverified version as the latest build.");
-      }
-    } catch (error) {
-      setText("app-version", "Unavailable");
-      setText("version-code", "Could not read release metadata");
-      setText("release-version", "Unavailable");
-      setText("published", "Unavailable");
-      setText("size", "Unavailable");
-      setText("android-requirement", "Unavailable");
-      showUnconfirmed("The download link remains available, but release metadata could not be checked. The latest version is unconfirmed—please retry before installing.");
-    } finally {
-      refreshButton.disabled = false;
-      refreshButton.textContent = "Recheck release ↻";
-    }
-  }
-
-  refreshButton.addEventListener("click", function () { loadReleaseInfo(true); });
-
-  copyButton.addEventListener("click", async function () {
-    if (!checksumInput.value) return;
-    try {
-      await navigator.clipboard.writeText(checksumInput.value);
-      copyStatus.textContent = "SHA-256 copied.";
-    } catch (_) {
-      checksumInput.focus();
-      checksumInput.select();
-      var copied = false;
-      try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
-      copyStatus.textContent = copied ? "SHA-256 copied." : "Select the fingerprint above and copy it.";
-    }
-  });
-
-  loadReleaseInfo(false);
-})();`;
+  return [
+    '(function () {',
+    '  "use strict";',
+    '  var catalogUrl = "/download/catalog.json";',
+    '  var grid = document.getElementById("app-grid");',
+    '  var empty = document.getElementById("empty-state");',
+    '  var search = document.getElementById("app-search");',
+    '  var status = document.getElementById("catalog-status");',
+    '  var statusText = document.getElementById("catalog-status-text");',
+    '  var catalogFoot = document.getElementById("catalog-foot");',
+    '  var appCount = document.getElementById("app-count");',
+    '  var refreshButton = document.getElementById("refresh-catalog");',
+    '  var activeFilter = "all";',
+    '  var latestApps = [];',
+    '  var ICONS = {',
+    '    command: \'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m8 9 4 2.2L16 9M12 11.2V16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>\',',
+    '    container: \'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5v-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7 9v6m3-7v8m4-8v8m3-7v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>\',',
+    '    "file-check": \'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 3.5h7l4 4v13H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3.5v4h4M8.5 14l2.2 2.2 4.8-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>\',',
+    '    "shield-check": \'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 7 3v5.3c0 4.4-2.9 7.8-7 9.7-4.1-1.9-7-5.3-7-9.7V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m8.7 12 2.1 2.1 4.5-4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>\''
+    '  };',
+    '  var FALLBACK_APPS = [',
+    '    {id:"sonalit",name:"Sonalit",category:"OPERATIONS",filterKey:"operations",audience:"Operations & management",description:"Your main Sonalit workspace for fleet coordination, dispatch, monitoring and operational decisions.",capabilities:["Fleet operations","Dispatch & oversight","Live operational workspace"],packageId:"io.sonalit.app",accent:"blue",icon:"command",status:"unverified",minimumAndroid:"Android 7.0+"},',
+    '    {id:"field",name:"Sonalit Field",category:"YARD & PORT",filterKey:"field",audience:"Yard & port teams",description:"A focused mobile workflow for container e-lock clamping, arrivals, unclamping and delivery updates.",capabilities:["Clamp e-locks","Live transit view","Record delivery"],packageId:"io.sonalit.field",accent:"mint",icon:"container",status:"unverified",minimumAndroid:"Android 7.0+"},',
+    '    {id:"handover",name:"Sonalit Handover",category:"SECURE HANDOVER",filterKey:"handover",audience:"Handover officers",description:"Review convoys awaiting handover, complete signed truck or convoy handovers, and submit the required form.",capabilities:["Review pending handovers","Truck-by-truck sign-off","Submit signed forms"],packageId:"io.sonalit.handover",accent:"amber",icon:"file-check",status:"unverified",minimumAndroid:"Android 7.0+"},',
+    '    {id:"guardian",name:"Sonalit Guardian",category:"FIELD SAFETY",filterKey:"safety",audience:"Field officers",description:"The native Guardian companion for device enrolment, location and field-safety operations.",capabilities:["Device enrolment","Field location","Guardian safety workflows"],packageId:"io.sonalit.guardian",accent:"violet",icon:"shield-check",status:"unverified",minimumAndroid:"Android 10+"}',
+    '  ];',
+    '  function make(tag, className, text) { var node = document.createElement(tag); if (className) node.className = className; if (text !== undefined && text !== null) node.textContent = String(text); return node; }',
+    '  function formatDate(value) { if (!value) return "Not recorded"; var date = new Date(value); if (Number.isNaN(date.getTime())) return "Not recorded"; return new Intl.DateTimeFormat(undefined,{year:"numeric",month:"short",day:"numeric"}).format(date); }',
+    '  function appVersionText(app) { if (app.appVersion) return "v" + app.appVersion; if (app.status === "available") return "Not recorded"; if (app.status === "unavailable") return "No release"; return "Checking…"; }',
+    '  function versionSubtext(app) { if (app.versionCode) return "Android version code " + app.versionCode; if (app.appVersion) return "Version from the built APK"; if (app.status === "available") return "Android app version not recorded for this older release"; return app.status === "unavailable" ? "No published APK found for this app" : "Reading release metadata"; }',
+    '  function safeDownloadUrl(app) {',
+    '    if (app.id === "guardian" && app.downloadUrl === "/api/v1/guardian/apk/download") return app.downloadUrl;',
+    '    if (typeof app.downloadUrl !== "string" || !app.downloadUrl) return null;',
+    '    try { var url = new URL(app.downloadUrl, window.location.origin); if (url.protocol === "https:" && url.hostname === "github.com" && url.pathname.indexOf("/releases/download/") >= 0) return url.href; } catch (_) {}',
+    '    return null;',
+    '  }',
+    '  function addMetaCell(parent, label, value, isMono) { var cell = make("div","meta-cell"); cell.appendChild(make("div","data-label",label)); cell.appendChild(make("div","meta-value" + (isMono ? " mono" : ""),value || "Not recorded")); parent.appendChild(cell); }',
+    '  function createCard(app) {',
+    '    var card = make("article","app-card"); card.dataset.accent = ["blue","mint","amber","violet"].indexOf(app.accent) >= 0 ? app.accent : "blue"; card.dataset.filter = app.filterKey || "all";',
+    '    var searchable = [app.name,app.audience,app.description,app.packageId,app.releaseId,app.appVersion].filter(Boolean).join(" ").toLowerCase(); card.dataset.search = searchable;',
+    '    var top = make("div","card-top"); var identity = make("div","app-identity");',
+    '    var icon = make("div","app-icon"); icon.innerHTML = ICONS[app.icon] || ICONS.command;',
+    '    var nameBlock = make("div",""); nameBlock.appendChild(make("div","app-category",app.category || "SONALIT APP")); nameBlock.appendChild(make("h3","app-name",app.name)); nameBlock.appendChild(make("div","app-audience",app.audience));',
+    '    identity.appendChild(icon); identity.appendChild(nameBlock); top.appendChild(identity);',
+    '    var pill = make("span","release-pill",app.status === "available" ? (app.appVersion ? "LATEST RELEASE" : "LATEST RELEASE FOUND") : (app.status === "unavailable" ? "NO PUBLISHED APK" : "RELEASE UNVERIFIED")); pill.dataset.status = app.status || "unverified"; top.appendChild(pill); card.appendChild(top);',
+    '    card.appendChild(make("p","app-desc",app.description));',
+    '    var caps = make("div","capabilities"); (Array.isArray(app.capabilities) ? app.capabilities : []).slice(0,4).forEach(function (feature) { caps.appendChild(make("span","capability",feature)); }); card.appendChild(caps);',
+    '    var version = make("div","version-panel"); var versionBlock = make("div",""); versionBlock.appendChild(make("div","data-label","ANDROID APP VERSION")); versionBlock.appendChild(make("div","version-value",appVersionText(app))); versionBlock.appendChild(make("div","version-code",versionSubtext(app))); version.appendChild(versionBlock);',
+    '    version.appendChild(make("div","release-badge",app.releaseId || (app.status === "unavailable" ? "NO RELEASE" : "PENDING CHECK"))); card.appendChild(version);',
+    '    var meta = make("div","meta-grid"); addMetaCell(meta,"PUBLISHED",formatDate(app.publishedAt)); addMetaCell(meta,"APK SIZE",app.sizeLabel || "Not recorded"); addMetaCell(meta,"ANDROID",app.minimumAndroid || "Not recorded"); addMetaCell(meta,"PACKAGE ID",app.packageId || "Not recorded",true); card.appendChild(meta);',
+    '    var actions = make("div","card-actions"); var url = safeDownloadUrl(app);',
+    '    if (app.status === "available" && url) {',
+    '      var link = make("a","download-btn"); link.href = url; link.setAttribute("aria-label","Download " + app.name + " Android APK");',
+    '      var downIcon = \'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.8v10.1m0 0 4-4m-4 4-4-4M4.5 16.5v2.2c0 .8.6 1.4 1.4 1.4h12.2c.8 0 1.4-.6 1.4-1.4v-2.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>\';',
+    '      link.innerHTML = downIcon; link.appendChild(make("span","", "Download " + app.name + " APK")); actions.appendChild(link);',
+    '    } else {',
+    '      var disabled = make("span","download-btn disabled"); disabled.setAttribute("aria-disabled","true"); disabled.appendChild(make("span","",app.status === "unavailable" ? "No published APK available" : "Release check required")); actions.appendChild(disabled);',
+    '    }',
+    '    card.appendChild(actions);',
+    '    var foot = make("div","card-foot"); foot.appendChild(make("span","", app.sha256 ? "SHA-256 fingerprint available" : "Release details " + (app.status === "available" ? "loaded" : "not yet confirmed")));',
+    '    if (app.status === "available" && (app.releaseNotes || app.sha256)) { var more = make("button","more-link","Release details +"); more.type = "button"; more.addEventListener("click",function () { var det = card.querySelector(".release-details"); if (det) { det.open = !det.open; more.textContent = det.open ? "Release details −" : "Release details +"; } }); foot.appendChild(more); }',
+    '    else foot.appendChild(make("span","",app.status === "available" ? "Official release" : "Official source")); card.appendChild(foot);',
+    '    if (app.status === "available" && (app.releaseNotes || app.sha256)) {',
+    '      var details = make("details","release-details"); details.classList.add("release-details");',
+    '      var summary = make("summary","","What changed & integrity"); details.appendChild(summary);',
+    '      if (app.releaseNotes) details.appendChild(make("p","notes-body",app.releaseNotes));',
+    '      if (app.sha256) { var row = make("div","checksum-row"); var code = make("code","checksum",app.sha256); var copy = make("button","copy-btn","Copy SHA-256"); copy.type="button"; copy.addEventListener("click",async function () { var outcome = card.querySelector(".copy-status"); try { await navigator.clipboard.writeText(app.sha256); outcome.textContent="SHA-256 copied."; } catch (_) { var range = document.createRange(); range.selectNodeContents(code); var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range); outcome.textContent="Fingerprint selected; copy it from the selection."; } }); row.appendChild(code); row.appendChild(copy); details.appendChild(row); details.appendChild(make("div","copy-status","")); }',
+    '      card.appendChild(details);',
+    '    }',
+    '    return card;',
+    '  }',
+    '  function applyFilters() {',
+    '    var q = (search.value || "").trim().toLowerCase(); var visible = 0;',
+    '    Array.prototype.forEach.call(grid.children,function (card) { var categoryOk = activeFilter === "all" || card.dataset.filter === activeFilter; var queryOk = !q || (card.dataset.search || "").indexOf(q) >= 0; var show = categoryOk && queryOk; card.hidden = !show; if (show) visible++; });',
+    '    empty.classList.toggle("is-visible",visible === 0);',
+    '  }',
+    '  function renderApps(apps) { latestApps = (Array.isArray(apps) ? apps : FALLBACK_APPS).slice().sort(function (a,b) { var order = {sonalit:1,field:2,handover:3,guardian:4}; return (order[a.id]||99)-(order[b.id]||99); });',
+    '    grid.replaceChildren(); latestApps.forEach(function (app) { grid.appendChild(createCard(app)); });',
+    '    appCount.textContent = String(latestApps.length).padStart(2,"0"); applyFilters();',
+    '  }',
+    '  function setCatalogStatus(text,state) { statusText.textContent = text; status.className = "catalog-status" + (state ? " " + state : ""); }',
+    '  async function loadCatalog(forceRefresh) {',
+    '    refreshButton.disabled = true; refreshButton.textContent = "Checking…"; setCatalogStatus("Checking app-specific releases…",""); catalogFoot.textContent = "Reading the release catalogue…"; grid.setAttribute("aria-busy","true");',
+    '    try {',
+    '      var response = await fetch(forceRefresh ? catalogUrl + "?refresh=1" : catalogUrl,{method:"GET",headers:{"Accept":"application/json"},cache:"no-store",credentials:"same-origin"});',
+    '      if (!response.ok) throw new Error("Catalog returned HTTP " + response.status);',
+    '      var data = await response.json(); if (!data || !Array.isArray(data.apps)) throw new Error("Catalog response was incomplete");',
+    '      renderApps(data.apps); var available = data.apps.filter(function (app) { return app.status === "available" && safeDownloadUrl(app); }).length;',
+    '      if (data.source === "github-releases") { setCatalogStatus(available + " of " + data.apps.length + " releases available","is-good"); catalogFoot.textContent = "App-specific releases checked"; }',
+    '      else { setCatalogStatus("Release source unavailable","is-warn"); catalogFoot.textContent = "Release versions could not be verified"; }',
+    '    } catch (_) {',
+    '      renderApps(FALLBACK_APPS); setCatalogStatus("Could not verify releases","is-warn"); catalogFoot.textContent = "Try rechecking the release source";',
+    '    } finally { grid.setAttribute("aria-busy","false"); refreshButton.disabled = false; refreshButton.textContent = "Recheck releases ↻"; }',
+    '  }',
+    '  Array.prototype.forEach.call(document.querySelectorAll("[data-filter]"),function (button) { button.addEventListener("click",function () { activeFilter = button.dataset.filter; Array.prototype.forEach.call(document.querySelectorAll("[data-filter]"),function (item) { item.setAttribute("aria-pressed",item === button ? "true" : "false"); }); applyFilters(); }); });',
+    '  search.addEventListener("input",applyFilters); refreshButton.addEventListener("click",function () { loadCatalog(true); });',
+    '  renderApps(FALLBACK_APPS); loadCatalog(false);',
+    '})();'
+  ].join("\n");
 }
 
 module.exports = { renderDownloadPage, renderDownloadScript };
