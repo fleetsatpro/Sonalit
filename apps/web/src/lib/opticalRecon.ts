@@ -28,7 +28,7 @@ export type OpticalReconResult = {
   primary: OpticalCandidate
   precisionAlternative: OpticalCandidate | null
   candidates: OpticalCandidate[]
-  render: { source: 'sentinel' | 'oam' | 'nasa'; date?: string | null; itemId?: string }
+  render: { source: 'sentinel' | 'oam' | 'nasa' | 'vantor'; date?: string | null; itemId?: string }
   quality: {
     state: string
     freshness: string
@@ -43,7 +43,7 @@ export type OpticalReconResult = {
   }
   warnings: string[]
   semantics: string[]
-  premiumBasemap: { provider: string; enabled: boolean; state: string; product: string | null; productGsdM: number | null; productGsdLabel: string | null; resolutionSemantics: string }
+  premiumBasemap?: { provider: string; enabled: boolean; state: string; product: string | null; productGsdM: number | null; productGsdLabel: string | null; resolutionSemantics: string }
 }
 
 let installed = false
@@ -148,7 +148,7 @@ export function installOpticalReconMapLibreProtocol() {
         const token = getAccessToken()
         return token ? { Authorization: 'Bearer ' + token } : {}
       })(),
-      cache: 'force-cache',
+      cache: parsed.source === 'vantor' ? 'no-store' : 'force-cache',
     })
     if (!response.ok) throw new Error('Reconnaissance tile HTTP ' + response.status)
     return { data: await response.arrayBuffer() }

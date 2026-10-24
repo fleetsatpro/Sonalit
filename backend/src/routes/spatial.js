@@ -134,7 +134,7 @@ router.get('/optical-recon', opticalReconLimiter, asyncHandler(async (req, res) 
     return res.status(400).json({ error: 'Valid lat and lng are required' });
   }
   const result = await getOpticalRecon({ latitude, longitude, radiusM: Number.isFinite(radiusM) ? radiusM : 25_000, signal: req.signal });
-  res.json({ data: result, meta: { source: 'optical-recon', generated_at: new Date().toISOString(), commercial_imagery: Boolean(result.premiumBasemap?.enabled) } });
+  res.json({ data: result, meta: { source: 'optical-recon', generated_at: new Date().toISOString(), commercial_imagery: false, commercial_basemap_configured: Boolean(result.premiumBasemap?.enabled) } });
 }));
 
 router.get('/optical-recon/tile', opticalTileLimiter, asyncHandler(async (req, res) => {

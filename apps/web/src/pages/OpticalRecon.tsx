@@ -190,7 +190,7 @@ export default function OpticalRecon() {
   useEffect(() => {
     if (!mapRef.current || mapMode === 'normal') return
     if (mapMode === 'ultra') {
-      if (!recon?.premiumBasemap.enabled) return
+      if (!recon?.premiumBasemap?.enabled) return
       setMapReady(false); setTileError(null)
       mapRef.current.setStyle(reconStyle({ source: 'vantor', date: 'mosaic' }))
       return
@@ -198,7 +198,7 @@ export default function OpticalRecon() {
     if (!viewed?.render) return
     setMapReady(false); setTileError(null)
     mapRef.current.setStyle(reconStyle(viewed.render))
-  }, [mapMode, recon?.premiumBasemap.enabled, viewed?.render?.source, viewed?.render?.date, viewed?.render?.itemId])
+  }, [mapMode, recon?.premiumBasemap?.enabled, viewed?.render?.source, viewed?.render?.date, viewed?.render?.itemId])
 
   useEffect(() => {
     if (!mapRef.current || !opticalQ.error || mapMode === 'normal') return
@@ -276,7 +276,7 @@ export default function OpticalRecon() {
           }} disabled={!recon?.precisionAlternative}>
             <Maximize2 size={13} /> DETAIL SCENE
           </button>
-          <button type="button" className={mapMode === 'ultra' ? 'active ultra' : 'ultra'} onClick={() => { setSelectedId(null); setMapMode('ultra'); setTileError(null) }} disabled={!recon?.premiumBasemap.enabled} title={recon?.premiumBasemap.enabled ? 'Use the licensed Vantor Vivid Mosaic high-resolution basemap' : 'Requires Vantor API access, an approved imagery licence and explicit server configuration'}>
+          <button type="button" className={mapMode === 'ultra' ? 'active ultra' : 'ultra'} onClick={() => { setSelectedId(null); setMapMode('ultra'); setTileError(null) }} disabled={!recon?.premiumBasemap?.enabled} title={recon?.premiumBasemap?.enabled ? 'Use the licensed Vantor Vivid Mosaic high-resolution basemap' : 'Requires Vantor API access, an approved imagery licence and explicit server configuration'}>
             <Layers3 size={13} /> VANTOR ULTRA-HD
           </button>
         </div>
@@ -330,8 +330,8 @@ export default function OpticalRecon() {
             </div>
             <div className="ore-source">
               <div className="ore-source-mark vantor"><Layers3 size={13} /></div>
-              <div className="ore-source-copy"><strong>Vantor Vivid Mosaic</strong><span>{recon?.premiumBasemap.productGsdLabel || '30 cm product GSD target'} · not native sensor GSD</span></div>
-              <em className={recon?.premiumBasemap.enabled ? 'ok' : 'warn'}>{recon?.premiumBasemap.enabled ? 'READY' : (recon?.premiumBasemap.state || 'not_configured').replaceAll('_', ' ').toUpperCase()}</em>
+              <div className="ore-source-copy"><strong>Vantor Vivid Mosaic</strong><span>{recon?.premiumBasemap?.productGsdLabel || '30 cm product GSD target'} · not native sensor GSD</span></div>
+              <em className={recon?.premiumBasemap?.enabled ? 'ok' : 'warn'}>{recon?.premiumBasemap?.enabled ? 'READY' : (recon?.premiumBasemap?.state || 'not_configured').replaceAll('_', ' ').toUpperCase()}</em>
             </div>
             <div className="ore-source">
               <div className="ore-source-mark nasa"><Cloud size={13} /></div>
@@ -367,7 +367,7 @@ export default function OpticalRecon() {
           </div>
           <div className="ore-map-bottom">
             {mapMode === 'ultra' ? <>
-              <span><b>SOURCE</b> Vantor Vivid Mosaic</span><span><b>PRODUCT GSD</b> {recon?.premiumBasemap.productGsdLabel || '—'}</span>
+              <span><b>SOURCE</b> Vantor Vivid Mosaic</span><span><b>PRODUCT GSD</b> {recon?.premiumBasemap?.productGsdLabel || '—'}</span>
               <span><b>ACQUISITION</b> Per-area mosaic date not provided by tile response</span><span><b>LICENCE</b> Server-confirmed Sonalit stream</span>
             </> : <>
               <span><b>ACQ</b> {dateLabel(viewed?.acquiredAt)}</span><span><b>RES</b> {viewed?.nativeResolutionM ? String(viewed.nativeResolutionM) + ' m' : '—'}</span>

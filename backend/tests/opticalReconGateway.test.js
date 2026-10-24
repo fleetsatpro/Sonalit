@@ -154,6 +154,19 @@ describe('free optical reconnaissance gateway', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  test('rejects a Vantor HTTP 200 response that is not an image tile', async () => {
+    process.env.VANTOR_VIVID_ENABLED = 'true';
+    process.env.VANTOR_API_KEY = 'unit-test-key';
+    process.env.VANTOR_VIVID_LICENSE_CONFIRMED = 'true';
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'application/xml' },
+      arrayBuffer: async () => new TextEncoder().encode('<Exception>not entitled</Exception>').buffer,
+    }));
+    await expect(getOpticalTile({ source: 'vantor', z: 4, x: 2, y: 3, date: 'mosaic' }))
+      .rejects.toMatchObject({ failureClass: 'provider_invalid_response' });
+  });
+
   test('rejects malformed tile coordinates before touching an upstream provider', async () => {
     await expect(getOpticalTile({ source: 'sentinel', z: 99, x: 0, y: 0, date: '2026-10-05' }))
       .rejects.toMatchObject({ failureClass: 'malformed' });

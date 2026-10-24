@@ -421,12 +421,13 @@ async function getOpticalTile({ source = 'sentinel', date, z, x, y, itemId } = {
     error.failureClass = response.status === 429 ? 'rate_limited' : 'http_error';
     throw error;
   }
-  const contentType = response.headers.get('content-type') || (source === 'nasa' || source === 'oam' || source === 'vantor' ? 'image/jpeg' : 'image/png');
-  if (source === 'vantor' && !/^image\\//i.test(contentType)) {
+  const upstreamContentType = response.headers.get('content-type');
+  if (source === 'vantor' && (!upstreamContentType || !/^image\//i.test(upstreamContentType))) {
     const error = new Error('Vantor imagery service returned a non-image response');
     error.failureClass = 'provider_invalid_response';
     throw error;
   }
+  const contentType = upstreamContentType || (source === 'nasa' || source === 'oam' || source === 'vantor' ? 'image/jpeg' : 'image/png');
   const buffer = Buffer.from(await response.arrayBuffer());
   const result = { buffer, contentType, expiresAt: Date.now() + 5 * 60_000 };
   if (cacheable) {
