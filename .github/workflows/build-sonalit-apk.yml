@@ -174,6 +174,41 @@ jobs:
             exit 1
           fi
 
+      - name: Extract APK release metadata
+        id: apkmeta
+        env:
+          APK_PATH: ${{ github.workspace }}/apps/sonalit-app/android/app/build/outputs/apk/sonalit.apk
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          if [ ! -x "$AAPT" ]; then
+            echo "::error::Android aapt binary not found at $AAPT"
+            exit 1
+          fi
+          BADGING="$("$AAPT" dump badging "$APK_PATH")"
+          PACKAGE_NAME=$(printf '%s\\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p")
+          VERSION_CODE=$(printf '%s\\n' "$BADGING" | sed -n "s/^package:.*versionCode='\\([^']*\\)'.*/\\1/p")
+          VERSION_NAME=$(printf '%s\\n' "$BADGING" | sed -n "s/^package:.*versionName='\\([^']*\\)'.*/\\1/p")
+          MIN_SDK=$(printf '%s\\n' "$BADGING" | sed -n "s/^sdkVersion:'\\([^']*\\)'.*/\\1/p")
+          SHA256=$(sha256sum "$APK_PATH" | cut -d ' ' -f 1)
+          for field in PACKAGE_NAME VERSION_CODE VERSION_NAME MIN_SDK SHA256; do
+            if [ -z "${!field}" ]; then
+              echo "::error::Missing APK metadata field: $field"
+              exit 1
+            fi
+          done
+          if ! printf '%s' "$SHA256" | grep -Eq '^[a-fA-F0-9]{64}$'; then
+            echo "::error::APK SHA-256 did not validate"
+            exit 1
+          fi
+          {
+            echo "package_name=$PACKAGE_NAME"
+            echo "version_code=$VERSION_CODE"
+            echo "version_name=$VERSION_NAME"
+            echo "min_sdk=$MIN_SDK"
+            echo "sha256=$SHA256"
+          } >> "$GITHUB_OUTPUT"
+          echo "APK metadata: $PACKAGE_NAME v$VERSION_NAME (code $VERSION_CODE), min SDK $MIN_SDK"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         continue-on-error: true
@@ -194,6 +229,12 @@ jobs:
             **Install**: Download and open on an Android 7.0+ device (enable "Install unknown apps" in settings). Installing a newer build over an older one is an in-place update — no uninstall needed.
 
             **Updates**: This app loads the live Sonalit web app, so UI and feature updates appear automatically on next open. You only need a new APK for rare native changes.
+            **Android app version:** ${{ steps.apkmeta.outputs.version_name }} (version code ${{ steps.apkmeta.outputs.version_code }}).
+            **Package ID:** ${{ steps.apkmeta.outputs.package_name }}.
+            **Minimum Android API:** ${{ steps.apkmeta.outputs.min_sdk }}+.
+            **SHA-256:** ${{ steps.apkmeta.outputs.sha256 }}.
+
+            <!-- SONALIT_APK_METADATA {"version_name":"${{ steps.apkmeta.outputs.version_name }}","version_code":${{ steps.apkmeta.outputs.version_code }},"package_name":"${{ steps.apkmeta.outputs.package_name }}","min_sdk":${{ steps.apkmeta.outputs.min_sdk }},"sha256":"${{ steps.apkmeta.outputs.sha256 }}"} -->
           files: apps/sonalit-app/android/app/build/outputs/apk/sonalit.apk
           draft: false
           prerelease: false
