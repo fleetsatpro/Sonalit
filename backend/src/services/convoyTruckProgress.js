@@ -55,6 +55,7 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
 
   let state = 'no_fix';
   let progressPct = null;
+  let projectedPct = null;
   let alongKm = null;
   let routeLenKm = null;
   let crossTrackKm = null;
@@ -77,6 +78,8 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
       routeLenKm = Math.round(projected.routeLenKm * 100) / 100;
       alongKm = Math.round(projected.alongKm * 100) / 100;
       crossTrackKm = Math.round(projected.crossTrackKm * 100) / 100;
+      projectedPct = Math.max(0, Math.min(100,
+        Math.round((projected.alongKm / projected.routeLenKm) * 100)));
       // A saved corridor is routed geometry and uses its configured width.
       // Waypoint fallback may connect only named stops with straight segments;
       // road curvature can legitimately place a truck farther from those
@@ -90,8 +93,7 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
         // Preserve measured distance diagnostics, but do not imply route
         // completion for a GPS point outside the accepted geometry tolerance.
       } else {
-        progressPct = Math.max(0, Math.min(100,
-          Math.round((projected.alongKm / projected.routeLenKm) * 100)));
+        progressPct = projectedPct;
         state = ageSeconds > GPS_STALE_AFTER_SECONDS ? 'stale' : 'live';
       }
     }
@@ -101,6 +103,7 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
   return {
     state,
     progress_pct: progressPct,
+    projected_pct: projectedPct,
     along_km: alongKm,
     route_len_km: routeLenKm,
     cross_track_km: crossTrackKm,
