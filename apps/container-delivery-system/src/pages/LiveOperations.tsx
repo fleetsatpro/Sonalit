@@ -141,7 +141,7 @@ export default function LiveOperations() {
 
         <Card className="max-h-[620px] overflow-y-auto p-4">
           <div className="font-display font-bold text-[13px] mb-1">Open Trips</div>
-          <div className="text-2xs text-text-2 font-mono mb-2.5">Refreshed from the tracking endpoint every 15 seconds</div>
+          <div className="text-2xs text-text-2 font-mono mb-2.5">Refresh attempted every 15 seconds · {feedState === 'FEED CURRENT' ? 'latest response verified' : feedState.toLowerCase()}</div>
           {trips.map(trip => {
             const verifiedLiveFix = hasVerifiedLiveFix(trip);
             const validPosition = hasValidCoordinates(trip);
