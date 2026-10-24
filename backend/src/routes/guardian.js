@@ -3216,7 +3216,12 @@ router.get('/apk/download-app/:appId/:releaseId', async (req, res) => {
     }
 
     if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) {
-      return await streamGithubAsset(res, asset.url, filename);
+      try {
+        return await streamGithubAsset(res, asset.url, filename);
+      } catch (streamError) {
+        if (res.headersSent) return;
+        logger.warn('Authenticated Sonalit APK stream failed; trying the public release URL: ' + streamError.message);
+      }
     }
     return await streamApk(res, assetUrl.href, filename);
   } catch (err) {
