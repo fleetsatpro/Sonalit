@@ -1,10 +1,5 @@
 "use strict";
 
-const {
-  getSonalitApkCatalog,
-  createUnverifiedCatalog
-} = require("../src/utils/apkReleaseCatalog");
-
 const originalFetch = global.fetch;
 
 function makeRelease(tag, name, packageId, versionName, versionCode, minSdk, publishedAt, assetName) {
@@ -32,6 +27,11 @@ function makeRelease(tag, name, packageId, versionName, versionCode, minSdk, pub
 }
 
 describe("Sonalit app-specific APK release catalogue", () => {
+  beforeEach(() => {
+    // Reset module-scoped cache so tests are isolated from the refresh cooldown.
+    jest.resetModules();
+  });
+
   afterEach(() => {
     global.fetch = originalFetch;
     jest.clearAllMocks();
@@ -53,6 +53,7 @@ describe("Sonalit app-specific APK release catalogue", () => {
       json: async () => releases
     });
 
+    const { getSonalitApkCatalog } = require("../src/utils/apkReleaseCatalog");
     const catalog = await getSonalitApkCatalog({ forceRefresh: true });
     const byId = Object.fromEntries(catalog.apps.map(app => [app.id, app]));
 
@@ -98,7 +99,24 @@ describe("Sonalit app-specific APK release catalogue", () => {
     expect(field.releaseId).toBeNull();
   });
 
+  test("coalesces repeated public forced refreshes within the minimum interval", async () => {
+    const releases = [
+      makeRelease("sonalit-v41", "Sonalit v41", "io.sonalit.app", "1.0.41", 41, 24, "2026-10-24T20:00:00Z", "sonalit.apk"),
+      makeRelease("sonalit-field-v26", "Sonalit Field v26", "io.sonalit.field", "1.0.26", 26, 24, "2026-10-24T20:00:00Z", "sonalit-field.apk"),
+      makeRelease("sonalit-handover-v18", "Sonalit Handover v18", "io.sonalit.handover", "1.0.18", 18, 24, "2026-10-24T20:00:00Z", "sonalit-handover.apk"),
+      makeRelease("guardian-v981", "Sonalit Guardian 4.7.0", "io.sonalit.guardian", "4.7.0", 13, 29, "2026-10-24T20:00:00Z", "app-debug.apk")
+    ];
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => releases });
+    const { getSonalitApkCatalog } = require("../src/utils/apkReleaseCatalog");
+
+    await getSonalitApkCatalog({ forceRefresh: true });
+    await getSonalitApkCatalog({ forceRefresh: true });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   test("unverified catalog has no fabricated version or download links", () => {
+    const { createUnverifiedCatalog } = require("../src/utils/apkReleaseCatalog");
     const catalog = createUnverifiedCatalog();
 
     expect(catalog.source).toBe("unavailable");
