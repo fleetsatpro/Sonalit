@@ -3,8 +3,8 @@ const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const { publish } = require('../realtime/centrifugo');
 const { evaluateConvoyOperationalState } = require('../services/convoyOperationalResilience');
-const { projectOntoRoute } = require('../services/geofence/corridor');
 const logger = require('../utils/logger');
+const { routePointList, calculateTruckRouteProgress } = require('../services/convoyTruckProgress');
 
 const VALID_TRANSITIONS = {
   planned: ['active', 'cancelled'],
@@ -48,19 +48,6 @@ async function assertClientInOrg(clientId, orgId) {
 
 function buildPagination(page, limit, total) {
   return { page: parseInt(page), limit: parseInt(limit), totalCount: parseInt(total), totalPages: Math.ceil(total / limit) };
-}
-
-function routePointList(raw) {
-  let value = raw;
-  if (typeof value === 'string') {
-    try { value = JSON.parse(value); } catch { return []; }
-  }
-  if (!Array.isArray(value)) return [];
-  return value.map(point => ({
-    lat: point?.lat == null ? NaN : Number(point.lat),
-    lng: point?.lng == null ? NaN : Number(point.lng),
-  })).filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lng)
-    && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180);
 }
 
 /**
@@ -175,57 +162,15 @@ async function attachTruckProgress(rows, orgId) {
     for (const row of rosterResult.rows || []) {
       const convoyId = String(row.convoy_id);
       const route = routes.get(convoyId);
-      const lat = row.gps_lat == null ? NaN : Number(row.gps_lat);
-      const lng = row.gps_lng == null ? NaN : Number(row.gps_lng);
-      const hasLocation = Number.isFinite(lat) && Number.isFinite(lng)
-        && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
-      const fixDate = row.last_fix_at == null ? null : new Date(row.last_fix_at);
-      const validFixDate = fixDate && Number.isFinite(fixDate.getTime()) ? fixDate : null;
-      const ageSeconds = validFixDate ? Math.max(0, Math.floor((now - validFixDate.getTime()) / 1000)) : null;
-
-      let state = 'no_fix';
-      let progressPct = null;
-      let alongKm = null;
-      let routeLenKm = null;
-      let crossTrackKm = null;
-
-      if (!row.vehicle_id) {
-        state = 'unassigned';
-      } else if (!hasLocation || ageSeconds == null) {
-        state = 'no_fix';
-      } else if (!route || route.points.length < 2) {
-        state = 'no_route';
-      } else {
-        const projected = projectOntoRoute(route.points, lat, lng);
-        routeLenKm = Number.isFinite(projected.routeLenKm) ? Math.round(projected.routeLenKm * 100) / 100 : null;
-        alongKm = Number.isFinite(projected.alongKm) ? Math.round(projected.alongKm * 100) / 100 : null;
-        crossTrackKm = Number.isFinite(projected.crossTrackKm) ? Math.round(projected.crossTrackKm * 100) / 100 : null;
-        if (Number.isFinite(projected.routeLenKm) && projected.routeLenKm > 0
-            && Number.isFinite(projected.crossTrackKm) && projected.crossTrackKm <= route.corridorKm) {
-          progressPct = Math.max(0, Math.min(100, Math.round((projected.alongKm / projected.routeLenKm) * 100)));
-          state = ageSeconds > 15 * 60 ? 'stale' : 'live';
-        } else {
-          // A point far outside the planned corridor is not converted into a
-          // misleading route percentage; the operator sees OFF ROUTE instead.
-          state = 'off_route';
-        }
-      }
-
       const position = Number(row.position) || 1;
+      const progress = calculateTruckRouteProgress(row, route, now);
       const truck = {
         id: row.convoy_truck_id ? String(row.convoy_truck_id) : convoyId + ':' + (row.vehicle_id ?? position),
         vehicle_id: row.vehicle_id ? String(row.vehicle_id) : null,
         position,
         registration: row.registration ?? null,
         driver_name: row.driver_name ?? null,
-        progress_pct: progressPct,
-        along_km: alongKm,
-        route_len_km: routeLenKm,
-        cross_track_km: crossTrackKm,
-        last_fix_at: validFixDate ? validFixDate.toISOString() : null,
-        age_seconds: ageSeconds,
-        speed_kph: row.speed_kph == null || !Number.isFinite(Number(row.speed_kph)) ? null : Number(row.speed_kph),
-        state,
+        ...progress,
       };
       if (byConvoy.has(convoyId)) byConvoy.get(convoyId).push(truck);
     }
