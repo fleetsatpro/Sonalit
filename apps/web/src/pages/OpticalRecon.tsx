@@ -88,7 +88,9 @@ function sourceState(recon: OpticalReconResult | undefined, source: 'sentinel' |
   }
   if (source === 'oam') {
     if (recon.warnings.includes('openaerialmap_catalog_unavailable')) return 'DEGRADED'
-    return recon.coverage.openAerialMapCandidates > 0 ? 'AVAILABLE' : 'NO CANDIDATES'
+    const aerialItems = recon.candidates.filter(candidate => candidate.provider === 'openaerialmap')
+    if (aerialItems.some(candidate => candidate.renderable && candidate.licenceVerified !== false)) return 'AVAILABLE'
+    return aerialItems.length ? 'LICENCE REVIEW' : 'NO CANDIDATES'
   }
   return recon.primary?.render?.source === 'nasa' ? 'ACTIVE FALLBACK' : 'STANDING BY'
 }
@@ -313,18 +315,18 @@ export default function OpticalRecon() {
               <span>{viewed?.provider || 'catalog pending'}</span>
             </div>
             <div className="ore-big-metric">
-              <strong>{viewed?.nativeResolutionM ? String(viewed.nativeResolutionM) + ' m' : '—'}</strong>
-              <span>NATIVE GROUND SAMPLE</span>
+              <strong>{mapMode === 'open' ? 'Variable' : viewed?.nativeResolutionM ? String(viewed.nativeResolutionM) + ' m' : '—'}</strong>
+              <span>{mapMode === 'open' ? 'NO UNIFORM GROUND SAMPLE' : 'NATIVE GROUND SAMPLE'}</span>
             </div>
             <div className="ore-metric-grid">
-              <div><span>ACQUIRED</span><b>{dateLabel(viewed?.acquiredAt)}</b></div>
-              <div><span>AGE</span><b>{ageLabel(viewed?.acquiredAt)}</b></div>
-              <div><span>CLOUD</span><b>{viewed?.cloudPct != null ? viewed.cloudPct.toFixed(1) + '%' : '—'}</b></div>
-              <div><span>SOURCE</span><b>{sourceLabel(viewed?.render?.source)}</b></div>
+              <div><span>ACQUIRED</span><b>{mapMode === 'open' ? 'Varies by location' : dateLabel(viewed?.acquiredAt)}</b></div>
+              <div><span>AGE</span><b>{mapMode === 'open' ? 'Unknown' : ageLabel(viewed?.acquiredAt)}</b></div>
+              <div><span>CLOUD</span><b>{mapMode === 'open' ? '—' : viewed?.cloudPct != null ? viewed.cloudPct.toFixed(1) + '%' : '—'}</b></div>
+              <div><span>SOURCE</span><b>{mapMode === 'open' ? 'OAM GLOBAL' : sourceLabel(viewed?.render?.source)}</b></div>
             </div>
             <div className="ore-recommendation">
               <Eye size={13} />
-              <span>{viewed?.recommendation || 'Awaiting the validated scene selection for this AOI.'}</span>
+              <span>{mapMode === 'open' ? 'Contributor imagery only; native resolution, acquisition date and coverage vary by tile. Zoom in and select a licensed catalogue scene for source-specific detail.' : viewed?.recommendation || 'Awaiting the validated scene selection for this AOI.'}</span>
             </div>
           </section>
 
@@ -467,7 +469,7 @@ export default function OpticalRecon() {
               <div><span>PROVIDER</span><b>{mapMode === 'ultra' ? 'Vantor Vivid Mosaic' : mapMode === 'open' ? 'HOTOSM / OpenAerialMap' : viewed?.provider || '—'}</b></div>
               <div><span>ACQUIRED UTC</span><b>{mapMode === 'ultra' ? 'Not provided per tile / location' : mapMode === 'open' ? 'No single acquisition time; source images vary by location' : viewed?.acquiredAt || '—'}</b></div>
               <div><span>LICENCE</span><b>{mapMode === 'ultra' ? 'Commercial; explicit server entitlement required' : mapMode === 'open' ? 'OpenAerialMap item attribution/licence varies; review source metadata' : viewed?.licence || '—'}</b></div>
-              <div><span>CAPABILITIES</span><b>{viewed?.capabilities?.join(' · ') || '—'}</b></div>
+              <div><span>CAPABILITIES</span><b>{mapMode === 'open' ? 'Contributor imagery; resolution/date vary by tile' : viewed?.capabilities?.join(' · ') || '—'}</b></div>
             </div>
           </section>
 
