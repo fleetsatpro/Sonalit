@@ -12,7 +12,7 @@ const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { validateBbox } = require('../services/spatial/openskyGateway');
 const { spatialProviderManager } = require('../services/spatial/providerManager');
-const { getOpticalRecon, getOpticalTile } = require('../services/spatial/opticalReconGateway');
+const { getOpticalRecon, getOpticalTile, getVantorBasemapConfig } = require('../services/spatial/opticalReconGateway');
 const {
   buildWorldContext,
   getSpatialProviderHealth,
@@ -134,16 +134,29 @@ router.get('/optical-recon', opticalReconLimiter, asyncHandler(async (req, res) 
     return res.status(400).json({ error: 'Valid lat and lng are required' });
   }
   const result = await getOpticalRecon({ latitude, longitude, radiusM: Number.isFinite(radiusM) ? radiusM : 25_000, signal: req.signal });
-  res.json({ data: result, meta: { source: 'optical-recon', generated_at: new Date().toISOString(), commercial_imagery: false } });
+  res.json({ data: result, meta: { source: 'optical-recon', generated_at: new Date().toISOString(), commercial_imagery: false, commercial_basemap_configured: Boolean(result.premiumBasemap?.enabled) } });
 }));
 
 router.get('/optical-recon/tile', opticalTileLimiter, asyncHandler(async (req, res) => {
   const source = String(req.query.source || 'sentinel');
-  if (!['sentinel', 'oam', 'nasa'].includes(source)) return res.status(400).json({ error: 'Unsupported optical source' });
+  if (!['sentinel', 'oam', 'oam-global', 'open-cities', 'nasa', 'vantor'].includes(source)) return res.status(400).json({ error: 'Unsupported optical source' });
+  if (source === 'vantor' && !getVantorBasemapConfig().enabled) {
+    return res.status(503).json({ error: 'vantor_ultrahd_not_configured', state: getVantorBasemapConfig().state });
+  }
   const result = await getOpticalTile({ source, date: req.query.date, z: req.query.z, x: req.query.x, y: req.query.y, itemId: req.query.itemId });
   res.setHeader('Content-Type', result.contentType);
-  res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
   res.setHeader('X-Sonalit-Imagery-Source', source);
+  if (source === 'open-cities') {
+    res.setHeader('X-Sonalit-Imagery-License', result.licence || 'ODbL-1.0');
+    if (result.sourceMetadataUrl) res.setHeader('X-Sonalit-Imagery-Metadata', result.sourceMetadataUrl);
+  }
+  if (source === 'vantor') {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Sonalit-Imagery-Resolution-Semantics', 'provider-product-gsd');
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+  }
   return res.send(result.buffer);
 }));
 

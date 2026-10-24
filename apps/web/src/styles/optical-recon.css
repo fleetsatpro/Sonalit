@@ -21,3 +21,10 @@
 @media(max-width:1200px){.ore-workspace{grid-template-columns:220px minmax(0,1fr) 320px}.ore-title-block p{max-width:600px}.ore-gesture{display:none}}
 @media(max-width:940px){.ore-workspace{grid-template-columns:1fr}.ore-left,.ore-right{border:0;border-top:1px solid rgba(255,255,255,.07);max-height:38vh}.ore-map-wrap{min-height:55vh}.ore-left{order:2}.ore-map-wrap{order:1}.ore-right{order:3}.ore-header{height:auto;min-height:66px;padding:10px 12px}.ore-header-right .ore-integrity-chip{display:none}.ore-title-block p{max-width:48vw}.ore-aoi-readout{display:none}}
 @media(max-width:600px){.ore-commandbar{overflow-x:auto}.ore-command-modes button{white-space:nowrap}.ore-title-block h1{font-size:15px}.ore-title-block p{display:none}.ore-map-bottom{bottom:8px;left:8px;right:8px}.ore-map-bottom span:nth-child(n+3){display:none}.ore-map-alert{left:8px;right:8px}.ore-map-acquire{width:calc(100% - 24px);justify-content:center}.ore-context-grid{grid-template-columns:1fr 1fr}}
+
+/* Vantor high-resolution mosaic mode. */
+.ore-command-modes button.ultra{color:#d5b4ff;border-color:rgba(190,145,255,.17);background:rgba(145,93,220,.035)}
+.ore-command-modes button.ultra:hover:not(:disabled),.ore-command-modes button.ultra.active{color:#ead7ff;background:rgba(145,93,220,.12);border-color:rgba(190,145,255,.42)}
+.ore-command-modes button.ultra:disabled{opacity:.42;cursor:not-allowed}
+.ore-source-mark.vantor{color:#d5b4ff;background:rgba(145,93,220,.07);border-color:rgba(190,145,255,.17)}
+.ore-uhd-note{position:absolute;top:93px;left:12px;max-width:min(430px,calc(100% - 24px));z-index:5;padding:7px 9px;border:1px solid rgba(190,145,255,.22);border-radius:5px;background:rgba(13,8,21,.88);color:#c4a9e9;font:700 7px/1.45 'IBM Plex Mono',monospace;pointer-events:none}
