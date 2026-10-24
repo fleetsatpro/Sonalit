@@ -87,6 +87,20 @@ describe('calculateTruckRouteProgress', () => {
     expect(staleBoundary.state).toBe('delayed');
   });
 
+  test('does not round fractional seconds down when applying freshness thresholds', () => {
+    const justDelayed = calculateTruckRouteProgress({
+      ...base, last_fix_at: new Date(NOW - (GPS_LIVE_AFTER_SECONDS * 1000 + 900)).toISOString(),
+    }, ROUTE, NOW);
+    const justStale = calculateTruckRouteProgress({
+      ...base, last_fix_at: new Date(NOW - (GPS_STALE_AFTER_SECONDS * 1000 + 900)).toISOString(),
+    }, ROUTE, NOW);
+
+    expect(justDelayed.age_seconds).toBe(GPS_LIVE_AFTER_SECONDS);
+    expect(justDelayed.state).toBe('delayed');
+    expect(justStale.age_seconds).toBe(GPS_STALE_AFTER_SECONDS);
+    expect(justStale.state).toBe('stale');
+  });
+
   test('flags stale GPS and retains measured position without calling it live', () => {
     const result = calculateTruckRouteProgress({
       ...base, last_fix_at: new Date(NOW - (GPS_STALE_AFTER_SECONDS + 1) * 1000).toISOString(),
