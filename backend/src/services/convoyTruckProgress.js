@@ -6,6 +6,11 @@ const GPS_LIVE_AFTER_SECONDS = 45;
 const GPS_STALE_AFTER_SECONDS = 5 * 60;
 const GPS_FUTURE_TOLERANCE_MS = 2 * 60 * 1000;
 
+function coordinateNumber(value) {
+  if (value == null || (typeof value === 'string' && value.trim() === '')) return NaN;
+  return Number(value);
+}
+
 function validCoordinatePair(lat, lng) {
   return Number.isFinite(lat) && Number.isFinite(lng)
     && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
@@ -24,8 +29,8 @@ function routePointList(raw) {
   if (!Array.isArray(value) || value.length < 2) return [];
 
   const points = value.map(point => ({
-    lat: point?.lat == null ? NaN : Number(point.lat),
-    lng: point?.lng == null ? NaN : Number(point.lng),
+    lat: coordinateNumber(point?.lat),
+    lng: coordinateNumber(point?.lng),
   }));
 
   return points.every(point => validCoordinatePair(point.lat, point.lng)) ? points : [];
@@ -49,7 +54,8 @@ function calculateTruckRouteProgress(row, route, nowMs = Date.now()) {
   const futureSkew = ageMs != null && ageMs < -GPS_FUTURE_TOLERANCE_MS;
   const ageSeconds = ageMs == null || futureSkew ? null : Math.max(0, Math.floor(ageMs / 1000));
   const validRoute = route && Array.isArray(route.points) && route.points.length >= 2
-    && route.points.every(point => validCoordinatePair(Number(point.lat), Number(point.lng)));
+    && route.points.every(point => point
+      && validCoordinatePair(coordinateNumber(point.lat), coordinateNumber(point.lng)));
   const corridorKm = Number(route?.corridorKm);
   const allowedCrossTrackKm = Number.isFinite(corridorKm) && corridorKm > 0 && corridorKm <= 50
     ? corridorKm : 2;
