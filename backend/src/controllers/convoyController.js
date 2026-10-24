@@ -635,4 +635,6 @@ const dispatchConvoy = asyncHandler(async (req, res) => {
 module.exports = {
   getConvoys, getConvoy, createConvoy, updateConvoy, updateConvoyStatus, assignVehicles, deleteConvoy, getConvoyEvents, dispatchConvoy,
   finalizeConvoyCompletion, isConvoyHandoverComplete,
+  // Exported for focused regression tests; the HTTP contract remains unchanged.
+  attachTruckProgress,
 };
