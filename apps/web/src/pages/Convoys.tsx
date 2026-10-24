@@ -275,7 +275,7 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
         {trackingAvailable && trucks.map(truck => {
           const color = truckProgressColor(truck)
           const label = typeof truck.progress_pct === 'number'
-            ? String(truck.progress_pct) + '%'
+            ? String(truck.progress_pct) + '%' + (truck.state === 'stale' ? ' STALE' : '')
             : truckProgressStateLabel(truck.state)
           return (
             <span key={truck.id} title={truckProgressTitle(truck)} style={{ display:'inline-flex', alignItems:'center', gap:3, fontFamily:MN, fontSize:7, color, whiteSpace:'nowrap', cursor:'help' }}>
