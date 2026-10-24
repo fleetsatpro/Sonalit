@@ -13,6 +13,7 @@ describe('free optical reconnaissance gateway', () => {
     VANTOR_VIVID_ENABLED: process.env.VANTOR_VIVID_ENABLED,
     VANTOR_VIVID_LICENSE_CONFIRMED: process.env.VANTOR_VIVID_LICENSE_CONFIRMED,
     VANTOR_VIVID_PRODUCT: process.env.VANTOR_VIVID_PRODUCT,
+    OPEN_CITIES_TITILER_BASE_URL: process.env.OPEN_CITIES_TITILER_BASE_URL,
   };
 
   afterEach(() => {
@@ -180,6 +181,49 @@ describe('free optical reconnaissance gateway', () => {
     }));
     await expect(getOpticalTile({ source: 'oam-global', z: 14, x: 8300, y: 6377, date: 'mosaic' }))
       .rejects.toMatchObject({ failureClass: 'provider_invalid_response' });
+  });
+
+  test('indexes the published Dar es Salaam Open Cities archive only when the AOI intersects its real footprint', async () => {
+    global.fetch = jest.fn(async url => {
+      const target = String(url);
+      if (target.includes('explorer.digitalearth.africa/stac/search')) return { ok: true, json: async () => ({ features: [] }) };
+      if (target.includes('api.imagery.hotosm.org/stac/search')) return { ok: true, json: async () => ({ features: [] }) };
+      throw new Error('unexpected fetch: ' + target);
+    });
+    const covered = await getOpticalRecon({ latitude: -6.79, longitude: 39.21, radiusM: 8_000 });
+    expect(covered.openCitiesScenes).toHaveLength(1);
+    expect(covered.openCitiesScenes[0]).toMatchObject({
+      id: 'open-cities:dar:5fe6fb', provider: 'open-cities-ai-challenge',
+      acquiredAt: '2017-11-01T00:00:00Z', nativeResolutionM: null,
+      licence: 'ODbL-1.0', licenceVerified: true, renderable: true,
+      render: { source: 'open-cities', itemId: 'dar-5fe6fb' },
+    });
+    expect(covered.openCitiesScenes[0].recommendation).toContain('does not declare native GSD');
+    const outside = await getOpticalRecon({ latitude: -1.286389, longitude: 36.817223, radiusM: 8_000 });
+    expect(outside.openCitiesScenes).toHaveLength(0);
+  });
+
+  test('renders only allow-listed Open Cities COGs through TiTiler and reports their licence', async () => {
+    process.env.OPEN_CITIES_TITILER_BASE_URL = 'https://tiler.example.test/';
+    const requests = [];
+    global.fetch = jest.fn(async (url, init) => {
+      requests.push({ url: String(url), init });
+      return { ok: true, headers: { get: () => 'image/png' }, arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer };
+    });
+    const first = await getOpticalTile({ source: 'open-cities', itemId: 'dar-5fe6fb', date: '2017-11-01', z: 18, x: 159616, y: 136032 });
+    expect(first.contentType).toBe('image/png');
+    expect(first.licence).toBe('ODbL-1.0');
+    expect(first.sourceMetadataUrl).toContain('/train_tier_2/dar/5fe6fb/5fe6fb.json');
+    expect(requests).toHaveLength(1);
+    const requestUrl = new URL(requests[0].url);
+    expect(requestUrl.origin).toBe('https://tiler.example.test');
+    expect(requestUrl.pathname).toBe('/cog/tiles/WebMercatorQuad/18/159616/136032.png');
+    expect(requestUrl.searchParams.get('url')).toBe('https://data.source.coop/open-cities/ai-challenge/train_tier_2/dar/5fe6fb/5fe6fb.tif');
+    expect(requestUrl.searchParams.getAll('bidx')).toEqual(['1', '2', '3']);
+    global.fetch = jest.fn();
+    await expect(getOpticalTile({ source: 'open-cities', itemId: 'https://attacker.example/payload.tif', z: 18, x: 1, y: 1 }))
+      .rejects.toMatchObject({ failureClass: 'invalid_archive_item' });
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   test('keeps Vantor disabled until enablement, API key and licence confirmation are all present', () => {

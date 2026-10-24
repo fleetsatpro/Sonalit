@@ -22,9 +22,11 @@ The workstation also exposes **OPEN UHD**, a separate OpenAerialMap/HOTOSM globa
 - Item-specific catalogue candidates are not rendered unless an explicit, recognised item licence is present. Missing licence metadata is surfaced as unresolved rather than silently assuming CC-BY.
 - Tile responses must be images; an upstream HTML/XML error response is rejected rather than presented as imagery.
 
-### Open Cities archive
+### Open Cities archive integration
 
-The Open Cities AI Challenge dataset is a downloadable, fixed-footprint African drone-imagery archive hosted on Source Cooperative under ODbL-1.0; it is not a global live tile service. It is documented as a candidate for a future, separately catalogued archive layer after verifying coverage, file layout, attribution and ODbL obligations. Do not ingest it into live rendering or expose it as general commercial-use imagery without that review.
+A first allow-listed archive tile is integrated for the published Dar es Salaam item `train_tier_2/dar/5fe6fb`. The catalogue item records `datetime=2017-11-01T00:00:00Z`, `license=ODbL-1.0`, a footprint bbox of `[39.1953249, -6.8050030, 39.2277869, -6.7738980]`, and a COG asset. The item JSON does **not** declare native GSD, so the UI reports it as unknown rather than assigning a resolution. The scene is returned only when the reconnaissance AOI bbox intersects the published footprint. Source record: https://data.source.coop/open-cities/ai-challenge/train_tier_2/dar/5fe6fb/5fe6fb.json.
+
+COG rendering uses TiTiler's documented `GET /cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=...&bidx=...` endpoint. The default `https://titiler.xyz` is a shared public service and has no Sonalit service-level guarantee; configure `OPEN_CITIES_TITILER_BASE_URL` to a Sonalit-managed TiTiler deployment for production-grade availability and controls. Item IDs are allow-listed server-side; the request cannot supply an arbitrary COG URL. The layer is explicitly historical, not live imagery. Review ODbL-1.0 attribution and share-alike obligations before using the rendered tiles in a production commercial offering.
 
 ## Enablement gate
 Configure these backend environment variables only after the signed contract permits streaming/embedding imagery in the Sonalit multi-tenant product and the provider account has been provisioned:

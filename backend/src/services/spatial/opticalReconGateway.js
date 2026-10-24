@@ -23,6 +23,21 @@ const DEA_COLLECTION = 's2_l2a_c1';
 const OAM_STAC_SEARCH = 'https://api.imagery.hotosm.org/stac/search';
 const OAM_TILE_BASE = 'https://api.imagery.hotosm.org/raster/collections/openaerialmap/items';
 const OAM_GLOBAL_TILE_BASE = 'https://global.imagery.hotosm.org';
+const OPEN_CITIES_COG_BASE = 'https://data.source.coop/open-cities/ai-challenge';
+const OPEN_CITIES_ITEMS = Object.freeze({
+  'dar-5fe6fb': Object.freeze({
+    id: 'open-cities:dar:5fe6fb', itemId: 'dar-5fe6fb',
+    mission: 'Open Cities drone archive · Dar es Salaam', area: 'Dar es Salaam, Tanzania',
+    acquiredAt: '2017-11-01T00:00:00Z', date: '2017-11-01',
+    bbox: [39.19532486780871, -6.805003033328566, 39.227786910904726, -6.773897997440206],
+    licence: 'ODbL-1.0', licenceVerified: true, licenceSource: 'catalog_metadata',
+    sourceMetadataUrl: OPEN_CITIES_COG_BASE + '/train_tier_2/dar/5fe6fb/5fe6fb.json',
+    cogUrl: OPEN_CITIES_COG_BASE + '/train_tier_2/dar/5fe6fb/5fe6fb.tif', nativeResolutionM: null,
+  }),
+});
+function openCitiesTilerBase() {
+  return String(process.env.OPEN_CITIES_TITILER_BASE_URL || 'https://titiler.xyz').trim().replace(/[/]+$/, '');
+}
 const NASA_GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default';
 const VANTOR_BASEMAP_WMTS = 'https://api.maxar.com/basemaps/v1/ogc/gwc/service/wmts';
 const VANTOR_PRODUCTS = Object.freeze({
@@ -102,6 +117,27 @@ function freshnessClass(acquiredAt) {
   if (age <= 72 * 3600000) return 'RECENT';
   if (age <= 14 * 86400000) return 'AGING';
   return 'OLD';
+}
+
+function bboxIntersects(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && a.length === 4 && b.length === 4
+    && a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+}
+
+function openCitiesScenesForBbox(bbox) {
+  return Object.values(OPEN_CITIES_ITEMS).filter(scene => bboxIntersects(scene.bbox, bbox)).map(scene => ({
+    id: scene.id, provider: 'open-cities-ai-challenge', mission: scene.mission,
+    sensor: 'drone orthomosaic (archive)', itemId: scene.itemId,
+    acquiredAt: scene.acquiredAt, date: scene.date, cloudPct: null,
+    nativeResolutionM: scene.nativeResolutionM, footprintBbox: scene.bbox, geometry: null,
+    licence: scene.licence, licenceVerified: scene.licenceVerified, licenceSource: scene.licenceSource,
+    sourceMetadataUrl: scene.sourceMetadataUrl, freshness: freshnessClass(scene.acquiredAt),
+    capabilities: ['drone', 'high-detail', 'historical-archive', 'rgb-cog'],
+    score: scoreCandidate({ acquiredAt: scene.acquiredAt, gsdM: undefined, coverage: 1, licenceOk: true }),
+    renderable: true,
+    recommendation: 'Historical drone archive acquired 2017-11-01. The item metadata does not declare native GSD; this is not current reconnaissance.',
+    render: { source: 'open-cities', date: scene.date, itemId: scene.itemId },
+  }));
 }
 
 function trim(map, max) {
@@ -265,6 +301,7 @@ async function getOpticalRecon({ latitude, longitude, radiusM = 25_000, signal }
     ]);
     const sentinel = sentinelResult.items || [];
     const oam = oamResult.items || [];
+    const openCitiesScenes = openCitiesScenesForBbox(bbox);
     const s2 = chooseSentinel(sentinel);
     const fallbackDate = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     const render = s2.selected
@@ -305,6 +342,7 @@ async function getOpticalRecon({ latitude, longitude, radiusM = 25_000, signal }
         .filter(x => x.renderable)
         .sort((a, b) => (a.nativeResolutionM ?? 999) - (b.nativeResolutionM ?? 999) || b.score - a.score)[0] || null,
       candidates: allCandidates.slice(0, 18),
+      openCitiesScenes,
       render,
       quality: {
         state: s2.selected
@@ -319,6 +357,7 @@ async function getOpticalRecon({ latitude, longitude, radiusM = 25_000, signal }
         sentinel2Scenes: sentinel.length,
         lowCloudScenes: s2.usableCount,
         openAerialMapCandidates: oam.length,
+      openCitiesArchiveScenes: openCitiesScenesForBbox(bbox).length,
       },
       warnings: [
         ...(sentinelResult.error ? ['sentinel_catalog_unavailable'] : []),
@@ -327,6 +366,8 @@ async function getOpticalRecon({ latitude, longitude, radiusM = 25_000, signal }
       ],
       semantics: [
         'Acquisition time is source metadata; imagery is not live telemetry.',
+        'Open Cities scenes are historical, fixed-footprint COGs; coverage and native GSD are item-specific.',
+        'The public TiTiler endpoint is a shared community service; set OPEN_CITIES_TITILER_BASE_URL to a Sonalit-managed deployment for production-grade control.',
         'Native resolution is reported separately from any display enhancement.',
         "Commercial tasking and live-imaging claims are outside this module's evidence contract.",
       ],
@@ -379,10 +420,21 @@ async function getOpticalTile({ source = 'sentinel', date, z, x, y, itemId } = {
 
   let url;
   let headers = { Accept: 'image/png,image/jpeg,image/*', 'User-Agent': 'Sonalit-Optical-Recon/1.0' };
+  let archiveScene = null;
   if (source === 'oam-global') {
     // HOTOSM documents a coverage grid at z0–13 and contributed imagery
     // from z14 onward; this is not a uniform-resolution global satellite map.
     url = OAM_GLOBAL_TILE_BASE + '/' + zoom + '/' + tx + '/' + ty + '.png';
+  } else if (source === 'open-cities') {
+    archiveScene = OPEN_CITIES_ITEMS[String(itemId || '')] || null;
+    if (!archiveScene) {
+      const error = new Error('Unknown Open Cities archive item');
+      error.failureClass = 'invalid_archive_item';
+      throw error;
+    }
+    const params = new URLSearchParams({ url: archiveScene.cogUrl, resampling: 'bilinear' });
+    params.append('bidx', '1'); params.append('bidx', '2'); params.append('bidx', '3');
+    url = openCitiesTilerBase() + '/cog/tiles/WebMercatorQuad/' + zoom + '/' + tx + '/' + ty + '.png?' + params.toString();
   } else if (source === 'vantor') {
     const config = getVantorBasemapConfig();
     if (!config.enabled) {
@@ -436,13 +488,17 @@ async function getOpticalTile({ source = 'sentinel', date, z, x, y, itemId } = {
   if (!upstreamContentType || !/^image\//i.test(upstreamContentType)) {
     const error = new Error(source === 'vantor'
       ? 'Vantor imagery service returned a non-image response'
-      : 'Open imagery provider returned a non-image response');
+      : source === 'open-cities'
+        ? 'Open Cities COG tiler returned a non-image response'
+        : 'Open imagery provider returned a non-image response');
     error.failureClass = 'provider_invalid_response';
     throw error;
   }
   const contentType = upstreamContentType || (source === 'nasa' || source === 'oam' || source === 'vantor' ? 'image/jpeg' : 'image/png');
   const buffer = Buffer.from(await response.arrayBuffer());
-  const result = { buffer, contentType, expiresAt: Date.now() + 5 * 60_000 };
+  const result = { buffer, contentType, expiresAt: Date.now() + 5 * 60_000,
+    ...(archiveScene ? { licence: archiveScene.licence, sourceMetadataUrl: archiveScene.sourceMetadataUrl } : {}),
+  };
   if (cacheable) {
     tileCache.set(cacheKey, result);
     trim(tileCache, 256);

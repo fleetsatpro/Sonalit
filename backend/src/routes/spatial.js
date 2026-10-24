@@ -139,13 +139,17 @@ router.get('/optical-recon', opticalReconLimiter, asyncHandler(async (req, res) 
 
 router.get('/optical-recon/tile', opticalTileLimiter, asyncHandler(async (req, res) => {
   const source = String(req.query.source || 'sentinel');
-  if (!['sentinel', 'oam', 'oam-global', 'nasa', 'vantor'].includes(source)) return res.status(400).json({ error: 'Unsupported optical source' });
+  if (!['sentinel', 'oam', 'oam-global', 'open-cities', 'nasa', 'vantor'].includes(source)) return res.status(400).json({ error: 'Unsupported optical source' });
   if (source === 'vantor' && !getVantorBasemapConfig().enabled) {
     return res.status(503).json({ error: 'vantor_ultrahd_not_configured', state: getVantorBasemapConfig().state });
   }
   const result = await getOpticalTile({ source, date: req.query.date, z: req.query.z, x: req.query.x, y: req.query.y, itemId: req.query.itemId });
   res.setHeader('Content-Type', result.contentType);
   res.setHeader('X-Sonalit-Imagery-Source', source);
+  if (source === 'open-cities') {
+    res.setHeader('X-Sonalit-Imagery-License', result.licence || 'ODbL-1.0');
+    if (result.sourceMetadataUrl) res.setHeader('X-Sonalit-Imagery-Metadata', result.sourceMetadataUrl);
+  }
   if (source === 'vantor') {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('Pragma', 'no-cache');

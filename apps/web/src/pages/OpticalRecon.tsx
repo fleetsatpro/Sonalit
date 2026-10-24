@@ -15,7 +15,7 @@ import { spatialCanvasContextAttributes, spatialPixelRatio } from '../lib/spatia
 
 installOpticalReconMapLibreProtocol()
 
-type MapMode = 'normal' | 'latest' | 'precision' | 'ultra' | 'open'
+type MapMode = 'normal' | 'latest' | 'precision' | 'ultra' | 'open' | 'archive'
 
 const DEFAULT_AOI = { latitude: -1.286389, longitude: 36.817223 }
 
@@ -44,6 +44,7 @@ function sourceLabel(source?: string) {
   if (source === 'sentinel') return 'SENTINEL-2 / DE AFRICA'
   if (source === 'oam') return 'OPENAERIALMAP'
   if (source === 'oam-global') return 'OPENAERIALMAP GLOBAL MOSAIC'
+  if (source === 'open-cities') return 'OPEN CITIES HISTORICAL DRONE ARCHIVE'
   if (source === 'nasa') return 'NASA GIBS / MODIS'
   if (source === 'vantor') return 'VANTOR VIVID MOSAIC'
   return 'UNKNOWN SOURCE'
@@ -140,7 +141,7 @@ export default function OpticalRecon() {
   )
   const viewed = useMemo(() => {
     if (!recon) return null
-    if (selectedId) return candidates.find(candidate => candidate.id === selectedId) ?? recon.primary
+    if (selectedId) return candidates.find(candidate => candidate.id === selectedId) ?? recon.openCitiesScenes?.find(candidate => candidate.id === selectedId) ?? recon.primary
     if (mapMode === 'precision') return recon.precisionAlternative ?? recon.primary
     return recon.primary
   }, [candidates, mapMode, recon, selectedId])
@@ -170,6 +171,7 @@ export default function OpticalRecon() {
     map.on('error', event => {
       if (mapModeRef.current === 'ultra' && event.error) setTileError('Vantor imagery stream failed. Verify account entitlement, coverage and provider service status.')
       if (mapModeRef.current === 'open' && event.error) setTileError('OpenAerialMap imagery could not be fetched for this tile. Coverage is contributed and uneven; zoom further or select an individual catalogue scene.')
+      if (mapModeRef.current === 'archive' && event.error) setTileError('Open Cities archive tile unavailable. Verify the COG tile server, item coverage and archive source status.')
     })
     map.on('click', event => {
       const next = { latitude: event.lngLat.lat, longitude: event.lngLat.lng }
@@ -202,6 +204,13 @@ export default function OpticalRecon() {
     if (mapMode === 'open') {
       setMapReady(false); setTileError(null)
       mapRef.current.setStyle(reconStyle({ source: 'oam-global', date: 'mosaic' }))
+      return
+    }
+    if (mapMode === 'archive') {
+      const archive = recon?.openCitiesScenes?.find(scene => scene.id === selectedId) ?? recon?.openCitiesScenes?.[0]
+      if (!archive?.render) return
+      setMapReady(false); setTileError(null)
+      mapRef.current.setStyle(reconStyle(archive.render))
       return
     }
     if (!viewed?.render) return
@@ -238,7 +247,7 @@ export default function OpticalRecon() {
   const selectCandidate = (candidate: OpticalCandidate) => {
     setSelectedId(candidate.id)
     if (!candidate.render) return
-    setMapMode(candidate.render.source === 'oam' ? 'precision' : 'latest')
+    setMapMode(candidate.render.source === 'oam' ? 'precision' : candidate.render.source === 'open-cities' ? 'archive' : 'latest')
   }
 
   const returnNormal = () => {
@@ -289,6 +298,12 @@ export default function OpticalRecon() {
           </button>
           <button type="button" className={mapMode === 'open' ? 'active ultra' : 'ultra'} onClick={() => { setSelectedId(null); setMapMode('open'); setTileError(null) }} title="Free/open contributor imagery. Coverage is uneven; zoom levels 0–13 show the HOTOSM coverage grid and 14+ show contributed imagery.">
             <Layers3 size={13} /> OPEN UHD
+          </button>
+          <button type="button" className={mapMode === 'archive' ? 'active precision' : 'precision'} onClick={() => {
+            const scene = recon?.openCitiesScenes?.[0]
+            if (scene?.render) { setSelectedId(scene.id); setMapMode('archive'); setTileError(null) }
+          }} disabled={!recon?.openCitiesScenes?.length} title={recon?.openCitiesScenes?.length ? 'View a verified historical Open Cities drone COG in the current AOI' : 'No indexed Open Cities archive footprint intersects this AOI'}>
+            <Database size={13} /> OPEN CITIES ARCHIVE{recon?.openCitiesScenes?.length ? ' · ' + recon.openCitiesScenes.length : ''}
           </button>
           <button type="button" className={mapMode === 'ultra' ? 'active ultra' : 'ultra'} onClick={() => { setSelectedId(null); setMapMode('ultra'); setTileError(null) }} disabled={!recon?.premiumBasemap?.enabled} title={recon?.premiumBasemap?.enabled ? 'Use the licensed Vantor Vivid Mosaic high-resolution basemap' : 'Requires Vantor API access, an approved imagery licence and explicit server configuration'}>
             <Layers3 size={13} /> VANTOR ULTRA-HD
@@ -343,6 +358,11 @@ export default function OpticalRecon() {
               <em className={sourceState(recon, 'oam') === 'DEGRADED' ? 'warn' : 'ok'}>{sourceState(recon, 'oam')}</em>
             </div>
             <div className="ore-source">
+              <div className="ore-source-mark aerial"><Database size={13} /></div>
+              <div className="ore-source-copy"><strong>Open Cities archive</strong><span>Historical drone COG · native GSD not stated</span></div>
+              <em className={recon?.openCitiesScenes?.length ? 'ok' : 'muted'}>{recon?.openCitiesScenes?.length ? 'IN AOI' : 'OUTSIDE INDEX'}</em>
+            </div>
+            <div className="ore-source">
               <div className="ore-source-mark vantor"><Layers3 size={13} /></div>
               <div className="ore-source-copy"><strong>Vantor Vivid Mosaic</strong><span>{recon?.premiumBasemap?.productGsdLabel || '30 cm product GSD target'} · not native sensor GSD</span></div>
               <em className={recon?.premiumBasemap?.enabled ? 'ok' : 'warn'}>{recon?.premiumBasemap?.enabled ? 'READY' : (recon?.premiumBasemap?.state || 'not_configured').replaceAll('_', ' ').toUpperCase()}</em>
@@ -376,8 +396,8 @@ export default function OpticalRecon() {
         <section className="ore-map-wrap">
           <div ref={containerRef} className="ore-map" />
           <div className="ore-map-top">
-            <div className="ore-map-badge"><i /> {mapMode === 'normal' ? 'OPERATIONAL SURFACE' : mapMode === 'precision' ? 'DETAIL OBSERVATION' : mapMode === 'ultra' ? 'VANTOR HIGH-RESOLUTION MOSAIC' : mapMode === 'open' ? 'OPEN CONTRIBUTED IMAGERY · COVERAGE VARIES' : 'LATEST VALIDATED OBSERVATION'}</div>
-            <div className="ore-map-source">{mapMode === 'ultra' ? 'VANTOR VIVID MOSAIC' : mapMode === 'open' ? 'OPENAERIALMAP / HOTOSM' : viewed ? sourceLabel(viewed.render?.source) : 'SCENE SEARCH'}</div>
+            <div className="ore-map-badge"><i /> {mapMode === 'normal' ? 'OPERATIONAL SURFACE' : mapMode === 'precision' ? 'DETAIL OBSERVATION' : mapMode === 'ultra' ? 'VANTOR HIGH-RESOLUTION MOSAIC' : mapMode === 'open' ? 'OPEN CONTRIBUTED IMAGERY · COVERAGE VARIES' : mapMode === 'archive' ? 'HISTORICAL OPEN CITIES DRONE IMAGERY' : 'LATEST VALIDATED OBSERVATION'}</div>
+            <div className="ore-map-source">{mapMode === 'ultra' ? 'VANTOR VIVID MOSAIC' : mapMode === 'open' ? 'OPENAERIALMAP / HOTOSM' : mapMode === 'archive' ? 'DAR ES SALAAM · 01 NOV 2017' : viewed ? sourceLabel(viewed.render?.source) : 'SCENE SEARCH'}</div>
           </div>
           <div className="ore-map-bottom">
             {mapMode === 'ultra' ? <>
@@ -386,6 +406,9 @@ export default function OpticalRecon() {
             </> : mapMode === 'open' ? <>
               <span><b>SOURCE</b> OpenAerialMap / HOTOSM</span><span><b>DETAIL</b> Contributor-dependent; no uniform global GSD</span>
               <span><b>ZOOM</b> z0–13 coverage grid · z14+ imagery</span><span><b>LICENCE</b> See image/item attribution</span>
+            </> : mapMode === 'archive' ? <>
+              <span><b>SOURCE</b> Open Cities AI Challenge</span><span><b>ACQ</b> {viewed?.date || '2017-11-01'}</span>
+              <span><b>GSD</b> Not declared in item metadata</span><span><b>LICENCE</b> ODbL-1.0 · attribution/share-alike obligations</span>
             </> : <>
               <span><b>ACQ</b> {dateLabel(viewed?.acquiredAt)}</span><span><b>RES</b> {viewed?.nativeResolutionM ? String(viewed.nativeResolutionM) + ' m' : '—'}</span>
               <span><b>CLOUD</b> {viewed?.cloudPct != null ? viewed.cloudPct.toFixed(1) + '%' : '—'}</span><span><b>LICENCE</b> {viewed?.licence || '—'}</span>
@@ -401,9 +424,10 @@ export default function OpticalRecon() {
               <div><strong>ACQUIRING SCENE EVIDENCE</strong><span>Querying current optical catalogs for the active AOI</span></div>
             </div>
           )}
-          {tileError && ['ultra', 'open'].includes(mapMode) && <div className="ore-map-alert critical"><XCircle size={15} /><div><strong>{mapMode === 'open' ? 'OPEN IMAGERY TILE UNAVAILABLE' : 'ULTRA-HD STREAM UNAVAILABLE'}</strong><span>{tileError}</span></div><button type="button" onClick={() => { setTileError(null); mapRef.current?.setStyle(reconStyle({ source: mapMode === 'open' ? 'oam-global' : 'vantor', date: 'mosaic' })) }}>RETRY</button></div>}
+          {tileError && ['ultra', 'open', 'archive'].includes(mapMode) && <div className="ore-map-alert critical"><XCircle size={15} /><div><strong>{mapMode === 'open' ? 'OPEN IMAGERY TILE UNAVAILABLE' : mapMode === 'archive' ? 'OPEN CITIES ARCHIVE TILE UNAVAILABLE' : 'ULTRA-HD STREAM UNAVAILABLE'}</strong><span>{tileError}</span></div><button type="button" onClick={() => { setTileError(null); if (mapMode === 'open') mapRef.current?.setStyle(reconStyle({ source: 'oam-global', date: 'mosaic' })); else if (mapMode === 'archive' && viewed?.render) mapRef.current?.setStyle(reconStyle(viewed.render)); else mapRef.current?.setStyle(reconStyle({ source: 'vantor', date: 'mosaic' })) }}>RETRY</button></div>}
           {mapMode === 'ultra' && <div className="ore-uhd-note">Product GSD describes the Vantor mosaic product, not native sensor GSD. Mosaic source dates can vary by location.</div>}
           {mapMode === 'open' && <div className="ore-uhd-note">Free/open contributed imagery is not uniform satellite UHD. This layer shows HOTOSM's coverage grid at z0–13 and actual contributed imagery from z14; individual catalog scenes may provide sharper detail.</div>}
+          {mapMode === 'archive' && <div className="ore-uhd-note">HISTORICAL ARCHIVE · 1 NOV 2017 · Dar es Salaam footprint only · the published item metadata does not state native GSD. Not suitable as current or live intelligence.</div>}
           {opticalQ.error && ['latest', 'precision'].includes(mapMode) && (
             <div className="ore-map-alert critical">
               <XCircle size={15} />
@@ -465,14 +489,22 @@ export default function OpticalRecon() {
           <section className="ore-panel">
             <div className="ore-panel-title compact"><div><span>ACQUISITION RECORD</span><strong>PROVENANCE</strong></div><Clock3 size={14} /></div>
             <div className="ore-record">
-              <div><span>MISSION</span><b>{mapMode === 'ultra' ? 'Vantor Vivid Mosaic (base layer)' : mapMode === 'open' ? 'OpenAerialMap global mosaic' : missionLabel(viewed)}</b></div>
-              <div><span>PROVIDER</span><b>{mapMode === 'ultra' ? 'Vantor Vivid Mosaic' : mapMode === 'open' ? 'HOTOSM / OpenAerialMap' : viewed?.provider || '—'}</b></div>
+              <div><span>MISSION</span><b>{mapMode === 'ultra' ? 'Vantor Vivid Mosaic (base layer)' : mapMode === 'open' ? 'OpenAerialMap global mosaic' : mapMode === 'archive' ? 'Open Cities · historical drone COG' : missionLabel(viewed)}</b></div>
+              <div><span>PROVIDER</span><b>{mapMode === 'ultra' ? 'Vantor Vivid Mosaic' : mapMode === 'open' ? 'HOTOSM / OpenAerialMap' : mapMode === 'archive' ? 'Open Cities AI Challenge / Source Cooperative' : viewed?.provider || '—'}</b></div>
               <div><span>ACQUIRED UTC</span><b>{mapMode === 'ultra' ? 'Not provided per tile / location' : mapMode === 'open' ? 'No single acquisition time; source images vary by location' : viewed?.acquiredAt || '—'}</b></div>
               <div><span>LICENCE</span><b>{mapMode === 'ultra' ? 'Commercial; explicit server entitlement required' : mapMode === 'open' ? 'OpenAerialMap item attribution/licence varies; review source metadata' : viewed?.licence || '—'}</b></div>
-              <div><span>CAPABILITIES</span><b>{mapMode === 'open' ? 'Contributor imagery; resolution/date vary by tile' : viewed?.capabilities?.join(' · ') || '—'}</b></div>
+              <div><span>CAPABILITIES</span><b>{mapMode === 'open' ? 'Contributor imagery; resolution/date vary by tile' : mapMode === 'archive' ? 'Historical drone RGB COG · fixed footprint' : viewed?.capabilities?.join(' · ') || '—'}</b></div>
             </div>
           </section>
 
+          {recon?.openCitiesScenes?.length ? <section className="ore-panel">
+            <div className="ore-panel-title compact"><div><span>HISTORICAL DETAIL</span><strong>OPEN CITIES ARCHIVE</strong></div><Database size={14} /></div>
+            {recon.openCitiesScenes.map(scene => <button type="button" key={scene.id} className={'ore-log-row ' + (selectedId === scene.id ? 'selected' : '')} onClick={() => selectCandidate(scene)}>
+              <div><strong>{scene.mission}</strong><span>{scene.date} · {scene.licence}</span></div>
+              <div className="ore-log-meta"><span>GSD —</span><ChevronRight size={12} /></div>
+            </button>)}
+            <p className="ore-footer-note">Historical reference only. Native resolution is not stated in this item’s metadata. See <a href={recon.openCitiesScenes[0]?.sourceMetadataUrl} target="_blank" rel="noreferrer">source record</a>.</p>
+          </section> : null}
           <section className="ore-panel">
             <div className="ore-panel-title compact"><div><span>TRUTH MODEL</span><strong>WHAT THIS SCREEN MEANS</strong></div></div>
             <div className="ore-truth"><span>OBSERVED</span><b>Source image + acquisition metadata</b></div>
