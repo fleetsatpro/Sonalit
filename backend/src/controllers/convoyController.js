@@ -135,7 +135,8 @@ async function attachTruckProgress(rows, orgId) {
         const width = Number(row.width_km);
         routes.set(String(row.convoy_id), {
           points,
-          corridorKm: Number.isFinite(width) && width > 0 ? width : 2,
+          corridorKm: Number.isFinite(width) && width > 0 && width <= 50 ? width : 2,
+          source: 'corridor',
         });
       }
     }
@@ -153,7 +154,7 @@ async function attachTruckProgress(rows, orgId) {
       if (!routes.has(id) && points.length >= 2
           && points.every(point => Number.isFinite(point.lat) && Number.isFinite(point.lng)
             && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180)) {
-        routes.set(id, { points, corridorKm: 2 });
+        routes.set(id, { points, corridorKm: 2, source: 'waypoints' });
       }
     }
 
