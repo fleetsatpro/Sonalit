@@ -92,6 +92,8 @@ describe('calculateTruckRouteProgress', () => {
     expect(result.state).toBe('off_route');
     expect(result.cross_track_km).toBeGreaterThan(2);
     expect(result.progress_pct).toBeNull();
+    expect(result.projected_pct).toBeGreaterThanOrEqual(49);
+    expect(result.projected_pct).toBeLessThanOrEqual(51);
   });
 
   test('uses a clearly labelled wider tolerance for long straight waypoint fallbacks', () => {
