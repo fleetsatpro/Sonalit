@@ -89,7 +89,7 @@ export default function PortApp() {
         <div className="flex-1 min-w-0">
           <div className="text-[15px] font-bold text-text-0 leading-tight">Port ops</div>
           <div className="text-[11px] font-mono text-text-2 flex items-center gap-1.5 mt-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-cds-cyan animate-pulse-dot" />
+            <span className="w-1.5 h-1.5 rounded-full bg-cds-cyan" />
             {rows.length} container{rows.length === 1 ? '' : 's'} in transit
           </div>
         </div>

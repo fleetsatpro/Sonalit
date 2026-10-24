@@ -1,5 +1,6 @@
 # Sonalit notification worker — standalone backend runtime
-FROM public.ecr.aws/docker/library/node:22-alpine
+ARG SONALIT_NODE_IMAGE=public.ecr.aws/docker/library/node:22-alpine
+FROM ${SONALIT_NODE_IMAGE}
 WORKDIR /app
 
 # Use the repository's pnpm lockfile so the notification worker cannot drift

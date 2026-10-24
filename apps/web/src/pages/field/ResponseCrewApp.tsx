@@ -159,19 +159,39 @@ export default function ResponseCrewApp() {
   const worker = useFieldAuth(s => s.worker);
   const [dispatches, setDispatches] = useState<DispatchAlert[]>([]);
   const [ackingId, setAckingId] = useState<string | null>(null);
+  const [dispatchFeedState, setDispatchFeedState] = useState<'checking' | 'current' | 'degraded' | 'stale' | 'unavailable'>('checking');
+  const lastDispatchSuccessAt = useRef<number | null>(null);
+  const [lastDispatchSuccessDisplayAt, setLastDispatchSuccessDisplayAt] = useState<number | null>(null);
   const sirenActiveRef = useRef(false);
 
-  // Fetch active dispatches on mount
+  // The control-room feed is only marked current after the real API poll succeeds.
+  // A failed poll keeps the last records visible but downgrades the evidence state.
   useEffect(() => {
-    fieldApi.get<{ data: DispatchAlert[] }>('/response-crew/dispatches')
-      .then(r => { setDispatches(r.data.data ?? []); })
-      .catch(() => {});
-    const interval = setInterval(() => {
-      fieldApi.get<{ data: DispatchAlert[] }>('/response-crew/dispatches')
-        .then(r => { setDispatches(r.data.data ?? []); })
-        .catch(() => {});
-    }, 15_000);
-    return () => clearInterval(interval);
+    let disposed = false;
+    const pollDispatchFeed = async () => {
+      try {
+        const response = await fieldApi.get<{ data: DispatchAlert[] }>('/response-crew/dispatches');
+        if (disposed) return;
+        if (!Array.isArray(response.data?.data)) throw new Error('Invalid dispatch-feed payload');
+        setDispatches(response.data.data);
+        const successAt = Date.now();
+        lastDispatchSuccessAt.current = successAt;
+        setLastDispatchSuccessDisplayAt(successAt);
+        setDispatchFeedState('current');
+      } catch {
+        if (disposed) return;
+        const lastSuccess = lastDispatchSuccessAt.current;
+        if (lastSuccess == null) setDispatchFeedState('unavailable');
+        else if (Date.now() - lastSuccess > 45_000) setDispatchFeedState('stale');
+        else setDispatchFeedState('degraded');
+      }
+    };
+    void pollDispatchFeed();
+    const interval = window.setInterval(() => { void pollDispatchFeed(); }, 15_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
   }, []);
 
   // Subscribe to realtime dispatch events
@@ -267,10 +287,12 @@ export default function ResponseCrewApp() {
             <div className="text-[16px] font-bold leading-tight mt-0.5">Response Crew</div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-text-2">
-          <Radio size={10} className="text-green-500 animate-pulse" />
-          LIVE
-        </div>
+        <span
+          role="status"
+          aria-live="polite"
+          title={lastDispatchSuccessDisplayAt == null ? 'No successful dispatch-feed response has been recorded.' : `Last successful dispatch-feed response: ${new Date(lastDispatchSuccessDisplayAt).toLocaleTimeString()}.`}
+          className={`rounded-md border px-2 py-1 font-mono text-[9px] font-semibold tracking-[.06em] ${dispatchFeedState === 'current' ? 'border-emerald-500/20 text-emerald-300' : dispatchFeedState === 'degraded' ? 'border-amber-500/20 text-amber-300' : dispatchFeedState === 'stale' || dispatchFeedState === 'unavailable' ? 'border-red-500/20 text-red-300' : 'border-white/10 text-text-2'}`}
+        >{dispatchFeedState === 'current' ? 'FEED CURRENT' : dispatchFeedState === 'degraded' ? 'FEED DEGRADED' : dispatchFeedState === 'stale' ? 'FEED STALE' : dispatchFeedState === 'unavailable' ? 'FEED UNAVAILABLE' : 'CHECKING FEED'}</span>
       </header>
 
       {worker && (

@@ -44,6 +44,7 @@ process.on("unhandledRejection", (reason) => {
 
 const express = require("express");
 const http = require("http");
+const jwt = require("jsonwebtoken");
 const helmet = require("helmet");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -56,6 +57,7 @@ const responseEnvelope = require("./middleware/responseEnvelope");
 const { createQueues } = require("./config/queue");
 const { healthCheck: dbHealth, globalQuery: dbQuery } = require("./config/database");
 const { healthCheck: redisHealth } = require("./config/redis");
+const { classifyPartitionEvidence } = require("./utils/partitionHealthEvidence");
 const requestId = require("./middleware/requestId");
 const csrf = require("./middleware/csrf");
 const { isFenceActive } = require("./utils/runtimeFenceBootstrap");
@@ -144,38 +146,142 @@ app.use(morgan(":method :url :status :res[content-length] - :response-time ms re
 // it is routed. It may answer the platform health probe, but it must not expose
 // operational mutations while it is still waiting for the database runtime fence.
 app.use((req, res, next) => {
-  if (req.path === "/health" || isFenceActive()) return next();
+  if (req.path === "/health" || req.path === "/api/v1/health" || isFenceActive()) return next();
   return res.status(503).json({ status: "warming", error: "runtime handover in progress" });
 });
 
 // ─── Health & metrics ─────────────────────────────────────────────────────────
-app.get("/health", async (req, res) => {
-  try {
-    const [db, redis] = await Promise.all([dbHealth(), redisHealth()]);
-    let partitions_ok = true;
+// One source of truth for platform probes. Keep this route dependency-aware:
+// missing or stale evidence is never silently promoted to healthy.
+const coreHealthHandler = async (req, res) => {
+  const checkedAt = new Date().toISOString();
+  const checks = [
+    { id: "api", label: "API process", status: "healthy", checked_at: checkedAt, detail: "Health endpoint responded" },
+  ];
+
+  const [dbResult, redisResult] = await Promise.allSettled([dbHealth(), redisHealth()]);
+  const databaseHealthy = dbResult.status === "fulfilled" && Boolean(dbResult.value);
+  const redisValue = redisResult.status === "fulfilled" ? redisResult.value : "unreachable";
+  const dbCheckAt = new Date().toISOString();
+
+  checks.push({
+    id: "database",
+    label: "PostgreSQL",
+    status: databaseHealthy ? "healthy" : "unavailable",
+    checked_at: dbCheckAt,
+    detail: databaseHealthy ? "Connection query succeeded" : "Connection query failed",
+  });
+  let redisStatus = "unknown";
+  let redisDetail = "Redis health could not be verified";
+  if (redisValue === "ok") {
+    redisStatus = "healthy";
+    redisDetail = "PING succeeded";
+  } else if (redisValue === "unreachable") {
+    redisStatus = "unavailable";
+    redisDetail = "Redis probe could not reach the service";
+  } else if (redisValue === "degraded") {
+    redisStatus = "degraded";
+    redisDetail = "Redis PING returned an unexpected response";
+  } else if (redisValue === "disabled") {
+    redisDetail = "Redis is disabled; health cannot be verified";
+  }
+  checks.push({
+    id: "redis",
+    label: "Redis",
+    status: redisStatus,
+    checked_at: new Date().toISOString(),
+    detail: redisDetail,
+  });
+
+  const requiredPartitionTables = ["gps_logs", "audit_logs", "outbox"];
+  let partitionRows = null;
+  if (databaseHealthy) {
     try {
-      const ph = await dbQuery(`SELECT partitions_ok FROM partition_health WHERE partitions_ok = false LIMIT 1`);
-      if (ph.rows.length) partitions_ok = false;
-    } catch (_) {}
-    const mem = process.memoryUsage();
-    if (!db || !redis) {
-      return res.status(503).json({ status: "error", database: db ? "ok" : "error", redis });
+      const result = await dbQuery(
+        "SELECT table_name, checked_at, partitions_ok FROM partition_health WHERE table_name = ANY($1::text[])",
+        [requiredPartitionTables],
+      );
+      partitionRows = result.rows;
+    } catch (_) {
+      // Preserve uncertainty: a failed probe is not a passing partition check.
     }
-    const status = partitions_ok ? "ok" : "degraded";
-    res.status(200).json({
-      status,
-      database: db ? "ok" : "error",
-      redis,
-      partitions_ok,
-      uptime_seconds: Math.floor(process.uptime()),
-      version: "2.1.0-enterprise",
-      memory: { heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024), heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024), rss_mb: Math.round(mem.rss / 1024 / 1024) },
-      node_version: process.version,
-      pid: process.pid,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (e) { res.status(503).json({ status: "error", error: e.message }); }
-});
+  }
+
+  const partitionByTable = new Map((partitionRows || []).map(row => [row.table_name, row]));
+  const partitionStatuses = requiredPartitionTables.map(tableName => ({
+    id: "partitions-" + tableName,
+    label: "Partitions · " + tableName,
+    ...classifyPartitionEvidence(partitionByTable.get(tableName)),
+  }));
+  checks.push(...partitionStatuses);
+
+  const partitions_ok = partitionStatuses.every(check => check.status === "healthy")
+    ? true
+    : partitionStatuses.some(check => check.status === "degraded")
+      ? false
+      : null;
+  // Only confirmed outages produce the critical error state. Disabled or
+  // inconclusive Redis checks remain unknown; an explicit degraded Redis
+  // response is impaired but is not mislabeled as unreachable.
+  const hasCriticalFailure = !databaseHealthy || redisValue === "unreachable";
+  const isNotReady = hasCriticalFailure || redisValue === "degraded";
+  const allHealthy = checks.every(check => check.status === "healthy");
+  const status = allHealthy ? "ok" : hasCriticalFailure ? "error" : "degraded";
+  const mem = process.memoryUsage();
+
+  const payload = {
+    status,
+    database: databaseHealthy ? "ok" : "error",
+    redis: redisValue,
+    partitions_ok,
+    uptime_seconds: Math.floor(process.uptime()),
+    version: process.env.SENTRY_RELEASE || process.env.RAILWAY_GIT_COMMIT_SHA || "unknown",
+    memory: {
+      heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
+      heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024),
+      rss_mb: Math.round(mem.rss / 1024 / 1024),
+    },
+    node_version: process.version,
+    pid: process.pid,
+    timestamp: new Date().toISOString(),
+    scope: "core-api-dependencies",
+    coverage: {
+      scope: "core-api-dependencies",
+      not_monitored: [
+        "background worker heartbeats",
+        "realtime gateway and websocket delivery",
+        "notification provider delivery",
+        "external data providers",
+        "frontend availability",
+      ],
+    },
+    checks,
+  };
+  // Keep the platform probe compatible but don't expose the newly-added,
+  // per-component evidence ledger or monitoring blind spots to anonymous callers.
+  if (req.path === "/health") {
+    const { scope: _scope, coverage: _coverage, checks: _checks, ...compatibilityPayload } = payload;
+    return res.status(isNotReady ? 503 : 200).json(compatibilityPayload);
+  }
+  res.status(isNotReady ? 503 : 200).json(payload);
+};
+
+// The dashboard needs detailed dependency checks, but a public probe does not.
+// Verify JWT signature/expiry without a database lookup so this diagnostic route
+// remains useful during a PostgreSQL outage. No user-specific data is returned.
+function requireSignedHealthToken(req, res, next) {
+  const header = String(req.headers.authorization || "");
+  const supplied = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!supplied) return res.status(401).json({ error: "health_auth_required" });
+  try {
+    jwt.verify(supplied, process.env.JWT_SECRET);
+    return next();
+  } catch (_) {
+    return res.status(401).json({ error: "health_auth_required" });
+  }
+}
+app.get("/health", coreHealthHandler);
+app.get("/api/v1/health", requireSignedHealthToken, coreHealthHandler);
 
 function requireMetricsAuth(req, res, next) {
   const configured = String(process.env.METRICS_TOKEN || '');

@@ -7,8 +7,8 @@
   },
   "servers": [
     {
-      "url": "/api/v1",
-      "description": "Current server"
+      "url": "/",
+      "description": "Current server origin"
     }
   ],
   "paths": {
@@ -18,6 +18,9 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "503": {
+            "description": "Core API dependency unavailable or health evidence not ready"
           }
         }
       }
@@ -6654,6 +6657,36 @@
             "description": "OK"
           }
         }
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "get_api_v1_health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "A valid signed Sonalit bearer token is required for detailed diagnostics"
+          },
+          "503": {
+            "description": "Core API dependency unavailable or health evidence not ready"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   }

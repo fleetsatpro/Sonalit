@@ -1,4 +1,5 @@
-FROM public.ecr.aws/docker/library/node:22-slim
+ARG SONALIT_NODE_IMAGE=public.ecr.aws/docker/library/node:22-slim
+FROM ${SONALIT_NODE_IMAGE}
 
 # PDF/SVG rendering uses sharp/libvips; provide a real Fontconfig runtime so
 # map labels and embedded text render consistently in production containers.

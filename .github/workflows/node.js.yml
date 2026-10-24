@@ -92,8 +92,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker build --file Dockerfile --tag sonalit-backend:ci .
-          docker build --file Dockerfile.notification-worker --tag sonalit-notification-worker:ci .
+          # Prefer the production ECR mirror. If that registry is temporarily
+          # rate-limited, retry using the official Node.js Docker Hub image for
+          # the same Node major/OS family. The Dockerfiles retain ECR as their
+          # default, so this fallback only affects the CI validation build.
+          if ! docker build --file Dockerfile --tag sonalit-backend:ci .; then
+            echo "::warning::Primary Node base-image registry failed; retrying CI build with official node:22-slim."
+            docker build --build-arg SONALIT_NODE_IMAGE=node:22-slim --file Dockerfile --tag sonalit-backend:ci .
+          fi
+          if ! docker build --file Dockerfile.notification-worker --tag sonalit-notification-worker:ci .; then
+            echo "::warning::Primary Node Alpine base-image registry failed; retrying CI build with official node:22-alpine."
+            docker build --build-arg SONALIT_NODE_IMAGE=node:22-alpine --file Dockerfile.notification-worker --tag sonalit-notification-worker:ci .
+          fi
 
           # Railway provides NODE_OPTIONS with a backend-relative preload. Run
           # the exact preload contract inside the built image so a Dockerfile
@@ -127,6 +137,15 @@ jobs:
 
       - name: Build web
         run: pnpm --filter @sonalit/web build
+
+      # CDS has pre-existing strict TypeScript debt across unrelated modules.
+      # Bundle the app to verify TSX syntax/module resolution without treating
+      # that unrelated debt as a regression from this operational UI change.
+      - name: Bundle Container Delivery System
+        run: pnpm --filter @sonalit/container-delivery-system exec vite build
+
+      - name: Container Delivery System unit tests
+        run: pnpm --filter @sonalit/container-delivery-system test:unit
 
       # The web package owns unit and contract tests for offline queues, auth,
       # health indicators, and feature capability claims. Typecheck/build alone

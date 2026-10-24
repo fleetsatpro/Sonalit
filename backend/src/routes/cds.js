@@ -432,6 +432,14 @@ router.get('/trips/live', asyncHandler(async (req, res) => {
   res.json({ data: result.rows.map(r => shapeLiveTrip(r, now)) });
 }));
 
+function coordinateOrNull(value, min, max) {
+  if (value == null || (typeof value === 'string' && value.trim() === '')) return null;
+  const number = typeof value === 'number'
+    ? value
+    : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(number) && number >= min && number <= max ? number : null;
+}
+
 // One position per trip, from whichever source actually knows where it is, and
 // never presented as live when it is not: health comes from the tracking
 // engine's own thresholds rather than a second opinion invented here.
@@ -444,12 +452,22 @@ function shapeLiveTrip(row, now) {
       }, now)
     : null;
 
-  const fromSession = row.current_lat != null && row.current_lng != null;
+  // PostgreSQL returns DECIMAL/Numeric columns as strings in node-postgres,
+  // while DOUBLE PRECISION session coordinates are numbers. Normalize both
+  // sources at the API boundary so clients get one honest numeric contract.
+  const sessionLat = coordinateOrNull(row.current_lat, -90, 90);
+  const sessionLng = coordinateOrNull(row.current_lng, -180, 180);
+  const gpsLat = coordinateOrNull(row.gps_lat, -90, 90);
+  const gpsLng = coordinateOrNull(row.gps_lng, -180, 180);
+  const fromSession = sessionLat !== null && sessionLng !== null;
+  const hasGpsPosition = gpsLat !== null && gpsLng !== null;
   // Normalised to null, never left undefined: undefined vanishes in JSON, and a
   // client reading an absent key cannot tell "no fix" from "field forgotten".
-  const lat = (fromSession ? row.current_lat : row.gps_lat) ?? null;
-  const lng = (fromSession ? row.current_lng : row.gps_lng) ?? null;
-  const lastSeen = (fromSession ? row.last_location_at : row.gps_time) ?? null;
+  const lat = fromSession ? sessionLat : hasGpsPosition ? gpsLat : null;
+  const lng = fromSession ? sessionLng : hasGpsPosition ? gpsLng : null;
+  const lastSeen = fromSession
+    ? row.last_location_at ?? null
+    : hasGpsPosition ? row.gps_time ?? null : null;
 
   return {
     id: row.id, trip_number: row.trip_number, status: row.status,
@@ -465,8 +483,10 @@ function shapeLiveTrip(row, now) {
     heading: (fromSession ? row.current_heading : row.gps_heading) ?? null,
     // Where the position came from, so the control room can tell a driver's
     // phone from a truck's telematics box at a glance.
-    position_source: fromSession ? (row.current_source || 'guardian_gps') : (row.gps_lat != null ? 'device_telematics' : null),
-    position_is_live: health === 'live',
+    position_source: fromSession ? (row.current_source || 'guardian_gps') : (hasGpsPosition ? 'device_telematics' : null),
+    // A live tracking session only makes the selected position live when its
+    // own reconciled coordinates are the ones returned to the client.
+    position_is_live: fromSession && health === 'live',
     tracking_health: health,
     tracking_session_id: row.session_id ?? null,
     confidence: fromSession ? row.current_confidence : null,

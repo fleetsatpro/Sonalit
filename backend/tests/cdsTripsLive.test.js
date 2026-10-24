@@ -163,6 +163,34 @@ describe('which position is shown', () => {
     });
   });
 
+  it('normalizes PostgreSQL DECIMAL strings from the telematics fallback', async () => {
+    const { body } = await callLive([{
+      id: 't1', status: 'dispatched',
+      gps_lat: '-4.0000000', gps_lng: '39.6000000',
+      gps_speed: '48.00', gps_time: old,
+    }]);
+    expect(body.data[0]).toMatchObject({
+      lat: -4, lng: 39.6, position_source: 'device_telematics',
+      position_is_live: false, has_session: false,
+    });
+    expect(typeof body.data[0].lat).toBe('number');
+    expect(typeof body.data[0].lng).toBe('number');
+  });
+
+  it('rejects invalid session coordinates and falls back without calling them live', async () => {
+    const { body } = await callLive([{
+      id: 't1', status: 'dispatched',
+      session_id: 's1', session_status: 'active', current_source: 'guardian_gps',
+      first_location_at: fresh, last_location_at: fresh,
+      current_lat: 999, current_lng: 37.2,
+      gps_lat: '-4.0', gps_lng: '39.6', gps_time: old,
+    }]);
+    expect(body.data[0]).toMatchObject({
+      lat: -4, lng: 39.6, position_source: 'device_telematics',
+      position_is_live: false, tracking_health: 'live',
+    });
+  });
+
   it('does not call a stale session fix live', async () => {
     const { body } = await callLive([{
       id: 't1', status: 'dispatched',

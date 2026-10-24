@@ -141,7 +141,6 @@ function Header({
         </div>
         <div className="ho-bar-actions">
           <div className="ho-live-clock">
-            <span className="ho-live-dot" />
             <span className="ho-clock">{time}</span>
           </div>
           {header.onRefresh && (
@@ -268,14 +267,6 @@ function ShellStyles() {
         padding: 0 8px;
       }
 
-      .ho-live-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: var(--d-sig);
-        animation: ho-live-pulse 1.8s ease-in-out infinite;
-      }
-
       .ho-clock {
         font-family: var(--d-font-mono);
         font-size: 13px;
@@ -374,13 +365,8 @@ function ShellStyles() {
         to { transform: rotate(360deg); }
       }
 
-      @keyframes ho-live-pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: .45; transform: scale(.72); }
-      }
-
       @media (prefers-reduced-motion: reduce) {
-        .ho-shell-loader, .ho-live-dot { animation: none; }
+        .ho-shell-loader { animation: none; }
       }
     `}</style>
   );

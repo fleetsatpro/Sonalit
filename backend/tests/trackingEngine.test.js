@@ -41,6 +41,23 @@ describe('computeHealth', () => {
     expect(T.computeHealth({ ...base, last_location_at: at(5000) }, now)).toBe('offline');
   });
 
+  it('does not promote invalid or materially future location timestamps to live', () => {
+    const base = { status: 'active', first_location_at: at(600) };
+    expect(T.computeHealth({
+      ...base,
+      last_location_at: new Date(now + 60_000).toISOString(),
+    }, now)).toBe('offline');
+    expect(T.computeHealth({
+      ...base,
+      last_location_at: 'not-a-timestamp',
+    }, now)).toBe('offline');
+    // Small device/server clock skew remains inside the explicit 30s tolerance.
+    expect(T.computeHealth({
+      ...base,
+      last_location_at: new Date(now + 10_000).toISOString(),
+    }, now)).toBe('live');
+  });
+
   it('never reports a finished journey as live', () => {
     expect(T.computeHealth(
       { status: 'completed', first_location_at: at(600), last_location_at: at(1) }, now

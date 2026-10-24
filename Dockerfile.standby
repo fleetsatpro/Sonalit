@@ -1,4 +1,5 @@
-FROM public.ecr.aws/docker/library/node:22-slim
+ARG SONALIT_NODE_IMAGE=public.ecr.aws/docker/library/node:22-slim
+FROM ${SONALIT_NODE_IMAGE}
 # Standby uses the same authoritative pnpm production graph as the primary API.
 WORKDIR /app
 

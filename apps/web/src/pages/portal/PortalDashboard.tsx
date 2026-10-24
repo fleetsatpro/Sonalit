@@ -41,11 +41,27 @@ function isActive(s: ShipmentSummary): boolean {
 
 function freshness(s: ShipmentSummary): 'live' | 'recent' | 'stale' | 'offline' {
   if (!s.last_ping_at) return 'offline';
-  const age = Date.now() - new Date(s.last_ping_at).getTime();
+  const pingAt = new Date(s.last_ping_at).getTime();
+  if (!Number.isFinite(pingAt)) return 'offline';
+  const age = Date.now() - pingAt;
+  if (age < -30_000) return 'offline';
+  if (age < 0) return 'recent';
   if (age < 120000) return 'live';
   if (age < 900000) return 'recent';
   if (age < 3600000) return 'stale';
   return 'offline';
+}
+
+function hasValidLocation(location: ShipmentSummary['current_location']): location is { lat: number; lng: number } {
+  return Boolean(
+    location
+    && Number.isFinite(location.lat)
+    && Number.isFinite(location.lng)
+    && Math.abs(location.lat) <= 90
+    && Math.abs(location.lng) <= 180
+    // A zero/zero default is usually an unset device location, not a verified fix.
+    && !(Math.abs(location.lat) < 0.000001 && Math.abs(location.lng) < 0.000001),
+  );
 }
 
 function KPI({ label, value, meta, icon: Icon, tone = 'default' }: {
@@ -87,6 +103,21 @@ function OverviewMap({ shipments, selected, onSelect }: {
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
+  const locatedShipments = shipments.filter(s => hasValidLocation(s.current_location));
+  const freshFixes = locatedShipments.filter(s => freshness(s) === 'live').length;
+  const recentFixes = locatedShipments.filter(s => freshness(s) === 'recent').length;
+  const telemetryLabel = locatedShipments.length === 0
+    ? 'NO VERIFIED GPS FIX'
+    : freshFixes > 0
+      ? `${freshFixes} FRESH GPS FIX${freshFixes === 1 ? '' : 'ES'}`
+      : recentFixes > 0
+        ? `${recentFixes} RECENT FIX${recentFixes === 1 ? '' : 'ES'}`
+        : 'POSITIONS STALE';
+  const telemetryTone = freshFixes > 0
+    ? 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300'
+    : recentFixes > 0
+      ? 'border-amber-500/20 bg-amber-500/[0.04] text-amber-300'
+      : 'border-white/10 bg-black/30 text-white/45';
   const ref = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
@@ -110,7 +141,7 @@ function OverviewMap({ shipments, selected, onSelect }: {
     if (!m || !m.isStyleLoaded()) return;
     markers.current.forEach(x => x.remove());
     markers.current = [];
-    const located = shipments.filter(s => s.current_location);
+    const located = shipments.filter(s => hasValidLocation(s.current_location));
     if (!located.length) return;
 
     const bounds = new maplibregl.LngLatBounds();
@@ -120,10 +151,16 @@ function OverviewMap({ shipments, selected, onSelect }: {
       el.type = 'button';
       el.title = s.reference;
       const alerting = s.exception_count > 0 || s.seal_status === 'compromised';
-      el.style.cssText = 'width:18px;height:18px;border-radius:999px;border:2px solid rgba(255,255,255,.85);background:' +
-        (alerting ? '#ef4444' : '#f97316') +
-        ';box-shadow:0 0 0 5px rgba(249,115,22,.12),0 0 18px rgba(249,115,22,.45);cursor:pointer;';
-      if (freshnessState === 'stale' || freshnessState === 'offline') el.style.opacity = '.6';
+      const markerColor = alerting
+        ? '#ef4444'
+        : freshnessState === 'live'
+          ? '#34d399'
+          : freshnessState === 'recent'
+            ? '#fbbf24'
+            : '#64748b';
+      el.style.cssText = 'width:14px;height:14px;border-radius:999px;border:2px solid rgba(255,255,255,.85);background:' +
+        markerColor + ';cursor:pointer;';
+      if (freshnessState === 'stale' || freshnessState === 'offline') el.style.opacity = '.55';
       el.onclick = () => onSelect(s.convoy_id);
       markers.current.push(new maplibregl.Marker({ element: el })
         .setLngLat([s.current_location!.lng, s.current_location!.lat])
@@ -142,9 +179,11 @@ function OverviewMap({ shipments, selected, onSelect }: {
           <p className="text-[10px] uppercase tracking-[0.18em] text-white/35">Live map</p>
           <p className="mt-1 text-sm font-semibold text-white/80">Cargo positions</p>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] text-emerald-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Telemetry
-        </span>
+        <span
+          role="status"
+          title={`${locatedShipments.length} shipments have valid coordinates; ${freshFixes} fixes are under 2 minutes old, ${recentFixes} are under 15 minutes old.`}
+          className={cx(['inline-flex items-center rounded-md border px-2.5 py-1 font-mono text-[9px] font-semibold tracking-[.05em]', telemetryTone])}
+        >{telemetryLabel}</span>
       </div>
       <div className="absolute bottom-3 left-3 flex flex-wrap gap-2 pointer-events-none">
         <span className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/45">Cargo</span>
@@ -291,25 +330,31 @@ export default function PortalDashboard(): React.ReactElement {
   const navigate = useNavigate();
   const [shipments, setShipments] = useState<ShipmentSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [tab, setTab] = useState<Tab>('active');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const load = React.useCallback(() => {
+    setRefreshing(true);
     setErrorMsg('');
     fetch(API + '/portal/shipments', { credentials: 'include' })
       .then(async res => {
-        if (res.status === 401) { void navigate({ to: '/portal/login' }); return null; }
+        if (res.status === 401) { setErrorMsg('Session expired; sign in again.'); void navigate({ to: '/portal/login' }); return null; }
         if (!res.ok) throw new Error((await res.json().catch(() => ({} as Record<string, string>)) as { error?: string }).error ?? ('Error ' + res.status));
         return res.json() as Promise<{ data: ShipmentSummary[] }>;
       })
       .then(json => {
-        if (json) { setShipments(json.data ?? []); setLastRefresh(new Date()); }
+        if (json) {
+          if (!Array.isArray(json.data)) throw new Error('Shipment feed returned an invalid payload');
+          setShipments(json.data);
+          setLastRefresh(new Date());
+        }
       })
       .catch((e: Error) => setErrorMsg(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setRefreshing(false); });
   }, [navigate]);
 
   useEffect(() => {
@@ -324,6 +369,23 @@ export default function PortalDashboard(): React.ReactElement {
   const liveCount = shipments.filter(s => freshness(s) === 'live').length;
   const verifiedSeals = shipments.filter(s => s.seal_status === 'intact').length;
   const avgProgress = active.length ? Math.round(active.reduce((a, s) => a + (s.progress_pct ?? 0), 0) / active.length) : 0;
+  const portfolioAgeMs = lastRefresh ? Date.now() - lastRefresh.getTime() : Infinity;
+  const portfolioFeedState = loading && !lastRefresh
+    ? 'CHECKING'
+    : refreshing
+      ? 'CHECKING UPDATE'
+      : errorMsg
+        ? shipments.length > 0 ? 'FEED DEGRADED' : 'FEED UNAVAILABLE'
+        : !lastRefresh
+          ? 'FEED UNAVAILABLE'
+          : portfolioAgeMs > 120_000
+            ? 'FEED STALE'
+            : 'FEED CURRENT';
+  const portfolioFeedClass = portfolioFeedState === 'FEED CURRENT'
+    ? 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300'
+    : portfolioFeedState === 'FEED DEGRADED'
+      ? 'border-amber-500/20 bg-amber-500/[0.04] text-amber-300'
+      : 'border-white/10 bg-black/20 text-white/45';
 
   const filtered = useMemo(() => {
     let base = tab === 'active' ? active : tab === 'attention' ? attention : tab === 'completed' ? completed : shipments;
@@ -340,13 +402,13 @@ export default function PortalDashboard(): React.ReactElement {
             <p className="text-[10px] uppercase tracking-[0.2em] text-orange-300/70">Cargo Owner Workspace</p>
             <div className="flex items-center gap-2 mt-1">
               <h1 className="text-sm sm:text-base font-semibold text-white truncate">Portfolio command center</h1>
-              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-300 border border-emerald-500/20 bg-emerald-500/10 rounded-full px-2 py-0.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
+              <span role="status" aria-live="polite" className={cx(['hidden sm:inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[9px] font-semibold tracking-[.05em]', portfolioFeedClass])}>
+                {portfolioFeedState}
               </span>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="hidden md:inline text-[10px] text-white/25">Updated {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="hidden md:inline text-[10px] text-white/25">{lastRefresh ? `Updated ${lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not yet updated'}</span>
             <button onClick={load} className="p-2 rounded-lg border border-white/[0.07] text-white/40 hover:text-white hover:border-white/15 transition-colors" title="Refresh"><RefreshCw size={14} /></button>
             <button onClick={() => void navigate({ to: '/portal/notifications' })} className="p-2 rounded-lg border border-white/[0.07] text-white/40 hover:text-white hover:border-white/15 transition-colors"><Bell size={14} /></button>
           </div>

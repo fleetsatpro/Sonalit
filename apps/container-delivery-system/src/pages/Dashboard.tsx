@@ -1,4 +1,6 @@
-import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api.js';
+import { ageLabel, freshnessLabel, getLiveFeedState, hasValidCoordinates, hasVerifiedLiveFix, isValidLiveTripPayload } from '../lib/liveOperationsEvidence.js';
 import { KPICard } from '@/components/ui/KPICard.js';
 import { Card } from '@/components/ui/Card.js';
 import { StatusBadge } from '@/components/ui/Badge.js';
@@ -16,6 +18,23 @@ const iconPaths: Record<string, string> = {
   ai: 'M12 2 2 7l10 5 10-5-10-5ZM2 17l10 5 10-5M2 12l10 5 10-5',
 };
 
+interface DashboardLiveTrip {
+  id: string;
+  trip_number: string | null;
+  status: string;
+  phase: string;
+  origin: string | null;
+  destination: string | null;
+  eta: string | null;
+  vehicle_reg: string | null;
+  lat: number | null;
+  lng: number | null;
+  last_seen: string | null;
+  position_is_live: boolean;
+  tracking_health: string | null;
+  position_source: string | null;
+}
+
 const s = (v: unknown) => String(v ?? '—');
 
 export default function Dashboard() {
@@ -23,6 +42,22 @@ export default function Dashboard() {
   const { data: dashboard, isLoading: dashLoading } = useDashboard();
   const { data: activityData } = useActivityFeed();
   const { data: containerData } = useContainers();
+  const {
+    data: liveTripData,
+    isPending: liveTripsPending,
+    isError: liveTripsError,
+    dataUpdatedAt: liveTripsUpdatedAt,
+  } = useQuery<{ data: DashboardLiveTrip[] }>({
+    queryKey: ['trips', 'live'],
+    queryFn: async () => {
+      const response = await api.get<unknown>('/trips/live');
+      if (!isValidLiveTripPayload<DashboardLiveTrip>(response.data)) {
+        throw new Error('Tracking endpoint returned an invalid live-trip payload');
+      }
+      return response.data;
+    },
+    refetchInterval: 15_000,
+  });
 
   if (dashLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading…</div></div>;
 
@@ -41,6 +76,22 @@ export default function Dashboard() {
 
   const activities = (Array.isArray(activityData) ? activityData : (d?.['recent_activity'] as unknown[] ?? [])) as Record<string, unknown>[];
   const containers = ((containerData as Record<string, unknown> | undefined)?.['data'] as Record<string, unknown>[] | undefined) ?? [];
+  const liveTrips = Array.isArray(liveTripData?.data) ? liveTripData.data : [];
+  const locatedTrips = liveTrips.filter(hasValidCoordinates);
+  const verifiedLiveFixes = locatedTrips.filter(hasVerifiedLiveFix).length;
+  const liveFeedState = getLiveFeedState({
+    isPending: liveTripsPending && !liveTripData,
+    isError: liveTripsError,
+    hasData: Boolean(liveTripData),
+    dataUpdatedAt: liveTripsUpdatedAt,
+  });
+  const liveFeedTone = liveFeedState === 'FEED CURRENT'
+    ? 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300'
+    : liveFeedState === 'FEED DEGRADED'
+      ? 'border-amber-500/20 bg-amber-500/[0.04] text-amber-300'
+      : liveFeedState === 'FEED UNAVAILABLE'
+        ? 'border-red-500/20 bg-red-500/[0.04] text-red-300'
+        : 'border-white/10 bg-black/20 text-white/45';
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
@@ -51,29 +102,67 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-[1.7fr_1fr] gap-4 items-start">
-        <Card className="h-[360px] p-0 relative overflow-hidden">
-          <div className="w-full h-full relative" style={{
-            background: 'linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px) 0 0/40px 40px, radial-gradient(600px 300px at 20% 20%, rgba(255,122,0,0.06), transparent), #14171b',
-          }}>
-            <div className="absolute top-3.5 left-4 z-10">
-              <div className="font-display font-bold text-[13px]">Live Operations Map</div>
-              <div className="text-2xs text-text-2 font-mono">{s(d?.['in_transit'])} trucks in motion</div>
+        <Card className="h-[360px] p-0 overflow-hidden">
+          <div className="flex items-start justify-between gap-3 border-b border-hair px-4 py-4">
+            <div className="min-w-0">
+              <div className="font-display font-bold text-[13px]">GPS Evidence</div>
+              <div className="mt-1 text-2xs text-text-2 font-mono">
+                {locatedTrips.length} of {liveTrips.length} open trips have valid coordinates
+              </div>
             </div>
-            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 600 360" preserveAspectRatio="none">
-              <path d="M60,60 C 200,120 260,180 340,200 S 520,280 560,300" fill="none" stroke="#ff7a00" strokeWidth="2" strokeDasharray="6 5" opacity="0.55" />
-              <path d="M40,300 C 150,260 220,150 380,110 S 540,80 570,60" fill="none" stroke="#ff7a00" strokeWidth="2" strokeDasharray="6 5" opacity="0.55" />
-            </svg>
-            {[{ left: '22%', top: '38%' }, { left: '48%', top: '56%' }, { left: '71%', top: '29%' }, { left: '34%', top: '74%' }].map((pos, i) => (
-              <div key={i} className="absolute w-[11px] h-[11px] rounded-full bg-cds-orange shadow-[0_0_0_4px_rgba(255,122,0,0.13),0_0_14px_rgba(255,122,0,0.35)] animate-pulse-dot" style={{ left: pos.left, top: pos.top, animationDelay: `${i * 0.3}s` }} />
-            ))}
-            <div className="absolute w-[9px] h-[9px] rounded-sm bg-cds-teal shadow-glow-teal" style={{ left: '92%', top: '83%' }} />
-            <div className="absolute w-[9px] h-[9px] rounded-sm bg-cds-teal shadow-glow-teal" style={{ left: '8%', top: '12%' }} />
-            <div className="absolute bottom-3.5 left-4 flex gap-3.5 z-10 text-2xs text-text-1 font-mono">
-              <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full bg-cds-orange" />Truck en route</span>
-              <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full bg-cds-teal" />Port / warehouse</span>
-            </div>
+            <span className={`shrink-0 rounded-md border px-2 py-1 font-mono text-[9px] font-semibold tracking-[.05em] ${liveFeedTone}`} role="status" aria-live="polite">
+              {liveFeedState}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-hair px-4 py-3 text-2xs font-mono text-text-2">
+            <span><span className="text-emerald-300">{verifiedLiveFixes}</span> verified live fixes</span>
+            <span className="text-text-2/50">/</span>
+            <span>{locatedTrips.length - verifiedLiveFixes} last-known positions</span>
+          </div>
+
+          <div className="max-h-[242px] overflow-y-auto">
+            {liveTrips.slice(0, 6).map(trip => {
+              const validPosition = hasValidCoordinates(trip);
+              const verifiedLiveFix = hasVerifiedLiveFix(trip);
+              return (
+                <div key={trip.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-hair px-4 py-3 last:border-0">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-display text-xs font-bold text-text-0">{s(trip.trip_number)}</span>
+                      <span className="font-mono text-2xs text-text-2">{s(trip.vehicle_reg)}</span>
+                      <StatusBadge status={trip.status} />
+                    </div>
+                    <div className="mt-1 text-2xs text-text-2">
+                      {s(trip.origin)} → {s(trip.destination)}
+                    </div>
+                    <div className="mt-1 break-words font-mono text-[10px] text-text-2">
+                      {validPosition ? `${trip.lat.toFixed(5)}, ${trip.lng.toFixed(5)}` : 'No verified GPS coordinates'}
+                    </div>
+                    <div className="mt-1 text-[10px] text-text-2">
+                      {validPosition
+                        ? `${trip.position_source ?? 'Source unavailable'} · ${ageLabel(trip.last_seen)}`
+                        : `Location ${ageLabel(trip.last_seen)}`}
+                    </div>
+                  </div>
+                  <span className={`shrink-0 rounded-md border px-2 py-1 font-mono text-[9px] ${verifiedLiveFix ? 'border-emerald-500/20 text-emerald-300' : 'border-white/10 text-text-2'}`}>
+                    {verifiedLiveFix ? 'LIVE FIX' : validPosition ? freshnessLabel(trip) : 'NO GPS FIX'}
+                  </span>
+                </div>
+              );
+            })}
+            {liveTrips.length === 0 && (
+              <div className="min-h-[220px] flex items-center justify-center px-8 text-center text-xs text-text-2">
+                {liveFeedState === 'CHECKING FEED'
+                  ? 'Checking the tracking endpoint…'
+                  : liveFeedState === 'FEED UNAVAILABLE'
+                    ? 'Tracking feed unavailable; no empty-state conclusion can be drawn.'
+                    : 'No open trips were returned by the tracking endpoint.'}
+              </div>
+            )}
           </div>
         </Card>
+
 
         <Card className="p-4 max-h-[360px] overflow-y-auto">
           <div className="font-display font-bold text-[13px] mb-1.5">Recent Activity</div>
