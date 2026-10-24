@@ -4,30 +4,36 @@ const vm = require("node:vm");
 const { renderDownloadPage, renderDownloadScript } = require("../src/utils/apkDownloadPage");
 const { parseApkReleaseMetadata } = require("../src/utils/apkReleaseMetadata");
 
-describe("Sonalit Guardian download experience", () => {
-  test("clearly identifies the exact app and its release fields", () => {
+describe("Sonalit download hub", () => {
+  test("identifies the four apps and exposes discovery controls", () => {
     const html = renderDownloadPage();
+    expect(html).toContain("Every tool.");
+    expect(html).toContain('id="app-grid"');
+    expect(html).toContain('id="app-search"');
+    expect(html).toContain('data-filter="operations"');
+    expect(html).toContain('data-filter="field"');
+    expect(html).toContain('data-filter="handover"');
+    expect(html).toContain('data-filter="safety"');
+    expect(html).toContain("Sonalit Field");
+    expect(html).toContain("Sonalit Handover");
     expect(html).toContain("Sonalit Guardian");
-    expect(html).toContain("io.sonalit.guardian");
-    expect(html).toContain('href="/api/v1/guardian/apk/download"');
-    expect(html).toContain('id="app-version"');
-    expect(html).toContain('id="release-version"');
-    expect(html).toContain('id="published"');
-    expect(html).toContain('id="size"');
-    expect(html).toContain('id="android-requirement"');
+    expect(html).toContain("Official release channel");
     expect(html).toContain('<script src="/download/release.js" defer></script>');
     expect(html).not.toMatch(/<script>[\s\S]*?<\/script>/i);
   });
 
-  test("download script is valid JavaScript and does not claim latest on missing metadata", () => {
+  test("download script is valid JavaScript and renders unknown releases safely", () => {
     const script = renderDownloadScript();
     expect(() => new vm.Script(script)).not.toThrow();
-    expect(script).toContain("Latest status unconfirmed");
-    expect(script).toContain("latest version is unconfirmed");
-    expect(script).toContain('cache: "no-store"');
+    expect(script).toContain("Release check required");
+    expect(script).toContain("No published APK available");
+    expect(script).toContain('var catalogUrl = "/download/catalog.json"');
+    expect(script).toContain('catalogUrl + "?refresh=1"');
+    expect(script).toContain('querySelectorAll(".filter-btn[data-filter]")');
+    expect(script).toContain('hostname === "github.com"');
   });
 
-  test("reads APK metadata from the published release comment and removes it from notes", () => {
+  test("reads APK metadata embedded in release notes and removes the comment", () => {
     const fingerprint = "a".repeat(64);
     const metadataComment = '<!-- SONALIT_APK_METADATA {"version_name":"4.7.0","version_code":13,"package_name":"io.sonalit.guardian","min_sdk":29,"sha256":"' + fingerprint + '"} -->';
     const body = "Sonalit Guardian release notes\n\n" + metadataComment;
@@ -42,7 +48,7 @@ describe("Sonalit Guardian download experience", () => {
     });
   });
 
-  test("does not mark malformed or absent APK metadata as verified", () => {
+  test("does not promote malformed or absent metadata to verified values", () => {
     expect(parseApkReleaseMetadata("Release notes only")).toEqual({
       notes: "Release notes only",
       app_version: null,
