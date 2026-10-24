@@ -375,6 +375,17 @@ catch (e) { logger.warn("Claims route failed: " + e.message); }
 app.get("/download/apk", (req, res) => res.redirect(302, "/api/v1/guardian/apk/download"));
 const { renderDownloadPage, renderDownloadScript } = require("./utils/apkDownloadPage");
 
+app.get("/download/catalog.json", async (req, res) => {
+  const { getSonalitApkCatalog, createUnverifiedCatalog } = require("./utils/apkReleaseCatalog");
+  try {
+    const catalog = await getSonalitApkCatalog({ forceRefresh: req.query.refresh === "1" });
+    return res.set("Cache-Control", "no-store").json(catalog);
+  } catch (err) {
+    logger.warn("Sonalit APK release catalog unavailable: " + (err.message || String(err)));
+    return res.set("Cache-Control", "no-store").json(createUnverifiedCatalog());
+  }
+});
+
 app.get("/download/release.js", (req, res) => res.type("application/javascript").set("Cache-Control", "no-store").send(renderDownloadScript()));
 app.get(["/download", "/get"], (req, res) => res.type("html").send(renderDownloadPage()));
 
