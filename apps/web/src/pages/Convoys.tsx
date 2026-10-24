@@ -15,7 +15,7 @@ import BroadcastPanel from '../components/BroadcastPanel.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TruckProgressState = 'live' | 'stale' | 'off_route' | 'no_route' | 'no_fix' | 'unassigned' | 'clock_skew'
+type TruckProgressState = 'live' | 'delayed' | 'stale' | 'off_route' | 'no_route' | 'no_fix' | 'unassigned' | 'clock_skew'
 
 interface TruckProgress {
   id: string; vehicle_id: string | null; position: number
@@ -70,7 +70,8 @@ const statusStyle = (s: string) => STATUS_STYLE[s] ?? STATUS_STYLE['draft']!
 const TRUCK_PROGRESS_PALETTE = ['#36e0c3', '#77c7ff', '#b68cff', '#8de29d', '#ffbf69', '#fb92c6']
 
 function truckProgressColor(truck: TruckProgress): string {
-  if (truck.state === 'stale' || truck.state === 'clock_skew') return '#f5b544'
+  if (truck.state === 'delayed' || truck.state === 'clock_skew') return '#f5b544'
+  if (truck.state === 'stale') return '#9aa3ad'
   if (truck.state === 'off_route') return '#ff5964'
   if (truck.state === 'no_route') return '#ad8bff'
   if (truck.state === 'no_fix' || truck.state === 'unassigned') return '#66717d'
@@ -118,6 +119,8 @@ function truckProgressTitle(truck: TruckProgress): string {
   if (typeof truck.progress_pct === 'number' && truck.along_km != null && truck.route_len_km != null) {
     const basis = truck.route_source === 'waypoints' ? 'waypoint-line estimate' : 'saved route corridor'
     parts.push(truck.progress_pct + '% · ' + truck.along_km.toFixed(1) + ' / ' + truck.route_len_km.toFixed(1) + ' km · ' + basis)
+    if (truck.state === 'delayed') parts.push('DELAYED GPS FIX')
+    if (truck.state === 'stale') parts.push('STALE GPS FIX')
   } else if (truck.state === 'off_route' && typeof truck.projected_pct === 'number') {
     parts.push('OFF ROUTE · nearest route projection ' + truck.projected_pct + '% · not validated progress')
   } else {
@@ -219,8 +222,9 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
   const truckCount = Math.max(0, Number(c.vehicle_count ?? trucks.length) || 0)
   const trackingAvailable = c.truck_progress_available === true
   const onRail = trucks.filter(t => truckRailPosition(t) != null
-    && (t.state === 'live' || t.state === 'stale' || t.state === 'off_route'))
+    && (t.state === 'live' || t.state === 'delayed' || t.state === 'stale' || t.state === 'off_route'))
   const liveCount = trucks.filter(t => t.state === 'live').length
+  const delayedCount = trucks.filter(t => t.state === 'delayed').length
   const staleCount = trucks.filter(t => t.state === 'stale').length
   const offRouteCount = trucks.filter(t => t.state === 'off_route').length
   const noGpsCount = trucks.filter(t => t.state === 'no_fix').length
@@ -232,13 +236,14 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
     ? 'TRACKING DATA UNAVAILABLE'
     : [
       liveCount ? liveCount + ' LIVE' : '',
+      delayedCount ? delayedCount + ' DELAYED' : '',
       staleCount ? staleCount + ' STALE' : '',
       offRouteCount ? offRouteCount + ' OFF ROUTE' : '',
       noGpsCount ? noGpsCount + ' NO GPS' : '',
       clockSkewCount ? clockSkewCount + ' CLOCK SKEW' : '',
       waypointBasis ? 'WAYPOINT-LINE BASIS' : trucks.some(t => t.route_source === 'corridor') ? 'ROUTE-CORRIDOR BASIS' : '',
     ].filter(Boolean).join(' · ') || (trucks.length ? 'NO VALID GPS PROGRESS' : 'NO TRUCKS ASSIGNED')
-  const summaryColor = !trackingAvailable ? '#f5b544' : offRouteCount ? '#ff5964' : waypointBasis || clockSkewCount || staleCount ? '#f5b544' : liveCount ? '#36e0c3' : '#66717d'
+  const summaryColor = !trackingAvailable ? '#f5b544' : offRouteCount ? '#ff5964' : waypointBasis || clockSkewCount || staleCount || delayedCount ? '#f5b544' : liveCount ? '#36e0c3' : '#66717d'
   const railMarkers = trackingAvailable ? layoutTruckMarkers(onRail) : []
   const railHeight = railMarkers.length ? (Math.max(...railMarkers.map(marker => marker.lane)) + 1) * 13 + 8 : 18
 
@@ -289,7 +294,7 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
         {trackingAvailable && trucks.map(truck => {
           const color = truckProgressColor(truck)
           const label = typeof truck.progress_pct === 'number'
-            ? String(truck.progress_pct) + '%' + (truck.state === 'stale' ? ' STALE' : '')
+            ? String(truck.progress_pct) + '%' + (truck.state === 'delayed' ? ' DELAYED' : truck.state === 'stale' ? ' STALE' : '')
             : truckProgressStateLabel(truck.state)
           return (
             <span key={truck.id} title={truckProgressTitle(truck)} style={{ display:'inline-flex', alignItems:'center', gap:3, fontFamily:MN, fontSize:7, color, whiteSpace:'nowrap', cursor:'help' }}>
