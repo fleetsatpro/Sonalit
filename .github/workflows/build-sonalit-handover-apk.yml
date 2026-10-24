@@ -187,10 +187,10 @@ jobs:
             exit 1
           fi
           BADGING="$("$AAPT" dump badging "$APK_PATH")"
-          PACKAGE_NAME=$(printf '%s\\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p")
-          VERSION_CODE=$(printf '%s\\n' "$BADGING" | sed -n "s/^package:.*versionCode='\\([^']*\\)'.*/\\1/p")
-          VERSION_NAME=$(printf '%s\\n' "$BADGING" | sed -n "s/^package:.*versionName='\\([^']*\\)'.*/\\1/p")
-          MIN_SDK=$(printf '%s\\n' "$BADGING" | sed -n "s/^sdkVersion:'\\([^']*\\)'.*/\\1/p")
+          PACKAGE_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          VERSION_CODE=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p")
+          VERSION_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p")
+          MIN_SDK=$(printf '%s\n' "$BADGING" | sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p")
           SHA256=$(sha256sum "$APK_PATH" | cut -d ' ' -f 1)
           for field in PACKAGE_NAME VERSION_CODE VERSION_NAME MIN_SDK SHA256; do
             if [ -z "${!field}" ]; then
