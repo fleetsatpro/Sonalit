@@ -15,7 +15,7 @@ import BroadcastPanel from '../components/BroadcastPanel.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TruckProgressState = 'live' | 'stale' | 'off_route' | 'no_route' | 'no_fix' | 'unassigned'
+type TruckProgressState = 'live' | 'stale' | 'off_route' | 'no_route' | 'no_fix' | 'unassigned' | 'clock_skew'
 
 interface TruckProgress {
   id: string; vehicle_id: string | null; position: number
@@ -68,7 +68,7 @@ const statusStyle = (s: string) => STATUS_STYLE[s] ?? STATUS_STYLE['draft']!
 const TRUCK_PROGRESS_PALETTE = ['#36e0c3', '#77c7ff', '#b68cff', '#8de29d', '#ffbf69', '#fb92c6']
 
 function truckProgressColor(truck: TruckProgress): string {
-  if (truck.state === 'stale') return '#f5b544'
+  if (truck.state === 'stale' || truck.state === 'clock_skew') return '#f5b544'
   if (truck.state === 'off_route') return '#ff5964'
   if (truck.state === 'no_route') return '#ad8bff'
   if (truck.state === 'no_fix' || truck.state === 'unassigned') return '#66717d'
@@ -81,6 +81,24 @@ function truckProgressStateLabel(state: TruckProgressState): string {
   if (state === 'no_fix') return 'NO GPS'
   if (state === 'unassigned') return 'NOT LINKED'
   return state.toUpperCase()
+}
+
+// Layout each numbered truck into a collision-free lane when two GPS fixes
+// map to nearly the same route progress. With at most six trucks per convoy,
+// this remains deterministic and keeps every position individually legible.
+function layoutTruckMarkers(trucks: TruckProgress[]): Array<{ truck: TruckProgress; lane: number }> {
+  const occupied: number[] = []
+  const minGapPercent = 9
+  return [...trucks]
+    .filter(truck => typeof truck.progress_pct === 'number')
+    .sort((a, b) => (a.progress_pct! - b.progress_pct!) || (a.position - b.position))
+    .map(truck => {
+      const pct = Math.max(0, Math.min(100, truck.progress_pct!))
+      let lane = occupied.findIndex(lastPct => pct - lastPct >= minGapPercent)
+      if (lane < 0) lane = occupied.length
+      occupied[lane] = pct
+      return { truck, lane }
+    })
 }
 
 function truckProgressTitle(truck: TruckProgress): string {
@@ -187,13 +205,23 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
     && (t.state === 'live' || t.state === 'stale'))
   const liveCount = trucks.filter(t => t.state === 'live').length
   const staleCount = trucks.filter(t => t.state === 'stale').length
+  const offRouteCount = trucks.filter(t => t.state === 'off_route').length
+  const noGpsCount = trucks.filter(t => t.state === 'no_fix').length
+  const clockSkewCount = trucks.filter(t => t.state === 'clock_skew').length
   const origin = c.route_origin ?? c.region ?? '—'
   const dest = c.route_destination ?? '—'
   const summary = !trackingAvailable
     ? 'TRACKING DATA UNAVAILABLE'
-    : [liveCount ? liveCount + ' LIVE' : '', staleCount ? staleCount + ' STALE' : ''].filter(Boolean).join(' · ')
-      || (trucks.length ? 'NO VALID GPS PROGRESS' : 'NO TRUCKS ASSIGNED')
-  const summaryColor = !trackingAvailable ? '#f5b544' : liveCount ? '#36e0c3' : staleCount ? '#f5b544' : '#66717d'
+    : [
+      liveCount ? liveCount + ' LIVE' : '',
+      staleCount ? staleCount + ' STALE' : '',
+      offRouteCount ? offRouteCount + ' OFF ROUTE' : '',
+      noGpsCount ? noGpsCount + ' NO GPS' : '',
+      clockSkewCount ? clockSkewCount + ' CLOCK SKEW' : '',
+    ].filter(Boolean).join(' · ') || (trucks.length ? 'NO VALID GPS PROGRESS' : 'NO TRUCKS ASSIGNED')
+  const summaryColor = !trackingAvailable ? '#f5b544' : offRouteCount ? '#ff5964' : clockSkewCount || staleCount ? '#f5b544' : liveCount ? '#36e0c3' : '#66717d'
+  const railMarkers = trackingAvailable ? layoutTruckMarkers(onRail) : []
+  const railHeight = railMarkers.length ? (Math.max(...railMarkers.map(marker => marker.lane)) + 1) * 13 + 8 : 18
 
   return (
     <div style={{ minWidth:205, maxWidth:280 }}>
@@ -210,18 +238,17 @@ function RouteProgressCell({ c }: { c: ConvoyRow }) {
       <div style={{ fontFamily:MN, fontSize:7, letterSpacing:'.07em', color:summaryColor, marginBottom:1 }}>
         {summary}
       </div>
-      <div style={{ position:'relative', height:36, marginTop:2, marginBottom:2 }} aria-label={'Truck route progress: ' + truckCount + ' trucks'}>
-        <div style={{ position:'absolute', left:2, right:2, top:16, height:3, borderRadius:3, background:'rgba(255,255,255,.10)', boxShadow:'inset 0 1px 2px rgba(0,0,0,.4)' }} />
-        <span style={{ position:'absolute', left:0, top:13, width:7, height:7, borderRadius:'50%', background:'#8de29d', boxShadow:'0 0 5px rgba(141,226,157,.45)' }} />
-        <span style={{ position:'absolute', right:0, top:13, width:7, height:7, borderRadius:'50%', background:'#f97316', boxShadow:'0 0 5px rgba(249,115,22,.45)' }} />
-        {trackingAvailable && onRail.map((truck, index) => {
+      <div style={{ position:'relative', height:railHeight, marginTop:4, marginBottom:4 }} aria-label={'Truck route progress: ' + truckCount + ' trucks'}>
+        <div style={{ position:'absolute', left:2, right:2, top:railHeight - 5, height:3, borderRadius:3, background:'rgba(255,255,255,.10)', boxShadow:'inset 0 1px 2px rgba(0,0,0,.4)' }} />
+        <span style={{ position:'absolute', left:0, top:railHeight - 8, width:7, height:7, borderRadius:'50%', background:'#8de29d', boxShadow:'0 0 5px rgba(141,226,157,.45)' }} />
+        <span style={{ position:'absolute', right:0, top:railHeight - 8, width:7, height:7, borderRadius:'50%', background:'#f97316', boxShadow:'0 0 5px rgba(249,115,22,.45)' }} />
+        {railMarkers.map(({ truck, lane }) => {
           const color = truckProgressColor(truck)
-          const laneTop = [1, 12, 23][index % 3]
           return (
             <div
               key={truck.id}
               title={truckProgressTitle(truck)}
-              style={{ position:'absolute', left: String(truck.progress_pct) + '%', top:laneTop, transform:'translateX(-50%)', zIndex:4 + (index % 3), transition:'left .5s ease', cursor:'help' }}
+              style={{ position:'absolute', left: 'clamp(9px, ' + truck.progress_pct + '%, calc(100% - 9px))', top:lane * 13, zIndex:4 + lane, transition:'left .5s ease, top .2s ease', cursor:'help' }}
             >
               <span style={{
                 display:'inline-flex', alignItems:'center', justifyContent:'center',
