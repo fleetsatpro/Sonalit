@@ -28,6 +28,7 @@ describe('routePointList', () => {
     expect(routePointList('[{"lat":0,"lng":0},{"lat":"bad","lng":0.5},{"lat":0,"lng":1}]')).toEqual([]);
     expect(routePointList('not-json')).toEqual([]);
     expect(routePointList([{ lat: 91, lng: 0 }, { lat: 0, lng: 1 }])).toEqual([]);
+    expect(routePointList([{ lat: '', lng: ' ' }, { lat: 0, lng: 1 }])).toEqual([]);
     expect(routePointList([{ lat: 0, lng: 0 }])).toEqual([]);
   });
 });
@@ -159,11 +160,15 @@ describe('calculateTruckRouteProgress', () => {
     expect(result.route_source).toBe('waypoints');
   });
 
-  test('does not accept a zero-length route as progress geometry', () => {
-    const result = calculateTruckRouteProgress(base, {
-      points: [{ lat: 0, lng: 0 }, { lat: 0, lng: 0 }], corridorKm: 2,
-    }, NOW);
-    expect(result.state).toBe('no_route');
-    expect(result.progress_pct).toBeNull();
+  test('does not accept a zero-length or malformed route as progress geometry', () => {
+    for (const route of [
+      { points: [{ lat: 0, lng: 0 }, { lat: 0, lng: 0 }], corridorKm: 2 },
+      { points: [{ lat: 0, lng: 0 }, null], corridorKm: 2 },
+      { points: [{ lat: '', lng: ' ' }, { lat: 0, lng: 1 }], corridorKm: 2 },
+    ]) {
+      const result = calculateTruckRouteProgress(base, route, NOW);
+      expect(result.state).toBe('no_route');
+      expect(result.progress_pct).toBeNull();
+    }
   });
 });
