@@ -15,6 +15,18 @@ import BroadcastPanel from '../components/BroadcastPanel.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type TruckProgressState = 'live' | 'delayed' | 'stale' | 'off_route' | 'no_route' | 'no_fix' | 'unassigned' | 'clock_skew'
+
+interface TruckProgress {
+  id: string; vehicle_id: string | null; position: number
+  registration: string | null; driver_name: string | null
+  progress_pct: number | null; projected_pct: number | null; along_km: number | null; route_len_km: number | null
+  cross_track_km: number | null; cross_track_limit_km: number | null
+  route_source: 'corridor' | 'waypoints' | null
+  last_fix_at: string | null; age_seconds: number | null
+  speed_kph: number | null; state: TruckProgressState
+}
+
 interface ConvoyRow {
   id: string; name: string; status: ConvoyStatus
   route_origin?: string | null; route_destination?: string | null
@@ -26,6 +38,8 @@ interface ConvoyRow {
   client_id?: string | null; client_name?: string | null; client_company?: string | null
   open_alert_count?: number | string | null; open_incident_count?: number | string | null
   seal_intact?: boolean | null
+  truck_progress?: TruckProgress[]
+  truck_progress_available?: boolean
 }
 interface ConvoyDetail extends ConvoyRow {
   trucks?: Array<{ id: string; position: number; driver_name: string; driver_phone?: string | null }>
@@ -53,14 +67,77 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; border: string }
 }
 const statusStyle = (s: string) => STATUS_STYLE[s] ?? STATUS_STYLE['draft']!
 
-function convoyProgress(c: ConvoyRow): number {
-  if (c.status === 'completed') return 100
-  if (c.status === 'cancelled' || c.status === 'draft') return 0
-  const start = c.departure_time ? new Date(c.departure_time).getTime() : c.start_date ? new Date(c.start_date).getTime() : null
-  const end   = c.estimated_arrival ? new Date(c.estimated_arrival).getTime() : c.end_date ? new Date(c.end_date).getTime() : null
-  if (!start || !end || end <= start) return c.status === 'active' ? 50 : 0
-  const now = Date.now()
-  return Math.min(99, Math.max(1, Math.round(((now - start) / (end - start)) * 100)))
+const TRUCK_PROGRESS_PALETTE = ['#36e0c3', '#77c7ff', '#b68cff', '#8de29d', '#ffbf69', '#fb92c6']
+
+function truckProgressColor(truck: TruckProgress): string {
+  if (truck.state === 'delayed' || truck.state === 'clock_skew') return '#f5b544'
+  if (truck.state === 'stale') return '#9aa3ad'
+  if (truck.state === 'off_route') return '#ff5964'
+  if (truck.state === 'no_route') return '#ad8bff'
+  if (truck.state === 'no_fix' || truck.state === 'unassigned') return '#66717d'
+  return TRUCK_PROGRESS_PALETTE[(Math.max(1, truck.position) - 1) % TRUCK_PROGRESS_PALETTE.length]!
+}
+
+function truckProgressStateLabel(state: TruckProgressState): string {
+  if (state === 'off_route') return 'OFF ROUTE'
+  if (state === 'no_route') return 'NO ROUTE'
+  if (state === 'no_fix') return 'NO GPS'
+  if (state === 'unassigned') return 'NOT LINKED'
+  if (state === 'clock_skew') return 'CLOCK SKEW'
+  return state.toUpperCase()
+}
+
+// Layout each numbered truck into a collision-free lane when two GPS fixes
+// map to nearly the same route progress. With at most six trucks per convoy,
+// this remains deterministic and keeps every position individually legible.
+function truckRailPosition(truck: TruckProgress): number | null {
+  if (typeof truck.progress_pct === 'number') return truck.progress_pct
+  // Off-route fixes have no validated progress percentage. Their red marker is
+  // the nearest route projection only, explicitly distinguished in the tooltip.
+  if (truck.state === 'off_route' && typeof truck.projected_pct === 'number') return truck.projected_pct
+  return null
+}
+
+function layoutTruckMarkers(trucks: TruckProgress[]): Array<{ truck: TruckProgress; lane: number; markerPct: number }> {
+  const occupied: number[] = []
+  const minGapPercent = 9
+  return [...trucks]
+    .filter(truck => truckRailPosition(truck) != null)
+    .sort((a, b) => (truckRailPosition(a)! - truckRailPosition(b)!) || (a.position - b.position))
+    .map(truck => {
+      const pct = Math.max(0, Math.min(100, truckRailPosition(truck)!))
+      let lane = occupied.findIndex(lastPct => pct - lastPct >= minGapPercent)
+      if (lane < 0) lane = occupied.length
+      occupied[lane] = pct
+      return { truck, lane, markerPct: pct }
+    })
+}
+
+function truckProgressTitle(truck: TruckProgress): string {
+  const parts: string[] = [truck.registration || ('Truck ' + truck.position)]
+  if (truck.driver_name) parts.push(truck.driver_name)
+  if (typeof truck.progress_pct === 'number' && truck.along_km != null && truck.route_len_km != null) {
+    const basis = truck.route_source === 'waypoints' ? 'waypoint-line estimate' : 'saved route corridor'
+    parts.push(truck.progress_pct + '% · ' + truck.along_km.toFixed(1) + ' / ' + truck.route_len_km.toFixed(1) + ' km · ' + basis)
+    if (truck.state === 'delayed') parts.push('DELAYED GPS FIX')
+    if (truck.state === 'stale') parts.push('STALE GPS FIX')
+  } else if (truck.state === 'off_route' && typeof truck.projected_pct === 'number') {
+    parts.push('OFF ROUTE · nearest route projection ' + truck.projected_pct + '% · not validated progress')
+  } else {
+    parts.push(truckProgressStateLabel(truck.state))
+  }
+  if (truck.cross_track_km != null && truck.cross_track_limit_km != null) {
+    parts.push('cross-track ' + truck.cross_track_km.toFixed(1) + ' km / tolerance ' + truck.cross_track_limit_km.toFixed(1) + ' km')
+  }
+  if (truck.speed_kph != null) parts.push(Math.round(truck.speed_kph) + ' km/h')
+  if (truck.last_fix_at) parts.push('Last GPS fix ' + fmtTime(truck.last_fix_at))
+  if (truck.age_seconds != null) {
+    const age = truck.age_seconds < 60 ? 'under 1 min' : truck.age_seconds < 3600
+      ? Math.floor(truck.age_seconds / 60) + ' min ago'
+      : Math.floor(truck.age_seconds / 3600) + ' h ago'
+    parts.push(age)
+  }
+  return parts.join(' · ')
 }
 
 const fmtDate = (d?: string | null) => {
@@ -141,27 +218,102 @@ function SBadge({ status }: { status: string }) {
 }
 
 function RouteProgressCell({ c }: { c: ConvoyRow }) {
-  const pct = convoyProgress(c)
-  const ss = statusStyle(c.status)
+  const trucks = Array.isArray(c.truck_progress) ? c.truck_progress : []
+  const truckCount = Math.max(0, Number(c.vehicle_count ?? trucks.length) || 0)
+  const trackingAvailable = c.truck_progress_available === true
+  const onRail = trucks.filter(t => truckRailPosition(t) != null
+    && (t.state === 'live' || t.state === 'delayed' || t.state === 'stale' || t.state === 'off_route'))
+  const liveCount = trucks.filter(t => t.state === 'live').length
+  const delayedCount = trucks.filter(t => t.state === 'delayed').length
+  const staleCount = trucks.filter(t => t.state === 'stale').length
+  const offRouteCount = trucks.filter(t => t.state === 'off_route').length
+  const noGpsCount = trucks.filter(t => t.state === 'no_fix').length
+  const clockSkewCount = trucks.filter(t => t.state === 'clock_skew').length
+  const waypointBasis = trucks.some(t => t.route_source === 'waypoints')
   const origin = c.route_origin ?? c.region ?? '—'
   const dest = c.route_destination ?? '—'
+  const summary = !trackingAvailable
+    ? 'TRACKING DATA UNAVAILABLE'
+    : [
+      liveCount ? liveCount + ' LIVE' : '',
+      delayedCount ? delayedCount + ' DELAYED' : '',
+      staleCount ? staleCount + ' STALE' : '',
+      offRouteCount ? offRouteCount + ' OFF ROUTE' : '',
+      noGpsCount ? noGpsCount + ' NO GPS' : '',
+      clockSkewCount ? clockSkewCount + ' CLOCK SKEW' : '',
+      waypointBasis ? 'WAYPOINT-LINE BASIS' : trucks.some(t => t.route_source === 'corridor') ? 'ROUTE-CORRIDOR BASIS' : '',
+    ].filter(Boolean).join(' · ') || (trucks.length ? 'NO VALID GPS PROGRESS' : 'NO TRUCKS ASSIGNED')
+  const summaryColor = !trackingAvailable ? '#f5b544' : offRouteCount ? '#ff5964' : waypointBasis || clockSkewCount || staleCount || delayedCount ? '#f5b544' : liveCount ? '#36e0c3' : '#66717d'
+  const railMarkers = trackingAvailable ? layoutTruckMarkers(onRail) : []
+  const railHeight = railMarkers.length ? (Math.max(...railMarkers.map(marker => marker.lane)) + 1) * 13 + 8 : 18
+
   return (
-    <div style={{ minWidth:150 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:5, fontFamily:SANS, fontSize:11.5, color:'#8a95a0', marginBottom:4 }}>
-        <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:90 }}>{origin}</span>
-        <span style={{ color:'#f97316', fontSize:10, flexShrink:0 }}>→</span>
-        <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:90 }}>{dest}</span>
-      </div>
-      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-        <div style={{ flex:1, height:2, background:'rgba(255,255,255,.08)', borderRadius:1 }}>
-          <div style={{ height:'100%', width:`${pct}%`, background:ss.color, borderRadius:1, transition:'width .6s' }} />
+    <div style={{ minWidth:205, maxWidth:280 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:7, marginBottom:3 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:5, minWidth:0, fontFamily:SANS, fontSize:11.5, color:'#aeb8c2' }}>
+          <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:100 }}>{origin}</span>
+          <span style={{ color:'#f97316', fontSize:10, flexShrink:0 }}>→</span>
+          <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:100 }}>{dest}</span>
         </div>
-        <span style={{ fontFamily:MN, fontSize:8, color:'#4e5a65', flexShrink:0 }}>{pct}%</span>
+        <span style={{ flexShrink:0, fontFamily:MN, fontSize:8, letterSpacing:'.06em', color:'#dde3ea', border:'1px solid rgba(255,255,255,.12)', borderRadius:3, padding:'2px 4px' }}>
+          {String(truckCount).padStart(2, '0')} TRK
+        </span>
+      </div>
+      <div style={{ fontFamily:MN, fontSize:7, letterSpacing:'.07em', color:summaryColor, marginBottom:1 }}>
+        {summary}
+      </div>
+      <div style={{ position:'relative', height:railHeight, marginTop:4, marginBottom:4 }} aria-label={'Truck route progress: ' + truckCount + ' trucks'}>
+        <div style={{ position:'absolute', left:2, right:2, top:railHeight - 5, height:3, borderRadius:3, background:'rgba(255,255,255,.10)', boxShadow:'inset 0 1px 2px rgba(0,0,0,.4)' }} />
+        <span style={{ position:'absolute', left:0, top:railHeight - 8, width:7, height:7, borderRadius:'50%', background:'#8de29d', boxShadow:'0 0 5px rgba(141,226,157,.45)' }} />
+        <span style={{ position:'absolute', right:0, top:railHeight - 8, width:7, height:7, borderRadius:'50%', background:'#f97316', boxShadow:'0 0 5px rgba(249,115,22,.45)' }} />
+        {railMarkers.map(({ truck, lane, markerPct }) => {
+          const color = truckProgressColor(truck)
+          return (
+            <div
+              key={truck.id}
+              title={truckProgressTitle(truck)}
+              style={{ position:'absolute', left: 'clamp(9px, ' + markerPct + '%, calc(100% - 9px))', top:lane * 13, transform:'translateX(-50%)', zIndex:4 + lane, transition:'left .5s ease, top .2s ease', cursor:'help' }}
+            >
+              <span style={{
+                position:'absolute', left:'50%', top:12, width:1,
+                height:Math.max(4, railHeight - 5 - (lane * 13 + 12)),
+                background:color, opacity:.55, transform:'translateX(-50%)',
+                pointerEvents:'none', zIndex:0,
+              }} />
+              <span style={{
+                position:'relative', zIndex:1,
+                display:'inline-flex', alignItems:'center', justifyContent:'center',
+                minWidth:18, height:12, padding:'0 2px', boxSizing:'border-box',
+                borderRadius:3, border:'1px solid ' + color, color,
+                background:'#0b0e12', fontFamily:MN, fontWeight:700, fontSize:7,
+                letterSpacing:'-.02em', boxShadow:truck.state === 'live' ? '0 0 8px ' + color + '44' : 'none',
+              }}>
+                {String(truck.position).padStart(2, '0')}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:'3px 7px', minHeight:12 }}>
+        {!trackingAvailable && (
+          <span style={{ fontFamily:MN, fontSize:7, color:'#f5b544' }}>GPS FEED UNAVAILABLE</span>
+        )}
+        {trackingAvailable && trucks.map(truck => {
+          const color = truckProgressColor(truck)
+          const label = typeof truck.progress_pct === 'number'
+            ? String(truck.progress_pct) + '%' + (truck.state === 'delayed' ? ' DELAYED' : truck.state === 'stale' ? ' STALE' : '')
+            : truckProgressStateLabel(truck.state)
+          return (
+            <span key={truck.id} title={truckProgressTitle(truck)} style={{ display:'inline-flex', alignItems:'center', gap:3, fontFamily:MN, fontSize:7, color, whiteSpace:'nowrap', cursor:'help' }}>
+              <span style={{ opacity:.8 }}>T{truck.position}</span>
+              <span style={{ color:'#89939e' }}>{label}</span>
+            </span>
+          )
+        })}
       </div>
     </div>
   )
 }
-
 function ScheduleCell({ c }: { c: ConvoyRow }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
@@ -313,17 +465,21 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
   })
   const c = raw
 
-  const pct = c ? convoyProgress(c) : 0
   const origin = c?.route_origin ?? c?.region ?? '—'
   const dest   = c?.route_destination ?? '—'
-
-  // bezier truck dot
-  const t = pct / 100
-  const bx = (1-t)*(1-t)*30 + 2*(1-t)*t*180 + t*t*330
-  const by = (1-t)*(1-t)*100 + 2*(1-t)*t*65 + t*t*30
+  const progressTrucks = (c?.truck_progress ?? []).filter(truck =>
+    typeof truck.progress_pct === 'number' || (truck.state === 'off_route' && typeof truck.projected_pct === 'number'))
+  const truckCount = Number(c?.vehicle_count ?? c?.truck_progress?.length ?? c?.trucks?.length ?? c?.vehicles?.length ?? 0)
+  const pointOnRoute = (percentage: number) => {
+    const t = Math.max(0, Math.min(100, percentage)) / 100
+    return {
+      x: (1-t)*(1-t)*30 + 2*(1-t)*t*180 + t*t*330,
+      y: (1-t)*(1-t)*100 + 2*(1-t)*t*20 + t*t*30,
+    }
+  }
 
   const stages = ['DISPATCH', 'EN ROUTE', 'CHECKPOINT', 'DELIVERY']
-  const stageIdx = !c ? -1 : c.status === 'completed' ? 4 : c.status === 'planned' || c.status === 'draft' ? 0 : Math.max(1, Math.floor(pct / 34))
+  const stageIdx = !c ? -1 : c.status === 'completed' ? 4 : c.status === 'completing' ? 2 : c.status === 'active' ? 1 : (c.status === 'cancelled' || c.status === 'aborted') ? -1 : 0
 
   return (
     <div style={{ position:'absolute', right:0, top:0, bottom:0, width:380, background:'#0d1014',
@@ -353,8 +509,24 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
           <path d="M30 100 Q180 20 330 30" stroke="url(#rg)" strokeWidth="1.5" fill="none" strokeDasharray="6 4" opacity=".6"/>
           <circle cx="30" cy="100" r="4" fill="#22c55e"/>
           <circle cx="330" cy="30" r="4" fill="#f97316"/>
-          <circle cx={bx} cy={by} r="6" fill="#f97316" opacity=".85"/>
-          <circle cx={bx} cy={by} r="10" fill="none" stroke="#f97316" strokeWidth=".5" opacity=".4"/>
+          {layoutTruckMarkers(progressTrucks).map(({ truck, lane }) => {
+            const point = pointOnRoute(truck.progress_pct ?? truck.projected_pct ?? 0)
+            const offsetY = lane === 0 ? 0 : (lane % 2 ? 1 : -1) * Math.ceil(lane / 2) * 7
+            const markerY = Math.max(15, Math.min(115, point.y + offsetY))
+            const color = truckProgressColor(truck)
+            return (
+              <g key={truck.id} aria-label={truckProgressTitle(truck)}>
+                <circle cx={point.x} cy={markerY} r="7" fill={color} opacity=".18"/>
+                <circle cx={point.x} cy={markerY} r="4.5" fill={color} stroke="#0d1014" strokeWidth="1"/>
+                <text x={point.x} y={markerY + 2.5} fill="#071014" textAnchor="middle" fontSize="5.5" fontWeight="700">{truck.position}</text>
+              </g>
+            )
+          })}
+          {progressTrucks.length === 0 && (
+            <text x="180" y="72" fill="#66717d" textAnchor="middle" fontSize="8" fontFamily="monospace">
+              {c?.truck_progress_available === false ? 'TRACKING FEED UNAVAILABLE' : 'NO VALID GPS PROGRESS'}
+            </text>
+          )}
           <text x="36" y="114" fill="#4e5a65" fontSize="8" fontFamily="monospace">{origin.toUpperCase().slice(0,12)}</text>
           <text x="290" y="25" fill="#4e5a65" fontSize="8" fontFamily="monospace">{dest.toUpperCase().slice(0,12)}</text>
         </svg>
@@ -381,7 +553,7 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
         {[
           ['Health', c ? <HealthBadge key="h" c={c} /> : '—'],
           ['Route', c ? `${origin} → ${dest}` : '—'],
-          ['Progress', c ? `${pct}%` : '—'],
+          ['GPS progress', c ? (progressTrucks.length + '/' + truckCount + ' trucks on route') : '—'],
           ['Vehicles', c?.vehicle_count ?? (c?.trucks?.length ?? c?.vehicles?.length ?? '—')],
           ['Start', fmtTime(c?.departure_time ?? c?.start_date)],
           ['ETA', fmtTime(c?.estimated_arrival ?? c?.end_date)],
