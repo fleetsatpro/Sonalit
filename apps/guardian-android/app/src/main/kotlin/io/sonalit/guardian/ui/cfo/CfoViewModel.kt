@@ -15,7 +15,9 @@ import io.sonalit.guardian.data.local.PendingPhotoEntity
 import io.sonalit.guardian.data.local.PendingPhotoUploadPolicy
 import io.sonalit.guardian.data.remote.*
 import io.sonalit.guardian.worker.PendingPhotoUploadWorker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -31,6 +34,10 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
+
+// Handover includes an API request, object-storage upload and final commit.
+// Bound the whole operation so the submit UI cannot spin forever.
+private const val HANDOVER_OPERATION_TIMEOUT_MS = 150_000L
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -63,6 +70,7 @@ data class CfoUiState(
     val failedPhotoCount: Int = 0,
     val failedPhotos: List<PendingPhotoEntity> = emptyList(),
     val handoverUploading: Boolean = false,
+    val handoverStage: String? = null,
     val handoverError: String? = null,
     // Set directly from a handover commit's convoy_completed flag — the
     // convoy's status flips server-side the instant this succeeds, but
@@ -82,12 +90,14 @@ data class CfoUiState(
 class CfoViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val api: GuardianApi,
-    private val okHttp: OkHttpClient,
     private val pendingPhotoDao: PendingPhotoDao,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(CfoUiState())
     val state: StateFlow<CfoUiState> = _state.asStateFlow()
+
+    // Presigned R2 PUTs must not reuse Retrofit's client: it injects X-Device-Token.
+    private val storageUploadClient = PresignedUploadClient.create()
 
     private val prefs: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(appContext)
@@ -285,7 +295,7 @@ class CfoViewModel @Inject constructor(
                     .put(file.asRequestBody("image/jpeg".toMediaType()))
                     .build()
                 withContext(Dispatchers.IO) {
-                    okHttp.newCall(putRequest).execute().use { resp ->
+                    storageUploadClient.newCall(putRequest).execute().use { resp ->
                         if (!resp.isSuccessful) error("Upload failed: ${resp.code}")
                     }
                 }
