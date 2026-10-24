@@ -4,6 +4,7 @@ const {
   getOpticalRecon,
   getOpticalTile,
   getVantorBasemapConfig,
+  resetOpticalReconCaches,
 } = require('../src/services/spatial/opticalReconGateway');
 
 describe('free optical reconnaissance gateway', () => {
@@ -15,6 +16,10 @@ describe('free optical reconnaissance gateway', () => {
     VANTOR_VIVID_PRODUCT: process.env.VANTOR_VIVID_PRODUCT,
     OPEN_CITIES_TITILER_BASE_URL: process.env.OPEN_CITIES_TITILER_BASE_URL,
   };
+
+  beforeEach(() => {
+    resetOpticalReconCaches();
+  });
 
   afterEach(() => {
     global.fetch = originalFetch;
@@ -120,6 +125,8 @@ describe('free optical reconnaissance gateway', () => {
       throw new Error('unexpected fetch: ' + target);
     });
     const result = await getOpticalRecon({ latitude: 8.1264, longitude: 34.5618, radiusM: 18_000 });
+    expect(result.coverage.openAerialMapCandidates).toBe(1);
+    expect(result.warnings).not.toContain('openaerialmap_catalog_unavailable');
     const candidate = result.candidates.find(item => item.id === 'oam:licensed-item');
     expect(candidate).toMatchObject({ renderable: true, licenceVerified: true, licenceSource: 'item_metadata' });
     expect(candidate.render).toMatchObject({ source: 'oam', itemId: 'licensed-item' });
@@ -142,6 +149,8 @@ describe('free optical reconnaissance gateway', () => {
       throw new Error('unexpected fetch: ' + target);
     });
     const result = await getOpticalRecon({ latitude: 8.1234, longitude: 34.5678, radiusM: 18_000 });
+    expect(result.coverage.openAerialMapCandidates).toBe(1);
+    expect(result.warnings).not.toContain('openaerialmap_catalog_unavailable');
     const candidate = result.candidates.find(item => item.id === 'oam:no-license-item');
     expect(candidate).toMatchObject({
       renderable: false,

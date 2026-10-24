@@ -506,10 +506,17 @@ async function getOpticalTile({ source = 'sentinel', date, z, x, y, itemId } = {
   return result;
 }
 
+function resetOpticalReconCaches() {
+  searchCache.clear();
+  inflight.clear();
+  tileCache.clear();
+}
+
 module.exports = {
   bboxFromCenter,
   getOpticalRecon,
   getOpticalTile,
   getVantorBasemapConfig,
   freshnessClass,
+  resetOpticalReconCaches,
 };
