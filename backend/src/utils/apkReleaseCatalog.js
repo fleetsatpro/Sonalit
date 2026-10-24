@@ -3,7 +3,7 @@
 const { parseApkReleaseMetadata } = require("./apkReleaseMetadata");
 
 const RELEASE_CACHE_MS = 600_000;
-const MIN_REFRESH_INTERVAL_MS = 300_000;
+const MIN_REFRESH_INTERVAL_MS = 900_000;
 const FAILURE_COOLDOWN_MS = 60_000;
 const APPS = [
   {
