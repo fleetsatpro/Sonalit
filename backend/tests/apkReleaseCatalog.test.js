@@ -62,22 +62,22 @@ describe("Sonalit app-specific APK release catalogue", () => {
     expect(byId.sonalit.releaseId).toBe("sonalit-v41");
     expect(byId.sonalit.appVersion).toBe("1.0.41");
     expect(byId.sonalit.packageId).toBe("io.sonalit.app");
-    expect(byId.sonalit.downloadUrl).toContain("/releases/download/sonalit-v41/sonalit.apk");
+    expect(byId.sonalit.downloadUrl).toContain("/api/v1/guardian/apk/download-app/sonalit/sonalit-v41");
 
     expect(byId.field.releaseId).toBe("sonalit-field-v26");
     expect(byId.field.appVersion).toBe("1.0.26");
     expect(byId.field.packageId).toBe("io.sonalit.field");
-    expect(byId.field.downloadUrl).toContain("/releases/download/sonalit-field-v26/sonalit-field.apk");
+    expect(byId.field.downloadUrl).toContain("/api/v1/guardian/apk/download-app/field/sonalit-field-v26");
 
     expect(byId.handover.releaseId).toBe("sonalit-handover-v18");
     expect(byId.handover.appVersion).toBe("1.0.18");
     expect(byId.handover.packageId).toBe("io.sonalit.handover");
-    expect(byId.handover.downloadUrl).toContain("/releases/download/sonalit-handover-v18/sonalit-handover.apk");
+    expect(byId.handover.downloadUrl).toContain("/api/v1/guardian/apk/download-app/handover/sonalit-handover-v18");
 
     expect(byId.guardian.releaseId).toBe("guardian-v981");
     expect(byId.guardian.appVersion).toBe("4.7.0");
     expect(byId.guardian.packageId).toBe("io.sonalit.guardian");
-    expect(byId.guardian.downloadUrl).toContain("/releases/download/guardian-v981/app-debug.apk");
+    expect(byId.guardian.downloadUrl).toContain("/api/v1/guardian/apk/download-app/guardian/guardian-v981");
     expect(byId.guardian.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
