@@ -247,7 +247,7 @@ async function getVehicles(db, orgId, convoyId, vehicleId) {
     : "(v.assigned_convoy_id=$2 OR EXISTS (SELECT 1 FROM convoy_assignments ca WHERE ca.convoy_id=$2 AND ca.vehicle_id=v.id))";
 
   return safeRows(db,
-    "SELECT v.id::text AS id,v.registration,v.type,v.region,v.status,v.latitude,v.longitude,v.heading,v.speed,v.last_ping,v.driver_id,v.assigned_convoy_id::text AS assigned_convoy_id," +
+    "SELECT v.id::text AS id,v.registration,v.type,v.region,v.status,v.latitude,v.longitude,v.heading,NULL::float AS speed,v.last_ping,v.driver_id,v.assigned_convoy_id::text AS assigned_convoy_id," +
     " lg.lat AS gps_lat,lg.lng AS gps_lng,NULL::float AS gps_heading,lg.speed AS gps_speed,NULL::float AS gps_accuracy,lg.timestamp AS gps_at," +
     " prev.lat AS prev_lat,prev.lng AS prev_lng,NULL::float AS prev_heading,prev.speed AS prev_speed,prev.timestamp AS prev_at," +
     " COALESCE(history.recent_points, '[]'::json) AS recent_points" +
@@ -743,14 +743,14 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
   const lng = num(useGps ? row.gps_lng : row.longitude);
   const observedAt = useGps ? gpsAt : canonicalAt;
   const heading = num(useGps ? row.gps_heading : row.heading);
-  const speedKmh = num(useGps ? row.gps_speed : row.speed) ?? 0;
+  const speedKmh = num(useGps ? row.gps_speed : row.speed);
   const freshness = classifyOperationalFreshness(observedAt, now);
 
   const previous = row.prev_at ? {
     lat: num(row.prev_lat),
     lng: num(row.prev_lng),
     heading: num(row.prev_heading),
-    speedKmh: num(row.prev_speed) ?? 0,
+    speedKmh: num(row.prev_speed),
     observedAt: iso(row.prev_at)
   } : null;
 
@@ -760,7 +760,7 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
       return {
         lat: num(point.lat),
         lng: num(point.lng),
-        speedKmh: num(point.speed) ?? 0,
+        speedKmh: num(point.speed),
         heading: num(point.heading),
         observedAt: iso(point.timestamp)
       };
@@ -772,7 +772,7 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
 
   const previousFreshness = previous ? classifyOperationalFreshness(previous.observedAt, now) : 'UNKNOWN';
   const gapMs = previous && observedAt ? Math.max(0, Date.parse(observedAt) - Date.parse(previous.observedAt)) : null;
-  const impliedKmh = previous && lat != null && lng != null && gapMs > 0
+  const impliedKmh = previous && previous.lat != null && previous.lng != null && lat != null && lng != null && gapMs > 0
     ? distanceM(previous.lat, previous.lng, lat, lng) / (gapMs / 3600000)
     : null;
   const headingDelta = previous && previous.heading != null && heading != null
@@ -823,7 +823,7 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
 
   const nearbyCheckpoints = checkpoints.map(function(cp) {
     const d = lat != null && lng != null ? distanceM(lat, lng, Number(cp.lat), Number(cp.lng)) : null;
-    const pd = previous && d != null ? distanceM(previous.lat, previous.lng, Number(cp.lat), Number(cp.lng)) : null;
+    const pd = previous && previous.lat != null && previous.lng != null && d != null ? distanceM(previous.lat, previous.lng, Number(cp.lat), Number(cp.lng)) : null;
     const approaching = d != null && d <= 2000 && (pd == null || pd - d >= 150);
     const passed = d != null && pd != null && pd > 500 && d <= 250;
     return {
@@ -858,7 +858,7 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
     latitude: lat,
     longitude: lng,
     headingDeg: heading,
-    speedMps: speedKmh / 3.6,
+    speedMps: speedKmh == null ? null : speedKmh / 3.6,
     accuracyM: useGps ? num(row.gps_accuracy) : null,
     observedAt: observedAt,
     observationConfidence: useGps && row.gps_accuracy != null
@@ -883,7 +883,11 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
   obs.historyGapMs = gapMs;
   obs.impliedSpeedKmh = Number.isFinite(impliedKmh) ? Math.round(impliedKmh * 100) / 100 : null;
   obs.headingDeltaDeg = headingDelta;
-  obs.stationaryDurationMs = speedKmh <= 2 && previous && gapMs != null && distanceM(previous.lat, previous.lng, lat, lng) <= 75 ? gapMs : 0;
+  if (speedKmh == null) obs.stationaryDurationMs = null;
+  else if (speedKmh > 2) obs.stationaryDurationMs = 0;
+  else if (previous && previous.lat != null && previous.lng != null && gapMs != null) {
+    obs.stationaryDurationMs = distanceM(previous.lat, previous.lng, lat, lng) <= 75 ? gapMs : 0;
+  } else obs.stationaryDurationMs = null;
   obs.previousFreshnessClass = previousFreshness;
   obs.recoveredFreshness = Boolean(
     previous &&

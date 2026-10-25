@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { register, collectDefaultMetrics } from 'prom-client';
 import { isRedisReady } from '../redis.js';
 import { isNatsReady } from '../nats.js';
+import { isDatabaseReady } from '../db.js';
 
 collectDefaultMetrics({ register });
 
@@ -11,20 +12,25 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/healthz/ready', async (_request, reply: FastifyReply) => {
-    const [redisOk, natsOk] = await Promise.all([
+    const [databaseOk, redisOk, natsOk] = await Promise.all([
+      isDatabaseReady(),
       isRedisReady(),
       isNatsReady(),
     ]);
 
     const checks = {
+      database: databaseOk ? 'ok' : 'degraded',
       redis: redisOk ? 'ok' : 'degraded',
       nats: natsOk ? 'ok' : 'degraded',
     };
 
-    const allOk = redisOk && natsOk;
-    return reply.status(allOk ? 200 : 503).send({
-      status: allOk ? 'ready' : 'not_ready',
+    // PostgreSQL-backed acceptance remains safe while the dispatcher is degraded.
+    // Database persistence and Redis-backed auth/rate limiting define ingest readiness.
+    const persistenceReady = databaseOk && redisOk;
+    return reply.status(persistenceReady ? 200 : 503).send({
+      status: persistenceReady ? 'ready' : 'not_ready',
       checks,
+      telemetry_delivery: natsOk ? 'live' : 'durably_queued',
     });
   });
 

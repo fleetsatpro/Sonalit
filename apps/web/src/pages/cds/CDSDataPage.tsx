@@ -69,15 +69,17 @@ export function DriversView() {
         columns={[
           { id: 'name', header: 'Name', accessor: (r: Row) => <span className="font-semibold text-text-0">{s(r['name'])}</span> },
           { id: 'phone', header: 'Phone', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['phone'])}</span> },
-          { id: 'license', header: 'License', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['license_number'])}</span> },
+          { id: 'license', header: 'License', accessor: (r: Row) => <span className="font-mono text-xs">{String(r['license_number'] ?? '').trim() || 'Not recorded'}</span> },
+          { id: 'license_verification', header: 'License Verification', accessor: (r: Row) => <StatusBadge status={s(r['license_verification_status'] ?? 'unverified')} /> },
           { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
           { id: 'trips', header: 'Total Trips', accessor: (r: Row) => s(r['total_trips']) },
           { id: 'rating', header: 'Rating', accessor: (r: Row) => {
-            const rating = Number(r['rating'] ?? 0);
+            const rating = r['rating'] == null || !Number.isFinite(Number(r['rating'])) ? null : Number(r['rating']);
+            if (rating === null) return <span className="text-text-2 text-xs">Not rated</span>;
             return (
               <div className="flex items-center gap-1.5">
                 <div className="w-[50px] h-1.5 rounded bg-ink-3 overflow-hidden">
-                  <div className="h-full rounded bg-cds-teal" style={{ width: `${(rating / 5) * 100}%` }} />
+                  <div className="h-full rounded bg-cds-teal" style={{ width: `${Math.max(0, Math.min(5, rating) / 5 * 100)}%` }} />
                 </div>
                 <span className="text-[10px] font-mono text-text-2">{rating.toFixed(1)}</span>
               </div>
@@ -93,11 +95,12 @@ export function DriversView() {
             <DrawerField label="Name" value={s(r['name'])} />
             <DrawerField label="Phone" value={s(r['phone'])} />
             <DrawerField label="Email" value={s(r['email'])} />
-            <DrawerField label="License" value={s(r['license_number'])} />
+            <DrawerField label="License" value={String(r['license_number'] ?? '').trim() || 'Not recorded'} />
             <DrawerField label="License Expiry" value={r['license_expiry'] ? new Date(s(r['license_expiry'])).toLocaleDateString() : '—'} />
+            <DrawerField label="License Verification" value={s(r['license_verification_status'] ?? 'unverified')} />
             <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
             <DrawerField label="Total Trips" value={s(r['total_trips'])} />
-            <DrawerField label="Rating" value={`${Number(r['rating'] ?? 0).toFixed(1)} / 5.0`} />
+            <DrawerField label="Rating" value={r['rating'] == null ? 'Not rated' : `${Number(r['rating']).toFixed(1)} / 5.0`} />
           </>
         ))}
       />
@@ -121,14 +124,17 @@ export function TransportersView() {
           { id: 'phone', header: 'Phone', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['phone'])}</span> },
           { id: 'trucks', header: 'Trucks', accessor: (r: Row) => s(r['total_trucks']) },
           { id: 'ontime', header: 'On-Time', accessor: (r: Row) => {
-            const rate = Number(r['on_time_rate'] ?? 0);
+            if (r['on_time_rate'] == null || !Number.isFinite(Number(r['on_time_rate']))) {
+              return <span className="text-text-2 text-xs">Not measured</span>;
+            }
+            const rate = Number(r['on_time_rate']);
             const color = rate >= 90 ? '#33d6a8' : rate >= 70 ? '#ffb020' : '#ff5c5c';
             return <span className="font-mono text-xs" style={{ color }}>{rate}%</span>;
           }},
           { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
           { id: 'rating', header: 'Rating', accessor: (r: Row) => {
-            const rating = Number(r['rating'] ?? 0);
-            return <span className="font-mono text-xs text-text-1">{rating.toFixed(1)}</span>;
+            const rating = r['rating'] == null || !Number.isFinite(Number(r['rating'])) ? null : Number(r['rating']);
+            return <span className="font-mono text-xs text-text-1">{rating === null ? 'Not rated' : rating.toFixed(1)}</span>;
           }},
         ]}
         data={rows}
@@ -143,9 +149,9 @@ export function TransportersView() {
             <DrawerField label="Phone" value={s(r['phone'])} />
             <DrawerField label="Email" value={s(r['email'])} />
             <DrawerField label="Total Trucks" value={s(r['total_trucks'])} />
-            <DrawerField label="On-Time Rate" value={`${Number(r['on_time_rate'] ?? 0)}%`} />
+            <DrawerField label="On-Time Rate" value={r['on_time_rate'] == null ? 'Not measured' : `${Number(r['on_time_rate'])}%`} />
             <DrawerField label="Total Trips" value={s(r['total_trips'])} />
-            <DrawerField label="Rating" value={`${Number(r['rating'] ?? 0).toFixed(1)} / 5.0`} />
+            <DrawerField label="Rating" value={r['rating'] == null ? 'Not rated' : `${Number(r['rating']).toFixed(1)} / 5.0`} />
             <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
           </>
         ))}

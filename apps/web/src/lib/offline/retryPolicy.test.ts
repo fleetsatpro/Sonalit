@@ -40,6 +40,25 @@ describe('classifyHttp', () => {
     expect(c.retryable).toBe(false);
   });
 
+  it('retries a keyed request that is still in progress instead of treating it as a business conflict', () => {
+    const c = classifyHttp({
+      status: 409,
+      body: {
+        error: 'idempotency_in_progress',
+        retry_same_key: true,
+        message: 'A request with this key is already executing. Retry with the same key.',
+      },
+    });
+    expect(c.errorClass).toBe('REQUEST_IN_PROGRESS');
+    expect(c.status).toBe('FAILED_RETRYABLE');
+    expect(c.retryable).toBe(true);
+    expect(c.code).toBe('idempotency_in_progress');
+  });
+
+  it('keeps ambiguous idempotency state retryable without re-keying the operation', () => {
+    expect(classifyHttp({ status: 409, body: { error: 'idempotency_state_unavailable' } }).retryable).toBe(true);
+  });
+
   it('treats 5xx as retryable and 4xx validation as permanent', () => {
     expect(classifyHttp({ status: 500 }).status).toBe('FAILED_RETRYABLE');
     expect(classifyHttp({ status: 503 }).status).toBe('FAILED_RETRYABLE');

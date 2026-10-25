@@ -24,6 +24,7 @@ export type ErrorClass =
   | 'DUPLICATE'
   | 'SCHEMA_FAILURE'
   | 'RATE_LIMITED'
+  | 'REQUEST_IN_PROGRESS'
   | 'UNKNOWN';
 
 export interface ClassifiedError {
@@ -40,7 +41,7 @@ export interface HttpLikeError {
   status?: number | undefined;
   code?: string | undefined;
   message?: string | undefined;
-  body?: { error?: string; message?: string; code?: string } | undefined;
+  body?: { error?: string; message?: string; code?: string; retry_same_key?: boolean } | undefined;
 }
 
 function bodyMessage(e: HttpLikeError, fallback: string): string {
@@ -101,6 +102,21 @@ export function classifyHttp(e: HttpLikeError): ClassifiedError {
       retryable: false,
       code: e.body?.code ?? 'forbidden',
       message: bodyMessage(e, 'Sonalit did not permit this action.'),
+    };
+  }
+
+  if (status === 409 && (
+    e.body?.error === 'idempotency_in_progress'
+    || e.body?.error === 'idempotency_state_unavailable'
+    || e.body?.code === 'idempotency_in_progress'
+    || e.body?.code === 'idempotency_state_unavailable'
+  )) {
+    return {
+      errorClass: 'REQUEST_IN_PROGRESS',
+      status: 'FAILED_RETRYABLE',
+      retryable: true,
+      code: e.body?.error ?? e.body?.code ?? 'idempotency_in_progress',
+      message: bodyMessage(e, 'A previous request is still resolving. Retry with the same idempotency key.'),
     };
   }
 

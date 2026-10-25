@@ -98,7 +98,7 @@ async function buildReportData(db, type, from, to) {
       "SELECT COUNT(*) total_completed, COUNT(*) FILTER (WHERE arrival_time <= estimated_arrival) on_time FROM convoys WHERE status='completed' AND arrival_time IS NOT NULL AND deleted_at IS NULL",
     );
     const row = rows[0];
-    const summary = { ...row, sla_pct: row.total_completed > 0 ? Math.round((row.on_time / row.total_completed) * 100) : 100 };
+    const summary = { ...row, sla_pct: row.total_completed > 0 ? Math.round((row.on_time / row.total_completed) * 100) : null };
     return { rows: [summary], summary, columns: Object.keys(summary) };
   }
 

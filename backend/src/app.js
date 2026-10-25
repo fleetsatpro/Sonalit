@@ -62,8 +62,15 @@ const { isFenceActive } = require("./utils/runtimeFenceBootstrap");
 
 if (!process.env.DATABASE_URL) logger.warn("DATABASE_URL not set — set it in Railway so the database works");
 if (!process.env.JWT_SECRET) {
+  const isProductionRuntime = String(process.env.NODE_ENV || '').toLowerCase() === 'production'
+    || String(process.env.RAILWAY_ENVIRONMENT_NAME || '').toLowerCase() === 'production';
+  if (isProductionRuntime) {
+    // Authentication must never appear healthy while using a process-local key:
+    // replicas/restarts would silently disagree about which sessions are valid.
+    throw new Error('JWT_SECRET is required in production; refusing to start with an ephemeral signing key');
+  }
   process.env.JWT_SECRET = require("crypto").randomBytes(32).toString("hex");
-  logger.warn("JWT_SECRET not set — generated a random one. Set JWT_SECRET in Railway to persist sessions across restarts.");
+  logger.warn("JWT_SECRET not set — generated a process-local development key. Configure JWT_SECRET for persistent sessions.");
 }
 
 const app = express();
