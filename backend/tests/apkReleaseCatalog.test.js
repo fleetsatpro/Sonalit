@@ -1,6 +1,7 @@
 "use strict";
 
 const originalFetch = global.fetch;
+const originalGitHubToken = process.env.GITHUB_TOKEN;
 
 function makeRelease(tag, name, packageId, versionName, versionCode, minSdk, publishedAt, assetName) {
   const checksum = (versionCode.toString(16).padStart(2, "0")).repeat(32).slice(0, 64);
@@ -34,6 +35,8 @@ describe("Sonalit app-specific APK release catalogue", () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+    if (originalGitHubToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = originalGitHubToken;
     jest.clearAllMocks();
     jest.restoreAllMocks();
   });
@@ -81,6 +84,30 @@ describe("Sonalit app-specific APK release catalogue", () => {
     expect(byId.guardian.downloadUrl).toContain("/api/v1/guardian/apk/download-app/guardian/guardian-v981");
     expect(byId.guardian.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("falls back to public release metadata when the configured GitHub token is rejected", async () => {
+    process.env.GITHUB_TOKEN = "intentionally-invalid-test-token";
+    const publishedAt = "2026-10-24T23:50:35Z";
+    const releases = [
+      makeRelease("sonalit-v706", "Sonalit v706", "io.sonalit.app", "1.0.706", 706, 24, publishedAt, "sonalit.apk"),
+      makeRelease("sonalit-field-v623", "Sonalit Field v623", "io.sonalit.field", "1.0.623", 623, 24, publishedAt, "sonalit-field.apk"),
+      makeRelease("sonalit-handover-v616", "Sonalit Handover v616", "io.sonalit.handover", "1.0.616", 616, 24, publishedAt, "sonalit-handover.apk"),
+      makeRelease("guardian-v1018", "Sonalit Guardian 4.7.0", "io.sonalit.guardian", "4.7.0", 13, 29, publishedAt, "app-release.apk")
+    ];
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 401 })
+      .mockResolvedValueOnce({ ok: true, json: async () => releases });
+
+    const { getSonalitApkCatalog } = require("../src/utils/apkReleaseCatalog");
+    const catalog = await getSonalitApkCatalog({ forceRefresh: true });
+
+    expect(catalog.source).toBe("github-releases");
+    expect(catalog.apps).toHaveLength(4);
+    expect(catalog.apps.every(app => app.status === "available" && app.downloadUrl)).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch.mock.calls[0][1].headers.Authorization).toBe("Bearer intentionally-invalid-test-token");
+    expect(global.fetch.mock.calls[1][1].headers.Authorization).toBeUndefined();
   });
 
   test("does not create a download link when an app has no published APK asset", async () => {
