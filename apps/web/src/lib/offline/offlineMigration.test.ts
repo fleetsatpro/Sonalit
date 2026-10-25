@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { classifyOfflineRow, createOfflineQuarantineRecord, shouldPurgeOfflineQuarantineRecord } from './offlineMigration.js';
 
 const dbSource = readFileSync(new URL('./db.ts', import.meta.url), 'utf8');
+const offlineIndexSource = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
 
 describe('offline tenant-scope migration', () => {
   it('quarantines a legacy outbox row with no tenant instead of assigning the current tenant', () => {
@@ -80,6 +81,44 @@ describe('offline tenant-scope migration', () => {
     expect(purgeSource).toContain('counts.quarantined = disposableQuarantine.length');
     expect(purgeSource).toContain('quarantined: number');
     expect(purgeSource).not.toContain('offline_quarantine.clear()');
+  });
+
+  it('adds the media queue in schema v5 without replacing the tenant-safe v4 upgrade', () => {
+    const v4 = dbSource.indexOf('this.version(4).stores');
+    const v4Upgrade = dbSource.indexOf('}).upgrade(async tx => {', v4);
+    const moveEntities = dbSource.indexOf("await moveUnscopedRows('entities', 'entities', 'key');", v4Upgrade);
+    const v5 = dbSource.indexOf('this.version(5).stores', v4Upgrade);
+    expect(v4).toBeGreaterThanOrEqual(0);
+    expect(v4Upgrade).toBeGreaterThan(v4);
+    expect(moveEntities).toBeGreaterThan(v4Upgrade);
+    expect(v5).toBeGreaterThan(moveEntities);
+    expect(dbSource).toContain("media_outbox: 'id, kind, ownerUserId, ownerOrgId, [ownerUserId+ownerOrgId]");
+    expect(dbSource).toContain('media_outbox!: EntityTable<MediaUploadEntry, \'id\'>');
+  });
+
+  it('preserves unresolved GPS, conflicts, media and permanent rejections on logout', () => {
+    const start = dbSource.indexOf('export async function purgeUserData');
+    const end = dbSource.indexOf('/** How many operations this user has', start);
+    const purgeSource = dbSource.slice(start, end);
+    const keepBranch = purgeSource.slice(purgeSource.indexOf('if (keepUnsyncedOutbox)'), purgeSource.indexOf('} else {'));
+    const fullPurge = purgeSource.slice(purgeSource.indexOf('} else {'));
+    expect(keepBranch).toContain("rows.filter(r => r.status === 'ACKNOWLEDGED')");
+    expect(keepBranch).not.toContain("r.status === 'FAILED_PERMANENT'");
+    expect(keepBranch).not.toContain("where('ownerUserId').equals(userId).delete()");
+    expect(fullPurge).toContain("db.gps_buffer.where('ownerUserId').equals(userId).delete()");
+    expect(fullPurge).toContain("db.conflicts.where('ownerUserId').equals(userId).delete()");
+    expect(fullPurge).toContain("db.media_outbox.where('ownerUserId').equals(userId).delete()");
+    expect(fullPurge).toContain('await owned.delete()');
+  });
+
+  it('retains only non-secret identity metadata so a later tenant switch can be detected', () => {
+    const stopStart = offlineIndexSource.indexOf('export async function stopOffline');
+    const stopEnd = offlineIndexSource.indexOf('/** Force a sync now', stopStart);
+    const stopSource = offlineIndexSource.slice(stopStart, stopEnd);
+    expect(stopSource).toContain("delete('session:userId')");
+    expect(stopSource).not.toContain("delete('session:identity')");
+    expect(stopSource).toContain('non-secret identity metadata');
+    expect(offlineIndexSource).toContain("prev.userId !== id.userId || prev.orgId !== id.orgId");
   });
 
   it('runs an additive v4 IndexedDB upgrade and quarantines before deleting source rows', () => {

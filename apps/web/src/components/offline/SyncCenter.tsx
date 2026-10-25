@@ -146,11 +146,13 @@ export default function SyncCenter({ userId }: { userId: string }) {
 
   const c = status.connectivity;
   const q = status.queue;
+  const mq = status.mediaQueue;
 
   // Acknowledged history is deliberately last and collapsed: the queue is for
   // what still needs attention, not a log to scroll past.
   const active = entries.filter(e => e.status !== 'ACKNOWLEDGED');
   const done = entries.filter(e => e.status === 'ACKNOWLEDGED');
+  const unresolvedMedia = mq == null ? null : mq.pending + mq.uploading + mq.failedRetryable + mq.failedPermanent;
 
   return (
     <div className="space-y-4">
@@ -222,6 +224,9 @@ export default function SyncCenter({ userId }: { userId: string }) {
           <Stat label="Needs review" value={String(q?.conflict ?? 0)} tone={q?.conflict ? 'text-cds-orange' : undefined} />
           <Stat label="Not accepted" value={String(q?.failedPermanent ?? 0)} tone={q?.failedPermanent ? 'text-cds-red' : undefined} />
           <Stat label="GPS buffered" value={String(status.gpsBuffered)} />
+          <Stat label="Media waiting" value={mq == null ? 'unknown' : String(mq.pending + mq.failedRetryable)} />
+          <Stat label="Media uploading" value={mq == null ? 'unknown' : String(mq.uploading)} />
+          <Stat label="Media needs review" value={mq == null ? 'unknown' : String(mq.failedPermanent)} tone={mq?.failedPermanent ? 'text-cds-red' : undefined} />
           {/* Realtime is reported separately because it fails on its own: live
               updates can be dead while everything else is healthy, and the map
               must not claim LIVE in that state. */}
@@ -229,6 +234,9 @@ export default function SyncCenter({ userId }: { userId: string }) {
           <Stat label="Latency" value={c.latencyMs == null ? 'unknown' : `${Math.round(c.latencyMs)}ms`} />
           <Stat label="Oldest waiting" value={q?.oldestPendingAgeMs ? ago(q.oldestPendingAgeMs) : '—'} />
         </dl>
+        <p className="mt-2 text-[10px] text-text-2">
+          Voice-note recordings stay on this device until Sonalit confirms the stored object and note record. Unknown media status is shown as unknown, not zero.
+        </p>
       </section>
 
       {active.length > 0 && (
@@ -242,9 +250,19 @@ export default function SyncCenter({ userId }: { userId: string }) {
         </section>
       )}
 
-      {active.length === 0 && (
+      {active.length === 0 && unresolvedMedia === 0 && (
         <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-6 text-center text-[12px] text-text-2">
           Everything recorded on this device has been confirmed by Sonalit.
+        </p>
+      )}
+      {active.length === 0 && unresolvedMedia === null && (
+        <p role="status" className="rounded-xl border border-cds-amber/30 bg-cds-amber/[.06] px-4 py-4 text-center text-[12px] text-text-2">
+          The binary-media queue could not be read. Sonalit cannot confirm that all recordings have uploaded; keep this device storage intact and retry.
+        </p>
+      )}
+      {active.length === 0 && unresolvedMedia !== null && unresolvedMedia > 0 && (
+        <p role="status" className="rounded-xl border border-cds-amber/30 bg-cds-amber/[.06] px-4 py-4 text-center text-[12px] text-text-2">
+          {unresolvedMedia} voice-note upload{unresolvedMedia === 1 ? '' : 's'} still need confirmation or review. Open the associated record to retry; queued audio remains on this device until Sonalit confirms it.
         </p>
       )}
 

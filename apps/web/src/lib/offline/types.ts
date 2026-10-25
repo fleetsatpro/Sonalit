@@ -198,6 +198,44 @@ export interface ConflictRecord {
   ownerOrgId: string;
 }
 
+/**
+ * Durable binary work. A Blob is stored in IndexedDB until Sonalit confirms
+ * the metadata commit; a local recording is not a server-side voice note.
+ */
+export type MediaUploadStatus =
+  | 'PENDING'
+  | 'UPLOADING'
+  | 'FAILED_RETRYABLE'
+  | 'FAILED_PERMANENT'
+  | 'ACKNOWLEDGED';
+
+export type VoiceNoteParentType = 'shift_handover' | 'incident' | 'convoy' | 'claim';
+
+export interface MediaUploadEntry {
+  /** Stable UUID and server note ID: retries always overwrite the same object key. */
+  id: string;
+  kind: 'voice_note';
+  ownerUserId: string;
+  ownerOrgId: string;
+  parentType: VoiceNoteParentType;
+  parentId: string;
+  blob: Blob | null;
+  mimeType: string;
+  fileSizeBytes: number;
+  durationSec: number;
+  sha256: string;
+  status: MediaUploadStatus;
+  attempts: number;
+  nextAttemptAt: number;
+  lastAttemptAt: number | null;
+  leaseUntil: number | null;
+  createdAt: number;
+  updatedAt: number;
+  acknowledgedAt: number | null;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+}
+
 /** One operation's outcome as reported by POST /sync/push. */
 export type PushOutcome = 'accepted' | 'duplicate' | 'rejected' | 'conflict' | 'retryable';
 
