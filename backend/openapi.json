@@ -6685,6 +6685,16 @@
           }
         }
       }
+    },
+    "/api/v1/cds/analytics": {
+      "get": {
+        "operationId": "get_api_v1_cds_analytics",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

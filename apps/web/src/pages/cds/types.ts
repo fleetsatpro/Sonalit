@@ -1,46 +1,34 @@
 export type ShipmentStatus =
   | 'created'
-  | 'customer_assigned'
-  | 'container_assigned'
   | 'vehicle_assigned'
   | 'driver_assigned'
   | 'awaiting_lock'
   | 'locked'
-  | 'lock_assigned'
-  | 'tracking_active'
   | 'dispatched'
-  | 'in_transit'
   | 'checkpoint'
   | 'delayed'
-  | 'border_crossing'
   | 'at_port'
-  | 'arrived'
-  | 'unlock_authorized'
   | 'delivered'
   | 'lock_removed'
   | 'completed'
-  | 'container_returned'
-  | 'closed'
   | 'archived';
 
 export type ContainerStatus =
   | 'available'
-  | 'assigned'
+  | 'booked'
+  | 'awaiting_pickup'
   | 'in_transit'
   | 'at_port'
   | 'delivered'
-  | 'maintenance'
-  | 'damaged'
-  | 'retired';
+  | 'maintenance';
 
 export type LockStatus =
   | 'available'
   | 'assigned'
-  | 'locked'
-  | 'unlocked'
-  | 'offline'
-  | 'tampered'
-  | 'maintenance';
+  | 'installed'
+  | 'removed'
+  | 'maintenance'
+  | 'offline';
 
 export type DriverStatus =
   | 'available'
@@ -98,8 +86,11 @@ export interface Container {
   id: string;
   number: string;
   isoType: string;
+  containerType?: string;
+  containerSize?: number;
   ownership: 'owned' | 'leased' | 'customer';
   status: ContainerStatus;
+  condition?: 'new' | 'good' | 'fair' | 'damaged' | 'retired';
   length: number;
   width: number;
   height: number;
@@ -110,6 +101,7 @@ export interface Container {
   currentLockId: string | null;
   lat: number | null;
   lng: number | null;
+  currentLocation?: string;
   lastInspection: string | null;
   nextInspection: string | null;
   manufacturer: string;
@@ -463,4 +455,88 @@ export interface BookingPipelineItem {
   trip_count: number;
   trips_completed: number;
   pipeline_stage: PipelineStage;
+}
+
+export type CDSAnalyticsWindow = 7 | 30 | 90 | 365;
+
+export interface CDSAnalyticsSummary {
+  bookings_received: number;
+  containers_clamped: number;
+  containers_unclamped: number;
+  containers_currently_clamped: number;
+  containers_clamped_over_24h: number;
+  unclamps_after_24h: number;
+  avg_clamp_duration_hours: number | null;
+  trips_started: number;
+  deliveries_completed: number;
+  active_trips: number;
+  moving_trips: number;
+  delayed_trips: number;
+  eta_met: number;
+  eta_observed: number;
+  eta_attainment_pct: number | null;
+  avg_transit_hours: number | null;
+  trips_missing_vehicle: number;
+  trips_missing_driver: number;
+  trips_missing_container: number;
+  trips_missing_lock: number;
+  trips_missing_eta: number;
+  total_containers: number;
+  available_containers: number;
+  containers_in_use: number;
+  containers_in_maintenance: number;
+  damaged_containers: number;
+  fair_condition_containers: number;
+  retired_containers: number;
+  overdue_inspections: number;
+  inspections_due_30_days: number;
+  containers_missing_location: number;
+  container_utilization_pct: number | null;
+  total_vehicles: number;
+  available_vehicles: number;
+  vehicles_in_use: number;
+  vehicles_in_maintenance: number;
+  vehicle_utilization_pct: number | null;
+  total_locks: number;
+  locks_in_use: number;
+  unclamped_locks: number;
+  locks_needing_attention: number;
+  low_battery_locks: number;
+  tampered_locks: number;
+  stale_lock_heartbeats: number;
+  active_drivers: number;
+  open_incidents: number;
+  unacknowledged_alerts: number;
+}
+
+export interface CDSAnalyticsPayload {
+  meta: { window_days: CDSAnalyticsWindow; period_start: string; period_end: string; generated_at: string };
+  summary: CDSAnalyticsSummary;
+  daily: Array<{
+    day: string; bookings_received: number; containers_clamped: number; containers_unclamped: number;
+    trips_started: number; deliveries_completed: number;
+  }>;
+  operator_leaderboard: Array<{
+    rank: number; operator_id: string; operator_name: string; containers_clamped: number;
+    containers_unclamped: number; clamp_actions: number; unclamp_actions: number; last_action_at: string;
+  }>;
+  overdue_clamps: Array<{
+    booking_number: string; container_number: string; lock_number: string; driver_name: string;
+    clamp_operator: string; clamped_at: string; hours_clamped: number;
+  }>;
+  clamp_state_mix: Array<{ state: 'clamped' | 'unclamped' | 'awaiting_clamp' | 'other'; count: number }>;
+  container_statuses: Array<{ status: string; count: number }>;
+  container_conditions: Array<{ condition: string; count: number }>;
+  trip_statuses: Array<{ status: string; count: number }>;
+  risk_mix: Array<{ risk: string; count: number }>;
+  lock_statuses: Array<{ status: string; count: number; low_battery: number; tampered: number }>;
+  booking_pipeline: Array<{ status: string; count: number }>;
+  lanes: Array<{
+    origin: string; destination: string; trips_started: number; deliveries_completed: number;
+    currently_delayed: number; avg_transit_hours: number | null;
+  }>;
+  alerts: Array<{
+    id: string; type: string; severity: string; title: string; message: string;
+    entity_type: string; entity_id: string; created_at: string;
+  }>;
 }

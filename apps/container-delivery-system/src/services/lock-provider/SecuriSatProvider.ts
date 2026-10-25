@@ -108,11 +108,11 @@ export class SecuriSatProvider implements LockProvider {
       params: since ? { since } : undefined,
     });
     return data.events.map((e: Record<string, unknown>) => ({
-      id: e.id as string,
+      id: e['id'] as string,
       lockId,
-      type: e.event_type as string,
-      data: e.payload as Record<string, unknown>,
-      timestamp: e.created_at as string,
+      type: e['event_type'] as string,
+      data: e['payload'] as Record<string, unknown>,
+      timestamp: e['created_at'] as string,
     }));
   }
 
@@ -150,7 +150,7 @@ export class SecuriSatProvider implements LockProvider {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private mapDevice(raw: any): LockDeviceInfo {
     return {
-      id: raw.id ?? raw.device_id,
+      id: raw['id'] ?? raw.device_id,
       serial: raw.serial_number ?? raw.serial,
       firmwareVersion: raw.firmware_version ?? raw.fw_version ?? 'unknown',
       hardwareVersion: raw.hardware_version ?? 'unknown',

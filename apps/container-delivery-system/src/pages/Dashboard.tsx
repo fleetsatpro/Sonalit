@@ -1,10 +1,11 @@
-import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import { api } from '@/lib/api.js';
 import { KPICard } from '@/components/ui/KPICard.js';
 import { Card } from '@/components/ui/Card.js';
 import { StatusBadge } from '@/components/ui/Badge.js';
-import { useUIStore } from '@/stores/ui.js';
 import { useDashboard, useActivityFeed } from '@/hooks/useDashboard.js';
-import { useContainers } from '@/hooks/useContainers.js';
+import { useShipments } from '@/hooks/useShipments.js';
 
 const iconPaths: Record<string, string> = {
   clamp: 'M5 11h14v9H5zM8 11V7a4 4 0 0 1 8 0v4',
@@ -19,10 +20,19 @@ const iconPaths: Record<string, string> = {
 const s = (v: unknown) => String(v ?? '—');
 
 export default function Dashboard() {
-  const { addToast } = useUIStore();
   const { data: dashboard, isLoading: dashLoading } = useDashboard();
   const { data: activityData } = useActivityFeed();
-  const { data: containerData } = useContainers();
+  const { data: shipmentData } = useShipments();
+  const { data: liveData, isLoading: liveLoading, isError: liveError, refetch: refetchLive } = useQuery<Record<string, unknown>[]>({
+    queryKey: ['cds', 'dashboard-live-trips'],
+    queryFn: async () => {
+      const { data: body } = await api.get('/trips/live');
+      return Array.isArray(body.data) ? body.data as Record<string, unknown>[] : [];
+    },
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+    retry: 1,
+  });
 
   if (dashLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading…</div></div>;
 
@@ -40,7 +50,11 @@ export default function Dashboard() {
   ];
 
   const activities = (Array.isArray(activityData) ? activityData : (d?.['recent_activity'] as unknown[] ?? [])) as Record<string, unknown>[];
-  const containers = ((containerData as Record<string, unknown> | undefined)?.['data'] as Record<string, unknown>[] | undefined) ?? [];
+  const activeTrips = (shipmentData?.data ?? [])
+    .filter(row => row.status !== 'completed' && row.status !== 'archived') as unknown as Record<string, unknown>[];
+  const liveTrips = liveData ?? [];
+  const tripsWithPosition = liveTrips.filter(trip => trip['lat'] != null && trip['lng'] != null);
+  const tripsReportingLive = liveTrips.filter(trip => trip['position_is_live'] === true);
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
@@ -51,28 +65,56 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-[1.7fr_1fr] gap-4 items-start">
-        <Card className="h-[360px] p-0 relative overflow-hidden">
-          <div className="w-full h-full relative" style={{
-            background: 'linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px) 0 0/40px 40px, radial-gradient(600px 300px at 20% 20%, rgba(255,122,0,0.06), transparent), #14171b',
-          }}>
-            <div className="absolute top-3.5 left-4 z-10">
-              <div className="font-display font-bold text-[13px]">Live Operations Map</div>
-              <div className="text-2xs text-text-2 font-mono">{s(d?.['in_transit'])} trucks in motion</div>
+        <Card className="h-[360px] p-4 relative overflow-hidden">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <div className="font-display font-bold text-[13px]">Live GPS coverage</div>
+              <div className="text-2xs text-text-2 font-mono mt-1">Canonical trip feed · refreshes every 15 seconds</div>
             </div>
-            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 600 360" preserveAspectRatio="none">
-              <path d="M60,60 C 200,120 260,180 340,200 S 520,280 560,300" fill="none" stroke="#ff7a00" strokeWidth="2" strokeDasharray="6 5" opacity="0.55" />
-              <path d="M40,300 C 150,260 220,150 380,110 S 540,80 570,60" fill="none" stroke="#ff7a00" strokeWidth="2" strokeDasharray="6 5" opacity="0.55" />
-            </svg>
-            {[{ left: '22%', top: '38%' }, { left: '48%', top: '56%' }, { left: '71%', top: '29%' }, { left: '34%', top: '74%' }].map((pos, i) => (
-              <div key={i} className="absolute w-[11px] h-[11px] rounded-full bg-cds-orange shadow-[0_0_0_4px_rgba(255,122,0,0.13),0_0_14px_rgba(255,122,0,0.35)] animate-pulse-dot" style={{ left: pos.left, top: pos.top, animationDelay: `${i * 0.3}s` }} />
-            ))}
-            <div className="absolute w-[9px] h-[9px] rounded-sm bg-cds-teal shadow-glow-teal" style={{ left: '92%', top: '83%' }} />
-            <div className="absolute w-[9px] h-[9px] rounded-sm bg-cds-teal shadow-glow-teal" style={{ left: '8%', top: '12%' }} />
-            <div className="absolute bottom-3.5 left-4 flex gap-3.5 z-10 text-2xs text-text-1 font-mono">
-              <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full bg-cds-orange" />Truck en route</span>
-              <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full bg-cds-teal" />Port / warehouse</span>
-            </div>
+            <Link to="/cds/live" className="text-[11px] font-semibold text-cds-orange hover:text-text-0">Open live tracking →</Link>
           </div>
+          {liveError && !liveData ? (
+            <div className="rounded-lg border border-red-400/20 p-4">
+              <div className="text-xs font-semibold text-text-0">Live tracking feed unavailable</div>
+              <div className="text-2xs text-text-2 mt-1">No synthetic positions are shown.</div>
+              <button type="button" onClick={() => { void refetchLive(); }} className="text-xs text-cds-orange mt-3">Retry feed</button>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                <div className="rounded-lg border border-white/[.06] bg-white/[.025] p-2.5">
+                  <div className="text-[9px] uppercase tracking-wider text-text-2">Open trips</div>
+                  <div className="text-xl font-bold font-mono text-text-0 mt-1">{liveLoading && !liveData ? '—' : liveTrips.length}</div>
+                </div>
+                <div className="rounded-lg border border-white/[.06] bg-white/[.025] p-2.5">
+                  <div className="text-[9px] uppercase tracking-wider text-text-2">Position available</div>
+                  <div className="text-xl font-bold font-mono text-text-0 mt-1">{liveLoading && !liveData ? '—' : tripsWithPosition.length}</div>
+                </div>
+                <div className="rounded-lg border border-white/[.06] bg-white/[.025] p-2.5">
+                  <div className="text-[9px] uppercase tracking-wider text-text-2">Fresh live fix</div>
+                  <div className="text-xl font-bold font-mono text-text-0 mt-1">{liveLoading && !liveData ? '—' : tripsReportingLive.length}</div>
+                </div>
+              </div>
+              <div className="max-h-[205px] overflow-y-auto">
+                {liveTrips.slice(0, 7).map((trip, index) => (
+                  <div key={String(trip['id'] ?? index)} className="flex items-start gap-2.5 py-2.5 border-t border-hair">
+                    <div className={'w-2 h-2 mt-1.5 rounded-full flex-none ' + (trip['position_is_live'] === true ? 'bg-cds-teal' : trip['lat'] != null && trip['lng'] != null ? 'bg-cds-orange' : 'bg-text-2')} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-semibold text-text-0 truncate">{s(trip['trip_number'])} · {s(trip['vehicle_reg'] ?? 'Vehicle unassigned')}</div>
+                      <div className="text-2xs text-text-2 mt-0.5 truncate">{s(trip['origin'])} → {s(trip['destination'])}</div>
+                      <div className="text-[9px] text-text-2 font-mono mt-1">
+                        {trip['lat'] != null && trip['lng'] != null ? Number(trip['lat']).toFixed(4) + ', ' + Number(trip['lng']).toFixed(4) : 'No position fix'}
+                        {' · ' + s(trip['position_source'] ?? 'No source')}
+                        {trip['last_seen'] ? ' · ' + new Date(String(trip['last_seen'])).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                      </div>
+                    </div>
+                    <StatusBadge status={s(trip['status'])} />
+                  </div>
+                ))}
+                {!liveLoading && liveTrips.length === 0 && <div className="py-8 text-center text-2xs text-text-2">No open trip records in the live feed.</div>}
+              </div>
+            </>
+          )}
         </Card>
 
         <Card className="p-4 max-h-[360px] overflow-y-auto">
@@ -105,22 +147,22 @@ export default function Dashboard() {
             <table className="w-full border-collapse text-xs-tight">
               <thead>
                 <tr>
-                  {['Container', 'Status', 'Truck / Driver', 'Route', 'ETA'].map((h) => (
+                  {['Trip reference', 'Status', 'Vehicle / driver', 'Route', 'ETA'].map((h) => (
                     <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {containers.map((c, i) => (
-                  <tr key={s(c['number'] ?? c['id'] ?? i)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors" onClick={() => addToast(`Viewing ${s(c['number'] ?? c['id'])}`)}>
-                    <td className="px-3.5 py-3 font-mono text-text-0">{s(c['number'] ?? c['id'])}</td>
+                {activeTrips.map((c, i) => (
+                  <tr key={s(c['reference'] ?? c['id'] ?? i)} className="border-t border-hair hover:bg-ink-2 transition-colors">
+                    <td className="px-3.5 py-3 font-mono text-text-0"><Link to="/cds/shipments" className="hover:text-cds-orange">{s(c['reference'] ?? c['id'])}</Link></td>
                     <td className="px-3.5 py-3"><StatusBadge status={s(c['status'])} /></td>
-                    <td className="px-3.5 py-3 text-text-0">{s(c['truck'])}<div className="text-2xs text-text-2 mt-0.5">{s(c['driver'])}</div></td>
+                    <td className="px-3.5 py-3 text-text-0">{s(c['vehicleReg'])}<div className="text-2xs text-text-2 mt-0.5">{s(c['driverName'])}</div></td>
                     <td className="px-3.5 py-3 text-text-0">{s(c['origin'])} → {s(c['destination'] ?? c['dest'])}</td>
                     <td className={`px-3.5 py-3 font-mono ${s(c['status']) === 'delayed' ? 'text-cds-red' : 'text-text-1'}`}>{s(c['eta'])}</td>
                   </tr>
                 ))}
-                {containers.length === 0 && <tr><td colSpan={5} className="px-3.5 py-8 text-center text-text-2">No active shipments.</td></tr>}
+                {activeTrips.length === 0 && <tr><td colSpan={5} className="px-3.5 py-8 text-center text-text-2">No active shipments.</td></tr>}
               </tbody>
             </table>
           </div>

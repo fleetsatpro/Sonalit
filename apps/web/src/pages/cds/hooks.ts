@@ -20,6 +20,26 @@ export function useDashboardKPIs() {
   });
 }
 
+
+export function useCDSAnalytics(days: 7 | 30 | 90 | 365) {
+  return useQuery<import('./types.js').CDSAnalyticsPayload>({
+    queryKey: ['cds', 'analytics', days],
+    queryFn: async () => {
+      // The PR preview uses a same-origin Vercel function, which forwards only
+      // this authenticated GET to the isolated Railway analytics API. This avoids
+      // browser CORS while preserving production's canonical same-origin API path.
+      const usePreviewProxy = import.meta.env['VITE_CDS_ANALYTICS_PREVIEW_PROXY'] === 'true';
+      const { data } = usePreviewProxy
+        ? await cdsApi.get('/cds-analytics', { baseURL: '/api', params: { days } })
+        : await cdsApi.get('/analytics', { baseURL: '/api/v1/cds', params: { days } });
+      return data.data as import('./types.js').CDSAnalyticsPayload;
+    },
+    staleTime: 20_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+}
+
 export function useActivity(limit = 30) {
   return useQuery({
     queryKey: ['cds', 'activity', limit],
@@ -259,6 +279,7 @@ export function useCreateBooking() {
       qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'analytics'] });
     },
   });
 }
@@ -555,6 +576,7 @@ export function useAcknowledgeAlert() {
       // one has to refresh it or the KPI keeps showing the alert the operator
       // has just dealt with.
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'analytics'] });
     },
   });
 }
