@@ -3,6 +3,7 @@ import { useAuthStore, getAccessToken } from './stores/auth.js';
 import AppShell from './components/layout/AppShell.js';
 import GlobalPanicAlarm from './components/layout/GlobalPanicAlarm.js';
 import { RootErrorComponent } from './components/ErrorBoundary.js';
+import { useCDSStore } from './pages/cds/store.js';
 const rootRoute=createRootRoute({component:Outlet,errorComponent:RootErrorComponent});
 const authCheck=()=>{if(!getAccessToken()&&!useAuthStore.getState().user)throw redirect({to:'/login',search:{redirect:window.location.pathname+window.location.search}})};
 const authRoute=createRoute({getParentRoute:()=>rootRoute,id:'auth',beforeLoad:authCheck,component:AppShell});
@@ -73,7 +74,7 @@ const cargoPortalRoute=createRoute({getParentRoute:()=>authRoute,path:'/cargo-po
 const portalViewRoute=createRoute({getParentRoute:()=>rootRoute,path:'/portal-view',component:lazyRouteComponent(()=>import('./pages/PortalView.js'))});
 const cdsDashRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/cds',component:lazyRouteComponent(()=>import('./pages/cds/CDSDashboard.js'))});
 // Backward-compatible direct link to CDS Analytics. CDS views are hash-backed within /cds.
-const cdsAnalyticsPreviewAliasRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/cds/analytics',beforeLoad:()=>{throw redirect({to:'/cds',hash:'cds:analytics',replace:true})}});
+const cdsAnalyticsPreviewAliasRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/cds/analytics',beforeLoad:()=>{useCDSStore.setState({activeView:'analytics'});throw redirect({to:'/cds',hash:'cds:analytics',replace:true})}});
 const fieldRoute=createRoute({getParentRoute:()=>rootRoute,id:'field',component:lazyRouteComponent(()=>import('./pages/field/FieldShell.js'))});
 const fieldHomeRoute=createRoute({getParentRoute:()=>fieldRoute,path:'/field',component:lazyRouteComponent(()=>import('./pages/field/FieldHome.js'))});
 const fieldYardRoute=createRoute({getParentRoute:()=>fieldRoute,path:'/field/yard',component:lazyRouteComponent(()=>import('./pages/field/YardApp.js'))});
