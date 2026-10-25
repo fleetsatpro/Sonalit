@@ -109,7 +109,7 @@ module.exports={runCollectionFabric,collectForOrg,severityHint,buildQuery,fetchG
 // Regional Incident Fabric scheduler. The API process already imports this module
 // and runs runCollectionFabric, so this scheduler guarantees the regional sweep
 // is active in the deployed npm-start process without requiring a separate worker.
-if(!process.env.GENERATE_OPENAPI&&process.env.NODE_ENV!=='test'&&!global.__sonalitRegionalIncidentScheduler){
+if(!process.env.GENERATE_OPENAPI&&process.env.NODE_ENV!=='test'&&String(process.env.SONALIT_STANDBY||'').toLowerCase()!=='true'&&!global.__sonalitRegionalIncidentScheduler){
   global.__sonalitRegionalIncidentScheduler=true;
   const regionalIntervalMs=Math.max(5,Number(process.env.INTEL_REGIONAL_INTERVAL_MINUTES||5))*60*1000;
   let regionalSweepRunning=false;
