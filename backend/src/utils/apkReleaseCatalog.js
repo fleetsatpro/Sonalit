@@ -162,10 +162,24 @@ async function fetchReleases(forceRefresh = false) {
     // missing, up to a bounded limit to avoid unbounded API traffic.
     const collected = [];
     for (let page = 1; page <= 5; page++) {
-      const response = await fetch(
-        "https://api.github.com/repos/" + repo + "/releases?per_page=100&page=" + page,
-        { method: "GET", headers, signal: AbortSignal.timeout(12_000) }
-      );
+      const releasesUrl = "https://api.github.com/repos/" + repo + "/releases?per_page=100&page=" + page;
+      let response = await fetch(releasesUrl, {
+        method: "GET",
+        headers,
+        signal: AbortSignal.timeout(12_000)
+      });
+      // The catalogue is public data. A stale/revoked Railway token must not
+      // make the app hub appear empty when the unauthenticated public endpoint
+      // is still available. Fall back once on 401 and keep using the public
+      // endpoint for subsequent pages in this refresh.
+      if (response.status === 401 && headers.Authorization) {
+        delete headers.Authorization;
+        response = await fetch(releasesUrl, {
+          method: "GET",
+          headers,
+          signal: AbortSignal.timeout(12_000)
+        });
+      }
       if (!response.ok) throw new Error("GitHub release catalog returned HTTP " + response.status);
       const data = await response.json();
       if (!Array.isArray(data)) throw new Error("GitHub release catalog had an unexpected shape");
