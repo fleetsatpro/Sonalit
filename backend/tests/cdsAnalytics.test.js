@@ -68,6 +68,13 @@ describe('GET /cds/analytics', () => {
     expect(captured[0].sql).toContain("a.action IN ('clamp', 'unclamp')");
     expect(captured[0].sql).toContain('containers_clamped_over_24h');
     expect(captured[0].sql).toContain('unclamps_after_24h');
+    const averageDurationAlias = captured[0].sql.indexOf('AS avg_clamp_duration_hours');
+    const averageDurationStart = captured[0].sql.lastIndexOf('(SELECT ROUND((AVG(', averageDurationAlias);
+    const averageDurationClause = captured[0].sql.slice(averageDurationStart, averageDurationAlias);
+    expect(averageDurationStart).toBeGreaterThanOrEqual(0);
+    expect(averageDurationClause).toContain('CROSS JOIN bounds win');
+    expect(averageDurationClause).toContain('bc.unclamped_at >= win.start_at');
+    expect(averageDurationClause).toContain('bc.unclamped_at < win.end_at');
     expect(captured[0].sql).toContain('operator_leaderboard');
     expect(captured[0].sql).toContain('overdue_clamps');
     expect(captured[0].sql).toContain('bc.clamped_at <= NOW() - INTERVAL \'24 hours\'');
