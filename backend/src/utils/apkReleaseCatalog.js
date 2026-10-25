@@ -156,6 +156,9 @@ async function fetchReleases(forceRefresh = false) {
     };
     const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
     if (token) headers.Authorization = "Bearer " + token;
+    // Keep the authenticated options immutable after the first request so
+    // diagnostics/tests can accurately observe the rejected attempt.
+    let requestHeaders = headers;
 
     // Releases across multiple Sonalit apps share one repository-level list.
     // Continue through additional pages only when an app-specific APK is still
@@ -165,18 +168,19 @@ async function fetchReleases(forceRefresh = false) {
       const releasesUrl = "https://api.github.com/repos/" + repo + "/releases?per_page=100&page=" + page;
       let response = await fetch(releasesUrl, {
         method: "GET",
-        headers,
+        headers: requestHeaders,
         signal: AbortSignal.timeout(12_000)
       });
       // The catalogue is public data. A stale/revoked Railway token must not
       // make the app hub appear empty when the unauthenticated public endpoint
       // is still available. Fall back once on 401 and keep using the public
       // endpoint for subsequent pages in this refresh.
-      if (response.status === 401 && headers.Authorization) {
-        delete headers.Authorization;
+      if (response.status === 401 && requestHeaders.Authorization) {
+        requestHeaders = { ...requestHeaders };
+        delete requestHeaders.Authorization;
         response = await fetch(releasesUrl, {
           method: "GET",
-          headers,
+          headers: requestHeaders,
           signal: AbortSignal.timeout(12_000)
         });
       }
