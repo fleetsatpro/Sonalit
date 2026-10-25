@@ -479,8 +479,10 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         (SELECT ROUND((AVG(EXTRACT(EPOCH FROM (bc.unclamped_at - bc.clamped_at)) / 3600.0))::numeric, 1)
            FROM cds_booking_containers bc
            JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
+           CROSS JOIN bounds win
           WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
             AND bc.clamped_at IS NOT NULL AND bc.unclamped_at IS NOT NULL
+            AND bc.unclamped_at >= win.start_at AND bc.unclamped_at < win.end_at
             AND bc.unclamped_at >= bc.clamped_at) AS avg_clamp_duration_hours
     ),
     container_clamp_rows AS (
