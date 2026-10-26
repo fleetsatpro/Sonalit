@@ -92,6 +92,7 @@ router.get('/forecasts', asyncHandler(async(req,res)=>{const s=scope(req),geo=sc
 router.post('/forecasts', asyncHandler(async(req,res)=>{const {scope_type,scope_key,horizon,scenario,probability,confidence,judgement,assumptions,indicators,invalidation_triggers,evidence,valid_until}=req.body||{};if(!scope_type||!horizon||!scenario||!judgement)return res.status(400).json({error:'scope_type, horizon, scenario and judgement are required'});const {rows}=await req.db(`INSERT INTO intel_forecasts (org_id,scope_type,scope_key,horizon,scenario,probability,confidence,judgement,assumptions,indicators,invalidation_triggers,evidence,valid_until,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,[req.user.org_id,scope_type,scope_key||null,horizon,scenario,probability??null,confidence??50,judgement,assumptions||[],indicators||[],invalidation_triggers||[],evidence||[],valid_until||null,req.user.id]);res.status(201).json({forecast:rows[0]});}));
 
 router.patch('/publications/:id/handling', asyncHandler(async(req,res)=>{
+  if(!['admin','super_admin'].includes(req.user?.role))return res.status(403).json({error:'Administrator role required to change publication handling'});
   let handling;
   const reason=String(req.body?.reason||'').trim();
   try{

@@ -11,6 +11,7 @@ describe('publication handling route invariants',()=>{
     const route=source.slice(start,end);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(route).toContain("WHERE id=$1 AND org_id=$2 FOR UPDATE");
+    expect(route).toContain("!['admin','super_admin'].includes(req.user?.role)");
     expect(route).toContain('req.dbTx(async client=>');
     expect(route).toContain('intel_publication_handling_audit');
     expect(route).toContain("pdf_status='not_requested'");
