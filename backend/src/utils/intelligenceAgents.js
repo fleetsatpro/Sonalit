@@ -568,7 +568,11 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const status=(publicationEvidenceContract&&qualityGate&&aiBoardGate&&researchReleaseGate)?'published':'draft';
   const version=existing.length?Number(existing[0].version||1)+1:1;
   const body={
-    ...finalBody,title,subtitle,executive_assessment:executive,key_events:reportEvents,
+    ...finalBody,
+    // Explicit operator-authored handling survives deterministic/AI refreshes
+    // of the same closed reporting period. Never replace it with an inferred level.
+    ...(existing[0]?.body?.handling ? {handling:existing[0].body.handling} : {}),
+    title,subtitle,executive_assessment:executive,key_events:reportEvents,
     collection_basis:{version:PUBLICATION_EVIDENCE_VERSION,original_evidence_contract_met:evidenceContract,publication_evidence_contract_met:publicationEvidenceContract,basis:publicationBasis.basis,research_backed_incidents:publicationBasis.researchBackedIncidents,research_source_count:publicationBasis.researchSourceCount,research_source_domains:publicationBasis.researchSourceDomains,full_period_event_count:events.length,detailed_event_count:reportEvents.length,excluded_event_count:excludedPeriodEventCount},
     editorial_board:{agents:AGENT_ROLES.map(a=>a.id),board,visual_plan:visual,graphics_plan:graphics,provider},
     generator:{

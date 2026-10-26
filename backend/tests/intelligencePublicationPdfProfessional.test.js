@@ -154,7 +154,7 @@ describe('professional intelligence publication PDF renderer',()=>{
     const parsed=JSON.parse(stdout);
     expect(parsed.pages).toBeLessThanOrEqual(16);
     expect(parsed.pages).toBeGreaterThanOrEqual(9);
-    expect(PDF_RENDERER_VERSION).toBe('2.4.0');
+    expect(PDF_RENDERER_VERSION).toBe('2.5.0');
     expect(parsed.text).not.toContain('[object Object]');
     expect(parsed.text).not.toContain('Comprehensive up-to-date news coverage, aggregated from sources all over the world by Google News');
     expect(parsed.text).not.toContain('Evidence-derived event record retained; automated analytical synthesis is unavailable.');
@@ -166,6 +166,8 @@ describe('professional intelligence publication PDF renderer',()=>{
     expect(parsed.text).toContain('WHAT HAPPENED');
     expect(parsed.text).toContain('ANALYTICAL ASSESSMENT');
     expect(parsed.text).toContain('MAP REGISTER');
+    expect(parsed.text).toContain('HANDLING NOT RECORDED');
+    expect(parsed.text).not.toContain('CONFIDENTIAL | CONTROLLED DISTRIBUTION');
   });
 });
 
@@ -191,4 +193,21 @@ test('executive judgements use structured assessment cards rather than concatena
   const source=fs.readFileSync(pathModule.join(__dirname,'../src/services/intelligencePublicationPdfProfessional.js'),'utf8');
   expect(source).toContain('const highlights=Array.isArray(body.assessment_highlights)');
   expect(source).not.toContain("return (i+1)+'. '+m.headline+' - '+why;");
+});
+
+
+test('publication periods use the publication timezone and half-open interval end',()=>{
+  const publication={
+    period_start:'2026-10-03T21:00:00.000Z',
+    period_end:'2026-10-04T21:00:00.000Z',
+    publication_timezone:'Africa/Nairobi'
+  };
+  expect(require('../src/services/intelligencePublicationPdfProfessional').periodLabel(publication))
+    .toBe('04 Oct 2026 - 04 Oct 2026');
+});
+
+test('unknown handling is not silently relabelled as confidential or a TLP level',()=>{
+  const source=fs.readFileSync(pathModule.join(__dirname,'../src/services/intelligencePublicationPdfProfessional.js'),'utf8');
+  expect(source).toContain("label:'HANDLING NOT RECORDED'");
+  expect(source).not.toContain('CONFIDENTIAL | CONTROLLED DISTRIBUTION | EVIDENCE-LINKED');
 });

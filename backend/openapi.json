@@ -6695,6 +6695,26 @@
           }
         }
       }
+    },
+    "/api/v1/risk/intelligence/?/publications/{id}/handling": {
+      "patch": {
+        "operationId": "patch_api_v1_risk_intelligence_publications_id_handling",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/intelligence/ops/publications/{id}/handling": {
+      "patch": {
+        "operationId": "patch_api_v1_risk_intelligence_ops_publications_id_handling",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

@@ -3,6 +3,7 @@ const { asyncHandler } = require('../middleware/error');
 const { normaliseScope, countryClause, scopedObjectClause, watchlistClause, REGIONS, AFRICA } = require('../utils/intelligenceScope');
 const { issuePublicationPdfCapability } = require('../middleware/publicationPdfCapability');
 const { publicationApprovalBlockers } = require('../utils/publicationApprovalGate');
+const { buildPublicationHandling, PUBLICATION_TLP_LEVELS } = require('../utils/publicationHandling');
 const priorityRank = `CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END`;
 const scope = req => normaliseScope(req);
 
@@ -89,6 +90,57 @@ router.post('/storylines/:id/events', asyncHandler(async(req,res)=>{const {event
 
 router.get('/forecasts', asyncHandler(async(req,res)=>{const s=scope(req),geo=scopedObjectClause(s,'f',3);const {rows}=await req.db(`SELECT f.* FROM intel_forecasts f WHERE f.org_id=$1 AND ($2::text IS NULL OR f.status<>'expired') AND ${geo.clause} ORDER BY f.valid_until ASC NULLS LAST,f.created_at DESC LIMIT 300`,[req.user.org_id,req.query.status||null,...geo.params]);res.json({forecasts:rows,scope:s,generated_at:new Date().toISOString()});}));
 router.post('/forecasts', asyncHandler(async(req,res)=>{const {scope_type,scope_key,horizon,scenario,probability,confidence,judgement,assumptions,indicators,invalidation_triggers,evidence,valid_until}=req.body||{};if(!scope_type||!horizon||!scenario||!judgement)return res.status(400).json({error:'scope_type, horizon, scenario and judgement are required'});const {rows}=await req.db(`INSERT INTO intel_forecasts (org_id,scope_type,scope_key,horizon,scenario,probability,confidence,judgement,assumptions,indicators,invalidation_triggers,evidence,valid_until,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,[req.user.org_id,scope_type,scope_key||null,horizon,scenario,probability??null,confidence??50,judgement,assumptions||[],indicators||[],invalidation_triggers||[],evidence||[],valid_until||null,req.user.id]);res.status(201).json({forecast:rows[0]});}));
+
+router.patch('/publications/:id/handling', asyncHandler(async(req,res)=>{
+  if(!['admin','super_admin'].includes(req.user?.role))return res.status(403).json({error:'Administrator role required to change publication handling'});
+  let handling;
+  const reason=String(req.body?.reason||'').trim();
+  try{
+    handling=buildPublicationHandling({
+      level:req.body?.level,
+      actorId:req.user.id,
+      now:new Date()
+    });
+    if(reason.length<5||reason.length>1000)throw new Error('A handling-change reason of 5–1000 characters is required.');
+  }catch(error){
+    return res.status(400).json({
+      error:'invalid_publication_handling',
+      message:error.message,
+      allowed_levels:PUBLICATION_TLP_LEVELS
+    });
+  }
+  const outcome=await req.dbTx(async client=>{
+    const {rows}=await client.query(
+      'SELECT id,status,body,version FROM intel_publications WHERE id=$1 AND org_id=$2 FOR UPDATE',
+      [req.params.id,req.user.org_id]
+    );
+    if(!rows.length)return {kind:'not_found'};
+    const publication=rows[0];
+    if(['withdrawn','superseded'].includes(String(publication.status||'').toLowerCase())){
+      return {kind:'invalid_status',status:publication.status};
+    }
+    const previous=publication.body?.handling||null;
+    const {rows:updatedRows}=await client.query(
+      "UPDATE intel_publications SET body=jsonb_set(COALESCE(body,'{}'::jsonb),'{handling}',$3::jsonb,true),pdf_status='not_requested',pdf_key=NULL,pdf_url=NULL,pdf_generated_at=NULL,pdf_error=NULL,pdf_version=COALESCE(pdf_version,1)+1,version=COALESCE(version,1)+1,updated_at=NOW() WHERE id=$1 AND org_id=$2 RETURNING id,country_code,publication_type,title,subtitle,status,period_start,period_end,executive_assessment,body,confidence,version,pdf_status,pdf_generated_at,pdf_error",
+      [req.params.id,req.user.org_id,JSON.stringify(handling)]
+    );
+    if(!updatedRows.length)return {kind:'not_found'};
+    await client.query(
+      'INSERT INTO intel_publication_handling_audit (org_id,publication_id,previous_handling,next_handling,reason,changed_by) VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6)',
+      [req.user.org_id,req.params.id,previous==null?null:JSON.stringify(previous),JSON.stringify(handling),reason,req.user.id]
+    );
+    return {kind:'ok',publication:updatedRows[0],previous_handling:previous,handling};
+  });
+  if(outcome.kind==='not_found')return res.status(404).json({error:'Publication not found'});
+  if(outcome.kind==='invalid_status')return res.status(409).json({error:'publication_handling_status_conflict',status:outcome.status,message:'Withdrawn or superseded publications cannot be reclassified.'});
+  res.json({
+    publication:outcome.publication,
+    previous_handling:outcome.previous_handling,
+    handling:outcome.handling,
+    pdf_invalidated:true,
+    message:'Handling saved. The previous PDF was invalidated and must be regenerated before distribution.'
+  });
+}));
 
 router.post('/publications/:id/review', asyncHandler(async(req,res)=>{const {action,notes}=req.body||{};if(!['submit','approve','reject','withdraw','request_changes'].includes(action))return res.status(400).json({error:'Invalid review action'});const {rows:pub}=await req.db(`SELECT id,status,body FROM intel_publications WHERE id=$1 AND org_id=$2`,[req.params.id,req.user.org_id]);if(!pub.length)return res.status(404).json({error:'Publication not found'});const next={submit:'review',approve:'published',reject:'draft',withdraw:'withdrawn',request_changes:'draft'}[action];if(action==='approve'&&pub[0].status!=='review')return res.status(409).json({error:'Publication must be in review before approval'});if(action==='approve'){const blockers=publicationApprovalBlockers(pub[0]);if(blockers.length)return res.status(409).json({error:'publication_release_gate_blocked',message:'Publication cannot be approved until its evidence, research, editorial and quality gates are recorded as passed.',blockers});}const {rows}=await req.db(`INSERT INTO intel_publication_reviews (org_id,publication_id,action,reviewer_id,notes) VALUES ($1,$2,$3,$4,$5) RETURNING *`,[req.user.org_id,req.params.id,action,req.user.id,notes||null]);await req.db(`UPDATE intel_publications SET status=$1,updated_at=now(),published_at=CASE WHEN $1='published' THEN now() ELSE published_at END,version=CASE WHEN $1 IN ('published','review') THEN version+1 ELSE version END WHERE id=$2 AND org_id=$3`,[next,req.params.id,req.user.org_id]);res.json({review:rows[0],status:next});}));
 

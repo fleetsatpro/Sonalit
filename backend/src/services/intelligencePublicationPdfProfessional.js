@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
 const { cleanPublicationText, dedupeSources: dedupePublicationSources, uniqueStrings } = require('../utils/publicationQuality');
 
-const PDF_RENDERER_VERSION = '2.4.0';
+const PDF_RENDERER_VERSION = '2.5.0';
 
 const COUNTRY_NAMES = {
   KE:'Kenya', SO:'Somalia', ET:'Ethiopia', UG:'Uganda', TZ:'Tanzania',
@@ -25,13 +25,14 @@ const SEVERITY_COLOR = {
   low:'#2563eb',
   informational:'#64748b'
 };
-const DOMAIN_COLOR = '#0f172a';
-const ACCENT = '#f97316';
-const INK = '#0f172a';
-const MUTED = '#64748b';
-const SOFT = '#f8fafc';
-const LINE = '#e2e8f0';
-const LIGHT = '#eef2f7';
+const DOMAIN_COLOR = '#080d18';
+const ACCENT = '#f0b429';
+const INK = '#101827';
+const MUTED = '#657189';
+const SOFT = '#fbfaf6';
+const PAPER = '#f2efe7';
+const LINE = '#d9dfe7';
+const LIGHT = '#e8edf3';
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
 const MARGIN = 42;
@@ -142,22 +143,106 @@ function priorityEvents(events, max=6) {
   return selected.slice(0, max);
 }
 
-function dateLabel(value) {
+function publicationTimezone(publication) {
+  const body = publication && publication.body || {};
+  const candidate = publication && (publication.publication_timezone || publication.timezone)
+    || body.publication_timezone || body.timezone
+    || process.env.INTEL_PUBLICATION_TIMEZONE || 'Africa/Nairobi';
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone:candidate });
+    return candidate;
+  } catch (_) {
+    return 'UTC';
+  }
+}
+
+function dateLabel(value, timeZone='UTC') {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return 'DATE NOT ESTABLISHED';
-  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric', timeZone:'UTC' });
+  return d.toLocaleDateString('en-GB', {
+    day:'2-digit', month:'short', year:'numeric', timeZone
+  });
 }
 
 function periodLabel(publication) {
-  const s = publication.period_start || publication.body && publication.body.period_start;
-  const e0 = publication.period_end || publication.body && publication.body.period_end;
+  const body = publication && publication.body || {};
+  const s = publication && (publication.period_start || body.period_start);
+  const e0 = publication && (publication.period_end || body.period_end);
   if (!s || !e0) return 'REPORTING PERIOD NOT ESTABLISHED';
   const e = new Date(new Date(e0).getTime() - 1);
-  return dateLabel(s) + ' - ' + dateLabel(e);
+  const zone = publicationTimezone(publication);
+  return dateLabel(s, zone) + ' - ' + dateLabel(e, zone);
+}
+
+function publicationLabel(publication, body) {
+  const type = String(body && body.publication_type || publication && publication.publication_type || 'intelligence')
+    .trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const labels = {
+    daily:'DAILY SECURITY INTELLIGENCE BRIEF',
+    weekly:'WEEKLY INSIGHT',
+    monthly:'MONTHLY STRATEGIC ASSESSMENT',
+    flash:'FLASH INTELLIGENCE ALERT',
+    crisis:'CRISIS SITUATION REPORT',
+    country_profile:'COUNTRY SECURITY PROFILE',
+    route_assessment:'ROUTE SECURITY ASSESSMENT',
+    executive_brief:'EXECUTIVE INTELLIGENCE BRIEF',
+    client_brief:'CLIENT INTELLIGENCE BRIEF',
+    election_security:'ELECTION SECURITY ASSESSMENT',
+    protest_outlook:'PROTEST OUTLOOK',
+    border_security:'BORDER SECURITY ASSESSMENT',
+    infrastructure_risk:'INFRASTRUCTURE RISK ASSESSMENT',
+    travel_advisory:'TRAVEL SECURITY ADVISORY'
+  };
+  if (labels[type]) return labels[type];
+  if (type === 'intelligence') return 'INTELLIGENCE PUBLICATION';
+  return upper(type.replace(/_/g, ' ') + ' INTELLIGENCE');
+}
+
+function handlingInfo(publication, body) {
+  const raw = publication && (publication.tlp || publication.tlp_label)
+    || body && (body.tlp || body.tlp_label)
+    || body && body.handling && (body.handling.level || body.handling.tlp);
+  const candidate = upper(raw || '').replace(/^TLP\s*[:\-]?\s*/, '').replace(/\s+/g, '');
+  // These are foreground tokens for the dark masthead and outlined cover badge,
+  // so use contrast-safe tints rather than low-luminance dashboard/status colours.
+  // FIRST TLP 2.0 foreground colours; the masthead is dark so the standard
+  // colour coding retains contrast. The paper control page uses INK for prose.
+  const colorByTlp = {
+    CLEAR:'#FFFFFF',
+    GREEN:'#33FF00',
+    AMBER:'#FFC000',
+    'AMBER+STRICT':'#FFC000',
+    RED:'#FF2B2B'
+  };
+  const messages = {
+    CLEAR:'TLP:CLEAR | SHARE IN ACCORDANCE WITH TLP RULES',
+    GREEN:'TLP:GREEN | COMMUNITY SHARING',
+    AMBER:'TLP:AMBER | LIMITED SHARING',
+    'AMBER+STRICT':'TLP:AMBER+STRICT | STRICT LIMITED SHARING',
+    RED:'TLP:RED | NAMED RECIPIENTS ONLY'
+  };
+  if (!Object.prototype.hasOwnProperty.call(colorByTlp, candidate)) {
+    return {
+      value:'',
+      label:'HANDLING NOT RECORDED',
+      banner:'HANDLING NOT RECORDED | VERIFY BEFORE DISTRIBUTION',
+      color:ACCENT
+    };
+  }
+  return {
+    value:candidate,
+    label:'TLP:' + candidate,
+    banner:messages[candidate],
+    color:colorByTlp[candidate]
+  };
 }
 
 function addPage(doc) {
   doc.addPage();
+  doc.save();
+  doc.rect(0, 0, PAGE_W, PAGE_H).fill(PAPER);
+  doc.rect(0, 48, 3, PAGE_H - 48).fill(ACCENT);
+  doc.restore();
   return TOP;
 }
 
@@ -166,15 +251,20 @@ function drawRule(doc, y, x=MARGIN, w=CONTENT_W, color=LINE) {
 }
 
 function sectionHeading(doc, y, title, subtitle) {
-  doc.fillColor(INK).font('Helvetica-Bold').fontSize(17).text(upper(title), MARGIN, y, { width:CONTENT_W });
+  doc.save();
+  doc.roundedRect(MARGIN, y + 1, 3.5, 16, 1).fill(ACCENT);
+  doc.restore();
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(16.5)
+    .text(upper(title), MARGIN + 10, y, { width:CONTENT_W - 10, characterSpacing:0.45 });
   if (subtitle) {
     y += 23;
-    doc.fillColor(MUTED).font('Helvetica').fontSize(8.5).text(text(subtitle, 240), MARGIN, y, { width:CONTENT_W });
+    doc.fillColor(MUTED).font('Helvetica').fontSize(8.5)
+      .text(text(subtitle, 240), MARGIN + 10, y, { width:CONTENT_W - 10 });
     y += 19;
   } else {
     y += 24;
   }
-  drawRule(doc, y);
+  drawRule(doc, y, MARGIN + 10, CONTENT_W - 10, LINE);
   return y + 15;
 }
 
@@ -207,7 +297,8 @@ function smallLabel(doc, x, y, label, width=120) {
 
 function badge(doc, x, y, label, width=88, color=ACCENT) {
   doc.roundedRect(x, y, width, 18, 5).fill(color);
-  doc.fillColor('#fff').font('Helvetica-Bold').fontSize(6.5).text(upper(label), x+5, y+6, { width:width-10, align:'center' });
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(6.5)
+    .text(upper(label), x+5, y+6, { width:width-10, align:'center' });
 }
 
 function card(doc, x, y, w, h, fill=SOFT) {
@@ -520,6 +611,13 @@ async function buildProfessionalPdf(publication, events, images=[]) {
   });
   const posture = counts.critical ? 'CRITICAL' : counts.high ? 'HIGH' : counts.moderate ? 'MODERATE' : counts.low ? 'LOW' : 'INFORMATIONAL';
   const trajectory = text(body.threat_posture && body.threat_posture.trajectory || 'STABLE', 30).toUpperCase();
+  const productTitle = publicationLabel(publication, body);
+  const handling = handlingInfo(publication, body);
+  const countryTitle = upper(
+    publication.country_code
+      ? (COUNTRY_NAMES[publication.country_code] || publication.country_code)
+      : body.country_name || 'REGIONAL'
+  );
 
   const doc = new PDFDocument({
     size:'A4',
@@ -529,7 +627,7 @@ async function buildProfessionalPdf(publication, events, images=[]) {
     info:{
       Title:text(publication.title || 'Sonalit Intelligence Publication',220),
       Author:'SONALIT INTELLIGENCE & SECURITY OPERATIONS',
-      Subject:'Evidence-governed intelligence publication',
+      Subject:'Evidence-governed intelligence publication | ' + handling.label,
       Keywords:'intelligence, security, assessment, evidence, Sonalit'
     }
   });
@@ -542,15 +640,29 @@ async function buildProfessionalPdf(publication, events, images=[]) {
 
   let y=addPage(doc);
 
-  // COVER
+  // COVER — the uploaded template's navy / signal-gold editorial language.
   doc.rect(MARGIN,74,CONTENT_W,235).fill(DOMAIN_COLOR);
-  doc.fillColor('#fff').font('Helvetica-Bold').fontSize(10).text('SONALIT',MARGIN+24,98,{characterSpacing:1.8});
-  doc.fillColor('#fff').font('Helvetica-Bold').fontSize(28).text(upper(publication.country_code ? COUNTRY_NAMES[publication.country_code] : body.country_name || 'REGIONAL'),MARGIN+24,135,{width:430});
-  doc.fillColor('#cbd5e1').font('Helvetica').fontSize(15).text(upper(body.publication_type || publication.publication_type || 'INTELLIGENCE') + ' INTELLIGENCE',MARGIN+24,177,{width:430});
-  doc.fillColor('#dbe4f0').font('Helvetica').fontSize(9.5).text(text(publication.subtitle || body.subtitle || 'Evidence-governed decision support',200),MARGIN+24,210,{width:430});
-  doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(8.2).text('CONFIDENTIAL | CONTROLLED DISTRIBUTION | EVIDENCE-LINKED',MARGIN+24,259,{characterSpacing:.7});
-  doc.fillColor(MUTED).font('Helvetica').fontSize(8.5).text('Reporting period: ' + periodLabel(publication),MARGIN+24,336,{width:430});
-  doc.fillColor(MUTED).fontSize(7.8).text('Generated from the Sonalit evidence, research, assessment and publication-quality control pipeline.',MARGIN+24,357,{width:430});
+  doc.rect(MARGIN,74,4,235).fill(ACCENT);
+  doc.save();
+  doc.circle(MARGIN+CONTENT_W-50,119,37).lineWidth(0.8).strokeColor('#2a3a58').stroke();
+  doc.circle(MARGIN+CONTENT_W-50,119,25).lineWidth(0.5).strokeColor('#2a3a58').stroke();
+  doc.restore();
+  doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(9.5)
+    .text('SONALIT  /  INTELLIGENCE CENTRE',MARGIN+24,96,{characterSpacing:1.1});
+  doc.fillColor('#f4f1ea').font('Helvetica-Bold').fontSize(25)
+    .text(countryTitle,MARGIN+24,128,{width:CONTENT_W-80});
+  doc.fillColor('#c3cad6').font('Helvetica-Bold').fontSize(12.2)
+    .text(productTitle,MARGIN+24,164,{width:CONTENT_W-52});
+  doc.fillColor('#aeb8c8').font('Helvetica').fontSize(8.8)
+    .text(text(publication.subtitle || body.subtitle || 'Evidence-governed decision support',200),MARGIN+24,190,{width:CONTENT_W-52});
+  doc.roundedRect(MARGIN+24,220,Math.min(CONTENT_W-48,235),20,4)
+    .lineWidth(0.9).strokeColor(handling.color).stroke();
+  doc.fillColor(handling.color).font('Helvetica-Bold').fontSize(7.2)
+    .text(handling.label,MARGIN+32,226,{width:Math.min(CONTENT_W-64,219),characterSpacing:0.2});
+  doc.fillColor(MUTED).font('Helvetica').fontSize(8.5)
+    .text('Reporting period: ' + periodLabel(publication),MARGIN+24,336,{width:CONTENT_W});
+  doc.fillColor(MUTED).fontSize(7.8)
+    .text('Generated from the Sonalit evidence, research, assessment and publication-quality control pipeline.',MARGIN+24,357,{width:CONTENT_W});
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(10).text('DECISION PURPOSE',MARGIN,410);
   y=431;
   y=paragraph(doc,y, body.security_environment && body.security_environment.summary || publication.executive_assessment || 'Evidence-governed intelligence for operational decision support.', {size:9.4,max:1500});
@@ -1027,17 +1139,25 @@ y=sectionHeading(doc,y,trendHasBaseline?'Emerging trends and key drivers':'Obser
   y+=12;
   y=paragraph(doc,y,'The publication distinguishes underlying reporting from analytical judgement and retains uncertainty where the evidence does not resolve the issue. Web research is treated as an input to be evaluated, not as unquestioned ground truth.',{size:8.1,color:MUTED,max:900,lineGap:3});
   y+=18;
-  doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7.2).text('SONALIT | CONFIDENTIAL | CONTROLLED DISTRIBUTION',MARGIN,y,{characterSpacing:.7});
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(7.2)
+    .text('SONALIT | ' + handling.banner,MARGIN,y,{characterSpacing:.45});
 
   // PAGE HEADERS/FOOTERS: add only after all content is laid out.
   const range=doc.bufferedPageRange();
   for(let i=0;i<range.count;i++){
     doc.switchToPage(range.start+i);
-    doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(6.6).text('SONALIT  /  INTELLIGENCE & SECURITY OPERATIONS',MARGIN,25,{width:340,characterSpacing:.8});
+    doc.rect(0,0,PAGE_W,48).fill(DOMAIN_COLOR);
+    doc.rect(0,46,PAGE_W,2).fill(ACCENT);
+    doc.fillColor('#f4f1ea').font('Helvetica-Bold').fontSize(6.8)
+      .text('SONALIT  /  INTELLIGENCE CENTRE',MARGIN,25,{width:300,characterSpacing:1.0});
+    doc.fillColor(handling.color).font('Helvetica-Bold').fontSize(6.1)
+      .text(handling.label,PAGE_W-MARGIN-175,25,{width:175,align:'right',characterSpacing:0.25});
     drawRule(doc,37,MARGIN,CONTENT_W,LINE);
     const footerY=PAGE_H-MARGIN-10;
-    doc.fillColor(MUTED).font('Helvetica').fontSize(6.4).text('Evidence-governed decision support | Confidential / controlled distribution',MARGIN,footerY,{width:350});
-    doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(6.4).text(String(i+1).padStart(2,'0'),PAGE_W-MARGIN-28,footerY,{width:28,align:'right'});
+    doc.fillColor(MUTED).font('Helvetica').fontSize(6.4)
+      .text('Evidence-governed decision support | ' + handling.label,MARGIN,footerY,{width:CONTENT_W-50});
+    doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(6.4)
+      .text(String(i+1).padStart(2,'0'),PAGE_W-MARGIN-28,footerY,{width:28,align:'right'});
   }
 
   doc.end();
