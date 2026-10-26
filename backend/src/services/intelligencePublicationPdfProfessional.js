@@ -202,12 +202,14 @@ function handlingInfo(publication, body) {
   const raw = publication && (publication.tlp || publication.tlp_label)
     || body && (body.tlp || body.tlp_label);
   const candidate = upper(raw || '').replace(/^TLP\s*[:\-]?\s*/, '').replace(/\s+/g, '');
+  // These are foreground tokens for the dark masthead and outlined cover badge,
+  // so use contrast-safe tints rather than low-luminance dashboard/status colours.
   const colorByTlp = {
-    CLEAR:'#657189',
-    GREEN:'#16875d',
-    AMBER:'#c46b15',
-    'AMBER+STRICT':'#a65f09',
-    RED:'#bd2935'
+    CLEAR:'#cbd5e1',
+    GREEN:'#65dca4',
+    AMBER:'#ffc66d',
+    'AMBER+STRICT':'#ffad55',
+    RED:'#ff7f87'
   };
   const messages = {
     CLEAR:'TLP:CLEAR | SHARE IN ACCORDANCE WITH TLP RULES',
