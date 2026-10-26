@@ -193,7 +193,9 @@ function publicationLabel(publication, body) {
     infrastructure_risk:'INFRASTRUCTURE RISK ASSESSMENT',
     travel_advisory:'TRAVEL SECURITY ADVISORY'
   };
-  return labels[type] || upper(type.replace(/_/g, ' ') + ' INTELLIGENCE');
+  if (labels[type]) return labels[type];
+  if (type === 'intelligence') return 'INTELLIGENCE PUBLICATION';
+  return upper(type.replace(/_/g, ' ') + ' INTELLIGENCE');
 }
 
 function handlingInfo(publication, body) {
