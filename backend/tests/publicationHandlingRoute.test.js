@@ -23,6 +23,9 @@ describe('publication handling route invariants',()=>{
   test('the handling audit store is isolated by tenant RLS and records changes immutably',()=>{
     const sql=fs.readFileSync(path.join(__dirname,'../migrations/20261026_001_intelligence_publication_handling.sql'),'utf8');
     expect(sql).toContain('ENABLE ROW LEVEL SECURITY');
+    expect(sql).toContain('FORCE ROW LEVEL SECURITY');
+    expect(sql).toContain('AS RESTRICTIVE');
+    expect(sql).toContain("next_handling->>'level' IN ('CLEAR','GREEN','AMBER','AMBER+STRICT','RED')");
     expect(sql).toContain("current_setting('app.current_org_id', true)::uuid");
     expect(sql).toContain('previous_handling JSONB');
     expect(sql).toContain('next_handling JSONB NOT NULL');
