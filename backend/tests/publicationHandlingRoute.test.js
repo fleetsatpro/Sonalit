@@ -21,6 +21,15 @@ describe('publication handling route invariants',()=>{
     expect(route).not.toContain("SET status='published'");
   });
 
+  test('scheduled regeneration preserves operator-authored handling on the same publication period',()=>{
+    const agents=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+    const start=agents.indexOf('  const body={');
+    const end=agents.indexOf('  let publicationId=null;',start);
+    const body=agents.slice(start,end);
+    expect(body).toContain('...(existing[0]?.body?.handling ? {handling:existing[0].body.handling} : {})');
+    expect(agents).toContain('SELECT id,status,version,body,pdf_status,pdf_version FROM intel_publications');
+  });
+
   test('the handling audit store is isolated by tenant RLS and records changes immutably',()=>{
     const sql=fs.readFileSync(path.join(__dirname,'../migrations/20261026_001_intelligence_publication_handling.sql'),'utf8');
     expect(sql).toContain('ENABLE ROW LEVEL SECURITY');
