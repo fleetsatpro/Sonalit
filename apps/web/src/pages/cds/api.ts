@@ -61,13 +61,12 @@ cdsApi.interceptors.response.use(
   },
 );
 
-// Without this, an expired access token turned every CDS call into a dead 401
-// — which matters most in the field app, where a device can sit offline past
-// the 2h token lifetime and then needs to sync its queued work. Refresh
-// failures reject quietly rather than redirecting: the offline queue retries
-// in the background, and yanking a yard worker to /login mid-shift would
-// throw away queued actions they could otherwise still complete.
-attachRefreshInterceptor(cdsApi, { redirectOnFailure: false });
+// Field-session 401s are handled above: they mark the request as already
+// retried and emit FIELD_SESSION_EXPIRED_EVENT, so they never enter the operator
+// refresh/redirect path. For operator requests, a failed refresh must clear the
+// stale operator session and return to login rather than leaving the CDS screen
+// mounted with a misleading "analytics unavailable" error.
+attachRefreshInterceptor(cdsApi);
 
 // The field app makes almost all of its requests through this instance, so
 // without it the connectivity manager would be blind on exactly the surface
