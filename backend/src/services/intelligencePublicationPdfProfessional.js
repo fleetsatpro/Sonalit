@@ -204,12 +204,14 @@ function handlingInfo(publication, body) {
   const candidate = upper(raw || '').replace(/^TLP\s*[:\-]?\s*/, '').replace(/\s+/g, '');
   // These are foreground tokens for the dark masthead and outlined cover badge,
   // so use contrast-safe tints rather than low-luminance dashboard/status colours.
+  // FIRST TLP 2.0 foreground colours; the masthead is dark so the standard
+  // colour coding retains contrast. The paper control page uses INK for prose.
   const colorByTlp = {
-    CLEAR:'#cbd5e1',
-    GREEN:'#65dca4',
-    AMBER:'#ffc66d',
-    'AMBER+STRICT':'#ffad55',
-    RED:'#ff7f87'
+    CLEAR:'#FFFFFF',
+    GREEN:'#33FF00',
+    AMBER:'#FFC000',
+    'AMBER+STRICT':'#FFC000',
+    RED:'#FF2B2B'
   };
   const messages = {
     CLEAR:'TLP:CLEAR | SHARE IN ACCORDANCE WITH TLP RULES',
@@ -1136,7 +1138,7 @@ y=sectionHeading(doc,y,trendHasBaseline?'Emerging trends and key drivers':'Obser
   y+=12;
   y=paragraph(doc,y,'The publication distinguishes underlying reporting from analytical judgement and retains uncertainty where the evidence does not resolve the issue. Web research is treated as an input to be evaluated, not as unquestioned ground truth.',{size:8.1,color:MUTED,max:900,lineGap:3});
   y+=18;
-  doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(7.2)
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(7.2)
     .text('SONALIT | ' + handling.banner,MARGIN,y,{characterSpacing:.45});
 
   // PAGE HEADERS/FOOTERS: add only after all content is laid out.
