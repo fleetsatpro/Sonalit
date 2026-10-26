@@ -200,7 +200,8 @@ function publicationLabel(publication, body) {
 
 function handlingInfo(publication, body) {
   const raw = publication && (publication.tlp || publication.tlp_label)
-    || body && (body.tlp || body.tlp_label);
+    || body && (body.tlp || body.tlp_label)
+    || body && body.handling && (body.handling.level || body.handling.tlp);
   const candidate = upper(raw || '').replace(/^TLP\s*[:\-]?\s*/, '').replace(/\s+/g, '');
   // These are foreground tokens for the dark masthead and outlined cover badge,
   // so use contrast-safe tints rather than low-luminance dashboard/status colours.
