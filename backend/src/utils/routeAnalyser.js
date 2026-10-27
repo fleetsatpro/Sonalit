@@ -30,11 +30,12 @@ async function fetchNearbyRiskZones(orgId,waypoints){
   const pad=1.75;
   const minLat=Math.max(-90,Math.min(...points.map(p=>Number(p.lat)))-pad), maxLat=Math.min(90,Math.max(...points.map(p=>Number(p.lat)))+pad);
   const minLng=Math.max(-180,Math.min(...points.map(p=>Number(p.lng)))-pad), maxLng=Math.min(180,Math.max(...points.map(p=>Number(p.lng)))+pad);
-  return query(`SELECT id,name,why,risk_level,zone_type,lat,lng,radius_km,confidence,velocity,active,is_active,level_source
+  const result=await query(`SELECT id,name,why,risk_level,zone_type,lat,lng,radius_km,confidence,velocity,active,is_active,level_source
     FROM risk_zones WHERE org_id=$1 AND COALESCE(is_active,active,true)=true
     AND lat BETWEEN $2 AND $3 AND lng BETWEEN $4 AND $5
     ORDER BY CASE LOWER(COALESCE(risk_level,'medium')) WHEN 'no_go' THEN 1 WHEN 'critical' THEN 2 WHEN 'high' THEN 3 WHEN 'medium' THEN 4 ELSE 5 END LIMIT 200`,
     [orgId,minLat,maxLat,minLng,maxLng]);
+  return Array.isArray(result)?result:(Array.isArray(result?.rows)?result.rows:[]);
 }
 function haversineKm(lat1,lng1,lat2,lng2){ const R=6371,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2; return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
 function makeFallbackRoute(origin,destination){ const distance=haversineKm(origin.lat,origin.lng,destination.lat,destination.lng); return {route:[origin,destination],provider:'direct-fallback',distance_km:Number(distance.toFixed(2)),duration_min:Math.max(1,Math.round(distance/55*60)),routed:false}; }
@@ -48,8 +49,9 @@ async function analyseRoute({origin,destination,viaPoints=[],convoyId,requestedB
   const hasViaPoints=Array.isArray(viaPoints)&&viaPoints.length>0;
   const constrained=Boolean(departureTime)||Boolean(avoidNightTravel)||maxRiskScore!=null;
   if(!constrained&&!hasViaPoints){
-    const cached=await query(`SELECT * FROM route_analyses WHERE org_id=$1 AND (($2::uuid IS NULL AND convoy_id IS NULL) OR convoy_id=$2) AND origin_lat=$3 AND origin_lng=$4 AND destination_lat=$5 AND destination_lng=$6 AND analysed_at>NOW()-make_interval(mins=>$7) ORDER BY analysed_at DESC LIMIT 1`,[orgId,convoyId??null,origin.lat,origin.lng,destination.lat,destination.lng,ROUTE_CACHE_MINUTES]);
-    if(cached[0])return {...cached[0],cache_hit:true};
+    const cachedResult=await query(`SELECT * FROM route_analyses WHERE org_id=$1 AND (($2::uuid IS NULL AND convoy_id IS NULL) OR convoy_id=$2) AND origin_lat=$3 AND origin_lng=$4 AND destination_lat=$5 AND destination_lng=$6 AND analysed_at>NOW()-make_interval(mins=>$7) ORDER BY analysed_at DESC LIMIT 1`,[orgId,convoyId??null,origin.lat,origin.lng,destination.lat,destination.lng,ROUTE_CACHE_MINUTES]);
+    const cachedRows=Array.isArray(cachedResult)?cachedResult:(Array.isArray(cachedResult?.rows)?cachedResult.rows:[]);
+    if(cachedRows[0])return {...cachedRows[0],cache_hit:true};
   }
 
   const zones=await fetchNearbyRiskZones(orgId,waypoints);
