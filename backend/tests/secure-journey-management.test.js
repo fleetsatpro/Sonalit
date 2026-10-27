@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('authenticates requests before the tenant-scope guard', () => {
@@ -157,12 +157,24 @@ describe('SJM validation and evidence boundaries', () => {
   test('PDF focus sections obey client section policy while retaining intrinsic report evidence', () => {
     const report={client_profile:{enabled_sections:['summary']},summary:{safety_gate:'GO'},route_assessment:{route_status:'routed'},itinerary:[{name:'Restricted route point'}],stops:[{name:'Restricted stop'}]};
     const itineraryFocus=JSON.stringify(reportFocusSections({...report,report_type:'itinerary'}));
-    expect(itineraryFocus).toContain('Route status');
+    expect(itineraryFocus).not.toContain('Route status');
     expect(itineraryFocus).not.toContain('Stored route points');
     expect(itineraryFocus).not.toContain('Restricted route point');
     expect(itineraryFocus).not.toContain('Ordered stops');
-    expect(reportFocusSections({...report,report_type:'daily'})).toEqual([]);
-    expect(reportFocusSections({...report,report_type:'sitrep'})).toEqual([]);
+    const daily={...report,report_type:'daily',generated_at:'2026-10-27T15:00:00Z',summary:{safety_gate:'GO',telemetry_status:'LIVE',stop_count:1,reached_stops:0,pending_stops:1,event_count:1}};
+    const dailyFocus=JSON.stringify(reportFocusSections(daily));
+    expect(dailyFocus).toContain('Lifecycle status');
+    expect(dailyFocus).not.toContain('Route Safety gate');
+    expect(dailyFocus).not.toContain('LIVE');
+    expect(dailyFocus).not.toContain('Outstanding planned stops');
+    const sitrepFocus=JSON.stringify(reportFocusSections({...daily,report_type:'sitrep'}));
+    expect(sitrepFocus).toContain('Current lifecycle state');
+    expect(sitrepFocus).not.toContain('Route status / safety gate');
+    expect(sitrepFocus).not.toContain('Telemetry state');
+    expect(sitrepFocus).not.toContain('Most recent recorded event');
+    const fullProfile={...daily,client_profile:{enabled_sections:['summary','itinerary','stops','route_assessment','operational_events','telemetry_snapshot']},events:[{event_type:'incident',summary:'Latest evidence',created_at:'2026-10-27T14:00:00Z',source:'operator'}],route_assessment:{route_status:'routed'},telemetry_snapshot:{status:'LIVE',observed_at:'2026-10-27T14:59:00Z'}};
+    expect(JSON.stringify(reportFocusSections(fullProfile))).toContain('Route Safety gate');
+    expect(JSON.stringify(reportFocusSections({...fullProfile,report_type:'sitrep'}))).toContain('Latest evidence');
     const readiness=reportFocusSections({report_type:'pre_trip_brief',client_profile:{enabled_sections:[]},pre_trip_readiness:[{item:'Route assessment',status:'PENDING',detail:'No assessment recorded'}]});
     expect(readiness[0].body).toContain('Route assessment');
     expect(enabledReportSections({enabled_sections:['summary','unknown','summary']})).toEqual(['summary']);

@@ -200,9 +200,24 @@ function reportFocusSections(report) {
   const j=report.journey||{},s=report.summary||{},type=report.report_type;
   const enabled=new Set(enabledReportSections(report.client_profile||{}));
   if(type==='pre_trip_brief')return [{title:'Pre-trip readiness evidence',body:(report.pre_trip_readiness||[]).map(x=>x.item+': '+x.status+' — '+x.detail).join('\n')||'No readiness evidence was returned.'}];
-  // Daily and situation reports are composed from the profile-enabled sections below.
-  // Do not emit a second, ungated summary before applying the client section policy.
-  if(type==='daily'||type==='sitrep')return [];
+  if(type==='daily') {
+    const lines=[];
+    if(enabled.has('summary'))lines.push('Lifecycle status: '+(j.status||'UNAVAILABLE'),'Generated at: '+(report.generated_at||'not recorded'));
+    if(enabled.has('stops'))lines.push('Recorded stops: '+(s.stop_count??0),'Reached stops: '+(s.reached_stops??0),'Outstanding planned stops: '+(s.pending_stops??0));
+    if(enabled.has('operational_events'))lines.push('Operational events in snapshot: '+(s.event_count??0));
+    if(enabled.has('route_assessment'))lines.push('Route Safety gate: '+(s.safety_gate||'UNAVAILABLE'));
+    if(enabled.has('telemetry_snapshot'))lines.push('Live device-evidence status: '+(s.telemetry_status||'UNAVAILABLE'));
+    return lines.length?[{title:'Daily movement summary',body:lines.join('\n')}]:[];
+  }
+  if(type==='sitrep') {
+    const lines=[],e=report.situation?.last_event||(report.events||[])[0];
+    if(enabled.has('summary'))lines.push('Current lifecycle state: '+(j.status||'UNAVAILABLE'));
+    if(enabled.has('route_assessment'))lines.push('Route status / safety gate: '+((report.route_assessment||{}).route_status||'UNAVAILABLE')+' / '+(s.safety_gate||'UNAVAILABLE'));
+    if(enabled.has('telemetry_snapshot'))lines.push('Telemetry state: '+(report.telemetry_snapshot?.status||'UNAVAILABLE')+'; latest observed timestamp: '+(report.telemetry_snapshot?.observed_at||'not recorded'));
+    if(enabled.has('stops'))lines.push('Outstanding planned stops: '+(s.pending_stops??0));
+    if(enabled.has('operational_events'))lines.push('Most recent recorded event: '+(e?(e.created_at||'time not recorded')+' — '+(e.event_type||'event')+' — '+(e.summary||'no summary')+' ['+(e.source||'source unknown')+']':'No journey event is recorded in the snapshot'));
+    return lines.length?[{title:'Current situation',body:lines.join('\n')}]:[];
+  }
   if(type==='change_notice') {
     const changes=report.change_events||[];
     return [{title:'Recorded change activity',body:['Total recorded change events: '+(report.summary?.change_event_count??0),'Change events included in this snapshot: '+(report.summary?.change_event_count_included??changes.length),'Change-event list truncated: '+(report.summary?.change_events_truncated?'YES':'NO'),...(changes.length?changes.slice(0,80).map(e=>(e.created_at||'time not recorded')+' — '+e.event_type+' — '+e.summary+' ['+(e.source||'source unknown')+']'):['No route, approval, lifecycle or stop-change event was found in the stored journey event window.']),'','This notice reports recorded event activity only. It does not infer an unrecorded before/after route difference.'].join('\n')}];
@@ -213,7 +228,7 @@ function reportFocusSections(report) {
   }
   if(type==='itinerary') {
     const lines=[];
-    if(enabled.has('summary')||enabled.has('route_assessment')) {
+    if(enabled.has('route_assessment')) {
       lines.push('Route status: '+((report.route_assessment||{}).route_status||'UNAVAILABLE'));
       lines.push('Route Safety gate: '+(s.safety_gate||'UNAVAILABLE'));
     }
@@ -280,7 +295,7 @@ function renderPdf(doc,r) {
   }
   for(const focus of reportFocusSections(r))section(focus.title,focus.body);
   const enabled=new Set(enabledReportSections(profile));
-  if(enabled.has('summary'))section('Mission summary',['Title: '+(j.title||'—'),'Purpose: '+(j.purpose||'—'),'Status: '+(j.status||'—'),'Client: '+(j.client_name||'Not linked'),'Convoy: '+(j.convoy_name||'Not linked'),'Origin: '+(j.origin_label||'—'),'Destination: '+(j.destination_label||'—'),'Planned departure: '+(j.planned_departure_at||'Not recorded'),'Planned arrival: '+(j.planned_arrival_at||'Not recorded'),'Safety gate: '+(r.summary?.safety_gate||'UNAVAILABLE'),'Telemetry: '+(r.summary?.telemetry_status||'UNAVAILABLE')].join('\n'));
+  if(enabled.has('summary'))section('Mission summary',['Title: '+(j.title||'—'),'Purpose: '+(j.purpose||'—'),'Status: '+(j.status||'—'),'Client: '+(j.client_name||'Not linked'),'Convoy: '+(j.convoy_name||'Not linked'),'Origin: '+(j.origin_label||'—'),'Destination: '+(j.destination_label||'—'),'Planned departure: '+(j.planned_departure_at||'Not recorded'),'Planned arrival: '+(j.planned_arrival_at||'Not recorded')].join('\n'));
   if(enabled.has('itinerary'))section('Planned itinerary',(r.itinerary||[]).map((p,i)=>(i+1)+'. '+(p.name||p.label||'Route point')+' ['+p.lat+', '+p.lng+']').join('\n')||'No routed road geometry recorded. Endpoints are not presented as a road-following route.');
   if(enabled.has('stops'))section('Journey stops',(r.stops||[]).map(s=>s.sequence+'. '+s.name+' — '+s.stop_status+' — planned '+(s.planned_arrival_at||'time not recorded')+(s.confirmed_at?' — confirmed '+s.confirmed_at+' ('+(s.confirmation_source||'unknown')+')':'')).join('\n')||'No stops defined.');
   if(enabled.has('route_assessment'))section('Route safety assessment',r.route_assessment?['Route status: '+(r.route_assessment.route_status||'unknown'),'Safety gate: '+(r.route_assessment.safety_gate||'unknown'),'Risk score: '+(r.route_assessment.overall_risk_score??'not returned'),'Provider: '+(r.route_assessment.routing_provider||'not returned'),'Assessment: '+(r.route_assessment.ai_summary||'No assessment narrative returned')].join('\n'):'Route assessment unavailable; no verdict is inferred.');
