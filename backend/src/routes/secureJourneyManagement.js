@@ -25,6 +25,8 @@ const LIFECYCLE_TRANSITIONS = {
   replan: { from:['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','paused','exception','on_hold'], to:'planning', timestamp:'planning_started_at', reasonRequired:true, clearPlan:true },
 };
 const DEFAULT_TEMPLATE = { title: 'Secure Journey Management Report', sections: SECTIONS };
+const SJM_SCHEDULER_ORG_IDS = String(process.env.SJM_REPORT_SCHEDULER_ORG_IDS||'').split(',').map(v=>v.trim().toLowerCase()).filter(Boolean);
+function dailyReportSchedulerAvailable(orgId){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(String(orgId||'').toLowerCase())&&SJM_SCHEDULER_ORG_IDS.includes(String(orgId).toLowerCase());}
 
 function lifecycleTransition(status, action) { const t=LIFECYCLE_TRANSITIONS[action]; return t && t.from.includes(status) ? t : null; }
 function txt(v, max=500) { return typeof v === 'string' ? v.trim().slice(0,max) : ''; }
@@ -148,18 +150,22 @@ router.get('/convoys',authorize('admin','dispatcher','operator','analyst'),async
 router.get('/client-profiles/:clientId',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const c=await req.db('SELECT id,name,company FROM cargo_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[req.params.clientId,req.user.org_id]);
   if(!c.rows.length)return res.status(404).json({error:'client_not_found'});
-  const p=await req.db('SELECT client_id,report_timezone,report_template,updated_at FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[req.user.org_id,req.params.clientId]);
-  res.json({data:{...(p.rows[0]||{client_id:req.params.clientId,report_timezone:'Africa/Nairobi',report_template:DEFAULT_TEMPLATE,updated_at:null}),client:c.rows[0]}});
+  const p=await req.db('SELECT client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_at FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[req.user.org_id,req.params.clientId]);
+  res.json({data:{...(p.rows[0]||{client_id:req.params.clientId,report_timezone:'Africa/Nairobi',report_template:DEFAULT_TEMPLATE,daily_reports_enabled:false,daily_report_local_time:'18:00:00',updated_at:null}),daily_report_scheduler_available:dailyReportSchedulerAvailable(req.user.org_id),client:c.rows[0]}});
 }));
 router.put('/client-profiles/:clientId',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const timezone=txt(req.body?.report_timezone,100)||'Africa/Nairobi';
   if(!tzValid(timezone))return res.status(400).json({error:'invalid_reporting_timezone'});
+  const enabled=req.body?.daily_reports_enabled===true;
+  const rawTime=typeof req.body?.daily_report_local_time==='string'?req.body.daily_report_local_time:'18:00';
+  if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(rawTime))return res.status(400).json({error:'invalid_daily_report_local_time',message:'Use a local 24-hour time in HH:MM format.'});
+  if(enabled&&!dailyReportSchedulerAvailable(req.user.org_id))return res.status(409).json({error:'daily_report_scheduler_not_configured',message:'Scheduled report generation is not enabled for this organisation on the current runtime. An authorised platform operator must configure SJM_REPORT_SCHEDULER_ORG_IDS first.'});
   const wanted=req.body?.report_template,title=txt(wanted?.title,160)||DEFAULT_TEMPLATE.title,sections=wanted?.sections==null?SECTIONS:wanted.sections;
   if(!Array.isArray(sections)||sections.some(s=>!SECTIONS.includes(s))||new Set(sections).size!==sections.length)return res.status(400).json({error:'invalid_report_sections',allowed:SECTIONS});
   const c=await req.db('SELECT id FROM cargo_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[req.params.clientId,req.user.org_id]);
   if(!c.rows.length)return res.status(404).json({error:'client_not_found'});
-  const p=await req.db('INSERT INTO sjm_client_profiles (org_id,client_id,report_timezone,report_template,updated_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id,client_id) DO UPDATE SET report_timezone=EXCLUDED.report_timezone,report_template=EXCLUDED.report_template,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING client_id,report_timezone,report_template,updated_at',[req.user.org_id,req.params.clientId,timezone,JSON.stringify({title,sections}),req.user.id]);
-  res.json({data:p.rows[0]});
+  const p=await req.db('INSERT INTO sjm_client_profiles (org_id,client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_by) VALUES ($1,$2,$3,$4,$5,$6::time,$7) ON CONFLICT (org_id,client_id) DO UPDATE SET report_timezone=EXCLUDED.report_timezone,report_template=EXCLUDED.report_template,daily_reports_enabled=EXCLUDED.daily_reports_enabled,daily_report_local_time=EXCLUDED.daily_report_local_time,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_at',[req.user.org_id,req.params.clientId,timezone,JSON.stringify({title,sections}),enabled,rawTime,req.user.id]);
+  res.json({data:{...p.rows[0],daily_report_scheduler_available:dailyReportSchedulerAvailable(req.user.org_id)}});
 }));
 
 router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
@@ -354,4 +360,5 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
   const doc=new PDFDocument({size:'A4',margin:42});doc.pipe(res);renderPdf(doc,report);
 }));
 module.exports=router;
-module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS};
+module.exports.__scheduler={reportSnapshot,dateInTimezone};
+module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,dailyReportSchedulerAvailable};

@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS sjm_client_profiles (
   client_id UUID NOT NULL REFERENCES cargo_clients(id) ON DELETE CASCADE,
   report_timezone TEXT NOT NULL DEFAULT 'Africa/Nairobi',
   report_template JSONB NOT NULL DEFAULT '{"title":"Secure Journey Management Report","sections":["summary","itinerary","stops","route_assessment","operational_events","telemetry_snapshot"]}'::jsonb,
+  daily_reports_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  daily_report_local_time TIME NOT NULL DEFAULT TIME '18:00',
   updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -112,6 +114,7 @@ CREATE TABLE IF NOT EXISTS sjm_reports (
   schema_version TEXT NOT NULL,
   data JSONB NOT NULL,
   generated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  generation_source TEXT NOT NULL DEFAULT 'manual' CHECK (generation_source IN ('manual','scheduled')),
   generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_sjm_journeys_org_departure ON sjm_journeys(org_id, planned_departure_at DESC) WHERE deleted_at IS NULL;
@@ -120,6 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_sjm_journeys_client ON sjm_journeys(org_id, clien
 CREATE INDEX IF NOT EXISTS idx_sjm_stops_journey_sequence ON sjm_journey_stops(org_id, journey_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_sjm_events_journey_time ON sjm_journey_events(org_id, journey_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sjm_reports_org_date ON sjm_reports(org_id, report_date DESC, generated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sjm_scheduled_daily_report ON sjm_reports(org_id, journey_id, report_type, report_date) WHERE generation_source='scheduled' AND report_type='daily';
 CREATE INDEX IF NOT EXISTS idx_sjm_reports_journey ON sjm_reports(org_id, journey_id, generated_at DESC);
 DO $sjm$
 DECLARE t TEXT;
