@@ -1,8 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { Activity, AlertTriangle, ArrowRight, CalendarClock, Check, CheckCircle2, Clock3, FileBarChart2, FileText, MapPinned, Navigation, Plus, RefreshCw, Route, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
+import { useAuthStore } from '../stores/auth.js';
+import { Activity, AlertTriangle, ArrowRight, CalendarClock, Check, CheckCircle2, Clock3, FileBarChart2, FileText, Layers, MapPinned, Maximize2, Navigation, Plus, RefreshCw, Route, Satellite, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
 type Point={lat:number;lng:number;name?:string;label?:string};
@@ -51,8 +55,122 @@ function StatusBadge({value}:{value:Status}){return <span className={'inline-fle
 function Gate({value}:{value?:string}){const v=String(value||'UNAVAILABLE').toUpperCase();const c=v==='GO'?'border-emerald-300/25 bg-emerald-300/10 text-emerald-100':v==='CONDITIONAL'?'border-amber-300/25 bg-amber-300/10 text-amber-100':v==='HUMAN_REVIEW'?'border-orange-300/25 bg-orange-300/10 text-orange-100':v==='NO_GO'?'border-red-300/25 bg-red-300/10 text-red-100':'border-white/10 bg-white/[0.03] text-slate-500';return <span className={'rounded-md border px-2 py-1 font-mono text-[9px] tracking-wider '+c}>{v.replaceAll('_',' ')}</span>}
 function download(blob:Blob,name:string){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url)}
 
+
+function mapCoord(latValue: unknown, lngValue: unknown): [number,number] | null {
+  if(latValue==null||lngValue==null)return null;
+  const lat=Number(latValue),lng=Number(lngValue);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat < -90||lat > 90||lng < -180||lng > 180||(Math.abs(lat)<0.000001&&Math.abs(lng)<0.000001))return null;
+  return [lng,lat];
+}
+function journeyMarkerElement(kind:'origin'|'stop'|'destination', title:string):HTMLElement {
+  const colors={origin:'#22d3ee',stop:'#fb923c',destination:'#4ade80'};
+  const color=colors[kind];
+  const root=document.createElement('div');
+  root.style.display='flex';root.style.alignItems='center';root.style.gap='6px';root.style.pointerEvents='none';
+  const dot=document.createElement('span');
+  dot.style.width='11px';dot.style.height='11px';dot.style.borderRadius='50%';dot.style.backgroundColor=color;dot.style.border='2px solid #07111d';dot.style.boxShadow='0 0 0 3px '+color+'44';dot.style.flexShrink='0';
+  const label=document.createElement('span');
+  label.textContent=title;label.style.padding='3px 6px';label.style.background='rgba(5,10,18,.9)';label.style.border='1px solid rgba(255,255,255,.16)';label.style.borderRadius='5px';label.style.color='#f8fafc';label.style.fontSize='10px';label.style.fontWeight='600';label.style.whiteSpace='nowrap';label.style.maxWidth='150px';label.style.overflow='hidden';label.style.textOverflow='ellipsis';
+  root.append(dot,label);
+  return root;
+}
+function JourneyMap({journey,stops,geometry,assessment}:{journey:Journey;stops:Stop[];geometry:Point[];assessment:Assessment|null}){
+  const containerRef=useRef<HTMLDivElement>(null);
+  const mapRef=useRef<maplibregl.Map|null>(null);
+  const markersRef=useRef<maplibregl.Marker[]>([]);
+  const [mapReady,setMapReady]=useState(false);
+  const [satellite,setSatellite]=useState(false);
+  const origin=useMemo(()=>mapCoord(journey.origin_lat,journey.origin_lng),[journey.origin_lat,journey.origin_lng]);
+  const destination=useMemo(()=>mapCoord(journey.destination_lat,journey.destination_lng),[journey.destination_lat,journey.destination_lng]);
+  const routeCoords=useMemo(()=>{
+    const coords=geometry.map(p=>mapCoord(p.lat,p.lng));
+    return coords.length>=2&&coords.every((p)=>p!==null)?coords as [number,number][]:[];
+  },[geometry]);
+  const hasRoutedGeometry=assessment?.route_status==='routed'&&routeCoords.length>=2;
+  const displayRoute=hasRoutedGeometry?routeCoords:[];
+  const stopPoints=useMemo(()=>stops.map(stop=>({stop,coord:mapCoord(stop.lat,stop.lng)})).filter((x):x is {stop:Stop;coord:[number,number]}=>x.coord!==null),[stops]);
+  const fitPoints=useMemo(()=>[...(origin?[origin]:[]),...displayRoute,...(destination?[destination]:[]),...stopPoints.map(p=>p.coord)],[origin,destination,displayRoute,stopPoints]);
+  useEffect(()=>{
+    const container=containerRef.current;
+    if(!container||mapRef.current)return;
+    const map=new maplibregl.Map({container,style:STREET_STYLE,center:origin||[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
+    map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'bottom-right');
+    map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
+    map.on('load',()=>setMapReady(true));
+    mapRef.current=map;
+    const resizeObserver=new ResizeObserver(()=>map.resize());
+    resizeObserver.observe(container);
+    return ()=>{
+      resizeObserver.disconnect();
+      markersRef.current.forEach(marker=>marker.remove());
+      markersRef.current=[];
+      map.remove();
+      mapRef.current=null;
+      setMapReady(false);
+    };
+  },[]);
+  useEffect(()=>{
+    const map=mapRef.current;
+    if(!map||!mapReady)return;
+    const routeData:GeoJSON.FeatureCollection={type:'FeatureCollection',features:displayRoute.length>=2?[{type:'Feature',geometry:{type:'LineString',coordinates:displayRoute},properties:{evidence:'ROUTE_SAFETY'}}]:[]};
+    const existing=map.getSource('sjm-route') as maplibregl.GeoJSONSource|undefined;
+    if(existing){
+      existing.setData(routeData);
+    }else{
+      map.addSource('sjm-route',{type:'geojson',data:routeData});
+      map.addLayer({id:'sjm-route-glow',type:'line',source:'sjm-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#22d3ee','line-width':10,'line-opacity':0.16,'line-blur':2}});
+      map.addLayer({id:'sjm-route-line',type:'line',source:'sjm-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#39ff88','line-width':3.5,'line-opacity':0.96}});
+    }
+    markersRef.current.forEach(marker=>marker.remove());
+    markersRef.current=[];
+    const addMarker=(coord:[number,number]|null,kind:'origin'|'stop'|'destination',title:string)=>{
+      if(!coord)return;
+      markersRef.current.push(new maplibregl.Marker({element:journeyMarkerElement(kind,title),anchor:'bottom',offset:[0,-7]}).setLngLat(coord).addTo(map));
+    };
+    addMarker(origin,'origin','ORIGIN · '+journey.origin_label);
+    stopPoints.forEach(({stop,coord})=>addMarker(coord,'stop',String(stop.sequence).padStart(2,'0')+' · '+stop.name));
+    addMarker(destination,'destination','DESTINATION · '+journey.destination_label);
+    map.resize();
+    if(fitPoints.length>1){
+      const bounds=new maplibregl.LngLatBounds();
+      fitPoints.forEach(point=>bounds.extend(point));
+      map.fitBounds(bounds,{padding:{top:65,bottom:70,left:38,right:52},maxZoom:9,duration:650});
+    }else if(fitPoints.length===1){
+      map.flyTo({center:fitPoints[0],zoom:6,duration:500});
+    }
+  },[mapReady,displayRoute,origin,destination,stopPoints,fitPoints,journey.origin_label,journey.destination_label]);
+  const toggleBasemap=()=>{
+    const map=mapRef.current;if(!map)return;
+    const next=!satellite;
+    setMapReady(false);
+    map.setStyle(next?SAT_STYLE:STREET_STYLE);
+    map.once('style.load',()=>setMapReady(true));
+    setSatellite(next);
+  };
+  const fitMap=()=>{
+    const map=mapRef.current;if(!map||fitPoints.length===0)return;
+    map.resize();
+    if(fitPoints.length===1){map.flyTo({center:fitPoints[0],zoom:6,duration:500});return;}
+    const bounds=new maplibregl.LngLatBounds();fitPoints.forEach(point=>bounds.extend(point));
+    map.fitBounds(bounds,{padding:{top:65,bottom:70,left:38,right:52},maxZoom:9,duration:650});
+  };
+  return <div className="overflow-hidden rounded-xl border border-emerald-300/[0.12] bg-[#07111d]">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.07] bg-black/20 px-3 py-2.5">
+      <div><p className="font-mono text-[9px] font-semibold uppercase tracking-[.18em] text-emerald-200/80">Mission corridor / geospatial context</p><p className="mt-1 text-[10px] text-slate-500">{hasRoutedGeometry?'Route Safety geometry · '+displayRoute.length+' waypoints':'No routed geometry · endpoints and stops only'}</p></div>
+      <div className="flex gap-1.5"><button type="button" onClick={toggleBasemap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[10px] text-slate-300 hover:bg-white/[0.08]" aria-label={satellite?'Switch to street basemap':'Switch to satellite basemap'}><Satellite size={12}/>{satellite?'Satellite':'Street'}</button><button type="button" onClick={fitMap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[10px] text-slate-300 hover:bg-white/[0.08]" aria-label="Fit map to journey"><Maximize2 size={12}/>Fit</button></div>
+    </div>
+    <div ref={containerRef} className="h-[260px] w-full bg-[#07111d] sm:h-[360px]"/>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-3 py-2 text-[9px] font-mono text-slate-500">
+      <span>{hasRoutedGeometry?'ROUTE GEOMETRY · OBSERVED FROM ROUTE SAFETY':'ROUTE LINE SUPPRESSED · NO VALID ROUTED GEOMETRY'}</span>
+      <span className="flex gap-3"><span className="text-cyan-200">● Origin</span><span className="text-orange-300">● Stop</span><span className="text-emerald-200">● Destination</span></span>
+    </div>
+  </div>;
+}
+
 export default function SecureJourneyManagement(){
  const qc=useQueryClient();
+ const currentUser=useAuthStore(s=>s.user);
+ const isSupervisor=['admin','dispatcher'].includes(String(currentUser?.role||'').toLowerCase());
  const [selectedId,setSelectedId]=useState('');
  const [showCreate,setShowCreate]=useState(false);
  const [form,setForm]=useState({...EMPTY});
@@ -128,6 +246,7 @@ export default function SecureJourneyManagement(){
     {!journey?<Panel className="p-8 md:p-12"><div className="mx-auto max-w-lg text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.055]"><MapPinned size={22} className="text-emerald-200/80"/></div><Kicker>MISSION WORKSPACE</Kicker><h2 className="mt-3 text-xl font-semibold">Select a journey dossier</h2><p className="mt-2 text-sm leading-6 text-slate-500">Open a saved record to access its itinerary, route-safety evidence, approval controls, checkpoints, event log and client-specific reports.</p><div className="mt-4"><Btn tone="green" onClick={()=>setShowCreate(true)}><Plus size={13}/>Create a journey</Btn></div></div></Panel>:<>
      <Panel className="overflow-hidden">
       <div className="border-b border-white/[0.07] p-4 md:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[10px] text-emerald-200">{journey.reference}</span><StatusBadge value={journey.status}/></div><h2 className="mt-2 text-xl font-semibold tracking-tight text-white md:text-2xl">{journey.title}</h2><p className="mt-2 max-w-3xl text-[12px] leading-5 text-slate-400">{journey.purpose}</p></div><div className="flex flex-wrap gap-2"><Btn onClick={()=>{void refresh()}}><RefreshCw size={12}/>Refresh</Btn><Btn tone="green" disabled={act.isPending} onClick={()=>report('daily')}><FileText size={12}/>Daily report</Btn></div></div>
+       <div className="mt-4"><JourneyMap journey={journey} stops={stops} geometry={geometry} assessment={assess}/></div>
        <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_1fr]"><div className="rounded-xl border border-white/[0.06] bg-black/20 p-3"><Kicker>ORIGIN / PLANNED</Kicker><p className="mt-1 text-sm font-semibold">{journey.origin_label}</p><p className="mt-1 font-mono text-[9px] text-slate-500">{Number(journey.origin_lat).toFixed(5)}, {Number(journey.origin_lng).toFixed(5)}</p><p className="mt-2 inline-flex items-center gap-1.5 text-[10px] text-slate-500"><Clock3 size={11}/>{dateText(journey.planned_departure_at)}</p></div><div className="hidden items-center justify-center text-emerald-300/60 md:flex"><ArrowRight size={20}/></div><div className="rounded-xl border border-white/[0.06] bg-black/20 p-3"><Kicker>DESTINATION / PLANNED</Kicker><p className="mt-1 text-sm font-semibold">{journey.destination_label}</p><p className="mt-1 font-mono text-[9px] text-slate-500">{Number(journey.destination_lat).toFixed(5)}, {Number(journey.destination_lng).toFixed(5)}</p><p className="mt-2 inline-flex items-center gap-1.5 text-[10px] text-slate-500"><Clock3 size={11}/>{dateText(journey.planned_arrival_at)}</p></div></div>
       </div>
       <div className="grid grid-cols-2 gap-px bg-white/[0.035] md:grid-cols-4">{[{label:'Client account',value:journey.client_name||'Not linked'},{label:'Operational convoy',value:journey.convoy_name||'Not linked'},{label:'Route length',value:journey.planned_distance_km==null?'—':Number(journey.planned_distance_km).toLocaleString()+' km'},{label:'Route duration',value:journey.planned_duration_minutes==null?'—':Math.floor(journey.planned_duration_minutes/60)+'h '+(journey.planned_duration_minutes%60)+'m'}].map(x=><div key={x.label} className="min-w-0 bg-[#0b1019] p-3"><p className="text-[9px] uppercase tracking-widest text-slate-600">{x.label}</p><p className="mt-1 truncate text-[12px] font-medium">{x.value}</p></div>)}</div>
@@ -152,7 +271,7 @@ export default function SecureJourneyManagement(){
        {journey.status==='ready_for_review'&&assess?.safety_gate!=='HUMAN_REVIEW'&&assess?.safety_gate!=='NO_GO'&&assess?.route_status==='routed'&&<><Input label="Risk acknowledgement / operational controls (required for conditional assessment)"><textarea className={field} rows={3} value={ack} onChange={e=>setAck(e.target.value)} placeholder="Record dispatch checks, route constraints and agreed mitigations."/></Input><Btn tone="green" disabled={act.isPending} onClick={()=>act.mutate({kind:'approve',body:{risk_acknowledgement:ack}})}><ShieldCheck size={13}/>Authorise journey</Btn></>}
        {journey.status==='ready_for_review'&&assess?.safety_gate==='HUMAN_REVIEW'&&journey.human_review_decision==='approve_with_controls'&&<><Input label="Final controls acknowledgement"><textarea className={field} rows={2} value={ack} onChange={e=>setAck(e.target.value)} placeholder="Confirm the reviewed controls will be implemented."/></Input><Btn tone="green" disabled={act.isPending} onClick={()=>act.mutate({kind:'approve',body:{risk_acknowledgement:ack}})}><ShieldCheck size={13}/>Approve with reviewed controls</Btn></>}
        {journey.status==='approved'&&<div className="space-y-2"><Input label="Departure readiness acknowledgement (15+ characters)"><textarea className={field} rows={2} value={departureNote} onChange={e=>setDepartureNote(e.target.value)} placeholder="Confirm dispatch readiness, route brief and required check-ins."/></Input><Btn tone="green" disabled={act.isPending||departureNote.trim().length<15} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'ready_to_depart',readiness_acknowledgement:departureNote}})}><ShieldCheck size={13}/>Confirm ready to depart</Btn></div>}{journey.status==='ready_to_depart'&&<Btn tone="green" disabled={act.isPending} onClick={()=>{if(window.confirm('Start this approved and departure-ready journey?'))act.mutate({kind:'lifecycle',body:{action:'start'}})}}><Navigation size={13}/>Start movement</Btn>}
-       {journey.status==='in_progress'&&<div className="space-y-2"><Input label="Operational reason for pause, exception or hold (10+ characters)"><textarea className={field} rows={2} value={transitionReason} onChange={e=>setTransitionReason(e.target.value)} placeholder="Reason for control change / route disruption / stand-down."/></Input><div className="flex flex-wrap gap-2"><Btn disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'pause',reason:transitionReason}})}><Clock3 size={12}/>Pause movement</Btn><Btn tone="red" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'raise_exception',reason:transitionReason}})}><AlertTriangle size={12}/>Raise exception</Btn><Btn tone="green" disabled={act.isPending} onClick={()=>{const pending=stops.filter(s=>s.stop_status==='planned').length;const prompt=pending?pending+' stops are unresolved. Request arrival verification without closing those stops?':'Request arrival verification at the destination?';if(window.confirm(prompt))act.mutate({kind:'lifecycle',body:{action:'arrive',confirm_outstanding_stops:pending>0}})}}><CheckCircle2 size={12}/>Request arrival verification</Btn><Btn disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'hold',reason:transitionReason}})}><Clock3 size={12}/>Place on hold</Btn><Btn tone="red" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'abort',reason:transitionReason}})}><XCircle size={12}/>Abort journey</Btn></div></div>}{journey.status==='paused'&&<><Input label="Reason for recovery, replan or abort (10+ characters)"><textarea className={field} rows={2} value={transitionReason} onChange={e=>setTransitionReason(e.target.value)} placeholder="Record the current condition and intended control."/></Input><div className="flex flex-wrap gap-2"><Btn tone="green" disabled={act.isPending} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'resume'}})}><Navigation size={12}/>Resume movement</Btn><Btn disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'replan',reason:transitionReason}})}><Route size={12}/>Replan route</Btn><Btn tone="red" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'abort',reason:transitionReason}})}><XCircle size={12}/>Abort journey</Btn></div></>}{['exception','on_hold'].includes(journey.status)&&<div className="space-y-2"><Input label="Replan / recovery rationale (10+ characters)"><textarea className={field} rows={2} value={transitionReason} onChange={e=>setTransitionReason(e.target.value)} placeholder="Record why the prior plan is no longer valid and what must be re-assessed."/></Input><div className="flex flex-wrap gap-2"><Btn tone="green" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'replan',reason:transitionReason}})}><Route size={12}/>Return to planning</Btn>{journey.status==='exception'&&<Btn tone="red" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'abort',reason:transitionReason}})}><XCircle size={12}/>Abort journey</Btn>}</div></div>}{journey.status==='arrival_pending_verification'&&<div className="space-y-2 rounded-xl border border-violet-300/15 bg-violet-300/[0.025] p-3"><p className="text-[11px] font-semibold text-violet-100">Arrival requires supervisor verification</p><p className="text-[10px] leading-5 text-slate-500">Closing is a recorded supervisor attestation, not a GPS claim. Live device evidence remains separate in the report snapshot.</p><Input label="Arrival verification rationale (30+ characters)"><textarea className={field} rows={3} value={arrivalNote} onChange={e=>setArrivalNote(e.target.value)} placeholder="Record how arrival was confirmed, who confirmed it and the evidence reviewed."/></Input><Btn tone="green" disabled={act.isPending||arrivalNote.trim().length<30} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'close',reason:arrivalNote}})}><CheckCircle2 size={12}/>Close with supervisor attestation</Btn></div>}
+       {journey.status==='in_progress'&&<div className="space-y-2"><Input label="Operational reason for pause, exception or hold (10+ characters)"><textarea className={field} rows={2} value={transitionReason} onChange={e=>setTransitionReason(e.target.value)} placeholder="Reason for control change / route disruption / stand-down."/></Input><div className="flex flex-wrap gap-2"><Btn disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'pause',reason:transitionReason}})}><Clock3 size={12}/>Pause movement</Btn><Btn tone="red" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'raise_exception',reason:transitionReason}})}><AlertTriangle size={12}/>Raise exception</Btn><Btn tone="green" disabled={act.isPending} onClick={()=>{const pending=stops.filter(s=>s.stop_status==='planned').length;const prompt=pending?pending+' stops are unresolved. Request arrival verification without closing those stops?':'Request arrival verification at the destination?';if(window.confirm(prompt))act.mutate({kind:'lifecycle',body:{action:'arrive',confirm_outstanding_stops:pending>0}})}}><CheckCircle2 size={12}/>Request arrival verification</Btn><Btn disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'hold',reason:transitionReason}})}><Clock3 size={12}/>Place on hold</Btn><Btn tone="red" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'abort',reason:transitionReason}})}><XCircle size={12}/>Abort journey</Btn></div></div>}{journey.status==='paused'&&<><Input label="Reason for recovery, replan or abort (10+ characters)"><textarea className={field} rows={2} value={transitionReason} onChange={e=>setTransitionReason(e.target.value)} placeholder="Record the current condition and intended control."/></Input><div className="flex flex-wrap gap-2"><Btn tone="green" disabled={act.isPending} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'resume'}})}><Navigation size={12}/>Resume movement</Btn><Btn disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'replan',reason:transitionReason}})}><Route size={12}/>Replan route</Btn><Btn tone="red" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'abort',reason:transitionReason}})}><XCircle size={12}/>Abort journey</Btn></div></>}{['exception','on_hold'].includes(journey.status)&&<div className="space-y-2"><Input label="Replan / recovery rationale (10+ characters)"><textarea className={field} rows={2} value={transitionReason} onChange={e=>setTransitionReason(e.target.value)} placeholder="Record why the prior plan is no longer valid and what must be re-assessed."/></Input><div className="flex flex-wrap gap-2"><Btn tone="green" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'replan',reason:transitionReason}})}><Route size={12}/>Return to planning</Btn>{journey.status==='exception'&&<Btn tone="red" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'abort',reason:transitionReason}})}><XCircle size={12}/>Abort journey</Btn>}</div></div>}{journey.status==='arrival_pending_verification'&&<div className="space-y-2 rounded-xl border border-violet-300/15 bg-violet-300/[0.025] p-3"><p className="text-[11px] font-semibold text-violet-100">Arrival requires supervisor verification</p><p className="text-[10px] leading-5 text-slate-500">Closing is a recorded supervisor attestation, not a GPS claim. Live device evidence remains separate in the report snapshot.</p><Input label="Abort rationale (10+ characters, only if the mission cannot be completed)"><textarea className={field} rows={2} value={transitionReason} onChange={e=>setTransitionReason(e.target.value)} placeholder="Why the active mission must be terminated."/></Input><Btn tone="red" disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'abort',reason:transitionReason}})}><XCircle size={12}/>Abort journey</Btn><Input label="Arrival verification rationale (30+ characters)"><textarea className={field} rows={3} value={arrivalNote} onChange={e=>setArrivalNote(e.target.value)} placeholder="Record how arrival was confirmed, who confirmed it and the evidence reviewed."/></Input><Btn tone="green" disabled={act.isPending||arrivalNote.trim().length<30||!isSupervisor} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'close',reason:arrivalNote}})}><CheckCircle2 size={12}/>Close with supervisor attestation</Btn>{!isSupervisor&&<p className="text-[10px] text-amber-200/80">Supervisor attestation is available to admin/dispatcher roles only.</p>}</div>}
        {['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart'].includes(journey.status)&&<div className="space-y-2 border-t border-white/[0.06] pt-3"><Input label="Operational reason to hold or replan (10+ characters)"><textarea className={field} rows={2} value={transitionReason} onChange={e=>setTransitionReason(e.target.value)} placeholder="Explain why the plan should pause or return to planning."/></Input><div className="flex flex-wrap gap-2"><Btn disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'hold',reason:transitionReason}})}><Clock3 size={12}/>Place on hold</Btn><Btn disabled={act.isPending||transitionReason.trim().length<10} onClick={()=>act.mutate({kind:'lifecycle',body:{action:'replan',reason:transitionReason}})}><Route size={12}/>Invalidate route and replan</Btn></div></div>}{['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','on_hold'].includes(journey.status)&&<div className="border-t border-white/[0.06] pt-3"><Input label="Cancellation reason (10+ characters)"><input className={field} value={cancelNote} onChange={e=>setCancelNote(e.target.value)} placeholder="Audit reason required"/></Input><div className="mt-2"><Btn tone="red" disabled={act.isPending||cancelNote.trim().length<10} onClick={()=>{if(window.confirm('Cancel this journey and record the reason?'))act.mutate({kind:'lifecycle',body:{action:'cancel',reason:cancelNote}})}}><XCircle size={13}/>Cancel journey</Btn></div></div>}
       </div></Panel>
      </div>

@@ -266,7 +266,7 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
   const action=req.body?.action;
   if(action==='close'){
     if(j.status!=='arrival_pending_verification')return res.status(409).json({error:'arrival_verification_not_pending'});
-    if(!['admin','dispatcher'].includes(req.user.role))return res.status(403).json({error:'supervisor_attestation_required',message:'Only an authorised admin or dispatcher may close a journey after recording an arrival attestation.'});
+    if(!['admin','dispatcher'].includes(String(req.user.role||'').toLowerCase()))return res.status(403).json({error:'supervisor_attestation_required',message:'Only an authorised admin or dispatcher may close a journey after recording an arrival attestation.'});
     const note=txt(req.body?.reason,1200);
     if(note.length<30)return res.status(400).json({error:'arrival_attestation_required',message:'Record at least 30 characters explaining how arrival was verified. This is a supervisor attestation, not GPS proof.'});
     const r=await req.db('UPDATE sjm_journeys SET status=\'closed\',closed_at=NOW(),completed_at=NOW(),arrival_confirmed_at=NOW(),arrival_verification_source=\'supervisor_attestation\',arrival_verification_note=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status=\'arrival_pending_verification\' RETURNING id',[note,req.user.id,j.id,org]);
