@@ -361,6 +361,7 @@ body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW
    tlp.value=['CLEAR','GREEN','AMBER','AMBER+STRICT','RED'].includes(candidate)?candidate:'';
    setFromInputs();setFilter(fam);
    let mapped=0;
+   if(fam==='weekly'){
    const weeklyCover=q('.sample[data-family="weekly"] article[aria-label="Weekly Insight cover template"]');
    mapped+=putAt(weeklyCover,'[data-placeholder="ASSESSED LEVEL"]',raw.threatLevel)?1:0;
    mapped+=putAt(weeklyCover,'[data-placeholder="SOURCE / METHOD"]',raw.collectionBasis)?1:0;
@@ -379,6 +380,8 @@ body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW
     mapped+=putAt(strategic,'[data-placeholder^="Operational effect"]',incident.whyItMatters)?1:0;
    }
    mapped+=put(q('[data-placeholder="Expected next development"]',strategic),Array.isArray(raw.outlook)?raw.outlook[0]:'')?1:0;
+}
+   if(fam==='monthly'){
    const monthlyForecast=q('.sample[data-family="monthly"] article[aria-label="Monthly Insight key judgments and forecast template"]');
    qa('.listrow',monthlyForecast).slice(0,3).forEach((row,i)=>{const v=findings[i];if(!v)return;mapped+=put(q('h4.slot',row),v.title)?1:0;mapped+=put(q('p.slot',row),v.assessment)?1:0});
    const monthlyAnalysis=q('.sample[data-family="monthly"] article[aria-label="Monthly Insight thematic and regional analysis template"]');
@@ -391,11 +394,15 @@ body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW
     mapped+=put(cells[1],[v.source,v.title].filter(Boolean).join(' — '))?1:0;mapped+=put(cells[2],v.timestamp)?1:0;
     mapped+=put(cells[3],v.reliability)?1:0;mapped+=put(cells[4],v.credibility)?1:0;mapped+=put(cells[5],[v.url,v.limitation].filter(Boolean).join(' · '))?1:0;
    });
+}
+   if(fam==='weekly'){
    const regional=q('.sample[data-family="weekly"] article[aria-label="Weekly Insight regional brief template"]');
    qa('.panel .severity-row',regional).filter(el=>q('[data-placeholder="REGION / COUNTY"]',el)).slice(0,4).forEach((row,i)=>{
     const v=(Array.isArray(raw.regionalUpdates)?raw.regionalUpdates:[])[i];if(!v)return;
     mapped+=put(q('[data-placeholder="REGION / COUNTY"]',row),v.region)?1:0;
    });
+}
+   if(fam==='trends'){
    const trendCover=q('.sample[data-family="trends"] article[aria-label="Weekly Trends cover template"]');
    mapped+=putAt(trendCover,'[data-placeholder="VERIFIED COUNT"]',raw.eventCount)?1:0;
    const trendDash=q('.sample[data-family="trends"] article[aria-label="Weekly Trends dashboard template"]');
@@ -414,9 +421,10 @@ body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW
     const v=(Array.isArray(raw.incidents)?raw.incidents:[])[i];if(!v)return;const cells=qa('.slot',row);
     [v.id,v.dateTime,v.location,v.whatHappened,v.type,v.severity].forEach((value,j)=>{mapped+=put(cells[j],value)?1:0});
    });
+   }
    document.body.classList.add('imported-publication-preview');
    importStatus.hidden=false;
-   importStatus.textContent='SONALIT RECORD IMPORTED · '+bounded(raw.publicationId,80)+' · '+mapped+' source-backed content fields mapped. Missing fields remain unresolved. This is a local authoring preview; it does not update the record, satisfy release approval, or replace its official PDF.';
+   importStatus.textContent=(fam==='all'?'SONALIT RECORD IMPORTED · '+bounded(raw.publicationId,80)+' · NO COMPATIBLE TEMPLATE FAMILY. Only shared metadata was imported; no family-specific report content was mapped.':'SONALIT RECORD IMPORTED · '+bounded(raw.publicationId,80)+' · '+mapped+' source-backed content fields mapped.')+' Missing fields remain unresolved. This is a local authoring preview; it does not update the record, satisfy release approval, or replace its official PDF.';
    markPreflightStale();
   }
   window.addEventListener('message',function(event){
