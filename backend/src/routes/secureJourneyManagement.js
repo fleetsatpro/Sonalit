@@ -6,13 +6,27 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const { analyseRoute } = require('../utils/routeAnalyser');
 
-const STATUSES = ['draft','planned','approved','in_progress','completed','cancelled'];
+const STATUSES = ['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification','closed','cancelled','aborted','on_hold'];
+const TERMINAL_STATUSES = ['closed','cancelled','aborted'];
 const STOP_TYPES = ['checkpoint','rest','refuelling','border','meeting','overnight','destination','other'];
 const REPORT_TYPES = ['itinerary','daily','final'];
 const SECTIONS = ['summary','itinerary','stops','route_assessment','operational_events','telemetry_snapshot'];
 const EVENT_TYPES = ['operator_note','security_update','client_update','delay','incident','other'];
+const LIFECYCLE_TRANSITIONS = {
+  ready_to_depart: { from:['approved'], to:'ready_to_depart', timestamp:'ready_to_depart_at' },
+  start: { from:['ready_to_depart'], to:'in_progress', timestamp:'started_at' },
+  pause: { from:['in_progress'], to:'paused', timestamp:'paused_at', reasonRequired:true },
+  resume: { from:['paused'], to:'in_progress' },
+  raise_exception: { from:['in_progress','paused'], to:'exception', timestamp:'exception_at', reasonRequired:true },
+  arrive: { from:['in_progress'], to:'arrival_pending_verification', timestamp:'arrival_pending_verification_at' },
+  hold: { from:['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','in_progress','paused','exception'], to:'on_hold', timestamp:'on_hold_at', reasonRequired:true },
+  cancel: { from:['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','on_hold'], to:'cancelled', timestamp:'cancelled_at', reasonRequired:true },
+  abort: { from:['in_progress','paused','exception','arrival_pending_verification'], to:'aborted', timestamp:'aborted_at', reasonRequired:true },
+  replan: { from:['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','paused','exception','on_hold'], to:'planning', timestamp:'planning_started_at', reasonRequired:true, clearPlan:true },
+};
 const DEFAULT_TEMPLATE = { title: 'Secure Journey Management Report', sections: SECTIONS };
 
+function lifecycleTransition(status, action) { const t=LIFECYCLE_TRANSITIONS[action]; return t && t.from.includes(status) ? t : null; }
 function txt(v, max=500) { return typeof v === 'string' ? v.trim().slice(0,max) : ''; }
 function validCoordinate(lat,lng) { return typeof lat==='number' && Number.isFinite(lat) && lat>=-90 && lat<=90 && typeof lng==='number' && Number.isFinite(lng) && lng>=-180 && lng<=180 && !(Math.abs(lat)<0.000001 && Math.abs(lng)<0.000001); }
 function validDate(v) { return v==null || (typeof v==='string' && Number.isFinite(Date.parse(v))); }
@@ -152,7 +166,7 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
   const status=req.query.status?String(req.query.status):null;
   if(status&&!STATUSES.includes(status))return res.status(400).json({error:'invalid_journey_status'});
   const clientId=req.query.client_id?String(req.query.client_id):null,limit=Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||50));
-  const r=await req.db('SELECT j.id,j.reference,j.title,j.purpose,j.status,j.transport_mode,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.created_at,j.updated_at,j.route_assessment IS NOT NULL AS has_route_assessment FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL AND ($2::text IS NULL OR j.status=$2) AND ($3::uuid IS NULL OR j.client_id=$3) ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC LIMIT $4',[req.user.org_id,status,clientId,limit]);
+  const r=await req.db('SELECT j.id,j.reference,j.title,j.purpose,j.status,j.transport_mode,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.created_at,j.updated_at,j.timezone,j.planned_route,j.planned_distance_km,j.planned_duration_minutes,j.route_assessment,j.route_assessment IS NOT NULL AS has_route_assessment FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL AND ($2::text IS NULL OR j.status=$2) AND ($3::uuid IS NULL OR j.client_id=$3) ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC LIMIT $4',[req.user.org_id,status,clientId,limit]);
   res.json({data:r.rows});
 }));
 router.post('/journeys',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
@@ -162,10 +176,10 @@ router.post('/journeys',authorize('admin','dispatcher','operator'),asyncHandler(
   if(b.convoy_id){const c=await req.db('SELECT id FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[b.convoy_id,org]);if(!c.rows.length)return res.status(404).json({error:'convoy_not_found_in_organisation'});}
   const reference='SJM-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+crypto.randomBytes(3).toString('hex').toUpperCase();
   const created=await req.dbTx(async c=>{
-    const x=await c.query('INSERT INTO sjm_journeys (org_id,reference,title,purpose,client_id,convoy_id,transport_mode,origin_label,origin_lat,origin_lng,destination_label,destination_lat,destination_lng,planned_departure_at,planned_arrival_at,timezone,status,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,\'draft\',$17,$17) RETURNING id,org_id,reference',[org,reference,txt(b.title,180),txt(b.purpose,1200),b.client_id||null,b.convoy_id||null,b.transport_mode||'road',txt(b.origin_label,180),b.origin_lat,b.origin_lng,txt(b.destination_label,180),b.destination_lat,b.destination_lng,b.planned_departure_at||null,b.planned_arrival_at||null,tzValid(b.timezone)?b.timezone:'Africa/Nairobi',req.user.id]);
+    const x=await c.query('INSERT INTO sjm_journeys (org_id,reference,title,purpose,client_id,convoy_id,transport_mode,origin_label,origin_lat,origin_lng,destination_label,destination_lat,destination_lng,planned_departure_at,planned_arrival_at,timezone,status,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,\'requested\',$17,$17) RETURNING id,org_id,reference',[org,reference,txt(b.title,180),txt(b.purpose,1200),b.client_id||null,b.convoy_id||null,b.transport_mode||'road',txt(b.origin_label,180),b.origin_lat,b.origin_lng,txt(b.destination_label,180),b.destination_lat,b.destination_lng,b.planned_departure_at||null,b.planned_arrival_at||null,tzValid(b.timezone)?b.timezone:'Africa/Nairobi',req.user.id]);
     const j=x.rows[0];
     for(let i=0;i<(b.stops||[]).length;i++){const s=b.stops[i];await c.query('INSERT INTO sjm_journey_stops (org_id,journey_id,sequence,name,stop_type,lat,lng,planned_arrival_at,planned_departure_at,duration_minutes,instructions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[org,j.id,i+1,txt(s.name,160),s.stop_type||'checkpoint',s.lat??null,s.lng??null,s.planned_arrival_at||null,s.planned_departure_at||null,s.duration_minutes??null,txt(s.instructions,1200)||null]);}
-    await c.query('INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,\'journey_created\',$4,$5,\'operator\')',[org,j.id,req.user.id,'Journey drafted',JSON.stringify({reference,stop_count:(b.stops||[]).length})]);
+    await c.query('INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,\'journey_requested\',$4,$5,\'operator\')',[org,j.id,req.user.id,'Journey requested for planning',JSON.stringify({reference,stop_count:(b.stops||[]).length})]);
     return j;
   });
   const j=await journeyById(req.db,org,created.id);res.status(201).json({data:{...j,stops:await stopsFor(req.db,org,created.id)}});
@@ -177,7 +191,7 @@ router.get('/journeys/:id',authorize('admin','dispatcher','operator','analyst'),
 }));
 router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
-  if(!['draft','planned'].includes(j.status))return res.status(409).json({error:'journey_not_editable'});
+  if(!['requested','planning'].includes(j.status))return res.status(409).json({error:'journey_not_editable'});
   const b=req.body||{},stops=b.stops===undefined?await stopsFor(req.db,org,j.id):b.stops;
   const candidate={title:b.title??j.title,purpose:b.purpose??j.purpose,origin_label:b.origin_label??j.origin_label,origin_lat:b.origin_lat==null?Number(j.origin_lat):b.origin_lat,origin_lng:b.origin_lng==null?Number(j.origin_lng):b.origin_lng,destination_label:b.destination_label??j.destination_label,destination_lat:b.destination_lat==null?Number(j.destination_lat):b.destination_lat,destination_lng:b.destination_lng==null?Number(j.destination_lng):b.destination_lng,planned_departure_at:b.planned_departure_at??j.planned_departure_at,planned_arrival_at:b.planned_arrival_at??j.planned_arrival_at,timezone:b.timezone??j.timezone,stops};
   if(!Array.isArray(stops))return res.status(400).json({error:'invalid_journey',message:'Stops must be an array.'});
@@ -187,7 +201,7 @@ router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(
   if(clientId){const r=await req.db('SELECT id FROM cargo_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[clientId,org]);if(!r.rows.length)return res.status(404).json({error:'client_not_found_in_organisation'});}
   if(convoyId){const r=await req.db('SELECT id FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[convoyId,org]);if(!r.rows.length)return res.status(404).json({error:'convoy_not_found_in_organisation'});}
   await req.dbTx(async c=>{
-    const x=await c.query('UPDATE sjm_journeys SET title=$1,purpose=$2,client_id=$3,convoy_id=$4,transport_mode=$5,origin_label=$6,origin_lat=$7,origin_lng=$8,destination_label=$9,destination_lat=$10,destination_lng=$11,planned_departure_at=$12,planned_arrival_at=$13,timezone=$14,status=\'draft\',planned_route=\'[]\'::jsonb,route_assessment=NULL,human_review_decision=NULL,human_review_rationale=NULL,risk_acknowledgement=NULL,updated_by=$15,updated_at=NOW() WHERE id=$16 AND org_id=$17 RETURNING id',[txt(candidate.title,180),txt(candidate.purpose,1200),clientId,convoyId,b.transport_mode||j.transport_mode,txt(candidate.origin_label,180),candidate.origin_lat,candidate.origin_lng,txt(candidate.destination_label,180),candidate.destination_lat,candidate.destination_lng,candidate.planned_departure_at||null,candidate.planned_arrival_at||null,tzValid(b.timezone||j.timezone)?(b.timezone||j.timezone):'Africa/Nairobi',req.user.id,j.id,org]);
+    const x=await c.query('UPDATE sjm_journeys SET title=$1,purpose=$2,client_id=$3,convoy_id=$4,transport_mode=$5,origin_label=$6,origin_lat=$7,origin_lng=$8,destination_label=$9,destination_lat=$10,destination_lng=$11,planned_departure_at=$12,planned_arrival_at=$13,timezone=$14,status=\'requested\',planned_route=\'[]\'::jsonb,route_assessment=NULL,planning_started_at=NULL,assessment_pending_at=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,departure_readiness_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,ready_to_depart_at=NULL,updated_by=$15,updated_at=NOW() WHERE id=$16 AND org_id=$17 RETURNING id',[txt(candidate.title,180),txt(candidate.purpose,1200),clientId,convoyId,b.transport_mode||j.transport_mode,txt(candidate.origin_label,180),candidate.origin_lat,candidate.origin_lng,txt(candidate.destination_label,180),candidate.destination_lat,candidate.destination_lng,candidate.planned_departure_at||null,candidate.planned_arrival_at||null,tzValid(b.timezone||j.timezone)?(b.timezone||j.timezone):'Africa/Nairobi',req.user.id,j.id,org]);
     if(!x.rows.length)throw new Error('journey_update_lost');
     if(b.stops!==undefined){await c.query('DELETE FROM sjm_journey_stops WHERE org_id=$1 AND journey_id=$2',[org,j.id]);for(let i=0;i<b.stops.length;i++){const s=b.stops[i];await c.query('INSERT INTO sjm_journey_stops (org_id,journey_id,sequence,name,stop_type,lat,lng,planned_arrival_at,planned_departure_at,duration_minutes,instructions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[org,j.id,i+1,txt(s.name,160),s.stop_type||'checkpoint',s.lat??null,s.lng??null,s.planned_arrival_at||null,s.planned_departure_at||null,s.duration_minutes??null,txt(s.instructions,1200)||null]);}}
     await c.query('INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,\'journey_revised\',$4,$5,\'operator\')',[org,j.id,req.user.id,'Journey revised; previous route assessment invalidated',JSON.stringify({revised_at:new Date().toISOString()})]);
@@ -196,56 +210,104 @@ router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(
 }));
 router.post('/journeys/:id/plan',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
-  if(!['draft','planned'].includes(j.status))return res.status(409).json({error:'journey_not_plannable'});
+  if(!['requested','planning','assessment_pending'].includes(j.status))return res.status(409).json({error:'journey_not_plannable',message:'Use Replan to invalidate a prior assessment before planning again.'});
   if(j.transport_mode!=='road')return res.status(409).json({error:'transport_mode_route_safety_unavailable',message:'The current Route Safety provider supports road routing only. This journey cannot be assessed or approved until a mode-specific route provider is configured.'});
   const routeStops=await stopsFor(req.db,org,j.id);
   if(routeStops.length>23)return res.status(422).json({error:'route_stop_limit_exceeded',message:'The configured road-routing providers support at most 23 intermediate stops per assessed journey.'});
+  await req.db('UPDATE sjm_journeys SET status=\'planning\',planning_started_at=COALESCE(planning_started_at,NOW()),updated_by=$1,updated_at=NOW() WHERE id=$2 AND org_id=$3',[req.user.id,j.id,org]);
+  await event(req.db,j,req.user.id,'journey_planning_started','Journey planning started',{previous_status:j.status,stop_count:routeStops.length},'system');
+  await req.db('UPDATE sjm_journeys SET status=\'assessment_pending\',assessment_pending_at=NOW(),updated_at=NOW() WHERE id=$1 AND org_id=$2 AND status=\'planning\'',[j.id,org]);
+  await event(req.db,j,req.user.id,'route_assessment_started','Route Safety assessment requested',{via_stop_count:routeStops.length},'system');
   const viaPoints=routeStops.map(stop=>({lat:Number(stop.lat),lng:Number(stop.lng)}));
   const a=await analyseRoute({origin:{lat:Number(j.origin_lat),lng:Number(j.origin_lng)},destination:{lat:Number(j.destination_lat),lng:Number(j.destination_lng)},viaPoints,convoyId:j.convoy_id||undefined,requestedBy:req.user.id,departureTime:j.planned_departure_at||undefined,avoidNightTravel:req.body?.avoid_night_travel===true,maxRiskScore:req.body?.max_risk_score==null?undefined:Number(req.body.max_risk_score),orgId:org});
   if(!a||!Number.isFinite(Number(a.overall_risk_score))||!a.safety_gate)return res.status(503).json({error:'route_assessment_unavailable'});
   const route=Array.isArray(a.recommended_route?.waypoints)?a.recommended_route.waypoints:[];
-  await req.db('UPDATE sjm_journeys SET planned_route=$1,route_assessment=$2,human_review_decision=NULL,human_review_rationale=NULL,risk_acknowledgement=NULL,status=\'planned\',planned_distance_km=$3,planned_duration_minutes=$4,updated_by=$5,updated_at=NOW() WHERE id=$6 AND org_id=$7',[JSON.stringify(route),JSON.stringify(a),a.recommended_route?.distance_km??null,a.recommended_route?.estimated_duration_minutes??null,req.user.id,j.id,org]);
-  await event(req.db,j,req.user.id,'route_assessed','Route Safety assessment recorded',{safety_gate:a.safety_gate,route_status:a.route_status,risk_score:a.overall_risk_score,provider:a.routing_provider,waypoint_count:route.length,via_stop_count:routeStops.length},'system');
+  const gateKnown=['GO','CONDITIONAL','HUMAN_REVIEW'].includes(a.safety_gate);
+  const blocked=a.route_status==='blocked'||a.recommended_route?.blocked===true||a.safety_gate==='NO_GO';
+  const nextStatus=a.route_status==='routed'&&gateKnown&&!blocked?'ready_for_review':'exception';
+  await req.db('UPDATE sjm_journeys SET planned_route=$1,route_assessment=$2,status=$3,planned_distance_km=$4,planned_duration_minutes=$5,ready_for_review_at=CASE WHEN $3=\'ready_for_review\' THEN NOW() ELSE NULL END,exception_at=CASE WHEN $3=\'exception\' THEN NOW() ELSE NULL END,updated_by=$6,updated_at=NOW() WHERE id=$7 AND org_id=$8 AND status=\'assessment_pending\'',[JSON.stringify(route),JSON.stringify(a),nextStatus,a.recommended_route?.distance_km??null,a.recommended_route?.estimated_duration_minutes??null,req.user.id,j.id,org]);
+  await event(req.db,j,req.user.id,'route_assessed',nextStatus==='ready_for_review'?'Route assessment ready for authorised review':'Route assessment raised an exception; replan required',{safety_gate:a.safety_gate,route_status:a.route_status,risk_score:a.overall_risk_score,provider:a.routing_provider,waypoint_count:route.length,via_stop_count:routeStops.length,next_status:nextStatus},'system');
   const latest=await journeyById(req.db,org,j.id);res.json({data:{...latest,route_assessment:a,planned_route:route}});
 }));
 router.post('/journeys/:id/review',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
+  if(j.status!=='ready_for_review')return res.status(409).json({error:'journey_not_ready_for_review'});
   const a=parseJson(j.route_assessment,null);if(!a)return res.status(409).json({error:'route_assessment_required'});
   if(a.route_status==='blocked'||a.recommended_route?.blocked===true||a.safety_gate==='NO_GO')return res.status(409).json({error:'route_blocked',message:'A blocked/NO_GO route cannot be overridden through SJM.'});
   if(a.safety_gate!=='HUMAN_REVIEW')return res.status(409).json({error:'human_review_not_required'});
   const decision=req.body?.decision,rationale=txt(req.body?.rationale,1200);
   if(!['approve_with_controls','reject'].includes(decision)||rationale.length<30)return res.status(400).json({error:'review_rationale_required',message:'Choose a review decision and provide at least 30 characters of rationale.'});
-  await req.db('UPDATE sjm_journeys SET human_review_decision=$1,human_review_rationale=$2,reviewed_by=$3,reviewed_at=NOW(),updated_by=$3,updated_at=NOW() WHERE id=$4 AND org_id=$5',[decision,rationale,req.user.id,j.id,org]);
-  await event(req.db,j,req.user.id,'human_route_review',decision==='reject'?'Route review rejected':'Route review accepted with controls',{decision,rationale,safety_gate:a.safety_gate,risk_score:a.overall_risk_score},'operator');
+  const nextStatus=decision==='reject'?'exception':'ready_for_review';
+  await req.db('UPDATE sjm_journeys SET human_review_decision=$1,human_review_rationale=$2,reviewed_by=$3,reviewed_at=NOW(),status=$4,exception_at=CASE WHEN $4=\'exception\' THEN NOW() ELSE exception_at END,updated_by=$3,updated_at=NOW() WHERE id=$5 AND org_id=$6 AND status=\'ready_for_review\'',[decision,rationale,req.user.id,nextStatus,j.id,org]);
+  await event(req.db,j,req.user.id,'human_route_review',decision==='reject'?'Route review rejected; replan required':'Route review accepted with controls',{decision,rationale,safety_gate:a.safety_gate,risk_score:a.overall_risk_score,next_status:nextStatus},'operator');
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
 router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
-  if(j.status!=='planned')return res.status(409).json({error:'journey_not_planned'});
+  if(j.status!=='ready_for_review')return res.status(409).json({error:'journey_not_ready_for_review'});
   const a=parseJson(j.route_assessment,null),gate=approvalGate(a,j.human_review_decision,req.body?.risk_acknowledgement);
   if(!gate.ok)return res.status(409).json({error:gate.code,message:gate.message});
   if(j.human_review_decision==='reject')return res.status(409).json({error:'route_review_rejected'});
   const ack=txt(req.body?.risk_acknowledgement,1200)||null;
-  const r=await req.db('UPDATE sjm_journeys SET status=\'approved\',approved_by=$1,approved_at=NOW(),risk_acknowledgement=$2,updated_by=$1,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status=\'planned\' RETURNING id',[req.user.id,ack,j.id,org]);
+  const r=await req.db('UPDATE sjm_journeys SET status=\'approved\',approved_by=$1,approved_at=NOW(),risk_acknowledgement=$2,updated_by=$1,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status=\'ready_for_review\' RETURNING id',[req.user.id,ack,j.id,org]);
   if(!r.rows.length)return res.status(409).json({error:'journey_state_changed'});
   await event(req.db,j,req.user.id,'journey_approved','Journey approved by authorised dispatcher',{safety_gate:a.safety_gate,risk_acknowledgement_recorded:Boolean(ack),human_review_decision:j.human_review_decision||null},'operator');
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
 router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
-  const action=req.body?.action,steps={start:{from:['approved'],to:'in_progress',field:'started_at'},complete:{from:['in_progress'],to:'completed',field:'completed_at'},cancel:{from:['draft','planned','approved'],to:'cancelled',field:'cancelled_at'}},s=steps[action];
-  if(!s)return res.status(400).json({error:'unsupported_lifecycle_action'});
-  if(!s.from.includes(j.status))return res.status(409).json({error:'invalid_lifecycle_transition',current_status:j.status,requested_action:action});
-  const reason=txt(req.body?.reason,1200);if(action==='cancel'&&reason.length<10)return res.status(400).json({error:'cancellation_reason_required'});
-  if(action==='complete'){const stops=await stopsFor(req.db,org,j.id),pending=stops.filter(x=>x.stop_status==='planned');if(pending.length&&req.body?.confirm_outstanding_stops!==true)return res.status(409).json({error:'stops_outstanding',outstanding_count:pending.length});}
-  const r=await req.db('UPDATE sjm_journeys SET status=$1,'+s.field+'=NOW(),updated_by=$2,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status=ANY($5::text[]) RETURNING id',[s.to,req.user.id,j.id,org,s.from]);
-  if(!r.rows.length)return res.status(409).json({error:'journey_state_changed'});
-  await event(req.db,j,req.user.id,'journey_'+action,action==='cancel'?'Journey cancelled':action==='start'?'Journey started':'Journey marked completed',{reason:reason||null,confirmed_outstanding_stops:req.body?.confirm_outstanding_stops===true},'operator');
+  const action=req.body?.action;
+  if(action==='close'){
+    if(j.status!=='arrival_pending_verification')return res.status(409).json({error:'arrival_verification_not_pending'});
+    if(!['admin','dispatcher'].includes(req.user.role))return res.status(403).json({error:'supervisor_attestation_required',message:'Only an authorised admin or dispatcher may close a journey after recording an arrival attestation.'});
+    const note=txt(req.body?.reason,1200);
+    if(note.length<30)return res.status(400).json({error:'arrival_attestation_required',message:'Record at least 30 characters explaining how arrival was verified. This is a supervisor attestation, not GPS proof.'});
+    const r=await req.db('UPDATE sjm_journeys SET status=\'closed\',closed_at=NOW(),completed_at=NOW(),arrival_confirmed_at=NOW(),arrival_verification_source=\'supervisor_attestation\',arrival_verification_note=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status=\'arrival_pending_verification\' RETURNING id',[note,req.user.id,j.id,org]);
+    if(!r.rows.length)return res.status(409).json({error:'journey_state_changed'});
+    await event(req.db,j,req.user.id,'journey_closed','Journey closed after authorised arrival attestation',{verification_source:'supervisor_attestation',gps_verified:false,rationale:note},'operator');
+    return res.json({data:await journeyById(req.db,org,j.id),arrival_evidence_class:'SUPERVISOR_ATTESTED_NOT_GPS'});
+  }
+  const step=lifecycleTransition(j.status,action);
+  if(!step)return res.status(409).json({error:'invalid_lifecycle_transition',current_status:j.status,requested_action:action,allowed_actions:Object.entries(LIFECYCLE_TRANSITIONS).filter(([,v])=>v.from.includes(j.status)).map(([k])=>k).concat(j.status==='arrival_pending_verification'?['close']:[])});
+  const reason=txt(req.body?.reason,1200);
+  if(step.reasonRequired&&reason.length<10)return res.status(400).json({error:'lifecycle_reason_required',message:'Record at least 10 characters explaining this operational decision.'});
+  let readiness='';
+  if(action==='ready_to_depart'){
+    readiness=txt(req.body?.readiness_acknowledgement,1200);
+    if(readiness.length<15)return res.status(400).json({error:'departure_readiness_acknowledgement_required',message:'Record at least 15 characters confirming departure readiness checks.'});
+  }
+  if(action==='arrive'){
+    const stops=await stopsFor(req.db,org,j.id),pending=stops.filter(s=>s.stop_status==='planned');
+    if(pending.length&&req.body?.confirm_outstanding_stops!==true)return res.status(409).json({error:'stops_outstanding',outstanding_count:pending.length,message:'Explicitly acknowledge outstanding stops before requesting arrival verification.'});
+  }
+  const params=[step.to,req.user.id,j.id,org,step.from];
+  let sql='UPDATE sjm_journeys SET status=$1,updated_by=$2,updated_at=NOW()';
+  if(step.timestamp)sql+=','+step.timestamp+'=NOW()';
+  if(action==='ready_to_depart'){sql+=',departure_readiness_acknowledgement=$6';params.push(readiness);}
+  if(step.clearPlan){
+    sql+=",planned_route='[]'::jsonb,route_assessment=NULL,planned_distance_km=NULL,planned_duration_minutes=NULL,planning_started_at=NOW(),assessment_pending_at=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,departure_readiness_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,ready_to_depart_at=NULL,paused_at=NULL,exception_at=NULL,arrival_pending_verification_at=NULL,arrival_confirmed_at=NULL,arrival_verification_source=NULL,arrival_verification_note=NULL,closed_at=NULL,completed_at=NULL,on_hold_at=NULL";
+  }
+  sql+=' WHERE id=$3 AND org_id=$4 AND status=ANY($5::text[]) RETURNING id';
+  const updated=await req.db(sql,params);
+  if(!updated.rows.length)return res.status(409).json({error:'journey_state_changed'});
+  const summaries={
+    ready_to_depart:'Journey marked ready to depart',
+    start:'Journey started',
+    pause:'Journey paused',
+    resume:'Journey resumed',
+    raise_exception:'Operational exception raised',
+    arrive:'Arrival pending verification',
+    hold:'Journey placed on hold',
+    cancel:'Journey cancelled',
+    abort:'Journey aborted',
+    replan:'Journey returned to planning; prior route and approvals invalidated',
+  };
+  await event(req.db,j,req.user.id,'journey_'+action,summaries[action]||'Journey lifecycle updated',{reason:reason||null,previous_status:j.status,next_status:step.to,readiness_acknowledgement:action==='ready_to_depart'?readiness:null,confirmed_outstanding_stops:req.body?.confirm_outstanding_stops===true,route_and_approval_invalidated:step.clearPlan===true},'operator');
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
 router.patch('/journeys/:id/stops/:stopId/status',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
-  if(!['approved','in_progress'].includes(j.status))return res.status(409).json({error:'journey_not_active_for_stop_confirmation'});
+  if(!['in_progress','paused','arrival_pending_verification'].includes(j.status))return res.status(409).json({error:'journey_not_active_for_stop_confirmation'});
   const status=req.body?.status;if(!['reached','skipped'].includes(status))return res.status(400).json({error:'invalid_stop_status'});
   const hasLat=req.body?.actual_lat!=null,hasLng=req.body?.actual_lng!=null;if(hasLat!==hasLng||(hasLat&&!validCoordinate(req.body.actual_lat,req.body.actual_lng)))return res.status(400).json({error:'invalid_actual_coordinates'});
   const r=await req.db('UPDATE sjm_journey_stops SET stop_status=$1,confirmed_at=NOW(),actual_lat=$2,actual_lng=$3,confirmation_source=\'operator_confirmed\' WHERE id=$4 AND journey_id=$5 AND org_id=$6 AND stop_status=\'planned\' RETURNING id,sequence,name,stop_status,confirmed_at,actual_lat,actual_lng,confirmation_source',[status,hasLat?req.body.actual_lat:null,hasLng?req.body.actual_lng:null,req.params.stopId,j.id,org]);
@@ -255,7 +317,7 @@ router.patch('/journeys/:id/stops/:stopId/status',authorize('admin','dispatcher'
 }));
 router.post('/journeys/:id/events',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
-  if(['completed','cancelled'].includes(j.status))return res.status(409).json({error:'journey_closed'});
+  if(TERMINAL_STATUSES.includes(j.status))return res.status(409).json({error:'journey_closed'});
   const type=req.body?.event_type,summary=txt(req.body?.summary,500);if(!EVENT_TYPES.includes(type)||summary.length<4)return res.status(400).json({error:'invalid_operational_event',allowed_event_types:EVENT_TYPES});
   const detail={note:txt(req.body?.detail,2000),severity:['low','medium','high','critical'].includes(req.body?.severity)?req.body.severity:null};
   const r=await event(req.db,j,req.user.id,type,summary,detail,'operator');res.status(201).json({data:{id:r.rows[0].id,created_at:r.rows[0].created_at,event_type:type,summary,detail,source:'operator'}});
@@ -285,4 +347,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
   const doc=new PDFDocument({size:'A4',margin:42});doc.pipe(res);renderPdf(doc,report);
 }));
 module.exports=router;
-module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,toCsv,DEFAULT_TEMPLATE,SECTIONS};
+module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS};

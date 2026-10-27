@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, toCsv } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, toCsv, lifecycleTransition } = sjmRouter.__test;
 describe('SJM validation and evidence boundaries', () => {
   test('authenticates requests before the tenant-scope guard', () => {
     const authIndex = sjmRouter.stack.findIndex(layer => layer.handle === authenticate);
@@ -10,6 +10,18 @@ describe('SJM validation and evidence boundaries', () => {
     expect(firstRouteIndex).toBeGreaterThan(authIndex);
   });
   const valid = { title:'Nairobi to Mombasa security movement', purpose:'Client-approved escorted road movement', origin_label:'Nairobi', origin_lat:-1.286389, origin_lng:36.817223, destination_label:'Mombasa', destination_lat:-4.043477, destination_lng:39.668206, planned_departure_at:'2026-10-28T06:00:00+03:00', planned_arrival_at:'2026-10-28T16:00:00+03:00', transport_mode:'road', stops:[{name:'Voi checkpoint',stop_type:'checkpoint',lat:-3.396,lng:38.556}] };
+  test('defines the expanded lifecycle and refuses unsafe shortcuts', () => {
+    expect(lifecycleTransition('approved','ready_to_depart')?.to).toBe('ready_to_depart');
+    expect(lifecycleTransition('ready_to_depart','start')?.to).toBe('in_progress');
+    expect(lifecycleTransition('in_progress','pause')?.to).toBe('paused');
+    expect(lifecycleTransition('in_progress','arrive')?.to).toBe('arrival_pending_verification');
+    expect(lifecycleTransition('arrival_pending_verification','start')).toBeNull();
+    expect(lifecycleTransition('in_progress','cancel')).toBeNull();
+    expect(lifecycleTransition('in_progress','replan')).toBeNull();
+    expect(lifecycleTransition('paused','replan')?.clearPlan).toBe(true);
+    expect(lifecycleTransition('exception','replan')?.to).toBe('planning');
+    expect(lifecycleTransition('on_hold','replan')?.to).toBe('planning');
+  });
   test('accepts valid geographic coordinates and rejects out-of-range and null-island coordinates', () => {
     expect(validCoordinate(-90,180)).toBe(true); expect(validCoordinate(91,20)).toBe(false); expect(validCoordinate(-1,181)).toBe(false); expect(validCoordinate(0,0)).toBe(false); expect(validCoordinate(null,20)).toBe(false);
   });

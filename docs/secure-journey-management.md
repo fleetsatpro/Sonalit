@@ -1,6 +1,6 @@
 # Secure Journey Management (SJM)
 
-SJM is the itinerary, approval, lifecycle and client-specific reporting workbench under XD Live Surveillance at /corridor/journeys. It reuses tenant-scoped client and convoy records, Sonalit Route Safety, and actual device-location evidence. Road routing includes every ordered, coordinate-backed stop using the existing multi-waypoint routing service; the current Route Safety provider is road-only.
+SJM is the itinerary, approval, lifecycle and client-specific reporting workbench under XD Live Surveillance at /corridor/journeys. It reuses tenant-scoped client and convoy records, Sonalit Route Safety, and actual device-location evidence. Road routing includes every ordered, coordinate-backed stop using the existing multi-waypoint routing service; the current Route Safety provider is road-only. The journey state machine is REQUESTED → PLANNING → ASSESSMENT_PENDING → READY_FOR_REVIEW → APPROVED → READY_TO_DEPART → IN_PROGRESS → PAUSED/EXCEPTION → ARRIVAL_PENDING_VERIFICATION → CLOSED, with explicit CANCELLED, ABORTED and ON_HOLD outcomes. Replanning invalidates prior route and approval evidence and requires a new assessment.
 
 ## Data contract
 - sjm_journeys is the authoritative journey record; planned endpoints, routed geometry and route assessment are distinct fields.
@@ -14,11 +14,12 @@ SJM is the itinerary, approval, lifecycle and client-specific reporting workbenc
 2. Planning calls the existing Route Safety service; no route geometry or risk score is invented.
 3. Approval requires a stored assessment with routed status. Blocked/NO_GO routes, unrouted fallbacks, unknown gates and unresolved human review cannot be approved.
 4. Conditional routes require written operational-controls acknowledgement. Human review requires an authorised supervisor's recorded rationale and decision. The UI cannot override blocked/NO_GO routes.
-5. Start, complete and cancel are explicit state transitions. Completing with outstanding stops requires acknowledgement.
-6. Report telemetry comes only from latest device_locations rows for convoy-linked devices. Freshness uses recorded timestamps; missing data is UNAVAILABLE, never mocked.
-7. Planned itinerary, route analysis, operator confirmations and telemetry remain distinct evidence classes.
-8. Stop coordinates are required for a road itinerary to be routed. The route result is assessed through those ordered via-points, not just the endpoints; more than 23 stops is rejected because configured providers may not accept more waypoints.
-9. Client-local datetime inputs are converted using the selected IANA timezone rather than the browser timezone.
+5. Start, pause, resume, exception, arrival verification, closure, cancel, abort, hold and replan are explicit state transitions. Outstanding stops require an explicit acknowledgement before arrival verification; closure requires an authorised admin/dispatcher attestation and is labelled as supervisor-attested, not GPS proof.
+6. A journey cannot move directly from approval to active movement: departure readiness is explicitly acknowledged, then the dispatcher/operator starts the movement. Replanning clears stored route assessment and all approval/release acknowledgements.
+7. Report telemetry comes only from latest device_locations rows for convoy-linked devices. Freshness uses recorded timestamps; missing data is UNAVAILABLE, never mocked.
+8. Planned itinerary, route analysis, operator confirmations and telemetry remain distinct evidence classes.
+9. Stop coordinates are required for a road itinerary to be routed. The route result is assessed through those ordered via-points, not just the endpoints; more than 23 stops is rejected because configured providers may not accept more waypoints.
+10. Client-local datetime inputs are converted using the selected IANA timezone rather than the browser timezone.
 
 ## API
 - GET /api/v1/sjm/clients and /convoys
