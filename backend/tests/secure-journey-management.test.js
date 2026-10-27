@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('authenticates requests before the tenant-scope guard', () => {
