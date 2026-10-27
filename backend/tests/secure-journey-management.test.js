@@ -71,6 +71,13 @@ describe('SJM validation and evidence boundaries', () => {
   test('validates journey content and chronology', () => {
     expect(validateJourney(valid)).toBeNull(); expect(validateJourney({...valid,planned_arrival_at:'2026-10-27T02:00:00Z'})).toMatch(/after planned departure/); expect(validateJourney({...valid,purpose:' '})).toMatch(/purpose is required/); expect(validateJourney({...valid,timezone:'Mars/NotAZone'})).toMatch(/valid IANA timezone/);
   });
+  test('accepts PostgreSQL Date values when validating an existing journey and its stops', () => {
+    const departure=new Date('2026-10-28T03:00:00.000Z');
+    const arrival=new Date('2026-10-28T13:00:00.000Z');
+    expect(validateJourney({...valid,planned_departure_at:departure,planned_arrival_at:arrival})).toBeNull();
+    expect(validateStop({name:'Existing checkpoint',stop_type:'checkpoint',lat:1,lng:2,planned_arrival_at:departure,planned_departure_at:arrival})).toBeNull();
+    expect(validateJourney({...valid,planned_departure_at:new Date('invalid')})).toMatch(/times must be valid ISO dates/);
+  });
   test('validates stop type, coordinate pairs and stop limit', () => {
     expect(validateStop({name:'Border',stop_type:'border',lat:1,lng:2})).toBeNull(); expect(validateStop({name:'Border',lat:1})).toMatch(/supplied together/); expect(validateStop({name:'Unlocated checkpoint'})).toMatch(/coordinates are required/); expect(validateStop({name:'Border',stop_type:'fictional'})).toMatch(/not supported/); expect(validateJourney({...valid,stops:Array.from({length:31},(_,i)=>({name:'Stop '+i}))})).toMatch(/at most 23 stops/);
   });

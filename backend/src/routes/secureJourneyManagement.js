@@ -33,7 +33,7 @@ function dailyReportSchedulerAvailable(orgId){return SJM_SCHEDULER_ORG_IDS.lengt
 function lifecycleTransition(status, action) { const t=LIFECYCLE_TRANSITIONS[action]; return t && t.from.includes(status) ? t : null; }
 function txt(v, max=500) { return typeof v === 'string' ? v.trim().slice(0,max) : ''; }
 function validCoordinate(lat,lng) { return typeof lat==='number' && Number.isFinite(lat) && lat>=-90 && lat<=90 && typeof lng==='number' && Number.isFinite(lng) && lng>=-180 && lng<=180 && !(Math.abs(lat)<0.000001 && Math.abs(lng)<0.000001); }
-function validDate(v) { return v==null || (typeof v==='string' && Number.isFinite(Date.parse(v))); }
+function validDate(v) { if(v==null)return true; if(v instanceof Date)return Number.isFinite(v.getTime()); return typeof v==='string'&&Number.isFinite(Date.parse(v)); }
 function validDateOnly(v) { if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v))return false; const d=new Date(v+'T00:00:00.000Z'); return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===v; }
 function validateStop(s) {
   if (!s || typeof s!=='object' || Array.isArray(s)) return 'Each stop must be an object.';
