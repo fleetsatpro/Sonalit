@@ -361,6 +361,7 @@ body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW
    tlp.value=['CLEAR','GREEN','AMBER','AMBER+STRICT','RED'].includes(candidate)?candidate:'';
    setFromInputs();setFilter(fam);
    let mapped=0;
+   const findings=Array.isArray(raw.findings)?raw.findings.slice(0,3):[];
    if(fam==='weekly'){
    const weeklyCover=q('.sample[data-family="weekly"] article[aria-label="Weekly Insight cover template"]');
    mapped+=putAt(weeklyCover,'[data-placeholder="ASSESSED LEVEL"]',raw.threatLevel)?1:0;
@@ -368,7 +369,6 @@ body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW
    mapped+=putAt(weeklyCover,'[data-placeholder="VERIFIED COUNT"]',raw.eventCount)?1:0;
    const weeklySummary=q('.sample[data-family="weekly"] article[aria-label="Weekly Insight executive summary template"]');
    mapped+=putAt(weeklySummary,'[data-placeholder^="State the most decision-relevant judgment"]',raw.executiveAssessment)?1:0;
-   const findings=Array.isArray(raw.findings)?raw.findings.slice(0,3):[];
    qa('.listrow',weeklySummary).slice(0,3).forEach((row,i)=>{const v=findings[i];if(!v)return;mapped+=put(q('h4.slot',row),v.title)?1:0;mapped+=put(q('p.slot',row),v.assessment)?1:0});
    const strategic=q('.sample[data-family="weekly"] article[aria-label="Weekly Insight strategic analysis template"]');
    const incident=Array.isArray(raw.incidents)?raw.incidents[0]:null;
