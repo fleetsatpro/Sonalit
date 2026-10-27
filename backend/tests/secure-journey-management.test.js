@@ -15,6 +15,7 @@ describe('SJM validation and evidence boundaries', () => {
     const org='12345678-1234-4234-8234-123456789abc';
     expect(configuredOrgIds('')).toEqual([]);
     expect(configuredOrgIds(' '+org.toUpperCase()+', '+org+' ')).toEqual([org]);
+    expect(configuredOrgIds('00000000-0000-0000-0000-000000000001')).toEqual(['00000000-0000-0000-0000-000000000001']);
     expect(()=>configuredOrgIds('not-a-uuid')).toThrow(/invalid UUID/);
     expect(dailyReportSchedulerAvailable(org)).toBe(configuredOrgIds().includes(org));
     expect(shouldGenerateForToday(new Date('2026-10-27T14:59:00Z'),'18:00','Africa/Nairobi')).toBe(false);

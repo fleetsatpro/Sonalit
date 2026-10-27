@@ -4,7 +4,7 @@ const { withOrg } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 const { reportSnapshot, dateInTimezone } = require('../routes/secureJourneyManagement').__scheduler;
 
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function configuredOrgIds(value=process.env.SJM_REPORT_SCHEDULER_ORG_IDS||'') {
   const raw=String(value).split(',').map(x=>x.trim()).filter(Boolean);
