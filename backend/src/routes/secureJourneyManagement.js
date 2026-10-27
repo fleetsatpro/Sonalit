@@ -125,6 +125,7 @@ function renderPdf(doc,r) {
   if(doc.y>700)doc.addPage();
   doc.moveDown(.5);doc.fillColor('#64748b').fontSize(7).text('Evidence note: PLANNED, ANALYSED, OBSERVED and OPERATOR_CONFIRMED data are separated. Operator confirmation is not GPS proof.',42,doc.y,{width:510});doc.end();
 }
+router.use(authenticate);
 router.use((req,res,next)=>{if(!req.user?.org_id||!req.db||!req.dbTx)return res.status(403).json({error:'tenant_scope_required'});next();});
 
 router.get('/clients',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{const r=await req.db('SELECT id,name,company FROM cargo_clients WHERE org_id=$1 AND deleted_at IS NULL ORDER BY name LIMIT 500',[req.user.org_id]);res.json({data:r.rows});}));
