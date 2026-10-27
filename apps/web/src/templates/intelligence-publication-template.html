@@ -16,6 +16,7 @@
 
 .import-status{max-width:1500px;margin:0 auto 12px;padding:12px 15px;border:1px solid #8a681c;background:linear-gradient(90deg,#fff8e7,#fffdf6);color:#624a0b;font:700 11px/1.55 Inter,Arial,sans-serif;letter-spacing:.02em}
 .import-status[hidden]{display:none!important}
+.actions button:disabled{opacity:.42;cursor:not-allowed;border-color:#424c5e;background:#141a24;color:#8d96a8;filter:none}.actions button:disabled:hover{border-color:#424c5e;background:#141a24}
 .paper{position:relative}
 body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW · NOT AN OFFICIAL RELEASE";position:absolute;top:7mm;right:7mm;z-index:30;pointer-events:none;padding:1.5mm 2mm;border:.5pt solid #bd8b12;background:rgba(255,250,232,.97);color:#75530a;font:700 5.7pt/1.2 Arial,sans-serif;letter-spacing:.12mm}
 @media print{.import-status{display:none!important}body.imported-publication-preview .paper::after{position:absolute;top:6mm;right:6mm}}
@@ -167,6 +168,7 @@ body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW
  const country=q('#countryInput'),period=q('#periodInput'),issue=q('#issueInput'),tlp=q('#tlpSelect'),family=q('#familySelect');
  const summary=q('#preflightSummary');
  const importStatus=q('#importStatus');
+ let incompatibleImportedPublication=false;
  const tlpColors={CLEAR:'#FFFFFF',GREEN:'#33FF00',AMBER:'#FFC000','AMBER+STRICT':'#FFC000',RED:'#FF2B2B'};
  let preflightHasRun=false;
  function displayValue(k){
@@ -323,14 +325,17 @@ body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW
  q('#resetBtn').addEventListener('click',()=>{
   country.value='';period.value='';issue.value='';tlp.value='';
   document.body.classList.remove('imported-publication-preview');importStatus.hidden=true;importStatus.textContent='';
+  incompatibleImportedPublication=false;q('#printBtn').disabled=false;q('#saveBtn').disabled=false;
+  q('#printBtn').title='Print / Save PDF';q('#saveBtn').title='Save the filled editable HTML template';
   qa('.slot[data-editable]').forEach(el=>{el.textContent=el.dataset.placeholder||'';el.classList.remove('needs-input')});
   qa('.chart-grid[data-media-slot]').forEach(el=>{const img=el.querySelector('img.inserted-media');if(img)img.remove();el.classList.remove('has-media','needs-media-input');let span=el.querySelector(':scope > span');if(!span){span=document.createElement('span');el.insertBefore(span,el.querySelector('.media-upload')||null)}span.innerHTML=el.dataset.mediaPlaceholderHtml||'';el.setAttribute('aria-label','Chart/map placeholder: '+(el.closest('.chart-shell')?.querySelector('.mini-label')?.innerText.trim()||'Chart or map')+'. Replace with a verified image or explicitly state unavailable.');const button=el.querySelector('.media-upload');if(button)button.textContent='Insert image'});
   setFromInputs();setFilter('all');
   preflightHasRun=false;summary.dataset.state='idle';
   summary.textContent='Template reset. Preflight has not been run. Select a publication family to check its visible pages; source verification and editorial approval remain manual.';
  });
- q('#printBtn').addEventListener('click',()=>{setFromInputs();setFilter(family.value||'all');window.print()});
+ q('#printBtn').addEventListener('click',()=>{if(incompatibleImportedPublication){importStatus.hidden=false;importStatus.textContent='EXPORT BLOCKED · This imported record has no compatible report family. Reset or open a compatible publication before printing.';return}setFromInputs();setFilter(family.value||'all');window.print()});
  q('#saveBtn').addEventListener('click',()=>{
+  if(incompatibleImportedPublication){importStatus.hidden=false;importStatus.textContent='EXPORT BLOCKED · This imported record has no compatible report family. Reset or open a compatible publication before saving a filled HTML master.';return}
   setFromInputs();
   const clone=document.documentElement.cloneNode(true);
   const cloneInputs=qa('#countryInput, #periodInput, #issueInput, #tlpSelect',clone);
@@ -423,8 +428,12 @@ body.imported-publication-preview .paper::after{content:"TEMPLATE STUDIO PREVIEW
    });
    }
    document.body.classList.add('imported-publication-preview');
+   incompatibleImportedPublication=fam==='all';
+   q('#printBtn').disabled=incompatibleImportedPublication;q('#saveBtn').disabled=incompatibleImportedPublication;
+   q('#printBtn').title=incompatibleImportedPublication?'Print disabled: no compatible report family is available for this imported record.':'Print / Save PDF';
+   q('#saveBtn').title=incompatibleImportedPublication?'Save disabled: reset the imported unsupported record before exporting a filled HTML master.':'Save the filled editable HTML template';
    importStatus.hidden=false;
-   importStatus.textContent=(fam==='all'?'SONALIT RECORD IMPORTED · '+bounded(raw.publicationId,80)+' · NO COMPATIBLE TEMPLATE FAMILY. Only shared metadata was imported; no family-specific report content was mapped.':'SONALIT RECORD IMPORTED · '+bounded(raw.publicationId,80)+' · '+mapped+' source-backed content fields mapped.')+' Missing fields remain unresolved. This is a local authoring preview; it does not update the record, satisfy release approval, or replace its official PDF.';
+   importStatus.textContent=(incompatibleImportedPublication?'SONALIT RECORD IMPORTED · '+bounded(raw.publicationId,80)+' · NO COMPATIBLE TEMPLATE FAMILY. Only shared metadata was imported; no family-specific report content was mapped. Print and filled-HTML export are disabled to prevent a contradictory reporting window. Reset the template or select a compatible publication record.':'SONALIT RECORD IMPORTED · '+bounded(raw.publicationId,80)+' · '+mapped+' source-backed content fields mapped.')+' Missing fields remain unresolved. This is a local authoring preview; it does not update the record, satisfy release approval, or replace its official PDF.';
    markPreflightStale();
   }
   window.addEventListener('message',function(event){
