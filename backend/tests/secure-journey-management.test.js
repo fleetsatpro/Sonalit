@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, toCsv, lifecycleTransition, dailyReportSchedulerAvailable } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('authenticates requests before the tenant-scope guard', () => {
@@ -21,6 +21,37 @@ describe('SJM validation and evidence boundaries', () => {
     expect(shouldGenerateForToday(new Date('2026-10-27T14:59:00Z'),'18:00','Africa/Nairobi')).toBe(false);
     expect(shouldGenerateForToday(new Date('2026-10-27T15:00:00Z'),'18:00','Africa/Nairobi')).toBe(true);
     expect(shouldGenerateForToday(new Date('2026-10-27T15:00:00Z'),'18:00','Mars/Nowhere')).toBe(false);
+  });
+
+  test('keeps journey mutation and audit event on the same tenant transaction client', async () => {
+    const calls=[];
+    const req={dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});return {rows:[{id:'row-1'}]};}})};
+    const journey={id:'journey-1',org_id:'org-1'};
+    const result=await mutateWithEvent(req,journey,'user-1','journey_approved','Journey approved',{},'operator',
+      db=>db('UPDATE sjm_journeys SET status=$1 WHERE id=$2 RETURNING id',['approved','journey-1']));
+    expect(result.changed).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].sql).toMatch(/UPDATE sjm_journeys/);
+    expect(calls[1].sql).toMatch(/INSERT INTO sjm_journey_events/);
+  });
+  test('does not append an audit event when the guarded mutation changes no row', async () => {
+    const calls=[];
+    const req={dbTx:async fn=>fn({query:async(sql,params)=>{calls.push(sql);return {rows:[]};}})};
+    const result=await mutateWithEvent(req,{id:'journey-1',org_id:'org-1'},'user-1','journey_approved','Journey approved',{},'operator',
+      db=>db('UPDATE sjm_journeys SET status=$1 WHERE id=$2 RETURNING id',['approved','journey-1']));
+    expect(result.changed).toBe(false);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatch(/UPDATE sjm_journeys/);
+  });
+  test('propagates audit write failures so the transaction wrapper can roll back', async () => {
+    let rollbackObserved=false;
+    const req={dbTx:async fn=>{try{return await fn({query:async(sql,params)=>{
+      if(sql.includes('INSERT INTO sjm_journey_events'))throw new Error('audit write failed');
+      return {rows:[{id:'journey-1'}]};
+    }});}catch(e){rollbackObserved=true;throw e;}}};
+    await expect(mutateWithEvent(req,{id:'journey-1',org_id:'org-1'},'user-1','journey_approved','Journey approved',{},'operator',
+      db=>db('UPDATE sjm_journeys SET status=$1 WHERE id=$2 RETURNING id',['approved','journey-1']))).rejects.toThrow('audit write failed');
+    expect(rollbackObserved).toBe(true);
   });
   test('defines the expanded lifecycle and refuses unsafe shortcuts', () => {
     expect(lifecycleTransition('approved','ready_to_depart')?.to).toBe('ready_to_depart');

@@ -97,6 +97,21 @@ async function eventsFor(db,org,id,limit=200) {
 async function event(db,j,actor,type,summary,detail={},source='operator') {
   return db('INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,created_at',[j.org_id,j.id,actor||null,type,txt(summary,500),JSON.stringify(detail||{}),source]);
 }
+
+async function mutateWithEvent(req,j,actor,type,summary,detail={},source='operator',mutation) {
+  if(typeof mutation!=='function') throw new TypeError('mutation callback is required');
+  return req.dbTx(async c=>{
+    const db=(sql,params)=>c.query(sql,params);
+    const result=await mutation(db);
+    if(!result?.rows?.length)return {changed:false,result};
+    const row=result.rows[0];
+    const resolvedSummary=typeof summary==='function'?summary(row):summary;
+    const resolvedDetail=typeof detail==='function'?detail(row):detail;
+    await event(db,j,actor,type,resolvedSummary,resolvedDetail,source);
+    return {changed:true,result};
+  });
+}
+
 async function telemetryFor(db,org,j) {
   if(!j.convoy_id)return {status:'UNAVAILABLE',reason:'No convoy linked to this journey; live fleet evidence is unavailable.',observed_at:null,devices:[]};
   const r=await db('SELECT d.id AS device_id,d.name AS device_name,fo.name AS officer_name,fix.lat,fix.lng,fix.speed AS speed_kph,fix.heading,fix.accuracy AS accuracy_m,fix.observed_at,fix.source FROM convoy_cfos cc JOIN guardian_devices d ON d.id=cc.guardian_device_id LEFT JOIN field_officers fo ON fo.device_id=d.id LEFT JOIN LATERAL (SELECT lat,lng,speed,heading,accuracy,timestamp AS observed_at,\'device_locations\'::text AS source FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC,id DESC LIMIT 1) fix ON true WHERE cc.org_id=$1 AND cc.convoy_id=$2 AND d.deleted_at IS NULL ORDER BY d.name',[org,j.convoy_id]);
@@ -238,9 +253,9 @@ router.post('/journeys/:id/plan',authorize('admin','dispatcher','operator'),asyn
   const gateKnown=['GO','CONDITIONAL','HUMAN_REVIEW'].includes(a.safety_gate);
   const blocked=a.route_status==='blocked'||a.recommended_route?.blocked===true||a.safety_gate==='NO_GO';
   const nextStatus=a.route_status==='routed'&&gateKnown&&!blocked?'ready_for_review':'exception';
-  const saved=await req.db('UPDATE sjm_journeys SET planned_route=$1,route_assessment=$2,status=$3,planned_distance_km=$4,planned_duration_minutes=$5,ready_for_review_at=CASE WHEN $3=\'ready_for_review\' THEN NOW() ELSE NULL END,exception_at=CASE WHEN $3=\'exception\' THEN NOW() ELSE NULL END,updated_by=$6,updated_at=NOW() WHERE id=$7 AND org_id=$8 AND status=\'assessment_pending\' RETURNING id',[JSON.stringify(route),JSON.stringify(a),nextStatus,a.recommended_route?.distance_km??null,a.recommended_route?.estimated_duration_minutes??null,req.user.id,j.id,org]);
-  if(!saved.rows.length)return res.status(409).json({error:'journey_state_changed',message:'The journey changed while Route Safety was evaluating it; assessment evidence was not attached to a different state.'});
-  await event(req.db,j,req.user.id,'route_assessed',nextStatus==='ready_for_review'?'Route assessment ready for authorised review':'Route assessment raised an exception; replan required',{safety_gate:a.safety_gate,route_status:a.route_status,risk_score:a.overall_risk_score,provider:a.routing_provider,waypoint_count:route.length,via_stop_count:routeStops.length,next_status:nextStatus},'system');
+  const save=await mutateWithEvent(req,j,req.user.id,'route_assessed',nextStatus==='ready_for_review'?'Route assessment ready for authorised review':'Route assessment raised an exception; replan required',{safety_gate:a.safety_gate,route_status:a.route_status,risk_score:a.overall_risk_score,provider:a.routing_provider,waypoint_count:route.length,via_stop_count:routeStops.length,next_status:nextStatus},'system',
+    db=>db("UPDATE sjm_journeys SET planned_route=$1,route_assessment=$2,status=$3,planned_distance_km=$4,planned_duration_minutes=$5,ready_for_review_at=CASE WHEN $3='ready_for_review' THEN NOW() ELSE NULL END,exception_at=CASE WHEN $3='exception' THEN NOW() ELSE NULL END,updated_by=$6,updated_at=NOW() WHERE id=$7 AND org_id=$8 AND status='assessment_pending' RETURNING id",[JSON.stringify(route),JSON.stringify(a),nextStatus,a.recommended_route?.distance_km??null,a.recommended_route?.estimated_duration_minutes??null,req.user.id,j.id,org]));
+  if(!save.changed)return res.status(409).json({error:'journey_state_changed',message:'The journey changed while Route Safety was evaluating it; assessment evidence was not attached to a different state.'});
   const latest=await journeyById(req.db,org,j.id);res.json({data:{...latest,route_assessment:a,planned_route:route}});
 }));
 router.post('/journeys/:id/review',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
@@ -252,8 +267,9 @@ router.post('/journeys/:id/review',authorize('admin','dispatcher'),asyncHandler(
   const decision=req.body?.decision,rationale=txt(req.body?.rationale,1200);
   if(!['approve_with_controls','reject'].includes(decision)||rationale.length<30)return res.status(400).json({error:'review_rationale_required',message:'Choose a review decision and provide at least 30 characters of rationale.'});
   const nextStatus=decision==='reject'?'exception':'ready_for_review';
-  await req.db('UPDATE sjm_journeys SET human_review_decision=$1,human_review_rationale=$2,reviewed_by=$3,reviewed_at=NOW(),status=$4,exception_at=CASE WHEN $4=\'exception\' THEN NOW() ELSE exception_at END,updated_by=$3,updated_at=NOW() WHERE id=$5 AND org_id=$6 AND status=\'ready_for_review\'',[decision,rationale,req.user.id,nextStatus,j.id,org]);
-  await event(req.db,j,req.user.id,'human_route_review',decision==='reject'?'Route review rejected; replan required':'Route review accepted with controls',{decision,rationale,safety_gate:a.safety_gate,risk_score:a.overall_risk_score,next_status:nextStatus},'operator');
+  const transition=await mutateWithEvent(req,j,req.user.id,'human_route_review',decision==='reject'?'Route review rejected; replan required':'Route review accepted with controls',{decision,rationale,safety_gate:a.safety_gate,risk_score:a.overall_risk_score,next_status:nextStatus},'operator',
+    db=>db("UPDATE sjm_journeys SET human_review_decision=$1,human_review_rationale=$2,reviewed_by=$3,reviewed_at=NOW(),status=$4,exception_at=CASE WHEN $4='exception' THEN NOW() ELSE exception_at END,updated_by=$3,updated_at=NOW() WHERE id=$5 AND org_id=$6 AND status='ready_for_review' RETURNING id",[decision,rationale,req.user.id,nextStatus,j.id,org]));
+  if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
 router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
@@ -263,9 +279,9 @@ router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler
   if(!gate.ok)return res.status(409).json({error:gate.code,message:gate.message});
   if(j.human_review_decision==='reject')return res.status(409).json({error:'route_review_rejected'});
   const ack=txt(req.body?.risk_acknowledgement,1200)||null;
-  const r=await req.db('UPDATE sjm_journeys SET status=\'approved\',approved_by=$1,approved_at=NOW(),risk_acknowledgement=$2,updated_by=$1,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status=\'ready_for_review\' RETURNING id',[req.user.id,ack,j.id,org]);
-  if(!r.rows.length)return res.status(409).json({error:'journey_state_changed'});
-  await event(req.db,j,req.user.id,'journey_approved','Journey approved by authorised dispatcher',{safety_gate:a.safety_gate,risk_acknowledgement_recorded:Boolean(ack),human_review_decision:j.human_review_decision||null},'operator');
+  const transition=await mutateWithEvent(req,j,req.user.id,'journey_approved','Journey approved by authorised dispatcher',{safety_gate:a.safety_gate,risk_acknowledgement_recorded:Boolean(ack),human_review_decision:j.human_review_decision||null},'operator',
+    db=>db("UPDATE sjm_journeys SET status='approved',approved_by=$1,approved_at=NOW(),risk_acknowledgement=$2,updated_by=$1,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status='ready_for_review' RETURNING id",[req.user.id,ack,j.id,org]));
+  if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
 router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
@@ -276,9 +292,9 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
     if(!['admin','dispatcher'].includes(String(req.user.role||'').toLowerCase()))return res.status(403).json({error:'supervisor_attestation_required',message:'Only an authorised admin or dispatcher may close a journey after recording an arrival attestation.'});
     const note=txt(req.body?.reason,1200);
     if(note.length<30)return res.status(400).json({error:'arrival_attestation_required',message:'Record at least 30 characters explaining how arrival was verified. This is a supervisor attestation, not GPS proof.'});
-    const r=await req.db('UPDATE sjm_journeys SET status=\'closed\',closed_at=NOW(),completed_at=NOW(),arrival_confirmed_at=NOW(),arrival_verification_source=\'supervisor_attestation\',arrival_verification_note=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status=\'arrival_pending_verification\' RETURNING id',[note,req.user.id,j.id,org]);
-    if(!r.rows.length)return res.status(409).json({error:'journey_state_changed'});
-    await event(req.db,j,req.user.id,'journey_closed','Journey closed after authorised arrival attestation',{verification_source:'supervisor_attestation',gps_verified:false,rationale:note},'operator');
+    const transition=await mutateWithEvent(req,j,req.user.id,'journey_closed','Journey closed after authorised arrival attestation',{verification_source:'supervisor_attestation',gps_verified:false,rationale:note},'operator',
+      db=>db("UPDATE sjm_journeys SET status='closed',closed_at=NOW(),completed_at=NOW(),arrival_confirmed_at=NOW(),arrival_verification_source='supervisor_attestation',arrival_verification_note=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status='arrival_pending_verification' RETURNING id",[note,req.user.id,j.id,org]));
+    if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
     return res.json({data:await journeyById(req.db,org,j.id),arrival_evidence_class:'SUPERVISOR_ATTESTED_NOT_GPS'});
   }
   const step=lifecycleTransition(j.status,action);
@@ -302,8 +318,6 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
     sql+=",planned_route='[]'::jsonb,route_assessment=NULL,planned_distance_km=NULL,planned_duration_minutes=NULL,planning_started_at=NOW(),assessment_pending_at=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,departure_readiness_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,ready_to_depart_at=NULL,paused_at=NULL,exception_at=NULL,arrival_pending_verification_at=NULL,arrival_confirmed_at=NULL,arrival_verification_source=NULL,arrival_verification_note=NULL,closed_at=NULL,completed_at=NULL,on_hold_at=NULL";
   }
   sql+=' WHERE id=$3 AND org_id=$4 AND status=ANY($5::text[]) RETURNING id';
-  const updated=await req.db(sql,params);
-  if(!updated.rows.length)return res.status(409).json({error:'journey_state_changed'});
   const summaries={
     ready_to_depart:'Journey marked ready to depart',
     start:'Journey started',
@@ -316,7 +330,8 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
     abort:'Journey aborted',
     replan:'Journey returned to planning; prior route and approvals invalidated',
   };
-  await event(req.db,j,req.user.id,'journey_'+action,summaries[action]||'Journey lifecycle updated',{reason:reason||null,previous_status:j.status,next_status:step.to,readiness_acknowledgement:action==='ready_to_depart'?readiness:null,confirmed_outstanding_stops:req.body?.confirm_outstanding_stops===true,route_and_approval_invalidated:step.clearPlan===true},'operator');
+  const transition=await mutateWithEvent(req,j,req.user.id,'journey_'+action,summaries[action]||'Journey lifecycle updated',{reason:reason||null,previous_status:j.status,next_status:step.to,readiness_acknowledgement:action==='ready_to_depart'?readiness:null,confirmed_outstanding_stops:req.body?.confirm_outstanding_stops===true,route_and_approval_invalidated:step.clearPlan===true},'operator',db=>db(sql,params));
+  if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
 router.patch('/journeys/:id/stops/:stopId/status',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
@@ -324,10 +339,10 @@ router.patch('/journeys/:id/stops/:stopId/status',authorize('admin','dispatcher'
   if(!['in_progress','paused','arrival_pending_verification'].includes(j.status))return res.status(409).json({error:'journey_not_active_for_stop_confirmation'});
   const status=req.body?.status;if(!['reached','skipped'].includes(status))return res.status(400).json({error:'invalid_stop_status'});
   const hasLat=req.body?.actual_lat!=null,hasLng=req.body?.actual_lng!=null;if(hasLat!==hasLng||(hasLat&&!validCoordinate(req.body.actual_lat,req.body.actual_lng)))return res.status(400).json({error:'invalid_actual_coordinates'});
-  const r=await req.db('UPDATE sjm_journey_stops SET stop_status=$1,confirmed_at=NOW(),actual_lat=$2,actual_lng=$3,confirmation_source=\'operator_confirmed\' WHERE id=$4 AND journey_id=$5 AND org_id=$6 AND stop_status=\'planned\' RETURNING id,sequence,name,stop_status,confirmed_at,actual_lat,actual_lng,confirmation_source',[status,hasLat?req.body.actual_lat:null,hasLng?req.body.actual_lng:null,req.params.stopId,j.id,org]);
-  if(!r.rows.length)return res.status(404).json({error:'stop_not_found_or_already_resolved'});
-  await event(req.db,j,req.user.id,'stop_'+status,'Stop '+status+': '+r.rows[0].name,{stop_id:r.rows[0].id,sequence:r.rows[0].sequence,actual_coordinates_supplied:hasLat},'operator');
-  res.json({data:r.rows[0],evidence_class:'OPERATOR_CONFIRMED'});
+  const write=await mutateWithEvent(req,j,req.user.id,'stop_'+status,row=>'Stop '+status+': '+row.name,row=>({stop_id:row.id,sequence:row.sequence,actual_coordinates_supplied:hasLat}),'operator',
+    db=>db("UPDATE sjm_journey_stops SET stop_status=$1,confirmed_at=NOW(),actual_lat=$2,actual_lng=$3,confirmation_source='operator_confirmed' WHERE id=$4 AND journey_id=$5 AND org_id=$6 AND stop_status='planned' RETURNING id,sequence,name,stop_status,confirmed_at,actual_lat,actual_lng,confirmation_source",[status,hasLat?req.body.actual_lat:null,hasLng?req.body.actual_lng:null,req.params.stopId,j.id,org]));
+  if(!write.changed)return res.status(404).json({error:'stop_not_found_or_already_resolved'});
+  return res.json({data:write.result.rows[0],evidence_class:'OPERATOR_CONFIRMED'});
 }));
 router.post('/journeys/:id/events',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
@@ -342,9 +357,10 @@ router.post('/journeys/:id/reports',authorize('admin','dispatcher','operator','a
   const p=j.client_id?await req.db('SELECT report_timezone FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[org,j.client_id]):{rows:[]};
   const timezone=p.rows[0]?.report_timezone||j.timezone||'Africa/Nairobi',date=typeof req.body?.report_date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(req.body.report_date)?req.body.report_date:dateInTimezone(new Date(),timezone);
   const snapshot=await reportSnapshot(req.db,org,j,type,date);
-  const r=await req.db('INSERT INTO sjm_reports (org_id,journey_id,report_type,report_date,schema_version,data,generated_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,journey_id,report_type,report_date,generated_at',[org,j.id,type,date,snapshot.schema_version,JSON.stringify(snapshot),req.user.id]);
-  await event(req.db,j,req.user.id,'report_generated','SJM '+type+' report generated',{report_id:r.rows[0].id,report_date:date,schema_version:snapshot.schema_version},'system');
-  res.status(201).json({data:r.rows[0],snapshot});
+  const write=await mutateWithEvent(req,j,req.user.id,'report_generated','SJM '+type+' report generated',row=>({report_id:row.id,report_date:date,schema_version:snapshot.schema_version}),'system',
+    db=>db('INSERT INTO sjm_reports (org_id,journey_id,report_type,report_date,schema_version,data,generated_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,journey_id,report_type,report_date,generated_at',[org,j.id,type,date,snapshot.schema_version,JSON.stringify(snapshot),req.user.id]));
+  if(!write.changed)return res.status(409).json({error:'report_not_persisted'});
+  res.status(201).json({data:write.result.rows[0],snapshot});
 }));
 router.get('/reports/:reportId',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const r=await req.db('SELECT id,journey_id,report_type,report_date,schema_version,data,generated_at FROM sjm_reports WHERE id=$1 AND org_id=$2 LIMIT 1',[req.params.reportId,req.user.org_id]);
@@ -362,4 +378,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,dailyReportSchedulerAvailable};
+module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,dailyReportSchedulerAvailable,mutateWithEvent};
