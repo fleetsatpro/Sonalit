@@ -210,14 +210,20 @@ router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(
 }));
 router.post('/journeys/:id/plan',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
-  if(!['requested','planning','assessment_pending'].includes(j.status))return res.status(409).json({error:'journey_not_plannable',message:'Use Replan to invalidate a prior assessment before planning again.'});
+  if(!['requested','planning'].includes(j.status))return res.status(409).json({error:'journey_not_plannable',message:'This journey is not in a claimable planning state. Replan after resolving the current assessment attempt.'});
   if(j.transport_mode!=='road')return res.status(409).json({error:'transport_mode_route_safety_unavailable',message:'The current Route Safety provider supports road routing only. This journey cannot be assessed or approved until a mode-specific route provider is configured.'});
   const routeStops=await stopsFor(req.db,org,j.id);
   if(routeStops.length>23)return res.status(422).json({error:'route_stop_limit_exceeded',message:'The configured road-routing providers support at most 23 intermediate stops per assessed journey.'});
-  await req.db('UPDATE sjm_journeys SET status=\'planning\',planning_started_at=COALESCE(planning_started_at,NOW()),updated_by=$1,updated_at=NOW() WHERE id=$2 AND org_id=$3',[req.user.id,j.id,org]);
-  await event(req.db,j,req.user.id,'journey_planning_started','Journey planning started',{previous_status:j.status,stop_count:routeStops.length},'system');
-  await req.db('UPDATE sjm_journeys SET status=\'assessment_pending\',assessment_pending_at=NOW(),updated_at=NOW() WHERE id=$1 AND org_id=$2 AND status=\'planning\'',[j.id,org]);
-  await event(req.db,j,req.user.id,'route_assessment_started','Route Safety assessment requested',{via_stop_count:routeStops.length},'system');
+  const claimed=await req.dbTx(async c=>{
+    const first=await c.query("UPDATE sjm_journeys SET status='planning',planning_started_at=COALESCE(planning_started_at,NOW()),updated_by=$1,updated_at=NOW() WHERE id=$2 AND org_id=$3 AND status=$4 RETURNING id",[req.user.id,j.id,org,j.status]);
+    if(!first.rows.length)return false;
+    await c.query("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'journey_planning_started',$4,$5,'system')",[org,j.id,req.user.id,'Journey planning started',JSON.stringify({previous_status:j.status,stop_count:routeStops.length})]);
+    const second=await c.query("UPDATE sjm_journeys SET status='assessment_pending',assessment_pending_at=NOW(),updated_at=NOW() WHERE id=$1 AND org_id=$2 AND status='planning' RETURNING id",[j.id,org]);
+    if(!second.rows.length)throw new Error('journey_assessment_claim_lost');
+    await c.query("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'route_assessment_started',$4,$5,'system')",[org,j.id,req.user.id,'Route Safety assessment requested',JSON.stringify({via_stop_count:routeStops.length})]);
+    return true;
+  });
+  if(!claimed)return res.status(409).json({error:'journey_state_changed',message:'Another request changed this journey. Refresh before retrying.'});
   const viaPoints=routeStops.map(stop=>({lat:Number(stop.lat),lng:Number(stop.lng)}));
   const a=await analyseRoute({origin:{lat:Number(j.origin_lat),lng:Number(j.origin_lng)},destination:{lat:Number(j.destination_lat),lng:Number(j.destination_lng)},viaPoints,convoyId:j.convoy_id||undefined,requestedBy:req.user.id,departureTime:j.planned_departure_at||undefined,avoidNightTravel:req.body?.avoid_night_travel===true,maxRiskScore:req.body?.max_risk_score==null?undefined:Number(req.body.max_risk_score),orgId:org});
   if(!a||!Number.isFinite(Number(a.overall_risk_score))||!a.safety_gate)return res.status(503).json({error:'route_assessment_unavailable'});
@@ -225,7 +231,8 @@ router.post('/journeys/:id/plan',authorize('admin','dispatcher','operator'),asyn
   const gateKnown=['GO','CONDITIONAL','HUMAN_REVIEW'].includes(a.safety_gate);
   const blocked=a.route_status==='blocked'||a.recommended_route?.blocked===true||a.safety_gate==='NO_GO';
   const nextStatus=a.route_status==='routed'&&gateKnown&&!blocked?'ready_for_review':'exception';
-  await req.db('UPDATE sjm_journeys SET planned_route=$1,route_assessment=$2,status=$3,planned_distance_km=$4,planned_duration_minutes=$5,ready_for_review_at=CASE WHEN $3=\'ready_for_review\' THEN NOW() ELSE NULL END,exception_at=CASE WHEN $3=\'exception\' THEN NOW() ELSE NULL END,updated_by=$6,updated_at=NOW() WHERE id=$7 AND org_id=$8 AND status=\'assessment_pending\'',[JSON.stringify(route),JSON.stringify(a),nextStatus,a.recommended_route?.distance_km??null,a.recommended_route?.estimated_duration_minutes??null,req.user.id,j.id,org]);
+  const saved=await req.db('UPDATE sjm_journeys SET planned_route=$1,route_assessment=$2,status=$3,planned_distance_km=$4,planned_duration_minutes=$5,ready_for_review_at=CASE WHEN $3=\'ready_for_review\' THEN NOW() ELSE NULL END,exception_at=CASE WHEN $3=\'exception\' THEN NOW() ELSE NULL END,updated_by=$6,updated_at=NOW() WHERE id=$7 AND org_id=$8 AND status=\'assessment_pending\' RETURNING id',[JSON.stringify(route),JSON.stringify(a),nextStatus,a.recommended_route?.distance_km??null,a.recommended_route?.estimated_duration_minutes??null,req.user.id,j.id,org]);
+  if(!saved.rows.length)return res.status(409).json({error:'journey_state_changed',message:'The journey changed while Route Safety was evaluating it; assessment evidence was not attached to a different state.'});
   await event(req.db,j,req.user.id,'route_assessed',nextStatus==='ready_for_review'?'Route assessment ready for authorised review':'Route assessment raised an exception; replan required',{safety_gate:a.safety_gate,route_status:a.route_status,risk_score:a.overall_risk_score,provider:a.routing_provider,waypoint_count:route.length,via_stop_count:routeStops.length,next_status:nextStatus},'system');
   const latest=await journeyById(req.db,org,j.id);res.json({data:{...latest,route_assessment:a,planned_route:route}});
 }));
@@ -282,7 +289,7 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
   }
   const params=[step.to,req.user.id,j.id,org,step.from];
   let sql='UPDATE sjm_journeys SET status=$1,updated_by=$2,updated_at=NOW()';
-  if(step.timestamp)sql+=','+step.timestamp+'=NOW()';
+  if(step.timestamp&&!step.clearPlan)sql+=','+step.timestamp+'=NOW()';
   if(action==='ready_to_depart'){sql+=',departure_readiness_acknowledgement=$6';params.push(readiness);}
   if(step.clearPlan){
     sql+=",planned_route='[]'::jsonb,route_assessment=NULL,planned_distance_km=NULL,planned_duration_minutes=NULL,planning_started_at=NOW(),assessment_pending_at=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,departure_readiness_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,ready_to_depart_at=NULL,paused_at=NULL,exception_at=NULL,arrival_pending_verification_at=NULL,arrival_confirmed_at=NULL,arrival_verification_source=NULL,arrival_verification_note=NULL,closed_at=NULL,completed_at=NULL,on_hold_at=NULL";
