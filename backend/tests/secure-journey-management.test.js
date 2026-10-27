@@ -148,6 +148,26 @@ describe('SJM validation and evidence boundaries', () => {
   });
 
 
+  test('rejects caller-supplied SJM risk thresholds that could weaken the Route Safety gate', () => {
+    expect(planRequestPolicyError({max_risk_score:100})).toMatch(/caller-supplied maximum risk threshold/);
+    expect(planRequestPolicyError({max_risk_score:0})).toMatch(/authorised trusted client policy/);
+    expect(planRequestPolicyError({avoid_night_travel:true})).toBeNull();
+    expect(planRequestPolicyError({})).toBeNull();
+  });
+  test('PDF focus sections obey client section policy while retaining intrinsic report evidence', () => {
+    const report={client_profile:{enabled_sections:['summary']},summary:{safety_gate:'GO'},route_assessment:{route_status:'routed'},itinerary:[{name:'Restricted route point'}],stops:[{name:'Restricted stop'}]};
+    const itineraryFocus=JSON.stringify(reportFocusSections({...report,report_type:'itinerary'}));
+    expect(itineraryFocus).toContain('Route status');
+    expect(itineraryFocus).not.toContain('Stored route points');
+    expect(itineraryFocus).not.toContain('Restricted route point');
+    expect(itineraryFocus).not.toContain('Ordered stops');
+    expect(reportFocusSections({...report,report_type:'daily'})).toEqual([]);
+    expect(reportFocusSections({...report,report_type:'sitrep'})).toEqual([]);
+    const readiness=reportFocusSections({report_type:'pre_trip_brief',client_profile:{enabled_sections:[]},pre_trip_readiness:[{item:'Route assessment',status:'PENDING',detail:'No assessment recorded'}]});
+    expect(readiness[0].body).toContain('Route assessment');
+    expect(enabledReportSections({enabled_sections:['summary','unknown','summary']})).toEqual(['summary']);
+    expect(enabledReportSections({enabled_sections:[]})).toEqual([]);
+  });
   test('report CSV respects client section policy for optional stop, event and telemetry evidence', () => {
     const csv=toCsv({
       report_type:'daily',report_title:'Daily Travel Report',report_date:'2026-10-27',generated_at:'2026-10-27T15:00:00Z',
