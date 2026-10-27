@@ -1,6 +1,14 @@
 'use strict';
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, toCsv } = require('../src/routes/secureJourneyManagement').__test;
+const sjmRouter = require('../src/routes/secureJourneyManagement');
+const { authenticate } = require('../src/middleware/auth');
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, toCsv } = sjmRouter.__test;
 describe('SJM validation and evidence boundaries', () => {
+  test('authenticates requests before the tenant-scope guard', () => {
+    const authIndex = sjmRouter.stack.findIndex(layer => layer.handle === authenticate);
+    expect(authIndex).toBeGreaterThanOrEqual(0);
+    const firstRouteIndex = sjmRouter.stack.findIndex(layer => Boolean(layer.route));
+    expect(firstRouteIndex).toBeGreaterThan(authIndex);
+  });
   const valid = { title:'Nairobi to Mombasa security movement', purpose:'Client-approved escorted road movement', origin_label:'Nairobi', origin_lat:-1.286389, origin_lng:36.817223, destination_label:'Mombasa', destination_lat:-4.043477, destination_lng:39.668206, planned_departure_at:'2026-10-28T06:00:00+03:00', planned_arrival_at:'2026-10-28T16:00:00+03:00', transport_mode:'road', stops:[{name:'Voi checkpoint',stop_type:'checkpoint',lat:-3.396,lng:38.556}] };
   test('accepts valid geographic coordinates and rejects out-of-range and null-island coordinates', () => {
     expect(validCoordinate(-90,180)).toBe(true); expect(validCoordinate(91,20)).toBe(false); expect(validCoordinate(-1,181)).toBe(false); expect(validCoordinate(0,0)).toBe(false); expect(validCoordinate(null,20)).toBe(false);
