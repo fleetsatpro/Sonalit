@@ -21,7 +21,8 @@ function validateStop(s) {
   if (!txt(s.name,160)) return 'Every stop needs a name.';
   if (!STOP_TYPES.includes(s.stop_type || 'checkpoint')) return 'Stop type is not supported.';
   if ((s.lat==null)!==(s.lng==null)) return 'Stop latitude and longitude must be supplied together.';
-  if (s.lat!=null && !validCoordinate(s.lat,s.lng)) return 'Stop coordinates are invalid.';
+  if (s.lat==null || s.lng==null) return 'Stop coordinates are required so the routed itinerary includes this stop.';
+  if (!validCoordinate(s.lat,s.lng)) return 'Stop coordinates are invalid.';
   if (!validDate(s.planned_arrival_at) || !validDate(s.planned_departure_at)) return 'Stop times must be valid ISO dates.';
   if (s.duration_minutes!=null && (!Number.isInteger(s.duration_minutes)||s.duration_minutes<0||s.duration_minutes>10080)) return 'Stop duration must be between 0 and 10080 minutes.';
   return null;
@@ -35,11 +36,12 @@ function validateJourney(b) {
   if (!validDate(b.planned_departure_at)||!validDate(b.planned_arrival_at)) return 'Planned times must be valid ISO dates.';
   if (b.planned_departure_at && b.planned_arrival_at && Date.parse(b.planned_arrival_at)<=Date.parse(b.planned_departure_at)) return 'Planned arrival must be after planned departure.';
   if (b.stops!=null && !Array.isArray(b.stops)) return 'Stops must be an array.';
-  if ((b.stops||[]).length>30) return 'A journey can contain at most 30 stops.';
+  if ((b.stops||[]).length>23) return 'A journey can contain at most 23 stops.';
   for (const s of b.stops||[]) { const err=validateStop(s); if(err)return err; }
   if (b.client_id!=null && !/^[0-9a-f-]{36}$/i.test(String(b.client_id))) return 'Client ID must be a UUID.';
   if (b.convoy_id!=null && !/^[0-9a-f-]{36}$/i.test(String(b.convoy_id))) return 'Convoy ID must be a UUID.';
   if (b.transport_mode!=null && !['road','air','rail','sea','multimodal','other'].includes(b.transport_mode)) return 'Transport mode is not supported.';
+  if (b.timezone != null && !tzValid(b.timezone)) return 'Reporting timezone must be a valid IANA timezone.';
   return null;
 }
 function approvalGate(a, review, ack) {
@@ -176,7 +178,7 @@ router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
   if(!['draft','planned'].includes(j.status))return res.status(409).json({error:'journey_not_editable'});
   const b=req.body||{},stops=b.stops===undefined?await stopsFor(req.db,org,j.id):b.stops;
-  const candidate={title:b.title??j.title,purpose:b.purpose??j.purpose,origin_label:b.origin_label??j.origin_label,origin_lat:b.origin_lat==null?Number(j.origin_lat):b.origin_lat,origin_lng:b.origin_lng==null?Number(j.origin_lng):b.origin_lng,destination_label:b.destination_label??j.destination_label,destination_lat:b.destination_lat==null?Number(j.destination_lat):b.destination_lat,destination_lng:b.destination_lng==null?Number(j.destination_lng):b.destination_lng,planned_departure_at:b.planned_departure_at??j.planned_departure_at,planned_arrival_at:b.planned_arrival_at??j.planned_arrival_at,stops};
+  const candidate={title:b.title??j.title,purpose:b.purpose??j.purpose,origin_label:b.origin_label??j.origin_label,origin_lat:b.origin_lat==null?Number(j.origin_lat):b.origin_lat,origin_lng:b.origin_lng==null?Number(j.origin_lng):b.origin_lng,destination_label:b.destination_label??j.destination_label,destination_lat:b.destination_lat==null?Number(j.destination_lat):b.destination_lat,destination_lng:b.destination_lng==null?Number(j.destination_lng):b.destination_lng,planned_departure_at:b.planned_departure_at??j.planned_departure_at,planned_arrival_at:b.planned_arrival_at??j.planned_arrival_at,timezone:b.timezone??j.timezone,stops};
   if(!Array.isArray(stops))return res.status(400).json({error:'invalid_journey',message:'Stops must be an array.'});
   const normalized=stops.map(s=>({...s,lat:s.lat==null?null:Number(s.lat),lng:s.lng==null?null:Number(s.lng)}));
   const invalid=validateJourney({...candidate,stops:normalized,transport_mode:b.transport_mode??j.transport_mode});if(invalid)return res.status(400).json({error:'invalid_journey',message:invalid});
@@ -194,11 +196,15 @@ router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(
 router.post('/journeys/:id/plan',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
   if(!['draft','planned'].includes(j.status))return res.status(409).json({error:'journey_not_plannable'});
-  const a=await analyseRoute({origin:{lat:Number(j.origin_lat),lng:Number(j.origin_lng)},destination:{lat:Number(j.destination_lat),lng:Number(j.destination_lng)},convoyId:j.convoy_id||undefined,requestedBy:req.user.id,departureTime:j.planned_departure_at||undefined,avoidNightTravel:req.body?.avoid_night_travel===true,maxRiskScore:req.body?.max_risk_score==null?undefined:Number(req.body.max_risk_score),orgId:org});
+  if(j.transport_mode!=='road')return res.status(409).json({error:'transport_mode_route_safety_unavailable',message:'The current Route Safety provider supports road routing only. This journey cannot be assessed or approved until a mode-specific route provider is configured.'});
+  const routeStops=await stopsFor(req.db,org,j.id);
+  if(routeStops.length>23)return res.status(422).json({error:'route_stop_limit_exceeded',message:'The configured road-routing providers support at most 23 intermediate stops per assessed journey.'});
+  const viaPoints=routeStops.map(stop=>({lat:Number(stop.lat),lng:Number(stop.lng)}));
+  const a=await analyseRoute({origin:{lat:Number(j.origin_lat),lng:Number(j.origin_lng)},destination:{lat:Number(j.destination_lat),lng:Number(j.destination_lng)},viaPoints,convoyId:j.convoy_id||undefined,requestedBy:req.user.id,departureTime:j.planned_departure_at||undefined,avoidNightTravel:req.body?.avoid_night_travel===true,maxRiskScore:req.body?.max_risk_score==null?undefined:Number(req.body.max_risk_score),orgId:org});
   if(!a||!Number.isFinite(Number(a.overall_risk_score))||!a.safety_gate)return res.status(503).json({error:'route_assessment_unavailable'});
   const route=Array.isArray(a.recommended_route?.waypoints)?a.recommended_route.waypoints:[];
   await req.db('UPDATE sjm_journeys SET planned_route=$1,route_assessment=$2,human_review_decision=NULL,human_review_rationale=NULL,risk_acknowledgement=NULL,status=\'planned\',planned_distance_km=$3,planned_duration_minutes=$4,updated_by=$5,updated_at=NOW() WHERE id=$6 AND org_id=$7',[JSON.stringify(route),JSON.stringify(a),a.recommended_route?.distance_km??null,a.recommended_route?.estimated_duration_minutes??null,req.user.id,j.id,org]);
-  await event(req.db,j,req.user.id,'route_assessed','Route Safety assessment recorded',{safety_gate:a.safety_gate,route_status:a.route_status,risk_score:a.overall_risk_score,provider:a.routing_provider,waypoint_count:route.length},'system');
+  await event(req.db,j,req.user.id,'route_assessed','Route Safety assessment recorded',{safety_gate:a.safety_gate,route_status:a.route_status,risk_score:a.overall_risk_score,provider:a.routing_provider,waypoint_count:route.length,via_stop_count:routeStops.length},'system');
   const latest=await journeyById(req.db,org,j.id);res.json({data:{...latest,route_assessment:a,planned_route:route}});
 }));
 router.post('/journeys/:id/review',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{

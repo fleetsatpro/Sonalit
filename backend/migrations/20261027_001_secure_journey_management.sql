@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS sjm_journey_stops (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL,
   journey_id UUID NOT NULL REFERENCES sjm_journeys(id) ON DELETE CASCADE,
-  sequence INTEGER NOT NULL CHECK (sequence BETWEEN 1 AND 30),
+  sequence INTEGER NOT NULL CHECK (sequence BETWEEN 1 AND 23),
   name TEXT NOT NULL CHECK (length(trim(name)) > 0),
   stop_type TEXT NOT NULL DEFAULT 'checkpoint' CHECK (stop_type IN ('checkpoint','rest','refuelling','border','meeting','overnight','destination','other')),
   lat NUMERIC(10,7),

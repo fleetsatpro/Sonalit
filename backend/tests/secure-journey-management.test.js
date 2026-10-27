@@ -6,10 +6,10 @@ describe('SJM validation and evidence boundaries', () => {
     expect(validCoordinate(-90,180)).toBe(true); expect(validCoordinate(91,20)).toBe(false); expect(validCoordinate(-1,181)).toBe(false); expect(validCoordinate(0,0)).toBe(false); expect(validCoordinate(null,20)).toBe(false);
   });
   test('validates journey content and chronology', () => {
-    expect(validateJourney(valid)).toBeNull(); expect(validateJourney({...valid,planned_arrival_at:'2026-10-27T02:00:00Z'})).toMatch(/after planned departure/); expect(validateJourney({...valid,purpose:' '})).toMatch(/purpose is required/);
+    expect(validateJourney(valid)).toBeNull(); expect(validateJourney({...valid,planned_arrival_at:'2026-10-27T02:00:00Z'})).toMatch(/after planned departure/); expect(validateJourney({...valid,purpose:' '})).toMatch(/purpose is required/); expect(validateJourney({...valid,timezone:'Mars/NotAZone'})).toMatch(/valid IANA timezone/);
   });
   test('validates stop type, coordinate pairs and stop limit', () => {
-    expect(validateStop({name:'Border',stop_type:'border',lat:1,lng:2})).toBeNull(); expect(validateStop({name:'Border',lat:1})).toMatch(/supplied together/); expect(validateStop({name:'Border',stop_type:'fictional'})).toMatch(/not supported/); expect(validateJourney({...valid,stops:Array.from({length:31},(_,i)=>({name:'Stop '+i}))})).toMatch(/at most 30 stops/);
+    expect(validateStop({name:'Border',stop_type:'border',lat:1,lng:2})).toBeNull(); expect(validateStop({name:'Border',lat:1})).toMatch(/supplied together/); expect(validateStop({name:'Unlocated checkpoint'})).toMatch(/coordinates are required/); expect(validateStop({name:'Border',stop_type:'fictional'})).toMatch(/not supported/); expect(validateJourney({...valid,stops:Array.from({length:31},(_,i)=>({name:'Stop '+i}))})).toMatch(/at most 23 stops/);
   });
   test('blocks absent, unrouted, blocked and unresolved human-review evidence', () => {
     expect(approvalGate(null,null,null).code).toBe('ROUTED_EVIDENCE_REQUIRED'); expect(approvalGate({route_status:'unrouted',safety_gate:'GO'},null,null).ok).toBe(false);

@@ -1,6 +1,6 @@
 # Secure Journey Management (SJM)
 
-SJM is the itinerary, approval, lifecycle and client-specific reporting workbench under XD Live Surveillance at /corridor/journeys. It reuses tenant-scoped client and convoy records, Sonalit Route Safety, and actual device-location evidence.
+SJM is the itinerary, approval, lifecycle and client-specific reporting workbench under XD Live Surveillance at /corridor/journeys. It reuses tenant-scoped client and convoy records, Sonalit Route Safety, and actual device-location evidence. Road routing includes every ordered, coordinate-backed stop using the existing multi-waypoint routing service; the current Route Safety provider is road-only.
 
 ## Data contract
 - sjm_journeys is the authoritative journey record; planned endpoints, routed geometry and route assessment are distinct fields.
@@ -17,6 +17,8 @@ SJM is the itinerary, approval, lifecycle and client-specific reporting workbenc
 5. Start, complete and cancel are explicit state transitions. Completing with outstanding stops requires acknowledgement.
 6. Report telemetry comes only from latest device_locations rows for convoy-linked devices. Freshness uses recorded timestamps; missing data is UNAVAILABLE, never mocked.
 7. Planned itinerary, route analysis, operator confirmations and telemetry remain distinct evidence classes.
+8. Stop coordinates are required for a road itinerary to be routed. The route result is assessed through those ordered via-points, not just the endpoints; more than 23 stops is rejected because configured providers may not accept more waypoints.
+9. Client-local datetime inputs are converted using the selected IANA timezone rather than the browser timezone.
 
 ## API
 - GET /api/v1/sjm/clients and /convoys
