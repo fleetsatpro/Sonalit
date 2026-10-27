@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { Script } from 'node:vm';
 import { buildTemplatePayload } from './IntelligencePublicationTemplateStudio';
 const desk=readFileSync(new URL('./IntelligencePublicationDesk.tsx',import.meta.url),'utf8');
 const studio=readFileSync(new URL('./IntelligencePublicationTemplateStudio.tsx',import.meta.url),'utf8');
@@ -69,4 +70,20 @@ it('declares shared findings before family-specific mapping blocks',()=>{
  const weekly=template.indexOf("if(fam==='weekly'){");
  expect(shared).toBeGreaterThanOrEqual(0);
  expect(shared).toBeLessThan(weekly);
+});
+
+
+describe('unsupported publication export safety',()=>{
+ it('blocks print and filled-HTML export for incompatible imported records, and reset restores the blank master',()=>{
+  expect(template).toContain("incompatibleImportedPublication=fam==='all'");
+  expect(template).toContain("q('#printBtn').disabled=incompatibleImportedPublication;q('#saveBtn').disabled=incompatibleImportedPublication");
+  expect(template).toContain("if(incompatibleImportedPublication){importStatus.hidden=false;importStatus.textContent='EXPORT BLOCKED");
+  expect(template).toContain("incompatibleImportedPublication=false;q('#printBtn').disabled=false;q('#saveBtn').disabled=false");
+  expect(template).toContain('Print and filled-HTML export are disabled to prevent a contradictory reporting window.');
+ });
+ it('parses the embedded controller script instead of relying on a raw-HTML build',()=>{
+  const scripts=Array.from(template.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi),match=>match[1]);
+  expect(scripts).toHaveLength(1);
+  expect(()=>new Script(scripts[0])).not.toThrow();
+ });
 });
