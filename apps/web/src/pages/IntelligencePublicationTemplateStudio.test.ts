@@ -63,3 +63,10 @@ describe('publication family compatibility',()=>{
   expect(buildTemplatePayload({id:'route',publication_type:'route_assessment',body:{}})?.family).toBe('all');
  });
 });
+
+it('declares shared findings before family-specific mapping blocks',()=>{
+ const shared=template.indexOf('const findings=Array.isArray(raw.findings)?raw.findings.slice(0,3):[]');
+ const weekly=template.indexOf("if(fam==='weekly'){");
+ expect(shared).toBeGreaterThanOrEqual(0);
+ expect(shared).toBeLessThan(weekly);
+});
