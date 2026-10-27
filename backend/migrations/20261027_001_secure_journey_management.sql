@@ -133,6 +133,8 @@ BEGIN
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS sjm_org_isolation ON public.%I', t);
     EXECUTE format('CREATE POLICY sjm_org_isolation ON public.%I USING (org_id = current_setting(''app.current_org_id'', true)::uuid) WITH CHECK (org_id = current_setting(''app.current_org_id'', true)::uuid)', t);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening ON public.%I', t);
+    EXECUTE format('CREATE POLICY tenant_isolation_hardening ON public.%I AS RESTRICTIVE FOR ALL USING (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),'''')) WITH CHECK (org_id::text=NULLIF(current_setting(''app.current_org_id'',true),''''))', t);
   END LOOP;
 END
 $sjm$;
