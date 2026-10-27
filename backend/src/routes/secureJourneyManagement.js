@@ -88,14 +88,22 @@ function toCsv(report) {
     for(const e of report.recent_events||[])rows.push(['event',e.created_at||'',e.event_type||'',e.source||'',{journey_reference:e.journey_reference,journey_title:e.journey_title,summary:e.summary,detail:e.detail}]);
     return rows.map(r=>r.map(csvCell).join(',')).join('\r\n')+'\r\n';
   }
-  const j=report.journey||{};
-  rows.push(['journey',j.created_at||'',j.title||'',j.status||'',{reference:j.reference,client:j.client_name,convoy:j.convoy_name,origin:j.origin_label,destination:j.destination_label,purpose:j.purpose}]);
-  for(const s of report.stops||[])rows.push(['stop',s.confirmed_at||s.planned_arrival_at||'',s.name||'',s.stop_status||'',{sequence:s.sequence,stop_type:s.stop_type,planned_arrival_at:s.planned_arrival_at,actual_lat:s.actual_lat,actual_lng:s.actual_lng,confirmation_source:s.confirmation_source}]);
-  for(const e of report.events||[])rows.push(['event',e.created_at||'',e.event_type||'',e.source||'',e.detail||{}]);
-  for(const x of report.pre_trip_readiness||[])rows.push(['readiness',report.generated_at||'',x.item||'',x.status||'',x.detail||'']);
-  for(const e of report.change_events||[])rows.push(['change_event',e.created_at||'',e.event_type||'',e.source||'',{summary:e.summary,detail:e.detail}]);
-  if(report.closeout_evidence)rows.push(['closeout_evidence',report.closeout_evidence.closed_at||'',report.closeout_evidence.arrival_verification_source||'arrival source unavailable',report.closeout_evidence.evidence_class||'UNAVAILABLE',report.closeout_evidence]);
-  for(const d of report.telemetry_snapshot?.devices||[])rows.push(['telemetry',d.observed_at||'',d.device_name||'',d.freshness||'UNAVAILABLE',{lat:d.lat,lng:d.lng,speed_kph:d.speed_kph,accuracy_m:d.accuracy_m,source:d.source,freshness_reason:d.freshness_reason}]);
+  const j=report.journey||{},profile=report.client_profile||{};
+  const enabled=new Set(Array.isArray(profile.enabled_sections)?profile.enabled_sections.filter(x=>SECTIONS.includes(x)):SECTIONS);
+  rows.push(['report',report.generated_at||'',report.report_title||'Journey report',report.report_type||'',{report_date:report.report_date,timezone:report.timezone,schema_version:report.schema_version}]);
+  rows.push(['journey',j.created_at||'',j.reference||'Journey',j.status||'',{id:j.id||null}]);
+  if(enabled.has('summary'))rows.push(['journey_summary',j.created_at||'',j.title||'',j.status||'',{purpose:j.purpose,client:j.client_name,convoy:j.convoy_name,origin:j.origin_label,destination:j.destination_label,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,transport_mode:j.transport_mode}]);
+  if(enabled.has('itinerary'))for(const [i,p] of (report.itinerary||[]).entries())rows.push(['route_point',report.generated_at||'',p.name||p.label||('Route point '+(i+1)),'PLANNED',{sequence:i+1,lat:p.lat,lng:p.lng,geometry_source:report.provenance?.planned_itinerary||'UNAVAILABLE'}]);
+  if(enabled.has('stops'))for(const s of report.stops||[])rows.push(['stop',s.confirmed_at||s.planned_arrival_at||'',s.name||'',s.stop_status||'',{sequence:s.sequence,stop_type:s.stop_type,planned_arrival_at:s.planned_arrival_at,actual_lat:s.actual_lat,actual_lng:s.actual_lng,confirmation_source:s.confirmation_source,instructions:s.instructions}]);
+  if(enabled.has('route_assessment')&&report.route_assessment)rows.push(['route_assessment',report.generated_at||'',report.route_assessment.routing_provider||'Route Safety','ANALYSED',{route_status:report.route_assessment.route_status,safety_gate:report.route_assessment.safety_gate,risk_score:report.route_assessment.overall_risk_score,summary:report.route_assessment.ai_summary,risk_factors:report.route_assessment.risk_factors}]);
+  if(enabled.has('operational_events'))for(const e of report.events||[])rows.push(['event',e.created_at||'',e.event_type||'',e.source||'',{summary:e.summary,detail:e.detail}]);
+  if(report.report_type==='pre_trip_brief')for(const x of report.pre_trip_readiness||[])rows.push(['readiness',report.generated_at||'',x.item||'',x.status||'',x.detail||'']);
+  if(report.report_type==='change_notice') {
+    rows.push(['change_event_register',report.generated_at||'','Recorded change activity',report.summary?.change_events_truncated?'TRUNCATED':'COMPLETE',{total:report.summary?.change_event_count??0,included:report.summary?.change_event_count_included??(report.change_events||[]).length}]);
+    for(const e of report.change_events||[])rows.push(['change_event',e.created_at||'',e.event_type||'',e.source||'',{summary:e.summary,detail:e.detail}]);
+  }
+  if(['closeout','final'].includes(report.report_type)&&report.closeout_evidence)rows.push(['closeout_evidence',report.closeout_evidence.closed_at||'',report.closeout_evidence.arrival_verification_source||'arrival source unavailable',report.closeout_evidence.evidence_class||'UNAVAILABLE',report.closeout_evidence]);
+  if(enabled.has('telemetry_snapshot'))for(const d of report.telemetry_snapshot?.devices||[])rows.push(['telemetry',d.observed_at||'',d.device_name||'',d.freshness||'UNAVAILABLE',{lat:d.lat,lng:d.lng,speed_kph:d.speed_kph,accuracy_m:d.accuracy_m,source:d.source,freshness_reason:d.freshness_reason}]);
   return rows.map(r=>r.map(csvCell).join(',')).join('\r\n')+'\r\n';
 }
 
@@ -110,6 +118,13 @@ async function stopsFor(db,org,id) {
 async function eventsFor(db,org,id,limit=200) {
   const r=await db('SELECT id,actor_id,event_type,summary,detail,source,created_at FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 ORDER BY created_at DESC,id DESC LIMIT $3',[org,id,limit]);
   return r.rows;
+}
+
+async function eventsForReport(db,org,id,limit=500) {
+  const r=await db("SELECT id,actor_id,event_type,summary,detail,source,created_at,COUNT(*) OVER()::int AS total_count,COUNT(*) FILTER (WHERE left(event_type,8)='journey_' OR left(event_type,5)='stop_' OR event_type IN ('route_assessed','human_route_review')) OVER()::int AS total_change_count FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 ORDER BY created_at DESC,id DESC LIMIT $3",[org,id,limit]);
+  const total=Number(r.rows[0]?.total_count||0),totalChanges=Number(r.rows[0]?.total_change_count||0);
+  const rows=r.rows.map(({total_count,total_change_count,...row})=>row);
+  return {rows,total,totalChanges,limit};
 }
 async function event(db,j,actor,type,summary,detail={},source='operator') {
   return db('INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,created_at',[j.org_id,j.id,actor||null,type,txt(summary,500),JSON.stringify(detail||{}),source]);
@@ -181,7 +196,7 @@ function reportFocusSections(report) {
   }
   if(type==='change_notice') {
     const changes=report.change_events||[];
-    return [{title:'Recorded change activity',body:(changes.length?changes.slice(0,80).map(e=>(e.created_at||'time not recorded')+' — '+e.event_type+' — '+e.summary+' ['+(e.source||'source unknown')+']').join('\n'):'No route, approval, lifecycle or stop-change event was found in the stored journey event window.')+'\n\nThis notice reports recorded event activity only. It does not infer an unrecorded before/after route difference.'}];
+    return [{title:'Recorded change activity',body:['Total recorded change events: '+(report.summary?.change_event_count??0),'Change events included in this snapshot: '+(report.summary?.change_event_count_included??changes.length),'Change-event list truncated: '+(report.summary?.change_events_truncated?'YES':'NO'),...(changes.length?changes.slice(0,80).map(e=>(e.created_at||'time not recorded')+' — '+e.event_type+' — '+e.summary+' ['+(e.source||'source unknown')+']'):['No route, approval, lifecycle or stop-change event was found in the stored journey event window.']),'','This notice reports recorded event activity only. It does not infer an unrecorded before/after route difference.'].join('\n')}];
   }
   if(type==='closeout'||type==='final') {
     const c=report.closeout_evidence||{};
@@ -198,11 +213,11 @@ function managementSummaryCounts(journeys,aggregate,statusCounts,recentEventCoun
 }
 async function reportSnapshot(db,org,j,type,date) {
   const [stops,events,profile,telemetry]=await Promise.all([
-    stopsFor(db,org,j.id),eventsFor(db,org,j.id,500),
+    stopsFor(db,org,j.id),eventsForReport(db,org,j.id,500),
     j.client_id?db('SELECT report_timezone,report_template FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[org,j.client_id]):Promise.resolve({rows:[]}),
     telemetryFor(db,org,j),
   ]);
-  const p=profile.rows[0]||{},template={...DEFAULT_TEMPLATE,...parseJson(p.report_template,{})},assessment=parseJson(j.route_assessment,null),changes=changeEventsFor(events);
+  const p=profile.rows[0]||{},template={...DEFAULT_TEMPLATE,...parseJson(p.report_template,{})},assessment=parseJson(j.route_assessment,null),eventRows=events.rows,changes=changeEventsFor(eventRows);
   const pendingStops=stops.filter(s=>s.stop_status==='planned').length,reachedStops=stops.filter(s=>s.stop_status==='reached').length,skippedStops=stops.filter(s=>s.stop_status==='skipped').length;
   const title=REPORT_TITLES[type]||'Secure Journey Management Report';
   const closeoutEvidence={closed_at:j.closed_at||null,arrival_verification_source:j.arrival_verification_source||null,arrival_verification_note:j.arrival_verification_note||null,gps_verified:j.arrival_verification_source==='gps',evidence_class:j.arrival_verification_source==='supervisor_attestation'?'SUPERVISOR_ATTESTED_NOT_GPS':j.arrival_verification_source?'SOURCE_RECORDED':'UNAVAILABLE'};
@@ -211,8 +226,8 @@ async function reportSnapshot(db,org,j,type,date) {
     timezone:p.report_timezone||j.timezone||'Africa/Nairobi',
     client_profile:{client_id:j.client_id,client_name:j.client_name||null,template_title:template.title||DEFAULT_TEMPLATE.title,enabled_sections:Array.isArray(template.sections)?template.sections.filter(x=>SECTIONS.includes(x)):SECTIONS},
     journey:{id:j.id,reference:j.reference,title:j.title,purpose:j.purpose,status:j.status,transport_mode:j.transport_mode,client_id:j.client_id,convoy_id:j.convoy_id,origin_label:j.origin_label,origin_lat:j.origin_lat,origin_lng:j.origin_lng,destination_label:j.destination_label,destination_lat:j.destination_lat,destination_lng:j.destination_lng,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,client_name:j.client_name||null,convoy_name:j.convoy_name||null,created_at:j.created_at,approved_at:j.approved_at,started_at:j.started_at,completed_at:j.completed_at,closed_at:j.closed_at,paused_at:j.paused_at,exception_at:j.exception_at,departure_readiness_acknowledgement:j.departure_readiness_acknowledgement||null,human_review_decision:j.human_review_decision||null,human_review_rationale:j.human_review_rationale||null,risk_acknowledgement:j.risk_acknowledgement||null,arrival_verification_source:j.arrival_verification_source||null,arrival_verification_note:j.arrival_verification_note||null},
-    summary:{stop_count:stops.length,reached_stops:reachedStops,skipped_stops:skippedStops,pending_stops:pendingStops,event_count:events.length,change_event_count:changes.length,route_assessment_available:Boolean(assessment),safety_gate:assessment?.safety_gate||'UNAVAILABLE',telemetry_status:telemetry.status},
-    itinerary:parseJson(j.planned_route,[]),stops,events,change_events:changes,route_assessment:assessment,telemetry_snapshot:telemetry,
+    summary:{stop_count:stops.length,reached_stops:reachedStops,skipped_stops:skippedStops,pending_stops:pendingStops,event_count:eventRows.total,event_count_included:eventRows.length,events_truncated:eventRows.total>eventRows.length,change_event_count:eventRows.totalChanges,change_event_count_included:changes.length,change_events_truncated:eventRows.totalChanges>changes.length,route_assessment_available:Boolean(assessment),safety_gate:assessment?.safety_gate||'UNAVAILABLE',telemetry_status:telemetry.status},
+    itinerary:parseJson(j.planned_route,[]),stops,events:eventRows.rows,change_events:changes,route_assessment:assessment,telemetry_snapshot:telemetry,
     pre_trip_readiness:readinessChecklist(j,stops,assessment,telemetry),
     situation:{last_event:events[0]||null,open_stops:pendingStops,telemetry_status:telemetry.status},
     closeout_evidence:closeoutEvidence,
@@ -262,8 +277,7 @@ async function managementSnapshot(db,org,timezone) {
   const aggregateResult=await db("SELECT COUNT(*)::int AS total_journeys,COUNT(*) FILTER (WHERE status NOT IN ('closed','cancelled','aborted'))::int AS open_journeys,COUNT(*) FILTER (WHERE status IN ('in_progress','paused','exception','arrival_pending_verification'))::int AS active_controlled_journeys,COUNT(*) FILTER (WHERE status IN ('requested','planning','assessment_pending'))::int AS planning_queue,COUNT(*) FILTER (WHERE status='ready_for_review')::int AS approval_queue,COUNT(*) FILTER (WHERE status IN ('paused','exception','on_hold'))::int AS paused_exception_or_hold,COUNT(*) FILTER (WHERE status='arrival_pending_verification')::int AS arrival_pending_verification,COUNT(*) FILTER (WHERE planned_arrival_at IS NOT NULL AND planned_arrival_at<NOW() AND status NOT IN ('closed','cancelled','aborted'))::int AS overdue_journeys,COUNT(*) FILTER (WHERE CASE WHEN jsonb_typeof(route_assessment)='object' THEN (route_assessment->>'safety_gate' IN ('HUMAN_REVIEW','NO_GO') OR route_assessment->>'route_status'='blocked') ELSE FALSE END)::int AS route_review_required FROM sjm_journeys WHERE org_id=$1 AND deleted_at IS NULL",[org]);
   const statusResult=await db('SELECT status,COUNT(*)::int AS count FROM sjm_journeys WHERE org_id=$1 AND deleted_at IS NULL GROUP BY status',[org]);
   const journeyResult=await db('SELECT j.id,j.reference,j.title,j.status,j.client_id,j.convoy_id,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.approved_at,j.started_at,j.closed_at,j.updated_at,j.created_at,j.route_assessment,c.name AS client_name,v.name AS convoy_name FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL ORDER BY COALESCE(j.updated_at,j.created_at) DESC LIMIT 500',[org]);
-  const eventCountResult=await db("SELECT COUNT(*)::int AS count FROM sjm_journey_events e JOIN sjm_journeys j ON j.id=e.journey_id AND j.org_id=e.org_id WHERE e.org_id=$1 AND e.created_at>=NOW()-INTERVAL '24 hours' AND j.deleted_at IS NULL",[org]);
-  const eventResult=await db("SELECT e.id,e.journey_id,e.event_type,e.summary,e.detail,e.source,e.created_at,j.reference AS journey_reference,j.title AS journey_title FROM sjm_journey_events e JOIN sjm_journeys j ON j.id=e.journey_id AND j.org_id=e.org_id WHERE e.org_id=$1 AND e.created_at>=NOW()-INTERVAL '24 hours' AND j.deleted_at IS NULL ORDER BY e.created_at DESC,e.id DESC LIMIT 250",[org]);
+  const eventResult=await db("SELECT e.id,e.journey_id,e.event_type,e.summary,e.detail,e.source,e.created_at,j.reference AS journey_reference,j.title AS journey_title,COUNT(*) OVER()::int AS total_count FROM sjm_journey_events e JOIN sjm_journeys j ON j.id=e.journey_id AND j.org_id=e.org_id WHERE e.org_id=$1 AND e.created_at>=NOW()-INTERVAL '24 hours' AND j.deleted_at IS NULL ORDER BY e.created_at DESC,e.id DESC LIMIT 250",[org]);
   const telemetryResult=await db("SELECT cc.convoy_id,d.id AS device_id,d.name AS device_name,fo.name AS officer_name,fix.lat,fix.lng,fix.speed AS speed_kph,fix.accuracy AS accuracy_m,fix.observed_at,fix.source FROM convoy_cfos cc JOIN guardian_devices d ON d.id=cc.guardian_device_id LEFT JOIN field_officers fo ON fo.device_id=d.id LEFT JOIN LATERAL (SELECT lat,lng,speed,accuracy,timestamp AS observed_at,'device_locations'::text AS source FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC,id DESC LIMIT 1) fix ON true WHERE cc.org_id=$1 AND cc.convoy_id IN (SELECT DISTINCT convoy_id FROM sjm_journeys WHERE org_id=$1 AND deleted_at IS NULL AND convoy_id IS NOT NULL) AND d.deleted_at IS NULL ORDER BY cc.convoy_id,d.name",[org]);
   const telemetryByConvoy=new Map();
   for(const d of telemetryResult.rows) {
@@ -278,8 +292,8 @@ async function managementSnapshot(db,org,timezone) {
   });
   const statusCounts=Object.fromEntries(STATUSES.map(s=>[s,0]));
   for(const row of statusResult.rows)statusCounts[row.status]=Number(row.count||0);
-  const aggregate=aggregateResult.rows[0]||{},recentEvents=eventResult.rows.map(e=>({...e,detail:parseJson(e.detail,{})}));
-  const summary=managementSummaryCounts(journeys,aggregate,statusCounts,Number(eventCountResult.rows[0]?.count||0),recentEvents.length);
+  const aggregate=aggregateResult.rows[0]||{},recentEvents=eventResult.rows.map(({total_count,...e})=>({...e,detail:parseJson(e.detail,{})})),recentEventTotal=Number(eventResult.rows[0]?.total_count||0);
+  const summary=managementSummaryCounts(journeys,aggregate,statusCounts,recentEventTotal,recentEvents.length);
   return {schema_version:'sonalit.sjm.management-report.v1',report_type:'management_summary',report_title:REPORT_TITLES.management_summary,report_date:date,generated_at:generatedAt,timezone,client_profile:{client_id:null,client_name:null,template_title:REPORT_TITLES.management_summary,enabled_sections:SECTIONS},journey:null,summary,journeys,recent_events:recentEvents,data_scope:{tenant_scoped:true,total_journeys:Number(aggregate.total_journeys||0),journey_records_included:journeys.length,journey_register_complete:Number(aggregate.total_journeys||0)<=journeys.length,journey_register_limit:500,recent_events_window:'last_24_hours',recent_events_limit:250,telemetry_scope:'Included journey register only; each fix comes from device_locations.'},provenance:{journeys:'Tenant-scoped sjm_journeys joined to same-tenant cargo_clients and convoys',recent_events:'Tenant-scoped sjm_journey_events from the preceding 24 hours',telemetry:'Latest device_locations fixes for devices linked to convoys referenced by SJM journeys',eta_inferred:false,fabricated_data_used:false}};
 }
 
@@ -526,4 +540,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,freshnessFor,readinessChecklist,changeEventsFor,managementSummaryCounts};
+module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,freshnessFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport};

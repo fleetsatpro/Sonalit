@@ -140,6 +140,37 @@ describe('SJM validation and evidence boundaries', () => {
     expect(summary.recent_events_truncated).toBe(true);
   });
 
+
+  test('report CSV respects client section policy for optional stop, event and telemetry evidence', () => {
+    const csv=toCsv({
+      report_type:'daily',report_title:'Daily Travel Report',report_date:'2026-10-27',generated_at:'2026-10-27T15:00:00Z',
+      client_profile:{enabled_sections:['summary']},
+      journey:{id:'j1',reference:'SJM-1',title:'Restricted movement',purpose:'client private purpose',status:'in_progress',origin_label:'Private origin',destination_label:'Private destination'},
+      itinerary:[{name:'Hidden route point',lat:-1.2,lng:36.8}],
+      stops:[{id:'s1',name:'Private checkpoint',stop_status:'planned',instructions:'Secret checkpoint notes'}],
+      events:[{id:'e1',event_type:'incident',summary:'Sensitive event summary',source:'operator',detail:{note:'Private notes'}}],
+      route_assessment:{route_status:'routed',safety_gate:'GO',ai_summary:'Private safety narrative'},
+      telemetry_snapshot:{status:'LIVE',devices:[{device_name:'Private device',freshness:'LIVE',lat:-1.2,lng:36.8}]},
+      summary:{stop_count:1,event_count:1,safety_gate:'GO',telemetry_status:'LIVE'}
+    });
+    expect(csv).toContain('client private purpose');
+    expect(csv).not.toContain('Private checkpoint');
+    expect(csv).not.toContain('Sensitive event summary');
+    expect(csv).not.toContain('Private safety narrative');
+    expect(csv).not.toContain('Private device');
+    expect(csv).not.toContain('Hidden route point');
+  });
+  test('report event query returns exact totals and flags truncated history separately from included rows', async () => {
+    const sqlCalls=[];
+    const db=async(sql,params)=>{sqlCalls.push({sql,params});return {rows:[{id:'e1',event_type:'journey_pause',summary:'paused',total_count:501,total_change_count:400}]};};
+    const result=await eventsForReport(db,'org-1','journey-1',500);
+    expect(result.total).toBe(501);
+    expect(result.totalChanges).toBe(400);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].total_count).toBeUndefined();
+    expect(sqlCalls[0].sql).toMatch(/COUNT\(\*\) OVER\(\)/);
+  });
+
   test('escapes CSV values', () => {
     const csv=toCsv({journey:{reference:'SJM-1',title:'A, B',status:'planned'},stops:[],events:[],telemetry_snapshot:{devices:[]}});
     expect(csv).toContain('"A, B"'); expect(csv).toContain('record_type,timestamp,label,status,details');
