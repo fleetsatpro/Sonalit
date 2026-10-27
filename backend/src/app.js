@@ -575,6 +575,16 @@ try {
   logger.info("Sync retention scheduled (daily 03:40 UTC)");
 } catch (e) { logger.warn("Sync retention cron not started: " + e.message); }
 
+// SJM scheduled report generation is opt-in and generation-only. The allowlist is
+// explicit because this legacy backend has no authoritative organisation registry;
+// discovering tenants via global business-table queries would breach RLS boundaries.
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test') {
+  try {
+    const { startSjmDailyReportScheduler } = require('./services/sjmDailyReportScheduler');
+    startSjmDailyReportScheduler({isActive:()=>!isStandbyRuntime&&isFenceActive()});
+  } catch (e) { logger.warn('SJM scheduled report generation not started: '+e.message); }
+}
+
 // CDS Operations Intelligence: Groq/Llama scans live operational data every 15 min
 // and writes alerts for overdue trips, stalled bookings, capacity gaps, etc.
 if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')

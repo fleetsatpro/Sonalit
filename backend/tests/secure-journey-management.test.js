@@ -1,7 +1,8 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, toCsv, lifecycleTransition } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, toCsv, lifecycleTransition, dailyReportSchedulerAvailable } = sjmRouter.__test;
+const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('authenticates requests before the tenant-scope guard', () => {
     const authIndex = sjmRouter.stack.findIndex(layer => layer.handle === authenticate);
@@ -10,6 +11,16 @@ describe('SJM validation and evidence boundaries', () => {
     expect(firstRouteIndex).toBeGreaterThan(authIndex);
   });
   const valid = { title:'Nairobi to Mombasa security movement', purpose:'Client-approved escorted road movement', origin_label:'Nairobi', origin_lat:-1.286389, origin_lng:36.817223, destination_label:'Mombasa', destination_lat:-4.043477, destination_lng:39.668206, planned_departure_at:'2026-10-28T06:00:00+03:00', planned_arrival_at:'2026-10-28T16:00:00+03:00', transport_mode:'road', stops:[{name:'Voi checkpoint',stop_type:'checkpoint',lat:-3.396,lng:38.556}] };
+  test('keeps daily report generation tenant-allowlisted and respects client-local time', () => {
+    const org='12345678-1234-4234-8234-123456789abc';
+    expect(configuredOrgIds('')).toEqual([]);
+    expect(configuredOrgIds(' '+org.toUpperCase()+', '+org+' ')).toEqual([org]);
+    expect(()=>configuredOrgIds('not-a-uuid')).toThrow(/invalid UUID/);
+    expect(dailyReportSchedulerAvailable(org)).toBe(configuredOrgIds().includes(org));
+    expect(shouldGenerateForToday(new Date('2026-10-27T14:59:00Z'),'18:00','Africa/Nairobi')).toBe(false);
+    expect(shouldGenerateForToday(new Date('2026-10-27T15:00:00Z'),'18:00','Africa/Nairobi')).toBe(true);
+    expect(shouldGenerateForToday(new Date('2026-10-27T15:00:00Z'),'18:00','Mars/Nowhere')).toBe(false);
+  });
   test('defines the expanded lifecycle and refuses unsafe shortcuts', () => {
     expect(lifecycleTransition('approved','ready_to_depart')?.to).toBe('ready_to_depart');
     expect(lifecycleTransition('ready_to_depart','start')?.to).toBe('in_progress');
