@@ -121,13 +121,23 @@ describe('SJM validation and evidence boundaries', () => {
   test('summarises tenant aggregates without overstating telemetry coverage', () => {
     const summary=managementSummaryCounts([{telemetry_status:'LIVE'},{telemetry_status:'STALE'},{telemetry_status:'UNAVAILABLE'}],
       {total_journeys:12,open_journeys:9,active_controlled_journeys:4,planning_queue:2,approval_queue:1,paused_exception_or_hold:3,arrival_pending_verification:1,overdue_journeys:2,route_review_required:1},
-      {requested:2,in_progress:4,closed:3},5);
+      {requested:2,in_progress:4,closed:3},905,250);
     expect(summary.total_journeys).toBe(12);
     expect(summary.open_journeys).toBe(9);
     expect(summary.status_counts.closed).toBe(3);
     expect(summary.telemetry_status_counts).toEqual({LIVE:1,DELAYED:0,STALE:1,UNAVAILABLE:1});
     expect(summary.telemetry_journey_sample_count).toBe(3);
-    expect(summary.recent_events_last_24h).toBe(5);
+    expect(summary.recent_events_last_24h).toBe(905);
+    expect(summary.recent_events_included).toBe(250);
+    expect(summary.recent_events_truncated).toBe(true);
+  });
+
+
+  test('management event totals remain exact when the displayed event list is capped', () => {
+    const summary=managementSummaryCounts([], {total_journeys:0}, {}, 905, 250);
+    expect(summary.recent_events_last_24h).toBe(905);
+    expect(summary.recent_events_included).toBe(250);
+    expect(summary.recent_events_truncated).toBe(true);
   });
 
   test('escapes CSV values', () => {

@@ -190,11 +190,11 @@ function reportFocusSections(report) {
   if(type==='itinerary')return [{title:'Itinerary evidence status',body:['Route status: '+((report.route_assessment||{}).route_status||'UNAVAILABLE'),'Route Safety gate: '+(s.safety_gate||'UNAVAILABLE'),'Stored route points: '+((report.itinerary||[]).length),'Ordered stops: '+((report.stops||[]).length),'Geometry source: '+(report.provenance?.planned_itinerary||'UNAVAILABLE')].join('\n')}];
   return [];
 }
-function managementSummaryCounts(journeys,aggregate,statusCounts,recentEventCount) {
+function managementSummaryCounts(journeys,aggregate,statusCounts,recentEventCount,recentEventsIncluded=recentEventCount) {
   const telemetryCounts={LIVE:0,DELAYED:0,STALE:0,UNAVAILABLE:0};
   (journeys||[]).forEach(j=>{const k=telemetryCounts[j.telemetry_status]!=null?j.telemetry_status:'UNAVAILABLE';telemetryCounts[k]++;});
   const a=aggregate||{};
-  return {total_journeys:Number(a.total_journeys||0),open_journeys:Number(a.open_journeys||0),active_controlled_journeys:Number(a.active_controlled_journeys||0),planning_queue:Number(a.planning_queue||0),approval_queue:Number(a.approval_queue||0),paused_exception_or_hold:Number(a.paused_exception_or_hold||0),arrival_pending_verification:Number(a.arrival_pending_verification||0),overdue_journeys:Number(a.overdue_journeys||0),route_review_required:Number(a.route_review_required||0),status_counts:statusCounts||{},recent_events_last_24h:Number(recentEventCount||0),telemetry_status_counts:telemetryCounts,telemetry_journey_sample_count:(journeys||[]).length};
+  return {total_journeys:Number(a.total_journeys||0),open_journeys:Number(a.open_journeys||0),active_controlled_journeys:Number(a.active_controlled_journeys||0),planning_queue:Number(a.planning_queue||0),approval_queue:Number(a.approval_queue||0),paused_exception_or_hold:Number(a.paused_exception_or_hold||0),arrival_pending_verification:Number(a.arrival_pending_verification||0),overdue_journeys:Number(a.overdue_journeys||0),route_review_required:Number(a.route_review_required||0),status_counts:statusCounts||{},recent_events_last_24h:Number(recentEventCount||0),recent_events_included:Number(recentEventsIncluded||0),recent_events_truncated:Number(recentEventsIncluded||0)<Number(recentEventCount||0),telemetry_status_counts:telemetryCounts,telemetry_journey_sample_count:(journeys||[]).length};
 }
 async function reportSnapshot(db,org,j,type,date) {
   const [stops,events,profile,telemetry]=await Promise.all([
@@ -233,7 +233,7 @@ function renderPdf(doc,r) {
   const evidenceNote=()=>{if(doc.y>700)doc.addPage();doc.moveDown(.5);doc.fillColor('#64748b').font('Helvetica').fontSize(7).text('Evidence note: PLANNED, ANALYSED, OBSERVED and OPERATOR_CONFIRMED data are separated. Operator confirmation is not GPS proof. Future-dated device fixes are not treated as LIVE.',42,doc.y,{width:510});};
   if(type==='management_summary') {
     const s=r.summary||{},counts=s.status_counts||{},scope=r.data_scope||{};
-    section('Portfolio overview',['Tenant-scoped journeys: '+(s.total_journeys??0),'Open journeys: '+(s.open_journeys??0),'Active / controlled movements: '+(s.active_controlled_journeys??0),'Planning queue: '+(s.planning_queue??0),'Awaiting approval: '+(s.approval_queue??0),'Paused / exception / on hold: '+(s.paused_exception_or_hold??0),'Awaiting arrival verification: '+(s.arrival_pending_verification??0),'Overdue planned arrivals: '+(s.overdue_journeys??0),'Route review required: '+(s.route_review_required??0),'Recorded events in preceding 24 hours: '+(s.recent_events_last_24h??0)].join('\n'));
+    section('Portfolio overview',['Tenant-scoped journeys: '+(s.total_journeys??0),'Open journeys: '+(s.open_journeys??0),'Active / controlled movements: '+(s.active_controlled_journeys??0),'Planning queue: '+(s.planning_queue??0),'Awaiting approval: '+(s.approval_queue??0),'Paused / exception / on hold: '+(s.paused_exception_or_hold??0),'Awaiting arrival verification: '+(s.arrival_pending_verification??0),'Overdue planned arrivals: '+(s.overdue_journeys??0),'Route review required: '+(s.route_review_required??0),'Recorded events in preceding 24 hours: '+(s.recent_events_last_24h??0),'Event rows included in snapshot: '+(s.recent_events_included??0),'Event list truncated: '+(s.recent_events_truncated?'YES — capped at 250 rows':'NO')].join('\n'));
     section('Journey status distribution',Object.entries(counts).filter(([,n])=>Number(n)>0).map(([k,n])=>k+': '+n).join('\n')||'No journeys are recorded in this tenant.');
     const attention=(r.journeys||[]).filter(x=>x.overdue||x.route_review_required||['paused','exception','on_hold','arrival_pending_verification'].includes(x.status));
     section('Attention queue',attention.slice(0,100).map(x=>x.reference+' — '+x.status+' — '+x.origin_label+' to '+x.destination_label+' — client '+(x.client_name||'not linked')+' — route gate '+x.safety_gate+' — telemetry '+x.telemetry_status+(x.overdue?' — OVERDUE':'')).join('\n')||'No attention items were found in the included journey register.');
@@ -262,6 +262,7 @@ async function managementSnapshot(db,org,timezone) {
   const aggregateResult=await db("SELECT COUNT(*)::int AS total_journeys,COUNT(*) FILTER (WHERE status NOT IN ('closed','cancelled','aborted'))::int AS open_journeys,COUNT(*) FILTER (WHERE status IN ('in_progress','paused','exception','arrival_pending_verification'))::int AS active_controlled_journeys,COUNT(*) FILTER (WHERE status IN ('requested','planning','assessment_pending'))::int AS planning_queue,COUNT(*) FILTER (WHERE status='ready_for_review')::int AS approval_queue,COUNT(*) FILTER (WHERE status IN ('paused','exception','on_hold'))::int AS paused_exception_or_hold,COUNT(*) FILTER (WHERE status='arrival_pending_verification')::int AS arrival_pending_verification,COUNT(*) FILTER (WHERE planned_arrival_at IS NOT NULL AND planned_arrival_at<NOW() AND status NOT IN ('closed','cancelled','aborted'))::int AS overdue_journeys,COUNT(*) FILTER (WHERE CASE WHEN jsonb_typeof(route_assessment)='object' THEN (route_assessment->>'safety_gate' IN ('HUMAN_REVIEW','NO_GO') OR route_assessment->>'route_status'='blocked') ELSE FALSE END)::int AS route_review_required FROM sjm_journeys WHERE org_id=$1 AND deleted_at IS NULL",[org]);
   const statusResult=await db('SELECT status,COUNT(*)::int AS count FROM sjm_journeys WHERE org_id=$1 AND deleted_at IS NULL GROUP BY status',[org]);
   const journeyResult=await db('SELECT j.id,j.reference,j.title,j.status,j.client_id,j.convoy_id,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.approved_at,j.started_at,j.closed_at,j.updated_at,j.created_at,j.route_assessment,c.name AS client_name,v.name AS convoy_name FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL ORDER BY COALESCE(j.updated_at,j.created_at) DESC LIMIT 500',[org]);
+  const eventCountResult=await db("SELECT COUNT(*)::int AS count FROM sjm_journey_events e JOIN sjm_journeys j ON j.id=e.journey_id AND j.org_id=e.org_id WHERE e.org_id=$1 AND e.created_at>=NOW()-INTERVAL '24 hours' AND j.deleted_at IS NULL",[org]);
   const eventResult=await db("SELECT e.id,e.journey_id,e.event_type,e.summary,e.detail,e.source,e.created_at,j.reference AS journey_reference,j.title AS journey_title FROM sjm_journey_events e JOIN sjm_journeys j ON j.id=e.journey_id AND j.org_id=e.org_id WHERE e.org_id=$1 AND e.created_at>=NOW()-INTERVAL '24 hours' AND j.deleted_at IS NULL ORDER BY e.created_at DESC,e.id DESC LIMIT 250",[org]);
   const telemetryResult=await db("SELECT cc.convoy_id,d.id AS device_id,d.name AS device_name,fo.name AS officer_name,fix.lat,fix.lng,fix.speed AS speed_kph,fix.accuracy AS accuracy_m,fix.observed_at,fix.source FROM convoy_cfos cc JOIN guardian_devices d ON d.id=cc.guardian_device_id LEFT JOIN field_officers fo ON fo.device_id=d.id LEFT JOIN LATERAL (SELECT lat,lng,speed,accuracy,timestamp AS observed_at,'device_locations'::text AS source FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC,id DESC LIMIT 1) fix ON true WHERE cc.org_id=$1 AND cc.convoy_id IN (SELECT DISTINCT convoy_id FROM sjm_journeys WHERE org_id=$1 AND deleted_at IS NULL AND convoy_id IS NOT NULL) AND d.deleted_at IS NULL ORDER BY cc.convoy_id,d.name",[org]);
   const telemetryByConvoy=new Map();
@@ -278,7 +279,7 @@ async function managementSnapshot(db,org,timezone) {
   const statusCounts=Object.fromEntries(STATUSES.map(s=>[s,0]));
   for(const row of statusResult.rows)statusCounts[row.status]=Number(row.count||0);
   const aggregate=aggregateResult.rows[0]||{},recentEvents=eventResult.rows.map(e=>({...e,detail:parseJson(e.detail,{})}));
-  const summary=managementSummaryCounts(journeys,aggregate,statusCounts,recentEvents.length);
+  const summary=managementSummaryCounts(journeys,aggregate,statusCounts,Number(eventCountResult.rows[0]?.count||0),recentEvents.length);
   return {schema_version:'sonalit.sjm.management-report.v1',report_type:'management_summary',report_title:REPORT_TITLES.management_summary,report_date:date,generated_at:generatedAt,timezone,client_profile:{client_id:null,client_name:null,template_title:REPORT_TITLES.management_summary,enabled_sections:SECTIONS},journey:null,summary,journeys,recent_events:recentEvents,data_scope:{tenant_scoped:true,total_journeys:Number(aggregate.total_journeys||0),journey_records_included:journeys.length,journey_register_complete:Number(aggregate.total_journeys||0)<=journeys.length,journey_register_limit:500,recent_events_window:'last_24_hours',recent_events_limit:250,telemetry_scope:'Included journey register only; each fix comes from device_locations.'},provenance:{journeys:'Tenant-scoped sjm_journeys joined to same-tenant cargo_clients and convoys',recent_events:'Tenant-scoped sjm_journey_events from the preceding 24 hours',telemetry:'Latest device_locations fixes for devices linked to convoys referenced by SJM journeys',eta_inferred:false,fabricated_data_used:false}};
 }
 
@@ -485,17 +486,29 @@ router.post('/journeys/:id/events',authorize('admin','dispatcher','operator'),as
   const r=await event(req.db,j,req.user.id,type,summary,detail,'operator');res.status(201).json({data:{id:r.rows[0].id,created_at:r.rows[0].created_at,event_type:type,summary,detail,source:'operator'}});
 }));
 router.post('/journeys/:id/reports',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
-  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
-  const type=req.body?.report_type||'daily';if(!REPORT_TYPES.includes(type))return res.status(400).json({error:'invalid_report_type',allowed:REPORT_TYPES});
-  if(type==='closeout'&&j.status!=='closed')return res.status(409).json({error:'closeout_requires_closed_journey',message:'Generate a closeout report only after the journey has been closed with its required arrival attestation.'});
+  const org=req.user.org_id,jid=req.params.id,type=req.body?.report_type||'daily';
+  if(!/^[0-9a-f-]{36}$/i.test(String(jid)))return res.status(400).json({error:'invalid_journey_id'});
+  if(!REPORT_TYPES.includes(type))return res.status(400).json({error:'invalid_report_type',allowed:REPORT_TYPES});
   if(req.body?.report_date!=null&&!validDateOnly(req.body.report_date))return res.status(400).json({error:'invalid_report_date',message:'report_date must be a real calendar date in YYYY-MM-DD format.'});
-  const p=j.client_id?await req.db('SELECT report_timezone FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[org,j.client_id]):{rows:[]};
-  const timezone=p.rows[0]?.report_timezone||j.timezone||'Africa/Nairobi',date=req.body?.report_date||dateInTimezone(new Date(),timezone);
-  const snapshot=await reportSnapshot(req.db,org,j,type,date);
-  const write=await mutateWithEvent(req,j,req.user.id,'report_generated','SJM '+type+' report generated',row=>({report_id:row.id,report_date:date,schema_version:snapshot.schema_version}),'operator',
-    db=>db('INSERT INTO sjm_reports (org_id,journey_id,report_type,report_date,schema_version,data,generated_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,journey_id,report_type,report_date,generated_at',[org,j.id,type,date,snapshot.schema_version,JSON.stringify(snapshot),req.user.id]));
-  if(!write.changed)return res.status(409).json({error:'report_not_persisted'});
-  res.status(201).json({data:write.result.rows[0],snapshot});
+  const result=await req.dbTx(async c=>{
+    const db=(sql,params)=>c.query(sql,params);
+    await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',[jid,org]);
+    const j=await journeyById(db,org,jid);
+    if(!j)return {error:'journey_not_found'};
+    if(type==='closeout'&&j.status!=='closed')return {error:'closeout_requires_closed_journey'};
+    await db('SELECT id FROM sjm_journey_stops WHERE org_id=$1 AND journey_id=$2 FOR SHARE',[org,j.id]);
+    const p=j.client_id?await db('SELECT report_timezone FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[org,j.client_id]):{rows:[]};
+    const timezone=p.rows[0]?.report_timezone||j.timezone||'Africa/Nairobi';
+    const date=req.body?.report_date||dateInTimezone(new Date(),timezone);
+    const snapshot=await reportSnapshot(db,org,j,type,date);
+    const write=await db('INSERT INTO sjm_reports (org_id,journey_id,report_type,report_date,schema_version,data,generated_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,journey_id,report_type,report_date,generated_at',[org,j.id,type,date,snapshot.schema_version,JSON.stringify(snapshot),req.user.id]);
+    const row=write.rows[0];
+    await event(db,j,req.user.id,'report_generated','SJM '+type+' report generated',{report_id:row.id,report_date:date,schema_version:snapshot.schema_version},'operator');
+    return {data:row,snapshot};
+  });
+  if(result.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
+  if(result.error==='closeout_requires_closed_journey')return res.status(409).json({error:result.error,message:'Generate a closeout report only after the journey has been closed with its required arrival attestation.'});
+  res.status(201).json({data:result.data,snapshot:result.snapshot});
 }));
 router.get('/reports/:reportId',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const r=await req.db('SELECT id,journey_id,report_type,report_date,schema_version,data,generated_at FROM sjm_reports WHERE id=$1 AND org_id=$2 LIMIT 1',[req.params.reportId,req.user.org_id]);
