@@ -6715,6 +6715,170 @@
           }
         }
       }
+    },
+    "/api/v1/sjm/clients": {
+      "get": {
+        "operationId": "get_api_v1_sjm_clients",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/convoys": {
+      "get": {
+        "operationId": "get_api_v1_sjm_convoys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/client-profiles/{clientId}": {
+      "get": {
+        "operationId": "get_api_v1_sjm_client_profiles_clientId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_sjm_client_profiles_clientId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/plan": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_plan",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/review": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_review",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/approve": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_approve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/lifecycle": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_lifecycle",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/stops/{stopId}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id_stops_stopId_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/events": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/reports": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_reports",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/reports/{reportId}": {
+      "get": {
+        "operationId": "get_api_v1_sjm_reports_reportId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/reports/{reportId}/download": {
+      "get": {
+        "operationId": "get_api_v1_sjm_reports_reportId_download",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
