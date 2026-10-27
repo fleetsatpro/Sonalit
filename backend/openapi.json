@@ -6879,6 +6879,16 @@
           }
         }
       }
+    },
+    "/api/v1/sjm/management-summary": {
+      "post": {
+        "operationId": "post_api_v1_sjm_management_summary",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

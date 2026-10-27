@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('authenticates requests before the tenant-scope guard', () => {
@@ -85,8 +85,54 @@ describe('SJM validation and evidence boundaries', () => {
     expect(approvalGate({route_status:'routed',safety_gate:'GO'},null,null).ok).toBe(true);
     expect(dateInTimezone(new Date('2026-10-27T22:30:00Z'),'Africa/Nairobi')).toBe('2026-10-28');
   });
+
+  test('supports distinct report types and a separate portfolio summary', () => {
+    expect(REPORT_TYPES).toEqual(['itinerary','pre_trip_brief','daily','sitrep','change_notice','closeout','final']);
+    expect(REPORT_TITLES.sitrep).toMatch(/Situation Report/);
+    expect(REPORT_TITLES.management_summary).toMatch(/Portfolio Summary/);
+  });
+  test('rejects impossible calendar dates', () => {
+    expect(validDateOnly('2026-10-27')).toBe(true);
+    expect(validDateOnly('2026-02-31')).toBe(false);
+    expect(validDateOnly('27-10-2026')).toBe(false);
+  });
+  test('never classifies a future-dated device fix as LIVE', () => {
+    const now=Date.parse('2026-10-27T15:00:00Z');
+    expect(freshnessFor('2026-10-27T14:59:59Z',now)).toBe('LIVE');
+    expect(freshnessFor('2026-10-27T14:50:00Z',now)).toBe('STALE');
+    expect(freshnessFor('2026-10-27T15:01:00Z',now)).toBe('UNAVAILABLE');
+    expect(freshnessFor(null,now)).toBe('UNAVAILABLE');
+  });
+  test('reports unknown pre-trip evidence as pending/unavailable rather than verified', () => {
+    const checklist=readinessChecklist({status:'requested',approved_at:null,convoy_id:null,departure_readiness_acknowledgement:null},[],null,{status:'UNAVAILABLE',reason:'No convoy linked.'});
+    expect(checklist.find(x=>x.item==='Stored Route Safety assessment').status).toBe('UNAVAILABLE');
+    expect(checklist.find(x=>x.item==='Journey approval').status).toBe('PENDING');
+    expect(checklist.find(x=>x.item==='Convoy linkage').status).toBe('NOT_LINKED');
+    expect(checklist.find(x=>x.item==='Convoy device telemetry').status).toBe('UNAVAILABLE');
+  });
+  test('selects only recorded route, approval, lifecycle and stop events for change notices', () => {
+    const selected=changeEventsFor([{event_type:'operator_note'},{event_type:'route_assessed'},{event_type:'journey_pause'},{event_type:'stop_reached'}]);
+    expect(selected.map(x=>x.event_type)).toEqual(['route_assessed','journey_pause','stop_reached']);
+  });
+  test('CSV exports defend against spreadsheet formula injection', () => {
+    expect(csvCell('=1+1')).toBe("'=1+1");
+    expect(csvCell('-12.5')).toBe('-12.5');
+  });
+  test('summarises tenant aggregates without overstating telemetry coverage', () => {
+    const summary=managementSummaryCounts([{telemetry_status:'LIVE'},{telemetry_status:'STALE'},{telemetry_status:'UNAVAILABLE'}],
+      {total_journeys:12,open_journeys:9,active_controlled_journeys:4,planning_queue:2,approval_queue:1,paused_exception_or_hold:3,arrival_pending_verification:1,overdue_journeys:2,route_review_required:1},
+      {requested:2,in_progress:4,closed:3},5);
+    expect(summary.total_journeys).toBe(12);
+    expect(summary.open_journeys).toBe(9);
+    expect(summary.status_counts.closed).toBe(3);
+    expect(summary.telemetry_status_counts).toEqual({LIVE:1,DELAYED:0,STALE:1,UNAVAILABLE:1});
+    expect(summary.telemetry_journey_sample_count).toBe(3);
+    expect(summary.recent_events_last_24h).toBe(5);
+  });
+
   test('escapes CSV values', () => {
     const csv=toCsv({journey:{reference:'SJM-1',title:'A, B',status:'planned'},stops:[],events:[],telemetry_snapshot:{devices:[]}});
     expect(csv).toContain('"A, B"'); expect(csv).toContain('record_type,timestamp,label,status,details');
+    expect(csvCell('=1+1')).toBe("'=1+1");
   });
 });
