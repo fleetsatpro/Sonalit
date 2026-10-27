@@ -241,6 +241,10 @@ app.get("/metrics", requireMetricsAuth, async (req, res) => {
   "fuel", "shifts", "traffic", "spatial", "satellites", "cctv"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
+// Secure Journey Management: tenant-scoped itinerary, safety gates and reports.
+try { app.use("/api/v1/sjm", require("./routes/secureJourneyManagement")); logger.info("Route loaded: /api/v1/sjm"); }
+catch (e) { logger.warn("Secure Journey Management route failed: " + e.message); }
+
 // 4D-geofence corridor writes: POST /api/v1/convoys/:id/corridor (the "Plan
 // corridor" button) and GET /api/v1/convoys/:id/corridor/deviations. This router
 // was written but never mounted, so planning a corridor 404'd. It MUST stay
