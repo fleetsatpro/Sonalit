@@ -6,7 +6,7 @@ const studio=readFileSync(new URL('./IntelligencePublicationTemplateStudio.tsx',
 const template=readFileSync(new URL('../templates/intelligence-publication-template.html',import.meta.url),'utf8');
 describe('Intel Hub publication template studio integration',()=>{
  it('launches in the governed publication desk with lazy loading',()=>{expect(desk).toContain("lazy(() => import('./IntelligencePublicationTemplateStudio.tsx'))");expect(desk).toContain('OPEN TEMPLATE STUDIO');expect(desk).toContain('USE PUBLICATION TEMPLATE')});
- it('isolates the editor and accepts only parent-window imports',()=>{expect(studio).toContain('sandbox="allow-scripts allow-downloads allow-modals"');expect(template).toContain('event.source!==window.parent');expect(template).toContain("message.type!=='SONALIT_TEMPLATE_IMPORT_V1'");expect(template).toContain('el.textContent=value')});
+ it('isolates the editor and accepts only parent-window imports',()=>{expect(studio).toContain('sandbox="allow-scripts allow-downloads allow-modals"');expect(template).toContain('event.source!==window.parent');expect(template).toContain("message.type!=='SONALIT_TEMPLATE_IMPORT_V1'");expect(template).toContain('el.textContent=value');expect(template).toContain("if(fam==='weekly'){");expect(template).toContain("if(fam==='monthly'){");expect(template).toContain("if(fam==='trends'){");expect(template).toContain('NO COMPATIBLE TEMPLATE FAMILY')});
  it('never turns the local authoring preview into an official release',()=>{expect(studio).toContain('does not update the publication record');expect(studio).toContain('official PDF');expect(template).toContain('TEMPLATE STUDIO PREVIEW · NOT AN OFFICIAL RELEASE');expect(template).toContain('markPreflightStale()');expect(studio).not.toContain('api.post(');expect(studio).not.toContain('api.patch(')});
 });
 
@@ -42,5 +42,24 @@ describe('publication record mapping',()=>{
   expect(payload?.severityCounts).toEqual({});
   expect(payload?.references).toEqual([]);
   expect(payload?.incidents).toEqual([]);
+ });
+});
+
+describe('publication family compatibility',()=>{
+ it('does not relabel daily publications as a weekly report',()=>{
+  const payload=buildTemplatePayload({
+   id:'daily-123',status:'draft',publication_type:'daily',country_code:'KE',
+   body:{collection_basis:{full_period_event_count:12,basis:'Recorded daily event ledger'},threat_posture:{level:'HIGH',counts:{critical:2}},incident_dossiers:[{event_id:'evt-daily',headline:'Daily development'}]}
+  });
+  expect(payload?.family).toBe('all');
+  expect(payload?.eventCount).toBe('12');
+  expect(payload?.incidents[0]?.headline).toBe('Daily development');
+  expect(studio).toContain("type==='weekly'?'weekly':'all'");
+ });
+ it('maps only explicit weekly, monthly and trends records to the matching family',()=>{
+  expect(buildTemplatePayload({id:'weekly',publication_type:'weekly',body:{}})?.family).toBe('weekly');
+  expect(buildTemplatePayload({id:'monthly',publication_type:'monthly',body:{}})?.family).toBe('monthly');
+  expect(buildTemplatePayload({id:'trends',publication_type:'weekly_trends',body:{}})?.family).toBe('trends');
+  expect(buildTemplatePayload({id:'route',publication_type:'route_assessment',body:{}})?.family).toBe('all');
  });
 });
