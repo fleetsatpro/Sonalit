@@ -6,7 +6,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { useAuthStore } from '../stores/auth.js';
-import { Activity, AlertTriangle, ArrowRight, CalendarClock, Check, CheckCircle2, Clock3, FileBarChart2, FileText, Layers, MapPinned, Maximize2, Navigation, Plus, RefreshCw, Route, Satellite, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, CalendarClock, Check, CheckCircle2, Clock3, FileBarChart2, FileText, MapPinned, Maximize2, Navigation, Plus, RefreshCw, Route, Satellite, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
 type Point={lat:number;lng:number;name?:string;label?:string};
@@ -87,13 +87,13 @@ function JourneyMap({journey,stops,geometry,assessment}:{journey:Journey;stops:S
     return coords.length>=2&&coords.every((p)=>p!==null)?coords as [number,number][]:[];
   },[geometry]);
   const hasRoutedGeometry=assessment?.route_status==='routed'&&routeCoords.length>=2;
-  const displayRoute=hasRoutedGeometry?routeCoords:[];
+  const displayRoute=useMemo(()=>hasRoutedGeometry?routeCoords:[],[hasRoutedGeometry,routeCoords]);
   const stopPoints=useMemo(()=>stops.map(stop=>({stop,coord:mapCoord(stop.lat,stop.lng)})).filter((x):x is {stop:Stop;coord:[number,number]}=>x.coord!==null),[stops]);
   const fitPoints=useMemo(()=>[...(origin?[origin]:[]),...displayRoute,...(destination?[destination]:[]),...stopPoints.map(p=>p.coord)],[origin,destination,displayRoute,stopPoints]);
   useEffect(()=>{
     const container=containerRef.current;
     if(!container||mapRef.current)return;
-    const map=new maplibregl.Map({container,style:STREET_STYLE,center:origin||[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
+    const map=new maplibregl.Map({container,style:STREET_STYLE,center:[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
     map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'bottom-right');
     map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
     map.on('load',()=>setMapReady(true));
