@@ -61,15 +61,21 @@ async function unsubscribeUserFromChannel(userId, channel) {
       body: JSON.stringify({ user: String(userId), channel }),
       signal: AbortSignal.timeout(5_000),
     });
-    let payload = null;
-    try { payload = await resp.json(); } catch (_) {}
-
     if (!resp.ok) {
       logger.warn(`Centrifugo unsubscribe failed: HTTP ${resp.status} for user ${userId} on ${channel}`);
       return false;
     }
-    if (payload?.error) {
-      logger.warn(`Centrifugo unsubscribe failed: ${payload.error.code || 'unknown'} ${payload.error.message || 'unknown error'} for user ${userId} on ${channel}`);
+
+    let payload;
+    try {
+      payload = await resp.json();
+    } catch (err) {
+      logger.warn(`Centrifugo unsubscribe returned an unreadable response for user ${userId} on ${channel}: ${err.message}`);
+      return false;
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+        || !Object.prototype.hasOwnProperty.call(payload, 'result') || payload.error) {
+      logger.warn(`Centrifugo unsubscribe returned an invalid success response for user ${userId} on ${channel}`);
       return false;
     }
     return true;
