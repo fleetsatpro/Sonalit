@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, routeAssessmentUsable, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -314,6 +314,27 @@ describe('SJM validation and evidence boundaries', () => {
     expect(checklist.find(x=>x.item==='Journey approval').status).toBe('PENDING');
     expect(checklist.find(x=>x.item==='Convoy linkage').status).toBe('NOT_LINKED');
     expect(checklist.find(x=>x.item==='Convoy device telemetry').status).toBe('UNAVAILABLE');
+  });
+
+  test('accepts explicit unrouted fallback as a usable exception assessment without inventing risk or distance', () => {
+    const explicitUnrouted={
+      route_status:'unrouted',
+      safety_gate:'HUMAN_REVIEW',
+      overall_risk_score:null,
+      constraint_status:{risk_score_available:false,max_risk_exceeded:true},
+      recommended_route:{
+        label:'Unrouted waypoint reference',
+        waypoints:[{lat:-1.28,lng:36.81},{lat:-4.04,lng:39.66}],
+        risk_score:null,distance_km:null,estimated_duration_minutes:null,
+        notes:'Road routing unavailable. Risk score unavailable.'
+      }
+    };
+    expect(routeAssessmentUsable(explicitUnrouted)).toBe(true);
+    expect(routeAssessmentUsable({...explicitUnrouted,constraint_status:{risk_score_available:true}})).toBe(false);
+    expect(routeAssessmentUsable({...explicitUnrouted,safety_gate:'GO'})).toBe(false);
+    expect(routeAssessmentUsable({...explicitUnrouted,overall_risk_score:12})).toBe(false);
+    expect(routeAssessmentUsable({route_status:'routed',safety_gate:'GO',overall_risk_score:12})).toBe(true);
+    expect(routeAssessmentUsable({route_status:'routed',safety_gate:'GO',overall_risk_score:null})).toBe(false);
   });
 
   test('only declares human review unnecessary after a routed GO/CONDITIONAL gate exists', () => {
