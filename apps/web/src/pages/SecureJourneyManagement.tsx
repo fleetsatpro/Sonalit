@@ -6,6 +6,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
+import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
 import { useAuthStore } from '../stores/auth.js';
 import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, Navigation, Plus, RefreshCw, Route, Satellite, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 
@@ -23,6 +24,7 @@ type Convoy={id:string;name:string;status:string};
 type Profile={client_id:string;report_timezone:string;report_template:{title?:string;sections?:string[]};daily_reports_enabled?:boolean;daily_report_local_time?:string;daily_report_scheduler_available?:boolean;client?:Client};
 type Report={data:{id:string;report_type:string;report_date:string;generated_at:string}};
 type IntakePickTarget='origin'|'destination'|{stopIndex:number}|null;
+type StopDraft={name:string;stop_type:string;lat:string;lng:string;instructions:string;planned_arrival_at?:string|null;planned_departure_at?:string|null;duration_minutes?:number|null};
 const META:Record<Status,{label:string;cls:string}>={requested:{label:'Requested',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'},planning:{label:'Planning',cls:'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'},assessment_pending:{label:'Assessment pending',cls:'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'},ready_for_review:{label:'Ready for review',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},approved:{label:'Approved',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},ready_to_depart:{label:'Ready to depart',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},in_progress:{label:'In progress',cls:'border-orange-500/30 bg-orange-500/10 text-orange-200'},paused:{label:'Paused',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},exception:{label:'Exception',cls:'border-red-500/30 bg-red-500/10 text-red-200'},arrival_pending_verification:{label:'Arrival verification',cls:'border-violet-500/30 bg-violet-500/10 text-violet-200'},closed:{label:'Closed',cls:'border-violet-500/30 bg-violet-500/10 text-violet-200'},cancelled:{label:'Cancelled',cls:'border-red-500/30 bg-red-500/10 text-red-200'},aborted:{label:'Aborted',cls:'border-red-500/30 bg-red-500/10 text-red-200'},on_hold:{label:'On hold',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'}};
 const SECTIONS=[{id:'summary',label:'Mission summary'},{id:'itinerary',label:'Planned itinerary'},{id:'stops',label:'Stops and checkpoints'},{id:'route_assessment',label:'Route risk assessment'},{id:'operational_events',label:'Operational event log'},{id:'telemetry_snapshot',label:'Observed telemetry snapshot'}];
 const INTAKE_STEPS=[{label:'Mission brief',detail:'Intent, client and operating context'},{label:'Corridor',detail:'Origin, destination and schedule'},{label:'Itinerary',detail:'Ordered stops and checkpoints'},{label:'Review',detail:'Confirm the request before saving'}] as const;
@@ -30,27 +32,7 @@ const EMPTY={title:'',purpose:'',client_id:'',convoy_id:'',transport_mode:'road'
 function assessmentOf(v:Journey['route_assessment']):Assessment|null{if(!v)return null;if(typeof v==='object')return v as Assessment;try{return JSON.parse(v) as Assessment}catch{return null}}
 function routeOf(v:Journey['planned_route']):Point[]{if(Array.isArray(v))return v;if(typeof v==='string'){try{const p=JSON.parse(v);return Array.isArray(p)?p:[]}catch{return []}}return []}
 function dateText(v?:string|null){if(!v)return'Not recorded';const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):'Not recorded'}
-function localDateTimeInTimezone(value:string, timezone:string):string|null {
- if(!value)return null;
- const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
- if(!m)throw new Error('Enter a valid planned date and time.');
- const target={year:Number(m[1]),month:Number(m[2]),day:Number(m[3]),hour:Number(m[4]),minute:Number(m[5])};
- const targetEpoch=Date.UTC(target.year,target.month-1,target.day,target.hour,target.minute);
- const fmt=new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
- let candidate=targetEpoch;
- for(let i=0;i<4;i++){
-  const parts=fmt.formatToParts(new Date(candidate));
-  const valueOf=(type:string)=>Number(parts.find(p=>p.type===type)?.value);
-  const represented=Date.UTC(valueOf('year'),valueOf('month')-1,valueOf('day'),valueOf('hour'),valueOf('minute'));
-  const delta=targetEpoch-represented;
-  if(delta===0)break;
-  candidate+=delta;
- }
- const parts=fmt.formatToParts(new Date(candidate));
- const valueOf=(type:string)=>Number(parts.find(p=>p.type===type)?.value);
- if(valueOf('year')!==target.year||valueOf('month')!==target.month||valueOf('day')!==target.day||valueOf('hour')!==target.hour||valueOf('minute')!==target.minute)throw new Error('The entered local time does not exist in the selected timezone.');
- return new Date(candidate).toISOString();
-}
+
 function errorText(e:unknown,fallback:string){const x=e as{response?:{data?:{message?:string;error?:string}};message?:string};return x.response?.data?.message||x.response?.data?.error||x.message||fallback}
 function Input({label,children,className=''}:{label:string;children:ReactNode;className?:string}){return <label className={'block min-w-0 '+className}><span className="mb-1.5 block text-[10px] font-medium text-slate-400">{label}</span>{children}</label>}
 const field='w-full min-w-0 rounded-lg border border-white/10 bg-[#070b12] px-3 py-2.5 text-[12px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-emerald-300/45 focus:ring-2 focus:ring-emerald-300/[0.08]';
@@ -243,12 +225,15 @@ export default function SecureJourneyManagement(){
  const isSupervisor=['admin','dispatcher'].includes(String(currentUser?.role||'').toLowerCase());
  const [selectedId,setSelectedId]=useState('');
  const [showCreate,setShowCreate]=useState(false);
+ const [intakeMode,setIntakeMode]=useState<'create'|'edit'>('create');
+ const [editAcknowledged,setEditAcknowledged]=useState(false);
+ const [editBaseline,setEditBaseline]=useState<{journeyId:string;timezone:string;departureInput:string;departureAt:string|null;arrivalInput:string;arrivalAt:string|null}|null>(null);
  const [workspaceTab,setWorkspaceTab]=useState<'overview'|'command'|'itinerary'|'evidence'|'reports'>('overview');
  const [reportType,setReportType]=useState('daily');
  const [lastGeneratedReport,setLastGeneratedReport]=useState<{id:string;report_date:string;report_type:string}|null>(null);
  const [reportDownloadError,setReportDownloadError]=useState('');
  const [form,setForm]=useState({...EMPTY});
- const [stopDrafts,setStopDrafts]=useState<Array<{name:string;stop_type:string;lat:string;lng:string;instructions:string}>>([]);
+ const [stopDrafts,setStopDrafts]=useState<StopDraft[]>([]);
  const [intakeStep,setIntakeStep]=useState<0|1|2|3>(0);
  const [intakePickTarget,setIntakePickTarget]=useState<IntakePickTarget>(null);
  const [filter,setFilter]=useState('all');const [search,setSearch]=useState('');
@@ -256,6 +241,7 @@ export default function SecureJourneyManagement(){
  const [eventType,setEventType]=useState('operator_note');const [eventTitle,setEventTitle]=useState('');const [eventDetail,setEventDetail]=useState('');const [eventSeverity,setEventSeverity]=useState('medium');
 
  const intakeStepIssue=useMemo(()=>{
+  if(intakeStep===3&&intakeMode==='edit'&&!editAcknowledged)return 'Acknowledge that this revision invalidates the prior route assessment and release authorisations.';
   if(intakeStep===0){
    if(!form.title.trim())return 'Give the movement a clear mission title.';
    if(!form.purpose.trim())return 'Record the operational purpose and constraints.';
@@ -280,7 +266,7 @@ export default function SecureJourneyManagement(){
    return null;
   }
   return null;
- },[intakeStep,form,stopDrafts]);
+ },[intakeStep,form,stopDrafts,intakeMode,editAcknowledged]);
  const applyIntakeMapPoint=(point:{lat:number;lng:number})=>{
   const lat=point.lat.toFixed(6),lng=point.lng.toFixed(6);
   if(intakePickTarget==='origin')setForm(prev=>({...prev,origin_lat:lat,origin_lng:lng}));
@@ -307,7 +293,43 @@ export default function SecureJourneyManagement(){
  const refresh=async()=>{await qc.invalidateQueries({queryKey:['sjm-journeys']});if(selectedId)await qc.invalidateQueries({queryKey:['sjm-journey',selectedId]})};
  const downloadReportArtifact=async(id:string,date:string,type:string,format:'PDF'|'CSV')=>{setReportDownloadError('');try{const b=await api.get('/sjm/reports/'+id+'/download',{params:{format},responseType:'blob'});download(b.data as Blob,'sonalit-sjm-'+type+'-'+date+'.'+format.toLowerCase())}catch(error){setReportDownloadError(type.replaceAll('_',' ')+' report is saved, but '+format+' export failed: '+errorText(error,'Download request failed.')+' You can retry the export below.')}};
 
- const create=useMutation({mutationFn:async()=>{const payload={...form,origin_lat:Number(form.origin_lat),origin_lng:Number(form.origin_lng),destination_lat:Number(form.destination_lat),destination_lng:Number(form.destination_lng),planned_departure_at:localDateTimeInTimezone(form.planned_departure_at,form.timezone),planned_arrival_at:localDateTimeInTimezone(form.planned_arrival_at,form.timezone),client_id:form.client_id||null,convoy_id:form.convoy_id||null,stops:stopDrafts.map(s=>({name:s.name,stop_type:s.stop_type,lat:s.lat===''?null:Number(s.lat),lng:s.lng===''?null:Number(s.lng),instructions:s.instructions||null}))};return(await api.post('/sjm/journeys',payload)).data.data as Journey},onSuccess:async j=>{setShowCreate(false);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);setSelectedId(j.id);await qc.invalidateQueries({queryKey:['sjm-journeys']});await qc.invalidateQueries({queryKey:['sjm-journey',j.id]})}});
+ const buildJourneyPayload=()=>{
+  const baselineMatches=intakeMode==='edit'&&editBaseline?.journeyId===journey?.id&&editBaseline.timezone===form.timezone;
+  return {...form,
+   origin_lat:Number(form.origin_lat),origin_lng:Number(form.origin_lng),
+   destination_lat:Number(form.destination_lat),destination_lng:Number(form.destination_lng),
+   planned_departure_at:baselineMatches&&form.planned_departure_at===editBaseline?.departureInput?editBaseline.departureAt:localDateTimeInTimezone(form.planned_departure_at,form.timezone),
+   planned_arrival_at:baselineMatches&&form.planned_arrival_at===editBaseline?.arrivalInput?editBaseline.arrivalAt:localDateTimeInTimezone(form.planned_arrival_at,form.timezone),
+   client_id:form.client_id||null,convoy_id:form.convoy_id||null,
+   stops:stopDrafts.map(s=>({name:s.name,stop_type:s.stop_type,lat:s.lat===''?null:Number(s.lat),lng:s.lng===''?null:Number(s.lng),instructions:s.instructions||null,planned_arrival_at:s.planned_arrival_at||null,planned_departure_at:s.planned_departure_at||null,duration_minutes:s.duration_minutes??null}))
+  };
+ };
+ const create=useMutation({mutationFn:async()=> (await api.post('/sjm/journeys',buildJourneyPayload())).data.data as Journey,onSuccess:async j=>{setShowCreate(false);setIntakeMode('create');setEditAcknowledged(false);setEditBaseline(null);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);setSelectedId(j.id);await qc.invalidateQueries({queryKey:['sjm-journeys']});await qc.invalidateQueries({queryKey:['sjm-journey',j.id]})}});
+ const updateJourney=useMutation({mutationFn:async()=>{
+  const source=detailQ.data?.data;
+  if(!journey||!source)throw new Error('Load the full journey dossier before editing.');
+  if(!isSupervisor)throw new Error('Only admin/dispatcher roles may revise a journey.');
+  if(!['requested','planning'].includes(source.status))throw new Error('This journey is no longer editable. Refresh its current status.');
+  return (await api.patch('/sjm/journeys/'+source.id,buildJourneyPayload())).data.data as Journey;
+ },onSuccess:async j=>{setShowCreate(false);setIntakeMode('create');setEditAcknowledged(false);setEditBaseline(null);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);setSelectedId(j.id);await qc.invalidateQueries({queryKey:['sjm-journeys']});await qc.invalidateQueries({queryKey:['sjm-journey',j.id]})}});
+ const resetIntake=()=>{
+  setShowCreate(false);setIntakeMode('create');setEditAcknowledged(false);setEditBaseline(null);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);create.reset();updateJourney.reset();
+ };
+ const openCreate=()=>{
+  setIntakeMode('create');setEditAcknowledged(false);setEditBaseline(null);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);create.reset();updateJourney.reset();setShowCreate(true);
+ };
+ const startEdit=()=>{
+  const source=detailQ.data?.data;
+  if(!source||!isSupervisor||!['requested','planning'].includes(source.status))return;
+  const timezone=source.timezone||'Africa/Nairobi';
+  const departureInput=localDateTimeInputInTimezone(source.planned_departure_at,timezone);
+  const arrivalInput=localDateTimeInputInTimezone(source.planned_arrival_at,timezone);
+  setIntakeMode('edit');setEditAcknowledged(false);setIntakeStep(0);setIntakePickTarget(null);
+  setEditBaseline({journeyId:source.id,timezone,departureInput,departureAt:source.planned_departure_at||null,arrivalInput,arrivalAt:source.planned_arrival_at||null});
+  setForm({title:source.title||'',purpose:source.purpose||'',client_id:source.client_id||'',convoy_id:source.convoy_id||'',transport_mode:source.transport_mode||'road',origin_label:source.origin_label||'',origin_lat:String(source.origin_lat??''),origin_lng:String(source.origin_lng??''),destination_label:source.destination_label||'',destination_lat:String(source.destination_lat??''),destination_lng:String(source.destination_lng??''),planned_departure_at:departureInput,planned_arrival_at:arrivalInput,timezone});
+  setStopDrafts((source.stops||[]).map(s=>({name:s.name,stop_type:s.stop_type,lat:s.lat==null?'':String(s.lat),lng:s.lng==null?'':String(s.lng),instructions:s.instructions||'',planned_arrival_at:s.planned_arrival_at||null,planned_departure_at:s.planned_departure_at||null,duration_minutes:s.duration_minutes??null})));
+  create.reset();updateJourney.reset();setShowCreate(true);
+ };
  const act=useMutation({mutationFn:async({kind,body={}}:{kind:'plan'|'review'|'approve'|'lifecycle'|'report'|'event'|'stop'|'management_summary';body?:Record<string,unknown>})=>{
   if(kind==='management_summary')return(await api.post('/sjm/management-summary',body)).data;
   if(!journey)throw new Error('Select a journey first.');
@@ -365,7 +387,7 @@ return (
        <div className="flex flex-wrap gap-2 2xl:justify-end">
         <Btn onClick={()=>{void refresh();void qc.invalidateQueries({queryKey:['sjm-clients']});void qc.invalidateQueries({queryKey:['sjm-convoys']})}} disabled={registerQ.isFetching}><RefreshCw size={13} className={registerQ.isFetching?'animate-spin':''}/>Refresh register</Btn>
         {['admin','dispatcher','analyst'].includes(String(currentUser?.role||'').toLowerCase())&&<Btn disabled={act.isPending} onClick={()=>act.mutate({kind:'management_summary'})}><FileBarChart2 size={13}/>Portfolio snapshot</Btn>}
-        <Btn tone="green" onClick={()=>{setIntakeStep(0);setIntakePickTarget(null);setShowCreate(true)}}><Plus size={14}/>Create mission</Btn>
+        <Btn tone="green" onClick={openCreate}><Plus size={14}/>Create mission</Btn>
        </div>
       </div>
      </div>
@@ -384,9 +406,9 @@ return (
      </div>)}
     </section>
 
-      {showCreate&&<div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#02050b]/80 p-2 backdrop-blur-md sm:p-5"><div className="max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-[28px] shadow-2xl"><Panel className="p-4 md:p-6"><div className="mb-4 flex items-start justify-between gap-3"><div><Kicker>MISSION INTAKE</Kicker><h2 className="mt-1 text-lg font-semibold">Create journey dossier</h2><p className="mt-1 text-[11px] text-slate-500">Coordinates and planned times are required. Road Route Safety assesses the route through every ordered stop. Non-road modes can be recorded, but cannot be approved until a matching route provider is configured.</p></div><Btn onClick={()=>{setShowCreate(false);setIntakeStep(0);setIntakePickTarget(null)}}><XCircle size={13}/>Close</Btn></div>
+      {showCreate&&<div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#02050b]/80 p-2 backdrop-blur-md sm:p-5"><div className="max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-[28px] shadow-2xl"><Panel className="p-4 md:p-6"><div className="mb-4 flex items-start justify-between gap-3"><div><Kicker>{intakeMode==='edit'?'MISSION REVISION':'MISSION INTAKE'}</Kicker><h2 className="mt-1 text-lg font-semibold">{intakeMode==='edit'?'Revise journey dossier':'Create journey dossier'}</h2><p className="mt-1 text-[11px] text-slate-500">{intakeMode==='edit'?'Revision is restricted to requested/planning dossiers. Saving clears the stored route assessment and release authorisations, then returns the journey to REQUESTED for fresh assessment.':'Coordinates and planned times are required. Road Route Safety assesses the route through every ordered stop. Non-road modes can be recorded, but cannot be approved until a matching route provider is configured.'}</p></div><Btn onClick={resetIntake}><XCircle size={13}/>Close</Btn></div>
 
-   <form onSubmit={e=>{e.preventDefault();if(intakeStep===3&&!intakeStepIssue)create.mutate()}} className="space-y-4">
+   <form onSubmit={e=>{e.preventDefault();if(intakeStep===3&&!intakeStepIssue){if(intakeMode==='edit')updateJourney.mutate();else create.mutate()}}} className="space-y-4">
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4" aria-label="Mission intake steps">
      {INTAKE_STEPS.map((step,index)=><button type="button" key={step.label} onClick={()=>{if(index<=intakeStep||(index===intakeStep+1&&!intakeStepIssue)){setIntakePickTarget(null);setIntakeStep(index as 0|1|2|3)}}} className={'relative rounded-xl border p-3 text-left transition '+(intakeStep===index?'border-emerald-300/30 bg-emerald-300/[0.075]':'border-white/[0.07] bg-black/15 hover:border-white/[0.14]')}><span className={'font-mono text-[9px] '+(intakeStep===index?'text-emerald-200':'text-slate-600')}>STEP {String(index+1).padStart(2,'0')}</span><span className={'mt-1 block text-[11px] font-semibold '+(intakeStep===index?'text-white':'text-slate-300')}>{step.label}</span><span className="mt-1 hidden text-[9px] leading-4 text-slate-600 sm:block">{step.detail}</span></button>)}
     </div>
@@ -423,17 +445,17 @@ return (
     </div>}
 
     {intakeStep===3&&<div className="space-y-4">
-     <div className="rounded-xl border border-violet-300/15 bg-violet-300/[0.025] p-3"><Kicker>04 / REQUEST REVIEW</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Check the operational request before saving. This action creates a REQUESTED dossier only; Route Safety assessment, approval and movement start remain separate operations after creation.</p></div>
+     <div className="rounded-xl border border-violet-300/15 bg-violet-300/[0.025] p-3"><Kicker>{intakeMode==='edit'?'04 / REVISION REVIEW':'04 / REQUEST REVIEW'}</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">{intakeMode==='edit'?'Review this revision carefully. The server retains the journey identity and audit trail, clears the old route plan and assessment, and returns the dossier to REQUESTED. Route Safety and release authorisation must be repeated.':'Check the operational request before saving. This action creates a REQUESTED dossier only; Route Safety assessment, approval and movement start remain separate operations after creation.'}</p></div>
      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <section className="rounded-xl border border-white/[0.075] bg-black/15 p-4"><Kicker>MISSION MANDATE</Kicker><h3 className="mt-2 text-base font-semibold text-white">{form.title||'Untitled mission'}</h3><p className="mt-2 whitespace-pre-wrap text-[11px] leading-5 text-slate-400">{form.purpose||'Purpose not recorded'}</p><dl className="mt-4 space-y-2">{[['Client account',clients.find(cl=>cl.id===form.client_id)?.name||'Not linked'],['Operational convoy',convoys.find(cv=>cv.id===form.convoy_id)?.name||'Not linked'],['Transport mode',form.transport_mode.toUpperCase()],['Reporting timezone',form.timezone]].map(([label,value])=><div key={label} className="flex justify-between gap-3 border-b border-white/[0.05] pb-2 last:border-0"><dt className="text-[10px] text-slate-500">{label}</dt><dd className="break-words text-right text-[10px] font-medium text-slate-200">{value}</dd></div>)}</dl></section>
       <section className="rounded-xl border border-white/[0.075] bg-black/15 p-4"><Kicker>PLANNED CORRIDOR</Kicker><div className="mt-3 space-y-3"><div className="flex gap-3"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-cyan-200"/><div className="min-w-0"><p className="text-[11px] font-semibold text-white">{form.origin_label}</p><p className="mt-1 font-mono text-[9px] text-slate-500">{form.origin_lat}, {form.origin_lng}</p><p className="mt-1 text-[10px] text-slate-600">Departure · {form.planned_departure_at||'Not scheduled'}</p></div></div><div className="ml-1 h-6 border-l border-dashed border-white/20"/><div className="flex gap-3"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-orange-200"/><div className="min-w-0"><p className="text-[11px] font-semibold text-white">{stopDrafts.length} ordered intermediate stops</p><p className="mt-1 text-[10px] text-slate-600">Stops will be routed only where the existing Route Safety provider supports the mode.</p></div></div><div className="ml-1 h-6 border-l border-dashed border-white/20"/><div className="flex gap-3"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-200"/><div className="min-w-0"><p className="text-[11px] font-semibold text-white">{form.destination_label}</p><p className="mt-1 font-mono text-[9px] text-slate-500">{form.destination_lat}, {form.destination_lng}</p><p className="mt-1 text-[10px] text-slate-600">Arrival · {form.planned_arrival_at||'Not scheduled'}</p></div></div></div></section>
      </div>
-     <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.025] p-3"><div className="flex gap-3"><ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-200"/><div><p className="text-[11px] font-semibold text-amber-100">Request is not a release decision</p><p className="mt-1 text-[10px] leading-5 text-slate-500">The saved journey begins in REQUESTED. It is not route-cleared, approved, dispatch-ready or in motion until the corresponding Route Safety and human-control steps are recorded.</p></div></div></div>
+     <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.025] p-3"><div className="flex gap-3"><ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-200"/><div><p className="text-[11px] font-semibold text-amber-100">{intakeMode==='edit'?'Revision invalidates prior release evidence':'Request is not a release decision'}</p><p className="mt-1 text-[10px] leading-5 text-slate-500">{intakeMode==='edit'?'Saving clears the prior route assessment, review decision, approval and departure-readiness acknowledgement. The journey returns to REQUESTED and must pass the safety and human-release gates again.':'The saved journey begins in REQUESTED. It is not route-cleared, approved, dispatch-ready or in motion until the corresponding Route Safety and human-control steps are recorded.'}</p></div></div></div>{intakeMode==='edit'&&<label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.035] p-3"><input type="checkbox" className="mt-0.5 accent-emerald-300" checked={editAcknowledged} onChange={e=>setEditAcknowledged(e.target.checked)}/><span className="text-[10px] leading-5 text-amber-100/90">I understand that saving this revision invalidates the prior route assessment and release authorisations, and returns the mission to REQUESTED.</span></label>}
     </div>}
 
-    {create.isError&&<p role="alert" className="rounded-lg border border-red-400/20 bg-red-500/[0.06] p-3 text-[11px] text-red-200">{errorText(create.error,'Journey creation failed.')}</p>}
+    {((intakeMode==='edit'&&updateJourney.isError)||(intakeMode==='create'&&create.isError))&&<p role="alert" className="rounded-lg border border-red-400/20 bg-red-500/[0.06] p-3 text-[11px] text-red-200">{errorText(intakeMode==='edit'?updateJourney.error:create.error,intakeMode==='edit'?'Journey revision failed.':'Journey creation failed.')}</p>}
     {intakeStepIssue&&<p role="status" className="rounded-lg border border-amber-300/15 bg-amber-300/[0.025] px-3 py-2.5 text-[10px] leading-5 text-amber-100/90">Before continuing: {intakeStepIssue}</p>}
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] pt-4"><Btn onClick={()=>{setShowCreate(false);setIntakePickTarget(null);setIntakeStep(0)}}>Cancel intake</Btn><div className="flex flex-wrap items-center gap-2">{intakeStep>0&&<Btn onClick={()=>{setIntakePickTarget(null);setIntakeStep((intakeStep-1) as 0|1|2|3)}}><ArrowLeft size={12}/>Back</Btn>}{intakeStep<3?<Btn tone="green" disabled={Boolean(intakeStepIssue)} onClick={()=>{setIntakePickTarget(null);setIntakeStep((intakeStep+1) as 0|1|2|3)}}>Continue to {INTAKE_STEPS[(intakeStep+1) as 1|2|3].label}<ArrowRight size={12}/></Btn>:<button type="submit" disabled={create.isPending||Boolean(intakeStepIssue)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-300/15 px-4 py-2.5 text-[11px] font-semibold text-emerald-100 disabled:opacity-40"><Check size={13}/>{create.isPending?'Saving dossier…':'Create requested dossier'}</button>}</div></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] pt-4"><Btn onClick={resetIntake}>Cancel intake</Btn><div className="flex flex-wrap items-center gap-2">{intakeStep>0&&<Btn onClick={()=>{setIntakePickTarget(null);setIntakeStep((intakeStep-1) as 0|1|2|3)}}><ArrowLeft size={12}/>Back</Btn>}{intakeStep<3?<Btn tone="green" disabled={Boolean(intakeStepIssue)} onClick={()=>{setIntakePickTarget(null);setIntakeStep((intakeStep+1) as 0|1|2|3)}}>Continue to {INTAKE_STEPS[(intakeStep+1) as 1|2|3].label}<ArrowRight size={12}/></Btn>:<button type="submit" disabled={create.isPending||updateJourney.isPending||Boolean(intakeStepIssue)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-300/15 px-4 py-2.5 text-[11px] font-semibold text-emerald-100 disabled:opacity-40"><Check size={13}/>{intakeMode==='edit'?(updateJourney.isPending?'Saving revision…':'Save revision & reset release'):create.isPending?'Saving dossier…':'Create requested dossier'}</button>}</div></div>
    </form>
 
   </Panel></div></div>}
@@ -464,11 +486,11 @@ return (
      </Panel>
 
      <div className="min-w-0 space-y-3">
-      {!journey?<Panel className="p-5 sm:p-8"><div className="mx-auto max-w-lg py-10 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.05]"><MapPinned size={25} className="text-emerald-200"/></span><Kicker>MISSION WORKSPACE</Kicker><h2 className="mt-3 text-xl font-semibold text-white">No mission selected</h2><p className="mt-2 text-sm leading-6 text-slate-500">Select a journey from the register or create a new mission. The workspace will only render route geometry returned by the Route Safety service.</p><Btn tone="green" onClick={()=>setShowCreate(true)}><Plus size={13}/>Create mission</Btn></div></Panel>:<>
+      {!journey?<Panel className="p-5 sm:p-8"><div className="mx-auto max-w-lg py-10 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.05]"><MapPinned size={25} className="text-emerald-200"/></span><Kicker>MISSION WORKSPACE</Kicker><h2 className="mt-3 text-xl font-semibold text-white">No mission selected</h2><p className="mt-2 text-sm leading-6 text-slate-500">Select a journey from the register or create a new mission. The workspace will only render route geometry returned by the Route Safety service.</p><Btn tone="green" onClick={openCreate}><Plus size={13}/>Create mission</Btn></div></Panel>:<>
        <Panel className="overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] p-4 sm:p-5">
          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[10px] font-semibold tracking-[.13em] text-emerald-200">{journey.reference}</span><StatusBadge value={journey.status}/><span className="rounded-md border border-white/[0.07] px-2 py-1 font-mono text-[9px] uppercase tracking-[.12em] text-slate-500">{journey.transport_mode.replaceAll('_',' ')}</span></div><h2 className="mt-2 text-xl font-semibold leading-tight tracking-tight text-white sm:text-2xl">{journey.title}</h2><p className="mt-1.5 max-w-3xl text-xs leading-5 text-slate-400">{journey.purpose}</p></div>
-         <div className="flex flex-wrap items-center gap-2"><Gate value={assess?.safety_gate}/><Btn onClick={()=>void refresh()} disabled={detailQ.isFetching}><RefreshCw size={12} className={detailQ.isFetching?'animate-spin':''}/>Sync details</Btn></div>
+         <div className="flex flex-wrap items-center gap-2"><Gate value={assess?.safety_gate}/>{isSupervisor&&['requested','planning'].includes(journey.status)&&<Btn onClick={startEdit} disabled={detailQ.isLoading||updateJourney.isPending||!detailQ.data?.data}><Pencil size={12}/>Revise dossier</Btn>}<Btn onClick={()=>void refresh()} disabled={detailQ.isFetching}><RefreshCw size={12} className={detailQ.isFetching?'animate-spin':''}/>Sync details</Btn></div>
         </div>
         <div className="p-2 sm:p-3"><JourneyMap journey={journey} stops={stops} geometry={geometry} assessment={assess} telemetry={journey.telemetry_snapshot}/></div>
         <div className="grid grid-cols-2 border-t border-white/[0.07] bg-black/15 md:grid-cols-4">
