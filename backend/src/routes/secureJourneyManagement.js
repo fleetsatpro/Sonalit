@@ -546,7 +546,7 @@ router.get('/journeys/:id',authorize('admin','dispatcher','operator','analyst'),
   const assessment=parseJson(j.route_assessment,null);
   const safe=journeyForViewer(j,events,canSeeInternal);
   res.setHeader('Cache-Control','no-store');
-  res.json({data:{...safe,stops,telemetry_snapshot:telemetry,readiness_checklist:readinessChecklist(j,stops,assessment,telemetry)}});
+  res.json({data:{...safe,stops,duty_roles:dutyRoles,telemetry_snapshot:telemetry,readiness_checklist:readinessChecklist(j,stops,assessment,telemetry)}});
 }));
 router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
