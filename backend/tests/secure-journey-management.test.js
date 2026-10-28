@@ -141,6 +141,24 @@ describe('SJM validation and evidence boundaries', () => {
     });
     expect(result.devices[0].freshness_reason).toBeNull();
   });
+  test('does not label a fresh timestamp as a live fix when its coordinates are unusable', async () => {
+    const observedAt = new Date(Date.now() - 12_000);
+    const db = async () => ({rows:[{
+      device_id:'device-no-fix',device_name:'Locator without coordinates',
+      lat:null,lng:36.8,speed_kph:null,heading:null,accuracy_m:null,
+      observed_at:observedAt,source:'device_locations'
+    }]});
+    const result = await telemetryFor(db,'org-1',{convoy_id:'convoy-1'});
+    expect(result.status).toBe('UNAVAILABLE');
+    expect(result.devices[0]).toMatchObject({
+      freshness:'UNAVAILABLE',
+      position_available:false,
+      freshness_reason:'latest_record_has_no_usable_coordinates',
+      evidence_class:'OBSERVED'
+    });
+    expect(result.devices[0].age_seconds).toBeGreaterThanOrEqual(0);
+  });
+
   test('does not query or invent device evidence when no convoy is linked', async () => {
     const db = jest.fn();
     const result = await telemetryFor(db,'org-1',{convoy_id:null});
@@ -155,9 +173,23 @@ describe('SJM validation and evidence boundaries', () => {
   test('reports unknown pre-trip evidence as pending/unavailable rather than verified', () => {
     const checklist=readinessChecklist({status:'requested',approved_at:null,convoy_id:null,departure_readiness_acknowledgement:null},[],null,{status:'UNAVAILABLE',reason:'No convoy linked.'});
     expect(checklist.find(x=>x.item==='Stored Route Safety assessment').status).toBe('UNAVAILABLE');
+    expect(checklist.find(x=>x.item==='Human route review').status).toBe('UNAVAILABLE');
     expect(checklist.find(x=>x.item==='Journey approval').status).toBe('PENDING');
     expect(checklist.find(x=>x.item==='Convoy linkage').status).toBe('NOT_LINKED');
     expect(checklist.find(x=>x.item==='Convoy device telemetry').status).toBe('UNAVAILABLE');
+  });
+
+  test('only declares human review unnecessary after a routed GO/CONDITIONAL gate exists', () => {
+    const base={status:'requested',approved_at:null,convoy_id:'convoy-1',departure_readiness_acknowledgement:null};
+    const telemetry={status:'UNAVAILABLE',reason:'No location record.'};
+    const status=(assessment,decision=null)=>readinessChecklist({...base,human_review_decision:decision},[],assessment,telemetry).find(x=>x.item==='Human route review').status;
+    expect(status(null)).toBe('UNAVAILABLE');
+    expect(status({route_status:'routed',safety_gate:'GO'})).toBe('NOT_REQUIRED_BY_CURRENT_GATE');
+    expect(status({route_status:'routed',safety_gate:'CONDITIONAL'})).toBe('NOT_REQUIRED_BY_CURRENT_GATE');
+    expect(status({route_status:'routed',safety_gate:'HUMAN_REVIEW'})).toBe('PENDING');
+    expect(status({route_status:'routed',safety_gate:'HUMAN_REVIEW'},'approve_with_controls')).toBe('RECORDED_WITH_CONTROLS');
+    expect(status({route_status:'routed',safety_gate:'HUMAN_REVIEW'},'reject')).toBe('REJECTED');
+    expect(status({route_status:'blocked',safety_gate:'NO_GO'})).toBe('BLOCKED');
   });
   test('selects only recorded route, approval, lifecycle and stop events for change notices', () => {
     const selected=changeEventsFor([{event_type:'operator_note'},{event_type:'route_assessed'},{event_type:'journey_pause'},{event_type:'stop_reached'}]);

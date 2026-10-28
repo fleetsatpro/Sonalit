@@ -179,8 +179,18 @@ async function telemetryFor(db,org,j) {
   const r=await db('SELECT d.id AS device_id,d.name AS device_name,fo.name AS officer_name,fix.lat,fix.lng,fix.speed AS speed_kph,fix.heading,fix.accuracy AS accuracy_m,fix.observed_at,fix.source FROM convoy_cfos cc JOIN guardian_devices d ON d.id=cc.guardian_device_id LEFT JOIN field_officers fo ON fo.device_id=d.id LEFT JOIN LATERAL (SELECT lat,lng,speed,heading,accuracy,timestamp AS observed_at,\'device_locations\'::text AS source FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC,id DESC LIMIT 1) fix ON true WHERE cc.org_id=$1 AND cc.convoy_id=$2 AND d.deleted_at IS NULL ORDER BY d.name',[org,j.convoy_id]);
   const now=Date.now();
   const devices=r.rows.map(d=>{
-    const observedMs=d.observed_at?new Date(d.observed_at).getTime():NaN,age=d.observed_at?now-observedMs:null,freshness=freshnessFor(d.observed_at,now);
-    return {...d,freshness,age_seconds:age==null||!Number.isFinite(age)||age<0?null:Math.round(age/1000),freshness_reason:d.observed_at&&Number.isFinite(observedMs)&&observedMs>now?'future_timestamp_not_accepted_as_live':null,evidence_class:'OBSERVED'};
+    const observedMs=d.observed_at?new Date(d.observed_at).getTime():NaN;
+    const age=d.observed_at?now-observedMs:null;
+    const timestampFreshness=freshnessFor(d.observed_at,now);
+    const hasUsableCoordinates=d.lat!=null&&d.lng!=null&&validCoordinate(Number(d.lat),Number(d.lng));
+    // A fresh database timestamp without a usable coordinate is not a live location fix.
+    const freshness=hasUsableCoordinates?timestampFreshness:'UNAVAILABLE';
+    let freshness_reason=null;
+    if(d.observed_at&&Number.isFinite(observedMs)&&observedMs>now)freshness_reason='future_timestamp_not_accepted_as_live';
+    else if(!d.observed_at)freshness_reason='no_location_record';
+    else if(!hasUsableCoordinates)freshness_reason='latest_record_has_no_usable_coordinates';
+    else if(timestampFreshness==='UNAVAILABLE')freshness_reason='observation_timestamp_invalid';
+    return {...d,freshness,age_seconds:age==null||!Number.isFinite(age)||age<0?null:Math.round(age/1000),freshness_reason,position_available:hasUsableCoordinates,evidence_class:'OBSERVED'};
   });
   return {status:telemetryStatus(devices),observed_at:latestObservedAt(devices.map(d=>d.observed_at))||null,devices,reason:devices.length?null:'No linked devices with a location record were returned.'};
 }
@@ -190,9 +200,10 @@ function changeEventsFor(events) {
 }
 function readinessChecklist(j,stops,assessment,telemetry) {
   const gate=assessment?.safety_gate||'UNAVAILABLE';
-  let review='NOT_REQUIRED_BY_CURRENT_GATE';
+  let review='UNAVAILABLE';
   if(assessment?.route_status==='blocked'||gate==='NO_GO')review='BLOCKED';
   else if(gate==='HUMAN_REVIEW')review=j.human_review_decision==='approve_with_controls'?'RECORDED_WITH_CONTROLS':j.human_review_decision==='reject'?'REJECTED':'PENDING';
+  else if(assessment?.route_status==='routed'&&['GO','CONDITIONAL'].includes(gate))review='NOT_REQUIRED_BY_CURRENT_GATE';
   const located=(stops||[]).length?(stops.every(s=>s.lat!=null&&s.lng!=null&&validCoordinate(Number(s.lat),Number(s.lng)))?'COMPLETE':'INCOMPLETE'):'NO_STOPS_DEFINED';
   return [
     {item:'Stored Route Safety assessment',status:assessment?.route_status==='routed'?gate:assessment?.route_status==='blocked'?'BLOCKED':'UNAVAILABLE',detail:assessment?'Route status: '+String(assessment.route_status||'UNKNOWN'):'No stored assessment record.'},

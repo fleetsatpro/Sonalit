@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
+import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
 import { useAuthStore } from '../stores/auth.js';
 import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, Navigation, Plus, RefreshCw, Route, Satellite, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 
@@ -71,12 +72,7 @@ function Gate({value}:{value?:string}){const v=String(value||'UNAVAILABLE').toUp
 function download(blob:Blob,name:string){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url)}
 
 
-function mapCoord(latValue: unknown, lngValue: unknown): [number,number] | null {
-  if(latValue==null||lngValue==null)return null;
-  const lat=Number(latValue),lng=Number(lngValue);
-  if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat < -90||lat > 90||lng < -180||lng > 180||(Math.abs(lat)<0.000001&&Math.abs(lng)<0.000001))return null;
-  return [lng,lat];
-}
+
 function journeyMarkerElement(kind:'origin'|'stop'|'destination'|'observed_live'|'observed_delayed'|'observed_stale'|'observed_unavailable', title:string):HTMLElement {
   const colors={origin:'#22d3ee',stop:'#fb923c',destination:'#4ade80',observed_live:'#39ff88',observed_delayed:'#fbbf24',observed_stale:'#fb923c',observed_unavailable:'#94a3b8'};
   const color=colors[kind];
