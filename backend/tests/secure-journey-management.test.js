@@ -38,6 +38,8 @@ describe('SJM validation and evidence boundaries', () => {
   });
   test('limits mission management to operational roles', () => {
     expect(isMobilityManager({role:'dispatcher'})).toBe(true);
+    expect(isMobilityManager({role:'admin'})).toBe(true);
+    expect(isMobilityManager({role:'operator'})).toBe(false);
     expect(isMobilityManager({role:'analyst'})).toBe(false);
     expect(isMobilityManager({role:'driver'})).toBe(false);
   });
