@@ -143,6 +143,13 @@ function validateJourney(b) {
   const serviceError=validateServiceDetails(b);if(serviceError)return serviceError;
   return null;
 }
+function routeAssessmentUsable(a) {
+  if(!a||typeof a.route_status!=='string'||!a.route_status.trim()||typeof a.safety_gate!=='string'||!a.safety_gate.trim())return false;
+  const score=a.overall_risk_score;
+  const finiteScore=score!=null&&!(typeof score==='string'&&score.trim()==='')&&Number.isFinite(Number(score));
+  const explicitUnrouted=a.route_status==='unrouted'&&a.safety_gate==='HUMAN_REVIEW'&&score==null&&a.constraint_status?.risk_score_available===false&&a.recommended_route?.risk_score==null&&a.recommended_route?.distance_km==null&&a.recommended_route?.estimated_duration_minutes==null&&Array.isArray(a.recommended_route?.waypoints);
+  return finiteScore||explicitUnrouted;
+}
 function approvalGate(a, review, ack) {
   if (a && (a.route_status==='blocked' || a.recommended_route?.blocked===true || a.safety_gate==='NO_GO')) return {ok:false,code:'ROUTE_BLOCKED',message:'The selected route is blocked and cannot be approved.'};
   if (!a || a.route_status!=='routed') return {ok:false,code:'ROUTED_EVIDENCE_REQUIRED',message:'A routed safety assessment is required before approval.'};
@@ -211,11 +218,17 @@ async function event(db,j,actor,type,summary,detail={},source='operator') {
   return db('INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,created_at',[j.org_id,j.id,actor||null,type,txt(summary,500),JSON.stringify(detail||{}),source]);
 }
 
-async function mutateWithEvent(req,j,actor,type,summary,detail={},source='operator',mutation) {
+async function mutateWithEvent(req,j,actor,type,summary,detail={},source='operator',mutation,guard=null) {
   if(typeof mutation!=='function') throw new TypeError('mutation callback is required');
   return req.dbTx(async c=>{
     const db=(sql,params)=>c.query(sql,params);
-    const result=await mutation(db);
+    const locked=await lockJourneyForMobility(db,req.user.org_id,j.id);
+    if(!locked)return {changed:false,error:'journey_not_found'};
+    if(typeof guard==='function'){
+      const rejected=await guard(db,locked);
+      if(rejected?.error)return {...rejected,changed:false};
+    }
+    const result=await mutation(db,locked);
     if(!result?.rows?.length)return {changed:false,result};
     const row=result.rows[0];
     const resolvedSummary=typeof summary==='function'?summary(row):summary;
@@ -621,12 +634,20 @@ router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(
   const clientId=b.client_id===undefined?j.client_id:(b.client_id||null),convoyId=b.convoy_id===undefined?j.convoy_id:(b.convoy_id||null);
   if(clientId){const r=await req.db('SELECT id FROM cargo_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[clientId,org]);if(!r.rows.length)return res.status(404).json({error:'client_not_found_in_organisation'});}
   if(convoyId){const r=await req.db('SELECT id FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[convoyId,org]);if(!r.rows.length)return res.status(404).json({error:'convoy_not_found_in_organisation'});}
-  await req.dbTx(async c=>{
-    const x=await c.query('UPDATE sjm_journeys SET title=$1,purpose=$2,client_id=$3,convoy_id=$4,transport_mode=$5,origin_label=$6,origin_lat=$7,origin_lng=$8,destination_label=$9,destination_lat=$10,destination_lng=$11,planned_departure_at=$12,planned_arrival_at=$13,timezone=$14,status=\'requested\',planned_route=\'[]\'::jsonb,route_assessment=NULL,planning_started_at=NULL,assessment_pending_at=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,departure_readiness_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,ready_to_depart_at=NULL,updated_by=$15,service_type=$18,principal_reference=$19,airport_code=$20,terminal=$21,airline=$22,flight_number=$23,flight_scheduled_at=$24,flight_status=\'unknown\',flight_status_source=\'not_recorded\',flight_status_observed_at=NULL,flight_status_note=NULL,meet_greet_instructions=$25,updated_at=NOW() WHERE id=$16 AND org_id=$17 RETURNING id',[txt(candidate.title,180),txt(candidate.purpose,1200),clientId,convoyId,b.transport_mode||j.transport_mode,txt(candidate.origin_label,180),candidate.origin_lat,candidate.origin_lng,txt(candidate.destination_label,180),candidate.destination_lat,candidate.destination_lng,candidate.planned_departure_at||null,candidate.planned_arrival_at||null,tzValid(b.timezone||j.timezone)?(b.timezone||j.timezone):'Africa/Nairobi',req.user.id,j.id,org,candidate.service_type||'executive_transfer',txt(candidate.principal_reference,120)||null,txt(candidate.airport_code,4).toUpperCase()||null,txt(candidate.terminal,80)||null,txt(candidate.airline,100)||null,txt(candidate.flight_number,24).toUpperCase()||null,candidate.flight_scheduled_at||null,txt(candidate.meet_greet_instructions,2000)||null]);
-    if(!x.rows.length)throw new Error('journey_update_lost');
+  const editResult=await req.dbTx(async c=>{
+    const db=(sql,params)=>c.query(sql,params),locked=await lockJourneyForMobility(db,org,j.id);
+    if(!locked)return {error:'journey_not_found'};
+    if(!['requested','planning'].includes(locked.status))return {error:'journey_not_editable'};
+    if(locked.status!==j.status)return {error:'journey_state_changed'};
+    const x=await c.query('UPDATE sjm_journeys SET title=$1,purpose=$2,client_id=$3,convoy_id=$4,transport_mode=$5,origin_label=$6,origin_lat=$7,origin_lng=$8,destination_label=$9,destination_lat=$10,destination_lng=$11,planned_departure_at=$12,planned_arrival_at=$13,timezone=$14,status=\'requested\',planned_route=\'[]\'::jsonb,route_assessment=NULL,planning_started_at=NULL,assessment_pending_at=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,departure_readiness_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,ready_to_depart_at=NULL,updated_by=$15,service_type=$18,principal_reference=$19,airport_code=$20,terminal=$21,airline=$22,flight_number=$23,flight_scheduled_at=$24,flight_status=\'unknown\',flight_status_source=\'not_recorded\',flight_status_observed_at=NULL,flight_status_note=NULL,meet_greet_instructions=$25,updated_at=NOW() WHERE id=$16 AND org_id=$17 AND status IN ($26,$27) RETURNING id',[txt(candidate.title,180),txt(candidate.purpose,1200),clientId,convoyId,b.transport_mode||j.transport_mode,txt(candidate.origin_label,180),candidate.origin_lat,candidate.origin_lng,txt(candidate.destination_label,180),candidate.destination_lat,candidate.destination_lng,candidate.planned_departure_at||null,candidate.planned_arrival_at||null,tzValid(b.timezone||j.timezone)?(b.timezone||j.timezone):'Africa/Nairobi',req.user.id,j.id,org,candidate.service_type||'executive_transfer',txt(candidate.principal_reference,120)||null,txt(candidate.airport_code,4).toUpperCase()||null,txt(candidate.terminal,80)||null,txt(candidate.airline,100)||null,txt(candidate.flight_number,24).toUpperCase()||null,candidate.flight_scheduled_at||null,txt(candidate.meet_greet_instructions,2000)||null,'requested','planning']);
+    if(!x.rows.length)return {error:'journey_state_changed'};
     if(b.stops!==undefined){await c.query('DELETE FROM sjm_journey_stops WHERE org_id=$1 AND journey_id=$2',[org,j.id]);for(let i=0;i<b.stops.length;i++){const s=b.stops[i];await c.query('INSERT INTO sjm_journey_stops (org_id,journey_id,sequence,name,stop_type,lat,lng,planned_arrival_at,planned_departure_at,duration_minutes,instructions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[org,j.id,i+1,txt(s.name,160),s.stop_type||'checkpoint',s.lat??null,s.lng??null,s.planned_arrival_at||null,s.planned_departure_at||null,s.duration_minutes??null,txt(s.instructions,1200)||null]);}}
     await c.query('INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,\'journey_revised\',$4,$5,\'operator\')',[org,j.id,req.user.id,'Journey revised; previous route assessment invalidated',JSON.stringify({revised_at:new Date().toISOString()})]);
+    return {ok:true};
   });
+  if(editResult?.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
+  if(editResult?.error==='journey_not_editable')return res.status(409).json({error:'journey_not_editable'});
+  if(editResult?.error==='journey_state_changed')return res.status(409).json({error:'journey_state_changed',message:'Another request changed this journey. Refresh before editing again.'});
   const latest=await journeyById(req.db,org,j.id);res.json({data:{...latest,stops:await stopsFor(req.db,org,j.id)}});
 }));
 router.post('/journeys/:id/plan',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
@@ -658,8 +679,7 @@ router.post('/journeys/:id/plan',authorize('admin','dispatcher'),asyncHandler(as
     if(!failure.changed)return res.status(409).json({error:'journey_state_changed',message:'The journey changed while Route Safety was evaluating it; failure state was not applied.'});
     return res.status(503).json({error:'route_assessment_unavailable',message:'Route Safety did not return a usable assessment. The journey is now in exception and must be replanned after the provider issue is resolved.'});
   }
-  const score=a?.overall_risk_score;
-  const assessmentUsable=Boolean(a&&score!=null&&!(typeof score==='string'&&score.trim()==='')&&Number.isFinite(Number(score))&&typeof a.route_status==='string'&&Boolean(a.route_status.trim())&&typeof a.safety_gate==='string'&&Boolean(a.safety_gate.trim()));
+  const assessmentUsable=routeAssessmentUsable(a);
   if(!assessmentUsable) {
     const failure=await recordRouteAssessmentFailure(req,j,req.user.id,'invalid_provider_response');
     if(!failure.changed)return res.status(409).json({error:'journey_state_changed',message:'The journey changed while Route Safety was evaluating it; failure state was not applied.'});
@@ -816,4 +836,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility,routeAssessmentUsable};
