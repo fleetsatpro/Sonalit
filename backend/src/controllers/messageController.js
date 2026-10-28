@@ -51,7 +51,21 @@ function slugify(raw) {
     .slice(0, MAX_CHANNEL_NAME);
 }
 
-function isOrgAdmin(user)   { return user && user.role === 'admin'; }
+function isOrgAdmin(user)   { return user && String(user.role || '').toLowerCase() === 'admin'; }
+function isSjmChannelManager(user) { return user && ['admin', 'dispatcher'].includes(String(user.role || '').toLowerCase()); }
+async function hasActiveSjmAssignment(db, orgId, journeyId, userId) {
+  const result = await db(
+    `SELECT 1
+       FROM sjm_journey_participants p
+       JOIN users u ON u.id = p.user_id AND u.org_id = p.org_id
+                    AND u.deleted_at IS NULL AND u.status = 'active'
+      WHERE p.org_id = $1 AND p.journey_id = $2 AND p.user_id = $3
+        AND p.removed_at IS NULL
+      LIMIT 1`,
+    [orgId, journeyId, userId],
+  );
+  return result.rows.length > 0;
+}
 function badRequest(res, m) { return res.status(400).json({ error: m }); }
 function forbidden(res, m)  { return res.status(403).json({ error: m || 'Forbidden' }); }
 function notFound(res, m)   { return res.status(404).json({ error: m || 'Not found' }); }
@@ -106,6 +120,9 @@ async function withChannelReaderTransaction(req, res, channelId, work) {
         [channel.sjm_journey_id, req.user.org_id],
       );
       if (!mission.rows.length) return { accessError: { status: 404, message: 'Channel not found' } };
+      if (!isSjmChannelManager(req.user) && !(await hasActiveSjmAssignment(db, req.user.org_id, channel.sjm_journey_id, req.user.id))) {
+        return { accessError: { status: 403, message: 'Active SJM assignment required for this channel' } };
+      }
     }
 
     const memberResult = await db(
@@ -248,6 +265,13 @@ const listChannels = asyncHandler(async (req, res) => {
          WHERE ($2::boolean OR EXISTS (
                 SELECT 1 FROM channel_members m
                  WHERE m.channel_id = c.id AND m.user_id = $1
+                   AND (c.sjm_journey_id IS NULL OR $3::boolean OR EXISTS (
+                     SELECT 1 FROM sjm_journey_participants p
+                     JOIN users pu ON pu.id = p.user_id AND pu.org_id = p.org_id
+                                  AND pu.deleted_at IS NULL AND pu.status = 'active'
+                     WHERE p.org_id = c.org_id AND p.journey_id = c.sjm_journey_id
+                       AND p.user_id = $1 AND p.removed_at IS NULL
+                   ))
               ))
       )
       SELECT
@@ -279,7 +303,7 @@ const listChannels = asyncHandler(async (req, res) => {
       LEFT JOIN channel_members m ON m.channel_id = v.id AND m.user_id = $1
       ORDER BY v.category NULLS LAST, v.name
       `,
-      [userId, isOrgAdmin(req.user)],
+      [userId, isOrgAdmin(req.user), isSjmChannelManager(req.user)],
     );
   });
   res.json({ data: rows.rows });
@@ -1021,6 +1045,9 @@ const getAttachmentUrl = asyncHandler(async (req, res) => {
           [sjmJourneyId, req.user.org_id],
         );
         if (!mission.rows.length) return { error: 'attachment_not_found' };
+        if (!isSjmChannelManager(req.user) && !(await hasActiveSjmAssignment(db, req.user.org_id, sjmJourneyId, req.user.id))) {
+          return { error: 'attachment_access_denied' };
+        }
       }
       const memberResult = await db(
         'SELECT user_id FROM channel_members WHERE channel_id = $1 AND user_id = $2',
