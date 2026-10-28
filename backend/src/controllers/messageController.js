@@ -87,6 +87,47 @@ async function requireChannelReader(req, res, channelId) {
 }
 
 /**
+ * Runs a private-channel operation in the same transaction as its membership
+ * check. For SJM channels it takes a shared lock on the parent journey before
+ * checking membership. Roster changes take FOR UPDATE on that journey, so an
+ * in-flight read/write linearizes either before the roster change or after its
+ * membership revocation; it cannot pass a stale pre-check and then operate.
+ */
+async function withChannelReaderTransaction(req, res, channelId, work) {
+  const outcome = await req.dbTx(async (client) => {
+    const db = (sql, params) => client.query(sql, params);
+    const channelResult = await db('SELECT * FROM channels WHERE id = $1', [channelId]);
+    const channel = channelResult.rows[0] ?? null;
+    if (!channel) return { accessError: { status: 404, message: 'Channel not found' } };
+
+    if (channel.sjm_journey_id) {
+      const mission = await db(
+        'SELECT id FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+        [channel.sjm_journey_id, req.user.org_id],
+      );
+      if (!mission.rows.length) return { accessError: { status: 404, message: 'Channel not found' } };
+    }
+
+    const memberResult = await db(
+      'SELECT * FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+      [channelId, req.user.id],
+    );
+    const member = memberResult.rows[0] ?? null;
+    if (!member && !isOrgAdmin(req.user)) {
+      return { accessError: { status: 403, message: 'Not a member of this channel' } };
+    }
+    return { value: await work(db, { channel, member }) };
+  });
+
+  if (outcome?.accessError) {
+    if (outcome.accessError.status === 404) notFound(res, outcome.accessError.message);
+    else forbidden(res, outcome.accessError.message);
+    return { ok: false };
+  }
+  return { ok: true, value: outcome?.value };
+}
+
+/**
  * Actor may manage the channel (add/remove members, pin, delete channel)
  * if either they are a channel admin OR the org admin.
  */
@@ -266,6 +307,9 @@ const createChannel = asyncHandler(async (req, res) => {
 const deleteChannel = asyncHandler(async (req, res) => {
   const perm = await requireChannelManager(req, res, req.params.id);
   if (!perm) return;
+  if (perm.channel.sjm_journey_id) {
+    return res.status(409).json({ error: 'sjm_channel_managed_by_journey', message: 'Mission channels are lifecycle-managed by SJM and cannot be deleted through generic Ops Comms.' });
+  }
   const { channel } = perm;
 
   // Snapshot member count + message count for the audit row.
@@ -460,13 +504,9 @@ const markRead = asyncHandler(async (req, res) => {
  * so the client can render "Message deleted" without a 404.
  */
 const listMessages = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
   const before = req.query.before || null;
-
-  const rows = await req.db(
+  const guarded = await withChannelReaderTransaction(req, res, req.params.id, async (db) => db(
     `SELECT
        m.id, m.channel_id, m.author_id, m.body, m.reply_to_id,
        m.created_at, m.edited_at, m.deleted_at,
@@ -498,7 +538,9 @@ const listMessages = asyncHandler(async (req, res) => {
     ORDER BY m.created_at DESC
     LIMIT $4`,
     [req.params.id, req.user.id, before, limit],
-  );
+  ));
+  if (!guarded.ok) return;
+  const rows = guarded.value;
 
   // Scrub deleted rows before returning to client.
   const data = rows.rows.map((r) => {
@@ -519,9 +561,6 @@ const listMessages = asyncHandler(async (req, res) => {
 });
 
 const sendMessage = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const schema = Joi.object({
     text:         Joi.string().trim().max(MAX_MESSAGE_BODY).allow(''),
     replyToId:    Joi.string().uuid().allow(null, ''),
@@ -535,17 +574,18 @@ const sendMessage = asyncHandler(async (req, res) => {
   const { error, value } = schema.validate(req.body);
   if (error) return badRequest(res, error.message);
 
-  // If replying, verify the parent message exists in this same channel.
-  if (value.replyToId) {
-    const parent = await req.db(
-      `SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL`,
-      [value.replyToId, req.params.id],
-    );
-    if (!parent.rows.length) return badRequest(res, 'reply_to message not found in this channel');
-  }
+  const guarded = await withChannelReaderTransaction(req, res, req.params.id, async (db) => {
+    // Keep reply validation, message insertion and attachment binding under the
+    // same journey lock that serializes against SJM roster revocation.
+    if (value.replyToId) {
+      const parent = await db(
+        'SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL',
+        [value.replyToId, req.params.id],
+      );
+      if (!parent.rows.length) return { validationError: 'reply_to message not found in this channel' };
+    }
 
-  const message = await req.dbTx(async (client) => {
-    const insert = await client.query(
+    const insert = await db(
       `INSERT INTO messages (org_id, channel_id, author_id, body, reply_to_id)
        VALUES ((current_setting('app.current_org_id', true))::uuid, $1, $2, $3, $4)
        RETURNING *`,
@@ -555,7 +595,7 @@ const sendMessage = asyncHandler(async (req, res) => {
 
     // Bind any pending attachments this user uploaded to this new message.
     if (value.attachmentIds.length > 0) {
-      const upd = await client.query(
+      const upd = await db(
         `UPDATE message_attachments
             SET message_id = $1, finalized_at = COALESCE(finalized_at, NOW())
           WHERE id = ANY($2)
@@ -564,15 +604,18 @@ const sendMessage = asyncHandler(async (req, res) => {
         [msg.id, value.attachmentIds, req.user.id],
       );
       if (upd.rowCount !== value.attachmentIds.length) {
-        // At least one attachment did not belong to this user or was already used.
         throw Object.assign(new Error('One or more attachments could not be attached'), { status: 400 });
       }
     }
     return msg;
   });
+  if (!guarded.ok) return;
+  if (guarded.value?.validationError) return badRequest(res, guarded.value.validationError);
+  const message = guarded.value;
 
   // Load author + attachments for the publish payload so subscribers can render
-  // without an extra fetch.
+  // without an extra fetch. The message write already linearized under the
+  // mission lock, before any subsequent roster change can commit.
   const authorRes = await req.db(`SELECT name, role FROM users WHERE id = $1`, [req.user.id]);
   const attachRes = await req.db(
     `SELECT id, kind, file_name, storage_key, mime_type, size_bytes, width, height
@@ -964,6 +1007,7 @@ module.exports = {
   listChannels, createChannel, deleteChannel,
   listMembers, addMembers, removeMember, updateMember, toggleMute, markRead,
   listMessages, sendMessage, deleteMessage, getThread,
+  withChannelReaderTransaction,
   addReaction, removeReaction,
   listPinned, addPin, removePin,
   searchMessages,
