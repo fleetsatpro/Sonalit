@@ -552,7 +552,22 @@ return (
             </section>
            </div>
           </div>
-          <section className="rounded-2xl border border-white/[0.075] bg-black/15 p-4">
+                    <Panel className="overflow-hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] p-4">
+              <div><Kicker>MISSION ASSURANCE / EVIDENCE LEDGER</Kicker><h4 className="mt-1 text-sm font-semibold">Operational readiness evidence</h4><p className="mt-1 max-w-3xl text-[10px] leading-5 text-slate-500">Readiness is reported from stored route assessment, lifecycle acknowledgements, convoy linkage and observed device timestamps. No composite readiness score is inferred.</p></div>
+              <span className="rounded-md border border-white/10 bg-black/20 px-2 py-1 font-mono text-[9px] text-slate-400">{journey.readiness_checklist?.length||0} SERVER CHECKS</span>
+            </div>
+            <div className="divide-y divide-white/[0.05]">
+              {(journey.readiness_checklist||[]).map((item,i)=><div key={item.item} className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[minmax(150px,.7fr)_auto_minmax(0,1.4fr)] sm:items-start">
+                <div className="flex items-start gap-2"><span className="mt-0.5 font-mono text-[9px] text-slate-600">{String(i+1).padStart(2,'0')}</span><p className="text-[11px] font-medium text-slate-200">{item.item}</p></div>
+                <EvidenceBadge value={item.status}/>
+                <p className="break-words text-[10px] leading-5 text-slate-500">{item.detail||'No detail returned by the readiness evaluator.'}</p>
+              </div>)}
+              {(!journey.readiness_checklist||journey.readiness_checklist.length===0)&&<div className="p-4 text-[11px] leading-5 text-slate-500">The server has not returned a readiness checklist for this record. This is shown as unavailable—not treated as a cleared mission.</div>}
+            </div>
+            <div className="border-t border-white/[0.06] bg-black/15 px-4 py-3 text-[9px] leading-5 text-slate-600">Evidence boundary: operator stop confirmations are not GPS proof; a convoy link is not live tracking; a stored route gate is not a guarantee of current corridor safety. Re-sync the dossier before consequential decisions.</div>
+          </Panel>
+<section className="rounded-2xl border border-white/[0.075] bg-black/15 p-4">
            <div className="flex items-center justify-between gap-3"><div><Kicker>RECENT ACTIVITY</Kicker><h4 className="mt-1 text-sm font-semibold">Latest stored events</h4></div><button type="button" onClick={()=>setWorkspaceTab('evidence')} className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-cyan-200 hover:text-cyan-100">Open evidence ledger <ArrowUpRight size={12}/></button></div>
            {detailQ.isLoading?<p className="mt-4 text-xs text-slate-500">Loading journey detail…</p>:events.length===0?<p className="mt-4 rounded-xl border border-dashed border-white/[0.08] p-4 text-xs text-slate-500">No journey events have been returned for this record. This is not interpreted as proof that no external events occurred.</p>:<div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-2">{events.slice(0,4).map(e=><div key={e.id} className="flex min-w-0 gap-3 rounded-xl border border-white/[0.055] bg-white/[0.012] p-3"><span className={'mt-1.5 h-2 w-2 shrink-0 rounded-full '+(e.source==='system'?'bg-cyan-300':'bg-emerald-300')}/><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-[11px] font-semibold text-slate-200">{e.summary}</p><span className="font-mono text-[8px] uppercase tracking-wider text-slate-600">{e.source}</span></div><p className="mt-1 text-[10px] text-slate-600">{dateText(e.created_at)} · {e.event_type.replaceAll('_',' ')}</p></div></div>)}</div>}
           </section>
