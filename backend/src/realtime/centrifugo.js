@@ -49,4 +49,34 @@ async function publish(channel, data) {
   }
 }
 
-module.exports = { publish, normalizeCentrifugoUrl };
+async function unsubscribeUserFromChannel(userId, channel) {
+  if (!CENTRIFUGO_API_KEY) {
+    logger.warn('Centrifugo unsubscribe unavailable: API key is not configured');
+    return false;
+  }
+  try {
+    const resp = await fetch(`${CENTRIFUGO_URL}/api/unsubscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': CENTRIFUGO_API_KEY },
+      body: JSON.stringify({ user: String(userId), channel }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    let payload = null;
+    try { payload = await resp.json(); } catch (_) {}
+
+    if (!resp.ok) {
+      logger.warn(`Centrifugo unsubscribe failed: HTTP ${resp.status} for user ${userId} on ${channel}`);
+      return false;
+    }
+    if (payload?.error) {
+      logger.warn(`Centrifugo unsubscribe failed: ${payload.error.code || 'unknown'} ${payload.error.message || 'unknown error'} for user ${userId} on ${channel}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn(`Centrifugo unsubscribe error for user ${userId} on ${channel}: ${err.message}`);
+    return false;
+  }
+}
+
+module.exports = { publish, unsubscribeUserFromChannel, normalizeCentrifugoUrl };
