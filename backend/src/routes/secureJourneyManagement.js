@@ -73,6 +73,12 @@ function validateServiceDetails(b){
 }
 function isMobilityManager(user){return !!user&&MOBILITY_MANAGER_ROLES.has(String(user.role||'').toLowerCase());}
 function dutyEventAllowed(roles,eventType){return Array.isArray(roles)&&roles.some(role=>(DUTY_EVENT_RULES[role]||[]).includes(eventType));}
+function isInternalOperationalEvent(e){return parseJson(e?.detail, {})?.classification==='INTERNAL_OPERATIONS';}
+function journeyForViewer(journey,events,canSeeInternal){
+ const visibleJourney=canSeeInternal?journey:{...journey,principal_reference:null,flight_status_note:null,meet_greet_instructions:null};
+ const visibleEvents=canSeeInternal?(events||[]):(events||[]).filter(e=>!isInternalOperationalEvent(e));
+ return {...visibleJourney,events:visibleEvents};
+}
 async function activeDutyRoles(db,org,journeyId,userId){const r=await db('SELECT duty_role FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL ORDER BY duty_role',[org,journeyId,userId]);return r.rows.map(row=>row.duty_role);}
 async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=true){
  const slug='sjm-'+String(journey.id).replace(/-/g,'').slice(0,20).toLowerCase(),name=txt(journey.reference,40)+' · Mission team';
@@ -80,7 +86,8 @@ async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=tru
  const channelId=r.rows[0]?.id;if(!channelId)throw new Error('sjm_comms_channel_unavailable');
  if(actorId)await db('INSERT INTO channel_members (channel_id,user_id,org_id,is_channel_admin) VALUES ($1,$2,$3,$4) ON CONFLICT (channel_id,user_id) DO UPDATE SET is_channel_admin=EXCLUDED.is_channel_admin',[channelId,actorId,org,actorIsManager===true]);
  await db("INSERT INTO channel_members (channel_id,user_id,org_id,is_channel_admin) SELECT $1,p.user_id,$2,false FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status='active' WHERE p.org_id=$2 AND p.journey_id=$3 AND p.removed_at IS NULL ON CONFLICT (channel_id,user_id) DO NOTHING",[channelId,org,journey.id]);
- await db("DELETE FROM channel_members cm WHERE cm.org_id=$1 AND cm.channel_id=$2 AND cm.is_channel_admin=false AND NOT EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=$1 AND p.journey_id=$3 AND p.user_id=cm.user_id AND p.removed_at IS NULL)",[org,channelId,journey.id]);
+ await db("UPDATE channel_members cm SET is_channel_admin=EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher','operator')) WHERE cm.org_id=$1 AND cm.channel_id=$2",[org,channelId]);
+ await db("DELETE FROM channel_members cm WHERE cm.org_id=$1 AND cm.channel_id=$2 AND NOT EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=$1 AND p.journey_id=$3 AND p.user_id=cm.user_id AND p.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher','operator'))",[org,channelId,journey.id]);
  return channelId;
 }
 function validateJourney(b) {
@@ -531,9 +538,13 @@ router.patch('/journeys/:id/flight-status',asyncHandler(async(req,res)=>{
 
 router.get('/journeys/:id',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
+  const dutyRoles=await activeDutyRoles(req.db,org,j.id,req.user.id);
+  const canSeeInternal=isMobilityManager(req.user)||dutyRoles.length>0;
   const [stops,events,telemetry]=await Promise.all([stopsFor(req.db,org,j.id),eventsFor(req.db,org,j.id),telemetryFor(req.db,org,j)]);
   const assessment=parseJson(j.route_assessment,null);
-  res.json({data:{...j,stops,events,telemetry_snapshot:telemetry,readiness_checklist:readinessChecklist(j,stops,assessment,telemetry)}});
+  const safe=journeyForViewer(j,events,canSeeInternal);
+  res.setHeader('Cache-Control','no-store');
+  res.json({data:{...safe,stops,telemetry_snapshot:telemetry,readiness_checklist:readinessChecklist(j,stops,assessment,telemetry)}});
 }));
 router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
@@ -733,4 +744,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,isInternalOperationalEvent,journeyForViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
