@@ -28,7 +28,7 @@ type Participant={id:string;user_id:string;duty_role:string;is_primary:boolean;r
 type TeamUser={id:string;name:string;role:string;email:string};
 type IntakePickTarget='origin'|'destination'|{stopIndex:number}|null;
 type StopDraft={name:string;stop_type:string;lat:string;lng:string;instructions:string;planned_arrival_at?:string|null;planned_departure_at?:string|null;duration_minutes?:number|null};
-const META:Record<Status,{label:string;cls:string}>={requested:{label:'Requested',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'},planning:{label:'Planning',cls:'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'},assessment_pending:{label:'Assessment pending',cls:'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'},ready_for_review:{label:'Ready for review',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},approved:{label:'Approved',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},ready_to_depart:{label:'Ready to depart',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},in_progress:{label:'In progress',cls:'border-orange-500/30 bg-orange-500/10 text-orange-200'},paused:{label:'Paused',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},exception:{label:'Exception',cls:'border-red-500/30 bg-red-500/10 text-red-200'},arrival_pending_verification:{label:'Arrival verification',cls:'border-violet-500/30 bg-violet-500/10 text-violet-200'},closed:{label:'Closed',cls:'border-violet-500/30 bg-violet-500/10 text-violet-200'},cancelled:{label:'Cancelled',cls:'border-red-500/30 bg-red-500/10 text-red-200'},aborted:{label:'Aborted',cls:'border-red-500/30 bg-red-500/10 text-red-200'},on_hold:{label:'On hold',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'}};
+const META:Record<Status,{label:string;cls:string}>={requested:{label:'Requested',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'},planning:{label:'Planning',cls:'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'},assessment_pending:{label:'Assessment pending',cls:'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'},ready_for_review:{label:'Ready for review',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},approved:{label:'Approved',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},ready_to_depart:{label:'Ready to depart',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},in_progress:{label:'In progress',cls:'border-orange-500/30 bg-orange-500/10 text-orange-200'},paused:{label:'Paused',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},exception:{label:'Exception',cls:'border-red-500/30 bg-red-500/10 text-red-200'},arrival_pending_verification:{label:'Arrival verification',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},closed:{label:'Closed',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'},cancelled:{label:'Cancelled',cls:'border-red-500/30 bg-red-500/10 text-red-200'},aborted:{label:'Aborted',cls:'border-red-500/30 bg-red-500/10 text-red-200'},on_hold:{label:'On hold',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'}};
 const SECTIONS=[{id:'summary',label:'Mission summary'},{id:'itinerary',label:'Planned itinerary'},{id:'stops',label:'Stops and checkpoints'},{id:'route_assessment',label:'Route risk assessment'},{id:'operational_events',label:'Operational event log'},{id:'telemetry_snapshot',label:'Observed telemetry snapshot'}];
 const INTAKE_STEPS=[{label:'Mission brief',detail:'Intent, client and operating context'},{label:'Corridor',detail:'Origin, destination and schedule'},{label:'Itinerary',detail:'Ordered stops and checkpoints'},{label:'Review',detail:'Confirm the request before saving'}] as const;
 const EMPTY={title:'',purpose:'',client_id:'',convoy_id:'',service_type:'executive_transfer',principal_reference:'',airport_code:'',terminal:'',airline:'',flight_number:'',flight_scheduled_at:'',meet_greet_instructions:'',transport_mode:'road',origin_label:'',origin_lat:'',origin_lng:'',destination_label:'',destination_lat:'',destination_lng:'',planned_departure_at:'',planned_arrival_at:'',timezone:'Africa/Nairobi'};
@@ -39,8 +39,8 @@ function dateText(v?:string|null){if(!v)return'Not recorded';const d=new Date(v)
 function errorText(e:unknown,fallback:string){const x=e as{response?:{data?:{message?:string;error?:string}};message?:string};return x.response?.data?.message||x.response?.data?.error||x.message||fallback}
 function Input({label,children,className=''}:{label:string;children:ReactNode;className?:string}){return <label className={'block min-w-0 '+className}><span className="mb-1.5 block text-[10px] font-medium text-slate-400">{label}</span>{children}</label>}
 const field='w-full min-w-0 rounded-lg border border-white/10 bg-[#070b12] px-3 py-2.5 text-[12px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-emerald-300/45 focus:ring-2 focus:ring-emerald-300/[0.08]';
-function Panel({children,className=''}:{children:ReactNode;className?:string}){return <section className={'rounded-2xl border border-white/[0.085] bg-[#0b1019]/95 shadow-[0_18px_55px_rgba(0,0,0,.16)] '+className}>{children}</section>}
-function Kicker({children}:{children:ReactNode}){return <p className="font-mono text-[9px] font-semibold uppercase tracking-[.2em] text-emerald-300/75">{children}</p>}
+function Panel({children,className=''}:{children:ReactNode;className?:string}){return <section className={'sjm-panel '+className}>{children}</section>}
+function Kicker({children}:{children:ReactNode}){const label=typeof children==='string'?children.toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase()).replace(/\bXd\b/g,'XD').replace(/\bSjm\b/g,'SJM').replace(/\bCpo\b/g,'CPO').replace(/\bApi\b/g,'API'):children;return <p className="sjm-kicker">{label}</p>}
 function Btn({children,onClick,disabled=false,tone='neutral'}:{children:ReactNode;onClick:()=>void;disabled?:boolean;tone?:'neutral'|'green'|'red'}){const c=tone==='green'?'border-emerald-300/25 bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/15':tone==='red'?'border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15':'border-white/10 bg-white/[0.035] text-slate-300 hover:bg-white/[0.07] hover:text-white';return <button type="button" onClick={onClick} disabled={disabled} className={'inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 '+c}>{children}</button>}
 function StatusBadge({value}:{value:Status}){return <span className={'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase '+META[value].cls}><i className="h-1.5 w-1.5 rounded-full bg-current"/>{META[value].label}</span>}
 
@@ -66,7 +66,7 @@ function journeyMarkerElement(kind:'origin'|'stop'|'destination'|'observed_live'
   const dot=document.createElement('span');
   dot.style.width='11px';dot.style.height='11px';dot.style.borderRadius='50%';dot.style.backgroundColor=color;dot.style.border='2px solid #07111d';dot.style.boxShadow='0 0 0 3px '+color+'44';dot.style.flexShrink='0';
   const label=document.createElement('span');
-  label.textContent=title;label.style.padding='3px 6px';label.style.background='rgba(5,10,18,.9)';label.style.border='1px solid rgba(255,255,255,.16)';label.style.borderRadius='5px';label.style.color='#f8fafc';label.style.fontSize='10px';label.style.fontWeight='600';label.style.whiteSpace='nowrap';label.style.maxWidth='150px';label.style.overflow='hidden';label.style.textOverflow='ellipsis';
+  label.textContent=title;label.style.padding='3px 6px';label.style.background='rgba(5,10,18,.9)';label.style.border='1px solid rgba(255,255,255,.16)';label.style.borderRadius='5px';label.style.color='#f8fafc';label.style.fontSize='11px';label.style.fontWeight='600';label.style.whiteSpace='nowrap';label.style.maxWidth='150px';label.style.overflow='hidden';label.style.textOverflow='ellipsis';
   root.append(dot,label);
   return root;
 }
@@ -119,7 +119,6 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
       existing.setData(routeData);
     }else{
       map.addSource('sjm-route',{type:'geojson',data:routeData});
-      map.addLayer({id:'sjm-route-glow',type:'line',source:'sjm-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#22d3ee','line-width':10,'line-opacity':0.16,'line-blur':2}});
       map.addLayer({id:'sjm-route-line',type:'line',source:'sjm-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#39ff88','line-width':3.5,'line-opacity':0.96}});
     }
     markersRef.current.forEach(marker=>marker.remove());
@@ -361,36 +360,30 @@ export default function SecureJourneyManagement(){
  const isTerminal=Boolean(journey&&['closed','cancelled','aborted'].includes(journey.status));
 
 return (
-  <main className="relative min-h-full overflow-y-auto bg-[#050913] text-slate-100">
-   <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
-    <div className="absolute inset-0 opacity-[0.16]" style={{backgroundImage:'linear-gradient(rgba(140,170,200,.06) 1px, transparent 1px),linear-gradient(90deg,rgba(140,170,200,.06) 1px,transparent 1px)',backgroundSize:'36px 36px'}}/>
-    <div className="absolute -right-48 -top-56 h-[620px] w-[620px] rounded-full bg-emerald-400/[0.045] blur-[130px]"/>
-    <div className="absolute -left-56 top-[45%] h-[520px] w-[520px] rounded-full bg-cyan-500/[0.035] blur-[140px]"/>
-   </div>
-   <div className="relative mx-auto max-w-[1940px] space-y-4 p-3 sm:p-4 lg:p-6">
-    <header className="relative overflow-hidden rounded-[26px] border border-white/[0.10] bg-[linear-gradient(118deg,rgba(8,19,29,.98),rgba(10,16,28,.97)_55%,rgba(11,24,31,.98))] p-4 shadow-[0_24px_80px_rgba(0,0,0,.24)] sm:p-6 xl:p-7">
-     <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-32 h-[380px] w-[380px] rounded-full border border-emerald-300/[0.09]"/>
-     <div aria-hidden="true" className="pointer-events-none absolute -right-8 -top-16 h-[290px] w-[290px] rounded-full border border-cyan-300/[0.07]"/>
+  <main className="sjm-console relative min-h-full overflow-y-auto bg-[#080c12] text-slate-100">
+   <div className="relative mx-auto max-w-[1680px] space-y-4 p-3 sm:p-4 lg:p-6">
+    <header className="relative border-b border-white/[0.10] bg-[#0b1018] p-4 sm:p-5 xl:p-6">
      <div className="relative flex flex-col gap-5 2xl:flex-row 2xl:items-end 2xl:justify-between">
-      <div className="max-w-4xl">
-       <div className="mb-4 flex flex-wrap items-center gap-2 text-[10px]">
-        <span className="grid h-9 w-9 place-items-center rounded-xl border border-emerald-300/20 bg-emerald-300/[0.07]"><Navigation size={17} className="text-emerald-200"/></span>
-        <Kicker>XD LIVE SURVEILLANCE</Kicker><ChevronRight size={12} className="text-slate-600"/><span className="font-mono uppercase tracking-[.18em] text-slate-500">Operations / SJM</span>
+      <div className="max-w-3xl">
+       <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="font-semibold tracking-[.04em] text-emerald-300">XD Live Surveillance</span>
+        <span className="text-slate-600">/</span>
+        <span className="text-slate-400">Operations</span>
        </div>
-       <h1 className="text-[clamp(1.75rem,3.1vw,3.25rem)] font-semibold leading-[1.05] tracking-[-.045em] text-white">Secure movement.<br className="hidden sm:block"/><span className="text-emerald-300"> Evidenced control.</span></h1>
-       <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">A decision-led mission workspace for dispatch readiness, corridor safety, movement exceptions, arrival attestation and client reporting. Every status is tied to a stored record; missing evidence stays visible.</p>
-       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.09] bg-black/20 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.12em] text-slate-400"><ShieldCheck size={12} className="text-emerald-200"/>Tenant-scoped records</span>
-        <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.09] bg-black/20 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.12em] text-slate-400"><Route size={12} className="text-cyan-200"/>Route Safety evidence</span>
-        <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.09] bg-black/20 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.12em] text-slate-400"><Activity size={12} className="text-violet-200"/>Audit-linked operations</span>
+       <h1 className="text-[clamp(1.5rem,2.2vw,2.2rem)] font-semibold leading-tight tracking-tight text-white">Secure journey operations</h1>
+       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Review requests, verify route controls, coordinate assigned teams, monitor exceptions and close out each journey with auditable evidence.</p>
+       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400">
+        <span className="inline-flex items-center gap-2"><ShieldCheck size={13} className="text-emerald-300"/>Tenant-scoped records</span>
+        <span className="inline-flex items-center gap-2"><Route size={13} className="text-slate-300"/>Route Safety evidence</span>
+        <span className="inline-flex items-center gap-2"><Activity size={13} className="text-slate-300"/>Auditable operations</span>
        </div>
       </div>
       <div className="flex min-w-0 flex-col gap-3 2xl:min-w-[420px] 2xl:items-end">
        <div className="flex w-full flex-wrap items-center gap-2 2xl:justify-end">
         <div className="inline-flex min-h-[38px] items-center gap-2 rounded-xl border border-white/[0.09] bg-black/25 px-3 py-2">
          <span className={'h-2 w-2 rounded-full '+(registerQ.isError?'bg-red-400':registerQ.isFetching?'animate-pulse bg-amber-300':'bg-emerald-300')}/>
-         <span className="font-mono text-[9px] font-semibold uppercase tracking-[.15em] text-slate-300">{registerQ.isError?'API unavailable':registerQ.isFetching?'Synchronising records':'API connected'}</span>
-         <span className="hidden border-l border-white/10 pl-2 text-[9px] text-slate-600 sm:inline">AUTO-REFRESH 30S</span>
+         <span className="font-mono text-[9px] font-semibold uppercase tracking-[.15em] text-slate-300">{registerQ.isError?'Register unavailable':registerQ.isFetching?'Refreshing register':registerQ.isSuccess?'Register loaded':'Waiting for first response'}</span>
+         <span className="hidden border-l border-white/10 pl-2 text-[11px] text-slate-500 sm:inline">Refresh cycle · 30 sec</span>
         </div>
         <div className="flex-1 text-[10px] text-slate-500 sm:flex-none 2xl:text-right">
          <span className="block font-mono uppercase tracking-[.14em] text-slate-600">Last register response</span>
@@ -398,7 +391,7 @@ return (
         </div>
        </div>
        <div className="flex flex-wrap gap-2 2xl:justify-end">
-        <Link to="/corridor/missions" className="inline-flex items-center gap-2 rounded-xl border border-violet-300/20 bg-violet-300/[0.045] px-3 py-2 text-[11px] font-semibold text-violet-100">Field mission app <ArrowUpRight size={13}/></Link>
+        <Link to="/corridor/missions" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px] font-semibold text-slate-200">Field operations <ArrowUpRight size={13}/></Link>
         <Btn onClick={()=>{void refresh();void qc.invalidateQueries({queryKey:['sjm-clients']});void qc.invalidateQueries({queryKey:['sjm-convoys']})}} disabled={registerQ.isFetching}><RefreshCw size={13} className={registerQ.isFetching?'animate-spin':''}/>Refresh register</Btn>
         {isSupervisor&&<Btn disabled={act.isPending} onClick={()=>act.mutate({kind:'management_summary'})}><FileBarChart2 size={13}/>Portfolio snapshot</Btn>}
         {isSupervisor&&<Btn tone="green" onClick={openCreate}><Plus size={14}/>Create mission</Btn>}
@@ -414,8 +407,8 @@ return (
       {label:'Safety / exception attention',value:stats.review,detail:'Exception, pause, arrival or restrictive gate',icon:AlertTriangle,tone:'text-orange-200',rule:'from-orange-300/70'},
       {label:'Arrival verification',value:journeys.filter(j=>j.status==='arrival_pending_verification').length,detail:'Closure requires supervisor attestation',icon:CheckCircle2,tone:'text-violet-200',rule:'from-violet-300/70'}
      ].map(card=><div key={card.label} className="relative overflow-hidden rounded-2xl border border-white/[0.085] bg-[#0b111c]/90 p-3.5 sm:p-4">
-      <div className={'absolute inset-x-0 top-0 h-px bg-gradient-to-r '+card.rule+' to-transparent'}/>
-      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-medium uppercase leading-4 tracking-[.12em] text-slate-500">{card.label}</p><p className={'mt-2 text-3xl font-semibold tabular-nums tracking-tight '+card.tone}>{String(card.value).padStart(2,'0')}</p></div><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/[0.07] bg-white/[0.025]"><card.icon size={16} className={card.tone}/></span></div>
+      
+      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-medium uppercase leading-4 tracking-[.12em] text-slate-500">{card.label}</p><p className={'mt-2 text-3xl font-semibold tabular-nums tracking-tight '+card.tone}>{String(card.value)}</p></div><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/[0.07] bg-white/[0.025]"><card.icon size={16} className={card.tone}/></span></div>
       <p className="mt-2 text-[10px] leading-4 text-slate-600">{card.detail}</p>
      </div>)}
     </section>
@@ -432,7 +425,7 @@ return (
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4" aria-label="Mission intake steps">
      {INTAKE_STEPS.map((step,index)=><button type="button" key={step.label} onClick={()=>{if(index<=intakeStep||(index===intakeStep+1&&!intakeStepIssue)){setIntakePickTarget(null);setIntakeStep(index as 0|1|2|3)}}} className={'relative rounded-xl border p-3 text-left transition '+(intakeStep===index?'border-emerald-300/30 bg-emerald-300/[0.075]':'border-white/[0.07] bg-black/15 hover:border-white/[0.14]')}><span className={'font-mono text-[9px] '+(intakeStep===index?'text-emerald-200':'text-slate-600')}>STEP {String(index+1).padStart(2,'0')}</span><span className={'mt-1 block text-[11px] font-semibold '+(intakeStep===index?'text-white':'text-slate-300')}>{step.label}</span><span className="mt-1 hidden text-[9px] leading-4 text-slate-600 sm:block">{step.detail}</span></button>)}
     </div>
-    <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300 transition-all" style={{width:((intakeStep+1)/INTAKE_STEPS.length*100)+'%'}}/></div>
+    <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-emerald-300 transition-all style={{width:((intakeStep+1)/INTAKE_STEPS.length*100)+'%'}}/></div>
 
     {intakeStep===0&&<div className="space-y-4">
      <div className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.025] p-3"><Kicker>01 / MISSION MANDATE</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Establish purpose, tenant/client context and operating mode. Saving creates a requested dossier; it does not approve, dispatch or assess the route.</p></div>
@@ -503,7 +496,7 @@ return (
        {registerQ.isLoading?<div className="p-8 text-center text-xs text-slate-500"><RefreshCw size={17} className="mx-auto mb-3 animate-spin"/>Loading tenant register…</div>:registerQ.isError?<div role="alert" className="m-2 rounded-xl border border-red-400/20 bg-red-500/[0.05] p-4 text-xs leading-5 text-red-200">The mission register could not be loaded. {errorText(registerQ.error,'API request failed.')}</div>:visible.length===0?<div className="m-2 rounded-xl border border-dashed border-white/[0.10] p-5 text-center"><Route size={22} className="mx-auto mb-3 text-slate-600"/><p className="text-sm font-medium text-slate-300">{journeys.length?'No matching missions':'No journey records in this tenant'}</p><p className="mt-2 text-[11px] leading-5 text-slate-600">{journeys.length?'Change the filters or search terms.':'Create a mission to start a real, tenant-scoped operational record.'}</p>{!journeys.length&&<button type="button" onClick={()=>{setIntakeStep(0);setIntakePickTarget(null);setShowCreate(true)}} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-300/25 bg-emerald-300/[0.08] px-3 py-2 text-[11px] font-semibold text-emerald-100"><Plus size={13}/>Create mission</button>}</div>:visible.map(j=>{
         const a=assessmentOf(j.route_assessment);
         const isSelected=j.id===journey?.id;
-        return <button key={j.id} type="button" onClick={()=>choose(j.id)} aria-pressed={isSelected} className={'group relative w-full overflow-hidden rounded-xl border p-3.5 text-left transition '+(isSelected?'border-emerald-300/30 bg-[linear-gradient(120deg,rgba(16,45,43,.55),rgba(10,18,29,.95))] shadow-[inset_2px_0_0_0_rgba(110,231,183,.9)]':'border-white/[0.055] bg-white/[0.012] hover:border-white/[0.13] hover:bg-white/[0.035]')}>
+        return <button key={j.id} type="button" onClick={()=>choose(j.id)} aria-pressed={isSelected} className={'group relative w-full overflow-hidden rounded-xl border p-3.5 text-left transition '+(isSelected?'border-emerald-300/35 bg-emerald-300/[0.045] shadow-none':'border-white/[0.075] bg-white/[0.012] hover:border-white/[0.14] hover:bg-white/[0.025]')}>
          <div className="flex items-start justify-between gap-2"><span className="font-mono text-[10px] font-semibold tracking-[.08em] text-emerald-200">{j.reference}</span><StatusBadge value={j.status}/></div>
          <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-5 text-slate-100">{j.title}</p>
          <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-400"><span className="max-w-[44%] truncate">{j.origin_label}</span><ArrowRight size={12} className="shrink-0 text-slate-600"/><span className="max-w-[44%] truncate">{j.destination_label}</span></div>
