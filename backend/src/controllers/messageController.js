@@ -115,12 +115,14 @@ async function withChannelReaderTransaction(req, res, channelId, work) {
     const channel = channelResult.rows[0] ?? null;
     if (!channel) return { accessError: { status: 404, message: 'Channel not found' } };
 
+    let realtimeChannel = `org#${req.user.org_id}#comms#${channelId}`;
     if (channel.sjm_journey_id) {
       const mission = await db(
-        'SELECT id FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+        'SELECT id, comms_epoch FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
         [channel.sjm_journey_id, req.user.org_id],
       );
       if (!mission.rows.length) return { accessError: { status: 404, message: 'Channel not found' } };
+      realtimeChannel = sjmChannelName(req.user.org_id, channelId, mission.rows[0].comms_epoch);
       if (!isSjmChannelManager(req.user) && !(await hasActiveSjmAssignment(db, req.user.org_id, channel.sjm_journey_id, req.user.id))) {
         return { accessError: { status: 403, message: 'Active SJM assignment required for this channel' } };
       }
@@ -134,7 +136,7 @@ async function withChannelReaderTransaction(req, res, channelId, work) {
     if (!member && !isOrgAdmin(req.user)) {
       return { accessError: { status: 403, message: 'Not a member of this channel' } };
     }
-    return { value: await work(db, { channel, member }) };
+    return { value: await work(db, { channel, member, realtimeChannel }), realtimeChannel };
   });
 
   if (outcome?.accessError) {
@@ -142,7 +144,7 @@ async function withChannelReaderTransaction(req, res, channelId, work) {
     else forbidden(res, outcome.accessError.message);
     return { ok: false };
   }
-  return { ok: true, value: outcome?.value };
+  return { ok: true, value: outcome?.value, realtimeChannel: outcome?.realtimeChannel };
 }
 
 /** Runs channel-manager decisions and writes under the same membership/journey lock. */
@@ -197,10 +199,18 @@ async function resolveRealtimeChannelName(orgId, channelId) {
   });
 }
 
-function publishCommsEvent(orgId, channelId, type, payload) {
-  resolveRealtimeChannelName(orgId, channelId)
-    .then((channel) => channel ? publish(channel, { type, channel_id: channelId, ...payload }) : null)
-    .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
+function publishCommsEvent(orgId, channelId, type, payload, authorizedRealtimeChannel = null) {
+  const event = { type, channel_id: channelId, ...payload };
+  if (authorizedRealtimeChannel) {
+    // Preserve the generation held under the message transaction's journey lock.
+    // A concurrent roster change must not redirect an in-flight event to the new team.
+    Promise.resolve(publish(authorizedRealtimeChannel, event))
+      .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
+  } else {
+    resolveRealtimeChannelName(orgId, channelId)
+      .then((channel) => channel ? publish(channel, event) : null)
+      .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
+  }
   publish(`org#${orgId}`, { type: `comms.${type}`, channel_id: channelId });
 }
 
@@ -730,7 +740,7 @@ const sendMessage = asyncHandler(async (req, res) => {
     deleted: false,
   };
 
-  publishCommsEvent(req.user.org_id, req.params.id, 'message.created', { message: payload });
+  publishCommsEvent(req.user.org_id, req.params.id, 'message.created', { message: payload }, guarded.realtimeChannel);
   res.status(201).json({ data: payload });
 });
 
@@ -770,7 +780,7 @@ const deleteMessage = asyncHandler(async (req, res) => {
 
   publishCommsEvent(req.user.org_id, req.params.id, 'message.deleted', {
     message_id: result.value.messageId, deleted_by: req.user.id,
-  });
+  }, result.realtimeChannel);
   res.json({ ok: true });
 });
 
@@ -815,7 +825,7 @@ const addReaction = asyncHandler(async (req, res) => {
   if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
   publishCommsEvent(req.user.org_id, req.params.id, 'reaction.added', {
     message_id: req.params.msgId, user_id: req.user.id, emoji: value.emoji,
-  });
+  }, result.realtimeChannel);
   res.status(201).json({ ok: true });
 });
 
@@ -831,7 +841,7 @@ const removeReaction = asyncHandler(async (req, res) => {
   if (!result.ok) return;
   publishCommsEvent(req.user.org_id, req.params.id, 'reaction.removed', {
     message_id: req.params.msgId, user_id: req.user.id, emoji,
-  });
+  }, result.realtimeChannel);
   res.json({ ok: true });
 });
 
@@ -874,7 +884,7 @@ const addPin = asyncHandler(async (req, res) => {
   });
   if (!result.ok) return;
   if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
-  publishCommsEvent(req.user.org_id, req.params.id, 'pin.added', { message_id: value.messageId });
+  publishCommsEvent(req.user.org_id, req.params.id, 'pin.added', { message_id: value.messageId }, result.realtimeChannel);
   res.status(201).json({ ok: true });
 });
 
@@ -884,7 +894,7 @@ const removePin = asyncHandler(async (req, res) => {
     [req.params.id, req.params.messageId],
   ));
   if (!result.ok) return;
-  publishCommsEvent(req.user.org_id, req.params.id, 'pin.removed', { message_id: req.params.messageId });
+  publishCommsEvent(req.user.org_id, req.params.id, 'pin.removed', { message_id: req.params.messageId }, result.realtimeChannel);
   res.json({ ok: true });
 });
 

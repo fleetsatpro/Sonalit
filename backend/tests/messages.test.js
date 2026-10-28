@@ -32,6 +32,7 @@ jest.mock('../src/config/database', () => ({
 jest.mock('../src/realtime/centrifugo', () => ({ publish: jest.fn() }));
 
 const controller = require('../src/controllers/messageController');
+const { publish } = require('../src/realtime/centrifugo');
 
 // ── Test harness ────────────────────────────────────────────────────────────
 
@@ -91,6 +92,46 @@ test('sendMessage: regular member of channel can send text', async () => {
   await controller.sendMessage(req, res, jest.fn());
   expect(res.status).toHaveBeenCalledWith(201);
   expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ body: 'hello world' }) }));
+});
+
+test('sendMessage: SJM event stays on the generation held by the authorisation lock', async () => {
+  jest.clearAllMocks();
+  const journeyId = '11111111-2222-4333-8444-555555555555';
+  const req = makeReq({
+    user: { id: USER_MEMBER, org_id: ORG_A, role: 'driver', name: 'Assigned Driver' },
+    dbReturns: [
+      [/^SELECT \* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: journeyId }]],
+      [/^SELECT \* FROM channel_members/, [{ user_id: USER_MEMBER, is_channel_admin: false }]],
+      [/^SELECT name, role FROM users/, [{ name: 'Assigned Driver', role: 'driver' }]],
+      [/message_attachments WHERE message_id/, []],
+    ],
+  });
+  req.params.id = CHAN;
+  req.body = { text: 'Operational check-in' };
+  req.dbTx = jest.fn(async (work) => work({ query: (sql, params) => {
+    if (/SELECT id, comms_epoch FROM sjm_journeys/.test(sql)) {
+      return Promise.resolve({ rows: [{ id: journeyId, comms_epoch: 7 }] });
+    }
+    if (/sjm_journey_participants/.test(sql)) {
+      return Promise.resolve({ rows: [{ duty_role: 'driver' }] });
+    }
+    if (sql.includes('INSERT INTO messages')) {
+      return Promise.resolve({ rows: [{
+        id: 'msg-sjm', channel_id: CHAN, author_id: USER_MEMBER, body: 'Operational check-in',
+        reply_to_id: null, created_at: new Date().toISOString(),
+      }], rowCount: 1 });
+    }
+    return req.db(sql, params);
+  } }));
+  const res = makeRes();
+
+  await controller.sendMessage(req, res, jest.fn());
+
+  expect(res.status).toHaveBeenCalledWith(201);
+  expect(publish).toHaveBeenCalledWith(
+    `org#${ORG_A}#comms#${CHAN}#v7`,
+    expect.objectContaining({ type: 'message.created', message: expect.objectContaining({ body: 'Operational check-in' }) }),
+  );
 });
 
 test('sendMessage: non-member of channel is 403', async () => {
