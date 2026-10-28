@@ -147,13 +147,16 @@ describe('SJM validation and evidence boundaries', () => {
       calls.push({sql,params});
       if(sql.includes('INSERT INTO channels'))return {rows:[{id:channelId}]};
       if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:removedUser}]};
-      if(sql.includes('DELETE FROM channel_members cm'))expect(unsubscribeUserFromChannel).toHaveBeenCalledWith(removedUser,'org#org-1#comms#'+channelId);
+      if(sql.includes('DELETE FROM channel_members cm')) {
+        expect(unsubscribeUserFromChannel).toHaveBeenNthCalledWith(1,'org-1','org#org-1#comms#'+channelId);
+        expect(unsubscribeUserFromChannel).toHaveBeenNthCalledWith(2,removedUser,'org#org-1#comms#'+channelId);
+      }
       return {rows:[],rowCount:1};
     };
     const result=await syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1'},'manager-1',true);
     expect(result).toBe(channelId);
     expect(calls.findIndex(c=>c.sql.includes('SELECT cm.user_id FROM channel_members cm'))).toBeLessThan(calls.findIndex(c=>c.sql.includes('DELETE FROM channel_members cm')));
-    expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(1);
+    expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(2);
   });
 
   test('fails closed and preserves old roster memberships if live-channel revocation fails', async () => {
