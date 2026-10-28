@@ -12,6 +12,25 @@ const { runSwarm }=require('../src/services/geo/routeSafetySwarm');
 const { analyseRoute }=require('../src/utils/routeAnalyser');
 describe('Route Safety ordered via-points',()=>{
  beforeEach(()=>{query.mockClear();planRouteAlternatives.mockReset();rankRoutes.mockReset();runSwarm.mockReset();});
+ test('keeps risk score, distance and duration unavailable when providers cannot return a routed itinerary',async()=>{
+  const origin={lat:-1.286389,lng:36.817223},stop1={lat:-3.396,lng:38.556},stop2={lat:-3.8,lng:38.9},destination={lat:-4.043477,lng:39.668206},ordered=[origin,stop1,stop2,destination];
+  planRouteAlternatives.mockResolvedValue([]);
+  rankRoutes.mockImplementation(()=>{throw new Error('Unrouted waypoints must not be scored as road geometry');});
+  runSwarm.mockImplementation(()=>{throw new Error('AI route selector must not rank a missing road route');});
+  const result=await analyseRoute({origin,destination,viaPoints:[stop1,stop2],orgId:'11111111-1111-1111-1111-111111111111'});
+  expect(result.recommended_route.waypoints).toEqual(ordered);
+  expect(result.recommended_route.label).toBe('Unrouted waypoint reference');
+  expect(result.recommended_route.risk_score).toBeNull();
+  expect(result.overall_risk_score).toBeNull();
+  expect(result.recommended_route.distance_km).toBeNull();
+  expect(result.recommended_route.estimated_duration_minutes).toBeNull();
+  expect(result.recommended_route.notes).toMatch(/road routing unavailable/i);
+  expect(result.route_status).toBe('unrouted');
+  expect(result.safety_gate).toBe('HUMAN_REVIEW');
+  expect(result.constraint_status.risk_score_available).toBe(false);
+  expect(rankRoutes).not.toHaveBeenCalled();
+  expect(runSwarm).not.toHaveBeenCalled();
+ });
  test('routes through every supplied via-point in sequence and bypasses endpoint-only cache',async()=>{
   const origin={lat:-1.286389,lng:36.817223},stop={lat:-3.396,lng:38.556},destination={lat:-4.043477,lng:39.668206},ordered=[origin,stop,destination];
   planRouteAlternatives.mockResolvedValue([{route:ordered,provider:'osrm',distance_km:610,duration_min:420}]);
