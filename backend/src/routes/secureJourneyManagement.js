@@ -5,6 +5,7 @@ const PDFDocument = require('pdfkit');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const { analyseRoute } = require('../utils/routeAnalyser');
+const { unsubscribeUserFromChannel } = require('../realtime/centrifugo');
 
 const STATUSES = ['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification','closed','cancelled','aborted','on_hold'];
 const TERMINAL_STATUSES = ['closed','cancelled','aborted'];
@@ -123,6 +124,11 @@ async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=tru
  if(actorId)await db('INSERT INTO channel_members (channel_id,user_id,org_id,is_channel_admin) VALUES ($1,$2,$3,$4) ON CONFLICT (channel_id,user_id) DO UPDATE SET is_channel_admin=EXCLUDED.is_channel_admin',[channelId,actorId,org,actorIsManager===true]);
  await db("INSERT INTO channel_members (channel_id,user_id,org_id,is_channel_admin) SELECT $1,p.user_id,$2,false FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status='active' WHERE p.org_id=$2 AND p.journey_id=$3 AND p.removed_at IS NULL ON CONFLICT (channel_id,user_id) DO NOTHING",[channelId,org,journey.id]);
  await db("UPDATE channel_members cm SET is_channel_admin=EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher')) WHERE cm.org_id=$1 AND cm.channel_id=$2",[org,channelId]);
+ const staleMembers=await db("SELECT cm.user_id FROM channel_members cm WHERE cm.org_id=$1 AND cm.channel_id=$2 AND NOT EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=$1 AND p.journey_id=$3 AND p.user_id=cm.user_id AND p.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher'))",[org,channelId,journey.id]);
+ for(const member of staleMembers.rows){
+   const revoked=await unsubscribeUserFromChannel(member.user_id,'org#'+org+'#comms#'+channelId);
+   if(!revoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
+ }
  await db("DELETE FROM channel_members cm WHERE cm.org_id=$1 AND cm.channel_id=$2 AND NOT EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=$1 AND p.journey_id=$3 AND p.user_id=cm.user_id AND p.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher'))",[org,channelId,journey.id]);
  return channelId;
 }
@@ -926,4 +932,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility,lockJourneyForMobilityRead,routeAssessmentUsable};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility,lockJourneyForMobilityRead,routeAssessmentUsable,syncJourneyCommsChannel};
