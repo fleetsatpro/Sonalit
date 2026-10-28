@@ -12,7 +12,7 @@ import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarC
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
 type Point={lat:number;lng:number;name?:string;label?:string};
-type Stop={id:string;sequence:number;name:string;stop_type:string;lat?:number|null;lng?:number|null;planned_arrival_at?:string|null;stop_status:'planned'|'reached'|'skipped';confirmed_at?:string|null;confirmation_source?:string|null;instructions?:string|null};
+type Stop={id:string;sequence:number;name:string;stop_type:string;lat?:number|null;lng?:number|null;planned_arrival_at?:string|null;planned_departure_at?:string|null;duration_minutes?:number|null;stop_status:'planned'|'reached'|'skipped';confirmed_at?:string|null;confirmation_source?:string|null;instructions?:string|null};
 type EventRow={id:string;event_type:string;summary:string;detail:Record<string,unknown>;source:string;created_at:string};
 type Assessment={route_status?:string;safety_gate?:string;overall_risk_score?:number;routing_provider?:string;ai_summary?:string;risk_zone_count?:number;recommended_route?:{blocked?:boolean;distance_km?:number;estimated_duration_minutes?:number;waypoints?:Point[];risk_factors?:string[]}};
 type TelemetryDevice={device_id:string;device_name:string;officer_name?:string|null;lat?:number|string|null;lng?:number|string|null;speed_kph?:number|string|null;heading?:number|string|null;accuracy_m?:number|string|null;observed_at?:string|Date|null;source?:string|null;freshness:'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE'|string;age_seconds?:number|null;freshness_reason?:string|null;evidence_class?:'OBSERVED'|string};
