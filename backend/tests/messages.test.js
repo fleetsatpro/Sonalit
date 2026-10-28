@@ -245,8 +245,8 @@ test('addMembers: SJM mission channel rejects direct member additions', async ()
   const req = makeReq({
     user: { id: USER_ORGADMIN, org_id: ORG_A, role: 'admin' },
     dbReturns: [
-      [/^SELECT \\* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }]],
-      [/^SELECT \\* FROM channel_members/, []],
+      [/^SELECT \* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }]],
+      [/^SELECT \* FROM channel_members/, []],
     ],
   });
   req.params.id = CHAN;
@@ -264,8 +264,8 @@ test('removeMember: SJM mission membership cannot be changed through generic Ops
   const req = makeReq({
     user: { id: USER_ORGADMIN, org_id: ORG_A, role: 'admin' },
     dbReturns: [
-      [/^SELECT \\* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }]],
-      [/^SELECT \\* FROM channel_members/, []],
+      [/^SELECT \* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }]],
+      [/^SELECT \* FROM channel_members/, []],
     ],
   });
   req.params = { id: CHAN, userId: USER_OTHER };
@@ -281,8 +281,8 @@ test('updateMember: SJM mission channel roles cannot be changed through generic 
   const req = makeReq({
     user: { id: USER_ORGADMIN, org_id: ORG_A, role: 'admin' },
     dbReturns: [
-      [/^SELECT \\* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }]],
-      [/^SELECT \\* FROM channel_members/, []],
+      [/^SELECT \* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }]],
+      [/^SELECT \* FROM channel_members/, []],
     ],
   });
   req.params = { id: CHAN, userId: USER_OTHER };
