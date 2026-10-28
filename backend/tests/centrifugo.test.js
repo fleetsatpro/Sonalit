@@ -80,6 +80,20 @@ describe('centrifugo publish()', () => {
     );
   });
 
+  test('rejects an empty successful HTTP response for targeted unsubscribe', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
+    await expect(unsubscribeUserFromChannel('user-1', 'org#org-1#comms#channel-1')).resolves.toBe(false);
+  });
+
+  test('rejects an unreadable successful HTTP response for targeted unsubscribe', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => { throw new SyntaxError('invalid JSON'); } });
+    const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
+    await expect(unsubscribeUserFromChannel('user-1', 'org#org-1#comms#channel-1')).resolves.toBe(false);
+  });
+
   test('reports targeted unsubscribe failure so SJM can roll back roster changes', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ error: { code: 105, message: 'channel not allowed' } }) });
