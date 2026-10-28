@@ -219,47 +219,69 @@ const listOrgUsers = asyncHandler(async (req, res) => {
  */
 const listChannels = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const rows = await req.db(
-    `
-    WITH visible AS (
-      SELECT c.*
-        FROM channels c
-       WHERE ($2::boolean OR EXISTS (
-              SELECT 1 FROM channel_members m
-               WHERE m.channel_id = c.id AND m.user_id = $1
-            ))
-    )
-    SELECT
-      v.id, v.name, v.slug, v.type, v.category, v.created_at, v.created_by,
-      COALESCE(m.muted, false)             AS muted,
-      COALESCE(m.is_channel_admin, false)  AS is_channel_admin,
-      COALESCE(m.last_read_at, v.created_at) AS last_read_at,
-      (SELECT COUNT(*)::INT
-         FROM messages msg
-        WHERE msg.channel_id = v.id
-          AND msg.deleted_at IS NULL
-          AND msg.author_id <> $1
-          AND msg.created_at > COALESCE(m.last_read_at, v.created_at)
-      ) AS unread_count,
-      (SELECT COUNT(*)::INT FROM channel_members cm WHERE cm.channel_id = v.id) AS member_count,
-      (SELECT jsonb_build_object(
-                'id', lm.id,
-                'body', CASE WHEN lm.deleted_at IS NULL THEN lm.body ELSE NULL END,
-                'created_at', lm.created_at,
-                'author_id', lm.author_id,
-                'author_name', u.name
-              )
-         FROM messages lm
-         LEFT JOIN users u ON u.id = lm.author_id
-        WHERE lm.channel_id = v.id
-        ORDER BY lm.created_at DESC LIMIT 1
-      ) AS last_message
-    FROM visible v
-    LEFT JOIN channel_members m ON m.channel_id = v.id AND m.user_id = $1
-    ORDER BY v.category NULLS LAST, v.name
-    `,
-    [userId, isOrgAdmin(req.user)],
-  );
+  const rows = await req.dbTx(async (client) => {
+    const db = (sql, params) => client.query(sql, params);
+    // A channel preview includes the last message body. Lock visible SJM parent
+    // journeys first, then re-run the actual visibility query under a fresh
+    // statement snapshot so a concurrent roster revocation cannot return a
+    // stale mission-channel preview after the revocation commits.
+    await db(
+      `SELECT j.id
+         FROM sjm_journeys j
+         JOIN channels c ON c.sjm_journey_id = j.id AND c.org_id = j.org_id
+        WHERE j.org_id = $1
+          AND j.deleted_at IS NULL
+          AND ($2::boolean OR EXISTS (
+                SELECT 1 FROM channel_members m
+                 WHERE m.channel_id = c.id AND m.user_id = $3
+              ))
+        ORDER BY j.id
+        FOR SHARE OF j`,
+      [req.user.org_id, isOrgAdmin(req.user), userId],
+    );
+
+    return db(
+      `
+      WITH visible AS (
+        SELECT c.*
+          FROM channels c
+         WHERE ($2::boolean OR EXISTS (
+                SELECT 1 FROM channel_members m
+                 WHERE m.channel_id = c.id AND m.user_id = $1
+              ))
+      )
+      SELECT
+        v.id, v.name, v.slug, v.type, v.category, v.created_at, v.created_by,
+        COALESCE(m.muted, false)             AS muted,
+        COALESCE(m.is_channel_admin, false)  AS is_channel_admin,
+        COALESCE(m.last_read_at, v.created_at) AS last_read_at,
+        (SELECT COUNT(*)::INT
+           FROM messages msg
+          WHERE msg.channel_id = v.id
+            AND msg.deleted_at IS NULL
+            AND msg.author_id <> $1
+            AND msg.created_at > COALESCE(m.last_read_at, v.created_at)
+        ) AS unread_count,
+        (SELECT COUNT(*)::INT FROM channel_members cm WHERE cm.channel_id = v.id) AS member_count,
+        (SELECT jsonb_build_object(
+                  'id', lm.id,
+                  'body', CASE WHEN lm.deleted_at IS NULL THEN lm.body ELSE NULL END,
+                  'created_at', lm.created_at,
+                  'author_id', lm.author_id,
+                  'author_name', u.name
+                )
+           FROM messages lm
+           LEFT JOIN users u ON u.id = lm.author_id
+          WHERE lm.channel_id = v.id
+          ORDER BY lm.created_at DESC LIMIT 1
+        ) AS last_message
+      FROM visible v
+      LEFT JOIN channel_members m ON m.channel_id = v.id AND m.user_id = $1
+      ORDER BY v.category NULLS LAST, v.name
+      `,
+      [userId, isOrgAdmin(req.user)],
+    );
+  });
   res.json({ data: rows.rows });
 });
 
