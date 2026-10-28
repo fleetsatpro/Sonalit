@@ -125,8 +125,17 @@ async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=tru
  await db("INSERT INTO channel_members (channel_id,user_id,org_id,is_channel_admin) SELECT $1,p.user_id,$2,false FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status='active' WHERE p.org_id=$2 AND p.journey_id=$3 AND p.removed_at IS NULL ON CONFLICT (channel_id,user_id) DO NOTHING",[channelId,org,journey.id]);
  await db("UPDATE channel_members cm SET is_channel_admin=EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher')) WHERE cm.org_id=$1 AND cm.channel_id=$2",[org,channelId]);
  const staleMembers=await db("SELECT cm.user_id FROM channel_members cm WHERE cm.org_id=$1 AND cm.channel_id=$2 AND NOT EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users pu ON pu.id=p.user_id AND pu.org_id=p.org_id AND pu.deleted_at IS NULL AND pu.status='active' WHERE p.org_id=$1 AND p.journey_id=$3 AND p.user_id=cm.user_id AND p.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher'))",[org,channelId,journey.id]);
+ const channelName='org#'+org+'#comms#'+channelId;
+ let legacyOrgSubscriptionsRevoked=false;
  for(const member of staleMembers.rows){
-   const revoked=await unsubscribeUserFromChannel(member.user_id,'org#'+org+'#comms#'+channelId);
+   // Older sessions used the tenant ID as Centrifugo's subject. Disconnect
+   // that legacy identity once per channel, then revoke the specific user ID.
+   if(!legacyOrgSubscriptionsRevoked){
+     const legacyRevoked=await unsubscribeUserFromChannel(org,channelName);
+     if(!legacyRevoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
+     legacyOrgSubscriptionsRevoked=true;
+   }
+   const revoked=await unsubscribeUserFromChannel(member.user_id,channelName);
    if(!revoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
  }
  await db("DELETE FROM channel_members cm WHERE cm.org_id=$1 AND cm.channel_id=$2 AND NOT EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users pu ON pu.id=p.user_id AND pu.org_id=p.org_id AND pu.deleted_at IS NULL AND pu.status='active' WHERE p.org_id=$1 AND p.journey_id=$3 AND p.user_id=cm.user_id AND p.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher'))",[org,channelId,journey.id]);
