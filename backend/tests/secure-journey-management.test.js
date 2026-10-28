@@ -1,9 +1,30 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
+  test('validates executive mobility metadata and rejects caller-forged flight state', () => {
+    expect(validateServiceDetails({service_type:'airport_arrival',airport_code:'NBO',flight_number:'KQ 100'})).toBeNull();
+    expect(validateServiceDetails({service_type:'executive_transfer'})).toBeNull();
+    expect(validateServiceDetails({service_type:'airport_arrival',airport_code:'Nairobi'})).toMatch(/Airport code/);
+    expect(validateServiceDetails({service_type:'unsupported'})).toMatch(/Service type/);
+    expect(validateServiceDetails({flight_status:'landed'})).toMatch(/operator-status endpoint/);
+    expect(validateServiceDetails({flight_scheduled_at:'not-a-time'})).toMatch(/Scheduled flight time/);
+  });
+  test('restricts field check-ins to allowed assigned duty roles', () => {
+    expect(dutyEventAllowed(['driver'],'driver_at_pickup')).toBe(true);
+    expect(dutyEventAllowed(['driver'],'principal_met')).toBe(false);
+    expect(dutyEventAllowed(['cpo'],'security_concern')).toBe(true);
+    expect(dutyEventAllowed(['meet_greet'],'handover_to_cpo')).toBe(true);
+    expect(dutyEventAllowed(['dispatcher'],'incident')).toBe(true);
+    expect(dutyEventAllowed(['analyst'],'incident')).toBe(false);
+  });
+  test('limits mission management to operational roles', () => {
+    expect(isMobilityManager({role:'dispatcher'})).toBe(true);
+    expect(isMobilityManager({role:'analyst'})).toBe(false);
+    expect(isMobilityManager({role:'driver'})).toBe(false);
+  });
   test('authenticates requests before the tenant-scope guard', () => {
     const authIndex = sjmRouter.stack.findIndex(layer => layer.handle === authenticate);
     expect(authIndex).toBeGreaterThanOrEqual(0);
@@ -305,6 +326,11 @@ describe('SJM validation and evidence boundaries', () => {
     expect(csv).not.toContain('Private safety narrative');
     expect(csv).not.toContain('Private device');
     expect(csv).not.toContain('Hidden route point');
+  });
+  test('client reports exclude internal field-event records', async () => {
+    const calls=[];const db=async(sql,params)=>{calls.push({sql,params});return {rows:[]};};
+    expect((await eventsForReport(db,'org-1','journey-1',500)).rows).toHaveLength(0);
+    expect(calls[0].sql).toContain("COALESCE(detail->>'classification','') <> 'INTERNAL_OPERATIONS'");
   });
   test('report event query returns exact totals and flags truncated history separately from included rows', async () => {
     const sqlCalls=[];
