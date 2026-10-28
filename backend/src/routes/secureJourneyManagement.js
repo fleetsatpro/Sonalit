@@ -156,6 +156,18 @@ function freshnessFor(observedAt,nowMs=Date.now()) {
   if(!Number.isFinite(observedMs)||!Number.isFinite(age)||age<0)return 'UNAVAILABLE';
   return age<=45000?'LIVE':age<=300000?'DELAYED':'STALE';
 }
+// PostgreSQL timestamps arrive as Date objects; default Array.sort() compares their strings,
+// not their instants, and can select an older observation across weekday boundaries.
+function latestObservedAt(values) {
+  return (values || []).reduce((latest, value) => {
+    if (value == null) return latest;
+    const candidateMs = new Date(value).getTime();
+    if (!Number.isFinite(candidateMs)) return latest;
+    const latestMs = latest == null ? NaN : new Date(latest).getTime();
+    return !Number.isFinite(latestMs) || candidateMs > latestMs ? value : latest;
+  }, null);
+}
+
 function telemetryStatus(devices) {
   if((devices||[]).some(d=>d.freshness==='LIVE'))return 'LIVE';
   if((devices||[]).some(d=>d.freshness==='DELAYED'))return 'DELAYED';
@@ -170,7 +182,7 @@ async function telemetryFor(db,org,j) {
     const observedMs=d.observed_at?new Date(d.observed_at).getTime():NaN,age=d.observed_at?now-observedMs:null,freshness=freshnessFor(d.observed_at,now);
     return {...d,freshness,age_seconds:age==null||!Number.isFinite(age)||age<0?null:Math.round(age/1000),freshness_reason:d.observed_at&&Number.isFinite(observedMs)&&observedMs>now?'future_timestamp_not_accepted_as_live':null,evidence_class:'OBSERVED'};
   });
-  return {status:telemetryStatus(devices),observed_at:devices.map(d=>d.observed_at).filter(Boolean).sort().slice(-1)[0]||null,devices,reason:devices.length?null:'No linked devices with a location record were returned.'};
+  return {status:telemetryStatus(devices),observed_at:latestObservedAt(devices.map(d=>d.observed_at))||null,devices,reason:devices.length?null:'No linked devices with a location record were returned.'};
 }
 
 function changeEventsFor(events) {
@@ -578,4 +590,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,freshnessFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
+module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,freshnessFor,latestObservedAt,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};

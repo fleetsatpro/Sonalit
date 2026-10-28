@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, latestObservedAt, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('authenticates requests before the tenant-scope guard', () => {
@@ -23,6 +23,14 @@ describe('SJM validation and evidence boundaries', () => {
     expect(shouldGenerateForToday(new Date('2026-10-27T15:00:00Z'),'18:00','Mars/Nowhere')).toBe(false);
   });
 
+  test('selects latest telemetry by instant rather than Date.toString() ordering', () => {
+    const latest = new Date('2026-10-25T21:00:00.000Z'); // Sunday
+    const older = new Date('2026-10-22T23:00:00.000Z'); // Thursday
+    expect([latest, older].sort().at(-1)).toBe(older); // documents the default-sort trap
+    expect(latestObservedAt([latest, older])).toBe(latest);
+    expect(latestObservedAt([null, 'not-a-date', older, latest])).toBe(latest);
+    expect(latestObservedAt([null, 'not-a-date'])).toBeNull();
+  });
   test('keeps journey mutation and audit event on the same tenant transaction client', async () => {
     const calls=[];
     const req={dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});return {rows:[{id:'row-1'}]};}})};
