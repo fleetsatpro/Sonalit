@@ -730,7 +730,15 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
     const note=txt(req.body?.reason,1200);
     if(note.length<30)return res.status(400).json({error:'arrival_attestation_required',message:'Record at least 30 characters explaining how arrival was verified. This is a supervisor attestation, not GPS proof.'});
     const transition=await mutateWithEvent(req,j,req.user.id,'journey_closed','Journey closed after authorised arrival attestation',{verification_source:'supervisor_attestation',gps_verified:false,rationale:note},'operator',
-      db=>db("UPDATE sjm_journeys SET status='closed',closed_at=NOW(),completed_at=NOW(),arrival_confirmed_at=NOW(),arrival_verification_source='supervisor_attestation',arrival_verification_note=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status='arrival_pending_verification' RETURNING id",[note,req.user.id,j.id,org]));
+      db=>db("UPDATE sjm_journeys SET status='closed',closed_at=NOW(),completed_at=NOW(),arrival_confirmed_at=NOW(),arrival_verification_source='supervisor_attestation',arrival_verification_note=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status='arrival_pending_verification' RETURNING id",[note,req.user.id,j.id,org]),async(db,locked)=>{
+        if(locked.status!==j.status)return {error:'journey_state_changed'};
+        const roles=await activeDutyRoles(db,org,j.id,req.user.id);
+        if(!canAccessJourney(req.user,roles))return {error:'journey_not_found'};
+        if(!isMobilityManager(req.user))return {error:'lifecycle_authority_revoked',details:{error:'supervisor_attestation_required',message:'Only an authorised admin or dispatcher may close this journey.'}};
+        return null;
+      });
+    if(transition.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
+    if(transition.error==='lifecycle_authority_revoked')return res.status(403).json(transition.details);
     if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
     return res.json({data:await journeyById(req.db,org,j.id),arrival_evidence_class:'SUPERVISOR_ATTESTED_NOT_GPS'});
   }
@@ -767,7 +775,16 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
     abort:'Journey aborted',
     replan:'Journey returned to planning; prior route and approvals invalidated',
   };
-  const transition=await mutateWithEvent(req,j,req.user.id,'journey_'+action,summaries[action]||'Journey lifecycle updated',{reason:reason||null,previous_status:j.status,next_status:step.to,readiness_acknowledgement:action==='ready_to_depart'?readiness:null,confirmed_outstanding_stops:req.body?.confirm_outstanding_stops===true,route_and_approval_invalidated:step.clearPlan===true},'operator',db=>db(sql,params));
+  const transition=await mutateWithEvent(req,j,req.user.id,'journey_'+action,summaries[action]||'Journey lifecycle updated',{reason:reason||null,previous_status:j.status,next_status:step.to,readiness_acknowledgement:action==='ready_to_depart'?readiness:null,confirmed_outstanding_stops:req.body?.confirm_outstanding_stops===true,route_and_approval_invalidated:step.clearPlan===true},'operator',db=>db(sql,params),async(db,locked)=>{
+    if(locked.status!==j.status)return {error:'journey_state_changed'};
+    const roles=await activeDutyRoles(db,org,j.id,req.user.id);
+    if(!canAccessJourney(req.user,roles))return {error:'journey_not_found'};
+    const currentAuthority=lifecycleAuthorityError(req.user,roles,action);
+    if(currentAuthority)return {error:'lifecycle_authority_revoked',details:currentAuthority};
+    return null;
+  });
+  if(transition.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
+  if(transition.error==='lifecycle_authority_revoked')return res.status(403).json(transition.details);
   if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
@@ -778,7 +795,18 @@ router.patch('/journeys/:id/stops/:stopId/status',authorize('admin','dispatcher'
   const status=req.body?.status;if(!['reached','skipped'].includes(status))return res.status(400).json({error:'invalid_stop_status'});
   const hasLat=req.body?.actual_lat!=null,hasLng=req.body?.actual_lng!=null;if(hasLat!==hasLng||(hasLat&&!validCoordinate(req.body.actual_lat,req.body.actual_lng)))return res.status(400).json({error:'invalid_actual_coordinates'});
   const write=await mutateWithEvent(req,j,req.user.id,'stop_'+status,row=>'Stop '+status+': '+row.name,row=>({stop_id:row.id,sequence:row.sequence,actual_coordinates_supplied:hasLat}),'operator',
-    db=>db("UPDATE sjm_journey_stops SET stop_status=$1,confirmed_at=NOW(),actual_lat=$2,actual_lng=$3,confirmation_source='operator_confirmed' WHERE id=$4 AND journey_id=$5 AND org_id=$6 AND stop_status='planned' RETURNING id,sequence,name,stop_status,confirmed_at,actual_lat,actual_lng,confirmation_source",[status,hasLat?req.body.actual_lat:null,hasLng?req.body.actual_lng:null,req.params.stopId,j.id,org]));
+    db=>db("UPDATE sjm_journey_stops SET stop_status=$1,confirmed_at=NOW(),actual_lat=$2,actual_lng=$3,confirmation_source='operator_confirmed' WHERE id=$4 AND journey_id=$5 AND org_id=$6 AND stop_status='planned' RETURNING id,sequence,name,stop_status,confirmed_at,actual_lat,actual_lng,confirmation_source",[status,hasLat?req.body.actual_lat:null,hasLng?req.body.actual_lng:null,req.params.stopId,j.id,org]),async(db,locked)=>{
+      if(locked.status!==j.status)return {error:'journey_state_changed'};
+      if(!['in_progress','paused','arrival_pending_verification'].includes(locked.status))return {error:'journey_not_active_for_stop_confirmation'};
+      const roles=await activeDutyRoles(db,org,j.id,req.user.id);
+      if(!canAccessJourney(req.user,roles))return {error:'journey_not_found'};
+      if(!isMobilityManager(req.user)&&!roles.some(role=>['driver','backup_driver'].includes(role)))return {error:'driver_authority_required',details:{error:'driver_authority_required',message:'Stop completion is a driver duty. CPOs and security escorts should submit their duty-specific field check-ins.'}};
+      return null;
+    });
+  if(write.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
+  if(write.error==='journey_not_active_for_stop_confirmation')return res.status(409).json({error:'journey_not_active_for_stop_confirmation'});
+  if(write.error==='driver_authority_required')return res.status(403).json(write.details);
+  if(write.error==='journey_state_changed')return res.status(409).json({error:'journey_state_changed'});
   if(!write.changed)return res.status(404).json({error:'stop_not_found_or_already_resolved'});
   return res.json({data:write.result.rows[0],evidence_class:'OPERATOR_CONFIRMED'});
 }));
