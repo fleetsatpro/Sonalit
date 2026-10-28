@@ -385,7 +385,7 @@ test('toggleMute: a revoked SJM participant cannot recreate channel membership',
     body: { muted: true },
     dbTx: jest.fn(async (work) => work({ query: async (sql, params) => {
       calls.push({ sql, params });
-      if (/^SELECT \\* FROM channels/.test(sql)) {
+      if (/^SELECT \* FROM channels/.test(sql)) {
         return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
       }
       if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
@@ -411,7 +411,7 @@ test('getThread: revoked SJM participant is denied before private thread content
     params: { id: CHAN, msgId: MSG_BY_MEMBER },
     dbTx: jest.fn(async (work) => work({ query: async (sql, params) => {
       calls.push({ sql, params });
-      if (/^SELECT \\* FROM channels/.test(sql)) {
+      if (/^SELECT \* FROM channels/.test(sql)) {
         return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
       }
       if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
