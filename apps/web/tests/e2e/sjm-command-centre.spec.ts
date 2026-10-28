@@ -164,6 +164,46 @@ async function stubSjmApi(page: Page) {
   );
 }
 
+async function stubFieldSjmApi(page: Page) {
+  await page.route('**/api/v1/sjm/**', async (route) => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    if (pathname === '/api/v1/sjm/my-assignments') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: [{ ...journey, duty_roles: ['driver'] }] }),
+      });
+    }
+    if (pathname.endsWith('/communications')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            channel_id: 'channel-sjm-e2e-001',
+            realtime_channel: 'org#org-sjm-e2e#comms#channel-sjm-e2e-001#v1',
+            comms_epoch: 1,
+          },
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [] }),
+    });
+  });
+
+  await page.route('**/api/v1/messages/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [] }),
+    }),
+  );
+}
+
 test.describe('SJM command-centre responsive smoke', () => {
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
@@ -222,4 +262,37 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('heading', { name: 'Generate a persisted report' })).toBeVisible();
     await expect(page.getByText(/No report is automatically emailed or distributed/)).toBeVisible();
   });
+
+  test('team assignments stay out of the initial dispatch path until requested', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+
+    const team = page.locator('details.sjm-team-admin');
+    await expect(team).toBeVisible({ timeout: 15000 });
+    await expect(team).not.toHaveAttribute('open', '');
+    await expect(team.getByRole('heading', { name: 'Drivers, CPOs and meet-and-greet' })).toBeVisible();
+    await expect(team.getByLabel('Active organisation user')).not.toBeVisible();
+
+    await team.locator('summary').click();
+    await expect(team).toHaveAttribute('open', '');
+    await expect(team.getByLabel('Active organisation user')).toBeVisible();
+  });
+
+  test('field communications appear before check-in actions on a narrow screen', async ({ page }) => {
+    await seedAuth(page);
+    await stubFieldSjmApi(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+
+    const communications = page.getByRole('heading', { name: 'Private mission channel' });
+    const milestones = page.getByRole('heading', { name: 'Mission milestones' });
+    await expect(communications).toBeVisible({ timeout: 15000 });
+    await expect(milestones).toBeVisible();
+    const communicationsTop = await communications.evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
+    const milestonesTop = await milestones.evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
+    expect(communicationsTop).toBeLessThan(milestonesTop);
+  });
+
 });

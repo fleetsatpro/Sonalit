@@ -168,33 +168,26 @@ body {
 html, body, #root { width: 100%; height: 100%; min-height: 100%; }
 
 
-/* SJM enterprise workbench — restrained, readable, evidence-led styling.
-   Scoped to the two SJM routes so the rest of Sonalit keeps its own design system. */
+
+/* Secure Journey Management: restrained operational surfaces and accessible controls. */
 .sjm-console,
 .sjm-field-console {
   --sjm-page: #080c12;
   --sjm-surface: #0c1119;
-  --sjm-surface-raised: #101722;
   --sjm-rule: rgba(219, 229, 240, 0.12);
-  --sjm-muted: #9aa7b8;
-  --sjm-accent: #39ff88;
+  background-color: var(--sjm-page);
   color-scheme: dark;
 }
 
-.sjm-console,
-.sjm-field-console {
-  background-color: var(--sjm-page) !important;
-}
-
 .sjm-console .sjm-kicker {
+  display: block;
   margin: 0;
   color: #a8b4c3;
   font-family: var(--p-sans, 'Archivo', system-ui, sans-serif);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
-  letter-spacing: 0;
-  text-transform: none;
+  letter-spacing: 0.01em;
 }
 
 .sjm-console .sjm-panel {
@@ -204,70 +197,31 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   box-shadow: none;
 }
 
-.sjm-console [class~="rounded-[26px]"],
-.sjm-console [class~="rounded-[28px]"],
-.sjm-console [class~="rounded-3xl"],
-.sjm-console [class~="rounded-2xl"],
-.sjm-console [class~="rounded-xl"],
-.sjm-field-console [class~="rounded-3xl"],
-.sjm-field-console [class~="rounded-2xl"],
-.sjm-field-console [class~="rounded-xl"] {
-  border-radius: 7px !important;
+.sjm-team-admin {
+  overflow: hidden;
+  border: 1px solid var(--sjm-rule);
+  border-radius: 7px;
+  background: var(--sjm-surface);
 }
 
-.sjm-console [class*="shadow-"],
-.sjm-field-console [class*="shadow-"] {
-  box-shadow: none !important;
+.sjm-team-admin > summary { list-style: none; }
+.sjm-team-admin > summary::-webkit-details-marker { display: none; }
+
+.sjm-team-admin > summary::after {
+  content: 'Manage team +';
+  flex-shrink: 0;
+  margin-left: auto;
+  color: #b9c4d1;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.sjm-console [class*="bg-[linear-gradient"],
-.sjm-console [class*="bg-gradient-to"] {
-  background-image: none !important;
-}
-
-.sjm-console [class~="uppercase"],
-.sjm-field-console [class~="uppercase"] {
-  text-transform: none !important;
-  letter-spacing: 0.025em !important;
-}
-
-.sjm-console [class~="text-[9px]"],
-.sjm-console [class~="text-[10px]"],
-.sjm-field-console [class~="text-[9px]"],
-.sjm-field-console [class~="text-[10px]"] {
-  font-size: 11px !important;
-  line-height: 1.45;
-}
-
-.sjm-console [class*="border-violet-300/"],
-.sjm-console [class*="border-cyan-300/"],
-.sjm-field-console [class*="border-violet-300/"],
-.sjm-field-console [class*="border-cyan-300/"] {
-  border-color: var(--sjm-rule) !important;
-}
-
-.sjm-console [class*="bg-violet-300/"],
-.sjm-console [class*="bg-cyan-300/"],
-.sjm-field-console [class*="bg-violet-300/"],
-.sjm-field-console [class*="bg-cyan-300/"] {
-  background-color: rgba(255, 255, 255, 0.025) !important;
-}
-
-.sjm-console [class*="text-violet-200"],
-.sjm-console [class*="text-violet-100"],
-.sjm-console [class*="text-cyan-200"],
-.sjm-console [class*="text-cyan-100"],
-.sjm-field-console [class*="text-violet-200"],
-.sjm-field-console [class*="text-violet-100"],
-.sjm-field-console [class*="text-cyan-200"],
-.sjm-field-console [class*="text-cyan-100"] {
-  color: #c0cad6 !important;
-}
+.sjm-team-admin[open] > summary { border-bottom: 1px solid var(--sjm-rule); }
+.sjm-team-admin[open] > summary::after { content: 'Close −'; }
+.sjm-team-admin__content { padding: 12px; }
 
 .sjm-console button,
-.sjm-field-console button {
-  transition-duration: 120ms;
-}
+.sjm-field-console button { transition-duration: 120ms; }
 
 .sjm-console button:focus-visible,
 .sjm-console a:focus-visible,
@@ -294,13 +248,6 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
 }
 
 @media (max-width: 640px) {
-  .sjm-console > div {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
-
-  .sjm-field-console header {
-    padding-left: 14px;
-    padding-right: 14px;
-  }
+  .sjm-console > div { padding-left: 12px; padding-right: 12px; }
+  .sjm-field-console header { padding-left: 14px; padding-right: 14px; }
 }
