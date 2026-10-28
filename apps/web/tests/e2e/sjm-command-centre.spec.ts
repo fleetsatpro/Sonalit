@@ -212,7 +212,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(tabs).toBeVisible();
 
     await page.getByRole('tab', { name: 'Evidence ledger' }).click();
-    await expect(page.getByRole('heading', { name: 'Controlled operational log' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Journey events' })).toBeVisible();
     await expect(page.getByText('Manual stop confirmations', { exact: true })).toBeVisible();
     await expect(page.getByText('Not equivalent to a GPS proof', { exact: true })).toBeVisible();
 
