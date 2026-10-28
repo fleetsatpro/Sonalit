@@ -310,6 +310,31 @@ test('withChannelReaderTransaction denies a revoked SJM participant before messa
   expect(calls.some(x => /SELECT body FROM messages/.test(x.sql))).toBe(false);
 });
 
+test('listChannels locks SJM journeys before returning private last-message previews', async () => {
+  const calls = [];
+  const req = makeReq({
+    user: { id: USER_MEMBER, org_id: ORG_A, role: 'operator' },
+    dbReturns: [],
+  });
+  req.dbTx = jest.fn(async (work) => work({ query: async (sql, params) => {
+    calls.push({ sql, params });
+    if (/FOR SHARE OF j/.test(sql)) return { rows: [{ id: 'journey-1' }] };
+    if (/WITH visible AS/.test(sql)) return { rows: [] };
+    return { rows: [] };
+  } }));
+  const res = makeRes();
+
+  await controller.listChannels(req, res, jest.fn());
+
+  expect(calls).toHaveLength(2);
+  expect(calls[0].sql).toMatch(/sjm_journeys[\s\S]*FOR SHARE OF j/);
+  expect(calls[1].sql).toMatch(/WITH visible AS/);
+  expect(calls[1].sql).toMatch(/c\.sjm_journey_id IS NULL OR \$3::boolean OR EXISTS/);
+  expect(calls[1].sql).toMatch(/p\.removed_at IS NULL/);
+  expect(calls[0].params).toEqual([ORG_A, false, USER_MEMBER]);
+  expect(calls[1].params).toEqual([USER_MEMBER, false, false]);
+});
+
 test('deleteChannel: SJM-owned mission channel cannot be deleted through generic Ops Comms', async () => {
   const req = makeReq({
     user: { id: USER_ORGADMIN, org_id: ORG_A, role: 'admin' },
