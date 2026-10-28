@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, journeyForViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -22,6 +22,25 @@ describe('SJM validation and evidence boundaries', () => {
     expect(isInternalOperationalEvent(events[0])).toBe(true);
     expect(isInternalOperationalEvent(events[1])).toBe(false);
     expect(isClientSafeEvent(events[1])).toBe(true);
+  });
+  test('redacts mission details and event notes by assigned duty, while retaining relevant operational context', () => {
+    const journey={principal_reference:'PRINCIPAL-17',airport_code:'NBO',terminal:'1A',airline:'KQ',flight_number:'KQ 100',flight_scheduled_at:'2026-10-29T08:00:00Z',flight_status:'delayed',flight_status_source:'operator_entered',flight_status_note:'Sensitive airline and arrival handling note',meet_greet_instructions:'Use the east-side VIP entrance'};
+    const internal={id:'e1',detail:{classification:'INTERNAL_OPERATIONS',duty_roles:['meet_greet'],note:'Sensitive pickup detail'}};
+    const clientSafe={id:'e2',detail:{classification:'CLIENT_SAFE',note:'Client-safe update'}};
+    const unclassified={id:'e3',detail:{note:'Legacy entry without classification'}};
+    const driver=journeyForDutyViewer(journey,[internal,clientSafe,unclassified],{role:'operator'},['driver']);
+    expect(driver.principal_reference).toBe('PRINCIPAL-17');
+    expect(driver.flight_status_note).toBeNull();
+    expect(driver.meet_greet_instructions).toBeNull();
+    expect(driver.events.map(e=>e.id)).toEqual(['e2']);
+    const greeter=journeyForDutyViewer(journey,[internal,clientSafe,unclassified],{role:'operator'},['meet_greet']);
+    expect(greeter.meet_greet_instructions).toBe('Use the east-side VIP entrance');
+    expect(greeter.flight_status_note).toBe('Sensitive airline and arrival handling note');
+    expect(greeter.events.map(e=>e.id)).toEqual(['e1','e2']);
+    expect(eventVisibleToDuty(internal,{role:'operator'},['meet_greet'])).toBe(true);
+    expect(eventVisibleToDuty(internal,{role:'operator'},['driver'])).toBe(false);
+    expect(eventVisibleToDuty(unclassified,{role:'operator'},['driver'])).toBe(false);
+    expect(eventVisibleToDuty(unclassified,{role:'dispatcher'},[])).toBe(true);
   });
   test('validates executive mobility metadata and rejects caller-forged flight state', () => {
     expect(validateServiceDetails({service_type:'airport_arrival',airport_code:'NBO',flight_number:'KQ 100'})).toBeNull();
