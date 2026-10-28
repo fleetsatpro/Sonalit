@@ -510,8 +510,33 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
   const status=req.query.status?String(req.query.status):null;
   if(status&&!STATUSES.includes(status))return res.status(400).json({error:'invalid_journey_status'});
   const clientId=req.query.client_id?String(req.query.client_id):null,limit=Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||50));
-  const r=await req.db('SELECT j.id,j.reference,j.title,j.purpose,j.status,j.transport_mode,j.service_type,j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,j.meet_greet_instructions,j.principal_reference,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.created_at,j.updated_at,j.timezone,j.planned_route,j.planned_distance_km,j.planned_duration_minutes,j.route_assessment,j.route_assessment IS NOT NULL AS has_route_assessment,ARRAY(SELECT DISTINCT p.duty_role FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$6 AND p.removed_at IS NULL ORDER BY p.duty_role) AS duty_roles FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL AND ($2::text IS NULL OR j.status=$2) AND ($3::uuid IS NULL OR j.client_id=$3) AND ($5::boolean OR EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$6 AND p.removed_at IS NULL)) ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC LIMIT $4',[req.user.org_id,status,clientId,limit,isMobilityManager(req.user),req.user.id]);
-  res.setHeader('Cache-Control','no-store');res.json({data:r.rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles))});
+  const rows=await req.dbTx(async c=>{
+    const db=(sql,params)=>c.query(sql,params);
+    // Field-role assignment listings hold the same shared parent lock used by
+    // journey dossier reads. Re-run the list as a separate statement after
+    // waiting for concurrent roster updates so it sees the committed roster.
+    if(!isMobilityManager(req.user)){
+      await db(
+        `SELECT j.id
+           FROM sjm_journeys j
+          WHERE j.org_id=$1 AND j.deleted_at IS NULL
+            AND ($2::text IS NULL OR j.status=$2)
+            AND ($3::uuid IS NULL OR j.client_id=$3)
+            AND EXISTS (
+              SELECT 1 FROM sjm_journey_participants p
+               WHERE p.org_id=j.org_id AND p.journey_id=j.id
+                 AND p.user_id=$5 AND p.removed_at IS NULL
+            )
+          ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC
+          LIMIT $4
+          FOR SHARE OF j`,
+        [req.user.org_id,status,clientId,limit,req.user.id],
+      );
+    }
+    const r=await db('SELECT j.id,j.reference,j.title,j.purpose,j.status,j.transport_mode,j.service_type,j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,j.meet_greet_instructions,j.principal_reference,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.created_at,j.updated_at,j.timezone,j.planned_route,j.planned_distance_km,j.planned_duration_minutes,j.route_assessment,j.route_assessment IS NOT NULL AS has_route_assessment,ARRAY(SELECT DISTINCT p.duty_role FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$6 AND p.removed_at IS NULL ORDER BY p.duty_role) AS duty_roles FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL AND ($2::text IS NULL OR j.status=$2) AND ($3::uuid IS NULL OR j.client_id=$3) AND ($5::boolean OR EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$6 AND p.removed_at IS NULL)) ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC LIMIT $4',[req.user.org_id,status,clientId,limit,isMobilityManager(req.user),req.user.id]);
+    return r.rows;
+  });
+  res.setHeader('Cache-Control','no-store');res.json({data:rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles))});
 }));
 router.post('/journeys',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const invalid=validateJourney(req.body);if(invalid)return res.status(400).json({error:'invalid_journey',message:invalid});
@@ -530,8 +555,28 @@ router.post('/journeys',authorize('admin','dispatcher'),asyncHandler(async(req,r
 }));
 
 router.get('/my-assignments',asyncHandler(async(req,res)=>{
- const r=await req.db("SELECT j.id,j.reference,j.title,j.purpose,j.service_type,j.status,j.transport_mode,j.origin_label,j.origin_lat,j.origin_lng,j.destination_label,j.destination_lat,j.destination_lng,j.planned_departure_at,j.planned_arrival_at,j.timezone,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.principal_reference,j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,j.meet_greet_instructions,ARRAY(SELECT DISTINCT p2.duty_role FROM sjm_journey_participants p2 WHERE p2.org_id=j.org_id AND p2.journey_id=j.id AND p2.user_id=$2 AND p2.removed_at IS NULL ORDER BY p2.duty_role) AS duty_roles FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL AND EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$2 AND p.removed_at IS NULL) ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC LIMIT 100",[req.user.org_id,req.user.id]);
- res.setHeader('Cache-Control','no-store');res.json({data:r.rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles))});
+ const rows=await req.dbTx(async c=>{
+  const db=(sql,params)=>c.query(sql,params);
+  // The list exposes VIP, flight and location details. Serialize its access
+  // check with roster changes and re-read under a fresh statement snapshot.
+  await db(
+    `SELECT j.id
+       FROM sjm_journeys j
+      WHERE j.org_id=$1 AND j.deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM sjm_journey_participants p
+           WHERE p.org_id=j.org_id AND p.journey_id=j.id
+             AND p.user_id=$2 AND p.removed_at IS NULL
+        )
+      ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC
+      LIMIT 100
+      FOR SHARE OF j`,
+    [req.user.org_id,req.user.id],
+  );
+  const r=await db("SELECT j.id,j.reference,j.title,j.purpose,j.service_type,j.status,j.transport_mode,j.origin_label,j.origin_lat,j.origin_lng,j.destination_label,j.destination_lat,j.destination_lng,j.planned_departure_at,j.planned_arrival_at,j.timezone,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.principal_reference,j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,j.meet_greet_instructions,ARRAY(SELECT DISTINCT p2.duty_role FROM sjm_journey_participants p2 WHERE p2.org_id=j.org_id AND p2.journey_id=j.id AND p2.user_id=$2 AND p2.removed_at IS NULL ORDER BY p2.duty_role) AS duty_roles FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL AND EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$2 AND p.removed_at IS NULL) ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC LIMIT 100",[req.user.org_id,req.user.id]);
+  return r.rows;
+ });
+ res.setHeader('Cache-Control','no-store');res.json({data:rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles))});
 }));
 router.get('/journeys/:id/participants',asyncHandler(async(req,res)=>{
  const org=req.user.org_id;
