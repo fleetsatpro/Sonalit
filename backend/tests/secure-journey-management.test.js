@@ -62,7 +62,7 @@ describe('SJM validation and evidence boundaries', () => {
     expect(calls).toHaveLength(2);
     expect(calls[0].sql).toMatch(/status='exception'/);
     expect(calls[0].sql).toMatch(/status='assessment_pending'/);
-    expect(calls[0].sql).toMatch(/planned_route='\[\]'::jsonb/);
+    expect(calls[0].sql).toContain("planned_route='[]'::jsonb");
     expect(calls[0].sql).toMatch(/route_assessment=NULL/);
     expect(calls[0].sql).toMatch(/approved_at=NULL/);
     expect(calls[1].sql).toMatch(/INSERT INTO sjm_journey_events/);
