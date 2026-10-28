@@ -116,6 +116,17 @@ function journeyForDutyViewer(journey,events,user,dutyRoles){
 }
 async function lockJourneyForMobility(db,org,journeyId){const r=await db('SELECT id,status,flight_number,flight_status FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',[journeyId,org]);return r.rows[0]||null;}
 async function lockJourneyForMobilityRead(db,org,journeyId){const r=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[journeyId,org]);return r.rows[0]||null;}
+async function readLockedAssignmentRows(db,org,initialLockRows,listSql,listParams){
+ const held=new Set((initialLockRows?.rows||[]).map(row=>String(row.id)));
+ for(let attempt=0;attempt<5;attempt++){
+  const listed=await db(listSql,listParams);
+  const unlocked=[...new Set(listed.rows.map(row=>String(row.id)).filter(id=>!held.has(id)))];
+  if(!unlocked.length)return {rows:listed.rows};
+  const locks=await db('SELECT id FROM sjm_journeys WHERE org_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL ORDER BY id FOR SHARE',[org,unlocked]);
+  for(const row of locks.rows)held.add(String(row.id));
+ }
+ return {error:'assignment_roster_changed'};
+}
 async function activeDutyRoles(db,org,journeyId,userId){const r=await db('SELECT duty_role FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL ORDER BY duty_role',[org,journeyId,userId]);return r.rows.map(row=>row.duty_role);}
 async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=true){
  const slug='sjm-'+String(journey.id).replace(/-/g,'').slice(0,20).toLowerCase(),name=txt(journey.reference,40)+' · Mission team';
@@ -986,4 +997,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility,lockJourneyForMobilityRead,routeAssessmentUsable,syncJourneyCommsChannel};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
