@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, classificationForGenericEvent, journeyForViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, journeyForViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -9,16 +9,19 @@ describe('SJM validation and evidence boundaries', () => {
     const events=[
       {id:'1',detail:{classification:'INTERNAL_OPERATIONS',note:'CPO only'}},
       {id:'2',detail:{classification:'CLIENT_SAFE',note:'Public arrival'}},
-      {id:'3',detail:{note:'No classification defaults to reportable'}}
+      {id:'3',detail:{note:'Unclassified legacy entry must not be published'}}
     ];
     const safe=journeyForViewer(journey,events,false);
     expect(safe.principal_reference).toBeNull();
     expect(safe.flight_status_note).toBeNull();
     expect(safe.meet_greet_instructions).toBeNull();
-    expect(safe.events.map(e=>e.id)).toEqual(['2','3']);
+    expect(safe.events.map(e=>e.id)).toEqual(['2']);
+    expect(isClientSafeEvent(events[1])).toBe(true);
+    expect(isClientSafeEvent(events[2])).toBe(false);
     expect(journeyForViewer(journey,events,true).events).toHaveLength(3);
     expect(isInternalOperationalEvent(events[0])).toBe(true);
     expect(isInternalOperationalEvent(events[1])).toBe(false);
+    expect(isClientSafeEvent(events[1])).toBe(true);
   });
   test('validates executive mobility metadata and rejects caller-forged flight state', () => {
     expect(validateServiceDetails({service_type:'airport_arrival',airport_code:'NBO',flight_number:'KQ 100'})).toBeNull();
