@@ -77,11 +77,16 @@ test('sendMessage: regular member of channel can send text', async () => {
   req.params.id = CHAN;
   req.body = { text: 'hello world' };
   const res = makeRes();
-  // req.dbTx must return the newly inserted message row for the controller to read
-  req.dbTx = jest.fn(async () => ({
-    id: 'msg-new', channel_id: CHAN, author_id: USER_MEMBER, body: 'hello world',
-    reply_to_id: null, created_at: new Date().toISOString(),
-  }));
+  // Execute the controller's read/check/write callback on one transaction client.
+  req.dbTx = jest.fn(async (work) => work({ query: (sql, params) => {
+    if (sql.includes('INSERT INTO messages')) {
+      return Promise.resolve({ rows: [{
+        id: 'msg-new', channel_id: CHAN, author_id: USER_MEMBER, body: 'hello world',
+        reply_to_id: null, created_at: new Date().toISOString(),
+      }], rowCount: 1 });
+    }
+    return req.db(sql, params);
+  } }));
 
   await controller.sendMessage(req, res, jest.fn());
   expect(res.status).toHaveBeenCalledWith(201);
@@ -239,6 +244,83 @@ test('updateMember: cannot demote the last channel admin', async () => {
   const res = makeRes();
   await controller.updateMember(req, res, jest.fn());
   expect(res.status).toHaveBeenCalledWith(409);
+});
+
+test('withChannelReaderTransaction holds the SJM journey lock through message access', async () => {
+  const calls = [];
+  let inTransaction = false;
+  const req = {
+    user: { id: USER_MEMBER, org_id: ORG_A, role: 'operator' },
+    dbTx: jest.fn(async (work) => {
+      inTransaction = true;
+      try {
+        return await work({ query: async (sql, params) => {
+          calls.push({ sql, params });
+          if (/^SELECT \\* FROM channels/.test(sql)) return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
+          if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
+          if (/FROM channel_members/.test(sql)) return { rows: [{ user_id: USER_MEMBER, is_channel_admin: false }] };
+          if (/SELECT body FROM messages/.test(sql)) return { rows: [{ body: 'private mission update' }] };
+          return { rows: [], rowCount: 0 };
+        } });
+      } finally { inTransaction = false; }
+    }),
+  };
+  const res = makeRes();
+  const work = jest.fn(async (db) => {
+    expect(inTransaction).toBe(true);
+    const result = await db('SELECT body FROM messages WHERE channel_id = $1', [CHAN]);
+    return result.rows;
+  });
+
+  const result = await controller.withChannelReaderTransaction(req, res, CHAN, work);
+  expect(result).toEqual({ ok: true, value: [{ body: 'private mission update' }] });
+  expect(calls.map(x => x.sql)).toEqual(expect.arrayContaining([
+    expect.stringMatching(/FROM channels/),
+    expect.stringMatching(/sjm_journeys.*FOR SHARE/),
+    expect.stringMatching(/FROM channel_members/),
+    expect.stringMatching(/SELECT body FROM messages/),
+  ]));
+  expect(calls.findIndex(x => /FOR SHARE/.test(x.sql))).toBeLessThan(calls.findIndex(x => /FROM channel_members/.test(x.sql)));
+  expect(calls.findIndex(x => /FROM channel_members/.test(x.sql))).toBeLessThan(calls.findIndex(x => /SELECT body FROM messages/.test(x.sql)));
+  expect(inTransaction).toBe(false);
+});
+
+test('withChannelReaderTransaction denies a revoked SJM participant before message query', async () => {
+  const calls = [];
+  const req = {
+    user: { id: USER_OTHER, org_id: ORG_A, role: 'operator' },
+    dbTx: jest.fn(async (work) => work({ query: async (sql, params) => {
+      calls.push({ sql, params });
+      if (/^SELECT \\* FROM channels/.test(sql)) return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
+      if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
+      if (/FROM channel_members/.test(sql)) return { rows: [] };
+      return { rows: [] };
+    } })),
+  };
+  const res = makeRes();
+  const work = jest.fn();
+  const result = await controller.withChannelReaderTransaction(req, res, CHAN, work);
+  expect(result).toEqual({ ok: false });
+  expect(res.status).toHaveBeenCalledWith(403);
+  expect(work).not.toHaveBeenCalled();
+  expect(calls.findIndex(x => /FOR SHARE/.test(x.sql))).toBeLessThan(calls.findIndex(x => /FROM channel_members/.test(x.sql)));
+  expect(calls.some(x => /SELECT body FROM messages/.test(x.sql))).toBe(false);
+});
+
+test('deleteChannel: SJM-owned mission channel cannot be deleted through generic Ops Comms', async () => {
+  const req = makeReq({
+    user: { id: USER_ORGADMIN, org_id: ORG_A, role: 'admin' },
+    dbReturns: [
+      [/^SELECT \\* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }]],
+      [/channel_members WHERE channel_id = \\$1 AND user_id = \\$2/, []],
+    ],
+  });
+  req.params.id = CHAN;
+  const res = makeRes();
+  await controller.deleteChannel(req, res, jest.fn());
+  expect(res.status).toHaveBeenCalledWith(409);
+  expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'sjm_channel_managed_by_journey' }));
+  expect(req.db).not.toHaveBeenCalledWith(expect.stringMatching(/^DELETE FROM channels/), expect.anything());
 });
 
 test('addMembers: SJM mission channel rejects direct member additions', async () => {
