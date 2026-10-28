@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, isInternalOperationalEvent, journeyForViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, isInternalOperationalEvent, journeyForViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -42,6 +42,19 @@ describe('SJM validation and evidence boundaries', () => {
     expect(isMobilityManager({role:'operator'})).toBe(false);
     expect(isMobilityManager({role:'analyst'})).toBe(false);
     expect(isMobilityManager({role:'driver'})).toBe(false);
+  });
+  test('scopes all itinerary and report snapshots to assigned personnel or dispatch management', () => {
+    expect(canAccessJourney({role:'admin'},[])).toBe(true);
+    expect(canAccessJourney({role:'dispatcher'},[])).toBe(true);
+    expect(canAccessJourney({role:'operator'},[])).toBe(false);
+    expect(canAccessJourney({role:'analyst'},[])).toBe(false);
+    expect(canAccessJourney({role:'operator'},['driver'])).toBe(true);
+    expect(canAccessJourney({role:'analyst'},['cpo'])).toBe(true);
+    expect(canAccessReport({role:'operator'},{journey_id:'mission-1'},[])).toBe(false);
+    expect(canAccessReport({role:'operator'},{journey_id:'mission-1'},['driver'])).toBe(true);
+    expect(canAccessReport({role:'analyst'},{journey_id:null},[])).toBe(false);
+    expect(canAccessReport({role:'dispatcher'},{journey_id:null},[])).toBe(true);
+    expect(canAccessReport({role:'operator'},null,[])).toBe(false);
   });
   test('authenticates requests before the tenant-scope guard', () => {
     const authIndex = sjmRouter.stack.findIndex(layer => layer.handle === authenticate);
