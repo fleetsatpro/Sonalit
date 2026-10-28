@@ -74,6 +74,14 @@ function validateServiceDetails(b){
 function isMobilityManager(user){return !!user&&MOBILITY_MANAGER_ROLES.has(String(user.role||'').toLowerCase());}
 function canAccessJourney(user,dutyRoles){return isMobilityManager(user)||(Array.isArray(dutyRoles)&&dutyRoles.length>0);}
 function canAccessReport(user,report,dutyRoles){if(!report)return false;if(!report.journey_id)return isMobilityManager(user);return canAccessJourney(user,dutyRoles);}
+function lifecycleAuthorityError(user,dutyRoles,action){
+ if(isMobilityManager(user))return null;
+ const roles=new Set(Array.isArray(dutyRoles)?dutyRoles:[]);
+ if(['hold','cancel','replan','ready_to_depart'].includes(action))return {error:'dispatcher_authority_required',message:'Only an authorised admin or dispatcher may perform this lifecycle action.'};
+ if(action==='start'&&!['driver','backup_driver'].some(role=>roles.has(role)))return {error:'driver_authority_required',message:'Only the assigned driver or backup driver may start a movement.'};
+ if(['pause','resume','raise_exception','arrive','abort'].includes(action)&&!['driver','backup_driver','cpo','security_escort','dispatcher'].some(role=>roles.has(role)))return {error:'field_duty_required',message:'This action requires an assigned driver, CPO, security escort or dispatcher duty.'};
+ return null;
+}
 async function requireJourneyAccess(req,res,journey){if(!journey){res.status(404).json({error:'journey_not_found'});return null;}const roles=await activeDutyRoles(req.db,req.user.org_id,journey.id,req.user.id);if(!canAccessJourney(req.user,roles)){res.status(404).json({error:'journey_not_found'});return null;}return roles;}
 function dutyEventAllowed(roles,eventType){return Array.isArray(roles)&&roles.some(role=>(DUTY_EVENT_RULES[role]||[]).includes(eventType));}
 function isInternalOperationalEvent(e){return parseJson(e?.detail, {})?.classification==='INTERNAL_OPERATIONS';}
@@ -641,7 +649,7 @@ router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler
 router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);const dutyRoles=await requireJourneyAccess(req,res,j);if(!dutyRoles)return;
   const action=req.body?.action;
-  if(!isMobilityManager(req.user)&&['hold','cancel','replan'].includes(action))return res.status(403).json({error:'dispatcher_authority_required',message:'Only an authorised admin or dispatcher may place a mission on hold, cancel it or replan it.'});
+  const authorityError=lifecycleAuthorityError(req.user,dutyRoles,action);if(authorityError)return res.status(403).json(authorityError);
   if(action==='close'){
     if(j.status!=='arrival_pending_verification')return res.status(409).json({error:'arrival_verification_not_pending'});
     if(!['admin','dispatcher'].includes(String(req.user.role||'').toLowerCase()))return res.status(403).json({error:'supervisor_attestation_required',message:'Only an authorised admin or dispatcher may close a journey after recording an arrival attestation.'});
@@ -754,4 +762,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,isInternalOperationalEvent,journeyForViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,journeyForViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
