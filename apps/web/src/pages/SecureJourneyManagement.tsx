@@ -9,7 +9,7 @@ import { STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
 import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
 import { useAuthStore } from '../stores/auth.js';
-import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, Navigation, Plus, RefreshCw, Route, Satellite, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, Navigation, Pencil, Plus, RefreshCw, Route, Satellite, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
 type Point={lat:number;lng:number;name?:string;label?:string};
