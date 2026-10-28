@@ -518,40 +518,22 @@ router.get('/my-assignments',asyncHandler(async(req,res)=>{
  res.setHeader('Cache-Control','no-store');res.json({data:r.rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles))});
 }));
 router.get('/journeys/:id/participants',asyncHandler(async(req,res)=>{
- const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
- const roles=await requireJourneyAccess(req,res,j);if(!roles)return;
- const r=await req.db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 AND ($3::boolean OR p.removed_at IS NULL) ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id,isMobilityManager(req.user)]);res.json({data:r.rows});
-}));
-router.put('/journeys/:id/participants',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
- const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
- const submitted=req.body?.participants;if(!Array.isArray(submitted)||submitted.length>20)return res.status(400).json({error:'invalid_participants',message:'Provide an array of no more than 20 team assignments.'});
- const seen=new Set(),primaryRoles=new Set();
- for(const p of submitted){
-  if(!p||typeof p!=='object'||!SJM_ORG_UUID.test(String(p.user_id||'')))return res.status(400).json({error:'invalid_participants',message:'Every assignment needs a valid user UUID.'});
-  if(!DUTY_ROLES.includes(p.duty_role))return res.status(400).json({error:'invalid_participants',message:'A duty role is not supported.'});
-  if(p.is_primary!=null&&typeof p.is_primary!=='boolean')return res.status(400).json({error:'invalid_participants',message:'is_primary must be a boolean when supplied.'});
-  const key=String(p.user_id)+'|'+p.duty_role;if(seen.has(key))return res.status(400).json({error:'duplicate_participant_role'});seen.add(key);
-  if(p.is_primary===true){if(primaryRoles.has(p.duty_role))return res.status(400).json({error:'duplicate_primary_duty_role',message:'Only one primary assignee may be set for each duty role.'});primaryRoles.add(p.duty_role);}
- }
- const ids=[...new Set(submitted.map(p=>String(p.user_id)))],keys=submitted.map(p=>String(p.user_id)+'|'+p.duty_role);
- const assignedResult=await req.dbTx(async c=>{
-  const db=(sql,params)=>c.query(sql,params),locked=await lockJourneyForMobility(db,org,j.id);
-  if(!locked)return {error:'journey_not_found'};
-  if(TERMINAL_STATUSES.includes(locked.status))return {error:'journey_terminal'};
-  if(ids.length){const users=await db("SELECT id FROM users WHERE org_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL AND status='active'",[org,ids]);if(users.rows.length!==ids.length)return {error:'participant_outside_organisation_or_inactive'};}
-  await db("UPDATE sjm_journey_participants SET removed_at=NOW(),is_primary=false WHERE org_id=$1 AND journey_id=$2 AND removed_at IS NULL AND NOT ((user_id::text || '|' || duty_role)=ANY($3::text[]))",[org,j.id,keys]);
-  await db("UPDATE sjm_journey_participants SET is_primary=false WHERE org_id=$1 AND journey_id=$2 AND removed_at IS NULL",[org,j.id]);
-  for(const p of submitted)await db("INSERT INTO sjm_journey_participants (org_id,journey_id,user_id,duty_role,is_primary,assigned_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (org_id,journey_id,user_id,duty_role) WHERE removed_at IS NULL DO UPDATE SET is_primary=EXCLUDED.is_primary",[org,j.id,p.user_id,p.duty_role,p.is_primary===true,req.user.id]);
-  const channelId=await syncJourneyCommsChannel(db,org,j,req.user.id,true);
-  await db("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'team_assignment_changed',$4,$5,'operator')",[org,j.id,req.user.id,'Mission team assignments updated',JSON.stringify({assignment_count:submitted.length,assignments:submitted.map(p=>({user_id:p.user_id,duty_role:p.duty_role,is_primary:p.is_primary===true})),communications_channel_id:channelId,classification:'INTERNAL_OPERATIONS'})]);
-  return {channelId};
+ const org=req.user.org_id;
+ const outcome=await req.dbTx(async c=>{
+  const db=(sql,params)=>c.query(sql,params);
+  const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[req.params.id,org]);
+  if(!locked.rows.length)return {error:'journey_not_found'};
+  const j=await journeyById(db,org,req.params.id);
+  if(!j)return {error:'journey_not_found'};
+  const roles=await activeDutyRoles(db,org,j.id,req.user.id);
+  if(!canAccessJourney(req.user,roles))return {error:'journey_not_found'};
+  const r=await db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 AND ($3::boolean OR p.removed_at IS NULL) ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id,isMobilityManager(req.user)]);
+  return {data:r.rows};
  });
- if(assignedResult?.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
- if(assignedResult?.error==='journey_terminal')return res.status(409).json({error:'journey_terminal',message:'Closed, cancelled and aborted journeys cannot be reassigned.'});
- if(assignedResult?.error==='participant_outside_organisation_or_inactive')return res.status(422).json({error:'participant_outside_organisation_or_inactive',message:'Every assigned user must be an active account in this organisation.'});
- const assigned=await req.db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id]);
- res.setHeader('Cache-Control','no-store');res.json({data:assigned.rows});
+ if(outcome?.error)return res.status(404).json({error:'journey_not_found'});
+ res.setHeader('Cache-Control','no-store');res.json({data:outcome.data});
 }));
+
 router.get('/journeys/:id/communications',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
  const outcome=await req.dbTx(async c=>{
@@ -566,12 +548,22 @@ router.get('/journeys/:id/communications',asyncHandler(async(req,res)=>{
  res.setHeader('Cache-Control','no-store');res.json({data:{channel_id:outcome.channelId,transport:'Ops Comms',membership_policy:'active mission team or mission manager',messages_endpoint:'/api/v1/messages/channels/'+outcome.channelId+'/messages'}});
 }));
 router.get('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
- const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
- const fieldRoles=await requireJourneyAccess(req,res,j);if(!fieldRoles)return;
- const manager=isMobilityManager(req.user);
- const r=await req.db("SELECT id,actor_id,event_type,summary,detail,source,created_at FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 AND event_type=ANY($3::text[]) AND ($4::boolean OR detail->>'classification'='CLIENT_SAFE' OR (detail->>'classification'='INTERNAL_OPERATIONS' AND COALESCE(detail->'duty_roles','[]'::jsonb) ?| $5::text[])) ORDER BY created_at DESC,id DESC LIMIT 60",[org,j.id,Object.keys(DUTY_EVENT_SUMMARIES),manager,fieldRoles]);
- res.setHeader('Cache-Control','no-store');res.json({data:r.rows.filter(e=>eventVisibleToDuty(e,req.user,fieldRoles))});
+ const org=req.user.org_id,manager=isMobilityManager(req.user);
+ const outcome=await req.dbTx(async c=>{
+  const db=(sql,params)=>c.query(sql,params);
+  const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[req.params.id,org]);
+  if(!locked.rows.length)return {error:'journey_not_found'};
+  const j=await journeyById(db,org,req.params.id);
+  if(!j)return {error:'journey_not_found'};
+  const roles=await activeDutyRoles(db,org,j.id,req.user.id);
+  if(!canAccessJourney(req.user,roles))return {error:'journey_not_found'};
+  const r=await db("SELECT id,actor_id,event_type,summary,detail,source,created_at FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 AND event_type=ANY($3::text[]) AND ($4::boolean OR detail->>'classification'='CLIENT_SAFE' OR (detail->>'classification'='INTERNAL_OPERATIONS' AND COALESCE(detail->'duty_roles','[]'::jsonb) ?| $5::text[])) ORDER BY created_at DESC,id DESC LIMIT 60",[org,j.id,Object.keys(DUTY_EVENT_SUMMARIES),manager,roles]);
+  return {data:r.rows.filter(e=>eventVisibleToDuty(e,req.user,roles))};
+ });
+ if(outcome?.error)return res.status(404).json({error:'journey_not_found'});
+ res.setHeader('Cache-Control','no-store');res.json({data:outcome.data});
 }));
+
 router.post('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
  const type=String(req.body?.event_type||''),note=req.body?.note;
@@ -616,13 +608,29 @@ router.patch('/journeys/:id/flight-status',asyncHandler(async(req,res)=>{
  res.setHeader('Cache-Control','no-store');res.json({data:outcome.data,provenance:{source:'operator_entered',evidence_class:'OPERATOR_ENTERED_UNVERIFIED',provider_feed_connected:false}});
 }));
 router.get('/journeys/:id',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
-  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);const dutyRoles=await requireJourneyAccess(req,res,j);if(!dutyRoles)return;
-  const [stops,events,telemetry]=await Promise.all([stopsFor(req.db,org,j.id),eventsFor(req.db,org,j.id,200,req.user,dutyRoles),telemetryFor(req.db,org,j)]);
-  const assessment=parseJson(j.route_assessment,null);
-  const safe=journeyForDutyViewer(j,events,req.user,dutyRoles);
+  const org=req.user.org_id;
+  const outcome=await req.dbTx(async c=>{
+    const db=(sql,params)=>c.query(sql,params);
+    const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[req.params.id,org]);
+    if(!locked.rows.length)return {error:'journey_not_found'};
+    const j=await journeyById(db,org,req.params.id);
+    if(!j)return {error:'journey_not_found'};
+    const dutyRoles=await activeDutyRoles(db,org,j.id,req.user.id);
+    if(!canAccessJourney(req.user,dutyRoles))return {error:'journey_not_found'};
+    const [stops,events,telemetry]=await Promise.all([
+      stopsFor(db,org,j.id),
+      eventsFor(db,org,j.id,200,req.user,dutyRoles),
+      telemetryFor(db,org,j)
+    ]);
+    const assessment=parseJson(j.route_assessment,null);
+    const safe=journeyForDutyViewer(j,events,req.user,dutyRoles);
+    return {data:{...safe,stops,duty_roles:dutyRoles,telemetry_snapshot:telemetry,readiness_checklist:readinessChecklist(j,stops,assessment,telemetry)}};
+  });
+  if(outcome?.error)return res.status(404).json({error:'journey_not_found'});
   res.setHeader('Cache-Control','no-store');
-  res.json({data:{...safe,stops,duty_roles:dutyRoles,telemetry_snapshot:telemetry,readiness_checklist:readinessChecklist(j,stops,assessment,telemetry)}});
+  res.json({data:outcome.data});
 }));
+
 router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
   if(!['requested','planning'].includes(j.status))return res.status(409).json({error:'journey_not_editable'});
