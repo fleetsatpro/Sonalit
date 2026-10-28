@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -102,6 +102,19 @@ describe('SJM validation and evidence boundaries', () => {
     expect(firstRouteIndex).toBeGreaterThan(authIndex);
   });
   const valid = { title:'Nairobi to Mombasa security movement', purpose:'Client-approved escorted road movement', origin_label:'Nairobi', origin_lat:-1.286389, origin_lng:36.817223, destination_label:'Mombasa', destination_lat:-4.043477, destination_lng:39.668206, planned_departure_at:'2026-10-28T06:00:00+03:00', planned_arrival_at:'2026-10-28T16:00:00+03:00', transport_mode:'road', stops:[{name:'Voi checkpoint',stop_type:'checkpoint',lat:-3.396,lng:38.556}] };
+  test('locks the tenant-scoped journey row before mutation decisions', async () => {
+    const calls=[];
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      return {rows:[{id:'journey-1',status:'in_progress',flight_number:'KQ 100',flight_status:'scheduled'}]};
+    };
+    const locked=await lockJourneyForMobility(db,'org-1','journey-1');
+    expect(locked).toMatchObject({id:'journey-1',status:'in_progress',flight_number:'KQ 100'});
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toMatch(/WHERE id=\\$1 AND org_id=\\$2 AND deleted_at IS NULL FOR UPDATE/i);
+    expect(calls[0].params).toEqual(['journey-1','org-1']);
+  });
+
   test('keeps daily report generation tenant-allowlisted and respects client-local time', () => {
     const org='12345678-1234-4234-8234-123456789abc';
     expect(configuredOrgIds('')).toEqual([]);
