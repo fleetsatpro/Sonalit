@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 const { dualAuthenticate } = require('../middleware/fieldAuth');
+const { asyncHandler } = require('../middleware/error');
 
 // dualAuthenticate, not authenticate: yard and port tablets need this token
 // too. Without it the field app could only ever poll, which is exactly the
@@ -23,7 +24,7 @@ router.post('/token', (req, res) => {
   res.json({ token });
 });
 
-router.post('/subscription-token', (req, res) => {
+router.post('/subscription-token', asyncHandler(async (req, res) => {
   const secret = process.env.CENTRIFUGO_TOKEN_HMAC_SECRET;
   if (!secret) return res.status(503).json({ error: 'Realtime not configured' });
 
@@ -38,6 +39,46 @@ router.post('/subscription-token', (req, res) => {
     `org#${orgId}`,
     `risk:updates:${orgId}`,
   ]);
+
+  // Private Ops Comms subscriptions are granted only after checking the exact
+  // tenant-owned channel and current membership. For SJM-managed channels a
+  // shared journey lock serializes token issuance against the roster update
+  // transaction, which holds FOR UPDATE while removing channel membership.
+  const commsPrefix = `org#${orgId}#comms#`;
+  if (channel.startsWith(commsPrefix)) {
+    const channelId = channel.slice(commsPrefix.length);
+    const channelUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!channelUuid.test(channelId) || typeof req.dbTx !== 'function') {
+      return res.status(403).json({ error: 'Not authorized for this channel' });
+    }
+
+    const authorized = await req.dbTx(async (client) => {
+      const result = await client.query(
+        'SELECT id, org_id, sjm_journey_id FROM channels WHERE id = $1 AND org_id = $2',
+        [channelId, orgId],
+      );
+      const ownedChannel = result.rows[0];
+      if (!ownedChannel) return false;
+
+      if (ownedChannel.sjm_journey_id) {
+        const mission = await client.query(
+          'SELECT id FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+          [ownedChannel.sjm_journey_id, orgId],
+        );
+        if (!mission.rows.length) return false;
+      }
+
+      const member = await client.query(
+        'SELECT user_id FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+        [channelId, req.user.id],
+      );
+      return member.rows.length > 0 || String(req.user.role || '').toLowerCase() === 'admin';
+    });
+
+    if (!authorized) return res.status(403).json({ error: 'Not authorized for this channel' });
+    allowedChannels.add(channel);
+  }
+
   if (!allowedChannels.has(channel)) {
     return res.status(403).json({ error: 'Not authorized for this channel' });
   }
@@ -48,6 +89,6 @@ router.post('/subscription-token', (req, res) => {
     { expiresIn: '1h', algorithm: 'HS256' }
   );
   res.json({ token });
-});
+}));
 
 module.exports = router;
