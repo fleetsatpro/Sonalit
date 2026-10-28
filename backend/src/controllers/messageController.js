@@ -127,6 +127,22 @@ async function withChannelReaderTransaction(req, res, channelId, work) {
   return { ok: true, value: outcome?.value };
 }
 
+/** Runs channel-manager decisions and writes under the same membership/journey lock. */
+async function withChannelManagerTransaction(req, res, channelId, work) {
+  const result = await withChannelReaderTransaction(req, res, channelId, async (db, context) => {
+    if (!isOrgAdmin(req.user) && !context.member?.is_channel_admin) {
+      return { managerDenied: true };
+    }
+    return work(db, context);
+  });
+  if (!result.ok) return result;
+  if (result.value?.managerDenied) {
+    forbidden(res, 'Channel admin permission required');
+    return { ok: false };
+  }
+  return result;
+}
+
 /**
  * Actor may manage the channel (add/remove members, pin, delete channel)
  * if either they are a channel admin OR the org admin.
@@ -333,10 +349,7 @@ const deleteChannel = asyncHandler(async (req, res) => {
 // ─── Membership ──────────────────────────────────────────────────────────────
 
 const listMembers = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
-  const rows = await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `SELECT cm.user_id, cm.is_channel_admin, cm.muted, cm.joined_at,
             u.name, u.email, u.role, u.status
        FROM channel_members cm
@@ -344,8 +357,9 @@ const listMembers = asyncHandler(async (req, res) => {
       WHERE cm.channel_id = $1
       ORDER BY cm.is_channel_admin DESC, u.name`,
     [req.params.id],
-  );
-  res.json({ data: rows.rows });
+  ));
+  if (!result.ok) return;
+  res.json({ data: result.value.rows });
 });
 
 const addMembers = asyncHandler(async (req, res) => {
@@ -464,20 +478,26 @@ const updateMember = asyncHandler(async (req, res) => {
 });
 
 const toggleMute = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const schema = Joi.object({ muted: Joi.boolean().required() });
   const { error, value } = schema.validate(req.body);
   if (error) return badRequest(res, error.message);
 
-  await req.db(
-    `INSERT INTO channel_members (channel_id, user_id, org_id, is_channel_admin, muted)
-       VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, false, $3)
-     ON CONFLICT (channel_id, user_id) DO UPDATE SET muted = EXCLUDED.muted`,
-    [req.params.id, req.user.id, value.muted],
-  );
-  res.json({ ok: true, muted: value.muted });
+  // UPDATE-only is intentional: a mute preference must never recreate a
+  // channel_members row after an SJM roster revocation.
+  const result = await withChannelReaderTransaction(req, res, req.params.id, async (db, { member }) => {
+    if (!member) return { membershipRequired: true };
+    const updated = await db(
+      `UPDATE channel_members SET muted = $3
+        WHERE channel_id = $1 AND user_id = $2
+        RETURNING muted`,
+      [req.params.id, req.user.id, value.muted],
+    );
+    if (!updated.rows.length) return { membershipRequired: true };
+    return { muted: updated.rows[0].muted };
+  });
+  if (!result.ok) return;
+  if (result.value?.membershipRequired) return forbidden(res, 'Channel membership is required to change mute settings');
+  res.json({ ok: true, muted: result.value.muted });
 });
 
 /**
@@ -485,13 +505,13 @@ const toggleMute = asyncHandler(async (req, res) => {
  * Called by the client when the user opens the channel or scrolls to bottom.
  */
 const markRead = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-  await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `UPDATE channel_members SET last_read_at = NOW()
-      WHERE channel_id = $1 AND user_id = $2`,
+      WHERE channel_id = $1 AND user_id = $2
+      RETURNING user_id`,
     [req.params.id, req.user.id],
-  );
+  ));
+  if (!result.ok) return;
   res.json({ ok: true });
 });
 
@@ -647,44 +667,42 @@ const sendMessage = asyncHandler(async (req, res) => {
  * its ID remain so the client can render a "Message deleted" placeholder.
  */
 const deleteMessage = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-  const { member } = rd;
+  const result = await withChannelReaderTransaction(req, res, req.params.id, async (db, { member }) => {
+    const msgRes = await db(
+      'SELECT * FROM messages WHERE id = $1 AND channel_id = $2',
+      [req.params.msgId, req.params.id],
+    );
+    const msg = msgRes.rows[0];
+    if (!msg) return { error: 'message_not_found' };
+    if (msg.deleted_at) return { already: true };
 
-  const msgRes = await req.db(
-    `SELECT * FROM messages WHERE id = $1 AND channel_id = $2`,
-    [req.params.msgId, req.params.id],
-  );
-  const msg = msgRes.rows[0];
-  if (!msg) return notFound(res, 'Message not found');
-  if (msg.deleted_at) return res.json({ ok: true, already: true });
+    const isAuthor = msg.author_id === req.user.id;
+    const canDelete = isAuthor || isOrgAdmin(req.user) || (member && member.is_channel_admin);
+    if (!canDelete) return { error: 'cannot_delete' };
 
-  const isAuthor  = msg.author_id === req.user.id;
-  const canDelete = isAuthor || isOrgAdmin(req.user) || (member && member.is_channel_admin);
-  if (!canDelete) return forbidden(res, 'Cannot delete this message');
-
-  await req.db(
-    `UPDATE messages
-        SET deleted_at = NOW(), deleted_by = $2, body = NULL, edited_at = NOW()
-      WHERE id = $1`,
-    [msg.id, req.user.id],
-  );
-  // Reactions and attachments follow the row: attachments stay (cascade only on
-  // hard-delete), reactions are dropped since they no longer have meaning.
-  await req.db(`DELETE FROM message_reactions WHERE message_id = $1`, [msg.id]);
-  await req.db(`DELETE FROM pinned_messages   WHERE message_id = $1`, [msg.id]);
+    await db(
+      `UPDATE messages
+          SET deleted_at = NOW(), deleted_by = $2, body = NULL, edited_at = NOW()
+        WHERE id = $1`,
+      [msg.id, req.user.id],
+    );
+    await db('DELETE FROM message_reactions WHERE message_id = $1', [msg.id]);
+    await db('DELETE FROM pinned_messages WHERE message_id = $1', [msg.id]);
+    return { messageId: msg.id };
+  });
+  if (!result.ok) return;
+  if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
+  if (result.value?.error === 'cannot_delete') return forbidden(res, 'Cannot delete this message');
+  if (result.value?.already) return res.json({ ok: true, already: true });
 
   publishCommsEvent(req.user.org_id, req.params.id, 'message.deleted', {
-    message_id: msg.id, deleted_by: req.user.id,
+    message_id: result.value.messageId, deleted_by: req.user.id,
   });
   res.json({ ok: true });
 });
 
 const getThread = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
-  const rows = await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `SELECT m.id, m.channel_id, m.author_id, m.body, m.reply_to_id,
             m.created_at, m.deleted_at,
             u.name AS author_name, u.role AS author_role
@@ -694,35 +712,34 @@ const getThread = asyncHandler(async (req, res) => {
         AND (m.id = $2 OR m.reply_to_id = $2)
       ORDER BY m.created_at ASC`,
     [req.params.id, req.params.msgId],
-  );
-  if (rows.rows.length === 0) return notFound(res, 'Thread not found');
-
-  const data = rows.rows.map((r) => (r.deleted_at ? { ...r, body: null, deleted: true } : { ...r, deleted: false }));
+  ));
+  if (!result.ok) return;
+  if (result.value.rows.length === 0) return notFound(res, 'Thread not found');
+  const data = result.value.rows.map((r) => (r.deleted_at ? { ...r, body: null, deleted: true } : { ...r, deleted: false }));
   res.json({ data });
 });
 
 const addReaction = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const schema = Joi.object({ emoji: Joi.string().min(1).max(16).required() });
   const { error, value } = schema.validate(req.body);
   if (error) return badRequest(res, error.message);
 
-  // Ensure message exists in this channel and isn't deleted.
-  const msg = await req.db(
-    `SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL`,
-    [req.params.msgId, req.params.id],
-  );
-  if (!msg.rows.length) return notFound(res, 'Message not found');
-
-  await req.db(
-    `INSERT INTO message_reactions (message_id, user_id, org_id, emoji)
-       VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, $3)
-     ON CONFLICT (message_id, user_id, emoji) DO NOTHING`,
-    [req.params.msgId, req.user.id, value.emoji],
-  );
-
+  const result = await withChannelReaderTransaction(req, res, req.params.id, async (db) => {
+    const msg = await db(
+      'SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL',
+      [req.params.msgId, req.params.id],
+    );
+    if (!msg.rows.length) return { error: 'message_not_found' };
+    await db(
+      `INSERT INTO message_reactions (message_id, user_id, org_id, emoji)
+         VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, $3)
+       ON CONFLICT (message_id, user_id, emoji) DO NOTHING`,
+      [req.params.msgId, req.user.id, value.emoji],
+    );
+    return { ok: true };
+  });
+  if (!result.ok) return;
+  if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
   publishCommsEvent(req.user.org_id, req.params.id, 'reaction.added', {
     message_id: req.params.msgId, user_id: req.user.id, emoji: value.emoji,
   });
@@ -730,17 +747,15 @@ const addReaction = asyncHandler(async (req, res) => {
 });
 
 const removeReaction = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const emoji = decodeURIComponent(req.params.emoji || '');
   if (!emoji) return badRequest(res, 'emoji required');
 
-  await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `DELETE FROM message_reactions
       WHERE message_id = $1 AND user_id = $2 AND emoji = $3`,
     [req.params.msgId, req.user.id, emoji],
-  );
+  ));
+  if (!result.ok) return;
   publishCommsEvent(req.user.org_id, req.params.id, 'reaction.removed', {
     message_id: req.params.msgId, user_id: req.user.id, emoji,
   });
@@ -750,10 +765,7 @@ const removeReaction = asyncHandler(async (req, res) => {
 // ─── Pinned messages ─────────────────────────────────────────────────────────
 
 const listPinned = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
-  const rows = await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `SELECT p.message_id, p.pinned_at, p.pinned_by,
             m.body, m.created_at, m.deleted_at,
             u.name AS author_name, u.role AS author_role
@@ -763,43 +775,42 @@ const listPinned = asyncHandler(async (req, res) => {
       WHERE p.channel_id = $1
       ORDER BY p.pinned_at DESC`,
     [req.params.id],
-  );
-  const data = rows.rows.filter((r) => !r.deleted_at);
-  res.json({ data });
+  ));
+  if (!result.ok) return;
+  res.json({ data: result.value.rows.filter((r) => !r.deleted_at) });
 });
 
 const addPin = asyncHandler(async (req, res) => {
-  const perm = await requireChannelManager(req, res, req.params.id);
-  if (!perm) return;
-
   const schema = Joi.object({ messageId: Joi.string().uuid().required() });
   const { error, value } = schema.validate(req.body);
   if (error) return badRequest(res, error.message);
 
-  const msg = await req.db(
-    `SELECT id FROM messages
-      WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL`,
-    [value.messageId, req.params.id],
-  );
-  if (!msg.rows.length) return notFound(res, 'Message not found');
-
-  await req.db(
-    `INSERT INTO pinned_messages (channel_id, message_id, org_id, pinned_by)
-       VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, $3)
-     ON CONFLICT (channel_id, message_id) DO NOTHING`,
-    [req.params.id, value.messageId, req.user.id],
-  );
+  const result = await withChannelManagerTransaction(req, res, req.params.id, async (db) => {
+    const msg = await db(
+      'SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL',
+      [value.messageId, req.params.id],
+    );
+    if (!msg.rows.length) return { error: 'message_not_found' };
+    await db(
+      `INSERT INTO pinned_messages (channel_id, message_id, org_id, pinned_by)
+         VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, $3)
+       ON CONFLICT (channel_id, message_id) DO NOTHING`,
+      [req.params.id, value.messageId, req.user.id],
+    );
+    return { ok: true };
+  });
+  if (!result.ok) return;
+  if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
   publishCommsEvent(req.user.org_id, req.params.id, 'pin.added', { message_id: value.messageId });
   res.status(201).json({ ok: true });
 });
 
 const removePin = asyncHandler(async (req, res) => {
-  const perm = await requireChannelManager(req, res, req.params.id);
-  if (!perm) return;
-  await req.db(
-    `DELETE FROM pinned_messages WHERE channel_id = $1 AND message_id = $2`,
+  const result = await withChannelManagerTransaction(req, res, req.params.id, (db) => db(
+    'DELETE FROM pinned_messages WHERE channel_id = $1 AND message_id = $2',
     [req.params.id, req.params.messageId],
-  );
+  ));
+  if (!result.ok) return;
   publishCommsEvent(req.user.org_id, req.params.id, 'pin.removed', { message_id: req.params.messageId });
   res.json({ ok: true });
 });
@@ -807,16 +818,11 @@ const removePin = asyncHandler(async (req, res) => {
 // ─── Search (server-side fallback the client uses once its window has scrolled) ─
 
 const searchMessages = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return badRequest(res, 'q must be at least 2 characters');
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 40));
 
-  // ILIKE is fine here: message counts stay bounded per channel and
-  // (channel_id, created_at DESC) index narrows the scan window.
-  const rows = await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `SELECT m.id, m.channel_id, m.author_id, m.body, m.created_at,
             u.name AS author_name, u.role AS author_role
        FROM messages m
@@ -827,8 +833,9 @@ const searchMessages = asyncHandler(async (req, res) => {
       ORDER BY m.created_at DESC
       LIMIT $3`,
     [req.params.id, q, limit],
-  );
-  res.json({ data: rows.rows });
+  ));
+  if (!result.ok) return;
+  res.json({ data: result.value.rows });
 });
 
 // ─── Attachments (presigned R2 uploads) ─────────────────────────────────────
@@ -990,15 +997,17 @@ const getAttachmentUrl = asyncHandler(async (req, res) => {
 // ─── Typing (transient, not persisted) ───────────────────────────────────────
 
 const publishTyping = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-  publish(`org#${req.user.org_id}#comms#${req.params.id}`, {
-    type: 'typing',
-    channel_id: req.params.id,
-    user_id: req.user.id,
-    user_name: req.user.name,
-    at: Date.now(),
+  const result = await withChannelReaderTransaction(req, res, req.params.id, async () => {
+    publish(`org#${req.user.org_id}#comms#${req.params.id}`, {
+      type: 'typing',
+      channel_id: req.params.id,
+      user_id: req.user.id,
+      user_name: req.user.name,
+      at: Date.now(),
+    });
+    return { ok: true };
   });
+  if (!result.ok) return;
   res.json({ ok: true });
 });
 
