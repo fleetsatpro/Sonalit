@@ -216,6 +216,7 @@ export default function SecureJourneyManagement(){
  const choose=(id:string)=>{setSelectedId(id);setAck('');setReviewNote('');setCancelNote('');setEditingProfile(false);setWorkspaceTab('overview')};
  const configureProfile=()=>{setProfileTimezone(profile?.report_timezone||'Africa/Nairobi');setProfileTitle(profile?.report_template?.title||'Secure Journey Management Report');setProfileSections(profile?.report_template?.sections||SECTIONS.map(s=>s.id));setDailyReportsEnabled(profile?.daily_reports_enabled===true);setDailyReportTime(String(profile?.daily_report_local_time||'18:00').slice(0,5));setEditingProfile(true)};
  const report=(report_type:string)=>act.mutate({kind:'report',body:{report_type}});
+ const isTerminal=Boolean(journey&&['closed','cancelled','aborted'].includes(journey.status));
 
 return (
   <main className="relative min-h-full overflow-y-auto bg-[#050913] text-slate-100">
@@ -340,12 +341,12 @@ return (
          <div className="flex flex-wrap items-center justify-between gap-3"><div><Kicker>MISSION WORKSPACE</Kicker><h3 className="mt-1 text-sm font-semibold text-white">Operational record</h3></div><span className="font-mono text-[9px] text-slate-600">{events.length} loaded events · {stops.length} stops</span></div>
          <div className="mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="Mission workspace views">
           {[
-           ['overview','Situation brief',Activity],
-           ['command','Command & release',ShieldCheck],
-           ['itinerary','Itinerary',Route],
-           ['evidence','Evidence ledger',Layers3],
-           ['reports','Client reporting',FileText]
-          ].map(([value,label,Icon])=><button type="button" role="tab" aria-selected={workspaceTab===value} key={String(value)} onClick={()=>setWorkspaceTab(value as typeof workspaceTab)} className={'inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-[11px] font-medium transition '+(workspaceTab===value?'border-emerald-300 text-emerald-100':'border-transparent text-slate-500 hover:text-slate-200')}><Icon size={13}/>{String(label)}</button>)}
+           {value:'overview',label:'Situation brief',Icon:Activity},
+           {value:'command',label:'Command & release',Icon:ShieldCheck},
+           {value:'itinerary',label:'Itinerary',Icon:Route},
+           {value:'evidence',label:'Evidence ledger',Icon:Layers3},
+           {value:'reports',label:'Client reporting',Icon:FileText}
+          ].map(({value,label,Icon})=><button type="button" role="tab" aria-selected={workspaceTab===value} key={value} onClick={()=>setWorkspaceTab(value)} className={'inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-[11px] font-medium transition '+(workspaceTab===value?'border-emerald-300 text-emerald-100':'border-transparent text-slate-500 hover:text-slate-200')}><Icon size={13}/>{label}</button>)}
          </div>
         </div>
         <div className="p-3 sm:p-5">
@@ -430,7 +431,7 @@ return (
              <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-3"><p className="text-[10px] font-semibold uppercase tracking-[.12em] text-slate-400">Data discipline</p><p className="mt-1.5 text-[11px] leading-5 text-slate-500">Client section policies control optional content. Safety gates, stop attestations, telemetry and event history retain their own provenance and are not merged into a single unsupported confidence claim.</p></div>
              <Btn tone="green" disabled={act.isPending||(reportType==='closeout'&&journey.status!=='closed')} onClick={()=>report(reportType)}><FileText size={13}/>{act.isPending?'Working…':'Generate & download PDF'}</Btn>
             </div>
-            {lastGeneratedReport&&<div className="mt-4 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.035] p-3"><p className="text-[11px] font-semibold text-emerald-100">Persisted artifact available</p><p className="mt-1 text-[10px] text-slate-500">{lastGeneratedReport.report_type.replaceAll('_',' ')} · {lastGeneratedReport.report_date} · {dateText(lastGeneratedReport.generated_at)}</p><div className="mt-3 flex flex-wrap gap-2"><Btn onClick={()=>void downloadReportArtifact(lastGeneratedReport.id,lastGeneratedReport.report_date,lastGeneratedReport.report_type,'PDF')}><FileDown size={12}/>Download PDF</Btn><Btn onClick={()=>void downloadReportArtifact(lastGeneratedReport.id,lastGeneratedReport.report_date,lastGeneratedReport.report_type,'CSV')}><FileDown size={12}/>Download CSV</Btn></div></div>}
+            {lastGeneratedReport&&<div className="mt-4 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.035] p-3"><p className="text-[11px] font-semibold text-emerald-100">Persisted artifact available</p><p className="mt-1 text-[10px] text-slate-500">{lastGeneratedReport.report_type.replaceAll('_',' ')} · {lastGeneratedReport.report_date} · </p><div className="mt-3 flex flex-wrap gap-2"><Btn onClick={()=>void downloadReportArtifact(lastGeneratedReport.id,lastGeneratedReport.report_date,lastGeneratedReport.report_type,'PDF')}><FileDown size={12}/>Download PDF</Btn><Btn onClick={()=>void downloadReportArtifact(lastGeneratedReport.id,lastGeneratedReport.report_date,lastGeneratedReport.report_type,'CSV')}><FileDown size={12}/>Download CSV</Btn></div></div>}
             {reportDownloadError&&<p role="alert" className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/[0.035] p-3 text-[11px] leading-5 text-amber-100">{reportDownloadError}</p>}
             <p className="mt-4 text-[9px] leading-5 text-slate-600">No report is automatically emailed or distributed to a client from this workspace.</p>
            </section>
