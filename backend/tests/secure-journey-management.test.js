@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, routeAssessmentUsable, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, routeAssessmentUsable, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -112,6 +112,19 @@ describe('SJM validation and evidence boundaries', () => {
     expect(locked).toMatchObject({id:'journey-1',status:'in_progress',flight_number:'KQ 100'});
     expect(calls).toHaveLength(1);
     expect(calls[0].sql).toContain('WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE');
+    expect(calls[0].params).toEqual(['journey-1','org-1']);
+  });
+
+  test('uses a tenant-scoped shared journey lock to protect sensitive read payloads', async () => {
+    const calls=[];
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      return {rows:[{id:'journey-1'}]};
+    };
+    const locked=await lockJourneyForMobilityRead(db,'org-1','journey-1');
+    expect(locked).toEqual({id:'journey-1'});
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE');
     expect(calls[0].params).toEqual(['journey-1','org-1']);
   });
 
