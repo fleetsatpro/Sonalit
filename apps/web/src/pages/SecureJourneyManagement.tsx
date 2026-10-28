@@ -13,7 +13,10 @@ type Point={lat:number;lng:number;name?:string;label?:string};
 type Stop={id:string;sequence:number;name:string;stop_type:string;lat?:number|null;lng?:number|null;planned_arrival_at?:string|null;stop_status:'planned'|'reached'|'skipped';confirmed_at?:string|null;confirmation_source?:string|null;instructions?:string|null};
 type EventRow={id:string;event_type:string;summary:string;detail:Record<string,unknown>;source:string;created_at:string};
 type Assessment={route_status?:string;safety_gate?:string;overall_risk_score?:number;routing_provider?:string;ai_summary?:string;risk_zone_count?:number;recommended_route?:{blocked?:boolean;distance_km?:number;estimated_duration_minutes?:number;waypoints?:Point[];risk_factors?:string[]}};
-type Journey={id:string;reference:string;title:string;purpose:string;status:Status;transport_mode:string;client_id?:string|null;client_name?:string|null;convoy_id?:string|null;convoy_name?:string|null;origin_label:string;origin_lat:string|number;origin_lng:string|number;destination_label:string;destination_lat:string|number;destination_lng:string|number;planned_departure_at?:string|null;planned_arrival_at?:string|null;planned_distance_km?:number|string|null;planned_duration_minutes?:number|null;timezone:string;route_assessment?:Assessment|string|null;planned_route?:Point[]|string;human_review_decision?:string|null;human_review_rationale?:string|null;approved_at?:string|null;started_at?:string|null;completed_at?:string|null;stops?:Stop[];events?:EventRow[];has_route_assessment?:boolean};
+type TelemetryDevice={device_id:string;device_name:string;officer_name?:string|null;lat?:number|string|null;lng?:number|string|null;speed_kph?:number|string|null;heading?:number|string|null;accuracy_m?:number|string|null;observed_at?:string|Date|null;source?:string|null;freshness:'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE'|string;age_seconds?:number|null;freshness_reason?:string|null;evidence_class?:'OBSERVED'|string};
+type TelemetrySnapshot={status:'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE'|string;reason?:string|null;observed_at?:string|Date|null;devices:TelemetryDevice[]};
+type ReadinessItem={item:string;status:string;detail:string};
+type Journey={id:string;reference:string;title:string;purpose:string;status:Status;transport_mode:string;client_id?:string|null;client_name?:string|null;convoy_id?:string|null;convoy_name?:string|null;origin_label:string;origin_lat:string|number;origin_lng:string|number;destination_label:string;destination_lat:string|number;destination_lng:string|number;planned_departure_at?:string|null;planned_arrival_at?:string|null;planned_distance_km?:number|string|null;planned_duration_minutes?:number|null;timezone:string;route_assessment?:Assessment|string|null;planned_route?:Point[]|string;human_review_decision?:string|null;human_review_rationale?:string|null;approved_at?:string|null;started_at?:string|null;completed_at?:string|null;stops?:Stop[];events?:EventRow[];has_route_assessment?:boolean;telemetry_snapshot?:TelemetrySnapshot;readiness_checklist?:ReadinessItem[]};
 type Client={id:string;name:string;company?:string|null};
 type Convoy={id:string;name:string;status:string};
 type Profile={client_id:string;report_timezone:string;report_template:{title?:string;sections?:string[]};daily_reports_enabled?:boolean;daily_report_local_time?:string;daily_report_scheduler_available?:boolean;client?:Client};
@@ -54,6 +57,16 @@ function Panel({children,className=''}:{children:ReactNode;className?:string}){r
 function Kicker({children}:{children:ReactNode}){return <p className="font-mono text-[9px] font-semibold uppercase tracking-[.2em] text-emerald-300/75">{children}</p>}
 function Btn({children,onClick,disabled=false,tone='neutral'}:{children:ReactNode;onClick:()=>void;disabled?:boolean;tone?:'neutral'|'green'|'red'}){const c=tone==='green'?'border-emerald-300/25 bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/15':tone==='red'?'border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15':'border-white/10 bg-white/[0.035] text-slate-300 hover:bg-white/[0.07] hover:text-white';return <button type="button" onClick={onClick} disabled={disabled} className={'inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 '+c}>{children}</button>}
 function StatusBadge({value}:{value:Status}){return <span className={'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase '+META[value].cls}><i className="h-1.5 w-1.5 rounded-full bg-current"/>{META[value].label}</span>}
+
+function EvidenceBadge({value}:{value?:string|null}){
+ const v=String(value||'UNAVAILABLE').toUpperCase();
+ const ok=['LIVE','RECORDED','COMPLETE','LINKED','GO','RECORDED_WITH_CONTROLS'].includes(v);
+ const warn=['DELAYED','STALE','PENDING','INCOMPLETE','CONDITIONAL','HUMAN_REVIEW','NOT_REQUIRED_BY_CURRENT_GATE','NO_STOPS_DEFINED'].includes(v);
+ const bad=['BLOCKED','REJECTED','NO_GO'].includes(v);
+ const cls=ok?'border-emerald-300/25 bg-emerald-300/[0.07] text-emerald-100':warn?'border-amber-300/25 bg-amber-300/[0.06] text-amber-100':bad?'border-red-300/25 bg-red-400/[0.06] text-red-100':'border-white/[0.10] bg-white/[0.025] text-slate-400';
+ return <span className={'inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[9px] '+cls}><span className="h-1.5 w-1.5 rounded-full bg-current"/>{v.replaceAll('_',' ')}</span>;
+}
+
 function Gate({value}:{value?:string}){const v=String(value||'UNAVAILABLE').toUpperCase();const c=v==='GO'?'border-emerald-300/25 bg-emerald-300/10 text-emerald-100':v==='CONDITIONAL'?'border-amber-300/25 bg-amber-300/10 text-amber-100':v==='HUMAN_REVIEW'?'border-orange-300/25 bg-orange-300/10 text-orange-100':v==='NO_GO'?'border-red-300/25 bg-red-300/10 text-red-100':'border-white/10 bg-white/[0.03] text-slate-500';return <span className={'rounded-md border px-2 py-1 font-mono text-[9px] tracking-wider '+c}>{v.replaceAll('_',' ')}</span>}
 function download(blob:Blob,name:string){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url)}
 
@@ -64,8 +77,8 @@ function mapCoord(latValue: unknown, lngValue: unknown): [number,number] | null 
   if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat < -90||lat > 90||lng < -180||lng > 180||(Math.abs(lat)<0.000001&&Math.abs(lng)<0.000001))return null;
   return [lng,lat];
 }
-function journeyMarkerElement(kind:'origin'|'stop'|'destination', title:string):HTMLElement {
-  const colors={origin:'#22d3ee',stop:'#fb923c',destination:'#4ade80'};
+function journeyMarkerElement(kind:'origin'|'stop'|'destination'|'observed_live'|'observed_delayed'|'observed_stale'|'observed_unavailable', title:string):HTMLElement {
+  const colors={origin:'#22d3ee',stop:'#fb923c',destination:'#4ade80',observed_live:'#39ff88',observed_delayed:'#fbbf24',observed_stale:'#fb923c',observed_unavailable:'#94a3b8'};
   const color=colors[kind];
   const root=document.createElement('div');
   root.style.display='flex';root.style.alignItems='center';root.style.gap='6px';root.style.pointerEvents='none';
@@ -76,7 +89,7 @@ function journeyMarkerElement(kind:'origin'|'stop'|'destination', title:string):
   root.append(dot,label);
   return root;
 }
-function JourneyMap({journey,stops,geometry,assessment}:{journey:Journey;stops:Stop[];geometry:Point[];assessment:Assessment|null}){
+function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journey;stops:Stop[];geometry:Point[];assessment:Assessment|null;telemetry?:TelemetrySnapshot|null}){
   const containerRef=useRef<HTMLDivElement>(null);
   const mapRef=useRef<maplibregl.Map|null>(null);
   const markersRef=useRef<maplibregl.Marker[]>([]);
@@ -91,7 +104,8 @@ function JourneyMap({journey,stops,geometry,assessment}:{journey:Journey;stops:S
   const hasRoutedGeometry=assessment?.route_status==='routed'&&routeCoords.length>=2;
   const displayRoute=useMemo(()=>hasRoutedGeometry?routeCoords:[],[hasRoutedGeometry,routeCoords]);
   const stopPoints=useMemo(()=>stops.map(stop=>({stop,coord:mapCoord(stop.lat,stop.lng)})).filter((x):x is {stop:Stop;coord:[number,number]}=>x.coord!==null),[stops]);
-  const fitPoints=useMemo(()=>[...(origin?[origin]:[]),...displayRoute,...(destination?[destination]:[]),...stopPoints.map(p=>p.coord)],[origin,destination,displayRoute,stopPoints]);
+  const observedPoints=useMemo(()=>((telemetry?.devices)||[]).map(device=>({device,coord:mapCoord(device.lat,device.lng)})).filter((x):x is {device:TelemetryDevice;coord:[number,number]}=>x.coord!==null),[telemetry?.devices]);
+  const fitPoints=useMemo(()=>[...(origin?[origin]:[]),...displayRoute,...(destination?[destination]:[]),...stopPoints.map(p=>p.coord),...observedPoints.map(p=>p.coord)],[origin,destination,displayRoute,stopPoints,observedPoints]);
   useEffect(()=>{
     const container=containerRef.current;
     if(!container||mapRef.current)return;
@@ -129,9 +143,15 @@ function JourneyMap({journey,stops,geometry,assessment}:{journey:Journey;stops:S
       if(!coord)return;
       markersRef.current.push(new maplibregl.Marker({element:journeyMarkerElement(kind,title),anchor:'bottom',offset:[0,-7]}).setLngLat(coord).addTo(map));
     };
-    addMarker(origin,'origin','ORIGIN · '+journey.origin_label);
-    stopPoints.forEach(({stop,coord})=>addMarker(coord,'stop',String(stop.sequence).padStart(2,'0')+' · '+stop.name));
-    addMarker(destination,'destination','DESTINATION · '+journey.destination_label);
+    addMarker(origin,'origin','PLANNED ORIGIN · '+journey.origin_label);
+    stopPoints.forEach(({stop,coord})=>addMarker(coord,'stop','PLANNED STOP '+String(stop.sequence).padStart(2,'0')+' · '+stop.name));
+    addMarker(destination,'destination','PLANNED DESTINATION · '+journey.destination_label);
+    observedPoints.forEach(({device,coord})=>{
+      const freshness=String(device.freshness||'UNAVAILABLE').toUpperCase();
+      const kind=freshness==='LIVE'?'observed_live':freshness==='DELAYED'?'observed_delayed':freshness==='STALE'?'observed_stale':'observed_unavailable';
+      const title='OBSERVED '+freshness+' · '+device.device_name+' · '+dateText(device.observed_at);
+      markersRef.current.push(new maplibregl.Marker({element:journeyMarkerElement(kind,title),anchor:'bottom',offset:[0,-7]}).setLngLat(coord).addTo(map));
+    });
     map.resize();
     if(fitPoints.length>1){
       const bounds=new maplibregl.LngLatBounds();
@@ -140,7 +160,7 @@ function JourneyMap({journey,stops,geometry,assessment}:{journey:Journey;stops:S
     }else if(fitPoints.length===1){
       map.flyTo({center:fitPoints[0],zoom:6,duration:500});
     }
-  },[mapReady,displayRoute,origin,destination,stopPoints,fitPoints,journey.origin_label,journey.destination_label]);
+  },[mapReady,displayRoute,origin,destination,stopPoints,observedPoints,fitPoints,journey.origin_label,journey.destination_label]);
   const toggleBasemap=()=>{
     const map=mapRef.current;if(!map)return;
     const next=!satellite;
@@ -163,8 +183,8 @@ function JourneyMap({journey,stops,geometry,assessment}:{journey:Journey;stops:S
     </div>
     <div ref={containerRef} className="h-[320px] w-full bg-[#07111d] sm:h-[390px] xl:h-[470px] 2xl:h-[520px]"/>
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-3 py-2 text-[9px] font-mono text-slate-500">
-      <span>{hasRoutedGeometry?'ROUTE GEOMETRY · OBSERVED FROM ROUTE SAFETY':'ROUTE LINE SUPPRESSED · NO VALID ROUTED GEOMETRY'}</span>
-      <span className="flex gap-3"><span className="text-cyan-200">● Origin</span><span className="text-orange-300">● Stop</span><span className="text-emerald-200">● Destination</span></span>
+      <span>{hasRoutedGeometry?'PLANNED ROUTE GEOMETRY · SOURCE: ROUTE SAFETY':'ROUTE LINE SUPPRESSED · NO VALID ROUTED GEOMETRY'}</span>
+      <span className="flex flex-wrap gap-3"><span className="text-cyan-200">● Planned origin</span><span className="text-orange-300">● Planned stop</span><span className="text-emerald-200">● Planned destination</span>{observedPoints.length>0&&<span className="text-emerald-300">● Observed device fix ({observedPoints.length})</span>}</span>
     </div>
   </div>;
 }
@@ -443,7 +463,7 @@ return (
          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[10px] font-semibold tracking-[.13em] text-emerald-200">{journey.reference}</span><StatusBadge value={journey.status}/><span className="rounded-md border border-white/[0.07] px-2 py-1 font-mono text-[9px] uppercase tracking-[.12em] text-slate-500">{journey.transport_mode.replaceAll('_',' ')}</span></div><h2 className="mt-2 text-xl font-semibold leading-tight tracking-tight text-white sm:text-2xl">{journey.title}</h2><p className="mt-1.5 max-w-3xl text-xs leading-5 text-slate-400">{journey.purpose}</p></div>
          <div className="flex flex-wrap items-center gap-2"><Gate value={assess?.safety_gate}/><Btn onClick={()=>void refresh()} disabled={detailQ.isFetching}><RefreshCw size={12} className={detailQ.isFetching?'animate-spin':''}/>Sync details</Btn></div>
         </div>
-        <div className="p-2 sm:p-3"><JourneyMap journey={journey} stops={stops} geometry={geometry} assessment={assess}/></div>
+        <div className="p-2 sm:p-3"><JourneyMap journey={journey} stops={stops} geometry={geometry} assessment={assess} telemetry={journey.telemetry_snapshot}/></div>
         <div className="grid grid-cols-2 border-t border-white/[0.07] bg-black/15 md:grid-cols-4">
          {[
           {label:'Planned distance',value:journey.planned_distance_km==null?'Not assessed':Number(journey.planned_distance_km).toLocaleString(undefined,{maximumFractionDigits:1})+' km'},
@@ -593,6 +613,22 @@ return (
         </div>
        </div>
       </Panel>
+
+      <Panel className="overflow-hidden">
+       <div className="border-b border-white/[0.07] p-4"><Kicker>03 / OBSERVED FLEET EVIDENCE</Kicker><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><h3 className="text-base font-semibold text-white">Convoy telemetry</h3><EvidenceBadge value={journey.telemetry_snapshot?.status||'UNAVAILABLE'}/></div><p className="mt-1 text-[10px] leading-5 text-slate-500">Latest stored device_locations fixes for devices linked to the selected convoy. These are observations, not route predictions or proof of stop arrival.</p></div>
+       <div className="space-y-3 p-4">
+        <div className="grid grid-cols-2 gap-2"><div className="rounded-xl border border-white/[0.07] bg-black/15 p-3"><p className="text-[9px] uppercase tracking-[.13em] text-slate-600">Latest observation</p><p className="mt-1.5 text-[11px] font-semibold text-slate-200">{dateText(journey.telemetry_snapshot?.observed_at as string|null|undefined)}</p></div><div className="rounded-xl border border-white/[0.07] bg-black/15 p-3"><p className="text-[9px] uppercase tracking-[.13em] text-slate-600">Linked devices</p><p className="mt-1.5 text-xl font-semibold tabular-nums text-white">{journey.telemetry_snapshot?.devices?.length||0}</p></div></div>
+        {!journey.telemetry_snapshot||journey.telemetry_snapshot.devices.length===0?<div className="rounded-xl border border-dashed border-white/[0.09] p-4"><p className="text-[11px] font-semibold text-slate-300">No usable convoy-device records returned</p><p className="mt-1.5 text-[10px] leading-5 text-slate-500">{journey.telemetry_snapshot?.reason||'Telemetry was not included in the detail response. No location or freshness is inferred.'}</p></div>:<div className="space-y-2">{journey.telemetry_snapshot.devices.map(device=>{const coord=mapCoord(device.lat,device.lng);const age=device.age_seconds;const ageLabel=age==null?'Age unavailable':age<60?age+'s ago':Math.floor(age/60)+'m '+(age%60)+'s ago';return <div key={device.device_id} className="rounded-xl border border-white/[0.07] bg-black/15 p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-[11px] font-semibold text-white">{device.device_name||'Unnamed device'}</p><p className="mt-1 text-[10px] text-slate-500">{device.officer_name||'No assigned officer returned'}</p></div><EvidenceBadge value={device.freshness}/></div><div className="mt-3 grid grid-cols-2 gap-2"><div><p className="text-[9px] uppercase tracking-[.1em] text-slate-600">Last fix · age</p><p className="mt-1 text-[10px] text-slate-300">{ageLabel}</p></div><div><p className="text-[9px] uppercase tracking-[.1em] text-slate-600">Reported speed</p><p className="mt-1 text-[10px] text-slate-300">{device.speed_kph==null?'Not reported':Number(device.speed_kph).toFixed(0)+' km/h'}</p></div><div className="col-span-2"><p className="text-[9px] uppercase tracking-[.1em] text-slate-600">Observed coordinate</p><p className="mt-1 font-mono text-[10px] text-slate-300">{coord?coord[1].toFixed(5)+', '+coord[0].toFixed(5):'No valid coordinates in latest fix'}</p></div></div><p className="mt-2 break-words text-[9px] leading-4 text-slate-600">Source: {device.source||'not returned'} · Observed: {dateText(device.observed_at as string|null|undefined)}{device.accuracy_m==null?'':' · Accuracy '+Number(device.accuracy_m).toFixed(0)+' m'}{device.heading==null?'':' · Heading '+Number(device.heading).toFixed(0)+'°'}</p>{device.freshness_reason&&<p className="mt-2 rounded-md border border-amber-300/10 bg-amber-300/[0.025] px-2 py-1.5 text-[9px] text-amber-100/80">Freshness exception: {device.freshness_reason.replaceAll('_',' ')}</p>}</div>})}</div>}
+        <p className="border-t border-white/[0.06] pt-3 text-[9px] leading-5 text-slate-600">LIVE = at most 45 seconds old · DELAYED = at most 5 minutes old · STALE = older · UNAVAILABLE = no acceptable timestamp or no linked fix. Each marker is separately labelled by freshness.</p>
+       </div>
+      </Panel>
+      <Panel className="overflow-hidden">
+       <div className="border-b border-white/[0.07] p-4"><Kicker>04 / PRE-TRIP READINESS</Kicker><h3 className="mt-1 text-base font-semibold text-white">Server-derived control checklist</h3><p className="mt-1 text-[10px] leading-5 text-slate-500">Computed from the stored route assessment, approvals, convoy linkage, observed telemetry and ordered-stop records.</p></div>
+       <div className="space-y-2 p-3">{(journey.readiness_checklist||[]).map((item,index)=><div key={item.item} className="rounded-xl border border-white/[0.06] bg-black/15 p-3"><div className="flex items-start justify-between gap-2"><div className="flex min-w-0 items-start gap-2"><span className="mt-0.5 font-mono text-[9px] text-slate-600">{String(index+1).padStart(2,'0')}</span><p className="text-[11px] font-medium text-slate-200">{item.item}</p></div><EvidenceBadge value={item.status}/></div><p className="mt-2 pl-5 text-[10px] leading-5 text-slate-500">{item.detail}</p></div>)}
+        {(!journey.readiness_checklist||journey.readiness_checklist.length===0)&&<p className="rounded-xl border border-dashed border-white/[0.09] p-4 text-[10px] leading-5 text-slate-500">Readiness evidence was not returned by the mission detail endpoint.</p>}
+       </div>
+      </Panel>
+
       <Panel className="p-4">
        <div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-violet-300/15 bg-violet-300/[0.04]"><Layers3 size={16} className="text-violet-200"/></span><div><p className="text-[11px] font-semibold text-slate-200">Evidence stays separated</p><p className="mt-1 text-[10px] leading-5 text-slate-500">Planned route geometry, Route Safety analysis, operator stop attestations and device telemetry are different evidence classes. This desk does not substitute one for another.</p></div></div>
       </Panel>
