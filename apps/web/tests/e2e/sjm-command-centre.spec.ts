@@ -182,7 +182,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
 
-      await expect(page.getByRole('heading', { name: /Secure movement/i })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('heading', { name: /Secure journey operations/i })).toBeVisible({ timeout: 15000 });
       await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 10000 });
       await expect(page.getByText('Route has not been assessed', { exact: true })).toBeVisible();
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
