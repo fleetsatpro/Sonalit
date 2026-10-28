@@ -280,8 +280,8 @@ export default function SecureJourneyManagement(){
 
  const [editingProfile,setEditingProfile]=useState(false);const [profileTimezone,setProfileTimezone]=useState('Africa/Nairobi');const [profileTitle,setProfileTitle]=useState('Secure Journey Management Report');const [profileSections,setProfileSections]=useState(SECTIONS.map(s=>s.id));const [dailyReportsEnabled,setDailyReportsEnabled]=useState(false);const [dailyReportTime,setDailyReportTime]=useState('18:00');
 
- const clientsQ=useQuery<{data:Client[]}>({queryKey:['sjm-clients'],queryFn:async()=>(await api.get('/sjm/clients')).data});
- const convoysQ=useQuery<{data:Convoy[]}>({queryKey:['sjm-convoys'],queryFn:async()=>(await api.get('/sjm/convoys')).data});
+ const clientsQ=useQuery<{data:Client[]}>({queryKey:['sjm-clients'],queryFn:async()=>(await api.get('/sjm/clients')).data,enabled:isSupervisor});
+ const convoysQ=useQuery<{data:Convoy[]}>({queryKey:['sjm-convoys'],queryFn:async()=>(await api.get('/sjm/convoys')).data,enabled:isSupervisor});
  const registerQ=useQuery<{data:Journey[]}>({queryKey:['sjm-journeys'],queryFn:async()=>(await api.get('/sjm/journeys?limit=100')).data,refetchInterval:30000});
  const journeys=registerQ.data?.data||[],clients=clientsQ.data?.data||[],convoys=convoysQ.data?.data||[];
  useEffect(()=>{if(!selectedId&&journeys.length>0)setSelectedId(journeys[0].id)},[selectedId,journeys]);
@@ -292,7 +292,7 @@ export default function SecureJourneyManagement(){
  const canConfirmStops=isSupervisor||(journey?.duty_roles||[]).some(role=>['driver','backup_driver'].includes(role));
  const canOperateLifecycle=isSupervisor||(journey?.duty_roles||[]).some(role=>['driver','backup_driver','cpo','security_escort','dispatcher'].includes(role));
  const canStartMovement=isSupervisor||(journey?.duty_roles||[]).some(role=>['driver','backup_driver'].includes(role));
- const profileQ=useQuery<{data:Profile}>({queryKey:['sjm-client-profile',journey?.client_id],enabled:Boolean(journey?.client_id),queryFn:async()=>(await api.get('/sjm/client-profiles/'+journey?.client_id)).data});
+ const profileQ=useQuery<{data:Profile}>({queryKey:['sjm-client-profile',journey?.client_id],enabled:Boolean(journey?.client_id&&isSupervisor),queryFn:async()=>(await api.get('/sjm/client-profiles/'+journey?.client_id)).data});
  const teamUsersQ=useQuery<{data:TeamUser[]}>({queryKey:['sjm-team-users',currentUser?.org_id],queryFn:async()=>(await api.get('/messages/org-users')).data,enabled:isSupervisor,staleTime:300000});
  const participantsQ=useQuery<{data:Participant[]}>({queryKey:['sjm-participants',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/participants')).data,enabled:Boolean(selectedId&&isSupervisor)});
  const [teamDraft,setTeamDraft]=useState<{user_id:string;duty_role:string;is_primary:boolean;user_name:string;account_role:string}[]>([]);
