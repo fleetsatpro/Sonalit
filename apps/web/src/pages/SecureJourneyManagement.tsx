@@ -382,7 +382,7 @@ return (
        <div className="flex w-full flex-wrap items-center gap-2 2xl:justify-end">
         <div className="inline-flex min-h-[38px] items-center gap-2 rounded-xl border border-white/[0.09] bg-black/25 px-3 py-2">
          <span className={'h-2 w-2 rounded-full '+(registerQ.isError?'bg-red-400':registerQ.isFetching?'animate-pulse bg-amber-300':'bg-emerald-300')}/>
-         <span className="font-mono text-[9px] font-semibold uppercase tracking-[.15em] text-slate-300">{registerQ.isError?'Register unavailable':registerQ.isFetching?'Refreshing register':registerQ.isSuccess?'Register loaded':'Waiting for first response'}</span>
+         <span className="font-mono text-[9px] font-semibold uppercase tracking-[.15em] text-slate-300">{registerQ.isError?(registerQ.data?'Refresh failed · showing last result':'Register unavailable'):registerQ.isFetching?'Refreshing register':registerQ.isSuccess?'Register loaded':'Waiting for first response'}</span>
          <span className="hidden border-l border-white/10 pl-2 text-[11px] text-slate-500 sm:inline">Refresh cycle · 30 sec</span>
         </div>
         <div className="flex-1 text-[10px] text-slate-500 sm:flex-none 2xl:text-right">
@@ -425,7 +425,7 @@ return (
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4" aria-label="Mission intake steps">
      {INTAKE_STEPS.map((step,index)=><button type="button" key={step.label} onClick={()=>{if(index<=intakeStep||(index===intakeStep+1&&!intakeStepIssue)){setIntakePickTarget(null);setIntakeStep(index as 0|1|2|3)}}} className={'relative rounded-xl border p-3 text-left transition '+(intakeStep===index?'border-emerald-300/30 bg-emerald-300/[0.075]':'border-white/[0.07] bg-black/15 hover:border-white/[0.14]')}><span className={'font-mono text-[9px] '+(intakeStep===index?'text-emerald-200':'text-slate-600')}>STEP {String(index+1).padStart(2,'0')}</span><span className={'mt-1 block text-[11px] font-semibold '+(intakeStep===index?'text-white':'text-slate-300')}>{step.label}</span><span className="mt-1 hidden text-[9px] leading-4 text-slate-600 sm:block">{step.detail}</span></button>)}
     </div>
-    <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-emerald-300 transition-all style={{width:((intakeStep+1)/INTAKE_STEPS.length*100)+'%'}}/></div>
+    <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-emerald-300 transition-all" style={{width:((intakeStep+1)/INTAKE_STEPS.length*100)+'%'}}/></div>
 
     {intakeStep===0&&<div className="space-y-4">
      <div className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.025] p-3"><Kicker>01 / MISSION MANDATE</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Establish purpose, tenant/client context and operating mode. Saving creates a requested dossier; it does not approve, dispatch or assess the route.</p></div>
