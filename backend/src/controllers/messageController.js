@@ -963,35 +963,74 @@ const finalizeAttachment = asyncHandler(async (req, res) => {
  * so nobody can fetch attachments outside their channels.
  */
 const getAttachmentUrl = asyncHandler(async (req, res) => {
-  const row = await req.db(
-    `SELECT a.*, m.channel_id
-       FROM message_attachments a
-       LEFT JOIN messages m ON m.id = a.message_id
-      WHERE a.id = $1 AND a.finalized_at IS NOT NULL`,
-    [req.params.id],
-  );
-  if (!row.rows.length) return notFound(res, 'Attachment not found');
-  const att = row.rows[0];
+  // Read, authorize and sign within one transaction. Attached files require
+  // current channel membership even when the requester originally uploaded
+  // them; the uploader shortcut applies only to unattached preview uploads.
+  const outcome = await req.dbTx(async (client) => {
+    const db = (sql, params) => client.query(sql, params);
+    const rowResult = await db(
+      `SELECT * FROM message_attachments
+        WHERE id = $1 AND finalized_at IS NOT NULL
+        FOR SHARE`,
+      [req.params.id],
+    );
+    if (!rowResult.rows.length) return { error: 'attachment_not_found' };
+    const att = rowResult.rows[0];
 
-  // Uploader can always fetch their own uploads (covers the pre-send preview
-  // case where message_id is still NULL).
-  const isUploader = att.uploader_id === req.user.id;
-  if (!isUploader) {
-    if (!att.channel_id) return forbidden(res);
-    const member = await loadMember(req, att.channel_id, req.user.id);
-    if (!member && !isOrgAdmin(req.user)) return forbidden(res);
-  }
+    let channelId = null;
+    let sjmJourneyId = null;
+    if (att.message_id) {
+      const link = await db(
+        `SELECT m.channel_id, c.sjm_journey_id
+           FROM messages m
+           LEFT JOIN channels c ON c.id = m.channel_id
+          WHERE m.id = $1`,
+        [att.message_id],
+      );
+      if (!link.rows.length || !link.rows[0].channel_id) return { error: 'attachment_access_denied' };
+      channelId = link.rows[0].channel_id;
+      sjmJourneyId = link.rows[0].sjm_journey_id || null;
+    }
 
-  const s3 = getR2Client();
-  if (!s3) return res.status(501).json({ error: 'Attachment storage not configured on this server' });
-  const { GetObjectCommand } = require('@aws-sdk/client-s3');
-  const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-  const url = await getSignedUrl(
-    s3,
-    new GetObjectCommand({ Bucket: process.env.R2_BUCKET, Key: att.storage_key }),
-    { expiresIn: 300 },
-  );
-  res.json({ url, expires_in: 300, mime_type: att.mime_type, file_name: att.file_name, kind: att.kind });
+    if (channelId) {
+      if (sjmJourneyId) {
+        const mission = await db(
+          'SELECT id FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+          [sjmJourneyId, req.user.org_id],
+        );
+        if (!mission.rows.length) return { error: 'attachment_not_found' };
+      }
+      const memberResult = await db(
+        'SELECT user_id FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+        [channelId, req.user.id],
+      );
+      if (!memberResult.rows.length && !isOrgAdmin(req.user)) {
+        return { error: 'attachment_access_denied' };
+      }
+    } else if (att.uploader_id !== req.user.id) {
+      // Never use the uploader exception for an attachment that claims to have
+      // been bound to a message but has no readable channel relationship.
+      return { error: 'attachment_access_denied' };
+    }
+
+    const s3 = getR2Client();
+    if (!s3) return { error: 'attachment_storage_unavailable' };
+    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+    const url = await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: process.env.R2_BUCKET, Key: att.storage_key }),
+      { expiresIn: 300 },
+    );
+    return {
+      data: { url, expires_in: 300, mime_type: att.mime_type, file_name: att.file_name, kind: att.kind },
+    };
+  });
+
+  if (outcome?.error === 'attachment_not_found') return notFound(res, 'Attachment not found');
+  if (outcome?.error === 'attachment_access_denied') return forbidden(res, 'Attachment access requires an active channel membership');
+  if (outcome?.error === 'attachment_storage_unavailable') return res.status(501).json({ error: 'Attachment storage not configured on this server' });
+  res.json(outcome.data);
 });
 
 // ─── Typing (transient, not persisted) ───────────────────────────────────────
