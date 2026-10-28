@@ -194,9 +194,10 @@ async function stopsFor(db,org,id) {
   const r=await db('SELECT id,sequence,name,stop_type,lat,lng,planned_arrival_at,planned_departure_at,duration_minutes,instructions,stop_status,confirmed_at,actual_lat,actual_lng,confirmation_source FROM sjm_journey_stops WHERE org_id=$1 AND journey_id=$2 ORDER BY sequence',[org,id]);
   return r.rows;
 }
-async function eventsFor(db,org,id,limit=200) {
-  const r=await db('SELECT id,actor_id,event_type,summary,detail,source,created_at FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 ORDER BY created_at DESC,id DESC LIMIT $3',[org,id,limit]);
-  return r.rows;
+async function eventsFor(db,org,id,limit=200,user=null,dutyRoles=[]) {
+  const manager=isMobilityManager(user);
+  const r=await db("SELECT id,actor_id,event_type,summary,detail,source,created_at FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 AND ($4::boolean OR detail->>'classification'='CLIENT_SAFE' OR (detail->>'classification'='INTERNAL_OPERATIONS' AND COALESCE(detail->'duty_roles','[]'::jsonb) ?| $5::text[])) ORDER BY created_at DESC,id DESC LIMIT $3",[org,id,limit,manager,Array.isArray(dutyRoles)?dutyRoles:[]]);
+  return r.rows.filter(e=>eventVisibleToDuty(e,user,dutyRoles));
 }
 
 async function eventsForReport(db,org,id,limit=500) {
@@ -540,7 +541,8 @@ router.get('/journeys/:id/communications',asyncHandler(async(req,res)=>{
 router.get('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
  const fieldRoles=await requireJourneyAccess(req,res,j);if(!fieldRoles)return;
- const r=await req.db("SELECT id,actor_id,event_type,summary,detail,source,created_at FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 AND event_type=ANY($3::text[]) ORDER BY created_at DESC,id DESC LIMIT 60",[org,j.id,Object.keys(DUTY_EVENT_SUMMARIES)]);
+ const manager=isMobilityManager(req.user);
+ const r=await req.db("SELECT id,actor_id,event_type,summary,detail,source,created_at FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 AND event_type=ANY($3::text[]) AND ($4::boolean OR detail->>'classification'='CLIENT_SAFE' OR (detail->>'classification'='INTERNAL_OPERATIONS' AND COALESCE(detail->'duty_roles','[]'::jsonb) ?| $5::text[])) ORDER BY created_at DESC,id DESC LIMIT 60",[org,j.id,Object.keys(DUTY_EVENT_SUMMARIES),manager,fieldRoles]);
  res.setHeader('Cache-Control','no-store');res.json({data:r.rows.filter(e=>eventVisibleToDuty(e,req.user,fieldRoles))});
 }));
 router.post('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
@@ -573,7 +575,7 @@ router.patch('/journeys/:id/flight-status',asyncHandler(async(req,res)=>{
 
 router.get('/journeys/:id',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);const dutyRoles=await requireJourneyAccess(req,res,j);if(!dutyRoles)return;
-  const [stops,events,telemetry]=await Promise.all([stopsFor(req.db,org,j.id),eventsFor(req.db,org,j.id),telemetryFor(req.db,org,j)]);
+  const [stops,events,telemetry]=await Promise.all([stopsFor(req.db,org,j.id),eventsFor(req.db,org,j.id,200,req.user,dutyRoles),telemetryFor(req.db,org,j)]);
   const assessment=parseJson(j.route_assessment,null);
   const safe=journeyForDutyViewer(j,events,req.user,dutyRoles);
   res.setHeader('Cache-Control','no-store');
