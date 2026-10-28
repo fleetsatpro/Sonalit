@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, latestObservedAt, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('authenticates requests before the tenant-scope guard', () => {
@@ -117,6 +117,40 @@ describe('SJM validation and evidence boundaries', () => {
     expect(freshnessFor('2026-10-27T14:50:00Z',now)).toBe('STALE');
     expect(freshnessFor('2026-10-27T15:01:00Z',now)).toBe('UNAVAILABLE');
     expect(freshnessFor(null,now)).toBe('UNAVAILABLE');
+  });
+  test('returns latest convoy-linked device fixes as observed evidence for the mission detail payload', async () => {
+    const observedAt = new Date(Date.now() - 12_000);
+    const calls = [];
+    const db = async (sql, params) => {
+      calls.push({sql,params});
+      return {rows:[{
+        device_id:'device-1',device_name:'Truck locator',officer_name:'Assigned officer',
+        lat:-1.2864,lng:36.8172,speed_kph:37,heading:84,accuracy_m:9,
+        observed_at:observedAt,source:'device_locations'
+      }]};
+    };
+    const result = await telemetryFor(db,'org-1',{convoy_id:'convoy-1'});
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toMatch(/FROM convoy_cfos/);
+    expect(calls[0].params).toEqual(['org-1','convoy-1']);
+    expect(result.status).toBe('LIVE');
+    expect(result.observed_at).toEqual(observedAt);
+    expect(result.devices[0]).toMatchObject({
+      device_id:'device-1',lat:-1.2864,lng:36.8172,
+      freshness:'LIVE',evidence_class:'OBSERVED',source:'device_locations'
+    });
+    expect(result.devices[0].freshness_reason).toBeNull();
+  });
+  test('does not query or invent device evidence when no convoy is linked', async () => {
+    const db = jest.fn();
+    const result = await telemetryFor(db,'org-1',{convoy_id:null});
+    expect(db).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status:'UNAVAILABLE',
+      reason:'No convoy linked to this journey; live fleet evidence is unavailable.',
+      observed_at:null,
+      devices:[]
+    });
   });
   test('reports unknown pre-trip evidence as pending/unavailable rather than verified', () => {
     const checklist=readinessChecklist({status:'requested',approved_at:null,convoy_id:null,departure_readiness_acknowledgement:null},[],null,{status:'UNAVAILABLE',reason:'No convoy linked.'});
