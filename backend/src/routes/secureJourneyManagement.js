@@ -85,10 +85,11 @@ function lifecycleAuthorityError(user,dutyRoles,action){
 async function requireJourneyAccess(req,res,journey){if(!journey){res.status(404).json({error:'journey_not_found'});return null;}const roles=await activeDutyRoles(req.db,req.user.org_id,journey.id,req.user.id);if(!canAccessJourney(req.user,roles)){res.status(404).json({error:'journey_not_found'});return null;}return roles;}
 function dutyEventAllowed(roles,eventType){return Array.isArray(roles)&&roles.some(role=>(DUTY_EVENT_RULES[role]||[]).includes(eventType));}
 function isInternalOperationalEvent(e){return parseJson(e?.detail, {})?.classification==='INTERNAL_OPERATIONS';}
+function isClientSafeEvent(e){return parseJson(e?.detail, {})?.classification==='CLIENT_SAFE';}
 function classificationForGenericEvent(type){return type==='client_update'?'CLIENT_SAFE':'INTERNAL_OPERATIONS';}
 function journeyForViewer(journey,events,canSeeInternal){
  const visibleJourney=canSeeInternal?journey:{...journey,principal_reference:null,flight_status_note:null,meet_greet_instructions:null};
- const visibleEvents=canSeeInternal?(events||[]):(events||[]).filter(e=>!isInternalOperationalEvent(e));
+ const visibleEvents=canSeeInternal?(events||[]):(events||[]).filter(isClientSafeEvent);
  return {...visibleJourney,events:visibleEvents};
 }
 async function activeDutyRoles(db,org,journeyId,userId){const r=await db('SELECT duty_role FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL ORDER BY duty_role',[org,journeyId,userId]);return r.rows.map(row=>row.duty_role);}
@@ -178,7 +179,7 @@ async function eventsFor(db,org,id,limit=200) {
 }
 
 async function eventsForReport(db,org,id,limit=500) {
-  const r=await db("SELECT id,actor_id,event_type,summary,detail,source,created_at,COUNT(*) OVER()::int AS total_count,COUNT(*) FILTER (WHERE left(event_type,8)='journey_' OR left(event_type,5)='stop_' OR event_type IN ('route_assessed','human_route_review')) OVER()::int AS total_change_count FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 AND COALESCE(detail->>'classification','') <> 'INTERNAL_OPERATIONS' ORDER BY created_at DESC,id DESC LIMIT $3",[org,id,limit]);
+  const r=await db("SELECT id,actor_id,event_type,summary,detail,source,created_at,COUNT(*) OVER()::int AS total_count,COUNT(*) FILTER (WHERE left(event_type,8)='journey_' OR left(event_type,5)='stop_' OR event_type IN ('route_assessed','human_route_review')) OVER()::int AS total_change_count FROM sjm_journey_events WHERE org_id=$1 AND journey_id=$2 AND detail->>'classification'='CLIENT_SAFE' ORDER BY created_at DESC,id DESC LIMIT $3",[org,id,limit]);
   const total=Number(r.rows[0]?.total_count||0),totalChanges=Number(r.rows[0]?.total_change_count||0);
   const rows=r.rows.map(({total_count,total_change_count,...row})=>row);
   return {rows,total,totalChanges,limit};
@@ -764,4 +765,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,classificationForGenericEvent,journeyForViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,journeyForViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
