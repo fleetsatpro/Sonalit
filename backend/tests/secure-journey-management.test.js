@@ -5,7 +5,7 @@ jest.mock('../src/realtime/centrifugo', () => ({ unsubscribeUserFromChannel: jes
 const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -158,6 +158,27 @@ describe('SJM validation and evidence boundaries', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].sql).toContain('WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE');
     expect(calls[0].params).toEqual(['journey-1','org-1']);
+  });
+
+  test('re-reads assignment lists after locking any newly visible journey rows', async () => {
+    const calls=[];
+    let listReads=0;
+    const db=jest.fn(async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql==='ASSIGNMENT_LIST'){
+        listReads+=1;
+        return {rows:listReads===1?[{id:'journey-1'},{id:'journey-2'}]:[{id:'journey-2'}]};
+      }
+      if(sql.includes('id=ANY($2::uuid[])'))return {rows:[{id:'journey-2'}]};
+      throw new Error('Unexpected SQL in assignment-list lock test');
+    });
+    const result=await readLockedAssignmentRows(
+      db,'org-1',{rows:[{id:'journey-1'}]},'ASSIGNMENT_LIST',[],
+    );
+    expect(result).toEqual({rows:[{id:'journey-2'}]});
+    expect(listReads).toBe(2);
+    expect(calls[1].sql).toContain('ORDER BY id FOR SHARE');
+    expect(calls[1].params).toEqual(['org-1',['journey-2']]);
   });
 
   test('revokes stale mission-channel subscriptions before deleting SJM channel membership', async () => {
