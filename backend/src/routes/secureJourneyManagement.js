@@ -403,9 +403,10 @@ router.post('/journeys',authorize('admin','dispatcher','operator'),asyncHandler(
   const j=await journeyById(req.db,org,created.id);res.status(201).json({data:{...j,stops:await stopsFor(req.db,org,created.id)}});
 }));
 router.get('/journeys/:id',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
-  const j=await journeyById(req.db,req.user.org_id,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
-  const [stops,events]=await Promise.all([stopsFor(req.db,req.user.org_id,j.id),eventsFor(req.db,req.user.org_id,j.id)]);
-  res.json({data:{...j,stops,events}});
+  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
+  const [stops,events,telemetry]=await Promise.all([stopsFor(req.db,org,j.id),eventsFor(req.db,org,j.id),telemetryFor(req.db,org,j)]);
+  const assessment=parseJson(j.route_assessment,null);
+  res.json({data:{...j,stops,events,telemetry_snapshot:telemetry,readiness_checklist:readinessChecklist(j,stops,assessment,telemetry)}});
 }));
 router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
@@ -590,4 +591,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,freshnessFor,latestObservedAt,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
+module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
