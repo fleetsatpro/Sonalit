@@ -111,7 +111,7 @@ describe('SJM validation and evidence boundaries', () => {
     const locked=await lockJourneyForMobility(db,'org-1','journey-1');
     expect(locked).toMatchObject({id:'journey-1',status:'in_progress',flight_number:'KQ 100'});
     expect(calls).toHaveLength(1);
-    expect(calls[0].sql).toMatch(/WHERE id=\\$1 AND org_id=\\$2 AND deleted_at IS NULL FOR UPDATE/i);
+    expect(calls[0].sql).toContain('WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE');
     expect(calls[0].params).toEqual(['journey-1','org-1']);
   });
 
