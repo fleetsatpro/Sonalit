@@ -114,6 +114,7 @@ function journeyForDutyViewer(journey,events,user,dutyRoles){
  return {...visible,events:(events||[]).filter(e=>eventVisibleToDuty(e,user,dutyRoles))};
 }
 async function lockJourneyForMobility(db,org,journeyId){const r=await db('SELECT id,status,flight_number,flight_status FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',[journeyId,org]);return r.rows[0]||null;}
+async function lockJourneyForMobilityRead(db,org,journeyId){const r=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[journeyId,org]);return r.rows[0]||null;}
 async function activeDutyRoles(db,org,journeyId,userId){const r=await db('SELECT duty_role FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL ORDER BY duty_role',[org,journeyId,userId]);return r.rows.map(row=>row.duty_role);}
 async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=true){
  const slug='sjm-'+String(journey.id).replace(/-/g,'').slice(0,20).toLowerCase(),name=txt(journey.reference,40)+' · Mission team';
@@ -521,8 +522,8 @@ router.get('/journeys/:id/participants',asyncHandler(async(req,res)=>{
  const org=req.user.org_id;
  const outcome=await req.dbTx(async c=>{
   const db=(sql,params)=>c.query(sql,params);
-  const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[req.params.id,org]);
-  if(!locked.rows.length)return {error:'journey_not_found'};
+  const locked=await lockJourneyForMobilityRead(db,org,req.params.id);
+  if(!locked)return {error:'journey_not_found'};
   const j=await journeyById(db,org,req.params.id);
   if(!j)return {error:'journey_not_found'};
   const roles=await activeDutyRoles(db,org,j.id,req.user.id);
@@ -551,8 +552,8 @@ router.get('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,manager=isMobilityManager(req.user);
  const outcome=await req.dbTx(async c=>{
   const db=(sql,params)=>c.query(sql,params);
-  const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[req.params.id,org]);
-  if(!locked.rows.length)return {error:'journey_not_found'};
+  const locked=await lockJourneyForMobilityRead(db,org,req.params.id);
+  if(!locked)return {error:'journey_not_found'};
   const j=await journeyById(db,org,req.params.id);
   if(!j)return {error:'journey_not_found'};
   const roles=await activeDutyRoles(db,org,j.id,req.user.id);
@@ -611,8 +612,8 @@ router.get('/journeys/:id',authorize('admin','dispatcher','operator','analyst'),
   const org=req.user.org_id;
   const outcome=await req.dbTx(async c=>{
     const db=(sql,params)=>c.query(sql,params);
-    const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[req.params.id,org]);
-    if(!locked.rows.length)return {error:'journey_not_found'};
+    const locked=await lockJourneyForMobilityRead(db,org,req.params.id);
+    if(!locked)return {error:'journey_not_found'};
     const j=await journeyById(db,org,req.params.id);
     if(!j)return {error:'journey_not_found'};
     const dutyRoles=await activeDutyRoles(db,org,j.id,req.user.id);
@@ -859,8 +860,8 @@ router.get('/reports/:reportId',authorize('admin','dispatcher','operator','analy
     if(!r.rows.length)return {error:'report_not_found'};
     const reportRow=r.rows[0];
     if(reportRow.journey_id){
-      const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[reportRow.journey_id,org]);
-      if(!locked.rows.length)return {error:'report_not_found'};
+      const locked=await lockJourneyForMobilityRead(db,org,reportRow.journey_id);
+      if(!locked)return {error:'report_not_found'};
     }
     const dutyRoles=reportRow.journey_id?await activeDutyRoles(db,org,reportRow.journey_id,req.user.id):[];
     if(!canAccessReport(req.user,reportRow,dutyRoles))return {error:'report_not_found'};
@@ -877,8 +878,8 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
     if(!r.rows.length)return {error:'report_not_found'};
     const reportRow=r.rows[0];
     if(reportRow.journey_id){
-      const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[reportRow.journey_id,org]);
-      if(!locked.rows.length)return {error:'report_not_found'};
+      const locked=await lockJourneyForMobilityRead(db,org,reportRow.journey_id);
+      if(!locked)return {error:'report_not_found'};
     }
     const dutyRoles=reportRow.journey_id?await activeDutyRoles(db,org,reportRow.journey_id,req.user.id):[];
     if(!canAccessReport(req.user,reportRow,dutyRoles))return {error:'report_not_found'};
@@ -895,4 +896,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility,routeAssessmentUsable};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility,lockJourneyForMobilityRead,routeAssessmentUsable};
