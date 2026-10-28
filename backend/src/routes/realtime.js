@@ -66,6 +66,20 @@ router.post('/subscription-token', asyncHandler(async (req, res) => {
           [ownedChannel.sjm_journey_id, orgId],
         );
         if (!mission.rows.length) return false;
+        const manager = ['admin', 'dispatcher'].includes(String(req.user.role || '').toLowerCase());
+        if (!manager) {
+          const assignment = await client.query(
+            `SELECT 1
+               FROM sjm_journey_participants p
+               JOIN users u ON u.id = p.user_id AND u.org_id = p.org_id
+                            AND u.deleted_at IS NULL AND u.status = 'active'
+              WHERE p.org_id = $1 AND p.journey_id = $2 AND p.user_id = $3
+                AND p.removed_at IS NULL
+              LIMIT 1`,
+            [orgId, ownedChannel.sjm_journey_id, req.user.id],
+          );
+          if (!assignment.rows.length) return false;
+        }
       }
 
       const member = await client.query(
