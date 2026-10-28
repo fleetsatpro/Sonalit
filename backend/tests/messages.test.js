@@ -258,6 +258,7 @@ test('withChannelReaderTransaction holds the SJM journey lock through message ac
           calls.push({ sql, params });
           if (/^SELECT \* FROM channels/.test(sql)) return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
           if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
+          if (/FROM sjm_journey_participants/.test(sql)) return { rows: [{ one: 1 }] };
           if (/FROM channel_members/.test(sql)) return { rows: [{ user_id: USER_MEMBER, is_channel_admin: false }] };
           if (/SELECT body FROM messages/.test(sql)) return { rows: [{ body: 'private mission update' }] };
           return { rows: [], rowCount: 0 };
@@ -293,7 +294,8 @@ test('withChannelReaderTransaction denies a revoked SJM participant before messa
       calls.push({ sql, params });
       if (/^SELECT \* FROM channels/.test(sql)) return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
       if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
-      if (/FROM channel_members/.test(sql)) return { rows: [] };
+      if (/FROM sjm_journey_participants/.test(sql)) return { rows: [] };
+      if (/FROM channel_members/.test(sql)) return { rows: [{ user_id: USER_OTHER }] };
       return { rows: [] };
     } })),
   };
@@ -303,7 +305,8 @@ test('withChannelReaderTransaction denies a revoked SJM participant before messa
   expect(result).toEqual({ ok: false });
   expect(res.status).toHaveBeenCalledWith(403);
   expect(work).not.toHaveBeenCalled();
-  expect(calls.findIndex(x => /FOR SHARE/.test(x.sql))).toBeLessThan(calls.findIndex(x => /FROM channel_members/.test(x.sql)));
+  expect(calls.findIndex(x => /FOR SHARE/.test(x.sql))).toBeLessThan(calls.findIndex(x => /FROM sjm_journey_participants/.test(x.sql)));
+  expect(calls.some(x => /FROM channel_members/.test(x.sql))).toBe(false);
   expect(calls.some(x => /SELECT body FROM messages/.test(x.sql))).toBe(false);
 });
 
@@ -389,6 +392,7 @@ test('toggleMute: a revoked SJM participant cannot recreate channel membership',
         return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
       }
       if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
+      if (/FROM sjm_journey_participants/.test(sql)) return { rows: [{ one: 1 }] };
       if (/FROM channel_members/.test(sql)) return { rows: [] };
       return { rows: [], rowCount: 0 };
     } })),
@@ -415,14 +419,16 @@ test('getThread: revoked SJM participant is denied before private thread content
         return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
       }
       if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
-      if (/FROM channel_members/.test(sql)) return { rows: [] };
+      if (/FROM sjm_journey_participants/.test(sql)) return { rows: [] };
+      if (/FROM channel_members/.test(sql)) return { rows: [{ user_id: USER_OTHER }] };
       return { rows: [], rowCount: 0 };
     } })),
   };
   const res = makeRes();
   await controller.getThread(req, res, jest.fn());
   expect(res.status).toHaveBeenCalledWith(403);
-  expect(calls.findIndex(x => /FOR SHARE/.test(x.sql))).toBeLessThan(calls.findIndex(x => /FROM channel_members/.test(x.sql)));
+  expect(calls.findIndex(x => /FOR SHARE/.test(x.sql))).toBeLessThan(calls.findIndex(x => /FROM sjm_journey_participants/.test(x.sql)));
+  expect(calls.some(x => /FROM channel_members/.test(x.sql))).toBe(false);
   expect(calls.some(x => /FROM messages m/.test(x.sql))).toBe(false);
 });
 
@@ -445,7 +451,8 @@ test('getAttachmentUrl: uploader must still belong to the SJM channel after atta
       }] };
       if (/FROM messages m/.test(sql)) return { rows: [{ channel_id: CHAN, sjm_journey_id: 'journey-1' }] };
       if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
-      if (/FROM channel_members/.test(sql)) return { rows: [] };
+      if (/FROM sjm_journey_participants/.test(sql)) return { rows: [] };
+      if (/FROM channel_members/.test(sql)) return { rows: [{ user_id: USER_MEMBER }] };
       return { rows: [], rowCount: 0 };
     } })),
   };
@@ -456,7 +463,8 @@ test('getAttachmentUrl: uploader must still belong to the SJM channel after atta
     error: 'Attachment access requires an active channel membership',
   }));
   expect(calls.some(x => /FOR SHARE/.test(x.sql))).toBe(true);
-  expect(calls.some(x => /FROM channel_members/.test(x.sql))).toBe(true);
+  expect(calls.some(x => /FROM sjm_journey_participants/.test(x.sql))).toBe(true);
+  expect(calls.some(x => /FROM channel_members/.test(x.sql))).toBe(false);
   expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ url: expect.any(String) }));
 });
 
