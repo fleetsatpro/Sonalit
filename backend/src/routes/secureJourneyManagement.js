@@ -113,6 +113,7 @@ function journeyForDutyViewer(journey,events,user,dutyRoles){
  }
  return {...visible,events:(events||[]).filter(e=>eventVisibleToDuty(e,user,dutyRoles))};
 }
+async function lockJourneyForMobility(db,org,journeyId){const r=await db('SELECT id,status,flight_number,flight_status FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',[journeyId,org]);return r.rows[0]||null;}
 async function activeDutyRoles(db,org,journeyId,userId){const r=await db('SELECT duty_role FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL ORDER BY duty_role',[org,journeyId,userId]);return r.rows.map(row=>row.duty_role);}
 async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=true){
  const slug='sjm-'+String(journey.id).replace(/-/g,'').slice(0,20).toLowerCase(),name=txt(journey.reference,40)+' · Mission team';
@@ -510,7 +511,6 @@ router.get('/journeys/:id/participants',asyncHandler(async(req,res)=>{
 }));
 router.put('/journeys/:id/participants',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
- if(TERMINAL_STATUSES.includes(j.status))return res.status(409).json({error:'journey_terminal',message:'Closed, cancelled and aborted journeys cannot be reassigned.'});
  const submitted=req.body?.participants;if(!Array.isArray(submitted)||submitted.length>20)return res.status(400).json({error:'invalid_participants',message:'Provide an array of no more than 20 team assignments.'});
  const seen=new Set(),primaryRoles=new Set();
  for(const p of submitted){
@@ -520,23 +520,37 @@ router.put('/journeys/:id/participants',authorize('admin','dispatcher'),asyncHan
   const key=String(p.user_id)+'|'+p.duty_role;if(seen.has(key))return res.status(400).json({error:'duplicate_participant_role'});seen.add(key);
   if(p.is_primary===true){if(primaryRoles.has(p.duty_role))return res.status(400).json({error:'duplicate_primary_duty_role',message:'Only one primary assignee may be set for each duty role.'});primaryRoles.add(p.duty_role);}
  }
- const ids=[...new Set(submitted.map(p=>String(p.user_id)))];
- if(ids.length){const users=await req.db("SELECT id FROM users WHERE org_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL AND status='active'",[org,ids]);if(users.rows.length!==ids.length)return res.status(422).json({error:'participant_outside_organisation_or_inactive',message:'Every assigned user must be an active account in this organisation.'});}
- const keys=submitted.map(p=>String(p.user_id)+'|'+p.duty_role);
- await req.dbTx(async c=>{
-  await c.query("UPDATE sjm_journey_participants SET removed_at=NOW(),is_primary=false WHERE org_id=$1 AND journey_id=$2 AND removed_at IS NULL AND NOT ((user_id::text || '|' || duty_role)=ANY($3::text[]))",[org,j.id,keys]);
-  await c.query("UPDATE sjm_journey_participants SET is_primary=false WHERE org_id=$1 AND journey_id=$2 AND removed_at IS NULL",[org,j.id]);
-  for(const p of submitted)await c.query("INSERT INTO sjm_journey_participants (org_id,journey_id,user_id,duty_role,is_primary,assigned_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (org_id,journey_id,user_id,duty_role) WHERE removed_at IS NULL DO UPDATE SET is_primary=EXCLUDED.is_primary",[org,j.id,p.user_id,p.duty_role,p.is_primary===true,req.user.id]);
-  const db=(sql,params)=>c.query(sql,params),channelId=await syncJourneyCommsChannel(db,org,j,req.user.id,true);
-  await c.query("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'team_assignment_changed',$4,$5,'operator')",[org,j.id,req.user.id,'Mission team assignments updated',JSON.stringify({assignment_count:submitted.length,assignments:submitted.map(p=>({user_id:p.user_id,duty_role:p.duty_role,is_primary:p.is_primary===true})),communications_channel_id:channelId,classification:'INTERNAL_OPERATIONS'})]);
+ const ids=[...new Set(submitted.map(p=>String(p.user_id)))],keys=submitted.map(p=>String(p.user_id)+'|'+p.duty_role);
+ const assignedResult=await req.dbTx(async c=>{
+  const db=(sql,params)=>c.query(sql,params),locked=await lockJourneyForMobility(db,org,j.id);
+  if(!locked)return {error:'journey_not_found'};
+  if(TERMINAL_STATUSES.includes(locked.status))return {error:'journey_terminal'};
+  if(ids.length){const users=await db("SELECT id FROM users WHERE org_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL AND status='active'",[org,ids]);if(users.rows.length!==ids.length)return {error:'participant_outside_organisation_or_inactive'};}
+  await db("UPDATE sjm_journey_participants SET removed_at=NOW(),is_primary=false WHERE org_id=$1 AND journey_id=$2 AND removed_at IS NULL AND NOT ((user_id::text || '|' || duty_role)=ANY($3::text[]))",[org,j.id,keys]);
+  await db("UPDATE sjm_journey_participants SET is_primary=false WHERE org_id=$1 AND journey_id=$2 AND removed_at IS NULL",[org,j.id]);
+  for(const p of submitted)await db("INSERT INTO sjm_journey_participants (org_id,journey_id,user_id,duty_role,is_primary,assigned_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (org_id,journey_id,user_id,duty_role) WHERE removed_at IS NULL DO UPDATE SET is_primary=EXCLUDED.is_primary",[org,j.id,p.user_id,p.duty_role,p.is_primary===true,req.user.id]);
+  const channelId=await syncJourneyCommsChannel(db,org,j,req.user.id,true);
+  await db("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'team_assignment_changed',$4,$5,'operator')",[org,j.id,req.user.id,'Mission team assignments updated',JSON.stringify({assignment_count:submitted.length,assignments:submitted.map(p=>({user_id:p.user_id,duty_role:p.duty_role,is_primary:p.is_primary===true})),communications_channel_id:channelId,classification:'INTERNAL_OPERATIONS'})]);
+  return {channelId};
  });
- const assigned=await req.db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id]);res.json({data:assigned.rows});
+ if(assignedResult?.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
+ if(assignedResult?.error==='journey_terminal')return res.status(409).json({error:'journey_terminal',message:'Closed, cancelled and aborted journeys cannot be reassigned.'});
+ if(assignedResult?.error==='participant_outside_organisation_or_inactive')return res.status(422).json({error:'participant_outside_organisation_or_inactive',message:'Every assigned user must be an active account in this organisation.'});
+ const assigned=await req.db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id]);
+ res.setHeader('Cache-Control','no-store');res.json({data:assigned.rows});
 }));
 router.get('/journeys/:id/communications',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
- const roles=await requireJourneyAccess(req,res,j);if(!roles)return;
- const id=await req.dbTx(async c=>syncJourneyCommsChannel((sql,params)=>c.query(sql,params),org,j,req.user.id,isMobilityManager(req.user)));
- res.setHeader('Cache-Control','no-store');res.json({data:{channel_id:id,transport:'Ops Comms',membership_policy:'active mission team or mission manager',messages_endpoint:'/api/v1/messages/channels/'+id+'/messages'}});
+ const outcome=await req.dbTx(async c=>{
+  const db=(sql,params)=>c.query(sql,params),locked=await lockJourneyForMobility(db,org,j.id);
+  if(!locked)return {error:'journey_not_found'};
+  const roles=await activeDutyRoles(db,org,j.id,req.user.id);
+  if(!isMobilityManager(req.user)&&!roles.length)return {error:'journey_not_found'};
+  const channelId=await syncJourneyCommsChannel(db,org,j,req.user.id,isMobilityManager(req.user));
+  return {channelId};
+ });
+ if(outcome?.error)return res.status(404).json({error:'journey_not_found'});
+ res.setHeader('Cache-Control','no-store');res.json({data:{channel_id:outcome.channelId,transport:'Ops Comms',membership_policy:'active mission team or mission manager',messages_endpoint:'/api/v1/messages/channels/'+outcome.channelId+'/messages'}});
 }));
 router.get('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
@@ -547,32 +561,47 @@ router.get('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
 }));
 router.post('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
- if(TERMINAL_STATUSES.includes(j.status))return res.status(409).json({error:'journey_terminal',message:'Field updates cannot be added after journey closure, cancellation or abort.'});
- const roles=await activeDutyRoles(req.db,org,j.id,req.user.id);if(!roles.length)return res.status(404).json({error:'journey_not_found'});
- const type=String(req.body?.event_type||''),note=req.body?.note;if(!DUTY_EVENT_SUMMARIES[type]||!dutyEventAllowed(roles,type))return res.status(403).json({error:'duty_action_not_permitted',message:'This action is not available for this assigned duty role.'});
+ const type=String(req.body?.event_type||''),note=req.body?.note;
+ if(!DUTY_EVENT_SUMMARIES[type])return res.status(403).json({error:'duty_action_not_permitted',message:'This action is not available for this assigned duty role.'});
  if(note!=null&&(typeof note!=='string'||note.trim().length>1200))return res.status(400).json({error:'invalid_note'});
  const clean=txt(note,1200);if(['delay','vehicle_issue','incident','security_concern'].includes(type)&&clean.length<5)return res.status(400).json({error:'note_required',message:'Provide at least five characters about the issue.'});
- const result=await req.dbTx(c=>c.query("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,$4,$5,$6,'operator') RETURNING id,event_type,summary,detail,source,created_at",[org,j.id,req.user.id,type,DUTY_EVENT_SUMMARIES[type],JSON.stringify({duty_roles:roles,event_class:'FIELD_REPORTED_CHECK_IN',evidence_class:'OPERATOR_REPORTED_NOT_AUTOMATIC_GPS_PROOF',classification:'INTERNAL_OPERATIONS',note:clean||null})]));
- res.status(201).json({data:result.rows[0]});
+ const outcome=await req.dbTx(async c=>{
+  const db=(sql,params)=>c.query(sql,params),locked=await lockJourneyForMobility(db,org,j.id);
+  if(!locked)return {error:'journey_not_found'};
+  if(TERMINAL_STATUSES.includes(locked.status))return {error:'journey_terminal'};
+  const roles=await activeDutyRoles(db,org,j.id,req.user.id);
+  if(!roles.length)return {error:'journey_not_found'};
+  if(!dutyEventAllowed(roles,type))return {error:'duty_action_not_permitted'};
+  const saved=await db("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,$4,$5,$6,'operator') RETURNING id,event_type,summary,detail,source,created_at",[org,j.id,req.user.id,type,DUTY_EVENT_SUMMARIES[type],JSON.stringify({duty_roles:roles,event_class:'FIELD_REPORTED_CHECK_IN',evidence_class:'OPERATOR_REPORTED_NOT_AUTOMATIC_GPS_PROOF',classification:'INTERNAL_OPERATIONS',note:clean||null})]);
+  return {data:saved.rows[0]};
+ });
+ if(outcome?.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
+ if(outcome?.error==='journey_terminal')return res.status(409).json({error:'journey_terminal',message:'Field updates cannot be added after journey closure, cancellation or abort.'});
+ if(outcome?.error==='duty_action_not_permitted')return res.status(403).json({error:'duty_action_not_permitted',message:'This action is not available for this assigned duty role.'});
+ res.status(201).json({data:outcome.data});
 }));
 router.patch('/journeys/:id/flight-status',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
- const roles=await activeDutyRoles(req.db,org,j.id,req.user.id);if(!isMobilityManager(req.user)&&!roles.some(r=>['cpo','meet_greet','dispatcher'].includes(r)))return res.status(404).json({error:'journey_not_found'});
- if(TERMINAL_STATUSES.includes(j.status))return res.status(409).json({error:'journey_terminal'});
  const flight=String(req.body?.flight_status||'');if(!FLIGHT_STATUSES.includes(flight))return res.status(400).json({error:'invalid_flight_status',allowed:FLIGHT_STATUSES});
- if(!j.flight_number)return res.status(409).json({error:'flight_reference_required',message:'Record a flight number before entering status.'});
  const note=req.body?.note;if(note!=null&&(typeof note!=='string'||note.trim().length>1200))return res.status(400).json({error:'invalid_note'});
  const clean=txt(note,1200);if(['delayed','cancelled','diverted'].includes(flight)&&clean.length<5)return res.status(400).json({error:'flight_status_note_required',message:'Add context for a delayed, cancelled or diverted flight.'});
- const saved=await req.dbTx(async c=>{
-  const up=await c.query("UPDATE sjm_journeys SET flight_status=$1,flight_status_source='operator_entered',flight_status_observed_at=NOW(),flight_status_note=$2,updated_by=$3,updated_at=NOW() WHERE id=$4 AND org_id=$5 AND deleted_at IS NULL AND status NOT IN ('closed','cancelled','aborted') RETURNING id,flight_status,flight_status_source,flight_status_observed_at",[flight,clean||null,req.user.id,j.id,org]);
-  if(!up.rows.length)return null;
-  await c.query("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'flight_status_operator_update',$4,$5,'operator')",[org,j.id,req.user.id,'Flight status entered by field operator',JSON.stringify({previous_status:j.flight_status||'unknown',flight_status:flight,evidence_class:'OPERATOR_ENTERED_UNVERIFIED',classification:'INTERNAL_OPERATIONS',note:clean||null,source:'operator_entered'})]);
-  return up.rows[0];
+ const outcome=await req.dbTx(async c=>{
+  const db=(sql,params)=>c.query(sql,params),locked=await lockJourneyForMobility(db,org,j.id);
+  if(!locked)return {error:'journey_not_found'};
+  if(TERMINAL_STATUSES.includes(locked.status))return {error:'journey_terminal'};
+  if(!locked.flight_number)return {error:'flight_reference_required'};
+  const roles=await activeDutyRoles(db,org,j.id,req.user.id);
+  if(!isMobilityManager(req.user)&&!roles.some(r=>['cpo','meet_greet','dispatcher'].includes(r)))return {error:'journey_not_found'};
+  const up=await db("UPDATE sjm_journeys SET flight_status=$1,flight_status_source='operator_entered',flight_status_observed_at=NOW(),flight_status_note=$2,updated_by=$3,updated_at=NOW() WHERE id=$4 AND org_id=$5 AND deleted_at IS NULL AND status NOT IN ('closed','cancelled','aborted') RETURNING id,flight_status,flight_status_source,flight_status_observed_at",[flight,clean||null,req.user.id,j.id,org]);
+  if(!up.rows.length)return {error:'journey_terminal'};
+  await db("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'flight_status_operator_update',$4,$5,'operator')",[org,j.id,req.user.id,'Flight status entered by field operator',JSON.stringify({previous_status:locked.flight_status||'unknown',flight_status:flight,evidence_class:'OPERATOR_ENTERED_UNVERIFIED',classification:'INTERNAL_OPERATIONS',note:clean||null,source:'operator_entered'})]);
+  return {data:up.rows[0]};
  });
- if(!saved)return res.status(409).json({error:'journey_terminal'});
- res.json({data:saved,provenance:{source:'operator_entered',evidence_class:'OPERATOR_ENTERED_UNVERIFIED',provider_feed_connected:false}});
+ if(outcome?.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
+ if(outcome?.error==='journey_terminal')return res.status(409).json({error:'journey_terminal'});
+ if(outcome?.error==='flight_reference_required')return res.status(409).json({error:'flight_reference_required',message:'Record a flight number before entering status.'});
+ res.setHeader('Cache-Control','no-store');res.json({data:outcome.data,provenance:{source:'operator_entered',evidence_class:'OPERATOR_ENTERED_UNVERIFIED',provider_feed_connected:false}});
 }));
-
 router.get('/journeys/:id',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);const dutyRoles=await requireJourneyAccess(req,res,j);if(!dutyRoles)return;
   const [stops,events,telemetry]=await Promise.all([stopsFor(req.db,org,j.id),eventsFor(req.db,org,j.id,200,req.user,dutyRoles),telemetryFor(req.db,org,j)]);
@@ -787,4 +816,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility};
