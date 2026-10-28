@@ -256,7 +256,7 @@ test('withChannelReaderTransaction holds the SJM journey lock through message ac
       try {
         return await work({ query: async (sql, params) => {
           calls.push({ sql, params });
-          if (/^SELECT \\* FROM channels/.test(sql)) return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
+          if (/^SELECT \* FROM channels/.test(sql)) return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
           if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
           if (/FROM channel_members/.test(sql)) return { rows: [{ user_id: USER_MEMBER, is_channel_admin: false }] };
           if (/SELECT body FROM messages/.test(sql)) return { rows: [{ body: 'private mission update' }] };
@@ -291,7 +291,7 @@ test('withChannelReaderTransaction denies a revoked SJM participant before messa
     user: { id: USER_OTHER, org_id: ORG_A, role: 'operator' },
     dbTx: jest.fn(async (work) => work({ query: async (sql, params) => {
       calls.push({ sql, params });
-      if (/^SELECT \\* FROM channels/.test(sql)) return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
+      if (/^SELECT \* FROM channels/.test(sql)) return { rows: [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }] };
       if (/FOR SHARE/.test(sql)) return { rows: [{ id: 'journey-1' }] };
       if (/FROM channel_members/.test(sql)) return { rows: [] };
       return { rows: [] };
@@ -311,8 +311,8 @@ test('deleteChannel: SJM-owned mission channel cannot be deleted through generic
   const req = makeReq({
     user: { id: USER_ORGADMIN, org_id: ORG_A, role: 'admin' },
     dbReturns: [
-      [/^SELECT \\* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }]],
-      [/channel_members WHERE channel_id = \\$1 AND user_id = \\$2/, []],
+      [/^SELECT \* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: 'journey-1' }]],
+      [/channel_members WHERE channel_id = \$1 AND user_id = \$2/, []],
     ],
   });
   req.params.id = CHAN;
