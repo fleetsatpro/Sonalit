@@ -19,7 +19,7 @@ router.post('/token', (req, res) => {
   const token = jwt.sign(
     { sub: String(req.user.id) },
     secret,
-    { expiresIn: '1h', algorithm: 'HS256' }
+    { expiresIn: '5m', algorithm: 'HS256' }
   );
   res.json({ token });
 });
@@ -100,7 +100,7 @@ router.post('/subscription-token', asyncHandler(async (req, res) => {
   const token = jwt.sign(
     { sub: String(req.user.id), channel },
     secret,
-    { expiresIn: '1h', algorithm: 'HS256' }
+    { expiresIn: '60s', algorithm: 'HS256' }
   );
   res.json({ token });
 }));
