@@ -93,8 +93,10 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
   const containerRef=useRef<HTMLDivElement>(null);
   const mapRef=useRef<maplibregl.Map|null>(null);
   const markersRef=useRef<maplibregl.Marker[]>([]);
+  const observedMarkersRef=useRef<maplibregl.Marker[]>([]);
   const [mapReady,setMapReady]=useState(false);
   const [satellite,setSatellite]=useState(false);
+  const [showObserved,setShowObserved]=useState(true);
   const origin=useMemo(()=>mapCoord(journey.origin_lat,journey.origin_lng),[journey.origin_lat,journey.origin_lng]);
   const destination=useMemo(()=>mapCoord(journey.destination_lat,journey.destination_lng),[journey.destination_lat,journey.destination_lng]);
   const routeCoords=useMemo(()=>{
@@ -105,7 +107,7 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
   const displayRoute=useMemo(()=>hasRoutedGeometry?routeCoords:[],[hasRoutedGeometry,routeCoords]);
   const stopPoints=useMemo(()=>stops.map(stop=>({stop,coord:mapCoord(stop.lat,stop.lng)})).filter((x):x is {stop:Stop;coord:[number,number]}=>x.coord!==null),[stops]);
   const observedPoints=useMemo(()=>((telemetry?.devices)||[]).map(device=>({device,coord:mapCoord(device.lat,device.lng)})).filter((x):x is {device:TelemetryDevice;coord:[number,number]}=>x.coord!==null),[telemetry?.devices]);
-  const fitPoints=useMemo(()=>[...(origin?[origin]:[]),...displayRoute,...(destination?[destination]:[]),...stopPoints.map(p=>p.coord),...observedPoints.map(p=>p.coord)],[origin,destination,displayRoute,stopPoints,observedPoints]);
+  const fitPoints=useMemo(()=>[...(origin?[origin]:[]),...displayRoute,...(destination?[destination]:[]),...stopPoints.map(p=>p.coord)],[origin,destination,displayRoute,stopPoints]);
   useEffect(()=>{
     const container=containerRef.current;
     if(!container||mapRef.current)return;
@@ -120,6 +122,8 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
       resizeObserver.disconnect();
       markersRef.current.forEach(marker=>marker.remove());
       markersRef.current=[];
+      observedMarkersRef.current.forEach(marker=>marker.remove());
+      observedMarkersRef.current=[];
       map.remove();
       mapRef.current=null;
       setMapReady(false);
@@ -146,12 +150,6 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
     addMarker(origin,'origin','PLANNED ORIGIN · '+journey.origin_label);
     stopPoints.forEach(({stop,coord})=>addMarker(coord,'stop','PLANNED STOP '+String(stop.sequence).padStart(2,'0')+' · '+stop.name));
     addMarker(destination,'destination','PLANNED DESTINATION · '+journey.destination_label);
-    observedPoints.forEach(({device,coord})=>{
-      const freshness=String(device.freshness||'UNAVAILABLE').toUpperCase();
-      const kind=freshness==='LIVE'?'observed_live':freshness==='DELAYED'?'observed_delayed':freshness==='STALE'?'observed_stale':'observed_unavailable';
-      const title='OBSERVED '+freshness+' · '+device.device_name+' · '+dateText(device.observed_at);
-      markersRef.current.push(new maplibregl.Marker({element:journeyMarkerElement(kind,title),anchor:'bottom',offset:[0,-7]}).setLngLat(coord).addTo(map));
-    });
     map.resize();
     if(fitPoints.length>1){
       const bounds=new maplibregl.LngLatBounds();
@@ -160,7 +158,20 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
     }else if(fitPoints.length===1){
       map.flyTo({center:fitPoints[0],zoom:6,duration:500});
     }
-  },[mapReady,displayRoute,origin,destination,stopPoints,observedPoints,fitPoints,journey.origin_label,journey.destination_label]);
+  },[mapReady,displayRoute,origin,destination,stopPoints,fitPoints,journey.origin_label,journey.destination_label]);
+  useEffect(()=>{
+    const map=mapRef.current;
+    if(!map||!mapReady)return;
+    observedMarkersRef.current.forEach(marker=>marker.remove());
+    observedMarkersRef.current=[];
+    if(!showObserved)return;
+    observedPoints.forEach(({device,coord})=>{
+      const freshness=String(device.freshness||'UNAVAILABLE').toUpperCase();
+      const kind=freshness==='LIVE'?'observed_live':freshness==='DELAYED'?'observed_delayed':freshness==='STALE'?'observed_stale':'observed_unavailable';
+      const title='OBSERVED '+freshness+' · '+device.device_name+' · '+dateText(device.observed_at);
+      observedMarkersRef.current.push(new maplibregl.Marker({element:journeyMarkerElement(kind,title),anchor:'bottom',offset:[0,-7]}).setLngLat(coord).addTo(map));
+    });
+  },[mapReady,showObserved,observedPoints]);
   const toggleBasemap=()=>{
     const map=mapRef.current;if(!map)return;
     const next=!satellite;
@@ -179,12 +190,12 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
   return <div className="overflow-hidden rounded-xl border border-emerald-300/[0.12] bg-[#07111d]">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.07] bg-black/20 px-3 py-2.5">
       <div><p className="font-mono text-[9px] font-semibold uppercase tracking-[.18em] text-emerald-200/80">Mission corridor / geospatial context</p><p className="mt-1 text-[10px] text-slate-500">{hasRoutedGeometry?'Route Safety geometry · '+displayRoute.length+' waypoints':'No routed geometry · endpoints and stops only'}</p></div>
-      <div className="flex gap-1.5"><button type="button" onClick={toggleBasemap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[10px] text-slate-300 hover:bg-white/[0.08]" aria-label={satellite?'Switch to street basemap':'Switch to satellite basemap'}><Satellite size={12}/>{satellite?'Satellite':'Street'}</button><button type="button" onClick={fitMap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[10px] text-slate-300 hover:bg-white/[0.08]" aria-label="Fit map to journey"><Maximize2 size={12}/>Fit</button></div>
+      <div className="flex flex-wrap gap-1.5"><button type="button" onClick={toggleBasemap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[10px] text-slate-300 hover:bg-white/[0.08]" aria-label={satellite?'Switch to street basemap':'Switch to satellite basemap'}><Satellite size={12}/>{satellite?'Satellite':'Street'}</button><button type="button" onClick={()=>setShowObserved(value=>!value)} disabled={observedPoints.length===0} className={'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-[10px] disabled:cursor-not-allowed disabled:opacity-40 '+(showObserved?'border-emerald-300/20 bg-emerald-300/[0.06] text-emerald-100':'border-white/10 bg-white/[0.035] text-slate-300 hover:bg-white/[0.08]')} aria-pressed={showObserved} aria-label={showObserved?'Hide observed device layer':'Show observed device layer'}><Activity size={12}/>{showObserved?'Observed on':'Observed off'} · {observedPoints.length}</button><button type="button" onClick={fitMap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[10px] text-slate-300 hover:bg-white/[0.08]" aria-label="Fit map to planned journey corridor"><Maximize2 size={12}/>Fit corridor</button></div>
     </div>
     <div ref={containerRef} className="h-[320px] w-full bg-[#07111d] sm:h-[390px] xl:h-[470px] 2xl:h-[520px]"/>
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-3 py-2 text-[9px] font-mono text-slate-500">
       <span>{hasRoutedGeometry?'PLANNED ROUTE GEOMETRY · SOURCE: ROUTE SAFETY':'ROUTE LINE SUPPRESSED · NO VALID ROUTED GEOMETRY'}</span>
-      <span className="flex flex-wrap gap-3"><span className="text-cyan-200">● Planned origin</span><span className="text-orange-300">● Planned stop</span><span className="text-emerald-200">● Planned destination</span>{observedPoints.length>0&&<span className="text-emerald-300">● Observed device fix ({observedPoints.length})</span>}</span>
+      <span className="flex flex-wrap gap-3"><span className="text-cyan-200">● Planned origin</span><span className="text-orange-300">● Planned stop</span><span className="text-emerald-200">● Planned destination</span>{showObserved&&observedPoints.length>0&&<span className="text-emerald-300">● Observed device fix ({observedPoints.length})</span>}{!showObserved&&observedPoints.length>0&&<span className="text-slate-500">Observed layer hidden ({observedPoints.length})</span>}</span>
     </div>
   </div>;
 }
