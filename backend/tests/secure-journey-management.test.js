@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, isInternalOperationalEvent, journeyForViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, journeyForViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -55,6 +55,16 @@ describe('SJM validation and evidence boundaries', () => {
     expect(canAccessReport({role:'analyst'},{journey_id:null},[])).toBe(false);
     expect(canAccessReport({role:'dispatcher'},{journey_id:null},[])).toBe(true);
     expect(canAccessReport({role:'operator'},null,[])).toBe(false);
+  });
+  test('enforces lifecycle authority by account role and assigned duty', () => {
+    expect(lifecycleAuthorityError({role:'operator'},['driver'],'ready_to_depart')).toMatchObject({error:'dispatcher_authority_required'});
+    expect(lifecycleAuthorityError({role:'dispatcher'},[],'ready_to_depart')).toBeNull();
+    expect(lifecycleAuthorityError({role:'operator'},['meet_greet'],'start')).toMatchObject({error:'driver_authority_required'});
+    expect(lifecycleAuthorityError({role:'operator'},['backup_driver'],'start')).toBeNull();
+    expect(lifecycleAuthorityError({role:'operator'},['meet_greet'],'pause')).toMatchObject({error:'field_duty_required'});
+    expect(lifecycleAuthorityError({role:'operator'},['cpo'],'raise_exception')).toBeNull();
+    expect(lifecycleAuthorityError({role:'operator'},['driver'],'hold')).toMatchObject({error:'dispatcher_authority_required'});
+    expect(lifecycleAuthorityError({role:'admin'},[],'hold')).toBeNull();
   });
   test('authenticates requests before the tenant-scope guard', () => {
     const authIndex = sjmRouter.stack.findIndex(layer => layer.handle === authenticate);
