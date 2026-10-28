@@ -400,7 +400,7 @@ describe('SJM validation and evidence boundaries', () => {
   test('client reports exclude internal field-event records', async () => {
     const calls=[];const db=async(sql,params)=>{calls.push({sql,params});return {rows:[]};};
     expect((await eventsForReport(db,'org-1','journey-1',500)).rows).toHaveLength(0);
-    expect(calls[0].sql).toContain("COALESCE(detail->>'classification','') <> 'INTERNAL_OPERATIONS'");
+    expect(calls[0].sql).toContain("detail->>'classification'='CLIENT_SAFE'");
   });
   test('report event query returns exact totals and flags truncated history separately from included rows', async () => {
     const sqlCalls=[];
