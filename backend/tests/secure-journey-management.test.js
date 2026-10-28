@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('authenticates requests before the tenant-scope guard', () => {
@@ -51,6 +51,39 @@ describe('SJM validation and evidence boundaries', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatch(/UPDATE sjm_journeys/);
   });
+  test('records failed Route Safety assessment as an exception without stale route or approval evidence', async () => {
+    const calls=[];
+    const req={user:{org_id:'org-1'},dbTx:async fn=>fn({query:async(sql,params)=>{
+      calls.push({sql,params});
+      return {rows:[{id:'journey-1'}]};
+    }})};
+    const result=await recordRouteAssessmentFailure(req,{id:'journey-1',org_id:'org-1'},'user-1','provider_error');
+    expect(result.changed).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].sql).toMatch(/status='exception'/);
+    expect(calls[0].sql).toMatch(/status='assessment_pending'/);
+    expect(calls[0].sql).toMatch(/planned_route='\[\]'::jsonb/);
+    expect(calls[0].sql).toMatch(/route_assessment=NULL/);
+    expect(calls[0].sql).toMatch(/approved_at=NULL/);
+    expect(calls[1].sql).toMatch(/INSERT INTO sjm_journey_events/);
+    expect(calls[1].params[3]).toBe('route_assessment_failed');
+    expect(JSON.parse(calls[1].params[5])).toMatchObject({
+      failure_reason:'provider_error',
+      route_status:'UNAVAILABLE',
+      safety_gate:'UNAVAILABLE',
+      approval_allowed:false
+    });
+  });
+
+  test('does not audit a route-assessment failure if another request already changed the journey state', async () => {
+    const calls=[];
+    const req={user:{org_id:'org-1'},dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});return {rows:[]};}})};
+    const result=await recordRouteAssessmentFailure(req,{id:'journey-1',org_id:'org-1'},'user-1','invalid_provider_response');
+    expect(result.changed).toBe(false);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toMatch(/status='assessment_pending'/);
+  });
+
   test('propagates audit write failures so the transaction wrapper can roll back', async () => {
     let rollbackObserved=false;
     const req={dbTx:async fn=>{try{return await fn({query:async(sql,params)=>{

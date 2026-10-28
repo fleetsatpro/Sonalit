@@ -150,6 +150,16 @@ async function mutateWithEvent(req,j,actor,type,summary,detail={},source='operat
   });
 }
 
+async function recordRouteAssessmentFailure(req,j,actor,reason) {
+  const failureReason=reason==='provider_error'?'provider_error':'invalid_provider_response';
+  return mutateWithEvent(req,j,actor,'route_assessment_failed',
+    'Route Safety assessment unavailable; journey moved to exception',
+    {failure_reason:failureReason,route_status:'UNAVAILABLE',safety_gate:'UNAVAILABLE',approval_allowed:false},
+    'system',
+    db=>db("UPDATE sjm_journeys SET status='exception',planned_route='[]'::jsonb,route_assessment=NULL,planned_distance_km=NULL,planned_duration_minutes=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,departure_readiness_acknowledgement=NULL,ready_to_depart_at=NULL,exception_at=NOW(),updated_by=$1,updated_at=NOW() WHERE id=$2 AND org_id=$3 AND status='assessment_pending' RETURNING id",[actor,j.id,req.user.org_id])
+  );
+}
+
 function freshnessFor(observedAt,nowMs=Date.now()) {
   if(!observedAt)return 'UNAVAILABLE';
   const observedMs=new Date(observedAt).getTime(),age=nowMs-observedMs;
@@ -457,8 +467,23 @@ router.post('/journeys/:id/plan',authorize('admin','dispatcher','operator'),asyn
   });
   if(!claimed)return res.status(409).json({error:'journey_state_changed',message:'Another request changed this journey. Refresh before retrying.'});
   const viaPoints=routeStops.map(stop=>({lat:Number(stop.lat),lng:Number(stop.lng)}));
-  const a=await analyseRoute({origin:{lat:Number(j.origin_lat),lng:Number(j.origin_lng)},destination:{lat:Number(j.destination_lat),lng:Number(j.destination_lng)},viaPoints,convoyId:j.convoy_id||undefined,requestedBy:req.user.id,departureTime:j.planned_departure_at||undefined,avoidNightTravel:req.body?.avoid_night_travel===true,orgId:org});
-  if(!a||!Number.isFinite(Number(a.overall_risk_score))||!a.safety_gate)return res.status(503).json({error:'route_assessment_unavailable'});
+  let a;
+  try {
+    a=await analyseRoute({origin:{lat:Number(j.origin_lat),lng:Number(j.origin_lng)},destination:{lat:Number(j.destination_lat),lng:Number(j.destination_lng)},viaPoints,convoyId:j.convoy_id||undefined,requestedBy:req.user.id,departureTime:j.planned_departure_at||undefined,avoidNightTravel:req.body?.avoid_night_travel===true,orgId:org});
+  } catch(error) {
+    const errorName=error instanceof Error&&/^[A-Za-z][A-Za-z0-9_]{0,59}$/.test(error.name)?error.name:'UnknownError';
+    console.error('[SJM] Route Safety analysis failed',{journeyId:j.id,errorName});
+    const failure=await recordRouteAssessmentFailure(req,j,req.user.id,'provider_error');
+    if(!failure.changed)return res.status(409).json({error:'journey_state_changed',message:'The journey changed while Route Safety was evaluating it; failure state was not applied.'});
+    return res.status(503).json({error:'route_assessment_unavailable',message:'Route Safety did not return a usable assessment. The journey is now in exception and must be replanned after the provider issue is resolved.'});
+  }
+  const score=a?.overall_risk_score;
+  const assessmentUsable=Boolean(a&&score!=null&&!(typeof score==='string'&&score.trim()==='')&&Number.isFinite(Number(score))&&typeof a.route_status==='string'&&Boolean(a.route_status.trim())&&typeof a.safety_gate==='string'&&Boolean(a.safety_gate.trim()));
+  if(!assessmentUsable) {
+    const failure=await recordRouteAssessmentFailure(req,j,req.user.id,'invalid_provider_response');
+    if(!failure.changed)return res.status(409).json({error:'journey_state_changed',message:'The journey changed while Route Safety was evaluating it; failure state was not applied.'});
+    return res.status(503).json({error:'route_assessment_unavailable',message:'Route Safety returned an incomplete assessment. The journey is now in exception and must be replanned after the provider issue is resolved.'});
+  }
   const route=Array.isArray(a.recommended_route?.waypoints)?a.recommended_route.waypoints:[];
   const gateKnown=['GO','CONDITIONAL','HUMAN_REVIEW'].includes(a.safety_gate);
   const blocked=a.route_status==='blocked'||a.recommended_route?.blocked===true||a.safety_gate==='NO_GO';
@@ -602,4 +627,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
+module.exports.__test={validCoordinate,validateStop,validateJourney,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
