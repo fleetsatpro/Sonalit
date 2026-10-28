@@ -58,8 +58,9 @@ async function analyseRoute({origin,destination,viaPoints=[],convoyId,requestedB
 
   const zones=await fetchNearbyRiskZones(orgId,waypoints);
   const routing=await planRouteAlternatives(waypoints,{mapboxToken:mapboxToken(),osrmUrl:osrmUrl(),maxPoints:300});
-  const hasRoutedAlternative=routing.length>0;
-  const candidates=hasRoutedAlternative?routing:[makeFallbackRoute(waypoints)];
+  const routedCandidates=(Array.isArray(routing)?routing:[]).filter(candidate=>candidate&&candidate.routed!==false&&Array.isArray(candidate.route)&&candidate.route.length>=2);
+  const hasRoutedAlternative=routedCandidates.length>0;
+  const candidates=hasRoutedAlternative?routedCandidates:[makeFallbackRoute(waypoints)];
   // Do not score or ask the AI selector to judge a straight-line waypoint preview as if it were a road route.
   const ranked=hasRoutedAlternative?rankRoutes(candidates,zones):{ranked:candidates,all_blocked:false};
   const constrainedRoutes=!hasRoutedAlternative?ranked.ranked:(maxRiskScore==null?ranked.ranked:ranked.ranked.filter(c=>!c.blocked&&Number(c.score)<=Number(maxRiskScore)));
