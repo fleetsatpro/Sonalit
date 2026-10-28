@@ -37,11 +37,13 @@ async function fetchNearbyRiskZones(orgId,waypoints){
     [orgId,minLat,maxLat,minLng,maxLng]);
   return Array.isArray(result)?result:(Array.isArray(result?.rows)?result.rows:[]);
 }
-function haversineKm(lat1,lng1,lat2,lng2){ const R=6371,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2; return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
-function makeFallbackRoute(origin,destination){ const distance=haversineKm(origin.lat,origin.lng,destination.lat,destination.lng); return {route:[origin,destination],provider:'direct-fallback',distance_km:Number(distance.toFixed(2)),duration_min:Math.max(1,Math.round(distance/55*60)),routed:false}; }
+function makeFallbackRoute(waypoints){ return {route:Array.isArray(waypoints)?waypoints:[],provider:'direct-fallback',distance_km:null,duration_min:null,routed:false}; }
 function toRouteOption(candidate,label){
-  const riskScore=clamp(candidate.blocked?100:candidate.score);
-  return {label,waypoints:candidate.route,distance_km:Number(candidate.distance_km??0),estimated_duration_minutes:Math.max(0,Math.round(candidate.duration_min??0)),risk_score:riskScore,risk_factors:riskFactorsFromExposures(candidate.exposures),blocked:Boolean(candidate.blocked),risk_exposures:candidate.exposures||[],notes:candidate.blocked?'This route intersects a no-go risk zone and is blocked from normal selection.':candidate.exposures?.length?`${candidate.exposures.length} mapped risk zone exposure(s); see route evidence for detail.`:'No mapped active risk-zone exposure detected.'};
+  const routed=candidate.routed!==false,exposures=routed?(candidate.exposures||[]):[];
+  const riskScore=routed?clamp(candidate.blocked?100:candidate.score):null;
+  const blocked=routed&&Boolean(candidate.blocked);
+  const notes=!routed?'Road routing unavailable. No routed geometry, road distance, duration or route risk score is available. Do not release this journey until Route Safety produces a routed assessment.':blocked?'This route intersects a no-go risk zone and is blocked from normal selection.':exposures.length?`${exposures.length} mapped risk zone exposure(s); see route evidence for detail.`:'No mapped active risk-zone exposure detected.';
+  return {label,waypoints:candidate.route,distance_km:routed?Number(candidate.distance_km??0):null,estimated_duration_minutes:routed?Math.max(0,Math.round(candidate.duration_min??0)):null,risk_score:riskScore,risk_factors:riskFactorsFromExposures(exposures),blocked,risk_exposures:exposures,notes};
 }
 
 async function analyseRoute({origin,destination,viaPoints=[],convoyId,requestedBy,departureTime,avoidNightTravel,maxRiskScore,orgId}){
@@ -56,31 +58,33 @@ async function analyseRoute({origin,destination,viaPoints=[],convoyId,requestedB
 
   const zones=await fetchNearbyRiskZones(orgId,waypoints);
   const routing=await planRouteAlternatives(waypoints,{mapboxToken:mapboxToken(),osrmUrl:osrmUrl(),maxPoints:300});
-  const candidates=routing.length?routing:[makeFallbackRoute(origin,destination)];
-  const ranked=rankRoutes(candidates,zones);
-  const constrainedRoutes=maxRiskScore==null?ranked.ranked:ranked.ranked.filter(c=>!c.blocked&&Number(c.score)<=Number(maxRiskScore));
+  const hasRoutedAlternative=routing.length>0;
+  const candidates=hasRoutedAlternative?routing:[makeFallbackRoute(waypoints)];
+  // Do not score or ask the AI selector to judge a straight-line waypoint preview as if it were a road route.
+  const ranked=hasRoutedAlternative?rankRoutes(candidates,zones):{ranked:candidates,all_blocked:false};
+  const constrainedRoutes=!hasRoutedAlternative?ranked.ranked:(maxRiskScore==null?ranked.ranked:ranked.ranked.filter(c=>!c.blocked&&Number(c.score)<=Number(maxRiskScore)));
   const selected=constrainedRoutes.length?constrainedRoutes:ranked.ranked;
   const primary=selected[0];
-  const options=selected.slice(0,3).map((c,i)=>toRouteOption(c,i===0?'Recommended safety route':`Alternative ${i}`));
-  const best=options[0]||toRouteOption(makeFallbackRoute(origin,destination),'Direct fallback');
+  const options=selected.slice(0,3).map((c,i)=>toRouteOption(c,!hasRoutedAlternative?'Unrouted waypoint reference':i===0?'Recommended safety route':`Alternative ${i}`));
+  const best=options[0];
   const allRoutesBlocked=Boolean(ranked.all_blocked);
-  const maxRiskExceeded=maxRiskScore!=null&&Number(best.risk_score)>Number(maxRiskScore);
+  const maxRiskExceeded=maxRiskScore!=null&&(best?.risk_score==null||Number(best.risk_score)>Number(maxRiskScore));
 
   let swarm=null;
-  try{ swarm=await runSwarm({origin,destination,departureTime,avoidNightTravel,maxRiskScore:maxRiskScore==null?null:Number(maxRiskScore),candidates:options,zones:zones.slice(0,100)}); }
+  if(hasRoutedAlternative)try{ swarm=await runSwarm({origin,destination,departureTime,avoidNightTravel,maxRiskScore:maxRiskScore==null?null:Number(maxRiskScore),candidates:options,zones:zones.slice(0,100)}); }
   catch(err){ logger.warn({err},'Route Safety swarm unavailable; deterministic result retained'); }
 
   const swarmLevel=swarm?.arbiter?.risk_level||null;
-  const hardStop=allRoutesBlocked||maxRiskExceeded||swarm?.consensus?.hard_block||swarmLevel==='CRITICAL';
+  const hardStop=!hasRoutedAlternative||allRoutesBlocked||maxRiskExceeded||swarm?.consensus?.hard_block||swarmLevel==='CRITICAL';
   const safetyGate=hardStop?'HUMAN_REVIEW':(swarm?.arbiter?.go_no_go||'CONDITIONAL');
   return {
     org_id:orgId,convoy_id:convoyId??null,origin_lat:origin.lat,origin_lng:origin.lng,destination_lat:destination.lat,destination_lng:destination.lng,
     overall_risk_score:best.risk_score,primary_risk_factors:riskFactorsFromExposures(primary?.exposures??[]),recommended_route:best,alternate_routes:options.slice(1),
-    ai_summary:swarm?.arbiter?.route_selection_reason||`Deterministic route assessment: ${riskBand(best.risk_score)} risk based on current mapped route exposure and road-routing evidence.`,
+    ai_summary:!hasRoutedAlternative?'Road-routing providers returned no route. Route risk is UNAVAILABLE; the displayed waypoints are not road geometry and this journey is not approved for release.':swarm?.arbiter?.route_selection_reason||`Deterministic route assessment: ${riskBand(best.risk_score)} risk based on current mapped route exposure and road-routing evidence.`,
     safety_gate:safetyGate,
     swarm:swarm?{version:swarm.version,agent_count:swarm.agent_count,providers:[...new Set((swarm.reports||[]).map(r=>r.provider).filter(Boolean).concat([swarm.arbiter?.provider,swarm.critic?.provider].filter(Boolean)))],confidence:swarm.consensus?.confidence??0,hard_block:Boolean(swarm.consensus?.hard_block),aggregated_risks:swarm.aggregated_risks||[],arbiter:swarm.arbiter||null,critic:swarm.critic?{provider:swarm.critic.provider,status:swarm.critic.status,finding:swarm.critic.finding,contradictions:swarm.critic.contradictions,evidence_gaps:swarm.critic.evidence_gaps}:null}:null,
-    requested_by:requestedBy??null,analysis_version:ROUTE_ANALYSIS_VERSION,routing_provider:best.label.includes('fallback')?'direct-fallback':(primary?.provider||'unknown'),route_status:primary?.blocked?'blocked':(primary?.routed===false?'unrouted':'routed'),risk_zone_count:zones.length,cache_hit:false,
-    constraint_status:{max_risk_score:maxRiskScore==null?null:Number(maxRiskScore),max_risk_exceeded:maxRiskExceeded,all_routes_blocked:allRoutesBlocked},
+    requested_by:requestedBy??null,analysis_version:ROUTE_ANALYSIS_VERSION,routing_provider:primary?.provider||'unknown',route_status:!hasRoutedAlternative?'unrouted':primary?.blocked?'blocked':(primary?.routed===false?'unrouted':'routed'),risk_zone_count:zones.length,cache_hit:false,
+    constraint_status:{max_risk_score:maxRiskScore==null?null:Number(maxRiskScore),max_risk_exceeded:maxRiskExceeded,all_routes_blocked:allRoutesBlocked,risk_score_available:best?.risk_score!=null},
   };
 }
 module.exports={analyseRoute,ROUTE_ANALYSIS_VERSION};
