@@ -148,7 +148,7 @@ function routeAssessmentUsable(a) {
   const score=a.overall_risk_score;
   const finiteScore=score!=null&&!(typeof score==='string'&&score.trim()==='')&&Number.isFinite(Number(score));
   const explicitUnrouted=a.route_status==='unrouted'&&a.safety_gate==='HUMAN_REVIEW'&&score==null&&a.constraint_status?.risk_score_available===false&&a.recommended_route?.risk_score==null&&a.recommended_route?.distance_km==null&&a.recommended_route?.estimated_duration_minutes==null&&Array.isArray(a.recommended_route?.waypoints);
-  return finiteScore||explicitUnrouted;
+  return a.route_status==='unrouted'?explicitUnrouted:finiteScore;
 }
 function approvalGate(a, review, ack) {
   if (a && (a.route_status==='blocked' || a.recommended_route?.blocked===true || a.safety_gate==='NO_GO')) return {ok:false,code:'ROUTE_BLOCKED',message:'The selected route is blocked and cannot be approved.'};
