@@ -1,7 +1,7 @@
 'use strict';
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, journeyForViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, classificationForGenericEvent, journeyForViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -65,6 +65,13 @@ describe('SJM validation and evidence boundaries', () => {
     expect(lifecycleAuthorityError({role:'operator'},['cpo'],'raise_exception')).toBeNull();
     expect(lifecycleAuthorityError({role:'operator'},['driver'],'hold')).toMatchObject({error:'dispatcher_authority_required'});
     expect(lifecycleAuthorityError({role:'admin'},[],'hold')).toBeNull();
+  });
+  test('classifies generic mission log entries before report publication', () => {
+    expect(classificationForGenericEvent('operator_note')).toBe('INTERNAL_OPERATIONS');
+    expect(classificationForGenericEvent('security_update')).toBe('INTERNAL_OPERATIONS');
+    expect(classificationForGenericEvent('delay')).toBe('INTERNAL_OPERATIONS');
+    expect(classificationForGenericEvent('incident')).toBe('INTERNAL_OPERATIONS');
+    expect(classificationForGenericEvent('client_update')).toBe('CLIENT_SAFE');
   });
   test('authenticates requests before the tenant-scope guard', () => {
     const authIndex = sjmRouter.stack.findIndex(layer => layer.handle === authenticate);
