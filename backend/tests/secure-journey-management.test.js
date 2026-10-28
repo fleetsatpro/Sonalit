@@ -113,11 +113,12 @@ describe('SJM validation and evidence boundaries', () => {
     const list = source.slice(listStart, listEnd);
     expect(mine).toContain('await req.dbTx(async c=>{');
     expect(mine).toContain('FOR SHARE OF j');
-    expect(mine.indexOf('FOR SHARE OF j')).toBeLessThan(mine.indexOf('const r=await db('));
-    expect(list).toContain('if(!isMobilityManager(req.user)){');
+    expect(mine.indexOf('FOR SHARE OF j')).toBeLessThan(mine.indexOf('readLockedAssignmentRows('));
+    expect(mine).toContain('assignment_roster_changed');
+    expect(list).toContain('!isMobilityManager(req.user)?await db(');
     expect(list).toContain('FOR SHARE OF j');
-    expect(list.indexOf('FOR SHARE OF j')).toBeLessThan(list.indexOf('const r=await db('));
-    expect(list).toContain('return r.rows;');
+    expect(list.indexOf('FOR SHARE OF j')).toBeLessThan(list.indexOf('readLockedAssignmentRows('));
+    expect(list).toContain('assignment_roster_changed');
   });
 
   test('keeps the mission-team assignment write endpoint registered', () => {
