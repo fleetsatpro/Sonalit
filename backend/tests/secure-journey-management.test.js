@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('fs');
+const path = require('path');
 jest.mock('../src/realtime/centrifugo', () => ({ unsubscribeUserFromChannel: jest.fn() }));
 const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
@@ -97,6 +99,27 @@ describe('SJM validation and evidence boundaries', () => {
     expect(classificationForGenericEvent('incident')).toBe('INTERNAL_OPERATIONS');
     expect(classificationForGenericEvent('client_update')).toBe('CLIENT_SAFE');
   });
+  test('serializes assignment-list reads against concurrent roster changes', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../src/routes/secureJourneyManagement.js'), 'utf8');
+    const mineStart = source.indexOf("router.get('/my-assignments'");
+    const mineEnd = source.indexOf("\n}));", mineStart);
+    const listStart = source.indexOf("router.get('/journeys',");
+    const listEnd = source.indexOf("\nrouter.post('/journeys',", listStart);
+    expect(mineStart).toBeGreaterThanOrEqual(0);
+    expect(mineEnd).toBeGreaterThan(mineStart);
+    expect(listStart).toBeGreaterThanOrEqual(0);
+    expect(listEnd).toBeGreaterThan(listStart);
+    const mine = source.slice(mineStart, mineEnd);
+    const list = source.slice(listStart, listEnd);
+    expect(mine).toContain('await req.dbTx(async c=>{');
+    expect(mine).toContain('FOR SHARE OF j');
+    expect(mine.indexOf('FOR SHARE OF j')).toBeLessThan(mine.indexOf('const r=await db('));
+    expect(list).toContain('if(!isMobilityManager(req.user)){');
+    expect(list).toContain('FOR SHARE OF j');
+    expect(list.indexOf('FOR SHARE OF j')).toBeLessThan(list.indexOf('const r=await db('));
+    expect(list).toContain('return r.rows;');
+  });
+
   test('keeps the mission-team assignment write endpoint registered', () => {
     const layer=sjmRouter.stack.find(entry =>
       entry.route?.path === '/journeys/:id/participants' && entry.route.methods?.put === true
