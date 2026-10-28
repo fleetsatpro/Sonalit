@@ -23,13 +23,21 @@ function makeApp(dbTx) {
 }
 
 describe('POST /realtime/subscription-token channel authorisation', () => {
+  test('binds the Centrifugo connection token to the authenticated user, not the tenant', async () => {
+    const res = await request(makeApp())
+      .post('/api/v1/realtime/token')
+      .expect(200);
+    const claims = jwt.verify(res.body.token, process.env.CENTRIFUGO_TOKEN_HMAC_SECRET);
+    expect(claims.sub).toBe('user-1');
+  });
+
   test('allows the exact organization channel', async () => {
     const res = await request(makeApp())
       .post('/api/v1/realtime/subscription-token')
       .send({ channel: 'org#org-a' })
       .expect(200);
     const claims = jwt.verify(res.body.token, process.env.CENTRIFUGO_TOKEN_HMAC_SECRET);
-    expect(claims.sub).toBe('org-a');
+    expect(claims.sub).toBe('user-1');
     expect(claims.channel).toBe('org#org-a');
   });
 
@@ -39,7 +47,7 @@ describe('POST /realtime/subscription-token channel authorisation', () => {
       .send({ channel: 'risk:updates:org-a' })
       .expect(200);
     const claims = jwt.verify(res.body.token, process.env.CENTRIFUGO_TOKEN_HMAC_SECRET);
-    expect(claims.sub).toBe('org-a');
+    expect(claims.sub).toBe('user-1');
     expect(claims.channel).toBe('risk:updates:org-a');
   });
 
@@ -69,7 +77,7 @@ describe('POST /realtime/subscription-token channel authorisation', () => {
       .send({ channel })
       .expect(200);
     const claims = jwt.verify(res.body.token, process.env.CENTRIFUGO_TOKEN_HMAC_SECRET);
-    expect(claims.sub).toBe('org-a');
+    expect(claims.sub).toBe('user-1');
     expect(claims.channel).toBe(channel);
     expect(calls.some(c => /deleted_at IS NULL FOR SHARE/.test(c.sql))).toBe(true);
     expect(calls.findIndex(c => /FOR SHARE/.test(c.sql))).toBeLessThan(calls.findIndex(c => /FROM channel_members/.test(c.sql)));
