@@ -85,6 +85,7 @@ function lifecycleAuthorityError(user,dutyRoles,action){
 async function requireJourneyAccess(req,res,journey){if(!journey){res.status(404).json({error:'journey_not_found'});return null;}const roles=await activeDutyRoles(req.db,req.user.org_id,journey.id,req.user.id);if(!canAccessJourney(req.user,roles)){res.status(404).json({error:'journey_not_found'});return null;}return roles;}
 function dutyEventAllowed(roles,eventType){return Array.isArray(roles)&&roles.some(role=>(DUTY_EVENT_RULES[role]||[]).includes(eventType));}
 function isInternalOperationalEvent(e){return parseJson(e?.detail, {})?.classification==='INTERNAL_OPERATIONS';}
+function classificationForGenericEvent(type){return type==='client_update'?'CLIENT_SAFE':'INTERNAL_OPERATIONS';}
 function journeyForViewer(journey,events,canSeeInternal){
  const visibleJourney=canSeeInternal?journey:{...journey,principal_reference:null,flight_status_note:null,meet_greet_instructions:null};
  const visibleEvents=canSeeInternal?(events||[]):(events||[]).filter(e=>!isInternalOperationalEvent(e));
@@ -427,12 +428,13 @@ router.post('/management-summary',authorize('admin','dispatcher'),asyncHandler(a
   });
   res.status(201).json(saved);
 }));
-router.get('/clients',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{const r=await req.db('SELECT id,name,company FROM cargo_clients WHERE org_id=$1 AND deleted_at IS NULL ORDER BY name LIMIT 500',[req.user.org_id]);res.json({data:r.rows});}));
-router.get('/convoys',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{const r=await req.db('SELECT id,name,status,route_origin,route_destination FROM convoys WHERE org_id=$1 AND deleted_at IS NULL AND status IN (\'planned\',\'active\') ORDER BY updated_at DESC NULLS LAST,name LIMIT 200',[req.user.org_id]);res.json({data:r.rows});}));
+router.get('/clients',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{const r=await req.db('SELECT id,name,company FROM cargo_clients WHERE org_id=$1 AND deleted_at IS NULL ORDER BY name LIMIT 500',[req.user.org_id]);res.json({data:r.rows});}));
+router.get('/convoys',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{const r=await req.db('SELECT id,name,status,route_origin,route_destination FROM convoys WHERE org_id=$1 AND deleted_at IS NULL AND status IN (\'planned\',\'active\') ORDER BY updated_at DESC NULLS LAST,name LIMIT 200',[req.user.org_id]);res.json({data:r.rows});}));
 
 router.get('/client-profiles/:clientId',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const c=await req.db('SELECT id,name,company FROM cargo_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[req.params.clientId,req.user.org_id]);
   if(!c.rows.length)return res.status(404).json({error:'client_not_found'});
+  if(!isMobilityManager(req.user)){const assignment=await req.db('SELECT 1 FROM sjm_journeys j JOIN sjm_journey_participants p ON p.org_id=j.org_id AND p.journey_id=j.id WHERE j.org_id=$1 AND j.client_id=$2 AND j.deleted_at IS NULL AND p.user_id=$3 AND p.removed_at IS NULL LIMIT 1',[req.user.org_id,req.params.clientId,req.user.id]);if(!assignment.rows.length)return res.status(404).json({error:'client_not_found'});}
   const p=await req.db('SELECT client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_at FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[req.user.org_id,req.params.clientId]);
   res.json({data:{...(p.rows[0]||{client_id:req.params.clientId,report_timezone:'Africa/Nairobi',report_template:DEFAULT_TEMPLATE,daily_reports_enabled:false,daily_report_local_time:'18:00:00',updated_at:null}),daily_report_scheduler_available:dailyReportSchedulerAvailable(req.user.org_id),client:c.rows[0]}});
 }));
@@ -481,7 +483,7 @@ router.get('/my-assignments',asyncHandler(async(req,res)=>{
 router.get('/journeys/:id/participants',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
  const roles=await requireJourneyAccess(req,res,j);if(!roles)return;
- const r=await req.db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id]);res.json({data:r.rows});
+ const r=await req.db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 AND ($3::boolean OR p.removed_at IS NULL) ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id,isMobilityManager(req.user)]);res.json({data:r.rows});
 }));
 router.put('/journeys/:id/participants',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
@@ -699,7 +701,7 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
 }));
 router.patch('/journeys/:id/stops/:stopId/status',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);const dutyRoles=await requireJourneyAccess(req,res,j);if(!dutyRoles)return;
-  if(!isMobilityManager(req.user)&&!dutyRoles.some(role=>['driver','backup_driver','cpo','security_escort'].includes(role)))return res.status(403).json({error:'field_duty_required',message:'Only an assigned driver, CPO or security escort may confirm a stop.'});
+  if(!isMobilityManager(req.user)&&!dutyRoles.some(role=>['driver','backup_driver'].includes(role)))return res.status(403).json({error:'driver_authority_required',message:'Stop completion is a driver duty. CPOs and security escorts should submit their duty-specific field check-ins.'});
   if(!['in_progress','paused','arrival_pending_verification'].includes(j.status))return res.status(409).json({error:'journey_not_active_for_stop_confirmation'});
   const status=req.body?.status;if(!['reached','skipped'].includes(status))return res.status(400).json({error:'invalid_stop_status'});
   const hasLat=req.body?.actual_lat!=null,hasLng=req.body?.actual_lng!=null;if(hasLat!==hasLng||(hasLat&&!validCoordinate(req.body.actual_lat,req.body.actual_lng)))return res.status(400).json({error:'invalid_actual_coordinates'});
@@ -708,11 +710,11 @@ router.patch('/journeys/:id/stops/:stopId/status',authorize('admin','dispatcher'
   if(!write.changed)return res.status(404).json({error:'stop_not_found_or_already_resolved'});
   return res.json({data:write.result.rows[0],evidence_class:'OPERATOR_CONFIRMED'});
 }));
-router.post('/journeys/:id/events',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
+router.post('/journeys/:id/events',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);const dutyRoles=await requireJourneyAccess(req,res,j);if(!dutyRoles)return;
   if(TERMINAL_STATUSES.includes(j.status))return res.status(409).json({error:'journey_closed'});
   const type=req.body?.event_type,summary=txt(req.body?.summary,500);if(!EVENT_TYPES.includes(type)||summary.length<4)return res.status(400).json({error:'invalid_operational_event',allowed_event_types:EVENT_TYPES});
-  const detail={note:txt(req.body?.detail,2000),severity:['low','medium','high','critical'].includes(req.body?.severity)?req.body.severity:null};
+  const detail={note:txt(req.body?.detail,2000),severity:['low','medium','high','critical'].includes(req.body?.severity)?req.body.severity:null,classification:classificationForGenericEvent(type),publication_authority:type==='client_update'?'admin_or_dispatcher':null};
   const r=await event(req.db,j,req.user.id,type,summary,detail,'operator');res.status(201).json({data:{id:r.rows[0].id,created_at:r.rows[0].created_at,event_type:type,summary,detail,source:'operator'}});
 }));
 router.post('/journeys/:id/reports',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
@@ -762,4 +764,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 }));
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,journeyForViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,classificationForGenericEvent,journeyForViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections};
