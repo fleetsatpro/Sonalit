@@ -24,6 +24,7 @@ const { asyncHandler } = require('../middleware/error');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('../utils/logger');
 const { withOrg } = require('../utils/orgScopedDb');
+const { sjmChannelName } = require('../realtime/sjmChannel');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -178,8 +179,28 @@ async function requireChannelManager(req, res, channelId) {
 //   org#<orgId>#comms#<channelId>  — subscribers viewing that channel see rich payload
 //   org#<orgId>                    — badge/unread hint so clients not currently viewing
 //                                    still tick their unread counter
+async function resolveRealtimeChannelName(orgId, channelId) {
+  return withOrg(orgId, async (client) => {
+    const result = await client.query(
+      `SELECT c.sjm_journey_id, j.comms_epoch
+         FROM channels c
+         LEFT JOIN sjm_journeys j ON j.id = c.sjm_journey_id AND j.org_id = c.org_id
+        WHERE c.org_id = $1 AND c.id = $2
+        LIMIT 1`,
+      [orgId, channelId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return row.sjm_journey_id
+      ? sjmChannelName(orgId, channelId, row.comms_epoch)
+      : `org#${orgId}#comms#${channelId}`;
+  });
+}
+
 function publishCommsEvent(orgId, channelId, type, payload) {
-  publish(`org#${orgId}#comms#${channelId}`, { type, channel_id: channelId, ...payload });
+  resolveRealtimeChannelName(orgId, channelId)
+    .then((channel) => channel ? publish(channel, { type, channel_id: channelId, ...payload }) : null)
+    .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
   publish(`org#${orgId}`, { type: `comms.${type}`, channel_id: channelId });
 }
 
@@ -276,6 +297,11 @@ const listChannels = asyncHandler(async (req, res) => {
       )
       SELECT
         v.id, v.name, v.slug, v.type, v.category, v.created_at, v.created_by,
+        CASE WHEN v.sjm_journey_id IS NOT NULL
+          THEN 'org#' || v.org_id::text || '#comms#' || v.id::text ||
+               CASE WHEN COALESCE(realtime_j.comms_epoch, 0) > 0 THEN '#v' || realtime_j.comms_epoch::text ELSE '' END
+          ELSE 'org#' || v.org_id::text || '#comms#' || v.id::text
+        END AS realtime_channel,
         COALESCE(m.muted, false)             AS muted,
         COALESCE(m.is_channel_admin, false)  AS is_channel_admin,
         COALESCE(m.last_read_at, v.created_at) AS last_read_at,
@@ -300,6 +326,7 @@ const listChannels = asyncHandler(async (req, res) => {
           ORDER BY lm.created_at DESC LIMIT 1
         ) AS last_message
       FROM visible v
+      LEFT JOIN sjm_journeys realtime_j ON realtime_j.id = v.sjm_journey_id AND realtime_j.org_id = v.org_id
       LEFT JOIN channel_members m ON m.channel_id = v.id AND m.user_id = $1
       ORDER BY v.category NULLS LAST, v.name
       `,
@@ -1085,8 +1112,17 @@ const getAttachmentUrl = asyncHandler(async (req, res) => {
 // ─── Typing (transient, not persisted) ───────────────────────────────────────
 
 const publishTyping = asyncHandler(async (req, res) => {
-  const result = await withChannelReaderTransaction(req, res, req.params.id, async () => {
-    publish(`org#${req.user.org_id}#comms#${req.params.id}`, {
+  const result = await withChannelReaderTransaction(req, res, req.params.id, async (db, { channel }) => {
+    let realtimeChannel = `org#${req.user.org_id}#comms#${req.params.id}`;
+    if (channel.sjm_journey_id) {
+      const mission = await db(
+        'SELECT comms_epoch FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+        [channel.sjm_journey_id, req.user.org_id],
+      );
+      if (!mission.rows.length) return { error: 'mission_not_found' };
+      realtimeChannel = sjmChannelName(req.user.org_id, req.params.id, mission.rows[0].comms_epoch);
+    }
+    publish(realtimeChannel, {
       type: 'typing',
       channel_id: req.params.id,
       user_id: req.user.id,
@@ -1096,6 +1132,7 @@ const publishTyping = asyncHandler(async (req, res) => {
     return { ok: true };
   });
   if (!result.ok) return;
+  if (result.value?.error === 'mission_not_found') return notFound(res, 'Channel not found');
   res.json({ ok: true });
 });
 

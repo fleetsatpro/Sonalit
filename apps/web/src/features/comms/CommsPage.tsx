@@ -48,7 +48,7 @@ export default function CommsPage() {
   const membersQ  = useChannelMembers(activeChannelId);
   const pinnedQ   = usePinned(activeChannelId);
 
-  const typing = useCommsRealtime(user?.org_id, activeChannelId, user?.id);
+  const typing = useCommsRealtime(user?.org_id, activeChannelId, user?.id, activeChannel?.realtime_channel);
 
   // Mark-read whenever we open a channel + when new messages arrive.
   const markRead = useMarkRead();

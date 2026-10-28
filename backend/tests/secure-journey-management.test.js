@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-jest.mock('../src/realtime/centrifugo', () => ({ unsubscribeUserFromChannel: jest.fn() }));
+jest.mock('../src/realtime/centrifugo', () => ({ unsubscribeUserFromChannel: jest.fn(), publish: jest.fn() }));
 const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
@@ -192,14 +192,15 @@ describe('SJM validation and evidence boundaries', () => {
       calls.push({sql,params});
       if(sql.includes('INSERT INTO channels'))return {rows:[{id:channelId}]};
       if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:removedUser}]};
+      if(/UPDATE sjm_journeys SET comms_epoch/.test(sql))return {rows:[{comms_epoch:1}],rowCount:1};
       if(sql.includes('DELETE FROM channel_members cm')) {
         expect(unsubscribeUserFromChannel).toHaveBeenNthCalledWith(1,'org-1','org#org-1#comms#'+channelId);
         expect(unsubscribeUserFromChannel).toHaveBeenNthCalledWith(2,removedUser,'org#org-1#comms#'+channelId);
       }
       return {rows:[],rowCount:1};
     };
-    const result=await syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1'},'manager-1',true);
-    expect(result).toBe(channelId);
+    const result=await syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1',comms_epoch:0},'manager-1',true);
+    expect(result).toMatchObject({channelId,commsEpoch:1,realtimeChannel:'org#org-1#comms#'+channelId+'#v1',rotated:true});
     expect(calls.findIndex(c=>c.sql.includes('SELECT cm.user_id FROM channel_members cm'))).toBeLessThan(calls.findIndex(c=>c.sql.includes('DELETE FROM channel_members cm')));
     expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(2);
   });
@@ -212,6 +213,7 @@ describe('SJM validation and evidence boundaries', () => {
       calls.push({sql,params});
       if(sql.includes('INSERT INTO channels'))return {rows:[{id:'cccccccc-0000-0000-0000-000000000001'}]};
       if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:'aaaaaaaa-0000-0000-0000-000000000099'}]};
+      if(/UPDATE sjm_journeys SET comms_epoch/.test(sql))return {rows:[{comms_epoch:1}],rowCount:1};
       return {rows:[],rowCount:1};
     };
     await expect(syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1'},'manager-1',true))

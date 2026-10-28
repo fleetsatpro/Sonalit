@@ -40,9 +40,9 @@ export default function ExecutiveMobility(){
   const current=missions.find(m=>m.id===selectedId),knownStatus=current?.flight_status;
   setFlightStatus(knownStatus&&knownStatus!=='unknown'?knownStatus:'');
  },[selectedId,missions]);
- const channelQ=useQuery<{data:{channel_id:string}}>({queryKey:['sjm-mission-channel',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/communications')).data,enabled:Boolean(selectedId),staleTime:15000});
+ const channelQ=useQuery<{data:{channel_id:string;realtime_channel:string;comms_epoch:number}}>({queryKey:['sjm-mission-channel',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/communications')).data,enabled:Boolean(selectedId),staleTime:15000});
  const channelId=channelQ.data?.data.channel_id||null,messagesQ=useMessages(channelId),sendMessage=useSendMessage(channelId||'');
- useCommsRealtime(user?.org_id,channelId,user?.id);
+ useCommsRealtime(user?.org_id,channelId,user?.id,channelQ.data?.data.realtime_channel,selectedId);
  const eventsQ=useQuery<{data:FieldEvent[]}>({queryKey:['sjm-field-events',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/field-events')).data,enabled:Boolean(selectedId),refetchInterval:30000});
  const actions=useMemo(()=>{const map=new Map<string,{type:string;label:string}>();for(const r of mission?.duty_roles||[])for(const a of ACTIONS[r]||[])map.set(a.type,a);return [...map.values()]},[mission?.duty_roles]);
  const reportQ=useMutation({mutationFn:async(p:{event_type:string;note?:string})=>(await api.post('/sjm/journeys/'+selectedId+'/field-events',p)).data,onSuccess:async()=>{setEventNote('');await qc.invalidateQueries({queryKey:['sjm-field-events',selectedId]})}});

@@ -5,7 +5,8 @@ const PDFDocument = require('pdfkit');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const { analyseRoute } = require('../utils/routeAnalyser');
-const { unsubscribeUserFromChannel } = require('../realtime/centrifugo');
+const { unsubscribeUserFromChannel, publish } = require('../realtime/centrifugo');
+const { sjmChannelName } = require('../realtime/sjmChannel');
 
 const STATUSES = ['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification','closed','cancelled','aborted','on_hold'];
 const TERMINAL_STATUSES = ['closed','cancelled','aborted'];
@@ -114,7 +115,7 @@ function journeyForDutyViewer(journey,events,user,dutyRoles){
  }
  return {...visible,events:(events||[]).filter(e=>eventVisibleToDuty(e,user,dutyRoles))};
 }
-async function lockJourneyForMobility(db,org,journeyId){const r=await db('SELECT id,status,flight_number,flight_status FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',[journeyId,org]);return r.rows[0]||null;}
+async function lockJourneyForMobility(db,org,journeyId){const r=await db('SELECT id,status,flight_number,flight_status,comms_epoch FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',[journeyId,org]);return r.rows[0]||null;}
 async function lockJourneyForMobilityRead(db,org,journeyId){const r=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[journeyId,org]);return r.rows[0]||null;}
 async function readLockedAssignmentRows(db,org,initialLockRows,listSql,listParams){
  const held=new Set((initialLockRows?.rows||[]).map(row=>String(row.id)));
@@ -128,29 +129,37 @@ async function readLockedAssignmentRows(db,org,initialLockRows,listSql,listParam
  return {error:'assignment_roster_changed'};
 }
 async function activeDutyRoles(db,org,journeyId,userId){const r=await db('SELECT duty_role FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL ORDER BY duty_role',[org,journeyId,userId]);return r.rows.map(row=>row.duty_role);}
-async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=true){
+async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=true,previousEpoch=null){
  const slug='sjm-'+String(journey.id).replace(/-/g,'').slice(0,20).toLowerCase(),name=txt(journey.reference,40)+' · Mission team';
  const r=await db("INSERT INTO channels (org_id,name,slug,type,category,created_by,sjm_journey_id) VALUES ($1,$2,$3,'private','operations',$4,$5) ON CONFLICT (org_id,sjm_journey_id) WHERE sjm_journey_id IS NOT NULL DO UPDATE SET name=EXCLUDED.name RETURNING id",[org,name,slug,actorId||null,journey.id]);
  const channelId=r.rows[0]?.id;if(!channelId)throw new Error('sjm_comms_channel_unavailable');
+ const priorMembers=await db('SELECT user_id FROM channel_members WHERE org_id=$1 AND channel_id=$2',[org,channelId]);
+ const priorMemberIds=new Set((priorMembers.rows||[]).map(row=>String(row.user_id)));
  if(actorId)await db('INSERT INTO channel_members (channel_id,user_id,org_id,is_channel_admin) VALUES ($1,$2,$3,$4) ON CONFLICT (channel_id,user_id) DO UPDATE SET is_channel_admin=EXCLUDED.is_channel_admin',[channelId,actorId,org,actorIsManager===true]);
  await db("INSERT INTO channel_members (channel_id,user_id,org_id,is_channel_admin) SELECT $1,p.user_id,$2,false FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status='active' WHERE p.org_id=$2 AND p.journey_id=$3 AND p.removed_at IS NULL ON CONFLICT (channel_id,user_id) DO NOTHING",[channelId,org,journey.id]);
  await db("UPDATE channel_members cm SET is_channel_admin=EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher')) WHERE cm.org_id=$1 AND cm.channel_id=$2",[org,channelId]);
  const staleMembers=await db("SELECT cm.user_id FROM channel_members cm WHERE cm.org_id=$1 AND cm.channel_id=$2 AND NOT EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users pu ON pu.id=p.user_id AND pu.org_id=p.org_id AND pu.deleted_at IS NULL AND pu.status='active' WHERE p.org_id=$1 AND p.journey_id=$3 AND p.user_id=cm.user_id AND p.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher'))",[org,channelId,journey.id]);
- const channelName='org#'+org+'#comms#'+channelId;
- let legacyOrgSubscriptionsRevoked=false;
- for(const member of staleMembers.rows){
-   // Older sessions used the tenant ID as Centrifugo's subject. Disconnect
-   // that legacy identity once per channel, then revoke the specific user ID.
-   if(!legacyOrgSubscriptionsRevoked){
-     const legacyRevoked=await unsubscribeUserFromChannel(org,channelName);
-     if(!legacyRevoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
-     legacyOrgSubscriptionsRevoked=true;
+ let commsEpoch=Number(journey.comms_epoch||0),oldEpoch=previousEpoch==null?null:Number(previousEpoch),rotated=oldEpoch!==null;
+ if(!rotated&&staleMembers.rows.length){
+  const bumped=await db('UPDATE sjm_journeys SET comms_epoch=comms_epoch+1 WHERE id=$1 AND org_id=$2 RETURNING comms_epoch',[journey.id,org]);
+  if(!bumped.rows.length)throw new Error('sjm_comms_epoch_rotation_failed');
+  oldEpoch=commsEpoch;commsEpoch=Number(bumped.rows[0].comms_epoch);rotated=true;
+ }
+ if(rotated){
+  if(!Number.isSafeInteger(commsEpoch)||commsEpoch<=oldEpoch)throw new Error('sjm_comms_epoch_rotation_invalid');
+  const channelName=sjmChannelName(org,channelId,oldEpoch);
+  const revokeUsers=new Set([...priorMemberIds,...staleMembers.rows.map(row=>String(row.user_id))]);
+  if(revokeUsers.size){
+   const legacyRevoked=await unsubscribeUserFromChannel(org,channelName);
+   if(!legacyRevoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
+   for(const userId of revokeUsers){
+    const revoked=await unsubscribeUserFromChannel(userId,channelName);
+    if(!revoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
    }
-   const revoked=await unsubscribeUserFromChannel(member.user_id,channelName);
-   if(!revoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
+  }
  }
  await db("DELETE FROM channel_members cm WHERE cm.org_id=$1 AND cm.channel_id=$2 AND NOT EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users pu ON pu.id=p.user_id AND pu.org_id=p.org_id AND pu.deleted_at IS NULL AND pu.status='active' WHERE p.org_id=$1 AND p.journey_id=$3 AND p.user_id=cm.user_id AND p.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher'))",[org,channelId,journey.id]);
- return channelId;
+ return {channelId,commsEpoch,realtimeChannel:sjmChannelName(org,channelId,commsEpoch),rotated};
 }
 function validateJourney(b) {
   if (!b || typeof b!=='object' || Array.isArray(b)) return 'A journey payload is required.';
@@ -617,27 +626,39 @@ router.put('/journeys/:id/participants',authorize('admin','dispatcher'),asyncHan
   if(!p||typeof p!=='object'||!SJM_ORG_UUID.test(String(p.user_id||'')))return res.status(400).json({error:'invalid_participants',message:'Every assignment needs a valid user UUID.'});
   if(!DUTY_ROLES.includes(p.duty_role))return res.status(400).json({error:'invalid_participants',message:'A duty role is not supported.'});
   if(p.is_primary!=null&&typeof p.is_primary!=='boolean')return res.status(400).json({error:'invalid_participants',message:'is_primary must be a boolean when supplied.'});
-  const key=String(p.user_id)+'|'+p.duty_role;if(seen.has(key))return res.status(400).json({error:'duplicate_participant_role'});seen.add(key);
+  const key=String(p.user_id).toLowerCase()+'|'+p.duty_role;if(seen.has(key))return res.status(400).json({error:'duplicate_participant_role'});seen.add(key);
   if(p.is_primary===true){if(primaryRoles.has(p.duty_role))return res.status(400).json({error:'duplicate_primary_duty_role',message:'Only one primary assignee may be set for each duty role.'});primaryRoles.add(p.duty_role);}
  }
- const ids=[...new Set(submitted.map(p=>String(p.user_id)))],keys=submitted.map(p=>String(p.user_id)+'|'+p.duty_role);
+ const ids=[...new Set(submitted.map(p=>String(p.user_id)))],keys=submitted.map(p=>String(p.user_id).toLowerCase()+'|'+p.duty_role);
  const assignedResult=await req.dbTx(async c=>{
   const db=(sql,params)=>c.query(sql,params),locked=await lockJourneyForMobility(db,org,j.id);
   if(!locked)return {error:'journey_not_found'};
   if(TERMINAL_STATUSES.includes(locked.status))return {error:'journey_terminal'};
   if(ids.length){const users=await db("SELECT id FROM users WHERE org_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL AND status='active'",[org,ids]);if(users.rows.length!==ids.length)return {error:'participant_outside_organisation_or_inactive'};}
+  const activeRoster=await db('SELECT user_id,duty_role,is_primary FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND removed_at IS NULL ORDER BY user_id,duty_role FOR UPDATE',[org,j.id]);
+  const beforeRoster=activeRoster.rows.map(p=>String(p.user_id).toLowerCase()+'|'+p.duty_role+'|'+(p.is_primary===true)).sort();
+  const afterRoster=submitted.map(p=>String(p.user_id).toLowerCase()+'|'+p.duty_role+'|'+(p.is_primary===true)).sort();
+  const rosterChanged=beforeRoster.length!==afterRoster.length||beforeRoster.some((value,index)=>value!==afterRoster[index]);
+  const previousEpoch=rosterChanged?Number(locked.comms_epoch||0):null;
+  let commsEpoch=Number(locked.comms_epoch||0);
+  if(rosterChanged){
+   const bumped=await db('UPDATE sjm_journeys SET comms_epoch=comms_epoch+1 WHERE id=$1 AND org_id=$2 RETURNING comms_epoch',[j.id,org]);
+   if(!bumped.rows.length)return {error:'journey_not_found'};
+   commsEpoch=Number(bumped.rows[0].comms_epoch);
+  }
   await db("UPDATE sjm_journey_participants SET removed_at=NOW(),is_primary=false WHERE org_id=$1 AND journey_id=$2 AND removed_at IS NULL AND NOT ((user_id::text || '|' || duty_role)=ANY($3::text[]))",[org,j.id,keys]);
   await db("UPDATE sjm_journey_participants SET is_primary=false WHERE org_id=$1 AND journey_id=$2 AND removed_at IS NULL",[org,j.id]);
   for(const p of submitted)await db("INSERT INTO sjm_journey_participants (org_id,journey_id,user_id,duty_role,is_primary,assigned_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (org_id,journey_id,user_id,duty_role) WHERE removed_at IS NULL DO UPDATE SET is_primary=EXCLUDED.is_primary",[org,j.id,p.user_id,p.duty_role,p.is_primary===true,req.user.id]);
-  const channelId=await syncJourneyCommsChannel(db,org,j,req.user.id,true);
-  await db("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'team_assignment_changed',$4,$5,'operator')",[org,j.id,req.user.id,'Mission team assignments updated',JSON.stringify({assignment_count:submitted.length,assignments:submitted.map(p=>({user_id:p.user_id,duty_role:p.duty_role,is_primary:p.is_primary===true})),communications_channel_id:channelId,classification:'INTERNAL_OPERATIONS'})]);
-  return {channelId};
+  const synced=await syncJourneyCommsChannel(db,org,{...j,comms_epoch:commsEpoch},req.user.id,true,previousEpoch);
+  await db("INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'team_assignment_changed',$4,$5,'operator')",[org,j.id,req.user.id,'Mission team assignments updated',JSON.stringify({assignment_count:submitted.length,assignments:submitted.map(p=>({user_id:p.user_id,duty_role:p.duty_role,is_primary:p.is_primary===true})),communications_channel_id:synced.channelId,comms_epoch:synced.commsEpoch,classification:'INTERNAL_OPERATIONS'})]);
+  return synced;
  });
  if(assignedResult?.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
  if(assignedResult?.error==='journey_terminal')return res.status(409).json({error:'journey_terminal',message:'Closed, cancelled and aborted journeys cannot be reassigned.'});
  if(assignedResult?.error==='participant_outside_organisation_or_inactive')return res.status(422).json({error:'participant_outside_organisation_or_inactive',message:'Every assigned user must be an active account in this organisation.'});
+ if(assignedResult.rotated)void Promise.resolve(publish('org#'+org,{type:'comms.sjm.roster_changed',channel_id:assignedResult.channelId})).catch(()=>{});
  const assigned=await req.db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id]);
- res.setHeader('Cache-Control','no-store');res.json({data:assigned.rows});
+ res.setHeader('Cache-Control','no-store');res.json({data:assigned.rows,communications:{channel_id:assignedResult.channelId,realtime_channel:assignedResult.realtimeChannel,comms_epoch:assignedResult.commsEpoch}});
 }));
 router.get('/journeys/:id/communications',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
@@ -646,11 +667,11 @@ router.get('/journeys/:id/communications',asyncHandler(async(req,res)=>{
   if(!locked)return {error:'journey_not_found'};
   const roles=await activeDutyRoles(db,org,j.id,req.user.id);
   if(!isMobilityManager(req.user)&&!roles.length)return {error:'journey_not_found'};
-  const channelId=await syncJourneyCommsChannel(db,org,j,req.user.id,isMobilityManager(req.user));
-  return {channelId};
+  return syncJourneyCommsChannel(db,org,{...j,comms_epoch:Number(locked.comms_epoch||0)},req.user.id,isMobilityManager(req.user));
  });
  if(outcome?.error)return res.status(404).json({error:'journey_not_found'});
- res.setHeader('Cache-Control','no-store');res.json({data:{channel_id:outcome.channelId,transport:'Ops Comms',membership_policy:'active mission team or mission manager',messages_endpoint:'/api/v1/messages/channels/'+outcome.channelId+'/messages'}});
+ if(outcome.rotated)void Promise.resolve(publish('org#'+org,{type:'comms.sjm.roster_changed',channel_id:outcome.channelId})).catch(()=>{});
+ res.setHeader('Cache-Control','no-store');res.json({data:{channel_id:outcome.channelId,realtime_channel:outcome.realtimeChannel,comms_epoch:outcome.commsEpoch,transport:'Ops Comms',membership_policy:'active mission team or mission manager',messages_endpoint:'/api/v1/messages/channels/'+outcome.channelId+'/messages'}});
 }));
 router.get('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,manager=isMobilityManager(req.user);

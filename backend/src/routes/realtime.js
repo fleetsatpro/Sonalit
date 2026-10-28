@@ -2,6 +2,7 @@ const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 const { dualAuthenticate } = require('../middleware/fieldAuth');
 const { asyncHandler } = require('../middleware/error');
+const { sjmChannelName } = require('../realtime/sjmChannel');
 
 // dualAuthenticate, not authenticate: yard and port tablets need this token
 // too. Without it the field app could only ever poll, which is exactly the
@@ -46,11 +47,12 @@ router.post('/subscription-token', asyncHandler(async (req, res) => {
   // transaction, which holds FOR UPDATE while removing channel membership.
   const commsPrefix = `org#${orgId}#comms#`;
   if (channel.startsWith(commsPrefix)) {
-    const channelId = channel.slice(commsPrefix.length);
-    const channelUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!channelUuid.test(channelId) || typeof req.dbTx !== 'function') {
+    const channelMatch = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:#v([1-9]\d*))?$/i.exec(channel.slice(commsPrefix.length));
+    if (!channelMatch || channelMatch[1] !== channelMatch[1].toLowerCase() || typeof req.dbTx !== 'function') {
       return res.status(403).json({ error: 'Not authorized for this channel' });
     }
+    const channelId = channelMatch[1];
+    const requestedEpoch = channelMatch[2] ? Number(channelMatch[2]) : 0;
 
     const authorized = await req.dbTx(async (client) => {
       const result = await client.query(
@@ -62,10 +64,12 @@ router.post('/subscription-token', asyncHandler(async (req, res) => {
 
       if (ownedChannel.sjm_journey_id) {
         const mission = await client.query(
-          'SELECT id FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+          'SELECT id, comms_epoch FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
           [ownedChannel.sjm_journey_id, orgId],
         );
         if (!mission.rows.length) return false;
+        const currentEpoch = Number(mission.rows[0].comms_epoch || 0);
+        if (requestedEpoch !== currentEpoch || channel !== sjmChannelName(orgId, channelId, currentEpoch)) return false;
         const manager = ['admin', 'dispatcher'].includes(String(req.user.role || '').toLowerCase());
         if (!manager) {
           const assignment = await client.query(
@@ -80,6 +84,8 @@ router.post('/subscription-token', asyncHandler(async (req, res) => {
           );
           if (!assignment.rows.length) return false;
         }
+      } else if (requestedEpoch !== 0) {
+        return false;
       }
 
       const member = await client.query(

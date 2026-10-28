@@ -87,6 +87,38 @@ describe('POST /realtime/subscription-token channel authorisation', () => {
     expect(calls.findIndex(c => /FROM sjm_journey_participants/.test(c.sql))).toBeLessThan(calls.findIndex(c => /FROM channel_members/.test(c.sql)));
   });
 
+  test('allows the current versioned channel after an SJM roster change', async () => {
+    const channelId = 'cccccccc-0000-0000-0000-000000000001';
+    const journeyId = '11111111-2222-4333-8444-555555555555';
+    const dbTx = async (work) => work({ query: async (sql) => {
+      if (/FROM channels/.test(sql)) return { rows: [{ id: channelId, org_id: 'org-a', sjm_journey_id: journeyId }] };
+      if (/FROM sjm_journeys/.test(sql)) return { rows: [{ id: journeyId, comms_epoch: 7 }] };
+      if (/FROM sjm_journey_participants/.test(sql)) return { rows: [{ one: 1 }] };
+      if (/FROM channel_members/.test(sql)) return { rows: [{ user_id: 'user-1' }] };
+      return { rows: [] };
+    } });
+    const channel = `org#org-a#comms#${channelId}#v7`;
+    const res = await request(makeApp(dbTx)).post('/api/v1/realtime/subscription-token').send({ channel }).expect(200);
+    const claims = jwt.verify(res.body.token, process.env.CENTRIFUGO_TOKEN_HMAC_SECRET);
+    expect(claims.channel).toBe(channel);
+    expect(claims.exp - claims.iat).toBe(60);
+  });
+
+  test('rejects replay of a previous SJM channel generation before checking membership', async () => {
+    const channelId = 'cccccccc-0000-0000-0000-000000000001';
+    const journeyId = '11111111-2222-4333-8444-555555555555';
+    const calls = [];
+    const dbTx = async (work) => work({ query: async (sql) => {
+      calls.push(sql);
+      if (/FROM channels/.test(sql)) return { rows: [{ id: channelId, org_id: 'org-a', sjm_journey_id: journeyId }] };
+      if (/FROM sjm_journeys/.test(sql)) return { rows: [{ id: journeyId, comms_epoch: 7 }] };
+      return { rows: [] };
+    } });
+    await request(makeApp(dbTx)).post('/api/v1/realtime/subscription-token')
+      .send({ channel: `org#org-a#comms#${channelId}#v6` }).expect(403);
+    expect(calls.some(sql => /FROM sjm_journey_participants/.test(sql))).toBe(false);
+  });
+
   test('rejects private comms subscription when current membership is absent', async () => {
     const channelId = 'cccccccc-0000-0000-0000-000000000001';
     const journeyId = '11111111-2222-4333-8444-555555555555';

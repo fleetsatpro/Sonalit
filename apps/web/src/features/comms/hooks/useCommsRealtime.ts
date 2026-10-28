@@ -28,6 +28,8 @@ export function useCommsRealtime(
   orgId: string | undefined,
   activeChannelId: string | null,
   selfId: string | undefined,
+  realtimeChannelName?: string | null,
+  missionQueryId?: string | null,
 ): TypingState | null {
   const qc = useQueryClient();
   const [typing, setTyping] = useState<TypingState | null>(null);
@@ -39,13 +41,20 @@ export function useCommsRealtime(
     return subscribe<{ type?: string; channel_id?: string }>(`org#${orgId}`, (raw) => {
       if (!raw?.type || !raw.type.startsWith('comms.')) return;
       qc.invalidateQueries({ queryKey: commsKeys.channels });
+      if (raw.type === 'comms.sjm.roster_changed' && raw.channel_id === activeChannelId) {
+        qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId || activeChannelId] });
+        qc.invalidateQueries({ queryKey: commsKeys.messages(activeChannelId) });
+        qc.invalidateQueries({ queryKey: commsKeys.members(activeChannelId) });
+        qc.invalidateQueries({ queryKey: commsKeys.pinned(activeChannelId) });
+      }
     });
-  }, [orgId, qc]);
+  }, [orgId, activeChannelId, missionQueryId, qc]);
 
   // Per-channel channel — handles both cache invalidation AND typing events.
   useEffect(() => {
     if (!orgId || !activeChannelId) { setTyping(null); return; }
-    return subscribe<CommsEvent>(`org#${orgId}#comms#${activeChannelId}`, (event) => {
+    const channelName = realtimeChannelName || `org#${orgId}#comms#${activeChannelId}`;
+    return subscribe<CommsEvent>(channelName, (event) => {
       switch (event.type) {
         case 'message.created':
         case 'message.deleted':
@@ -76,7 +85,7 @@ export function useCommsRealtime(
           break;
       }
     });
-  }, [orgId, activeChannelId, selfId, qc]);
+  }, [orgId, activeChannelId, selfId, realtimeChannelName, qc]);
 
   // Auto-clear the typing indicator when its TTL expires.
   useEffect(() => {
