@@ -241,6 +241,10 @@ app.get("/metrics", requireMetricsAuth, async (req, res) => {
   "fuel", "shifts", "traffic", "spatial", "satellites", "cctv"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
+// Secure Journey Management: tenant-scoped itinerary, safety gates and reports.
+try { app.use("/api/v1/sjm", require("./routes/secureJourneyManagement")); logger.info("Route loaded: /api/v1/sjm"); }
+catch (e) { logger.warn("Secure Journey Management route failed: " + e.message); }
+
 // 4D-geofence corridor writes: POST /api/v1/convoys/:id/corridor (the "Plan
 // corridor" button) and GET /api/v1/convoys/:id/corridor/deviations. This router
 // was written but never mounted, so planning a corridor 404'd. It MUST stay
@@ -570,6 +574,16 @@ try {
   });
   logger.info("Sync retention scheduled (daily 03:40 UTC)");
 } catch (e) { logger.warn("Sync retention cron not started: " + e.message); }
+
+// SJM scheduled report generation is opt-in and generation-only. The allowlist is
+// explicit because this legacy backend has no authoritative organisation registry;
+// discovering tenants via global business-table queries would breach RLS boundaries.
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test') {
+  try {
+    const { startSjmDailyReportScheduler } = require('./services/sjmDailyReportScheduler');
+    startSjmDailyReportScheduler({isActive:()=>!isStandbyRuntime&&isFenceActive()});
+  } catch (e) { logger.warn('SJM scheduled report generation not started: '+e.message); }
+}
 
 // CDS Operations Intelligence: Groq/Llama scans live operational data every 15 min
 // and writes alerts for overdue trips, stalled bookings, capacity gaps, etc.
