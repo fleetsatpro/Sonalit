@@ -6,7 +6,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { useAuthStore } from '../stores/auth.js';
-import { Activity, AlertTriangle, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, Navigation, Plus, RefreshCw, Route, Satellite, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, Navigation, Plus, RefreshCw, Route, Satellite, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
 type Point={lat:number;lng:number;name?:string;label?:string};
@@ -18,8 +18,10 @@ type Client={id:string;name:string;company?:string|null};
 type Convoy={id:string;name:string;status:string};
 type Profile={client_id:string;report_timezone:string;report_template:{title?:string;sections?:string[]};daily_reports_enabled?:boolean;daily_report_local_time?:string;daily_report_scheduler_available?:boolean;client?:Client};
 type Report={data:{id:string;report_type:string;report_date:string;generated_at:string}};
+type IntakePickTarget='origin'|'destination'|{stopIndex:number}|null;
 const META:Record<Status,{label:string;cls:string}>={requested:{label:'Requested',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'},planning:{label:'Planning',cls:'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'},assessment_pending:{label:'Assessment pending',cls:'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'},ready_for_review:{label:'Ready for review',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},approved:{label:'Approved',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},ready_to_depart:{label:'Ready to depart',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},in_progress:{label:'In progress',cls:'border-orange-500/30 bg-orange-500/10 text-orange-200'},paused:{label:'Paused',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},exception:{label:'Exception',cls:'border-red-500/30 bg-red-500/10 text-red-200'},arrival_pending_verification:{label:'Arrival verification',cls:'border-violet-500/30 bg-violet-500/10 text-violet-200'},closed:{label:'Closed',cls:'border-violet-500/30 bg-violet-500/10 text-violet-200'},cancelled:{label:'Cancelled',cls:'border-red-500/30 bg-red-500/10 text-red-200'},aborted:{label:'Aborted',cls:'border-red-500/30 bg-red-500/10 text-red-200'},on_hold:{label:'On hold',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'}};
 const SECTIONS=[{id:'summary',label:'Mission summary'},{id:'itinerary',label:'Planned itinerary'},{id:'stops',label:'Stops and checkpoints'},{id:'route_assessment',label:'Route risk assessment'},{id:'operational_events',label:'Operational event log'},{id:'telemetry_snapshot',label:'Observed telemetry snapshot'}];
+const INTAKE_STEPS=[{label:'Mission brief',detail:'Intent, client and operating context'},{label:'Corridor',detail:'Origin, destination and schedule'},{label:'Itinerary',detail:'Ordered stops and checkpoints'},{label:'Review',detail:'Confirm the request before saving'}] as const;
 const EMPTY={title:'',purpose:'',client_id:'',convoy_id:'',transport_mode:'road',origin_label:'',origin_lat:'',origin_lng:'',destination_label:'',destination_lat:'',destination_lng:'',planned_departure_at:'',planned_arrival_at:'',timezone:'Africa/Nairobi'};
 function assessmentOf(v:Journey['route_assessment']):Assessment|null{if(!v)return null;if(typeof v==='object')return v as Assessment;try{return JSON.parse(v) as Assessment}catch{return null}}
 function routeOf(v:Journey['planned_route']):Point[]{if(Array.isArray(v))return v;if(typeof v==='string'){try{const p=JSON.parse(v);return Array.isArray(p)?p:[]}catch{return []}}return []}
@@ -167,6 +169,47 @@ function JourneyMap({journey,stops,geometry,assessment}:{journey:Journey;stops:S
   </div>;
 }
 
+
+function IntakeMapPicker({onPick,targetKey}:{onPick:(point:{lat:number;lng:number})=>void;targetKey:string}){
+ const containerRef=useRef<HTMLDivElement>(null);
+ const mapRef=useRef<maplibregl.Map|null>(null);
+ const pickedMarkerRef=useRef<maplibregl.Marker|null>(null);
+ const onPickRef=useRef(onPick);
+ useEffect(()=>{onPickRef.current=onPick},[onPick]);
+ useEffect(()=>{
+  const container=containerRef.current;
+  if(!container||mapRef.current)return;
+  const map=new maplibregl.Map({container,style:STREET_STYLE,center:[37.5,-1.3],zoom:4.7,attributionControl:false,maxPitch:35});
+  map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'top-right');
+  map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
+  map.on('click',(event)=>{
+   const point={lat:Number(event.lngLat.lat.toFixed(6)),lng:Number(event.lngLat.lng.toFixed(6))};
+   if(pickedMarkerRef.current)pickedMarkerRef.current.setLngLat([point.lng,point.lat]);
+   else pickedMarkerRef.current=new maplibregl.Marker({color:'#39ff88'}).setLngLat([point.lng,point.lat]).addTo(map);
+   onPickRef.current(point);
+  });
+  mapRef.current=map;
+  const resizeObserver=new ResizeObserver(()=>map.resize());
+  resizeObserver.observe(container);
+  return ()=>{
+   resizeObserver.disconnect();
+   pickedMarkerRef.current?.remove();
+   pickedMarkerRef.current=null;
+   map.remove();
+   mapRef.current=null;
+  };
+ },[]);
+ useEffect(()=>{
+  pickedMarkerRef.current?.remove();
+  pickedMarkerRef.current=null;
+ },[targetKey]);
+ return <div className="overflow-hidden rounded-xl border border-emerald-300/15 bg-[#07111d]">
+  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.07] bg-black/20 px-3 py-2.5"><div><p className="font-mono text-[9px] font-semibold uppercase tracking-[.16em] text-emerald-200">Map coordinate capture</p><p className="mt-1 text-[10px] text-slate-500">Click the map to set a coordinate. The place name is entered separately; the map does not geocode labels.</p></div><span className="rounded-md border border-white/[0.08] px-2 py-1 font-mono text-[9px] text-slate-500">OPERATOR SELECTED</span></div>
+  <div ref={containerRef} className="h-[260px] w-full bg-[#07111d] sm:h-[340px]"/>
+  <div className="border-t border-white/[0.06] px-3 py-2 text-[9px] leading-5 text-slate-600">Map click stores a coordinate only. It does not verify a road, checkpoint, security condition or Route Safety status.</div>
+ </div>;
+}
+
 export default function SecureJourneyManagement(){
  const qc=useQueryClient();
  const currentUser=useAuthStore(s=>s.user);
@@ -179,9 +222,46 @@ export default function SecureJourneyManagement(){
  const [reportDownloadError,setReportDownloadError]=useState('');
  const [form,setForm]=useState({...EMPTY});
  const [stopDrafts,setStopDrafts]=useState<Array<{name:string;stop_type:string;lat:string;lng:string;instructions:string}>>([]);
+ const [intakeStep,setIntakeStep]=useState<0|1|2|3>(0);
+ const [intakePickTarget,setIntakePickTarget]=useState<IntakePickTarget>(null);
  const [filter,setFilter]=useState('all');const [search,setSearch]=useState('');
  const [ack,setAck]=useState('');const [departureNote,setDepartureNote]=useState('');const [arrivalNote,setArrivalNote]=useState('');const [transitionReason,setTransitionReason]=useState('');const [reviewChoice,setReviewChoice]=useState('approve_with_controls');const [reviewNote,setReviewNote]=useState('');const [cancelNote,setCancelNote]=useState('');
  const [eventType,setEventType]=useState('operator_note');const [eventTitle,setEventTitle]=useState('');const [eventDetail,setEventDetail]=useState('');const [eventSeverity,setEventSeverity]=useState('medium');
+
+ const intakeStepIssue=useMemo(()=>{
+  if(intakeStep===0){
+   if(!form.title.trim())return 'Give the movement a clear mission title.';
+   if(!form.purpose.trim())return 'Record the operational purpose and constraints.';
+   try{new Intl.DateTimeFormat('en',{timeZone:form.timezone}).format(new Date())}catch{return 'Choose a valid IANA reporting timezone, for example Africa/Nairobi.'}
+   return null;
+  }
+  if(intakeStep===1){
+   if(!form.origin_label.trim()||!form.destination_label.trim())return 'Name both the origin and destination.';
+   if(!mapCoord(form.origin_lat,form.origin_lng))return 'Set a valid origin latitude/longitude pair. The map picker can capture it.';
+   if(!mapCoord(form.destination_lat,form.destination_lng))return 'Set a valid destination latitude/longitude pair. The map picker can capture it.';
+   try{
+    const departure=localDateTimeInTimezone(form.planned_departure_at,form.timezone);
+    const arrival=localDateTimeInTimezone(form.planned_arrival_at,form.timezone);
+    if(!departure||!arrival)return 'Set both planned departure and planned arrival times.';
+    if(Date.parse(arrival)<=Date.parse(departure))return 'Planned arrival must be after planned departure.';
+   }catch(error){return errorText(error,'Check the selected timezone and movement window.')}
+   return null;
+  }
+  if(intakeStep===2){
+   const incomplete=stopDrafts.findIndex(s=>!s.name.trim()||!mapCoord(s.lat,s.lng));
+   if(incomplete>=0)return 'Complete the name and a valid coordinate pair for stop '+(incomplete+1)+', or remove that draft.';
+   return null;
+  }
+  return null;
+ },[intakeStep,form,stopDrafts]);
+ const applyIntakeMapPoint=(point:{lat:number;lng:number})=>{
+  const lat=point.lat.toFixed(6),lng=point.lng.toFixed(6);
+  if(intakePickTarget==='origin')setForm(prev=>({...prev,origin_lat:lat,origin_lng:lng}));
+  else if(intakePickTarget==='destination')setForm(prev=>({...prev,destination_lat:lat,destination_lng:lng}));
+  else if(intakePickTarget&&typeof intakePickTarget==='object')setStopDrafts(prev=>prev.map((stop,index)=>index===intakePickTarget.stopIndex?{...stop,lat,lng}:stop));
+ };
+ const intakePickLabel=intakePickTarget==='origin'?'Origin':intakePickTarget==='destination'?'Destination':intakePickTarget&&typeof intakePickTarget==='object'?'Stop '+(intakePickTarget.stopIndex+1):'No map target selected';
+
  const [editingProfile,setEditingProfile]=useState(false);const [profileTimezone,setProfileTimezone]=useState('Africa/Nairobi');const [profileTitle,setProfileTitle]=useState('Secure Journey Management Report');const [profileSections,setProfileSections]=useState(SECTIONS.map(s=>s.id));const [dailyReportsEnabled,setDailyReportsEnabled]=useState(false);const [dailyReportTime,setDailyReportTime]=useState('18:00');
 
  const clientsQ=useQuery<{data:Client[]}>({queryKey:['sjm-clients'],queryFn:async()=>(await api.get('/sjm/clients')).data});
@@ -200,7 +280,7 @@ export default function SecureJourneyManagement(){
  const refresh=async()=>{await qc.invalidateQueries({queryKey:['sjm-journeys']});if(selectedId)await qc.invalidateQueries({queryKey:['sjm-journey',selectedId]})};
  const downloadReportArtifact=async(id:string,date:string,type:string,format:'PDF'|'CSV')=>{setReportDownloadError('');try{const b=await api.get('/sjm/reports/'+id+'/download',{params:{format},responseType:'blob'});download(b.data as Blob,'sonalit-sjm-'+type+'-'+date+'.'+format.toLowerCase())}catch(error){setReportDownloadError(type.replaceAll('_',' ')+' report is saved, but '+format+' export failed: '+errorText(error,'Download request failed.')+' You can retry the export below.')}};
 
- const create=useMutation({mutationFn:async()=>{const payload={...form,origin_lat:Number(form.origin_lat),origin_lng:Number(form.origin_lng),destination_lat:Number(form.destination_lat),destination_lng:Number(form.destination_lng),planned_departure_at:localDateTimeInTimezone(form.planned_departure_at,form.timezone),planned_arrival_at:localDateTimeInTimezone(form.planned_arrival_at,form.timezone),client_id:form.client_id||null,convoy_id:form.convoy_id||null,stops:stopDrafts.map(s=>({name:s.name,stop_type:s.stop_type,lat:s.lat===''?null:Number(s.lat),lng:s.lng===''?null:Number(s.lng),instructions:s.instructions||null}))};return(await api.post('/sjm/journeys',payload)).data.data as Journey},onSuccess:async j=>{setShowCreate(false);setForm({...EMPTY});setStopDrafts([]);setSelectedId(j.id);await qc.invalidateQueries({queryKey:['sjm-journeys']});await qc.invalidateQueries({queryKey:['sjm-journey',j.id]})}});
+ const create=useMutation({mutationFn:async()=>{const payload={...form,origin_lat:Number(form.origin_lat),origin_lng:Number(form.origin_lng),destination_lat:Number(form.destination_lat),destination_lng:Number(form.destination_lng),planned_departure_at:localDateTimeInTimezone(form.planned_departure_at,form.timezone),planned_arrival_at:localDateTimeInTimezone(form.planned_arrival_at,form.timezone),client_id:form.client_id||null,convoy_id:form.convoy_id||null,stops:stopDrafts.map(s=>({name:s.name,stop_type:s.stop_type,lat:s.lat===''?null:Number(s.lat),lng:s.lng===''?null:Number(s.lng),instructions:s.instructions||null}))};return(await api.post('/sjm/journeys',payload)).data.data as Journey},onSuccess:async j=>{setShowCreate(false);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);setSelectedId(j.id);await qc.invalidateQueries({queryKey:['sjm-journeys']});await qc.invalidateQueries({queryKey:['sjm-journey',j.id]})}});
  const act=useMutation({mutationFn:async({kind,body={}}:{kind:'plan'|'review'|'approve'|'lifecycle'|'report'|'event'|'stop'|'management_summary';body?:Record<string,unknown>})=>{
   if(kind==='management_summary')return(await api.post('/sjm/management-summary',body)).data;
   if(!journey)throw new Error('Select a journey first.');
@@ -278,19 +358,57 @@ return (
     </section>
 
       {showCreate&&<div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#02050b]/80 p-2 backdrop-blur-md sm:p-5"><div className="max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-[28px] shadow-2xl"><Panel className="p-4 md:p-6"><div className="mb-4 flex items-start justify-between gap-3"><div><Kicker>MISSION INTAKE</Kicker><h2 className="mt-1 text-lg font-semibold">Create journey dossier</h2><p className="mt-1 text-[11px] text-slate-500">Coordinates and planned times are required. Road Route Safety assesses the route through every ordered stop. Non-road modes can be recorded, but cannot be approved until a matching route provider is configured.</p></div><Btn onClick={()=>setShowCreate(false)}><XCircle size={13}/>Close</Btn></div>
-   <form onSubmit={e=>{e.preventDefault();create.mutate()}} className="space-y-4">
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-3"><Input label="Mission title"><input required maxLength={180} className={field} value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Client movement / mission reference"/></Input><Input label="Client account"><select className={field} value={form.client_id} onChange={e=>setForm({...form,client_id:e.target.value})}><option value="">No client linked</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}{c.company?' · '+c.company:''}</option>)}</select></Input><Input label="Operational convoy"><select className={field} value={form.convoy_id} onChange={e=>setForm({...form,convoy_id:e.target.value})}><option value="">No convoy linked yet</option>{convoys.map(c=><option key={c.id} value={c.id}>{c.name} · {c.status}</option>)}</select></Input><Input label="Movement purpose" className="lg:col-span-3"><textarea required maxLength={1200} rows={2} className={field} value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})} placeholder="Purpose, client constraints, support requirements and operational context"/></Input></div>
-    <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 md:grid-cols-2">
-     <div><Kicker>01 / DEPARTURE</Kicker><div className="mt-3 grid grid-cols-2 gap-2"><Input label="Origin label"><input required className={field} value={form.origin_label} onChange={e=>setForm({...form,origin_label:e.target.value})} placeholder="Nairobi ICD"/></Input><Input label="Planned departure"><input required type="datetime-local" className={field} value={form.planned_departure_at} onChange={e=>setForm({...form,planned_departure_at:e.target.value})}/></Input><Input label="Latitude"><input required type="number" step="any" min="-90" max="90" className={field} value={form.origin_lat} onChange={e=>setForm({...form,origin_lat:e.target.value})} placeholder="-1.2864"/></Input><Input label="Longitude"><input required type="number" step="any" min="-180" max="180" className={field} value={form.origin_lng} onChange={e=>setForm({...form,origin_lng:e.target.value})} placeholder="36.8172"/></Input></div></div>
-     <div><Kicker>02 / DESTINATION</Kicker><div className="mt-3 grid grid-cols-2 gap-2"><Input label="Destination label"><input required className={field} value={form.destination_label} onChange={e=>setForm({...form,destination_label:e.target.value})} placeholder="Mombasa Port"/></Input><Input label="Planned arrival"><input required type="datetime-local" className={field} value={form.planned_arrival_at} onChange={e=>setForm({...form,planned_arrival_at:e.target.value})}/></Input><Input label="Latitude"><input required type="number" step="any" min="-90" max="90" className={field} value={form.destination_lat} onChange={e=>setForm({...form,destination_lat:e.target.value})} placeholder="-4.0435"/></Input><Input label="Longitude"><input required type="number" step="any" min="-180" max="180" className={field} value={form.destination_lng} onChange={e=>setForm({...form,destination_lng:e.target.value})} placeholder="39.6682"/></Input></div></div>
+
+   <form onSubmit={e=>{e.preventDefault();if(intakeStep===3&&!intakeStepIssue)create.mutate()}} className="space-y-4">
+    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4" aria-label="Mission intake steps">
+     {INTAKE_STEPS.map((step,index)=><button type="button" key={step.label} onClick={()=>{if(index<=intakeStep||(index===intakeStep+1&&!intakeStepIssue)){setIntakePickTarget(null);setIntakeStep(index as 0|1|2|3)}}} className={'relative rounded-xl border p-3 text-left transition '+(intakeStep===index?'border-emerald-300/30 bg-emerald-300/[0.075]':'border-white/[0.07] bg-black/15 hover:border-white/[0.14]')}><span className={'font-mono text-[9px] '+(intakeStep===index?'text-emerald-200':'text-slate-600')}>STEP {String(index+1).padStart(2,'0')}</span><span className={'mt-1 block text-[11px] font-semibold '+(intakeStep===index?'text-white':'text-slate-300')}>{step.label}</span><span className="mt-1 hidden text-[9px] leading-4 text-slate-600 sm:block">{step.detail}</span></button>)}
     </div>
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><Input label="Transport mode"><select className={field} value={form.transport_mode} onChange={e=>setForm({...form,transport_mode:e.target.value})}><option value="road">Road / convoy</option><option value="air">Air</option><option value="rail">Rail</option><option value="sea">Sea</option><option value="multimodal">Multimodal</option><option value="other">Other</option></select></Input><Input label="Reporting timezone (IANA)"><input required className={field} value={form.timezone} onChange={e=>setForm({...form,timezone:e.target.value})} placeholder="Africa/Nairobi"/></Input></div>
-    <div className="rounded-xl border border-white/[0.07] bg-black/20 p-3"><div className="mb-3 flex items-center justify-between gap-3"><div><Kicker>03 / ITINERARY STOPS</Kicker><p className="mt-1 text-[10px] text-slate-500">Road-route stops require coordinates so Route Safety can assess the actual via-point itinerary. Up to 23 intermediate stops are supported.</p></div><Btn disabled={stopDrafts.length>=23} onClick={()=>setStopDrafts([...stopDrafts,{name:'',stop_type:'checkpoint',lat:'',lng:'',instructions:''}])}><Plus size={12}/>Add stop</Btn></div>
-     {stopDrafts.length===0?<p className="py-3 text-center text-[11px] text-slate-600">No intermediate stops recorded.</p>:<div className="space-y-2">{stopDrafts.map((s,i)=><div key={i} className="grid grid-cols-1 gap-2 rounded-lg border border-white/[0.06] p-2 sm:grid-cols-[1.3fr_1fr_1fr_1fr_auto]"><Input label={'Stop '+(i+1)}><input required className={field} value={s.name} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,name:e.target.value}:x))} placeholder="Named checkpoint"/></Input><Input label="Type"><select className={field} value={s.stop_type} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,stop_type:e.target.value}:x))}>{['checkpoint','border','rest','refuelling','meeting','overnight','destination','other'].map(t=><option key={t} value={t}>{t}</option>)}</select></Input><Input label="Latitude (required)"><input required type="number" min="-90" max="90" step="any" className={field} value={s.lat} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,lat:e.target.value}:x))}/></Input><Input label="Longitude (required)"><input required type="number" min="-180" max="180" step="any" className={field} value={s.lng} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,lng:e.target.value}:x))}/></Input><div className="flex items-end"><Btn tone="red" onClick={()=>setStopDrafts(stopDrafts.filter((_,k)=>k!==i))}><XCircle size={13}/></Btn></div><Input label="Stop instructions" className="sm:col-span-5"><input className={field} value={s.instructions} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,instructions:e.target.value}:x))} placeholder="Optional stop-specific instructions"/></Input></div>)}</div>}
-    </div>
+    <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300 transition-all" style={{width:((intakeStep+1)/INTAKE_STEPS.length*100)+'%'}}/></div>
+
+    {intakeStep===0&&<div className="space-y-4">
+     <div className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.025] p-3"><Kicker>01 / MISSION MANDATE</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Establish purpose, tenant/client context and operating mode. Saving creates a requested dossier; it does not approve, dispatch or assess the route.</p></div>
+     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <Input label="Mission title"><input required maxLength={180} className={field} value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Client movement / mission reference"/></Input>
+      <Input label="Client account"><select className={field} value={form.client_id} onChange={e=>setForm({...form,client_id:e.target.value})}><option value="">No client linked</option>{clients.map(cl=><option key={cl.id} value={cl.id}>{cl.name}{cl.company?' · '+cl.company:''}</option>)}</select></Input>
+      <Input label="Operational convoy"><select className={field} value={form.convoy_id} onChange={e=>setForm({...form,convoy_id:e.target.value})}><option value="">No convoy linked yet</option>{convoys.map(cv=><option key={cv.id} value={cv.id}>{cv.name} · {cv.status}</option>)}</select></Input>
+      <Input label="Movement purpose / constraints" className="lg:col-span-3"><textarea required maxLength={1200} rows={3} className={field} value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})} placeholder="Operational objective, client constraints, support requirements, cargo sensitivity and movement context"/></Input>
+     </div>
+     <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/[0.07] bg-black/15 p-3 sm:grid-cols-2">
+      <Input label="Transport mode"><select className={field} value={form.transport_mode} onChange={e=>setForm({...form,transport_mode:e.target.value})}><option value="road">Road / convoy</option><option value="air">Air</option><option value="rail">Rail</option><option value="sea">Sea</option><option value="multimodal">Multimodal</option><option value="other">Other</option></select></Input>
+      <Input label="Reporting timezone (IANA)"><input required className={field} value={form.timezone} onChange={e=>setForm({...form,timezone:e.target.value})} placeholder="Africa/Nairobi"/></Input>
+     </div>
+    </div>}
+
+    {intakeStep===1&&<div className="space-y-4">
+     <div className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.025] p-3"><Kicker>02 / CORRIDOR & MOVEMENT WINDOW</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Choose coordinates from the map or enter them directly. Selecting a point captures coordinates only; it does not geocode the place name or certify a traversable route.</p></div>
+     <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/[0.07] bg-black/15 p-3 md:grid-cols-2">
+      <div className="space-y-3"><div className="flex items-center justify-between gap-2"><Kicker>01 / ORIGIN</Kicker><Btn onClick={()=>setIntakePickTarget('origin')} tone="green"><MapPinned size={12}/>Pick on map</Btn></div><Input label="Origin / departure point name"><input required className={field} value={form.origin_label} onChange={e=>setForm({...form,origin_label:e.target.value})} placeholder="Named yard, terminal or agreed meeting point"/></Input><Input label="Planned departure · local time"><input required type="datetime-local" className={field} value={form.planned_departure_at} onChange={e=>setForm({...form,planned_departure_at:e.target.value})}/></Input><div className="grid grid-cols-2 gap-2"><Input label="Latitude"><input required type="number" step="any" min="-90" max="90" className={field} value={form.origin_lat} onChange={e=>setForm({...form,origin_lat:e.target.value})} placeholder="-1.2864"/></Input><Input label="Longitude"><input required type="number" step="any" min="-180" max="180" className={field} value={form.origin_lng} onChange={e=>setForm({...form,origin_lng:e.target.value})} placeholder="36.8172"/></Input></div></div>
+      <div className="space-y-3"><div className="flex items-center justify-between gap-2"><Kicker>02 / DESTINATION</Kicker><Btn onClick={()=>setIntakePickTarget('destination')} tone="green"><MapPinned size={12}/>Pick on map</Btn></div><Input label="Destination / arrival point name"><input required className={field} value={form.destination_label} onChange={e=>setForm({...form,destination_label:e.target.value})} placeholder="Named delivery, port or handover point"/></Input><Input label="Planned arrival · local time"><input required type="datetime-local" className={field} value={form.planned_arrival_at} onChange={e=>setForm({...form,planned_arrival_at:e.target.value})}/></Input><div className="grid grid-cols-2 gap-2"><Input label="Latitude"><input required type="number" step="any" min="-90" max="90" className={field} value={form.destination_lat} onChange={e=>setForm({...form,destination_lat:e.target.value})} placeholder="-4.0435"/></Input><Input label="Longitude"><input required type="number" step="any" min="-180" max="180" className={field} value={form.destination_lng} onChange={e=>setForm({...form,destination_lng:e.target.value})} placeholder="39.6682"/></Input></div></div>
+     </div>
+     {intakePickTarget&&<div className="space-y-2 rounded-xl border border-emerald-300/15 bg-emerald-300/[0.02] p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[11px] font-semibold text-emerald-100">Selecting: {intakePickLabel}</p><p className="mt-1 text-[10px] text-slate-500">Pan and zoom to the intended point, then click once. The selected coordinate will fill the matching fields.</p></div><Btn onClick={()=>setIntakePickTarget(null)}><Check size={12}/>Done picking</Btn></div><IntakeMapPicker key={intakePickLabel} targetKey={intakePickLabel} onPick={applyIntakeMapPoint}/></div>}
+     {!intakePickTarget&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-white/[0.09] p-3"><p className="text-[10px] text-slate-500">Map-assisted point capture is optional; the coordinate fields remain editable.</p><Btn onClick={()=>setIntakePickTarget('origin')}><MapPinned size={12}/>Open coordinate map</Btn></div>}
+    </div>}
+
+    {intakeStep===2&&<div className="space-y-3">
+     <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-orange-300/15 bg-orange-300/[0.025] p-3"><div><Kicker>03 / ORDERED ITINERARY</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Add operational checkpoints in movement order. Road Route Safety assesses the itinerary through coordinate-backed via-points. These are planned stops, not live tracking.</p></div><Btn disabled={stopDrafts.length>=23} onClick={()=>setStopDrafts([...stopDrafts,{name:'',stop_type:'checkpoint',lat:'',lng:'',instructions:''}])}><Plus size={12}/>Add stop</Btn></div>
+     {stopDrafts.length===0?<div className="rounded-xl border border-dashed border-white/[0.09] p-6 text-center"><Route size={20} className="mx-auto mb-2 text-slate-600"/><p className="text-[12px] font-medium text-slate-300">No intermediate stops added</p><p className="mt-1 text-[10px] text-slate-600">For road routing, add any border, rest, refuelling, meeting or delivery checkpoint that should be included in the route assessment.</p></div>:<div className="space-y-2">{stopDrafts.map((s,i)=><div key={i} className="grid grid-cols-1 gap-2 rounded-xl border border-white/[0.06] bg-black/15 p-3 sm:grid-cols-[1.2fr_.9fr_1fr_1fr_auto]"><Input label={'Stop '+String(i+1).padStart(2,'0')+' · Name'}><input required className={field} value={s.name} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,name:e.target.value}:x))} placeholder="Named checkpoint"/></Input><Input label="Type"><select className={field} value={s.stop_type} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,stop_type:e.target.value}:x))}>{['checkpoint','border','rest','refuelling','meeting','overnight','destination','other'].map(t=><option key={t} value={t}>{t.replaceAll('_',' ')}</option>)}</select></Input><Input label="Latitude"><input required type="number" min="-90" max="90" step="any" className={field} value={s.lat} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,lat:e.target.value}:x))} placeholder="Latitude"/></Input><Input label="Longitude"><input required type="number" min="-180" max="180" step="any" className={field} value={s.lng} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,lng:e.target.value}:x))} placeholder="Longitude"/></Input><div className="flex items-end gap-1"><Btn onClick={()=>setIntakePickTarget({stopIndex:i})}><MapPinned size={12}/></Btn><Btn tone="red" onClick={()=>setStopDrafts(stopDrafts.filter((_,k)=>k!==i))}><XCircle size={13}/></Btn></div><Input label="Stop instructions / operating constraints" className="sm:col-span-5"><input className={field} value={s.instructions} onChange={e=>setStopDrafts(stopDrafts.map((x,k)=>k===i?{...x,instructions:e.target.value}:x))} placeholder="Optional stop-specific instructions, entry notes or client constraints"/></Input></div>)}</div>}
+     {intakePickTarget&&typeof intakePickTarget==='object'&&<div className="space-y-2 rounded-xl border border-emerald-300/15 bg-emerald-300/[0.02] p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-[11px] font-semibold text-emerald-100">Selecting: {intakePickLabel}</p><p className="mt-1 text-[10px] text-slate-500">Click the intended point to fill that stop's coordinate pair.</p></div><Btn onClick={()=>setIntakePickTarget(null)}><Check size={12}/>Done picking</Btn></div><IntakeMapPicker key={intakePickLabel} targetKey={intakePickLabel} onPick={applyIntakeMapPoint}/></div>}
+    </div>}
+
+    {intakeStep===3&&<div className="space-y-4">
+     <div className="rounded-xl border border-violet-300/15 bg-violet-300/[0.025] p-3"><Kicker>04 / REQUEST REVIEW</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Check the operational request before saving. This action creates a REQUESTED dossier only; Route Safety assessment, approval and movement start remain separate operations after creation.</p></div>
+     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <section className="rounded-xl border border-white/[0.075] bg-black/15 p-4"><Kicker>MISSION MANDATE</Kicker><h3 className="mt-2 text-base font-semibold text-white">{form.title||'Untitled mission'}</h3><p className="mt-2 whitespace-pre-wrap text-[11px] leading-5 text-slate-400">{form.purpose||'Purpose not recorded'}</p><dl className="mt-4 space-y-2">{[['Client account',clients.find(cl=>cl.id===form.client_id)?.name||'Not linked'],['Operational convoy',convoys.find(cv=>cv.id===form.convoy_id)?.name||'Not linked'],['Transport mode',form.transport_mode.toUpperCase()],['Reporting timezone',form.timezone]].map(([label,value])=><div key={label} className="flex justify-between gap-3 border-b border-white/[0.05] pb-2 last:border-0"><dt className="text-[10px] text-slate-500">{label}</dt><dd className="break-words text-right text-[10px] font-medium text-slate-200">{value}</dd></div>)}</dl></section>
+      <section className="rounded-xl border border-white/[0.075] bg-black/15 p-4"><Kicker>PLANNED CORRIDOR</Kicker><div className="mt-3 space-y-3"><div className="flex gap-3"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-cyan-200"/><div className="min-w-0"><p className="text-[11px] font-semibold text-white">{form.origin_label}</p><p className="mt-1 font-mono text-[9px] text-slate-500">{form.origin_lat}, {form.origin_lng}</p><p className="mt-1 text-[10px] text-slate-600">Departure · {form.planned_departure_at||'Not scheduled'}</p></div></div><div className="ml-1 h-6 border-l border-dashed border-white/20"/><div className="flex gap-3"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-orange-200"/><div className="min-w-0"><p className="text-[11px] font-semibold text-white">{stopDrafts.length} ordered intermediate stops</p><p className="mt-1 text-[10px] text-slate-600">Stops will be routed only where the existing Route Safety provider supports the mode.</p></div></div><div className="ml-1 h-6 border-l border-dashed border-white/20"/><div className="flex gap-3"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-200"/><div className="min-w-0"><p className="text-[11px] font-semibold text-white">{form.destination_label}</p><p className="mt-1 font-mono text-[9px] text-slate-500">{form.destination_lat}, {form.destination_lng}</p><p className="mt-1 text-[10px] text-slate-600">Arrival · {form.planned_arrival_at||'Not scheduled'}</p></div></div></div></section>
+     </div>
+     <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.025] p-3"><div className="flex gap-3"><ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-200"/><div><p className="text-[11px] font-semibold text-amber-100">Request is not a release decision</p><p className="mt-1 text-[10px] leading-5 text-slate-500">The saved journey begins in REQUESTED. It is not route-cleared, approved, dispatch-ready or in motion until the corresponding Route Safety and human-control steps are recorded.</p></div></div></div>
+    </div>}
+
     {create.isError&&<p role="alert" className="rounded-lg border border-red-400/20 bg-red-500/[0.06] p-3 text-[11px] text-red-200">{errorText(create.error,'Journey creation failed.')}</p>}
-    <div className="flex justify-end gap-2"><Btn onClick={()=>setShowCreate(false)}>Cancel</Btn><button type="submit" disabled={create.isPending} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-300/15 px-4 py-2.5 text-[11px] font-semibold text-emerald-100 disabled:opacity-40"><Check size={13}/>{create.isPending?'Saving dossier…':'Create requested journey'}</button></div>
+    {intakeStepIssue&&<p role="status" className="rounded-lg border border-amber-300/15 bg-amber-300/[0.025] px-3 py-2.5 text-[10px] leading-5 text-amber-100/90">Before continuing: {intakeStepIssue}</p>}
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] pt-4"><Btn onClick={()=>{setShowCreate(false);setIntakePickTarget(null);setIntakeStep(0)}}>Cancel intake</Btn><div className="flex flex-wrap items-center gap-2">{intakeStep>0&&<Btn onClick={()=>{setIntakePickTarget(null);setIntakeStep((intakeStep-1) as 0|1|2|3)}}><ArrowLeft size={12}/>Back</Btn>}{intakeStep<3?<Btn tone="green" disabled={Boolean(intakeStepIssue)} onClick={()=>{setIntakePickTarget(null);setIntakeStep((intakeStep+1) as 0|1|2|3)}}>Continue to {INTAKE_STEPS[(intakeStep+1) as 1|2|3].label}<ArrowRight size={12}/></Btn>:<button type="submit" disabled={create.isPending||Boolean(intakeStepIssue)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-300/15 px-4 py-2.5 text-[11px] font-semibold text-emerald-100 disabled:opacity-40"><Check size={13}/>{create.isPending?'Saving dossier…':'Create requested dossier'}</button>}</div></div>
    </form>
+
   </Panel></div></div>}
 
     <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(270px,310px)_minmax(0,1fr)_minmax(270px,330px)]">
