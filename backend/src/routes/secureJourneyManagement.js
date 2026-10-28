@@ -852,24 +852,47 @@ router.post('/journeys/:id/reports',authorize('admin','dispatcher','operator','a
   res.status(201).json({data:result.data,snapshot:result.snapshot});
 }));
 router.get('/reports/:reportId',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
-  const r=await req.db('SELECT id,journey_id,report_type,report_date,schema_version,data,generated_at FROM sjm_reports WHERE id=$1 AND org_id=$2 LIMIT 1',[req.params.reportId,req.user.org_id]);
-  if(!r.rows.length)return res.status(404).json({error:'report_not_found'});
-  const reportRow=r.rows[0],dutyRoles=reportRow.journey_id?await activeDutyRoles(req.db,req.user.org_id,reportRow.journey_id,req.user.id):[];
-  if(!canAccessReport(req.user,reportRow,dutyRoles))return res.status(404).json({error:'report_not_found'});
-  res.setHeader('Cache-Control','no-store');res.json({data:{...reportRow,data:parseJson(reportRow.data,{})}});
+  const org=req.user.org_id;
+  const outcome=await req.dbTx(async c=>{
+    const db=(sql,params)=>c.query(sql,params);
+    const r=await db('SELECT id,journey_id,report_type,report_date,schema_version,data,generated_at FROM sjm_reports WHERE id=$1 AND org_id=$2 LIMIT 1',[req.params.reportId,org]);
+    if(!r.rows.length)return {error:'report_not_found'};
+    const reportRow=r.rows[0];
+    if(reportRow.journey_id){
+      const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[reportRow.journey_id,org]);
+      if(!locked.rows.length)return {error:'report_not_found'};
+    }
+    const dutyRoles=reportRow.journey_id?await activeDutyRoles(db,org,reportRow.journey_id,req.user.id):[];
+    if(!canAccessReport(req.user,reportRow,dutyRoles))return {error:'report_not_found'};
+    return {data:{...reportRow,data:parseJson(reportRow.data,{})}};
+  });
+  if(outcome?.error)return res.status(404).json({error:'report_not_found'});
+  res.setHeader('Cache-Control','no-store');res.json({data:outcome.data});
 }));
 router.get('/reports/:reportId/download',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
-  const r=await req.db('SELECT id,journey_id,data,report_type,report_date FROM sjm_reports WHERE id=$1 AND org_id=$2 LIMIT 1',[req.params.reportId,req.user.org_id]);
-  if(!r.rows.length)return res.status(404).json({error:'report_not_found'});
-  const reportRow=r.rows[0],dutyRoles=reportRow.journey_id?await activeDutyRoles(req.db,req.user.org_id,reportRow.journey_id,req.user.id):[];
-  if(!canAccessReport(req.user,reportRow,dutyRoles))return res.status(404).json({error:'report_not_found'});
-  const report=parseJson(reportRow.data,{}),format=String(req.query.format||'PDF').toUpperCase(),name=('sonalit-sjm-'+(report.journey?.reference||reportRow.id)+'-'+(reportRow.report_date||'report')).replace(/[^a-z0-9-]/gi,'-');
+  const org=req.user.org_id;
+  const outcome=await req.dbTx(async c=>{
+    const db=(sql,params)=>c.query(sql,params);
+    const r=await db('SELECT id,journey_id,data,report_type,report_date FROM sjm_reports WHERE id=$1 AND org_id=$2 LIMIT 1',[req.params.reportId,org]);
+    if(!r.rows.length)return {error:'report_not_found'};
+    const reportRow=r.rows[0];
+    if(reportRow.journey_id){
+      const locked=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[reportRow.journey_id,org]);
+      if(!locked.rows.length)return {error:'report_not_found'};
+    }
+    const dutyRoles=reportRow.journey_id?await activeDutyRoles(db,org,reportRow.journey_id,req.user.id):[];
+    if(!canAccessReport(req.user,reportRow,dutyRoles))return {error:'report_not_found'};
+    return {data:{...reportRow,data:parseJson(reportRow.data,{})}};
+  });
+  if(outcome?.error)return res.status(404).json({error:'report_not_found'});
+  const reportRow=outcome.data,report=reportRow.data,format=String(req.query.format||'PDF').toUpperCase(),name=('sonalit-sjm-'+(report.journey?.reference||reportRow.id)+'-'+(reportRow.report_date||'report')).replace(/[^a-z0-9-]/gi,'-');
   res.setHeader('Cache-Control','no-store');
   if(format==='CSV'){res.setHeader('Content-Type','text/csv; charset=utf-8');res.setHeader('Content-Disposition','attachment; filename="'+name+'.csv"');return res.send('\uFEFF'+toCsv(report));}
   if(format!=='PDF')return res.status(400).json({error:'unsupported_report_format',allowed:['PDF','CSV']});
   res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition','attachment; filename="'+name+'.pdf"');
   const doc=new PDFDocument({size:'A4',margin:42});doc.pipe(res);renderPdf(doc,report);
 }));
+
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
 module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility,routeAssessmentUsable};
