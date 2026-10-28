@@ -137,41 +137,64 @@ describe('SJM validation and evidence boundaries', () => {
   });
   test('keeps journey mutation and audit event on the same tenant transaction client', async () => {
     const calls=[];
-    const req={dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});return {rows:[{id:'row-1'}]};}})};
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});return {rows:[{id:'row-1',status:'in_progress'}]};}})};
     const journey={id:'journey-1',org_id:'org-1'};
     const result=await mutateWithEvent(req,journey,'user-1','journey_approved','Journey approved',{},'operator',
       db=>db('UPDATE sjm_journeys SET status=$1 WHERE id=$2 RETURNING id',['approved','journey-1']));
     expect(result.changed).toBe(true);
-    expect(calls).toHaveLength(2);
-    expect(calls[0].sql).toMatch(/UPDATE sjm_journeys/);
-    expect(calls[1].sql).toMatch(/INSERT INTO sjm_journey_events/);
+    expect(calls).toHaveLength(3);
+    expect(calls[0].sql).toMatch(/FOR UPDATE/);
+    expect(calls[1].sql).toMatch(/UPDATE sjm_journeys/);
+    expect(calls[2].sql).toMatch(/INSERT INTO sjm_journey_events/);
   });
+  test('rechecks assigned field authority under the locked journey row before mutation', async () => {
+    const calls=[];
+    const req={user:{id:'former-field-user',org_id:'org-1',role:'operator'},dbTx:async fn=>fn({query:async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql.includes('FOR UPDATE'))return {rows:[{id:'journey-1',status:'in_progress'}]};
+      if(sql.includes('SELECT duty_role'))return {rows:[]};
+      return {rows:[{id:'should-not-write'}]};
+    }})};
+    const mutation=jest.fn(async db=>db("UPDATE sjm_journeys SET status='paused' WHERE id=$1 RETURNING id",['journey-1']));
+    const result=await mutateWithEvent(req,{id:'journey-1',org_id:'org-1'},req.user.id,'journey_pause','Journey paused',{},'operator',mutation,async(db,locked)=>{
+      expect(locked.status).toBe('in_progress');
+      const roles=await db('SELECT duty_role FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL',['org-1','journey-1',req.user.id]);
+      return canAccessJourney(req.user,roles.rows.map(row=>row.duty_role))?null:{error:'journey_not_found'};
+    });
+    expect(result).toMatchObject({changed:false,error:'journey_not_found'});
+    expect(mutation).not.toHaveBeenCalled();
+    expect(calls[0].sql).toMatch(/FOR UPDATE/);
+    expect(calls[1].sql).toMatch(/SELECT duty_role/);
+  });
+
   test('does not append an audit event when the guarded mutation changes no row', async () => {
     const calls=[];
-    const req={dbTx:async fn=>fn({query:async(sql,params)=>{calls.push(sql);return {rows:[]};}})};
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>fn({query:async(sql,params)=>{calls.push(sql);if(sql.includes('FOR UPDATE'))return {rows:[{id:'journey-1',status:'in_progress'}]};return {rows:[]};}})};
     const result=await mutateWithEvent(req,{id:'journey-1',org_id:'org-1'},'user-1','journey_approved','Journey approved',{},'operator',
       db=>db('UPDATE sjm_journeys SET status=$1 WHERE id=$2 RETURNING id',['approved','journey-1']));
     expect(result.changed).toBe(false);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatch(/UPDATE sjm_journeys/);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatch(/FOR UPDATE/);
+    expect(calls[1]).toMatch(/UPDATE sjm_journeys/);
   });
   test('records failed Route Safety assessment as an exception without stale route or approval evidence', async () => {
     const calls=[];
-    const req={user:{org_id:'org-1'},dbTx:async fn=>fn({query:async(sql,params)=>{
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>fn({query:async(sql,params)=>{
       calls.push({sql,params});
-      return {rows:[{id:'journey-1'}]};
+      return {rows:[{id:'journey-1',status:'assessment_pending'}]};
     }})};
     const result=await recordRouteAssessmentFailure(req,{id:'journey-1',org_id:'org-1'},'user-1','provider_error');
     expect(result.changed).toBe(true);
-    expect(calls).toHaveLength(2);
-    expect(calls[0].sql).toMatch(/status='exception'/);
-    expect(calls[0].sql).toMatch(/status='assessment_pending'/);
-    expect(calls[0].sql).toContain("planned_route='[]'::jsonb");
-    expect(calls[0].sql).toMatch(/route_assessment=NULL/);
-    expect(calls[0].sql).toMatch(/approved_at=NULL/);
-    expect(calls[1].sql).toMatch(/INSERT INTO sjm_journey_events/);
-    expect(calls[1].params[3]).toBe('route_assessment_failed');
-    expect(JSON.parse(calls[1].params[5])).toMatchObject({
+    expect(calls).toHaveLength(3);
+    expect(calls[0].sql).toMatch(/FOR UPDATE/);
+    expect(calls[1].sql).toMatch(/status='exception'/);
+    expect(calls[1].sql).toMatch(/status='assessment_pending'/);
+    expect(calls[1].sql).toContain("planned_route='[]'::jsonb");
+    expect(calls[1].sql).toMatch(/route_assessment=NULL/);
+    expect(calls[1].sql).toMatch(/approved_at=NULL/);
+    expect(calls[2].sql).toMatch(/INSERT INTO sjm_journey_events/);
+    expect(calls[2].params[3]).toBe('route_assessment_failed');
+    expect(JSON.parse(calls[2].params[5])).toMatchObject({
       failure_reason:'provider_error',
       route_status:'UNAVAILABLE',
       safety_gate:'UNAVAILABLE',
@@ -181,16 +204,17 @@ describe('SJM validation and evidence boundaries', () => {
 
   test('does not audit a route-assessment failure if another request already changed the journey state', async () => {
     const calls=[];
-    const req={user:{org_id:'org-1'},dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});return {rows:[]};}})};
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});if(sql.includes('FOR UPDATE'))return {rows:[{id:'journey-1',status:'cancelled'}]};return {rows:[]};}})};
     const result=await recordRouteAssessmentFailure(req,{id:'journey-1',org_id:'org-1'},'user-1','invalid_provider_response');
     expect(result.changed).toBe(false);
-    expect(calls).toHaveLength(1);
-    expect(calls[0].sql).toMatch(/status='assessment_pending'/);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].sql).toMatch(/FOR UPDATE/);
+    expect(calls[1].sql).toMatch(/status='assessment_pending'/);
   });
 
   test('propagates audit write failures so the transaction wrapper can roll back', async () => {
     let rollbackObserved=false;
-    const req={dbTx:async fn=>{try{return await fn({query:async(sql,params)=>{
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>{try{return await fn({query:async(sql,params)=>{
       if(sql.includes('INSERT INTO sjm_journey_events'))throw new Error('audit write failed');
       return {rows:[{id:'journey-1'}]};
     }});}catch(e){rollbackObserved=true;throw e;}}};
