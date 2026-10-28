@@ -165,6 +165,8 @@ async function stubSjmApi(page: Page) {
 }
 
 test.describe('SJM command-centre responsive smoke', () => {
+  // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
+  test.describe.configure({ timeout: 120_000 });
   test('renders a real-evidence empty assessment state without horizontal overflow at target viewports', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
