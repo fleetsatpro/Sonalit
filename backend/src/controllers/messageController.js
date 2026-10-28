@@ -307,6 +307,12 @@ const listMembers = asyncHandler(async (req, res) => {
 const addMembers = asyncHandler(async (req, res) => {
   const perm = await requireChannelManager(req, res, req.params.id);
   if (!perm) return;
+  if (perm.channel.sjm_journey_id) {
+    return res.status(409).json({
+      error: 'sjm_membership_managed_by_journey_team',
+      message: 'Mission-channel membership is controlled by the Secure Journey Management roster. Update assignments in the SJM mission workspace.',
+    });
+  }
 
   const schema = Joi.object({
     userIds: Joi.array().items(Joi.string().uuid()).min(1).max(200).required(),
@@ -343,6 +349,9 @@ const addMembers = asyncHandler(async (req, res) => {
 const removeMember = asyncHandler(async (req, res) => {
   const perm = await requireChannelManager(req, res, req.params.id);
   if (!perm) return;
+  if (perm.channel.sjm_journey_id) {
+    return res.status(409).json({ error: 'sjm_membership_managed_by_journey_team', message: 'Remove or reassign mission personnel through the SJM mission roster.' });
+  }
   const { user_id: targetId } = { user_id: req.params.userId };
 
   const target = await loadMember(req, req.params.id, targetId);
@@ -374,6 +383,9 @@ const removeMember = asyncHandler(async (req, res) => {
 const updateMember = asyncHandler(async (req, res) => {
   const perm = await requireChannelManager(req, res, req.params.id);
   if (!perm) return;
+  if (perm.channel.sjm_journey_id) {
+    return res.status(409).json({ error: 'sjm_membership_managed_by_journey_team', message: 'Mission-channel roles are managed by the SJM mission roster.' });
+  }
 
   const schema = Joi.object({ isChannelAdmin: Joi.boolean().required() });
   const { error, value } = schema.validate(req.body);
