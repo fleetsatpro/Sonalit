@@ -68,6 +68,7 @@ describe('POST /realtime/subscription-token channel authorisation', () => {
         return { rows: [{ id: channelId, org_id: 'org-a', sjm_journey_id: journeyId }] };
       }
       if (/FROM sjm_journeys/.test(sql)) return { rows: [{ id: journeyId }] };
+      if (/FROM sjm_journey_participants/.test(sql)) return { rows: [{ one: 1 }] };
       if (/FROM channel_members/.test(sql)) return { rows: [{ user_id: 'user-1' }] };
       return { rows: [] };
     } });
@@ -80,7 +81,8 @@ describe('POST /realtime/subscription-token channel authorisation', () => {
     expect(claims.sub).toBe('user-1');
     expect(claims.channel).toBe(channel);
     expect(calls.some(c => /deleted_at IS NULL FOR SHARE/.test(c.sql))).toBe(true);
-    expect(calls.findIndex(c => /FOR SHARE/.test(c.sql))).toBeLessThan(calls.findIndex(c => /FROM channel_members/.test(c.sql)));
+    expect(calls.findIndex(c => /FOR SHARE/.test(c.sql))).toBeLessThan(calls.findIndex(c => /FROM sjm_journey_participants/.test(c.sql)));
+    expect(calls.findIndex(c => /FROM sjm_journey_participants/.test(c.sql))).toBeLessThan(calls.findIndex(c => /FROM channel_members/.test(c.sql)));
   });
 
   test('rejects private comms subscription when current membership is absent', async () => {
@@ -93,6 +95,7 @@ describe('POST /realtime/subscription-token channel authorisation', () => {
         return { rows: [{ id: channelId, org_id: 'org-a', sjm_journey_id: journeyId }] };
       }
       if (/FROM sjm_journeys/.test(sql)) return { rows: [{ id: journeyId }] };
+      if (/FROM sjm_journey_participants/.test(sql)) return { rows: [{ one: 1 }] };
       if (/FROM channel_members/.test(sql)) return { rows: [] };
       return { rows: [] };
     } });
@@ -102,6 +105,26 @@ describe('POST /realtime/subscription-token channel authorisation', () => {
       .expect(403);
     expect(calls.some(c => /FOR SHARE/.test(c.sql))).toBe(true);
     expect(calls.some(c => /FROM channel_members/.test(c.sql))).toBe(true);
+  });
+
+  test('rejects a stale channel_members row when no active SJM duty assignment remains', async () => {
+    const channelId = 'cccccccc-0000-0000-0000-000000000001';
+    const journeyId = '11111111-2222-4333-8444-555555555555';
+    const calls = [];
+    const dbTx = async (work) => work({ query: async (sql, params) => {
+      calls.push({ sql, params });
+      if (/FROM channels/.test(sql)) return { rows: [{ id: channelId, org_id: 'org-a', sjm_journey_id: journeyId }] };
+      if (/FROM sjm_journeys/.test(sql)) return { rows: [{ id: journeyId }] };
+      if (/FROM sjm_journey_participants/.test(sql)) return { rows: [] };
+      if (/FROM channel_members/.test(sql)) return { rows: [{ user_id: 'user-1' }] };
+      return { rows: [] };
+    } });
+    await request(makeApp(dbTx))
+      .post('/api/v1/realtime/subscription-token')
+      .send({ channel: `org#org-a#comms#${channelId}` })
+      .expect(403);
+    expect(calls.some(c => /FROM sjm_journey_participants/.test(c.sql))).toBe(true);
+    expect(calls.some(c => /FROM channel_members/.test(c.sql))).toBe(false);
   });
 
   test('rejects malformed comms channel identifiers without querying the database', async () => {
