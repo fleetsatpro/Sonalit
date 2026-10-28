@@ -1,7 +1,9 @@
 'use strict';
+jest.mock('../src/realtime/centrifugo', () => ({ unsubscribeUserFromChannel: jest.fn() }));
+const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, routeAssessmentUsable, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -133,6 +135,41 @@ describe('SJM validation and evidence boundaries', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].sql).toContain('WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE');
     expect(calls[0].params).toEqual(['journey-1','org-1']);
+  });
+
+  test('revokes stale mission-channel subscriptions before deleting SJM channel membership', async () => {
+    jest.clearAllMocks();
+    unsubscribeUserFromChannel.mockResolvedValue(true);
+    const calls=[];
+    const channelId='cccccccc-0000-0000-0000-000000000001';
+    const removedUser='aaaaaaaa-0000-0000-0000-000000000099';
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql.includes('INSERT INTO channels'))return {rows:[{id:channelId}]};
+      if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:removedUser}]};
+      if(sql.includes('DELETE FROM channel_members cm'))expect(unsubscribeUserFromChannel).toHaveBeenCalledWith(removedUser,'org-1#comms#'+channelId);
+      return {rows:[],rowCount:1};
+    };
+    const result=await syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1'},'manager-1',true);
+    expect(result).toBe(channelId);
+    expect(calls.findIndex(c=>c.sql.includes('SELECT cm.user_id FROM channel_members cm'))).toBeLessThan(calls.findIndex(c=>c.sql.includes('DELETE FROM channel_members cm')));
+    expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails closed and preserves old roster memberships if live-channel revocation fails', async () => {
+    jest.clearAllMocks();
+    unsubscribeUserFromChannel.mockResolvedValue(false);
+    const calls=[];
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql.includes('INSERT INTO channels'))return {rows:[{id:'cccccccc-0000-0000-0000-000000000001'}]};
+      if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:'aaaaaaaa-0000-0000-0000-000000000099'}]};
+      return {rows:[],rowCount:1};
+    };
+    await expect(syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1'},'manager-1',true))
+      .rejects.toMatchObject({status:503});
+    expect(calls.some(c=>c.sql.includes('DELETE FROM channel_members cm'))).toBe(false);
+    expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(1);
   });
 
   test('keeps daily report generation tenant-allowlisted and respects client-local time', () => {
