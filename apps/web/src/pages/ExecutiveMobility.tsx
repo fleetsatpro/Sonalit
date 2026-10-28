@@ -39,7 +39,7 @@ export default function ExecutiveMobility(){
  const actions=useMemo(()=>{const map=new Map<string,{type:string;label:string}>();for(const r of mission?.duty_roles||[])for(const a of ACTIONS[r]||[])map.set(a.type,a);return [...map.values()]},[mission?.duty_roles]);
  const reportQ=useMutation({mutationFn:async(p:{event_type:string;note?:string})=>(await api.post('/sjm/journeys/'+selectedId+'/field-events',p)).data,onSuccess:async()=>{setEventNote('');await qc.invalidateQueries({queryKey:['sjm-field-events',selectedId]})}});
  const flightQ=useMutation({mutationFn:async()=>(await api.patch('/sjm/journeys/'+selectedId+'/flight-status',{flight_status:flightStatus,note:flightNote.trim()||undefined})).data,onSuccess:async()=>{setFlightNote('');await qc.invalidateQueries({queryKey:['sjm-my-assignments',user?.org_id,user?.id]})}});
- const canFlight=Boolean(mission?.flight_number&&((mission.duty_roles||[]).some(r=>['cpo','meet_greet','dispatcher'].includes(r))||['admin','dispatcher','operator'].includes(String(user?.role||'').toLowerCase())));
+ const canFlight=Boolean(mission?.flight_number&&((mission.duty_roles||[]).some(r=>['cpo','meet_greet','dispatcher'].includes(r))||['admin','dispatcher'].includes(String(user?.role||'').toLowerCase())));
  const send=()=>{const body=draft.trim();if(body&&channelId)sendMessage.mutate({text:body},{onSuccess:()=>setDraft('')})};
  const report=(type:string)=>{if(notes.includes(type)&&eventNote.trim().length<5)return;reportQ.mutate({event_type:type,note:eventNote.trim()||undefined})};
  if(missionQ.isLoading)return <main className="min-h-screen bg-[#050914] p-5 text-slate-300">Loading assigned missions…</main>;
