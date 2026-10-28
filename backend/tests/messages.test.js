@@ -315,7 +315,11 @@ test('withChannelReaderTransaction holds the SJM journey lock through message ac
   });
 
   const result = await controller.withChannelReaderTransaction(req, res, CHAN, work);
-  expect(result).toEqual({ ok: true, value: [{ body: 'private mission update' }] });
+  expect(result).toEqual({
+    ok: true,
+    value: [{ body: 'private mission update' }],
+    realtimeChannel: `org#${ORG_A}#comms#${CHAN}`,
+  });
   expect(calls.map(x => x.sql)).toEqual(expect.arrayContaining([
     expect.stringMatching(/FROM channels/),
     expect.stringMatching(/sjm_journeys.*FOR SHARE/),
