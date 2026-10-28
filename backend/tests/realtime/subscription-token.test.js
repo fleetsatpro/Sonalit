@@ -29,6 +29,7 @@ describe('POST /realtime/subscription-token channel authorisation', () => {
       .expect(200);
     const claims = jwt.verify(res.body.token, process.env.CENTRIFUGO_TOKEN_HMAC_SECRET);
     expect(claims.sub).toBe('user-1');
+    expect(claims.exp - claims.iat).toBe(300);
   });
 
   test('allows the exact organization channel', async () => {
@@ -80,6 +81,7 @@ describe('POST /realtime/subscription-token channel authorisation', () => {
     const claims = jwt.verify(res.body.token, process.env.CENTRIFUGO_TOKEN_HMAC_SECRET);
     expect(claims.sub).toBe('user-1');
     expect(claims.channel).toBe(channel);
+    expect(claims.exp - claims.iat).toBe(60);
     expect(calls.some(c => /deleted_at IS NULL FOR SHARE/.test(c.sql))).toBe(true);
     expect(calls.findIndex(c => /FOR SHARE/.test(c.sql))).toBeLessThan(calls.findIndex(c => /FROM sjm_journey_participants/.test(c.sql)));
     expect(calls.findIndex(c => /FROM sjm_journey_participants/.test(c.sql))).toBeLessThan(calls.findIndex(c => /FROM channel_members/.test(c.sql)));
