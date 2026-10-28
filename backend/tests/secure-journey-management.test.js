@@ -95,6 +95,13 @@ describe('SJM validation and evidence boundaries', () => {
     expect(classificationForGenericEvent('incident')).toBe('INTERNAL_OPERATIONS');
     expect(classificationForGenericEvent('client_update')).toBe('CLIENT_SAFE');
   });
+  test('keeps the mission-team assignment write endpoint registered', () => {
+    const layer=sjmRouter.stack.find(entry =>
+      entry.route?.path === '/journeys/:id/participants' && entry.route.methods?.put === true
+    );
+    expect(layer).toBeDefined();
+  });
+
   test('authenticates requests before the tenant-scope guard', () => {
     const authIndex = sjmRouter.stack.findIndex(layer => layer.handle === authenticate);
     expect(authIndex).toBeGreaterThanOrEqual(0);
