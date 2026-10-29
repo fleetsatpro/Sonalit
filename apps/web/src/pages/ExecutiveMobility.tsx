@@ -127,10 +127,42 @@ export default function ExecutiveMobility(){
  const currentAssignmentIdsRef=useRef<Set<string>>(new Set());currentAssignmentIdsRef.current=new Set(currentAssignments.map(m=>m.id));
  const revalidatingMissionIdsRef=useRef(revalidatingMissionIds);revalidatingMissionIdsRef.current=revalidatingMissionIds;
  const missions=currentAssignments.filter(m=>!inaccessibleMissionIds.has(m.id)&&!revalidatingMissionIds.has(m.id));
- useEffect(()=>{if(accessIdentityRef.current===identityKey)return;accessIdentityRef.current=identityKey;rosterRevalidationVersionRef.current.clear();const previous=accessIdentityScopeRef.current;if(previous.orgId&&previous.userId)qc.removeQueries({queryKey:['sjm-my-assignments',previous.orgId,previous.userId],exact:true});qc.removeQueries({queryKey:['sjm-field-detail']});qc.removeQueries({queryKey:['sjm-field-events']});qc.removeQueries({queryKey:['sjm-mission-channel']});accessIdentityScopeRef.current={orgId:user?.org_id,userId:user?.id};setInaccessibleMissionIds(new Set());setRevalidatingMissionIds(new Set());setAccessNotice(false);setSelectedId('');previousMissionId.current=''},[identityKey,qc,user?.org_id,user?.id]);
+ useEffect(()=>{
+  if(accessIdentityRef.current===identityKey)return;
+  const previous=accessIdentityScopeRef.current;
+  // Keep identityReady false until all old-scope reads have been cancelled and
+  // their private query caches removed. Query functions consume AbortSignal so
+  // Axios can stop the underlying requests, not just ignore their results.
+  const cancellations=[
+   qc.cancelQueries({queryKey:['sjm-field-detail']}),
+   qc.cancelQueries({queryKey:['sjm-field-events']}),
+   qc.cancelQueries({queryKey:['sjm-mission-channel']}),
+   ...(previous.orgId&&previous.userId
+    ?[qc.cancelQueries({queryKey:['sjm-my-assignments',previous.orgId,previous.userId],exact:true})]
+    :[]),
+  ];
+  const finishScopeChange=()=>{
+   // A second login/tenant change may supersede this cleanup while cancellation
+   // settles. Never mark an obsolete identity as ready.
+   if(identityKeyRef.current!==identityKey)return;
+   rosterRevalidationVersionRef.current.clear();
+   if(previous.orgId&&previous.userId)qc.removeQueries({queryKey:['sjm-my-assignments',previous.orgId,previous.userId],exact:true});
+   qc.removeQueries({queryKey:['sjm-field-detail']});
+   qc.removeQueries({queryKey:['sjm-field-events']});
+   qc.removeQueries({queryKey:['sjm-mission-channel']});
+   accessIdentityScopeRef.current={orgId:user?.org_id,userId:user?.id};
+   accessIdentityRef.current=identityKey;
+   setInaccessibleMissionIds(new Set());
+   setRevalidatingMissionIds(new Set());
+   setAccessNotice(false);
+   setSelectedId('');
+   previousMissionId.current='';
+  };
+  void Promise.all(cancellations).then(finishScopeChange,finishScopeChange);
+ },[identityKey,qc,user?.org_id,user?.id]);
  useEffect(()=>{if(!identityReady||selectedId&&revalidatingMissionIds.has(selectedId))return;if(!selectedId&&missions.length)setSelectedId(missions[0]!.id);else if(selectedId&&!missions.some(m=>m.id===selectedId))setSelectedId(missions[0]?.id||'')},[identityReady,missions,selectedId,revalidatingMissionIds]);
  const mission=missions.find(m=>m.id===selectedId);
- const detailQ=useQuery<{data:MissionDetail}>({queryKey:['sjm-field-detail',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId)).data,enabled:Boolean(identityReady&&selectedId&&!revalidatingMissionIds.has(selectedId)),staleTime:10000,refetchInterval:['in_progress','paused','exception','arrival_pending_verification'].includes(mission?.status||'')?30000:false});
+ const detailQ=useQuery<{data:MissionDetail}>({queryKey:['sjm-field-detail',selectedId],queryFn:async({signal})=>(await api.get('/sjm/journeys/'+selectedId,{signal})).data,enabled:Boolean(identityReady&&selectedId&&!revalidatingMissionIds.has(selectedId)),staleTime:10000,refetchInterval:['in_progress','paused','exception','arrival_pending_verification'].includes(mission?.status||'')?30000:false});
  const detailHttpStatus=Number((detailQ.error as {response?:{status?:number}}|null)?.response?.status||0);
  const detailAccessDenied=detailQ.isError&&[403,404].includes(detailHttpStatus);
  const missionDetail=detailAccessDenied?undefined:detailQ.data?.data;
@@ -149,7 +181,7 @@ export default function ExecutiveMobility(){
   const current=missions.find(m=>m.id===selectedId),knownStatus=current?.flight_status;
   setFlightStatus(knownStatus&&knownStatus!=='unknown'?knownStatus:'');
  },[selectedId,missions]);
- const channelQ=useQuery<{data:{channel_id:string;realtime_channel:string;comms_epoch:number}}>({queryKey:['sjm-mission-channel',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/communications')).data,enabled:Boolean(identityReady&&selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),staleTime:15000});
+ const channelQ=useQuery<{data:{channel_id:string;realtime_channel:string;comms_epoch:number}}>({queryKey:['sjm-mission-channel',selectedId],queryFn:async({signal})=>(await api.get('/sjm/journeys/'+selectedId+'/communications',{signal})).data,enabled:Boolean(identityReady&&selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),staleTime:15000});
  const channelId=!identityReady||detailAccessDenied||revalidatingMissionIds.has(selectedId)?null:channelQ.data?.data.channel_id||null,messagesQ=useMessages(channelId),sendMessage=useSendMessage(channelId||'');
  const revalidateRosterMissionAccess=useCallback(async(missionId:string,markNewEvent=true)=>{
   const workIdentity=identityKey;
@@ -210,7 +242,7 @@ export default function ExecutiveMobility(){
   void revalidateRosterMissionAccess(missionId,true);
  },[channelQ.data?.data.channel_id,revalidateRosterMissionAccess,identityReady,qc]);
  useCommsRealtime(user?.org_id,channelId,user?.id,detailAccessDenied?undefined:channelQ.data?.data.realtime_channel,selectedId,handleFieldRosterRevocation);
- const eventsQ=useQuery<{data:FieldEvent[]}>({queryKey:['sjm-field-events',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/field-events')).data,enabled:Boolean(identityReady&&selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),refetchInterval:30000});
+ const eventsQ=useQuery<{data:FieldEvent[]}>({queryKey:['sjm-field-events',selectedId],queryFn:async({signal})=>(await api.get('/sjm/journeys/'+selectedId+'/field-events',{signal})).data,enabled:Boolean(identityReady&&selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),refetchInterval:30000});
  const actions=useMemo(()=>{const map=new Map<string,{type:string;label:string}>();for(const r of mission?.duty_roles||[])for(const a of ACTIONS[r]||[])map.set(a.type,a);return [...map.values()]},[mission?.duty_roles]);
  const routineActions=useMemo(()=>actions.filter(a=>!notes.includes(a.type)),[actions]);
  const nextRoutineAction=useMemo(()=>eventsQ.isSuccess?routineActions.find(a=>!(eventsQ.data?.data||[]).some(e=>e.event_type===a.type)):undefined,[routineActions,eventsQ.data,eventsQ.isSuccess]);
