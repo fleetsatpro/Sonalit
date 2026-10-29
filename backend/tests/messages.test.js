@@ -143,6 +143,34 @@ test('sendMessage: SJM message bodies never publish to private realtime channels
   expect(tenantSignal?.[1]).not.toHaveProperty('body');
 });
 
+test('publishTyping: SJM channel does not disclose officer presence over private realtime', async () => {
+  jest.clearAllMocks();
+  const journeyId = '11111111-2222-4333-8444-555555555555';
+  const req = makeReq({
+    user: { id: USER_MEMBER, org_id: ORG_A, role: 'dispatcher', name: 'Duty Dispatcher' },
+    dbReturns: [
+      [/^SELECT \* FROM channels/, [{ id: CHAN, org_id: ORG_A, sjm_journey_id: journeyId }]],
+      [/^SELECT \* FROM channel_members/, [{ user_id: USER_MEMBER, is_channel_admin: true }]],
+    ],
+  });
+  req.params.id = CHAN;
+  req.dbTx = jest.fn(async (work) => work({ query: async (sql, params) => {
+    if (/SELECT comms_epoch FROM sjm_journeys/.test(sql)) {
+      return { rows: [{ comms_epoch: 7 }] };
+    }
+    return req.db(sql, params);
+  } }));
+  const res = makeRes();
+
+  await controller.publishTyping(req, res, jest.fn());
+
+  expect(res.json).toHaveBeenCalledWith({ ok: true });
+  expect(publish).not.toHaveBeenCalledWith(
+    `org#${ORG_A}#comms#${CHAN}#v7`,
+    expect.objectContaining({ type: 'typing', user_name: 'Duty Dispatcher' }),
+  );
+});
+
 test('sendMessage: non-member of channel is 403', async () => {
   const req = makeReq({
     user: { id: USER_OTHER, org_id: ORG_A, role: 'operator', name: 'Nobody' },
