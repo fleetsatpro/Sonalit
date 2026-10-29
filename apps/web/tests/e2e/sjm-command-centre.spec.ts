@@ -402,28 +402,45 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('176 matches')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Portfolio totals cover 176 authorised journeys', { exact: false })).toBeVisible();
+    const registerResponse = (offset: string, filter?: string, sort?: string) => page.waitForResponse((response) => {
+      if (response.request().method() !== 'GET') return false;
+      const url = new URL(response.url());
+      return url.pathname === '/api/v1/sjm/journeys'
+        && url.searchParams.get('offset') === offset
+        && (filter === undefined || (url.searchParams.get('filter') || 'all') === filter)
+        && (sort === undefined || (url.searchParams.get('sort') || '') === sort);
+    }, { timeout: 15000 });
+
     const nextPage = page.getByRole('button', { name: 'Next register page' });
     await expect(nextPage).toBeEnabled();
+    const secondPageResponse = registerResponse('100', 'all');
     await nextPage.click();
+    await secondPageResponse;
     await expect.poll(() => requestedOffset).toBe(100);
     await expect(page.getByText('Showing 101–176 of 176')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Previous register page' })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Next register page' })).toBeDisabled();
 
+    const sortedRegisterResponse = registerResponse('0', 'all', 'departure_asc');
     await page.getByLabel('Sort missions').selectOption('departure_asc');
+    await sortedRegisterResponse;
     await expect.poll(() => requestedSort).toBe('departure_asc');
     await expect.poll(() => requestedOffset).toBe(0);
     await expect(page.getByText('Showing 1–100 of 176')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Next register page' })).toBeEnabled();
 
+    const overdueResponse = registerResponse('0', 'overdue', 'departure_asc');
     await page.getByRole('button', { name: 'Overdue' }).click();
+    await overdueResponse;
     await expect.poll(() => requestedFilter).toBe('overdue');
     await expect.poll(() => requestedOffset).toBe(0);
     await expect(page.getByText('7 matches')).toBeVisible();
     await expect(page.getByText('Showing 1–7 of 7')).toBeVisible();
     await expect(page.getByRole('button', { name: /SJM-PAGE-0/ }).getByText('Departure overdue')).toBeVisible();
 
+    const departureDueResponse = registerResponse('0', 'departure_due_30m', 'departure_asc');
     await page.getByRole('button', { name: 'Departure due ≤30m' }).click();
+    await departureDueResponse;
     await expect.poll(() => requestedFilter).toBe('departure_due_30m');
     await expect.poll(() => requestedOffset).toBe(0);
     await expect(page.getByText('3 matches')).toBeVisible();
