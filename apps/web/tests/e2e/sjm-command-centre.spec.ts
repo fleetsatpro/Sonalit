@@ -410,7 +410,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText('Current authorised channel', { exact: true })).toHaveCount(0);
 
     releaseChannels();
-    await expect(page.getByText('Current authorised channel', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('main header').getByText('Current authorised channel', { exact: true })).toBeVisible({ timeout: 15000 });
   });
 
   test('an unauthorised channel deep-link never triggers private channel queries', async ({ page }) => {
