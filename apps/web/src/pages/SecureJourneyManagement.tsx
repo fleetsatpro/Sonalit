@@ -295,6 +295,8 @@ export default function SecureJourneyManagement(){
  const currentUser=useAuthStore(s=>s.user);
  const isSupervisor=['admin','dispatcher'].includes(String(currentUser?.role||'').toLowerCase());
  const [selectedId,setSelectedId]=useState('');
+ const selectedIdRef=useRef('');
+ useEffect(()=>{selectedIdRef.current=selectedId},[selectedId]);
  const [showCreate,setShowCreate]=useState(false);
  const [intakeMode,setIntakeMode]=useState<'create'|'edit'>('create');
  const [editAcknowledged,setEditAcknowledged]=useState(false);
@@ -455,33 +457,46 @@ export default function SecureJourneyManagement(){
   onSuccess:(channelId)=>window.location.assign('/messages?channelId='+encodeURIComponent(channelId))
  });
  const recordFlightStatus=useMutation({
-   mutationFn:async()=>{
-    if(!journey)throw new Error('Select a journey first.');
-    if(!journey.flight_number)throw new Error('Add a flight number before recording status.');
-    return (await api.patch('/sjm/journeys/'+journey.id+'/flight-status',{flight_status:flightStatusDraft,note:flightStatusNote.trim()||null})).data as {data:{flight_status:string};provenance:{source:string;evidence_class:string;provider_feed_connected:boolean}};
-   },
-   onSuccess:async result=>{
-    setFlightStatusDraft(result.data.flight_status||'scheduled');
-    setShowFlightStatusForm(false);
-    setFlightStatusNote('');
-    await refresh();
-   }
-  });
-  const choose=(id:string)=>{
-   const selectionChanged=id!==selectedId;
-   setSelectedId(id);setAck('');setReviewNote('');setCancelNote('');setEditingProfile(false);setWorkspaceTab('overview');
-   // The mission workspace precedes the register below xl on purpose. When an
-   // operator selects a different row from that lower register, return the
-   // selected dossier/map to view and move focus to its heading. Do not affect
-   // desktop dispatch or filter/page actions.
-   if(selectionChanged&&typeof window!=='undefined'&&window.matchMedia('(max-width: 1279px)').matches){
-    const behavior:ScrollBehavior=window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth';
-    window.requestAnimationFrame(()=>{
-     document.getElementById('sjm-mission-workspace')?.scrollIntoView({behavior,block:'start'});
-     document.getElementById('sjm-selected-mission-title')?.focus({preventScroll:true});
-    });
-   }
-  };
+  mutationFn:async(submission:{journeyId:string;flightNumber:string;flightStatus:string;note:string})=>{
+   if(!submission.journeyId)throw new Error('Select a journey first.');
+   if(!submission.flightNumber.trim())throw new Error('Add a flight number before recording status.');
+   return (await api.patch('/sjm/journeys/'+submission.journeyId+'/flight-status',{flight_status:submission.flightStatus,note:submission.note.trim()||null})).data as {data:{id:string;flight_status:string};provenance:{source:string;evidence_class:string;provider_feed_connected:boolean}};
+  },
+  onSuccess:async(result,submission)=>{
+   await Promise.all([
+    qc.invalidateQueries({queryKey:['sjm-journeys']}),
+    qc.invalidateQueries({queryKey:['sjm-journey',submission.journeyId]})
+   ]);
+   if(selectedIdRef.current!==submission.journeyId)return;
+   setFlightStatusDraft(result.data.flight_status||submission.flightStatus);
+   setShowFlightStatusForm(false);
+   setFlightStatusNote('');
+  }
+ });
+ const flightStatusSavePending=Boolean(journey&&recordFlightStatus.isPending&&recordFlightStatus.variables?.journeyId===journey.id);
+ const flightStatusSaveError=Boolean(journey&&recordFlightStatus.isError&&recordFlightStatus.variables?.journeyId===journey.id);
+ const choose=(id:string)=>{
+  const selectionChanged=id!==selectedId;
+  selectedIdRef.current=id;
+  if(selectionChanged){
+   setShowFlightStatusForm(false);
+   setFlightStatusDraft('scheduled');
+   setFlightStatusNote('');
+   recordFlightStatus.reset();
+  }
+  setSelectedId(id);setAck('');setReviewNote('');setCancelNote('');setEditingProfile(false);setWorkspaceTab('overview');
+  // The mission workspace precedes the register below xl on purpose. When an
+  // operator selects a different row from that lower register, return the
+  // selected dossier/map to view and move focus to its heading. Do not affect
+  // desktop dispatch or filter/page actions.
+  if(selectionChanged&&typeof window!=='undefined'&&window.matchMedia('(max-width: 1279px)').matches){
+   const behavior:ScrollBehavior=window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth';
+   window.requestAnimationFrame(()=>{
+    document.getElementById('sjm-mission-workspace')?.scrollIntoView({behavior,block:'start'});
+    document.getElementById('sjm-selected-mission-title')?.focus({preventScroll:true});
+   });
+  }
+ };
  const configureProfile=()=>{setProfileTimezone(profile?.report_timezone||'Africa/Nairobi');setProfileTitle(profile?.report_template?.title||'Secure Journey Management Report');setProfileSections(profile?.report_template?.sections||SECTIONS.map(s=>s.id));setDailyReportsEnabled(profile?.daily_reports_enabled===true);setDailyReportTime(String(profile?.daily_report_local_time||'18:00').slice(0,5));setEditingProfile(true)};
  const report=(report_type:string)=>act.mutate({kind:'report',body:{report_type}});
  const isTerminal=Boolean(journey&&['closed','cancelled','aborted'].includes(journey.status));
@@ -641,15 +656,15 @@ return (
                {journey.flight_status_note&&<p className="mt-3 rounded-md border border-white/[0.06] bg-black/15 p-3 text-xs leading-5 text-slate-300"><span className="font-semibold text-slate-200">Team note:</span> {journey.flight_status_note}</p>}
                <p className="mt-3 text-xs leading-5 text-slate-400">This is an operator-entered observation, not a live airline feed or independent verification.</p>
                {canRecordFlightStatus&&journey.flight_number&&!['closed','cancelled','aborted'].includes(journey.status)&&<div className="mt-3">
-                <Btn onClick={()=>{setFlightStatusDraft(FLIGHT_STATUS_OPTIONS.some(option=>option.value===journey.flight_status)?journey.flight_status||'scheduled':'scheduled');setFlightStatusNote(journey.flight_status_note||'');setShowFlightStatusForm(value=>!value);recordFlightStatus.reset()}} disabled={recordFlightStatus.isPending}><Activity size={13}/>{showFlightStatusForm?'Close form':'Record flight status'}</Btn>
+                <Btn onClick={()=>{setFlightStatusDraft(FLIGHT_STATUS_OPTIONS.some(option=>option.value===journey.flight_status)?journey.flight_status||'scheduled':'scheduled');setFlightStatusNote(journey.flight_status_note||'');setShowFlightStatusForm(value=>!value);recordFlightStatus.reset()}} disabled={flightStatusSavePending}><Activity size={13}/>{showFlightStatusForm?'Close form':'Record flight status'}</Btn>
                </div>}
                {!journey.flight_number&&canRecordFlightStatus&&<p className="mt-3 text-xs text-slate-400">A flight number is required. Ask a dispatcher to add it before recording status.</p>}
-               {showFlightStatusForm&&canRecordFlightStatus&&journey.flight_number&&<form className="mt-4 space-y-3 border-t border-white/[0.06] pt-4" onSubmit={event=>{event.preventDefault();if(!recordFlightStatus.isPending)recordFlightStatus.mutate()}}>
+               {showFlightStatusForm&&canRecordFlightStatus&&journey.flight_number&&<form className="mt-4 space-y-3 border-t border-white/[0.06] pt-4" onSubmit={event=>{event.preventDefault();if(!flightStatusSavePending)recordFlightStatus.mutate({journeyId:journey.id,flightNumber:String(journey.flight_number||''),flightStatus:flightStatusDraft,note:flightStatusNote})}}>
                 <Input label="Flight status"><select aria-label="Flight status" className={field} value={flightStatusDraft} onChange={event=>setFlightStatusDraft(event.target.value)}>{FLIGHT_STATUS_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></Input>
                 <Input label="Observation note"><textarea aria-label="Observation note" className={field} rows={2} maxLength={1200} value={flightStatusNote} onChange={event=>setFlightStatusNote(event.target.value)} placeholder="What did the airline or airport team report?"/></Input>
                 {['delayed','cancelled','diverted'].includes(flightStatusDraft)&&<p className="text-xs leading-5 text-amber-100">A delay, cancellation or diversion needs an explanatory note of at least five characters.</p>}
-                {recordFlightStatus.isError&&<p role="alert" className="text-xs leading-5 text-red-200">{errorText(recordFlightStatus.error,'Flight status could not be saved.')}</p>}
-                <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-slate-400">Saved status is audit-logged with its operator source.</p><Btn tone="green" disabled={recordFlightStatus.isPending||(['delayed','cancelled','diverted'].includes(flightStatusDraft)&&flightStatusNote.trim().length<5)} onClick={()=>recordFlightStatus.mutate()}><CheckCircle2 size={13}/>{recordFlightStatus.isPending?'Saving observation…':'Save flight observation'}</Btn></div>
+                {flightStatusSaveError&&<p role="alert" className="text-xs leading-5 text-red-200">{errorText(recordFlightStatus.error,'Flight status could not be saved.')}</p>}
+                <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-slate-400">Saved status is audit-logged with its operator source.</p><Btn tone="green" disabled={flightStatusSavePending||(['delayed','cancelled','diverted'].includes(flightStatusDraft)&&flightStatusNote.trim().length<5)} onClick={()=>recordFlightStatus.mutate({journeyId:journey.id,flightNumber:String(journey.flight_number||''),flightStatus:flightStatusDraft,note:flightStatusNote})}><CheckCircle2 size={13}/>{flightStatusSavePending?'Saving observation…':'Save flight observation'}</Btn></div>
                </form>}
               </section>}
            </div>

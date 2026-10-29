@@ -523,6 +523,71 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(flightCard.getByText('Airline desk reported a 35 minute delay.')).toBeVisible();
   });
 
+  test('late flight-status response cannot overwrite another journey draft', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    const secondJourneyId = JOURNEY_ID + '-second-flight';
+    await page.route('**/api/v1/sjm/journeys?**', async (route) => {
+      const summary = { ...journey };
+      delete summary.stops; delete summary.events; delete summary.telemetry_snapshot; delete summary.readiness_checklist;
+      const second = { ...summary, id: secondJourneyId, reference: 'SJM-E2E-002', title: 'Second executive transfer', flight_number: 'ZZ 200', flight_status: 'scheduled', flight_status_source: 'not_recorded', flight_status_observed_at: null, flight_status_note: null };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        data: [summary, second], pagination: { limit: 100, offset: 0, total_count: 2, has_more: false },
+        summary: { total: 2, active: 0, queue: 2, review: 0, awaiting_review: 0, arrival_verification: 0 },
+      }) });
+    });
+    await page.route('**/api/v1/sjm/journeys/' + secondJourneyId, (route) => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ data: { ...journey, id: secondJourneyId, reference: 'SJM-E2E-002', title: 'Second executive transfer', flight_number: 'ZZ 200', flight_status: 'scheduled', flight_status_source: 'not_recorded', flight_status_observed_at: null, flight_status_note: null } }),
+    }));
+
+    let releaseFirstSave: (() => void) | undefined;
+    let markFirstSaveStarted: (() => void) | undefined;
+    const firstSaveStarted = new Promise<void>((resolve) => { markFirstSaveStarted = resolve; });
+    const firstSaveResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/v1/sjm/journeys/' + JOURNEY_ID + '/flight-status' && response.request().method() === 'PATCH';
+    });
+    await page.route((url) => url.pathname === '/api/v1/sjm/journeys/' + JOURNEY_ID + '/flight-status', async (route) => {
+      markFirstSaveStarted?.();
+      await new Promise<void>((resolve) => { releaseFirstSave = resolve; });
+      const body = route.request().postDataJSON() as { flight_status: string; note?: string | null };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        data: { id: JOURNEY_ID, flight_status: body.flight_status, flight_status_source: 'operator_entered', flight_status_observed_at: '2026-10-29T18:00:00.000Z' },
+        provenance: { source: 'operator_entered', evidence_class: 'OPERATOR_ENTERED_UNVERIFIED', provider_feed_connected: false },
+      }) });
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+    const firstCard = page.getByRole('region', { name: 'Flight status' });
+    await firstCard.getByRole('button', { name: 'Record flight status' }).click();
+    await firstCard.getByLabel('Flight status').selectOption('delayed');
+    await firstCard.getByLabel('Observation note').fill('First journey delay awaiting confirmation.');
+    await firstCard.getByRole('button', { name: 'Save flight observation' }).click();
+    await firstSaveStarted;
+
+    const secondMission = page.getByRole('button', { name: /SJM-E2E-002/ });
+    await secondMission.scrollIntoViewIfNeeded();
+    await secondMission.click();
+    await expect(page.getByRole('heading', { name: 'Second executive transfer' })).toBeVisible({ timeout: 15000 });
+    const secondCard = page.getByRole('region', { name: 'Flight status' });
+    await secondCard.getByRole('button', { name: 'Record flight status' }).click();
+    await secondCard.getByLabel('Flight status').selectOption('landed');
+    await secondCard.getByLabel('Observation note').fill('Second journey draft remains unsent.');
+    await expect(secondCard.getByLabel('Flight status')).toHaveValue('landed');
+
+    if (!releaseFirstSave) throw new Error('The first flight-status request did not reach the hold point.');
+    releaseFirstSave();
+    await firstSaveResponse;
+    await expect(secondCard.getByLabel('Flight status')).toHaveValue('landed');
+    await expect(secondCard.getByLabel('Observation note')).toHaveValue('Second journey draft remains unsent.');
+    await expect(secondCard.getByRole('button', { name: 'Save flight observation' })).toBeVisible();
+    await expect(secondCard.getByText('Scheduled', { exact: true })).toBeVisible();
+    await expect(secondCard.getByText('First journey delay awaiting confirmation.')).toHaveCount(0);
+  });
+
   test('team assignments stay out of the initial dispatch path until requested', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
