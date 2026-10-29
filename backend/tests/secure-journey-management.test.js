@@ -5,7 +5,7 @@ jest.mock('../src/realtime/centrifugo', () => ({ removeChannelHistory: jest.fn()
 const { removeChannelHistory, unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, revisionAcknowledgementError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -614,6 +614,13 @@ describe('SJM validation and evidence boundaries', () => {
     expect(summary.recent_events_truncated).toBe(true);
   });
 
+
+  test('requires a strict server-side acknowledgement before invalidating prior journey release evidence', () => {
+    expect(revisionAcknowledgementError({})).toMatch(/Explicitly acknowledge/);
+    expect(revisionAcknowledgementError({acknowledge_route_authorization_invalidation:false})).toMatch(/Explicitly acknowledge/);
+    expect(revisionAcknowledgementError({acknowledge_route_authorization_invalidation:'true'})).toMatch(/Explicitly acknowledge/);
+    expect(revisionAcknowledgementError({acknowledge_route_authorization_invalidation:true})).toBeNull();
+  });
 
   test('rejects caller-supplied SJM risk thresholds that could weaken the Route Safety gate', () => {
     expect(planRequestPolicyError({max_risk_score:100})).toMatch(/caller-supplied maximum risk threshold/);

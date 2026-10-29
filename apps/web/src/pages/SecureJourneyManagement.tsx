@@ -392,7 +392,8 @@ export default function SecureJourneyManagement(){
    planned_arrival_at:baselineMatches&&form.planned_arrival_at===editBaseline?.arrivalInput?editBaseline.arrivalAt:localDateTimeInTimezone(form.planned_arrival_at,form.timezone),
    client_id:form.client_id||null,convoy_id:form.convoy_id||null,
    flight_scheduled_at:form.flight_scheduled_at?localDateTimeInTimezone(form.flight_scheduled_at,form.timezone):null,airport_code:form.airport_code.trim().toUpperCase()||null,flight_number:form.flight_number.trim().toUpperCase()||null,principal_reference:form.principal_reference.trim()||null,terminal:form.terminal.trim()||null,airline:form.airline.trim()||null,meet_greet_instructions:form.meet_greet_instructions.trim()||null,
-   stops:stopDrafts.map(s=>({name:s.name,stop_type:s.stop_type,lat:s.lat===''?null:Number(s.lat),lng:s.lng===''?null:Number(s.lng),instructions:s.instructions||null,planned_arrival_at:s.planned_arrival_at||null,planned_departure_at:s.planned_departure_at||null,duration_minutes:s.duration_minutes??null}))
+   stops:stopDrafts.map(s=>({name:s.name,stop_type:s.stop_type,lat:s.lat===''?null:Number(s.lat),lng:s.lng===''?null:Number(s.lng),instructions:s.instructions||null,planned_arrival_at:s.planned_arrival_at||null,planned_departure_at:s.planned_departure_at||null,duration_minutes:s.duration_minutes??null})),
+   ...(intakeMode==='edit'?{acknowledge_route_authorization_invalidation:editAcknowledged}:{})
   };
  };
  const create=useMutation({mutationFn:async()=> (await api.post('/sjm/journeys',buildJourneyPayload())).data.data as Journey,onSuccess:async j=>{setShowCreate(false);setIntakeMode('create');setEditAcknowledged(false);setEditBaseline(null);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);setSelectedId(j.id);await qc.invalidateQueries({queryKey:['sjm-journeys']});await qc.invalidateQueries({queryKey:['sjm-journey',j.id]})}});
