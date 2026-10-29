@@ -103,20 +103,16 @@ export default function CommsPage() {
 
   useEffect(() => {
     if (!identityReady || !requestedChannelId) return;
-    let cancelled = false;
-    // Cached membership is not authorization for a deep-link. Require a fresh,
-    // authenticated channel list before selecting or querying the requested channel.
-    void channelsQ.refetch().then((result) => {
-      if (cancelled) return;
-      if (!result.isSuccess) setRequestedChannelId(null);
-      setVerifyingDeepLink(false);
-    }).catch(() => {
-      if (cancelled) return;
+    // The identity gate has already completed a fresh authenticated channel-list
+    // request. Treat the URL value only as a hint and validate it against that
+    // response; do not launch a redundant second fetch.
+    if (channelsQ.isError) {
       setRequestedChannelId(null);
       setVerifyingDeepLink(false);
-    });
-    return () => { cancelled = true; };
-  }, [identityReady, requestedChannelId, channelsQ.refetch]);
+      return;
+    }
+    if (channelsQ.isSuccess && !channelsQ.isFetching) setVerifyingDeepLink(false);
+  }, [identityReady, requestedChannelId, channelsQ.isError, channelsQ.isFetching, channelsQ.isSuccess]);
 
   // A requested channel remains unselected while its fresh authorisation fetch runs.
   useEffect(() => {
@@ -290,8 +286,9 @@ export default function CommsPage() {
               </div>
             </div>
           ) : (
-            <div className="text-gray-500 font-mono text-[12px]">
-              {verifyingDeepLink || channelsQ.isFetching ? 'Verifying authorised channels…' : channelsQ.isError ? 'Unable to verify channel access' : channelsQ.isLoading ? 'Loading channels…' : 'Select a channel'}
+            <div className="flex items-center gap-3 text-gray-500 font-mono text-[12px]">
+              <span>{verifyingDeepLink || channelsQ.isFetching ? 'Verifying authorised channels…' : channelsQ.isError ? 'Unable to verify channel access' : channelsQ.isLoading ? 'Loading channels…' : 'Select a channel'}</span>
+              {channelsQ.isError && <button type="button" className="rounded border border-white/15 px-2 py-1 font-sans text-[11px] text-slate-300" onClick={() => void channelsQ.refetch()}>Retry</button>}
             </div>
           )}
 
