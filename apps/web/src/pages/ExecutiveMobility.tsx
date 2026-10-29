@@ -118,6 +118,7 @@ export default function ExecutiveMobility(){
  const [accessNotice,setAccessNotice]=useState(false);
  const identityKey=String(user?.org_id||'')+':'+String(user?.id||'');
  const accessIdentityRef=useRef<string|null>(null);
+ const identityCleanupRef=useRef<{identityKey:string;promise:Promise<void>}|null>(null);
  const identityKeyRef=useRef(identityKey);identityKeyRef.current=identityKey;
  const accessIdentityScopeRef=useRef<{orgId:string|undefined;userId:string|undefined}>({orgId:undefined,userId:undefined});
  const identityReady=accessIdentityRef.current===identityKey;
@@ -129,24 +130,24 @@ export default function ExecutiveMobility(){
  const missions=currentAssignments.filter(m=>!inaccessibleMissionIds.has(m.id)&&!revalidatingMissionIds.has(m.id));
  useEffect(()=>{
   if(accessIdentityRef.current===identityKey)return;
-  // The initial mount is also untrusted: the page may have unmounted during a
-  // logout/login transition, so in-memory refs cannot prove which tenant's cache
-  // was last active. Preserve only assignment queries for this exact identity.
-  const staleAssignmentKeys=qc.getQueryCache()
-   .findAll({queryKey:['sjm-my-assignments']})
-   .map(query=>query.queryKey)
-   .filter(queryKey=>queryKey[1]!==user?.org_id||queryKey[2]!==user?.id);
-  // Keep identityReady false until old/private reads are cancelled and their
-  // cache entries are removed. Axios receives AbortSignal on all private reads.
-  const cancellations=[
-   qc.cancelQueries({queryKey:['sjm-field-detail']}),
-   qc.cancelQueries({queryKey:['sjm-field-events']}),
-   qc.cancelQueries({queryKey:['sjm-mission-channel']}),
-   ...staleAssignmentKeys.map(queryKey=>qc.cancelQueries({queryKey,exact:true})),
-  ];
-  const finishScopeChange=async()=>{
-   // A second login/tenant change may supersede this cleanup while cancellation
-   // settles. Never mark an obsolete identity as ready.
+  // StrictMode can replay mount effects. Reuse one pending cleanup/refetch per
+  // identity so duplicate effect setups cannot race two assignment refreshes.
+  if(identityCleanupRef.current?.identityKey===identityKey)return;
+  const cleanupScope=async()=>{
+   // The initial mount is untrusted: a previous page may have unmounted during
+   // logout/login, so keep only assignment query data for this exact identity.
+   const staleAssignmentKeys=qc.getQueryCache()
+    .findAll({queryKey:['sjm-my-assignments']})
+    .map(query=>query.queryKey)
+    .filter(queryKey=>queryKey[1]!==user?.org_id||queryKey[2]!==user?.id);
+   // Keep identityReady false while private requests are cancelled and caches purged.
+   const cancellations=[
+    qc.cancelQueries({queryKey:['sjm-field-detail']}),
+    qc.cancelQueries({queryKey:['sjm-field-events']}),
+    qc.cancelQueries({queryKey:['sjm-mission-channel']}),
+    ...staleAssignmentKeys.map(queryKey=>qc.cancelQueries({queryKey,exact:true})),
+   ];
+   await Promise.all(cancellations).catch(()=>undefined);
    if(identityKeyRef.current!==identityKey)return;
    rosterRevalidationVersionRef.current.clear();
    staleAssignmentKeys.forEach(queryKey=>qc.removeQueries({queryKey,exact:true}));
@@ -159,13 +160,16 @@ export default function ExecutiveMobility(){
    setAccessNotice(false);
    setSelectedId('');
    previousMissionId.current='';
-   // A warm cache is not proof that assignments survived a roster change while
-   // this page was unmounted. Revalidate before allowing the workspace to render.
+   // A warm cache is not proof assignments survived a roster change while this
+   // page was unmounted. Fetch before making the field workspace renderable.
    if(user?.org_id&&user?.id)await missionQ.refetch().catch(()=>undefined);
    if(identityKeyRef.current!==identityKey)return;
    accessIdentityRef.current=identityKey;
   };
-  void Promise.all(cancellations).then(finishScopeChange,finishScopeChange);
+  const promise=Promise.resolve().then(cleanupScope);
+  identityCleanupRef.current={identityKey,promise};
+  const release=()=>{if(identityCleanupRef.current?.promise===promise)identityCleanupRef.current=null};
+  void promise.then(release,release);
  },[identityKey,qc,user?.org_id,user?.id,missionQ.refetch]);
  useEffect(()=>{if(!identityReady||selectedId&&revalidatingMissionIds.has(selectedId))return;if(!selectedId&&missions.length)setSelectedId(missions[0]!.id);else if(selectedId&&!missions.some(m=>m.id===selectedId))setSelectedId(missions[0]?.id||'')},[identityReady,missions,selectedId,revalidatingMissionIds]);
  const mission=missions.find(m=>m.id===selectedId);
