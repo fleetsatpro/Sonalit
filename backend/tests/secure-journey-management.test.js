@@ -5,7 +5,7 @@ jest.mock('../src/realtime/centrifugo', () => ({ unsubscribeUserFromChannel: jes
 const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -130,6 +130,36 @@ describe('SJM validation and evidence boundaries', () => {
     expect(journeyRegisterFilterSql('overdue')).toMatch(/planned_arrival_at\s*<\s*NOW\(\)/);
     expect(journeyRegisterFilterSql('departure_due_30m')).toMatch(/INTERVAL '30 minutes'/);
     expect(journeyRegisterFilterSql("all' OR 1=1 --")).toBeNull();
+  });
+
+  test('route review and approval reject a stale assessment, decision or journey revision', () => {
+    const expected={
+      id:'journey-1',
+      status:'ready_for_review',
+      route_assessment:{route_status:'routed',safety_gate:'HUMAN_REVIEW',recommended_route:{blocked:false,waypoints:[{lat:-1.2,lng:36.8}]}},
+      human_review_decision:null,
+      updated_at:new Date('2026-10-29T10:00:00.000Z'),
+    };
+    expect(sameRouteReviewSnapshot({...expected,route_assessment:{recommended_route:{waypoints:[{lng:36.8,lat:-1.2}],blocked:false},safety_gate:'HUMAN_REVIEW',route_status:'routed'}},expected)).toBe(true);
+    expect(sameRouteReviewSnapshot({...expected,updated_at:new Date('2026-10-29T10:00:01.000Z')},expected)).toBe(false);
+    expect(sameRouteReviewSnapshot({...expected,route_assessment:{...expected.route_assessment,assessment_revision:2}},expected)).toBe(false);
+    expect(sameRouteReviewSnapshot({...expected,human_review_decision:'approve_with_controls'},expected)).toBe(false);
+    expect(sameRouteReviewSnapshot({...expected,status:'planning'},expected)).toBe(false);
+  });
+
+  test('human review and approval evaluate the same snapshot under the journey lock', () => {
+    const source=fs.readFileSync(path.join(__dirname, '../src/routes/secureJourneyManagement.js'), 'utf8');
+    const reviewStart=source.indexOf("router.post('/journeys/:id/review'");
+    const approveStart=source.indexOf("router.post('/journeys/:id/approve'");
+    const lifecycleStart=source.indexOf("router.post('/journeys/:id/lifecycle'");
+    const review=source.slice(reviewStart,approveStart);
+    const approve=source.slice(approveStart,lifecycleStart);
+    expect(review).toContain('mutateWithEvent');
+    expect(approve).toContain('mutateWithEvent');
+    expect(review).toContain('await readLockedRouteReviewSnapshot(db,org,j)');
+    expect(approve).toContain('await readLockedRouteReviewSnapshot(db,org,j)');
+    expect(review).toContain("route_review_already_recorded");
+    expect(approve).toContain('approvalGate(parseJson(snapshot.current?.route_assessment,null),currentDecision,ack)');
   });
 
   test('register sort compiler exposes operational priority and explicit date alternatives only', () => {

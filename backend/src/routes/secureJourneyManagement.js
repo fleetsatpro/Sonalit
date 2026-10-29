@@ -221,6 +221,23 @@ function approvalGate(a, review, ack) {
   return {ok:true};
 }
 function parseJson(v,fallback) { if(v==null)return fallback; if(typeof v==='object')return v; try{return JSON.parse(v)}catch(_){return fallback} }
+function canonicalJson(value) {
+  if(value===null||typeof value!=='object')return JSON.stringify(value);
+  if(Array.isArray(value))return '['+value.map(canonicalJson).join(',')+']';
+  return '{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonicalJson(value[key])).join(',')+'}';
+}
+function sameRouteReviewSnapshot(current,expected) {
+  if(!current||!expected||current.status!=='ready_for_review'||expected.status!=='ready_for_review')return false;
+  const currentUpdatedAt=new Date(current.updated_at).getTime(),expectedUpdatedAt=new Date(expected.updated_at).getTime();
+  if(!Number.isFinite(currentUpdatedAt)||!Number.isFinite(expectedUpdatedAt)||currentUpdatedAt!==expectedUpdatedAt)return false;
+  if(canonicalJson(parseJson(current.route_assessment,null))!==canonicalJson(parseJson(expected.route_assessment,null)))return false;
+  return (current.human_review_decision||null)===(expected.human_review_decision||null);
+}
+async function readLockedRouteReviewSnapshot(db,org,expected) {
+  const result=await db('SELECT status,route_assessment,human_review_decision,updated_at FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[expected.id,org]);
+  const current=result.rows[0]||null;
+  return {current,matches:sameRouteReviewSnapshot(current,expected)};
+}
 function tzValid(tz) { try { new Intl.DateTimeFormat('en-US',{timeZone:tz}).format(new Date()); return typeof tz==='string'&&tz.length>0&&tz.length<=100; } catch(_){return false} }
 function dateInTimezone(d,tz) { const p=new Intl.DateTimeFormat('en-GB',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d); const f=(k)=>p.find(x=>x.type===k)?.value||''; return f('year')+'-'+f('month')+'-'+f('day'); }
 function csvCell(v) {
@@ -924,10 +941,19 @@ router.post('/journeys/:id/review',authorize('admin','dispatcher'),asyncHandler(
   if(a.safety_gate!=='HUMAN_REVIEW')return res.status(409).json({error:'human_review_not_required'});
   const decision=req.body?.decision,rationale=txt(req.body?.rationale,1200);
   if(!['approve_with_controls','reject'].includes(decision)||rationale.length<30)return res.status(400).json({error:'review_rationale_required',message:'Choose a review decision and provide at least 30 characters of rationale.'});
+  if(j.human_review_decision)return res.status(409).json({error:'route_review_already_recorded',message:'A route review decision is already recorded. Replan the journey before issuing a replacement decision.'});
   const nextStatus=decision==='reject'?'exception':'ready_for_review';
   const transition=await mutateWithEvent(req,j,req.user.id,'human_route_review',decision==='reject'?'Route review rejected; replan required':'Route review accepted with controls',{decision,rationale,safety_gate:a.safety_gate,risk_score:a.overall_risk_score,next_status:nextStatus},'operator',
-    db=>db("UPDATE sjm_journeys SET human_review_decision=$1,human_review_rationale=$2,reviewed_by=$3,reviewed_at=NOW(),status=$4,exception_at=CASE WHEN $4='exception' THEN NOW() ELSE exception_at END,updated_by=$3,updated_at=NOW() WHERE id=$5 AND org_id=$6 AND status='ready_for_review' RETURNING id",[decision,rationale,req.user.id,nextStatus,j.id,org]));
-  if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
+    db=>db("UPDATE sjm_journeys SET human_review_decision=$1,human_review_rationale=$2,reviewed_by=$3,reviewed_at=NOW(),status=$4,exception_at=CASE WHEN $4='exception' THEN NOW() ELSE exception_at END,updated_by=$3,updated_at=NOW() WHERE id=$5 AND org_id=$6 AND status='ready_for_review' RETURNING id",[decision,rationale,req.user.id,nextStatus,j.id,org]),
+    async(db,locked)=>{
+      if(locked.status!==j.status||locked.status!=='ready_for_review')return {error:'journey_state_changed'};
+      const snapshot=await readLockedRouteReviewSnapshot(db,org,j);
+      if(!snapshot.matches||snapshot.current?.human_review_decision)return {error:'journey_state_changed'};
+      const currentAssessment=parseJson(snapshot.current?.route_assessment,null);
+      if(!currentAssessment||currentAssessment.route_status!=='routed'||currentAssessment.route_status==='blocked'||currentAssessment.recommended_route?.blocked===true||currentAssessment.safety_gate!=='HUMAN_REVIEW'||currentAssessment.safety_gate==='NO_GO')return {error:'journey_state_changed'};
+      return null;
+    });
+  if(!transition.changed)return res.status(409).json({error:transition.error||'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
 router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
@@ -938,8 +964,17 @@ router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler
   if(j.human_review_decision==='reject')return res.status(409).json({error:'route_review_rejected'});
   const ack=txt(req.body?.risk_acknowledgement,1200)||null;
   const transition=await mutateWithEvent(req,j,req.user.id,'journey_approved','Journey approved by authorised dispatcher',{safety_gate:a.safety_gate,risk_acknowledgement_recorded:Boolean(ack),human_review_decision:j.human_review_decision||null},'operator',
-    db=>db("UPDATE sjm_journeys SET status='approved',approved_by=$1,approved_at=NOW(),risk_acknowledgement=$2,updated_by=$1,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status='ready_for_review' RETURNING id",[req.user.id,ack,j.id,org]));
-  if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
+    db=>db("UPDATE sjm_journeys SET status='approved',approved_by=$1,approved_at=NOW(),risk_acknowledgement=$2,updated_by=$1,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status='ready_for_review' RETURNING id",[req.user.id,ack,j.id,org]),
+    async(db,locked)=>{
+      if(locked.status!==j.status||locked.status!=='ready_for_review')return {error:'journey_state_changed'};
+      const snapshot=await readLockedRouteReviewSnapshot(db,org,j);
+      if(!snapshot.matches)return {error:'journey_state_changed'};
+      const currentDecision=snapshot.current?.human_review_decision||null;
+      const currentGate=approvalGate(parseJson(snapshot.current?.route_assessment,null),currentDecision,ack);
+      if(!currentGate.ok||currentDecision==='reject')return {error:'journey_state_changed'};
+      return null;
+    });
+  if(!transition.changed)return res.status(409).json({error:transition.error||'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
 router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator'),asyncHandler(async(req,res)=>{
@@ -1109,4 +1144,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,journeyRegisterOrderSql,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,journeyRegisterOrderSql,sameRouteReviewSnapshot,readLockedRouteReviewSnapshot,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
