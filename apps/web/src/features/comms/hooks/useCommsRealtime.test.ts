@@ -19,12 +19,12 @@ describe('clearRevokedSjmChannelCache', () => {
     client.setQueryData(commsKeys.thread('another-channel', 'm-9'), [{ id: 'm-10', body: 'OTHER CHANNEL' }]);
   };
 
-  it('removes private data and blanks the visible channel list when the active mission rotates', () => {
+  it('removes private data and blanks the visible channel list when the active mission rotates', async () => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const channelId = 'mission-channel-private';
     seedSensitiveCache(queryClient, channelId);
 
-    clearRevokedSjmChannelCache(queryClient, channelId, true);
+    await clearRevokedSjmChannelCache(queryClient, channelId, true);
 
     expect(queryClient.getQueryData(commsKeys.channels)).toEqual([]);
     expect(queryClient.getQueryData(commsKeys.messages(channelId))).toBeUndefined();
@@ -63,7 +63,7 @@ describe('clearRevokedSjmChannelCache', () => {
     );
   });
 
-  it('removes an inactive mission cache without disrupting the currently visible channel list', () => {
+  it('removes an inactive mission cache without disrupting the currently visible channel list', async () => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const channelId = 'inactive-mission-channel';
     queryClient.setQueryData(commsKeys.channels, [{ id: channelId, name: 'Old mission' }, { id: 'still-authorised', name: 'Open channel' }]);
@@ -73,7 +73,7 @@ describe('clearRevokedSjmChannelCache', () => {
       { id: 'still-authorised', name: 'Open channel', last_message: { body: 'AUTHORISED CHANNEL' } },
     ]);
 
-    clearRevokedSjmChannelCache(queryClient, channelId, false);
+    await clearRevokedSjmChannelCache(queryClient, channelId, false);
 
     expect(queryClient.getQueryData(commsKeys.channels)).toEqual([
       { id: 'still-authorised', name: 'Open channel', last_message: { body: 'AUTHORISED CHANNEL' } },
