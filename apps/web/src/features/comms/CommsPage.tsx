@@ -63,7 +63,7 @@ export default function CommsPage() {
 
   // A requested channel remains unselected while its fresh authorisation fetch runs.
   useEffect(() => {
-    if (verifyingDeepLink) return;
+    if (verifyingDeepLink || channelsQ.isError) return;
     const list = channelsQ.data ?? [];
     if (requestedChannelId) {
       if (list.some((channel) => channel.id === requestedChannelId)) {
@@ -82,7 +82,7 @@ export default function CommsPage() {
     if (!activeChannelId || !list.some((channel) => channel.id === activeChannelId)) {
       setActiveChannelId(list[0]!.id);
     }
-  }, [channelsQ.data, channelsQ.isFetching, channelsQ.isSuccess, activeChannelId, requestedChannelId, verifyingDeepLink]);
+  }, [channelsQ.data, channelsQ.isError, channelsQ.isFetching, channelsQ.isSuccess, activeChannelId, requestedChannelId, verifyingDeepLink]);
 
   const activeChannel = useMemo(
     () => !verifyingDeepLink && !channelsQ.isError ? channelsQ.data?.find((c) => c.id === activeChannelId) ?? null : null,
