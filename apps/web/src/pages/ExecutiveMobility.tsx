@@ -152,6 +152,7 @@ export default function ExecutiveMobility(){
    classified.revoked.forEach(id=>next.add(id));
    return next;
   });
+  if(classified.stillAssigned.length)setAccessNotice(false);
   setSelectedId(current=>current||classified.stillAssigned[0]||'');
  },[missionQ.refetch]);
 
