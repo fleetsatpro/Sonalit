@@ -35,55 +35,16 @@ export const SAT_STYLE: maplibregl.StyleSpecification = {
 };
 
 /**
- * SJM dark cartography rendered from the existing Esri street raster source.
- * MapLibre adjusts only this raster layer, keeping assessed routes and device
- * markers in their own colors. No CARTO key or style API is required.
+ * SJM dark vector cartography from OpenFreeMap. The provider publishes a
+ * keyless MapLibre style and serves its own glyphs, sprites and vector tiles.
+ * Route geometry and operational markers are added by the journey layer.
  */
-export const DARK_STREET_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    'dark-street': {
-      type: 'raster',
-      tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'],
-      tileSize: 256,
-      maxzoom: 19,
-      attribution: '© Esri, HERE, Garmin, USGS, NGA, EPA, USDA',
-    },
-  },
-  layers: [
-    {
-      id: 'dark-street-tiles',
-      type: 'raster',
-      source: 'dark-street' as const,
-      paint: {
-        'raster-opacity': 1,
-        'raster-saturation': -1,
-        'raster-contrast': 0.12,
-        'raster-brightness-min': 0.06,
-        'raster-brightness-max': 0.46,
-        'raster-fade-duration': 150,
-      },
-    },
-  ],
-};
+export const DARK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/dark' as const;
 
 /**
- * Dark raster cartography for dense operational overlays and an independent
- * fallback where the primary street tile host is blocked or unreachable.
- * This is cartography only: it never fabricates route, tracking or weather data.
+ * Independent keyless vector fallback for map workspaces when their primary
+ * cartographic provider fails. It provides geography only; no route, tracking,
+ * forecast or weather data is fabricated.
  */
-export const FALLBACK_STREET_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    'fallback-base': {
-      type: 'raster',
-      tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      maxzoom: 20,
-      attribution: '© OpenStreetMap contributors · © CARTO',
-    },
-  },
-  layers: [
-    { id: 'fallback-base-layer', type: 'raster', source: 'fallback-base', paint: { 'raster-opacity': 1, 'raster-fade-duration': 150 } },
-  ],
-};
+export const FALLBACK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/liberty' as const;
+
