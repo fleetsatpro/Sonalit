@@ -386,6 +386,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         ...summary,
         id: offset === 0 && index === 0 ? JOURNEY_ID : JOURNEY_ID + '-' + (offset + index),
         reference: 'SJM-PAGE-' + (offset + index),
+        schedule_urgency: requestedFilter === 'overdue' ? 'DEPARTURE_OVERDUE' : requestedFilter === 'departure_due_30m' ? 'DEPARTURE_DUE_30M' : null,
       }));
       return route.fulfill({
         status: 200,
@@ -420,11 +421,13 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect.poll(() => requestedOffset).toBe(0);
     await expect(page.getByText('7 matches')).toBeVisible();
     await expect(page.getByText('Showing 1–7 of 7')).toBeVisible();
+    await expect(page.getByRole('button', { name: /SJM-PAGE-0/ }).getByText('Departure overdue')).toBeVisible();
 
     await page.getByRole('button', { name: 'Departure due ≤30m' }).click();
     await expect.poll(() => requestedFilter).toBe('departure_due_30m');
     await expect.poll(() => requestedOffset).toBe(0);
     await expect(page.getByText('3 matches')).toBeVisible();
+    await expect(page.getByRole('button', { name: /SJM-PAGE-0/ }).getByText('Departure due ≤30m')).toBeVisible();
   });
 
   test('lifecycle rail keeps movement and arrival verification on their correct checkpoints', async ({ page }) => {

@@ -158,6 +158,10 @@ describe('SJM validation and evidence boundaries', () => {
     expect(route).toContain('journeyRegisterOrderSql(sort)');
     expect(route).toContain('AS overdue');
     expect(route).toContain('AS departures_due_30m');
+    expect(route).toContain('AS schedule_urgency');
+    expect(route).toContain("THEN 'DEPARTURE_OVERDUE'");
+    expect(route).toContain("THEN 'ARRIVAL_OVERDUE'");
+    expect(route).toContain("THEN 'DEPARTURE_DUE_30M'");
     expect(route).toContain('ORDER BY ${orderSql}');
     expect(route).toContain('invalid_journey_sort');
   });
