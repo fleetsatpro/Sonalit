@@ -27,8 +27,8 @@ export const commsKeys = {
 export function useChannels() {
   return useQuery({
     queryKey: commsKeys.channels,
-    queryFn: async (): Promise<Channel[]> => {
-      const r = await api.get<{ data: Channel[] }>('/messages/channels');
+    queryFn: async ({ signal }): Promise<Channel[]> => {
+      const r = await api.get<{ data: Channel[] }>('/messages/channels', { signal });
       return r.data.data ?? [];
     },
     staleTime: 30_000,

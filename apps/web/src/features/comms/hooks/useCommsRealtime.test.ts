@@ -34,6 +34,35 @@ describe('clearRevokedSjmChannelCache', () => {
     expect(queryClient.getQueryData(commsKeys.thread('another-channel', 'm-9'))).toEqual([{ id: 'm-10', body: 'OTHER CHANNEL' }]);
   });
 
+  it('fences an in-flight channel list when revocation arrives before the first snapshot', async () => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const channelId = 'revoked-before-first-snapshot';
+    let resolveList!: (value: Array<{ id: string; name: string; last_message?: { body: string } }>) => void;
+    const inFlightList = new Promise<Array<{ id: string; name: string; last_message?: { body: string } }>>((resolve) => {
+      resolveList = resolve;
+    });
+    const pendingQuery = queryClient.fetchQuery({
+      queryKey: commsKeys.channels,
+      queryFn: () => inFlightList,
+    }).catch(() => undefined);
+
+    expect(queryClient.getQueryData(commsKeys.channels)).toBeUndefined();
+    expect(queryClient.getQueryState(commsKeys.channels)?.fetchStatus).toBe('fetching');
+
+    const revocation = clearRevokedSjmChannelCache(queryClient, channelId, false);
+    // An unknown snapshot is fenced as an empty list rather than left to race the
+    // original request; the previous request deliberately ignores AbortSignal here.
+    expect(queryClient.getQueryData(commsKeys.channels)).toEqual([]);
+    resolveList([{ id: channelId, name: 'Revoked mission', last_message: { body: 'SECRET PREVIEW' } }]);
+
+    await pendingQuery;
+    await revocation;
+    expect(queryClient.getQueryData(commsKeys.channels)).toEqual([]);
+    expect(queryClient.getQueryData(commsKeys.channels)).not.toContainEqual(
+      expect.objectContaining({ id: channelId }),
+    );
+  });
+
   it('removes an inactive mission cache without disrupting the currently visible channel list', () => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const channelId = 'inactive-mission-channel';

@@ -25,25 +25,32 @@ export function clearRevokedSjmChannelCache(
   qc: ReturnType<typeof useQueryClient>,
   channelId: string,
   blankChannelList = true,
-): void {
+): Promise<void> {
   qc.removeQueries({ queryKey: commsKeys.messages(channelId), exact: true });
   qc.removeQueries({ queryKey: commsKeys.members(channelId), exact: true });
   qc.removeQueries({ queryKey: commsKeys.pinned(channelId), exact: true });
   qc.removeQueries({ queryKey: ['comms', 'channels', channelId, 'thread'] });
-  if (blankChannelList) {
-    // The active channel's old membership snapshot is no longer trustworthy.
-    // Keep the visible list empty until the server returns a fresh authorised list.
-    qc.setQueryData(commsKeys.channels, []);
-  } else {
-    // Channel rows also cache last-message previews. Remove the rotated mission
-    // row immediately so an inactive channel cannot leak a preview while REST
-    // revalidates the current roster.
-    const currentChannels = qc.getQueryData<Array<{ id: string }>>(commsKeys.channels);
-    if (currentChannels) {
-      qc.setQueryData(commsKeys.channels, currentChannels.filter((channel) => channel.id !== channelId));
+
+  // Start cancellation before applying the fence. A refetch already in progress
+  // can otherwise finish after the roster event and restore a revoked row's
+  // last-message preview. This must also work when the cache is initially empty.
+  const cancellation = qc.cancelQueries({ queryKey: commsKeys.channels, exact: true });
+  const applyFence = () => {
+    if (blankChannelList) {
+      qc.setQueryData(commsKeys.channels, []);
+      return;
     }
-  }
-  void qc.invalidateQueries({ queryKey: commsKeys.channels, exact: true });
+    const currentChannels = qc.getQueryData<Array<{ id: string }>>(commsKeys.channels);
+    qc.setQueryData(commsKeys.channels, (currentChannels ?? []).filter((channel) => channel.id !== channelId));
+  };
+
+  applyFence();
+  return cancellation.then(async () => {
+    // Query cancellation can restore the pre-fetch snapshot; re-apply the fence
+    // after cancellation, then admit only the new authorised server response.
+    applyFence();
+    await qc.invalidateQueries({ queryKey: commsKeys.channels, exact: true });
+  });
 }
 import type { CommsEvent } from '../types/comms.js';
 
@@ -78,7 +85,7 @@ export function useCommsRealtime(
         // when it is not the open channel. If it is open, also blank the channel
         // list and immediately leave the workspace until access is re-authorised.
         const isActiveChannel = raw.channel_id === activeChannelId;
-        clearRevokedSjmChannelCache(qc, raw.channel_id, isActiveChannel);
+        void clearRevokedSjmChannelCache(qc, raw.channel_id, isActiveChannel);
         if (isActiveChannel) {
           onSjmRosterChanged?.(raw.channel_id);
           if (missionQueryId) {
