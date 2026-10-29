@@ -363,6 +363,25 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(communicationsTop).toBeLessThan(milestonesTop);
   });
 
+  test('field communications distinguish failed history loads from an empty channel', async ({ page }) => {
+    await seedAuth(page);
+    await stubFieldSjmApi(page);
+    await page.route('**/api/v1/messages/**', (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'message_history_unavailable' }),
+      }),
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('heading', { name: 'Private mission channel' })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Message history could not be loaded. No empty-state assumption is made.')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('No messages recorded in this mission channel.')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Retry history' })).toBeVisible();
+  });
+
   test('register exposes full result counts and bounded page navigation', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
