@@ -264,9 +264,35 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(serviceBrief.getByText('Airport arrival', { exact: true })).toBeVisible();
       await expect(serviceBrief.getByText('Test Airline · ZZ 100', { exact: true })).toBeVisible();
       await expect(serviceBrief.getByText('NBO · Terminal 1A', { exact: true })).toBeVisible();
-      await expect(serviceBrief.getByText('No team observation', { exact: true })).toBeVisible();
+      const flightStatusPanel = page.locator('section[aria-label="Flight status"]');
+      await expect(flightStatusPanel.getByText('No observation recorded', { exact: true })).toBeVisible();
+      await expect(flightStatusPanel.getByText('Entered by your team; this is not a live airline feed and is not independently verified.', { exact: true })).toBeVisible();
       await expect(serviceBrief.getByText('TEST-PRINCIPAL-001', { exact: true })).toBeVisible();
       await expect(serviceBrief.getByText('Synthetic fixture instructions only.', { exact: true })).toBeVisible();
+      const overviewColumns = page.locator('.sjm-overview-columns');
+      const riskPanel = page.locator('.sjm-overview-risk-panel');
+      const overviewRail = page.locator('.sjm-overview-rail');
+      await expect(overviewColumns).toBeVisible();
+      const hierarchy = await overviewColumns.evaluate((el) => ({
+        borderWidth: getComputedStyle(el).borderTopWidth,
+        radius: getComputedStyle(el).borderTopLeftRadius,
+        riskBorder: getComputedStyle(el.querySelector('.sjm-overview-risk-panel') as HTMLElement).borderTopWidth,
+        riskBackground: getComputedStyle(el.querySelector('.sjm-overview-risk-panel') as HTMLElement).backgroundColor,
+      }));
+      expect(hierarchy.borderWidth).toBe('1px');
+      expect(hierarchy.radius).toBe('10px');
+      expect(hierarchy.riskBorder).toBe('0px');
+      expect(hierarchy.riskBackground).toBe('rgba(0, 0, 0, 0)');
+      const riskBox = await riskPanel.boundingBox();
+      const railBox = await overviewRail.boundingBox();
+      expect(riskBox, `${viewport.label}: route review region should render`).not.toBeNull();
+      expect(railBox, `${viewport.label}: overview rail should render`).not.toBeNull();
+      if (viewport.width >= 1536) {
+        expect(Math.abs(riskBox!.y - railBox!.y), `${viewport.label}: route review and overview rail should align as one surface`).toBeLessThanOrEqual(1);
+        expect(railBox!.x).toBeGreaterThan(riskBox!.x + riskBox!.width - 1);
+      } else {
+        expect(railBox!.y).toBeGreaterThanOrEqual(riskBox!.y + riskBox!.height - 1);
+      }
       const basemapSelect = page.getByRole('combobox', { name: 'Map basemap' });
       await expect(basemapSelect).toHaveValue('dark');
       await expect(basemapSelect.locator('option')).toHaveText(['Street', 'Dark', 'Satellite']);
