@@ -144,7 +144,7 @@ export default function ExecutiveMobility(){
    qc.cancelQueries({queryKey:['sjm-mission-channel']}),
    ...staleAssignmentKeys.map(queryKey=>qc.cancelQueries({queryKey,exact:true})),
   ];
-  const finishScopeChange=()=>{
+  const finishScopeChange=async()=>{
    // A second login/tenant change may supersede this cleanup while cancellation
    // settles. Never mark an obsolete identity as ready.
    if(identityKeyRef.current!==identityKey)return;
@@ -154,15 +154,19 @@ export default function ExecutiveMobility(){
    qc.removeQueries({queryKey:['sjm-field-events']});
    qc.removeQueries({queryKey:['sjm-mission-channel']});
    accessIdentityScopeRef.current={orgId:user?.org_id,userId:user?.id};
-   accessIdentityRef.current=identityKey;
    setInaccessibleMissionIds(new Set());
    setRevalidatingMissionIds(new Set());
    setAccessNotice(false);
    setSelectedId('');
    previousMissionId.current='';
+   // A warm cache is not proof that assignments survived a roster change while
+   // this page was unmounted. Revalidate before allowing the workspace to render.
+   if(user?.org_id&&user?.id)await missionQ.refetch().catch(()=>undefined);
+   if(identityKeyRef.current!==identityKey)return;
+   accessIdentityRef.current=identityKey;
   };
   void Promise.all(cancellations).then(finishScopeChange,finishScopeChange);
- },[identityKey,qc,user?.org_id,user?.id]);
+ },[identityKey,qc,user?.org_id,user?.id,missionQ.refetch]);
  useEffect(()=>{if(!identityReady||selectedId&&revalidatingMissionIds.has(selectedId))return;if(!selectedId&&missions.length)setSelectedId(missions[0]!.id);else if(selectedId&&!missions.some(m=>m.id===selectedId))setSelectedId(missions[0]?.id||'')},[identityReady,missions,selectedId,revalidatingMissionIds]);
  const mission=missions.find(m=>m.id===selectedId);
  const detailQ=useQuery<{data:MissionDetail}>({queryKey:['sjm-field-detail',selectedId],queryFn:async({signal})=>(await api.get('/sjm/journeys/'+selectedId,{signal})).data,enabled:Boolean(identityReady&&selectedId&&!revalidatingMissionIds.has(selectedId)),staleTime:10000,refetchInterval:['in_progress','paused','exception','arrival_pending_verification'].includes(mission?.status||'')?30000:false});
