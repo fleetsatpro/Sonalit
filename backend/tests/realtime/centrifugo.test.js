@@ -77,6 +77,18 @@ describe('Centrifugo publish client', () => {
     );
   });
 
+  test('treats Centrifugo history-disabled code 108 as an empty stream', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'test-key';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: jest.fn().mockResolvedValue({ error: { code: 108, message: 'not available' } }),
+    });
+
+    const { removeChannelHistory } = require('../../src/realtime/centrifugo');
+    await expect(removeChannelHistory('org#org-a#comms#channel-1')).resolves.toBe(true);
+  });
+
   test('fails closed if the history-removal response is malformed', async () => {
     process.env.CENTRIFUGO_API_KEY = 'test-key';
     global.fetch = jest.fn().mockResolvedValue({
