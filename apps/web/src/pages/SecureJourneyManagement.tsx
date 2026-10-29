@@ -647,7 +647,7 @@ return (
               {hasFlightContext&&<section className="rounded-md border border-[#263442] bg-[#0f1720] p-4" aria-label="Flight status">
                <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0"><Kicker>Flight status</Kicker><h4 className="mt-1 text-sm font-semibold text-white">Flight status</h4><p className="mt-1 text-xs leading-5 text-slate-400">{journey.flight_number?[(journey.airline||null),journey.flight_number].filter(Boolean).join(' · '):'No flight number recorded'}{journey.airport_code?' · '+journey.airport_code:''}{journey.terminal?' · '+journey.terminal:''}</p></div>
-                <span className={'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold '+(['delayed','cancelled','diverted'].includes(journey.flight_status||'')?'border-amber-300/25 bg-amber-300/[0.06] text-amber-100':'border-white/[0.12] bg-white/[0.025] text-slate-200')}>{flightStatusLabel(journey.flight_status)}</span>
+                <span data-testid="sjm-flight-status-value" className={'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold '+(['delayed','cancelled','diverted'].includes(journey.flight_status||'')?'border-amber-300/25 bg-amber-300/[0.06] text-amber-100':'border-white/[0.12] bg-white/[0.025] text-slate-200')}>{flightStatusLabel(journey.flight_status)}</span>
                </div>
                <dl className="mt-3 grid grid-cols-1 gap-2 border-t border-white/[0.06] pt-3 sm:grid-cols-2">
                 <div><dt className="text-xs text-slate-400">Source</dt><dd className="mt-1 text-xs font-medium text-slate-200">{journey.flight_status_source==='operator_entered'?'Operator-entered':'No observation recorded'}</dd></div>

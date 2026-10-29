@@ -584,7 +584,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(secondCard.getByLabel('Flight status')).toHaveValue('landed');
     await expect(secondCard.getByLabel('Observation note')).toHaveValue('Second journey draft remains unsent.');
     await expect(secondCard.getByRole('button', { name: 'Save flight observation' })).toBeVisible();
-    await expect(secondCard.getByText('Scheduled', { exact: true })).toBeVisible();
+    await expect(secondCard.getByTestId('sjm-flight-status-value')).toHaveText('Scheduled');
     await expect(secondCard.getByText('First journey delay awaiting confirmation.')).toHaveCount(0);
   });
 
