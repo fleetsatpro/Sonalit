@@ -87,6 +87,8 @@ async function seedAuth(page: Page) {
 }
 
 async function stubSjmApi(page: Page) {
+  let flightStatusObservation = { flight_status: journey.flight_status, flight_status_source: journey.flight_status_source, flight_status_observed_at: journey.flight_status_observed_at, flight_status_note: journey.flight_status_note };
+  const flightStatusUpdates: Array<{flight_status:string;note:string|null}> = [];
   await page.route('**/api/v1/sjm/**', async (route) => {
     const url = new URL(route.request().url());
     const pathname = url.pathname;
@@ -104,11 +106,18 @@ async function stubSjmApi(page: Page) {
         body: JSON.stringify({ data: [{ id: CONVOY_ID, name: 'SJM E2E Fixture Team', status: 'planned' }] }),
       });
     }
+    if (pathname === '/api/v1/sjm/journeys/' + JOURNEY_ID + '/flight-status' && route.request().method() === 'PATCH') {
+      const body = route.request().postDataJSON() as { flight_status: string; note?: string | null };
+      const note = body.note?.trim() || null;
+      flightStatusObservation = { flight_status: body.flight_status, flight_status_source: 'operator_entered', flight_status_observed_at: '2026-10-29T18:00:00.000Z', flight_status_note: note };
+      flightStatusUpdates.push({ flight_status: body.flight_status, note });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: JOURNEY_ID, flight_status: body.flight_status, flight_status_source: 'operator_entered', flight_status_observed_at: flightStatusObservation.flight_status_observed_at }, provenance: { source: 'operator_entered', evidence_class: 'OPERATOR_ENTERED_UNVERIFIED', provider_feed_connected: false } }) });
+    }
     if (pathname === '/api/v1/sjm/journeys' && route.request().method() === 'GET') {
       const requestUrl = new URL(route.request().url());
       const offset = Number(requestUrl.searchParams.get('offset') || 0);
       const limit = Number(requestUrl.searchParams.get('limit') || 100);
-      const summary = { ...journey };
+      const summary = { ...journey, ...flightStatusObservation };
       delete summary.stops;
       delete summary.events;
       delete summary.telemetry_snapshot;
@@ -126,7 +135,7 @@ async function stubSjmApi(page: Page) {
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ data: journey }),
+          body: JSON.stringify({ data: { ...journey, ...flightStatusObservation } }),
         });
       }
       // The pagination E2E creates extra, synthetic register IDs. Return a
@@ -180,6 +189,7 @@ async function stubSjmApi(page: Page) {
       }),
     }),
   );
+  return { flightStatusUpdates };
 }
 
 async function stubFieldSjmApi(page: Page, detail: Record<string, unknown> = { ...journey, duty_roles: ['driver'] }) {
@@ -474,6 +484,30 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByRole('tab', { name: 'Reports' }).click();
     await expect(page.getByRole('heading', { name: 'Generate report' })).toBeVisible();
     await expect(page.getByText(/Reports are downloaded here/)).toBeVisible();
+  });
+
+  test('flight status can be recorded as an audited operator observation', async ({ page }) => {
+    await seedAuth(page);
+    const { flightStatusUpdates } = await stubSjmApi(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+
+    const flightCard = page.getByRole('region', { name: 'Flight status' });
+    await expect(flightCard).toBeVisible({ timeout: 15000 });
+    await expect(flightCard.getByText('Not recorded', { exact: true }).first()).toBeVisible();
+    await expect(flightCard.getByText(/not a live airline feed/i)).toBeVisible();
+
+    await flightCard.getByRole('button', { name: 'Record flight status' }).click();
+    await flightCard.getByLabel('Flight status').selectOption('delayed');
+    await expect(flightCard.getByRole('button', { name: 'Save flight observation' })).toBeDisabled();
+    await flightCard.getByLabel('Observation note').fill('Airline desk reported a 35 minute delay.');
+    await expect(flightCard.getByRole('button', { name: 'Save flight observation' })).toBeEnabled();
+    await flightCard.getByRole('button', { name: 'Save flight observation' }).click();
+
+    await expect.poll(() => flightStatusUpdates).toEqual([{ flight_status: 'delayed', note: 'Airline desk reported a 35 minute delay.' }]);
+    await expect(flightCard.getByText('Delayed', { exact: true })).toBeVisible();
+    await expect(flightCard.getByText('Operator-entered', { exact: true })).toBeVisible();
+    await expect(flightCard.getByText('Airline desk reported a 35 minute delay.')).toBeVisible();
   });
 
   test('team assignments stay out of the initial dispatch path until requested', async ({ page }) => {
