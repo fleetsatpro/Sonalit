@@ -117,12 +117,14 @@ export default function ExecutiveMobility(){
 
  const [accessNotice,setAccessNotice]=useState(false);
  const identityKey=String(user?.org_id||'')+':'+String(user?.id||'');
- const accessIdentityRef=useRef<string|null>(null);
- const [verifiedIdentityKey,setVerifiedIdentityKey]=useState<string|null>(null);
- const identityCleanupRef=useRef<{identityKey:string;promise:Promise<void>}|null>(null);
- const identityKeyRef=useRef(identityKey);identityKeyRef.current=identityKey;
+ const identityGenerationRef=useRef({identityKey,generation:0});
+ if(identityGenerationRef.current.identityKey!==identityKey){identityGenerationRef.current={identityKey,generation:identityGenerationRef.current.generation+1};}
+ const identityGeneration=identityGenerationRef.current.generation;
+ const [verifiedScope,setVerifiedScope]=useState<{identityKey:string;generation:number}|null>(null);
+ const verifiedScopeRef=useRef<{identityKey:string;generation:number}|null>(null);
+ const identityCleanupRef=useRef<{identityKey:string;generation:number;promise:Promise<void>}|null>(null);
  const accessIdentityScopeRef=useRef<{orgId:string|undefined;userId:string|undefined}>({orgId:undefined,userId:undefined});
- const identityReady=verifiedIdentityKey===identityKey;
+ const identityReady=verifiedScope?.identityKey===identityKey&&verifiedScope.generation===identityGeneration;
  const previousMissionId=useRef('');
  const missionQ=useQuery<{data:Mission[]}>({queryKey:['sjm-my-assignments',user?.org_id,user?.id],queryFn:async({signal})=>(await api.get('/sjm/my-assignments',{signal})).data,enabled:Boolean(user?.org_id&&user?.id),refetchInterval:30000,staleTime:10000});
  const currentAssignments=identityReady?missionQ.data?.data||[]:[];
@@ -130,18 +132,18 @@ export default function ExecutiveMobility(){
  const revalidatingMissionIdsRef=useRef(revalidatingMissionIds);revalidatingMissionIdsRef.current=revalidatingMissionIds;
  const missions=currentAssignments.filter(m=>!inaccessibleMissionIds.has(m.id)&&!revalidatingMissionIds.has(m.id));
  useEffect(()=>{
-  if(accessIdentityRef.current===identityKey)return;
-  // StrictMode can replay mount effects. Reuse one pending cleanup/refetch per
-  // identity so duplicate effect setups cannot race two assignment refreshes.
-  if(identityCleanupRef.current?.identityKey===identityKey)return;
+  if(verifiedScopeRef.current?.identityKey===identityKey&&verifiedScopeRef.current.generation===identityGeneration)return;
+  // StrictMode can replay the same effect. Reuse a pending cleanup only when
+  // both identity and generation match; A -> B -> A must perform fresh work.
+  if(identityCleanupRef.current?.identityKey===identityKey&&identityCleanupRef.current.generation===identityGeneration)return;
   const cleanupScope=async()=>{
-   // The initial mount is untrusted: a previous page may have unmounted during
-   // logout/login, so keep only assignment query data for this exact identity.
+   const isCurrentScope=()=>identityGenerationRef.current.identityKey===identityKey&&identityGenerationRef.current.generation===identityGeneration;
+   // The initial mount is untrusted: prior component refs may be gone, so keep
+   // only assignment query data for this exact user/org.
    const staleAssignmentKeys=qc.getQueryCache()
     .findAll({queryKey:['sjm-my-assignments']})
     .map(query=>query.queryKey)
     .filter(queryKey=>queryKey[1]!==user?.org_id||queryKey[2]!==user?.id);
-   // Keep identityReady false while private requests are cancelled and caches purged.
    const cancellations=[
     qc.cancelQueries({queryKey:['sjm-field-detail']}),
     qc.cancelQueries({queryKey:['sjm-field-events']}),
@@ -149,7 +151,7 @@ export default function ExecutiveMobility(){
     ...staleAssignmentKeys.map(queryKey=>qc.cancelQueries({queryKey,exact:true})),
    ];
    await Promise.all(cancellations).catch(()=>undefined);
-   if(identityKeyRef.current!==identityKey)return;
+   if(!isCurrentScope())return;
    rosterRevalidationVersionRef.current.clear();
    staleAssignmentKeys.forEach(queryKey=>qc.removeQueries({queryKey,exact:true}));
    qc.removeQueries({queryKey:['sjm-field-detail']});
@@ -161,18 +163,19 @@ export default function ExecutiveMobility(){
    setAccessNotice(false);
    setSelectedId('');
    previousMissionId.current='';
-   // A warm cache is not proof assignments survived a roster change while this
-   // page was unmounted. Fetch before making the field workspace renderable.
+   // A warm cache is not proof that assignments survived a roster change while
+   // this page was unmounted. Fetch before making the workspace renderable.
    if(user?.org_id&&user?.id)await missionQ.refetch().catch(()=>undefined);
-   if(identityKeyRef.current!==identityKey)return;
-   accessIdentityRef.current=identityKey;
-   setVerifiedIdentityKey(identityKey);
+   if(!isCurrentScope())return;
+   const verified={identityKey,generation:identityGeneration};
+   verifiedScopeRef.current=verified;
+   setVerifiedScope(verified);
   };
   const promise=Promise.resolve().then(cleanupScope);
-  identityCleanupRef.current={identityKey,promise};
+  identityCleanupRef.current={identityKey,generation:identityGeneration,promise};
   const release=()=>{if(identityCleanupRef.current?.promise===promise)identityCleanupRef.current=null};
   void promise.then(release,release);
- },[identityKey,qc,user?.org_id,user?.id,missionQ.refetch]);
+ },[identityKey,identityGeneration,qc,user?.org_id,user?.id,missionQ.refetch]);
  useEffect(()=>{if(!identityReady||selectedId&&revalidatingMissionIds.has(selectedId))return;if(!selectedId&&missions.length)setSelectedId(missions[0]!.id);else if(selectedId&&!missions.some(m=>m.id===selectedId))setSelectedId(missions[0]?.id||'')},[identityReady,missions,selectedId,revalidatingMissionIds]);
  const mission=missions.find(m=>m.id===selectedId);
  const detailQ=useQuery<{data:MissionDetail}>({queryKey:['sjm-field-detail',selectedId],queryFn:async({signal})=>(await api.get('/sjm/journeys/'+selectedId,{signal})).data,enabled:Boolean(identityReady&&selectedId&&!revalidatingMissionIds.has(selectedId)),staleTime:10000,refetchInterval:['in_progress','paused','exception','arrival_pending_verification'].includes(mission?.status||'')?30000:false});
