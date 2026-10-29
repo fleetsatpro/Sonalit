@@ -119,7 +119,7 @@ async function stubSjmApi(page: Page) {
         body: JSON.stringify({ data: [summary], pagination: { limit, offset, total_count: 1, has_more: false }, summary: { total: 1, active: 0, queue: 1, review: 0, awaiting_review: 1, arrival_verification: 0 } }),
       });
     }
-    const journeyDetailMatch = pathname.match(/^\\/api\\/v1\\/sjm\\/journeys\\/([^/]+)$/);
+    const journeyDetailMatch = pathname.match(/^\/api\/v1\/sjm\/journeys\/([^/]+)$/);
     if (journeyDetailMatch && route.request().method() === 'GET') {
       const requestedId = decodeURIComponent(journeyDetailMatch[1]);
       if (requestedId === JOURNEY_ID) {
