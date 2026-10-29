@@ -41,11 +41,17 @@ export function useCommsRealtime(
     return subscribe<{ type?: string; channel_id?: string }>(`org#${orgId}`, (raw) => {
       if (!raw?.type || !raw.type.startsWith('comms.')) return;
       qc.invalidateQueries({ queryKey: commsKeys.channels });
-      if (raw.type === 'comms.sjm.roster_changed' && raw.channel_id === activeChannelId) {
-        qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId || activeChannelId] });
+      // SJM chat publishes only a tenant-scoped invalidation signal, never a rich
+      // message payload to a private realtime channel. Refetch authorised REST data
+      // under the server's current assignment check.
+      if (raw.channel_id === activeChannelId) {
         qc.invalidateQueries({ queryKey: commsKeys.messages(activeChannelId) });
         qc.invalidateQueries({ queryKey: commsKeys.members(activeChannelId) });
         qc.invalidateQueries({ queryKey: commsKeys.pinned(activeChannelId) });
+        qc.invalidateQueries({ queryKey: ['comms', 'channels', activeChannelId, 'thread'] });
+      }
+      if (raw.type === 'comms.sjm.roster_changed' && raw.channel_id === activeChannelId) {
+        qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId || activeChannelId] });
       }
     });
   }, [orgId, activeChannelId, missionQueryId, qc]);
