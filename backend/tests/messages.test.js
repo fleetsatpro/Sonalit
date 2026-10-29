@@ -94,7 +94,7 @@ test('sendMessage: regular member of channel can send text', async () => {
   expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ body: 'hello world' }) }));
 });
 
-test('sendMessage: SJM event stays on the generation held by the authorisation lock', async () => {
+test('sendMessage: SJM message bodies never publish to private realtime channels', async () => {
   jest.clearAllMocks();
   const journeyId = '11111111-2222-4333-8444-555555555555';
   const req = makeReq({
@@ -128,10 +128,19 @@ test('sendMessage: SJM event stays on the generation held by the authorisation l
   await controller.sendMessage(req, res, jest.fn());
 
   expect(res.status).toHaveBeenCalledWith(201);
-  expect(publish).toHaveBeenCalledWith(
+  expect(publish).not.toHaveBeenCalledWith(
     `org#${ORG_A}#comms#${CHAN}#v7`,
-    expect.objectContaining({ type: 'message.created', message: expect.objectContaining({ body: 'Operational check-in' }) }),
+    expect.objectContaining({ type: 'message.created', message: expect.anything() }),
   );
+  expect(publish).toHaveBeenCalledWith(
+    `org#${ORG_A}`,
+    { type: 'comms.message.created', channel_id: CHAN },
+  );
+  const tenantSignal = publish.mock.calls.find(([channel, event]) =>
+    channel === `org#${ORG_A}` && event?.type === 'comms.message.created',
+  );
+  expect(tenantSignal?.[1]).not.toHaveProperty('message');
+  expect(tenantSignal?.[1]).not.toHaveProperty('body');
 });
 
 test('sendMessage: non-member of channel is 403', async () => {
