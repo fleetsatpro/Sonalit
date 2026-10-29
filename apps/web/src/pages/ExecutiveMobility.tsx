@@ -10,7 +10,7 @@ import { toCoordinatePair } from '../lib/coordinatePair.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useMessages, useSendMessage } from '../features/comms/hooks/useComms.js';
 import { useCommsRealtime } from '../features/comms/hooks/useCommsRealtime.js';
-import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache } from '../lib/sjmFieldAccess.js';
+import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache, isFieldMissionRelevantForRosterChange } from '../lib/sjmFieldAccess.js';
 type DutyRole='driver'|'backup_driver'|'cpo'|'meet_greet'|'security_escort'|'dispatcher';
 type FlightStatus='unknown'|'scheduled'|'delayed'|'landed'|'departed'|'cancelled'|'diverted';
 type Mission={id:string;reference:string;title:string;purpose:string;service_type:string;status:string;origin_label:string;origin_lat:number|string;origin_lng:number|string;destination_label:string;destination_lat:number|string;destination_lng:number|string;planned_departure_at?:string|null;planned_arrival_at?:string|null;timezone:string;principal_reference?:string|null;airport_code?:string|null;terminal?:string|null;airline?:string|null;flight_number?:string|null;flight_scheduled_at?:string|null;flight_status:FlightStatus;flight_status_source:string;flight_status_observed_at?:string|null;meet_greet_instructions?:string|null;duty_roles:DutyRole[]};
@@ -123,7 +123,10 @@ export default function ExecutiveMobility(){
  const identityReady=accessIdentityRef.current===identityKey;
  const previousMissionId=useRef('');
  const missionQ=useQuery<{data:Mission[]}>({queryKey:['sjm-my-assignments',user?.org_id,user?.id],queryFn:async({signal})=>(await api.get('/sjm/my-assignments',{signal})).data,enabled:Boolean(user?.org_id&&user?.id),refetchInterval:30000,staleTime:10000});
- const missions=(identityReady?missionQ.data?.data||[]:[]).filter(m=>!inaccessibleMissionIds.has(m.id)&&!revalidatingMissionIds.has(m.id));
+ const currentAssignments=identityReady?missionQ.data?.data||[]:[];
+ const currentAssignmentIdsRef=useRef<Set<string>>(new Set());currentAssignmentIdsRef.current=new Set(currentAssignments.map(m=>m.id));
+ const revalidatingMissionIdsRef=useRef(revalidatingMissionIds);revalidatingMissionIdsRef.current=revalidatingMissionIds;
+ const missions=currentAssignments.filter(m=>!inaccessibleMissionIds.has(m.id)&&!revalidatingMissionIds.has(m.id));
  useEffect(()=>{if(accessIdentityRef.current===identityKey)return;accessIdentityRef.current=identityKey;rosterRevalidationVersionRef.current.clear();const previous=accessIdentityScopeRef.current;if(previous.orgId&&previous.userId)qc.removeQueries({queryKey:['sjm-my-assignments',previous.orgId,previous.userId],exact:true});qc.removeQueries({queryKey:['sjm-field-detail']});qc.removeQueries({queryKey:['sjm-field-events']});qc.removeQueries({queryKey:['sjm-mission-channel']});accessIdentityScopeRef.current={orgId:user?.org_id,userId:user?.id};setInaccessibleMissionIds(new Set());setRevalidatingMissionIds(new Set());setAccessNotice(false);setSelectedId('');previousMissionId.current=''},[identityKey,qc,user?.org_id,user?.id]);
  useEffect(()=>{if(!identityReady||selectedId&&revalidatingMissionIds.has(selectedId))return;if(!selectedId&&missions.length)setSelectedId(missions[0]!.id);else if(selectedId&&!missions.some(m=>m.id===selectedId))setSelectedId(missions[0]?.id||'')},[identityReady,missions,selectedId,revalidatingMissionIds]);
  const mission=missions.find(m=>m.id===selectedId);
@@ -191,13 +194,21 @@ export default function ExecutiveMobility(){
  const handleFieldRosterRevocation=useCallback((revokedChannelId:string,revokedJourneyId?:string)=>{
   if(!identityReady)return;
   const currentChannelId=channelQ.data?.data.channel_id;
-  const missionId=revokedJourneyId||(selectedId&&currentChannelId===revokedChannelId?selectedId:null);
+  const missionId=revokedJourneyId||(selectedIdRef.current&&currentChannelId===revokedChannelId?selectedIdRef.current:null);
   if(!missionId)return;
+  const hasPrivateCache=
+   qc.getQueryData(['sjm-field-detail',missionId])!==undefined||
+   qc.getQueryData(['sjm-field-events',missionId])!==undefined||
+   qc.getQueryData(['sjm-mission-channel',missionId])!==undefined;
+  if(!isFieldMissionRelevantForRosterChange(
+   missionId,selectedIdRef.current,currentAssignmentIdsRef.current,revalidatingMissionIdsRef.current,hasPrivateCache
+  ))return;
   setRevalidatingMissionIds(current=>new Set(current).add(missionId));
-  if(selectedId===missionId)setAccessNotice(true);
-  // Revalidate and purge even when this is a previously viewed, currently inactive mission.
+  if(selectedIdRef.current===missionId)setAccessNotice(true);
+  // Process inactive missions whose assignment or private cache is known, but
+  // ignore unrelated journey events to avoid per-event tenant-wide REST fan-out.
   void revalidateRosterMissionAccess(missionId,true);
- },[channelQ.data?.data.channel_id,selectedId,revalidateRosterMissionAccess,identityReady]);
+ },[channelQ.data?.data.channel_id,revalidateRosterMissionAccess,identityReady,qc]);
  useCommsRealtime(user?.org_id,channelId,user?.id,detailAccessDenied?undefined:channelQ.data?.data.realtime_channel,selectedId,handleFieldRosterRevocation);
  const eventsQ=useQuery<{data:FieldEvent[]}>({queryKey:['sjm-field-events',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/field-events')).data,enabled:Boolean(identityReady&&selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),refetchInterval:30000});
  const actions=useMemo(()=>{const map=new Map<string,{type:string;label:string}>();for(const r of mission?.duty_roles||[])for(const a of ACTIONS[r]||[])map.set(a.type,a);return [...map.values()]},[mission?.duty_roles]);

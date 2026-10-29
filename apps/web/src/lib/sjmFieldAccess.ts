@@ -62,3 +62,16 @@ export function classifyRosterRevalidation(
     revoked: missionIds.filter(id => !assignedIds.has(id)),
   };
 }
+
+export function isFieldMissionRelevantForRosterChange(
+  missionId: string,
+  selectedMissionId: string,
+  assignedMissionIds: ReadonlySet<string>,
+  pendingMissionIds: ReadonlySet<string>,
+  hasPrivateCache: boolean,
+): boolean {
+  return missionId === selectedMissionId ||
+    assignedMissionIds.has(missionId) ||
+    pendingMissionIds.has(missionId) ||
+    hasPrivateCache;
+}

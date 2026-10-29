@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache } from './sjmFieldAccess.js';
+import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache, isFieldMissionRelevantForRosterChange } from './sjmFieldAccess.js';
 
 describe('clearRevokedSjmFieldMissionCache', () => {
   let queryClient: QueryClient;
@@ -65,5 +65,17 @@ describe('classifyRosterRevalidation', () => {
       ['mission-kept', 'mission-removed'],
       [{ id: 'mission-kept' }, { id: 'another-mission' }],
     )).toEqual({ stillAssigned: ['mission-kept'], revoked: ['mission-removed'] });
+  });
+});
+
+describe('isFieldMissionRelevantForRosterChange', () => {
+  it('revalidates active, assigned, pending, and previously cached missions only', () => {
+    const assigned = new Set(['assigned-a']);
+    const pending = new Set(['pending-a']);
+    expect(isFieldMissionRelevantForRosterChange('selected-a', 'selected-a', new Set(), new Set(), false)).toBe(true);
+    expect(isFieldMissionRelevantForRosterChange('assigned-a', 'selected-b', assigned, new Set(), false)).toBe(true);
+    expect(isFieldMissionRelevantForRosterChange('pending-a', 'selected-b', new Set(), pending, false)).toBe(true);
+    expect(isFieldMissionRelevantForRosterChange('cached-a', 'selected-b', new Set(), new Set(), true)).toBe(true);
+    expect(isFieldMissionRelevantForRosterChange('unrelated-a', 'selected-b', new Set(), new Set(), false)).toBe(false);
   });
 });
