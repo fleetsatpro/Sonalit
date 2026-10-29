@@ -9,7 +9,7 @@ import { STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
 import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
 import { useAuthStore } from '../stores/auth.js';
-import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, Navigation, Pencil, Plus, RefreshCw, Route, Satellite, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, MessagesSquare, Navigation, Pencil, Plus, RefreshCw, Route, Satellite, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
 type Point={lat:number;lng:number;name?:string;label?:string};
@@ -433,6 +433,16 @@ export default function SecureJourneyManagement(){
   return(await api.post('/sjm/journeys/'+journey.id+'/reports',body)).data as Report;
  },onSuccess:async(result,vars)=>{if(vars.kind==='report'||vars.kind==='management_summary'){const r=result as {data:{id:string;report_date:string;report_type:string}};setLastGeneratedReport({id:r.data.id,report_date:r.data.report_date,report_type:r.data.report_type});await downloadReportArtifact(r.data.id,r.data.report_date,r.data.report_type,'PDF')}if(vars.kind==='event'){setEventTitle('');setEventDetail('')}if(vars.kind==='review')setReviewNote('');await refresh()},onError:async()=>{await refresh()}});
  const saveProfile=useMutation({mutationFn:async()=>{if(!journey?.client_id)throw new Error('Link this journey to a real client first.');return(await api.put('/sjm/client-profiles/'+journey.client_id,{report_timezone:profileTimezone,report_template:{title:profileTitle,sections:profileSections},daily_reports_enabled:dailyReportsEnabled,daily_report_local_time:dailyReportTime})).data},onSuccess:async()=>{setEditingProfile(false);await qc.invalidateQueries({queryKey:['sjm-client-profile',journey?.client_id]})}});
+ const openMissionComms=useMutation({
+  mutationFn:async()=>{
+   if(!journey)throw new Error('Select a journey first.');
+   const response=await api.get<{data:{channel_id:string}}>('/sjm/journeys/'+journey.id+'/communications');
+   const channelId=response.data?.data?.channel_id;
+   if(typeof channelId!=='string'||!/^[0-9a-f-]{36}$/i.test(channelId))throw new Error('The mission communication channel was not returned by Sonalit.');
+   return channelId;
+  },
+  onSuccess:(channelId)=>window.location.assign('/messages?channelId='+encodeURIComponent(channelId))
+ });
  const choose=(id:string)=>{
    const selectionChanged=id!==selectedId;
    setSelectedId(id);setAck('');setReviewNote('');setCancelNote('');setEditingProfile(false);setWorkspaceTab('overview');
@@ -525,8 +535,9 @@ return (
        <Panel className="overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] p-4 sm:p-5">
          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[11px] font-semibold tracking-[.13em] text-emerald-200">{journey.reference}</span><StatusBadge value={journey.status}/><span className="rounded-md border border-white/[0.07] px-2 py-1 font-mono text-[11px]  tracking-[.12em] text-slate-500">{journey.transport_mode.replaceAll('_',' ')}</span></div><h2 id="sjm-selected-mission-title" tabIndex={-1} className="mt-2 text-xl font-semibold leading-tight tracking-tight text-white outline-none sm:text-2xl">{journey.title}</h2><p className="mt-1.5 max-w-3xl text-xs leading-5 text-slate-400">{journey.purpose}</p></div>
-         <div className="flex flex-wrap items-center gap-2"><Gate value={assess?.safety_gate}/>{isSupervisor&&['requested','planning'].includes(journey.status)&&<Btn onClick={startEdit} disabled={detailQ.isLoading||updateJourney.isPending||!detailQ.data?.data}><Pencil size={12}/>Revise dossier</Btn>}<Btn onClick={()=>void refresh()} disabled={detailQ.isFetching}><RefreshCw size={12} className={detailQ.isFetching?'animate-spin':''}/>Sync details</Btn></div>
+         <div className="flex flex-wrap items-center gap-2"><Gate value={assess?.safety_gate}/><Btn tone="green" onClick={()=>openMissionComms.mutate()} disabled={openMissionComms.isPending}><MessagesSquare size={12}/>{openMissionComms.isPending?'Opening mission chat…':'Open mission communications'}</Btn>{isSupervisor&&['requested','planning'].includes(journey.status)&&<Btn onClick={startEdit} disabled={detailQ.isLoading||updateJourney.isPending||!detailQ.data?.data}><Pencil size={12}/>Revise dossier</Btn>}<Btn onClick={()=>void refresh()} disabled={detailQ.isFetching}><RefreshCw size={12} className={detailQ.isFetching?'animate-spin':''}/>Sync details</Btn></div>
         </div>
+        {openMissionComms.isError&&<p role="alert" className="border-b border-amber-300/15 bg-amber-300/[0.025] px-4 py-2 text-[11px] leading-5 text-amber-100">{errorText(openMissionComms.error,'Mission communications could not be opened.')}</p>}
         <div className="p-2 sm:p-3"><JourneyMap journey={journey} stops={stops} geometry={geometry} assessment={assess} telemetry={journey.telemetry_snapshot}/></div>
         <div className="grid grid-cols-2 border-t border-white/[0.07] bg-black/15 md:grid-cols-4">
          {[

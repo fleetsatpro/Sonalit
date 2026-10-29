@@ -26,7 +26,34 @@ export default function CommsPage() {
   const channelsQ = useChannels();
   const orgUsersQ = useOrgUsers();
 
+  useEffect(() => {
+    if (!requestedChannelId) return;
+    let cancelled = false;
+    // Cached membership is not authorization for a deep-link. Require a fresh,
+    // authenticated channel list before selecting or querying the requested channel.
+    void channelsQ.refetch().then((result) => {
+      if (cancelled) return;
+      if (!result.isSuccess) setRequestedChannelId(null);
+      setVerifyingDeepLink(false);
+    }).catch(() => {
+      if (cancelled) return;
+      setRequestedChannelId(null);
+      setVerifyingDeepLink(false);
+    });
+    return () => { cancelled = true; };
+  }, [requestedChannelId, channelsQ.refetch]);
+
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [requestedChannelId, setRequestedChannelId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const requested = new URLSearchParams(window.location.search).get('channelId');
+    return requested && /^[0-9a-f-]{36}$/i.test(requested) ? requested : null;
+  });
+  const [verifyingDeepLink, setVerifyingDeepLink] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const requested = new URLSearchParams(window.location.search).get('channelId');
+    return Boolean(requested && /^[0-9a-f-]{36}$/i.test(requested));
+  });
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState<null | 'priority' | 'regional' | 'operations'>(null);
@@ -34,25 +61,34 @@ export default function CommsPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState('');
 
-  // Auto-select first channel once list loads, or when the active channel
-  // has been deleted out from under us.
+  // A requested channel remains unselected while its fresh authorisation fetch runs.
   useEffect(() => {
+    if (verifyingDeepLink) return;
     const list = channelsQ.data ?? [];
+    if (requestedChannelId) {
+      if (list.some((channel) => channel.id === requestedChannelId)) {
+        if (activeChannelId !== requestedChannelId) setActiveChannelId(requestedChannelId);
+        setRequestedChannelId(null);
+        return;
+      }
+      if (channelsQ.isSuccess && !channelsQ.isFetching) setRequestedChannelId(null);
+    }
     if (list.length === 0) {
       // A successfully refreshed empty channel list is an authorization result,
       // not permission to keep rendering the previously selected channel.
       if (channelsQ.isSuccess && activeChannelId) setActiveChannelId(null);
       return;
     }
-    if (!activeChannelId || !list.some((c) => c.id === activeChannelId)) {
+    if (!activeChannelId || !list.some((channel) => channel.id === activeChannelId)) {
       setActiveChannelId(list[0]!.id);
     }
-  }, [channelsQ.data, channelsQ.isSuccess, activeChannelId]);
+  }, [channelsQ.data, channelsQ.isFetching, channelsQ.isSuccess, activeChannelId, requestedChannelId, verifyingDeepLink]);
 
   const activeChannel = useMemo(
-    () => channelsQ.data?.find((c) => c.id === activeChannelId) ?? null,
-    [channelsQ.data, activeChannelId],
+    () => !verifyingDeepLink && !channelsQ.isError ? channelsQ.data?.find((c) => c.id === activeChannelId) ?? null : null,
+    [channelsQ.data, channelsQ.isError, activeChannelId, verifyingDeepLink],
   );
+  const channelsForDisplay = verifyingDeepLink || channelsQ.isError ? [] : (channelsQ.data ?? []);
   const isChannelAdmin = !!activeChannel?.is_channel_admin;
 
   const messagesQ = useMessages(activeChannelId);
@@ -151,7 +187,7 @@ export default function CommsPage() {
         drawerOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
       }`}>
         <ChannelList
-          channels={channelsQ.data ?? []}
+          channels={channelsForDisplay}
           activeChannelId={activeChannelId}
           isOrgAdmin={isOrgAdmin}
           onSelect={handleSelect}
@@ -187,7 +223,7 @@ export default function CommsPage() {
             </div>
           ) : (
             <div className="text-gray-500 font-mono text-[12px]">
-              {channelsQ.isLoading ? 'Loading channels…' : 'Select a channel'}
+              {verifyingDeepLink || channelsQ.isFetching ? 'Verifying authorised channels…' : channelsQ.isError ? 'Unable to verify channel access' : channelsQ.isLoading ? 'Loading channels…' : 'Select a channel'}
             </div>
           )}
 
