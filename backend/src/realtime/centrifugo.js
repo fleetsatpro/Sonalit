@@ -49,6 +49,45 @@ async function publish(channel, data) {
   }
 }
 
+// Clear retained publications when an SJM team roster rotates to a new channel epoch.
+// Old subscription JWTs remain cryptographically valid until expiry, so history must not
+// remain available on the superseded channel after access is revoked.
+async function removeChannelHistory(channel) {
+  if (!CENTRIFUGO_API_KEY) {
+    logger.warn('Centrifugo history removal unavailable: API key is not configured');
+    return false;
+  }
+  try {
+    const resp = await fetch(CENTRIFUGO_URL + '/api/history_remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': CENTRIFUGO_API_KEY },
+      body: JSON.stringify({ channel }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!resp.ok) {
+      logger.warn('Centrifugo history removal failed: HTTP ' + resp.status + ' for ' + channel);
+      return false;
+    }
+    let payload;
+    try {
+      payload = await resp.json();
+    } catch (err) {
+      logger.warn('Centrifugo history removal returned an unreadable response for ' + channel + ': ' + err.message);
+      return false;
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+        || !Object.prototype.hasOwnProperty.call(payload, 'result')
+        || !payload.result || typeof payload.result !== 'object' || Array.isArray(payload.result)
+        || payload.error) {
+      logger.warn('Centrifugo history removal returned an invalid success response for ' + channel);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn('Centrifugo history removal error for ' + channel + ': ' + err.message);
+    return false;
+  }
+}
 async function unsubscribeUserFromChannel(userId, channel) {
   if (!CENTRIFUGO_API_KEY) {
     logger.warn('Centrifugo unsubscribe unavailable: API key is not configured');
@@ -85,4 +124,4 @@ async function unsubscribeUserFromChannel(userId, channel) {
   }
 }
 
-module.exports = { publish, unsubscribeUserFromChannel, normalizeCentrifugoUrl };
+module.exports = { publish, removeChannelHistory, unsubscribeUserFromChannel, normalizeCentrifugoUrl };
