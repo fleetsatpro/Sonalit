@@ -136,7 +136,7 @@ async function withChannelReaderTransaction(req, res, channelId, work) {
     if (!member && !isOrgAdmin(req.user)) {
       return { accessError: { status: 403, message: 'Not a member of this channel' } };
     }
-    return { value: await work(db, { channel, member, realtimeChannel }), realtimeChannel };
+    return { value: await work(db, { channel, member, realtimeChannel }), realtimeChannel, sjmManaged: Boolean(channel.sjm_journey_id) };
   });
 
   if (outcome?.accessError) {
@@ -144,7 +144,7 @@ async function withChannelReaderTransaction(req, res, channelId, work) {
     else forbidden(res, outcome.accessError.message);
     return { ok: false };
   }
-  return { ok: true, value: outcome?.value, realtimeChannel: outcome?.realtimeChannel };
+  return { ok: true, value: outcome?.value, realtimeChannel: outcome?.realtimeChannel, sjmManaged: outcome?.sjmManaged === true };
 }
 
 /** Runs channel-manager decisions and writes under the same membership/journey lock. */
@@ -202,19 +202,26 @@ async function resolveRealtimeChannelName(orgId, channelId) {
   });
 }
 
-function publishCommsEvent(orgId, channelId, type, payload, authorizedRealtimeChannel = null) {
+function publishCommsEvent(orgId, channelId, type, payload, authorizedRealtimeChannel = null, sjmManaged = null) {
   const event = { type, channel_id: channelId, ...payload };
   // SJM private-channel publications are deliberately disabled. Even a perfectly
   // valid, short-lived JWT issued before roster removal can be replayed; publishing
   // rich payloads to a retired channel could disclose messages. The tenant channel
   // receives only a channel-id invalidation hint, and authorised REST reads return
-  // the message body after checking the current assignment under the journey lock.
-  resolveRealtimeChannelName(orgId, channelId)
-    .then((resolved) => {
-      if (!resolved || resolved.sjmManaged) return null;
-      return publish(authorizedRealtimeChannel || resolved.name, event);
-    })
-    .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
+  // message bodies after checking current assignment under the journey lock.
+  if (sjmManaged === true) {
+    // Do not publish private data, even to the current epoch channel.
+  } else if (authorizedRealtimeChannel && sjmManaged === false) {
+    Promise.resolve(publish(authorizedRealtimeChannel, event))
+      .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
+  } else {
+    resolveRealtimeChannelName(orgId, channelId)
+      .then((resolved) => {
+        if (!resolved || resolved.sjmManaged) return null;
+        return publish(authorizedRealtimeChannel || resolved.name, event);
+      })
+      .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
+  }
   publish(`org#${orgId}`, { type: `comms.${type}`, channel_id: channelId });
 }
 
@@ -744,7 +751,7 @@ const sendMessage = asyncHandler(async (req, res) => {
     deleted: false,
   };
 
-  publishCommsEvent(req.user.org_id, req.params.id, 'message.created', { message: payload }, guarded.realtimeChannel);
+  publishCommsEvent(req.user.org_id, req.params.id, 'message.created', { message: payload }, guarded.realtimeChannel, guarded.sjmManaged);
   res.status(201).json({ data: payload });
 });
 
@@ -784,7 +791,7 @@ const deleteMessage = asyncHandler(async (req, res) => {
 
   publishCommsEvent(req.user.org_id, req.params.id, 'message.deleted', {
     message_id: result.value.messageId, deleted_by: req.user.id,
-  }, result.realtimeChannel);
+  }, result.realtimeChannel, result.sjmManaged);
   res.json({ ok: true });
 });
 
