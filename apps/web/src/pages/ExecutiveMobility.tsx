@@ -201,6 +201,8 @@ export default function ExecutiveMobility(){
  const channelId=!identityReady||detailAccessDenied||revalidatingMissionIds.has(selectedId)?null:channelQ.data?.data.channel_id||null,messagesQ=useMessages(channelId),sendMessage=useSendMessage(channelId||'');
  const revalidateRosterMissionAccess=useCallback(async(missionId:string,markNewEvent=true)=>{
   const workIdentity=identityKey;
+  const workGeneration=identityGeneration;
+  const isCurrentWorkerIdentity=()=>identityGenerationRef.current.identityKey===workIdentity&&identityGenerationRef.current.generation===workGeneration;
   if(markNewEvent){
    const nextVersion=(rosterRevalidationVersionRef.current.get(missionId)||0)+1;
    rosterRevalidationVersionRef.current.set(missionId,nextVersion);
@@ -211,14 +213,14 @@ export default function ExecutiveMobility(){
   rosterRevalidationInFlightRef.current=true;
   const snapshotChanged=(versions:Map<string,number>)=>rosterRevalidationVersionRef.current.size!==versions.size||[...versions].some(([id,version])=>rosterRevalidationVersionRef.current.get(id)!==version);
   try{
-   while(rosterRevalidationVersionRef.current.size&&identityKeyRef.current===workIdentity){
+   while(rosterRevalidationVersionRef.current.size&&isCurrentWorkerIdentity()){
     const versions=new Map(rosterRevalidationVersionRef.current);
     const missionIds=[...versions.keys()];
     await Promise.all(missionIds.map(id=>clearRevokedSjmFieldMissionCache(qc,user?.org_id,user?.id,id,false)));
-    if(identityKeyRef.current!==workIdentity)return;
+    if(!isCurrentWorkerIdentity())return;
     if(snapshotChanged(versions))continue;
     const refreshed=await missionQ.refetch({throwOnError:true}).catch(()=>null);
-    if(identityKeyRef.current!==workIdentity)return;
+    if(!isCurrentWorkerIdentity())return;
     if(snapshotChanged(versions))continue;
     if(!refreshed||!refreshed.isSuccess||!refreshed.data?.data)throw new Error('Current mission assignments could not be confirmed.');
     const classified=classifyRosterRevalidation(missionIds,refreshed.data.data);
@@ -237,7 +239,7 @@ export default function ExecutiveMobility(){
   }finally{
    rosterRevalidationInFlightRef.current=false;
   }
- },[missionQ.refetch,qc,user?.org_id,user?.id,identityKey]);
+ },[missionQ.refetch,qc,user?.org_id,user?.id,identityKey,identityGeneration]);
 
  const handleFieldRosterRevocation=useCallback((revokedChannelId:string,revokedJourneyId?:string)=>{
   if(!identityReady)return;
