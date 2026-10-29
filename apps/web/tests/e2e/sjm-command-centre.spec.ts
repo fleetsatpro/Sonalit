@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
 const JOURNEY_ID = 'journey-sjm-e2e-001';
 const CLIENT_ID = 'client-sjm-e2e-001';
@@ -228,7 +228,7 @@ async function stubFieldSjmApi(page: Page, detail: Record<string, unknown> = { .
 test.describe('SJM command-centre responsive smoke', () => {
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
-  test('keeps the mission workspace map-first without horizontal overflow at target viewports', async ({ page }) => {
+  test('keeps the journey workspace readable without horizontal overflow at target viewports', async ({ page }, testInfo: TestInfo) => {
     await seedAuth(page);
     await stubSjmApi(page);
 
@@ -275,6 +275,10 @@ test.describe('SJM command-centre responsive smoke', () => {
         dimensions.body,
         viewport.label + ': body width ' + dimensions.body + 'px exceeded viewport ' + dimensions.viewport + 'px',
       ).toBeLessThanOrEqual(viewport.width);
+      await testInfo.attach(`sjm-${viewport.label}-overview`, {
+        body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
+        contentType: 'image/png',
+      });
     }
   });
 
