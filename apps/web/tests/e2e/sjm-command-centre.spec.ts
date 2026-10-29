@@ -322,6 +322,11 @@ test.describe('SJM command-centre responsive smoke', () => {
         dimensions.body,
         viewport.label + ': body width ' + dimensions.body + 'px exceeded viewport ' + dimensions.viewport + 'px',
       ).toBeLessThanOrEqual(viewport.width);
+      await serviceBrief.scrollIntoViewIfNeeded();
+      await testInfo.attach(`sjm-${viewport.label}-service-brief`, {
+        body: await serviceBrief.screenshot({ animations: 'disabled' }),
+        contentType: 'image/png',
+      });
       await testInfo.attach(`sjm-${viewport.label}-overview`, {
         body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
         contentType: 'image/png',

@@ -667,7 +667,7 @@ return (
          </div>
         </div>
         <div className="p-3 sm:p-5">
-         {workspaceTab==='overview'&&<div className="space-y-4">
+         {workspaceTab==='overview'&&<div className="space-y-4 sjm-overview-content">
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]">
                  <Panel className="overflow-hidden"><div className="border-b border-white/[0.07] p-4"><div className="flex items-center justify-between gap-3"><div><Kicker>ROUTE REVIEW</Kicker><h3 className="mt-1 text-sm font-semibold">Route & risk assessment</h3></div><Gate value={assess?.safety_gate}/></div></div><div className="space-y-4 p-4">
        {!assess?<div className="rounded-md border border-dashed border-white/10 p-4"><div className="flex gap-3"><Route size={17} className="mt-0.5 text-slate-300"/><div><p className="text-[12px] font-semibold">Route has not been assessed</p><p className="mt-1 text-[11px] leading-5 text-slate-500">Assess the full corridor before approval. A line between the origin and destination is not an assessed route.</p></div></div>{isSupervisor&&['requested','planning'].includes(journey.status)&&<div className="mt-3"><Btn tone="green" disabled={act.isPending} onClick={()=>act.mutate({kind:'plan'})}><Route size={12}/>Assess route and plan</Btn></div>}</div>:<>

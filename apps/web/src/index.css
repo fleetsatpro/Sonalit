@@ -339,3 +339,101 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
     font-size: 11px;
   }
 }
+
+
+/* SJM overview hierarchy: one composed surface, not a stack of nested cards. */
+.sjm-console .sjm-overview-content {
+  gap: 16px;
+}
+.sjm-console .sjm-overview-columns {
+  gap: 0 !important;
+  overflow: hidden;
+  border: 1px solid #2a3948;
+  border-radius: 10px;
+  background: #0c141d;
+}
+.sjm-console .sjm-overview-columns > .sjm-overview-risk-panel {
+  min-width: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.sjm-console .sjm-overview-risk-panel > div:first-child {
+  border-bottom: 1px solid #283744;
+  background: #101923;
+}
+.sjm-console .sjm-overview-risk-panel .sjm-risk-metrics > div {
+  border: 0;
+  border-left: 1px solid #293846;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 0 0 12px;
+}
+.sjm-console .sjm-overview-risk-panel .sjm-risk-metrics > div:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+.sjm-console .sjm-overview-risk-panel .sjm-risk-metrics > div > p:first-child {
+  color: #9fadb9;
+  letter-spacing: .02em;
+}
+.sjm-console .sjm-overview-risk-panel .sjm-risk-metrics > div > p:last-child {
+  color: #edf2f6;
+}
+.sjm-console .sjm-overview-risk-panel .sjm-route-details {
+  border: 0;
+  border-top: 1px solid #293846;
+  border-radius: 0;
+  padding: 12px 0 0;
+}
+.sjm-console .sjm-overview-rail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-top: 1px solid #293846;
+  background: #0c141d;
+  padding: 16px;
+}
+.sjm-console .sjm-overview-rail > section {
+  border: 0 !important;
+  border-bottom: 1px solid #263441 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 0 16px !important;
+}
+.sjm-console .sjm-overview-rail > section:last-child {
+  border-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+.sjm-console .sjm-overview-rail > .sjm-next-step {
+  border-left: 2px solid #78b6c6 !important;
+  padding-left: 14px !important;
+}
+.sjm-console .sjm-overview-rail > .sjm-next-step [class~="text-xs"] {
+  line-height: 1.55;
+}
+@media (min-width: 1536px) {
+  .sjm-console .sjm-overview-columns > .sjm-overview-risk-panel {
+    border-right: 1px solid #283744 !important;
+  }
+  .sjm-console .sjm-overview-rail {
+    border-top: 0;
+  }
+}
+@media (max-width: 640px) {
+  .sjm-console .sjm-overview-rail {
+    padding: 14px;
+  }
+  .sjm-console .sjm-overview-risk-panel .sjm-risk-metrics {
+    gap: 10px;
+  }
+  .sjm-console .sjm-overview-risk-panel .sjm-risk-metrics > div {
+    padding-left: 8px;
+  }
+  .sjm-console .sjm-overview-risk-panel .sjm-risk-metrics > div:first-child {
+    padding-left: 0;
+  }
+}
