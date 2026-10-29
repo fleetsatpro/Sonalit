@@ -39,13 +39,15 @@ describe('clearRevokedSjmChannelCache', () => {
     const channelId = 'inactive-mission-channel';
     queryClient.setQueryData(commsKeys.channels, [{ id: channelId, name: 'Old mission' }, { id: 'still-authorised', name: 'Open channel' }]);
     seedSensitiveCache(queryClient, channelId);
-    queryClient.setQueryData(commsKeys.channels, [{ id: channelId, name: 'Old mission' }, { id: 'still-authorised', name: 'Open channel' }]);
+    queryClient.setQueryData(commsKeys.channels, [
+      { id: channelId, name: 'Old mission', last_message: { body: 'SECRET PREVIEW' } },
+      { id: 'still-authorised', name: 'Open channel', last_message: { body: 'AUTHORISED CHANNEL' } },
+    ]);
 
     clearRevokedSjmChannelCache(queryClient, channelId, false);
 
     expect(queryClient.getQueryData(commsKeys.channels)).toEqual([
-      { id: channelId, name: 'Old mission' },
-      { id: 'still-authorised', name: 'Open channel' },
+      { id: 'still-authorised', name: 'Open channel', last_message: { body: 'AUTHORISED CHANNEL' } },
     ]);
     expect(queryClient.getQueryData(commsKeys.messages(channelId))).toBeUndefined();
     expect(queryClient.getQueryData(commsKeys.pinned(channelId))).toBeUndefined();

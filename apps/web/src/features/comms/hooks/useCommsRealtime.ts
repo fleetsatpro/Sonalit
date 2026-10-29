@@ -34,6 +34,14 @@ export function clearRevokedSjmChannelCache(
     // The active channel's old membership snapshot is no longer trustworthy.
     // Keep the visible list empty until the server returns a fresh authorised list.
     qc.setQueryData(commsKeys.channels, []);
+  } else {
+    // Channel rows also cache last-message previews. Remove the rotated mission
+    // row immediately so an inactive channel cannot leak a preview while REST
+    // revalidates the current roster.
+    const currentChannels = qc.getQueryData<Array<{ id: string }>>(commsKeys.channels);
+    if (currentChannels) {
+      qc.setQueryData(commsKeys.channels, currentChannels.filter((channel) => channel.id !== channelId));
+    }
   }
   void qc.invalidateQueries({ queryKey: commsKeys.channels, exact: true });
 }
