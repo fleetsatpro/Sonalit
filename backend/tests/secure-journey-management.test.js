@@ -291,6 +291,7 @@ describe('SJM validation and evidence boundaries', () => {
   test('does not rotate a roster when retired-channel history cannot be cleared', async () => {
     jest.clearAllMocks();
     removeChannelHistory.mockResolvedValue(false);
+    unsubscribeUserFromChannel.mockResolvedValue(true);
     const calls=[];
     const db=async(sql,params)=>{
       calls.push({sql,params});
@@ -303,7 +304,7 @@ describe('SJM validation and evidence boundaries', () => {
       .rejects.toMatchObject({status:503});
     expect(removeChannelHistory).toHaveBeenCalledWith('org#org-1#comms#cccccccc-0000-0000-0000-000000000001');
     expect(calls.some(c=>c.sql.includes('DELETE FROM channel_members cm'))).toBe(false);
-    expect(unsubscribeUserFromChannel).not.toHaveBeenCalled();
+    expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(2);
   });
 
   test('fails closed and preserves old roster memberships if live-channel revocation fails', async () => {
@@ -322,6 +323,7 @@ describe('SJM validation and evidence boundaries', () => {
       .rejects.toMatchObject({status:503});
     expect(calls.some(c=>c.sql.includes('DELETE FROM channel_members cm'))).toBe(false);
     expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(1);
+    expect(removeChannelHistory).not.toHaveBeenCalled();
   });
 
   test('keeps daily report generation tenant-allowlisted and respects client-local time', () => {
