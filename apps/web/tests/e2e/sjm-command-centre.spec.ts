@@ -302,9 +302,11 @@ test.describe('SJM command-centre responsive smoke', () => {
     await seedAuth(page);
     await stubSjmApi(page);
     let requestedOffset = -1;
+    let requestedSort = '';
     await page.route('**/api/v1/sjm/journeys?**', async (route) => {
       const url = new URL(route.request().url());
       requestedOffset = Number(url.searchParams.get('offset') || 0);
+      requestedSort = url.searchParams.get('sort') || '';
       const summary = { ...journey };
       delete summary.stops;
       delete summary.events;
@@ -338,6 +340,12 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText('Showing 101–176 of 176')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Previous register page' })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Next register page' })).toBeDisabled();
+
+    await page.getByLabel('Sort missions').selectOption('departure_asc');
+    await expect.poll(() => requestedSort).toBe('departure_asc');
+    await expect.poll(() => requestedOffset).toBe(0);
+    await expect(page.getByText('Showing 1–100 of 176')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next register page' })).toBeEnabled();
   });
 
   test('lifecycle rail keeps movement and arrival verification on their correct checkpoints', async ({ page }) => {

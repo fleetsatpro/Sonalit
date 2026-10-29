@@ -19,7 +19,7 @@ type Assessment={route_status?:string;safety_gate?:string;overall_risk_score?:nu
 type TelemetryDevice={device_id:string;device_name:string;officer_name?:string|null;lat?:number|string|null;lng?:number|string|null;speed_kph?:number|string|null;heading?:number|string|null;accuracy_m?:number|string|null;observed_at?:string|Date|null;source?:string|null;freshness:'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE'|string;age_seconds?:number|null;freshness_reason?:string|null;evidence_class?:'OBSERVED'|string};
 type TelemetrySnapshot={status:'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE'|string;reason?:string|null;observed_at?:string|Date|null;devices:TelemetryDevice[]};
 type ReadinessItem={item:string;status:string;detail:string};
-type Journey={id:string;reference:string;title:string;purpose:string;status:Status;service_type?:string;principal_reference?:string|null;airport_code?:string|null;terminal?:string|null;airline?:string|null;flight_number?:string|null;flight_scheduled_at?:string|null;flight_status?:string;flight_status_source?:string;flight_status_observed_at?:string|null;meet_greet_instructions?:string|null;transport_mode:string;client_id?:string|null;client_name?:string|null;convoy_id?:string|null;convoy_name?:string|null;origin_label:string;origin_lat:string|number;origin_lng:string|number;destination_label:string;destination_lat:string|number;destination_lng:string|number;planned_departure_at?:string|null;planned_arrival_at?:string|null;planned_distance_km?:number|string|null;planned_duration_minutes?:number|null;timezone:string;route_assessment?:Assessment|string|null;planned_route?:Point[]|string;human_review_decision?:string|null;human_review_rationale?:string|null;approved_at?:string|null;started_at?:string|null;completed_at?:string|null;stops?:Stop[];events?:EventRow[];has_route_assessment?:boolean;telemetry_snapshot?:TelemetrySnapshot;readiness_checklist?:ReadinessItem[];duty_roles?:string[]};
+type Journey={id:string;reference:string;title:string;purpose:string;status:Status;service_type?:string;principal_reference?:string|null;airport_code?:string|null;terminal?:string|null;airline?:string|null;flight_number?:string|null;flight_scheduled_at?:string|null;flight_status?:string;flight_status_source?:string;flight_status_observed_at?:string|null;meet_greet_instructions?:string|null;transport_mode:string;client_id?:string|null;client_name?:string|null;convoy_id?:string|null;convoy_name?:string|null;origin_label:string;origin_lat:string|number;origin_lng:string|number;destination_label:string;destination_lat:string|number;destination_lng:string|number;planned_departure_at?:string|null;planned_arrival_at?:string|null;planned_distance_km?:number|string|null;planned_duration_minutes?:number|null;timezone:string;route_assessment?:Assessment|string|null;planned_route?:Point[]|string;human_review_decision?:string|null;human_review_rationale?:string|null;approved_at?:string|null;started_at?:string|null;completed_at?:string|null;stops?:Stop[];events?:EventRow[];has_route_assessment?:boolean;telemetry_snapshot?:TelemetrySnapshot;readiness_checklist?:ReadinessItem[];duty_roles?:string[];created_at?:string|null;updated_at?:string|null};
 type JourneyRegisterResponse={data:Journey[];pagination?:{limit:number;offset:number;total_count:number;has_more:boolean};summary?:{total:number;active:number;queue:number;review:number;awaiting_review:number;arrival_verification:number}};
 function lifecycleCheckpointIndex(status:Status,journey:Pick<Journey,'route_assessment'|'approved_at'|'started_at'>):number {
  const direct:Partial<Record<Status,number>>={requested:0,planning:1,assessment_pending:1,ready_for_review:2,approved:4,ready_to_depart:5,in_progress:5,paused:5,exception:5,on_hold:5,arrival_pending_verification:6,closed:8};
@@ -40,6 +40,38 @@ const SECTIONS=[{id:'summary',label:'Mission summary'},{id:'itinerary',label:'Pl
 const INTAKE_STEPS=[{label:'Mission brief',detail:'Intent, client and operating context'},{label:'Corridor',detail:'Origin, destination and schedule'},{label:'Itinerary',detail:'Ordered stops and checkpoints'},{label:'Review',detail:'Confirm the request before saving'}] as const;
 const EMPTY={title:'',purpose:'',client_id:'',convoy_id:'',service_type:'executive_transfer',principal_reference:'',airport_code:'',terminal:'',airline:'',flight_number:'',flight_scheduled_at:'',meet_greet_instructions:'',transport_mode:'road',origin_label:'',origin_lat:'',origin_lng:'',destination_label:'',destination_lat:'',destination_lng:'',planned_departure_at:'',planned_arrival_at:'',timezone:'Africa/Nairobi'};
 function assessmentOf(v:Journey['route_assessment']):Assessment|null{if(!v)return null;if(typeof v==='object')return v as Assessment;try{return JSON.parse(v) as Assessment}catch{return null}}
+type RegisterSort='priority'|'departure_asc'|'departure_desc'|'updated_desc';
+const REGISTER_SORT_OPTIONS:ReadonlyArray<{value:RegisterSort;label:string}>=[
+ {value:'priority',label:'Operational priority'},
+ {value:'departure_asc',label:'Departure · soonest first'},
+ {value:'departure_desc',label:'Departure · latest first'},
+ {value:'updated_desc',label:'Recently updated'},
+];
+const REGISTER_STATUS_PRIORITY:Record<Status,number>={exception:1,paused:2,arrival_pending_verification:3,on_hold:5,in_progress:6,ready_for_review:7,ready_to_depart:8,approved:9,assessment_pending:10,planning:11,requested:12,closed:20,cancelled:21,aborted:22};
+function dateOrder(a?:string|null,b?:string|null,direction:'asc'|'desc'='asc'){
+ const av=a?Date.parse(a):NaN,bv=b?Date.parse(b):NaN;
+ if(!Number.isFinite(av)&&!Number.isFinite(bv))return 0;
+ if(!Number.isFinite(av))return 1;
+ if(!Number.isFinite(bv))return -1;
+ return direction==='asc'?av-bv:bv-av;
+}
+function compareRegisterRows(a:Journey,b:Journey,sort:RegisterSort){
+ if(sort==='priority'){
+  const ga=assessmentOf(a.route_assessment)?.safety_gate,gb=assessmentOf(b.route_assessment)?.safety_gate;
+  const pa=ga==='NO_GO'&&!['closed','cancelled','aborted'].includes(a.status)?0:ga==='HUMAN_REVIEW'&&!['closed','cancelled','aborted'].includes(a.status)?4:(REGISTER_STATUS_PRIORITY[a.status]??15);
+  const pb=gb==='NO_GO'&&!['closed','cancelled','aborted'].includes(b.status)?0:gb==='HUMAN_REVIEW'&&!['closed','cancelled','aborted'].includes(b.status)?4:(REGISTER_STATUS_PRIORITY[b.status]??15);
+  if(pa!==pb)return pa-pb;
+  const d=dateOrder(a.planned_departure_at,b.planned_departure_at,'asc');if(d)return d;
+  const u=dateOrder(a.updated_at,b.updated_at,'desc');if(u)return u;
+ }else if(sort==='departure_asc'||sort==='departure_desc'){
+  const d=dateOrder(a.planned_departure_at,b.planned_departure_at,sort==='departure_asc'?'asc':'desc');if(d)return d;
+  const u=dateOrder(a.updated_at,b.updated_at,'desc');if(u)return u;
+ }else{
+  const u=dateOrder(a.updated_at,b.updated_at,'desc');if(u)return u;
+  const d=dateOrder(a.planned_departure_at,b.planned_departure_at,'asc');if(d)return d;
+ }
+ return a.reference.localeCompare(b.reference);
+}
 function routeOf(v:Journey['planned_route']):Point[]{if(Array.isArray(v))return v;if(typeof v==='string'){try{const p=JSON.parse(v);return Array.isArray(p)?p:[]}catch{return []}}return []}
 function dateText(v?:string|null){if(!v)return'Not recorded';const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):'Not recorded'}
 
@@ -245,7 +277,7 @@ export default function SecureJourneyManagement(){
  const [stopDrafts,setStopDrafts]=useState<StopDraft[]>([]);
  const [intakeStep,setIntakeStep]=useState<0|1|2|3>(0);
  const [intakePickTarget,setIntakePickTarget]=useState<IntakePickTarget>(null);
- const [filter,setFilter]=useState('all');const [search,setSearch]=useState('');const [registerSearch,setRegisterSearch]=useState('');const [registerPage,setRegisterPage]=useState(0);
+ const [filter,setFilter]=useState('all');const [search,setSearch]=useState('');const [registerSearch,setRegisterSearch]=useState('');const [registerPage,setRegisterPage]=useState(0);const [registerSort,setRegisterSort]=useState<RegisterSort>('priority');
  const [ack,setAck]=useState('');const [departureNote,setDepartureNote]=useState('');const [arrivalNote,setArrivalNote]=useState('');const [transitionReason,setTransitionReason]=useState('');const [reviewChoice,setReviewChoice]=useState('approve_with_controls');const [reviewNote,setReviewNote]=useState('');const [cancelNote,setCancelNote]=useState('');
  const [eventType,setEventType]=useState('operator_note');const [eventTitle,setEventTitle]=useState('');const [eventDetail,setEventDetail]=useState('');const [eventSeverity,setEventSeverity]=useState('medium');
 
@@ -289,7 +321,7 @@ export default function SecureJourneyManagement(){
  const clientsQ=useQuery<{data:Client[]}>({queryKey:['sjm-clients'],queryFn:async()=>(await api.get('/sjm/clients')).data,enabled:isSupervisor});
  const convoysQ=useQuery<{data:Convoy[]}>({queryKey:['sjm-convoys'],queryFn:async()=>(await api.get('/sjm/convoys')).data,enabled:isSupervisor});
  useEffect(()=>{const timer=window.setTimeout(()=>{setRegisterSearch(search.trim());setRegisterPage(0)},250);return ()=>window.clearTimeout(timer)},[search]);
- const registerQ=useQuery<JourneyRegisterResponse>({queryKey:['sjm-journeys',registerPage,filter,registerSearch],queryFn:async()=>(await api.get('/sjm/journeys',{params:{limit:100,offset:registerPage*100,filter,search:registerSearch}})).data,refetchInterval:30000,placeholderData:previous=>previous});
+ const registerQ=useQuery<JourneyRegisterResponse>({queryKey:['sjm-journeys',registerPage,filter,registerSearch,registerSort],queryFn:async()=>(await api.get('/sjm/journeys',{params:{limit:100,offset:registerPage*100,filter,search:registerSearch,sort:registerSort}})).data,refetchInterval:30000,placeholderData:previous=>previous});
  const journeys=registerQ.data?.data||[],clients=clientsQ.data?.data||[],convoys=convoysQ.data?.data||[];
  useEffect(()=>{if(!registerQ.isSuccess||registerQ.isPlaceholderData)return;if(journeys.length===0){if(selectedId)setSelectedId('');return;}if(!journeys.some(j=>j.id===selectedId))setSelectedId(journeys[0].id)},[registerQ.isSuccess,registerQ.isPlaceholderData,journeys,selectedId]);
  const selectedSummary=journeys.find(j=>j.id===selectedId);
@@ -309,12 +341,13 @@ export default function SecureJourneyManagement(){
  const profile=profileQ.data?.data;
  const hasRegisterContract=Boolean(registerQ.data?.pagination&&registerQ.data?.summary);
  const stats=registerQ.data?.summary;
- const visible=hasRegisterContract?journeys:journeys.filter(j=>{
+ const legacyVisible=journeys.filter(j=>{
   const active=['in_progress','paused','exception','arrival_pending_verification'].includes(j.status);
   const attention=['paused','exception','on_hold','arrival_pending_verification'].includes(j.status)||['HUMAN_REVIEW','NO_GO'].includes(assessmentOf(j.route_assessment)?.safety_gate||'');
   const matchesFilter=filter==='all'||(filter==='active'&&active)||(filter==='attention'&&attention)||(filter==='review'&&j.status==='ready_for_review')||(filter==='planning'&&['requested','planning','assessment_pending'].includes(j.status))||(filter==='closed'&&['closed','cancelled','aborted'].includes(j.status))||j.status===filter;
   return matchesFilter&&(registerSearch.trim()===''||[j.reference,j.title,j.client_name,j.origin_label,j.destination_label,j.convoy_name].some(value=>String(value||'').toLowerCase().includes(registerSearch.toLowerCase())));
- });
+ }).slice().sort((a,b)=>compareRegisterRows(a,b,registerSort));
+ const visible=hasRegisterContract?journeys:legacyVisible;
  const refresh=async()=>{await qc.invalidateQueries({queryKey:['sjm-journeys']});if(selectedId)await qc.invalidateQueries({queryKey:['sjm-journey',selectedId]})};
  const downloadReportArtifact=async(id:string,date:string,type:string,format:'PDF'|'CSV')=>{setReportDownloadError('');try{const b=await api.get('/sjm/reports/'+id+'/download',{params:{format},responseType:'blob'});download(b.data as Blob,'sonalit-sjm-'+type+'-'+date+'.'+format.toLowerCase())}catch(error){setReportDownloadError(type.replaceAll('_',' ')+' report is saved, but '+format+' export failed: '+errorText(error,'Download request failed.')+' You can retry the export below.')}};
 
@@ -505,6 +538,7 @@ return (
        <div className="mt-3 flex flex-wrap gap-1.5">
         {[['all','All'],['active','In operation'],['attention','Attention'],['review','Release review'],['planning','Planning'],['closed','Closed']].map(([value,label])=><button key={value} type="button" onClick={()=>{setFilter(value);setRegisterPage(0)}} className={'rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition '+(filter===value?'border-emerald-300/30 bg-emerald-300/[0.09] text-emerald-100':'border-white/[0.07] bg-white/[0.015] text-slate-500 hover:text-slate-200')}>{label}</button>)}
        </div>
+       <label className="mt-3 flex items-center justify-between gap-3 text-[11px] text-slate-400"><span>Sort missions</span><select aria-label="Sort missions" value={registerSort} onChange={event=>{setRegisterSort(event.target.value as RegisterSort);setRegisterPage(0)}} className="min-w-0 max-w-[72%] rounded-md border border-white/[0.10] bg-[#080c12] px-2.5 py-2 text-[11px] text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300">{REGISTER_SORT_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       </div>
       <div className="max-h-[780px] min-h-[280px] overflow-y-auto">
        {registerQ.isLoading?<div className="p-8 text-center text-xs text-slate-500"><RefreshCw size={17} className="mx-auto mb-3 animate-spin"/>Loading tenant register…</div>:registerQ.isError?<div role="alert" className="m-2 rounded-md border border-red-400/20 bg-red-500/[0.05] p-4 text-xs leading-5 text-red-200">The mission register could not be loaded. {errorText(registerQ.error,'API request failed.')}</div>:visible.length===0?<div className="m-2 rounded-md border border-dashed border-white/[0.10] p-5 text-center"><Route size={22} className="mx-auto mb-3 text-slate-600"/><p className="text-sm font-medium text-slate-300">{registerQ.data?.pagination?.total_count?'No records on this page':(filter!=='all'||registerSearch)?'No matching missions':'No journey records in your authorised scope'}</p><p className="mt-2 text-[11px] leading-5 text-slate-600">{registerQ.data?.pagination?.total_count?'Move to another page.':(filter!=='all'||registerSearch)?'Change the filter or search term.':'Create a mission to start a real, tenant-scoped operational record.'}</p>{!journeys.length&&<button type="button" onClick={()=>{setIntakeStep(0);setIntakePickTarget(null);setShowCreate(true)}} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-300/25 bg-emerald-300/[0.08] px-3 py-2 text-[11px] font-semibold text-emerald-100"><Plus size={13}/>Create mission</button>}</div>:visible.map(j=>{

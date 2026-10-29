@@ -17,6 +17,12 @@ const JOURNEY_REGISTER_FILTER_SQL = Object.freeze({
   planning: "j.status IN ('requested','planning','assessment_pending')",
   closed: "j.status IN ('closed','cancelled','aborted')",
 });
+const JOURNEY_REGISTER_ORDER_SQL = Object.freeze({
+  priority: "CASE WHEN j.status NOT IN ('closed','cancelled','aborted') AND COALESCE(j.route_assessment->>'safety_gate','')='NO_GO' THEN 0 WHEN j.status='exception' THEN 1 WHEN j.status='paused' THEN 2 WHEN j.status='arrival_pending_verification' THEN 3 WHEN j.status NOT IN ('closed','cancelled','aborted') AND COALESCE(j.route_assessment->>'safety_gate','')='HUMAN_REVIEW' THEN 4 WHEN j.status='on_hold' THEN 5 WHEN j.status='in_progress' THEN 6 WHEN j.status='ready_for_review' THEN 7 WHEN j.status='ready_to_depart' THEN 8 WHEN j.status='approved' THEN 9 WHEN j.status='assessment_pending' THEN 10 WHEN j.status='planning' THEN 11 WHEN j.status='requested' THEN 12 WHEN j.status='closed' THEN 20 WHEN j.status='cancelled' THEN 21 WHEN j.status='aborted' THEN 22 ELSE 15 END ASC, j.planned_departure_at ASC NULLS LAST, j.updated_at DESC, j.id ASC",
+  departure_asc: "j.planned_departure_at ASC NULLS LAST, j.updated_at DESC, j.id ASC",
+  departure_desc: "j.planned_departure_at DESC NULLS LAST, j.updated_at DESC, j.id ASC",
+  updated_desc: "j.updated_at DESC NULLS LAST, j.planned_departure_at ASC NULLS LAST, j.id ASC",
+});
 const TERMINAL_STATUSES = ['closed','cancelled','aborted'];
 const STOP_TYPES = ['checkpoint','rest','refuelling','border','meeting','overnight','destination','other'];
 const SERVICE_TYPES=['airport_arrival','airport_departure','meet_and_greet','close_protection','security_escort','executive_transfer','other'];
@@ -59,6 +65,10 @@ function journeyRegisterFilterSql(value) {
   if(Object.prototype.hasOwnProperty.call(JOURNEY_REGISTER_FILTER_SQL,filter))return JOURNEY_REGISTER_FILTER_SQL[filter];
   if(STATUSES.includes(filter))return 'j.status=$4';
   return null;
+}
+function journeyRegisterOrderSql(value) {
+  const sort=txt(value,40)||'priority';
+  return Object.prototype.hasOwnProperty.call(JOURNEY_REGISTER_ORDER_SQL,sort)?JOURNEY_REGISTER_ORDER_SQL[sort]:null;
 }
 function validCoordinate(lat,lng) { return typeof lat==='number' && Number.isFinite(lat) && lat>=-90 && lat<=90 && typeof lng==='number' && Number.isFinite(lng) && lng>=-180 && lng<=180 && !(Math.abs(lat)<0.000001 && Math.abs(lng)<0.000001); }
 function validDate(v) { if(v==null)return true; if(v instanceof Date)return Number.isFinite(v.getTime()); return typeof v==='string'&&Number.isFinite(Date.parse(v)); }
@@ -551,6 +561,9 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
   const filter=txt(req.query.filter,40)||'all';
   const filterSql=journeyRegisterFilterSql(filter);
   if(!filterSql)return res.status(400).json({error:'invalid_journey_filter',allowed:['all','active','attention','review','planning','closed',...STATUSES]});
+  const sort=txt(req.query.sort,40)||'priority';
+  const orderSql=journeyRegisterOrderSql(sort);
+  if(!orderSql)return res.status(400).json({error:'invalid_journey_sort',allowed:Object.keys(JOURNEY_REGISTER_ORDER_SQL)});
   const search=txt(req.query.search,160);
   const rows=await req.dbTx(async c=>{
     const db=(sql,params)=>c.query(sql,params);
@@ -571,7 +584,7 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
                WHERE p.org_id=j.org_id AND p.journey_id=j.id
                  AND p.user_id=$8 AND p.removed_at IS NULL
             )
-          ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC,j.id DESC
+          ORDER BY ${orderSql}
           LIMIT $6 OFFSET $7
           FOR SHARE OF j`,
         [req.user.org_id,status,clientId,filter,search,limit,offset,req.user.id],
@@ -590,7 +603,7 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
            WHERE p.org_id=j.org_id AND p.journey_id=j.id
              AND p.user_id=$9 AND p.removed_at IS NULL
         ))
-      ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC,j.id DESC
+      ORDER BY ${orderSql}
       LIMIT $6 OFFSET $7`;
     const guarded=await readLockedAssignmentRows(db,req.user.org_id,initialLocks,listSql,[req.user.org_id,status,clientId,filter,search,limit,offset,isMobilityManager(req.user),req.user.id]);
     if(guarded.error)return guarded;
@@ -1092,4 +1105,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,journeyRegisterOrderSql,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
