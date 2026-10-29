@@ -193,24 +193,28 @@ async function resolveRealtimeChannelName(orgId, channelId) {
     );
     const row = result.rows[0];
     if (!row) return null;
-    return row.sjm_journey_id
-      ? sjmChannelName(orgId, channelId, row.comms_epoch)
-      : `org#${orgId}#comms#${channelId}`;
+    return {
+      name: row.sjm_journey_id
+        ? sjmChannelName(orgId, channelId, row.comms_epoch)
+        : `org#${orgId}#comms#${channelId}`,
+      sjmManaged: Boolean(row.sjm_journey_id),
+    };
   });
 }
 
 function publishCommsEvent(orgId, channelId, type, payload, authorizedRealtimeChannel = null) {
   const event = { type, channel_id: channelId, ...payload };
-  if (authorizedRealtimeChannel) {
-    // Preserve the generation held under the message transaction's journey lock.
-    // A concurrent roster change must not redirect an in-flight event to the new team.
-    Promise.resolve(publish(authorizedRealtimeChannel, event))
-      .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
-  } else {
-    resolveRealtimeChannelName(orgId, channelId)
-      .then((channel) => channel ? publish(channel, event) : null)
-      .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
-  }
+  // SJM private-channel publications are deliberately disabled. Even a perfectly
+  // valid, short-lived JWT issued before roster removal can be replayed; publishing
+  // rich payloads to a retired channel could disclose messages. The tenant channel
+  // receives only a channel-id invalidation hint, and authorised REST reads return
+  // the message body after checking the current assignment under the journey lock.
+  resolveRealtimeChannelName(orgId, channelId)
+    .then((resolved) => {
+      if (!resolved || resolved.sjmManaged) return null;
+      return publish(authorizedRealtimeChannel || resolved.name, event);
+    })
+    .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
   publish(`org#${orgId}`, { type: `comms.${type}`, channel_id: channelId });
 }
 
