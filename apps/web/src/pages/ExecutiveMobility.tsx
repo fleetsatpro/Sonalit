@@ -113,7 +113,7 @@ export default function ExecutiveMobility(){
  const [revalidatingMissionIds,setRevalidatingMissionIds]=useState<Set<string>>(()=>new Set());
  const selectedIdRef=useRef(selectedId);selectedIdRef.current=selectedId;
  const rosterRevalidationVersionRef=useRef(new Map<string,number>());
- const rosterRevalidationInFlightRef=useRef(false);
+ const rosterRevalidationInFlightRef=useRef<{identityKey:string;generation:number}|null>(null);
 
  const [accessNotice,setAccessNotice]=useState(false);
  const identityKey=String(user?.org_id||'')+':'+String(user?.id||'');
@@ -209,8 +209,10 @@ export default function ExecutiveMobility(){
   }else if(!rosterRevalidationVersionRef.current.has(missionId)){
    rosterRevalidationVersionRef.current.set(missionId,1);
   }
-  if(rosterRevalidationInFlightRef.current)return;
-  rosterRevalidationInFlightRef.current=true;
+  if(rosterRevalidationInFlightRef.current?.identityKey===workIdentity&&rosterRevalidationInFlightRef.current.generation===workGeneration)return;
+  // A worker from an older identity generation may still be unwinding; it must
+  // not block the current worker or later clear ownership that belongs to it.
+  rosterRevalidationInFlightRef.current={identityKey:workIdentity,generation:workGeneration};
   const snapshotChanged=(versions:Map<string,number>)=>rosterRevalidationVersionRef.current.size!==versions.size||[...versions].some(([id,version])=>rosterRevalidationVersionRef.current.get(id)!==version);
   try{
    while(rosterRevalidationVersionRef.current.size&&isCurrentWorkerIdentity()){
@@ -237,7 +239,7 @@ export default function ExecutiveMobility(){
   }catch{
    // Fail closed for every pending mission. The retry path starts a new authorised read.
   }finally{
-   rosterRevalidationInFlightRef.current=false;
+   if(rosterRevalidationInFlightRef.current?.identityKey===workIdentity&&rosterRevalidationInFlightRef.current.generation===workGeneration){rosterRevalidationInFlightRef.current=null;}
   }
  },[missionQ.refetch,qc,user?.org_id,user?.id,identityKey,identityGeneration]);
 
