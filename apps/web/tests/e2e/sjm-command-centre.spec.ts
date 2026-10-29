@@ -287,6 +287,27 @@ test.describe('SJM command-centre responsive smoke', () => {
   });
 
 
+
+  test('field app withholds cached mission details when the server revokes access', async ({ page }) => {
+    await seedAuth(page);
+    await stubFieldSjmApi(page);
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID, (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'journey_not_found' }),
+      }),
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByText('A previous mission is no longer in your authorised assignment list')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Synthetic fixture instructions only.')).not.toBeVisible();
+    await expect(page.getByTestId('sjm-field-route-map')).not.toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).not.toBeVisible();
+    await expect(page.getByText('Principal / booking reference: TEST-PRINCIPAL-001')).not.toBeVisible();
+  });
+
   test('field route map shows locations without inventing an unassessed route', async ({ page }) => {
     await seedAuth(page);
     await stubFieldSjmApi(page);
