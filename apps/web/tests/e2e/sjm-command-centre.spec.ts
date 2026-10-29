@@ -259,6 +259,14 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
       await expect(page.getByTestId('sjm-journey-progress')).toBeVisible();
       await expect(page.getByTestId('sjm-journey-progress').getByRole('heading', { name: 'Lifecycle milestones' })).toBeVisible();
+      const serviceBrief = page.getByTestId('sjm-service-brief');
+      await expect(serviceBrief).toBeVisible();
+      await expect(serviceBrief.getByText('Airport arrival', { exact: true })).toBeVisible();
+      await expect(serviceBrief.getByText('Test Airline · ZZ 100', { exact: true })).toBeVisible();
+      await expect(serviceBrief.getByText('NBO · Terminal 1A', { exact: true })).toBeVisible();
+      await expect(serviceBrief.getByText('No team observation', { exact: true })).toBeVisible();
+      await expect(serviceBrief.getByText('TEST-PRINCIPAL-001', { exact: true })).toBeVisible();
+      await expect(serviceBrief.getByText('Synthetic fixture instructions only.', { exact: true })).toBeVisible();
       const basemapSelect = page.getByRole('combobox', { name: 'Map basemap' });
       await expect(basemapSelect).toHaveValue('dark');
       await expect(basemapSelect.locator('option')).toHaveText(['Street', 'Dark', 'Satellite']);

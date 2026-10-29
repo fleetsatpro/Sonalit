@@ -99,6 +99,16 @@ function compareRegisterRows(a:Journey,b:Journey,sort:RegisterSort){
 }
 function routeOf(v:Journey['planned_route']):Point[]{if(Array.isArray(v))return v;if(typeof v==='string'){try{const p=JSON.parse(v);return Array.isArray(p)?p:[]}catch{return []}}return []}
 function dateText(v?:string|null){if(!v)return'Not recorded';const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):'Not recorded'}
+function dateTextInTimezone(v?:string|null,timeZone?:string){
+ if(!v)return'Not scheduled';
+ const d=new Date(v);
+ if(!Number.isFinite(d.getTime()))return'Not recorded';
+ try{return new Intl.DateTimeFormat([],{dateStyle:'medium',timeStyle:'short',...(timeZone?{timeZone}:{})}).format(d)}catch{return dateText(v)}
+}
+function serviceTypeLabel(value?:string|null){
+ const labels:Record<string,string>={airport_arrival:'Airport arrival',airport_departure:'Airport departure',meet_and_greet:'Meet and greet',close_protection:'Close protection',security_escort:'Security escort',executive_transfer:'Executive transfer',other:'Other movement'};
+ return value?labels[value]||eventTypeLabel(value):'Service type not recorded';
+}
 
 function errorText(e:unknown,fallback:string){const x=e as{response?:{data?:{message?:string;error?:string}};message?:string};return x.response?.data?.message||x.response?.data?.error||x.message||fallback}
 function Input({label,children,className=''}:{label:string;children:ReactNode;className?:string}){return <label className={'block min-w-0 '+className}><span className="mb-1.5 block text-xs font-medium text-slate-300">{label}</span>{children}</label>}
@@ -384,6 +394,8 @@ export default function SecureJourneyManagement(){
  const canOperateLifecycle=isSupervisor||(journey?.duty_roles||[]).some(role=>['driver','backup_driver','cpo','security_escort','dispatcher'].includes(role));
   const canRecordFlightStatus=isSupervisor||(journey?.duty_roles||[]).some(role=>['cpo','meet_greet','dispatcher'].includes(role));
   const hasFlightContext=Boolean(journey&&(journey.flight_number||journey.airline||journey.airport_code||['airport_arrival','airport_departure','meet_and_greet'].includes(journey.service_type||'')));
+  const isProtectiveJourney=Boolean(journey&&['close_protection','security_escort'].includes(journey.service_type||''));
+  const hasServiceBrief=Boolean(journey&&(hasFlightContext||isProtectiveJourney||journey.principal_reference?.trim()||journey.meet_greet_instructions?.trim()));
  const canStartMovement=isSupervisor||(journey?.duty_roles||[]).some(role=>['driver','backup_driver'].includes(role));
  const profileQ=useQuery<{data:Profile}>({queryKey:['sjm-client-profile',journey?.client_id],enabled:Boolean(journey?.client_id&&isSupervisor),queryFn:async()=>(await api.get('/sjm/client-profiles/'+journey?.client_id)).data});
  const teamUsersQ=useQuery<{data:TeamUser[]}>({queryKey:['sjm-team-users',currentUser?.org_id],queryFn:async()=>(await api.get('/messages/org-users')).data,enabled:isSupervisor,staleTime:300000});
@@ -595,6 +607,33 @@ return (
         </div>
         {openMissionComms.isError&&<p role="alert" className="border-b border-amber-300/15 bg-amber-300/[0.025] px-4 py-2 text-[11px] leading-5 text-amber-100">{errorText(openMissionComms.error,'The secure channel could not be opened.')}</p>}
         <div className="p-2 sm:p-3"><JourneyMap journey={journey} stops={stops} geometry={geometry} assessment={assess} telemetry={journey.telemetry_snapshot}/></div>
+        {hasServiceBrief&&<section aria-label="Service brief" data-testid="sjm-service-brief" className="border-t border-white/[0.07] bg-[#0c141d] px-4 py-3.5 sm:px-5">
+         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[.13em] text-slate-300">Service brief</h3>
+          <span className="text-[11px] font-medium text-slate-400">{serviceTypeLabel(journey.service_type)}</span>
+         </div>
+         <dl className="grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
+          {hasFlightContext?<>{[
+           {label:'Flight reference',value:journey.flight_number?[(journey.airline||null),journey.flight_number].filter(Boolean).join(' · '):'Not recorded'},
+           {label:'Airport / terminal',value:[journey.airport_code,journey.terminal].filter(Boolean).join(' · ')||'Not recorded'},
+           {label:'Scheduled flight · '+(journey.timezone||'journey time'),value:dateTextInTimezone(journey.flight_scheduled_at,journey.timezone)},
+           {label:'Team-recorded status',value:journey.flight_status_source==='operator_entered'?flightStatusLabel(journey.flight_status):'No team observation'}
+          ].map(item=><div key={item.label} className="min-w-0"><dt className="text-[11px] font-semibold tracking-[.04em] text-slate-400">{item.label}</dt><dd className="mt-1 break-words text-[13px] font-semibold leading-5 text-slate-100">{item.value}</dd></div>)}
+           {journey.principal_reference?.trim()&&<div className="min-w-0"><dt className="text-[11px] font-semibold tracking-[.04em] text-slate-400">Principal / booking reference</dt><dd className="mt-1 break-words text-[13px] font-semibold leading-5 text-slate-100">{journey.principal_reference}</dd></div>}
+          </>:isProtectiveJourney?<>{[
+           {label:'Principal / booking reference',value:journey.principal_reference?.trim()||'Not recorded'},
+           {label:'Planned departure',value:dateTextInTimezone(journey.planned_departure_at,journey.timezone)},
+           {label:'Planned arrival',value:dateTextInTimezone(journey.planned_arrival_at,journey.timezone)},
+           {label:'Transport mode',value:eventTypeLabel(journey.transport_mode)}
+          ].map(item=><div key={item.label} className="min-w-0"><dt className="text-[11px] font-semibold tracking-[.04em] text-slate-400">{item.label}</dt><dd className="mt-1 break-words text-[13px] font-semibold leading-5 text-slate-100">{item.value}</dd></div>)}</>:<>
+           {journey.principal_reference?.trim()&&<div className="min-w-0"><dt className="text-[11px] font-semibold tracking-[.04em] text-slate-400">Principal / booking reference</dt><dd className="mt-1 break-words text-[13px] font-semibold leading-5 text-slate-100">{journey.principal_reference}</dd></div>}
+           {journey.planned_departure_at&&<div className="min-w-0"><dt className="text-[11px] font-semibold tracking-[.04em] text-slate-400">Planned departure</dt><dd className="mt-1 break-words text-[13px] font-semibold leading-5 text-slate-100">{dateTextInTimezone(journey.planned_departure_at,journey.timezone)}</dd></div>}
+           {journey.planned_arrival_at&&<div className="min-w-0"><dt className="text-[11px] font-semibold tracking-[.04em] text-slate-400">Planned arrival</dt><dd className="mt-1 break-words text-[13px] font-semibold leading-5 text-slate-100">{dateTextInTimezone(journey.planned_arrival_at,journey.timezone)}</dd></div>}
+           <div className="min-w-0"><dt className="text-[11px] font-semibold tracking-[.04em] text-slate-400">Transport mode</dt><dd className="mt-1 break-words text-[13px] font-semibold leading-5 text-slate-100">{eventTypeLabel(journey.transport_mode)}</dd></div>
+          </>}
+         </dl>
+         {journey.meet_greet_instructions?.trim()&&<div className="mt-3 border-l-2 border-emerald-300/30 pl-3"><p className="text-[11px] font-semibold tracking-[.04em] text-slate-400">Team instructions</p><p title={journey.meet_greet_instructions} className="mt-1 line-clamp-2 text-xs leading-5 text-slate-300">{journey.meet_greet_instructions}</p></div>}
+        </section>}
         <div className="grid grid-cols-2 border-t border-white/[0.07] bg-black/15 md:grid-cols-4">
          {[
           {label:'Planned distance',value:journey.planned_distance_km==null?'Not assessed':Number(journey.planned_distance_km).toLocaleString(undefined,{maximumFractionDigits:1})+' km'},
