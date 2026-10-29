@@ -771,7 +771,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('176 matches')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Portfolio view: 176 journeys', { exact: false })).toBeVisible();
+    await expect(page.getByText('Register summary: 176 journeys', { exact: false })).toBeVisible();
     const registerResponse = (offset: string, filter?: string, sort?: string) => page.waitForResponse((response) => {
       if (response.request().method() !== 'GET') return false;
       const url = new URL(response.url());
