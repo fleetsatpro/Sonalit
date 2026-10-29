@@ -1141,7 +1141,10 @@ const publishTyping = asyncHandler(async (req, res) => {
         [channel.sjm_journey_id, req.user.org_id],
       );
       if (!mission.rows.length) return { error: 'mission_not_found' };
-      realtimeChannel = sjmChannelName(req.user.org_id, req.params.id, mission.rows[0].comms_epoch);
+      // SJM mission channels do not carry private realtime publications. Typing is
+      // intentionally suppressed too; otherwise a replayed token could still expose
+      // officer names/presence after roster revocation.
+      return { ok: true, typingSuppressed: true };
     }
     publish(realtimeChannel, {
       type: 'typing',
