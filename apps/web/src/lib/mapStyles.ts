@@ -35,6 +35,39 @@ export const SAT_STYLE: maplibregl.StyleSpecification = {
 };
 
 /**
+ * SJM dark cartography rendered from the existing Esri street raster source.
+ * MapLibre adjusts only this raster layer, keeping assessed routes and device
+ * markers in their own colors. No CARTO key or style API is required.
+ */
+export const DARK_STREET_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: {
+    'dark-street': {
+      type: 'raster',
+      tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: '© Esri, HERE, Garmin, USGS, NGA, EPA, USDA',
+    },
+  },
+  layers: [
+    {
+      id: 'dark-street-tiles',
+      type: 'raster',
+      source: 'dark-street' as const,
+      paint: {
+        'raster-opacity': 1,
+        'raster-saturation': -1,
+        'raster-contrast': 0.12,
+        'raster-brightness-min': 0.06,
+        'raster-brightness-max': 0.46,
+        'raster-fade-duration': 150,
+      },
+    },
+  ],
+};
+
+/**
  * Dark raster cartography for dense operational overlays and an independent
  * fallback where the primary street tile host is blocked or unreachable.
  * This is cartography only: it never fabricates route, tracking or weather data.

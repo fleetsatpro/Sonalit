@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { FALLBACK_STREET_STYLE, STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
+import { DARK_STREET_STYLE, STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
 import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
 import { useAuthStore } from '../stores/auth.js';
@@ -169,7 +169,7 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
   useEffect(()=>{
     const container=containerRef.current;
     if(!container||mapRef.current)return;
-    const map=new maplibregl.Map({container,style:FALLBACK_STREET_STYLE,center:[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
+    const map=new maplibregl.Map({container,style:DARK_STREET_STYLE,center:[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
      container.dataset.sjmMapState='loading';
     map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'bottom-right');
     map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
@@ -239,7 +239,7 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
     if(!map||value===basemap)return;
     setMapReady(false);
     map.once('style.load',()=>setMapReady(true));
-    map.setStyle(value==='satellite'?SAT_STYLE:value==='dark'?FALLBACK_STREET_STYLE:STREET_STYLE);
+    map.setStyle(value==='satellite'?SAT_STYLE:value==='dark'?DARK_STREET_STYLE:STREET_STYLE);
     setBasemap(value);
   };
   const fitMap=()=>{
