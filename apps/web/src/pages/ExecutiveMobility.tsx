@@ -114,8 +114,7 @@ export default function ExecutiveMobility(){
  const selectedIdRef=useRef(selectedId);selectedIdRef.current=selectedId;
  const rosterRevalidationVersionRef=useRef(new Map<string,number>());
  const rosterRevalidationInFlightRef=useRef(false);
- const rosterRevalidationVersionRef=useRef(new Map<string,number>());
- const rosterRevalidationInFlightRef=useRef(new Set<string>());
+
  const [accessNotice,setAccessNotice]=useState(false);
  const identityKey=String(user?.org_id||'')+':'+String(user?.id||'');
  const accessIdentityRef=useRef(identityKey);
