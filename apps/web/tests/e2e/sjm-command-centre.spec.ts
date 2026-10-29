@@ -107,7 +107,7 @@ async function stubSjmApi(page: Page) {
     if (pathname === '/api/v1/sjm/journeys' && route.request().method() === 'GET') {
       const requestUrl = new URL(route.request().url());
       const offset = Number(requestUrl.searchParams.get('offset') || 0);
-      const limit = Number(requestUrl.searchParams.get('limit') || 50);
+      const limit = Number(requestUrl.searchParams.get('limit') || 100);
       const summary = { ...journey };
       delete summary.stops;
       delete summary.events;
@@ -311,7 +311,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       delete summary.telemetry_snapshot;
       delete summary.readiness_checklist;
       const offset = requestedOffset;
-      const rowCount = offset === 0 ? 50 : 26;
+      const rowCount = offset === 0 ? 100 : 76;
       const data = Array.from({ length: rowCount }, (_, index) => ({
         ...summary,
         id: offset === 0 && index === 0 ? JOURNEY_ID : JOURNEY_ID + '-' + (offset + index),
@@ -322,20 +322,20 @@ test.describe('SJM command-centre responsive smoke', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           data,
-          pagination: { limit: 50, offset, total_count: 76, has_more: offset === 0 },
-          summary: { total: 76, active: 12, queue: 18, review: 4, awaiting_review: 3, arrival_verification: 1 },
+          pagination: { limit: 100, offset, total_count: 176, has_more: offset === 0 },
+          summary: { total: 176, active: 32, queue: 48, review: 14, awaiting_review: 13, arrival_verification: 11 },
         }),
       });
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('76 matches')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Portfolio totals cover 76 authorised journeys', { exact: false })).toBeVisible();
+    await expect(page.getByText('176 matches')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Portfolio totals cover 176 authorised journeys', { exact: false })).toBeVisible();
     const nextPage = page.getByRole('button', { name: 'Next register page' });
     await expect(nextPage).toBeEnabled();
     await nextPage.click();
-    await expect.poll(() => requestedOffset).toBe(50);
-    await expect(page.getByText('Showing 51–76 of 76')).toBeVisible();
+    await expect.poll(() => requestedOffset).toBe(100);
+    await expect(page.getByText('Showing 101–176 of 176')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Previous register page' })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Next register page' })).toBeDisabled();
   });
