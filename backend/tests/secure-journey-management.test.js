@@ -1,8 +1,8 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-jest.mock('../src/realtime/centrifugo', () => ({ unsubscribeUserFromChannel: jest.fn(), publish: jest.fn() }));
-const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
+jest.mock('../src/realtime/centrifugo', () => ({ removeChannelHistory: jest.fn(), unsubscribeUserFromChannel: jest.fn(), publish: jest.fn() }));
+const { removeChannelHistory, unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
 const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
@@ -266,6 +266,7 @@ describe('SJM validation and evidence boundaries', () => {
   test('revokes stale mission-channel subscriptions before deleting SJM channel membership', async () => {
     jest.clearAllMocks();
     unsubscribeUserFromChannel.mockResolvedValue(true);
+    removeChannelHistory.mockResolvedValue(true);
     const calls=[];
     const channelId='cccccccc-0000-0000-0000-000000000001';
     const removedUser='aaaaaaaa-0000-0000-0000-000000000099';
@@ -275,6 +276,7 @@ describe('SJM validation and evidence boundaries', () => {
       if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:removedUser}]};
       if(/UPDATE sjm_journeys SET comms_epoch/.test(sql))return {rows:[{comms_epoch:1}],rowCount:1};
       if(sql.includes('DELETE FROM channel_members cm')) {
+        expect(removeChannelHistory).toHaveBeenCalledWith('org#org-1#comms#'+channelId);
         expect(unsubscribeUserFromChannel).toHaveBeenNthCalledWith(1,'org-1','org#org-1#comms#'+channelId);
         expect(unsubscribeUserFromChannel).toHaveBeenNthCalledWith(2,removedUser,'org#org-1#comms#'+channelId);
       }
@@ -286,8 +288,27 @@ describe('SJM validation and evidence boundaries', () => {
     expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(2);
   });
 
+  test('does not rotate a roster when retired-channel history cannot be cleared', async () => {
+    jest.clearAllMocks();
+    removeChannelHistory.mockResolvedValue(false);
+    const calls=[];
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql.includes('INSERT INTO channels'))return {rows:[{id:'cccccccc-0000-0000-0000-000000000001'}]};
+      if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:'aaaaaaaa-0000-0000-0000-000000000099'}]};
+      if(/UPDATE sjm_journeys SET comms_epoch/.test(sql))return {rows:[{comms_epoch:1}],rowCount:1};
+      return {rows:[],rowCount:1};
+    };
+    await expect(syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1'},'manager-1',true))
+      .rejects.toMatchObject({status:503});
+    expect(removeChannelHistory).toHaveBeenCalledWith('org#org-1#comms#cccccccc-0000-0000-0000-000000000001');
+    expect(calls.some(c=>c.sql.includes('DELETE FROM channel_members cm'))).toBe(false);
+    expect(unsubscribeUserFromChannel).not.toHaveBeenCalled();
+  });
+
   test('fails closed and preserves old roster memberships if live-channel revocation fails', async () => {
     jest.clearAllMocks();
+    removeChannelHistory.mockResolvedValue(true);
     unsubscribeUserFromChannel.mockResolvedValue(false);
     const calls=[];
     const db=async(sql,params)=>{
