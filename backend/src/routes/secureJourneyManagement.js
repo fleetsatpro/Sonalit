@@ -5,7 +5,7 @@ const PDFDocument = require('pdfkit');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const { analyseRoute } = require('../utils/routeAnalyser');
-const { unsubscribeUserFromChannel, publish } = require('../realtime/centrifugo');
+const { removeChannelHistory, unsubscribeUserFromChannel, publish } = require('../realtime/centrifugo');
 const { sjmChannelName } = require('../realtime/sjmChannel');
 
 const STATUSES = ['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification','closed','cancelled','aborted','on_hold'];
@@ -175,6 +175,8 @@ async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=tru
   if(!Number.isSafeInteger(commsEpoch)||commsEpoch<=oldEpoch)throw new Error('sjm_comms_epoch_rotation_invalid');
   const channelName=sjmChannelName(org,channelId,oldEpoch);
   const revokeUsers=new Set([...priorMemberIds,...staleMembers.rows.map(row=>String(row.user_id))]);
+  const historyRemoved=await removeChannelHistory(channelName);
+  if(!historyRemoved)throw Object.assign(new Error('SJM channel rotation could not be confirmed'),{status:503});
   if(revokeUsers.size){
    const legacyRevoked=await unsubscribeUserFromChannel(org,channelName);
    if(!legacyRevoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
