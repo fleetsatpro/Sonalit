@@ -10,7 +10,7 @@ import { toCoordinatePair } from '../lib/coordinatePair.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useMessages, useSendMessage } from '../features/comms/hooks/useComms.js';
 import { useCommsRealtime } from '../features/comms/hooks/useCommsRealtime.js';
-import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache, isFieldMissionRelevantForRosterChange } from '../lib/sjmFieldAccess.js';
+import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache, isFieldMissionRelevantForRosterChange, isCurrentSjmFieldIdentityGeneration } from '../lib/sjmFieldAccess.js';
 type DutyRole='driver'|'backup_driver'|'cpo'|'meet_greet'|'security_escort'|'dispatcher';
 type FlightStatus='unknown'|'scheduled'|'delayed'|'landed'|'departed'|'cancelled'|'diverted';
 type Mission={id:string;reference:string;title:string;purpose:string;service_type:string;status:string;origin_label:string;origin_lat:number|string;origin_lng:number|string;destination_label:string;destination_lat:number|string;destination_lng:number|string;planned_departure_at?:string|null;planned_arrival_at?:string|null;timezone:string;principal_reference?:string|null;airport_code?:string|null;terminal?:string|null;airline?:string|null;flight_number?:string|null;flight_scheduled_at?:string|null;flight_status:FlightStatus;flight_status_source:string;flight_status_observed_at?:string|null;meet_greet_instructions?:string|null;duty_roles:DutyRole[]};
@@ -202,7 +202,7 @@ export default function ExecutiveMobility(){
  const revalidateRosterMissionAccess=useCallback(async(missionId:string,markNewEvent=true)=>{
   const workIdentity=identityKey;
   const workGeneration=identityGeneration;
-  const isCurrentWorkerIdentity=()=>identityGenerationRef.current.identityKey===workIdentity&&identityGenerationRef.current.generation===workGeneration;
+  const isCurrentWorkerIdentity=()=>isCurrentSjmFieldIdentityGeneration(identityGenerationRef.current,{identityKey:workIdentity,generation:workGeneration});
   if(markNewEvent){
    const nextVersion=(rosterRevalidationVersionRef.current.get(missionId)||0)+1;
    rosterRevalidationVersionRef.current.set(missionId,nextVersion);

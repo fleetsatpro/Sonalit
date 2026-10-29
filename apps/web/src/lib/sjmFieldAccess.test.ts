@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache, isFieldMissionRelevantForRosterChange } from './sjmFieldAccess.js';
+import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache, isFieldMissionRelevantForRosterChange, isCurrentSjmFieldIdentityGeneration } from './sjmFieldAccess.js';
 
 describe('clearRevokedSjmFieldMissionCache', () => {
   let queryClient: QueryClient;
@@ -77,5 +77,25 @@ describe('isFieldMissionRelevantForRosterChange', () => {
     expect(isFieldMissionRelevantForRosterChange('pending-a', 'selected-b', new Set(), pending, false)).toBe(true);
     expect(isFieldMissionRelevantForRosterChange('cached-a', 'selected-b', new Set(), new Set(), true)).toBe(true);
     expect(isFieldMissionRelevantForRosterChange('unrelated-a', 'selected-b', new Set(), new Set(), false)).toBe(false);
+  });
+});
+
+describe('isCurrentSjmFieldIdentityGeneration', () => {
+  it('rejects a stale A worker after an A → B → A identity transition', () => {
+    expect(isCurrentSjmFieldIdentityGeneration(
+      { identityKey: 'org-a:user-a', generation: 2 },
+      { identityKey: 'org-a:user-a', generation: 0 },
+    )).toBe(false);
+  });
+
+  it('accepts only the exact current key and generation', () => {
+    expect(isCurrentSjmFieldIdentityGeneration(
+      { identityKey: 'org-a:user-a', generation: 2 },
+      { identityKey: 'org-a:user-a', generation: 2 },
+    )).toBe(true);
+    expect(isCurrentSjmFieldIdentityGeneration(
+      { identityKey: 'org-b:user-a', generation: 2 },
+      { identityKey: 'org-a:user-a', generation: 2 },
+    )).toBe(false);
   });
 });

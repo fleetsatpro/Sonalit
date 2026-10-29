@@ -75,3 +75,17 @@ export function isFieldMissionRelevantForRosterChange(
     pendingMissionIds.has(missionId) ||
     hasPrivateCache;
 }
+
+export type SjmFieldIdentityGeneration = {
+  identityKey: string;
+  generation: number;
+};
+
+/** A key match alone is unsafe for A → B → A transitions. */
+export function isCurrentSjmFieldIdentityGeneration(
+  current: SjmFieldIdentityGeneration,
+  expected: SjmFieldIdentityGeneration,
+): boolean {
+  return current.identityKey === expected.identityKey &&
+    current.generation === expected.generation;
+}
