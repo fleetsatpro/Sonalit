@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { clearRevokedSjmFieldMissionCache } from './sjmFieldAccess.js';
+import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache } from './sjmFieldAccess.js';
 
 describe('clearRevokedSjmFieldMissionCache', () => {
   let queryClient: QueryClient;
@@ -56,5 +56,14 @@ describe('clearRevokedSjmFieldMissionCache', () => {
 
     const current = queryClient.getQueryData<{ data: Array<{ id: string }> }>(assignmentKey);
     expect(current?.data.some(mission => mission.id === revokedId)).not.toBe(true);
+  });
+});
+
+describe('classifyRosterRevalidation', () => {
+  it('preserves members still assigned and revokes only those absent from the fresh list', () => {
+    expect(classifyRosterRevalidation(
+      ['mission-kept', 'mission-removed'],
+      [{ id: 'mission-kept' }, { id: 'another-mission' }],
+    )).toEqual({ stillAssigned: ['mission-kept'], revoked: ['mission-removed'] });
   });
 });

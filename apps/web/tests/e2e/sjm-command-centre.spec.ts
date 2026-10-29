@@ -453,7 +453,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByText('A previous mission is no longer in your authorised assignment list')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('A mission’s team changed. Sensitive details are hidden until Sonalit reconfirms your assignment.')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Synthetic fixture instructions only.')).not.toBeVisible();
     await expect(page.getByTestId('sjm-field-route-map')).not.toBeVisible();
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).not.toBeVisible();

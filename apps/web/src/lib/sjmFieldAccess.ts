@@ -14,6 +14,7 @@ export async function clearRevokedSjmFieldMissionCache(
   orgId: string | undefined,
   userId: string | undefined,
   missionId: string,
+  refreshAssignments = true,
 ): Promise<void> {
   const assignmentKey = ['sjm-my-assignments', orgId, userId] as const;
   const privateKeys = [
@@ -46,7 +47,18 @@ export async function clearRevokedSjmFieldMissionCache(
   // A cancelled fetch can restore its pre-fetch snapshot; re-filter after all
   // cancellation settles, even when the first snapshot was absent.
   filterAssignmentSnapshot();
-  if (orgId && userId) {
-    void queryClient.invalidateQueries({ queryKey: assignmentKey, exact: true });
+  if (orgId && userId && refreshAssignments) {
+    await queryClient.invalidateQueries({ queryKey: assignmentKey, exact: true });
   }
+}
+
+export function classifyRosterRevalidation(
+  missionIds: readonly string[],
+  assignments: readonly { id: string }[],
+): { stillAssigned: string[]; revoked: string[] } {
+  const assignedIds = new Set(assignments.map(assignment => assignment.id));
+  return {
+    stillAssigned: missionIds.filter(id => assignedIds.has(id)),
+    revoked: missionIds.filter(id => !assignedIds.has(id)),
+  };
 }
