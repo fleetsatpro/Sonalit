@@ -658,7 +658,7 @@ return (
                 <div><dt className="text-xs text-slate-400">Last observation</dt><dd className="mt-1 text-xs font-medium text-slate-200">{journey.flight_status_source==='operator_entered'?dateText(journey.flight_status_observed_at):'Not recorded'}</dd></div>
                </dl>
                {journey.flight_status_note&&<p className="mt-3 rounded-md border border-white/[0.06] bg-black/15 p-3 text-xs leading-5 text-slate-300"><span className="font-semibold text-slate-200">Team note:</span> {journey.flight_status_note}</p>}
-               <p className="mt-3 text-xs leading-5 text-slate-400">Entered by your team; this status is not from a live airline feed or independently verified.</p>
+               <p className="mt-3 text-xs leading-5 text-slate-400">Entered by your team; this is not a live airline feed and is not independently verified.</p>
                {canRecordFlightStatus&&journey.flight_number&&!['closed','cancelled','aborted'].includes(journey.status)&&<div className="mt-3">
                 <Btn onClick={()=>{setFlightStatusDraft(FLIGHT_STATUS_OPTIONS.some(option=>option.value===journey.flight_status)?journey.flight_status||'scheduled':'scheduled');setFlightStatusNote(journey.flight_status_note||'');setShowFlightStatusForm(value=>!value);recordFlightStatus.reset()}} disabled={flightStatusSavePending}><Activity size={13}/>{showFlightStatusForm?'Close form':'Record flight status'}</Btn>
                </div>}
