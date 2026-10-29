@@ -118,10 +118,11 @@ export default function ExecutiveMobility(){
  const [accessNotice,setAccessNotice]=useState(false);
  const identityKey=String(user?.org_id||'')+':'+String(user?.id||'');
  const accessIdentityRef=useRef<string|null>(null);
+ const [verifiedIdentityKey,setVerifiedIdentityKey]=useState<string|null>(null);
  const identityCleanupRef=useRef<{identityKey:string;promise:Promise<void>}|null>(null);
  const identityKeyRef=useRef(identityKey);identityKeyRef.current=identityKey;
  const accessIdentityScopeRef=useRef<{orgId:string|undefined;userId:string|undefined}>({orgId:undefined,userId:undefined});
- const identityReady=accessIdentityRef.current===identityKey;
+ const identityReady=verifiedIdentityKey===identityKey;
  const previousMissionId=useRef('');
  const missionQ=useQuery<{data:Mission[]}>({queryKey:['sjm-my-assignments',user?.org_id,user?.id],queryFn:async({signal})=>(await api.get('/sjm/my-assignments',{signal})).data,enabled:Boolean(user?.org_id&&user?.id),refetchInterval:30000,staleTime:10000});
  const currentAssignments=identityReady?missionQ.data?.data||[]:[];
@@ -165,6 +166,7 @@ export default function ExecutiveMobility(){
    if(user?.org_id&&user?.id)await missionQ.refetch().catch(()=>undefined);
    if(identityKeyRef.current!==identityKey)return;
    accessIdentityRef.current=identityKey;
+   setVerifiedIdentityKey(identityKey);
   };
   const promise=Promise.resolve().then(cleanupScope);
   identityCleanupRef.current={identityKey,promise};
