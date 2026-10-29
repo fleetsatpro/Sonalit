@@ -1,7 +1,7 @@
 /**
  * Orchestrates the full comms experience: layout, live data, modal state.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Hash, Radio, Users, Search as SearchIcon, Pin, Menu, X, Star,
 } from 'lucide-react';
@@ -32,11 +32,16 @@ export default function CommsPage() {
   // has been deleted out from under us.
   useEffect(() => {
     const list = channelsQ.data ?? [];
-    if (list.length === 0) return;
+    if (list.length === 0) {
+      // A successfully refreshed empty channel list is an authorization result,
+      // not permission to keep rendering the previously selected channel.
+      if (channelsQ.isSuccess && activeChannelId) setActiveChannelId(null);
+      return;
+    }
     if (!activeChannelId || !list.some((c) => c.id === activeChannelId)) {
       setActiveChannelId(list[0]!.id);
     }
-  }, [channelsQ.data, activeChannelId]);
+  }, [channelsQ.data, channelsQ.isSuccess, activeChannelId]);
 
   const activeChannel = useMemo(
     () => channelsQ.data?.find((c) => c.id === activeChannelId) ?? null,
@@ -48,7 +53,24 @@ export default function CommsPage() {
   const membersQ  = useChannelMembers(activeChannelId);
   const pinnedQ   = usePinned(activeChannelId);
 
-  const typing = useCommsRealtime(user?.org_id, activeChannelId, user?.id, activeChannel?.realtime_channel);
+  // Move away from the current mission immediately when its roster rotates.
+  // The refreshed server channel list will select a still-authorised channel again.
+  const handleSjmRosterChanged = useCallback((channelId: string) => {
+    setActiveChannelId((current) => current === channelId ? null : current);
+    setPanelMode(null);
+    setThreadParentId(null);
+    setSearchOpen(false);
+    setSearchQ('');
+  }, []);
+
+  const typing = useCommsRealtime(
+    user?.org_id,
+    activeChannelId,
+    user?.id,
+    activeChannel?.realtime_channel,
+    undefined,
+    handleSjmRosterChanged,
+  );
 
   // Mark-read whenever we open a channel + when new messages arrive.
   const markRead = useMarkRead();
@@ -69,14 +91,14 @@ export default function CommsPage() {
   // ── UI state ────────────────────────────────────────────────────────────
   const [panelMode, setPanelMode]   = useState<PanelMode>(null);
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
-  const threadQ = useThread(activeChannelId, threadParentId);
   const [createOpen, setCreateOpen] = useState<null | 'priority' | 'regional' | 'operations'>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ,    setSearchQ]    = useState('');
+  const threadQ = useThread(activeChannelId, threadParentId);
 
   // ── Handlers ────────────────────────────────────────────────────────────
-  const handleSelect = (id: string) => { setActiveChannelId(id); setPanelMode(null); setDrawerOpen(false); };
+  const handleSelect = (id: string) => { setActiveChannelId(id); setPanelMode(null); setThreadParentId(null); setDrawerOpen(false); };
   const handleCreate = (category: 'priority' | 'regional' | 'operations') => setCreateOpen(category);
 
   const handleDeleteChannel = (id: string) => {
@@ -189,7 +211,7 @@ export default function CommsPage() {
           </div>
         </header>
 
-        {pinnedQ.data && pinnedQ.data.length > 0 && (
+        {activeChannel && pinnedQ.data && pinnedQ.data.length > 0 && (
           <button
             onClick={() => setPanelMode('pinned')}
             className="flex items-center gap-2 text-left px-5 py-2 bg-gradient-to-r from-red-500/10 to-transparent border-b border-white/[0.06] text-[12px] hover:from-red-500/15"
@@ -201,7 +223,7 @@ export default function CommsPage() {
           </button>
         )}
 
-        {activeChannelId ? (
+        {activeChannelId && activeChannel ? (
           <>
             <MessageStream
               messages={messagesQ.data?.data ?? []}
@@ -232,7 +254,7 @@ export default function CommsPage() {
         )}
       </main>
 
-      {activeChannelId && (
+      {activeChannelId && activeChannel && (
         <RightPanel
           mode={panelMode}
           channelId={activeChannelId}

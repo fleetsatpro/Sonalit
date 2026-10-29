@@ -14,6 +14,21 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { subscribe } from '../../../lib/centrifuge.js';
 import { commsKeys } from './useComms.js';
+
+/**
+ * Clear all cached private data associated with an SJM channel when its
+ * assignment roster rotates. The channel list is blanked until an authorised
+ * REST refresh returns, preventing stale membership from reselecting the
+ * channel while the server denies access.
+ */
+export function clearRevokedSjmChannelCache(qc: ReturnType<typeof useQueryClient>, channelId: string): void {
+  qc.removeQueries({ queryKey: commsKeys.messages(channelId), exact: true });
+  qc.removeQueries({ queryKey: commsKeys.members(channelId), exact: true });
+  qc.removeQueries({ queryKey: commsKeys.pinned(channelId), exact: true });
+  qc.removeQueries({ queryKey: ['comms', 'channels', channelId, 'thread'] });
+  qc.setQueryData(commsKeys.channels, []);
+  void qc.invalidateQueries({ queryKey: commsKeys.channels, exact: true });
+}
 import type { CommsEvent } from '../types/comms.js';
 
 export interface TypingState { name: string; expiresAt: number }
@@ -30,6 +45,7 @@ export function useCommsRealtime(
   selfId: string | undefined,
   realtimeChannelName?: string | null,
   missionQueryId?: string | null,
+  onSjmRosterChanged?: (channelId: string) => void,
 ): TypingState | null {
   const qc = useQueryClient();
   const [typing, setTyping] = useState<TypingState | null>(null);
@@ -40,21 +56,31 @@ export function useCommsRealtime(
     if (!orgId) return;
     return subscribe<{ type?: string; channel_id?: string }>(`org#${orgId}`, (raw) => {
       if (!raw?.type || !raw.type.startsWith('comms.')) return;
+
+      if (raw.type === 'comms.sjm.roster_changed' && raw.channel_id && raw.channel_id === activeChannelId) {
+        // A roster rotation invalidates the prior authorisation boundary. Fail
+        // closed: erase cached private content and temporarily blank the cached
+        // channel list so a stale list cannot reselect the just-revoked channel.
+        clearRevokedSjmChannelCache(qc, raw.channel_id);
+        onSjmRosterChanged?.(raw.channel_id);
+        if (missionQueryId) {
+          void qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId] });
+        }
+        return;
+      }
+
       qc.invalidateQueries({ queryKey: commsKeys.channels });
       // SJM chat publishes only a tenant-scoped invalidation signal, never a rich
       // message payload to a private realtime channel. Refetch authorised REST data
       // under the server's current assignment check.
-      if (raw.channel_id === activeChannelId) {
+      if (raw.channel_id && raw.channel_id === activeChannelId) {
         qc.invalidateQueries({ queryKey: commsKeys.messages(activeChannelId) });
         qc.invalidateQueries({ queryKey: commsKeys.members(activeChannelId) });
         qc.invalidateQueries({ queryKey: commsKeys.pinned(activeChannelId) });
         qc.invalidateQueries({ queryKey: ['comms', 'channels', activeChannelId, 'thread'] });
       }
-      if (raw.type === 'comms.sjm.roster_changed' && raw.channel_id === activeChannelId) {
-        qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId || activeChannelId] });
-      }
     });
-  }, [orgId, activeChannelId, missionQueryId, qc]);
+  }, [orgId, activeChannelId, missionQueryId, onSjmRosterChanged, qc]);
 
   // Per-channel channel — handles both cache invalidation AND typing events.
   useEffect(() => {
