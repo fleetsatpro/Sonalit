@@ -324,7 +324,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     ).toBeLessThan(160);
   });
 
-  test('mission workspace opens the requested channel only when Ops Comms authorises it', async ({ page }) => {
+  test('mission workspace opens its authorised private communications channel', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
     const missionChannelId = '00000000-0000-4000-8000-000000000123';
@@ -352,258 +352,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.route((url) => url.pathname === '/api/v1/messages/channels', (route) => route.fulfill({
       status: 200, contentType: 'application/json', body: JSON.stringify({ data: channels }),
     }));
-    for (const channelId of [missionChannelId, generalChannelId]) {
-      await page.route((url) => url.pathname === '/api/v1/messages/channels/' + channelId + '/messages', (route) => route.fulfill({
-        status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], next_cursor: null }),
-      }));
-      await page.route((url) => new RegExp('/api/v1/messages/channels/' + channelId + '/(members|pinned|read)
-    await seedAuth(page);
-    await stubSjmApi(page);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
-
-    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    const tabs = page.getByRole('tablist', { name: 'Mission workspace views' });
-    await expect(tabs).toBeVisible();
-
-    await page.getByRole('tab', { name: 'Evidence ledger' }).click();
-    await expect(page.getByRole('heading', { name: 'Journey events' })).toBeVisible();
-    await expect(page.getByText('Manual stop confirmations', { exact: true })).toBeVisible();
-    await expect(page.getByText('Not equivalent to a GPS proof', { exact: true })).toBeVisible();
-
-    await page.getByRole('tab', { name: 'Client reporting' }).click();
-    await expect(page.getByRole('heading', { name: 'Generate a persisted report' })).toBeVisible();
-    await expect(page.getByText(/No report is automatically emailed or distributed/)).toBeVisible();
-  });
-
-  test('team assignments stay out of the initial dispatch path until requested', async ({ page }) => {
-    await seedAuth(page);
-    await stubSjmApi(page);
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
-
-    const team = page.locator('details.sjm-team-admin');
-    await expect(team).toBeVisible({ timeout: 15000 });
-    await expect(team).not.toHaveAttribute('open', '');
-    await expect(team.getByRole('heading', { name: 'Drivers, CPOs and meet-and-greet' })).toBeVisible();
-    await expect(team.getByLabel('Active organisation user')).not.toBeVisible();
-
-    await team.locator('summary').click();
-    await expect(team).toHaveAttribute('open', '');
-    await expect(team.getByLabel('Active organisation user')).toBeVisible();
-  });
-
-
-
-  test('field app withholds cached mission details when the server revokes access', async ({ page }) => {
-    await seedAuth(page);
-    await stubFieldSjmApi(page);
-    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID, (route) =>
-      route.fulfill({
-        status: 404,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'journey_not_found' }),
-      }),
-    );
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
-
-    await expect(page.getByText('A previous mission is no longer in your authorised assignment list')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Synthetic fixture instructions only.')).not.toBeVisible();
-    await expect(page.getByTestId('sjm-field-route-map')).not.toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).not.toBeVisible();
-    await expect(page.getByText('Principal / booking reference: TEST-PRINCIPAL-001')).not.toBeVisible();
-  });
-
-  test('field route map shows locations without inventing an unassessed route', async ({ page }) => {
-    await seedAuth(page);
-    await stubFieldSjmApi(page);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
-
-    const routeMap = page.getByTestId('sjm-field-route-map');
-    await expect(routeMap).toBeVisible({ timeout: 15000 });
-    await expect(routeMap).toHaveAttribute('data-route-evidence', 'unavailable');
-    await expect(page.getByText('No routed Route Safety geometry is available. The map does not connect endpoints.')).toBeVisible();
-    await expect(page.getByRole('list', { name: 'Ordered checkpoints' }).getByText('Meet point')).toBeVisible();
-    await expect(page.getByText(/no live position inferred/)).toBeVisible();
-  });
-
-  test('field route map draws only stored routed geometry and labels its safety gate', async ({ page }) => {
-    await seedAuth(page);
-    const routedDetail = {
-      ...journey,
-      duty_roles: ['driver'],
-      route_assessment: { route_status: 'routed', safety_gate: 'GO' },
-      planned_route: [
-        { lat: -1.3192, lng: 36.9275 },
-        { lat: -1.3020, lng: 36.9000 },
-        { lat: -1.2864, lng: 36.8172 },
-      ],
-    };
-    await stubFieldSjmApi(page, routedDetail);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
-
-    const routeMap = page.getByTestId('sjm-field-route-map');
-    await expect(routeMap).toBeVisible({ timeout: 15000 });
-    await expect(routeMap).toHaveAttribute('data-route-evidence', 'routed');
-    await expect(routeMap.getByText('Route Safety · GO')).toBeVisible();
-    await expect(routeMap.getByText('The line is stored Route Safety planned geometry, not a live GPS track.')).toBeVisible();
-    const mapTop = await routeMap.evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
-    const instructionsTop = await page.getByText('Synthetic fixture instructions only.').evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
-    expect(mapTop).toBeLessThan(instructionsTop);
-  });
-
-  test('field communications appear before check-in actions on a narrow screen', async ({ page }) => {
-    await seedAuth(page);
-    await stubFieldSjmApi(page);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
-
-    const communications = page.getByRole('heading', { name: 'Private mission channel' });
-    const milestones = page.getByRole('heading', { name: 'Mission milestones' });
-    await expect(communications).toBeVisible({ timeout: 15000 });
-    await expect(milestones).toBeVisible();
-    const communicationsTop = await communications.evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
-    const milestonesTop = await milestones.evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
-    expect(communicationsTop).toBeLessThan(milestonesTop);
-  });
-
-  test('field communications distinguish failed history loads from an empty channel', async ({ page }) => {
-    await seedAuth(page);
-    await stubFieldSjmApi(page);
-    await page.route('**/api/v1/messages/**', (route) =>
-      route.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'message_history_unavailable' }),
-      }),
-    );
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
-
-    await expect(page.getByRole('heading', { name: 'Private mission channel' })).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Message history could not be loaded. No empty-state assumption is made.')).toBeVisible({ timeout: 20000 });
-    await expect(page.getByText('No messages recorded in this mission channel.')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Retry history' })).toBeVisible();
-  });
-
-  test('register exposes full result counts and bounded page navigation', async ({ page }) => {
-    await seedAuth(page);
-    await stubSjmApi(page);
-    let requestedOffset = -1;
-    let requestedSort = '';
-    let requestedFilter = 'all';
-    await page.route('**/api/v1/sjm/journeys?**', async (route) => {
-      const url = new URL(route.request().url());
-      requestedOffset = Number(url.searchParams.get('offset') || 0);
-      requestedSort = url.searchParams.get('sort') || '';
-      requestedFilter = url.searchParams.get('filter') || 'all';
-      const summary = { ...journey };
-      delete summary.stops;
-      delete summary.events;
-      delete summary.telemetry_snapshot;
-      delete summary.readiness_checklist;
-      const offset = requestedOffset;
-      const totalCount = requestedFilter === 'overdue' ? 7 : requestedFilter === 'departure_due_30m' ? 3 : 176;
-      const rowCount = Math.max(0, Math.min(offset === 0 ? 100 : 76, totalCount - offset));
-      const data = Array.from({ length: rowCount }, (_, index) => ({
-        ...summary,
-        id: offset === 0 && index === 0 ? JOURNEY_ID : JOURNEY_ID + '-' + (offset + index),
-        reference: 'SJM-PAGE-' + (offset + index),
-        schedule_urgency: requestedFilter === 'overdue' ? 'DEPARTURE_OVERDUE' : requestedFilter === 'departure_due_30m' ? 'DEPARTURE_DUE_30M' : null,
-      }));
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          data,
-          pagination: { limit: 100, offset, total_count: totalCount, has_more: offset + rowCount < totalCount },
-          summary: { total: 176, active: 32, queue: 48, review: 14, awaiting_review: 13, arrival_verification: 11, overdue: 7, departures_due_30m: 3 },
-        }),
-      });
-    });
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('176 matches')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Portfolio totals cover 176 authorised journeys', { exact: false })).toBeVisible();
-    const registerResponse = (offset: string, filter?: string, sort?: string) => page.waitForResponse((response) => {
-      if (response.request().method() !== 'GET') return false;
-      const url = new URL(response.url());
-      return url.pathname === '/api/v1/sjm/journeys'
-        && url.searchParams.get('offset') === offset
-        && (filter === undefined || (url.searchParams.get('filter') || 'all') === filter)
-        && (sort === undefined || (url.searchParams.get('sort') || '') === sort);
-    }, { timeout: 15000 });
-
-    const nextPage = page.getByRole('button', { name: 'Next register page' });
-    await expect(nextPage).toBeEnabled();
-    const secondPageResponse = registerResponse('100', 'all');
-    await nextPage.click();
-    await secondPageResponse;
-    await expect.poll(() => requestedOffset).toBe(100);
-    await expect(page.getByText('Showing 101–176 of 176')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Previous register page' })).toBeEnabled();
-    await expect(page.getByRole('button', { name: 'Next register page' })).toBeDisabled();
-
-    const sortedRegisterResponse = registerResponse('0', 'all', 'departure_asc');
-    await page.getByLabel('Sort missions').selectOption('departure_asc');
-    await sortedRegisterResponse;
-    await expect.poll(() => requestedSort).toBe('departure_asc');
-    await expect.poll(() => requestedOffset).toBe(0);
-    await expect(page.getByText('Showing 1–100 of 176')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Next register page' })).toBeEnabled();
-
-    const overdueResponse = registerResponse('0', 'overdue', 'departure_asc');
-    await page.getByRole('button', { name: 'Overdue' }).click();
-    await overdueResponse;
-    await expect.poll(() => requestedFilter).toBe('overdue');
-    await expect.poll(() => requestedOffset).toBe(0);
-    await expect(page.getByText('7 matches')).toBeVisible();
-    await expect(page.getByText('Showing 1–7 of 7')).toBeVisible();
-    await expect(page.getByRole('button', { name: /SJM-PAGE-0/ }).getByText('Departure overdue')).toBeVisible();
-
-    const departureDueResponse = registerResponse('0', 'departure_due_30m', 'departure_asc');
-    await page.getByRole('button', { name: 'Departure due ≤30m' }).click();
-    await departureDueResponse;
-    await expect.poll(() => requestedFilter).toBe('departure_due_30m');
-    await expect.poll(() => requestedOffset).toBe(0);
-    await expect(page.getByText('3 matches')).toBeVisible();
-    await expect(page.getByRole('button', { name: /SJM-PAGE-0/ }).getByText('Departure due ≤30m')).toBeVisible();
-  });
-
-  test('lifecycle rail keeps movement and arrival verification on their correct checkpoints', async ({ page }) => {
-    await seedAuth(page);
-    await stubSjmApi(page);
-    const moving = { ...journey, status: 'in_progress', approved_at: '2026-10-29T07:30:00.000Z', started_at: '2026-10-29T08:00:00.000Z' };
-    const summary = { ...moving };
-    delete summary.stops;
-    delete summary.events;
-    delete summary.telemetry_snapshot;
-    delete summary.readiness_checklist;
-    await page.route('**/api/v1/sjm/journeys?**', (route) => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: [summary], pagination: { limit: 100, offset: 0, total_count: 1, has_more: false }, summary: { total: 1, active: 1, queue: 0, review: 0, awaiting_review: 0, arrival_verification: 0 } }),
+    await page.route((url) => url.pathname.startsWith('/api/v1/messages/channels/' + missionChannelId + '/') ||
+      url.pathname.startsWith('/api/v1/messages/channels/' + generalChannelId + '/'), (route) => route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], next_cursor: null, ok: true }),
     }));
-    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID, (route) => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: moving }),
-    }));
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByLabel('5 of 8 checkpoints cleared')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole('listitem', { name: 'Move current' })).toBeVisible();
-    await expect(page.getByRole('listitem', { name: 'Arrival pending' })).toBeVisible();
-  });
-
-});
-).test(url.pathname), (route) => route.fulfill({
-        status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], ok: true }),
-      }));
-    }
     await page.route('**/api/v1/realtime/**', (route) => route.fulfill({
       status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'e2e-token' }),
     }));
@@ -616,14 +368,14 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.locator('main header').getByText('General operations', { exact: true })).toHaveCount(0);
   });
 
-  test('a crafted channel deep-link cannot select or fetch a channel outside the authorised list', async ({ page }) => {
+  test('an unauthorised channel deep-link never triggers private channel queries', async ({ page }) => {
     await seedAuth(page);
     const authorisedId = '00000000-0000-4000-8000-000000000124';
     const rejectedId = '00000000-0000-4000-8000-000000000123';
-    const queriedPaths: string[] = [];
-    await page.on('request', (request) => {
+    const rejectedRequests: string[] = [];
+    page.on('request', (request) => {
       const url = new URL(request.url());
-      if (url.pathname.startsWith('/api/v1/messages/channels/' + rejectedId + '/')) queriedPaths.push(url.pathname);
+      if (url.pathname.startsWith('/api/v1/messages/channels/' + rejectedId + '/')) rejectedRequests.push(url.pathname);
     });
     await page.route((url) => url.pathname === '/api/v1/messages/channels', (route) => route.fulfill({
       status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{
@@ -646,7 +398,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.goto('/messages?channelId=' + rejectedId, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('main header').getByText('General operations', { exact: true })).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(300);
-    expect(queriedPaths).toEqual([]);
+    expect(rejectedRequests).toEqual([]);
   });
 
   test('workspace tabs remain operable and preserve evidence provenance on a narrow viewport', async ({ page }) => {
