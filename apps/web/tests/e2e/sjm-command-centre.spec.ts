@@ -262,13 +262,14 @@ test.describe('SJM command-centre responsive smoke', () => {
       const mapSurface = page.locator('[data-sjm-map="journey"]');
       await expect(mapSurface).toHaveAttribute('data-sjm-map-state', 'ready', { timeout: 20000 });
 
-      const fieldTeamLink = page.getByRole('link', { name: /Field team app/ });
-      const portfolioSummary = page.getByRole('button', { name: 'Portfolio summary' });
+      const pageHeader = page.locator('main header');
+      const fieldTeamLink = pageHeader.getByRole('link', { name: /Field team app/ });
+      const portfolioSummary = pageHeader.getByRole('button', { name: 'Portfolio summary', exact: true });
       if (viewport.width < 640) {
         await expect(fieldTeamLink).toBeHidden();
         await expect(portfolioSummary).toBeHidden();
-        await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'New journey' })).toBeVisible();
+        await expect(pageHeader.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
+        await expect(pageHeader.getByRole('button', { name: 'New journey', exact: true })).toBeVisible();
       } else {
         await expect(fieldTeamLink).toBeVisible();
         await expect(portfolioSummary).toBeVisible();
