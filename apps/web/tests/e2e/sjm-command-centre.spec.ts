@@ -228,7 +228,7 @@ async function stubFieldSjmApi(page: Page, detail: Record<string, unknown> = { .
 test.describe('SJM command-centre responsive smoke', () => {
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
-  test('renders a real-evidence empty assessment state without horizontal overflow at target viewports', async ({ page }) => {
+  test('keeps the mission workspace map-first without horizontal overflow at target viewports', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
 
@@ -247,6 +247,18 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 10000 });
       await expect(page.getByText('Route has not been assessed', { exact: true })).toBeVisible();
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
+
+      const registerHeading = page.getByRole('heading', { name: 'Mission register' });
+      const selectedMissionHeading = page.getByRole('heading', { name: 'Airport arrival — controlled transfer' });
+      const registerBox = await registerHeading.boundingBox();
+      const missionBox = await selectedMissionHeading.boundingBox();
+      expect(registerBox, `${viewport.label}: register heading should render`).not.toBeNull();
+      expect(missionBox, `${viewport.label}: selected mission heading should render`).not.toBeNull();
+      if (viewport.width < 1280) {
+        expect(missionBox!.y, `${viewport.label}: mission workspace must precede the register on narrow screens`).toBeLessThan(registerBox!.y);
+      } else {
+        expect(registerBox!.x, `${viewport.label}: register should remain the left desktop rail`).toBeLessThan(missionBox!.x);
+      }
 
       const dimensions = await page.evaluate(() => ({
         viewport: window.innerWidth,
