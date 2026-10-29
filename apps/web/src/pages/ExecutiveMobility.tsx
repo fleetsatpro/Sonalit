@@ -132,13 +132,13 @@ export default function ExecutiveMobility(){
  const detailAccessDenied=detailQ.isError&&[403,404].includes(detailHttpStatus);
  const missionDetail=detailAccessDenied?undefined:detailQ.data?.data;
  useEffect(()=>{
-  if(!detailAccessDenied||!selectedId||revalidatingMissionIds.has(selectedId))return;
+  if(!identityReady||!detailAccessDenied||!selectedId||revalidatingMissionIds.has(selectedId))return;
   const revokedId=selectedId;
   setInaccessibleMissionIds(current=>current.has(revokedId)?current:new Set(current).add(revokedId));
   setAccessNotice(true);
   setSelectedId(current=>current===revokedId?'':current);
   void clearRevokedSjmFieldMissionCache(qc,user?.org_id,user?.id,revokedId);
- },[detailAccessDenied,selectedId,qc,user?.org_id,user?.id,revalidatingMissionIds]);
+ },[identityReady,detailAccessDenied,selectedId,qc,user?.org_id,user?.id,revalidatingMissionIds]);
  useEffect(()=>{
   if(previousMissionId.current===selectedId)return;
   previousMissionId.current=selectedId;
