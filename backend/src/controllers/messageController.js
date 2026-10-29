@@ -836,7 +836,7 @@ const addReaction = asyncHandler(async (req, res) => {
   if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
   publishCommsEvent(req.user.org_id, req.params.id, 'reaction.added', {
     message_id: req.params.msgId, user_id: req.user.id, emoji: value.emoji,
-  }, result.realtimeChannel);
+  }, result.realtimeChannel, result.sjmManaged);
   res.status(201).json({ ok: true });
 });
 
@@ -852,7 +852,7 @@ const removeReaction = asyncHandler(async (req, res) => {
   if (!result.ok) return;
   publishCommsEvent(req.user.org_id, req.params.id, 'reaction.removed', {
     message_id: req.params.msgId, user_id: req.user.id, emoji,
-  }, result.realtimeChannel);
+  }, result.realtimeChannel, result.sjmManaged);
   res.json({ ok: true });
 });
 
@@ -895,7 +895,7 @@ const addPin = asyncHandler(async (req, res) => {
   });
   if (!result.ok) return;
   if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
-  publishCommsEvent(req.user.org_id, req.params.id, 'pin.added', { message_id: value.messageId }, result.realtimeChannel);
+  publishCommsEvent(req.user.org_id, req.params.id, 'pin.added', { message_id: value.messageId }, result.realtimeChannel, result.sjmManaged);
   res.status(201).json({ ok: true });
 });
 
@@ -905,7 +905,7 @@ const removePin = asyncHandler(async (req, res) => {
     [req.params.id, req.params.messageId],
   ));
   if (!result.ok) return;
-  publishCommsEvent(req.user.org_id, req.params.id, 'pin.removed', { message_id: req.params.messageId }, result.realtimeChannel);
+  publishCommsEvent(req.user.org_id, req.params.id, 'pin.removed', { message_id: req.params.messageId }, result.realtimeChannel, result.sjmManaged);
   res.json({ ok: true });
 });
 
