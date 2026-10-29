@@ -518,9 +518,9 @@ return (
         </div>
        </div>
        <div className="flex flex-wrap gap-2 xl:justify-end">
-        <Link to="/corridor/missions" className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px] font-semibold text-slate-200">Field team app <ArrowUpRight size={13}/></Link>
+        <Link to="/corridor/missions" className="hidden items-center gap-2 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px] font-semibold text-slate-200 sm:inline-flex">Field team app <ArrowUpRight size={13}/></Link>
         <Btn onClick={()=>{void refresh();void qc.invalidateQueries({queryKey:['sjm-clients']});void qc.invalidateQueries({queryKey:['sjm-convoys']})}} disabled={registerQ.isFetching}><RefreshCw size={13} className={registerQ.isFetching?'animate-spin':''}/>Refresh</Btn>
-        {isSupervisor&&<Btn disabled={act.isPending} onClick={()=>act.mutate({kind:'management_summary'})}><FileBarChart2 size={13}/>Portfolio summary</Btn>}
+        {isSupervisor&&<div className="hidden sm:block"><Btn disabled={act.isPending} onClick={()=>act.mutate({kind:'management_summary'})}><FileBarChart2 size={13}/>Portfolio summary</Btn></div>}
         {isSupervisor&&<Btn tone="green" onClick={openCreate}><Plus size={14}/>New journey</Btn>}
        </div>
       </div>
@@ -643,7 +643,7 @@ return (
                {canRecordFlightStatus&&journey.flight_number&&!['closed','cancelled','aborted'].includes(journey.status)&&<div className="mt-3">
                 <Btn onClick={()=>{setFlightStatusDraft(FLIGHT_STATUS_OPTIONS.some(option=>option.value===journey.flight_status)?journey.flight_status||'scheduled':'scheduled');setFlightStatusNote(journey.flight_status_note||'');setShowFlightStatusForm(value=>!value);recordFlightStatus.reset()}} disabled={recordFlightStatus.isPending}><Activity size={13}/>{showFlightStatusForm?'Close form':'Record flight status'}</Btn>
                </div>}
-               {!journey.flight_number&&canRecordFlightStatus&&<p className="mt-3 text-xs text-slate-400">Add a flight number in Edit journey before recording an observation.</p>}
+               {!journey.flight_number&&canRecordFlightStatus&&<p className="mt-3 text-xs text-slate-400">A flight number is required. Ask a dispatcher to add it before recording status.</p>}
                {showFlightStatusForm&&canRecordFlightStatus&&journey.flight_number&&<form className="mt-4 space-y-3 border-t border-white/[0.06] pt-4" onSubmit={event=>{event.preventDefault();if(!recordFlightStatus.isPending)recordFlightStatus.mutate()}}>
                 <Input label="Flight status"><select aria-label="Flight status" className={field} value={flightStatusDraft} onChange={event=>setFlightStatusDraft(event.target.value)}>{FLIGHT_STATUS_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></Input>
                 <Input label="Observation note"><textarea aria-label="Observation note" className={field} rows={2} maxLength={1200} value={flightStatusNote} onChange={event=>setFlightStatusNote(event.target.value)} placeholder="What did the airline or airport team report?"/></Input>
@@ -821,7 +821,7 @@ return (
       <Input label="Transport mode"><select className={field} value={form.transport_mode} onChange={e=>setForm({...form,transport_mode:e.target.value})}><option value="road">Road / convoy</option><option value="air">Air</option><option value="rail">Rail</option><option value="sea">Sea</option><option value="multimodal">Multimodal</option><option value="other">Other</option></select></Input>
       <Input label="Time zone"><input required className={field} value={form.timezone} onChange={e=>setForm({...form,timezone:e.target.value})} placeholder="Africa/Nairobi"/></Input>
      </div>
-     <div className="rounded-md border border-white/[0.08] bg-white/[0.025] p-3"><Kicker>AIRPORT & EXECUTIVE SERVICES</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Flight status remains Unknown until a team member records an observation. A live airline feed is not connected.</p><div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+     <div className="rounded-md border border-white/[0.08] bg-white/[0.025] p-3"><Kicker>AIRPORT & EXECUTIVE SERVICES</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Add a flight number to this request. An authorised team member can record an observation after it is saved; no live airline feed is connected.</p><div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <Input label="Service type"><select className={field} value={form.service_type} onChange={e=>setForm({...form,service_type:e.target.value})}>{[['airport_arrival','Airport arrival'],['airport_departure','Airport departure'],['meet_and_greet','Meet and greet'],['close_protection','Close protection'],['security_escort','Security escort'],['executive_transfer','Executive transfer'],['other','Other']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></Input>
       <Input label="Principal / booking reference (avoid full name)"><input maxLength={120} className={field} value={form.principal_reference} onChange={e=>setForm({...form,principal_reference:e.target.value})} placeholder="Protected reference or booking code"/></Input>
       <Input label="Airport code (IATA / ICAO)"><input maxLength={4} className={field} value={form.airport_code} onChange={e=>setForm({...form,airport_code:e.target.value.toUpperCase()})} placeholder="NBO"/></Input>
