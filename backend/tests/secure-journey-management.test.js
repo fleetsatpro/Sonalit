@@ -5,7 +5,7 @@ jest.mock('../src/realtime/centrifugo', () => ({ unsubscribeUserFromChannel: jes
 const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -121,6 +121,26 @@ describe('SJM validation and evidence boundaries', () => {
     expect(list).toContain('assignment_roster_changed');
   });
 
+  test('register filter compiler accepts supported buckets and rejects arbitrary SQL', () => {
+    expect(journeyRegisterFilterSql('all')).toBe('TRUE');
+    expect(journeyRegisterFilterSql('active')).toMatch(/in_progress/);
+    expect(journeyRegisterFilterSql('attention')).toMatch(/HUMAN_REVIEW/);
+    expect(journeyRegisterFilterSql('ready_for_review')).toBe('j.status=$4');
+    expect(journeyRegisterFilterSql("all' OR 1=1 --")).toBeNull();
+  });
+
+  test('journey register uses one server filter for rows, counts and page continuation', () => {
+    const source=fs.readFileSync(path.join(__dirname, '../src/routes/secureJourneyManagement.js'), 'utf8');
+    const start=source.indexOf("router.get('/journeys',");
+    const end=source.indexOf("\nrouter.post('/journeys',",start);
+    const route=source.slice(start,end);
+    expect(route).toContain('LIMIT $6 OFFSET $7');
+    expect(route).toContain('COUNT(*)::int AS total_count');
+    expect(route).toContain('has_more:offset+data.length<rows.totalCount');
+    expect(route).toContain("concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label,v.name) ILIKE");
+    expect(route).toContain('summary:rows.summary');
+    expect(route).toContain('journeyRegisterFilterSql(filter)');
+  });
   test('keeps the mission-team assignment write endpoint registered', () => {
     const layer=sjmRouter.stack.find(entry =>
       entry.route?.path === '/journeys/:id/participants' && entry.route.methods?.put === true

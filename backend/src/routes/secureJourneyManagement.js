@@ -9,6 +9,14 @@ const { unsubscribeUserFromChannel, publish } = require('../realtime/centrifugo'
 const { sjmChannelName } = require('../realtime/sjmChannel');
 
 const STATUSES = ['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification','closed','cancelled','aborted','on_hold'];
+const JOURNEY_REGISTER_FILTER_SQL = Object.freeze({
+  all: 'TRUE',
+  active: "j.status IN ('in_progress','paused','exception','arrival_pending_verification')",
+  attention: "(j.status IN ('paused','exception','on_hold','arrival_pending_verification') OR COALESCE(j.route_assessment->>'safety_gate','') IN ('HUMAN_REVIEW','NO_GO'))",
+  review: "j.status='ready_for_review'",
+  planning: "j.status IN ('requested','planning','assessment_pending')",
+  closed: "j.status IN ('closed','cancelled','aborted')",
+});
 const TERMINAL_STATUSES = ['closed','cancelled','aborted'];
 const STOP_TYPES = ['checkpoint','rest','refuelling','border','meeting','overnight','destination','other'];
 const SERVICE_TYPES=['airport_arrival','airport_departure','meet_and_greet','close_protection','security_escort','executive_transfer','other'];
@@ -46,6 +54,12 @@ function planRequestPolicyError(body) {
 }
 function lifecycleTransition(status, action) { const t=LIFECYCLE_TRANSITIONS[action]; return t && t.from.includes(status) ? t : null; }
 function txt(v, max=500) { return typeof v === 'string' ? v.trim().slice(0,max) : ''; }
+function journeyRegisterFilterSql(value) {
+  const filter=txt(value,40)||'all';
+  if(Object.prototype.hasOwnProperty.call(JOURNEY_REGISTER_FILTER_SQL,filter))return JOURNEY_REGISTER_FILTER_SQL[filter];
+  if(STATUSES.includes(filter))return 'j.status=$4';
+  return null;
+}
 function validCoordinate(lat,lng) { return typeof lat==='number' && Number.isFinite(lat) && lat>=-90 && lat<=90 && typeof lng==='number' && Number.isFinite(lng) && lng>=-180 && lng<=180 && !(Math.abs(lat)<0.000001 && Math.abs(lng)<0.000001); }
 function validDate(v) { if(v==null)return true; if(v instanceof Date)return Number.isFinite(v.getTime()); return typeof v==='string'&&Number.isFinite(Date.parse(v)); }
 function validDateOnly(v) { if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v))return false; const d=new Date(v+'T00:00:00.000Z'); return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===v; }
@@ -529,35 +543,92 @@ router.put('/client-profiles/:clientId',authorize('admin','dispatcher'),asyncHan
 router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const status=req.query.status?String(req.query.status):null;
   if(status&&!STATUSES.includes(status))return res.status(400).json({error:'invalid_journey_status'});
-  const clientId=req.query.client_id?String(req.query.client_id):null,limit=Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||50));
+  const clientId=req.query.client_id?String(req.query.client_id):null;
+  if(clientId&&!SJM_ORG_UUID.test(clientId))return res.status(400).json({error:'invalid_client_id'});
+  const limit=Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||50));
+  const parsedOffset=Number.parseInt(req.query.offset,10);
+  const offset=Number.isInteger(parsedOffset)&&parsedOffset>=0?Math.min(100000,parsedOffset):0;
+  const filter=txt(req.query.filter,40)||'all';
+  const filterSql=journeyRegisterFilterSql(filter);
+  if(!filterSql)return res.status(400).json({error:'invalid_journey_filter',allowed:['all','active','attention','review','planning','closed',...STATUSES]});
+  const search=txt(req.query.search,160);
   const rows=await req.dbTx(async c=>{
     const db=(sql,params)=>c.query(sql,params);
-    // Field-role assignment listings hold the same shared parent lock used by
-    // journey dossier reads. Re-run the list as a separate statement after
-    // waiting for concurrent roster updates so it sees the committed roster.
+    // Lock the authorised candidate page before returning it. The reader helper
+    // re-reads the page after any lock wait to observe committed roster changes.
     const initialLocks=!isMobilityManager(req.user)?await db(
         `SELECT j.id
            FROM sjm_journeys j
+           LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
+           LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL
           WHERE j.org_id=$1 AND j.deleted_at IS NULL
             AND ($2::text IS NULL OR j.status=$2)
             AND ($3::uuid IS NULL OR j.client_id=$3)
+            AND ${filterSql}
+            AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label,v.name) ILIKE '%'||$5||'%')
             AND EXISTS (
               SELECT 1 FROM sjm_journey_participants p
                WHERE p.org_id=j.org_id AND p.journey_id=j.id
-                 AND p.user_id=$5 AND p.removed_at IS NULL
+                 AND p.user_id=$8 AND p.removed_at IS NULL
             )
-          ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC
-          LIMIT $4
+          ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC,j.id DESC
+          LIMIT $6 OFFSET $7
           FOR SHARE OF j`,
-        [req.user.org_id,status,clientId,limit,req.user.id],
+        [req.user.org_id,status,clientId,filter,search,limit,offset,req.user.id],
       ): {rows:[]};
-    const listSql='SELECT j.id,j.reference,j.title,j.purpose,j.status,j.transport_mode,j.service_type,j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,j.meet_greet_instructions,j.principal_reference,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.created_at,j.updated_at,j.timezone,j.planned_route,j.planned_distance_km,j.planned_duration_minutes,j.route_assessment,j.route_assessment IS NOT NULL AS has_route_assessment,ARRAY(SELECT DISTINCT p.duty_role FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$6 AND p.removed_at IS NULL ORDER BY p.duty_role) AS duty_roles FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL AND ($2::text IS NULL OR j.status=$2) AND ($3::uuid IS NULL OR j.client_id=$3) AND ($5::boolean OR EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$6 AND p.removed_at IS NULL)) ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC LIMIT $4';
-    const guarded=await readLockedAssignmentRows(db,req.user.org_id,initialLocks,listSql,[req.user.org_id,status,clientId,limit,isMobilityManager(req.user),req.user.id]);
+    const listSql=`SELECT j.id,j.reference,j.title,j.purpose,j.status,j.transport_mode,j.service_type,j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,j.meet_greet_instructions,j.principal_reference,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.created_at,j.updated_at,j.timezone,j.planned_route,j.planned_distance_km,j.planned_duration_minutes,j.route_assessment,j.route_assessment IS NOT NULL AS has_route_assessment,ARRAY(SELECT DISTINCT p.duty_role FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$9 AND p.removed_at IS NULL ORDER BY p.duty_role) AS duty_roles
+      FROM sjm_journeys j
+      LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
+      LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL
+      WHERE j.org_id=$1 AND j.deleted_at IS NULL
+        AND ($2::text IS NULL OR j.status=$2)
+        AND ($3::uuid IS NULL OR j.client_id=$3)
+        AND ${filterSql}
+        AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label,v.name) ILIKE '%'||$5||'%')
+        AND ($8::boolean OR EXISTS (
+          SELECT 1 FROM sjm_journey_participants p
+           WHERE p.org_id=j.org_id AND p.journey_id=j.id
+             AND p.user_id=$9 AND p.removed_at IS NULL
+        ))
+      ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC,j.id DESC
+      LIMIT $6 OFFSET $7`;
+    const guarded=await readLockedAssignmentRows(db,req.user.org_id,initialLocks,listSql,[req.user.org_id,status,clientId,filter,search,limit,offset,isMobilityManager(req.user),req.user.id]);
     if(guarded.error)return guarded;
-    return guarded.rows;
+    const countSql=`SELECT COUNT(*)::int AS total_count
+      FROM sjm_journeys j
+      LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
+      LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL
+      WHERE j.org_id=$1 AND j.deleted_at IS NULL
+        AND ($2::text IS NULL OR j.status=$2)
+        AND ($3::uuid IS NULL OR j.client_id=$3)
+        AND ${filterSql}
+        AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label,v.name) ILIKE '%'||$5||'%')
+        AND ($6::boolean OR EXISTS (
+          SELECT 1 FROM sjm_journey_participants p
+           WHERE p.org_id=j.org_id AND p.journey_id=j.id
+             AND p.user_id=$7 AND p.removed_at IS NULL
+        ))`;
+    const counts=await db(countSql,[req.user.org_id,status,clientId,filter,search,isMobilityManager(req.user),req.user.id]);
+    const summaryResult=await db(`SELECT COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE j.status IN ('in_progress','paused','exception','arrival_pending_verification'))::int AS active,
+      COUNT(*) FILTER (WHERE j.status IN ('requested','planning','assessment_pending','ready_for_review'))::int AS queue,
+      COUNT(*) FILTER (WHERE j.status IN ('paused','exception','on_hold','arrival_pending_verification') OR COALESCE(j.route_assessment->>'safety_gate','') IN ('HUMAN_REVIEW','NO_GO'))::int AS review,
+      COUNT(*) FILTER (WHERE j.status='ready_for_review')::int AS awaiting_review,
+      COUNT(*) FILTER (WHERE j.status='arrival_pending_verification')::int AS arrival_verification
+      FROM sjm_journeys j
+      WHERE j.org_id=$1 AND j.deleted_at IS NULL
+        AND ($2::boolean OR EXISTS (
+          SELECT 1 FROM sjm_journey_participants p
+           WHERE p.org_id=j.org_id AND p.journey_id=j.id
+             AND p.user_id=$3 AND p.removed_at IS NULL
+        ))`,
+      [req.user.org_id,isMobilityManager(req.user),req.user.id]);
+    return {rows:guarded.rows,totalCount:Number(counts.rows[0]?.total_count||0),summary:summaryResult.rows[0]||{total:0,active:0,queue:0,review:0,awaiting_review:0,arrival_verification:0}};
   });
   if(rows.error)return res.status(409).json({error:'assignment_roster_changed',message:'The assignment roster changed repeatedly while loading this list. Refresh and retry.'});
-  res.setHeader('Cache-Control','no-store');res.json({data:rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles))});
+  const data=rows.rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles));
+  res.setHeader('Cache-Control','no-store');
+  res.json({data,pagination:{limit,offset,total_count:rows.totalCount,has_more:offset+data.length<rows.totalCount},summary:rows.summary});
 }));
 router.post('/journeys',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const invalid=validateJourney(req.body);if(invalid)return res.status(400).json({error:'invalid_journey',message:invalid});
@@ -1021,4 +1092,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};

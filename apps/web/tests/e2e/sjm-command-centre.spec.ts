@@ -105,6 +105,9 @@ async function stubSjmApi(page: Page) {
       });
     }
     if (pathname === '/api/v1/sjm/journeys' && route.request().method() === 'GET') {
+      const requestUrl = new URL(route.request().url());
+      const offset = Number(requestUrl.searchParams.get('offset') || 0);
+      const limit = Number(requestUrl.searchParams.get('limit') || 50);
       const summary = { ...journey };
       delete summary.stops;
       delete summary.events;
@@ -113,7 +116,7 @@ async function stubSjmApi(page: Page) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ data: [summary] }),
+        body: JSON.stringify({ data: [summary], pagination: { limit, offset, total_count: 1, has_more: false }, summary: { total: 1, active: 0, queue: 1, review: 0, awaiting_review: 1, arrival_verification: 0 } }),
       });
     }
     if (pathname === '/api/v1/sjm/journeys/' + JOURNEY_ID && route.request().method() === 'GET') {
@@ -293,6 +296,48 @@ test.describe('SJM command-centre responsive smoke', () => {
     const communicationsTop = await communications.evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
     const milestonesTop = await milestones.evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
     expect(communicationsTop).toBeLessThan(milestonesTop);
+  });
+
+  test('register exposes full result counts and bounded page navigation', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    let requestedOffset = -1;
+    await page.route('**/api/v1/sjm/journeys?**', async (route) => {
+      const url = new URL(route.request().url());
+      requestedOffset = Number(url.searchParams.get('offset') || 0);
+      const summary = { ...journey };
+      delete summary.stops;
+      delete summary.events;
+      delete summary.telemetry_snapshot;
+      delete summary.readiness_checklist;
+      const offset = requestedOffset;
+      const rowCount = offset === 0 ? 50 : 26;
+      const data = Array.from({ length: rowCount }, (_, index) => ({
+        ...summary,
+        id: offset === 0 && index === 0 ? JOURNEY_ID : JOURNEY_ID + '-' + (offset + index),
+        reference: 'SJM-PAGE-' + (offset + index),
+      }));
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data,
+          pagination: { limit: 50, offset, total_count: 76, has_more: offset === 0 },
+          summary: { total: 76, active: 12, queue: 18, review: 4, awaiting_review: 3, arrival_verification: 1 },
+        }),
+      });
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('76 matches')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Portfolio totals cover 76 authorised journeys', { exact: false })).toBeVisible();
+    const nextPage = page.getByRole('button', { name: 'Next register page' });
+    await expect(nextPage).toBeEnabled();
+    await nextPage.click();
+    await expect.poll(() => requestedOffset).toBe(50);
+    await expect(page.getByText('Showing 51–76 of 76')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Previous register page' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Next register page' })).toBeDisabled();
   });
 
 });
