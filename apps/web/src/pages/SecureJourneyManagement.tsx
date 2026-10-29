@@ -433,7 +433,21 @@ export default function SecureJourneyManagement(){
   return(await api.post('/sjm/journeys/'+journey.id+'/reports',body)).data as Report;
  },onSuccess:async(result,vars)=>{if(vars.kind==='report'||vars.kind==='management_summary'){const r=result as {data:{id:string;report_date:string;report_type:string}};setLastGeneratedReport({id:r.data.id,report_date:r.data.report_date,report_type:r.data.report_type});await downloadReportArtifact(r.data.id,r.data.report_date,r.data.report_type,'PDF')}if(vars.kind==='event'){setEventTitle('');setEventDetail('')}if(vars.kind==='review')setReviewNote('');await refresh()},onError:async()=>{await refresh()}});
  const saveProfile=useMutation({mutationFn:async()=>{if(!journey?.client_id)throw new Error('Link this journey to a real client first.');return(await api.put('/sjm/client-profiles/'+journey.client_id,{report_timezone:profileTimezone,report_template:{title:profileTitle,sections:profileSections},daily_reports_enabled:dailyReportsEnabled,daily_report_local_time:dailyReportTime})).data},onSuccess:async()=>{setEditingProfile(false);await qc.invalidateQueries({queryKey:['sjm-client-profile',journey?.client_id]})}});
- const choose=(id:string)=>{setSelectedId(id);setAck('');setReviewNote('');setCancelNote('');setEditingProfile(false);setWorkspaceTab('overview')};
+ const choose=(id:string)=>{
+   const selectionChanged=id!==selectedId;
+   setSelectedId(id);setAck('');setReviewNote('');setCancelNote('');setEditingProfile(false);setWorkspaceTab('overview');
+   // The mission workspace precedes the register below xl on purpose. When an
+   // operator selects a different row from that lower register, return the
+   // selected dossier/map to view and move focus to its heading. Do not affect
+   // desktop dispatch or filter/page actions.
+   if(selectionChanged&&typeof window!=='undefined'&&window.matchMedia('(max-width: 1279px)').matches){
+    const behavior:ScrollBehavior=window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth';
+    window.requestAnimationFrame(()=>{
+     document.getElementById('sjm-mission-workspace')?.scrollIntoView({behavior,block:'start'});
+     document.getElementById('sjm-selected-mission-title')?.focus({preventScroll:true});
+    });
+   }
+  };
  const configureProfile=()=>{setProfileTimezone(profile?.report_timezone||'Africa/Nairobi');setProfileTitle(profile?.report_template?.title||'Secure Journey Management Report');setProfileSections(profile?.report_template?.sections||SECTIONS.map(s=>s.id));setDailyReportsEnabled(profile?.daily_reports_enabled===true);setDailyReportTime(String(profile?.daily_report_local_time||'18:00').slice(0,5));setEditingProfile(true)};
  const report=(report_type:string)=>act.mutate({kind:'report',body:{report_type}});
  const isTerminal=Boolean(journey&&['closed','cancelled','aborted'].includes(journey.status));
@@ -506,11 +520,11 @@ return (
       {registerQ.data?.pagination&&<div className="border-t border-white/[0.07] px-3 py-3"><div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400"><span>{registerQ.data.pagination.total_count===0?'0 matching journeys':`Showing ${registerQ.data.pagination.offset+1}–${Math.min(registerQ.data.pagination.offset+journeys.length,registerQ.data.pagination.total_count)} of ${registerQ.data.pagination.total_count}`}</span><span>Page {registerPage+1}</span></div><div className="mt-3 flex items-center justify-between gap-2"><button type="button" aria-label="Previous register page" disabled={registerPage===0||registerQ.isFetching} onClick={()=>setRegisterPage(page=>Math.max(0,page-1))} className="rounded-md border border-white/[0.10] px-3 py-2 text-[11px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"><ArrowLeft size={12} className="mr-1 inline"/>Previous</button><button type="button" aria-label="Next register page" disabled={!registerQ.data.pagination.has_more||registerQ.isFetching} onClick={()=>setRegisterPage(page=>page+1)} className="rounded-md border border-white/[0.10] px-3 py-2 text-[11px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35">Next<ArrowRight size={12} className="ml-1 inline"/></button></div>{registerQ.isFetching&&<p role="status" className="mt-2 text-[11px] text-slate-500">Refreshing register…</p>}</div>}
      </Panel>
 
-     <div className="order-1 min-w-0 space-y-3 xl:order-2">
+     <div id="sjm-mission-workspace" className="order-1 min-w-0 space-y-3 scroll-mt-16 xl:order-2">
       {!journey?<Panel className="p-5 sm:p-8"><div className="mx-auto max-w-lg py-10 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-md border border-emerald-300/15 bg-emerald-300/[0.05]"><MapPinned size={25} className="text-emerald-200"/></span><Kicker>MISSION WORKSPACE</Kicker><h2 className="mt-3 text-xl font-semibold text-white">No mission selected</h2><p className="mt-2 text-sm leading-6 text-slate-500">Select a journey from the register or create a new mission. The workspace will only render route geometry returned by the Route Safety service.</p>{isSupervisor&&<Btn tone="green" onClick={openCreate}><Plus size={13}/>Create mission</Btn>}</div></Panel>:<>
        <Panel className="overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] p-4 sm:p-5">
-         <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[11px] font-semibold tracking-[.13em] text-emerald-200">{journey.reference}</span><StatusBadge value={journey.status}/><span className="rounded-md border border-white/[0.07] px-2 py-1 font-mono text-[11px]  tracking-[.12em] text-slate-500">{journey.transport_mode.replaceAll('_',' ')}</span></div><h2 className="mt-2 text-xl font-semibold leading-tight tracking-tight text-white sm:text-2xl">{journey.title}</h2><p className="mt-1.5 max-w-3xl text-xs leading-5 text-slate-400">{journey.purpose}</p></div>
+         <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[11px] font-semibold tracking-[.13em] text-emerald-200">{journey.reference}</span><StatusBadge value={journey.status}/><span className="rounded-md border border-white/[0.07] px-2 py-1 font-mono text-[11px]  tracking-[.12em] text-slate-500">{journey.transport_mode.replaceAll('_',' ')}</span></div><h2 id="sjm-selected-mission-title" tabIndex={-1} className="mt-2 text-xl font-semibold leading-tight tracking-tight text-white outline-none sm:text-2xl">{journey.title}</h2><p className="mt-1.5 max-w-3xl text-xs leading-5 text-slate-400">{journey.purpose}</p></div>
          <div className="flex flex-wrap items-center gap-2"><Gate value={assess?.safety_gate}/>{isSupervisor&&['requested','planning'].includes(journey.status)&&<Btn onClick={startEdit} disabled={detailQ.isLoading||updateJourney.isPending||!detailQ.data?.data}><Pencil size={12}/>Revise dossier</Btn>}<Btn onClick={()=>void refresh()} disabled={detailQ.isFetching}><RefreshCw size={12} className={detailQ.isFetching?'animate-spin':''}/>Sync details</Btn></div>
         </div>
         <div className="p-2 sm:p-3"><JourneyMap journey={journey} stops={stops} geometry={geometry} assessment={assess} telemetry={journey.telemetry_snapshot}/></div>

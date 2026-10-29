@@ -276,6 +276,54 @@ test.describe('SJM command-centre responsive smoke', () => {
     }
   });
 
+  test('mobile mission selection returns focus to the map-first workspace', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    const secondJourneyId = JOURNEY_ID + '-second';
+    await page.route('**/api/v1/sjm/journeys?**', async (route) => {
+      const summary = { ...journey };
+      delete summary.stops;
+      delete summary.events;
+      delete summary.telemetry_snapshot;
+      delete summary.readiness_checklist;
+      const second = { ...summary, id: secondJourneyId, reference: 'SJM-E2E-002', title: 'Second executive transfer' };
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [summary, second],
+          pagination: { limit: 100, offset: 0, total_count: 2, has_more: false },
+          summary: { total: 2, active: 0, queue: 2, review: 0, awaiting_review: 0, arrival_verification: 0 },
+        }),
+      });
+    });
+    await page.route('**/api/v1/sjm/journeys/' + secondJourneyId, (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { ...journey, id: secondJourneyId, reference: 'SJM-E2E-002', title: 'Second executive transfer' } }),
+    }));
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+
+    const workspace = page.locator('#sjm-mission-workspace');
+    const secondMission = page.getByRole('button', { name: /SJM-E2E-002/ });
+    await secondMission.scrollIntoViewIfNeeded();
+    await expect.poll(() => workspace.evaluate((node) => node.getBoundingClientRect().top)).toBeLessThan(0);
+    await secondMission.click();
+    const selectedHeading = page.getByRole('heading', { name: 'Second executive transfer' });
+    await expect(selectedHeading).toBeVisible({ timeout: 15000 });
+    await expect(selectedHeading).toBeFocused();
+    await expect.poll(
+      () => workspace.evaluate((node) => node.getBoundingClientRect().top),
+      { timeout: 8000 },
+    ).toBeGreaterThanOrEqual(0);
+    await expect.poll(
+      () => workspace.evaluate((node) => node.getBoundingClientRect().top),
+      { timeout: 8000 },
+    ).toBeLessThan(160);
+  });
+
   test('workspace tabs remain operable and preserve evidence provenance on a narrow viewport', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
