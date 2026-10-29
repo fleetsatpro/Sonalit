@@ -56,4 +56,45 @@ describe('Centrifugo publish client', () => {
     const { publish } = require('../../src/realtime/centrifugo');
     await expect(publish('org#test', { type: 'test' })).resolves.toBeUndefined();
   });
+
+  test('clears retained channel history using the canonical server API', async () => {
+    process.env.CENTRIFUGO_API_URL = 'http://centrifugo.internal:8000';
+    process.env.CENTRIFUGO_API_KEY = 'test-key';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ result: {} }),
+    });
+
+    const { removeChannelHistory } = require('../../src/realtime/centrifugo');
+    await expect(removeChannelHistory('org#org-a#comms#channel-1')).resolves.toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://centrifugo.internal:8000/api/history_remove',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': 'test-key' },
+        body: JSON.stringify({ channel: 'org#org-a#comms#channel-1' }),
+      }),
+    );
+  });
+
+  test('fails closed if the history-removal response is malformed', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'test-key';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({}),
+    });
+
+    const { removeChannelHistory } = require('../../src/realtime/centrifugo');
+    await expect(removeChannelHistory('org#org-a#comms#channel-1')).resolves.toBe(false);
+  });
+
+  test('fails closed when history removal is not configured', async () => {
+    delete process.env.CENTRIFUGO_API_KEY;
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+
+    const { removeChannelHistory } = require('../../src/realtime/centrifugo');
+    await expect(removeChannelHistory('org#org-a#comms#channel-1')).resolves.toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
