@@ -139,9 +139,11 @@ describe('SJM validation and evidence boundaries', () => {
       route_assessment:{route_status:'routed',safety_gate:'HUMAN_REVIEW',recommended_route:{blocked:false,waypoints:[{lat:-1.2,lng:36.8}]}},
       human_review_decision:null,
       updated_at:new Date('2026-10-29T10:00:00.000Z'),
+      route_review_row_version:'tx-104',
     };
     expect(sameRouteReviewSnapshot({...expected,route_assessment:{recommended_route:{waypoints:[{lng:36.8,lat:-1.2}],blocked:false},safety_gate:'HUMAN_REVIEW',route_status:'routed'}},expected)).toBe(true);
     expect(sameRouteReviewSnapshot({...expected,updated_at:new Date('2026-10-29T10:00:01.000Z')},expected)).toBe(false);
+    expect(sameRouteReviewSnapshot({...expected,route_review_row_version:'tx-105'},expected)).toBe(false);
     expect(sameRouteReviewSnapshot({...expected,route_assessment:{...expected.route_assessment,assessment_revision:2}},expected)).toBe(false);
     expect(sameRouteReviewSnapshot({...expected,human_review_decision:'approve_with_controls'},expected)).toBe(false);
     expect(sameRouteReviewSnapshot({...expected,status:'planning'},expected)).toBe(false);
@@ -158,6 +160,10 @@ describe('SJM validation and evidence boundaries', () => {
     expect(approve).toContain('mutateWithEvent');
     expect(review).toContain('await readLockedRouteReviewSnapshot(db,org,j)');
     expect(approve).toContain('await readLockedRouteReviewSnapshot(db,org,j)');
+    expect(review).toContain('j.xmin::text AS route_review_row_version');
+    expect(approve).toContain('j.xmin::text AS route_review_row_version');
+    expect(review).toContain('xmin::text AS route_review_row_version');
+    expect(approve).toContain('xmin::text AS route_review_row_version');
     expect(review).toContain("route_review_already_recorded");
     expect(approve).toContain('approvalGate(parseJson(snapshot.current?.route_assessment,null),currentDecision,ack)');
   });

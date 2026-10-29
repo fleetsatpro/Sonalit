@@ -228,13 +228,15 @@ function canonicalJson(value) {
 }
 function sameRouteReviewSnapshot(current,expected) {
   if(!current||!expected||current.status!=='ready_for_review'||expected.status!=='ready_for_review')return false;
+  // The PostgreSQL row version detects replan/re-assessment even when timestamps share a millisecond.
+  if(!current.route_review_row_version||!expected.route_review_row_version||String(current.route_review_row_version)!==String(expected.route_review_row_version))return false;
   const currentUpdatedAt=new Date(current.updated_at).getTime(),expectedUpdatedAt=new Date(expected.updated_at).getTime();
   if(!Number.isFinite(currentUpdatedAt)||!Number.isFinite(expectedUpdatedAt)||currentUpdatedAt!==expectedUpdatedAt)return false;
   if(canonicalJson(parseJson(current.route_assessment,null))!==canonicalJson(parseJson(expected.route_assessment,null)))return false;
   return (current.human_review_decision||null)===(expected.human_review_decision||null);
 }
 async function readLockedRouteReviewSnapshot(db,org,expected) {
-  const result=await db('SELECT status,route_assessment,human_review_decision,updated_at FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[expected.id,org]);
+  const result=await db('SELECT status,route_assessment,human_review_decision,updated_at,xmin::text AS route_review_row_version FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[expected.id,org]);
   const current=result.rows[0]||null;
   return {current,matches:sameRouteReviewSnapshot(current,expected)};
 }
@@ -275,6 +277,10 @@ function toCsv(report) {
 
 async function journeyById(db,org,id) {
   const r=await db('SELECT j.*, c.name AS client_name, c.company AS client_company, v.name AS convoy_name FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.id=$1 AND j.org_id=$2 AND j.deleted_at IS NULL LIMIT 1',[id,org]);
+  return r.rows[0]||null;
+}
+async function journeyForRouteReview(db,org,id) {
+  const r=await db('SELECT j.*, j.xmin::text AS route_review_row_version, c.name AS client_name, c.company AS client_company, v.name AS convoy_name FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.id=$1 AND j.org_id=$2 AND j.deleted_at IS NULL LIMIT 1',[id,org]);
   return r.rows[0]||null;
 }
 async function stopsFor(db,org,id) {
@@ -934,7 +940,7 @@ router.post('/journeys/:id/plan',authorize('admin','dispatcher'),asyncHandler(as
   const latest=await journeyById(req.db,org,j.id);res.json({data:{...latest,route_assessment:a,planned_route:route}});
 }));
 router.post('/journeys/:id/review',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
-  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
+  const org=req.user.org_id,j=await journeyForRouteReview(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
   if(j.status!=='ready_for_review')return res.status(409).json({error:'journey_not_ready_for_review'});
   const a=parseJson(j.route_assessment,null);if(!a)return res.status(409).json({error:'route_assessment_required'});
   if(a.route_status==='blocked'||a.recommended_route?.blocked===true||a.safety_gate==='NO_GO')return res.status(409).json({error:'route_blocked',message:'A blocked/NO_GO route cannot be overridden through SJM.'});
@@ -957,7 +963,7 @@ router.post('/journeys/:id/review',authorize('admin','dispatcher'),asyncHandler(
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
 router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
-  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
+  const org=req.user.org_id,j=await journeyForRouteReview(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
   if(j.status!=='ready_for_review')return res.status(409).json({error:'journey_not_ready_for_review'});
   const a=parseJson(j.route_assessment,null),gate=approvalGate(a,j.human_review_decision,req.body?.risk_acknowledgement);
   if(!gate.ok)return res.status(409).json({error:gate.code,message:gate.message});
@@ -1144,4 +1150,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,journeyRegisterOrderSql,sameRouteReviewSnapshot,readLockedRouteReviewSnapshot,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,journeyRegisterOrderSql,sameRouteReviewSnapshot,readLockedRouteReviewSnapshot,journeyForRouteReview,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
