@@ -175,8 +175,6 @@ async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=tru
   if(!Number.isSafeInteger(commsEpoch)||commsEpoch<=oldEpoch)throw new Error('sjm_comms_epoch_rotation_invalid');
   const channelName=sjmChannelName(org,channelId,oldEpoch);
   const revokeUsers=new Set([...priorMemberIds,...staleMembers.rows.map(row=>String(row.user_id))]);
-  const historyRemoved=await removeChannelHistory(channelName);
-  if(!historyRemoved)throw Object.assign(new Error('SJM channel rotation could not be confirmed'),{status:503});
   if(revokeUsers.size){
    const legacyRevoked=await unsubscribeUserFromChannel(org,channelName);
    if(!legacyRevoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
@@ -185,6 +183,9 @@ async function syncJourneyCommsChannel(db,org,journey,actorId,actorIsManager=tru
     if(!revoked)throw Object.assign(new Error('SJM channel subscription revocation is unavailable; roster change rolled back'),{status:503});
    }
   }
+  // Purge only after live-session revocation succeeds, avoiding history loss on a failed roster change.
+  const historyRemoved=await removeChannelHistory(channelName);
+  if(!historyRemoved)throw Object.assign(new Error('SJM channel rotation could not be confirmed'),{status:503});
  }
  await db("DELETE FROM channel_members cm WHERE cm.org_id=$1 AND cm.channel_id=$2 AND NOT EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users pu ON pu.id=p.user_id AND pu.org_id=p.org_id AND pu.deleted_at IS NULL AND pu.status='active' WHERE p.org_id=$1 AND p.journey_id=$3 AND p.user_id=cm.user_id AND p.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id=cm.user_id AND u.org_id=$1 AND u.deleted_at IS NULL AND u.status='active' AND lower(u.role) IN ('admin','dispatcher'))",[org,channelId,journey.id]);
  return {channelId,commsEpoch,realtimeChannel:sjmChannelName(org,channelId,commsEpoch),rotated};
