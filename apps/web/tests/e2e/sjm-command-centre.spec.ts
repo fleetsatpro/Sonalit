@@ -340,4 +340,30 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('button', { name: 'Next register page' })).toBeDisabled();
   });
 
+  test('lifecycle rail keeps movement and arrival verification on their correct checkpoints', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    const moving = { ...journey, status: 'in_progress', approved_at: '2026-10-29T07:30:00.000Z', started_at: '2026-10-29T08:00:00.000Z' };
+    const summary = { ...moving };
+    delete summary.stops;
+    delete summary.events;
+    delete summary.telemetry_snapshot;
+    delete summary.readiness_checklist;
+    await page.route('**/api/v1/sjm/journeys?**', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [summary], pagination: { limit: 100, offset: 0, total_count: 1, has_more: false }, summary: { total: 1, active: 1, queue: 0, review: 0, awaiting_review: 0, arrival_verification: 0 } }),
+    }));
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID, (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: moving }),
+    }));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByLabel('5 of 8 checkpoints cleared')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('listitem', { name: 'Move current' })).toBeVisible();
+    await expect(page.getByRole('listitem', { name: 'Arrival pending' })).toBeVisible();
+  });
+
 });
