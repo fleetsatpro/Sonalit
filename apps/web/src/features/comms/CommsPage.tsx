@@ -27,6 +27,12 @@ export default function CommsPage() {
   const orgUsersQ = useOrgUsers();
 
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [panelMode, setPanelMode] = useState<PanelMode>(null);
+  const [threadParentId, setThreadParentId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState<null | 'priority' | 'regional' | 'operations'>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQ, setSearchQ] = useState('');
 
   // Auto-select first channel once list loads, or when the active channel
   // has been deleted out from under us.
@@ -75,9 +81,11 @@ export default function CommsPage() {
   // Mark-read whenever we open a channel + when new messages arrive.
   const markRead = useMarkRead();
   useEffect(() => {
-    if (activeChannelId) markRead.mutate(activeChannelId);
+    // A stale channel ID is not enough to establish access: only mark-read while
+    // the refreshed server channel list still contains the active channel.
+    if (activeChannelId && activeChannel?.id === activeChannelId) markRead.mutate(activeChannelId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChannelId, messagesQ.data?.data.length]);
+  }, [activeChannelId, activeChannel?.id, messagesQ.data?.data.length]);
 
   // ── Mutations ───────────────────────────────────────────────────────────
   const createChannel = useCreateChannel();
@@ -89,12 +97,6 @@ export default function CommsPage() {
   const pin           = usePin(activeChannelId ?? '');
 
   // ── UI state ────────────────────────────────────────────────────────────
-  const [panelMode, setPanelMode]   = useState<PanelMode>(null);
-  const [threadParentId, setThreadParentId] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState<null | 'priority' | 'regional' | 'operations'>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQ,    setSearchQ]    = useState('');
   const threadQ = useThread(activeChannelId, threadParentId);
 
   // ── Handlers ────────────────────────────────────────────────────────────

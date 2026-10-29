@@ -21,12 +21,20 @@ import { commsKeys } from './useComms.js';
  * REST refresh returns, preventing stale membership from reselecting the
  * channel while the server denies access.
  */
-export function clearRevokedSjmChannelCache(qc: ReturnType<typeof useQueryClient>, channelId: string): void {
+export function clearRevokedSjmChannelCache(
+  qc: ReturnType<typeof useQueryClient>,
+  channelId: string,
+  blankChannelList = true,
+): void {
   qc.removeQueries({ queryKey: commsKeys.messages(channelId), exact: true });
   qc.removeQueries({ queryKey: commsKeys.members(channelId), exact: true });
   qc.removeQueries({ queryKey: commsKeys.pinned(channelId), exact: true });
   qc.removeQueries({ queryKey: ['comms', 'channels', channelId, 'thread'] });
-  qc.setQueryData(commsKeys.channels, []);
+  if (blankChannelList) {
+    // The active channel's old membership snapshot is no longer trustworthy.
+    // Keep the visible list empty until the server returns a fresh authorised list.
+    qc.setQueryData(commsKeys.channels, []);
+  }
   void qc.invalidateQueries({ queryKey: commsKeys.channels, exact: true });
 }
 import type { CommsEvent } from '../types/comms.js';
@@ -57,14 +65,17 @@ export function useCommsRealtime(
     return subscribe<{ type?: string; channel_id?: string }>(`org#${orgId}`, (raw) => {
       if (!raw?.type || !raw.type.startsWith('comms.')) return;
 
-      if (raw.type === 'comms.sjm.roster_changed' && raw.channel_id && raw.channel_id === activeChannelId) {
-        // A roster rotation invalidates the prior authorisation boundary. Fail
-        // closed: erase cached private content and temporarily blank the cached
-        // channel list so a stale list cannot reselect the just-revoked channel.
-        clearRevokedSjmChannelCache(qc, raw.channel_id);
-        onSjmRosterChanged?.(raw.channel_id);
-        if (missionQueryId) {
-          void qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId] });
+      if (raw.type === 'comms.sjm.roster_changed' && raw.channel_id) {
+        // Roster changes invalidate cached content for the affected mission even
+        // when it is not the open channel. If it is open, also blank the channel
+        // list and immediately leave the workspace until access is re-authorised.
+        const isActiveChannel = raw.channel_id === activeChannelId;
+        clearRevokedSjmChannelCache(qc, raw.channel_id, isActiveChannel);
+        if (isActiveChannel) {
+          onSjmRosterChanged?.(raw.channel_id);
+          if (missionQueryId) {
+            void qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId] });
+          }
         }
         return;
       }
