@@ -155,7 +155,7 @@ test('publishTyping: SJM channel does not disclose officer presence over private
   });
   req.params.id = CHAN;
   req.dbTx = jest.fn(async (work) => work({ query: async (sql, params) => {
-    if (/SELECT comms_epoch FROM sjm_journeys/.test(sql)) {
+    if (/FROM sjm_journeys/.test(sql)) {
       return { rows: [{ comms_epoch: 7 }] };
     }
     return req.db(sql, params);
@@ -356,6 +356,7 @@ test('withChannelReaderTransaction holds the SJM journey lock through message ac
     ok: true,
     value: [{ body: 'private mission update' }],
     realtimeChannel: `org#${ORG_A}#comms#${CHAN}`,
+    sjmManaged: true,
   });
   expect(calls.map(x => x.sql)).toEqual(expect.arrayContaining([
     expect.stringMatching(/FROM channels/),
