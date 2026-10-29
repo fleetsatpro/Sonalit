@@ -368,6 +368,51 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.locator('main header').getByText('General operations', { exact: true })).toHaveCount(0);
   });
 
+  test('Ops Comms withholds channel history until the fresh authorised channel list settles', async ({ page }) => {
+    await seedAuth(page);
+    const channelId = '00000000-0000-4000-8000-000000000125';
+    let releaseChannels!: () => void;
+    let signalChannelsRequest!: () => void;
+    const channelsRequestStarted = new Promise<void>((resolve) => { signalChannelsRequest = resolve; });
+    const channelsGate = new Promise<void>((resolve) => { releaseChannels = resolve; });
+    const privateQueries: string[] = [];
+
+    await page.route((url) => url.pathname === '/api/v1/messages/channels', async (route) => {
+      signalChannelsRequest();
+      await channelsGate;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: [{
+          id: channelId, name: 'Current authorised channel', slug: 'current-authorised-channel',
+          type: 'private', category: 'operations', created_at: '2026-10-29T07:00:00.000Z',
+          created_by: 'user-sjm-e2e-admin', realtime_channel: 'org#org-sjm-e2e#comms#' + channelId + '#v1',
+          muted: false, is_channel_admin: true, last_read_at: '2026-10-29T07:00:00.000Z',
+          unread_count: 0, member_count: 2, last_message: null,
+        }] }),
+      });
+    });
+    await page.route((url) => url.pathname === '/api/v1/messages/org-users', (route) => route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }),
+    }));
+    await page.route((url) => url.pathname.startsWith('/api/v1/messages/channels/') , (route) => {
+      privateQueries.push(new URL(route.request().url()).pathname);
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], next_cursor: null, ok: true }) });
+    });
+    await page.route('**/api/v1/realtime/**', (route) => route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'e2e-token' }),
+    }));
+
+    await page.goto('/messages', { waitUntil: 'domcontentloaded' });
+    await channelsRequestStarted;
+    await expect(page.getByRole('heading', { name: 'Refreshing authorised communications scope' })).toBeVisible();
+    expect(privateQueries).toEqual([]);
+    await expect(page.getByText('Current authorised channel', { exact: true })).toHaveCount(0);
+
+    releaseChannels();
+    await expect(page.getByText('Current authorised channel', { exact: true })).toBeVisible({ timeout: 15000 });
+  });
+
   test('an unauthorised channel deep-link never triggers private channel queries', async ({ page }) => {
     await seedAuth(page);
     const authorisedId = '00000000-0000-4000-8000-000000000124';

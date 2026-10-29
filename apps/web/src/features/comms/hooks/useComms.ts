@@ -24,7 +24,7 @@ export const commsKeys = {
 
 // ── Queries ────────────────────────────────────────────────────────────────
 
-export function useChannels() {
+export function useChannels(enabled = true) {
   return useQuery({
     queryKey: commsKeys.channels,
     queryFn: async ({ signal }): Promise<Channel[]> => {
@@ -32,6 +32,7 @@ export function useChannels() {
       return r.data.data ?? [];
     },
     staleTime: 30_000,
+    enabled,
   });
 }
 
@@ -93,14 +94,15 @@ export function useThread(channelId: string | null, msgId: string | null) {
  * user in the caller's org (GET /messages/org-users — any authenticated
  * member can call this, it's not admin-gated).
  */
-export function useOrgUsers() {
+export function useOrgUsers(enabled = true) {
   return useQuery({
     queryKey: commsKeys.orgUsers,
-    queryFn: async (): Promise<OrgUser[]> => {
-      const r = await api.get<{ data: OrgUser[] }>('/messages/org-users');
+    queryFn: async ({ signal }): Promise<OrgUser[]> => {
+      const r = await api.get<{ data: OrgUser[] }>('/messages/org-users', { signal });
       return r.data.data ?? [];
     },
     staleTime: 5 * 60_000,
+    enabled,
   });
 }
 
