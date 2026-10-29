@@ -260,6 +260,8 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(page.getByTestId('sjm-journey-progress')).toBeVisible();
       await expect(page.getByTestId('sjm-journey-progress').getByRole('heading', { name: 'Journey progress' })).toBeVisible();
       const mapSurface = page.locator('[data-sjm-map="journey"]');
+      await expect(page.getByRole('status', { name: 'No device locations to show' })).toBeVisible();
+      await expect(page.getByRole('button', { name: /observed device layer/i })).toHaveCount(0);
       await expect(mapSurface).toHaveAttribute('data-sjm-map-state', 'ready', { timeout: 20000 });
 
       const pageHeader = page.locator('main header');
