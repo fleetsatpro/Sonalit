@@ -117,9 +117,9 @@ export default function ExecutiveMobility(){
 
  const [accessNotice,setAccessNotice]=useState(false);
  const identityKey=String(user?.org_id||'')+':'+String(user?.id||'');
- const accessIdentityRef=useRef(identityKey);
+ const accessIdentityRef=useRef<string|null>(null);
  const identityKeyRef=useRef(identityKey);identityKeyRef.current=identityKey;
- const accessIdentityScopeRef=useRef({orgId:user?.org_id,userId:user?.id});
+ const accessIdentityScopeRef=useRef<{orgId:string|undefined;userId:string|undefined}>({orgId:undefined,userId:undefined});
  const identityReady=accessIdentityRef.current===identityKey;
  const previousMissionId=useRef('');
  const missionQ=useQuery<{data:Mission[]}>({queryKey:['sjm-my-assignments',user?.org_id,user?.id],queryFn:async({signal})=>(await api.get('/sjm/my-assignments',{signal})).data,enabled:Boolean(user?.org_id&&user?.id),refetchInterval:30000,staleTime:10000});
@@ -129,24 +129,27 @@ export default function ExecutiveMobility(){
  const missions=currentAssignments.filter(m=>!inaccessibleMissionIds.has(m.id)&&!revalidatingMissionIds.has(m.id));
  useEffect(()=>{
   if(accessIdentityRef.current===identityKey)return;
-  const previous=accessIdentityScopeRef.current;
-  // Keep identityReady false until all old-scope reads have been cancelled and
-  // their private query caches removed. Query functions consume AbortSignal so
-  // Axios can stop the underlying requests, not just ignore their results.
+  // The initial mount is also untrusted: the page may have unmounted during a
+  // logout/login transition, so in-memory refs cannot prove which tenant's cache
+  // was last active. Preserve only assignment queries for this exact identity.
+  const staleAssignmentKeys=qc.getQueryCache()
+   .findAll({queryKey:['sjm-my-assignments']})
+   .map(query=>query.queryKey)
+   .filter(queryKey=>queryKey[1]!==user?.org_id||queryKey[2]!==user?.id);
+  // Keep identityReady false until old/private reads are cancelled and their
+  // cache entries are removed. Axios receives AbortSignal on all private reads.
   const cancellations=[
    qc.cancelQueries({queryKey:['sjm-field-detail']}),
    qc.cancelQueries({queryKey:['sjm-field-events']}),
    qc.cancelQueries({queryKey:['sjm-mission-channel']}),
-   ...(previous.orgId&&previous.userId
-    ?[qc.cancelQueries({queryKey:['sjm-my-assignments',previous.orgId,previous.userId],exact:true})]
-    :[]),
+   ...staleAssignmentKeys.map(queryKey=>qc.cancelQueries({queryKey,exact:true})),
   ];
   const finishScopeChange=()=>{
    // A second login/tenant change may supersede this cleanup while cancellation
    // settles. Never mark an obsolete identity as ready.
    if(identityKeyRef.current!==identityKey)return;
    rosterRevalidationVersionRef.current.clear();
-   if(previous.orgId&&previous.userId)qc.removeQueries({queryKey:['sjm-my-assignments',previous.orgId,previous.userId],exact:true});
+   staleAssignmentKeys.forEach(queryKey=>qc.removeQueries({queryKey,exact:true}));
    qc.removeQueries({queryKey:['sjm-field-detail']});
    qc.removeQueries({queryKey:['sjm-field-events']});
    qc.removeQueries({queryKey:['sjm-mission-channel']});
