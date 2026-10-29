@@ -64,15 +64,18 @@ async function removeChannelHistory(channel) {
       body: JSON.stringify({ channel }),
       signal: AbortSignal.timeout(5_000),
     });
-    if (!resp.ok) {
-      logger.warn('Centrifugo history removal failed: HTTP ' + resp.status + ' for ' + channel);
-      return false;
-    }
     let payload;
     try {
       payload = await resp.json();
     } catch (err) {
       logger.warn('Centrifugo history removal returned an unreadable response for ' + channel + ': ' + err.message);
+      return false;
+    }
+    // Centrifugo returns ErrorNotAvailable (108) when channel history is disabled.
+    // In that configuration there is no retained publication history to expose.
+    if (payload?.error && Number(payload.error.code) === 108) return true;
+    if (!resp.ok) {
+      logger.warn('Centrifugo history removal failed: HTTP ' + resp.status + ' for ' + channel);
       return false;
     }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)
