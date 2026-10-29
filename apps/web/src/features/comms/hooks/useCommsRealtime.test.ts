@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { commsKeys } from './useComms.js';
-import { clearRevokedSjmChannelCache } from './useCommsRealtime.js';
+import { clearRevokedSjmChannelCache, isRelevantSjmRosterChangedEvent } from './useCommsRealtime.js';
 
 describe('clearRevokedSjmChannelCache', () => {
   let queryClient: QueryClient;
@@ -82,5 +82,18 @@ describe('clearRevokedSjmChannelCache', () => {
     expect(queryClient.getQueryData(commsKeys.pinned(channelId))).toBeUndefined();
     expect(queryClient.getQueryData(commsKeys.thread(channelId, 'm-1'))).toBeUndefined();
     expect(queryClient.getQueryData(commsKeys.thread('another-channel', 'm-9'))).toEqual([{ id: 'm-10', body: 'OTHER CHANNEL' }]);
+  });
+});
+
+describe('isRelevantSjmRosterChangedEvent', () => {
+  it('matches the selected field mission while its private channel is still resolving', () => {
+    const event = { channel_id: 'mission-channel-42', journey_id: 'journey-42' };
+    expect(isRelevantSjmRosterChangedEvent(event, null, 'journey-42')).toBe(true);
+    expect(isRelevantSjmRosterChangedEvent(event, null, 'another-journey')).toBe(false);
+  });
+
+  it('continues to match the active Ops Comms channel without a journey identity', () => {
+    expect(isRelevantSjmRosterChangedEvent({ channel_id: 'channel-7' }, 'channel-7')).toBe(true);
+    expect(isRelevantSjmRosterChangedEvent({ channel_id: 'channel-8' }, 'channel-7')).toBe(false);
   });
 });

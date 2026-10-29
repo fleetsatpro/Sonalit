@@ -688,3 +688,11 @@ describe('SJM validation and evidence boundaries', () => {
     expect(csvCell('=1+1')).toBe("'=1+1");
   });
 });
+
+describe('SJM roster-change invalidation contract', () => {
+  test('publishes the tenant-scoped journey identity alongside the private channel ID', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../src/routes/secureJourneyManagement.js'), 'utf8');
+    expect(source).toContain("type:'comms.sjm.roster_changed',channel_id:assignedResult.channelId,journey_id:j.id");
+    expect(source).toContain("type:'comms.sjm.roster_changed',channel_id:outcome.channelId,journey_id:j.id");
+  });
+});

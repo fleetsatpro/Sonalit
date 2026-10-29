@@ -21,6 +21,17 @@ import { commsKeys } from './useComms.js';
  * REST refresh returns, preventing stale membership from reselecting the
  * channel while the server denies access.
  */
+export function isRelevantSjmRosterChangedEvent(
+  event: { channel_id?: string; journey_id?: string },
+  activeChannelId: string | null,
+  missionQueryId?: string | null,
+): boolean {
+  return Boolean(event.channel_id && (
+    event.channel_id === activeChannelId ||
+    (missionQueryId && event.journey_id === missionQueryId)
+  ));
+}
+
 export function clearRevokedSjmChannelCache(
   qc: ReturnType<typeof useQueryClient>,
   channelId: string,
@@ -68,7 +79,7 @@ export function useCommsRealtime(
   selfId: string | undefined,
   realtimeChannelName?: string | null,
   missionQueryId?: string | null,
-  onSjmRosterChanged?: (channelId: string) => void,
+  onSjmRosterChanged?: (channelId: string, journeyId?: string) => void,
 ): TypingState | null {
   const qc = useQueryClient();
   const [typing, setTyping] = useState<TypingState | null>(null);
@@ -77,7 +88,7 @@ export function useCommsRealtime(
   // counts stay fresh across the whole channel list.
   useEffect(() => {
     if (!orgId) return;
-    return subscribe<{ type?: string; channel_id?: string }>(`org#${orgId}`, (raw) => {
+    return subscribe<{ type?: string; channel_id?: string; journey_id?: string }>(`org#${orgId}`, (raw) => {
       if (!raw?.type || !raw.type.startsWith('comms.')) return;
 
       if (raw.type === 'comms.sjm.roster_changed' && raw.channel_id) {
@@ -85,10 +96,14 @@ export function useCommsRealtime(
         // when it is not the open channel. If it is open, also blank the channel
         // list and immediately leave the workspace until access is re-authorised.
         const isActiveChannel = raw.channel_id === activeChannelId;
+        const isCurrentMission = Boolean(missionQueryId && raw.journey_id === missionQueryId);
         void clearRevokedSjmChannelCache(qc, raw.channel_id, isActiveChannel);
-        if (isActiveChannel) {
-          onSjmRosterChanged?.(raw.channel_id);
-          if (missionQueryId) {
+        // A field app may still be opening the channel query when roster rotation
+        // arrives. The server-provided journey_id lets that selected mission be
+        // fenced immediately without waiting for a channel ID to resolve.
+        if (isRelevantSjmRosterChangedEvent(raw, activeChannelId, missionQueryId)) {
+          onSjmRosterChanged?.(raw.channel_id, raw.journey_id);
+          if (missionQueryId && (isActiveChannel || isCurrentMission)) {
             void qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId] });
           }
         }

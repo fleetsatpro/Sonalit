@@ -143,9 +143,12 @@ export default function ExecutiveMobility(){
  },[selectedId,missions]);
  const channelQ=useQuery<{data:{channel_id:string;realtime_channel:string;comms_epoch:number}}>({queryKey:['sjm-mission-channel',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/communications')).data,enabled:Boolean(selectedId&&!detailAccessDenied),staleTime:15000});
  const channelId=detailAccessDenied?null:channelQ.data?.data.channel_id||null,messagesQ=useMessages(channelId),sendMessage=useSendMessage(channelId||'');
- const handleFieldRosterRevocation=useCallback((revokedChannelId:string)=>{
+ const handleFieldRosterRevocation=useCallback((revokedChannelId:string,revokedJourneyId?:string)=>{
   const currentChannelId=channelQ.data?.data.channel_id;
-  if(!selectedId||!currentChannelId||revokedChannelId!==currentChannelId)return;
+  if(!selectedId)return;
+  // Prefer the tenant-scoped journey identity when supplied. Fall back to the
+  // channel match only for older/legacy invalidation events.
+  if(revokedJourneyId ? revokedJourneyId!==selectedId : (!currentChannelId||revokedChannelId!==currentChannelId))return;
   const revokedMissionId=selectedId;
   // Fence the mission from the rendered roster immediately, before any refresh.
   setInaccessibleMissionIds(current=>current.has(revokedMissionId)?current:new Set(current).add(revokedMissionId));

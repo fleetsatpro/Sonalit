@@ -770,7 +770,7 @@ router.put('/journeys/:id/participants',authorize('admin','dispatcher'),asyncHan
  if(assignedResult?.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
  if(assignedResult?.error==='journey_terminal')return res.status(409).json({error:'journey_terminal',message:'Closed, cancelled and aborted journeys cannot be reassigned.'});
  if(assignedResult?.error==='participant_outside_organisation_or_inactive')return res.status(422).json({error:'participant_outside_organisation_or_inactive',message:'Every assigned user must be an active account in this organisation.'});
- if(assignedResult.rotated)void Promise.resolve(publish('org#'+org,{type:'comms.sjm.roster_changed',channel_id:assignedResult.channelId})).catch(()=>{});
+ if(assignedResult.rotated)void Promise.resolve(publish('org#'+org,{type:'comms.sjm.roster_changed',channel_id:assignedResult.channelId,journey_id:j.id})).catch(()=>{});
  const assigned=await req.db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id]);
  res.setHeader('Cache-Control','no-store');res.json({data:assigned.rows,communications:{channel_id:assignedResult.channelId,realtime_channel:assignedResult.realtimeChannel,comms_epoch:assignedResult.commsEpoch}});
 }));
@@ -784,7 +784,7 @@ router.get('/journeys/:id/communications',asyncHandler(async(req,res)=>{
   return syncJourneyCommsChannel(db,org,{...j,comms_epoch:Number(locked.comms_epoch||0)},req.user.id,isMobilityManager(req.user));
  });
  if(outcome?.error)return res.status(404).json({error:'journey_not_found'});
- if(outcome.rotated)void Promise.resolve(publish('org#'+org,{type:'comms.sjm.roster_changed',channel_id:outcome.channelId})).catch(()=>{});
+ if(outcome.rotated)void Promise.resolve(publish('org#'+org,{type:'comms.sjm.roster_changed',channel_id:outcome.channelId,journey_id:j.id})).catch(()=>{});
  res.setHeader('Cache-Control','no-store');res.json({data:{channel_id:outcome.channelId,realtime_channel:outcome.realtimeChannel,comms_epoch:outcome.commsEpoch,transport:'Ops Comms',membership_policy:'active mission team or mission manager',messages_endpoint:'/api/v1/messages/channels/'+outcome.channelId+'/messages'}});
 }));
 router.get('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
