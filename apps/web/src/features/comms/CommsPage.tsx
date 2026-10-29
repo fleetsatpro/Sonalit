@@ -98,12 +98,13 @@ export default function CommsPage() {
   // Move away from the current mission immediately when its roster rotates.
   // The refreshed server channel list will select a still-authorised channel again.
   const handleSjmRosterChanged = useCallback((channelId: string) => {
+    if (activeChannelId !== channelId) return;
     setActiveChannelId((current) => current === channelId ? null : current);
     setPanelMode(null);
     setThreadParentId(null);
     setSearchOpen(false);
     setSearchQ('');
-  }, []);
+  }, [activeChannelId]);
 
   const typing = useCommsRealtime(
     user?.org_id,

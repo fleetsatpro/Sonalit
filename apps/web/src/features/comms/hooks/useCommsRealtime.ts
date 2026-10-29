@@ -32,6 +32,12 @@ export function isRelevantSjmRosterChangedEvent(
   ));
 }
 
+export function shouldNotifySjmRosterChangedCallback(
+  event: { channel_id?: string; journey_id?: string },
+  activeChannelId: string | null,
+): boolean {
+  return Boolean(event.journey_id || (event.channel_id && event.channel_id === activeChannelId));
+}
 export function clearRevokedSjmChannelCache(
   qc: ReturnType<typeof useQueryClient>,
   channelId: string,
@@ -101,11 +107,12 @@ export function useCommsRealtime(
         // A field app may still be opening the channel query when roster rotation
         // arrives. The server-provided journey_id lets that selected mission be
         // fenced immediately without waiting for a channel ID to resolve.
-        if (isRelevantSjmRosterChangedEvent(raw, activeChannelId, missionQueryId)) {
+        if (shouldNotifySjmRosterChangedCallback(raw, activeChannelId)) {
           onSjmRosterChanged?.(raw.channel_id, raw.journey_id);
-          if (missionQueryId && (isActiveChannel || isCurrentMission)) {
-            void qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId] });
-          }
+        }
+        if (isRelevantSjmRosterChangedEvent(raw, activeChannelId, missionQueryId) &&
+            missionQueryId && (isActiveChannel || isCurrentMission)) {
+          void qc.invalidateQueries({ queryKey: ['sjm-mission-channel', missionQueryId] });
         }
         return;
       }

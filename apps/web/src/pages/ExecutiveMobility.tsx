@@ -111,6 +111,9 @@ export default function ExecutiveMobility(){
  const [selectedId,setSelectedId]=useState(''),[eventType,setEventType]=useState('delay'),[eventNote,setEventNote]=useState(''),[flightStatus,setFlightStatus]=useState<FlightStatus|''>(''),[flightNote,setFlightNote]=useState(''),[draft,setDraft]=useState('');
  const [inaccessibleMissionIds,setInaccessibleMissionIds]=useState<Set<string>>(()=>new Set());
  const [revalidatingMissionIds,setRevalidatingMissionIds]=useState<Set<string>>(()=>new Set());
+ const selectedIdRef=useRef(selectedId);selectedIdRef.current=selectedId;
+ const rosterRevalidationVersionRef=useRef(new Map<string,number>());
+ const rosterRevalidationInFlightRef=useRef(false);
  const rosterRevalidationVersionRef=useRef(new Map<string,number>());
  const rosterRevalidationInFlightRef=useRef(new Set<string>());
  const [accessNotice,setAccessNotice]=useState(false);
@@ -143,50 +146,51 @@ export default function ExecutiveMobility(){
  },[selectedId,missions]);
  const channelQ=useQuery<{data:{channel_id:string;realtime_channel:string;comms_epoch:number}}>({queryKey:['sjm-mission-channel',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/communications')).data,enabled:Boolean(selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),staleTime:15000});
  const channelId=detailAccessDenied||revalidatingMissionIds.has(selectedId)?null:channelQ.data?.data.channel_id||null,messagesQ=useMessages(channelId),sendMessage=useSendMessage(channelId||'');
- const revalidateRosterMissionAccess=useCallback(async(missionId:string)=>{
-  // One worker per mission. Every newer roster event increments a generation;
-  // stale assignment reads are discarded before private data is restored.
-  const version=(rosterRevalidationVersionRef.current.get(missionId)||0)+1;
-  rosterRevalidationVersionRef.current.set(missionId,version);
-  if(rosterRevalidationInFlightRef.current.has(missionId))return;
-  rosterRevalidationInFlightRef.current.add(missionId);
+ const revalidateRosterMissionAccess=useCallback(async(missionId:string,markNewEvent=true)=>{
+  if(markNewEvent){
+   const nextVersion=(rosterRevalidationVersionRef.current.get(missionId)||0)+1;
+   rosterRevalidationVersionRef.current.set(missionId,nextVersion);
+  }else if(!rosterRevalidationVersionRef.current.has(missionId)){
+   rosterRevalidationVersionRef.current.set(missionId,1);
+  }
+  if(rosterRevalidationInFlightRef.current)return;
+  rosterRevalidationInFlightRef.current=true;
+  const snapshotChanged=(versions:Map<string,number>)=>rosterRevalidationVersionRef.current.size!==versions.size||[...versions].some(([id,version])=>rosterRevalidationVersionRef.current.get(id)!==version);
   try{
-   while(rosterRevalidationVersionRef.current.has(missionId)){
-    const checkedVersion=rosterRevalidationVersionRef.current.get(missionId)!;
-    await clearRevokedSjmFieldMissionCache(qc,user?.org_id,user?.id,missionId,false);
-    if(rosterRevalidationVersionRef.current.get(missionId)!==checkedVersion)continue;
+   while(rosterRevalidationVersionRef.current.size){
+    const versions=new Map(rosterRevalidationVersionRef.current);
+    const missionIds=[...versions.keys()];
+    await Promise.all(missionIds.map(id=>clearRevokedSjmFieldMissionCache(qc,user?.org_id,user?.id,id,false)));
+    if(snapshotChanged(versions))continue;
     const refreshed=await missionQ.refetch({throwOnError:true}).catch(()=>null);
-    if(rosterRevalidationVersionRef.current.get(missionId)!==checkedVersion)continue;
+    if(snapshotChanged(versions))continue;
     if(!refreshed||!refreshed.isSuccess||!refreshed.data?.data)throw new Error('Current mission assignments could not be confirmed.');
-    const classified=classifyRosterRevalidation([missionId],refreshed.data.data);
-    setRevalidatingMissionIds(current=>{const next=new Set(current);next.delete(missionId);return next});
+    const classified=classifyRosterRevalidation(missionIds,refreshed.data.data);
+    setRevalidatingMissionIds(current=>{const next=new Set(current);missionIds.forEach(id=>next.delete(id));return next});
     setInaccessibleMissionIds(current=>{
      const next=new Set(current);
      classified.stillAssigned.forEach(id=>next.delete(id));
      classified.revoked.forEach(id=>next.add(id));
      return next;
     });
-    if(classified.stillAssigned.length)setAccessNotice(false);
-    rosterRevalidationVersionRef.current.delete(missionId);
-    return;
+    if(selectedIdRef.current&&classified.stillAssigned.includes(selectedIdRef.current))setAccessNotice(false);
+    missionIds.forEach(id=>rosterRevalidationVersionRef.current.delete(id));
    }
   }catch{
-   // Fail closed. The mission remains hidden and can be rechecked by Retry.
+   // Fail closed for every pending mission. The retry path starts a new authorised read.
   }finally{
-   rosterRevalidationInFlightRef.current.delete(missionId);
+   rosterRevalidationInFlightRef.current=false;
   }
  },[missionQ.refetch,qc,user?.org_id,user?.id]);
 
  const handleFieldRosterRevocation=useCallback((revokedChannelId:string,revokedJourneyId?:string)=>{
   const currentChannelId=channelQ.data?.data.channel_id;
-  if(!selectedId)return;
-  // Prefer tenant-scoped journey identity; channel matching is legacy fallback.
-  if(revokedJourneyId ? revokedJourneyId!==selectedId : (!currentChannelId||revokedChannelId!==currentChannelId))return;
-  const revokedMissionId=selectedId;
-  setRevalidatingMissionIds(current=>new Set(current).add(revokedMissionId));
-  setAccessNotice(true);
-  // Keep selection stable so further events can advance the generation.
-  void revalidateRosterMissionAccess(revokedMissionId);
+  const missionId=revokedJourneyId||(selectedId&&currentChannelId===revokedChannelId?selectedId:null);
+  if(!missionId)return;
+  setRevalidatingMissionIds(current=>new Set(current).add(missionId));
+  if(selectedId===missionId)setAccessNotice(true);
+  // Revalidate and purge even when this is a previously viewed, currently inactive mission.
+  void revalidateRosterMissionAccess(missionId,true);
  },[channelQ.data?.data.channel_id,selectedId,revalidateRosterMissionAccess]);
  useCommsRealtime(user?.org_id,channelId,user?.id,detailAccessDenied?undefined:channelQ.data?.data.realtime_channel,selectedId,handleFieldRosterRevocation);
  const eventsQ=useQuery<{data:FieldEvent[]}>({queryKey:['sjm-field-events',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/field-events')).data,enabled:Boolean(selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),refetchInterval:30000});
@@ -199,7 +203,7 @@ export default function ExecutiveMobility(){
  const send=()=>{const body=draft.trim();if(body&&channelId)sendMessage.mutate({text:body},{onSuccess:()=>setDraft('')})};
  const report=(type:string)=>{if(notes.includes(type)&&eventNote.trim().length<5)return;reportQ.mutate({event_type:type,note:eventNote.trim()||undefined})};
  if(missionQ.isLoading)return <main className="sjm-field-console min-h-screen bg-[#080c12] p-5 text-slate-300">Loading assigned missions…</main>;
- if(missionQ.isError)return <main className="sjm-field-console min-h-screen bg-[#080c12] p-5 text-slate-300"><section className="mx-auto max-w-2xl rounded-md border border-red-300/20 p-6"><h1 className="text-xl text-white">Mission service unavailable</h1><p className="mt-2 text-sm text-slate-400">No sample assignment is shown. Check the connection before retrying.</p><button className="mt-4 rounded-md border border-white/10 px-4 py-3" onClick={()=>{if(revalidatingMissionIds.size)void Promise.all([...revalidatingMissionIds].map(id=>revalidateRosterMissionAccess(id)));else void missionQ.refetch().catch(()=>undefined)}}>Retry</button></section></main>;
+ if(missionQ.isError)return <main className="sjm-field-console min-h-screen bg-[#080c12] p-5 text-slate-300"><section className="mx-auto max-w-2xl rounded-md border border-red-300/20 p-6"><h1 className="text-xl text-white">Mission service unavailable</h1><p className="mt-2 text-sm text-slate-400">No sample assignment is shown. Check the connection before retrying.</p><button className="mt-4 rounded-md border border-white/10 px-4 py-3" onClick={()=>{if(revalidatingMissionIds.size)void Promise.all([...revalidatingMissionIds].map(id=>revalidateRosterMissionAccess(id,false)));else void missionQ.refetch().catch(()=>undefined)}}>Retry</button></section></main>;
  return <main className="sjm-field-console min-h-screen bg-[#080c12] text-slate-100"><header className="border-b border-white/[0.08] bg-[#0b1118] px-4 py-4 sm:px-6"><div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3"><div><p className="text-[11px] font-semibold tracking-[.05em] text-emerald-300">Sonalit / Field operations</p><h1 className="mt-1 text-xl font-semibold">Executive Mobility</h1><p className="mt-1 text-[11px] text-slate-500">Assigned missions · auditable check-ins · no fabricated live state</p></div><Link to="/corridor/journeys" className="inline-flex items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-xs"><ArrowLeft size={13}/>SJM desk</Link></div></header>
   <div className="mx-auto max-w-[1400px] px-3 py-4 sm:px-6 sm:py-6">{accessNotice&&<div role="status" className="mb-4 rounded-md border border-amber-300/20 bg-amber-300/[0.035] px-4 py-3 text-xs leading-5 text-amber-100">A mission’s team changed. Sensitive details are hidden until Sonalit reconfirms your assignment.</div>}{selectedId&&revalidatingMissionIds.has(selectedId)?<section role="status" className="mx-auto max-w-2xl rounded-md border border-amber-300/20 p-6"><h2 className="text-lg font-semibold text-white">Rechecking mission assignment</h2><p className="mt-2 text-sm leading-6 text-slate-400">The mission team changed. Sensitive itinerary, principal details and private communications remain hidden until the server confirms your current assignment.</p></section>:detailAccessDenied?<section role="alert" className="mx-auto max-w-2xl rounded-md border border-amber-300/20 p-6"><h2 className="text-lg font-semibold text-white">Mission access no longer available</h2><p className="mt-2 text-sm leading-6 text-slate-400">The server could not confirm your current assignment. Principal instructions, route details and private communications are hidden. Refresh assignments or ask dispatch to confirm the roster.</p><button type="button" className="mt-4 rounded-md border border-white/10 px-4 py-3 text-sm" onClick={()=>{setAccessNotice(true);setSelectedId('');void missionQ.refetch()}}>Return to authorised assignments</button></section>:!missions.length?<section className="rounded-md border border-dashed border-white/15 p-8 text-center sm:p-14"><Users size={28} className="mx-auto text-slate-600"/><h2 className="mt-4 text-xl font-semibold">No mission assignments</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-400">Dispatch has not assigned a mission to you. No placeholder journeys or other officers’ itineraries are shown.</p><Link to="/corridor/journeys" className="mt-5 inline-flex rounded-md border border-emerald-300/25 px-4 py-3 text-sm">Return to SJM desk</Link></section>:<div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
    <section className="min-w-0 space-y-4">

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { commsKeys } from './useComms.js';
-import { clearRevokedSjmChannelCache, isRelevantSjmRosterChangedEvent } from './useCommsRealtime.js';
+import { clearRevokedSjmChannelCache, isRelevantSjmRosterChangedEvent, shouldNotifySjmRosterChangedCallback } from './useCommsRealtime.js';
 
 describe('clearRevokedSjmChannelCache', () => {
   let queryClient: QueryClient;
@@ -95,5 +95,15 @@ describe('isRelevantSjmRosterChangedEvent', () => {
   it('continues to match the active Ops Comms channel without a journey identity', () => {
     expect(isRelevantSjmRosterChangedEvent({ channel_id: 'channel-7' }, 'channel-7')).toBe(true);
     expect(isRelevantSjmRosterChangedEvent({ channel_id: 'channel-8' }, 'channel-7')).toBe(false);
+  });
+});
+
+describe('shouldNotifySjmRosterChangedCallback', () => {
+  it('delivers inactive mission events so field caches from prior selections are purged', () => {
+    expect(shouldNotifySjmRosterChangedCallback({ channel_id: 'mission-channel-a', journey_id: 'journey-a' }, 'mission-channel-b')).toBe(true);
+  });
+  it('still accepts active-channel legacy events and ignores unrelated legacy events', () => {
+    expect(shouldNotifySjmRosterChangedCallback({ channel_id: 'mission-channel-b' }, 'mission-channel-b')).toBe(true);
+    expect(shouldNotifySjmRosterChangedCallback({ channel_id: 'mission-channel-a' }, 'mission-channel-b')).toBe(false);
   });
 });
