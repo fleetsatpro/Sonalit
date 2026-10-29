@@ -169,60 +169,44 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
 
 
 
-/* Secure Journey Management: restrained operational surfaces and accessible controls. */
+/* Secure Journey Management — restrained surfaces, readable data and sentence-case hierarchy. */
 .sjm-console,
 .sjm-field-console {
-  --sjm-page: #080c12;
-  --sjm-surface: #0c1119;
-  --sjm-rule: rgba(219, 229, 240, 0.12);
+  --sjm-page: #080d13;
+  --sjm-surface: #101720;
+  --sjm-surface-raised: #151f2a;
+  --sjm-rule: #263442;
   background-color: var(--sjm-page);
   color-scheme: dark;
 }
-
+.sjm-console { font-family: var(--p-sans, 'Archivo', system-ui, sans-serif); }
 .sjm-console .sjm-kicker {
-  display: block;
-  margin: 0;
-  color: #a8b4c3;
+  display: block; margin: 0; color: #aebac8;
   font-family: var(--p-sans, 'Archivo', system-ui, sans-serif);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: 0.01em;
+  font-size: 12px; font-weight: 600; line-height: 1.45; letter-spacing: .015em;
 }
-
 .sjm-console .sjm-panel {
-  border: 1px solid var(--sjm-rule);
-  border-radius: 7px;
-  background: var(--sjm-surface);
-  box-shadow: none;
+  border: 1px solid var(--sjm-rule); border-radius: 10px; background: var(--sjm-surface);
+  box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 8px 22px rgba(0,0,0,.08);
 }
-
-.sjm-team-admin {
-  overflow: hidden;
-  border: 1px solid var(--sjm-rule);
-  border-radius: 7px;
-  background: var(--sjm-surface);
-}
-
+/* Supporting text remains muted, but is not low-contrast. */
+.sjm-console .text-slate-600 { color: #91a0b1; }
+.sjm-console .text-slate-500 { color: #a1afbd; }
+.sjm-console .text-slate-400 { color: #bac5d1; }
+.sjm-console [class~="text-[11px]"] { font-size: 12px; line-height: 1.45; }
+.sjm-console .rounded-md { border-radius: 8px; }
+.sjm-console .rounded-lg { border-radius: 10px; }
+.sjm-team-admin { overflow: hidden; border: 1px solid var(--sjm-rule); border-radius: 10px; background: var(--sjm-surface); }
 .sjm-team-admin > summary { list-style: none; }
 .sjm-team-admin > summary::-webkit-details-marker { display: none; }
-
 .sjm-team-admin > summary::after {
-  content: 'Manage team +';
-  flex-shrink: 0;
-  margin-left: auto;
-  color: #b9c4d1;
-  font-size: 12px;
-  font-weight: 600;
+  content: 'Manage team +'; flex-shrink: 0; margin-left: auto;
+  color: #b9c4d1; font-size: 12px; font-weight: 600;
 }
-
 .sjm-team-admin[open] > summary { border-bottom: 1px solid var(--sjm-rule); }
 .sjm-team-admin[open] > summary::after { content: 'Close −'; }
 .sjm-team-admin__content { padding: 12px; }
-
-.sjm-console button,
-.sjm-field-console button { transition-duration: 120ms; }
-
+.sjm-console button, .sjm-field-console button { transition-duration: 120ms; }
 .sjm-console button:focus-visible,
 .sjm-console a:focus-visible,
 .sjm-console input:focus-visible,
@@ -232,36 +216,15 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
 .sjm-field-console a:focus-visible,
 .sjm-field-console input:focus-visible,
 .sjm-field-console select:focus-visible,
-.sjm-field-console textarea:focus-visible {
-  outline: 2px solid #75dda1;
-  outline-offset: 2px;
-}
-
+.sjm-field-console textarea:focus-visible { outline: 2px solid #75dda1; outline-offset: 2px; }
 .sjm-console input:not([type="checkbox"]):not([type="radio"]),
-.sjm-console select,
-.sjm-console textarea,
+.sjm-console select, .sjm-console textarea,
 .sjm-field-console input:not([type="checkbox"]):not([type="radio"]),
-.sjm-field-console select,
-.sjm-field-console textarea {
-  border-radius: 6px;
-  font-size: 13px;
+.sjm-field-console select, .sjm-field-console textarea {
+  border-radius: 8px; font-size: 14px;
 }
-
 @media (max-width: 640px) {
   .sjm-console > div { padding-left: 12px; padding-right: 12px; }
+  .sjm-console .sjm-panel { border-radius: 9px; }
   .sjm-field-console header { padding-left: 14px; padding-right: 14px; }
 }
-
-
-/* SJM refinement: clearer type hierarchy, measured elevation and readable metadata. */
-.sjm-console { font-family: var(--p-sans, 'Archivo', system-ui, sans-serif); }
-.sjm-console .sjm-panel { border-color: #263442; border-radius: 10px; background: #101720; box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 8px 22px rgba(0,0,0,.08); }
-.sjm-console .sjm-kicker { color: #aebac8; font-size: 12px; line-height: 1.45; letter-spacing: .025em; }
-.sjm-console .text-slate-600 { color: #91a0b1; }
-.sjm-console .text-slate-500 { color: #a1afbd; }
-.sjm-console .text-slate-400 { color: #bac5d1; }
-.sjm-console [class~="text-[11px]"] { font-size: 12px; line-height: 1.45; }
-.sjm-console .rounded-md { border-radius: 8px; }
-.sjm-console .rounded-lg { border-radius: 10px; }
-.sjm-console input:not([type="checkbox"]):not([type="radio"]), .sjm-console select, .sjm-console textarea { border-radius: 8px; font-size: 14px; }
-@media (max-width: 640px) { .sjm-console .sjm-panel { border-radius: 9px; } }

@@ -249,6 +249,8 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
       await expect(page.getByTestId('sjm-journey-progress')).toBeVisible();
       await expect(page.getByTestId('sjm-journey-progress').getByRole('heading', { name: 'Journey progress' })).toBeVisible();
+      const mapSurface = page.locator('[data-sjm-map="journey"]');
+      await expect(mapSurface).toHaveAttribute('data-sjm-map-state', 'ready', { timeout: 20000 });
 
       const registerHeading = page.getByRole('heading', { name: 'Journey register' });
       const selectedMissionHeading = page.getByRole('heading', { name: 'Airport arrival — controlled transfer' });
@@ -262,6 +264,8 @@ test.describe('SJM command-centre responsive smoke', () => {
         expect(registerBox!.x, `${viewport.label}: register should remain the left desktop rail`).toBeLessThan(missionBox!.x);
       }
 
+      const settledMapState = await mapSurface.getAttribute('data-sjm-map-state');
+      expect(settledMapState, `${viewport.label}: map must settle before screenshot capture`).toBe('ready');
       const dimensions = await page.evaluate(() => ({
         viewport: window.innerWidth,
         document: document.documentElement.scrollWidth,

@@ -37,7 +37,7 @@ type IntakePickTarget='origin'|'destination'|{stopIndex:number}|null;
 type StopDraft={name:string;stop_type:string;lat:string;lng:string;instructions:string;planned_arrival_at?:string|null;planned_departure_at?:string|null;duration_minutes?:number|null};
 const META:Record<Status,{label:string;cls:string}>={requested:{label:'Requested',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'},planning:{label:'Planning',cls:'border-white/[0.08] bg-white/[0.025] text-slate-300'},assessment_pending:{label:'Assessment pending',cls:'border-white/[0.08] bg-white/[0.025] text-slate-300'},ready_for_review:{label:'Ready for review',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},approved:{label:'Approved',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},ready_to_depart:{label:'Ready to depart',cls:'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'},in_progress:{label:'In progress',cls:'border-orange-500/30 bg-orange-500/10 text-orange-200'},paused:{label:'Paused',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},exception:{label:'Exception',cls:'border-red-500/30 bg-red-500/10 text-red-200'},arrival_pending_verification:{label:'Awaiting arrival check',cls:'border-amber-500/30 bg-amber-500/10 text-amber-200'},closed:{label:'Closed',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'},cancelled:{label:'Cancelled',cls:'border-red-500/30 bg-red-500/10 text-red-200'},aborted:{label:'Aborted',cls:'border-red-500/30 bg-red-500/10 text-red-200'},on_hold:{label:'On hold',cls:'border-slate-500/30 bg-slate-500/10 text-slate-300'}};
 const SECTIONS=[{id:'summary',label:'Mission summary'},{id:'itinerary',label:'Planned itinerary'},{id:'stops',label:'Stops and checkpoints'},{id:'route_assessment',label:'Route risk assessment'},{id:'operational_events',label:'Operational event log'},{id:'telemetry_snapshot',label:'Observed telemetry snapshot'}];
-const INTAKE_STEPS=[{label:'Mission brief',detail:'Intent, client and operating context'},{label:'Corridor',detail:'Origin, destination and schedule'},{label:'Itinerary',detail:'Ordered stops and checkpoints'},{label:'Review',detail:'Confirm the request before saving'}] as const;
+const INTAKE_STEPS=[{label:'Journey details',detail:'Purpose, client and service'},{label:'Route',detail:'Origin, destination and timing'},{label:'Stops',detail:'Checkpoints in travel order'},{label:'Review',detail:'Check the request before saving'}] as const;
 const EMPTY={title:'',purpose:'',client_id:'',convoy_id:'',service_type:'executive_transfer',principal_reference:'',airport_code:'',terminal:'',airline:'',flight_number:'',flight_scheduled_at:'',meet_greet_instructions:'',transport_mode:'road',origin_label:'',origin_lat:'',origin_lng:'',destination_label:'',destination_lat:'',destination_lng:'',planned_departure_at:'',planned_arrival_at:'',timezone:'Africa/Nairobi'};
 function assessmentOf(v:Journey['route_assessment']):Assessment|null{if(!v)return null;if(typeof v==='object')return v as Assessment;try{return JSON.parse(v) as Assessment}catch{return null}}
 type RegisterSort='priority'|'departure_asc'|'departure_desc'|'updated_desc';
@@ -98,7 +98,7 @@ function errorText(e:unknown,fallback:string){const x=e as{response?:{data?:{mes
 function Input({label,children,className=''}:{label:string;children:ReactNode;className?:string}){return <label className={'block min-w-0 '+className}><span className="mb-1.5 block text-xs font-medium text-slate-300">{label}</span>{children}</label>}
 const field='w-full min-w-0 rounded-md border border-white/10 bg-[#101720] px-3 py-3 text-[13px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-300/55 focus:ring-2 focus:ring-emerald-300/[0.10]';
 function Panel({children,className=''}:{children:ReactNode;className?:string}){return <section className={'sjm-panel '+className}>{children}</section>}
-function Kicker({children}:{children:ReactNode}){const label=typeof children==='string'?children.toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase()).replace(/\bXd\b/g,'XD').replace(/\bSjm\b/g,'SJM').replace(/\bCpo\b/g,'CPO').replace(/\bApi\b/g,'API'):children;return <p className="sjm-kicker">{label}</p>}
+function Kicker({children}:{children:ReactNode}){const label=typeof children==='string'?children.trim().toLowerCase().replace(/^./,c=>c.toUpperCase()).replace(/\bxd\b/g,'XD').replace(/\bsjm\b/g,'SJM').replace(/\bcpo\b/g,'CPO').replace(/\bapi\b/g,'API').replace(/\bgps\b/g,'GPS').replace(/\bsitrep\b/g,'SITREP').replace(/\bnbo\b/g,'NBO'):children;return <p className="sjm-kicker">{label}</p>}
 function Btn({children,onClick,disabled=false,tone='neutral'}:{children:ReactNode;onClick:()=>void;disabled?:boolean;tone?:'neutral'|'green'|'red'}){const c=tone==='green'?'border-emerald-300/25 bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/15':tone==='red'?'border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15':'border-white/10 bg-white/[0.035] text-slate-300 hover:bg-white/[0.07] hover:text-white';return <button type="button" onClick={onClick} disabled={disabled} className={'inline-flex min-h-10 items-center justify-center gap-2 rounded-md border px-3.5 py-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-9 '+c}>{children}</button>}
 function StatusBadge({value}:{value:Status}){return <span className={'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px]  '+META[value].cls}><i className="h-1.5 w-1.5 rounded-full bg-current"/>{META[value].label}</span>}
 
@@ -157,9 +157,10 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
     const container=containerRef.current;
     if(!container||mapRef.current)return;
     const map=new maplibregl.Map({container,style:STREET_STYLE,center:[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
+     container.dataset.sjmMapState='loading';
     map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'bottom-right');
     map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
-    map.on('load',()=>setMapReady(true));
+    map.on('load',()=>{container.dataset.sjmMapState='loaded';setMapReady(true)});
     mapRef.current=map;
     const resizeObserver=new ResizeObserver(()=>map.resize());
     resizeObserver.observe(container);
@@ -177,7 +178,10 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
   useEffect(()=>{
     const map=mapRef.current;
     if(!map||!mapReady)return;
-    const routeData:GeoJSON.FeatureCollection={type:'FeatureCollection',features:displayRoute.length>=2?[{type:'Feature',geometry:{type:'LineString',coordinates:displayRoute},properties:{evidence:'ROUTE_SAFETY'}}]:[]};
+    const container=containerRef.current;
+     if(!container)return;
+     const markFitSettled=()=>{container.dataset.sjmMapState='fitting';map.once('idle',()=>{container.dataset.sjmMapState=map.areTilesLoaded()?'ready':'partial';container.dataset.sjmMapZoom=map.getZoom().toFixed(2)})};
+     const routeData:GeoJSON.FeatureCollection={type:'FeatureCollection',features:displayRoute.length>=2?[{type:'Feature',geometry:{type:'LineString',coordinates:displayRoute},properties:{evidence:'ROUTE_SAFETY'}}]:[]};
     const existing=map.getSource('sjm-route') as maplibregl.GeoJSONSource|undefined;
     if(existing){
       existing.setData(routeData);
@@ -191,11 +195,12 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
       if(!coord)return;
       markersRef.current.push(new maplibregl.Marker({element:journeyMarkerElement(kind,title),anchor:'bottom',offset:[0,-7]}).setLngLat(coord).addTo(map));
     };
-    addMarker(origin,'origin','PLANNED ORIGIN · '+journey.origin_label);
-    stopPoints.forEach(({stop,coord})=>addMarker(coord,'stop','PLANNED STOP '+String(stop.sequence).padStart(2,'0')+' · '+stop.name));
-    addMarker(destination,'destination','PLANNED DESTINATION · '+journey.destination_label);
+    addMarker(origin,'origin','Origin · '+journey.origin_label);
+    stopPoints.forEach(({stop,coord})=>addMarker(coord,'stop','Stop '+String(stop.sequence).padStart(2,'0')+' · '+stop.name));
+    addMarker(destination,'destination','Destination · '+journey.destination_label);
     map.resize();
-    if(fitPoints.length>1){
+    markFitSettled();
+     if(fitPoints.length>1){
       const bounds=new maplibregl.LngLatBounds();
       fitPoints.forEach(point=>bounds.extend(point));
       map.fitBounds(bounds,{padding:{top:65,bottom:70,left:38,right:52},maxZoom:9,duration:650});
@@ -236,7 +241,7 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
       <div><p className="text-xs font-semibold text-slate-200">Route map</p><p className="mt-1 text-[11px] text-slate-500">{hasRoutedGeometry?'Assessed path · '+displayRoute.length+' waypoints':'No routed path · showing planned locations only'}</p></div>
       <div className="flex flex-wrap gap-1.5"><button type="button" onClick={toggleBasemap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[11px] text-slate-300 hover:bg-white/[0.08]" aria-label={satellite?'Switch to street basemap':'Switch to satellite basemap'}><Satellite size={12}/>{satellite?'Satellite':'Street'}</button><button type="button" onClick={()=>setShowObserved(value=>!value)} disabled={observedPoints.length===0} className={'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-[11px] disabled:cursor-not-allowed disabled:opacity-40 '+(showObserved?'border-emerald-300/20 bg-emerald-300/[0.06] text-emerald-100':'border-white/10 bg-white/[0.035] text-slate-300 hover:bg-white/[0.08]')} aria-pressed={showObserved} aria-label={showObserved?'Hide observed device layer':'Show observed device layer'}><Activity size={12}/>{showObserved?'Observed on':'Observed off'} · {observedPoints.length}</button><button type="button" onClick={fitMap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[11px] text-slate-300 hover:bg-white/[0.08]" aria-label="Fit map to planned journey corridor"><Maximize2 size={12}/>Fit corridor</button></div>
     </div>
-    <div ref={containerRef} className="h-[320px] w-full bg-[#07111d] sm:h-[390px] xl:h-[470px] 2xl:h-[520px]"/>
+    <div ref={containerRef} data-sjm-map="journey" data-sjm-map-state="loading" role="img" aria-label="Map of the selected journey showing planned locations and any assessed route" className="h-[320px] w-full bg-[#07111d] sm:h-[390px] xl:h-[470px] 2xl:h-[520px]"/>
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-3 py-2 text-[11px] font-mono text-slate-500">
       <span>{hasRoutedGeometry?'Planned route geometry · Route Safety':'No route line · routed geometry unavailable'}</span>
       <span className="flex flex-wrap gap-3"><span className="text-slate-300">● Planned origin</span><span className="text-orange-300">● Planned stop</span><span className="text-emerald-200">● Planned destination</span>{showObserved&&observedPoints.length>0&&<span className="text-emerald-300">● Observed device fix ({observedPoints.length})</span>}{!showObserved&&observedPoints.length>0&&<span className="text-slate-500">Observed layer hidden ({observedPoints.length})</span>}</span>
@@ -309,7 +314,7 @@ export default function SecureJourneyManagement(){
  const intakeStepIssue=useMemo(()=>{
   if(intakeStep===3&&intakeMode==='edit'&&!editAcknowledged)return 'Acknowledge that this revision invalidates the prior route assessment and release authorisations.';
   if(intakeStep===0){
-   if(!form.title.trim())return 'Give the movement a clear mission title.';
+   if(!form.title.trim())return 'Add a clear journey title.';
    if(!form.purpose.trim())return 'Record the operational purpose and constraints.';
    try{new Intl.DateTimeFormat('en',{timeZone:form.timezone}).format(new Date())}catch{return 'Choose a valid IANA reporting timezone, for example Africa/Nairobi.'}
    return null;
@@ -399,7 +404,7 @@ export default function SecureJourneyManagement(){
  const create=useMutation({mutationFn:async()=> (await api.post('/sjm/journeys',buildJourneyPayload())).data.data as Journey,onSuccess:async j=>{setShowCreate(false);setIntakeMode('create');setEditAcknowledged(false);setEditBaseline(null);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);setSelectedId(j.id);await qc.invalidateQueries({queryKey:['sjm-journeys']});await qc.invalidateQueries({queryKey:['sjm-journey',j.id]})}});
  const updateJourney=useMutation({mutationFn:async()=>{
   const source=detailQ.data?.data;
-  if(!journey||!source)throw new Error('Load the full journey dossier before editing.');
+  if(!journey||!source)throw new Error('Reload the journey details before editing.');
   if(!isSupervisor)throw new Error('Only admin/dispatcher roles may revise a journey.');
   if(!['requested','planning'].includes(source.status))throw new Error('This journey is no longer editable. Refresh its current status.');
   return (await api.patch('/sjm/journeys/'+source.id,buildJourneyPayload())).data.data as Journey;
@@ -439,7 +444,7 @@ export default function SecureJourneyManagement(){
    if(!journey)throw new Error('Select a journey first.');
    const response=await api.get<{data:{channel_id:string}}>('/sjm/journeys/'+journey.id+'/communications');
    const channelId=response.data?.data?.channel_id;
-   if(typeof channelId!=='string'||!/^[0-9a-f-]{36}$/i.test(channelId))throw new Error('The mission communication channel was not returned by Sonalit.');
+   if(typeof channelId!=='string'||!/^[0-9a-f-]{36}$/i.test(channelId))throw new Error('Sonalit did not return a secure channel for this journey.');
    return channelId;
   },
   onSuccess:(channelId)=>window.location.assign('/messages?channelId='+encodeURIComponent(channelId))
@@ -466,8 +471,8 @@ export default function SecureJourneyManagement(){
 return (
   <main className="sjm-console relative min-h-full overflow-y-auto bg-[#080c12] text-slate-100 antialiased">
    <div className="relative mx-auto max-w-[1760px] space-y-5 p-3 sm:p-5 lg:p-7">
-    <header className="rounded-lg border border-[#283544] bg-[#101720] p-5 sm:p-6 xl:p-7">
-     <div className="relative flex flex-col gap-5 2xl:flex-row 2xl:items-end 2xl:justify-between">
+    <header className="rounded-lg border border-[#283544] bg-[#101720] p-4 sm:p-6 xl:p-7">
+     <div className="relative flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
       <div className="max-w-3xl">
        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
         <span className="font-semibold tracking-[.04em] text-emerald-300">XD Live Surveillance</span>
@@ -475,26 +480,26 @@ return (
         <span className="text-slate-400">Operations</span>
        </div>
        <h1 className="text-[clamp(1.5rem,2.2vw,2.2rem)] font-semibold leading-tight tracking-tight text-white">Secure Journey Management</h1>
-       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Plan executive movements, assess routes and coordinate assigned teams. Keep approvals, evidence and closeout linked to each journey.</p>
-       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400">
+       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Plan and coordinate executive journeys, from route assessment through verified closeout.</p>
+       <div className="mt-3 hidden flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400 sm:flex">
         <span className="inline-flex items-center gap-2"><ShieldCheck size={13} className="text-emerald-300"/>Organisation-scoped records</span>
         <span className="inline-flex items-center gap-2"><Route size={13} className="text-slate-300"/>Route Safety review</span>
         <span className="inline-flex items-center gap-2"><Activity size={13} className="text-slate-300"/>Recorded decisions</span>
        </div>
       </div>
-      <div className="flex min-w-0 flex-col gap-3 2xl:min-w-[420px] 2xl:items-end">
-       <div className="flex w-full flex-wrap items-center gap-2 2xl:justify-end">
+      <div className="flex min-w-0 flex-col gap-3 xl:min-w-[420px] xl:items-end">
+       <div className="flex w-full flex-wrap items-center gap-2 xl:justify-end">
         <div className="inline-flex min-h-[38px] items-center gap-2 rounded-md border border-white/[0.09] bg-black/25 px-3 py-2">
          <span className={'h-2 w-2 rounded-full '+(registerQ.isError?'bg-red-400':registerQ.isFetching?'animate-pulse bg-amber-300':'bg-emerald-300')}/>
          <span className="font-mono text-[11px] font-semibold  tracking-[.15em] text-slate-300">{registerQ.isError?(registerQ.data?'Update failed · showing saved data':'Journey list unavailable'):registerQ.isFetching?'Updating journey list':registerQ.isSuccess?'Journey list ready':'Waiting for data'}</span>
          <span className="hidden border-l border-white/10 pl-2 text-[11px] text-slate-500 sm:inline">Auto-refresh · 30 sec</span>
         </div>
-        <div className="flex-1 text-[11px] text-slate-500 sm:flex-none 2xl:text-right">
+        <div className="hidden flex-1 text-[11px] text-slate-500 sm:block sm:flex-none xl:text-right">
          <span className="block font-mono  tracking-[.14em] text-slate-600">Last updated</span>
          <span className="mt-1 block text-slate-300">{registerQ.dataUpdatedAt?new Date(registerQ.dataUpdatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'Waiting for first update'}</span>
         </div>
        </div>
-       <div className="flex flex-wrap gap-2 2xl:justify-end">
+       <div className="flex flex-wrap gap-2 xl:justify-end">
         <Link to="/corridor/missions" className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px] font-semibold text-slate-200">Field team app <ArrowUpRight size={13}/></Link>
         <Btn onClick={()=>{void refresh();void qc.invalidateQueries({queryKey:['sjm-clients']});void qc.invalidateQueries({queryKey:['sjm-convoys']})}} disabled={registerQ.isFetching}><RefreshCw size={13} className={registerQ.isFetching?'animate-spin':''}/>Refresh</Btn>
         {isSupervisor&&<Btn disabled={act.isPending} onClick={()=>act.mutate({kind:'management_summary'})}><FileBarChart2 size={13}/>Portfolio summary</Btn>}
@@ -764,7 +769,7 @@ return (
     <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-emerald-300 transition-all" style={{width:((intakeStep+1)/INTAKE_STEPS.length*100)+'%'}}/></div>
 
     {intakeStep===0&&<div className="space-y-4">
-     <div className="rounded-md border border-white/[0.08] bg-white/[0.025] p-3"><Kicker>JOURNEY DETAILS</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Establish purpose, tenant/client context and operating mode. Saving creates a requested dossier; it does not approve, dispatch or assess the route.</p></div>
+     <div className="rounded-md border border-white/[0.08] bg-white/[0.025] p-3"><Kicker>JOURNEY DETAILS</Kicker><p className="mt-1 text-[11px] leading-5 text-slate-400">Establish purpose, tenant/client context and operating mode. Saving creates a request only. It does not assess the route, approve it or release the journey.</p></div>
      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
       <Input label="Journey title"><input required maxLength={180} className={field} value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Client movement reference"/></Input>
       <Input label="Client account"><select className={field} value={form.client_id} onChange={e=>setForm({...form,client_id:e.target.value})}><option value="">No client linked</option>{clients.map(cl=><option key={cl.id} value={cl.id}>{cl.name}{cl.company?' · '+cl.company:''}</option>)}</select></Input>
