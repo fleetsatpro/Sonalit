@@ -243,12 +243,14 @@ test.describe('SJM command-centre responsive smoke', () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
 
-      await expect(page.getByRole('heading', { name: /Secure journey operations/i })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
       await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 10000 });
       await expect(page.getByText('Route has not been assessed', { exact: true })).toBeVisible();
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
+      await expect(page.getByTestId('sjm-journey-progress')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Journey progress' })).toBeVisible();
 
-      const registerHeading = page.getByRole('heading', { name: 'Mission register' });
+      const registerHeading = page.getByRole('heading', { name: 'Journey register' });
       const selectedMissionHeading = page.getByRole('heading', { name: 'Airport arrival — controlled transfer' });
       const registerBox = await registerHeading.boundingBox();
       const missionBox = await selectedMissionHeading.boundingBox();
@@ -362,7 +364,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    await page.getByRole('button', { name: 'Open mission communications' }).click();
+    await page.getByRole('button', { name: 'Open secure channel' }).click();
     await page.waitForURL((url) => url.pathname === '/messages' && url.searchParams.get('channelId') === missionChannelId);
     await expect(page.locator('main header').getByText('SJM-E2E-001 mission channel', { exact: true })).toBeVisible({ timeout: 15000 });
     await expect(page.locator('main header').getByText('General operations', { exact: true })).toHaveCount(0);
@@ -453,17 +455,17 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    const tabs = page.getByRole('tablist', { name: 'Mission workspace views' });
+    const tabs = page.getByRole('tablist', { name: 'Journey workspace views' });
     await expect(tabs).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Evidence ledger' }).click();
+    await page.getByRole('tab', { name: 'Evidence' }).click();
     await expect(page.getByRole('heading', { name: 'Journey events' })).toBeVisible();
     await expect(page.getByText('Manual stop confirmations', { exact: true })).toBeVisible();
     await expect(page.getByText('Not equivalent to a GPS proof', { exact: true })).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Client reporting' }).click();
-    await expect(page.getByRole('heading', { name: 'Generate a persisted report' })).toBeVisible();
-    await expect(page.getByText(/No report is automatically emailed or distributed/)).toBeVisible();
+    await page.getByRole('tab', { name: 'Reports' }).click();
+    await expect(page.getByRole('heading', { name: 'Generate report' })).toBeVisible();
+    await expect(page.getByText(/Reports are downloaded here/)).toBeVisible();
   });
 
   test('team assignments stay out of the initial dispatch path until requested', async ({ page }) => {
@@ -475,7 +477,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     const team = page.locator('details.sjm-team-admin');
     await expect(team).toBeVisible({ timeout: 15000 });
     await expect(team).not.toHaveAttribute('open', '');
-    await expect(team.getByRole('heading', { name: 'Drivers, CPOs and meet-and-greet' })).toBeVisible();
+    await expect(team.getByRole('heading', { name: 'Assigned drivers, CPOs and meet-and-greet staff' })).toBeVisible();
     await expect(team.getByLabel('Active organisation user')).not.toBeVisible();
 
     await team.locator('summary').click();
@@ -649,7 +651,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('176 matches')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Portfolio totals cover 176 authorised journeys', { exact: false })).toBeVisible();
+    await expect(page.getByText('Portfolio view: 176 journeys', { exact: false })).toBeVisible();
     const registerResponse = (offset: string, filter?: string, sort?: string) => page.waitForResponse((response) => {
       if (response.request().method() !== 'GET') return false;
       const url = new URL(response.url());
@@ -670,7 +672,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('button', { name: 'Next register page' })).toBeDisabled();
 
     const sortedRegisterResponse = registerResponse('0', 'all', 'departure_asc');
-    await page.getByLabel('Sort missions').selectOption('departure_asc');
+    await page.getByLabel('Sort journeys').selectOption('departure_asc');
     await sortedRegisterResponse;
     await expect.poll(() => requestedSort).toBe('departure_asc');
     await expect.poll(() => requestedOffset).toBe(0);
@@ -717,7 +719,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
     await expect(page.getByLabel('5 of 8 checkpoints cleared')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole('listitem', { name: 'Move current' })).toBeVisible();
+    await expect(page.getByRole('listitem', { name: 'Movement current' })).toBeVisible();
     await expect(page.getByRole('listitem', { name: 'Arrival pending' })).toBeVisible();
   });
 
