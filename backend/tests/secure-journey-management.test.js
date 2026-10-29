@@ -160,10 +160,11 @@ describe('SJM validation and evidence boundaries', () => {
     expect(approve).toContain('mutateWithEvent');
     expect(review).toContain('await readLockedRouteReviewSnapshot(db,org,j)');
     expect(approve).toContain('await readLockedRouteReviewSnapshot(db,org,j)');
-    expect(review).toContain('j.xmin::text AS route_review_row_version');
-    expect(approve).toContain('j.xmin::text AS route_review_row_version');
-    expect(review).toContain('xmin::text AS route_review_row_version');
-    expect(approve).toContain('xmin::text AS route_review_row_version');
+    expect(review).toContain('journeyForRouteReview(req.db,org,req.params.id)');
+    expect(approve).toContain('journeyForRouteReview(req.db,org,req.params.id)');
+    expect(source).toContain('async function journeyForRouteReview(db,org,id)');
+    expect(source).toContain('j.xmin::text AS route_review_row_version');
+    expect(source).toContain('xmin::text AS route_review_row_version');
     expect(review).toContain("route_review_already_recorded");
     expect(approve).toContain('approvalGate(parseJson(snapshot.current?.route_assessment,null),currentDecision,ack)');
   });
