@@ -343,6 +343,9 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(routeMap).toHaveAttribute('data-route-evidence', 'routed');
     await expect(routeMap.getByText('Route Safety · GO')).toBeVisible();
     await expect(routeMap.getByText('The line is stored Route Safety planned geometry, not a live GPS track.')).toBeVisible();
+    const mapTop = await routeMap.evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
+    const instructionsTop = await page.getByText('Synthetic fixture instructions only.').evaluate((node) => node.getBoundingClientRect().top + window.scrollY);
+    expect(mapTop).toBeLessThan(instructionsTop);
   });
 
   test('field communications appear before check-in actions on a narrow screen', async ({ page }) => {
@@ -365,17 +368,20 @@ test.describe('SJM command-centre responsive smoke', () => {
     await stubSjmApi(page);
     let requestedOffset = -1;
     let requestedSort = '';
+    let requestedFilter = 'all';
     await page.route('**/api/v1/sjm/journeys?**', async (route) => {
       const url = new URL(route.request().url());
       requestedOffset = Number(url.searchParams.get('offset') || 0);
       requestedSort = url.searchParams.get('sort') || '';
+      requestedFilter = url.searchParams.get('filter') || 'all';
       const summary = { ...journey };
       delete summary.stops;
       delete summary.events;
       delete summary.telemetry_snapshot;
       delete summary.readiness_checklist;
       const offset = requestedOffset;
-      const rowCount = offset === 0 ? 100 : 76;
+      const totalCount = requestedFilter === 'overdue' ? 7 : requestedFilter === 'departure_due_30m' ? 3 : 176;
+      const rowCount = Math.max(0, Math.min(offset === 0 ? 100 : 76, totalCount - offset));
       const data = Array.from({ length: rowCount }, (_, index) => ({
         ...summary,
         id: offset === 0 && index === 0 ? JOURNEY_ID : JOURNEY_ID + '-' + (offset + index),
@@ -386,8 +392,8 @@ test.describe('SJM command-centre responsive smoke', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           data,
-          pagination: { limit: 100, offset, total_count: 176, has_more: offset === 0 },
-          summary: { total: 176, active: 32, queue: 48, review: 14, awaiting_review: 13, arrival_verification: 11 },
+          pagination: { limit: 100, offset, total_count: totalCount, has_more: offset + rowCount < totalCount },
+          summary: { total: 176, active: 32, queue: 48, review: 14, awaiting_review: 13, arrival_verification: 11, overdue: 7, departures_due_30m: 3 },
         }),
       });
     });
@@ -408,6 +414,17 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect.poll(() => requestedOffset).toBe(0);
     await expect(page.getByText('Showing 1–100 of 176')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Next register page' })).toBeEnabled();
+
+    await page.getByRole('button', { name: 'Overdue' }).click();
+    await expect.poll(() => requestedFilter).toBe('overdue');
+    await expect.poll(() => requestedOffset).toBe(0);
+    await expect(page.getByText('7 matches')).toBeVisible();
+    await expect(page.getByText('Showing 1–7 of 7')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Departure due ≤30m' }).click();
+    await expect.poll(() => requestedFilter).toBe('departure_due_30m');
+    await expect.poll(() => requestedOffset).toBe(0);
+    await expect(page.getByText('3 matches')).toBeVisible();
   });
 
   test('lifecycle rail keeps movement and arrival verification on their correct checkpoints', async ({ page }) => {

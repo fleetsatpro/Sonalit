@@ -126,12 +126,18 @@ describe('SJM validation and evidence boundaries', () => {
     expect(journeyRegisterFilterSql('active')).toMatch(/in_progress/);
     expect(journeyRegisterFilterSql('attention')).toMatch(/HUMAN_REVIEW/);
     expect(journeyRegisterFilterSql('ready_for_review')).toBe('j.status=$4');
+    expect(journeyRegisterFilterSql('overdue')).toMatch(/planned_departure_at\s*<\s*NOW\(\)/);
+    expect(journeyRegisterFilterSql('overdue')).toMatch(/planned_arrival_at\s*<\s*NOW\(\)/);
+    expect(journeyRegisterFilterSql('departure_due_30m')).toMatch(/INTERVAL '30 minutes'/);
     expect(journeyRegisterFilterSql("all' OR 1=1 --")).toBeNull();
   });
 
   test('register sort compiler exposes operational priority and explicit date alternatives only', () => {
     expect(journeyRegisterOrderSql('priority')).toMatch(/safety_gate/);
     expect(journeyRegisterOrderSql('priority')).toMatch(/j.status='exception'/);
+    expect(journeyRegisterOrderSql('priority')).toMatch(/planned_departure_at < NOW\(\)/);
+    expect(journeyRegisterOrderSql('priority')).toMatch(/planned_arrival_at < NOW\(\)/);
+    expect(journeyRegisterOrderSql('priority')).toMatch(/INTERVAL '30 minutes'/);
     expect(journeyRegisterOrderSql('departure_asc')).toMatch(/planned_departure_at ASC NULLS LAST/);
     expect(journeyRegisterOrderSql('departure_desc')).toMatch(/planned_departure_at DESC NULLS LAST/);
     expect(journeyRegisterOrderSql('updated_desc')).toMatch(/updated_at DESC NULLS LAST/);
@@ -150,6 +156,8 @@ describe('SJM validation and evidence boundaries', () => {
     expect(route).toContain('summary:rows.summary');
     expect(route).toContain('journeyRegisterFilterSql(filter)');
     expect(route).toContain('journeyRegisterOrderSql(sort)');
+    expect(route).toContain('AS overdue');
+    expect(route).toContain('AS departures_due_30m');
     expect(route).toContain('ORDER BY ${orderSql}');
     expect(route).toContain('invalid_journey_sort');
   });

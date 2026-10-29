@@ -20,7 +20,7 @@ type TelemetryDevice={device_id:string;device_name:string;officer_name?:string|n
 type TelemetrySnapshot={status:'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE'|string;reason?:string|null;observed_at?:string|Date|null;devices:TelemetryDevice[]};
 type ReadinessItem={item:string;status:string;detail:string};
 type Journey={id:string;reference:string;title:string;purpose:string;status:Status;service_type?:string;principal_reference?:string|null;airport_code?:string|null;terminal?:string|null;airline?:string|null;flight_number?:string|null;flight_scheduled_at?:string|null;flight_status?:string;flight_status_source?:string;flight_status_observed_at?:string|null;meet_greet_instructions?:string|null;transport_mode:string;client_id?:string|null;client_name?:string|null;convoy_id?:string|null;convoy_name?:string|null;origin_label:string;origin_lat:string|number;origin_lng:string|number;destination_label:string;destination_lat:string|number;destination_lng:string|number;planned_departure_at?:string|null;planned_arrival_at?:string|null;planned_distance_km?:number|string|null;planned_duration_minutes?:number|null;timezone:string;route_assessment?:Assessment|string|null;planned_route?:Point[]|string;human_review_decision?:string|null;human_review_rationale?:string|null;approved_at?:string|null;started_at?:string|null;completed_at?:string|null;stops?:Stop[];events?:EventRow[];has_route_assessment?:boolean;telemetry_snapshot?:TelemetrySnapshot;readiness_checklist?:ReadinessItem[];duty_roles?:string[];created_at?:string|null;updated_at?:string|null};
-type JourneyRegisterResponse={data:Journey[];pagination?:{limit:number;offset:number;total_count:number;has_more:boolean};summary?:{total:number;active:number;queue:number;review:number;awaiting_review:number;arrival_verification:number}};
+type JourneyRegisterResponse={data:Journey[];pagination?:{limit:number;offset:number;total_count:number;has_more:boolean};summary?:{total:number;active:number;queue:number;review:number;awaiting_review:number;arrival_verification:number;overdue?:number;departures_due_30m?:number}};
 function lifecycleCheckpointIndex(status:Status,journey:Pick<Journey,'route_assessment'|'approved_at'|'started_at'>):number {
  const direct:Partial<Record<Status,number>>={requested:0,planning:1,assessment_pending:1,ready_for_review:2,approved:4,ready_to_depart:5,in_progress:5,paused:5,exception:5,on_hold:5,arrival_pending_verification:6,closed:8};
  if(direct[status]!==undefined)return direct[status] as number;
@@ -47,7 +47,7 @@ const REGISTER_SORT_OPTIONS:ReadonlyArray<{value:RegisterSort;label:string}>=[
  {value:'departure_desc',label:'Departure · latest first'},
  {value:'updated_desc',label:'Recently updated'},
 ];
-const REGISTER_STATUS_PRIORITY:Record<Status,number>={exception:1,paused:2,arrival_pending_verification:3,on_hold:5,in_progress:6,ready_for_review:7,ready_to_depart:8,approved:9,assessment_pending:10,planning:11,requested:12,closed:20,cancelled:21,aborted:22};
+const REGISTER_STATUS_PRIORITY:Record<Status,number>={exception:1,paused:2,arrival_pending_verification:3,on_hold:8,in_progress:9,ready_for_review:10,ready_to_depart:11,approved:12,assessment_pending:13,planning:14,requested:15,closed:20,cancelled:21,aborted:22};
 function dateOrder(a?:string|null,b?:string|null,direction:'asc'|'desc'='asc'){
  const av=a?Date.parse(a):NaN,bv=b?Date.parse(b):NaN;
  if(!Number.isFinite(av)&&!Number.isFinite(bv))return 0;
@@ -55,20 +55,39 @@ function dateOrder(a?:string|null,b?:string|null,direction:'asc'|'desc'='asc'){
  if(!Number.isFinite(bv))return -1;
  return direction==='asc'?av-bv:bv-av;
 }
+function registerPriority(journey:Journey,now=Date.now()){
+ const status=journey.status,gate=assessmentOf(journey.route_assessment)?.safety_gate;
+ const terminal=['closed','cancelled','aborted'].includes(status);
+ if(gate==='NO_GO'&&!terminal)return 0;
+ if(status==='exception')return 1;
+ if(status==='paused')return 2;
+ if(status==='arrival_pending_verification')return 3;
+ if(gate==='HUMAN_REVIEW'&&!terminal)return 4;
+ const departure=journey.planned_departure_at?Date.parse(journey.planned_departure_at):NaN;
+ const arrival=journey.planned_arrival_at?Date.parse(journey.planned_arrival_at):NaN;
+ if(['approved','ready_to_depart'].includes(status)&&Number.isFinite(departure)&&departure<now)return 5;
+ if(status==='in_progress'&&Number.isFinite(arrival)&&arrival<now)return 6;
+ if(['approved','ready_to_depart'].includes(status)&&Number.isFinite(departure)&&departure>=now&&departure<=now+30*60*1000)return 7;
+ return REGISTER_STATUS_PRIORITY[status]??16;
+}
 function compareRegisterRows(a:Journey,b:Journey,sort:RegisterSort){
  if(sort==='priority'){
-  const ga=assessmentOf(a.route_assessment)?.safety_gate,gb=assessmentOf(b.route_assessment)?.safety_gate;
-  const pa=ga==='NO_GO'&&!['closed','cancelled','aborted'].includes(a.status)?0:ga==='HUMAN_REVIEW'&&!['closed','cancelled','aborted'].includes(a.status)?4:(REGISTER_STATUS_PRIORITY[a.status]??15);
-  const pb=gb==='NO_GO'&&!['closed','cancelled','aborted'].includes(b.status)?0:gb==='HUMAN_REVIEW'&&!['closed','cancelled','aborted'].includes(b.status)?4:(REGISTER_STATUS_PRIORITY[b.status]??15);
+  const pa=registerPriority(a),pb=registerPriority(b);
   if(pa!==pb)return pa-pb;
-  const d=dateOrder(a.planned_departure_at,b.planned_departure_at,'asc');if(d)return d;
-  const u=dateOrder(a.updated_at,b.updated_at,'desc');if(u)return u;
+  const departure=dateOrder(a.planned_departure_at,b.planned_departure_at,'asc');
+  if(departure)return departure;
+  const updated=dateOrder(a.updated_at,b.updated_at,'desc');
+  if(updated)return updated;
  }else if(sort==='departure_asc'||sort==='departure_desc'){
-  const d=dateOrder(a.planned_departure_at,b.planned_departure_at,sort==='departure_asc'?'asc':'desc');if(d)return d;
-  const u=dateOrder(a.updated_at,b.updated_at,'desc');if(u)return u;
+  const departure=dateOrder(a.planned_departure_at,b.planned_departure_at,sort==='departure_asc'?'asc':'desc');
+  if(departure)return departure;
+  const updated=dateOrder(a.updated_at,b.updated_at,'desc');
+  if(updated)return updated;
  }else{
-  const u=dateOrder(a.updated_at,b.updated_at,'desc');if(u)return u;
-  const d=dateOrder(a.planned_departure_at,b.planned_departure_at,'asc');if(d)return d;
+  const updated=dateOrder(a.updated_at,b.updated_at,'desc');
+  if(updated)return updated;
+  const departure=dateOrder(a.planned_departure_at,b.planned_departure_at,'asc');
+  if(departure)return departure;
  }
  return a.reference.localeCompare(b.reference);
 }
@@ -342,9 +361,16 @@ export default function SecureJourneyManagement(){
  const hasRegisterContract=Boolean(registerQ.data?.pagination&&registerQ.data?.summary);
  const stats=registerQ.data?.summary;
  const legacyVisible=journeys.filter(j=>{
+  const now=Date.now();
+  const departure=j.planned_departure_at?Date.parse(j.planned_departure_at):NaN;
+  const arrival=j.planned_arrival_at?Date.parse(j.planned_arrival_at):NaN;
+  const departureStatuses=['approved','ready_to_depart'].includes(j.status);
+  const arrivalStatuses=['in_progress','paused','exception'].includes(j.status);
+  const overdue=(departureStatuses&&Number.isFinite(departure)&&departure<now)||(arrivalStatuses&&Number.isFinite(arrival)&&arrival<now);
+  const departureDue=departureStatuses&&Number.isFinite(departure)&&departure>=now&&departure<=now+30*60*1000;
   const active=['in_progress','paused','exception','arrival_pending_verification'].includes(j.status);
   const attention=['paused','exception','on_hold','arrival_pending_verification'].includes(j.status)||['HUMAN_REVIEW','NO_GO'].includes(assessmentOf(j.route_assessment)?.safety_gate||'');
-  const matchesFilter=filter==='all'||(filter==='active'&&active)||(filter==='attention'&&attention)||(filter==='review'&&j.status==='ready_for_review')||(filter==='planning'&&['requested','planning','assessment_pending'].includes(j.status))||(filter==='closed'&&['closed','cancelled','aborted'].includes(j.status))||j.status===filter;
+  const matchesFilter=filter==='all'||(filter==='active'&&active)||(filter==='attention'&&attention)||(filter==='review'&&j.status==='ready_for_review')||(filter==='planning'&&['requested','planning','assessment_pending'].includes(j.status))||(filter==='overdue'&&overdue)||(filter==='departure_due_30m'&&departureDue)||(filter==='closed'&&['closed','cancelled','aborted'].includes(j.status))||j.status===filter;
   return matchesFilter&&(registerSearch.trim()===''||[j.reference,j.title,j.client_name,j.origin_label,j.destination_label,j.convoy_name].some(value=>String(value||'').toLowerCase().includes(registerSearch.toLowerCase())));
  }).slice().sort((a,b)=>compareRegisterRows(a,b,registerSort));
  const visible=hasRegisterContract?journeys:legacyVisible;
@@ -447,17 +473,19 @@ return (
      </div>
     </header>
 
-    <section aria-label="Operations overview" className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-white/[0.10] py-3 lg:grid-cols-4 lg:gap-0">
+    <section aria-label="Operations overview" className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-white/[0.10] py-3 lg:grid-cols-5 lg:gap-0">
      {[
-      {label:'Under operational control',value:stats?.active,detail:'In progress, pause, exception or arrival check',icon:Activity,tone:'text-emerald-200'},
+      {label:'Under operational control',value:stats?.active,detail:'In progress, paused, exception or arrival check',icon:Activity,tone:'text-emerald-200'},
       {label:'Awaiting release review',value:stats?.awaiting_review,detail:'Human decision still required',icon:ShieldCheck,tone:'text-amber-200'},
-      {label:'Safety / exception attention',value:stats?.review,detail:'Exception, pause, arrival or restrictive gate',icon:AlertTriangle,tone:'text-orange-200'},
+      {label:'Overdue planned movement',value:stats?.overdue,detail:'Missed departure or planned arrival',icon:AlertTriangle,tone:'text-red-200'},
+      {label:'Safety / exception attention',value:stats?.review,detail:'Exception or restrictive safety gate',icon:AlertTriangle,tone:'text-orange-200'},
       {label:'Arrival verification',value:stats?.arrival_verification,detail:'Closure requires supervisor attestation',icon:CheckCircle2,tone:'text-slate-300'}
      ].map((card,index)=><div key={card.label} className={'min-w-0 py-1 '+(index>0?'lg:border-l lg:border-white/[0.08] lg:pl-4':'lg:pr-4')}>
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[11px] font-medium leading-4 text-slate-400">{card.label}</p><p className={'mt-1.5 text-2xl font-semibold tabular-nums tracking-tight '+card.tone}>{registerQ.isError?'Unavailable':card.value==null?'—':String(card.value)}</p></div><card.icon size={16} className={card.tone+' mt-1 shrink-0 opacity-80'}/></div>
       <p className="mt-1 text-[11px] leading-4 text-slate-500">{card.detail}</p>
      </div>)}
     </section>
+    {hasRegisterContract&&Number(stats?.departures_due_30m||0)>0&&<div role="status" className="border-l-2 border-amber-300/70 bg-amber-300/[0.035] px-3 py-2.5 text-[11px] leading-5 text-amber-100/90"><span className="font-semibold tabular-nums">{stats?.departures_due_30m}</span> scheduled departures are due within the next 30 minutes. Confirm readiness before recording release; this count reflects planned times, not live dispatch telemetry.</div>
     {hasRegisterContract?<p className="text-[11px] leading-5 text-slate-500">Portfolio totals cover {stats?.total==null?"the authorised scope":String(stats.total)+" authorised journeys"}; search and status filters apply to the paginated register below.</p>:registerQ.data&&<div role="status" className="border-l-2 border-amber-300/50 bg-amber-300/[0.04] px-3 py-2.5 text-[11px] leading-5 text-amber-100/90">Limited register mode: this API response does not include portfolio totals or pagination. Search and filters apply only to the first {journeys.length} authorised records returned. Full-scope counts and page navigation require the matching SJM backend build.</div>}
 
       {isSupervisor&&journey&&<details className="sjm-team-admin mb-4" aria-label="Mission team assignments"><summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-4 py-3"><span className="min-w-0"><span className="sjm-kicker">Mission team</span><h2 className="mt-1 block text-sm font-semibold text-white">Drivers, CPOs and meet-and-greet</h2><span className="mt-1 block text-[11px] text-slate-400">Manage role assignments and secure Ops Comms membership.</span></span><span className="shrink-0 font-mono text-[11px] text-slate-400">{teamDraft.length} active assignment{teamDraft.length===1?'':'s'}</span></summary><div className="sjm-team-admin__content"><p className="mb-3 text-[11px] leading-5 text-slate-500">Only active users in this organisation can be assigned. Roster changes are audited and update the mission’s private communications membership.</p>
@@ -536,7 +564,7 @@ return (
        <div className="flex items-center justify-between gap-2"><div><Kicker>01 / REGISTER</Kicker><h2 className="mt-1 text-base font-semibold tracking-tight text-white">Mission register</h2></div><span className="font-mono text-[11px] text-slate-400">{registerQ.isError&&!registerQ.data?"Unavailable":registerQ.data?.pagination?registerQ.data.pagination.total_count.toLocaleString()+" matches":registerQ.data?journeys.length+" loaded":"—"}</span></div>
        <div className="relative mt-3"><Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/><input aria-label="Search missions" className={field+' pl-9'} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Reference, client, corridor…"/></div>
        <div className="mt-3 flex flex-wrap gap-1.5">
-        {[['all','All'],['active','In operation'],['attention','Attention'],['review','Release review'],['planning','Planning'],['closed','Closed']].map(([value,label])=><button key={value} type="button" onClick={()=>{setFilter(value);setRegisterPage(0)}} className={'rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition '+(filter===value?'border-emerald-300/30 bg-emerald-300/[0.09] text-emerald-100':'border-white/[0.07] bg-white/[0.015] text-slate-500 hover:text-slate-200')}>{label}</button>)}
+        {[['all','All'],['active','In operation'],['attention','Attention'],['review','Release review'],['planning','Planning'],['overdue','Overdue'],['departure_due_30m','Departure due ≤30m'],['closed','Closed']].map(([value,label])=><button key={value} type="button" onClick={()=>{setFilter(value);setRegisterPage(0)}} className={'rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition '+(filter===value?'border-emerald-300/30 bg-emerald-300/[0.09] text-emerald-100':'border-white/[0.07] bg-white/[0.015] text-slate-500 hover:text-slate-200')}>{label}</button>)}
        </div>
        <label className="mt-3 flex items-center justify-between gap-3 text-[11px] text-slate-400"><span>Sort missions</span><select aria-label="Sort missions" value={registerSort} onChange={event=>{setRegisterSort(event.target.value as RegisterSort);setRegisterPage(0)}} className="min-w-0 max-w-[72%] rounded-md border border-white/[0.10] bg-[#080c12] px-2.5 py-2 text-[11px] text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300">{REGISTER_SORT_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       </div>

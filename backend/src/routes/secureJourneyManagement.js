@@ -15,10 +15,12 @@ const JOURNEY_REGISTER_FILTER_SQL = Object.freeze({
   attention: "(j.status IN ('paused','exception','on_hold','arrival_pending_verification') OR COALESCE(j.route_assessment->>'safety_gate','') IN ('HUMAN_REVIEW','NO_GO'))",
   review: "j.status='ready_for_review'",
   planning: "j.status IN ('requested','planning','assessment_pending')",
+  overdue: "((j.status IN ('approved','ready_to_depart') AND j.planned_departure_at IS NOT NULL AND j.planned_departure_at < NOW()) OR (j.status IN ('in_progress','paused','exception') AND j.planned_arrival_at IS NOT NULL AND j.planned_arrival_at < NOW()))",
+  departure_due_30m: "(j.status IN ('approved','ready_to_depart') AND j.planned_departure_at >= NOW() AND j.planned_departure_at <= NOW() + INTERVAL '30 minutes')",
   closed: "j.status IN ('closed','cancelled','aborted')",
 });
 const JOURNEY_REGISTER_ORDER_SQL = Object.freeze({
-  priority: "CASE WHEN j.status NOT IN ('closed','cancelled','aborted') AND COALESCE(j.route_assessment->>'safety_gate','')='NO_GO' THEN 0 WHEN j.status='exception' THEN 1 WHEN j.status='paused' THEN 2 WHEN j.status='arrival_pending_verification' THEN 3 WHEN j.status NOT IN ('closed','cancelled','aborted') AND COALESCE(j.route_assessment->>'safety_gate','')='HUMAN_REVIEW' THEN 4 WHEN j.status='on_hold' THEN 5 WHEN j.status='in_progress' THEN 6 WHEN j.status='ready_for_review' THEN 7 WHEN j.status='ready_to_depart' THEN 8 WHEN j.status='approved' THEN 9 WHEN j.status='assessment_pending' THEN 10 WHEN j.status='planning' THEN 11 WHEN j.status='requested' THEN 12 WHEN j.status='closed' THEN 20 WHEN j.status='cancelled' THEN 21 WHEN j.status='aborted' THEN 22 ELSE 15 END ASC, j.planned_departure_at ASC NULLS LAST, j.updated_at DESC, j.id ASC",
+  priority: "CASE WHEN j.status NOT IN ('closed','cancelled','aborted') AND COALESCE(j.route_assessment->>'safety_gate','')='NO_GO' THEN 0 WHEN j.status='exception' THEN 1 WHEN j.status='paused' THEN 2 WHEN j.status='arrival_pending_verification' THEN 3 WHEN j.status NOT IN ('closed','cancelled','aborted') AND COALESCE(j.route_assessment->>'safety_gate','')='HUMAN_REVIEW' THEN 4 WHEN j.status IN ('approved','ready_to_depart') AND j.planned_departure_at < NOW() THEN 5 WHEN j.status='in_progress' AND j.planned_arrival_at < NOW() THEN 6 WHEN j.status IN ('approved','ready_to_depart') AND j.planned_departure_at >= NOW() AND j.planned_departure_at <= NOW() + INTERVAL '30 minutes' THEN 7 WHEN j.status='on_hold' THEN 8 WHEN j.status='in_progress' THEN 9 WHEN j.status='ready_for_review' THEN 10 WHEN j.status='ready_to_depart' THEN 11 WHEN j.status='approved' THEN 12 WHEN j.status='assessment_pending' THEN 13 WHEN j.status='planning' THEN 14 WHEN j.status='requested' THEN 15 WHEN j.status='closed' THEN 20 WHEN j.status='cancelled' THEN 21 WHEN j.status='aborted' THEN 22 ELSE 16 END ASC, j.planned_departure_at ASC NULLS LAST, j.updated_at DESC, j.id ASC",
   departure_asc: "j.planned_departure_at ASC NULLS LAST, j.updated_at DESC, j.id ASC",
   departure_desc: "j.planned_departure_at DESC NULLS LAST, j.updated_at DESC, j.id ASC",
   updated_desc: "j.updated_at DESC NULLS LAST, j.planned_departure_at ASC NULLS LAST, j.id ASC",
@@ -560,7 +562,7 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
   const offset=Number.isInteger(parsedOffset)&&parsedOffset>=0?Math.min(100000,parsedOffset):0;
   const filter=txt(req.query.filter,40)||'all';
   const filterSql=journeyRegisterFilterSql(filter);
-  if(!filterSql)return res.status(400).json({error:'invalid_journey_filter',allowed:['all','active','attention','review','planning','closed',...STATUSES]});
+  if(!filterSql)return res.status(400).json({error:'invalid_journey_filter',allowed:[...Object.keys(JOURNEY_REGISTER_FILTER_SQL),...STATUSES]});
   const sort=txt(req.query.sort,40)||'priority';
   const orderSql=journeyRegisterOrderSql(sort);
   if(!orderSql)return res.status(400).json({error:'invalid_journey_sort',allowed:Object.keys(JOURNEY_REGISTER_ORDER_SQL)});
@@ -627,7 +629,9 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
       COUNT(*) FILTER (WHERE j.status IN ('requested','planning','assessment_pending','ready_for_review'))::int AS queue,
       COUNT(*) FILTER (WHERE j.status IN ('paused','exception','on_hold','arrival_pending_verification') OR COALESCE(j.route_assessment->>'safety_gate','') IN ('HUMAN_REVIEW','NO_GO'))::int AS review,
       COUNT(*) FILTER (WHERE j.status='ready_for_review')::int AS awaiting_review,
-      COUNT(*) FILTER (WHERE j.status='arrival_pending_verification')::int AS arrival_verification
+      COUNT(*) FILTER (WHERE j.status='arrival_pending_verification')::int AS arrival_verification,
+      COUNT(*) FILTER (WHERE (j.status IN ('approved','ready_to_depart') AND j.planned_departure_at IS NOT NULL AND j.planned_departure_at<NOW()) OR (j.status IN ('in_progress','paused','exception') AND j.planned_arrival_at IS NOT NULL AND j.planned_arrival_at<NOW()))::int AS overdue,
+      COUNT(*) FILTER (WHERE j.status IN ('approved','ready_to_depart') AND j.planned_departure_at>=NOW() AND j.planned_departure_at<=NOW()+INTERVAL '30 minutes')::int AS departures_due_30m
       FROM sjm_journeys j
       WHERE j.org_id=$1 AND j.deleted_at IS NULL
         AND ($2::boolean OR EXISTS (
@@ -636,7 +640,7 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
              AND p.user_id=$3 AND p.removed_at IS NULL
         ))`,
       [req.user.org_id,isMobilityManager(req.user),req.user.id]);
-    return {rows:guarded.rows,totalCount:Number(counts.rows[0]?.total_count||0),summary:summaryResult.rows[0]||{total:0,active:0,queue:0,review:0,awaiting_review:0,arrival_verification:0}};
+    return {rows:guarded.rows,totalCount:Number(counts.rows[0]?.total_count||0),summary:summaryResult.rows[0]||{total:0,active:0,queue:0,review:0,awaiting_review:0,arrival_verification:0,overdue:0,departures_due_30m:0}};
   });
   if(rows.error)return res.status(409).json({error:'assignment_roster_changed',message:'The assignment roster changed repeatedly while loading this list. Refresh and retry.'});
   const data=rows.rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles));
