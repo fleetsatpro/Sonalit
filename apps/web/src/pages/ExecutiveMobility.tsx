@@ -118,13 +118,16 @@ export default function ExecutiveMobility(){
  const [accessNotice,setAccessNotice]=useState(false);
  const identityKey=String(user?.org_id||'')+':'+String(user?.id||'');
  const accessIdentityRef=useRef(identityKey);
+ const identityKeyRef=useRef(identityKey);identityKeyRef.current=identityKey;
+ const accessIdentityScopeRef=useRef({orgId:user?.org_id,userId:user?.id});
+ const identityReady=accessIdentityRef.current===identityKey;
  const previousMissionId=useRef('');
  const missionQ=useQuery<{data:Mission[]}>({queryKey:['sjm-my-assignments',user?.org_id,user?.id],queryFn:async({signal})=>(await api.get('/sjm/my-assignments',{signal})).data,enabled:Boolean(user?.org_id&&user?.id),refetchInterval:30000,staleTime:10000});
- const missions=(missionQ.data?.data||[]).filter(m=>!inaccessibleMissionIds.has(m.id)&&!revalidatingMissionIds.has(m.id));
- useEffect(()=>{if(accessIdentityRef.current===identityKey)return;accessIdentityRef.current=identityKey;setInaccessibleMissionIds(new Set());setRevalidatingMissionIds(new Set());setAccessNotice(false);setSelectedId('');previousMissionId.current=''},[identityKey]);
- useEffect(()=>{if(selectedId&&revalidatingMissionIds.has(selectedId))return;if(!selectedId&&missions.length)setSelectedId(missions[0]!.id);else if(selectedId&&!missions.some(m=>m.id===selectedId))setSelectedId(missions[0]?.id||'')},[missions,selectedId,revalidatingMissionIds]);
+ const missions=(identityReady?missionQ.data?.data||[]:[]).filter(m=>!inaccessibleMissionIds.has(m.id)&&!revalidatingMissionIds.has(m.id));
+ useEffect(()=>{if(accessIdentityRef.current===identityKey)return;accessIdentityRef.current=identityKey;rosterRevalidationVersionRef.current.clear();const previous=accessIdentityScopeRef.current;if(previous.orgId&&previous.userId)qc.removeQueries({queryKey:['sjm-my-assignments',previous.orgId,previous.userId],exact:true});qc.removeQueries({queryKey:['sjm-field-detail']});qc.removeQueries({queryKey:['sjm-field-events']});qc.removeQueries({queryKey:['sjm-mission-channel']});accessIdentityScopeRef.current={orgId:user?.org_id,userId:user?.id};setInaccessibleMissionIds(new Set());setRevalidatingMissionIds(new Set());setAccessNotice(false);setSelectedId('');previousMissionId.current=''},[identityKey,qc,user?.org_id,user?.id]);
+ useEffect(()=>{if(!identityReady||selectedId&&revalidatingMissionIds.has(selectedId))return;if(!selectedId&&missions.length)setSelectedId(missions[0]!.id);else if(selectedId&&!missions.some(m=>m.id===selectedId))setSelectedId(missions[0]?.id||'')},[identityReady,missions,selectedId,revalidatingMissionIds]);
  const mission=missions.find(m=>m.id===selectedId);
- const detailQ=useQuery<{data:MissionDetail}>({queryKey:['sjm-field-detail',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId)).data,enabled:Boolean(selectedId&&!revalidatingMissionIds.has(selectedId)),staleTime:10000,refetchInterval:['in_progress','paused','exception','arrival_pending_verification'].includes(mission?.status||'')?30000:false});
+ const detailQ=useQuery<{data:MissionDetail}>({queryKey:['sjm-field-detail',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId)).data,enabled:Boolean(identityReady&&selectedId&&!revalidatingMissionIds.has(selectedId)),staleTime:10000,refetchInterval:['in_progress','paused','exception','arrival_pending_verification'].includes(mission?.status||'')?30000:false});
  const detailHttpStatus=Number((detailQ.error as {response?:{status?:number}}|null)?.response?.status||0);
  const detailAccessDenied=detailQ.isError&&[403,404].includes(detailHttpStatus);
  const missionDetail=detailAccessDenied?undefined:detailQ.data?.data;
@@ -143,9 +146,10 @@ export default function ExecutiveMobility(){
   const current=missions.find(m=>m.id===selectedId),knownStatus=current?.flight_status;
   setFlightStatus(knownStatus&&knownStatus!=='unknown'?knownStatus:'');
  },[selectedId,missions]);
- const channelQ=useQuery<{data:{channel_id:string;realtime_channel:string;comms_epoch:number}}>({queryKey:['sjm-mission-channel',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/communications')).data,enabled:Boolean(selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),staleTime:15000});
- const channelId=detailAccessDenied||revalidatingMissionIds.has(selectedId)?null:channelQ.data?.data.channel_id||null,messagesQ=useMessages(channelId),sendMessage=useSendMessage(channelId||'');
+ const channelQ=useQuery<{data:{channel_id:string;realtime_channel:string;comms_epoch:number}}>({queryKey:['sjm-mission-channel',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/communications')).data,enabled:Boolean(identityReady&&selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),staleTime:15000});
+ const channelId=!identityReady||detailAccessDenied||revalidatingMissionIds.has(selectedId)?null:channelQ.data?.data.channel_id||null,messagesQ=useMessages(channelId),sendMessage=useSendMessage(channelId||'');
  const revalidateRosterMissionAccess=useCallback(async(missionId:string,markNewEvent=true)=>{
+  const workIdentity=identityKey;
   if(markNewEvent){
    const nextVersion=(rosterRevalidationVersionRef.current.get(missionId)||0)+1;
    rosterRevalidationVersionRef.current.set(missionId,nextVersion);
@@ -156,12 +160,14 @@ export default function ExecutiveMobility(){
   rosterRevalidationInFlightRef.current=true;
   const snapshotChanged=(versions:Map<string,number>)=>rosterRevalidationVersionRef.current.size!==versions.size||[...versions].some(([id,version])=>rosterRevalidationVersionRef.current.get(id)!==version);
   try{
-   while(rosterRevalidationVersionRef.current.size){
+   while(rosterRevalidationVersionRef.current.size&&identityKeyRef.current===workIdentity){
     const versions=new Map(rosterRevalidationVersionRef.current);
     const missionIds=[...versions.keys()];
     await Promise.all(missionIds.map(id=>clearRevokedSjmFieldMissionCache(qc,user?.org_id,user?.id,id,false)));
+    if(identityKeyRef.current!==workIdentity)return;
     if(snapshotChanged(versions))continue;
     const refreshed=await missionQ.refetch({throwOnError:true}).catch(()=>null);
+    if(identityKeyRef.current!==workIdentity)return;
     if(snapshotChanged(versions))continue;
     if(!refreshed||!refreshed.isSuccess||!refreshed.data?.data)throw new Error('Current mission assignments could not be confirmed.');
     const classified=classifyRosterRevalidation(missionIds,refreshed.data.data);
@@ -180,9 +186,10 @@ export default function ExecutiveMobility(){
   }finally{
    rosterRevalidationInFlightRef.current=false;
   }
- },[missionQ.refetch,qc,user?.org_id,user?.id]);
+ },[missionQ.refetch,qc,user?.org_id,user?.id,identityKey]);
 
  const handleFieldRosterRevocation=useCallback((revokedChannelId:string,revokedJourneyId?:string)=>{
+  if(!identityReady)return;
   const currentChannelId=channelQ.data?.data.channel_id;
   const missionId=revokedJourneyId||(selectedId&&currentChannelId===revokedChannelId?selectedId:null);
   if(!missionId)return;
@@ -190,9 +197,9 @@ export default function ExecutiveMobility(){
   if(selectedId===missionId)setAccessNotice(true);
   // Revalidate and purge even when this is a previously viewed, currently inactive mission.
   void revalidateRosterMissionAccess(missionId,true);
- },[channelQ.data?.data.channel_id,selectedId,revalidateRosterMissionAccess]);
+ },[channelQ.data?.data.channel_id,selectedId,revalidateRosterMissionAccess,identityReady]);
  useCommsRealtime(user?.org_id,channelId,user?.id,detailAccessDenied?undefined:channelQ.data?.data.realtime_channel,selectedId,handleFieldRosterRevocation);
- const eventsQ=useQuery<{data:FieldEvent[]}>({queryKey:['sjm-field-events',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/field-events')).data,enabled:Boolean(selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),refetchInterval:30000});
+ const eventsQ=useQuery<{data:FieldEvent[]}>({queryKey:['sjm-field-events',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/field-events')).data,enabled:Boolean(identityReady&&selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),refetchInterval:30000});
  const actions=useMemo(()=>{const map=new Map<string,{type:string;label:string}>();for(const r of mission?.duty_roles||[])for(const a of ACTIONS[r]||[])map.set(a.type,a);return [...map.values()]},[mission?.duty_roles]);
  const routineActions=useMemo(()=>actions.filter(a=>!notes.includes(a.type)),[actions]);
  const nextRoutineAction=useMemo(()=>eventsQ.isSuccess?routineActions.find(a=>!(eventsQ.data?.data||[]).some(e=>e.event_type===a.type)):undefined,[routineActions,eventsQ.data,eventsQ.isSuccess]);
@@ -201,6 +208,7 @@ export default function ExecutiveMobility(){
  const canFlight=Boolean(mission?.flight_number&&((mission.duty_roles||[]).some(r=>['cpo','meet_greet','dispatcher'].includes(r))||['admin','dispatcher'].includes(String(user?.role||'').toLowerCase())));
  const send=()=>{const body=draft.trim();if(body&&channelId)sendMessage.mutate({text:body},{onSuccess:()=>setDraft('')})};
  const report=(type:string)=>{if(notes.includes(type)&&eventNote.trim().length<5)return;reportQ.mutate({event_type:type,note:eventNote.trim()||undefined})};
+ if(!identityReady)return <main className="sjm-field-console min-h-screen bg-[#080c12] p-5 text-slate-300">Refreshing authorised mission scope…</main>;
  if(missionQ.isLoading)return <main className="sjm-field-console min-h-screen bg-[#080c12] p-5 text-slate-300">Loading assigned missions…</main>;
  if(missionQ.isError)return <main className="sjm-field-console min-h-screen bg-[#080c12] p-5 text-slate-300"><section className="mx-auto max-w-2xl rounded-md border border-red-300/20 p-6"><h1 className="text-xl text-white">Mission service unavailable</h1><p className="mt-2 text-sm text-slate-400">No sample assignment is shown. Check the connection before retrying.</p><button className="mt-4 rounded-md border border-white/10 px-4 py-3" onClick={()=>{if(revalidatingMissionIds.size)void Promise.all([...revalidatingMissionIds].map(id=>revalidateRosterMissionAccess(id,false)));else void missionQ.refetch().catch(()=>undefined)}}>Retry</button></section></main>;
  return <main className="sjm-field-console min-h-screen bg-[#080c12] text-slate-100"><header className="border-b border-white/[0.08] bg-[#0b1118] px-4 py-4 sm:px-6"><div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3"><div><p className="text-[11px] font-semibold tracking-[.05em] text-emerald-300">Sonalit / Field operations</p><h1 className="mt-1 text-xl font-semibold">Executive Mobility</h1><p className="mt-1 text-[11px] text-slate-500">Assigned missions · auditable check-ins · no fabricated live state</p></div><Link to="/corridor/journeys" className="inline-flex items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-xs"><ArrowLeft size={13}/>SJM desk</Link></div></header>
