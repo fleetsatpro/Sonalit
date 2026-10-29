@@ -167,7 +167,7 @@ async function stubSjmApi(page: Page) {
   );
 }
 
-async function stubFieldSjmApi(page: Page) {
+async function stubFieldSjmApi(page: Page, detail: Record<string, unknown> = { ...journey, duty_roles: ['driver'] }) {
   await page.route('**/api/v1/sjm/**', async (route) => {
     const url = new URL(route.request().url());
     const pathname = url.pathname;
@@ -177,6 +177,9 @@ async function stubFieldSjmApi(page: Page) {
         contentType: 'application/json',
         body: JSON.stringify({ data: [{ ...journey, duty_roles: ['driver'] }] }),
       });
+    }
+    if (pathname === '/api/v1/sjm/journeys/' + JOURNEY_ID && route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: detail }) });
     }
     if (pathname.endsWith('/communications')) {
       return route.fulfill({
@@ -281,6 +284,44 @@ test.describe('SJM command-centre responsive smoke', () => {
     await team.locator('summary').click();
     await expect(team).toHaveAttribute('open', '');
     await expect(team.getByLabel('Active organisation user')).toBeVisible();
+  });
+
+
+  test('field route map shows locations without inventing an unassessed route', async ({ page }) => {
+    await seedAuth(page);
+    await stubFieldSjmApi(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+
+    const routeMap = page.getByTestId('sjm-field-route-map');
+    await expect(routeMap).toBeVisible({ timeout: 15000 });
+    await expect(routeMap).toHaveAttribute('data-route-evidence', 'unavailable');
+    await expect(page.getByText('No routed Route Safety geometry is available. The map does not connect endpoints.')).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Ordered checkpoints' }).getByText('Meet point')).toBeVisible();
+    await expect(page.getByText(/no live position inferred/)).toBeVisible();
+  });
+
+  test('field route map draws only stored routed geometry and labels its safety gate', async ({ page }) => {
+    await seedAuth(page);
+    const routedDetail = {
+      ...journey,
+      duty_roles: ['driver'],
+      route_assessment: { route_status: 'routed', safety_gate: 'GO' },
+      planned_route: [
+        { lat: -1.3192, lng: 36.9275 },
+        { lat: -1.3020, lng: 36.9000 },
+        { lat: -1.2864, lng: 36.8172 },
+      ],
+    };
+    await stubFieldSjmApi(page, routedDetail);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+
+    const routeMap = page.getByTestId('sjm-field-route-map');
+    await expect(routeMap).toBeVisible({ timeout: 15000 });
+    await expect(routeMap).toHaveAttribute('data-route-evidence', 'routed');
+    await expect(routeMap.getByText('Route Safety · GO')).toBeVisible();
+    await expect(routeMap.getByText('The line is stored Route Safety planned geometry, not a live GPS track.')).toBeVisible();
   });
 
   test('field communications appear before check-in actions on a narrow screen', async ({ page }) => {

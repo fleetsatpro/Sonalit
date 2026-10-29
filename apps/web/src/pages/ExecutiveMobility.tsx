@@ -3,12 +3,20 @@ import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Clock3, MessageCircle, PlaneLanding, PlaneTakeoff, RefreshCw, ShieldCheck, Users } from 'lucide-react';
 import { api } from '../lib/api.js';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { STREET_STYLE } from '../lib/mapStyles.js';
+import { toCoordinatePair } from '../lib/coordinatePair.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useMessages, useSendMessage } from '../features/comms/hooks/useComms.js';
 import { useCommsRealtime } from '../features/comms/hooks/useCommsRealtime.js';
 type DutyRole='driver'|'backup_driver'|'cpo'|'meet_greet'|'security_escort'|'dispatcher';
 type FlightStatus='unknown'|'scheduled'|'delayed'|'landed'|'departed'|'cancelled'|'diverted';
 type Mission={id:string;reference:string;title:string;purpose:string;service_type:string;status:string;origin_label:string;origin_lat:number|string;origin_lng:number|string;destination_label:string;destination_lat:number|string;destination_lng:number|string;planned_departure_at?:string|null;planned_arrival_at?:string|null;timezone:string;principal_reference?:string|null;airport_code?:string|null;terminal?:string|null;airline?:string|null;flight_number?:string|null;flight_scheduled_at?:string|null;flight_status:FlightStatus;flight_status_source:string;flight_status_observed_at?:string|null;meet_greet_instructions?:string|null;duty_roles:DutyRole[]};
+type FieldPoint={lat:number;lng:number;name?:string;label?:string};
+type FieldStop={id:string;sequence:number;name:string;stop_status:'planned'|'reached'|'skipped';lat?:number|string|null;lng?:number|string|null};
+type FieldAssessment={route_status?:string;safety_gate?:string};
+type MissionDetail=Mission & {planned_route?:FieldPoint[]|string;route_assessment?:FieldAssessment|string|null;stops?:FieldStop[];planned_distance_km?:number|string|null;planned_duration_minutes?:number|null};
 type FieldEvent={id:string;event_type:string;summary:string;detail?:{note?:string|null;evidence_class?:string};created_at:string;source:string};
 const SERVICES:Record<string,string>={airport_arrival:'Airport arrival',airport_departure:'Airport departure',meet_and_greet:'Meet and greet',close_protection:'Close protection',security_escort:'Security escort',executive_transfer:'Executive transfer',other:'Executive mobility'};
 const FLIGHTS:Record<FlightStatus,string>={unknown:'Unknown',scheduled:'Scheduled',delayed:'Delayed',landed:'Landed',departed:'Departed',cancelled:'Cancelled',diverted:'Diverted'};
@@ -25,6 +33,78 @@ const fmt=(v?:string|null)=>{if(!v)return'Not scheduled';const d=new Date(v);ret
 const words=(s:string)=>s.replaceAll('_',' ').replace(/\b\w/g,m=>m.toUpperCase());
 const notes=['delay','vehicle_issue','incident','security_concern'];
 const tone=(s:string)=>['in_progress','ready_to_depart'].includes(s)?'border-emerald-300/20 bg-emerald-300/[0.07] text-emerald-100':['paused','exception','on_hold','arrival_pending_verification'].includes(s)?'border-amber-300/25 bg-amber-300/[0.07] text-amber-100':'border-white/10 bg-white/[0.035] text-slate-300';
+function fieldRoutePoints(value:MissionDetail['planned_route']):FieldPoint[]{
+ if(Array.isArray(value))return value.filter(point=>point&&Number.isFinite(Number(point.lat))&&Number.isFinite(Number(point.lng)));
+ if(typeof value==='string'){try{const parsed=JSON.parse(value);return Array.isArray(parsed)?parsed.filter(point=>point&&Number.isFinite(Number(point.lat))&&Number.isFinite(Number(point.lng))):[]}catch{return [];}}
+ return [];
+}
+function fieldAssessmentOf(value:MissionDetail['route_assessment']):FieldAssessment|null{
+ if(value&&typeof value==='object')return value as FieldAssessment;
+ if(typeof value==='string'){try{return JSON.parse(value) as FieldAssessment}catch{return null;}}
+ return null;
+}
+function fieldMapMarker(letter:string,label:string,fill:string){
+ const root=document.createElement('div');
+ root.title=label;root.setAttribute('role','img');root.setAttribute('aria-label',label);
+ root.style.width='25px';root.style.height='25px';root.style.display='grid';root.style.placeItems='center';
+ root.style.borderRadius='50%';root.style.background=fill;root.style.border='2px solid #f1f5f9';
+ root.style.color='#07111d';root.style.fontSize='11px';root.style.fontWeight='700';root.style.boxShadow='0 1px 3px rgba(0,0,0,.32)';
+ root.textContent=letter;return root;
+}
+function FieldRouteMap({mission,detail,loading,error}:{mission:Mission;detail?:MissionDetail;loading:boolean;error:boolean}){
+ const containerRef=useRef<HTMLDivElement>(null);
+ const mapRef=useRef<maplibregl.Map|null>(null);
+ const markersRef=useRef<maplibregl.Marker[]>([]);
+ const [mapReady,setMapReady]=useState(false);
+ const origin=useMemo(()=>toCoordinatePair(mission.origin_lat,mission.origin_lng),[mission.origin_lat,mission.origin_lng]);
+ const destination=useMemo(()=>toCoordinatePair(mission.destination_lat,mission.destination_lng),[mission.destination_lat,mission.destination_lng]);
+ const assessment=useMemo(()=>fieldAssessmentOf(detail?.route_assessment),[detail?.route_assessment]);
+ const routeCoords=useMemo(()=>fieldRoutePoints(detail?.planned_route).map(point=>toCoordinatePair(point.lat,point.lng)),[detail?.planned_route]);
+ const drawRoute=assessment?.route_status==='routed'&&routeCoords.length>=2&&routeCoords.every(point=>point!==null);
+ const displayRoute=drawRoute?routeCoords as [number,number][]:[];
+ const stopPoints=useMemo(()=>[...(detail?.stops||[])].sort((a,b)=>a.sequence-b.sequence).map(stop=>({stop,coord:toCoordinatePair(stop.lat,stop.lng)})).filter((item):item is {stop:FieldStop;coord:[number,number]}=>item.coord!==null),[detail?.stops]);
+ const fitPoints=useMemo(()=>[...(origin?[origin]:[]),...displayRoute,...(destination?[destination]:[]),...stopPoints.map(item=>item.coord)],[origin,destination,displayRoute,stopPoints]);
+ useEffect(()=>{
+  const container=containerRef.current;if(!container||mapRef.current)return;
+  const map=new maplibregl.Map({container,style:STREET_STYLE,center:origin||[37.5,-1.3],zoom:5,attributionControl:false});
+  map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'bottom-right');
+  map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
+  map.on('load',()=>setMapReady(true));mapRef.current=map;
+  const resizeObserver=new ResizeObserver(()=>map.resize());resizeObserver.observe(container);
+  return ()=>{resizeObserver.disconnect();markersRef.current.forEach(marker=>marker.remove());markersRef.current=[];map.remove();mapRef.current=null;setMapReady(false)};
+ },[]);
+ useEffect(()=>{
+  const map=mapRef.current;if(!map||!mapReady)return;
+  const data:GeoJSON.FeatureCollection={type:'FeatureCollection',features:displayRoute.length>=2?[{type:'Feature',geometry:{type:'LineString',coordinates:displayRoute},properties:{evidence:'ROUTE_SAFETY_PLANNED_GEOMETRY'}}]:[]};
+  const source=map.getSource('sjm-field-planned-route') as maplibregl.GeoJSONSource|undefined;
+  const gate=String(assessment?.safety_gate||'').toUpperCase();
+  const lineColor=gate==='NO_GO'?'#b91c1c':['HUMAN_REVIEW','CONDITIONAL'].includes(gate)?'#b45309':gate==='GO'?'#047857':'#64748b';
+  if(source)source.setData(data);
+  else{map.addSource('sjm-field-planned-route',{type:'geojson',data});map.addLayer({id:'sjm-field-planned-route-line',type:'line',source:'sjm-field-planned-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':lineColor,'line-width':3.5,'line-opacity':0.95}});}
+  if(map.getLayer('sjm-field-planned-route-line'))map.setPaintProperty('sjm-field-planned-route-line','line-color',lineColor);
+  markersRef.current.forEach(marker=>marker.remove());markersRef.current=[];
+  const add=(coord:[number,number]|null,letter:string,label:string,fill:string)=>{if(coord)markersRef.current.push(new maplibregl.Marker({element:fieldMapMarker(letter,label,fill),anchor:'center'}).setLngLat(coord).addTo(map));};
+  add(origin,'O','Planned origin · '+mission.origin_label,'#bae6fd');
+  stopPoints.forEach(({stop,coord})=>add(coord,String(stop.sequence),String(stop.sequence)+'. '+stop.name+' · '+(stop.stop_status==='reached'?'operator-confirmed reached':stop.stop_status==='skipped'?'operator-confirmed skipped':'planned stop'),stop.stop_status==='reached'?'#bbf7d0':stop.stop_status==='skipped'?'#cbd5e1':'#fde68a'));
+  add(destination,'D','Planned destination · '+mission.destination_label,'#a7f3d0');
+  map.resize();
+  if(fitPoints.length>1){const bounds=new maplibregl.LngLatBounds();fitPoints.forEach(point=>bounds.extend(point));map.fitBounds(bounds,{padding:{top:36,bottom:44,left:34,right:44},maxZoom:13,duration:350});}
+  else if(fitPoints.length===1)map.flyTo({center:fitPoints[0],zoom:12,duration:350});
+ },[mapReady,displayRoute,origin,destination,stopPoints,fitPoints,assessment?.safety_gate,mission.origin_label,mission.destination_label]);
+ const gate=String(assessment?.safety_gate||'UNAVAILABLE').toUpperCase();
+ const gateClass=gate==='GO'?'border-emerald-300/25 text-emerald-200':gate==='NO_GO'?'border-red-300/25 text-red-200':['HUMAN_REVIEW','CONDITIONAL'].includes(gate)?'border-amber-300/25 text-amber-200':'border-white/10 text-slate-400';
+ const note=loading?'Loading the authorised itinerary…':error?'The detailed itinerary is unavailable. Only the endpoints from the assignment summary are shown; no route line is drawn.':drawRoute?'The line is stored Route Safety planned geometry, not a live GPS track.':assessment?.route_status==='routed'?'The assessment marks this route as routed, but its stored geometry is incomplete; no line is drawn.':'No routed Route Safety geometry is available. The map does not connect endpoints.';
+ return <section data-testid="sjm-field-route-map" data-route-evidence={drawRoute?'routed':'unavailable'} aria-label="Journey route map" className="overflow-hidden rounded-lg border border-white/[0.09] bg-[#0a1120]/95">
+  <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3"><div><h3 className="text-sm font-semibold text-white">Route & checkpoints</h3><p className="mt-1 text-[11px] text-slate-500">Planned locations · no live position inferred</p></div><span className={'rounded-md border px-2.5 py-1.5 text-[11px] font-semibold '+gateClass}>Route Safety · {gate}</span></header>
+  <div ref={containerRef} data-testid="sjm-field-map-canvas" className="h-[250px] w-full bg-[#101722] sm:h-[330px]"/>
+  <div className="space-y-3 border-t border-white/[0.08] p-3 sm:p-4">
+   <p className="text-[11px] leading-5 text-slate-400">{note}</p>
+   <div className="flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-slate-400"><span><b className="mr-1 text-sky-200">O</b> Origin</span><span><b className="mr-1 text-amber-200">#</b> Planned stop</span><span><b className="mr-1 text-emerald-200">D</b> Destination</span></div>
+   {detail?.stops?.length?<ol aria-label="Ordered checkpoints" className="space-y-1.5 border-t border-white/[0.07] pt-3">{[...detail.stops].sort((a,b)=>a.sequence-b.sequence).map(stop=><li key={stop.id} className="flex items-start justify-between gap-3 text-[11px]"><span className="min-w-0 text-slate-300"><span className="mr-2 inline-block font-mono text-slate-500">{String(stop.sequence).padStart(2,'0')}</span>{stop.name}</span><span className={stop.stop_status==='reached'?'shrink-0 text-emerald-200':stop.stop_status==='skipped'?'shrink-0 text-slate-400':'shrink-0 text-amber-200'}>{stop.stop_status==='reached'?'Reached · operator confirmed':stop.stop_status==='skipped'?'Skipped · operator confirmed':'Planned'}</span></li>)}</ol>:<p className="border-t border-white/[0.07] pt-3 text-[11px] text-slate-500">{loading?'Loading checkpoint sequence…':error?'Checkpoint sequence unavailable.':'No intermediate stops are recorded.'}</p>}
+  </div>
+ </section>;
+}
+
 export default function ExecutiveMobility(){
  const user=useAuthStore(s=>s.user),qc=useQueryClient();
  const [selectedId,setSelectedId]=useState(''),[eventType,setEventType]=useState('delay'),[eventNote,setEventNote]=useState(''),[flightStatus,setFlightStatus]=useState<FlightStatus|''>(''),[flightNote,setFlightNote]=useState(''),[draft,setDraft]=useState('');
@@ -33,6 +113,8 @@ export default function ExecutiveMobility(){
  const missions=missionQ.data?.data||[];
  useEffect(()=>{if(!selectedId&&missions.length)setSelectedId(missions[0]!.id);else if(selectedId&&!missions.some(m=>m.id===selectedId))setSelectedId(missions[0]?.id||'')},[missions,selectedId]);
  const mission=missions.find(m=>m.id===selectedId);
+ const detailQ=useQuery<{data:MissionDetail}>({queryKey:['sjm-field-detail',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId)).data,enabled:Boolean(selectedId),staleTime:10000,refetchInterval:['in_progress','paused','exception','arrival_pending_verification'].includes(mission?.status||'')?30000:false});
+ const missionDetail=detailQ.data?.data;
  useEffect(()=>{
   if(previousMissionId.current===selectedId)return;
   previousMissionId.current=selectedId;
@@ -64,6 +146,7 @@ export default function ExecutiveMobility(){
      <div className="mt-4 rounded-lg border border-white/[0.07] bg-black/15 p-4"><h3 className="text-xs font-semibold">Mission instructions</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">{mission?.purpose}</p>{mission?.principal_reference&&<p className="mt-3 text-[11px] text-slate-500">Principal / booking reference: {mission.principal_reference}</p>}{mission?.meet_greet_instructions&&<p className="mt-3 whitespace-pre-wrap border-t border-white/[0.06] pt-3 text-sm leading-6">{mission.meet_greet_instructions}</p>}<p className="mt-3 text-[11px] text-slate-600">Confirm discrepancies with dispatch. This is stored mission data, not live safety clearance.</p></div>
      {mission?.flight_number&&<div className="mt-4 rounded-lg border border-white/[0.08] bg-white/[0.025] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-mono text-[11px]  tracking-[.16em] text-slate-300">Airport coordination</p><h3 className="mt-1 text-lg font-semibold">{mission.airline||'Airline not recorded'} · {mission.flight_number}</h3><p className="mt-1 text-xs text-slate-400">{mission.airport_code||'Airport not recorded'}{mission.terminal?' · '+mission.terminal:''} · Scheduled {fmt(mission.flight_scheduled_at)}</p></div><span className="rounded-lg border border-white/[0.08] px-3 py-2 text-xs">{FLIGHTS[mission.flight_status]||'Unknown'}</span></div><p className="mt-3 text-[11px] text-amber-200/80">{mission.flight_status_source==='operator_entered'?'Operator-entered · '+fmt(mission.flight_status_observed_at):'No operator observation recorded'}. No connected airline feed.</p></div>}
     </div>
+    {mission&&<FieldRouteMap key={mission.id} mission={mission} detail={missionDetail} loading={detailQ.isLoading} error={detailQ.isError}/>}
     <section aria-label="Private mission channel" className="rounded-lg border border-emerald-300/15 bg-[#0a1120]/95 p-4 sm:p-5"><div className="flex items-center gap-2"><MessageCircle size={15} className="text-emerald-200"/><h3 className="text-base font-semibold">Private mission channel</h3></div><p className="mt-2 text-[11px] leading-5 text-slate-500">Uses existing Ops Comms and active mission-team membership.</p><div className="mt-4 max-h-[360px] space-y-3 overflow-y-auto">{channelQ.isLoading?<p className="text-xs text-slate-500">Opening secured channel…</p>:channelQ.isError?<p className="text-xs text-amber-200">Mission chat unavailable; check-ins still work separately.</p>:(messagesQ.data?.data||[]).length===0?<p className="text-xs text-slate-500">No messages yet.</p>:(messagesQ.data?.data||[]).map(m=><article key={m.id} className="rounded-md border border-white/[0.06] bg-white/[0.025] p-3"><div className="flex items-center justify-between gap-2"><span className="text-[11px] font-semibold text-emerald-100">{m.author_name||m.author_role||'Team member'}</span><time className="font-mono text-[11px] text-slate-600">{fmt(m.created_at)}</time></div><p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-slate-300">{m.deleted?'Message deleted':m.body}</p></article>)}</div><form onSubmit={e=>{e.preventDefault();send()}} className="mt-3 space-y-2"><textarea className={fieldClass} rows={3} maxLength={4000} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Message assigned mission team…"/><button type="submit" disabled={!channelId||sendMessage.isPending||!draft.trim()} className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-300 px-4 py-3 text-sm font-semibold text-[#04100b] disabled:opacity-40"><MessageCircle size={14}/>Send message <ArrowRight size={14}/></button>{sendMessage.isError&&<p className="text-xs text-red-200">Message not sent; check membership and connection.</p>}</form></section>
     <div className="rounded-lg border border-white/[0.09] bg-[#0a1120]/95 p-4 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[11px]  tracking-[.2em] text-emerald-200">01 / Field check-in</p><h3 className="mt-1 text-lg font-semibold">Mission milestones</h3><p className="mt-1 text-xs text-slate-500">These reports do not prove GPS presence or alter lifecycle state.</p></div><Activity size={17} className="text-emerald-200"/></div><div className="mt-4"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><p className="text-[11px] font-semibold text-slate-200">Routine check-ins</p><p className="text-[11px] text-slate-500">Record only after the milestone occurs</p></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{routineActions.map(a=>{const isNext=eventsQ.isSuccess&&nextRoutineAction?.type===a.type;return <button type="button" key={a.type} disabled={reportQ.isPending} onClick={()=>report(a.type)} className={isNext?'min-h-[68px] rounded-lg border border-emerald-300/30 bg-emerald-300/[0.07] p-3 text-left text-sm text-slate-100 disabled:opacity-50':'min-h-[68px] rounded-lg border border-white/[0.10] bg-white/[0.02] p-3 text-left text-sm text-slate-200 hover:bg-white/[0.04] disabled:opacity-50'}><span className="flex items-center gap-2"><span className={'h-2 w-2 shrink-0 rounded-full '+(isNext?'bg-emerald-300':'bg-slate-500')}/>{a.label}</span>{isNext&&<span className="mt-2 block text-[11px] text-emerald-300">Next unrecorded check-in</span>}</button>})}</div>{eventsQ.isSuccess&&routineActions.length>0&&!nextRoutineAction&&<p className="mt-3 text-[11px] leading-5 text-slate-500">Every listed check-in has been recorded at least once. Entries remain available for repeat confirmation when required.</p>}</div><div className="mt-4 rounded-lg border border-white/[0.07] bg-black/15 p-4"><label className="block"><span className="mb-1.5 block text-[11px] text-slate-400">Delay, issue or incident report</span><select className={fieldClass} value={eventType} onChange={e=>setEventType(e.target.value)}>{actions.filter(a=>notes.includes(a.type)).map(a=><option key={a.type} value={a.type}>{a.label}</option>)}</select></label><textarea className={fieldClass+' mt-2'} rows={3} maxLength={1200} value={eventNote} onChange={e=>setEventNote(e.target.value)} placeholder="What happened, who was notified, operational impact…"/><button type="button" disabled={reportQ.isPending||eventNote.trim().length<5||!actions.some(a=>a.type===eventType)} onClick={()=>report(eventType)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-sm text-amber-100 disabled:opacity-40"><AlertTriangle size={14}/>Record field report</button>{reportQ.isError&&<p className="mt-2 text-xs text-red-200">Server rejected this report; delivery is not assumed.</p>}{reportQ.isSuccess&&<p className="mt-2 text-xs text-emerald-200">Field report accepted by the server.</p>}</div></div>
     {canFlight&&<div className="rounded-lg border border-white/[0.08] bg-[#0a1120]/95 p-4 sm:p-6"><div className="flex items-center gap-2"><PlaneLanding size={16} className="text-slate-300"/><h3 className="text-lg font-semibold">Flight-status observation</h3></div><p className="mt-2 text-xs leading-5 text-slate-400">Enter what you saw on an authorised airport/airline display or direct operational contact. Sonalit has not independently verified it.</p><div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2"><label><span className="mb-1.5 block text-[11px] text-slate-400">Status</span><select className={fieldClass} value={flightStatus} onChange={e=>setFlightStatus(e.target.value as FlightStatus|'')}><option value="">Choose observed status…</option>{(['scheduled','delayed','landed','departed','cancelled','diverted'] as FlightStatus[]).map(f=><option key={f} value={f}>{FLIGHTS[f]}</option>)}</select></label><label><span className="mb-1.5 block text-[11px] text-slate-400">Note (required for delay/cancel/divert)</span><input className={fieldClass} maxLength={1200} value={flightNote} onChange={e=>setFlightNote(e.target.value)} placeholder="Source and context"/></label></div><button type="button" disabled={flightQ.isPending||!flightStatus||(['delayed','cancelled','diverted'].includes(flightStatus)&&flightNote.trim().length<5)} onClick={()=>flightQ.mutate()} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.025] px-4 py-3 text-sm text-slate-300 disabled:opacity-40"><PlaneTakeoff size={14}/>Save operator observation</button>{flightQ.isError&&<p className="mt-2 text-xs text-red-200">Flight status not saved. Refresh and verify the assigned mission.</p>}{flightQ.isSuccess&&<p className="mt-2 text-xs text-emerald-200">Operator-entered status saved with server timestamp.</p>}</div>}
