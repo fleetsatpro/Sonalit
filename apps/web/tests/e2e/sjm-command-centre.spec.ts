@@ -440,6 +440,38 @@ test.describe('SJM command-centre responsive smoke', () => {
 
 
 
+  test('field workspace stays locked until the authenticated assignment refresh settles', async ({ page }) => {
+    await seedAuth(page);
+    await stubFieldSjmApi(page);
+
+    let releaseAssignments!: () => void;
+    let signalAssignmentsRequest!: () => void;
+    const assignmentsRequestStarted = new Promise<void>((resolve) => { signalAssignmentsRequest = resolve; });
+    const assignmentsGate = new Promise<void>((resolve) => { releaseAssignments = resolve; });
+
+    // Override the broad field stub and deliberately hold the fresh assignment
+    // response. The stale-cache path must not render the mission before release.
+    await page.route('**/api/v1/sjm/my-assignments', async (route) => {
+      signalAssignmentsRequest();
+      await assignmentsGate;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: [{ ...journey, duty_roles: ['driver'] }] }),
+      });
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+    await assignmentsRequestStarted;
+
+    await expect(page.getByText('Refreshing authorised mission scope…')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).not.toBeVisible();
+
+    releaseAssignments();
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+  });
+
   test('field app withholds cached mission details when the server revokes access', async ({ page }) => {
     await seedAuth(page);
     await stubFieldSjmApi(page);
