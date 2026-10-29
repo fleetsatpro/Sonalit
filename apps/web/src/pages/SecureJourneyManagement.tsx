@@ -5,11 +5,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
+import { FALLBACK_STREET_STYLE, STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
 import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
 import { useAuthStore } from '../stores/auth.js';
-import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, MessagesSquare, Navigation, Pencil, Plus, RefreshCw, Route, Satellite, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, MessagesSquare, Navigation, Pencil, Plus, RefreshCw, Route, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
 type Point={lat:number;lng:number;name?:string;label?:string};
@@ -153,7 +153,7 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
   const markersRef=useRef<maplibregl.Marker[]>([]);
   const observedMarkersRef=useRef<maplibregl.Marker[]>([]);
   const [mapReady,setMapReady]=useState(false);
-  const [satellite,setSatellite]=useState(false);
+  const [basemap,setBasemap]=useState<'street'|'dark'|'satellite'>('dark');
   const [showObserved,setShowObserved]=useState(true);
   const origin=useMemo(()=>mapCoord(journey.origin_lat,journey.origin_lng),[journey.origin_lat,journey.origin_lng]);
   const destination=useMemo(()=>mapCoord(journey.destination_lat,journey.destination_lng),[journey.destination_lat,journey.destination_lng]);
@@ -169,7 +169,7 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
   useEffect(()=>{
     const container=containerRef.current;
     if(!container||mapRef.current)return;
-    const map=new maplibregl.Map({container,style:STREET_STYLE,center:[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
+    const map=new maplibregl.Map({container,style:FALLBACK_STREET_STYLE,center:[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
      container.dataset.sjmMapState='loading';
     map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'bottom-right');
     map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
@@ -234,13 +234,13 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
       observedMarkersRef.current.push(new maplibregl.Marker({element:journeyMarkerElement(kind,title),anchor:'bottom',offset:[0,-7]}).setLngLat(coord).addTo(map));
     });
   },[mapReady,showObserved,observedPoints]);
-  const toggleBasemap=()=>{
-    const map=mapRef.current;if(!map)return;
-    const next=!satellite;
+  const changeBasemap=(value:'street'|'dark'|'satellite')=>{
+    const map=mapRef.current;
+    if(!map||value===basemap)return;
     setMapReady(false);
-    map.setStyle(next?SAT_STYLE:STREET_STYLE);
     map.once('style.load',()=>setMapReady(true));
-    setSatellite(next);
+    map.setStyle(value==='satellite'?SAT_STYLE:value==='dark'?FALLBACK_STREET_STYLE:STREET_STYLE);
+    setBasemap(value);
   };
   const fitMap=()=>{
     const map=mapRef.current;if(!map||fitPoints.length===0)return;
@@ -251,13 +251,17 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
   };
   return <div className="overflow-hidden rounded-lg border border-[#2a3948] bg-[#0b131c]">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.07] bg-black/20 px-3 py-2.5">
-      <div><p className="text-xs font-semibold text-slate-200">Route map</p><p className="mt-1 text-[11px] text-slate-500">{hasRoutedGeometry?'Assessed path · '+displayRoute.length+' waypoints':'No assessed route path · planned locations only'}</p></div>
-      <div className="flex flex-wrap gap-1.5"><button type="button" onClick={toggleBasemap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[11px] text-slate-300 hover:bg-white/[0.08]" aria-label={satellite?'Switch to street basemap':'Switch to satellite basemap'}><Satellite size={12}/>{satellite?'Satellite':'Street'}</button>{observedPoints.length>0?<button type="button" onClick={()=>setShowObserved(value=>!value)} className={'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-[11px] '+(showObserved?'border-emerald-300/20 bg-emerald-300/[0.06] text-emerald-100':'border-white/10 bg-white/[0.035] text-slate-300 hover:bg-white/[0.08]')} aria-pressed={showObserved} aria-label={showObserved?'Hide observed device layer':'Show observed device layer'}><Activity size={12}/>{showObserved?'Hide device observations':'Show device observations'} · {observedPoints.length}</button>:<span role="status" aria-label="No device locations to show" title="No usable device coordinates are available for the map." className="inline-flex min-h-[34px] items-center rounded-md border border-white/[0.08] bg-white/[0.02] px-2.5 py-2 text-[11px] text-slate-400">No device locations to show</span>}<button type="button" onClick={fitMap} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[11px] text-slate-300 hover:bg-white/[0.08]" aria-label="Fit map to planned route"><Maximize2 size={12}/>Fit route</button></div>
+      <div><p className="text-xs font-semibold text-slate-200">Journey map</p><p className="mt-1 text-[11px] text-slate-500">{hasRoutedGeometry?'Assessed path · '+displayRoute.length+' waypoints':'Route not assessed · planned locations only'}</p></div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <label className="sjm-map-style-control"><span>Basemap</span><select aria-label="Map basemap" data-testid="sjm-map-style" className="sjm-map-style-select" value={basemap} onChange={event=>changeBasemap(event.target.value as 'street'|'dark'|'satellite')}><option value="street">Street</option><option value="dark">Dark</option><option value="satellite">Satellite</option></select></label>
+        {observedPoints.length>0?<button type="button" onClick={()=>setShowObserved(value=>!value)} className={'inline-flex min-h-[34px] items-center gap-1.5 rounded-md border px-2.5 py-2 text-[11px] font-medium '+(showObserved?'border-emerald-300/20 bg-emerald-300/[0.06] text-emerald-100':'border-white/10 bg-white/[0.035] text-slate-300 hover:bg-white/[0.08]')} aria-pressed={showObserved} aria-label={showObserved?'Hide observed device layer':'Show observed device layer'}><Activity size={12}/>{showObserved?'Observed':'Show devices'} · {observedPoints.length}</button>:<span role="status" aria-label="No device locations to show" title="No usable device coordinates are available for the map." className="inline-flex min-h-[34px] items-center rounded-md border border-white/[0.08] bg-white/[0.02] px-2.5 py-2 text-[11px] text-slate-400">No device fixes</span>}
+        <button type="button" onClick={fitMap} className="inline-flex min-h-[34px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-white/[0.08]" aria-label="Fit map to planned route"><Maximize2 size={12}/>Fit route</button>
+      </div>
     </div>
     <div ref={containerRef} data-sjm-map="journey" data-sjm-map-state="loading" role="img" aria-label="Map of the selected journey showing planned locations and any assessed route" className="h-[320px] w-full bg-[#07111d] sm:h-[390px] xl:h-[470px] 2xl:h-[520px]"/>
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-3 py-2 text-[11px] font-mono text-slate-500">
       {hasRoutedGeometry&&<span>Geometry source: Route Safety</span>}
-      <span className="flex flex-wrap gap-3"><span className="text-slate-300">● Planned origin</span><span className="text-orange-300">● Planned stop</span><span className="text-emerald-200">● Planned destination</span>{showObserved&&observedPoints.length>0&&<span className="text-emerald-300">● Observed device fix ({observedPoints.length})</span>}{!showObserved&&observedPoints.length>0&&<span className="text-slate-500">Observed layer hidden ({observedPoints.length})</span>}</span>
+      <span className="flex flex-wrap gap-3"><span className="text-cyan-200">● Planned origin</span><span className="text-orange-300">● Planned stop</span><span className="text-emerald-200">● Planned destination</span>{showObserved&&observedPoints.length>0&&<span className="text-emerald-300">● Observed device fix ({observedPoints.length})</span>}{!showObserved&&observedPoints.length>0&&<span className="text-slate-500">Observed layer hidden ({observedPoints.length})</span>}</span>
     </div>
   </div>;
 }
@@ -517,7 +521,7 @@ export default function SecureJourneyManagement(){
 return (
   <main className="sjm-console relative min-h-full overflow-y-auto bg-[#080c12] text-slate-100 antialiased">
    <div className="relative mx-auto max-w-[1760px] space-y-5 p-3 sm:p-5 lg:p-7">
-    <header className="rounded-lg border border-[#283544] bg-[#101720] p-4 sm:p-6 xl:p-7">
+    <header className="sjm-page-header rounded-lg border border-[#283544] bg-[#101720] p-4 sm:p-6 xl:p-7">
      <div className="relative flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
       <div className="max-w-3xl">
        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
@@ -526,19 +530,19 @@ return (
         <span className="text-slate-400">Operations</span>
        </div>
        <h1 className="text-[clamp(1.5rem,2.2vw,2.2rem)] font-semibold leading-tight tracking-tight text-white">Secure Journey Management</h1>
-       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Plan and coordinate executive journeys, from route assessment through verified closeout.</p>
+       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Coordinate airport transfers and protective movements from route review through verified arrival.</p>
        <div className="mt-3 hidden flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400 sm:flex">
-        <span className="inline-flex items-center gap-2"><ShieldCheck size={13} className="text-emerald-300"/>Organisation-scoped records</span>
+        <span className="inline-flex items-center gap-2"><ShieldCheck size={13} className="text-emerald-300"/>Organisation access</span>
         <span className="inline-flex items-center gap-2"><Route size={13} className="text-slate-300"/>Route Safety review</span>
-        <span className="inline-flex items-center gap-2"><Activity size={13} className="text-slate-300"/>Recorded decisions</span>
+        <span className="inline-flex items-center gap-2"><Activity size={13} className="text-slate-300"/>Audited decisions</span>
        </div>
       </div>
       <div className="flex min-w-0 flex-col gap-3 xl:min-w-[420px] xl:items-end">
        <div className="flex w-full flex-wrap items-center gap-2 xl:justify-end">
-        <div className="inline-flex min-h-[38px] items-center gap-2 rounded-md border border-white/[0.09] bg-black/25 px-3 py-2">
+        <div className="sjm-register-status inline-flex min-h-[38px] items-center gap-2 rounded-md border border-white/[0.09] bg-black/25 px-3 py-2">
          <span className={'h-2 w-2 rounded-full '+(registerQ.isError?'bg-red-400':registerQ.isFetching?'animate-pulse bg-amber-300':'bg-emerald-300')}/>
-         <span className="font-mono text-[11px] font-semibold  tracking-[.15em] text-slate-300">{registerQ.isError?(registerQ.data?'Update failed · showing saved data':'Journey list unavailable'):registerQ.isFetching?'Updating journey list':registerQ.isSuccess?'Journey list ready':'Waiting for data'}</span>
-         <span className="hidden border-l border-white/10 pl-2 text-[11px] text-slate-500 sm:inline">Auto-refresh · 30 sec</span>
+         <span className="sjm-register-state-label text-[11px] font-semibold text-slate-300">{registerQ.isError?(registerQ.data?'Refresh failed · showing last result':'Register unavailable'):registerQ.isFetching?'Refreshing register':registerQ.isSuccess?'Register refreshed':'Loading register'}</span>
+         <span className="hidden border-l border-white/10 pl-2 text-[11px] text-slate-500 sm:inline">Refreshes every 30 sec</span>
         </div>
         <div className="hidden flex-1 text-[11px] text-slate-500 sm:block sm:flex-none xl:text-right">
          <span className="block font-mono  tracking-[.14em] text-slate-600">Last updated</span>
@@ -562,7 +566,7 @@ return (
        <div className="flex items-center justify-between gap-2"><div><Kicker>Register</Kicker><h2 className="mt-1 text-base font-semibold tracking-tight text-white">Journey register</h2></div><span className="font-mono text-[11px] text-slate-400">{registerQ.isError&&!registerQ.data?"Unavailable":registerQ.data?.pagination?registerQ.data.pagination.total_count.toLocaleString()+" matches":registerQ.data?journeys.length+" loaded":"—"}</span></div>
        <div className="relative mt-3"><Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/><input aria-label="Search journeys" className={field+' pl-9'} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Reference, client or route…"/></div>
        <div className="mt-3 flex flex-wrap gap-1.5">
-        {[['all','All'],['active','In operation'],['attention','Attention'],['review','Awaiting review'],['planning','Planning'],['overdue','Overdue'],['departure_due_30m','Departing soon'],['closed','Closed']].map(([value,label])=><button key={value} type="button" onClick={()=>{setFilter(value);setRegisterPage(0)}} className={'rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition '+(filter===value?'border-emerald-300/30 bg-emerald-300/[0.09] text-emerald-100':'border-white/[0.07] bg-white/[0.015] text-slate-500 hover:text-slate-200')}>{label}</button>)}
+        {[['all','All'],['active','In operation'],['attention','Attention'],['review','Awaiting review'],['planning','Planning'],['overdue','Overdue'],['departure_due_30m','Departing soon'],['closed','Closed']].map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>{setFilter(value);setRegisterPage(0)}} className={'sjm-register-filter inline-flex min-h-8 items-center rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition '+(filter===value?'bg-[#20312f] text-emerald-100 ring-1 ring-inset ring-emerald-300/25':'text-slate-400 hover:bg-white/[0.035] hover:text-slate-100')}>{label}</button>)}
        </div>
        <label className="mt-3 flex items-center justify-between gap-3 text-[11px] text-slate-400"><span>Sort journeys</span><select aria-label="Sort journeys" value={registerSort} onChange={event=>{setRegisterSort(event.target.value as RegisterSort);setRegisterPage(0)}} className="min-w-0 max-w-[72%] rounded-md border border-white/[0.10] bg-[#080c12] px-2.5 py-2 text-[11px] text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300">{REGISTER_SORT_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       </div>
@@ -574,7 +578,7 @@ return (
          <div className="flex items-start justify-between gap-2"><span className="font-mono text-[11px] font-semibold tracking-[.08em] text-emerald-200">{j.reference}</span><StatusBadge value={j.status}/></div>
          <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-5 text-slate-100">{j.title}</p>
          <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400"><span className="max-w-[44%] truncate">{j.origin_label}</span><ArrowRight size={12} className="shrink-0 text-slate-600"/><span className="max-w-[44%] truncate">{j.destination_label}</span></div>
-         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.055] pt-2.5"><span className="min-w-0 truncate text-[11px] text-slate-500">{j.client_name||'Unlinked client'}{j.convoy_name?' · '+j.convoy_name:''}</span>{a?<Gate value={a.safety_gate}/>:<span className="font-mono text-[11px] text-slate-600">No assessment gate</span>}</div>
+         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.055] pt-2.5"><span className="min-w-0 truncate text-[11px] text-slate-500">{j.client_name||'Unlinked client'}{j.convoy_name?' · '+j.convoy_name:''}</span>{a?<Gate value={a.safety_gate}/>:<span className="font-mono text-[11px] text-slate-600">Route not assessed</span>}</div>
          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600"><span className="inline-flex items-center gap-1.5"><CalendarClock size={11}/>{dateText(j.planned_departure_at)}</span>{scheduleUrgencyPresentation(j.schedule_urgency)&&<span title={scheduleUrgencyPresentation(j.schedule_urgency)!.title} className={'inline-flex items-center rounded border px-1.5 py-1 font-semibold '+scheduleUrgencyPresentation(j.schedule_urgency)!.className}>{scheduleUrgencyPresentation(j.schedule_urgency)!.label}</span>}<ChevronRight size={13} className={'transition '+(isSelected?'translate-x-0.5 text-emerald-200':'text-slate-700 group-hover:translate-x-0.5 group-hover:text-slate-300')}/></div>
         </button>;
        })}
@@ -601,9 +605,9 @@ return (
         </div>
        </Panel>
 
-               <section aria-label="Journey progress" data-testid="sjm-journey-progress" className="rounded-lg border border-[#263442] bg-[#101720] px-4 py-4 sm:px-5">
+               <section aria-label="Lifecycle milestones" data-testid="sjm-journey-progress" className="rounded-lg border border-[#263442] bg-[#101720] px-4 py-4 sm:px-5">
          <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-xs font-semibold text-slate-200">Journey progress</h3>
+          <h3 className="text-xs font-semibold text-slate-200">Lifecycle milestones</h3>
           <span className="text-xs font-medium tabular-nums text-slate-400">{['cancelled','aborted'].includes(journey.status)?META[journey.status].label:journey.status==='closed'?'Complete':`Stage ${Math.min(lifecycleCheckpointIndex(journey.status,journey)+1,8)} of 8`}</span>
          </div>
          <ol aria-label="Journey stages" className="grid grid-cols-4 gap-x-3 gap-y-3 xl:grid-cols-8">
@@ -612,7 +616,7 @@ return (
         </section>
 <Panel className="overflow-hidden">
         <div className="border-b border-white/[0.07] px-4 pt-4 sm:px-5">
-         <div className="flex flex-wrap items-center justify-between gap-3"><div><Kicker>JOURNEY WORKSPACE</Kicker><h3 className="mt-1 text-sm font-semibold text-white">Journey record</h3></div><span className="font-mono text-[11px] text-slate-600">{events.length} loaded events · {stops.length} stops</span></div>
+         <div className="flex flex-wrap items-center justify-between gap-3"><div><Kicker>Selected journey</Kicker><h3 className="mt-1 text-sm font-semibold text-white">Journey workspace</h3></div><span className="font-mono text-[11px] text-slate-600">{events.length} loaded events · {stops.length} stops</span></div>
          <div className="mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="Journey workspace views">
           {[
            {value:'overview',label:'Overview',Icon:Activity},

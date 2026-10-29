@@ -228,3 +228,88 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   .sjm-console .sjm-panel { border-radius: 9px; }
   .sjm-field-console header { padding-left: 14px; padding-right: 14px; }
 }
+
+
+/* SJM command workspace refinement — quieter surfaces, clearer controls, dark cartography. */
+.sjm-console .sjm-page-header {
+  background: #0d151e;
+  border-color: #2a3948;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .07);
+}
+.sjm-console .sjm-panel {
+  border-radius: 9px;
+  box-shadow: none;
+}
+.sjm-console .sjm-panel .sjm-panel {
+  border-color: #223140;
+  background: #0c141d;
+}
+.sjm-console .sjm-register-status {
+  border-color: #2b3b49;
+  background: #0a121a;
+}
+.sjm-console .sjm-register-state-label {
+  font-family: var(--p-sans, 'Archivo', system-ui, sans-serif);
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+.sjm-console .sjm-register-filter {
+  border-color: transparent;
+  box-shadow: none;
+}
+.sjm-console .sjm-register-filter[aria-pressed="true"] {
+  border-color: rgba(110, 231, 160, .22);
+}
+.sjm-console .sjm-map-style-control {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #2c3b49;
+  border-radius: 7px;
+  background: #101923;
+  padding: 0 9px;
+  color: #9eacba;
+  font-size: 11px;
+  line-height: 1;
+}
+.sjm-console .sjm-map-style-select {
+  appearance: auto;
+  min-width: 70px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 2px;
+  color: #d7e0e8;
+  font: inherit;
+  font-size: 12px;
+  box-shadow: none !important;
+}
+.sjm-console .sjm-map-style-select option {
+  background: #101720;
+  color: #e2e8f0;
+}
+.sjm-console .sjm-map-style-select:focus-visible {
+  outline: 2px solid #75dda1;
+  outline-offset: 3px;
+}
+.sjm-console .maplibregl-ctrl-group {
+  overflow: hidden;
+  border: 1px solid #2d3b49 !important;
+  border-radius: 7px !important;
+  background: #101720 !important;
+  box-shadow: none !important;
+}
+.sjm-console .maplibregl-ctrl-group button + button {
+  border-top: 1px solid #293746 !important;
+}
+.sjm-console .maplibregl-ctrl-group .maplibregl-ctrl-icon {
+  filter: brightness(0) invert(.82);
+}
+.sjm-console .maplibregl-ctrl-attrib {
+  background: rgba(8, 12, 18, .88) !important;
+  color: #aab8c7 !important;
+}
+.sjm-console .maplibregl-ctrl-attrib a {
+  color: #d5dfe9 !important;
+}

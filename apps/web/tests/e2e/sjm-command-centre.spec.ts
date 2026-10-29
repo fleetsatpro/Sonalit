@@ -258,7 +258,10 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(page.getByText('Route has not been assessed', { exact: true })).toBeVisible();
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
       await expect(page.getByTestId('sjm-journey-progress')).toBeVisible();
-      await expect(page.getByTestId('sjm-journey-progress').getByRole('heading', { name: 'Journey progress' })).toBeVisible();
+      await expect(page.getByTestId('sjm-journey-progress').getByRole('heading', { name: 'Lifecycle milestones' })).toBeVisible();
+      const basemapSelect = page.getByRole('combobox', { name: 'Map basemap' });
+      await expect(basemapSelect).toHaveValue('dark');
+      await expect(basemapSelect.locator('option')).toHaveText(['Street', 'Dark', 'Satellite']);
       const mapSurface = page.locator('[data-sjm-map="journey"]');
       await expect(page.getByRole('status', { name: 'No device locations to show' })).toBeVisible();
       await expect(page.getByRole('button', { name: /observed device layer/i })).toHaveCount(0);
