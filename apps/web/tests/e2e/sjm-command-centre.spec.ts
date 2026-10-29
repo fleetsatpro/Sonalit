@@ -266,6 +266,13 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(page.getByRole('status', { name: 'No device locations to show' })).toBeVisible();
       await expect(page.getByRole('button', { name: /observed device layer/i })).toHaveCount(0);
       await expect(mapSurface).toHaveAttribute('data-sjm-map-state', 'ready', { timeout: 20000 });
+      await expect(page.getByRole('region', { name: 'Interactive journey map showing planned locations and any assessed route' })).toBeVisible();
+      if (viewport.width < 640) {
+        await expect(mapSurface).toBeInViewport({ ratio: 0.5 });
+        const mapControlYs = await page.locator('[data-testid="sjm-map-controls"] > *').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().top));
+        expect(mapControlYs).toHaveLength(3);
+        expect(Math.max(...mapControlYs) - Math.min(...mapControlYs)).toBeLessThanOrEqual(6);
+      }
 
       const pageHeader = page.locator('main header');
       const fieldTeamLink = pageHeader.getByRole('link', { name: /Field team app/ });

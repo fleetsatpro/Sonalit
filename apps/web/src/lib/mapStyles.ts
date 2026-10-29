@@ -35,9 +35,9 @@ export const SAT_STYLE: maplibregl.StyleSpecification = {
 };
 
 /**
- * Independent raster fallback for deployments where the primary tile host is
- * blocked, rate-limited or unreachable. This is cartography fallback only: it
- * never fabricates forecast or weather data.
+ * Dark raster cartography for dense operational overlays and an independent
+ * fallback where the primary street tile host is blocked or unreachable.
+ * This is cartography only: it never fabricates route, tracking or weather data.
  */
 export const FALLBACK_STREET_STYLE: maplibregl.StyleSpecification = {
   version: 8,
