@@ -26,23 +26,6 @@ export default function CommsPage() {
   const channelsQ = useChannels();
   const orgUsersQ = useOrgUsers();
 
-  useEffect(() => {
-    if (!requestedChannelId) return;
-    let cancelled = false;
-    // Cached membership is not authorization for a deep-link. Require a fresh,
-    // authenticated channel list before selecting or querying the requested channel.
-    void channelsQ.refetch().then((result) => {
-      if (cancelled) return;
-      if (!result.isSuccess) setRequestedChannelId(null);
-      setVerifyingDeepLink(false);
-    }).catch(() => {
-      if (cancelled) return;
-      setRequestedChannelId(null);
-      setVerifyingDeepLink(false);
-    });
-    return () => { cancelled = true; };
-  }, [requestedChannelId, channelsQ.refetch]);
-
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [requestedChannelId, setRequestedChannelId] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -60,6 +43,23 @@ export default function CommsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState('');
+
+  useEffect(() => {
+    if (!requestedChannelId) return;
+    let cancelled = false;
+    // Cached membership is not authorization for a deep-link. Require a fresh,
+    // authenticated channel list before selecting or querying the requested channel.
+    void channelsQ.refetch().then((result) => {
+      if (cancelled) return;
+      if (!result.isSuccess) setRequestedChannelId(null);
+      setVerifyingDeepLink(false);
+    }).catch(() => {
+      if (cancelled) return;
+      setRequestedChannelId(null);
+      setVerifyingDeepLink(false);
+    });
+    return () => { cancelled = true; };
+  }, [requestedChannelId, channelsQ.refetch]);
 
   // A requested channel remains unselected while its fresh authorisation fetch runs.
   useEffect(() => {
