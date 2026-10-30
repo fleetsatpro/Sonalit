@@ -359,6 +359,20 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
                 </li>;
               })}
             </ul>}
+          {!selectedAircraft&&filteredAircraft.length>0&&<section data-testid="sjm-aircraft-unselected-inspector" aria-label="Aircraft inspection guidance" className="mt-auto border-t border-white/[0.07] bg-[#0a121b] px-3 py-4 sm:px-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-semibold tracking-[.12em] text-slate-400">INSPECTION DESK</p>
+              <span className="rounded-sm border border-white/10 px-2 py-1 font-mono text-[9px] text-slate-500">NO SELECTION</span>
+            </div>
+            <p className="mt-2 text-xs font-semibold text-slate-200">Select an aircraft observation</p>
+            <p className="mt-1 max-w-sm text-[10px] leading-5 text-slate-500">Inspect its provider, observation age, reported altitude reference and coordinates. Unresolved vertical references are not converted into geographic height.</p>
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-white/[0.06] pt-3">
+              <div className="min-w-0"><dt className="text-[9px] uppercase tracking-[.08em] text-slate-500">Coverage bounds</dt><dd className="mt-1 text-[10px] leading-4 text-slate-300">{bounds?boundsLabel:'Not supplied'}</dd></div>
+              <div className="min-w-0"><dt className="text-[9px] uppercase tracking-[.08em] text-slate-500">OpenSky snapshots</dt><dd className="mt-1 text-[10px] text-slate-300">{configured&&pollIntervalSeconds?pollIntervalSeconds+'s cadence':'Not configured'}</dd></div>
+              <div className="min-w-0"><dt className="text-[9px] uppercase tracking-[.08em] text-slate-500">Regional ADS-B</dt><dd className="mt-1 text-[10px] text-slate-300">{String(regionalStatus||'NOT_CONFIGURED').replaceAll('_',' ').toLowerCase()}</dd></div>
+              <div className="min-w-0"><dt className="text-[9px] uppercase tracking-[.08em] text-slate-500">Last position</dt><dd className="mt-1 text-[10px] leading-4 text-slate-300">{lastPositionAt?observedLabel(lastPositionAt):'Not recorded'}</dd></div>
+            </dl>
+          </section>}
         </div>
       </aside>
     </div>

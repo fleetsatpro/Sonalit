@@ -700,6 +700,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(globe.locator('canvas')).toBeVisible();
     const observationList = page.getByRole('list', { name: 'Aircraft observation list' });
     await expect(observationList.getByRole('button', { name: /KQA123/ })).toBeVisible();
+    const emptyInspector = display.getByTestId('sjm-aircraft-unselected-inspector');
+    await expect(emptyInspector).toContainText('Select an aircraft observation');
+    await expect(emptyInspector).toContainText('Coverage bounds');
+    await expect(emptyInspector).toContainText('30s cadence');
     const aircraftRow = observationList.getByRole('button', { name: /KQA123/ });
     await aircraftRow.focus();
     await expect(aircraftRow).toBeFocused();
