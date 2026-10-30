@@ -96,6 +96,47 @@ describe('SJM federated aviation intelligence',()=>{
     expect(cached.cache_state).toBe('HIT');
   });
 
+  test('caches the worldwide SIGMET response across distinct airport weather lookups',async()=>{
+    const fetcher=jest.fn(async(url)=>{
+      const path=String(url);
+      const body=path.includes('/metar')
+        ?[{icaoId:path.includes('HKMO')?'HKMO':'HKJK',obsTime:now/1000,rawOb:'METAR'}]
+        :path.includes('/taf')
+          ?[{icaoId:path.includes('HKMO')?'HKMO':'HKJK',issueTime:now/1000,rawTAF:'TAF'}]
+          :[{firId:'HKNA',validTimeFrom:now/1000,rawAirSigmet:'GLOBAL SIGMET'}];
+      return {ok:true,status:200,json:async()=>body};
+    });
+    await aviation.loadWeather({airportIcao:'HKJK',fetcher,now});
+    await aviation.loadWeather({airportIcao:'HKMO',fetcher,now:now+1_000});
+    expect(fetcher).toHaveBeenCalledTimes(5);
+    const sigmetCalls=fetcher.mock.calls.filter(call=>String(call[0]).includes('/isigmet'));
+    expect(sigmetCalls).toHaveLength(1);
+  });
+
+  test('does not mark the federation live when only the provider registry is populated',async()=>{
+    const baseSnapshot={provider:'opensky_rest',status:'NOT_CONFIGURED',configured:false,aircraft:[]};
+    const fetcher=jest.fn();
+    const result=await aviation.getSnapshot({baseSnapshot,env:{},fetcher,now:now+2_000});
+    expect(result.intelligence.provenance).toMatchObject({
+      multi_provider:false,active_provider_count:0,provider_registry_present:true,
+    });
+  });
+
+  test('marks a multi-provider view only when OpenSky and another source return records',async()=>{
+    const fetcher=jest.fn(async(url)=>{
+      const path=String(url);
+      const body=path.includes('/metar')?[{icaoId:'HKJK',obsTime:now/1000,rawOb:'METAR'}]
+        :path.includes('/taf')?[{icaoId:'HKJK',issueTime:now/1000,rawTAF:'TAF'}]
+          :[{firId:'HKNA',validTimeFrom:now/1000,rawAirSigmet:'SIGMET'}];
+      return {ok:true,status:200,json:async()=>body};
+    });
+    const baseSnapshot={provider:'opensky_rest',status:'LIVE',configured:true,connected:true,aircraft:[]};
+    const result=await aviation.getSnapshot({airportIcao:'HKJK',baseSnapshot,env:{},fetcher,now:now+3_000});
+    expect(result.intelligence.provenance).toMatchObject({
+      multi_provider:true,active_provider_count:2,provider_registry_present:true,
+    });
+  });
+
   test('normalises an ADSB.lol record without inventing an origin, destination or observation timestamp',()=>{
     const item=aviation.normaliseAdsbLolRecord({
       hex:'abc123',flight:'KQ 100 ',r:'5Y-KZA',lat:-1.3,lon:36.8,
