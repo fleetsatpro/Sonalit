@@ -638,7 +638,7 @@ test.describe('SJM command-centre responsive smoke', () => {
   test('airspace observation index is keyboard-operable and preserves unresolved altitude references', async ({ page }, testInfo: TestInfo) => {
     await seedAuth(page);
     await stubSjmApi(page);
-    await page.route('**/api/v1/sjm/airspace', route => route.fulfill({
+    await page.route('**/api/v1/sjm/airspace**', route => route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ data: {
