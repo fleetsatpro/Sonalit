@@ -97,7 +97,7 @@ describe('SJM field push-only sync mode', () => {
     });
     const { classifyPushOutcome } = await import('./retryPolicy.js');
     vi.mocked(classifyPushOutcome).mockReturnValue({
-      errorClass: 'NONE',
+      errorClass: 'UNKNOWN',
       status: 'ACKNOWLEDGED',
       retryable: false,
       code: 'accepted',
