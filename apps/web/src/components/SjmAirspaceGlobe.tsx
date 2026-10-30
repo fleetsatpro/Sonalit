@@ -3,7 +3,7 @@ import * as Cesium from '@cesium/engine';
 import '@cesium/engine/Source/Widget/CesiumWidget.css';
 
 export type SjmAirspaceAircraft = {
-  id:string; map_key?:string; provider?:string; position_provider?:'opensky_rest'|'adsb_lol'|'flyitalyadsb'; position_source_label?:string|null; ident:string; latitude:number; longitude:number;
+  id:string; map_key?:string; provider?:string; position_provider?:'opensky_rest'|'adsb_lol'|'flyitalyadsb'; position_source?:string|null; position_source_label?:string|null; aircraft_type?:string|null; ident:string; latitude:number; longitude:number;
   altitude_m:number|null; altitude_reference?:'WGS84_ELLIPSOID'|'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;
   ground_speed_mps:number|null; heading_deg:number|null;
   origin?:string|null; destination?:string|null; observed_at:string;
@@ -357,6 +357,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
             <div><dt className="text-[10px] text-slate-500">Ground speed</dt><dd className="mt-0.5 text-[11px] font-semibold text-slate-200">{selectedAircraft.ground_speed_mps==null?'Not reported':Math.round(selectedAircraft.ground_speed_mps*3.6).toLocaleString()+' km/h'}</dd></div>
             <div><dt className="text-[10px] text-slate-500">Heading</dt><dd className="mt-0.5 text-[11px] font-semibold text-slate-200">{selectedAircraft.heading_deg==null?'Not reported':Math.round(selectedAircraft.heading_deg)+'°'}</dd></div>
             <div><dt className="text-[10px] text-slate-500">ICAO24</dt><dd className="mt-0.5 break-all font-mono text-[10px] font-semibold text-slate-200">{selectedAircraft.id.toUpperCase()}</dd></div>
+            <div><dt className="text-[10px] text-slate-500">Aircraft type</dt><dd className="mt-0.5 text-[11px] font-semibold text-slate-200">{selectedAircraft.aircraft_type||'Not supplied'}</dd></div>
             <div className="col-span-2"><dt className="text-[10px] text-slate-500">Reported altitude reference</dt><dd className="mt-0.5 text-[11px] font-medium text-slate-200">{altitudeReferenceLabel(selectedAircraft.altitude_reference)}</dd></div>
             <div className="col-span-2"><dt className="text-[10px] text-slate-500">3D elevation treatment</dt><dd className="mt-0.5 text-[11px] leading-4 text-slate-300">{selectedAircraft.altitude_m==null?'Not resolved; marker remains at the reference surface.':selectedAircraft.altitude_reference==='WGS84_ELLIPSOID'?'Plotted using the reported WGS84 ellipsoid height.':'Not converted or plotted vertically; marker remains at the reference surface.'}</dd></div>
             <div className="col-span-2"><dt className="text-[10px] text-slate-500">Last observed</dt><dd className="mt-0.5 text-[11px] leading-4 text-slate-300">{observedLabel(selectedAircraft.observed_at)} · {ageLabel(selectedAircraft.age_seconds)}</dd></div>
