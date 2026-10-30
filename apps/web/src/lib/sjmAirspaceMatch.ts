@@ -9,7 +9,7 @@ export type SjmAircraftObservation = {
   latitude:number;
   longitude:number;
   altitude_m:number|null;
-  altitude_reference?:'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;
+  altitude_reference?:'WGS84_ELLIPSOID'|'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;
   ground_speed_mps:number|null;
   heading_deg:number|null;
 };
