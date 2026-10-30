@@ -1,11 +1,21 @@
 'use strict';
 
+const crypto=require('crypto');
+const {getRedis}=require('../config/redis');
+
 const AIRWEATHER_BASE='https://aviationweather.gov/api/data';
 const ADSBLOL_BASE='https://api.adsb.lol';
 const FLYITALYADSB_BASE='https://api.flyitalyadsb.com/v2';
 const FLYITALYADSB_RADIUS_KM=500;
 const FLYITALYADSB_MAX_POSITION_AGE_SECONDS=60;
 const FLYITALYADSB_CACHE_TTL_MS=60*1000;
+const FLYITALYADSB_SHARED_CACHE_TTL_MS=FLYITALYADSB_CACHE_TTL_MS;
+const FLYITALYADSB_SHARED_LOCK_TTL_MS=15_000;
+const FLYITALYADSB_REQUESTS_PER_MINUTE=25;
+const FLYITALYADSB_REQUESTS_PER_MONTH=270_000;
+const FLYITALYADSB_REDIS_PREFIX='sonalit:sjm:airspace:flyitalyadsb:v1';
+const FLYITALYADSB_RELEASE_LOCK_SCRIPT="if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end";
+const FLYITALYADSB_RATE_LIMIT_SCRIPT="local now=tonumber(ARGV[1]); local window=tonumber(ARGV[2]); local limit=tonumber(ARGV[3]); local member=ARGV[4]; redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',now-window); local count=redis.call('ZCARD',KEYS[1]); if count >= limit then return 0 end; redis.call('ZADD',KEYS[1],now,member); redis.call('EXPIRE',KEYS[1],math.ceil(window/1000)+5); return count+1";
 const KCAA_AIM_URL='https://aim.kcaa.or.ke/';
 const EAD_URL='https://www.eurocontrol.int/service/european-ais-database';
 
@@ -26,6 +36,81 @@ const AIRPORT_REFERENCE_FAILURE_TTL_MS=15*60*1000;
 const AIRPORT_REFERENCE_URL='https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/airports.csv';
 const AIRPORT_REFERENCE_TTL_MS=24*60*60*1000;
 const MAX_AIRPORT_REFERENCE_BYTES=24*1024*1024;
+
+let flyItalyRedisReadyPromise=null;
+
+async function readyFlyItalyRedis(redis) {
+  if(!redis)throw new Error('FlyItalyADSB shared quota store is disabled.');
+  if(redis.status==='end')throw new Error('FlyItalyADSB shared quota store is closed.');
+  if(redis.status==='wait'){
+    if(!flyItalyRedisReadyPromise)flyItalyRedisReadyPromise=redis.connect().catch(error=>{flyItalyRedisReadyPromise=null;throw error;});
+    await Promise.race([
+      flyItalyRedisReadyPromise,
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('FlyItalyADSB shared Redis connection timed out.')),3_000)),
+    ]);
+  }
+  if(redis.status!=='ready'){
+    await Promise.race([
+      redis.ping(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('FlyItalyADSB shared Redis readiness check timed out.')),3_000)),
+    ]);
+  }
+  return redis;
+}
+
+function flyItalySharedKeys(icao,now=Date.now()) {
+  const month=new Date(now).toISOString().slice(0,7).replace('-','');
+  return {
+    cache:FLYITALYADSB_REDIS_PREFIX+':cache:'+icao,
+    lock:FLYITALYADSB_REDIS_PREFIX+':lock:'+icao,
+    minute:FLYITALYADSB_REDIS_PREFIX+':requests:rolling-minute',
+    month:FLYITALYADSB_REDIS_PREFIX+':requests:month:'+month,
+    monthExpirySeconds:Math.max(60,Math.ceil((Date.UTC(new Date(now).getUTCFullYear(),new Date(now).getUTCMonth()+1,1)-now)/1000)+86400),
+  };
+}
+
+async function readFlyItalySharedCache(redis,key,localKey,now=Date.now()) {
+  const raw=await redis.get(key);
+  if(!raw)return null;
+  let envelope;
+  try{envelope=JSON.parse(raw);}catch{return null;}
+  const remaining=Number(envelope?.expires_at)-now;
+  if(!envelope?.value||!Number.isFinite(remaining)||remaining<=0)return null;
+  const value={...envelope.value,cache_state:'SHARED_HIT'};
+  cacheSet(localKey,value,remaining,now);
+  return value;
+}
+
+async function writeFlyItalySharedCache(redis,key,localKey,value,ttlMs,now=Date.now()) {
+  cacheSet(localKey,value,ttlMs,now);
+  await redis.set(key,JSON.stringify({expires_at:now+ttlMs,value}),'PX',Math.max(1,Math.floor(ttlMs)));
+  return value;
+}
+
+function flyItalyQuotaResponse({status='RATE_LIMITED',reason,centre,retryAfterSeconds,now=Date.now()}={}) {
+  return {
+    status,configured:true,reason,retry_after_seconds:retryAfterSeconds||null,
+    records:[],record_count:0,radius_km:FLYITALYADSB_RADIUS_KM,
+    coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_km:FLYITALYADSB_RADIUS_KM},
+    source:'FlyItalyADSB',license:'CC-BY-SA-4.0',
+    commercial_use_permitted:true,attribution_required:true,share_alike_required:true,
+    service_level:'BEST_EFFORT',maximum_radius_km:FLYITALYADSB_RADIUS_KM,
+    requests_per_minute:FLYITALYADSB_REQUESTS_PER_MINUTE,
+    requests_per_month:FLYITALYADSB_REQUESTS_PER_MONTH,
+    quota_scope:'shared_product_key',
+    provenance:{provider:'flyitalyadsb',data_license:'CC-BY-SA-4.0',fabricated_data_used:false},
+    checked_at:new Date(now).toISOString(),
+  };
+}
+
+async function readFlyItalyCacheDuringLock(redis,sharedCacheKey,localCacheKey,now=Date.now()) {
+  for(let attempt=0;attempt<10;attempt++){
+    const cached=await readFlyItalySharedCache(redis,sharedCacheKey,localCacheKey,now);
+    if(cached)return cached;
+    await new Promise(resolve=>setTimeout(resolve,150));
+  }
+  return null;
+}
 
 function parseCsvRows(input) {
   const rows=[];
@@ -474,7 +559,7 @@ function normaliseFlyItalyAdsbRecord(item,now=Date.now()) {
   };
 }
 
-async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
+async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetch,now=Date.now(),redisClient}={}) {
   const config=getFlyItalyAdsbConfig(env);
   if(!config.enabled)return {
     status:'NOT_CONFIGURED',configured:false,reason:config.reason,records:[],
@@ -482,6 +567,7 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
     commercial_use_permitted:config.commercial_use_permitted,
     attribution_required:config.attribution_required,share_alike_required:config.share_alike_required,
     service_level:config.service_level,maximum_radius_km:config.maximum_radius_km,
+    requests_per_minute:config.requests_per_minute,requests_per_month:config.requests_per_month,
     use_restrictions:config.use_restrictions,
   };
   const icao=cleanCode(airport?.icao,4);
@@ -490,65 +576,111 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
     latitude < -90||latitude > 90||longitude < -180||longitude > 180)return {
       status:'NOT_REQUESTED',configured:true,reason:'uniquely_resolved_airport_coordinates_required',
       records:[],radius_km:FLYITALYADSB_RADIUS_KM,source:'FlyItalyADSB',license:config.license,
-      attribution_required:config.attribution_required,share_alike_required:config.share_alike_required,
+      attribution_required:true,share_alike_required:true,
+      requests_per_minute:config.requests_per_minute,requests_per_month:config.requests_per_month,
     };
-  const key='flyitalyadsb-area:'+icao+':'+FLYITALYADSB_RADIUS_KM;
-  const cached=cacheGet(key,now);
+  const localKey='flyitalyadsb-area:'+icao+':'+FLYITALYADSB_RADIUS_KM;
+  const cached=cacheGet(localKey,now);
   if(cached)return {...cached,cache_state:'HIT'};
-  const pending=areaLoadPromises.get(key);
+  const pending=areaLoadPromises.get(localKey);
   if(pending)return pending;
   const request=(async()=>{
     const centre={icao,latitude,longitude};
+    const unavailable=(reason)=>flyItalyQuotaResponse({
+      status:'UNAVAILABLE',reason,centre,now,
+    });
+    let redis;
     try{
-      const url=config.baseUrl+'/lat/'+latitude.toFixed(4)+'/lon/'+longitude.toFixed(4)+'/dist/'+FLYITALYADSB_RADIUS_KM;
-      const payload=await requestJson(url,{
-        fetcher,headers:{'X-Api-Key':config.apiKey,'User-Agent':'Sonalit-SJM/1.0 (regional aviation observations)'},
-      });
-      const providerNowSeconds=Number(payload?.now);
-      const providerNowMs=providerNowSeconds*1000;
-      if(!Number.isFinite(providerNowMs)||providerNowMs<=0||Math.abs(providerNowMs-now)>120_000){
-        const error=new Error('FlyItalyADSB response timestamp is missing or outside the trusted clock window.');
-        error.code='provider_timestamp_untrusted';
-        throw error;
+      redis=await readyFlyItalyRedis(redisClient===undefined?getRedis():redisClient);
+    }catch{
+      return unavailable('shared_product_quota_store_unavailable');
+    }
+    const keys=flyItalySharedKeys(icao,now);
+    try{
+      const shared=await readFlyItalySharedCache(redis,keys.cache,localKey,now);
+      if(shared)return shared;
+      const lockToken=crypto.randomUUID();
+      const lockResult=await redis.set(keys.lock,lockToken,'PX',FLYITALYADSB_SHARED_LOCK_TTL_MS,'NX');
+      if(lockResult!=='OK'){
+        const refreshed=await readFlyItalyCacheDuringLock(redis,keys.cache,localKey,now).catch(()=>null);
+        return refreshed||flyItalyQuotaResponse({
+          status:'REFRESHING',reason:'shared_airport_snapshot_refresh_in_progress',
+          centre,retryAfterSeconds:2,now,
+        });
       }
-      const rows=Array.isArray(payload?.ac)?payload.ac:[];
-      const records=rows.map(record=>normaliseFlyItalyAdsbRecord(record,providerNowMs)).filter(Boolean);
-      return cacheSet(key,{
-        status:records.length?'AVAILABLE':'NO_DATA',configured:true,reason:null,
-        records,record_count:records.length,rejected_count:Math.max(0,rows.length-records.length),
-        radius_km:FLYITALYADSB_RADIUS_KM,
-        coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_km:FLYITALYADSB_RADIUS_KM},
-        source:'FlyItalyADSB',license:config.license,
-        commercial_use_permitted:config.commercial_use_permitted,
-        attribution_required:config.attribution_required,share_alike_required:config.share_alike_required,
-        service_level:config.service_level,maximum_radius_km:config.maximum_radius_km,
-        checked_at:new Date(now).toISOString(),cache_state:'MISS',
-        provenance:{provider:'flyitalyadsb',data_license:config.license,
-          timestamp_basis:'provider_seen_pos_relative_age',fabricated_data_used:false,
-          permitted_use:'informational_aircraft_observation_only',
-          prohibited_uses:config.use_restrictions},
-      },FLYITALYADSB_CACHE_TTL_MS,now);
-    }catch(error){
-      const limited=error?.code==='rate_limited';
-      const value={
-        status:limited?'RATE_LIMITED':'UNAVAILABLE',configured:true,
-        reason:error?.code||'provider_error',retry_after_seconds:error?.retryAfterSeconds||null,
-        records:[],record_count:0,radius_km:FLYITALYADSB_RADIUS_KM,
-        coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_km:FLYITALYADSB_RADIUS_KM},
-        source:'FlyItalyADSB',license:config.license,
-        commercial_use_permitted:config.commercial_use_permitted,
-        attribution_required:config.attribution_required,share_alike_required:config.share_alike_required,
-        service_level:config.service_level,maximum_radius_km:config.maximum_radius_km,
-        use_restrictions:config.use_restrictions,
-        provenance:{provider:'flyitalyadsb',data_license:config.license,fabricated_data_used:false},
-      };
-      return cacheSet(key,value,limited?(error.retryAfterSeconds||60)*1000:15_000,now);
+      try{
+        const requestId=crypto.randomUUID();
+        const rateAllowed=Number(await redis.eval(
+          FLYITALYADSB_RATE_LIMIT_SCRIPT,1,keys.minute,
+          now,60_000,FLYITALYADSB_REQUESTS_PER_MINUTE,requestId,
+        ));
+        if(rateAllowed!==1){
+          const limited=flyItalyQuotaResponse({
+            reason:'shared_product_per_minute_budget_reached',centre,
+            retryAfterSeconds:60,now,
+          });
+          return await writeFlyItalySharedCache(redis,keys.cache,localKey,limited,15_000,now);
+        }
+        const monthlyCount=Number(await redis.incr(keys.month));
+        if(monthlyCount===1)await redis.expire(keys.month,keys.monthExpirySeconds);
+        if(monthlyCount>FLYITALYADSB_REQUESTS_PER_MONTH){
+          const limited=flyItalyQuotaResponse({
+            reason:'shared_product_monthly_budget_reached',centre,
+            retryAfterSeconds:keys.monthExpirySeconds,now,
+          });
+          return await writeFlyItalySharedCache(redis,keys.cache,localKey,limited,60_000,now);
+        }
+        const url=config.baseUrl+'/lat/'+latitude.toFixed(4)+'/lon/'+longitude.toFixed(4)+'/dist/'+FLYITALYADSB_RADIUS_KM;
+        const payload=await requestJson(url,{
+          fetcher,headers:{'X-Api-Key':config.apiKey,'User-Agent':'Sonalit-SJM/1.0 (regional aviation observations)'},
+        });
+        const providerNowSeconds=Number(payload?.now);
+        const providerNowMs=providerNowSeconds*1000;
+        if(!Number.isFinite(providerNowMs)||providerNowMs<=0||Math.abs(providerNowMs-now)>120_000){
+          const error=new Error('FlyItalyADSB response timestamp is missing or outside the trusted clock window.');
+          error.code='provider_timestamp_untrusted';
+          throw error;
+        }
+        const rows=Array.isArray(payload?.ac)?payload.ac:[];
+        const records=rows.map(record=>normaliseFlyItalyAdsbRecord(record,providerNowMs)).filter(Boolean);
+        const value={
+          status:records.length?'AVAILABLE':'NO_DATA',configured:true,reason:null,
+          records,record_count:records.length,rejected_count:Math.max(0,rows.length-records.length),
+          radius_km:FLYITALYADSB_RADIUS_KM,
+          coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_km:FLYITALYADSB_RADIUS_KM},
+          source:'FlyItalyADSB',license:config.license,
+          commercial_use_permitted:config.commercial_use_permitted,
+          attribution_required:config.attribution_required,share_alike_required:config.share_alike_required,
+          service_level:config.service_level,maximum_radius_km:config.maximum_radius_km,
+          requests_per_minute:config.requests_per_minute,requests_per_month:config.requests_per_month,
+          quota_scope:'shared_product_key',
+          checked_at:new Date(now).toISOString(),cache_state:'MISS',
+          provenance:{provider:'flyitalyadsb',data_license:config.license,
+            timestamp_basis:'provider_seen_pos_relative_age',provider_snapshot_at:new Date(providerNowMs).toISOString(),
+            fabricated_data_used:false,permitted_use:'informational_aircraft_observation_only',
+            prohibited_uses:config.use_restrictions},
+        };
+        return await writeFlyItalySharedCache(redis,keys.cache,localKey,value,FLYITALYADSB_SHARED_CACHE_TTL_MS,now);
+      }catch(error){
+        const limited=error?.code==='rate_limited';
+        const ttl=limited?Math.max(15,(error.retryAfterSeconds||60))*1000:15_000;
+        const value=flyItalyQuotaResponse({
+          status:limited?'RATE_LIMITED':'UNAVAILABLE',reason:error?.code||'provider_error',
+          centre,retryAfterSeconds:error?.retryAfterSeconds||null,now,
+        });
+        return await writeFlyItalySharedCache(redis,keys.cache,localKey,value,ttl,now);
+      }finally{
+        await redis.eval(FLYITALYADSB_RELEASE_LOCK_SCRIPT,1,keys.lock,lockToken).catch(()=>{});
+      }
+    }catch{
+      return unavailable('shared_product_quota_store_unavailable');
     }
   })();
-  areaLoadPromises.set(key,request);
+  areaLoadPromises.set(localKey,request);
   try{return await request;}
-  finally{if(areaLoadPromises.get(key)===request)areaLoadPromises.delete(key);}
+  finally{if(areaLoadPromises.get(localKey)===request)areaLoadPromises.delete(localKey);}
 }
+
 
 async function loadAdsbLolArea({airport,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
   const config=getAdsbLolConfig(env);
@@ -839,7 +971,7 @@ function buildSourceRegistry({opensky,weather,adsbLol,adsbArea,flyItalyArea,comm
   ];
 }
 
-async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
+async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,env=process.env,fetcher=global.fetch,now=Date.now(),redisClient}={}) {
   const suppliedAirportCode=String(airportCode||airportIcao||'').trim().toUpperCase();
   let airportReference={
     status:'NOT_REQUESTED',reason:'journey_airport_code_not_supplied',
@@ -870,7 +1002,7 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
       records:[],radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol',license:'ODbL-1.0',
     });
   const flyItalyAreaRequest=airportReference.status==='RESOLVED'
-    ?loadFlyItalyAdsbArea({airport:airportReference.airport,env,fetcher,now})
+    ?loadFlyItalyAdsbArea({airport:airportReference.airport,env,fetcher,now,redisClient})
     :Promise.resolve({
       status:'NOT_REQUESTED',configured:false,reason:'uniquely_resolved_airport_coordinates_required',
       records:[],radius_km:FLYITALYADSB_RADIUS_KM,source:'FlyItalyADSB',license:'CC-BY-SA-4.0',
