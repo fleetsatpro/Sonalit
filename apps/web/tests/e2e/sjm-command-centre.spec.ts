@@ -684,6 +684,8 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(display).toBeVisible();
     const globe = display.getByRole('application', { name: /three-dimensional airspace globe/i });
     await expect(globe).toBeVisible();
+    await expect(globe).toHaveAttribute('data-basemap-provider', 'openstreetmap');
+    await expect(display.getByText(/Basemap: © OpenStreetMap contributors/)).toBeVisible();
     await expect(globe.locator('canvas')).toBeVisible();
     const observationList = page.getByRole('list', { name: 'Aircraft observation list' });
     await expect(observationList.getByRole('button', { name: /KQA123/ })).toBeVisible();

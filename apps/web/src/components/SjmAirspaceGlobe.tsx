@@ -22,7 +22,7 @@ type Props = {
 type ProviderFilter='all'|'opensky_rest'|'adsb_lol';
 type FreshnessFilter='all'|'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE';
 
-const MAP_URL='https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+const MAP_URL='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const FRESHNESS_COLOURS:Record<string,string>={LIVE:'#9ce8d2',DELAYED:'#f3c979',STALE:'#8a98a8',UNAVAILABLE:'#64748b'};
 const AIRCRAFT_SYMBOL_SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M24 2.8 29.2 20l15.2 8.5v4.2l-15.2-4.2v11.2l5.6 4.2v2.8L24 43.2 13.2 46.7v-2.8l5.6-4.2V28.5L3.6 32.7v-4.2L18.8 20 24 2.8Z" fill="#f7fbff" stroke="#07111b" stroke-width="2.2" stroke-linejoin="round"/></svg>';
 const AIRCRAFT_SYMBOL='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(AIRCRAFT_SYMBOL_SVG);
@@ -101,11 +101,15 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     try{
       const imagery=new Cesium.UrlTemplateImageryProvider({
         url:MAP_URL,
-        credit:new Cesium.Credit('© Carto · © OpenStreetMap contributors',false),
+        credit:new Cesium.Credit('© OpenStreetMap contributors',false),
         maximumLevel:19,
       });
+      const imageryLayer=new Cesium.ImageryLayer(imagery);
+      imageryLayer.brightness=0.72;
+      imageryLayer.contrast=1.08;
+      imageryLayer.saturation=0.38;
       widget=new Cesium.CesiumWidget(containerRef.current,{
-        baseLayer:new Cesium.ImageryLayer(imagery),
+        baseLayer:imageryLayer,
         terrainProvider:new Cesium.EllipsoidTerrainProvider(),
         requestRenderMode:true,
         maximumRenderTimeChange:Number.POSITIVE_INFINITY,
@@ -262,7 +266,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         {initFailed
           ?<div role="status" className="grid min-h-[420px] place-items-center p-6 text-center"><div><p className="text-sm font-semibold text-slate-200">3D renderer unavailable</p><p className="mt-1 max-w-md text-xs leading-5 text-slate-400">The airspace scene could not be initialised in this browser. Aircraft data remains available in the observation index where supplied.</p></div></div>
           :<div className="relative">
-            <div ref={containerRef} role="application" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" data-testid="sjm-airspace-globe" className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>
+            <div ref={containerRef} role="application" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" data-testid="sjm-airspace-globe" data-basemap-provider="openstreetmap" className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>
             <div role="group" aria-label="Airspace globe controls" className="absolute right-3 top-3 z-10 flex flex-col overflow-hidden rounded-md border border-white/15 bg-[#07101b]/90 shadow-lg backdrop-blur">
               <button type="button" onClick={()=>zoom('in')} aria-label="Zoom in" title="Zoom in" className="h-10 w-10 border-b border-white/10 text-base text-slate-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">+</button>
               <button type="button" onClick={()=>zoom('out')} aria-label="Zoom out" title="Zoom out" className="h-10 w-10 border-b border-white/10 text-base text-slate-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">−</button>
@@ -336,7 +340,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         <p>Aircraft markers are provider observations. OpenSky uses bounded REST snapshots; ADSB.lol shows an airport-centred radius only. Neither is continuous certified ATC surveillance, and no path is extrapolated between reports.</p>
         <p>Only WGS84 ellipsoid-referenced heights are used for 3D elevation. Other altitude references are shown as reported but are not converted or inferred.</p>
         <p>Coverage: {boundsLabel} · Latest reported position: {lastPositionAt?observedLabel(lastPositionAt):'none recorded'}.</p>
-        <p>Basemap: © Carto · © OpenStreetMap contributors. Aircraft data: source is shown per observation; ADSB.lol is published under ODbL 1.0.</p>
+        <p>Basemap: © OpenStreetMap contributors. Public raster tiles are best-effort; production-scale service needs a dedicated tile host. Aircraft data: source is shown per observation; ADSB.lol is published under ODbL 1.0.</p>
       </div>
       <div className="flex items-center gap-3 border-t border-white/[0.05] px-3 py-3 text-[10px] text-slate-500 sm:border-l sm:border-t-0 sm:px-4">
         <span>Map controls</span><span>Drag to rotate</span><span>Scroll to zoom</span>
