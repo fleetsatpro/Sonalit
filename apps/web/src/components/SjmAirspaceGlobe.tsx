@@ -164,6 +164,13 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
   },[]);
 
   useEffect(()=>{
+    if(cameraMode!=='regional')return;
+    const widget=widgetRef.current;
+    if(!widget||widget.isDestroyed())return;
+    widget.camera.flyTo({...regionalAirspaceView(airportCentre),duration:1.15});
+  },[cameraMode,airportCentre?.latitude,airportCentre?.longitude]);
+
+  useEffect(()=>{
     const widget=widgetRef.current;
     if(!widget||widget.isDestroyed())return;
     const liveIds=new Set(aircraft.map(mapKey));
@@ -251,8 +258,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     setCameraMode(mode);
     const widget=widgetRef.current;
     if(!widget||widget.isDestroyed())return;
-    const view=mode==='orbital'?ORBITAL_AIRSPACE_VIEW:regionalAirspaceView(airportCentre);
-    widget.camera.flyTo({...view,duration:1.15});
+    if(mode==='orbital')widget.camera.flyTo({...ORBITAL_AIRSPACE_VIEW,duration:1.15});
   };
   const resetView=()=>{
     const widget=widgetRef.current;
