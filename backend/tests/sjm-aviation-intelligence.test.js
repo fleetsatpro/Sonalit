@@ -246,6 +246,7 @@ describe('SJM federated aviation intelligence',()=>{
       provider:'adsb_lol',age_seconds:12,evidence_class:'OBSERVED',
       timestamp_basis:'derived_from_provider_seen_pos',
     });
+    expect(item.altitude_m).toBeCloseTo(12400*0.3048,5);
     expect(item.observed_at).toBe(new Date(now-12_000).toISOString());
     expect(aviation.normaliseAdsbLolRecord({hex:'abc123',flight:'KQ100',lat:null,lon:36.8},now)).toBeNull();
     expect(aviation.normaliseAdsbLolRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:601},now)).toBeNull();
@@ -285,7 +286,7 @@ describe('SJM federated aviation intelligence',()=>{
       id:'abc123',map_key:'flyitalyadsb:abc123',ident:'KQ 100',registration:'5Y-KZA',
       latitude:-1.3,longitude:36.8,provider:'flyitalyadsb',position_provider:'flyitalyadsb',
       position_source:'adsb_icao',position_source_label:'FlyItalyADSB ADS-B',
-      aircraft_type:'B789',altitude_reference:'GEOMETRIC',ground_speed_mps:220*0.514444,
+      aircraft_type:'B789',altitude_reference:'WGS84_ELLIPSOID',ground_speed_mps:220*0.514444,
       heading_deg:90,vertical_rate_mps:3.048,age_seconds:12,freshness:'LIVE',
       evidence_class:'OBSERVED',timestamp_basis:'derived_from_provider_seen_pos',
     });
@@ -295,6 +296,7 @@ describe('SJM federated aviation intelligence',()=>{
     expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:-1},now)).toBeNull();
     expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,type:'mlat',seen_pos:30},now)).toMatchObject({freshness:'DELAYED',position_source:'mlat',position_source_label:'FlyItalyADSB MLAT'});
     expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:60},now)).toMatchObject({freshness:'STALE'});
+    expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,alt_baro:12000,seen_pos:10},now)).toMatchObject({altitude_reference:'BAROMETRIC_PRESSURE'});
   });
 
   test('loads a 500 km FlyItalyADSB picture with server-side key, compliance metadata and cache',async()=>{
@@ -464,9 +466,10 @@ describe('SJM federated aviation intelligence',()=>{
     expect(result.records[0]).toMatchObject({
       id:'abc123',map_key:'adsb_lol:abc123',ident:'KQ 100',registration:'5Y-KZA',
       latitude:-1.3,longitude:36.8,provider:'adsb_lol',position_provider:'adsb_lol',
-      freshness:'LIVE',age_seconds:12,altitude_reference:'GEOMETRIC',
+      freshness:'LIVE',age_seconds:12,altitude_reference:'WGS84_ELLIPSOID',
       timestamp_basis:'derived_from_provider_seen_pos',evidence_class:'OBSERVED',
     });
+    expect(result.records[0].altitude_m).toBeCloseTo(12400*0.3048,5);
     expect(result.records[0].ground_speed_mps).toBeCloseTo(220*0.514444,5);
     expect(result.records[1]).toMatchObject({id:'def456',ident:'DEF456',on_ground:true,altitude_m:null});
     expect(fetcher.mock.calls[0][0]).toBe('https://api.adsb.lol/v2/lat/-1.3192/lon/36.9278/dist/250');
