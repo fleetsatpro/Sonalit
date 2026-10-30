@@ -441,6 +441,13 @@ export default function SecureJourneyManagement(){
   return reference?.status==='RESOLVED'&&typeof latitude==='number'&&Number.isFinite(latitude)&&latitude>=-90&&latitude<=90&&typeof longitude==='number'&&Number.isFinite(longitude)&&longitude>=-180&&longitude<=180
    ?{latitude,longitude}:null;
  },[airspaceQ.data?.data.intelligence?.airport_reference]);
+ const airportLabel=useMemo(()=>{
+  const reference=airspaceQ.data?.data.intelligence?.airport_reference;
+  if(reference?.status!=='RESOLVED'||!reference.airport)return null;
+  const airport=reference.airport;
+  const place=String(airport.municipality||airport.name||'').trim();
+  return [airport.icao,place].filter((value,index,array)=>Boolean(value)&&array.indexOf(value)===index).join(' · ')||null;
+ },[airspaceQ.data?.data.intelligence?.airport_reference]);
  const flightCorrelation=useMemo(()=>correlateJourneyFlight({
   flightReference:journey?.flight_number,airportCode:journey?.airport_code,
   configured:airspaceQ.data?.data.configured===true||adsbArea?.configured===true||flyItalyArea?.configured===true,
@@ -744,7 +751,7 @@ return (
           </div>
           {airspaceQ.isError&&<p role="alert" className="rounded-md border border-red-400/20 bg-red-500/[0.05] p-3 text-[11px] text-red-200">{errorText(airspaceQ.error,'Airspace feed status could not be loaded.')}</p>}
           {!airspaceQ.data&&airspaceQ.isLoading?<div className="grid min-h-[240px] place-items-center rounded-md border border-white/[0.07] text-[11px] text-slate-500">Checking aviation provider configuration…</div>:<Suspense fallback={<div className="grid min-h-[420px] place-items-center rounded-md border border-white/[0.07] text-[11px] text-slate-500">Loading 3D globe…</div>}>
-           <SjmAirspaceGlobe aircraft={mapAircraft} status={airspaceDisplayStatus} configured={airspaceQ.data?.data.configured===true} lastPositionAt={mapLastPositionAt} bounds={airspaceQ.data?.data.coverage?.bounds||null} pollIntervalSeconds={airspaceQ.data?.data.poll_interval_seconds||null} regionalStatus={adsbArea?.status||'NOT_CONFIGURED'} flyItalyStatus={flyItalyArea?.status||'NOT_CONFIGURED'} regionalRadiusNm={adsbArea?.radius_nm||250} airportCentre={airportCentre}/>
+           <SjmAirspaceGlobe aircraft={mapAircraft} status={airspaceDisplayStatus} configured={airspaceQ.data?.data.configured===true} lastPositionAt={mapLastPositionAt} bounds={airspaceQ.data?.data.coverage?.bounds||null} pollIntervalSeconds={airspaceQ.data?.data.poll_interval_seconds||null} regionalStatus={adsbArea?.status||'NOT_CONFIGURED'} flyItalyStatus={flyItalyArea?.status||'NOT_CONFIGURED'} regionalRadiusNm={adsbArea?.radius_nm||250} airportCentre={airportCentre} airportLabel={airportLabel}/>
           </Suspense>}
           {airspaceQ.data?.data.status==='NOT_CONFIGURED'&&adsbArea?.status!=='AVAILABLE'&&flyItalyArea?.status!=='AVAILABLE'&&<div className="border-l-2 border-amber-300/50 bg-white/[0.02] px-3 py-2.5 text-[11px] leading-5 text-slate-400"><span className="font-semibold text-slate-200">OpenSky access is not configured.</span> No OpenSky observations are available. ADSB.lol publishes its API and data under ODbL 1.0; commercial use is permitted when attribution and applicable share-alike obligations are honoured. Its public API is best-effort, so contact the provider before sustained or high-volume production use. No aircraft are simulated.</div>}
           {adsbArea?.status==='AVAILABLE'&&<p className="border-l-2 border-sky-300/40 bg-white/[0.02] px-3 py-2 text-[10px] leading-5 text-slate-400">ADSB.lol regional coverage: {adsbArea.radius_nm||250} NM around {adsbArea.coverage?.centre?.icao||journey.airport_code}. {adsbArea.records.length.toLocaleString()} provider observations; coverage is incomplete and is not a flight-information or ATC service.</p>}
