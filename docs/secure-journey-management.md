@@ -23,6 +23,8 @@ SJM is Sonalit's standalone protective-mobility and executive-journey operations
 10. Client-local datetime inputs are converted using the selected IANA timezone rather than the browser timezone.
 
 ## API
+- GET /api/v1/sjm/airspace?flight_number={flightNumber}&airport_icao={ICAO} — bounded OpenSky aircraft snapshot plus independent flight-status, targeted ADSB.lol cross-check, aviation weather, NOTAM authority and provider-capability metadata. Both query parameters are optional; airport weather requires a verified four-letter ICAO station identifier. The endpoint does not infer IATA-to-ICAO mappings or query external sources outside their licence/enablement gates.
+
 - GET/POST /api/v1/sjm/clients; PUT /api/v1/sjm/clients/:id
 - GET /api/v1/sjm/vehicles and /api/v1/sjm/devices
 - GET/PUT /api/v1/sjm/journeys/:id/assets (direct vehicle and Guardian-device assignment)
