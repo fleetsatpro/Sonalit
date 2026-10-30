@@ -357,7 +357,7 @@ function normaliseAdsbLolRecord(item,now=Date.now()) {
 
 async function loadAdsbLolCallsign({callsign,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
   const config=getAdsbLolConfig(env);
-  const ident=String(callsign||'').trim().toUpperCase().replace(/\s+/g,' ');
+  const ident=normaliseCallsign(callsign);
   if(!config.enabled)return {status:'NOT_CONFIGURED',reason:config.reason,records:[],source:'adsb.lol'};
   if(!ident||ident.length>16||!/^[A-Z0-9 -]+$/.test(ident))return {status:'NOT_REQUESTED',reason:'valid_callsign_required',records:[],source:'adsb.lol'};
   const key='adsblol:'+ident;
