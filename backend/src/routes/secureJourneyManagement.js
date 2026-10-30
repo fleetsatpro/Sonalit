@@ -568,7 +568,7 @@ router.post('/management-summary',authorize('admin','dispatcher'),asyncHandler(a
 }));
 router.get('/airspace',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const feed=require('../services/sjmAirspaceFeed');
-  const data=feed.getSnapshot({start:true});
+  const data=await feed.getSnapshot({start:true});
   res.setHeader('Cache-Control','no-store');
   res.json({data});
 }));
