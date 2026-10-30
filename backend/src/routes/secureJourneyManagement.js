@@ -818,8 +818,9 @@ router.post('/journeys',authorize('admin','dispatcher'),asyncHandler(async(req,r
 router.get('/my-assignments',asyncHandler(async(req,res)=>{
  const rows=await req.dbTx(async c=>{
   const db=(sql,params)=>c.query(sql,params);
-  // The list exposes VIP, flight and location details. Serialize its access
-  // check with roster changes and re-read under a fresh statement snapshot.
+  // The list exposes principal, flight and location context. Lock the initial
+  // authorised page, then re-read and lock any newly assigned rows before
+  // returning the current committed roster.
   const initialLocks=await db(
     `SELECT j.id
        FROM sjm_journeys j
@@ -834,12 +835,45 @@ router.get('/my-assignments',asyncHandler(async(req,res)=>{
       FOR SHARE OF j`,
     [req.user.org_id,req.user.id],
   );
+  const listSql=`SELECT
+      j.id,j.reference,j.title,j.purpose,j.status,j.transport_mode,j.service_type,
+      j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,
+      j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,
+      j.meet_greet_instructions,j.principal_reference,
+      j.origin_label,j.origin_lat,j.origin_lng,j.destination_label,j.destination_lat,j.destination_lng,
+      j.planned_departure_at,j.planned_arrival_at,j.client_id,c.name AS client_name,
+      j.created_at,j.updated_at,j.timezone,j.planned_route,j.planned_distance_km,
+      j.planned_duration_minutes,j.route_assessment,
+      j.route_assessment IS NOT NULL AS has_route_assessment,
+      ARRAY(
+        SELECT DISTINCT p.duty_role
+          FROM sjm_journey_participants p
+         WHERE p.org_id=j.org_id AND p.journey_id=j.id
+           AND p.user_id=$2 AND p.removed_at IS NULL
+         ORDER BY p.duty_role
+      ) AS duty_roles
+    FROM sjm_journeys j
+    LEFT JOIN sjm_clients c
+      ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
+    WHERE j.org_id=$1 AND j.deleted_at IS NULL
+      AND EXISTS (
+        SELECT 1 FROM sjm_journey_participants p
+         WHERE p.org_id=j.org_id AND p.journey_id=j.id
+           AND p.user_id=$2 AND p.removed_at IS NULL
+      )
+    ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC
+    LIMIT 100`;
+  const guarded=await readLockedAssignmentRows(
+    db,req.user.org_id,initialLocks,listSql,[req.user.org_id,req.user.id],
+  );
   if(guarded.error)return guarded;
-  return guarded.rows;
+  return {rows:guarded.rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles))};
  });
  if(rows.error)return res.status(409).json({error:'assignment_roster_changed',message:'The assignment roster changed repeatedly while loading this list. Refresh and retry.'});
- res.setHeader('Cache-Control','no-store');res.json({data:rows.map(row=>journeyForDutyViewer(row,[],req.user,row.duty_roles))});
+ res.setHeader('Cache-Control','no-store');
+ res.json({data:rows.rows});
 }));
+
 router.get('/journeys/:id/participants',asyncHandler(async(req,res)=>{
  const org=req.user.org_id;
  const outcome=await req.dbTx(async c=>{
