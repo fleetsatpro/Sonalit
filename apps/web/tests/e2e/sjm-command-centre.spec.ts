@@ -692,7 +692,7 @@ test.describe('SJM command-centre responsive smoke', () => {
               id: 'abc123', map_key: 'flyitalyadsb:abc123', provider: 'flyitalyadsb', position_provider: 'flyitalyadsb',
               position_source: 'adsb_icao', position_source_label: 'FlyItalyADSB ADS-B', aircraft_type: 'B789',
               ident: 'KQFILL', latitude: -1.31, longitude: 36.92,
-              altitude_m: 11000, altitude_reference: 'GEOMETRIC', ground_speed_mps: 220, heading_deg: 95,
+              altitude_m: 11000, altitude_reference: 'WGS84_ELLIPSOID', ground_speed_mps: 220, heading_deg: 95,
               observed_at: '2026-10-30T11:29:45.000Z', age_seconds: 15, freshness: 'LIVE', trail: [],
             }],
           },
