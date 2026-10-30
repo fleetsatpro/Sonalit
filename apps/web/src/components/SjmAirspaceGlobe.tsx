@@ -8,7 +8,7 @@ export type SjmAirspaceAircraft = {
   ground_speed_mps:number|null; heading_deg:number|null;
   origin?:string|null; destination?:string|null; observed_at:string;
   age_seconds:number; freshness:string; update_type?:string|null;
-  trail?:Array<{latitude:number;longitude:number;altitude_m:number|null;altitude_reference?:'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;observed_at:string}>;
+  trail?:Array<{latitude:number;longitude:number;altitude_m:number|null;altitude_reference?:'WGS84_ELLIPSOID'|'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;observed_at:string}>;
 };
 type Props = {
   aircraft:SjmAirspaceAircraft[]; status:string; configured:boolean;
