@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,7 +9,7 @@ import { DARK_STREET_STYLE, STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js'
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
 import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
 import { useAuthStore } from '../stores/auth.js';
-import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, MessagesSquare, Navigation, Pencil, Plus, RefreshCw, Route, Search, ShieldAlert, ShieldCheck, Users, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, MessagesSquare, Navigation, Pencil, Plane, Plus, RefreshCw, Route, Search, ShieldAlert, ShieldCheck, Users, XCircle } from 'lucide-react';
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
 type Point={lat:number;lng:number;name?:string;label?:string};
@@ -32,6 +32,9 @@ type VehicleResource={id:string;registration:string;type:string;region:string;st
 type DeviceResource={id:string;name:string;status:string;last_checkin_at?:string|null;assigned_officer?:string|null};
 type JourneyAsset={id:string;asset_type:'vehicle'|'guardian_device';assignment_role:string;sort_order:number;assigned_at:string;vehicle_id?:string|null;registration?:string|null;vehicle_type?:string|null;region?:string|null;vehicle_status?:string|null;make?:string|null;model?:string|null;guardian_device_id?:string|null;device_name?:string|null;device_status?:string|null;officer_name?:string|null};
 type AssetDraft={id:string;assignment_role:string};
+type AirspaceAircraft={id:string;ident:string;latitude:number;longitude:number;altitude_m:number|null;ground_speed_mps:number|null;heading_deg:number|null;origin?:string|null;destination?:string|null;observed_at:string;age_seconds:number;freshness:string;update_type?:string|null;trail?:Array<{latitude:number;longitude:number;altitude_m:number|null;observed_at:string}>};
+type AirspaceSnapshot={provider:string;provider_name:string;status:string;configured:boolean;connected:boolean;last_position_at?:string|null;message_count:number;position_count:number;rejected_count:number;coverage:{complete:boolean;bounds?:{south:number;west:number;north:number;east:number}|null};aircraft:AirspaceAircraft[];recent_events:Array<{type:string;ident?:string|null;airport?:string|null;observed_at?:string|null;received_at:string}>};
+const SjmAirspaceGlobe=lazy(()=>import('../components/SjmAirspaceGlobe.js'));
 type Profile={client_id:string;report_timezone:string;report_template:{title?:string;sections?:string[]};daily_reports_enabled?:boolean;daily_report_local_time?:string;daily_report_scheduler_available?:boolean;client?:Client};
 type Report={data:{id:string;report_type:string;report_date:string;generated_at:string}};
 type Participant={id:string;user_id:string;duty_role:string;is_primary:boolean;removed_at?:string|null;user_name:string;account_role:string};
@@ -331,7 +334,7 @@ export default function SecureJourneyManagement(){
  const [intakeMode,setIntakeMode]=useState<'create'|'edit'>('create');
  const [editAcknowledged,setEditAcknowledged]=useState(false);
  const [editBaseline,setEditBaseline]=useState<{journeyId:string;timezone:string;departureInput:string;departureAt:string|null;arrivalInput:string;arrivalAt:string|null}|null>(null);
- const [workspaceTab,setWorkspaceTab]=useState<'overview'|'command'|'itinerary'|'evidence'|'resources'|'reports'>('overview');
+ const [workspaceTab,setWorkspaceTab]=useState<'overview'|'command'|'itinerary'|'evidence'|'resources'|'airspace'|'reports'>('overview');
  const [reportType,setReportType]=useState('daily');
  const [lastGeneratedReport,setLastGeneratedReport]=useState<{id:string;report_date:string;report_type:string}|null>(null);
  const [reportDownloadError,setReportDownloadError]=useState('');
@@ -405,6 +408,7 @@ export default function SecureJourneyManagement(){
  const assetsQ=useQuery<{data:JourneyAsset[]}>({queryKey:['sjm-assets',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/assets')).data,enabled:Boolean(selectedId)});
  const vehiclesQ=useQuery<{data:VehicleResource[]}>({queryKey:['sjm-vehicles'],queryFn:async()=>(await api.get('/sjm/vehicles')).data,enabled:isSupervisor,staleTime:60000});
  const devicesQ=useQuery<{data:DeviceResource[]}>({queryKey:['sjm-devices'],queryFn:async()=>(await api.get('/sjm/devices')).data,enabled:isSupervisor,staleTime:60000});
+ const airspaceQ=useQuery<{data:AirspaceSnapshot}>({queryKey:['sjm-airspace'],queryFn:async()=>(await api.get('/sjm/airspace')).data,enabled:Boolean(journey&&workspaceTab==='airspace'),refetchInterval:15000,staleTime:10000});
  const [vehicleDraft,setVehicleDraft]=useState<AssetDraft[]>([]);
  const [deviceDraft,setDeviceDraft]=useState<AssetDraft[]>([]);
  useEffect(()=>{
@@ -686,11 +690,28 @@ return (
            {value:'itinerary',label:'Itinerary',Icon:Route},
            {value:'evidence',label:'Evidence',Icon:Layers3},
            {value:'resources',label:'Team & resources',Icon:Users},
+           {value:'airspace',label:'Airspace 3D',Icon:Plane},
            {value:'reports',label:'Reports',Icon:FileText}
           ].map(({value,label,Icon})=><button type="button" role="tab" aria-selected={workspaceTab===value} key={value} onClick={()=>setWorkspaceTab(value as typeof workspaceTab)} className={'inline-flex shrink-0 items-center gap-2 rounded-t-md border-b-2 px-3 py-3 text-xs font-semibold transition '+(workspaceTab===value?'border-emerald-300 bg-emerald-300/[0.06] text-emerald-100':'border-transparent text-slate-400 hover:bg-white/[0.025] hover:text-slate-100')}><Icon size={13}/>{label}</button>)}
          </div>
         </div>
         <div className="p-3 sm:p-5">
+         {workspaceTab==='airspace'&&<div className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] pb-3">
+           <div><Kicker>AVIATION SURVEILLANCE</Kicker><h4 className="mt-1 text-base font-semibold text-white">Live 3D airspace</h4><p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-400">A separate aircraft picture for situational awareness. Aircraft positions, provider flight-information messages, airline status and this journey's arrival/handover evidence are independent records.</p></div>
+           <div className="flex items-center gap-2"><EvidenceBadge value={airspaceQ.data?.data.status||'NOT_CONFIGURED'}/><Btn onClick={()=>void airspaceQ.refetch()} disabled={airspaceQ.isFetching}><RefreshCw size={12} className={airspaceQ.isFetching?'animate-spin':''}/>Refresh feed</Btn></div>
+          </div>
+          {airspaceQ.isError&&<p role="alert" className="rounded-md border border-red-400/20 bg-red-500/[0.05] p-3 text-[11px] text-red-200">{errorText(airspaceQ.error,'Airspace feed status could not be loaded.')}</p>}
+          {!airspaceQ.data&&airspaceQ.isLoading?<div className="grid min-h-[240px] place-items-center rounded-md border border-white/[0.07] text-[11px] text-slate-500">Checking aviation provider configuration…</div>:<Suspense fallback={<div className="grid min-h-[420px] place-items-center rounded-md border border-white/[0.07] text-[11px] text-slate-500">Loading 3D globe…</div>}>
+           <SjmAirspaceGlobe aircraft={airspaceQ.data?.data.aircraft||[]} status={airspaceQ.data?.data.status||'UNAVAILABLE'} configured={airspaceQ.data?.data.configured===true} lastPositionAt={airspaceQ.data?.data.last_position_at||null} bounds={airspaceQ.data?.data.coverage?.bounds||null}/>
+          </Suspense>}
+          {airspaceQ.data?.data.status==='NOT_CONFIGURED'&&<div className="border-l-2 border-amber-300/50 bg-white/[0.02] px-3 py-2.5 text-[11px] leading-5 text-slate-400"><span className="font-semibold text-slate-200">Provider connection not configured.</span> The globe is an empty spatial view until the licensed Firehose account is enabled and the server-side credentials and approved coverage are supplied. No aircraft are simulated.</div>}
+          <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+           {[['Position messages',airspaceQ.data?.data.position_count??0],['All provider messages',airspaceQ.data?.data.message_count??0],['Rejected messages',airspaceQ.data?.data.rejected_count??0],['Aircraft in current cache',airspaceQ.data?.data.aircraft.length??0]].map(([label,value])=><div key={String(label)} className="border-b border-white/[0.07] py-2"><p className="text-[10px] uppercase tracking-[.12em] text-slate-500">{label}</p><p className="mt-1 text-lg font-semibold tabular-nums text-slate-200">{Number(value).toLocaleString()}</p></div>)}
+          </div>
+          <div className="border-t border-white/[0.07] pt-3"><Kicker>PROVIDER EVENTS</Kicker><div className="mt-2 space-y-2">{(airspaceQ.data?.data.recent_events||[]).slice(0,8).map((event,index)=><div key={event.received_at+'-'+index} className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.05] pb-2 text-[11px]"><span className="text-slate-300">{event.type.replaceAll('_',' ')} · {event.ident||'Unidentified flight'}{event.airport?' · '+event.airport:''}</span><span className="font-mono text-slate-500">{dateText(event.observed_at||event.received_at)}</span></div>)}{!(airspaceQ.data?.data.recent_events||[]).length&&<p className="text-[11px] text-slate-500">No provider flight-information events have been received.</p>}</div></div>
+          <p className="text-[10px] leading-5 text-slate-600">An aircraft appearing to land is not arrival verification for this journey. SJM closeout still requires its own authorised handover evidence. Coverage is bounded and incomplete; an empty view does not prove there are no aircraft.</p>
+         </div>}
          {workspaceTab==='resources'&&<div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-white/[0.08] bg-white/[0.025] p-4">
            <div><Kicker>DIRECT JOURNEY ASSIGNMENTS</Kicker><h4 className="mt-1 text-base font-semibold text-white">Team & mission resources</h4><p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-400">Assign people through mission roles and attach vehicles and Guardian devices directly to this journey. Resources with an active assignment to another journey cannot be reassigned here.</p></div>
