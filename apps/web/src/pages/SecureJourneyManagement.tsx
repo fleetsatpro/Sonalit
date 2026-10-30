@@ -430,8 +430,8 @@ export default function SecureJourneyManagement(){
   :['LIVE','DELAYED','CONNECTED'].includes(regionalStatus)?regionalStatus:airspaceQ.data?.data.status||'UNAVAILABLE';
  const airportCentre=useMemo(()=>{
   const reference=airspaceQ.data?.data.intelligence?.airport_reference;
-  const latitude=Number(reference?.airport?.latitude),longitude=Number(reference?.airport?.longitude);
-  return reference?.status==='RESOLVED'&&Number.isFinite(latitude)&&latitude>=-90&&latitude<=90&&Number.isFinite(longitude)&&longitude>=-180&&longitude<=180
+  const latitude=reference?.airport?.latitude,longitude=reference?.airport?.longitude;
+  return reference?.status==='RESOLVED'&&typeof latitude==='number'&&Number.isFinite(latitude)&&latitude>=-90&&latitude<=90&&typeof longitude==='number'&&Number.isFinite(longitude)&&longitude>=-180&&longitude<=180
    ?{latitude,longitude}:null;
  },[airspaceQ.data?.data.intelligence?.airport_reference]);
  const flightCorrelation=useMemo(()=>correlateJourneyFlight({
