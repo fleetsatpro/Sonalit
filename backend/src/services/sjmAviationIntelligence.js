@@ -426,7 +426,7 @@ function normaliseWeatherRecords(records,type,now=Date.now()) {
 async function loadInternationalSigmets({fetcher=global.fetch,now=Date.now(),headers={}}={}) {
   const key='weather:sigmets:international';
   const cached=cacheGet(key,now);
-  if(cached)return {...refreshCachedAircraftArea(cached,now,{maxAgeSeconds:ADSBLOL_MAX_POSITION_AGE_SECONDS,liveSeconds:45,delayedSeconds:180}),cache_state:'HIT'};
+  if(cached)return {...cached,cache_state:'HIT'};
   try{
     const payload=await requestJson(AIRWEATHER_BASE+'/isigmet?format=json',{headers,fetcher});
     const records=normaliseWeatherRecords(payload,'SIGMET',now);
@@ -742,7 +742,7 @@ async function loadAdsbLolArea({airport,env=process.env,fetcher=global.fetch,now
   }
   const key='adsblol-area:'+icao+':'+ADSBLOL_AREA_RADIUS_NM;
   const cached=cacheGet(key,now);
-  if(cached)return {...cached,cache_state:'HIT'};
+  if(cached)return {...refreshCachedAircraftArea(cached,now,{maxAgeSeconds:ADSBLOL_MAX_POSITION_AGE_SECONDS,liveSeconds:45,delayedSeconds:180}),cache_state:'HIT'};
   const pending=areaLoadPromises.get(key);
   if(pending)return pending;
   const request=(async()=>{
