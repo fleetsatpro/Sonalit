@@ -350,7 +350,8 @@ function normaliseAdsbLolRecord(item,now=Date.now()) {
   if(!/^[0-9a-f]{6}$/.test(hex)||!flight||!Number.isFinite(lat)||!Number.isFinite(lon)||
     lat < -90||lat > 90||lon < -180||lon > 180)return null;
   const seenPosition=numberOrNull(item.seen_pos);
-  const observedAt=Number.isFinite(seenPosition)&&seenPosition>=0&&seenPosition<86_400
+  if(Number.isFinite(seenPosition)&&(seenPosition<0||seenPosition>ADSBLOL_MAX_POSITION_AGE_SECONDS))return null;
+  const observedAt=Number.isFinite(seenPosition)
     ?new Date(now-seenPosition*1000).toISOString():null;
   const geometric=numberOrNull(item.alt_geom);
   const barometric=numberOrNull(item.alt_baro);
