@@ -86,7 +86,7 @@ describe('SJM OpenSky REST airspace feed',()=>{
       id:'abc123',ident:'KQ100',origin_country:'Kenya',latitude:-1.3,longitude:36.8,
       ground_speed_mps:220,heading_deg:90,vertical_rate_mps:-2.4,on_ground:false,
       barometric_altitude_m:12000,geometric_altitude_m:12400,altitude_m:12400,
-      altitude_reference:'GEOMETRIC',squawk:'1234',position_source_label:'ADSB',
+      altitude_reference:'WGS84_ELLIPSOID',squawk:'1234',position_source_label:'ADSB',
       category:4,category_label:'LARGE',evidence_class:'OBSERVED',provider:'opensky_rest',
     });
   });
