@@ -725,7 +725,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await testInfo.attach('sjm-airspace-selected-aircraft', { body: await display.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(display).toBeVisible();
-    const mobileGrid = display.locator(':scope > div.grid');
+    const mobileGrid = display.locator(':scope > div.grid').first();
     const mobileColumns = await mobileGrid.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
     expect(mobileColumns, '390px airspace workspace stacks globe and inspector').toBe(1);
     await expect(display.getByRole('complementary', { name: 'Aircraft inspection' })).toBeVisible();
