@@ -37,7 +37,7 @@ function getConfig(env=process.env) {
   let reason=null;
   if(!enabled)reason='feed_disabled';
   else if(!licence)reason='provider_licence_not_confirmed';
-  else if(!username||!apiKey||/[\\r\\n\\s]/.test(username)||/[\\r\\n\\s]/.test(apiKey))reason='provider_credentials_missing_or_invalid';
+  else if(!username||!apiKey||/[\\r\n\\s]/.test(username)||/[\\r\n\\s]/.test(apiKey))reason='provider_credentials_missing_or_invalid';
   else if(!bounds)reason='operational_bounds_missing_or_invalid';
   return {configured:!reason,reason,username:!reason?username:null,apiKey:!reason?apiKey:null,bounds:!reason?bounds:null};
 }
@@ -46,7 +46,7 @@ function buildInitiationCommand(config) {
   const {south,west,north,east}=config.bounds;
   return ['live','username '+config.username,'password '+config.apiKey,
     'events "position flifo arrival departure cancellation"',
-    'latlong "'+[south,west,north,east].join(' ')+'"','keepalive 60'].join(' ')+'\\n';
+    'latlong "'+[south,west,north,east].join(' ')+'"','keepalive 60'].join(' ')+'\n';
 }
 function validCoordinate(lat,lon) {
   return Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=-90&&lat<=90&&lon>=-180&&lon<=180;
@@ -179,7 +179,7 @@ function connect() {
     buffer+=String(chunk);
     if(buffer.length>MAX_BUFFER){lastErrorCode='provider_message_buffer_limit';stream.destroy();return;}
     let pos;
-    while((pos=buffer.indexOf('\\n'))>=0){const line=buffer.slice(0,pos);buffer=buffer.slice(pos+1);processLine(line);}
+    while((pos=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,pos);buffer=buffer.slice(pos+1);processLine(line);}
   });
   stream.on('error',()=>{lastErrorCode='tls_stream_error';});
   stream.on('close',()=>{

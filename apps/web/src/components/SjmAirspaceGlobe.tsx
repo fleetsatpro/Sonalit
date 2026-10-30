@@ -107,9 +107,13 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         });
         entityRef.current.set(item.id,entity);
       }else{
-        entity.position=position;
-        if(entity.point)entity.point.color=colour;
-        if(entity.label)entity.label.text=item.ident||item.id;
+        entity.position=new Cesium.ConstantPositionProperty(position);
+        entity.point=new Cesium.PointGraphics({
+          pixelSize:8,color:colour,
+          outlineColor:Cesium.Color.fromCssColorString('#17212b'),
+          outlineWidth:2,disableDepthTestDistance:Number.POSITIVE_INFINITY,
+        });
+        if(entity.label)entity.label.text=new Cesium.ConstantProperty(item.ident||item.id);
       }
       const track=(item.trail||[]).filter(p=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude));
       if(track.length>1){
@@ -120,7 +124,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
             positions,width:1.5,material:colour.withAlpha(0.45),arcType:Cesium.ArcType.NONE,
           })});
           trailRef.current.set(item.id,trail);
-        }else if(trail.polyline)trail.polyline.positions=positions;
+        }else trail.polyline=new Cesium.PolylineGraphics({positions,width:1.5,material:colour.withAlpha(0.45),arcType:Cesium.ArcType.NONE});
       }
     }
     viewer.scene.requestRender();

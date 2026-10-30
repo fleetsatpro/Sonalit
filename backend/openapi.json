@@ -7001,6 +7001,16 @@
           }
         }
       }
+    },
+    "/api/v1/sjm/airspace": {
+      "get": {
+        "operationId": "get_api_v1_sjm_airspace",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
-}
+}\n

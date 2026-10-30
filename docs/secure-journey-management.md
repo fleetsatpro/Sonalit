@@ -39,10 +39,23 @@ Journey reports can be generated manually as itinerary, pre-trip brief, daily tr
 
 ## Aviation data and live airspace
 
-- Flight reference and operator-entered flight-status notes are separate from live aircraft surveillance.
-- The 3D airspace layer is not considered connected until a licensed aircraft-data provider is contractually enabled and credentials are installed server-side. The browser must never receive provider secrets.
-- Until configured, airspace status must be shown as NOT_CONFIGURED/UNAVAILABLE with no synthetic aircraft or inferred coverage.
-- ADS-B/MLAT aircraft position, provider flight-information events, airline flight status and SJM principal handover/arrival verification are distinct evidence types. An aircraft landing never closes a journey or proves that a principal was received.
+SJM's aviation layer is a 3D airspace picture, not a renamed journey map. It is independent from Guardian telemetry, the operator-entered flight-status field, airline FLIFO events and the authorised journey arrival/handover process.
 
+The initial commercial provider adapter is FlightAware Firehose. It uses a persistent TLS 1.2+ TCP connection to `firehose.flightaware.com:1501`; the provider sends JSON Lines messages. The subscription must include the position layer (ADS-B/MLAT/radar layers as actually purchased) and any required FLIFO/arrival/departure event layers. Provider account enablement, pricing and permitted redistribution depend on the actual subscription and application scope.
+
+Feed activation is blocked until an authorised platform operator configures all of these:
+
+- `SJM_AIRSPACE_FEED_ENABLED=true`
+- `SJM_AIRSPACE_LICENSE_CONFIRMED=true` after commercial licence and intended tenant-display/redistribution rights have been reviewed
+- `FLIGHTAWARE_FIREHOSE_USERNAME` and `FLIGHTAWARE_FIREHOSE_API_KEY` as server-side secrets
+- `SJM_AIRSPACE_BOUNDS` as a bounded operational rectangle in `south west north east` order (for example `-5 32 6 42` for a contracted East Africa region)
+
+The backend owns the persistent TLS connection, JSONL parsing, reconnect/idle handling, bounded aircraft cache, freshness classification and event provenance. The browser never receives credentials. The Cesium globe plots only validated provider-observed positions and reported trail points; it does not dead-reckon aircraft between observations or claim complete coverage. When the feed is not configured, the endpoint returns `NOT_CONFIGURED` with an empty aircraft collection and the globe remains empty. It does not fall back to the OpenSky research API or show synthetic aircraft.
+
+OpenSky is not the default commercial SJM feed: its published terms require written permission for commercial/for-profit use and for operational REST API integration. Any separately licensed OpenSky adapter must remain governed by its approved licence and scope.
+
+A reported aircraft arrival or landing is not evidence that the principal has reached the receiving team. It must never transition the SJM lifecycle, complete a stop, verify custody or close a journey. Those remain separate authorised operations with their own evidence.
+
+## API
 ## Validation
 Run pnpm --filter fleetops-backend test -- --runInBand and pnpm --filter @sonalit/web typecheck. CI also checks migrations, backend integration, OpenAPI drift, browser E2E, dependency audit and container build. Preview route delivery has been verified; authenticated operator walkthrough and post-merge runtime verification remain separate release gates.

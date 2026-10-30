@@ -89,6 +89,21 @@ async function stubSjmApi(page: Page) {
   await page.route('**/api/v1/sjm/**', async (route) => {
     const url = new URL(route.request().url());
     const pathname = url.pathname;
+    if (pathname === '/api/v1/sjm/airspace') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: {
+          provider: 'flightaware_firehose', provider_name: 'FlightAware Firehose',
+          status: 'NOT_CONFIGURED', configured: false, connected: false,
+          last_connected_at: null, last_received_at: null, last_position_at: null,
+          message_count: 0, position_count: 0, rejected_count: 0,
+          coverage: { complete: false, bounds: null, query_scope: 'unavailable' },
+          aircraft: [], recent_events: [],
+          provenance: { source: 'FlightAware Firehose', fabricated_data_used: false },
+        } }),
+      });
+    }
     if (pathname === '/api/v1/sjm/clients') {
       return route.fulfill({
         status: 200,
