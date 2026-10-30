@@ -1,228 +1,451 @@
 'use strict';
 
-const tls = require('tls');
+const crypto=require('crypto');
+const {getRedis}=require('../config/redis');
 
-const HOST='firehose.flightaware.com';
-const PORT=1501;
-const MAX_BUFFER=512*1024;
-const MAX_AIRCRAFT=3000;
-const MAX_TRAIL=24;
+const API_BASE='https://opensky-network.org/api';
+const TOKEN_URL='https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
+const LEASE_KEY='sonalit:sjm:airspace:opensky:ingest-lease:v1';
+const SNAPSHOT_KEY='sonalit:sjm:airspace:opensky:snapshot:v1';
+const LEASE_MS=30_000;
+const SNAPSHOT_TTL_SECONDS=15*60;
+const MAX_AIRCRAFT=4_000;
+const MAX_TRAIL=36;
 const RETENTION_MS=10*60*1000;
 const LIVE_MS=45_000;
 const DELAYED_MS=180_000;
-const IDLE_MS=5*60*1000;
-const RECONNECT_BASE_MS=3000;
-const RECONNECT_MAX_MS=30000;
-const aircraft=new Map();
-const recentEvents=[];
-let socket=null, reconnectTimer=null, idleTimer=null;
-let started=false, stopping=false, connected=false, reconnectAttempt=0;
-let lastConnectedAt=null,lastReceivedAt=null,lastPositionAt=null,lastPitr=null,lastErrorCode=null;
-let messageCount=0,positionCount=0,rejectedCount=0;
+const UNAVAILABLE_MS=RETENTION_MS;
+const RENEW_SCRIPT="if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('pexpire',KEYS[1],ARGV[2]) else return 0 end";
+const RELEASE_SCRIPT="if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end";
+const POSITION_SOURCE={0:'ADSB',1:'ASTERIX',2:'MLAT',3:'FLARM'};
+const CATEGORY={
+  0:'UNKNOWN',1:'NO_INFORMATION',2:'LIGHT',3:'SMALL',4:'LARGE',5:'HIGH_VORTEX_LARGE',
+  6:'HEAVY',7:'HIGH_PERFORMANCE',8:'ROTORCRAFT',9:'GLIDER',10:'LIGHTER_THAN_AIR',
+  11:'SKYDIVING',12:'ULTRALIGHT',14:'UAV',15:'SPACE',16:'EMERGENCY_SURFACE',
+  17:'SERVICE_SURFACE',18:'POINT_OBSTACLE',19:'CLUSTER_OBSTACLE',20:'LINE_OBSTACLE',
+};
+
+let accessToken=null,accessTokenExpiresAt=0;
+let ownerToken=null,workerConfig=null,pollTimer=null,leaseTimer=null,pollInFlight=null;
+let aircraft=new Map();
+let lastSuccessfulPollAt=null,lastPositionAt=null,lastProviderTime=null;
+let messageCount=0,positionCount=0,rejectedCount=0,rateLimitRemaining=null;
+let lastErrorCode=null,nextPollAt=0,rateLimitRetrySeconds=null;
 
 function parseBounds(raw) {
   if(typeof raw!=='string'||!raw.trim())return null;
-  const v=raw.trim().split(/[ ,]+/).map(Number);
-  if(v.length!==4||v.some(n=>!Number.isFinite(n)))return null;
-  const [south,west,north,east]=v;
-  if(south < -90||north > 90||west < -180||east > 180||south>=north||west>=east||(north-south)*(east-west)>500)return null;
-  return {south,west,north,east};
+  const values=raw.trim().split(/[ ,]+/).map(Number);
+  if(values.length!==4||values.some(value=>!Number.isFinite(value)))return null;
+  const [south,west,north,east]=values;
+  if(south < -90||north > 90||west < -180||east > 180||south>=north||west>=east)return null;
+  const area=(north-south)*(east-west);
+  if(area<=0||area>500)return null;
+  return {south,west,north,east,area_sq_degrees:area};
 }
+
+function creditsForBounds(bounds) {
+  if(!bounds)return 4;
+  const area=bounds.area_sq_degrees??(bounds.north-bounds.south)*(bounds.east-bounds.west);
+  if(area<=25)return 1;
+  if(area<=100)return 2;
+  if(area<=400)return 3;
+  return 4;
+}
+
 function getConfig(env=process.env) {
   const enabled=env.SJM_AIRSPACE_FEED_ENABLED==='true';
   const licence=env.SJM_AIRSPACE_LICENSE_CONFIRMED==='true';
-  const username=String(env.FLIGHTAWARE_FIREHOSE_USERNAME||'').trim();
-  const apiKey=String(env.FLIGHTAWARE_FIREHOSE_API_KEY||'').trim();
+  const clientId=String(env.OPENSKY_CLIENT_ID||'').trim();
+  const clientSecret=String(env.OPENSKY_CLIENT_SECRET||'').trim();
   const bounds=parseBounds(env.SJM_AIRSPACE_BOUNDS);
+  const requestedBudget=Number(env.OPENSKY_DAILY_CREDIT_BUDGET||3000);
+  const dailyCreditBudget=Number.isFinite(requestedBudget)?Math.max(500,Math.min(4000,Math.floor(requestedBudget))):3000;
+  const desiredInterval=Number(env.OPENSKY_POLL_INTERVAL_SECONDS||120);
+  const basePollSeconds=Number.isFinite(desiredInterval)?Math.max(60,Math.min(900,Math.floor(desiredInterval))):120;
+  const creditsPerRequest=creditsForBounds(bounds);
+  const budgetFloorSeconds=Math.ceil(86_400*creditsPerRequest/dailyCreditBudget);
+  const pollIntervalSeconds=Math.max(basePollSeconds,budgetFloorSeconds,60);
   let reason=null;
   if(!enabled)reason='feed_disabled';
-  else if(!licence)reason='provider_licence_not_confirmed';
-  else if(!username||!apiKey||/[\\r\n\\s]/.test(username)||/[\\r\n\\s]/.test(apiKey))reason='provider_credentials_missing_or_invalid';
+  else if(!licence)reason='provider_written_operational_and_commercial_license_not_confirmed';
+  else if(!clientId||!clientSecret||/[\r\n]/.test(clientId)||/[\r\n]/.test(clientSecret))reason='provider_oauth_credentials_missing_or_invalid';
   else if(!bounds)reason='operational_bounds_missing_or_invalid';
-  return {configured:!reason,reason,username:!reason?username:null,apiKey:!reason?apiKey:null,bounds:!reason?bounds:null};
+  return {
+    configured:!reason,reason,provider:'opensky_rest',providerName:'OpenSky Network',
+    clientId:!reason?clientId:null,clientSecret:!reason?clientSecret:null,bounds:!reason?bounds:null,
+    dailyCreditBudget,creditsPerRequest,pollIntervalSeconds,
+    projectedDailyCredits:Math.ceil(86_400/pollIntervalSeconds)*creditsPerRequest,
+  };
 }
-function buildInitiationCommand(config,resumePitr=null) {
-  if(!config?.configured||!config.username||!config.apiKey||!config.bounds)throw new Error('Firehose configuration is incomplete.');
-  const {south,west,north,east}=config.bounds;
-  const cursor=Number(resumePitr);
-  const startCommand=Number.isFinite(cursor)&&cursor>0&&cursor<=4e9?'pitr '+cursor:'live';
-  return [startCommand,'username '+config.username,'password '+config.apiKey,
-    'events "position flifo arrival departure cancellation"',
-    'latlong "'+[south,west,north,east].join(' ')+'"','keepalive 60'].join(' ')+'\n';
+
+function epochIso(value,now=Date.now()) {
+  const number=Number(value);
+  if(!Number.isFinite(number)||number<=0||number>Math.floor(now/1000)+30)return null;
+  return new Date(number*1000).toISOString();
 }
-function validCoordinate(lat,lon) {
-  return Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=-90&&lat<=90&&lon>=-180&&lon<=180;
-}
-function epochIso(value) {
-  const n=Number(value);
-  return !Number.isFinite(n)||n<=0||n>4e9?null:new Date(n*1000).toISOString();
-}
-function classifyFreshness(observedAt,now=Date.now(),isConnected=connected) {
+
+function classifyFreshness(observedAt,now=Date.now()) {
   const observed=Date.parse(observedAt||'');
-  if(!Number.isFinite(observed)||observed>now)return 'UNAVAILABLE';
-  const age=now-observed;
-  if(!isConnected)return age<=DELAYED_MS?'DELAYED':age<=RETENTION_MS?'STALE':'UNAVAILABLE';
+  if(!Number.isFinite(observed)||observed>now+30_000)return 'UNAVAILABLE';
+  const age=Math.max(0,now-observed);
   if(age<=LIVE_MS)return 'LIVE';
   if(age<=DELAYED_MS)return 'DELAYED';
-  if(age<=RETENTION_MS)return 'STALE';
+  if(age<=UNAVAILABLE_MS)return 'STALE';
   return 'UNAVAILABLE';
 }
-function normalizePosition(m,receivedAt=new Date().toISOString()) {
-  if(!m||m.type!=='position')return null;
-  const lat=Number(m.lat),lon=Number(m.lon),observedAt=epochIso(m.clock);
-  const id=String(m.id||m.hexid||m.ident||'').trim();
-  if(!id||!validCoordinate(lat,lon)||!observedAt)return null;
-  const altitudeValue=m.alt_gnss??m.alt, speedValue=m.gs, headingValue=m.heading_true??m.heading;
-  const gnssFeet=m.alt_gnss==null||m.alt_gnss===''?NaN:Number(m.alt_gnss);
-  const pressureFeet=m.alt==null||m.alt===''?NaN:Number(m.alt);
-  const alt=Number.isFinite(gnssFeet)?gnssFeet:pressureFeet;
-  const altitudeReference=Number.isFinite(gnssFeet)?'WGS84_ELLIPSOID':Number.isFinite(pressureFeet)?'BAROMETRIC_PRESSURE':null;
-  const gs=speedValue==null||speedValue===''?NaN:Number(speedValue);
-  const heading=headingValue==null||headingValue===''?NaN:Number(headingValue);
+
+function normaliseStateVector(state,now=Date.now()) {
+  if(!Array.isArray(state)||state.length<17)return null;
+  const icao24=String(state[0]||'').trim().toLowerCase();
+  const latitude=state[6]==null?NaN:Number(state[6]);
+  const longitude=state[5]==null?NaN:Number(state[5]);
+  if(!/^[0-9a-f]{6}$/.test(icao24)||!Number.isFinite(latitude)||!Number.isFinite(longitude)||
+    latitude < -90||latitude > 90||longitude < -180||longitude > 180)return null;
+  // OpenSky explicitly sets time_position=null when no position report was
+  // received within the preceding 15 seconds. Do not create a fresh map fix.
+  const positionTime=epochIso(state[3],now);
+  if(!positionTime)return null;
+  const lastContact=epochIso(state[4],now);
+  if(!lastContact)return null;
+  const barometricAltitude=state[7]==null?null:Number(state[7]);
+  const geometricAltitude=state[13]==null?null:Number(state[13]);
+  const altitude=Number.isFinite(geometricAltitude)?geometricAltitude:
+    Number.isFinite(barometricAltitude)?barometricAltitude:null;
+  const altitudeReference=Number.isFinite(geometricAltitude)?'GEOMETRIC':
+    Number.isFinite(barometricAltitude)?'BAROMETRIC_PRESSURE':null;
+  const velocity=state[9]==null?null:Number(state[9]);
+  const track=state[10]==null?null:Number(state[10]);
+  const verticalRate=state[11]==null?null:Number(state[11]);
+  const category=state[17]==null?null:Number(state[17]);
+  const ident=String(state[1]||'').trim().replace(/\s+/g,' ')||icao24.toUpperCase();
+  const ageSeconds=Math.max(0,Math.floor((now-Date.parse(positionTime))/1000));
   return {
-    id,provider:'flightaware_firehose',ident:String(m.ident||m.atcident||m.reg||id).trim(),
-    registration:m.reg||null,aircraft_type:m.aircrafttype||null,
-    latitude:lat,longitude:lon,
-    altitude_m:Number.isFinite(alt)?alt*0.3048:null,altitude_reference:altitudeReference,
-    ground_speed_mps:Number.isFinite(gs)?gs*0.514444:null,
-    heading_deg:Number.isFinite(heading)&&heading>=0&&heading<=360?heading:null,
-    origin:m.orig||null,destination:m.dest||null,air_ground:m.air_ground||null,
-    update_type:m.updateType||null,observed_at:observedAt,received_at:receivedAt,
-    evidence_class:'OBSERVED',
-    provenance:{provider:'FlightAware Firehose',source_message:'position',position_source_code:m.updateType||null,pitr:m.pitr||null},
+    id:icao24,provider:'opensky_rest',ident,registration:null,
+    origin:null,destination:null,origin_country:state[2]||null,
+    latitude,longitude,altitude_m:altitude,altitude_reference:altitudeReference,
+    barometric_altitude_m:Number.isFinite(barometricAltitude)?barometricAltitude:null,
+    geometric_altitude_m:Number.isFinite(geometricAltitude)?geometricAltitude:null,
+    ground_speed_mps:Number.isFinite(velocity)?velocity:null,
+    heading_deg:Number.isFinite(track)&&track>=0&&track<=360?track:null,
+    vertical_rate_mps:Number.isFinite(verticalRate)?verticalRate:null,
+    on_ground:typeof state[8]==='boolean'?state[8]:null,
+    squawk:state[14]==null?null:String(state[14]),
+    position_source:state[16]==null?null:Number(state[16]),
+    position_source_label:POSITION_SOURCE[Number(state[16])]||'UNKNOWN',
+    category:Number.isInteger(category)?category:null,
+    category_label:CATEGORY[category]||'UNKNOWN',
+    observed_at:positionTime,last_contact_at:lastContact,
+    age_seconds:ageSeconds,freshness:classifyFreshness(positionTime,now),
+    evidence_class:'OBSERVED',trail:[],
   };
 }
-function rememberPosition(p) {
-  const previous=aircraft.get(p.id);
-  if(previous&&Date.parse(p.observed_at)<Date.parse(previous.observed_at))return false;
-  const trail=previous?previous.trail.slice(-(MAX_TRAIL-1)):[];
-  if(!trail.length||trail[trail.length-1].observed_at!==p.observed_at)trail.push({
-    latitude:p.latitude,longitude:p.longitude,altitude_m:p.altitude_m,
-    altitude_reference:p.altitude_reference,observed_at:p.observed_at,
+
+function buildStatesUrl(bounds) {
+  if(!bounds)throw new Error('A contracted OpenSky coverage rectangle is required.');
+  const url=new URL('/api/states/all',API_BASE);
+  url.searchParams.set('lamin',String(bounds.south));
+  url.searchParams.set('lomin',String(bounds.west));
+  url.searchParams.set('lamax',String(bounds.north));
+  url.searchParams.set('lomax',String(bounds.east));
+  url.searchParams.set('extended','1');
+  return url.toString();
+}
+
+async function getAccessToken(config,{fetcher=global.fetch,now=Date.now(),force=false}={}) {
+  if(!config?.clientId||!config?.clientSecret)throw new Error('OpenSky OAuth client credentials are not configured.');
+  if(!force&&accessToken&&accessTokenExpiresAt>now+60_000)return accessToken;
+  if(typeof fetcher!=='function')throw new Error('Global fetch is unavailable.');
+  const body=new URLSearchParams({
+    grant_type:'client_credentials',client_id:config.clientId,client_secret:config.clientSecret,
   });
-  aircraft.set(p.id,{...p,trail});
-  if(aircraft.size>MAX_AIRCRAFT) {
-    const old=[...aircraft.entries()].sort((a,b)=>Date.parse(a[1].observed_at)-Date.parse(b[1].observed_at)).slice(0,aircraft.size-MAX_AIRCRAFT);
-    for(const [key] of old)aircraft.delete(key);
+  const response=await fetcher(TOKEN_URL,{
+    method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:body.toString(),signal:AbortSignal.timeout(12_000),
+  });
+  if(!response.ok){
+    const error=new Error('OpenSky OAuth token request failed.');
+    error.code=response.status===401?'oauth_rejected':'oauth_unavailable';
+    error.status=response.status;
+    throw error;
   }
+  const payload=await response.json();
+  if(typeof payload?.access_token!=='string'||!payload.access_token)throw new Error('OpenSky OAuth response did not contain an access token.');
+  const expiresIn=Number(payload.expires_in||1800);
+  accessToken=payload.access_token;
+  accessTokenExpiresAt=now+Math.max(60,expiresIn-60)*1000;
+  return accessToken;
+}
+
+async function fetchStates(config,{fetcher=global.fetch,now=Date.now()}={}) {
+  const url=buildStatesUrl(config.bounds);
+  let token=await getAccessToken(config,{fetcher,now});
+  let response;
+  for(let attempt=0;attempt<2;attempt++){
+    response=await fetcher(url,{
+      method:'GET',headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+      signal:AbortSignal.timeout(15_000),
+    });
+    if(response.status===401&&attempt===0){
+      accessToken=null;accessTokenExpiresAt=0;
+      token=await getAccessToken(config,{fetcher,now,force:true});
+      continue;
+    }
+    break;
+  }
+  const remainingHeader=response.headers?.get?.('x-rate-limit-remaining');
+  const remaining=remainingHeader==null?null:Number(remainingHeader);
+  if(response.status===429){
+    const retryHeader=response.headers?.get?.('x-rate-limit-retry-after-seconds');
+    const retryAfter=Number(retryHeader);
+    const error=new Error('OpenSky API credit limit reached.');
+    error.code='rate_limited';
+    error.retryAfterSeconds=Number.isFinite(retryAfter)?Math.max(1,Math.min(86_400,retryAfter)):900;
+    error.rateLimitRemaining=Number.isFinite(remaining)?remaining:null;
+    throw error;
+  }
+  if(!response.ok){
+    const error=new Error('OpenSky state-vector request failed.');
+    error.code=response.status>=500?'provider_unavailable':'provider_request_rejected';
+    error.status=response.status;
+    throw error;
+  }
+  const payload=await response.json();
+  if(!payload||!Array.isArray(payload.states))throw new Error('OpenSky returned an invalid state-vector response.');
+  return {
+    states:payload.states,providerTime:epochIso(payload.time,now),
+    rateLimitRemaining:Number.isFinite(remaining)?remaining:null,
+    receivedAt:new Date(now).toISOString(),
+  };
+}
+
+function rememberPosition(item) {
+  const previous=aircraft.get(item.id);
+  if(previous&&Date.parse(item.observed_at)<=Date.parse(previous.observed_at)){
+    aircraft.set(item.id,{...previous,last_contact_at:item.last_contact_at});
+    return false;
+  }
+  const trail=previous?(previous.trail||[]).slice(-(MAX_TRAIL-1)):[];
+  trail.push({latitude:item.latitude,longitude:item.longitude,altitude_m:item.altitude_m,
+    altitude_reference:item.altitude_reference,observed_at:item.observed_at});
+  aircraft.set(item.id,{...item,trail});
   return true;
 }
-function rememberEvent(m,receivedAt) {
-  recentEvents.unshift({
-    type:m.type,flight_id:m.id||null,ident:m.ident||m.atcident||null,
-    airport:m.airport||null,origin:m.orig||null,destination:m.dest||null,
-    observed_at:epochIso(m.clock||m.aat||m.pitr),received_at:receivedAt,
-    evidence_class:'OBSERVED',source:'flightaware_firehose',
-  });
-  if(recentEvents.length>100)recentEvents.length=100;
-}
-function processLine(line) {
-  if(!String(line||'').trim())return;
-  let m;
-  try{m=JSON.parse(String(line));}catch(_){lastErrorCode='provider_message_parse_error';rejectedCount++;return;}
-  const receivedAt=new Date().toISOString();
-  lastReceivedAt=receivedAt;messageCount++;
-  const cursor=Number(m.pitr);
-  if(Number.isFinite(cursor)&&cursor>0&&cursor<=4e9&&(lastPitr===null||cursor>lastPitr))lastPitr=cursor;
-  if(m.type==='position') {
-    const p=normalizePosition(m,receivedAt);
-    if(!p){rejectedCount++;return;}
-    if(!rememberPosition(p)){rejectedCount++;return;}
-    positionCount++;lastPositionAt=receivedAt;
-  } else if(['flifo','arrival','departure','cancellation'].includes(m.type))rememberEvent(m,receivedAt);
-  resetIdleTimer();
-}
-function snapshot(now=Date.now()) {
-  const config=getConfig(),items=[];
-  for(const [id,p] of aircraft) {
-    const freshness=classifyFreshness(p.observed_at,now);
-    if(freshness==='UNAVAILABLE'){aircraft.delete(id);continue;}
-    items.push({...p,freshness,age_seconds:Math.max(0,Math.floor((now-Date.parse(p.observed_at))/1000))});
+
+function purgeExpired(now=Date.now()) {
+  for(const [id,item] of aircraft){
+    if(now-Date.parse(item.observed_at)>RETENTION_MS)aircraft.delete(id);
   }
-  items.sort((a,b)=>Date.parse(b.observed_at)-Date.parse(a.observed_at));
-  const status=!config.configured?'NOT_CONFIGURED':!connected?(items.length?'STALE':'UNAVAILABLE')
-    :items.some(x=>x.freshness==='LIVE')?'LIVE':items.some(x=>x.freshness==='DELAYED')?'DELAYED':'CONNECTED';
+  if(aircraft.size>MAX_AIRCRAFT){
+    const oldest=[...aircraft.entries()].sort((a,b)=>Date.parse(a[1].observed_at)-Date.parse(b[1].observed_at));
+    for(const [id] of oldest.slice(0,aircraft.size-MAX_AIRCRAFT))aircraft.delete(id);
+  }
+}
+
+function snapshot(now=Date.now(),config=getConfig(),statusOverride=null) {
+  purgeExpired(now);
+  const items=[...aircraft.values()].map(item=>({
+    ...item,age_seconds:Math.max(0,Math.floor((now-Date.parse(item.observed_at))/1000)),
+    freshness:classifyFreshness(item.observed_at,now),
+  })).filter(item=>item.freshness!=='UNAVAILABLE')
+    .sort((a,b)=>Date.parse(b.observed_at)-Date.parse(a.observed_at));
+  const lastSuccess=Date.parse(lastSuccessfulPollAt||'');
+  const pollFresh=Number.isFinite(lastSuccess)&&now-lastSuccess<=Math.max(config.pollIntervalSeconds*3000,180_000);
+  const status=statusOverride||(!pollFresh?'UNAVAILABLE':
+    items.some(item=>item.freshness==='LIVE')?'LIVE':
+    items.length?'DELAYED':'CONNECTED');
   return {
-    provider:'flightaware_firehose',provider_name:'FlightAware Firehose',status,
-    configured:config.configured,connected,last_connected_at:lastConnectedAt,
-    last_received_at:lastReceivedAt,last_position_at:lastPositionAt,last_pitr_at:lastPitr?epochIso(lastPitr):null,
+    provider:'opensky_rest',provider_name:'OpenSky Network',status,
+    configured:config.configured,connected:pollFresh,
+    last_connected_at:lastSuccessfulPollAt,last_received_at:lastSuccessfulPollAt,
+    last_position_at:lastPositionAt,last_provider_time:lastProviderTime,
     message_count:messageCount,position_count:positionCount,rejected_count:rejectedCount,
-    last_error_code:lastErrorCode,
-    coverage:{complete:false,bounds:config.bounds,query_scope:config.bounds?'contracted_operational_bounds':'unavailable'},
-    aircraft:items,recent_events:recentEvents.slice(0,50),
-    provenance:{source:'FlightAware Firehose',position_type:'provider-observed aircraft position',
-      flight_information:'separate provider event stream; not an SJM arrival or handover confirmation',
-      fabricated_data_used:false},
+    rate_limit_remaining:rateLimitRemaining,rate_limit_retry_after_seconds:rateLimitRetrySeconds,
+    last_error_code:lastErrorCode,next_poll_at:nextPollAt?new Date(nextPollAt).toISOString():null,
+    poll_interval_seconds:config.pollIntervalSeconds,
+    credit_cost_per_request:config.creditsPerRequest,
+    projected_daily_credits:config.projectedDailyCredits,
+    daily_credit_budget:config.dailyCreditBudget,
+    coverage:{complete:false,bounds:config.bounds,query_scope:'contracted_operational_bounds'},
+    aircraft:items,recent_events:[],
+    provenance:{
+      source:'OpenSky Network REST API',source_endpoint:'/states/all',
+      position_type:'provider-observed state-vector position',
+      feed_mode:'bounded_rest_polling_snapshot',
+      poll_interval_seconds:config.pollIntervalSeconds,
+      commercial_flight_information:false,
+      mlat_available_via_rest:false,
+      fabricated_data_used:false,
+    },
   };
 }
-function clearTimers() {
-  if(reconnectTimer)clearTimeout(reconnectTimer);
-  if(idleTimer)clearTimeout(idleTimer);
-  reconnectTimer=null;idleTimer=null;
+
+function inactiveSnapshot(reason='feed_disabled') {
+  return {
+    provider:'opensky_rest',provider_name:'OpenSky Network',status:'NOT_CONFIGURED',
+    configured:false,connected:false,last_connected_at:null,last_received_at:null,last_position_at:null,
+    last_provider_time:null,message_count:0,position_count:0,rejected_count:0,
+    rate_limit_remaining:null,rate_limit_retry_after_seconds:null,last_error_code:reason,
+    next_poll_at:null,poll_interval_seconds:null,credit_cost_per_request:null,
+    projected_daily_credits:null,daily_credit_budget:null,
+    coverage:{complete:false,bounds:null,query_scope:'unavailable'},
+    aircraft:[],recent_events:[],
+    provenance:{source:'OpenSky Network REST API',feed_mode:'bounded_rest_polling_snapshot',
+      commercial_flight_information:false,mlat_available_via_rest:false,fabricated_data_used:false},
+  };
 }
-function scheduleReconnect() {
-  if(stopping||reconnectTimer)return;
-  const delay=Math.min(RECONNECT_MAX_MS,RECONNECT_BASE_MS*(2**reconnectAttempt));
-  reconnectAttempt=Math.min(reconnectAttempt+1,5);
-  reconnectTimer=setTimeout(()=>{reconnectTimer=null;connect();},delay);
-  reconnectTimer.unref?.();
+
+async function readyRedis() {
+  const redis=getRedis();
+  if(!redis)throw new Error('SJM airspace shared Redis store is disabled.');
+  if(redis.status==='wait')await redis.connect();
+  if(redis.status==='end')throw new Error('SJM airspace shared Redis store is closed.');
+  await redis.ping();
+  return redis;
 }
-function resetIdleTimer() {
-  if(idleTimer)clearTimeout(idleTimer);
-  idleTimer=setTimeout(()=>{lastErrorCode='idle_reconnect';socket?.destroy();},IDLE_MS);
-  idleTimer.unref?.();
+
+async function saveSharedSnapshot(redis,config,statusOverride=null) {
+  const data=snapshot(Date.now(),config,statusOverride);
+  await redis.set(SNAPSHOT_KEY,JSON.stringify(data),'EX',SNAPSHOT_TTL_SECONDS);
+  return data;
 }
-function connect() {
-  if(stopping||!started||socket)return;
+
+async function pollOnce(redis,config,token) {
+  if(!ownerToken||ownerToken!==token||pollInFlight)return;
+  pollInFlight=(async()=>{
+    const owner=await redis.get(LEASE_KEY);
+    if(owner!==token)return stopWorker(false);
+    if(Date.now()<nextPollAt)return;
+    try{
+      const result=await fetchStates(config);
+      let validPositions=0,invalidPositions=0;
+      messageCount=result.states.length;
+      for(const state of result.states){
+        const item=normaliseStateVector(state,Date.now());
+        if(!item){invalidPositions++;continue;}
+        if(rememberPosition(item))validPositions++;
+      }
+      const now=Date.now();
+      purgeExpired(now);
+      positionCount=validPositions;
+      rejectedCount=invalidPositions;
+      rateLimitRemaining=result.rateLimitRemaining;
+      lastSuccessfulPollAt=result.receivedAt;
+      lastProviderTime=result.providerTime;
+      const positions=[...aircraft.values()].map(item=>Date.parse(item.observed_at)).filter(Number.isFinite);
+      lastPositionAt=positions.length?new Date(Math.max(...positions)).toISOString():null;
+      lastErrorCode=null;rateLimitRetrySeconds=null;nextPollAt=now+config.pollIntervalSeconds*1000;
+      await saveSharedSnapshot(redis,config);
+    }catch(error){
+      if(error?.code==='rate_limited'){
+        rateLimitRetrySeconds=error.retryAfterSeconds;
+        rateLimitRemaining=error.rateLimitRemaining??rateLimitRemaining;
+        nextPollAt=Date.now()+error.retryAfterSeconds*1000;
+        lastErrorCode='provider_rate_limited';
+        await saveSharedSnapshot(redis,config,'RATE_LIMITED');
+      }else{
+        lastErrorCode=error?.code||'provider_request_failed';
+        nextPollAt=Date.now()+config.pollIntervalSeconds*1000;
+        await saveSharedSnapshot(redis,config);
+      }
+    }
+  })();
+  try{await pollInFlight;}finally{pollInFlight=null;}
+}
+
+async function stopWorker(release=true) {
+  if(pollTimer)clearInterval(pollTimer);
+  if(leaseTimer)clearInterval(leaseTimer);
+  pollTimer=null;leaseTimer=null;
+  const token=ownerToken;ownerToken=null;workerConfig=null;
+  if(release&&token){
+    try{
+      const redis=await readyRedis();
+      await redis.eval(RELEASE_SCRIPT,1,LEASE_KEY,token);
+    }catch(_){}
+  }
+}
+
+async function acquireIngestLease(config) {
+  const redis=await readyRedis();
+  if(ownerToken)return redis;
+  const token=crypto.randomUUID();
+  const acquired=await redis.set(LEASE_KEY,token,'PX',LEASE_MS,'NX');
+  if(acquired!=='OK')return redis;
+  ownerToken=token;workerConfig=config;
+  try{
+    const previous=await redis.get(SNAPSHOT_KEY);
+    if(previous){
+      const restored=JSON.parse(previous);
+      if(restored?.provider==='opensky_rest'&&Array.isArray(restored.aircraft)){
+        aircraft=new Map(restored.aircraft.map(item=>[item.id,item]));
+        lastSuccessfulPollAt=restored.last_connected_at||null;
+        lastPositionAt=restored.last_position_at||null;
+        lastProviderTime=restored.last_provider_time||null;
+        messageCount=Number(restored.message_count)||0;
+        positionCount=Number(restored.position_count)||0;
+        rejectedCount=Number(restored.rejected_count)||0;
+        rateLimitRemaining=restored.rate_limit_remaining??null;
+      }
+    }
+  }catch(_){}
+  const leaderToken=token;
+  pollTimer=setInterval(()=>{void pollOnce(redis,config,leaderToken).catch(()=>{});},config.pollIntervalSeconds*1000);
+  pollTimer.unref?.();
+  leaseTimer=setInterval(async()=>{
+    try{
+      const renewed=await redis.eval(RENEW_SCRIPT,1,LEASE_KEY,leaderToken,LEASE_MS);
+      if(Number(renewed)!==1)await stopWorker(false);
+    }catch(_){await stopWorker(false);}
+  },Math.floor(LEASE_MS/3));
+  leaseTimer.unref?.();
+  void pollOnce(redis,config,leaderToken).catch(()=>{});
+  return redis;
+}
+
+async function getSnapshot({start=true}={}) {
   const config=getConfig();
-  if(!config.configured)return;
-  lastErrorCode=null;
-  let stream;
-  try{stream=tls.connect({host:HOST,port:PORT,minVersion:'TLSv1.2',rejectUnauthorized:true});}
-  catch(_){lastErrorCode='tls_connection_failed';scheduleReconnect();return;}
-  socket=stream;
-  let buffer='';
-  stream.setKeepAlive?.(true,30_000);
-  stream.setEncoding?.('utf8');
-  stream.once('secureConnect',()=>{
-    if(socket!==stream||stopping)return;
-    connected=true;lastConnectedAt=new Date().toISOString();reconnectAttempt=0;
-    try{stream.write(buildInitiationCommand(config,lastPitr));resetIdleTimer();}
-    catch(_){lastErrorCode='provider_initialisation_failed';stream.destroy();}
-  });
-  stream.on('data',chunk=>{
-    buffer+=String(chunk);
-    if(buffer.length>MAX_BUFFER){lastErrorCode='provider_message_buffer_limit';stream.destroy();return;}
-    let pos;
-    while((pos=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,pos);buffer=buffer.slice(pos+1);processLine(line);}
-  });
-  stream.on('error',()=>{lastErrorCode='tls_stream_error';});
-  stream.on('close',()=>{
-    if(socket===stream)socket=null;
-    connected=false;
-    if(idleTimer)clearTimeout(idleTimer);idleTimer=null;
-    if(!stopping)scheduleReconnect();
-  });
+  if(!config.configured)return inactiveSnapshot(config.reason);
+  let redis;
+  try{
+    redis=await readyRedis();
+    if(start)await acquireIngestLease(config);
+    const shared=await redis.get(SNAPSHOT_KEY);
+    if(shared){
+      const data=JSON.parse(shared);
+      if(data?.provider==='opensky_rest'&&Array.isArray(data.aircraft))return data;
+    }
+    return {
+      ...inactiveSnapshot('awaiting_first_provider_snapshot'),
+      status:'UNAVAILABLE',configured:true,provider:'opensky_rest',provider_name:'OpenSky Network',
+      coverage:{complete:false,bounds:config.bounds,query_scope:'contracted_operational_bounds'},
+      poll_interval_seconds:config.pollIntervalSeconds,credit_cost_per_request:config.creditsPerRequest,
+      projected_daily_credits:config.projectedDailyCredits,daily_credit_budget:config.dailyCreditBudget,
+    };
+  }catch(_){
+    return {
+      ...inactiveSnapshot('shared_store_unavailable'),
+      status:'UNAVAILABLE',configured:true,provider:'opensky_rest',provider_name:'OpenSky Network',
+      coverage:{complete:false,bounds:config.bounds,query_scope:'contracted_operational_bounds'},
+      last_error_code:'shared_store_unavailable',
+      provenance:{source:'OpenSky Network REST API',feed_mode:'bounded_rest_polling_snapshot',
+        shared_store_required:true,fabricated_data_used:false},
+    };
+  }
 }
-function start() {
-  if(started)return snapshot();
-  started=true;stopping=false;
-  if(getConfig().configured)connect();
-  return snapshot();
-}
-function getSnapshot({start:shouldStart=false}={}) {
-  if(shouldStart)start();
-  return snapshot();
-}
-function stop() {
-  stopping=true;started=false;clearTimers();
-  if(socket)socket.destroy();
-  socket=null;connected=false;
-}
+
 function resetForTests() {
-  stop();aircraft.clear();recentEvents.length=0;reconnectAttempt=0;
-  lastConnectedAt=null;lastReceivedAt=null;lastPositionAt=null;lastPitr=null;lastErrorCode=null;
-  messageCount=0;positionCount=0;rejectedCount=0;
+  if(pollTimer)clearInterval(pollTimer);
+  if(leaseTimer)clearInterval(leaseTimer);
+  pollTimer=null;leaseTimer=null;pollInFlight=null;
+  ownerToken=null;workerConfig=null;aircraft=new Map();
+  accessToken=null;accessTokenExpiresAt=0;
+  lastSuccessfulPollAt=null;lastPositionAt=null;lastProviderTime=null;
+  messageCount=0;positionCount=0;rejectedCount=0;rateLimitRemaining=null;
+  lastErrorCode=null;nextPollAt=0;rateLimitRetrySeconds=null;
 }
-module.exports={parseBounds,getConfig,buildInitiationCommand,validCoordinate,epochIso,
-  classifyFreshness,normalizePosition,snapshot,getSnapshot,start,stop,processLine,resetForTests};
+
+module.exports={
+  parseBounds,creditsForBounds,getConfig,epochIso,classifyFreshness,normaliseStateVector,
+  buildStatesUrl,getAccessToken,fetchStates,rememberPosition,purgeExpired,snapshot,
+  getSnapshot,stopWorker,resetForTests,
+};
