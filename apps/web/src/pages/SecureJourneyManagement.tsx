@@ -51,6 +51,22 @@ const SECTIONS=[{id:'summary',label:'Journey overview'},{id:'itinerary',label:'P
 const INTAKE_STEPS=[{label:'Journey details',detail:'Purpose, client and service'},{label:'Route',detail:'Origin, destination and timing'},{label:'Stops',detail:'Checkpoints in travel order'},{label:'Review',detail:'Check the request before saving'}] as const;
 const FLIGHT_STATUS_OPTIONS=[{value:'scheduled',label:'Scheduled'},{value:'departed',label:'Departed'},{value:'delayed',label:'Delayed'},{value:'landed',label:'Landed'},{value:'cancelled',label:'Cancelled'},{value:'diverted',label:'Diverted'}] as const;
 function flightStatusLabel(value?:string|null){return value==='scheduled'?'Scheduled':value==='departed'?'Departed':value==='delayed'?'Delayed':value==='landed'?'Landed':value==='cancelled'?'Cancelled':value==='diverted'?'Diverted':'Not recorded';}
+function flyItalyReasonLabel(value?:string|null):string {
+ const labels:Record<string,string>={
+  disabled:'The provider is disabled by deployment policy.',
+  cc_by_sa_share_alike_obligations_not_reviewed:'Awaiting confirmation of CC BY-SA 4.0 attribution and share-alike obligations.',
+  non_safety_informational_use_not_confirmed:'Awaiting acknowledgement of the provider\'s informational-only use restrictions.',
+  api_key_missing_or_invalid:'A valid server-side provider API key is not configured.',
+  uniquely_resolved_airport_coordinates_required:'A uniquely resolved airport and verified coordinates are required.',
+  shared_product_quota_store_unavailable:'The shared quota service is unavailable; provider requests are safely paused.',
+  shared_product_per_minute_budget_reached:'The shared product request budget has been reached; retry after the cooldown.',
+  shared_product_monthly_budget_reached:'The shared monthly provider budget has been reached.',
+  provider_timestamp_untrusted:'The provider snapshot clock could not be verified; its aircraft positions were withheld.',
+  provider_unavailable:'The provider is temporarily unavailable.',
+  provider_rejected:'The provider rejected the request.',
+ };
+ return labels[String(value||'')]||'No verified provider snapshot is available. Check server-side configuration and provider status.';
+}
 function routeStatusLabel(value?:string|null){const key=String(value||'').toUpperCase();const known:Record<string,string>={ROUTED:'Routed',BLOCKED:'Blocked',UNROUTED:'Not routed',UNAVAILABLE:'Unavailable'};return known[key]||(value?String(value).replaceAll('_',' ').toLowerCase().replace(/^./,c=>c.toUpperCase()):'Unavailable');}
 function safetyGateLabel(value?:string|null){const known:Record<string,string>={GO:'Go',CONDITIONAL:'Conditional',NO_GO:'No-go',HUMAN_REVIEW:'Human review',UNAVAILABLE:'Unavailable'};return known[String(value||'').toUpperCase()]||'Unavailable';}
 function eventSourceLabel(value?:string|null){if(value==='system')return 'Sonalit';if(value==='operator')return 'Team member';if(!value)return 'Source unavailable';return String(value).replaceAll('_',' ').toLowerCase().replace(/^./,c=>c.toUpperCase());}
@@ -819,9 +835,9 @@ return (
             <div className="rounded-md border border-white/[0.07] bg-[#0d151e] p-3">
              <Kicker>FLYITALYADSB · AIRCRAFT OBSERVATIONS</Kicker>
              <div className="mt-2 flex items-center justify-between gap-2"><span className="text-[12px] font-medium text-slate-100">Independent ADS-B / MLAT network</span><EvidenceBadge value={flyItalyArea?.status||'NOT_CONFIGURED'}/></div>
-             <p className="mt-2 text-[11px] leading-5 text-slate-400">{flyItalyArea?.status==='AVAILABLE'?`${flyItalyArea.records.length.toLocaleString()} fresh aircraft observations in a ${flyItalyArea.radius_km||500} km radius around ${flyItalyArea.coverage?.centre?.icao||journey.airport_code}.` :flyItalyArea?.status==='REFRESHING'?'A shared backend worker is updating this airport snapshot. Retry shortly.':flyItalyArea?.reason||'Requires a Sonalit product API key and an explicit CC BY-SA compliance review.'} The public network has uneven receiver density; Africa is sparsely served. An empty response does not establish an empty airspace.</p>
+             <p className="mt-2 text-[11px] leading-5 text-slate-400">{flyItalyArea?.status==='AVAILABLE'?`${flyItalyArea.records.length.toLocaleString()} fresh aircraft observations in a ${flyItalyArea.radius_km||500} km radius around ${flyItalyArea.coverage?.centre?.icao||journey.airport_code}.` :flyItalyArea?.status==='REFRESHING'?'A shared backend worker is updating this airport snapshot. Retry shortly.':flyItalyReasonLabel(flyItalyArea?.reason)} The public network has uneven receiver density; Africa is sparsely served. An empty response does not establish an empty airspace.</p>
              {flyItalyArea?.status==='RATE_LIMITED'&&<p className="mt-1 text-[10px] text-amber-200">FlyItalyADSB request cooldown: retry after {flyItalyArea.retry_after_seconds??'provider guidance'} seconds.</p>}
-             <p className="mt-2 text-[10px] leading-5 text-slate-500">Data: FlyItalyADSB (flyitalyadsb.com), CC BY-SA 4.0. Attribution and share-alike apply to the data and databases built from it. Provider Free plan: 30 requests/minute, 300,000/month, 500 km radius; best-effort, no SLA. Sonalit applies a shared-key ceiling of 25 requests/minute and 270,000/month across tenants and backend replicas; the Redis quota gate fails closed. One API key is used for this product, not one per tenant. Not for safety-of-life, air traffic control or navigation; informational awareness only.</p>
+             <p className="mt-2 text-[10px] leading-5 text-slate-500">Data: FlyItalyADSB (flyitalyadsb.com), CC BY-SA 4.0. Attribution and share-alike apply to the data and databases built from it. Provider Free plan: 30 requests/minute, 300,000/month, 500 km radius; best-effort, no SLA. Sonalit applies a shared-key ceiling of 25 requests/minute and 270,000/month across tenants and backend replicas; the Redis quota gate fails closed. One API key is used for this product, not one per tenant. Aircraft observations only: never use this source for safety-of-life, air traffic control, navigation, identifying passengers, following people or harassment. This display does not establish passenger identity or an individual's location.</p>
             </div>
             <div className="rounded-md border border-white/[0.07] bg-[#0d151e] p-3">
              <Kicker>OFFICIAL NOTAM / AIS AUTHORITY</Kicker>
