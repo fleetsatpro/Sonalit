@@ -218,6 +218,7 @@ describe('SJM federated aviation intelligence',()=>{
     });
     expect(fetcher.mock.calls[0][0]).toBe('https://prod.api.market/api/v1/aedbx/aerodatabox/flights/number/KQ100?dateLocalRole=Both');
     expect(fetcher.mock.calls[0][1].headers['x-api-key']).toBe('server-secret');
+    expect(fetcher.mock.calls[0][1].redirect).toBe('error');
     expect(JSON.stringify(result)).not.toContain('server-secret');
   });
 
