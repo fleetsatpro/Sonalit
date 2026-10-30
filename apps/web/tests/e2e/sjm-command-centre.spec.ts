@@ -391,7 +391,19 @@ test.describe('SJM command-centre responsive smoke', () => {
         body: await operationsRail.screenshot({ animations: 'disabled' }),
         contentType: 'image/png',
       });
-      await page.evaluate(() => window.scrollTo(0, 0));
+      // The SJM console is its own scroll container; resetting window scroll
+      // leaves the captured viewport wherever the service-brief screenshot moved it.
+      const consoleScroller = page.locator('main.sjm-console');
+      await consoleScroller.evaluate((element) => {
+        element.scrollTop = 0;
+        element.scrollLeft = 0;
+      });
+      await expect.poll(() => consoleScroller.evaluate((element) => element.scrollTop)).toBe(0);
+      if (viewport.width < 640) {
+        // The opening mobile screenshot must show the map-first workspace, not
+        // the operations rail scrolled into view by component-level captures.
+        await expect(mapSurface).toBeInViewport({ ratio: 0.5 });
+      }
       await testInfo.attach(`sjm-${viewport.label}-overview`, {
         body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
         contentType: 'image/png',
