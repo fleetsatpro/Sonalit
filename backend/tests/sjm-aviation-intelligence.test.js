@@ -28,10 +28,16 @@ describe('SJM federated aviation intelligence',()=>{
     expect(aviation.getFlyItalyAdsbConfig({
       SJM_FLYITALYADSB_ENABLED:'true',
       SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+    })).toMatchObject({enabled:false,reason:'non_safety_informational_use_not_confirmed'});
+    expect(aviation.getFlyItalyAdsbConfig({
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
     })).toMatchObject({enabled:false,reason:'api_key_missing_or_invalid'});
     const config=aviation.getFlyItalyAdsbConfig({
       SJM_FLYITALYADSB_ENABLED:'true',
       SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
       FLYITALYADSB_API_KEY:'sonalit-product-key',
     });
     expect(config).toMatchObject({
@@ -247,6 +253,7 @@ describe('SJM federated aviation intelligence',()=>{
     const env={
       SJM_FLYITALYADSB_ENABLED:'true',
       SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
       FLYITALYADSB_API_KEY:'server-only-key',
     };
     const airport={icao:'HKJK',latitude:-1.3192,longitude:36.9278};
@@ -595,6 +602,7 @@ describe('SJM federated aviation intelligence',()=>{
     const env={
       SJM_FLYITALYADSB_ENABLED:'true',
       SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
       FLYITALYADSB_API_KEY:'server-only-key',
     };
     const fetcher=jest.fn(async(url)=>{
