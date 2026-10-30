@@ -258,7 +258,17 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(page.getByText('Route has not been assessed', { exact: true })).toBeVisible();
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
       await expect(page.getByTestId('sjm-journey-progress')).toBeVisible();
-      await expect(page.getByTestId('sjm-journey-progress').getByRole('heading', { name: 'Lifecycle milestones' })).toBeVisible();
+      const lifecycle = page.getByTestId('sjm-journey-progress');
+      await expect(lifecycle.getByRole('heading', { name: 'Lifecycle milestones' })).toBeVisible();
+      const lifecycleStages = lifecycle.getByRole('list', { name: 'Journey stages' });
+      await expect(lifecycleStages.getByRole('listitem')).toHaveCount(8);
+      if (viewport.width < 640) {
+        const lifecycleGrid = await lifecycleStages.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+        expect(lifecycleGrid, 'mobile lifecycle must use readable two-column stage layout').toBe(2);
+        for (const stageName of ['Request', 'Route', 'Review', 'Approval', 'Readiness', 'Movement', 'Arrival', 'Closeout']) {
+          await expect(lifecycleStages.getByText(stageName, { exact: true })).toBeVisible();
+        }
+      }
       const serviceBrief = page.getByTestId('sjm-service-brief');
       await expect(serviceBrief).toBeVisible();
       await expect(serviceBrief.getByText('Airport arrival', { exact: true })).toBeVisible();
