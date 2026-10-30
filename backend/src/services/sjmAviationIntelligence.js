@@ -396,6 +396,11 @@ function movementTime(movement,key) {
   return isoTime(value?.utc??value?.timestamp??null);
 }
 
+function movementLocalTime(movement,key) {
+  const value=movement?.[key];
+  return textOrNull(value&&typeof value==='object'?value.local:null);
+}
+
 function normaliseCommercialMovement(movement) {
   const airport=movement?.airport||{};
   return {
@@ -407,10 +412,15 @@ function normaliseCommercialMovement(movement) {
     gate:textOrNull(movement?.gate),
     baggage_belt:textOrNull(movement?.baggageBelt),
     scheduled_at:movementTime(movement,'scheduledTime'),
+    scheduled_local:movementLocalTime(movement,'scheduledTime'),
     revised_at:movementTime(movement,'revisedTime'),
+    revised_local:movementLocalTime(movement,'revisedTime'),
     estimated_at:movementTime(movement,'estimatedTime'),
+    estimated_local:movementLocalTime(movement,'estimatedTime'),
     actual_at:movementTime(movement,'actualTime'),
+    actual_local:movementLocalTime(movement,'actualTime'),
     runway_at:movementTime(movement,'runwayTime'),
+    runway_local:movementLocalTime(movement,'runwayTime'),
     delay_minutes:numberOrNull(movement?.delayMinutes),
   };
 }
