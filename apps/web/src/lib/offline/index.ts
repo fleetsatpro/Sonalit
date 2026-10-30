@@ -34,6 +34,8 @@ export interface OfflineIdentity {
   role: string;
   /** SJM field devices push their own events only; they must not mirror CDS data. */
   pullEnabled?: boolean;
+  /** Restrict this session to a narrow set of append-only operations. */
+  allowedOperationTypes?: string[];
 }
 
 /**
@@ -97,7 +99,7 @@ async function tick(): Promise<void> {
   const generation = lifecycleGeneration;
   const work = (async () => {
     try {
-      const result = await runSync(session.userId, session.orgId, { pullEnabled: session.pullEnabled !== false });
+      const result = await runSync(session.userId, session.orgId, { pullEnabled: session.pullEnabled !== false, allowedOperationTypes: session.allowedOperationTypes });
       // A result from a prior login/tenant must not update the new session.
       if (generation === lifecycleGeneration && identity === session) {
         blocked = result.blocked;

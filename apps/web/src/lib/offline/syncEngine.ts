@@ -453,9 +453,14 @@ async function clearLocalModification(entry: OutboxEntry): Promise<void> {
   }
 }
 
-export async function push(userId: string, orgId: string): Promise<PushSummary> {
+export async function push(
+  userId: string,
+  orgId: string,
+  options: { allowedOperationTypes?: readonly string[] } = {},
+): Promise<PushSummary> {
   const summary: PushSummary = { ...EMPTY_PUSH };
-  const due = await dueEntries(userId, orgId);
+  const allowedTypes = options.allowedOperationTypes ? new Set(options.allowedOperationTypes) : null;
+  const due = (await dueEntries(userId, orgId)).filter(entry => !allowedTypes || allowedTypes.has(entry.type));
   if (due.length === 0) return summary;
 
   // Already sorted by priority then sequence. Slice the highest-priority window
@@ -511,7 +516,7 @@ export function lastSyncRun(): SyncRunSummary | null {
 export async function runSync(
   userId: string,
   orgId: string,
-  options: { pullEnabled?: boolean } = {},
+  options: { pullEnabled?: boolean; allowedOperationTypes?: readonly string[] } = {},
 ): Promise<SyncRunSummary> {
   const result: SyncRunSummary = { ranAt: Date.now(), pull: null, push: null, blocked: null, error: null };
 
@@ -529,7 +534,7 @@ export async function runSync(
     await registerDevice();
 
     // 2. Field work up before state comes down.
-    result.push = await push(userId, orgId);
+    result.push = await push(userId, orgId, { allowedOperationTypes: options.allowedOperationTypes });
 
     // 3. Reconcile only for surfaces authorised to mirror the shared entity set.
     // SJM field clients push append-only journey events and never pull CDS data.

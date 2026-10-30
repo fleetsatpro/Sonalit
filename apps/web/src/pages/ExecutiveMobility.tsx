@@ -128,7 +128,7 @@ export default function ExecutiveMobility(){
   if(!user?.id||!user.org_id){setOfflineReady(false);return;}
   let current=true;
   setOfflineReady(false);
-  void startOffline({userId:user.id,orgId:user.org_id,role:user.role,pullEnabled:false})
+  void startOffline({userId:user.id,orgId:user.org_id,role:user.role,pullEnabled:false,allowedOperationTypes:['sjm.field_event.create']})
    .then(started=>{if(current)setOfflineReady(started);})
    .catch(()=>{if(current)setOfflineReady(false);});
   return ()=>{current=false;void stopOffline({purge:false,stopConnectivity:false});};
