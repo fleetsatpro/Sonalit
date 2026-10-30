@@ -49,14 +49,11 @@ export function normaliseFlightIdent(value:string|null|undefined):string {
   return String(value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
 
-const AIRSPACE_PRIMARY_STATUSES=new Set(['LIVE','DELAYED','CONNECTED']);
-const AIRSPACE_SECONDARY_STATUSES=new Set(['LIVE','DELAYED','STALE','REFRESHING','RATE_LIMITED','CONNECTED','UNAVAILABLE']);
+const AIRSPACE_STATUS_PRECEDENCE=['LIVE','DELAYED','STALE','REFRESHING','RATE_LIMITED','CONNECTED','UNAVAILABLE'];
 export function resolveAirspaceDisplayStatus(primaryStatus?:string|null,regionalStatus?:string|null):string {
-  const primary=String(primaryStatus||'').toUpperCase();
-  const regional=String(regionalStatus||'').toUpperCase();
-  if(AIRSPACE_PRIMARY_STATUSES.has(primary))return primary;
-  if(AIRSPACE_SECONDARY_STATUSES.has(regional))return regional;
-  return primary||regional||'UNAVAILABLE';
+  const statuses=new Set([String(primaryStatus||'').toUpperCase(),String(regionalStatus||'').toUpperCase()]);
+  return AIRSPACE_STATUS_PRECEDENCE.find(status=>statuses.has(status))||
+    String(primaryStatus||regionalStatus||'UNAVAILABLE').toUpperCase();
 }
 
 export function correlateJourneyFlight(input:{
