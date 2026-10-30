@@ -223,6 +223,8 @@ async function requestJson(url,{headers={},fetcher=global.fetch,timeoutMs=10_000
     const error=new Error('Aviation data provider returned HTTP '+response.status+'.');
     error.code=response.status===429?'rate_limited':response.status>=500?'provider_unavailable':'provider_rejected';
     error.status=response.status;
+    const retryAfter=Number(response.headers?.get?.('retry-after')||response.headers?.get?.('x-ratelimit-reset-after'));
+    error.retryAfterSeconds=Number.isFinite(retryAfter)?Math.max(1,Math.min(3600,Math.floor(retryAfter))):response.status===429?60:null;
     throw error;
   }
   return response.json();
@@ -382,8 +384,11 @@ async function loadAdsbLolCallsign({callsign,env=process.env,fetcher=global.fetc
     };
     return cacheSet(key,value,DEFAULT_LOOKUP_TTL_MS,now);
   }catch(error){
-    return {status:'UNAVAILABLE',reason:error?.code||'provider_error',records:[],source:'adsb.lol',
+    const limited=error?.code==='rate_limited';
+    const value={status:limited?'RATE_LIMITED':'UNAVAILABLE',reason:error?.code||'provider_error',
+      retry_after_seconds:error?.retryAfterSeconds||null,records:[],source:'adsb.lol',
       provenance:{provider:'adsb.lol',database_license:'ODbL-1.0',fabricated_data_used:false}};
+    return cacheSet(key,value,limited?(error.retryAfterSeconds||60)*1000:15_000,now);
   }
 }
 
@@ -475,8 +480,11 @@ async function loadCommercialFlight({flightNumber,env=process.env,fetcher=global
     };
     return cacheSet(key,value,60_000,now);
   }catch(error){
-    return {status:'UNAVAILABLE',reason:error?.code||'provider_error',flight_number:number,flights:[],source:'AeroDataBox',
+    const limited=error?.code==='rate_limited';
+    const value={status:limited?'RATE_LIMITED':'UNAVAILABLE',reason:error?.code||'provider_error',
+      retry_after_seconds:error?.retryAfterSeconds||null,flight_number:number,flights:[],source:'AeroDataBox',
       provenance:{provider:'aerodatabox',fabricated_data_used:false}};
+    return cacheSet(key,value,limited?(error.retryAfterSeconds||60)*1000:15_000,now);
   }
 }
 
@@ -497,7 +505,7 @@ function compareAircraftSources({flightNumber,opensky,adsbLol}={}) {
   if(!reference)return {status:'NOT_REQUESTED',primary_count:0,secondary_count:0,note:'No journey flight reference was supplied.'};
   const primary=(opensky?.aircraft||[]).filter(item=>normaliseCallsign(item.ident)===reference);
   const secondary=(adsbLol?.records||[]).filter(item=>normaliseCallsign(item.ident)===reference);
-  if(!opensky?.configured||!['LIVE','DELAYED','CONNECTED'].includes(opensky?.status)||adsbLol?.status==='UNAVAILABLE'||adsbLol?.status==='NOT_CONFIGURED'){
+  if(!opensky?.configured||!['LIVE','DELAYED','CONNECTED'].includes(opensky?.status)||['UNAVAILABLE','RATE_LIMITED','NOT_CONFIGURED'].includes(adsbLol?.status)){
     return {status:'INSUFFICIENT_DATA',flight_number:flightNumber,primary_count:primary.length,secondary_count:secondary.length,
       note:'Both provider observations are required for an independent comparison. A missing result is not evidence that the flight or aircraft is absent.'};
   }
