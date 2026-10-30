@@ -84,7 +84,7 @@ describe('SJM federated aviation intelligence',()=>{
       commercial_use_permitted:true,attribution_required:true,share_alike_required:true,
       service_level:'BEST_EFFORT',requests_per_minute:30,requests_per_month:300000,
       maximum_radius_km:500,
-      use_restrictions:['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION'],
+      use_restrictions:['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION','NOT_FOR_PERSON_TRACKING_OR_HARASSMENT'],
     });
     expect(config.baseUrl).toBe('https://api.flyitalyadsb.com/v2');
     expect(aviation.getFlyItalyAdsbConfig({
@@ -329,6 +329,29 @@ describe('SJM federated aviation intelligence',()=>{
     expect(fetcher.mock.calls[0][1].headers['X-Api-Key']).toBe('server-only-key');
     const cached=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher:jest.fn(),now:now+30_000,redisClient});
     expect(cached.cache_state).toBe('HIT');
+  });
+
+  test('withholds FlyItaly aircraft when the provider snapshot clock is outside the trusted window',async()=>{
+    const env={
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'server-only-key',
+    };
+    const redisClient=createFakeRedis();
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:true,status:200,json:async()=>({now:(now-180_000)/1000,ac:[
+        {hex:'abc123',flight:'KQ100',type:'adsb_icao',lat:-1.3,lon:36.8,seen_pos:5},
+      ]}),
+    });
+    const result=await aviation.loadFlyItalyAdsbArea({
+      airport:{icao:'HKJK',latitude:-1.3192,longitude:36.9278},
+      env,fetcher,now,redisClient,
+    });
+    expect(result).toMatchObject({
+      status:'UNAVAILABLE',reason:'provider_timestamp_untrusted',records:[],
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   test('reuses the same FlyItaly airport snapshot across backend instances through shared Redis',async()=>{
