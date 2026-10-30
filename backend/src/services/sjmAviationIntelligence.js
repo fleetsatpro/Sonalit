@@ -191,10 +191,12 @@ function getAdsbLolConfig(env=process.env) {
 function getFlyItalyAdsbConfig(env=process.env) {
   const enabled=env.SJM_FLYITALYADSB_ENABLED==='true';
   const compliance=env.SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED==='true';
+  const informationalUse=env.SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED==='true';
   const apiKey=String(env.FLYITALYADSB_API_KEY||'').trim();
   let reason=null;
   if(!enabled)reason='disabled';
   else if(!compliance)reason='cc_by_sa_share_alike_obligations_not_reviewed';
+  else if(!informationalUse)reason='non_safety_informational_use_not_confirmed';
   else if(!apiKey||/[\\r\\n]/.test(apiKey))reason='api_key_missing_or_invalid';
   return {
     enabled:!reason,reason,baseUrl:FLYITALYADSB_BASE,apiKey:!reason?apiKey:null,
