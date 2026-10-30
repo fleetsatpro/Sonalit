@@ -123,7 +123,7 @@ function normaliseWeatherRecords(records,type,now=Date.now()) {
       visibility_sm:item?.visib==null?null:item.visib,
       temperature_c:numberOrNull(item?.temp),
       dewpoint_c:numberOrNull(item?.dewp),
-      altimeter_hpa:numberOrNull(item?.altim),
+      altimeter_inhg:numberOrNull(item?.altim),
       provider:'aviationweather_gov',
       evidence_class:'OBSERVED',
     };
