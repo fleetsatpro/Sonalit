@@ -174,6 +174,9 @@ describe('SJM federated aviation intelligence',()=>{
     });
     expect(item.observed_at).toBe(new Date(now-12_000).toISOString());
     expect(aviation.normaliseAdsbLolRecord({hex:'abc123',flight:'KQ100',lat:null,lon:36.8},now)).toBeNull();
+    expect(aviation.normaliseAdsbLolRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:601},now)).toBeNull();
+    expect(aviation.normaliseAdsbLolRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:-1},now)).toBeNull();
+    expect(aviation.normaliseAdsbLolRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8},now)).toMatchObject({observed_at:null,age_seconds:null});
   });
 
   test('performs an ADSB.lol callsign lookup when explicitly enabled and ODbL obligations are configured',async()=>{
