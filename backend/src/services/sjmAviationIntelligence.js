@@ -248,6 +248,66 @@ async function loadAdsbLolCallsign({callsign,env=process.env,fetcher=global.fetc
   }
 }
 
+function nestedValue(root,path) {
+  return path.split('.').reduce((value,key)=>value&&typeof value==='object'?value[key]:null,root);
+}
+
+function textOrNull(value) {
+  if(typeof value!=='string'&&typeof value!=='number')return null;
+  const text=String(value).trim();
+  return text?text:null;
+}
+
+function movementTime(movement,key) {
+  const value=movement?.[key];
+  if(typeof value==='string'||typeof value==='number')return isoTime(value);
+  return isoTime(value?.utc??value?.timestamp??null);
+}
+
+function normaliseCommercialMovement(movement) {
+  const airport=movement?.airport||{};
+  return {
+    airport_name:textOrNull(airport.name),
+    airport_iata:textOrNull(airport.iata),
+    airport_icao:textOrNull(airport.icao),
+    country_code:textOrNull(airport.countryCode),
+    terminal:textOrNull(movement?.terminal),
+    gate:textOrNull(movement?.gate),
+    baggage_belt:textOrNull(movement?.baggageBelt),
+    scheduled_at:movementTime(movement,'scheduledTime'),
+    revised_at:movementTime(movement,'revisedTime'),
+    estimated_at:movementTime(movement,'estimatedTime'),
+    actual_at:movementTime(movement,'actualTime'),
+    runway_at:movementTime(movement,'runwayTime'),
+    delay_minutes:numberOrNull(movement?.delayMinutes),
+  };
+}
+
+function normaliseCommercialFlight(record) {
+  if(!record||typeof record!=='object')return null;
+  const number=textOrNull(record.number??record.flightNumber??record.ident);
+  if(!number)return null;
+  const airline=record.airline||record.operator||{};
+  const aircraft=record.aircraft||{};
+  return {
+    flight_number:number,
+    status:textOrNull(record.status??record.statusText),
+    airline_name:textOrNull(airline.name),
+    airline_iata:textOrNull(airline.iata),
+    airline_icao:textOrNull(airline.icao),
+    codeshare_status:textOrNull(record.codeshareStatus),
+    aircraft_registration:textOrNull(aircraft.reg??aircraft.registration??record.reg),
+    aircraft_type:textOrNull(aircraft.model??aircraft.modelCode??aircraft.type),
+    is_cargo:typeof record.isCargo==='boolean'?record.isCargo:null,
+    departure:normaliseCommercialMovement(record.departure),
+    arrival:normaliseCommercialMovement(record.arrival),
+    provider_updated_at:isoTime(record.lastUpdatedUtc??record.lastUpdated??record.updatedAt),
+    quality:Array.isArray(record.quality)?record.quality.map(textOrNull).filter(Boolean).slice(0,20):[],
+    evidence_class:'COMMERCIAL_PROVIDER_FLIGHT_INFORMATION',
+    provenance:{provider:'aerodatabox',provider_record_id:textOrNull(record.id),fabricated_data_used:false},
+  };
+}
+
 async function loadCommercialFlight({flightNumber,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
   const config=getAeroDataBoxConfig(env);
   const number=String(flightNumber||'').trim().toUpperCase().replace(/\s+/g,'');
@@ -259,10 +319,11 @@ async function loadCommercialFlight({flightNumber,env=process.env,fetcher=global
   try{
     const url=config.baseUrl+'/flights/number/'+encodeURIComponent(number)+'?dateLocalRole=Both';
     const payload=await requestJson(url,{fetcher,headers:{[config.header]:config.apiKey}});
-    const flights=Array.isArray(payload)?payload:Array.isArray(payload?.items)?payload.items:Array.isArray(payload?.flights)?payload.flights:[];
+    const sourceFlights=Array.isArray(payload)?payload:Array.isArray(payload?.items)?payload.items:Array.isArray(payload?.flights)?payload.flights:[];
+    const flights=sourceFlights.map(normaliseCommercialFlight).filter(Boolean).slice(0,20);
     const value={
       status:flights.length?'AVAILABLE':'NO_MATCH',
-      reason:null,flight_number:number,flights:flights.slice(0,20),
+      reason:null,flight_number:number,flights,
       source:'AeroDataBox',cache_state:'MISS',checked_at:new Date(now).toISOString(),
       commercial_data:true,derived_work_rights_confirmed:true,
       provenance:{provider:'aerodatabox',evidence_class:'COMMERCIAL_PROVIDER_FLIGHT_INFORMATION',fabricated_data_used:false},
@@ -397,6 +458,6 @@ function resetCacheForTests(){responseCache.clear();}
 module.exports={
   cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
   normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseCallsign,haversineKm,compareAircraftSources,
-  loadInternationalSigmets,loadWeather,loadAdsbLolCallsign,loadCommercialFlight,
+  loadInternationalSigmets,loadWeather,loadAdsbLolCallsign,normaliseCommercialMovement,normaliseCommercialFlight,loadCommercialFlight,
   buildSourceRegistry,getSnapshot,resetCacheForTests,
 };
