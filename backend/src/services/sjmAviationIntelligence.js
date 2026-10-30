@@ -330,6 +330,39 @@ function cacheSet(key,value,ttl,now=Date.now()) {
   return value;
 }
 
+function refreshCachedAircraftArea(value,now,{maxAgeSeconds,liveSeconds,delayedSeconds}={}) {
+  if(!value||!Array.isArray(value.records)||!value.records.length)return value;
+  const records=[];
+  let expiredCount=0;
+  for(const record of value.records){
+    const observedAt=Date.parse(record?.observed_at||'');
+    if(!Number.isFinite(observedAt)){
+      expiredCount++;
+      continue;
+    }
+    const ageSeconds=Math.max(0,Math.floor((now-observedAt)/1000));
+    if(!Number.isFinite(ageSeconds)||ageSeconds>maxAgeSeconds){
+      expiredCount++;
+      continue;
+    }
+    records.push({
+      ...record,
+      age_seconds:ageSeconds,
+      freshness:ageSeconds<=liveSeconds?'LIVE':ageSeconds<=delayedSeconds?'DELAYED':'STALE',
+    });
+  }
+  const result={...value,records,record_count:records.length};
+  if(expiredCount){
+    result.rejected_count=(Number(value.rejected_count)||0)+expiredCount;
+    result.expired_cache_record_count=expiredCount;
+    if(!records.length){
+      result.status='UNAVAILABLE';
+      result.reason='cached_positions_expired';
+    }
+  }
+  return result;
+}
+
 async function requestJson(url,{headers={},fetcher=global.fetch,timeoutMs=10_000}={}) {
   if(typeof fetcher!=='function')throw new Error('Global fetch is unavailable.');
   const response=await fetcher(url,{
@@ -393,7 +426,7 @@ function normaliseWeatherRecords(records,type,now=Date.now()) {
 async function loadInternationalSigmets({fetcher=global.fetch,now=Date.now(),headers={}}={}) {
   const key='weather:sigmets:international';
   const cached=cacheGet(key,now);
-  if(cached)return {...cached,cache_state:'HIT'};
+  if(cached)return {...refreshCachedAircraftArea(cached,now,{maxAgeSeconds:ADSBLOL_MAX_POSITION_AGE_SECONDS,liveSeconds:45,delayedSeconds:180}),cache_state:'HIT'};
   try{
     const payload=await requestJson(AIRWEATHER_BASE+'/isigmet?format=json',{headers,fetcher});
     const records=normaliseWeatherRecords(payload,'SIGMET',now);
@@ -586,7 +619,7 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
     };
   const localKey='flyitalyadsb-area:'+icao+':'+FLYITALYADSB_RADIUS_KM;
   const cached=cacheGet(localKey,now);
-  if(cached)return {...cached,cache_state:'HIT'};
+  if(cached)return {...refreshCachedAircraftArea(cached,now,{maxAgeSeconds:FLYITALYADSB_MAX_POSITION_AGE_SECONDS,liveSeconds:15,delayedSeconds:45}),cache_state:'HIT'};
   const pending=areaLoadPromises.get(localKey);
   if(pending)return pending;
   const request=(async()=>{
@@ -603,12 +636,12 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
     const keys=flyItalySharedKeys(icao,now);
     try{
       const shared=await readFlyItalySharedCache(redis,keys.cache,localKey,now);
-      if(shared)return shared;
+      if(shared)return refreshCachedAircraftArea(shared,now,{maxAgeSeconds:FLYITALYADSB_MAX_POSITION_AGE_SECONDS,liveSeconds:15,delayedSeconds:45});
       const lockToken=crypto.randomUUID();
       const lockResult=await redis.set(keys.lock,lockToken,'PX',FLYITALYADSB_SHARED_LOCK_TTL_MS,'NX');
       if(lockResult!=='OK'){
         const refreshed=await readFlyItalyCacheDuringLock(redis,keys.cache,localKey,now).catch(()=>null);
-        return refreshed||flyItalyQuotaResponse({
+        return refreshed?refreshCachedAircraftArea(refreshed,now,{maxAgeSeconds:FLYITALYADSB_MAX_POSITION_AGE_SECONDS,liveSeconds:15,delayedSeconds:45}):flyItalyQuotaResponse({
           status:'REFRESHING',reason:'shared_airport_snapshot_refresh_in_progress',
           centre,retryAfterSeconds:2,now,
         });
@@ -647,7 +680,8 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
           throw error;
         }
         const rows=Array.isArray(payload?.ac)?payload.ac:[];
-        const records=rows.map(record=>normaliseFlyItalyAdsbRecord(record,providerNowMs)).filter(Boolean);
+        // Validate the provider snapshot clock above, but anchor seen_pos to Sonalit's receive clock.
+        const records=rows.map(record=>normaliseFlyItalyAdsbRecord(record,now)).filter(Boolean);
         const value={
           status:records.length?'AVAILABLE':'NO_DATA',configured:true,reason:null,
           records,record_count:records.length,rejected_count:Math.max(0,rows.length-records.length),
@@ -665,7 +699,8 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
             fabricated_data_used:false,permitted_use:'informational_aircraft_observation_only',
             prohibited_uses:config.use_restrictions},
         };
-        return await writeFlyItalySharedCache(redis,keys.cache,localKey,value,FLYITALYADSB_SHARED_CACHE_TTL_MS,now);
+        const stored=await writeFlyItalySharedCache(redis,keys.cache,localKey,value,FLYITALYADSB_SHARED_CACHE_TTL_MS,now);
+        return refreshCachedAircraftArea(stored,now,{maxAgeSeconds:FLYITALYADSB_MAX_POSITION_AGE_SECONDS,liveSeconds:15,delayedSeconds:45});
       }catch(error){
         const limited=error?.code==='rate_limited';
         const ttl=limited?Math.max(15,(error.retryAfterSeconds||60))*1000:15_000;
