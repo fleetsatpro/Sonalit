@@ -14,6 +14,10 @@ describe('SJM airspace display status',()=>{
   it('surfaces a regional rate limit when the primary feed is not configured',()=>{
     expect(resolveAirspaceDisplayStatus('NOT_CONFIGURED','RATE_LIMITED')).toBe('RATE_LIMITED');
   });
+  it('summarises the freshest observation across the provider federation',()=>{
+    expect(resolveAirspaceDisplayStatus('CONNECTED','LIVE')).toBe('LIVE');
+    expect(resolveAirspaceDisplayStatus('DELAYED','STALE')).toBe('DELAYED');
+  });
   it('does not downgrade a live primary snapshot because a secondary feed is stale',()=>{
     expect(resolveAirspaceDisplayStatus('LIVE','STALE')).toBe('LIVE');
   });
