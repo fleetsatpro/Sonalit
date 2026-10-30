@@ -100,8 +100,8 @@ async function stubSjmApi(page: Page) {
           message_count: 0, position_count: 0, rejected_count: 0,
           coverage: { complete: false, bounds: null, query_scope: 'unavailable' },
           aircraft: [], recent_events: [],
-          poll_interval_seconds: null, credit_cost_per_request: null, projected_daily_credits: null,
-          rate_limit_remaining: null,
+          poll_interval_seconds: null, credit_cost_per_request: null, credit_window: null, credit_budget: null,
+          projected_credits_per_window: null, rate_limit_remaining: null,
           provenance: { source: 'OpenSky Network REST API', feed_mode: 'bounded_rest_polling_snapshot', fabricated_data_used: false },
         } }),
       });
