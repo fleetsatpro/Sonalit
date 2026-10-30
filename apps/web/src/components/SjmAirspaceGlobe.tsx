@@ -4,10 +4,11 @@ import '@cesium/engine/Source/Widget/CesiumWidget.css';
 
 export type SjmAirspaceAircraft = {
   id:string; ident:string; latitude:number; longitude:number;
-  altitude_m:number|null; ground_speed_mps:number|null; heading_deg:number|null;
+  altitude_m:number|null; altitude_reference?:'WGS84_ELLIPSOID'|'BAROMETRIC_PRESSURE'|null;
+  ground_speed_mps:number|null; heading_deg:number|null;
   origin?:string|null; destination?:string|null; observed_at:string;
   age_seconds:number; freshness:string; update_type?:string|null;
-  trail?:Array<{latitude:number;longitude:number;altitude_m:number|null;observed_at:string}>;
+  trail?:Array<{latitude:number;longitude:number;altitude_m:number|null;altitude_reference?:'WGS84_ELLIPSOID'|'BAROMETRIC_PRESSURE'|null;observed_at:string}>;
 };
 type Props = {
   aircraft:SjmAirspaceAircraft[]; status:string; configured:boolean;
@@ -17,6 +18,10 @@ type Props = {
 
 const MAP_URL='https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const FRESHNESS_COLOURS:Record<string,string>={LIVE:'#9ce8d2',DELAYED:'#f3c979',STALE:'#8a98a8',UNAVAILABLE:'#64748b'};
+function ellipsoidHeight(altitude_m:number|null|undefined,reference?:string|null):number {
+  return reference==='WGS84_ELLIPSOID'&&Number.isFinite(altitude_m)?Math.max(0,altitude_m as number):0;
+}
+
 const EAST_AFRICA_VIEW={
   destination:Cesium.Cartesian3.fromDegrees(37.9,0.5,4_200_000),
   orientation:{heading:0,pitch:Cesium.Math.toRadians(-68),roll:0},
@@ -91,7 +96,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       }
     }
     for(const item of aircraft){
-      const position=Cesium.Cartesian3.fromDegrees(item.longitude,item.latitude,Math.max(0,item.altitude_m??0));
+      const position=Cesium.Cartesian3.fromDegrees(item.longitude,item.latitude,ellipsoidHeight(item.altitude_m,item.altitude_reference));
       const colour=Cesium.Color.fromCssColorString(FRESHNESS_COLOURS[item.freshness]||FRESHNESS_COLOURS.UNAVAILABLE);
       let entity=entityRef.current.get(item.id);
       if(!entity){
@@ -120,7 +125,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       const track=(item.trail||[]).filter(p=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude));
       let trail=trailRef.current.get(item.id);
       if(track.length>1){
-        const positions=track.map(p=>Cesium.Cartesian3.fromDegrees(p.longitude,p.latitude,Math.max(0,p.altitude_m??0)));
+        const positions=track.map(p=>Cesium.Cartesian3.fromDegrees(p.longitude,p.latitude,ellipsoidHeight(p.altitude_m,p.altitude_reference)));
         if(!trail){
           trail=widget.entities.add({id:'sjm-aircraft-trail:'+item.id,polyline:new Cesium.PolylineGraphics({
             positions,width:1.5,material:colour.withAlpha(0.45),arcType:Cesium.ArcType.NONE,
@@ -182,7 +187,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     </div>
     {selectedAircraft&&<div className="grid grid-cols-2 gap-3 border-t border-white/[0.07] bg-[#0d151e] px-3 py-3 text-[11px] sm:grid-cols-4 sm:px-4">
       <div><p className="text-slate-500">Callsign / ident</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.ident}</p></div>
-      <div><p className="text-slate-500">Altitude</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.altitude_m==null?'Not reported':Math.round(selectedAircraft.altitude_m).toLocaleString()+' m'}</p></div>
+      <div><p className="text-slate-500">Reported altitude</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.altitude_m==null?'Not reported':Math.round(selectedAircraft.altitude_m).toLocaleString()+' m · '+(selectedAircraft.altitude_reference==='WGS84_ELLIPSOID'?'GNSS / WGS84':selectedAircraft.altitude_reference==='BAROMETRIC_PRESSURE'?'pressure':'reference unknown')}</p></div>
       <div><p className="text-slate-500">Ground speed</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.ground_speed_mps==null?'Not reported':Math.round(selectedAircraft.ground_speed_mps*3.6)+' km/h'}</p></div>
       <div><p className="text-slate-500">Observed</p><p className="mt-1 font-semibold text-slate-100">{new Date(selectedAircraft.observed_at).toLocaleTimeString()} · {selectedAircraft.freshness}</p></div>
     </div>}
