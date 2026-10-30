@@ -246,9 +246,9 @@ test.describe('SJM command-centre responsive smoke', () => {
   test('legacy corridor URLs redirect to the standalone protective-mobility routes', async ({ page }) => {
     await seedAuth(page);
     await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(/\\/sjm$/);
+    await expect(page).toHaveURL(/\/sjm$/);
     await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(/\\/sjm\\/field$/);
+    await expect(page).toHaveURL(/\/sjm\/field$/);
   });
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
