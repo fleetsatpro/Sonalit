@@ -128,6 +128,7 @@ async function loadAirportReferenceIndex({fetcher=global.fetch,now=Date.now()}={
     const response=await fetcher(AIRPORT_REFERENCE_URL,{
       method:'GET',
       headers:{Accept:'text/csv','User-Agent':'Sonalit-SJM/1.0 (airport reference data)'},
+      redirect:'error',
       signal:AbortSignal.timeout(20_000),
     });
     if(!response.ok)throw new Error('OurAirports reference download failed with HTTP '+response.status+'.');
@@ -216,6 +217,7 @@ async function requestJson(url,{headers={},fetcher=global.fetch,timeoutMs=10_000
   if(typeof fetcher!=='function')throw new Error('Global fetch is unavailable.');
   const response=await fetcher(url,{
     method:'GET',headers:{Accept:'application/json',...headers},
+    redirect:'error',
     signal:AbortSignal.timeout(timeoutMs),
   });
   if(response.status===204)return null;
