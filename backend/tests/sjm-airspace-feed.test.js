@@ -2,101 +2,185 @@
 
 const feed=require('../src/services/sjmAirspaceFeed');
 
-describe('SJM licensed live airspace',()=>{
-  const oldEnv={};
-  const keys=['SJM_AIRSPACE_FEED_ENABLED','SJM_AIRSPACE_LICENSE_CONFIRMED','SJM_AIRSPACE_BOUNDS','FLIGHTAWARE_FIREHOSE_USERNAME','FLIGHTAWARE_FIREHOSE_API_KEY'];
+describe('SJM OpenSky REST airspace feed',()=>{
+  const originalEnv={};
+  const envKeys=[
+    'SJM_AIRSPACE_FEED_ENABLED','SJM_AIRSPACE_LICENSE_CONFIRMED',
+    'SJM_AIRSPACE_BOUNDS','OPENSKY_CLIENT_ID','OPENSKY_CLIENT_SECRET',
+    'OPENSKY_DAILY_CREDIT_BUDGET','OPENSKY_POLL_INTERVAL_SECONDS',
+  ];
+  const now=Date.parse('2026-10-30T12:00:00.000Z');
+  const state=(overrides={})=>[
+    'abc123','KQ100','Kenya',now/1000,now/1000,36.8,-1.3,12000,false,
+    220,90,-2.4,null,12400,'1234',false,0,4,
+    ...Object.values(overrides),
+  ];
+
   beforeEach(()=>{
-    for(const key of keys){oldEnv[key]=process.env[key];delete process.env[key];}
+    for(const key of envKeys){originalEnv[key]=process.env[key];delete process.env[key];}
     feed.resetForTests();
   });
   afterEach(()=>{
     feed.resetForTests();
-    for(const key of keys){if(oldEnv[key]===undefined)delete process.env[key];else process.env[key]=oldEnv[key];}
+    for(const key of envKeys){if(originalEnv[key]===undefined)delete process.env[key];else process.env[key]=originalEnv[key];}
     jest.restoreAllMocks();
   });
 
-  test('does not connect without explicit feed and licence configuration',()=>{
+  test('fails closed without explicit operational enablement and written licence confirmation',()=>{
     expect(feed.getConfig({})).toMatchObject({configured:false,reason:'feed_disabled'});
-    process.env.SJM_AIRSPACE_FEED_ENABLED='true';
-    expect(feed.getConfig()).toMatchObject({configured:false,reason:'provider_licence_not_confirmed'});
-    expect(feed.getSnapshot({start:true})).toMatchObject({status:'NOT_CONFIGURED',aircraft:[],configured:false});
+    expect(feed.getSnapshot()).resolves.toMatchObject({status:'NOT_CONFIGURED',provider:'opensky_rest',aircraft:[]});
+    const env={
+      SJM_AIRSPACE_FEED_ENABLED:'true',
+      SJM_AIRSPACE_BOUNDS:'-5 32 6 42',
+      OPENSKY_CLIENT_ID:'client',OPENSKY_CLIENT_SECRET:'secret',
+    };
+    expect(feed.getConfig(env)).toMatchObject({
+      configured:false,reason:'provider_written_operational_and_commercial_license_not_confirmed',
+    });
   });
 
-  test('requires a small valid contracted coverage rectangle',()=>{
-    expect(feed.parseBounds('-5 32 6 42')).toEqual({south:-5,west:32,north:6,east:42});
+  test('validates a bounded coverage rectangle and computes official state-query credit bands',()=>{
+    expect(feed.parseBounds('-5 32 6 42')).toMatchObject({south:-5,west:32,north:6,east:42,area_sq_degrees:110});
     expect(feed.parseBounds('-91 32 6 42')).toBeNull();
     expect(feed.parseBounds('-5 32 -6 42')).toBeNull();
     expect(feed.parseBounds('-90 -180 90 180')).toBeNull();
+    expect(feed.creditsForBounds({south:-2.5,west:32,north:2.5,east:36})).toBe(1);
+    expect(feed.creditsForBounds({south:-5,west:32,north:5,east:42})).toBe(2);
+    expect(feed.creditsForBounds({south:-5,west:32,north:6,east:42})).toBe(3);
+    expect(feed.creditsForBounds({south:-10,west:-20,north:10,east:5})).toBe(4);
   });
 
-  test('builds the documented single-line Firehose initiation command',()=>{
-    const config={
-      configured:true,username:'service-user',apiKey:'private-api-key',
-      bounds:{south:-5,west:32,north:6,east:42},
-    };
-    const command=feed.buildInitiationCommand(config);
-    expect(command).toContain('username service-user');
-    expect(command).toContain('password private-api-key');
-    expect(command).toContain('events "position flifo arrival departure cancellation"');
-    expect(command).toContain('latlong "-5 32 6 42"');
-    expect(command.startsWith('live ')).toBe(true);
-    expect(command.endsWith('\n')).toBe(true);
-    const resumed=feed.buildInitiationCommand(config,1793333333.25);
-    expect(resumed.startsWith('pitr 1793333333.25 ')).toBe(true);
-    expect(resumed).not.toContain(' live ');
-  });
-
-  test('normalises observed aircraft positions with correct units and provenance',()=>{
-    const now=Date.now();
-    const position=feed.normalizePosition({
-      type:'position',id:'fa-flight-1',ident:'KQ100',hexid:'ABC123',
-      lat:-1.3,lon:36.8,clock:now/1000,alt:12000,gs:430,heading_true:90,
-      updateType:'A',orig:'HKJK',dest:'EGLL',air_ground:'A',
-    },new Date(now).toISOString());
-    expect(position).toMatchObject({
-      id:'fa-flight-1',ident:'KQ100',latitude:-1.3,longitude:36.8,heading_deg:90,
-      origin:'HKJK',destination:'EGLL',update_type:'A',evidence_class:'OBSERVED',
-      altitude_reference:'BAROMETRIC_PRESSURE',
-      provenance:{provider:'FlightAware Firehose',source_message:'position'},
+  test('budgets state-vector polling below the standard authenticated daily credit allowance',()=>{
+    const config=feed.getConfig({
+      SJM_AIRSPACE_FEED_ENABLED:'true',
+      SJM_AIRSPACE_LICENSE_CONFIRMED:'true',
+      SJM_AIRSPACE_BOUNDS:'-5 32 6 42',
+      OPENSKY_CLIENT_ID:'client-id',
+      OPENSKY_CLIENT_SECRET:'client-secret',
+      OPENSKY_POLL_INTERVAL_SECONDS:'60',
     });
-    expect(position.altitude_m).toBeCloseTo(3657.6,1);
-    expect(position.ground_speed_mps).toBeCloseTo(221.2,1);
+    expect(config).toMatchObject({
+      configured:true,creditsPerRequest:3,pollIntervalSeconds:87,dailyCreditBudget:3000,
+    });
+    expect(config.projectedDailyCredits).toBeLessThanOrEqual(3000);
   });
 
-  test('uses GNSS altitude as WGS84 ellipsoid height when that field is supplied',()=>{
-    const position=feed.normalizePosition({type:'position',id:'gnss-1',lat:-1.3,lon:36.8,clock:Date.now()/1000,alt:12000,alt_gnss:11800});
-    expect(position.altitude_m).toBeCloseTo(3596.64,1);
-    expect(position.altitude_reference).toBe('WGS84_ELLIPSOID');
+  test('uses a query bounding box and requests extended state-vector fields',()=>{
+    const url=new URL(feed.buildStatesUrl({south:-5,west:32,north:6,east:42}));
+    expect(url.origin).toBe('https://opensky-network.org');
+    expect(url.pathname).toBe('/api/states/all');
+    expect(url.searchParams.get('lamin')).toBe('-5');
+    expect(url.searchParams.get('lomin')).toBe('32');
+    expect(url.searchParams.get('lamax')).toBe('6');
+    expect(url.searchParams.get('lomax')).toBe('42');
+    expect(url.searchParams.get('extended')).toBe('1');
   });
 
-  test('rejects invalid, missing and future-dated aircraft position evidence',()=>{
-    expect(feed.normalizePosition({type:'position',id:'x',lat:100,lon:0,clock:Date.now()/1000})).toBeNull();
-    expect(feed.normalizePosition({type:'position',id:'x',lat:0,lon:0,clock:0})).toBeNull();
-    expect(feed.classifyFreshness('2099-01-01T00:00:00.000Z',Date.now(),true)).toBe('UNAVAILABLE');
+  test('normalises the documented OpenSky state-vector indexes, units and evidence provenance',()=>{
+    const vector=[
+      'abc123','KQ100','Kenya',now/1000,now/1000,36.8,-1.3,12000,false,
+      220,90,-2.4,null,12400,'1234',false,0,4,
+    ];
+    const item=feed.normaliseStateVector(vector,now);
+    expect(item).toMatchObject({
+      id:'abc123',ident:'KQ100',origin_country:'Kenya',latitude:-1.3,longitude:36.8,
+      ground_speed_mps:220,heading_deg:90,vertical_rate_mps:-2.4,on_ground:false,
+      barometric_altitude_m:12000,geometric_altitude_m:12400,altitude_m:12400,
+      altitude_reference:'GEOMETRIC',squawk:'1234',position_source_label:'ADSB',
+      category:4,category_label:'LARGE',evidence_class:'OBSERVED',provider:'opensky_rest',
+    });
   });
 
-  test('does not regress current aircraft state when PITR replays older position messages',()=>{
-    const currentTime=Date.now()/1000;
-    feed.processLine(JSON.stringify({type:'position',id:'replay-1',ident:'KQ100',lat:-1.3,lon:36.8,clock:currentTime,pitr:currentTime}));
-    feed.processLine(JSON.stringify({type:'position',id:'replay-1',ident:'KQ100',lat:-2.3,lon:37.8,clock:currentTime-30,pitr:currentTime-30}));
-    const current=feed.snapshot();
-    expect(current.aircraft).toHaveLength(1);
-    expect(current.aircraft[0]).toMatchObject({latitude:-1.3,longitude:36.8});
-    expect(current.rejected_count).toBe(1);
-    expect(current.last_pitr_at).toBe(new Date(currentTime*1000).toISOString());
+  test('does not turn a missing position timestamp or invalid coordinates into a current fix',()=>{
+    const vector=['abc123','KQ100','Kenya',null,now/1000,36.8,-1.3,12000,false,220,90,-2.4,null,12400,'1234',false,0,4];
+    expect(feed.normaliseStateVector(vector,now)).toBeNull();
+    const invalid=['abc123','KQ100','Kenya',now/1000,now/1000,36.8,95,12000,false,220,90,-2.4,null,12400,'1234',false,0,4];
+    expect(feed.normaliseStateVector(invalid,now)).toBeNull();
   });
 
-  test('keeps flight-information events separate from observed aircraft positions',()=>{
-    feed.processLine(JSON.stringify({type:'flifo',id:'fa-flight-1',ident:'KQ100',clock:Date.now()/1000}));
-    const current=feed.snapshot();
-    expect(current.aircraft).toHaveLength(0);
-    expect(current.recent_events[0]).toMatchObject({type:'flifo',ident:'KQ100',evidence_class:'OBSERVED'});
+  test('classifies observed position age without accepting future timestamps',()=>{
+    expect(feed.classifyFreshness(new Date(now-10_000).toISOString(),now)).toBe('LIVE');
+    expect(feed.classifyFreshness(new Date(now-90_000).toISOString(),now)).toBe('DELAYED');
+    expect(feed.classifyFreshness(new Date(now-300_000).toISOString(),now)).toBe('STALE');
+    expect(feed.classifyFreshness(new Date(now-900_000).toISOString(),now)).toBe('UNAVAILABLE');
+    expect(feed.classifyFreshness(new Date(now+60_000).toISOString(),now)).toBe('UNAVAILABLE');
   });
 
-  test('returns no synthetic aircraft when the provider is unconfigured',()=>{
-    expect(feed.snapshot()).toMatchObject({
-      provider:'flightaware_firehose',status:'NOT_CONFIGURED',configured:false,
-      connected:false,aircraft:[],provenance:{fabricated_data_used:false},
+  test('refreshes OAuth2 client-credentials tokens before expiry and never uses account passwords',async()=>{
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:true,status:200,json:async()=>({access_token:'oauth-token',expires_in:1800}),
+    });
+    const config={clientId:'api-client-id',clientSecret:'api-client-secret'};
+    await expect(feed.getAccessToken(config,{fetcher,now})).resolves.toBe('oauth-token');
+    await expect(feed.getAccessToken(config,{fetcher,now:now+60_000})).resolves.toBe('oauth-token');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const request=fetcher.mock.calls[0][1];
+    expect(request.method).toBe('POST');
+    expect(request.body).toContain('grant_type=client_credentials');
+    expect(request.body).toContain('client_id=api-client-id');
+    expect(request.body).toContain('client_secret=api-client-secret');
+    expect(request.body).not.toContain('username=');
+    expect(request.body).not.toContain('password=');
+  });
+
+  test('retries one expired bearer token and returns only the bounded state snapshot',async()=>{
+    const fetcher=jest.fn()
+      .mockResolvedValueOnce({ok:true,status:200,json:async()=>({access_token:'expired-token',expires_in:1800})})
+      .mockResolvedValueOnce({ok:false,status:401,headers:{get:()=>null}})
+      .mockResolvedValueOnce({ok:true,status:200,json:async()=>({access_token:'new-token',expires_in:1800})})
+      .mockResolvedValueOnce({
+        ok:true,status:200,
+        headers:{get:(name)=>name.toLowerCase()==='x-rate-limit-remaining'?'3997':null},
+        json:async()=>({time:now/1000,states:[[ 'abc123','KQ100','Kenya',now/1000,now/1000,36.8,-1.3,12000,false,220,90,-2.4,null,12400,'1234',false,0,4]]}),
+      });
+    const config={clientId:'client-id',clientSecret:'client-secret',bounds:{south:-5,west:32,north:6,east:42}};
+    const result=await feed.fetchStates(config,{fetcher,now});
+    expect(result.states).toHaveLength(1);
+    expect(result.rateLimitRemaining).toBe(3997);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(fetcher.mock.calls[1][1].headers.Authorization).toBe('Bearer expired-token');
+    expect(fetcher.mock.calls[3][1].headers.Authorization).toBe('Bearer new-token');
+  });
+
+  test('surfaces provider retry guidance on HTTP 429 without silently retrying or fabricating data',async()=>{
+    const fetcher=jest.fn()
+      .mockResolvedValueOnce({ok:true,status:200,json:async()=>({access_token:'token',expires_in:1800})})
+      .mockResolvedValueOnce({
+        ok:false,status:429,
+        headers:{get:(name)=>name.toLowerCase()==='x-rate-limit-retry-after-seconds'?'600':null},
+      });
+    const config={clientId:'client-id',clientSecret:'client-secret',bounds:{south:-5,west:32,north:6,east:42}};
+    await expect(feed.fetchStates(config,{fetcher,now})).rejects.toMatchObject({
+      code:'rate_limited',retryAfterSeconds:600,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  test('preserves chronological aircraft trails and refuses out-of-order samples',()=>{
+    const first=feed.normaliseStateVector([
+      'abc123','KQ100','Kenya',now/1000,now/1000,36.8,-1.3,12000,false,220,90,-2.4,null,12400,'1234',false,0,4,
+    ],now);
+    const older=feed.normaliseStateVector([
+      'abc123','KQ100','Kenya',(now-30_000)/1000,(now-30_000)/1000,36.7,-1.4,12000,false,220,90,-2.4,null,12400,'1234',false,0,4,
+    ],now);
+    expect(feed.rememberPosition(first)).toBe(true);
+    expect(feed.rememberPosition(older)).toBe(false);
+    const output=feed.snapshot(now,{
+      configured:true,bounds:{south:-5,west:32,north:6,east:42},pollIntervalSeconds:120,
+      creditsPerRequest:3,projectedDailyCredits:2160,dailyCreditBudget:3000,
+    });
+    expect(output.aircraft).toHaveLength(1);
+    expect(output.aircraft[0].latitude).toBe(-1.3);
+    expect(output.aircraft[0].trail).toHaveLength(1);
+  });
+
+  test('unconfigured provider snapshot contains no simulated aircraft or flight-information events',async()=>{
+    const result=await feed.getSnapshot({start:false});
+    expect(result).toMatchObject({
+      provider:'opensky_rest',provider_name:'OpenSky Network',
+      status:'NOT_CONFIGURED',configured:false,connected:false,
+      aircraft:[],recent_events:[],
+      provenance:{fabricated_data_used:false,commercial_flight_information:false,mlat_available_via_rest:false},
     });
   });
 });
