@@ -94,13 +94,15 @@ async function stubSjmApi(page: Page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: {
-          provider: 'flightaware_firehose', provider_name: 'FlightAware Firehose',
+          provider: 'opensky_rest', provider_name: 'OpenSky Network',
           status: 'NOT_CONFIGURED', configured: false, connected: false,
           last_connected_at: null, last_received_at: null, last_position_at: null,
           message_count: 0, position_count: 0, rejected_count: 0,
           coverage: { complete: false, bounds: null, query_scope: 'unavailable' },
           aircraft: [], recent_events: [],
-          provenance: { source: 'FlightAware Firehose', fabricated_data_used: false },
+          poll_interval_seconds: null, credit_cost_per_request: null, projected_daily_credits: null,
+          rate_limit_remaining: null,
+          provenance: { source: 'OpenSky Network REST API', feed_mode: 'bounded_rest_polling_snapshot', fabricated_data_used: false },
         } }),
       });
     }
@@ -618,7 +620,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     await page.getByRole('tab', { name: 'Airspace 3D' }).click();
     await expect(page.getByRole('heading', { name: 'Live 3D airspace' })).toBeVisible();
-    await expect(page.getByText('Provider connection not configured.')).toBeVisible();
+    await expect(page.getByText('OpenSky access is not configured.')).toBeVisible();
     await expect(page.getByText(/0 aircraft records/)).toBeVisible();
     await expect(page.getByText('No aircraft are simulated.')).toBeVisible();
     expect(cspRuntimeErrors).toEqual([]);
