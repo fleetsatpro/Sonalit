@@ -138,7 +138,25 @@ describe('SJM federated aviation intelligence',()=>{
     }]};
     const result=await aviation.getSnapshot({airportIcao:'HKJK',baseSnapshot,env:{},fetcher,now:now+3_000});
     expect(result.intelligence.provenance).toMatchObject({
-      multi_provider:true,active_provider_count:3,provider_registry_present:true,
+      multi_provider:true,active_provider_count:2,active_reference_source_count:1,provider_registry_present:true,
+    });
+  });
+
+  test('does not count an airport reference lookup as a second live aviation provider',async()=>{
+    const fetcher=jest.fn(async(url)=>{
+      const path=String(url);
+      if(path.includes('airports.csv'))return {
+        ok:true,status:200,headers:{get:()=>String(airportCsv.length)},text:async()=>airportCsv,
+      };
+      return {ok:true,status:204,json:async()=>null};
+    });
+    const baseSnapshot={provider:'opensky_rest',status:'LIVE',configured:true,connected:true,aircraft:[{
+      id:'abc123',ident:'KQ100',latitude:-1.3,longitude:36.8,observed_at:new Date(now).toISOString(),
+    }]};
+    const result=await aviation.getSnapshot({airportCode:'NBO',baseSnapshot,env:{},fetcher,now:now+2_500});
+    expect(result.intelligence.airport_reference.status).toBe('RESOLVED');
+    expect(result.intelligence.provenance).toMatchObject({
+      multi_provider:false,active_provider_count:1,active_reference_source_count:1,
     });
   });
 
