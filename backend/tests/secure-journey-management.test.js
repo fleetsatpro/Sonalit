@@ -1,9 +1,224 @@
 'use strict';
+const fs = require('fs');
+const path = require('path');
+jest.mock('../src/realtime/centrifugo', () => ({ removeChannelHistory: jest.fn(), unsubscribeUserFromChannel: jest.fn(), publish: jest.fn() }));
+const { removeChannelHistory, unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, freshnessFor, latestObservedAt, readinessChecklist, changeEventsFor, managementSummaryCounts, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, enabledReportSections, reportFocusSections } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, revisionAcknowledgementError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
+  test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
+    const journey={id:'journey-1',principal_reference:'VIP-42',flight_status_note:'Private airline call',meet_greet_instructions:'Use private entrance'};
+    const events=[
+      {id:'1',detail:{classification:'INTERNAL_OPERATIONS',note:'CPO only'}},
+      {id:'2',detail:{classification:'CLIENT_SAFE',note:'Public arrival'}},
+      {id:'3',detail:{note:'Unclassified legacy entry must not be published'}}
+    ];
+    const safe=journeyForViewer(journey,events,false);
+    expect(safe.principal_reference).toBeNull();
+    expect(safe.flight_status_note).toBeNull();
+    expect(safe.meet_greet_instructions).toBeNull();
+    expect(safe.events.map(e=>e.id)).toEqual(['2']);
+    expect(isClientSafeEvent(events[1])).toBe(true);
+    expect(isClientSafeEvent(events[2])).toBe(false);
+    expect(journeyForViewer(journey,events,true).events).toHaveLength(3);
+    expect(isInternalOperationalEvent(events[0])).toBe(true);
+    expect(isInternalOperationalEvent(events[1])).toBe(false);
+    expect(isClientSafeEvent(events[1])).toBe(true);
+  });
+  test('redacts mission details and event notes by assigned duty, while retaining relevant operational context', () => {
+    const journey={principal_reference:'PRINCIPAL-17',airport_code:'NBO',terminal:'1A',airline:'KQ',flight_number:'KQ 100',flight_scheduled_at:'2026-10-29T08:00:00Z',flight_status:'delayed',flight_status_source:'operator_entered',flight_status_note:'Sensitive airline and arrival handling note',meet_greet_instructions:'Use the east-side VIP entrance'};
+    const internal={id:'e1',detail:{classification:'INTERNAL_OPERATIONS',duty_roles:['meet_greet'],note:'Sensitive pickup detail'}};
+    const clientSafe={id:'e2',detail:{classification:'CLIENT_SAFE',note:'Client-safe update'}};
+    const unclassified={id:'e3',detail:{note:'Legacy entry without classification'}};
+    const driver=journeyForDutyViewer(journey,[internal,clientSafe,unclassified],{role:'operator'},['driver']);
+    expect(driver.principal_reference).toBe('PRINCIPAL-17');
+    expect(driver.flight_status_note).toBeNull();
+    expect(driver.meet_greet_instructions).toBeNull();
+    expect(driver.events.map(e=>e.id)).toEqual(['e2']);
+    const greeter=journeyForDutyViewer(journey,[internal,clientSafe,unclassified],{role:'operator'},['meet_greet']);
+    expect(greeter.meet_greet_instructions).toBe('Use the east-side VIP entrance');
+    expect(greeter.flight_status_note).toBe('Sensitive airline and arrival handling note');
+    expect(greeter.events.map(e=>e.id)).toEqual(['e1','e2']);
+    expect(eventVisibleToDuty(internal,{role:'operator'},['meet_greet'])).toBe(true);
+    expect(eventVisibleToDuty(internal,{role:'operator'},['driver'])).toBe(false);
+    expect(eventVisibleToDuty(unclassified,{role:'operator'},['driver'])).toBe(false);
+    expect(eventVisibleToDuty(unclassified,{role:'dispatcher'},[])).toBe(true);
+  });
+  test('validates executive mobility metadata and rejects caller-forged flight state', () => {
+    expect(validateServiceDetails({service_type:'airport_arrival',airport_code:'NBO',flight_number:'KQ 100'})).toBeNull();
+    expect(validateServiceDetails({service_type:'executive_transfer'})).toBeNull();
+    expect(validateServiceDetails({service_type:'airport_arrival',airport_code:'Nairobi'})).toMatch(/Airport code/);
+    expect(validateServiceDetails({service_type:'unsupported'})).toMatch(/Service type/);
+    expect(validateServiceDetails({flight_status:'landed'})).toMatch(/operator-status endpoint/);
+    expect(validateServiceDetails({flight_scheduled_at:'not-a-time'})).toMatch(/Scheduled flight time/);
+  });
+  test('restricts field check-ins to allowed assigned duty roles', () => {
+    expect(dutyEventAllowed(['driver'],'driver_at_pickup')).toBe(true);
+    expect(dutyEventAllowed(['driver'],'principal_met')).toBe(false);
+    expect(dutyEventAllowed(['cpo'],'security_concern')).toBe(true);
+    expect(dutyEventAllowed(['meet_greet'],'handover_to_cpo')).toBe(true);
+    expect(dutyEventAllowed(['dispatcher'],'incident')).toBe(true);
+    expect(dutyEventAllowed(['analyst'],'incident')).toBe(false);
+  });
+  test('limits mission management to operational roles', () => {
+    expect(isMobilityManager({role:'dispatcher'})).toBe(true);
+    expect(isMobilityManager({role:'admin'})).toBe(true);
+    expect(isMobilityManager({role:'operator'})).toBe(false);
+    expect(isMobilityManager({role:'analyst'})).toBe(false);
+    expect(isMobilityManager({role:'driver'})).toBe(false);
+  });
+  test('scopes all itinerary and report snapshots to assigned personnel or dispatch management', () => {
+    expect(canAccessJourney({role:'admin'},[])).toBe(true);
+    expect(canAccessJourney({role:'dispatcher'},[])).toBe(true);
+    expect(canAccessJourney({role:'operator'},[])).toBe(false);
+    expect(canAccessJourney({role:'analyst'},[])).toBe(false);
+    expect(canAccessJourney({role:'operator'},['driver'])).toBe(true);
+    expect(canAccessJourney({role:'analyst'},['cpo'])).toBe(true);
+    expect(canAccessReport({role:'operator'},{journey_id:'mission-1'},[])).toBe(false);
+    expect(canAccessReport({role:'operator'},{journey_id:'mission-1'},['driver'])).toBe(true);
+    expect(canAccessReport({role:'analyst'},{journey_id:null},[])).toBe(false);
+    expect(canAccessReport({role:'dispatcher'},{journey_id:null},[])).toBe(true);
+    expect(canAccessReport({role:'operator'},null,[])).toBe(false);
+  });
+  test('enforces lifecycle authority by account role and assigned duty', () => {
+    expect(lifecycleAuthorityError({role:'operator'},['driver'],'ready_to_depart')).toMatchObject({error:'dispatcher_authority_required'});
+    expect(lifecycleAuthorityError({role:'dispatcher'},[],'ready_to_depart')).toBeNull();
+    expect(lifecycleAuthorityError({role:'operator'},['meet_greet'],'start')).toMatchObject({error:'driver_authority_required'});
+    expect(lifecycleAuthorityError({role:'operator'},['backup_driver'],'start')).toBeNull();
+    expect(lifecycleAuthorityError({role:'operator'},['meet_greet'],'pause')).toMatchObject({error:'field_duty_required'});
+    expect(lifecycleAuthorityError({role:'operator'},['cpo'],'raise_exception')).toBeNull();
+    expect(lifecycleAuthorityError({role:'operator'},['driver'],'hold')).toMatchObject({error:'dispatcher_authority_required'});
+    expect(lifecycleAuthorityError({role:'admin'},[],'hold')).toBeNull();
+  });
+  test('classifies generic mission log entries before report publication', () => {
+    expect(classificationForGenericEvent('operator_note')).toBe('INTERNAL_OPERATIONS');
+    expect(classificationForGenericEvent('security_update')).toBe('INTERNAL_OPERATIONS');
+    expect(classificationForGenericEvent('delay')).toBe('INTERNAL_OPERATIONS');
+    expect(classificationForGenericEvent('incident')).toBe('INTERNAL_OPERATIONS');
+    expect(classificationForGenericEvent('client_update')).toBe('CLIENT_SAFE');
+  });
+  test('serializes assignment-list reads against concurrent roster changes', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../src/routes/secureJourneyManagement.js'), 'utf8');
+    const mineStart = source.indexOf("router.get('/my-assignments'");
+    const mineEnd = source.indexOf("\n}));", mineStart);
+    const listStart = source.indexOf("router.get('/journeys',");
+    const listEnd = source.indexOf("\nrouter.post('/journeys',", listStart);
+    expect(mineStart).toBeGreaterThanOrEqual(0);
+    expect(mineEnd).toBeGreaterThan(mineStart);
+    expect(listStart).toBeGreaterThanOrEqual(0);
+    expect(listEnd).toBeGreaterThan(listStart);
+    const mine = source.slice(mineStart, mineEnd);
+    const list = source.slice(listStart, listEnd);
+    expect(mine).toContain('await req.dbTx(async c=>{');
+    expect(mine).toContain('FOR SHARE OF j');
+    expect(mine.indexOf('FOR SHARE OF j')).toBeLessThan(mine.indexOf('readLockedAssignmentRows('));
+    expect(mine).toContain('assignment_roster_changed');
+    expect(list).toContain('!isMobilityManager(req.user)?await db(');
+    expect(list).toContain('FOR SHARE OF j');
+    expect(list.indexOf('FOR SHARE OF j')).toBeLessThan(list.indexOf('readLockedAssignmentRows('));
+    expect(list).toContain('assignment_roster_changed');
+  });
+
+  test('register filter compiler accepts supported buckets and rejects arbitrary SQL', () => {
+    expect(journeyRegisterFilterSql('all')).toBe('TRUE');
+    expect(journeyRegisterFilterSql('active')).toMatch(/in_progress/);
+    expect(journeyRegisterFilterSql('attention')).toMatch(/HUMAN_REVIEW/);
+    expect(journeyRegisterFilterSql('ready_for_review')).toBe('j.status=$4');
+    expect(journeyRegisterFilterSql('overdue')).toMatch(/planned_departure_at\s*<\s*NOW\(\)/);
+    expect(journeyRegisterFilterSql('overdue')).toMatch(/planned_arrival_at\s*<\s*NOW\(\)/);
+    expect(journeyRegisterFilterSql('departure_due_30m')).toMatch(/INTERVAL '30 minutes'/);
+    expect(journeyRegisterFilterSql("all' OR 1=1 --")).toBeNull();
+  });
+
+  test('route review and approval reject a stale assessment, decision or journey revision', () => {
+    const expected={
+      id:'journey-1',
+      status:'ready_for_review',
+      route_assessment:{route_status:'routed',safety_gate:'HUMAN_REVIEW',recommended_route:{blocked:false,waypoints:[{lat:-1.2,lng:36.8}]}},
+      human_review_decision:null,
+      updated_at:new Date('2026-10-29T10:00:00.000Z'),
+      route_review_row_version:'tx-104',
+    };
+    expect(sameRouteReviewSnapshot({...expected,route_assessment:{recommended_route:{waypoints:[{lng:36.8,lat:-1.2}],blocked:false},safety_gate:'HUMAN_REVIEW',route_status:'routed'}},expected)).toBe(true);
+    expect(sameRouteReviewSnapshot({...expected,updated_at:new Date('2026-10-29T10:00:01.000Z')},expected)).toBe(false);
+    expect(sameRouteReviewSnapshot({...expected,route_review_row_version:'tx-105'},expected)).toBe(false);
+    expect(sameRouteReviewSnapshot({...expected,route_assessment:{...expected.route_assessment,assessment_revision:2}},expected)).toBe(false);
+    expect(sameRouteReviewSnapshot({...expected,human_review_decision:'approve_with_controls'},expected)).toBe(false);
+    expect(sameRouteReviewSnapshot({...expected,status:'planning'},expected)).toBe(false);
+  });
+
+  test('human review and approval evaluate the same snapshot under the journey lock', () => {
+    const source=fs.readFileSync(path.join(__dirname, '../src/routes/secureJourneyManagement.js'), 'utf8');
+    const reviewStart=source.indexOf("router.post('/journeys/:id/review'");
+    const approveStart=source.indexOf("router.post('/journeys/:id/approve'");
+    const lifecycleStart=source.indexOf("router.post('/journeys/:id/lifecycle'");
+    const review=source.slice(reviewStart,approveStart);
+    const approve=source.slice(approveStart,lifecycleStart);
+    expect(review).toContain('mutateWithEvent');
+    expect(approve).toContain('mutateWithEvent');
+    expect(review).toContain('await readLockedRouteReviewSnapshot(db,org,j)');
+    expect(approve).toContain('await readLockedRouteReviewSnapshot(db,org,j)');
+    expect(review).toContain('journeyForRouteReview(req.db,org,req.params.id)');
+    expect(approve).toContain('journeyForRouteReview(req.db,org,req.params.id)');
+    expect(source).toContain('async function journeyForRouteReview(db,org,id)');
+    expect(source).toContain('j.xmin::text AS route_review_row_version');
+    expect(source).toContain('xmin::text AS route_review_row_version');
+    expect(review).toContain("route_review_already_recorded");
+    expect(approve).toContain('approvalGate(parseJson(snapshot.current?.route_assessment,null),currentDecision,ack)');
+  });
+
+  test('register sort compiler exposes operational priority and explicit date alternatives only', () => {
+    expect(journeyRegisterOrderSql('priority')).toMatch(/safety_gate/);
+    expect(journeyRegisterOrderSql('priority')).toMatch(/j.status='exception'/);
+    expect(journeyRegisterOrderSql('priority')).toMatch(/planned_departure_at < NOW\(\)/);
+    expect(journeyRegisterOrderSql('priority')).toMatch(/planned_arrival_at < NOW\(\)/);
+    expect(journeyRegisterOrderSql('priority')).toMatch(/INTERVAL '30 minutes'/);
+    expect(journeyRegisterOrderSql('departure_asc')).toMatch(/planned_departure_at ASC NULLS LAST/);
+    expect(journeyRegisterOrderSql('departure_desc')).toMatch(/planned_departure_at DESC NULLS LAST/);
+    expect(journeyRegisterOrderSql('updated_desc')).toMatch(/updated_at DESC NULLS LAST/);
+    expect(journeyRegisterOrderSql("priority, pg_sleep(10) --")).toBeNull();
+  });
+
+  test('journey register uses one server filter, sort and scope for rows, counts and page continuation', () => {
+    const source=fs.readFileSync(path.join(__dirname, '../src/routes/secureJourneyManagement.js'), 'utf8');
+    const start=source.indexOf("router.get('/journeys',");
+    const end=source.indexOf("\nrouter.post('/journeys',",start);
+    const route=source.slice(start,end);
+    expect(route).toContain('LIMIT $6 OFFSET $7');
+    expect(route).toContain('COUNT(*)::int AS total_count');
+    expect(route).toContain('has_more:offset+data.length<rows.totalCount');
+    expect(route).toContain("concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE");
+    expect(route).toContain('summary:rows.summary');
+    expect(route).toContain('journeyRegisterFilterSql(filter)');
+    expect(route).toContain('journeyRegisterOrderSql(sort)');
+    expect(route).toContain('AS overdue');
+    expect(route).toContain('AS departures_due_30m');
+    expect(route).toContain('AS schedule_urgency');
+    expect(route).toContain("THEN 'DEPARTURE_OVERDUE'");
+    expect(route).toContain("THEN 'ARRIVAL_OVERDUE'");
+    expect(route).toContain("THEN 'DEPARTURE_DUE_30M'");
+    expect(route).toContain('ORDER BY ${orderSql}');
+    expect(route).toContain('invalid_journey_sort');
+  });
+  test('keeps direct journey asset read and allocation routes registered', () => {
+    const getLayer=sjmRouter.stack.find(entry =>
+      entry.route?.path === '/journeys/:id/assets' && entry.route.methods?.get === true
+    );
+    const putLayer=sjmRouter.stack.find(entry =>
+      entry.route?.path === '/journeys/:id/assets' && entry.route.methods?.put === true
+    );
+    expect(getLayer).toBeDefined();
+    expect(putLayer).toBeDefined();
+  });
+  test('keeps the mission-team assignment write endpoint registered', () => {
+    const layer=sjmRouter.stack.find(entry =>
+      entry.route?.path === '/journeys/:id/participants' && entry.route.methods?.put === true
+    );
+    expect(layer).toBeDefined();
+  });
+
   test('authenticates requests before the tenant-scope guard', () => {
     const authIndex = sjmRouter.stack.findIndex(layer => layer.handle === authenticate);
     expect(authIndex).toBeGreaterThanOrEqual(0);
@@ -11,6 +226,116 @@ describe('SJM validation and evidence boundaries', () => {
     expect(firstRouteIndex).toBeGreaterThan(authIndex);
   });
   const valid = { title:'Nairobi to Mombasa security movement', purpose:'Client-approved escorted road movement', origin_label:'Nairobi', origin_lat:-1.286389, origin_lng:36.817223, destination_label:'Mombasa', destination_lat:-4.043477, destination_lng:39.668206, planned_departure_at:'2026-10-28T06:00:00+03:00', planned_arrival_at:'2026-10-28T16:00:00+03:00', transport_mode:'road', stops:[{name:'Voi checkpoint',stop_type:'checkpoint',lat:-3.396,lng:38.556}] };
+  test('locks the tenant-scoped journey row before mutation decisions', async () => {
+    const calls=[];
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      return {rows:[{id:'journey-1',status:'in_progress',flight_number:'KQ 100',flight_status:'scheduled'}]};
+    };
+    const locked=await lockJourneyForMobility(db,'org-1','journey-1');
+    expect(locked).toMatchObject({id:'journey-1',status:'in_progress',flight_number:'KQ 100'});
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE');
+    expect(calls[0].params).toEqual(['journey-1','org-1']);
+  });
+
+  test('uses a tenant-scoped shared journey lock to protect sensitive read payloads', async () => {
+    const calls=[];
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      return {rows:[{id:'journey-1'}]};
+    };
+    const locked=await lockJourneyForMobilityRead(db,'org-1','journey-1');
+    expect(locked).toEqual({id:'journey-1'});
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE');
+    expect(calls[0].params).toEqual(['journey-1','org-1']);
+  });
+
+  test('re-reads assignment lists after locking any newly visible journey rows', async () => {
+    const calls=[];
+    let listReads=0;
+    const db=jest.fn(async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql==='ASSIGNMENT_LIST'){
+        listReads+=1;
+        return {rows:listReads===1?[{id:'journey-1'},{id:'journey-2'}]:[{id:'journey-2'}]};
+      }
+      if(sql.includes('id=ANY($2::uuid[])'))return {rows:[{id:'journey-2'}]};
+      throw new Error('Unexpected SQL in assignment-list lock test');
+    });
+    const result=await readLockedAssignmentRows(
+      db,'org-1',{rows:[{id:'journey-1'}]},'ASSIGNMENT_LIST',[],
+    );
+    expect(result).toEqual({rows:[{id:'journey-2'}]});
+    expect(listReads).toBe(2);
+    expect(calls[1].sql).toContain('ORDER BY id FOR SHARE');
+    expect(calls[1].params).toEqual(['org-1',['journey-2']]);
+  });
+
+  test('revokes stale mission-channel subscriptions before deleting SJM channel membership', async () => {
+    jest.clearAllMocks();
+    unsubscribeUserFromChannel.mockResolvedValue(true);
+    removeChannelHistory.mockResolvedValue(true);
+    const calls=[];
+    const channelId='cccccccc-0000-0000-0000-000000000001';
+    const removedUser='aaaaaaaa-0000-0000-0000-000000000099';
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql.includes('INSERT INTO channels'))return {rows:[{id:channelId}]};
+      if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:removedUser}]};
+      if(/UPDATE sjm_journeys SET comms_epoch/.test(sql))return {rows:[{comms_epoch:1}],rowCount:1};
+      if(sql.includes('DELETE FROM channel_members cm')) {
+        expect(removeChannelHistory).toHaveBeenCalledWith('org#org-1#comms#'+channelId);
+        expect(unsubscribeUserFromChannel).toHaveBeenNthCalledWith(1,'org-1','org#org-1#comms#'+channelId);
+        expect(unsubscribeUserFromChannel).toHaveBeenNthCalledWith(2,removedUser,'org#org-1#comms#'+channelId);
+      }
+      return {rows:[],rowCount:1};
+    };
+    const result=await syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1',comms_epoch:0},'manager-1',true);
+    expect(result).toMatchObject({channelId,commsEpoch:1,realtimeChannel:'org#org-1#comms#'+channelId+'#v1',rotated:true});
+    expect(calls.findIndex(c=>c.sql.includes('SELECT cm.user_id FROM channel_members cm'))).toBeLessThan(calls.findIndex(c=>c.sql.includes('DELETE FROM channel_members cm')));
+    expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(2);
+  });
+
+  test('does not rotate a roster when retired-channel history cannot be cleared', async () => {
+    jest.clearAllMocks();
+    removeChannelHistory.mockResolvedValue(false);
+    unsubscribeUserFromChannel.mockResolvedValue(true);
+    const calls=[];
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql.includes('INSERT INTO channels'))return {rows:[{id:'cccccccc-0000-0000-0000-000000000001'}]};
+      if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:'aaaaaaaa-0000-0000-0000-000000000099'}]};
+      if(/UPDATE sjm_journeys SET comms_epoch/.test(sql))return {rows:[{comms_epoch:1}],rowCount:1};
+      return {rows:[],rowCount:1};
+    };
+    await expect(syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1'},'manager-1',true))
+      .rejects.toMatchObject({status:503});
+    expect(removeChannelHistory).toHaveBeenCalledWith('org#org-1#comms#cccccccc-0000-0000-0000-000000000001');
+    expect(calls.some(c=>c.sql.includes('DELETE FROM channel_members cm'))).toBe(false);
+    expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(2);
+  });
+
+  test('fails closed and preserves old roster memberships if live-channel revocation fails', async () => {
+    jest.clearAllMocks();
+    removeChannelHistory.mockResolvedValue(true);
+    unsubscribeUserFromChannel.mockResolvedValue(false);
+    const calls=[];
+    const db=async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql.includes('INSERT INTO channels'))return {rows:[{id:'cccccccc-0000-0000-0000-000000000001'}]};
+      if(sql.includes('SELECT cm.user_id FROM channel_members cm'))return {rows:[{user_id:'aaaaaaaa-0000-0000-0000-000000000099'}]};
+      if(/UPDATE sjm_journeys SET comms_epoch/.test(sql))return {rows:[{comms_epoch:1}],rowCount:1};
+      return {rows:[],rowCount:1};
+    };
+    await expect(syncJourneyCommsChannel(db,'org-1',{id:'journey-1',reference:'SJM-1'},'manager-1',true))
+      .rejects.toMatchObject({status:503});
+    expect(calls.some(c=>c.sql.includes('DELETE FROM channel_members cm'))).toBe(false);
+    expect(unsubscribeUserFromChannel).toHaveBeenCalledTimes(1);
+    expect(removeChannelHistory).not.toHaveBeenCalled();
+  });
+
   test('keeps daily report generation tenant-allowlisted and respects client-local time', () => {
     const org='12345678-1234-4234-8234-123456789abc';
     expect(configuredOrgIds('')).toEqual([]);
@@ -33,27 +358,84 @@ describe('SJM validation and evidence boundaries', () => {
   });
   test('keeps journey mutation and audit event on the same tenant transaction client', async () => {
     const calls=[];
-    const req={dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});return {rows:[{id:'row-1'}]};}})};
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});return {rows:[{id:'row-1',status:'in_progress'}]};}})};
     const journey={id:'journey-1',org_id:'org-1'};
     const result=await mutateWithEvent(req,journey,'user-1','journey_approved','Journey approved',{},'operator',
       db=>db('UPDATE sjm_journeys SET status=$1 WHERE id=$2 RETURNING id',['approved','journey-1']));
     expect(result.changed).toBe(true);
-    expect(calls).toHaveLength(2);
-    expect(calls[0].sql).toMatch(/UPDATE sjm_journeys/);
-    expect(calls[1].sql).toMatch(/INSERT INTO sjm_journey_events/);
+    expect(calls).toHaveLength(3);
+    expect(calls[0].sql).toMatch(/FOR UPDATE/);
+    expect(calls[1].sql).toMatch(/UPDATE sjm_journeys/);
+    expect(calls[2].sql).toMatch(/INSERT INTO sjm_journey_events/);
   });
+  test('rechecks assigned field authority under the locked journey row before mutation', async () => {
+    const calls=[];
+    const req={user:{id:'former-field-user',org_id:'org-1',role:'operator'},dbTx:async fn=>fn({query:async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql.includes('FOR UPDATE'))return {rows:[{id:'journey-1',status:'in_progress'}]};
+      if(sql.includes('SELECT duty_role'))return {rows:[]};
+      return {rows:[{id:'should-not-write'}]};
+    }})};
+    const mutation=jest.fn(async db=>db("UPDATE sjm_journeys SET status='paused' WHERE id=$1 RETURNING id",['journey-1']));
+    const result=await mutateWithEvent(req,{id:'journey-1',org_id:'org-1'},req.user.id,'journey_pause','Journey paused',{},'operator',mutation,async(db,locked)=>{
+      expect(locked.status).toBe('in_progress');
+      const roles=await db('SELECT duty_role FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL',['org-1','journey-1',req.user.id]);
+      return canAccessJourney(req.user,roles.rows.map(row=>row.duty_role))?null:{error:'journey_not_found'};
+    });
+    expect(result).toMatchObject({changed:false,error:'journey_not_found'});
+    expect(mutation).not.toHaveBeenCalled();
+    expect(calls[0].sql).toMatch(/FOR UPDATE/);
+    expect(calls[1].sql).toMatch(/SELECT duty_role/);
+  });
+
   test('does not append an audit event when the guarded mutation changes no row', async () => {
     const calls=[];
-    const req={dbTx:async fn=>fn({query:async(sql,params)=>{calls.push(sql);return {rows:[]};}})};
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>fn({query:async(sql,params)=>{calls.push(sql);if(sql.includes('FOR UPDATE'))return {rows:[{id:'journey-1',status:'in_progress'}]};return {rows:[]};}})};
     const result=await mutateWithEvent(req,{id:'journey-1',org_id:'org-1'},'user-1','journey_approved','Journey approved',{},'operator',
       db=>db('UPDATE sjm_journeys SET status=$1 WHERE id=$2 RETURNING id',['approved','journey-1']));
     expect(result.changed).toBe(false);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatch(/UPDATE sjm_journeys/);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatch(/FOR UPDATE/);
+    expect(calls[1]).toMatch(/UPDATE sjm_journeys/);
   });
+  test('records failed Route Safety assessment as an exception without stale route or approval evidence', async () => {
+    const calls=[];
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>fn({query:async(sql,params)=>{
+      calls.push({sql,params});
+      return {rows:[{id:'journey-1',status:'assessment_pending'}]};
+    }})};
+    const result=await recordRouteAssessmentFailure(req,{id:'journey-1',org_id:'org-1'},'user-1','provider_error');
+    expect(result.changed).toBe(true);
+    expect(calls).toHaveLength(3);
+    expect(calls[0].sql).toMatch(/FOR UPDATE/);
+    expect(calls[1].sql).toMatch(/status='exception'/);
+    expect(calls[1].sql).toMatch(/status='assessment_pending'/);
+    expect(calls[1].sql).toContain("planned_route='[]'::jsonb");
+    expect(calls[1].sql).toMatch(/route_assessment=NULL/);
+    expect(calls[1].sql).toMatch(/approved_at=NULL/);
+    expect(calls[2].sql).toMatch(/INSERT INTO sjm_journey_events/);
+    expect(calls[2].params[3]).toBe('route_assessment_failed');
+    expect(JSON.parse(calls[2].params[5])).toMatchObject({
+      failure_reason:'provider_error',
+      route_status:'UNAVAILABLE',
+      safety_gate:'UNAVAILABLE',
+      approval_allowed:false
+    });
+  });
+
+  test('does not audit a route-assessment failure if another request already changed the journey state', async () => {
+    const calls=[];
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>fn({query:async(sql,params)=>{calls.push({sql,params});if(sql.includes('FOR UPDATE'))return {rows:[{id:'journey-1',status:'cancelled'}]};return {rows:[]};}})};
+    const result=await recordRouteAssessmentFailure(req,{id:'journey-1',org_id:'org-1'},'user-1','invalid_provider_response');
+    expect(result.changed).toBe(false);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].sql).toMatch(/FOR UPDATE/);
+    expect(calls[1].sql).toMatch(/status='assessment_pending'/);
+  });
+
   test('propagates audit write failures so the transaction wrapper can roll back', async () => {
     let rollbackObserved=false;
-    const req={dbTx:async fn=>{try{return await fn({query:async(sql,params)=>{
+    const req={user:{id:'user-1',org_id:'org-1',role:'dispatcher'},dbTx:async fn=>{try{return await fn({query:async(sql,params)=>{
       if(sql.includes('INSERT INTO sjm_journey_events'))throw new Error('audit write failed');
       return {rows:[{id:'journey-1'}]};
     }});}catch(e){rollbackObserved=true;throw e;}}};
@@ -118,12 +500,102 @@ describe('SJM validation and evidence boundaries', () => {
     expect(freshnessFor('2026-10-27T15:01:00Z',now)).toBe('UNAVAILABLE');
     expect(freshnessFor(null,now)).toBe('UNAVAILABLE');
   });
+  test('returns latest directly assigned Guardian-device fixes as observed journey evidence', async () => {
+    const observedAt = new Date(Date.now() - 12_000);
+    const calls = [];
+    const db = async (sql, params) => {
+      calls.push({sql,params});
+      return {rows:[{
+        device_id:'device-1',device_name:'Principal protection device',officer_name:'Assigned CPO',
+        lat:-1.2864,lng:36.8172,speed_kph:4,heading:84,accuracy_m:9,
+        observed_at:observedAt,source:'device_locations'
+      }]};
+    };
+    const result = await telemetryFor(db,'org-1',{id:'journey-1'});
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toMatch(/FROM sjm_journey_assets/);
+    expect(calls[0].sql).toMatch(/a\.journey_id=\$2/);
+    expect(calls[0].sql).not.toMatch(/convoy_cfos|convoys/);
+    expect(calls[0].params).toEqual(['org-1','journey-1']);
+    expect(result.status).toBe('LIVE');
+    expect(result.observed_at).toEqual(observedAt);
+    expect(result.devices[0]).toMatchObject({
+      device_id:'device-1',lat:-1.2864,lng:36.8172,
+      freshness:'LIVE',evidence_class:'OBSERVED',source:'device_locations',
+      position_available:true
+    });
+    expect(result.devices[0].freshness_reason).toBeNull();
+  });
+  test('does not label a fresh timestamp as a live fix when its coordinates are unusable', async () => {
+    const observedAt = new Date(Date.now() - 12_000);
+    const db = async () => ({rows:[{
+      device_id:'device-no-fix',device_name:'Locator without coordinates',
+      lat:null,lng:36.8,speed_kph:null,heading:null,accuracy_m:null,
+      observed_at:observedAt,source:'device_locations'
+    }]});
+    const result = await telemetryFor(db,'org-1',{id:'journey-1'});
+    expect(result.status).toBe('UNAVAILABLE');
+    expect(result.devices[0]).toMatchObject({
+      freshness:'UNAVAILABLE',
+      position_available:false,
+      freshness_reason:'latest_record_has_no_usable_coordinates',
+      evidence_class:'OBSERVED'
+    });
+    expect(result.devices[0].age_seconds).toBeGreaterThanOrEqual(0);
+  });
+  test('returns an unavailable evidence state when the journey has no directly assigned Guardian devices', async () => {
+    const db = jest.fn(async () => ({rows:[]}));
+    const result = await telemetryFor(db,'org-1',{id:'journey-1'});
+    expect(db).toHaveBeenCalledTimes(1);
+    expect(db.mock.calls[0][0]).toMatch(/sjm_journey_assets/);
+    expect(result).toMatchObject({
+      status:'UNAVAILABLE',
+      reason:'No Guardian devices are assigned directly to this journey.',
+      observed_at:null,
+      devices:[]
+    });
+  });
   test('reports unknown pre-trip evidence as pending/unavailable rather than verified', () => {
-    const checklist=readinessChecklist({status:'requested',approved_at:null,convoy_id:null,departure_readiness_acknowledgement:null},[],null,{status:'UNAVAILABLE',reason:'No convoy linked.'});
+    const checklist=readinessChecklist({status:'requested',approved_at:null,departure_readiness_acknowledgement:null},[],null,{status:'UNAVAILABLE',reason:'No devices assigned.'});
     expect(checklist.find(x=>x.item==='Stored Route Safety assessment').status).toBe('UNAVAILABLE');
+    expect(checklist.find(x=>x.item==='Human route review').status).toBe('UNAVAILABLE');
     expect(checklist.find(x=>x.item==='Journey approval').status).toBe('PENDING');
-    expect(checklist.find(x=>x.item==='Convoy linkage').status).toBe('NOT_LINKED');
-    expect(checklist.find(x=>x.item==='Convoy device telemetry').status).toBe('UNAVAILABLE');
+    expect(checklist.find(x=>x.item==='Assigned mission devices').status).toBe('NOT_ASSIGNED');
+    expect(checklist.find(x=>x.item==='Live device observations').status).toBe('UNAVAILABLE');
+  });
+
+  test('accepts explicit unrouted fallback as a usable exception assessment without inventing risk or distance', () => {
+    const explicitUnrouted={
+      route_status:'unrouted',
+      safety_gate:'HUMAN_REVIEW',
+      overall_risk_score:null,
+      constraint_status:{risk_score_available:false,max_risk_exceeded:true},
+      recommended_route:{
+        label:'Unrouted waypoint reference',
+        waypoints:[{lat:-1.28,lng:36.81},{lat:-4.04,lng:39.66}],
+        risk_score:null,distance_km:null,estimated_duration_minutes:null,
+        notes:'Road routing unavailable. Risk score unavailable.'
+      }
+    };
+    expect(routeAssessmentUsable(explicitUnrouted)).toBe(true);
+    expect(routeAssessmentUsable({...explicitUnrouted,constraint_status:{risk_score_available:true}})).toBe(false);
+    expect(routeAssessmentUsable({...explicitUnrouted,safety_gate:'GO'})).toBe(false);
+    expect(routeAssessmentUsable({...explicitUnrouted,overall_risk_score:12})).toBe(false);
+    expect(routeAssessmentUsable({route_status:'routed',safety_gate:'GO',overall_risk_score:12})).toBe(true);
+    expect(routeAssessmentUsable({route_status:'routed',safety_gate:'GO',overall_risk_score:null})).toBe(false);
+  });
+
+  test('only declares human review unnecessary after a routed GO/CONDITIONAL gate exists', () => {
+    const base={status:'requested',approved_at:null,departure_readiness_acknowledgement:null};
+    const telemetry={status:'UNAVAILABLE',reason:'No location record.'};
+    const status=(assessment,decision=null)=>readinessChecklist({...base,human_review_decision:decision},[],assessment,telemetry).find(x=>x.item==='Human route review').status;
+    expect(status(null)).toBe('UNAVAILABLE');
+    expect(status({route_status:'routed',safety_gate:'GO'})).toBe('NOT_REQUIRED_BY_CURRENT_GATE');
+    expect(status({route_status:'routed',safety_gate:'CONDITIONAL'})).toBe('NOT_REQUIRED_BY_CURRENT_GATE');
+    expect(status({route_status:'routed',safety_gate:'HUMAN_REVIEW'})).toBe('PENDING');
+    expect(status({route_status:'routed',safety_gate:'HUMAN_REVIEW'},'approve_with_controls')).toBe('RECORDED_WITH_CONTROLS');
+    expect(status({route_status:'routed',safety_gate:'HUMAN_REVIEW'},'reject')).toBe('REJECTED');
+    expect(status({route_status:'blocked',safety_gate:'NO_GO'})).toBe('BLOCKED');
   });
   test('selects only recorded route, approval, lifecycle and stop events for change notices', () => {
     const selected=changeEventsFor([{event_type:'operator_note'},{event_type:'route_assessed'},{event_type:'journey_pause'},{event_type:'stop_reached'}]);
@@ -155,6 +627,13 @@ describe('SJM validation and evidence boundaries', () => {
     expect(summary.recent_events_truncated).toBe(true);
   });
 
+
+  test('requires a strict server-side acknowledgement before invalidating prior journey release evidence', () => {
+    expect(revisionAcknowledgementError({})).toMatch(/Explicitly acknowledge/);
+    expect(revisionAcknowledgementError({acknowledge_route_authorization_invalidation:false})).toMatch(/Explicitly acknowledge/);
+    expect(revisionAcknowledgementError({acknowledge_route_authorization_invalidation:'true'})).toMatch(/Explicitly acknowledge/);
+    expect(revisionAcknowledgementError({acknowledge_route_authorization_invalidation:true})).toBeNull();
+  });
 
   test('rejects caller-supplied SJM risk thresholds that could weaken the Route Safety gate', () => {
     expect(planRequestPolicyError({max_risk_score:100})).toMatch(/caller-supplied maximum risk threshold/);
@@ -207,6 +686,11 @@ describe('SJM validation and evidence boundaries', () => {
     expect(csv).not.toContain('Private device');
     expect(csv).not.toContain('Hidden route point');
   });
+  test('client reports exclude internal field-event records', async () => {
+    const calls=[];const db=async(sql,params)=>{calls.push({sql,params});return {rows:[]};};
+    expect((await eventsForReport(db,'org-1','journey-1',500)).rows).toHaveLength(0);
+    expect(calls[0].sql).toContain("detail->>'classification'='CLIENT_SAFE'");
+  });
   test('report event query returns exact totals and flags truncated history separately from included rows', async () => {
     const sqlCalls=[];
     const db=async(sql,params)=>{sqlCalls.push({sql,params});return {rows:[{id:'e1',event_type:'journey_pause',summary:'paused',total_count:501,total_change_count:400}]};};
@@ -222,5 +706,13 @@ describe('SJM validation and evidence boundaries', () => {
     const csv=toCsv({journey:{reference:'SJM-1',title:'A, B',status:'planned'},stops:[],events:[],telemetry_snapshot:{devices:[]}});
     expect(csv).toContain('"A, B"'); expect(csv).toContain('record_type,timestamp,label,status,details');
     expect(csvCell('=1+1')).toBe("'=1+1");
+  });
+});
+
+describe('SJM roster-change invalidation contract', () => {
+  test('publishes the tenant-scoped journey identity alongside the private channel ID', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../src/routes/secureJourneyManagement.js'), 'utf8');
+    expect(source).toContain("type:'comms.sjm.roster_changed',channel_id:assignedResult.channelId,journey_id:j.id");
+    expect(source).toContain("type:'comms.sjm.roster_changed',channel_id:outcome.channelId,journey_id:j.id");
   });
 });

@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 const { dualAuthenticate } = require('../middleware/fieldAuth');
+const { asyncHandler } = require('../middleware/error');
+const { sjmChannelName } = require('../realtime/sjmChannel');
 
 // dualAuthenticate, not authenticate: yard and port tablets need this token
 // too. Without it the field app could only ever poll, which is exactly the
@@ -14,16 +16,16 @@ router.use(dualAuthenticate);
 router.post('/token', (req, res) => {
   const secret = process.env.CENTRIFUGO_TOKEN_HMAC_SECRET;
   if (!secret) return res.status(503).json({ error: 'Realtime not configured' });
-  if (!req.user?.org_id) return res.status(403).json({ error: 'tenant_scope_required' });
+  if (!req.user?.id || !req.user?.org_id) return res.status(403).json({ error: 'tenant_scope_required' });
   const token = jwt.sign(
-    { sub: String(req.user.org_id) },
+    { sub: String(req.user.id) },
     secret,
-    { expiresIn: '1h', algorithm: 'HS256' }
+    { expiresIn: '5m', algorithm: 'HS256' }
   );
   res.json({ token });
 });
 
-router.post('/subscription-token', (req, res) => {
+router.post('/subscription-token', asyncHandler(async (req, res) => {
   const secret = process.env.CENTRIFUGO_TOKEN_HMAC_SECRET;
   if (!secret) return res.status(503).json({ error: 'Realtime not configured' });
 
@@ -32,22 +34,81 @@ router.post('/subscription-token', (req, res) => {
     return res.status(400).json({ error: 'channel required' });
   }
 
-  if (!req.user?.org_id) return res.status(403).json({ error: 'tenant_scope_required' });
+  if (!req.user?.id || !req.user?.org_id) return res.status(403).json({ error: 'tenant_scope_required' });
   const orgId = String(req.user.org_id);
   const allowedChannels = new Set([
     `org#${orgId}`,
     `risk:updates:${orgId}`,
   ]);
+
+  // Private Ops Comms subscriptions are granted only after checking the exact
+  // tenant-owned channel and current membership. For SJM-managed channels a
+  // shared journey lock serializes token issuance against the roster update
+  // transaction, which holds FOR UPDATE while removing channel membership.
+  const commsPrefix = `org#${orgId}#comms#`;
+  if (channel.startsWith(commsPrefix)) {
+    const channelMatch = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:#v([1-9]\d*))?$/i.exec(channel.slice(commsPrefix.length));
+    if (!channelMatch || channelMatch[1] !== channelMatch[1].toLowerCase() || typeof req.dbTx !== 'function') {
+      return res.status(403).json({ error: 'Not authorized for this channel' });
+    }
+    const channelId = channelMatch[1];
+    const requestedEpoch = channelMatch[2] ? Number(channelMatch[2]) : 0;
+
+    const authorized = await req.dbTx(async (client) => {
+      const result = await client.query(
+        'SELECT id, org_id, sjm_journey_id FROM channels WHERE id = $1 AND org_id = $2',
+        [channelId, orgId],
+      );
+      const ownedChannel = result.rows[0];
+      if (!ownedChannel) return false;
+
+      if (ownedChannel.sjm_journey_id) {
+        const mission = await client.query(
+          'SELECT id, comms_epoch FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+          [ownedChannel.sjm_journey_id, orgId],
+        );
+        if (!mission.rows.length) return false;
+        const currentEpoch = Number(mission.rows[0].comms_epoch || 0);
+        if (requestedEpoch !== currentEpoch || channel !== sjmChannelName(orgId, channelId, currentEpoch)) return false;
+        const manager = ['admin', 'dispatcher'].includes(String(req.user.role || '').toLowerCase());
+        if (!manager) {
+          const assignment = await client.query(
+            `SELECT 1
+               FROM sjm_journey_participants p
+               JOIN users u ON u.id = p.user_id AND u.org_id = p.org_id
+                            AND u.deleted_at IS NULL AND u.status = 'active'
+              WHERE p.org_id = $1 AND p.journey_id = $2 AND p.user_id = $3
+                AND p.removed_at IS NULL
+              LIMIT 1`,
+            [orgId, ownedChannel.sjm_journey_id, req.user.id],
+          );
+          if (!assignment.rows.length) return false;
+        }
+      } else if (requestedEpoch !== 0) {
+        return false;
+      }
+
+      const member = await client.query(
+        'SELECT user_id FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+        [channelId, req.user.id],
+      );
+      return member.rows.length > 0 || String(req.user.role || '').toLowerCase() === 'admin';
+    });
+
+    if (!authorized) return res.status(403).json({ error: 'Not authorized for this channel' });
+    allowedChannels.add(channel);
+  }
+
   if (!allowedChannels.has(channel)) {
     return res.status(403).json({ error: 'Not authorized for this channel' });
   }
 
   const token = jwt.sign(
-    { sub: orgId, channel },
+    { sub: String(req.user.id), channel },
     secret,
-    { expiresIn: '1h', algorithm: 'HS256' }
+    { expiresIn: '60s', algorithm: 'HS256' }
   );
   res.json({ token });
-});
+}));
 
 module.exports = router;

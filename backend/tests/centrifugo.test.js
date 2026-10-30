@@ -59,6 +59,48 @@ describe('centrifugo publish()', () => {
     );
   });
 
+  test('unsubscribeUserFromChannel fails closed if the API key is missing', async () => {
+    const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
+    await expect(unsubscribeUserFromChannel('user-1', 'org#org-1#comms#channel-1')).resolves.toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test('POSTs a targeted unsubscribe for the specified user and channel', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ result: {} }) });
+    const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
+    await expect(unsubscribeUserFromChannel('user-1', 'org#org-1#comms#channel-1')).resolves.toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/unsubscribe'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-key' }),
+        body: JSON.stringify({ user: 'user-1', channel: 'org#org-1#comms#channel-1' }),
+      })
+    );
+  });
+
+  test('rejects an empty successful HTTP response for targeted unsubscribe', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
+    await expect(unsubscribeUserFromChannel('user-1', 'org#org-1#comms#channel-1')).resolves.toBe(false);
+  });
+
+  test('rejects an unreadable successful HTTP response for targeted unsubscribe', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => { throw new SyntaxError('invalid JSON'); } });
+    const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
+    await expect(unsubscribeUserFromChannel('user-1', 'org#org-1#comms#channel-1')).resolves.toBe(false);
+  });
+
+  test('reports targeted unsubscribe failure so SJM can roll back roster changes', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ error: { code: 105, message: 'channel not allowed' } }) });
+    const { unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
+    await expect(unsubscribeUserFromChannel('user-1', 'org#org-1#comms#channel-1')).resolves.toBe(false);
+  });
+
   test('logs Centrifugo application errors returned with HTTP 200', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
     mockFetch.mockResolvedValueOnce({

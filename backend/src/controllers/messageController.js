@@ -24,6 +24,7 @@ const { asyncHandler } = require('../middleware/error');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('../utils/logger');
 const { withOrg } = require('../utils/orgScopedDb');
+const { sjmChannelName } = require('../realtime/sjmChannel');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -51,7 +52,21 @@ function slugify(raw) {
     .slice(0, MAX_CHANNEL_NAME);
 }
 
-function isOrgAdmin(user)   { return user && user.role === 'admin'; }
+function isOrgAdmin(user)   { return user && String(user.role || '').toLowerCase() === 'admin'; }
+function isSjmChannelManager(user) { return user && ['admin', 'dispatcher'].includes(String(user.role || '').toLowerCase()); }
+async function hasActiveSjmAssignment(db, orgId, journeyId, userId) {
+  const result = await db(
+    `SELECT 1
+       FROM sjm_journey_participants p
+       JOIN users u ON u.id = p.user_id AND u.org_id = p.org_id
+                    AND u.deleted_at IS NULL AND u.status = 'active'
+      WHERE p.org_id = $1 AND p.journey_id = $2 AND p.user_id = $3
+        AND p.removed_at IS NULL
+      LIMIT 1`,
+    [orgId, journeyId, userId],
+  );
+  return result.rows.length > 0;
+}
 function badRequest(res, m) { return res.status(400).json({ error: m }); }
 function forbidden(res, m)  { return res.status(403).json({ error: m || 'Forbidden' }); }
 function notFound(res, m)   { return res.status(404).json({ error: m || 'Not found' }); }
@@ -87,6 +102,68 @@ async function requireChannelReader(req, res, channelId) {
 }
 
 /**
+ * Runs a private-channel operation in the same transaction as its membership
+ * check. For SJM channels it takes a shared lock on the parent journey before
+ * checking membership. Roster changes take FOR UPDATE on that journey, so an
+ * in-flight read/write linearizes either before the roster change or after its
+ * membership revocation; it cannot pass a stale pre-check and then operate.
+ */
+async function withChannelReaderTransaction(req, res, channelId, work) {
+  const outcome = await req.dbTx(async (client) => {
+    const db = (sql, params) => client.query(sql, params);
+    const channelResult = await db('SELECT * FROM channels WHERE id = $1', [channelId]);
+    const channel = channelResult.rows[0] ?? null;
+    if (!channel) return { accessError: { status: 404, message: 'Channel not found' } };
+
+    let realtimeChannel = `org#${req.user.org_id}#comms#${channelId}`;
+    if (channel.sjm_journey_id) {
+      const mission = await db(
+        'SELECT id, comms_epoch FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+        [channel.sjm_journey_id, req.user.org_id],
+      );
+      if (!mission.rows.length) return { accessError: { status: 404, message: 'Channel not found' } };
+      realtimeChannel = sjmChannelName(req.user.org_id, channelId, mission.rows[0].comms_epoch);
+      if (!isSjmChannelManager(req.user) && !(await hasActiveSjmAssignment(db, req.user.org_id, channel.sjm_journey_id, req.user.id))) {
+        return { accessError: { status: 403, message: 'Active SJM assignment required for this channel' } };
+      }
+    }
+
+    const memberResult = await db(
+      'SELECT * FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+      [channelId, req.user.id],
+    );
+    const member = memberResult.rows[0] ?? null;
+    if (!member && !isOrgAdmin(req.user)) {
+      return { accessError: { status: 403, message: 'Not a member of this channel' } };
+    }
+    return { value: await work(db, { channel, member, realtimeChannel }), realtimeChannel, sjmManaged: Boolean(channel.sjm_journey_id) };
+  });
+
+  if (outcome?.accessError) {
+    if (outcome.accessError.status === 404) notFound(res, outcome.accessError.message);
+    else forbidden(res, outcome.accessError.message);
+    return { ok: false };
+  }
+  return { ok: true, value: outcome?.value, realtimeChannel: outcome?.realtimeChannel, sjmManaged: outcome?.sjmManaged === true };
+}
+
+/** Runs channel-manager decisions and writes under the same membership/journey lock. */
+async function withChannelManagerTransaction(req, res, channelId, work) {
+  const result = await withChannelReaderTransaction(req, res, channelId, async (db, context) => {
+    if (!isOrgAdmin(req.user) && !context.member?.is_channel_admin) {
+      return { managerDenied: true };
+    }
+    return work(db, context);
+  });
+  if (!result.ok) return result;
+  if (result.value?.managerDenied) {
+    forbidden(res, 'Channel admin permission required');
+    return { ok: false };
+  }
+  return result;
+}
+
+/**
  * Actor may manage the channel (add/remove members, pin, delete channel)
  * if either they are a channel admin OR the org admin.
  */
@@ -104,8 +181,47 @@ async function requireChannelManager(req, res, channelId) {
 //   org#<orgId>#comms#<channelId>  — subscribers viewing that channel see rich payload
 //   org#<orgId>                    — badge/unread hint so clients not currently viewing
 //                                    still tick their unread counter
-function publishCommsEvent(orgId, channelId, type, payload) {
-  publish(`org#${orgId}#comms#${channelId}`, { type, channel_id: channelId, ...payload });
+async function resolveRealtimeChannelName(orgId, channelId) {
+  return withOrg(orgId, async (client) => {
+    const result = await client.query(
+      `SELECT c.sjm_journey_id, j.comms_epoch
+         FROM channels c
+         LEFT JOIN sjm_journeys j ON j.id = c.sjm_journey_id AND j.org_id = c.org_id
+        WHERE c.org_id = $1 AND c.id = $2
+        LIMIT 1`,
+      [orgId, channelId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      name: row.sjm_journey_id
+        ? sjmChannelName(orgId, channelId, row.comms_epoch)
+        : `org#${orgId}#comms#${channelId}`,
+      sjmManaged: Boolean(row.sjm_journey_id),
+    };
+  });
+}
+
+function publishCommsEvent(orgId, channelId, type, payload, authorizedRealtimeChannel = null, sjmManaged = null) {
+  const event = { type, channel_id: channelId, ...payload };
+  // SJM private-channel publications are deliberately disabled. Even a perfectly
+  // valid, short-lived JWT issued before roster removal can be replayed; publishing
+  // rich payloads to a retired channel could disclose messages. The tenant channel
+  // receives only a channel-id invalidation hint, and authorised REST reads return
+  // message bodies after checking current assignment under the journey lock.
+  if (sjmManaged === true) {
+    // Do not publish private data, even to the current epoch channel.
+  } else if (authorizedRealtimeChannel && sjmManaged === false) {
+    Promise.resolve(publish(authorizedRealtimeChannel, event))
+      .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
+  } else {
+    resolveRealtimeChannelName(orgId, channelId)
+      .then((resolved) => {
+        if (!resolved || resolved.sjmManaged) return null;
+        return publish(authorizedRealtimeChannel || resolved.name, event);
+      })
+      .catch((err) => logger.warn(`comms realtime publish skipped for channel ${channelId}: ${err.message}`));
+  }
   publish(`org#${orgId}`, { type: `comms.${type}`, channel_id: channelId });
 }
 
@@ -162,47 +278,82 @@ const listOrgUsers = asyncHandler(async (req, res) => {
  */
 const listChannels = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const rows = await req.db(
-    `
-    WITH visible AS (
-      SELECT c.*
-        FROM channels c
-       WHERE ($2::boolean OR EXISTS (
-              SELECT 1 FROM channel_members m
-               WHERE m.channel_id = c.id AND m.user_id = $1
-            ))
-    )
-    SELECT
-      v.id, v.name, v.slug, v.type, v.category, v.created_at, v.created_by,
-      COALESCE(m.muted, false)             AS muted,
-      COALESCE(m.is_channel_admin, false)  AS is_channel_admin,
-      COALESCE(m.last_read_at, v.created_at) AS last_read_at,
-      (SELECT COUNT(*)::INT
-         FROM messages msg
-        WHERE msg.channel_id = v.id
-          AND msg.deleted_at IS NULL
-          AND msg.author_id <> $1
-          AND msg.created_at > COALESCE(m.last_read_at, v.created_at)
-      ) AS unread_count,
-      (SELECT COUNT(*)::INT FROM channel_members cm WHERE cm.channel_id = v.id) AS member_count,
-      (SELECT jsonb_build_object(
-                'id', lm.id,
-                'body', CASE WHEN lm.deleted_at IS NULL THEN lm.body ELSE NULL END,
-                'created_at', lm.created_at,
-                'author_id', lm.author_id,
-                'author_name', u.name
-              )
-         FROM messages lm
-         LEFT JOIN users u ON u.id = lm.author_id
-        WHERE lm.channel_id = v.id
-        ORDER BY lm.created_at DESC LIMIT 1
-      ) AS last_message
-    FROM visible v
-    LEFT JOIN channel_members m ON m.channel_id = v.id AND m.user_id = $1
-    ORDER BY v.category NULLS LAST, v.name
-    `,
-    [userId, isOrgAdmin(req.user)],
-  );
+  const rows = await req.dbTx(async (client) => {
+    const db = (sql, params) => client.query(sql, params);
+    // A channel preview includes the last message body. Lock visible SJM parent
+    // journeys first, then re-run the actual visibility query under a fresh
+    // statement snapshot so a concurrent roster revocation cannot return a
+    // stale mission-channel preview after the revocation commits.
+    await db(
+      `SELECT j.id
+         FROM sjm_journeys j
+         JOIN channels c ON c.sjm_journey_id = j.id AND c.org_id = j.org_id
+        WHERE j.org_id = $1
+          AND j.deleted_at IS NULL
+          AND ($2::boolean OR EXISTS (
+                SELECT 1 FROM channel_members m
+                 WHERE m.channel_id = c.id AND m.user_id = $3
+              ))
+        ORDER BY j.id
+        FOR SHARE OF j`,
+      [req.user.org_id, isOrgAdmin(req.user), userId],
+    );
+
+    return db(
+      `
+      WITH visible AS (
+        SELECT c.*
+          FROM channels c
+         WHERE ($2::boolean OR EXISTS (
+                SELECT 1 FROM channel_members m
+                 WHERE m.channel_id = c.id AND m.user_id = $1
+                   AND (c.sjm_journey_id IS NULL OR $3::boolean OR EXISTS (
+                     SELECT 1 FROM sjm_journey_participants p
+                     JOIN users pu ON pu.id = p.user_id AND pu.org_id = p.org_id
+                                  AND pu.deleted_at IS NULL AND pu.status = 'active'
+                     WHERE p.org_id = c.org_id AND p.journey_id = c.sjm_journey_id
+                       AND p.user_id = $1 AND p.removed_at IS NULL
+                   ))
+              ))
+      )
+      SELECT
+        v.id, v.name, v.slug, v.type, v.category, v.created_at, v.created_by,
+        CASE WHEN v.sjm_journey_id IS NOT NULL
+          THEN 'org#' || v.org_id::text || '#comms#' || v.id::text ||
+               CASE WHEN COALESCE(realtime_j.comms_epoch, 0) > 0 THEN '#v' || realtime_j.comms_epoch::text ELSE '' END
+          ELSE 'org#' || v.org_id::text || '#comms#' || v.id::text
+        END AS realtime_channel,
+        COALESCE(m.muted, false)             AS muted,
+        COALESCE(m.is_channel_admin, false)  AS is_channel_admin,
+        COALESCE(m.last_read_at, v.created_at) AS last_read_at,
+        (SELECT COUNT(*)::INT
+           FROM messages msg
+          WHERE msg.channel_id = v.id
+            AND msg.deleted_at IS NULL
+            AND msg.author_id <> $1
+            AND msg.created_at > COALESCE(m.last_read_at, v.created_at)
+        ) AS unread_count,
+        (SELECT COUNT(*)::INT FROM channel_members cm WHERE cm.channel_id = v.id) AS member_count,
+        (SELECT jsonb_build_object(
+                  'id', lm.id,
+                  'body', CASE WHEN lm.deleted_at IS NULL THEN lm.body ELSE NULL END,
+                  'created_at', lm.created_at,
+                  'author_id', lm.author_id,
+                  'author_name', u.name
+                )
+           FROM messages lm
+           LEFT JOIN users u ON u.id = lm.author_id
+          WHERE lm.channel_id = v.id
+          ORDER BY lm.created_at DESC LIMIT 1
+        ) AS last_message
+      FROM visible v
+      LEFT JOIN sjm_journeys realtime_j ON realtime_j.id = v.sjm_journey_id AND realtime_j.org_id = v.org_id
+      LEFT JOIN channel_members m ON m.channel_id = v.id AND m.user_id = $1
+      ORDER BY v.category NULLS LAST, v.name
+      `,
+      [userId, isOrgAdmin(req.user), isSjmChannelManager(req.user)],
+    );
+  });
   res.json({ data: rows.rows });
 });
 
@@ -266,6 +417,9 @@ const createChannel = asyncHandler(async (req, res) => {
 const deleteChannel = asyncHandler(async (req, res) => {
   const perm = await requireChannelManager(req, res, req.params.id);
   if (!perm) return;
+  if (perm.channel.sjm_journey_id) {
+    return res.status(409).json({ error: 'sjm_channel_managed_by_journey', message: 'Mission channels are lifecycle-managed by SJM and cannot be deleted through generic Ops Comms.' });
+  }
   const { channel } = perm;
 
   // Snapshot member count + message count for the audit row.
@@ -289,10 +443,7 @@ const deleteChannel = asyncHandler(async (req, res) => {
 // ─── Membership ──────────────────────────────────────────────────────────────
 
 const listMembers = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
-  const rows = await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `SELECT cm.user_id, cm.is_channel_admin, cm.muted, cm.joined_at,
             u.name, u.email, u.role, u.status
        FROM channel_members cm
@@ -300,13 +451,20 @@ const listMembers = asyncHandler(async (req, res) => {
       WHERE cm.channel_id = $1
       ORDER BY cm.is_channel_admin DESC, u.name`,
     [req.params.id],
-  );
-  res.json({ data: rows.rows });
+  ));
+  if (!result.ok) return;
+  res.json({ data: result.value.rows });
 });
 
 const addMembers = asyncHandler(async (req, res) => {
   const perm = await requireChannelManager(req, res, req.params.id);
   if (!perm) return;
+  if (perm.channel.sjm_journey_id) {
+    return res.status(409).json({
+      error: 'sjm_membership_managed_by_journey_team',
+      message: 'Mission-channel membership is controlled by the Secure Journey Management roster. Update assignments in the SJM mission workspace.',
+    });
+  }
 
   const schema = Joi.object({
     userIds: Joi.array().items(Joi.string().uuid()).min(1).max(200).required(),
@@ -343,6 +501,9 @@ const addMembers = asyncHandler(async (req, res) => {
 const removeMember = asyncHandler(async (req, res) => {
   const perm = await requireChannelManager(req, res, req.params.id);
   if (!perm) return;
+  if (perm.channel.sjm_journey_id) {
+    return res.status(409).json({ error: 'sjm_membership_managed_by_journey_team', message: 'Remove or reassign mission personnel through the SJM mission roster.' });
+  }
   const { user_id: targetId } = { user_id: req.params.userId };
 
   const target = await loadMember(req, req.params.id, targetId);
@@ -374,6 +535,9 @@ const removeMember = asyncHandler(async (req, res) => {
 const updateMember = asyncHandler(async (req, res) => {
   const perm = await requireChannelManager(req, res, req.params.id);
   if (!perm) return;
+  if (perm.channel.sjm_journey_id) {
+    return res.status(409).json({ error: 'sjm_membership_managed_by_journey_team', message: 'Mission-channel roles are managed by the SJM mission roster.' });
+  }
 
   const schema = Joi.object({ isChannelAdmin: Joi.boolean().required() });
   const { error, value } = schema.validate(req.body);
@@ -408,20 +572,26 @@ const updateMember = asyncHandler(async (req, res) => {
 });
 
 const toggleMute = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const schema = Joi.object({ muted: Joi.boolean().required() });
   const { error, value } = schema.validate(req.body);
   if (error) return badRequest(res, error.message);
 
-  await req.db(
-    `INSERT INTO channel_members (channel_id, user_id, org_id, is_channel_admin, muted)
-       VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, false, $3)
-     ON CONFLICT (channel_id, user_id) DO UPDATE SET muted = EXCLUDED.muted`,
-    [req.params.id, req.user.id, value.muted],
-  );
-  res.json({ ok: true, muted: value.muted });
+  // UPDATE-only is intentional: a mute preference must never recreate a
+  // channel_members row after an SJM roster revocation.
+  const result = await withChannelReaderTransaction(req, res, req.params.id, async (db, { member }) => {
+    if (!member) return { membershipRequired: true };
+    const updated = await db(
+      `UPDATE channel_members SET muted = $3
+        WHERE channel_id = $1 AND user_id = $2
+        RETURNING muted`,
+      [req.params.id, req.user.id, value.muted],
+    );
+    if (!updated.rows.length) return { membershipRequired: true };
+    return { muted: updated.rows[0].muted };
+  });
+  if (!result.ok) return;
+  if (result.value?.membershipRequired) return forbidden(res, 'Channel membership is required to change mute settings');
+  res.json({ ok: true, muted: result.value.muted });
 });
 
 /**
@@ -429,13 +599,13 @@ const toggleMute = asyncHandler(async (req, res) => {
  * Called by the client when the user opens the channel or scrolls to bottom.
  */
 const markRead = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-  await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `UPDATE channel_members SET last_read_at = NOW()
-      WHERE channel_id = $1 AND user_id = $2`,
+      WHERE channel_id = $1 AND user_id = $2
+      RETURNING user_id`,
     [req.params.id, req.user.id],
-  );
+  ));
+  if (!result.ok) return;
   res.json({ ok: true });
 });
 
@@ -448,13 +618,9 @@ const markRead = asyncHandler(async (req, res) => {
  * so the client can render "Message deleted" without a 404.
  */
 const listMessages = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
   const before = req.query.before || null;
-
-  const rows = await req.db(
+  const guarded = await withChannelReaderTransaction(req, res, req.params.id, async (db) => db(
     `SELECT
        m.id, m.channel_id, m.author_id, m.body, m.reply_to_id,
        m.created_at, m.edited_at, m.deleted_at,
@@ -486,7 +652,9 @@ const listMessages = asyncHandler(async (req, res) => {
     ORDER BY m.created_at DESC
     LIMIT $4`,
     [req.params.id, req.user.id, before, limit],
-  );
+  ));
+  if (!guarded.ok) return;
+  const rows = guarded.value;
 
   // Scrub deleted rows before returning to client.
   const data = rows.rows.map((r) => {
@@ -507,9 +675,6 @@ const listMessages = asyncHandler(async (req, res) => {
 });
 
 const sendMessage = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const schema = Joi.object({
     text:         Joi.string().trim().max(MAX_MESSAGE_BODY).allow(''),
     replyToId:    Joi.string().uuid().allow(null, ''),
@@ -523,17 +688,18 @@ const sendMessage = asyncHandler(async (req, res) => {
   const { error, value } = schema.validate(req.body);
   if (error) return badRequest(res, error.message);
 
-  // If replying, verify the parent message exists in this same channel.
-  if (value.replyToId) {
-    const parent = await req.db(
-      `SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL`,
-      [value.replyToId, req.params.id],
-    );
-    if (!parent.rows.length) return badRequest(res, 'reply_to message not found in this channel');
-  }
+  const guarded = await withChannelReaderTransaction(req, res, req.params.id, async (db) => {
+    // Keep reply validation, message insertion and attachment binding under the
+    // same journey lock that serializes against SJM roster revocation.
+    if (value.replyToId) {
+      const parent = await db(
+        'SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL',
+        [value.replyToId, req.params.id],
+      );
+      if (!parent.rows.length) return { validationError: 'reply_to message not found in this channel' };
+    }
 
-  const message = await req.dbTx(async (client) => {
-    const insert = await client.query(
+    const insert = await db(
       `INSERT INTO messages (org_id, channel_id, author_id, body, reply_to_id)
        VALUES ((current_setting('app.current_org_id', true))::uuid, $1, $2, $3, $4)
        RETURNING *`,
@@ -543,7 +709,7 @@ const sendMessage = asyncHandler(async (req, res) => {
 
     // Bind any pending attachments this user uploaded to this new message.
     if (value.attachmentIds.length > 0) {
-      const upd = await client.query(
+      const upd = await db(
         `UPDATE message_attachments
             SET message_id = $1, finalized_at = COALESCE(finalized_at, NOW())
           WHERE id = ANY($2)
@@ -552,15 +718,18 @@ const sendMessage = asyncHandler(async (req, res) => {
         [msg.id, value.attachmentIds, req.user.id],
       );
       if (upd.rowCount !== value.attachmentIds.length) {
-        // At least one attachment did not belong to this user or was already used.
         throw Object.assign(new Error('One or more attachments could not be attached'), { status: 400 });
       }
     }
     return msg;
   });
+  if (!guarded.ok) return;
+  if (guarded.value?.validationError) return badRequest(res, guarded.value.validationError);
+  const message = guarded.value;
 
   // Load author + attachments for the publish payload so subscribers can render
-  // without an extra fetch.
+  // without an extra fetch. The message write already linearized under the
+  // mission lock, before any subsequent roster change can commit.
   const authorRes = await req.db(`SELECT name, role FROM users WHERE id = $1`, [req.user.id]);
   const attachRes = await req.db(
     `SELECT id, kind, file_name, storage_key, mime_type, size_bytes, width, height
@@ -582,7 +751,7 @@ const sendMessage = asyncHandler(async (req, res) => {
     deleted: false,
   };
 
-  publishCommsEvent(req.user.org_id, req.params.id, 'message.created', { message: payload });
+  publishCommsEvent(req.user.org_id, req.params.id, 'message.created', { message: payload }, guarded.realtimeChannel, guarded.sjmManaged);
   res.status(201).json({ data: payload });
 });
 
@@ -592,44 +761,42 @@ const sendMessage = asyncHandler(async (req, res) => {
  * its ID remain so the client can render a "Message deleted" placeholder.
  */
 const deleteMessage = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-  const { member } = rd;
+  const result = await withChannelReaderTransaction(req, res, req.params.id, async (db, { member }) => {
+    const msgRes = await db(
+      'SELECT * FROM messages WHERE id = $1 AND channel_id = $2',
+      [req.params.msgId, req.params.id],
+    );
+    const msg = msgRes.rows[0];
+    if (!msg) return { error: 'message_not_found' };
+    if (msg.deleted_at) return { already: true };
 
-  const msgRes = await req.db(
-    `SELECT * FROM messages WHERE id = $1 AND channel_id = $2`,
-    [req.params.msgId, req.params.id],
-  );
-  const msg = msgRes.rows[0];
-  if (!msg) return notFound(res, 'Message not found');
-  if (msg.deleted_at) return res.json({ ok: true, already: true });
+    const isAuthor = msg.author_id === req.user.id;
+    const canDelete = isAuthor || isOrgAdmin(req.user) || (member && member.is_channel_admin);
+    if (!canDelete) return { error: 'cannot_delete' };
 
-  const isAuthor  = msg.author_id === req.user.id;
-  const canDelete = isAuthor || isOrgAdmin(req.user) || (member && member.is_channel_admin);
-  if (!canDelete) return forbidden(res, 'Cannot delete this message');
-
-  await req.db(
-    `UPDATE messages
-        SET deleted_at = NOW(), deleted_by = $2, body = NULL, edited_at = NOW()
-      WHERE id = $1`,
-    [msg.id, req.user.id],
-  );
-  // Reactions and attachments follow the row: attachments stay (cascade only on
-  // hard-delete), reactions are dropped since they no longer have meaning.
-  await req.db(`DELETE FROM message_reactions WHERE message_id = $1`, [msg.id]);
-  await req.db(`DELETE FROM pinned_messages   WHERE message_id = $1`, [msg.id]);
+    await db(
+      `UPDATE messages
+          SET deleted_at = NOW(), deleted_by = $2, body = NULL, edited_at = NOW()
+        WHERE id = $1`,
+      [msg.id, req.user.id],
+    );
+    await db('DELETE FROM message_reactions WHERE message_id = $1', [msg.id]);
+    await db('DELETE FROM pinned_messages WHERE message_id = $1', [msg.id]);
+    return { messageId: msg.id };
+  });
+  if (!result.ok) return;
+  if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
+  if (result.value?.error === 'cannot_delete') return forbidden(res, 'Cannot delete this message');
+  if (result.value?.already) return res.json({ ok: true, already: true });
 
   publishCommsEvent(req.user.org_id, req.params.id, 'message.deleted', {
-    message_id: msg.id, deleted_by: req.user.id,
-  });
+    message_id: result.value.messageId, deleted_by: req.user.id,
+  }, result.realtimeChannel, result.sjmManaged);
   res.json({ ok: true });
 });
 
 const getThread = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
-  const rows = await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `SELECT m.id, m.channel_id, m.author_id, m.body, m.reply_to_id,
             m.created_at, m.deleted_at,
             u.name AS author_name, u.role AS author_role
@@ -639,66 +806,60 @@ const getThread = asyncHandler(async (req, res) => {
         AND (m.id = $2 OR m.reply_to_id = $2)
       ORDER BY m.created_at ASC`,
     [req.params.id, req.params.msgId],
-  );
-  if (rows.rows.length === 0) return notFound(res, 'Thread not found');
-
-  const data = rows.rows.map((r) => (r.deleted_at ? { ...r, body: null, deleted: true } : { ...r, deleted: false }));
+  ));
+  if (!result.ok) return;
+  if (result.value.rows.length === 0) return notFound(res, 'Thread not found');
+  const data = result.value.rows.map((r) => (r.deleted_at ? { ...r, body: null, deleted: true } : { ...r, deleted: false }));
   res.json({ data });
 });
 
 const addReaction = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const schema = Joi.object({ emoji: Joi.string().min(1).max(16).required() });
   const { error, value } = schema.validate(req.body);
   if (error) return badRequest(res, error.message);
 
-  // Ensure message exists in this channel and isn't deleted.
-  const msg = await req.db(
-    `SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL`,
-    [req.params.msgId, req.params.id],
-  );
-  if (!msg.rows.length) return notFound(res, 'Message not found');
-
-  await req.db(
-    `INSERT INTO message_reactions (message_id, user_id, org_id, emoji)
-       VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, $3)
-     ON CONFLICT (message_id, user_id, emoji) DO NOTHING`,
-    [req.params.msgId, req.user.id, value.emoji],
-  );
-
+  const result = await withChannelReaderTransaction(req, res, req.params.id, async (db) => {
+    const msg = await db(
+      'SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL',
+      [req.params.msgId, req.params.id],
+    );
+    if (!msg.rows.length) return { error: 'message_not_found' };
+    await db(
+      `INSERT INTO message_reactions (message_id, user_id, org_id, emoji)
+         VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, $3)
+       ON CONFLICT (message_id, user_id, emoji) DO NOTHING`,
+      [req.params.msgId, req.user.id, value.emoji],
+    );
+    return { ok: true };
+  });
+  if (!result.ok) return;
+  if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
   publishCommsEvent(req.user.org_id, req.params.id, 'reaction.added', {
     message_id: req.params.msgId, user_id: req.user.id, emoji: value.emoji,
-  });
+  }, result.realtimeChannel, result.sjmManaged);
   res.status(201).json({ ok: true });
 });
 
 const removeReaction = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const emoji = decodeURIComponent(req.params.emoji || '');
   if (!emoji) return badRequest(res, 'emoji required');
 
-  await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `DELETE FROM message_reactions
       WHERE message_id = $1 AND user_id = $2 AND emoji = $3`,
     [req.params.msgId, req.user.id, emoji],
-  );
+  ));
+  if (!result.ok) return;
   publishCommsEvent(req.user.org_id, req.params.id, 'reaction.removed', {
     message_id: req.params.msgId, user_id: req.user.id, emoji,
-  });
+  }, result.realtimeChannel, result.sjmManaged);
   res.json({ ok: true });
 });
 
 // ─── Pinned messages ─────────────────────────────────────────────────────────
 
 const listPinned = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
-  const rows = await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `SELECT p.message_id, p.pinned_at, p.pinned_by,
             m.body, m.created_at, m.deleted_at,
             u.name AS author_name, u.role AS author_role
@@ -708,60 +869,54 @@ const listPinned = asyncHandler(async (req, res) => {
       WHERE p.channel_id = $1
       ORDER BY p.pinned_at DESC`,
     [req.params.id],
-  );
-  const data = rows.rows.filter((r) => !r.deleted_at);
-  res.json({ data });
+  ));
+  if (!result.ok) return;
+  res.json({ data: result.value.rows.filter((r) => !r.deleted_at) });
 });
 
 const addPin = asyncHandler(async (req, res) => {
-  const perm = await requireChannelManager(req, res, req.params.id);
-  if (!perm) return;
-
   const schema = Joi.object({ messageId: Joi.string().uuid().required() });
   const { error, value } = schema.validate(req.body);
   if (error) return badRequest(res, error.message);
 
-  const msg = await req.db(
-    `SELECT id FROM messages
-      WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL`,
-    [value.messageId, req.params.id],
-  );
-  if (!msg.rows.length) return notFound(res, 'Message not found');
-
-  await req.db(
-    `INSERT INTO pinned_messages (channel_id, message_id, org_id, pinned_by)
-       VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, $3)
-     ON CONFLICT (channel_id, message_id) DO NOTHING`,
-    [req.params.id, value.messageId, req.user.id],
-  );
-  publishCommsEvent(req.user.org_id, req.params.id, 'pin.added', { message_id: value.messageId });
+  const result = await withChannelManagerTransaction(req, res, req.params.id, async (db) => {
+    const msg = await db(
+      'SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL',
+      [value.messageId, req.params.id],
+    );
+    if (!msg.rows.length) return { error: 'message_not_found' };
+    await db(
+      `INSERT INTO pinned_messages (channel_id, message_id, org_id, pinned_by)
+         VALUES ($1, $2, (current_setting('app.current_org_id', true))::uuid, $3)
+       ON CONFLICT (channel_id, message_id) DO NOTHING`,
+      [req.params.id, value.messageId, req.user.id],
+    );
+    return { ok: true };
+  });
+  if (!result.ok) return;
+  if (result.value?.error === 'message_not_found') return notFound(res, 'Message not found');
+  publishCommsEvent(req.user.org_id, req.params.id, 'pin.added', { message_id: value.messageId }, result.realtimeChannel, result.sjmManaged);
   res.status(201).json({ ok: true });
 });
 
 const removePin = asyncHandler(async (req, res) => {
-  const perm = await requireChannelManager(req, res, req.params.id);
-  if (!perm) return;
-  await req.db(
-    `DELETE FROM pinned_messages WHERE channel_id = $1 AND message_id = $2`,
+  const result = await withChannelManagerTransaction(req, res, req.params.id, (db) => db(
+    'DELETE FROM pinned_messages WHERE channel_id = $1 AND message_id = $2',
     [req.params.id, req.params.messageId],
-  );
-  publishCommsEvent(req.user.org_id, req.params.id, 'pin.removed', { message_id: req.params.messageId });
+  ));
+  if (!result.ok) return;
+  publishCommsEvent(req.user.org_id, req.params.id, 'pin.removed', { message_id: req.params.messageId }, result.realtimeChannel, result.sjmManaged);
   res.json({ ok: true });
 });
 
 // ─── Search (server-side fallback the client uses once its window has scrolled) ─
 
 const searchMessages = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return badRequest(res, 'q must be at least 2 characters');
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 40));
 
-  // ILIKE is fine here: message counts stay bounded per channel and
-  // (channel_id, created_at DESC) index narrows the scan window.
-  const rows = await req.db(
+  const result = await withChannelReaderTransaction(req, res, req.params.id, (db) => db(
     `SELECT m.id, m.channel_id, m.author_id, m.body, m.created_at,
             u.name AS author_name, u.role AS author_role
        FROM messages m
@@ -772,8 +927,9 @@ const searchMessages = asyncHandler(async (req, res) => {
       ORDER BY m.created_at DESC
       LIMIT $3`,
     [req.params.id, q, limit],
-  );
-  res.json({ data: rows.rows });
+  ));
+  if (!result.ok) return;
+  res.json({ data: result.value.rows });
 });
 
 // ─── Attachments (presigned R2 uploads) ─────────────────────────────────────
@@ -901,49 +1057,106 @@ const finalizeAttachment = asyncHandler(async (req, res) => {
  * so nobody can fetch attachments outside their channels.
  */
 const getAttachmentUrl = asyncHandler(async (req, res) => {
-  const row = await req.db(
-    `SELECT a.*, m.channel_id
-       FROM message_attachments a
-       LEFT JOIN messages m ON m.id = a.message_id
-      WHERE a.id = $1 AND a.finalized_at IS NOT NULL`,
-    [req.params.id],
-  );
-  if (!row.rows.length) return notFound(res, 'Attachment not found');
-  const att = row.rows[0];
+  // Read, authorize and sign within one transaction. Attached files require
+  // current channel membership even when the requester originally uploaded
+  // them; the uploader shortcut applies only to unattached preview uploads.
+  const outcome = await req.dbTx(async (client) => {
+    const db = (sql, params) => client.query(sql, params);
+    const rowResult = await db(
+      `SELECT * FROM message_attachments
+        WHERE id = $1 AND finalized_at IS NOT NULL
+        FOR SHARE`,
+      [req.params.id],
+    );
+    if (!rowResult.rows.length) return { error: 'attachment_not_found' };
+    const att = rowResult.rows[0];
 
-  // Uploader can always fetch their own uploads (covers the pre-send preview
-  // case where message_id is still NULL).
-  const isUploader = att.uploader_id === req.user.id;
-  if (!isUploader) {
-    if (!att.channel_id) return forbidden(res);
-    const member = await loadMember(req, att.channel_id, req.user.id);
-    if (!member && !isOrgAdmin(req.user)) return forbidden(res);
-  }
+    let channelId = null;
+    let sjmJourneyId = null;
+    if (att.message_id) {
+      const link = await db(
+        `SELECT m.channel_id, c.sjm_journey_id
+           FROM messages m
+           LEFT JOIN channels c ON c.id = m.channel_id
+          WHERE m.id = $1`,
+        [att.message_id],
+      );
+      if (!link.rows.length || !link.rows[0].channel_id) return { error: 'attachment_access_denied' };
+      channelId = link.rows[0].channel_id;
+      sjmJourneyId = link.rows[0].sjm_journey_id || null;
+    }
 
-  const s3 = getR2Client();
-  if (!s3) return res.status(501).json({ error: 'Attachment storage not configured on this server' });
-  const { GetObjectCommand } = require('@aws-sdk/client-s3');
-  const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-  const url = await getSignedUrl(
-    s3,
-    new GetObjectCommand({ Bucket: process.env.R2_BUCKET, Key: att.storage_key }),
-    { expiresIn: 300 },
-  );
-  res.json({ url, expires_in: 300, mime_type: att.mime_type, file_name: att.file_name, kind: att.kind });
+    if (channelId) {
+      if (sjmJourneyId) {
+        const mission = await db(
+          'SELECT id FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+          [sjmJourneyId, req.user.org_id],
+        );
+        if (!mission.rows.length) return { error: 'attachment_not_found' };
+        if (!isSjmChannelManager(req.user) && !(await hasActiveSjmAssignment(db, req.user.org_id, sjmJourneyId, req.user.id))) {
+          return { error: 'attachment_access_denied' };
+        }
+      }
+      const memberResult = await db(
+        'SELECT user_id FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+        [channelId, req.user.id],
+      );
+      if (!memberResult.rows.length && !isOrgAdmin(req.user)) {
+        return { error: 'attachment_access_denied' };
+      }
+    } else if (att.uploader_id !== req.user.id) {
+      // Never use the uploader exception for an attachment that claims to have
+      // been bound to a message but has no readable channel relationship.
+      return { error: 'attachment_access_denied' };
+    }
+
+    const s3 = getR2Client();
+    if (!s3) return { error: 'attachment_storage_unavailable' };
+    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+    const url = await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: process.env.R2_BUCKET, Key: att.storage_key }),
+      { expiresIn: 300 },
+    );
+    return {
+      data: { url, expires_in: 300, mime_type: att.mime_type, file_name: att.file_name, kind: att.kind },
+    };
+  });
+
+  if (outcome?.error === 'attachment_not_found') return notFound(res, 'Attachment not found');
+  if (outcome?.error === 'attachment_access_denied') return forbidden(res, 'Attachment access requires an active channel membership');
+  if (outcome?.error === 'attachment_storage_unavailable') return res.status(501).json({ error: 'Attachment storage not configured on this server' });
+  res.json(outcome.data);
 });
 
 // ─── Typing (transient, not persisted) ───────────────────────────────────────
 
 const publishTyping = asyncHandler(async (req, res) => {
-  const rd = await requireChannelReader(req, res, req.params.id);
-  if (!rd) return;
-  publish(`org#${req.user.org_id}#comms#${req.params.id}`, {
-    type: 'typing',
-    channel_id: req.params.id,
-    user_id: req.user.id,
-    user_name: req.user.name,
-    at: Date.now(),
+  const result = await withChannelReaderTransaction(req, res, req.params.id, async (db, { channel }) => {
+    let realtimeChannel = `org#${req.user.org_id}#comms#${req.params.id}`;
+    if (channel.sjm_journey_id) {
+      const mission = await db(
+        'SELECT comms_epoch FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR SHARE',
+        [channel.sjm_journey_id, req.user.org_id],
+      );
+      if (!mission.rows.length) return { error: 'mission_not_found' };
+      // SJM mission channels do not carry private realtime publications. Typing is
+      // intentionally suppressed too; otherwise a replayed token could still expose
+      // officer names/presence after roster revocation.
+      return { ok: true, typingSuppressed: true };
+    }
+    publish(realtimeChannel, {
+      type: 'typing',
+      channel_id: req.params.id,
+      user_id: req.user.id,
+      user_name: req.user.name,
+      at: Date.now(),
+    });
+    return { ok: true };
   });
+  if (!result.ok) return;
+  if (result.value?.error === 'mission_not_found') return notFound(res, 'Channel not found');
   res.json({ ok: true });
 });
 
@@ -952,6 +1165,7 @@ module.exports = {
   listChannels, createChannel, deleteChannel,
   listMembers, addMembers, removeMember, updateMember, toggleMute, markRead,
   listMessages, sendMessage, deleteMessage, getThread,
+  withChannelReaderTransaction,
   addReaction, removeReaction,
   listPinned, addPin, removePin,
   searchMessages,

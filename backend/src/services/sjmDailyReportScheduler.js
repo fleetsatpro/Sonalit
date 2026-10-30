@@ -41,10 +41,9 @@ async function runForOrganisation(orgId,now) {
       try { reportDate=dateInTimezone(now,timezone); }
       catch (error) { logger.warn({org_id:orgId,client_id:profile.client_id,error:error.message},'SJM daily report skipped: invalid client timezone');continue; }
       const journeys=await db(
-        'SELECT j.*,c.name AS client_name,c.company AS client_company,v.name AS convoy_name '+
+        'SELECT j.*,c.name AS client_name,c.company AS client_company '+
         'FROM sjm_journeys j '+
-        'LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL '+
-        'LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL '+
+        'LEFT JOIN sjm_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL '+
         'WHERE j.org_id=$1 AND j.client_id=$2 AND j.deleted_at IS NULL '+
         'AND (j.status IN (\'approved\',\'ready_to_depart\',\'in_progress\',\'paused\',\'exception\',\'arrival_pending_verification\') '+
         'OR (j.status=\'closed\' AND j.closed_at IS NOT NULL AND (j.closed_at AT TIME ZONE $3)::date=$4::date)) '+

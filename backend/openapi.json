@@ -6724,11 +6724,9 @@
             "description": "OK"
           }
         }
-      }
-    },
-    "/api/v1/sjm/convoys": {
-      "get": {
-        "operationId": "get_api_v1_sjm_convoys",
+      },
+      "post": {
+        "operationId": "post_api_v1_sjm_clients",
         "responses": {
           "200": {
             "description": "OK"
@@ -6883,6 +6881,130 @@
     "/api/v1/sjm/management-summary": {
       "post": {
         "operationId": "post_api_v1_sjm_management_summary",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/my-assignments": {
+      "get": {
+        "operationId": "get_api_v1_sjm_my_assignments",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/participants": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id_participants",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_sjm_journeys_id_participants",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/communications": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id_communications",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/field-events": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id_field_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_field_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/flight-status": {
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id_flight_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/clients/{id}": {
+      "put": {
+        "operationId": "put_api_v1_sjm_clients_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/vehicles": {
+      "get": {
+        "operationId": "get_api_v1_sjm_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/devices": {
+      "get": {
+        "operationId": "get_api_v1_sjm_devices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/assets": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id_assets",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_sjm_journeys_id_assets",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/airspace": {
+      "get": {
+        "operationId": "get_api_v1_sjm_airspace",
         "responses": {
           "200": {
             "description": "OK"

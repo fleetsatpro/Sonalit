@@ -24,23 +24,25 @@ export const commsKeys = {
 
 // ── Queries ────────────────────────────────────────────────────────────────
 
-export function useChannels() {
+export function useChannels(enabled = true) {
   return useQuery({
     queryKey: commsKeys.channels,
-    queryFn: async (): Promise<Channel[]> => {
-      const r = await api.get<{ data: Channel[] }>('/messages/channels');
+    queryFn: async ({ signal }): Promise<Channel[]> => {
+      const r = await api.get<{ data: Channel[] }>('/messages/channels', { signal });
       return r.data.data ?? [];
     },
     staleTime: 30_000,
+    enabled,
   });
 }
 
 export function useMessages(channelId: string | null) {
   return useQuery({
     queryKey: commsKeys.messages(channelId ?? ''),
-    queryFn: async (): Promise<{ data: Message[]; next_cursor: string | null }> => {
+    queryFn: async ({ signal }): Promise<{ data: Message[]; next_cursor: string | null }> => {
       const r = await api.get<{ data: Message[]; next_cursor: string | null }>(
         `/messages/channels/${channelId}/messages?limit=100`,
+        { signal },
       );
       return { data: r.data.data ?? [], next_cursor: r.data.next_cursor ?? null };
     },
@@ -52,8 +54,8 @@ export function useMessages(channelId: string | null) {
 export function useChannelMembers(channelId: string | null) {
   return useQuery({
     queryKey: commsKeys.members(channelId ?? ''),
-    queryFn: async (): Promise<ChannelMember[]> => {
-      const r = await api.get<{ data: ChannelMember[] }>(`/messages/channels/${channelId}/members`);
+    queryFn: async ({ signal }): Promise<ChannelMember[]> => {
+      const r = await api.get<{ data: ChannelMember[] }>(`/messages/channels/${channelId}/members`, { signal });
       return r.data.data ?? [];
     },
     enabled: !!channelId,
@@ -64,8 +66,8 @@ export function useChannelMembers(channelId: string | null) {
 export function usePinned(channelId: string | null) {
   return useQuery({
     queryKey: commsKeys.pinned(channelId ?? ''),
-    queryFn: async (): Promise<PinnedMessage[]> => {
-      const r = await api.get<{ data: PinnedMessage[] }>(`/messages/channels/${channelId}/pinned`);
+    queryFn: async ({ signal }): Promise<PinnedMessage[]> => {
+      const r = await api.get<{ data: PinnedMessage[] }>(`/messages/channels/${channelId}/pinned`, { signal });
       return r.data.data ?? [];
     },
     enabled: !!channelId,
@@ -76,9 +78,10 @@ export function usePinned(channelId: string | null) {
 export function useThread(channelId: string | null, msgId: string | null) {
   return useQuery({
     queryKey: commsKeys.thread(channelId ?? '', msgId ?? ''),
-    queryFn: async (): Promise<Message[]> => {
+    queryFn: async ({ signal }): Promise<Message[]> => {
       const r = await api.get<{ data: Message[] }>(
         `/messages/channels/${channelId}/messages/${msgId}/thread`,
+        { signal },
       );
       return r.data.data ?? [];
     },
@@ -91,14 +94,15 @@ export function useThread(channelId: string | null, msgId: string | null) {
  * user in the caller's org (GET /messages/org-users — any authenticated
  * member can call this, it's not admin-gated).
  */
-export function useOrgUsers() {
+export function useOrgUsers(enabled = true) {
   return useQuery({
     queryKey: commsKeys.orgUsers,
-    queryFn: async (): Promise<OrgUser[]> => {
-      const r = await api.get<{ data: OrgUser[] }>('/messages/org-users');
+    queryFn: async ({ signal }): Promise<OrgUser[]> => {
+      const r = await api.get<{ data: OrgUser[] }>('/messages/org-users', { signal });
       return r.data.data ?? [];
     },
     staleTime: 5 * 60_000,
+    enabled,
   });
 }
 

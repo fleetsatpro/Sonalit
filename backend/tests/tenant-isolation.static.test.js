@@ -196,9 +196,11 @@ describe('tenant isolation regression guards', () => {
     expect(source).not.toContain('publish(`convoy:${report.convoy_id}:report`');
     expect(source).toContain('org:${req.cfo.org_id}:convoy:${report.convoy_id}:report');
   });
-  test('realtime authorization never falls back from tenant to user identity', () => {
+  test('realtime tokens require tenant scope and bind Centrifugo identity to the authenticated user', () => {
     const realtime = fs.readFileSync(path.join(__dirname, '../src/routes/realtime.js'), 'utf8');
-    expect(realtime).toContain("if (!req.user?.org_id)");
+    expect(realtime).toContain("if (!req.user?.id || !req.user?.org_id)");
+    expect(realtime).toContain("{ sub: String(req.user.id) }");
+    expect(realtime).toContain("{ sub: String(req.user.id), channel }");
     expect(realtime).not.toContain("req.user.org_id ?? req.user.id");
   });
 

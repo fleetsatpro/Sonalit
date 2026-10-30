@@ -19,6 +19,7 @@
     "lighthouse": "lhci autorun"
   },
   "dependencies": {
+    "@cesium/engine": "25.0.0",
     "@fontsource/archivo": "^5.2.8",
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/inter": "^5.2.0",

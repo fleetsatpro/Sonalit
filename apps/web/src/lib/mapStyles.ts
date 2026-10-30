@@ -35,22 +35,16 @@ export const SAT_STYLE: maplibregl.StyleSpecification = {
 };
 
 /**
- * Independent raster fallback for deployments where the primary tile host is
- * blocked, rate-limited or unreachable. This is cartography fallback only: it
- * never fabricates forecast or weather data.
+ * SJM dark vector cartography from OpenFreeMap. The provider publishes a
+ * keyless MapLibre style and serves its own glyphs, sprites and vector tiles.
+ * Route geometry and operational markers are added by the journey layer.
  */
-export const FALLBACK_STREET_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    'fallback-base': {
-      type: 'raster',
-      tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      maxzoom: 20,
-      attribution: '© OpenStreetMap contributors · © CARTO',
-    },
-  },
-  layers: [
-    { id: 'fallback-base-layer', type: 'raster', source: 'fallback-base', paint: { 'raster-opacity': 1, 'raster-fade-duration': 150 } },
-  ],
-};
+export const DARK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/dark' as const;
+
+/**
+ * Independent keyless vector fallback for map workspaces when their primary
+ * cartographic provider fails. It provides geography only; no route, tracking,
+ * forecast or weather data is fabricated.
+ */
+export const FALLBACK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/liberty' as const;
+

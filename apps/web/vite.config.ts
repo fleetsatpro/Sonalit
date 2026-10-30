@@ -45,7 +45,7 @@ export default defineConfig({
           /^\/(robots\.txt|sitemap\.xml)$/,
         ],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        globIgnores: ['**/cesium/**', '**/Cesium.js', 'convoy.html', 'convoy-assets/**'],
+        globIgnores: ['**/cesium/**', '**/Cesium.js', '**/SjmAirspaceGlobe-*.js', 'convoy.html', 'convoy-assets/**'],
         runtimeCaching: [
           {
             urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith('/api/'),

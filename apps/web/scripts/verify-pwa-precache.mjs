@@ -22,6 +22,7 @@ const hasAppShell = entries.includes('app-shell.html');
 const hasIndex = entries.includes('index.html');
 const hasJavaScript = entries.some((url) => /(?:^|\/)assets\/[^"']+\.js$/.test(url));
 const hasCss = entries.some((url) => /(?:^|\/)assets\/[^"']+\.css$/.test(url));
+const hasOnDemandSjmGlobe = entries.some((url) => /(?:^|\/)assets\/SjmAirspaceGlobe-[^/]+\.js$/.test(url));
 
 const failures = [];
 if (entries.length < 10) failures.push('expected at least 10 precache entries; found ' + entries.length);
@@ -29,6 +30,7 @@ if (!hasIndex) failures.push('index.html is absent from the precache');
 if (!hasAppShell) failures.push('app-shell.html is absent from the precache');
 if (!hasJavaScript) failures.push('no generated JavaScript chunk is precached');
 if (!hasCss) failures.push('no generated CSS asset is precached');
+if (hasOnDemandSjmGlobe) failures.push('the on-demand SJM 3D engine chunk must not be included in the offline precache');
 
 if (failures.length) {
   throw new Error('PWA precache verification failed: ' + failures.join('; '));

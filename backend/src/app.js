@@ -80,9 +80,9 @@ app.use(helmet({
       // MapLibre GL fetches raster tiles via fetch()/XHR (not <img> tags), so
       // connect-src — not img-src — is what actually gates tile loading.
       // server.arcgisonline.com (Esri street + satellite tiles) and
-      // demotiles.maplibre.org (glyphs) were missing from connect-src, which
-      // silently blocked the map from ever rendering.
-      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io", "https://*.openstreetmap.org", "https://server.arcgisonline.com", "https://services.arcgisonline.com", "https://demotiles.maplibre.org", "https://tiles.openfreemap.org"],
+      // demotiles.maplibre.org (glyphs), CARTO raster tiles and Cesium's
+      // imagery requests are fetched via connect-src, not only img-src.
+      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io", "https://*.openstreetmap.org", "https://basemaps.cartocdn.com", "https://*.basemaps.cartocdn.com", "https://server.arcgisonline.com", "https://services.arcgisonline.com", "https://demotiles.maplibre.org", "https://tiles.openfreemap.org"],
       imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org", "https://*.openstreetmap.org", "https://server.arcgisonline.com", "https://services.arcgisonline.com", "https://tiles.openfreemap.org"],
       // Guardian voice notes play back from a blob: URL (fetched audio bytes
       // wrapped in URL.createObjectURL) — without this, mediaSrc falls back

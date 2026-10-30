@@ -11,6 +11,7 @@ export interface Channel {
   category: 'priority' | 'regional' | 'operations' | null;
   created_at: string;
   created_by: string | null;
+  realtime_channel?: string;
   muted: boolean;
   is_channel_admin: boolean;
   last_read_at: string;
