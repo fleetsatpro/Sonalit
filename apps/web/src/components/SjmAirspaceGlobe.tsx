@@ -19,6 +19,7 @@ type Props = {
   flyItalyStatus?:string;
   regionalRadiusNm?:number;
   airportCentre?:{latitude:number;longitude:number}|null;
+  airportLabel?:string|null;
 };
 
 type ProviderFilter='all'|'opensky_rest'|'adsb_lol'|'flyitalyadsb';
@@ -80,7 +81,7 @@ function aircraftFocusView(item:SjmAirspaceAircraft):Cesium.CameraFlyToOptions {
   };
 }
 
-export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds,pollIntervalSeconds=null,regionalStatus='NOT_CONFIGURED',flyItalyStatus='NOT_CONFIGURED',regionalRadiusNm=250,airportCentre=null}:Props) {
+export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds,pollIntervalSeconds=null,regionalStatus='NOT_CONFIGURED',flyItalyStatus='NOT_CONFIGURED',regionalRadiusNm=250,airportCentre=null,airportLabel=null}:Props) {
   const containerRef=useRef<HTMLDivElement>(null);
   const widgetRef=useRef<Cesium.CesiumWidget|null>(null);
   const entityRef=useRef<Map<string,Cesium.Entity>>(new Map());
@@ -289,7 +290,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
   return <section aria-label="Three-dimensional airspace display" data-testid="sjm-airspace-display" className="overflow-hidden rounded-lg border border-[#2a3948] bg-[#080e15]">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] bg-[#0c141d] px-3 py-3 sm:px-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[10px] font-semibold tracking-[.12em] text-slate-300">AIRSPACE / EAST AFRICA</span>
+        <span className="font-mono text-[10px] font-semibold tracking-[.12em] text-slate-300">AIRSPACE / {airportLabel||'EAST AFRICA'}</span>
         <span className={'rounded-sm border px-2 py-1 font-mono text-[10px] '+(status==='LIVE'?'border-emerald-300/25 bg-emerald-300/[0.06] text-emerald-200':'border-white/[0.09] text-slate-400')}>{status.replaceAll('_',' ')}</span>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-400">
