@@ -50,6 +50,11 @@ describe('SJM journey flight correlation',()=>{
     expect(result.status).toBe('FEED_UNAVAILABLE');
   });
 
+  it('does not interpret an empty degraded snapshot as a flight not being present',()=>{
+    const result=correlateJourneyFlight({flightReference:'KQ100',configured:true,connected:false,providerStatus:'DEGRADED',aircraft:[],events:[]});
+    expect(result.status).toBe('FEED_UNAVAILABLE');
+  });
+
   it('does not infer an airport match when provider route data is absent or different',()=>{
     const result=correlateJourneyFlight({flightReference:'KQ100',airportCode:'NBO',configured:true,connected:true,providerStatus:'LIVE',aircraft:[aircraft],events:[]});
     expect(result.status).toBe('MATCHED');
