@@ -498,7 +498,7 @@ function normaliseAdsbLolAreaRecord(item,now=Date.now()) {
   const callsign=String(item.flight||item.callsign||'').trim().replace(/\s+/g,' ');
   return {
     id:hex,map_key:'adsb_lol:'+hex,ident:callsign||hex.toUpperCase(),
-    registration:textOrNull(item.r),latitude,longitude,
+    registration:textOrNull(item.r),aircraft_type:textOrNull(item.t),latitude,longitude,
     altitude_m:geometricMetres??barometricMetres,
     altitude_reference:geometricMetres!==null?'GEOMETRIC':barometricMetres!==null?'BAROMETRIC_PRESSURE':null,
     geometric_altitude_m:geometricMetres,barometric_altitude_m:barometricMetres,
@@ -953,7 +953,9 @@ function buildSourceRegistry({opensky,weather,adsbLol,adsbArea,flyItalyArea,comm
       coverage_radius_km:FLYITALYADSB_RADIUS_KM,license:'CC-BY-SA-4.0',
       commercial_use_permitted:true,attribution_required:true,share_alike_required:true,
       service_level:'BEST_EFFORT',maximum_radius_km:FLYITALYADSB_RADIUS_KM,
-      requests_per_minute:30,requests_per_month:300000,
+      requests_per_minute:FLYITALYADSB_REQUESTS_PER_MINUTE,requests_per_month:FLYITALYADSB_REQUESTS_PER_MONTH,
+      provider_plan_requests_per_minute:30,provider_plan_requests_per_month:300000,
+      quota_scope:'shared_product_key',
       quality_limit:'No SLA; receiver coverage is uneven and Africa is sparsely served. Not for safety-of-life, air traffic control or navigation.'},
     {id:'aerodatabox',name:'AeroDataBox',capability:'flight_schedules_and_status',status:commercial?.status||'NOT_CONFIGURED',
       role:'Commercial flight schedule and operational status',commercial_license_required:true,derived_work_rights_required:true},
