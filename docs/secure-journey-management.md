@@ -83,6 +83,41 @@ The browser receives only the bounded, normalised state snapshot and its provena
 
 A provider-reported aircraft position or apparent landing never transitions the SJM lifecycle, confirms a client flight schedule, completes a stop, verifies principal custody or closes a journey. Those remain separate authorised operations with their own evidence.
 
+### Federated providers and data authority
+
+The airspace endpoint composes a provider registry with independently sourced records. It does not merge the providers into one authority or allow one provider's status to overwrite another provider's evidence.
+
+**Aircraft surveillance**
+- **OpenSky Network** remains the primary bounded-area state-vector source. It has its own written commercial/operational licence and account quota gates.
+- **ADSB.lol** is a secondary, targeted callsign cross-check. Its API/data use ODbL 1.0 and the provider asks production integrators to contact its maintainers. It remains disabled unless production access has been discussed/approved and ODbL attribution/database obligations have been reviewed. It is not merged into the OpenSky snapshot/cache and is not treated as a second full-area coverage feed.
+- **adsb.fi public endpoints are not used** for commercial Sonalit SJM. Their published terms say public open-data endpoints are for personal, non-commercial use; use would require a separate commercial agreement.
+- Source agreement requires exact ICAO24/callsign plus close timestamps; a disagreement is displayed as a source discrepancy, never auto-resolved into a fabricated position. Aircraft state vectors do not establish passenger or commercial flight identity.
+
+**Commercial flight information**
+- **AeroDataBox** is the selected optional provider for airline flight number, timetable/schedule, airport departure/arrival boards, and flight status including scheduled and actual/estimated movement times where its airport coverage supports those updates. Its documentation explicitly warns that live status is not available at every airport and that coverage/quality markers must be inspected per airport.
+- The integration uses `/flights/number/{flightNumber}`; activation additionally requires the correct subscription gateway/key header, a commercial-use permission, and written confirmation that the intended customer-facing/downstream derived-work use is covered. API general-commercial-use rights and commercial B2B derived-work/sub-licensing rights are not assumed to be interchangeable.
+- No AeroDataBox credential is configured by this change. With no licensed account the flight-status result is `NOT_CONFIGURED`, not an inferred timetable.
+- OpenSky's historic flight endpoints can help with retrospective aircraft/airport movement research, but their batch update means they are not substituted for current airline schedule, gate, delay or cancellation feeds.
+
+**Aviation weather**
+- **AviationWeather.gov Data API** is integrated server-side for worldwide METAR and TAF observations/forecasts and the international SIGMET response. The service is not called directly from browsers (CORS is not permitted); requests use a descriptive User-Agent, a four-letter ICAO station code and a five-minute application cache. Provider 204/no-data, rate-limit and outage responses remain explicit.
+- Its documented service limit is 100 requests/minute and most endpoint queries return at most 400 entries. Global SIGMET results are presented as provider notices, not as route-intersection analysis or an automated threat assessment. The SJM route must not be labelled safe/unsafe from an unfiltered global list.
+- The UI accepts an ICAO airport identifier for station weather lookup. An IATA-only airport code is not silently converted; the weather tile remains unrequested until a verified ICAO mapping is available.
+
+**Aeronautical reference and NOTAM authority**
+- **OurAirports** provides supplementary airport/runway/navaid CSV reference data in the public domain, updated nightly, but disclaims accuracy and fitness-for-use. The dataset is listed as `AVAILABLE_NOT_SYNCED` until a controlled import, validation and versioning job exists.
+- **open flightmaps (OFMA)** grants a royalty-free General Users License that includes commercial use, but regional coverage and quality vary, and the project states that its data is not certified for primary navigation. It is an optional supplementary aeronautical reference, not a clearance or NOTAM authority. No OFMA data is synced by this change.
+- **KCAA AIM / Nairobi FIR** is the official local NOTAM and pre-flight briefing authority. KCAA says NOTAM/briefing access is granted through its online briefing request process. SJM links operators to the official AIM service; it does not scrape authenticated portals or manufacture NOTAMs.
+- **EUROCONTROL MyEAD** is a candidate global system-to-system source for worldwide NOTAM and aeronautical data, subject to its Data User Agreement and any service/royalty charges. **EAD Basic is explicitly not for operational use** and is never ingested into SJM.
+- No NOTAM source is marked live/available until an authorised operational data agreement or authenticated feed is implemented, tested and accepted. A missing NOTAM response is not evidence that no restrictions exist.
+
+**Federation and product invariants**
+- Each source has an independent status, timestamp, scope, licence, evidence class, error state and refresh policy. An unavailable source never becomes a blank-success tile.
+- Open data is not assumed to mean unrestricted commercial reuse. ODbL/share-alike, attribution, derived-work, downstream display and retention obligations are recorded per source.
+- Source datasets remain isolated in their own caches/read models where licences require it; the API response is a composed view, not an implicitly merged derivative database.
+- No external feed directly changes SJM journey status, flight status, movement instructions, CPO/driver tasking, passenger custody or handover confirmation. An authorised human reviews consequential actions.
+- The federated API response is not a certified flight-planning, dispatch, air-traffic-control or navigation service.
+
 ## API
 ## Validation
 Run pnpm --filter fleetops-backend test -- --runInBand and pnpm --filter @sonalit/web typecheck. CI also checks migrations, backend integration, OpenAPI drift, browser E2E, dependency audit and container build. Preview route delivery has been verified; authenticated operator walkthrough and post-merge runtime verification remain separate release gates.
