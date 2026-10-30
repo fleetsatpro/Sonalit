@@ -258,7 +258,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     const signOut = page.getByRole('button', { name: 'Sign out' });
     await expect(signOut).toBeVisible();
     await signOut.click();
-    await expect(page).toHaveURL(/\\/login$/);
+    await expect(page).toHaveURL(/\/login$/);
   });
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
