@@ -52,7 +52,7 @@ describe('SJM federated aviation intelligence',()=>{
       SJM_FLYITALYADSB_ENABLED:'true',
       SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
       SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
-      FLYITALYADSB_API_KEY:'invalid\\nkey',
+      FLYITALYADSB_API_KEY:'invalid\nkey',
     })).toMatchObject({enabled:false,reason:'api_key_missing_or_invalid'});
   });
 
