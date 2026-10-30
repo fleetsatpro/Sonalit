@@ -744,7 +744,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByRole('tab', { name: 'Airspace 3D' }).click();
     const display = page.getByTestId('sjm-airspace-display');
     await expect(display).toBeVisible();
-    await expect(page.getByText('COMMERCIAL FLIGHT STATUS', { exact: true })).toBeVisible();
+    await expect(page.getByText('Commercial flight status', { exact: true })).toBeVisible();
     await expect(page.getByText('No commercial flight provider is configured', { exact: true })).toBeVisible();
     const globe = display.getByRole('application', { name: /three-dimensional airspace globe/i });
     await expect(globe).toBeVisible();
