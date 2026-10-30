@@ -751,7 +751,7 @@ return (
              <div className="mt-2 space-y-2 text-[11px]">
               <div><p className="text-[10px] uppercase tracking-[.1em] text-slate-500">Latest METAR</p><p className="mt-1 whitespace-pre-wrap break-words text-slate-300">{airspaceQ.data?.data.intelligence?.aviation_weather.metar[0]?.raw||'No observation returned; a four-letter ICAO station code is required.'}</p></div>
               <div><p className="text-[10px] uppercase tracking-[.1em] text-slate-500">TAF</p><p className="mt-1 whitespace-pre-wrap break-words text-slate-300">{airspaceQ.data?.data.intelligence?.aviation_weather.taf[0]?.raw||'No terminal forecast returned.'}</p></div>
-              <p className="text-slate-500">{airspaceQ.data?.data.intelligence?.aviation_weather.international_sigmets.length??0} international SIGMET records in the provider response.</p>
+              <p className="text-slate-500">{airspaceQ.data?.data.intelligence?.aviation_weather.international_sigmets.length??0} international SIGMET records in the provider response. This list is not filtered against the journey route or an operational risk assessment.</p>
              </div>
             </div>
             <div className="rounded-md border border-white/[0.07] bg-[#0d151e] p-3">
@@ -761,11 +761,11 @@ return (
              <p className="mt-2 text-[10px] text-slate-500">ODbL 1.0 attribution/share-alike obligations must be reviewed before production use.</p>
             </div>
             <div className="rounded-md border border-white/[0.07] bg-[#0d151e] p-3">
-             <Kicker>OFFICIAL AERONAUTICAL NOTICES</Kicker>
-             <div className="mt-2 flex items-center justify-between gap-2"><span className="text-[12px] font-medium text-slate-100">KCAA AIM · Nairobi FIR</span><EvidenceBadge value={airspaceQ.data?.data.intelligence?.notams.status||'ACCESS_REQUIRED'}/></div>
+             <Kicker>OFFICIAL NOTAM / AIS AUTHORITY</Kicker>
+             <div className="mt-2 flex items-center justify-between gap-2"><span className="text-[12px] font-medium text-slate-100">KCAA AIM · Kenya coverage</span><EvidenceBadge value={airspaceQ.data?.data.intelligence?.notams.status||'ACCESS_REQUIRED'}/></div>
              <p className="mt-2 text-[11px] leading-5 text-slate-400">{airspaceQ.data?.data.intelligence?.notams.message||'Official NOTAM and pre-flight briefing access requires an authorised account. No unofficial scraping or inferred NOTAMs are used.'}</p>
-             <a href="https://aim.kcaa.or.ke/" target="_blank" rel="noreferrer" className="mt-2 inline-flex text-[11px] font-medium text-sky-300 hover:text-sky-200">Open official KCAA AIM briefing service ↗</a>
-             <p className="mt-2 text-[10px] text-slate-500">Worldwide system-to-system option: EUROCONTROL MyEAD, subject to its Data User Agreement and service terms.</p>
+             <a href="https://aim.kcaa.or.ke/" target="_blank" rel="noreferrer" className="mt-2 inline-flex text-[11px] font-medium text-sky-300 hover:text-sky-200">Open official KCAA AIM service (Kenya) ↗</a>
+             <p className="mt-2 text-[10px] text-slate-500">For worldwide system-to-system NOTAM exchange, evaluate EUROCONTROL MyEAD under its Data User Agreement; the free EAD Basic service is not for operational use.</p>
             </div>
            </div>
            <div className="rounded-md border border-white/[0.07] bg-black/15 p-3">
