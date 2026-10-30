@@ -670,7 +670,20 @@ test.describe('SJM command-centre responsive smoke', () => {
         position_count: 1,
         rejected_count: 0,
         coverage: { complete: false, bounds: { south: -5, west: 30, north: 5, east: 45 }, query_scope: 'bounded' },
-        intelligence: { airport_reference: { status: 'RESOLVED', airport: { latitude: -1.3192, longitude: 36.9278 } } },
+        intelligence: {
+          airport_reference: { status: 'RESOLVED', airport: { latitude: -1.3192, longitude: 36.9278 } },
+          flyitaly_area: {
+            status: 'AVAILABLE', configured: true, radius_km: 500, record_count: 1, rejected_count: 0,
+            source: 'FlyItalyADSB', license: 'CC-BY-SA-4.0', attribution_required: true, share_alike_required: true,
+            coverage: { complete: false, query_scope: 'airport_centred_radius', centre: { icao: 'HKJK', latitude: -1.3192, longitude: 36.9278 }, radius_km: 500 },
+            records: [{
+              id: 'abc123', map_key: 'flyitalyadsb:abc123', provider: 'flyitalyadsb', position_provider: 'flyitalyadsb',
+              position_source_label: 'FlyItalyADSB ADS-B / MLAT network', ident: 'KQFILL', latitude: -1.31, longitude: 36.92,
+              altitude_m: 11000, altitude_reference: 'GEOMETRIC', ground_speed_mps: 220, heading_deg: 95,
+              observed_at: '2026-10-30T11:29:45.000Z', age_seconds: 15, freshness: 'LIVE', trail: [],
+            }],
+          },
+        },
         poll_interval_seconds: 30,
         aircraft: [{
           id: '4b1234',
@@ -724,6 +737,9 @@ test.describe('SJM command-centre responsive smoke', () => {
     const providerFilter = display.getByRole('combobox', { name: 'Filter aircraft provider' });
     await providerFilter.selectOption('opensky_rest');
     await expect(observationList.getByRole('button', { name: /KQA123/ })).toBeVisible();
+    await providerFilter.selectOption('flyitalyadsb');
+    await expect(observationList.getByRole('button', { name: /KQFILL/ })).toBeVisible();
+    await expect(display.getByText(/FlyItalyADSB \\(flyitalyadsb.com\\), CC BY-SA 4.0/)).toBeVisible();
     await providerFilter.selectOption('all');
     const emptyInspector = display.getByTestId('sjm-aircraft-unselected-inspector');
     await expect(emptyInspector).toContainText('Select an aircraft observation');
