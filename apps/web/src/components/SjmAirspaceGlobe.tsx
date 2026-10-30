@@ -294,7 +294,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
               <button type="button" onClick={()=>zoom('out')} aria-label="Zoom out" title="Zoom out" className="h-10 w-10 border-b border-white/10 text-base text-slate-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">−</button>
               <button type="button" onClick={resetView} aria-label="Reset airspace view" title="Reset airspace view" className="h-10 w-10 font-mono text-[10px] text-slate-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">RST</button>
             </div>
-            <div data-testid="sjm-airspace-basemap-credit" className="absolute bottom-3 right-3 z-10 whitespace-nowrap rounded border border-white/15 bg-[#07101b]/90 px-2.5 py-1.5 text-[10px] shadow-lg backdrop-blur">
+            <div data-testid="sjm-airspace-basemap-credit" className="absolute bottom-12 right-3 z-10 whitespace-nowrap rounded border border-white/15 bg-[#07101b]/95 px-2.5 py-1.5 text-[10px] shadow-lg backdrop-blur">
               <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="font-medium text-slate-200 underline decoration-white/30 underline-offset-2">© OpenStreetMap contributors</a>
               <span className="px-1 text-slate-500">·</span>
               <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-slate-200">Report map issue</a>

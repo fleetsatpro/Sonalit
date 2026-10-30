@@ -716,7 +716,25 @@ test.describe('SJM command-centre responsive smoke', () => {
     const focusAircraft = selected.getByTestId('sjm-aircraft-focus');
     await expect(focusAircraft).toBeVisible();
     await focusAircraft.click();
+    const credit = display.getByTestId('sjm-airspace-basemap-credit');
+    const globeBox = await globe.boundingBox();
+    const creditBox = await credit.boundingBox();
+    expect(globeBox).not.toBeNull();
+    expect(creditBox).not.toBeNull();
+    expect(creditBox!.y + creditBox!.height).toBeLessThan(globeBox!.y + globeBox!.height - 32);
     await testInfo.attach('sjm-airspace-selected-aircraft', { body: await display.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(display).toBeVisible();
+    const mobileGrid = display.locator(':scope > div.grid');
+    const mobileColumns = await mobileGrid.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+    expect(mobileColumns, '390px airspace workspace stacks globe and inspector').toBe(1);
+    await expect(display.getByRole('complementary', { name: 'Aircraft inspection' })).toBeVisible();
+    const mobileGlobeBox = await globe.boundingBox();
+    const mobileCreditBox = await credit.boundingBox();
+    expect(mobileGlobeBox).not.toBeNull();
+    expect(mobileCreditBox).not.toBeNull();
+    expect(mobileCreditBox!.y + mobileCreditBox!.height).toBeLessThan(mobileGlobeBox!.y + mobileGlobeBox!.height - 32);
+    await testInfo.attach('sjm-airspace-mobile-390', { body: await display.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   });
 
   test('flight status can be recorded as an audited operator observation', async ({ page }) => {
