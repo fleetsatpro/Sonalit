@@ -25,6 +25,7 @@
  */
 
 const OUTCOME = { ACCEPTED: 'accepted', REJECTED: 'rejected', CONFLICT: 'conflict' };
+const { DUTY_EVENT_SUMMARIES, dutyEventAllowed, validateFieldEventInput } = require('../services/sjmFieldEvents');
 
 /** Roles allowed to push each operation type. Server-side; the client's claim is irrelevant. */
 function allowed(ctx, roles) {
@@ -362,11 +363,88 @@ const gpsBatch = {
   },
 };
 
+
+/*
+ * sjm.field_event.create
+ *
+ * Append-only field observations. It deliberately cannot change journey state,
+ * flight status, approvals, arrival verification or closure. The authenticated
+ * user and live journey roster are rechecked here after every offline interval.
+ */
+const SJM_JOURNEY_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SJM_TERMINAL_STATUSES = new Set(['closed', 'cancelled', 'aborted']);
+
+const sjmFieldEventCreate = {
+  entityType: 'sjm_journey_event',
+  async apply(client, ctx, op) {
+    const journeyId = typeof op.entity_id === 'string' ? op.entity_id : '';
+    if (!SJM_JOURNEY_UUID.test(journeyId)) {
+      return reject('invalid_journey_id', 'A valid SJM journey reference is required.');
+    }
+
+    const input = validateFieldEventInput(op.payload?.event_type, op.payload?.note);
+    if (!input.ok) return reject(input.code, input.message);
+
+    const orgId = ctx.user.org_id;
+    const journey = await client.query(
+      'SELECT id, status FROM sjm_journeys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR UPDATE',
+      [journeyId, orgId]
+    );
+    if (!journey.rows.length) return reject('not_found', 'The assigned journey is no longer available.');
+    if (SJM_TERMINAL_STATUSES.has(String(journey.rows[0].status))) {
+      return reject('journey_terminal', 'Field events cannot be added to a closed, cancelled or aborted journey.');
+    }
+
+    const assignment = await client.query(
+      'SELECT duty_role FROM sjm_journey_participants WHERE org_id = $1 AND journey_id = $2 AND user_id = $3 AND removed_at IS NULL ORDER BY duty_role',
+      [orgId, journeyId, ctx.user.id]
+    );
+    const roles = assignment.rows.map(row => row.duty_role);
+    if (!roles.length) return reject('not_found', 'The user is no longer assigned to this journey.');
+    if (!dutyEventAllowed(roles, input.eventType)) {
+      return reject('forbidden', 'The current journey duty does not permit this field event.');
+    }
+
+    const clientCreatedAt = typeof op.client_created_at === 'string' &&
+      Number.isFinite(Date.parse(op.client_created_at))
+      ? new Date(op.client_created_at).toISOString()
+      : null;
+    const detail = {
+      duty_roles: roles,
+      event_class: 'FIELD_REPORTED_CHECK_IN',
+      evidence_class: 'OPERATOR_REPORTED_NOT_AUTOMATIC_GPS_PROOF',
+      classification: 'INTERNAL_OPERATIONS',
+      note: input.note || null,
+      ingest_transport: 'offline_sync',
+      device_id: ctx.deviceId || null,
+      client_observed_at: clientCreatedAt,
+      client_observed_time_quality: clientCreatedAt ? 'DEVICE_CLOCK_UNVERIFIED' : 'NOT_SUPPLIED',
+    };
+    const saved = await client.query(
+      "INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,$4,$5,$6,'operator') RETURNING id,event_type,summary,detail,source,created_at",
+      [orgId, journeyId, ctx.user.id, input.eventType, DUTY_EVENT_SUMMARIES[input.eventType], JSON.stringify(detail)]
+    );
+    const event = saved.rows[0];
+    return {
+      outcome: OUTCOME.ACCEPTED,
+      entity_id: journeyId,
+      result: {
+        event_id: event.id,
+        journey_id: journeyId,
+        event_type: event.event_type,
+        created_at: event.created_at,
+        evidence_class: detail.evidence_class,
+      },
+    };
+  },
+};
+
 const REGISTRY = Object.freeze({
   'cds_container.status_change': containerStatusChange,
   'cds_incident.create': incidentCreate,
   'cds_trip.observation': tripObservation,
   'gps.batch': gpsBatch,
+  'sjm.field_event.create': sjmFieldEventCreate,
 });
 
 module.exports = {

@@ -218,8 +218,9 @@ describe('offline session subscription lifecycle', () => {
     vi.resetModules();
     const { startOffline, stopOffline } = await import('./index.js');
     try {
-      expect(await startOffline({ userId: 'user-a', orgId: 'org-a', role: 'admin' })).toBe(true);
+      expect(await startOffline({ userId: 'user-a', orgId: 'org-a', role: 'admin', pullEnabled: false })).toBe(true);
       expect(reconnectHandlers.size).toBe(1);
+      expect(runSync).toHaveBeenCalledWith('user-a', 'org-a', { pullEnabled: false });
 
       expect(await startOffline({ userId: 'user-b', orgId: 'org-b', role: 'admin' })).toBe(true);
       expect(unsubscribers[0]).toHaveBeenCalledTimes(1);

@@ -508,7 +508,11 @@ export function lastSyncRun(): SyncRunSummary | null {
  * no sync engine — the worker's ability to keep recording work locally must not
  * depend on this succeeding.
  */
-export async function runSync(userId: string, orgId: string): Promise<SyncRunSummary> {
+export async function runSync(
+  userId: string,
+  orgId: string,
+  options: { pullEnabled?: boolean } = {},
+): Promise<SyncRunSummary> {
   const result: SyncRunSummary = { ranAt: Date.now(), pull: null, push: null, blocked: null, error: null };
 
   if (running) return result;
@@ -527,8 +531,9 @@ export async function runSync(userId: string, orgId: string): Promise<SyncRunSum
     // 2. Field work up before state comes down.
     result.push = await push(userId, orgId);
 
-    // 3. Reconcile.
-    result.pull = await pull(userId, orgId);
+    // 3. Reconcile only for surfaces authorised to mirror the shared entity set.
+    // SJM field clients push append-only journey events and never pull CDS data.
+    if (options.pullEnabled !== false) result.pull = await pull(userId, orgId);
 
     reportSyncSuccess();
   } catch (err) {

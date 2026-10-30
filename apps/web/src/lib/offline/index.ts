@@ -32,6 +32,8 @@ export interface OfflineIdentity {
   userId: string;
   orgId: string;
   role: string;
+  /** SJM field devices push their own events only; they must not mirror CDS data. */
+  pullEnabled?: boolean;
 }
 
 /**
@@ -95,7 +97,7 @@ async function tick(): Promise<void> {
   const generation = lifecycleGeneration;
   const work = (async () => {
     try {
-      const result = await runSync(session.userId, session.orgId);
+      const result = await runSync(session.userId, session.orgId, { pullEnabled: session.pullEnabled !== false });
       // A result from a prior login/tenant must not update the new session.
       if (generation === lifecycleGeneration && identity === session) {
         blocked = result.blocked;
@@ -228,13 +230,15 @@ export async function startOffline(id: OfflineIdentity): Promise<boolean> {
  * consent to throw away what somebody did. It becomes visible again when that
  * same user signs back in on this device.
  */
-export async function stopOffline({ purge = true }: { purge?: boolean } = {}): Promise<void> {
+export async function stopOffline(
+  { purge = true, stopConnectivity: stopConnectivityManager = true }: { purge?: boolean; stopConnectivity?: boolean } = {},
+): Promise<void> {
   lifecycleGeneration += 1;
   unsubscribeReconnect?.();
   unsubscribeReconnect = null;
   if (timer) clearTimeout(timer);
   timer = null;
-  stopConnectivity();
+  if (stopConnectivityManager) stopConnectivity();
 
   const id = identity;
   identity = null;

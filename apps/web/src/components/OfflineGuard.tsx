@@ -17,6 +17,7 @@ import { PUBLIC_PAGES } from '../lib/seo/pages.js';
  */
 const OFFLINE_CAPABLE = [
   /^\/field(\/|$)/,
+  /^\/sjm\/field(?:\/|$)/,
   // The public marketing pages are prerendered static content with no data
   // fetching at all — they render perfectly well with no network, and they are
   // the first thing an anonymous visitor (or a crawler) sees. Blanking them
