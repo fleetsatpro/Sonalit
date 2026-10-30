@@ -739,7 +739,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(observationList.getByRole('button', { name: /KQA123/ })).toBeVisible();
     await providerFilter.selectOption('flyitalyadsb');
     await expect(observationList.getByRole('button', { name: /KQFILL/ })).toBeVisible();
-    await expect(display.getByText(/FlyItalyADSB \(flyitalyadsb\.com\), CC BY-SA 4\.0/))
+    await expect(display.getByText(/FlyItalyADSB \(flyitalyadsb\.com\), CC BY-SA 4\.0/)).toBeVisible();
     await providerFilter.selectOption('all');
     const emptyInspector = display.getByTestId('sjm-aircraft-unselected-inspector');
     await expect(emptyInspector).toContainText('Select an aircraft observation');
