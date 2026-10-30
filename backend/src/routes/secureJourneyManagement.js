@@ -566,6 +566,12 @@ router.post('/management-summary',authorize('admin','dispatcher'),asyncHandler(a
   });
   res.status(201).json(saved);
 }));
+router.get('/airspace',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
+  const feed=require('../services/sjmAirspaceFeed');
+  const data=feed.getSnapshot({start:true});
+  res.setHeader('Cache-Control','no-store');
+  res.json({data});
+}));
 router.get('/clients',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const r=await req.db('SELECT id,name,company,email,phone,account_reference FROM sjm_clients WHERE org_id=$1 AND deleted_at IS NULL ORDER BY name LIMIT 500',[req.user.org_id]);
   res.json({data:r.rows});
