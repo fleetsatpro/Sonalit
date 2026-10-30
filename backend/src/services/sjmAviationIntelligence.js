@@ -290,7 +290,7 @@ function getFlyItalyAdsbConfig(env=process.env) {
     service_level:'BEST_EFFORT',production_contact_recommended:false,
     requests_per_minute:30,requests_per_month:300000,
     maximum_radius_km:FLYITALYADSB_RADIUS_KM,
-    use_restrictions:['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION'],
+    use_restrictions:['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION','NOT_FOR_PERSON_TRACKING_OR_HARASSMENT'],
   };
 }
 
