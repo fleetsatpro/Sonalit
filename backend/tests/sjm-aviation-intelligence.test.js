@@ -239,20 +239,23 @@ describe('SJM federated aviation intelligence',()=>{
 
   test('normalises FlyItalyADSB aircraft without coercing coordinates or retaining stale positions',()=>{
     const item=aviation.normaliseFlyItalyAdsbRecord({
-      hex:'abc123',flight:'KQ 100 ',r:'5Y-KZA',lat:-1.3,lon:36.8,
+      hex:'abc123',flight:'KQ 100 ',r:'5Y-KZA',t:'B789',type:'adsb_icao',lat:-1.3,lon:36.8,
       alt_geom:12400,alt_baro:12000,gs:220,track:90,baro_rate:600,seen_pos:12,
     },now);
     expect(item).toMatchObject({
       id:'abc123',map_key:'flyitalyadsb:abc123',ident:'KQ 100',registration:'5Y-KZA',
       latitude:-1.3,longitude:36.8,provider:'flyitalyadsb',position_provider:'flyitalyadsb',
-      altitude_reference:'GEOMETRIC',ground_speed_mps:220*0.514444,
-      heading_deg:90,vertical_rate_mps:3.048,age_seconds:12,
+      position_source:'adsb_icao',position_source_label:'FlyItalyADSB ADS-B',
+      aircraft_type:'B789',altitude_reference:'GEOMETRIC',ground_speed_mps:220*0.514444,
+      heading_deg:90,vertical_rate_mps:3.048,age_seconds:12,freshness:'LIVE',
       evidence_class:'OBSERVED',timestamp_basis:'derived_from_provider_seen_pos',
     });
     expect(item.observed_at).toBe(new Date(now-12_000).toISOString());
     expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:null,lon:36.8,seen_pos:3},now)).toBeNull();
-    expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:601},now)).toBeNull();
+    expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:61},now)).toBeNull();
     expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:-1},now)).toBeNull();
+    expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,type:'mlat',seen_pos:30},now)).toMatchObject({freshness:'DELAYED',position_source:'mlat',position_source_label:'FlyItalyADSB MLAT'});
+    expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:60},now)).toMatchObject({freshness:'STALE'});
   });
 
   test('loads a 500 km FlyItalyADSB picture with server-side key, compliance metadata and cache',async()=>{
@@ -265,8 +268,8 @@ describe('SJM federated aviation intelligence',()=>{
     const airport={icao:'HKJK',latitude:-1.3192,longitude:36.9278};
     const fetcher=jest.fn().mockResolvedValue({
       ok:true,status:200,json:async()=>({now:now/1000,ac:[
-        {hex:'abc123',flight:'KQ 100 ',r:'5Y-KZA',lat:-1.3,lon:36.8,seen_pos:12,alt_geom:12400,alt_baro:12000,gs:220,track:90},
-        {hex:'stale1',flight:'OLD',lat:-1.4,lon:36.8,seen_pos:601},
+        {hex:'abc123',flight:'KQ 100 ',r:'5Y-KZA',t:'B789',type:'adsb_icao',lat:-1.3,lon:36.8,seen_pos:12,alt_geom:12400,alt_baro:12000,gs:220,track:90},
+        {hex:'stale1',flight:'OLD',lat:-1.4,lon:36.8,seen_pos:61},
       ]}),
     });
     const result=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher,now});
@@ -279,7 +282,7 @@ describe('SJM federated aviation intelligence',()=>{
     });
     expect(result.records[0]).toMatchObject({
       id:'abc123',position_provider:'flyitalyadsb',ident:'KQ 100',
-      position_source_label:'FlyItalyADSB ADS-B / MLAT network',
+      position_source:'adsb_icao',position_source_label:'FlyItalyADSB ADS-B',aircraft_type:'B789',
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0][0]).toBe('https://api.flyitalyadsb.com/v2/lat/-1.3192/lon/36.9278/dist/500');
@@ -617,8 +620,8 @@ describe('SJM federated aviation intelligence',()=>{
         ok:true,status:200,headers:{get:()=>String(airportCsv.length)},text:async()=>airportCsv,
       };
       if(path.includes('api.flyitalyadsb.com'))return {
-        ok:true,status:200,json:async()=>({ac:[
-          {hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:12,alt_geom:12000},
+        ok:true,status:200,json:async()=>({now:now/1000,ac:[
+          {hex:'abc123',flight:'KQ100',type:'mlat',lat:-1.3,lon:36.8,seen_pos:12,alt_geom:12000},
         ]}),
       };
       if(path.includes('/metar'))return {ok:true,status:200,json:async()=>[]};
