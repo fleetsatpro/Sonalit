@@ -9,7 +9,7 @@ export type SjmAircraftObservation = {
   latitude:number;
   longitude:number;
   altitude_m:number|null;
-  altitude_reference?:'WGS84_ELLIPSOID'|'BAROMETRIC_PRESSURE'|null;
+  altitude_reference?:'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;
   ground_speed_mps:number|null;
   heading_deg:number|null;
 };
@@ -63,11 +63,10 @@ export function correlateJourneyFlight(input:{
     airport_alignment:(airport?'NOT_ESTABLISHED':'NO_AIRPORT_REFERENCE') as SjmFlightCorrelation['airport_alignment'],
   };
   if(!key)return {...empty,status:'NO_REFERENCE',explanation:'No flight reference is recorded on this journey.'};
-  if(!input.configured||input.providerStatus==='NOT_CONFIGURED')return {...empty,status:'NOT_CONFIGURED',explanation:'The licensed aircraft feed is not configured; no flight correlation is available.'};
+  if(!input.configured||input.providerStatus==='NOT_CONFIGURED')return {...empty,status:'NOT_CONFIGURED',explanation:'OpenSky access is not configured; no flight correlation is available.'};
   const aircraft=(input.aircraft||[]).filter(item=>{
     const ident=normaliseFlightIdent(item.ident);
-    const registration=normaliseFlightIdent(item.registration);
-    return ident===key||registration===key;
+    return ident===key;
   });
   const events=(input.events||[]).filter(item=>normaliseFlightIdent(item.ident)===key);
   const airportAlignment=airport&&aircraft.some(item=>
@@ -76,15 +75,15 @@ export function correlateJourneyFlight(input:{
   const status:SjmFlightCorrelationStatus=aircraft.length===1?'MATCHED'
     :aircraft.length>1?'AMBIGUOUS'
       :events.length?'EVENT_ONLY'
-        :!input.connected&&input.providerStatus==='UNAVAILABLE'?'FEED_UNAVAILABLE':'NO_MATCH';
+        :!input.connected&&['UNAVAILABLE','RATE_LIMITED'].includes(input.providerStatus)?'FEED_UNAVAILABLE':'NO_MATCH';
   const explanation=status==='MATCHED'
-    ?'One provider-observed aircraft has an exact callsign or registration match. This is a data correlation, not proof of passenger identity or journey arrival.'
+    ?'One OpenSky state vector has an exact callsign match. The REST response does not include aircraft registration; this correlation is not proof of passenger identity or journey arrival.'
     :status==='AMBIGUOUS'
-      ?'More than one aircraft record matches this reference. No aircraft is selected automatically.'
+      ?'More than one OpenSky callsign record matches this reference. No aircraft is selected automatically.'
       :status==='EVENT_ONLY'
         ?'Provider flight-information events match this reference, but no current aircraft position matches it.'
         :status==='FEED_UNAVAILABLE'
-          ?'The licensed feed is currently unavailable; a missing match cannot be interpreted as absence of the flight.'
-          :'No exact aircraft or flight-event match is present in the current bounded provider feed. Coverage is incomplete.';
+          ?'The OpenSky snapshot is unavailable or rate-limited; a missing match cannot be interpreted as absence of the flight.'
+          :'No exact callsign match is present in the latest bounded OpenSky snapshot. Coverage is incomplete and airline flight-information events are not supplied by this API.';
   return {...empty,status,aircraft,events,airport_alignment:airportAlignment,explanation};
 }
