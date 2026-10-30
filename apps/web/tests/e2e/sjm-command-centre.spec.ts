@@ -690,6 +690,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     const orbitalView = display.getByRole('button', { name: 'Orbital 3D view' });
     const regionalView = display.getByRole('button', { name: 'Regional map view' });
     await expect(orbitalView).toHaveAttribute('aria-pressed', 'true');
+    await testInfo.attach('sjm-airspace-orbital-view', { body: await display.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
     await regionalView.click();
     await expect(regionalView).toHaveAttribute('aria-pressed', 'true');
     await expect(globe).toHaveAttribute('data-camera-mode', 'regional');
