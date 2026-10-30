@@ -55,8 +55,8 @@ function altitudeReferenceLabel(value?:string|null):string {
 
 type CameraMode='orbital'|'regional';
 const ORBITAL_AIRSPACE_VIEW={
-  destination:Cesium.Cartesian3.fromDegrees(38.0,-0.5,8_200_000),
-  orientation:{heading:0,pitch:Cesium.Math.toRadians(-62),roll:0},
+  destination:Cesium.Cartesian3.fromDegrees(38.0,-0.5,7_200_000),
+  orientation:{heading:0,pitch:Cesium.Math.toRadians(-78),roll:0},
 };
 const REGIONAL_AIRSPACE_VIEW={
   destination:Cesium.Cartesian3.fromDegrees(38.0,-0.5,6_200_000),
