@@ -17,7 +17,7 @@ const aircraft=new Map();
 const recentEvents=[];
 let socket=null, reconnectTimer=null, idleTimer=null;
 let started=false, stopping=false, connected=false, reconnectAttempt=0;
-let lastConnectedAt=null,lastReceivedAt=null,lastPositionAt=null,lastErrorCode=null;
+let lastConnectedAt=null,lastReceivedAt=null,lastPositionAt=null,lastPitr=null,lastErrorCode=null;
 let messageCount=0,positionCount=0,rejectedCount=0;
 
 function parseBounds(raw) {
@@ -41,10 +41,12 @@ function getConfig(env=process.env) {
   else if(!bounds)reason='operational_bounds_missing_or_invalid';
   return {configured:!reason,reason,username:!reason?username:null,apiKey:!reason?apiKey:null,bounds:!reason?bounds:null};
 }
-function buildInitiationCommand(config) {
+function buildInitiationCommand(config,resumePitr=null) {
   if(!config?.configured||!config.username||!config.apiKey||!config.bounds)throw new Error('Firehose configuration is incomplete.');
   const {south,west,north,east}=config.bounds;
-  return ['live','username '+config.username,'password '+config.apiKey,
+  const cursor=Number(resumePitr);
+  const startCommand=Number.isFinite(cursor)&&cursor>0&&cursor<=4e9?'pitr '+cursor:'live';
+  return [startCommand,'username '+config.username,'password '+config.apiKey,
     'events "position flifo arrival departure cancellation"',
     'latlong "'+[south,west,north,east].join(' ')+'"','keepalive 60'].join(' ')+'\n';
 }
@@ -71,14 +73,17 @@ function normalizePosition(m,receivedAt=new Date().toISOString()) {
   const id=String(m.id||m.hexid||m.ident||'').trim();
   if(!id||!validCoordinate(lat,lon)||!observedAt)return null;
   const altitudeValue=m.alt_gnss??m.alt, speedValue=m.gs, headingValue=m.heading_true??m.heading;
-  const alt=altitudeValue==null||altitudeValue===''?NaN:Number(altitudeValue);
+  const gnssFeet=m.alt_gnss==null||m.alt_gnss===''?NaN:Number(m.alt_gnss);
+  const pressureFeet=m.alt==null||m.alt===''?NaN:Number(m.alt);
+  const alt=Number.isFinite(gnssFeet)?gnssFeet:pressureFeet;
+  const altitudeReference=Number.isFinite(gnssFeet)?'WGS84_ELLIPSOID':Number.isFinite(pressureFeet)?'BAROMETRIC_PRESSURE':null;
   const gs=speedValue==null||speedValue===''?NaN:Number(speedValue);
   const heading=headingValue==null||headingValue===''?NaN:Number(headingValue);
   return {
     id,provider:'flightaware_firehose',ident:String(m.ident||m.atcident||m.reg||id).trim(),
     registration:m.reg||null,aircraft_type:m.aircrafttype||null,
     latitude:lat,longitude:lon,
-    altitude_m:Number.isFinite(alt)?alt*0.3048:null,altitude_reference:m.alt_gnss!=null?'WGS84_ELLIPSOID':m.alt!=null?'BAROMETRIC_MSL':null,
+    altitude_m:Number.isFinite(alt)?alt*0.3048:null,altitude_reference:altitudeReference,
     ground_speed_mps:Number.isFinite(gs)?gs*0.514444:null,
     heading_deg:Number.isFinite(heading)&&heading>=0&&heading<=360?heading:null,
     origin:m.orig||null,destination:m.dest||null,air_ground:m.air_ground||null,
@@ -88,15 +93,19 @@ function normalizePosition(m,receivedAt=new Date().toISOString()) {
   };
 }
 function rememberPosition(p) {
-  const previous=aircraft.get(p.id),trail=previous?previous.trail.slice(-(MAX_TRAIL-1)):[];
+  const previous=aircraft.get(p.id);
+  if(previous&&Date.parse(p.observed_at)<Date.parse(previous.observed_at))return false;
+  const trail=previous?previous.trail.slice(-(MAX_TRAIL-1)):[];
   if(!trail.length||trail[trail.length-1].observed_at!==p.observed_at)trail.push({
-    latitude:p.latitude,longitude:p.longitude,altitude_m:p.altitude_m,observed_at:p.observed_at,
+    latitude:p.latitude,longitude:p.longitude,altitude_m:p.altitude_m,
+    altitude_reference:p.altitude_reference,observed_at:p.observed_at,
   });
   aircraft.set(p.id,{...p,trail});
   if(aircraft.size>MAX_AIRCRAFT) {
     const old=[...aircraft.entries()].sort((a,b)=>Date.parse(a[1].observed_at)-Date.parse(b[1].observed_at)).slice(0,aircraft.size-MAX_AIRCRAFT);
     for(const [key] of old)aircraft.delete(key);
   }
+  return true;
 }
 function rememberEvent(m,receivedAt) {
   recentEvents.unshift({
@@ -113,10 +122,13 @@ function processLine(line) {
   try{m=JSON.parse(String(line));}catch(_){lastErrorCode='provider_message_parse_error';rejectedCount++;return;}
   const receivedAt=new Date().toISOString();
   lastReceivedAt=receivedAt;messageCount++;
+  const cursor=Number(m.pitr);
+  if(Number.isFinite(cursor)&&cursor>0&&cursor<=4e9&&(lastPitr===null||cursor>lastPitr))lastPitr=cursor;
   if(m.type==='position') {
     const p=normalizePosition(m,receivedAt);
     if(!p){rejectedCount++;return;}
-    rememberPosition(p);positionCount++;lastPositionAt=receivedAt;
+    if(!rememberPosition(p)){rejectedCount++;return;}
+    positionCount++;lastPositionAt=receivedAt;
   } else if(['flifo','arrival','departure','cancellation'].includes(m.type))rememberEvent(m,receivedAt);
   resetIdleTimer();
 }
@@ -133,7 +145,7 @@ function snapshot(now=Date.now()) {
   return {
     provider:'flightaware_firehose',provider_name:'FlightAware Firehose',status,
     configured:config.configured,connected,last_connected_at:lastConnectedAt,
-    last_received_at:lastReceivedAt,last_position_at:lastPositionAt,
+    last_received_at:lastReceivedAt,last_position_at:lastPositionAt,last_pitr_at:lastPitr?epochIso(lastPitr):null,
     message_count:messageCount,position_count:positionCount,rejected_count:rejectedCount,
     last_error_code:lastErrorCode,
     coverage:{complete:false,bounds:config.bounds,query_scope:config.bounds?'contracted_operational_bounds':'unavailable'},
@@ -175,7 +187,7 @@ function connect() {
   stream.once('secureConnect',()=>{
     if(socket!==stream||stopping)return;
     connected=true;lastConnectedAt=new Date().toISOString();reconnectAttempt=0;
-    try{stream.write(buildInitiationCommand(config));resetIdleTimer();}
+    try{stream.write(buildInitiationCommand(config,lastPitr));resetIdleTimer();}
     catch(_){lastErrorCode='provider_initialisation_failed';stream.destroy();}
   });
   stream.on('data',chunk=>{
@@ -209,7 +221,7 @@ function stop() {
 }
 function resetForTests() {
   stop();aircraft.clear();recentEvents.length=0;reconnectAttempt=0;
-  lastConnectedAt=null;lastReceivedAt=null;lastPositionAt=null;lastErrorCode=null;
+  lastConnectedAt=null;lastReceivedAt=null;lastPositionAt=null;lastPitr=null;lastErrorCode=null;
   messageCount=0;positionCount=0;rejectedCount=0;
 }
 module.exports={parseBounds,getConfig,buildInitiationCommand,validCoordinate,epochIso,
