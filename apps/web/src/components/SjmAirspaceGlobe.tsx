@@ -4,16 +4,17 @@ import '@cesium/engine/Source/Widget/CesiumWidget.css';
 
 export type SjmAirspaceAircraft = {
   id:string; ident:string; latitude:number; longitude:number;
-  altitude_m:number|null; altitude_reference?:'WGS84_ELLIPSOID'|'BAROMETRIC_PRESSURE'|null;
+  altitude_m:number|null; altitude_reference?:'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;
   ground_speed_mps:number|null; heading_deg:number|null;
   origin?:string|null; destination?:string|null; observed_at:string;
   age_seconds:number; freshness:string; update_type?:string|null;
-  trail?:Array<{latitude:number;longitude:number;altitude_m:number|null;altitude_reference?:'WGS84_ELLIPSOID'|'BAROMETRIC_PRESSURE'|null;observed_at:string}>;
+  trail?:Array<{latitude:number;longitude:number;altitude_m:number|null;altitude_reference?:'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;observed_at:string}>;
 };
 type Props = {
   aircraft:SjmAirspaceAircraft[]; status:string; configured:boolean;
   lastPositionAt?:string|null;
   bounds?:{south:number;west:number;north:number;east:number}|null;
+  pollIntervalSeconds?:number|null;
 };
 
 const MAP_URL='https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
@@ -27,7 +28,7 @@ const EAST_AFRICA_VIEW={
   orientation:{heading:0,pitch:Cesium.Math.toRadians(-68),roll:0},
 };
 
-export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds}:Props) {
+export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds,pollIntervalSeconds=null}:Props) {
   const containerRef=useRef<HTMLDivElement>(null);
   const widgetRef=useRef<Cesium.CesiumWidget|null>(null);
   const entityRef=useRef<Map<string,Cesium.Entity>>(new Map());
@@ -163,7 +164,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         <span className="font-mono text-[10px] tracking-[.14em] text-slate-400">3D AIRSPACE / EAST AFRICA</span>
         <span className={'rounded-sm border px-2 py-1 font-mono text-[10px] '+(status==='LIVE'?'border-emerald-300/25 text-emerald-200':'border-white/[0.09] text-slate-400')}>{status.replaceAll('_',' ')}</span>
       </div>
-      <span className="text-[10px] text-slate-500">{aircraft.length.toLocaleString()} aircraft records · {configured?'provider configured':'provider not configured'}</span>
+      <span className="text-[10px] text-slate-500">{aircraft.length.toLocaleString()} aircraft records · {configured?'OpenSky configured':'OpenSky not configured'} · {configured&&pollIntervalSeconds?pollIntervalSeconds+'s snapshots':'no feed'}</span>
     </div>
     {initFailed
       ?<div className="grid min-h-[420px] place-items-center p-6 text-center"><div><p className="text-sm font-semibold text-slate-200">3D renderer unavailable</p><p className="mt-1 text-xs text-slate-500">The airspace scene could not be initialised in this browser. No aircraft state has been inferred.</p></div></div>
@@ -177,9 +178,9 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       </div>}
     <div className="grid grid-cols-1 gap-0 border-t border-white/[0.07] sm:grid-cols-[1fr_auto]">
       <div className="px-3 py-2.5 text-[10px] leading-5 text-slate-500 sm:px-4">
-        <p>Position markers and trails are provider observations. No path is extrapolated between reports.</p>
+        <p>Position markers and trails are OpenSky-observed state vectors. This is bounded REST snapshot polling, not a continuous transponder stream; no path is extrapolated between reports.</p>
         <p>Basemap attribution: © Carto · © OpenStreetMap contributors.</p>
-        <p>Coverage: {boundsLabel} · Last position message: {lastPositionAt?new Date(lastPositionAt).toLocaleTimeString():'none recorded'}</p>
+        <p>Coverage: {boundsLabel} · Latest reported position: {lastPositionAt?new Date(lastPositionAt).toLocaleTimeString():'none recorded'}</p>
       </div>
       <div className="flex items-center gap-3 px-3 py-2.5 text-[10px] text-slate-500 sm:px-4">
         {Object.entries(FRESHNESS_COLOURS).filter(([key])=>key!=='UNAVAILABLE').map(([key,value])=><span key={key} className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{backgroundColor:value}}/>{key}</span>)}
@@ -187,7 +188,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     </div>
     {selectedAircraft&&<div className="grid grid-cols-2 gap-3 border-t border-white/[0.07] bg-[#0d151e] px-3 py-3 text-[11px] sm:grid-cols-4 sm:px-4">
       <div><p className="text-slate-500">Callsign / ident</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.ident}</p></div>
-      <div><p className="text-slate-500">Reported altitude</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.altitude_m==null?'Not reported':Math.round(selectedAircraft.altitude_m).toLocaleString()+' m · '+(selectedAircraft.altitude_reference==='WGS84_ELLIPSOID'?'GNSS / WGS84':selectedAircraft.altitude_reference==='BAROMETRIC_PRESSURE'?'pressure':'reference unknown')}</p></div>
+      <div><p className="text-slate-500">Reported altitude</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.altitude_m==null?'Not reported':Math.round(selectedAircraft.altitude_m).toLocaleString()+' m · '+(selectedAircraft.altitude_reference==='GEOMETRIC'?'geometric':selectedAircraft.altitude_reference==='BAROMETRIC_PRESSURE'?'barometric pressure':'reference not supplied')}</p></div>
       <div><p className="text-slate-500">Ground speed</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.ground_speed_mps==null?'Not reported':Math.round(selectedAircraft.ground_speed_mps*3.6)+' km/h'}</p></div>
       <div><p className="text-slate-500">Observed</p><p className="mt-1 font-semibold text-slate-100">{new Date(selectedAircraft.observed_at).toLocaleTimeString()} · {selectedAircraft.freshness}</p></div>
     </div>}
