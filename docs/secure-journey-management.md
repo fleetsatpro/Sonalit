@@ -23,7 +23,7 @@ SJM is Sonalit's standalone protective-mobility and executive-journey operations
 10. Client-local datetime inputs are converted using the selected IANA timezone rather than the browser timezone.
 
 ## API
-- GET /api/v1/sjm/airspace?flight_number={flightNumber}&airport_icao={ICAO} — bounded OpenSky aircraft snapshot plus independent flight-status, targeted ADSB.lol cross-check, aviation weather, NOTAM authority and provider-capability metadata. Both query parameters are optional; airport weather requires a verified four-letter ICAO station identifier. The endpoint does not infer IATA-to-ICAO mappings or query external sources outside their licence/enablement gates.
+- GET /api/v1/sjm/airspace?flight_number={flightNumber}&airport_code={IATA|ICAO} — bounded OpenSky aircraft snapshot plus independently licensed flight status, targeted ADSB.lol cross-check, aviation weather, NOTAM authority and provider-capability metadata. Both query parameters are optional. A three-letter IATA or four-letter ICAO airport code is resolved against the public-domain OurAirports CSV index; METAR/TAF requests are made only after a unique ICAO match. Ambiguous, missing or unavailable mappings do not trigger a weather request.
 
 - GET/POST /api/v1/sjm/clients; PUT /api/v1/sjm/clients/:id
 - GET /api/v1/sjm/vehicles and /api/v1/sjm/devices
@@ -102,12 +102,12 @@ The airspace endpoint composes a provider registry with independently sourced re
 - OpenSky's historic flight endpoints can help with retrospective aircraft/airport movement research, but their batch update means they are not substituted for current airline schedule, gate, delay or cancellation feeds.
 
 **Aviation weather**
-- **AviationWeather.gov Data API** is integrated server-side for worldwide METAR and TAF observations/forecasts and the international SIGMET response. The service is not called directly from browsers (CORS is not permitted); requests use a descriptive User-Agent, a four-letter ICAO station code and a five-minute application cache. Provider 204/no-data, rate-limit and outage responses remain explicit.
+- **AviationWeather.gov Data API** is integrated server-side for worldwide METAR and TAF observations/forecasts and the international SIGMET response. The service is not called directly from browsers (CORS is not permitted); requests use a descriptive User-Agent, a verified ICAO station code (resolved from the journey's IATA/ICAO code through OurAirports) and a five-minute application cache. Provider 204/no-data, rate-limit and outage responses remain explicit.
 - Its documented service limit is 100 requests/minute and most endpoint queries return at most 400 entries. Global SIGMET results are presented as provider notices, not as route-intersection analysis or an automated threat assessment. The SJM route must not be labelled safe/unsafe from an unfiltered global list.
 - The UI accepts an ICAO airport identifier for station weather lookup. An IATA-only airport code is not silently converted; the weather tile remains unrequested until a verified ICAO mapping is available.
 
 **Aeronautical reference and NOTAM authority**
-- **OurAirports** provides supplementary airport/runway/navaid CSV reference data in the public domain, updated nightly, but disclaims accuracy and fitness-for-use. The dataset is listed as `AVAILABLE_NOT_SYNCED` until a controlled import, validation and versioning job exists.
+- **OurAirports** provides public-domain airport reference data, updated nightly, but disclaims accuracy and fitness-for-use. SJM resolves exact IATA/ICAO identifiers from its `airports.csv` dataset, caches the index for 24 hours and caches provider download failures for 15 minutes. Multiple airports for one IATA code are returned as `AMBIGUOUS` and are never auto-selected. This lookup does not certify an airport, runway, station or navigation procedure.
 - **open flightmaps (OFMA)** grants a royalty-free General Users License that includes commercial use, but regional coverage and quality vary, and the project states that its data is not certified for primary navigation. It is an optional supplementary aeronautical reference, not a clearance or NOTAM authority. No OFMA data is synced by this change.
 - **KCAA AIM / Nairobi FIR** is the official local NOTAM and pre-flight briefing authority. KCAA says NOTAM/briefing access is granted through its online briefing request process. SJM links operators to the official AIM service; it does not scrape authenticated portals or manufacture NOTAMs.
 - **EUROCONTROL MyEAD** is a candidate global system-to-system source for worldwide NOTAM and aeronautical data, subject to its Data User Agreement and any service/royalty charges. **EAD Basic is explicitly not for operational use** and is never ingested into SJM.
