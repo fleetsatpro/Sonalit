@@ -114,7 +114,7 @@ The airspace endpoint composes a provider registry with independently sourced re
 - No NOTAM source is marked live/available until an authorised operational data agreement or authenticated feed is implemented, tested and accepted. A missing NOTAM response is not evidence that no restrictions exist.
 
 **Federation and product invariants**
-- Each source has an independent status, timestamp, scope, licence, evidence class, error state and refresh policy. An unavailable source never becomes a blank-success tile.
+- Each source has an independent status, timestamp, scope, licence, evidence class, error state and refresh policy. An unavailable source never becomes a blank-success tile. The UI's `multi_provider` indicator requires at least two aviation data providers to return usable records; the OurAirports reference lookup is counted separately and never treated as a live aviation feed.
 - Open data is not assumed to mean unrestricted commercial reuse. ODbL/share-alike, attribution, derived-work, downstream display and retention obligations are recorded per source.
 - Source datasets remain isolated in their own caches/read models where licences require it; the API response is a composed view, not an implicitly merged derivative database.
 - No external feed directly changes SJM journey status, flight status, movement instructions, CPO/driver tasking, passenger custody or handover confirmation. An authorised human reviews consequential actions.
