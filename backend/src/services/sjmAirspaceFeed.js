@@ -111,7 +111,12 @@ function normaliseStateVector(state,now=Date.now()) {
   const geometricAltitude=state[13]==null?null:Number(state[13]);
   const altitude=Number.isFinite(geometricAltitude)?geometricAltitude:
     Number.isFinite(barometricAltitude)?barometricAltitude:null;
-  const altitudeReference=Number.isFinite(geometricAltitude)?'GEOMETRIC':
+  const positionSource=state[16]==null?null:Number(state[16]);
+  // ADS-B geometric altitude is GNSS height above the WGS-84 ellipsoid. For
+  // other REST position sources, retain the provider's geometric label but
+  // do not assume an ellipsoid datum for 3D projection.
+  const altitudeReference=Number.isFinite(geometricAltitude)&&positionSource===0?'WGS84_ELLIPSOID':
+    Number.isFinite(geometricAltitude)?'GEOMETRIC':
     Number.isFinite(barometricAltitude)?'BAROMETRIC_PRESSURE':null;
   const velocity=state[9]==null?null:Number(state[9]);
   const track=state[10]==null?null:Number(state[10]);
