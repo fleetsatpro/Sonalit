@@ -156,6 +156,50 @@ describe('SJM federated aviation intelligence',()=>{
     expect(JSON.stringify(result)).not.toContain('server-secret');
   });
 
+  test('corroborates two independent aircraft observations only when ICAO24, time and position agree',()=>{
+    const opensky={
+      configured:true,status:'LIVE',
+      aircraft:[{id:'abc123',ident:'KQ100',latitude:-1.3,longitude:36.8,observed_at:new Date(now).toISOString()}],
+    };
+    const adsbLol={
+      status:'AVAILABLE',
+      records:[{id:'abc123',ident:'KQ100',latitude:-1.31,longitude:36.81,observed_at:new Date(now-10_000).toISOString()}],
+    };
+    expect(aviation.compareAircraftSources({flightNumber:'KQ100',opensky,adsbLol})).toMatchObject({
+      status:'CORROBORATED',primary_count:1,secondary_count:1,
+    });
+  });
+
+  test('does not merge mismatching ICAO24 identifiers for an exact callsign',()=>{
+    const opensky={configured:true,status:'LIVE',aircraft:[{
+      id:'abc123',ident:'KQ100',latitude:-1.3,longitude:36.8,observed_at:new Date(now).toISOString(),
+    }]};
+    const adsbLol={status:'AVAILABLE',records:[{
+      id:'def456',ident:'KQ100',latitude:-1.3,longitude:36.8,observed_at:new Date(now).toISOString(),
+    }]};
+    expect(aviation.compareAircraftSources({flightNumber:'KQ100',opensky,adsbLol}).status).toBe('AIRCRAFT_ID_DISAGREEMENT');
+  });
+
+  test('keeps one-provider-only aircraft matches explicitly uncorroborated',()=>{
+    const opensky={configured:true,status:'LIVE',aircraft:[{
+      id:'abc123',ident:'KQ100',latitude:-1.3,longitude:36.8,observed_at:new Date(now).toISOString(),
+    }]};
+    const adsbLol={status:'NO_MATCH',records:[]};
+    expect(aviation.compareAircraftSources({flightNumber:'KQ100',opensky,adsbLol})).toMatchObject({
+      status:'SINGLE_SOURCE_ONLY',primary_count:1,secondary_count:0,
+    });
+  });
+
+  test('does not claim multi-provider operation from an empty provider registry',async()=>{
+    const result=await aviation.getSnapshot({
+      baseSnapshot:{provider:'opensky_rest',status:'NOT_CONFIGURED',configured:false,aircraft:[]},
+      env:{},fetcher:jest.fn(),now:now+1_000,
+    });
+    expect(result.intelligence.provenance).toMatchObject({
+      multi_provider:false,active_provider_count:0,provider_registry_present:true,
+    });
+  });
+
   test('does not use Eurocontrol EAD Basic as an operational NOTAM source',()=>{
     const providers=aviation.buildSourceRegistry({
       opensky:{status:'LIVE'},
@@ -176,7 +220,7 @@ describe('SJM federated aviation intelligence',()=>{
     const baseSnapshot={provider:'opensky_rest',status:'NOT_CONFIGURED',aircraft:[]};
     const result=await aviation.getSnapshot({baseSnapshot,env:{},fetcher:jest.fn(),now});
     expect(result.intelligence).toMatchObject({
-      provenance:{multi_provider:true,fabricated_data_used:false,providers_are_not_equivalent_authorities:true},
+      provenance:{multi_provider:false,active_provider_count:0,provider_registry_present:true,fabricated_data_used:false,providers_are_not_equivalent_authorities:true},
       flight_status:{status:'NOT_CONFIGURED',flights:[]},
       aircraft_cross_check:{status:'NOT_CONFIGURED',records:[]},
       aviation_weather:{status:'NOT_REQUESTED',metar:[],taf:[],international_sigmets:[]},
