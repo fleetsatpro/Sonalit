@@ -625,7 +625,7 @@ return (
     </header>
 
     {hasRegisterContract&&Number(stats?.departures_due_30m||0)>0&&<div role="status" className="border-l-2 border-amber-300/70 bg-amber-300/[0.035] px-3 py-2.5 text-[11px] leading-5 text-amber-100/90"><span className="font-semibold tabular-nums">{stats?.departures_due_30m}</span> scheduled departures are due within the next 30 minutes. Confirm readiness before recording release; this count reflects planned times, not live dispatch telemetry.</div>}
-    <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(270px,310px)_minmax(0,1fr)_minmax(270px,330px)]">
+    <section data-testid="sjm-command-grid" className="sjm-command-grid grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(270px,310px)_minmax(0,1fr)_minmax(270px,330px)]">
      <Panel className="order-2 overflow-hidden xl:order-1">
       <div className="border-b border-white/[0.075] p-4">
        <div className="flex items-center justify-between gap-2"><div><Kicker>Register</Kicker><h2 className="mt-1 text-base font-semibold tracking-tight text-white">Journey register</h2></div><span className="font-mono text-[11px] text-slate-400">{registerQ.isError&&!registerQ.data?"Unavailable":registerQ.data?.pagination?registerQ.data.pagination.total_count.toLocaleString()+" matches":registerQ.data?journeys.length+" loaded":"—"}</span></div>
@@ -723,7 +723,7 @@ return (
         <div className="p-3 sm:p-5">
          {workspaceTab==='airspace'&&<div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] pb-3">
-           <div><Kicker>AVIATION SURVEILLANCE</Kicker><h4 className="mt-1 text-base font-semibold text-white">Live 3D airspace</h4><p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-400">Aircraft observations from bounded OpenSky snapshots and an open-data ADSB.lol radius around the resolved airport when enabled. Sources stay separate; this is not certified ATC surveillance.</p></div>
+           <div><Kicker>AVIATION SURVEILLANCE</Kicker><h4 className="mt-1 text-base font-semibold text-white">3D airspace</h4><p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-400">Aircraft observations from bounded OpenSky snapshots and an open-data ADSB.lol radius around the resolved airport when enabled. Sources stay separate; this is not certified ATC surveillance.</p></div>
            <div className="flex items-center gap-2"><EvidenceBadge value={airspaceQ.data?.data.status||'NOT_CONFIGURED'}/><Btn onClick={()=>void airspaceQ.refetch()} disabled={airspaceQ.isFetching}><RefreshCw size={12} className={airspaceQ.isFetching?'animate-spin':''}/>Refresh feed</Btn></div>
           </div>
           {airspaceQ.isError&&<p role="alert" className="rounded-md border border-red-400/20 bg-red-500/[0.05] p-3 text-[11px] text-red-200">{errorText(airspaceQ.error,'Airspace feed status could not be loaded.')}</p>}

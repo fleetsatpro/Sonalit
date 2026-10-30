@@ -287,6 +287,9 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(serviceBrief.getByText('TEST-PRINCIPAL-001', { exact: true })).toBeVisible();
       await expect(serviceBrief.getByText('Synthetic fixture instructions only.', { exact: true })).toBeVisible();
       const operationsRail = page.locator('aside.sjm-journey-ops-rail');
+      const commandGrid = page.getByTestId('sjm-command-grid');
+      const commandColumns = await commandGrid.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+      expect(commandColumns, viewport.label + ': command grid column count').toBe(viewport.width >= 1440 ? 3 : viewport.width >= 1280 ? 2 : 1);
       const operationsSections = operationsRail.locator('.sjm-live-ops-section');
       await expect(operationsRail).toBeVisible();
       await expect(operationsSections).toHaveCount(4);
@@ -328,7 +331,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       const railBox = await overviewRail.boundingBox();
       expect(riskBox, `${viewport.label}: route review region should render`).not.toBeNull();
       expect(railBox, `${viewport.label}: overview rail should render`).not.toBeNull();
-      if (viewport.width >= 1536) {
+      if (viewport.width >= 1440) {
         expect(Math.abs(riskBox!.y - railBox!.y), `${viewport.label}: route review and overview rail should align as one surface`).toBeLessThanOrEqual(1);
         expect(railBox!.x).toBeGreaterThan(riskBox!.x + riskBox!.width - 1);
       } else {
@@ -619,7 +622,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText(/Reports are downloaded here/)).toBeVisible();
 
     await page.getByRole('tab', { name: 'Airspace 3D' }).click();
-    await expect(page.getByRole('heading', { name: 'Live 3D airspace' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '3D airspace' })).toBeVisible();
     await expect(page.getByText('OpenSky access is not configured.')).toBeVisible();
     await expect(page.getByText('Plottable observations', { exact: true })).toBeVisible();
     await expect(page.getByText('OpenSky state vectors', { exact: true })).toBeVisible();
@@ -629,6 +632,71 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(adsbAttribution).toContainText('public API is best-effort');
     await expect(page.getByText('No aircraft are simulated.')).toBeVisible();
     expect(cspRuntimeErrors).toEqual([]);
+  });
+
+
+  test('airspace observation index is keyboard-operable and preserves unresolved altitude references', async ({ page }, testInfo: TestInfo) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.route('**/api/v1/sjm/airspace', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        provider: 'opensky_rest',
+        provider_name: 'OpenSky Network',
+        status: 'LIVE',
+        configured: true,
+        connected: true,
+        last_received_at: '2026-10-30T11:30:00.000Z',
+        last_position_at: '2026-10-30T11:29:45.000Z',
+        message_count: 1,
+        position_count: 1,
+        rejected_count: 0,
+        coverage: { complete: false, bounds: { south: -5, west: 30, north: 5, east: 45 }, query_scope: 'bounded' },
+        poll_interval_seconds: 30,
+        aircraft: [{
+          id: '4b1234',
+          map_key: 'opensky_rest:4b1234',
+          provider: 'opensky_rest',
+          position_provider: 'opensky_rest',
+          position_source_label: 'OpenSky ADS-B state',
+          ident: 'KQA123',
+          latitude: -1.3192,
+          longitude: 36.9278,
+          altitude_m: 10668,
+          altitude_reference: 'BAROMETRIC_PRESSURE',
+          ground_speed_mps: 230,
+          heading_deg: 92,
+          observed_at: '2026-10-30T11:29:45.000Z',
+          age_seconds: 15,
+          freshness: 'LIVE',
+          trail: [],
+        }],
+        recent_events: [],
+        provenance: { fabricated_data_used: false },
+      } }),
+    }));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+    await page.getByRole('tab', { name: 'Airspace 3D' }).click();
+    const display = page.getByTestId('sjm-airspace-display');
+    await expect(display).toBeVisible();
+    const globe = display.getByRole('application', { name: /three-dimensional airspace globe/i });
+    await expect(globe).toBeVisible();
+    await expect(globe.locator('canvas')).toBeVisible();
+    const observationList = page.getByRole('list', { name: 'Aircraft observation list' });
+    await expect(observationList.getByRole('button', { name: /KQA123/ })).toBeVisible();
+    const aircraftRow = observationList.getByRole('button', { name: /KQA123/ });
+    await aircraftRow.focus();
+    await expect(aircraftRow).toBeFocused();
+    await page.keyboard.press('Enter');
+    const selected = page.getByRole('region', { name: 'Selected aircraft observation' });
+    await expect(selected).toBeVisible();
+    await expect(selected.getByText('BAROMETRIC_PRESSURE', { exact: false })).toBeVisible();
+    await expect(selected.getByText('Not converted or plotted vertically; marker remains at the reference surface.', { exact: true })).toBeVisible();
+    await expect(selected).toContainText(/10[,.]668 m/);
+    await testInfo.attach('sjm-airspace-selected-aircraft', { body: await display.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   });
 
   test('flight status can be recorded as an audited operator observation', async ({ page }) => {
