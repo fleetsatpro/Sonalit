@@ -21,7 +21,9 @@ function validBaseUrl(value,allowedHosts) {
     if(url.protocol!=='https:'||url.username||url.password)return null;
     if(!allowedHosts.some(host=>url.hostname===host||url.hostname.endsWith('.'+host)))return null;
     if(url.search||url.hash)return null;
-    return url.origin+url.pathname.replace(/\\/+$/,'');
+    let pathname=url.pathname;
+    while(pathname.endsWith('/'))pathname=pathname.slice(0,-1);
+    return url.origin+pathname;
   }catch{return null;}
 }
 
@@ -96,6 +98,12 @@ function isoTime(value) {
   return Number.isFinite(date.getTime())?date.toISOString():null;
 }
 
+function numberOrNull(value) {
+  if(value==null||value==='')return null;
+  const number=Number(value);
+  return Number.isFinite(number)?number:null;
+}
+
 function normaliseWeatherRecords(records,type,now=Date.now()) {
   const list=Array.isArray(records)?records:[];
   return list.slice(0,100).map(item=>{
@@ -109,13 +117,13 @@ function normaliseWeatherRecords(records,type,now=Date.now()) {
       valid_from:item?.validTimeFrom?new Date(Number(item.validTimeFrom)*1000).toISOString():null,
       valid_to:item?.validTimeTo?new Date(Number(item.validTimeTo)*1000).toISOString():null,
       raw:item?.rawOb||item?.rawTAF||item?.rawAirSigmet||item?.rawSigmet||null,
-      wind_direction_deg:Number.isFinite(Number(item?.wdir))?Number(item.wdir):null,
-      wind_speed_kt:Number.isFinite(Number(item?.wspd))?Number(item.wspd):null,
-      wind_gust_kt:Number.isFinite(Number(item?.wgst))?Number(item.wgst):null,
+      wind_direction_deg:numberOrNull(item?.wdir),
+      wind_speed_kt:numberOrNull(item?.wspd),
+      wind_gust_kt:numberOrNull(item?.wgst),
       visibility_sm:item?.visib==null?null:item.visib,
-      temperature_c:item?.temp==null?null:Number(item.temp),
-      dewpoint_c:item?.dewp==null?null:Number(item.dewp),
-      altimeter_hpa:item?.altim==null?null:Number(item.altim),
+      temperature_c:numberOrNull(item?.temp),
+      dewpoint_c:numberOrNull(item?.dewp),
+      altimeter_hpa:numberOrNull(item?.altim),
       provider:'aviationweather_gov',
       evidence_class:'OBSERVED',
     };
@@ -161,21 +169,21 @@ function normaliseAdsbLolRecord(item,now=Date.now()) {
   if(!item||typeof item!=='object')return null;
   const hex=String(item.hex||item.icao24||'').trim().toLowerCase();
   const flight=String(item.flight||item.callsign||'').trim();
-  const lat=Number(item.lat),lon=Number(item.lon);
+  const lat=numberOrNull(item.lat),lon=numberOrNull(item.lon);
   if(!/^[0-9a-f]{6}$/.test(hex)||!flight||!Number.isFinite(lat)||!Number.isFinite(lon)||
     lat < -90||lat > 90||lon < -180||lon > 180)return null;
-  const seenPosition=Number(item.seen_pos);
+  const seenPosition=numberOrNull(item.seen_pos);
   const observedAt=Number.isFinite(seenPosition)&&seenPosition>=0&&seenPosition<86_400
     ?new Date(now-seenPosition*1000).toISOString():null;
-  const geometric=Number(item.alt_geom);
-  const barometric=Number(item.alt_baro);
+  const geometric=numberOrNull(item.alt_geom);
+  const barometric=numberOrNull(item.alt_baro);
   return {
     id:hex,ident:flight.replace(/\s+/g,' ').trim(),
     registration:item.r||null,latitude:lat,longitude:lon,
     geometric_altitude_m:Number.isFinite(geometric)?geometric*0.3048:null,
     barometric_altitude_ft:Number.isFinite(barometric)?barometric:null,
-    ground_speed_kt:Number.isFinite(Number(item.gs))?Number(item.gs):null,
-    heading_deg:Number.isFinite(Number(item.track))?Number(item.track):null,
+    ground_speed_kt:numberOrNull(item.gs),
+    heading_deg:numberOrNull(item.track),
     on_ground:item.alt_baro==='ground',
     provider:'adsb_lol',observed_at:observedAt,
     age_seconds:Number.isFinite(seenPosition)?seenPosition:null,
@@ -296,7 +304,7 @@ async function getSnapshot({flightNumber,airportIcao,baseSnapshot,env=process.en
 function resetCacheForTests(){responseCache.clear();}
 
 module.exports={
-  cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,
+  cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
   normaliseWeatherRecords,normaliseAdsbLolRecord,
   loadWeather,loadAdsbLolCallsign,loadCommercialFlight,
   buildSourceRegistry,getSnapshot,resetCacheForTests,
