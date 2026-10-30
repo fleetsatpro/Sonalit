@@ -147,7 +147,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       :<div ref={containerRef} role="img" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>}
     <div className="grid grid-cols-1 gap-0 border-t border-white/[0.07] sm:grid-cols-[1fr_auto]">
       <div className="px-3 py-2.5 text-[10px] leading-5 text-slate-500 sm:px-4">
-        <p>Position markers and trails are provider observations. No path is extrapolated between reports.</p>
+        <p>Position markers and trails are provider observations. No path is extrapolated between reports.</p>\n        <p>Basemap attribution: © Carto · © OpenStreetMap contributors.</p>
         <p>Coverage: {boundsLabel} · Last position message: {lastPositionAt?new Date(lastPositionAt).toLocaleTimeString():'none recorded'}</p>
       </div>
       <div className="flex items-center gap-3 px-3 py-2.5 text-[10px] text-slate-500 sm:px-4">

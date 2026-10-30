@@ -70,12 +70,15 @@ function normalizePosition(m,receivedAt=new Date().toISOString()) {
   const lat=Number(m.lat),lon=Number(m.lon),observedAt=epochIso(m.clock);
   const id=String(m.id||m.hexid||m.ident||'').trim();
   if(!id||!validCoordinate(lat,lon)||!observedAt)return null;
-  const alt=Number(m.alt_gnss??m.alt),gs=Number(m.gs),heading=Number(m.heading_true??m.heading);
+  const altitudeValue=m.alt_gnss??m.alt, speedValue=m.gs, headingValue=m.heading_true??m.heading;
+  const alt=altitudeValue==null||altitudeValue===''?NaN:Number(altitudeValue);
+  const gs=speedValue==null||speedValue===''?NaN:Number(speedValue);
+  const heading=headingValue==null||headingValue===''?NaN:Number(headingValue);
   return {
     id,provider:'flightaware_firehose',ident:String(m.ident||m.atcident||m.reg||id).trim(),
     registration:m.reg||null,aircraft_type:m.aircrafttype||null,
     latitude:lat,longitude:lon,
-    altitude_m:Number.isFinite(alt)?alt*0.3048:null,
+    altitude_m:Number.isFinite(alt)?alt*0.3048:null,altitude_reference:m.alt_gnss!=null?'WGS84_ELLIPSOID':m.alt!=null?'BAROMETRIC_MSL':null,
     ground_speed_mps:Number.isFinite(gs)?gs*0.514444:null,
     heading_deg:Number.isFinite(heading)&&heading>=0&&heading<=360?heading:null,
     origin:m.orig||null,destination:m.dest||null,air_ground:m.air_ground||null,

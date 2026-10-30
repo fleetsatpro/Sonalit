@@ -611,6 +611,12 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByRole('tab', { name: 'Reports' }).click();
     await expect(page.getByRole('heading', { name: 'Generate report' })).toBeVisible();
     await expect(page.getByText(/Reports are downloaded here/)).toBeVisible();
+
+    await page.getByRole('tab', { name: 'Airspace 3D' }).click();
+    await expect(page.getByRole('heading', { name: 'Live 3D airspace' })).toBeVisible();
+    await expect(page.getByText('Provider connection not configured.')).toBeVisible();
+    await expect(page.getByText(/0 aircraft records/)).toBeVisible();
+    await expect(page.getByText('No aircraft are simulated.')).toBeVisible();
   });
 
   test('flight status can be recorded as an audited operator observation', async ({ page }) => {
