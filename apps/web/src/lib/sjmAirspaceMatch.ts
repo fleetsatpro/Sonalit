@@ -75,7 +75,7 @@ export function correlateJourneyFlight(input:{
   const status:SjmFlightCorrelationStatus=aircraft.length===1?'MATCHED'
     :aircraft.length>1?'AMBIGUOUS'
       :events.length?'EVENT_ONLY'
-        :!input.connected&&['UNAVAILABLE','RATE_LIMITED'].includes(input.providerStatus)?'FEED_UNAVAILABLE':'NO_MATCH';
+        :!input.connected&&['UNAVAILABLE','RATE_LIMITED','DEGRADED'].includes(input.providerStatus)?'FEED_UNAVAILABLE':'NO_MATCH';
   const explanation=status==='MATCHED'
     ?'One OpenSky state vector has an exact callsign match. The REST response does not include aircraft registration; this correlation is not proof of passenger identity or journey arrival.'
     :status==='AMBIGUOUS'
