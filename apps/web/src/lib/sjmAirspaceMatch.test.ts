@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { correlateJourneyFlight, normaliseFlightIdent } from './sjmAirspaceMatch.js';
+import { correlateJourneyFlight, normaliseFlightIdent, resolveAirspaceDisplayStatus } from './sjmAirspaceMatch.js';
 
 const aircraft={
   id:'abc123',ident:'KQ100',origin:null,destination:null,
