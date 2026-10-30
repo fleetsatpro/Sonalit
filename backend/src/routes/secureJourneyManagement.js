@@ -7,7 +7,7 @@ const { asyncHandler } = require('../middleware/error');
 const { analyseRoute } = require('../utils/routeAnalyser');
 const { removeChannelHistory, unsubscribeUserFromChannel, publish } = require('../realtime/centrifugo');
 const { sjmChannelName } = require('../realtime/sjmChannel');
-const { DUTY_EVENT_RULES, DUTY_EVENT_SUMMARIES, dutyEventAllowed, validateFieldEventInput } = require('../services/sjmFieldEvents');
+const { DUTY_EVENT_SUMMARIES, dutyEventAllowed, validateFieldEventInput } = require('../services/sjmFieldEvents');
 
 const STATUSES = ['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification','closed','cancelled','aborted','on_hold'];
 const JOURNEY_REGISTER_FILTER_SQL = Object.freeze({
