@@ -154,7 +154,6 @@ JOIN public.guardian_devices d ON d.id=cc.guardian_device_id AND d.deleted_at IS
 WHERE j.convoy_id IS NOT NULL AND j.deleted_at IS NULL
   AND (d.org_id=j.org_id OR (d.org_id IS NULL AND EXISTS (
     SELECT 1 FROM public.field_officers fo WHERE fo.device_id=d.id AND fo.org_id=j.org_id
-      AND fo.deleted_at IS NULL
   )))
   AND NOT EXISTS (
     SELECT 1 FROM public.sjm_journey_assets a

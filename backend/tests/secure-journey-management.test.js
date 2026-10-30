@@ -490,26 +490,29 @@ describe('SJM validation and evidence boundaries', () => {
     expect(freshnessFor('2026-10-27T15:01:00Z',now)).toBe('UNAVAILABLE');
     expect(freshnessFor(null,now)).toBe('UNAVAILABLE');
   });
-  test('returns latest convoy-linked device fixes as observed evidence for the mission detail payload', async () => {
+  test('returns latest directly assigned Guardian-device fixes as observed journey evidence', async () => {
     const observedAt = new Date(Date.now() - 12_000);
     const calls = [];
     const db = async (sql, params) => {
       calls.push({sql,params});
       return {rows:[{
-        device_id:'device-1',device_name:'Truck locator',officer_name:'Assigned officer',
-        lat:-1.2864,lng:36.8172,speed_kph:37,heading:84,accuracy_m:9,
+        device_id:'device-1',device_name:'Principal protection device',officer_name:'Assigned CPO',
+        lat:-1.2864,lng:36.8172,speed_kph:4,heading:84,accuracy_m:9,
         observed_at:observedAt,source:'device_locations'
       }]};
     };
-    const result = await telemetryFor(db,'org-1',{convoy_id:'convoy-1'});
+    const result = await telemetryFor(db,'org-1',{id:'journey-1'});
     expect(calls).toHaveLength(1);
-    expect(calls[0].sql).toMatch(/FROM convoy_cfos/);
-    expect(calls[0].params).toEqual(['org-1','convoy-1']);
+    expect(calls[0].sql).toMatch(/FROM sjm_journey_assets/);
+    expect(calls[0].sql).toMatch(/a\.journey_id=\$2/);
+    expect(calls[0].sql).not.toMatch(/convoy_cfos|convoys/);
+    expect(calls[0].params).toEqual(['org-1','journey-1']);
     expect(result.status).toBe('LIVE');
     expect(result.observed_at).toEqual(observedAt);
     expect(result.devices[0]).toMatchObject({
       device_id:'device-1',lat:-1.2864,lng:36.8172,
-      freshness:'LIVE',evidence_class:'OBSERVED',source:'device_locations'
+      freshness:'LIVE',evidence_class:'OBSERVED',source:'device_locations',
+      position_available:true
     });
     expect(result.devices[0].freshness_reason).toBeNull();
   });
@@ -520,7 +523,7 @@ describe('SJM validation and evidence boundaries', () => {
       lat:null,lng:36.8,speed_kph:null,heading:null,accuracy_m:null,
       observed_at:observedAt,source:'device_locations'
     }]});
-    const result = await telemetryFor(db,'org-1',{convoy_id:'convoy-1'});
+    const result = await telemetryFor(db,'org-1',{id:'journey-1'});
     expect(result.status).toBe('UNAVAILABLE');
     expect(result.devices[0]).toMatchObject({
       freshness:'UNAVAILABLE',
@@ -530,25 +533,25 @@ describe('SJM validation and evidence boundaries', () => {
     });
     expect(result.devices[0].age_seconds).toBeGreaterThanOrEqual(0);
   });
-
-  test('does not query or invent device evidence when no convoy is linked', async () => {
-    const db = jest.fn();
-    const result = await telemetryFor(db,'org-1',{convoy_id:null});
-    expect(db).not.toHaveBeenCalled();
+  test('returns an unavailable evidence state when the journey has no directly assigned Guardian devices', async () => {
+    const db = jest.fn(async () => ({rows:[]}));
+    const result = await telemetryFor(db,'org-1',{id:'journey-1'});
+    expect(db).toHaveBeenCalledTimes(1);
+    expect(db.mock.calls[0][0]).toMatch(/sjm_journey_assets/);
     expect(result).toMatchObject({
       status:'UNAVAILABLE',
-      reason:'No convoy linked to this journey; live fleet evidence is unavailable.',
+      reason:'No Guardian devices are assigned directly to this journey.',
       observed_at:null,
       devices:[]
     });
   });
   test('reports unknown pre-trip evidence as pending/unavailable rather than verified', () => {
-    const checklist=readinessChecklist({status:'requested',approved_at:null,convoy_id:null,departure_readiness_acknowledgement:null},[],null,{status:'UNAVAILABLE',reason:'No convoy linked.'});
+    const checklist=readinessChecklist({status:'requested',approved_at:null,departure_readiness_acknowledgement:null},[],null,{status:'UNAVAILABLE',reason:'No devices assigned.'});
     expect(checklist.find(x=>x.item==='Stored Route Safety assessment').status).toBe('UNAVAILABLE');
     expect(checklist.find(x=>x.item==='Human route review').status).toBe('UNAVAILABLE');
     expect(checklist.find(x=>x.item==='Journey approval').status).toBe('PENDING');
-    expect(checklist.find(x=>x.item==='Convoy linkage').status).toBe('NOT_LINKED');
-    expect(checklist.find(x=>x.item==='Convoy device telemetry').status).toBe('UNAVAILABLE');
+    expect(checklist.find(x=>x.item==='Assigned mission devices').status).toBe('NOT_ASSIGNED');
+    expect(checklist.find(x=>x.item==='Live device observations').status).toBe('UNAVAILABLE');
   });
 
   test('accepts explicit unrouted fallback as a usable exception assessment without inventing risk or distance', () => {
@@ -573,7 +576,7 @@ describe('SJM validation and evidence boundaries', () => {
   });
 
   test('only declares human review unnecessary after a routed GO/CONDITIONAL gate exists', () => {
-    const base={status:'requested',approved_at:null,convoy_id:'convoy-1',departure_readiness_acknowledgement:null};
+    const base={status:'requested',approved_at:null,departure_readiness_acknowledgement:null};
     const telemetry={status:'UNAVAILABLE',reason:'No location record.'};
     const status=(assessment,decision=null)=>readinessChecklist({...base,human_review_decision:decision},[],assessment,telemetry).find(x=>x.item==='Human route review').status;
     expect(status(null)).toBe('UNAVAILABLE');
