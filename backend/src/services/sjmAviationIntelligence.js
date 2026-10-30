@@ -20,7 +20,8 @@ function validBaseUrl(value,allowedHosts) {
     const url=new URL(value);
     if(url.protocol!=='https:'||url.username||url.password)return null;
     if(!allowedHosts.some(host=>url.hostname===host||url.hostname.endsWith('.'+host)))return null;
-    return url.origin;
+    if(url.search||url.hash)return null;
+    return url.origin+url.pathname.replace(/\\/+$/,'');
   }catch{return null;}
 }
 
@@ -86,12 +87,20 @@ async function requestJson(url,{headers={},fetcher=global.fetch,timeoutMs=10_000
   return response.json();
 }
 
+function isoTime(value) {
+  if(value==null||value==='')return null;
+  const numeric=Number(value);
+  const date=Number.isFinite(numeric)&&String(value).trim()!==''
+    ?new Date(numeric>10_000_000_000?numeric:numeric*1000)
+    :new Date(value);
+  return Number.isFinite(date.getTime())?date.toISOString():null;
+}
+
 function normaliseWeatherRecords(records,type,now=Date.now()) {
   const list=Array.isArray(records)?records:[];
   return list.slice(0,100).map(item=>{
     const observed=item?.obsTime??item?.issueTime??item?.issueTimeUTC??null;
-    const observedAt=observed==null?null:
-      new Date(Number(observed)>10_000_000_000?Number(observed):Number(observed)*1000).toISOString();
+    const observedAt=isoTime(observed);
     return {
       kind:type,
       station_icao:item?.icaoId||item?.stationId||null,
@@ -243,7 +252,7 @@ function buildSourceRegistry({opensky,weather,adsbLol,commercial}={}) {
       role:'National official NOTAM and flight briefing source',url:KCAA_AIM_URL,operational_authority:true},
     {id:'eurocontrol_ead',name:'EUROCONTROL MyEAD',capability:'global_notam_and_aeronautical_data',status:'AGREEMENT_REQUIRED',
       role:'System-to-system aeronautical data and worldwide NOTAM exchange',url:EAD_URL,operational_authority:true},
-    {id:'ourairports',name:'OurAirports',capability:'airport_reference_data',status:'REFERENCE_DATA_AVAILABLE',
+    {id:'ourairports',name:'OurAirports',capability:'airport_reference_data',status:'AVAILABLE_NOT_SYNCED',
       role:'Supplemental airport/runway/navaid metadata',license:'Public Domain',quality_limit:'No accuracy or fitness-for-use warranty'},
     {id:'openflightmaps',name:'open flightmaps',capability:'supplemental_aeronautical_reference',status:'OPTIONAL_REFERENCE_ONLY',
       role:'Supplemental VFR aeronautical database where regional coverage exists',license:'OFMA General Users License',
@@ -254,7 +263,7 @@ function buildSourceRegistry({opensky,weather,adsbLol,commercial}={}) {
 async function getSnapshot({flightNumber,airportIcao,baseSnapshot,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
   const [weatherResult,adsbResult,flightResult]=await Promise.all([
     loadWeather({airportIcao,fetcher,now}).catch(error=>({status:'UNAVAILABLE',reason:error?.code||'provider_error',metar:[],taf:[],international_sigmets:[]})),
-    loadAdsbLolCallsign({callsign:baseSnapshot?.aircraft?.find(item=>item.ident)?.ident||flightNumber,env,fetcher,now}),
+    loadAdsbLolCallsign({callsign:flightNumber,env,fetcher,now}),
     loadCommercialFlight({flightNumber,env,fetcher,now}),
   ]);
   const weather=weatherResult||{status:'NOT_REQUESTED',metar:[],taf:[],international_sigmets:[]};
