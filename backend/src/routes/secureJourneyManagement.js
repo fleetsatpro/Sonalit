@@ -208,7 +208,6 @@ function validateJourney(b) {
   if ((b.stops||[]).length>23) return 'A journey can contain at most 23 stops.';
   for (const s of b.stops||[]) { const err=validateStop(s); if(err)return err; }
   if (b.client_id!=null && !/^[0-9a-f-]{36}$/i.test(String(b.client_id))) return 'Client ID must be a UUID.';
-  if (b.convoy_id!=null && !/^[0-9a-f-]{36}$/i.test(String(b.convoy_id))) return 'Convoy ID must be a UUID.';
   if (b.transport_mode!=null && !['road','air','rail','sea','multimodal','other'].includes(b.transport_mode)) return 'Transport mode is not supported.';
   if (b.timezone != null && !tzValid(b.timezone)) return 'Reporting timezone must be a valid IANA timezone.';
   const serviceError=validateServiceDetails(b);if(serviceError)return serviceError;
@@ -261,7 +260,7 @@ function toCsv(report) {
   const rows=[['record_type','timestamp','label','status','details']];
   if(report?.report_type==='management_summary') {
     rows.push(['portfolio_summary',report.generated_at||'',report.report_title||'Management summary','',report.summary||{}]);
-    for(const j of report.journeys||[])rows.push(['journey',j.updated_at||j.created_at||'',j.reference||'',j.status||'',{title:j.title,client:j.client_name,convoy:j.convoy_name,origin:j.origin_label,destination:j.destination_label,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,route_status:j.route_status,safety_gate:j.safety_gate,overdue:j.overdue,telemetry_status:j.telemetry_status}]);
+    for(const j of report.journeys||[])rows.push(['journey',j.updated_at||j.created_at||'',j.reference||'',j.status||'',{title:j.title,client:j.client_name,origin:j.origin_label,destination:j.destination_label,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,route_status:j.route_status,safety_gate:j.safety_gate,overdue:j.overdue,telemetry_status:j.telemetry_status}]);
     for(const e of report.recent_events||[])rows.push(['event',e.created_at||'',e.event_type||'',e.source||'',{journey_reference:e.journey_reference,journey_title:e.journey_title,summary:e.summary,detail:e.detail}]);
     return rows.map(r=>r.map(csvCell).join(',')).join('\r\n')+'\r\n';
   }
@@ -269,7 +268,7 @@ function toCsv(report) {
   const enabled=new Set(Array.isArray(profile.enabled_sections)?profile.enabled_sections.filter(x=>SECTIONS.includes(x)):SECTIONS);
   rows.push(['report',report.generated_at||'',report.report_title||'Journey report',report.report_type||'',{report_date:report.report_date,timezone:report.timezone,schema_version:report.schema_version}]);
   rows.push(['journey',j.created_at||'',j.reference||'Journey',j.status||'',{id:j.id||null}]);
-  if(enabled.has('summary'))rows.push(['journey_summary',j.created_at||'',j.title||'',j.status||'',{purpose:j.purpose,client:j.client_name,convoy:j.convoy_name,origin:j.origin_label,destination:j.destination_label,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,transport_mode:j.transport_mode}]);
+  if(enabled.has('summary'))rows.push(['journey_summary',j.created_at||'',j.title||'',j.status||'',{purpose:j.purpose,client:j.client_name,origin:j.origin_label,destination:j.destination_label,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,transport_mode:j.transport_mode}]);
   if(enabled.has('itinerary'))for(const [i,p] of (report.itinerary||[]).entries())rows.push(['route_point',report.generated_at||'',p.name||p.label||('Route point '+(i+1)),'PLANNED',{sequence:i+1,lat:p.lat,lng:p.lng,geometry_source:report.provenance?.planned_itinerary||'UNAVAILABLE'}]);
   if(enabled.has('stops'))for(const s of report.stops||[])rows.push(['stop',s.confirmed_at||s.planned_arrival_at||'',s.name||'',s.stop_status||'',{sequence:s.sequence,stop_type:s.stop_type,planned_arrival_at:s.planned_arrival_at,actual_lat:s.actual_lat,actual_lng:s.actual_lng,confirmation_source:s.confirmation_source,instructions:s.instructions}]);
   if(enabled.has('route_assessment')&&report.route_assessment)rows.push(['route_assessment',report.generated_at||'',report.route_assessment.routing_provider||'Route Safety','ANALYSED',{route_status:report.route_assessment.route_status,safety_gate:report.route_assessment.safety_gate,risk_score:report.route_assessment.overall_risk_score,summary:report.route_assessment.ai_summary,risk_factors:report.route_assessment.risk_factors}]);
@@ -285,11 +284,9 @@ function toCsv(report) {
 }
 
 async function journeyById(db,org,id) {
-  const r=await db('SELECT j.*, c.name AS client_name, c.company AS client_company, v.name AS convoy_name FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.id=$1 AND j.org_id=$2 AND j.deleted_at IS NULL LIMIT 1',[id,org]);
   return r.rows[0]||null;
 }
 async function journeyForRouteReview(db,org,id) {
-  const r=await db('SELECT j.*, j.xmin::text AS route_review_row_version, c.name AS client_name, c.company AS client_company, v.name AS convoy_name FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.id=$1 AND j.org_id=$2 AND j.deleted_at IS NULL LIMIT 1',[id,org]);
   return r.rows[0]||null;
 }
 async function stopsFor(db,org,id) {
@@ -367,15 +364,21 @@ function telemetryStatus(devices) {
   return 'UNAVAILABLE';
 }
 async function telemetryFor(db,org,j) {
-  if(!j.convoy_id)return {status:'UNAVAILABLE',reason:'No convoy linked to this journey; live fleet evidence is unavailable.',observed_at:null,devices:[]};
-  const r=await db('SELECT d.id AS device_id,d.name AS device_name,fo.name AS officer_name,fix.lat,fix.lng,fix.speed AS speed_kph,fix.heading,fix.accuracy AS accuracy_m,fix.observed_at,fix.source FROM convoy_cfos cc JOIN guardian_devices d ON d.id=cc.guardian_device_id LEFT JOIN field_officers fo ON fo.device_id=d.id LEFT JOIN LATERAL (SELECT lat,lng,speed,heading,accuracy,timestamp AS observed_at,\'device_locations\'::text AS source FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC,id DESC LIMIT 1) fix ON true WHERE cc.org_id=$1 AND cc.convoy_id=$2 AND d.deleted_at IS NULL ORDER BY d.name',[org,j.convoy_id]);
+  const r=await db(
+    "SELECT d.id AS device_id,d.name AS device_name,fo.name AS officer_name,fix.lat,fix.lng,fix.speed AS speed_kph,fix.heading,fix.accuracy AS accuracy_m,fix.observed_at,fix.source " +
+    "FROM sjm_journey_assets a JOIN guardian_devices d ON d.id=a.guardian_device_id AND d.org_id=a.org_id " +
+    "LEFT JOIN field_officers fo ON fo.device_id=d.id AND fo.org_id=a.org_id " +
+    "LEFT JOIN LATERAL (SELECT lat,lng,speed,heading,accuracy,timestamp AS observed_at,'device_locations'::text AS source FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC,id DESC LIMIT 1) fix ON true " +
+    "WHERE a.org_id=$1 AND a.journey_id=$2 AND a.asset_type='guardian_device' AND a.removed_at IS NULL AND d.deleted_at IS NULL " +
+    "ORDER BY a.sort_order,d.name",
+    [org,j.id],
+  );
   const now=Date.now();
   const devices=r.rows.map(d=>{
     const observedMs=d.observed_at?new Date(d.observed_at).getTime():NaN;
     const age=d.observed_at?now-observedMs:null;
     const timestampFreshness=freshnessFor(d.observed_at,now);
     const hasUsableCoordinates=d.lat!=null&&d.lng!=null&&validCoordinate(Number(d.lat),Number(d.lng));
-    // A fresh database timestamp without a usable coordinate is not a live location fix.
     const freshness=hasUsableCoordinates?timestampFreshness:'UNAVAILABLE';
     let freshness_reason=null;
     if(d.observed_at&&Number.isFinite(observedMs)&&observedMs>now)freshness_reason='future_timestamp_not_accepted_as_live';
@@ -384,7 +387,7 @@ async function telemetryFor(db,org,j) {
     else if(timestampFreshness==='UNAVAILABLE')freshness_reason='observation_timestamp_invalid';
     return {...d,freshness,age_seconds:age==null||!Number.isFinite(age)||age<0?null:Math.round(age/1000),freshness_reason,position_available:hasUsableCoordinates,evidence_class:'OBSERVED'};
   });
-  return {status:telemetryStatus(devices),observed_at:latestObservedAt(devices.map(d=>d.observed_at))||null,devices,reason:devices.length?null:'No linked devices with a location record were returned.'};
+  return {status:telemetryStatus(devices),observed_at:latestObservedAt(devices.map(d=>d.observed_at))||null,devices,reason:devices.length?null:'No Guardian devices are assigned directly to this journey.'};
 }
 
 function changeEventsFor(events) {
@@ -402,8 +405,8 @@ function readinessChecklist(j,stops,assessment,telemetry) {
     {item:'Human route review',status:review,detail:j.human_review_rationale||'No human-review rationale recorded.'},
     {item:'Journey approval',status:j.approved_at?'RECORDED':'PENDING',detail:j.approved_at?'Approval timestamp: '+String(j.approved_at):'No approval timestamp recorded.'},
     {item:'Departure-readiness acknowledgement',status:txt(j.departure_readiness_acknowledgement,1200)?'RECORDED':'PENDING',detail:txt(j.departure_readiness_acknowledgement,1200)||'No departure-readiness acknowledgement recorded.'},
-    {item:'Convoy linkage',status:j.convoy_id?'LINKED':'NOT_LINKED',detail:j.convoy_id?'A Sonalit convoy is linked.':'No convoy is linked to this journey.'},
-    {item:'Convoy device telemetry',status:telemetry?.status||'UNAVAILABLE',detail:telemetry?.reason||'Freshness is derived from recorded device_locations timestamps.'},
+    {item:'Assigned mission devices',status:telemetry?.devices?.length?'ASSIGNED':'NOT_ASSIGNED',detail:telemetry?.devices?.length?String(telemetry.devices.length)+' Guardian device(s) assigned directly to this journey.':'No Guardian devices assigned directly to this journey.'},
+    {item:'Live device observations',status:telemetry?.status||'UNAVAILABLE',detail:telemetry?.reason||'Freshness is derived from recorded device_locations timestamps.'},
     {item:'Ordered stop coordinates',status:located,detail:(stops||[]).length+' stop record(s); operator confirmation is not GPS proof.'}
   ];
 }
@@ -476,13 +479,13 @@ async function reportSnapshot(db,org,j,type,date) {
     schema_version:'sonalit.sjm.report.v2',report_type:type,report_title:title,report_date:date,generated_at:new Date().toISOString(),
     timezone:p.report_timezone||j.timezone||'Africa/Nairobi',
     client_profile:{client_id:j.client_id,client_name:j.client_name||null,template_title:template.title||DEFAULT_TEMPLATE.title,enabled_sections:Array.isArray(template.sections)?template.sections.filter(x=>SECTIONS.includes(x)):SECTIONS},
-    journey:{id:j.id,reference:j.reference,title:j.title,purpose:j.purpose,status:j.status,transport_mode:j.transport_mode,service_type:j.service_type||'executive_transfer',airport_code:j.airport_code||null,terminal:j.terminal||null,airline:j.airline||null,flight_number:j.flight_number||null,flight_scheduled_at:j.flight_scheduled_at||null,flight_status:j.flight_status||'unknown',flight_status_source:j.flight_status_source||'not_recorded',flight_status_observed_at:j.flight_status_observed_at||null,client_id:j.client_id,convoy_id:j.convoy_id,origin_label:j.origin_label,origin_lat:j.origin_lat,origin_lng:j.origin_lng,destination_label:j.destination_label,destination_lat:j.destination_lat,destination_lng:j.destination_lng,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,client_name:j.client_name||null,convoy_name:j.convoy_name||null,created_at:j.created_at,approved_at:j.approved_at,started_at:j.started_at,completed_at:j.completed_at,closed_at:j.closed_at,paused_at:j.paused_at,exception_at:j.exception_at,departure_readiness_acknowledgement:j.departure_readiness_acknowledgement||null,human_review_decision:j.human_review_decision||null,human_review_rationale:j.human_review_rationale||null,risk_acknowledgement:j.risk_acknowledgement||null,arrival_verification_source:j.arrival_verification_source||null,arrival_verification_note:j.arrival_verification_note||null},
+    journey:{id:j.id,reference:j.reference,title:j.title,purpose:j.purpose,status:j.status,transport_mode:j.transport_mode,service_type:j.service_type||'executive_transfer',airport_code:j.airport_code||null,terminal:j.terminal||null,airline:j.airline||null,flight_number:j.flight_number||null,flight_scheduled_at:j.flight_scheduled_at||null,flight_status:j.flight_status||'unknown',flight_status_source:j.flight_status_source||'not_recorded',flight_status_observed_at:j.flight_status_observed_at||null,client_id:j.client_id,origin_label:j.origin_label,origin_lat:j.origin_lat,origin_lng:j.origin_lng,destination_label:j.destination_label,destination_lat:j.destination_lat,destination_lng:j.destination_lng,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,client_name:j.client_name||null,created_at:j.created_at,approved_at:j.approved_at,started_at:j.started_at,completed_at:j.completed_at,closed_at:j.closed_at,paused_at:j.paused_at,exception_at:j.exception_at,departure_readiness_acknowledgement:j.departure_readiness_acknowledgement||null,human_review_decision:j.human_review_decision||null,human_review_rationale:j.human_review_rationale||null,risk_acknowledgement:j.risk_acknowledgement||null,arrival_verification_source:j.arrival_verification_source||null,arrival_verification_note:j.arrival_verification_note||null},
     summary:{stop_count:stops.length,reached_stops:reachedStops,skipped_stops:skippedStops,pending_stops:pendingStops,event_count:eventRecords.total,event_count_included:events.length,events_truncated:eventRecords.total>events.length,change_event_count:eventRecords.totalChanges,change_event_count_included:changes.length,change_events_truncated:eventRecords.totalChanges>changes.length,route_assessment_available:Boolean(assessment),safety_gate:assessment?.safety_gate||'UNAVAILABLE',telemetry_status:telemetry.status},
     itinerary:parseJson(j.planned_route,[]),stops,events,change_events:changes,route_assessment:assessment,telemetry_snapshot:telemetry,
     pre_trip_readiness:readinessChecklist(j,stops,assessment,telemetry),
     situation:{last_event:events[0]||null,open_stops:pendingStops,telemetry_status:telemetry.status},
     closeout_evidence:closeoutEvidence,
-    provenance:{planned_itinerary:'SJM journey and ordered stop records',route_assessment:assessment?'Stored Sonalit Route Safety assessment':'UNAVAILABLE',telemetry:'Latest device_locations fixes associated with linked convoy; not a route prediction',stop_confirmation:'Operator confirmation is not represented as GPS-derived proof',future_telemetry_timestamps:'Future-dated fixes are UNAVAILABLE and never treated as LIVE',fabricated_data_used:false},
+    provenance:{planned_itinerary:'SJM journey and ordered stop records',route_assessment:assessment?'Stored Sonalit Route Safety assessment':'UNAVAILABLE',telemetry:'Latest device_locations fixes associated with directly assigned Guardian devices; not a route prediction',stop_confirmation:'Operator confirmation is not represented as GPS-derived proof',future_telemetry_timestamps:'Future-dated fixes are UNAVAILABLE and never treated as LIVE',fabricated_data_used:false},
   };
 }
 
@@ -503,14 +506,14 @@ function renderPdf(doc,r) {
     section('Journey status distribution',Object.entries(counts).filter(([,n])=>Number(n)>0).map(([k,n])=>k+': '+n).join('\n')||'No journeys are recorded in this tenant.');
     const attention=(r.journeys||[]).filter(x=>x.overdue||x.route_review_required||['paused','exception','on_hold','arrival_pending_verification'].includes(x.status));
     section('Attention queue',attention.slice(0,100).map(x=>x.reference+' — '+x.status+' — '+x.origin_label+' to '+x.destination_label+' — client '+(x.client_name||'not linked')+' — route gate '+x.safety_gate+' — telemetry '+x.telemetry_status+(x.overdue?' — OVERDUE':'')).join('\n')||'No attention items were found in the included journey register.');
-    section('Journey register',['Showing '+(r.journeys||[]).length+' of '+(scope.total_journeys??(r.journeys||[]).length)+' tenant journeys.',(r.journeys||[]).slice(0,100).map(x=>x.reference+' — '+x.status+' — '+x.origin_label+' to '+x.destination_label+' — client '+(x.client_name||'not linked')+' — convoy '+(x.convoy_name||'not linked')+' — planned arrival '+(x.planned_arrival_at||'not recorded')+' — route '+x.route_status+'/'+x.safety_gate+' — telemetry '+x.telemetry_status).join('\n'),scope.journey_register_complete?'Journey register is complete.':'Journey register is capped; the snapshot records exact tenant totals and exportable rows.'].filter(Boolean).join('\n'));
+    section('Journey register',['Showing '+(r.journeys||[]).length+' of '+(scope.total_journeys??(r.journeys||[]).length)+' tenant journeys.',(r.journeys||[]).slice(0,100).map(x=>x.reference+' — '+x.status+' — '+x.origin_label+' to '+x.destination_label+' — client '+(x.client_name||'not linked')+'+' — planned arrival '+(x.planned_arrival_at||'not recorded')+' — route '+x.route_status+'/'+x.safety_gate+' — telemetry '+x.telemetry_status).join('\n'),scope.journey_register_complete?'Journey register is complete.':'Journey register is capped; the snapshot records exact tenant totals and exportable rows.'].filter(Boolean).join('\n'));
     section('Recent operational events — preceding 24 hours',(r.recent_events||[]).slice(0,100).map(e=>(e.created_at||'time not recorded')+' — '+(e.journey_reference||'journey')+' — '+e.event_type+' — '+e.summary+' ['+(e.source||'unknown')+']').join('\n')||'No recorded journey events in the preceding 24 hours.');
     section('Evidence provenance',['All counts are scoped to the authenticated tenant.','Status aggregates cover all non-deleted journeys; the register is separately bounded and its completeness is recorded.','Telemetry freshness comes from device_locations timestamps and covers the included journey register.','No ETA, route, risk score, event or location is fabricated.','Data scope: '+JSON.stringify(scope)].join('\n'));
     evidenceNote();doc.end();return;
   }
   for(const focus of reportFocusSections(r))section(focus.title,focus.body);
   const enabled=new Set(enabledReportSections(profile));
-  if(enabled.has('summary'))section('Mission summary',['Title: '+(j.title||'—'),'Purpose: '+(j.purpose||'—'),'Status: '+(j.status||'—'),'Client: '+(j.client_name||'Not linked'),'Convoy: '+(j.convoy_name||'Not linked'),'Origin: '+(j.origin_label||'—'),'Destination: '+(j.destination_label||'—'),'Planned departure: '+(j.planned_departure_at||'Not recorded'),'Planned arrival: '+(j.planned_arrival_at||'Not recorded')].join('\n'));
+  if(enabled.has('summary'))section('Mission summary',['Title: '+(j.title||'—'),'Purpose: '+(j.purpose||'—'),'Status: '+(j.status||'—'),'Client: '+(j.client_name||'Not linked'),'Origin: '+(j.origin_label||'—'),'Destination: '+(j.destination_label||'—'),'Planned departure: '+(j.planned_departure_at||'Not recorded'),'Planned arrival: '+(j.planned_arrival_at||'Not recorded')].join('\n'));
   if(enabled.has('itinerary'))section('Planned itinerary',(r.itinerary||[]).map((p,i)=>(i+1)+'. '+(p.name||p.label||'Route point')+' ['+p.lat+', '+p.lng+']').join('\n')||'No routed road geometry recorded. Endpoints are not presented as a road-following route.');
   if(enabled.has('stops'))section('Journey stops',(r.stops||[]).map(s=>s.sequence+'. '+s.name+' — '+s.stop_status+' — planned '+(s.planned_arrival_at||'time not recorded')+(s.confirmed_at?' — confirmed '+s.confirmed_at+' ('+(s.confirmation_source||'unknown')+')':'')).join('\n')||'No stops defined.');
   if(enabled.has('route_assessment'))section('Route safety assessment',r.route_assessment?['Route status: '+(r.route_assessment.route_status||'unknown'),'Safety gate: '+(r.route_assessment.safety_gate||'unknown'),'Risk score: '+(r.route_assessment.overall_risk_score??'not returned'),'Provider: '+(r.route_assessment.routing_provider||'not returned'),'Assessment: '+(r.route_assessment.ai_summary||'No assessment narrative returned')].join('\n'):'Route assessment unavailable; no verdict is inferred.');
@@ -527,25 +530,27 @@ async function managementSnapshot(db,org,timezone) {
   const now=new Date(clock.rows[0]?.db_now||Date.now()),nowMs=now.getTime(),generatedAt=now.toISOString(),date=dateInTimezone(now,timezone);
   const aggregateResult=await db("SELECT COUNT(*)::int AS total_journeys,COUNT(*) FILTER (WHERE status NOT IN ('closed','cancelled','aborted'))::int AS open_journeys,COUNT(*) FILTER (WHERE status IN ('in_progress','paused','exception','arrival_pending_verification'))::int AS active_controlled_journeys,COUNT(*) FILTER (WHERE status IN ('requested','planning','assessment_pending'))::int AS planning_queue,COUNT(*) FILTER (WHERE status='ready_for_review')::int AS approval_queue,COUNT(*) FILTER (WHERE status IN ('paused','exception','on_hold'))::int AS paused_exception_or_hold,COUNT(*) FILTER (WHERE status='arrival_pending_verification')::int AS arrival_pending_verification,COUNT(*) FILTER (WHERE planned_arrival_at IS NOT NULL AND planned_arrival_at<NOW() AND status NOT IN ('closed','cancelled','aborted'))::int AS overdue_journeys,COUNT(*) FILTER (WHERE CASE WHEN jsonb_typeof(route_assessment)='object' THEN (route_assessment->>'safety_gate' IN ('HUMAN_REVIEW','NO_GO') OR route_assessment->>'route_status'='blocked') ELSE FALSE END)::int AS route_review_required FROM sjm_journeys WHERE org_id=$1 AND deleted_at IS NULL",[org]);
   const statusResult=await db('SELECT status,COUNT(*)::int AS count FROM sjm_journeys WHERE org_id=$1 AND deleted_at IS NULL GROUP BY status',[org]);
-  const journeyResult=await db('SELECT j.id,j.reference,j.title,j.status,j.client_id,j.convoy_id,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.approved_at,j.started_at,j.closed_at,j.updated_at,j.created_at,j.route_assessment,c.name AS client_name,v.name AS convoy_name FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL ORDER BY COALESCE(j.updated_at,j.created_at) DESC LIMIT 500',[org]);
+  const journeyResult=await db('SELECT j.id,j.reference,j.title,j.status,j.client_id,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,j.approved_at,j.started_at,j.closed_at,j.updated_at,j.created_at,j.route_assessment,c.name AS client_name FROM sjm_journeys j LEFT JOIN sjm_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL ORDER BY COALESCE(j.updated_at,j.created_at) DESC LIMIT 500',[org]);
   const eventResult=await db("SELECT e.id,e.journey_id,e.event_type,e.summary,e.detail,e.source,e.created_at,j.reference AS journey_reference,j.title AS journey_title,COUNT(*) OVER()::int AS total_count FROM sjm_journey_events e JOIN sjm_journeys j ON j.id=e.journey_id AND j.org_id=e.org_id WHERE e.org_id=$1 AND e.created_at>=NOW()-INTERVAL '24 hours' AND j.deleted_at IS NULL ORDER BY e.created_at DESC,e.id DESC LIMIT 250",[org]);
-  const telemetryResult=await db("SELECT cc.convoy_id,d.id AS device_id,d.name AS device_name,fo.name AS officer_name,fix.lat,fix.lng,fix.speed AS speed_kph,fix.accuracy AS accuracy_m,fix.observed_at,fix.source FROM convoy_cfos cc JOIN guardian_devices d ON d.id=cc.guardian_device_id LEFT JOIN field_officers fo ON fo.device_id=d.id LEFT JOIN LATERAL (SELECT lat,lng,speed,accuracy,timestamp AS observed_at,'device_locations'::text AS source FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC,id DESC LIMIT 1) fix ON true WHERE cc.org_id=$1 AND cc.convoy_id IN (SELECT DISTINCT convoy_id FROM sjm_journeys WHERE org_id=$1 AND deleted_at IS NULL AND convoy_id IS NOT NULL) AND d.deleted_at IS NULL ORDER BY cc.convoy_id,d.name",[org]);
-  const telemetryByConvoy=new Map();
+  const telemetryResult=await db("SELECT a.journey_id,d.id AS device_id,d.name AS device_name,fo.name AS officer_name,fix.lat,fix.lng,fix.speed AS speed_kph,fix.accuracy AS accuracy_m,fix.observed_at,fix.source FROM sjm_journey_assets a JOIN guardian_devices d ON d.id=a.guardian_device_id AND d.org_id=a.org_id LEFT JOIN field_officers fo ON fo.device_id=d.id AND fo.org_id=a.org_id LEFT JOIN LATERAL (SELECT lat,lng,speed,accuracy,timestamp AS observed_at,'device_locations'::text AS source FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC,id DESC LIMIT 1) fix ON true WHERE a.org_id=$1 AND a.asset_type='guardian_device' AND a.removed_at IS NULL AND d.deleted_at IS NULL ORDER BY a.journey_id,a.sort_order,d.name",[org]);
+  const telemetryByJourney=new Map();
   for(const d of telemetryResult.rows) {
     const observedMs=d.observed_at?new Date(d.observed_at).getTime():NaN,age=d.observed_at?nowMs-observedMs:null;
-    const dev={...d,freshness:freshnessFor(d.observed_at,nowMs),age_seconds:age==null||!Number.isFinite(age)||age<0?null:Math.round(age/1000),freshness_reason:d.observed_at&&Number.isFinite(observedMs)&&observedMs>nowMs?'future_timestamp_not_accepted_as_live':null,evidence_class:'OBSERVED'};
-    const key=String(d.convoy_id),list=telemetryByConvoy.get(key)||[];list.push(dev);telemetryByConvoy.set(key,list);
+    const hasUsableCoordinates=d.lat!=null&&d.lng!=null&&validCoordinate(Number(d.lat),Number(d.lng));
+    const timestampFreshness=freshnessFor(d.observed_at,nowMs);
+    const dev={...d,freshness:hasUsableCoordinates?timestampFreshness:'UNAVAILABLE',age_seconds:age==null||!Number.isFinite(age)||age<0?null:Math.round(age/1000),freshness_reason:d.observed_at&&Number.isFinite(observedMs)&&observedMs>nowMs?'future_timestamp_not_accepted_as_live':!d.observed_at?'no_location_record':!hasUsableCoordinates?'latest_record_has_no_usable_coordinates':null,evidence_class:'OBSERVED'};
+    const key=String(d.journey_id),list=telemetryByJourney.get(key)||[];list.push(dev);telemetryByJourney.set(key,list);
   }
   const journeys=journeyResult.rows.map(j=>{
-    const assessment=parseJson(j.route_assessment,null),devices=telemetryByConvoy.get(String(j.convoy_id))||[],routeGate=assessment?.safety_gate||'UNAVAILABLE',routeStatus=assessment?.route_status||'UNAVAILABLE';
+    const assessment=parseJson(j.route_assessment,null),devices=telemetryByJourney.get(String(j.id))||[],routeGate=assessment?.safety_gate||'UNAVAILABLE',routeStatus=assessment?.route_status||'UNAVAILABLE';
     const due=j.planned_arrival_at?new Date(j.planned_arrival_at).getTime():NaN;
-    return {id:j.id,reference:j.reference,title:j.title,status:j.status,client_id:j.client_id,client_name:j.client_name||null,convoy_id:j.convoy_id,convoy_name:j.convoy_name||null,origin_label:j.origin_label,destination_label:j.destination_label,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,approved_at:j.approved_at,started_at:j.started_at,closed_at:j.closed_at,updated_at:j.updated_at,route_status:routeStatus,safety_gate:routeGate,route_review_required:routeGate==='HUMAN_REVIEW'||routeGate==='NO_GO'||routeStatus==='blocked',overdue:Number.isFinite(due)&&due<nowMs&&!TERMINAL_STATUSES.includes(j.status),telemetry_status:telemetryStatus(devices),telemetry_devices:devices};
+    return {id:j.id,reference:j.reference,title:j.title,status:j.status,client_id:j.client_id,client_name:j.client_name||null,origin_label:j.origin_label,destination_label:j.destination_label,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,approved_at:j.approved_at,started_at:j.started_at,closed_at:j.closed_at,updated_at:j.updated_at,route_status:routeStatus,safety_gate:routeGate,route_review_required:routeGate==='HUMAN_REVIEW'||routeGate==='NO_GO'||routeStatus==='blocked',overdue:Number.isFinite(due)&&due<nowMs&&!TERMINAL_STATUSES.includes(j.status),telemetry_status:telemetryStatus(devices),telemetry_devices:devices};
   });
   const statusCounts=Object.fromEntries(STATUSES.map(s=>[s,0]));
   for(const row of statusResult.rows)statusCounts[row.status]=Number(row.count||0);
   const aggregate=aggregateResult.rows[0]||{},recentEvents=eventResult.rows.map(({total_count,...e})=>({...e,detail:parseJson(e.detail,{})})),recentEventTotal=Number(eventResult.rows[0]?.total_count||0);
   const summary=managementSummaryCounts(journeys,aggregate,statusCounts,recentEventTotal,recentEvents.length);
-  return {schema_version:'sonalit.sjm.management-report.v1',report_type:'management_summary',report_title:REPORT_TITLES.management_summary,report_date:date,generated_at:generatedAt,timezone,client_profile:{client_id:null,client_name:null,template_title:REPORT_TITLES.management_summary,enabled_sections:SECTIONS},journey:null,summary,journeys,recent_events:recentEvents,data_scope:{tenant_scoped:true,total_journeys:Number(aggregate.total_journeys||0),journey_records_included:journeys.length,journey_register_complete:Number(aggregate.total_journeys||0)<=journeys.length,journey_register_limit:500,recent_events_window:'last_24_hours',recent_events_limit:250,telemetry_scope:'Included journey register only; each fix comes from device_locations.'},provenance:{journeys:'Tenant-scoped sjm_journeys joined to same-tenant cargo_clients and convoys',recent_events:'Tenant-scoped sjm_journey_events from the preceding 24 hours',telemetry:'Latest device_locations fixes for devices linked to convoys referenced by SJM journeys',eta_inferred:false,fabricated_data_used:false}};
+  return {schema_version:'sonalit.sjm.management-report.v1',report_type:'management_summary',report_title:REPORT_TITLES.management_summary,report_date:date,generated_at:generatedAt,timezone,client_profile:{client_id:null,client_name:null,template_title:REPORT_TITLES.management_summary,enabled_sections:SECTIONS},journey:null,summary,journeys,recent_events:recentEvents,data_scope:{tenant_scoped:true,total_journeys:Number(aggregate.total_journeys||0),journey_records_included:journeys.length,journey_register_complete:Number(aggregate.total_journeys||0)<=journeys.length,journey_register_limit:500,recent_events_window:'last_24_hours',recent_events_limit:250,telemetry_scope:'Included journey register only; fixes come from directly assigned Guardian devices.'},provenance:{journeys:'Tenant-scoped sjm_journeys joined to same-tenant sjm_clients',recent_events:'Tenant-scoped sjm_journey_events from the preceding 24 hours',telemetry:'Latest device_locations fixes for Guardian devices assigned directly to each SJM journey',eta_inferred:false,fabricated_data_used:false}};
 }
 
 router.post('/management-summary',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
@@ -559,11 +564,25 @@ router.post('/management-summary',authorize('admin','dispatcher'),asyncHandler(a
   });
   res.status(201).json(saved);
 }));
-router.get('/clients',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{const r=await req.db('SELECT id,name,company FROM cargo_clients WHERE org_id=$1 AND deleted_at IS NULL ORDER BY name LIMIT 500',[req.user.org_id]);res.json({data:r.rows});}));
-router.get('/convoys',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{const r=await req.db('SELECT id,name,status,route_origin,route_destination FROM convoys WHERE org_id=$1 AND deleted_at IS NULL AND status IN (\'planned\',\'active\') ORDER BY updated_at DESC NULLS LAST,name LIMIT 200',[req.user.org_id]);res.json({data:r.rows});}));
-
+router.get('/clients',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
+  const r=await req.db('SELECT id,name,company,email,phone,account_reference FROM sjm_clients WHERE org_id=$1 AND deleted_at IS NULL ORDER BY name LIMIT 500',[req.user.org_id]);
+  res.json({data:r.rows});
+}));
+router.post('/clients',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
+  const name=txt(req.body?.name,180),company=txt(req.body?.company,180)||null,email=txt(req.body?.email,254).toLowerCase()||null,phone=txt(req.body?.phone,48)||null,accountReference=txt(req.body?.account_reference,80)||null;
+  if(!name)return res.status(400).json({error:'client_name_required'});
+  const result=await req.db('INSERT INTO sjm_clients (org_id,name,company,email,phone,account_reference) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,name,company,email,phone,account_reference',[req.user.org_id,name,company,email,phone,accountReference]);
+  res.status(201).json({data:result.rows[0]});
+}));
+router.put('/clients/:id',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
+  const name=txt(req.body?.name,180),company=txt(req.body?.company,180)||null,email=txt(req.body?.email,254).toLowerCase()||null,phone=txt(req.body?.phone,48)||null,accountReference=txt(req.body?.account_reference,80)||null;
+  if(!name)return res.status(400).json({error:'client_name_required'});
+  const result=await req.db('UPDATE sjm_clients SET name=$1,company=$2,email=$3,phone=$4,account_reference=$5,updated_at=NOW() WHERE id=$6 AND org_id=$7 AND deleted_at IS NULL RETURNING id,name,company,email,phone,account_reference',[name,company,email,phone,accountReference,req.params.id,req.user.org_id]);
+  if(!result.rows.length)return res.status(404).json({error:'client_not_found'});
+  res.json({data:result.rows[0]});
+}));
 router.get('/client-profiles/:clientId',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
-  const c=await req.db('SELECT id,name,company FROM cargo_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[req.params.clientId,req.user.org_id]);
+  const c=await req.db('SELECT id,name,company FROM sjm_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[req.params.clientId,req.user.org_id]);
   if(!c.rows.length)return res.status(404).json({error:'client_not_found'});
   if(!isMobilityManager(req.user)){const assignment=await req.db('SELECT 1 FROM sjm_journeys j JOIN sjm_journey_participants p ON p.org_id=j.org_id AND p.journey_id=j.id WHERE j.org_id=$1 AND j.client_id=$2 AND j.deleted_at IS NULL AND p.user_id=$3 AND p.removed_at IS NULL LIMIT 1',[req.user.org_id,req.params.clientId,req.user.id]);if(!assignment.rows.length)return res.status(404).json({error:'client_not_found'});}
   const p=await req.db('SELECT client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_at FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[req.user.org_id,req.params.clientId]);
@@ -578,7 +597,7 @@ router.put('/client-profiles/:clientId',authorize('admin','dispatcher'),asyncHan
   if(enabled&&!dailyReportSchedulerAvailable(req.user.org_id))return res.status(409).json({error:'daily_report_scheduler_not_configured',message:'Scheduled report generation is not enabled for this organisation on the current runtime. An authorised platform operator must configure SJM_REPORT_SCHEDULER_ORG_IDS first.'});
   const wanted=req.body?.report_template,title=txt(wanted?.title,160)||DEFAULT_TEMPLATE.title,sections=wanted?.sections==null?SECTIONS:wanted.sections;
   if(!Array.isArray(sections)||sections.some(s=>!SECTIONS.includes(s))||new Set(sections).size!==sections.length)return res.status(400).json({error:'invalid_report_sections',allowed:SECTIONS});
-  const c=await req.db('SELECT id FROM cargo_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[req.params.clientId,req.user.org_id]);
+  const c=await req.db('SELECT id FROM sjm_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[req.params.clientId,req.user.org_id]);
   if(!c.rows.length)return res.status(404).json({error:'client_not_found'});
   const p=await req.db('INSERT INTO sjm_client_profiles (org_id,client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_by) VALUES ($1,$2,$3,$4,$5,$6::time,$7) ON CONFLICT (org_id,client_id) DO UPDATE SET report_timezone=EXCLUDED.report_timezone,report_template=EXCLUDED.report_template,daily_reports_enabled=EXCLUDED.daily_reports_enabled,daily_report_local_time=EXCLUDED.daily_report_local_time,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_at',[req.user.org_id,req.params.clientId,timezone,JSON.stringify({title,sections}),enabled,rawTime,req.user.id]);
   res.json({data:{...p.rows[0],daily_report_scheduler_available:dailyReportSchedulerAvailable(req.user.org_id)}});
@@ -606,13 +625,12 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
     const initialLocks=!isMobilityManager(req.user)?await db(
         `SELECT j.id
            FROM sjm_journeys j
-           LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
-           LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL
+           LEFT JOIN sjm_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
           WHERE j.org_id=$1 AND j.deleted_at IS NULL
             AND ($2::text IS NULL OR j.status=$2)
             AND ($3::uuid IS NULL OR j.client_id=$3)
             AND ${filterSql}
-            AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label,v.name) ILIKE '%'||$5||'%')
+            AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE '%'||$5||'%')
             AND EXISTS (
               SELECT 1 FROM sjm_journey_participants p
                WHERE p.org_id=j.org_id AND p.journey_id=j.id
@@ -623,15 +641,14 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
           FOR SHARE OF j`,
         [req.user.org_id,status,clientId,filter,search,limit,offset,req.user.id],
       ): {rows:[]};
-    const listSql=`SELECT j.id,j.reference,j.title,j.purpose,j.status,j.transport_mode,j.service_type,j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,j.meet_greet_instructions,j.principal_reference,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,CASE WHEN j.status IN ('approved','ready_to_depart') AND j.planned_departure_at IS NOT NULL AND j.planned_departure_at<NOW() THEN 'DEPARTURE_OVERDUE' WHEN j.status IN ('in_progress','paused','exception') AND j.planned_arrival_at IS NOT NULL AND j.planned_arrival_at<NOW() THEN 'ARRIVAL_OVERDUE' WHEN j.status IN ('approved','ready_to_depart') AND j.planned_departure_at>=NOW() AND j.planned_departure_at<=NOW()+INTERVAL '30 minutes' THEN 'DEPARTURE_DUE_30M' ELSE NULL END AS schedule_urgency,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.created_at,j.updated_at,j.timezone,j.planned_route,j.planned_distance_km,j.planned_duration_minutes,j.route_assessment,j.route_assessment IS NOT NULL AS has_route_assessment,ARRAY(SELECT DISTINCT p.duty_role FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$9 AND p.removed_at IS NULL ORDER BY p.duty_role) AS duty_roles
+    const listSql=`SELECT j.id,j.reference,j.title,j.purpose,j.status,j.transport_mode,j.service_type,j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,j.meet_greet_instructions,j.principal_reference,j.origin_label,j.destination_label,j.planned_departure_at,j.planned_arrival_at,CASE WHEN j.status IN ('approved','ready_to_depart') AND j.planned_departure_at IS NOT NULL AND j.planned_departure_at<NOW() THEN 'DEPARTURE_OVERDUE' WHEN j.status IN ('in_progress','paused','exception') AND j.planned_arrival_at IS NOT NULL AND j.planned_arrival_at<NOW() THEN 'ARRIVAL_OVERDUE' WHEN j.status IN ('approved','ready_to_depart') AND j.planned_departure_at>=NOW() AND j.planned_departure_at<=NOW()+INTERVAL '30 minutes' THEN 'DEPARTURE_DUE_30M' ELSE NULL END AS schedule_urgency,j.client_id,c.name AS client_name,j.created_at,j.updated_at,j.timezone,j.planned_route,j.planned_distance_km,j.planned_duration_minutes,j.route_assessment,j.route_assessment IS NOT NULL AS has_route_assessment,ARRAY(SELECT DISTINCT p.duty_role FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$9 AND p.removed_at IS NULL ORDER BY p.duty_role) AS duty_roles
       FROM sjm_journeys j
-      LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
-      LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL
+      LEFT JOIN sjm_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
       WHERE j.org_id=$1 AND j.deleted_at IS NULL
         AND ($2::text IS NULL OR j.status=$2)
         AND ($3::uuid IS NULL OR j.client_id=$3)
         AND ${filterSql}
-        AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label,v.name) ILIKE '%'||$5||'%')
+        AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE '%'||$5||'%')
         AND ($8::boolean OR EXISTS (
           SELECT 1 FROM sjm_journey_participants p
            WHERE p.org_id=j.org_id AND p.journey_id=j.id
@@ -643,13 +660,12 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
     if(guarded.error)return guarded;
     const countSql=`SELECT COUNT(*)::int AS total_count
       FROM sjm_journeys j
-      LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
-      LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL
+      LEFT JOIN sjm_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL
       WHERE j.org_id=$1 AND j.deleted_at IS NULL
         AND ($2::text IS NULL OR j.status=$2)
         AND ($3::uuid IS NULL OR j.client_id=$3)
         AND ${filterSql}
-        AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label,v.name) ILIKE '%'||$5||'%')
+        AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE '%'||$5||'%')
         AND ($6::boolean OR EXISTS (
           SELECT 1 FROM sjm_journey_participants p
            WHERE p.org_id=j.org_id AND p.journey_id=j.id
@@ -682,11 +698,10 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
 router.post('/journeys',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const invalid=validateJourney(req.body);if(invalid)return res.status(400).json({error:'invalid_journey',message:invalid});
   const org=req.user.org_id,b=req.body;
-  if(b.client_id){const c=await req.db('SELECT id FROM cargo_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[b.client_id,org]);if(!c.rows.length)return res.status(404).json({error:'client_not_found_in_organisation'});}
-  if(b.convoy_id){const c=await req.db('SELECT id FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[b.convoy_id,org]);if(!c.rows.length)return res.status(404).json({error:'convoy_not_found_in_organisation'});}
+  if(b.client_id){const c=await req.db('SELECT id FROM sjm_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[b.client_id,org]);if(!c.rows.length)return res.status(404).json({error:'client_not_found_in_organisation'});}
   const reference='SJM-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+crypto.randomBytes(3).toString('hex').toUpperCase();
   const created=await req.dbTx(async c=>{
-    const x=await c.query('INSERT INTO sjm_journeys (org_id,reference,title,purpose,client_id,convoy_id,transport_mode,origin_label,origin_lat,origin_lng,destination_label,destination_lat,destination_lng,planned_departure_at,planned_arrival_at,timezone,status,created_by,updated_by,service_type,principal_reference,airport_code,terminal,airline,flight_number,flight_scheduled_at,meet_greet_instructions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,\'requested\',$17,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING id,org_id,reference',[org,reference,txt(b.title,180),txt(b.purpose,1200),b.client_id||null,b.convoy_id||null,b.transport_mode||'road',txt(b.origin_label,180),b.origin_lat,b.origin_lng,txt(b.destination_label,180),b.destination_lat,b.destination_lng,b.planned_departure_at||null,b.planned_arrival_at||null,tzValid(b.timezone)?b.timezone:'Africa/Nairobi',req.user.id,b.service_type||'executive_transfer',txt(b.principal_reference,120)||null,txt(b.airport_code,4).toUpperCase()||null,txt(b.terminal,80)||null,txt(b.airline,100)||null,txt(b.flight_number,24).toUpperCase()||null,b.flight_scheduled_at||null,txt(b.meet_greet_instructions,2000)||null]);
+    const x=await c.query('INSERT INTO sjm_journeys (org_id,reference,title,purpose,client_id,transport_mode,origin_label,origin_lat,origin_lng,destination_label,destination_lat,destination_lng,planned_departure_at,planned_arrival_at,timezone,status,created_by,updated_by,service_type,principal_reference,airport_code,terminal,airline,flight_number,flight_scheduled_at,meet_greet_instructions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,\'requested\',$16,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING id,org_id,reference',[org,reference,txt(b.title,180),txt(b.purpose,1200),b.client_id||null,b.transport_mode||'road',txt(b.origin_label,180),b.origin_lat,b.origin_lng,txt(b.destination_label,180),b.destination_lat,b.destination_lng,b.planned_departure_at||null,b.planned_arrival_at||null,tzValid(b.timezone)?b.timezone:'Africa/Nairobi',req.user.id,b.service_type||'executive_transfer',txt(b.principal_reference,120)||null,txt(b.airport_code,4).toUpperCase()||null,txt(b.terminal,80)||null,txt(b.airline,100)||null,txt(b.flight_number,24).toUpperCase()||null,b.flight_scheduled_at||null,txt(b.meet_greet_instructions,2000)||null]);
     const j=x.rows[0];
     for(let i=0;i<(b.stops||[]).length;i++){const s=b.stops[i];await c.query('INSERT INTO sjm_journey_stops (org_id,journey_id,sequence,name,stop_type,lat,lng,planned_arrival_at,planned_departure_at,duration_minutes,instructions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[org,j.id,i+1,txt(s.name,160),s.stop_type||'checkpoint',s.lat??null,s.lng??null,s.planned_arrival_at||null,s.planned_departure_at||null,s.duration_minutes??null,txt(s.instructions,1200)||null]);}
     await c.query('INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,\'journey_requested\',$4,$5,\'operator\')',[org,j.id,req.user.id,'Journey requested for planning',JSON.stringify({reference,stop_count:(b.stops||[]).length})]);
@@ -714,7 +729,6 @@ router.get('/my-assignments',asyncHandler(async(req,res)=>{
       FOR SHARE OF j`,
     [req.user.org_id,req.user.id],
   );
-  const guarded=await readLockedAssignmentRows(db,req.user.org_id,initialLocks,"SELECT j.id,j.reference,j.title,j.purpose,j.service_type,j.status,j.transport_mode,j.origin_label,j.origin_lat,j.origin_lng,j.destination_label,j.destination_lat,j.destination_lng,j.planned_departure_at,j.planned_arrival_at,j.timezone,j.client_id,c.name AS client_name,j.convoy_id,v.name AS convoy_name,j.principal_reference,j.airport_code,j.terminal,j.airline,j.flight_number,j.flight_scheduled_at,j.flight_status,j.flight_status_source,j.flight_status_observed_at,j.flight_status_note,j.meet_greet_instructions,ARRAY(SELECT DISTINCT p2.duty_role FROM sjm_journey_participants p2 WHERE p2.org_id=j.org_id AND p2.journey_id=j.id AND p2.user_id=$2 AND p2.removed_at IS NULL ORDER BY p2.duty_role) AS duty_roles FROM sjm_journeys j LEFT JOIN cargo_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL LEFT JOIN convoys v ON v.id=j.convoy_id AND v.org_id=j.org_id AND v.deleted_at IS NULL WHERE j.org_id=$1 AND j.deleted_at IS NULL AND EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=j.org_id AND p.journey_id=j.id AND p.user_id=$2 AND p.removed_at IS NULL) ORDER BY j.planned_departure_at DESC NULLS LAST,j.created_at DESC LIMIT 100",[req.user.org_id,req.user.id]);
   if(guarded.error)return guarded;
   return guarded.rows;
  });
@@ -888,15 +902,14 @@ router.patch('/journeys/:id',authorize('admin','dispatcher'),asyncHandler(async(
   if(!Array.isArray(stops))return res.status(400).json({error:'invalid_journey',message:'Stops must be an array.'});
   const normalized=stops.map(s=>({...s,lat:s.lat==null?null:Number(s.lat),lng:s.lng==null?null:Number(s.lng)}));
   const invalid=validateJourney({...candidate,stops:normalized,transport_mode:b.transport_mode??j.transport_mode});if(invalid)return res.status(400).json({error:'invalid_journey',message:invalid});
-  const clientId=b.client_id===undefined?j.client_id:(b.client_id||null),convoyId=b.convoy_id===undefined?j.convoy_id:(b.convoy_id||null);
-  if(clientId){const r=await req.db('SELECT id FROM cargo_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[clientId,org]);if(!r.rows.length)return res.status(404).json({error:'client_not_found_in_organisation'});}
-  if(convoyId){const r=await req.db('SELECT id FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[convoyId,org]);if(!r.rows.length)return res.status(404).json({error:'convoy_not_found_in_organisation'});}
+  const clientId=b.client_id===undefined?j.client_id:(b.client_id||null);
+  if(clientId){const r=await req.db('SELECT id FROM sjm_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',[clientId,org]);if(!r.rows.length)return res.status(404).json({error:'client_not_found_in_organisation'});}
   const editResult=await req.dbTx(async c=>{
     const db=(sql,params)=>c.query(sql,params),locked=await lockJourneyForMobility(db,org,j.id);
     if(!locked)return {error:'journey_not_found'};
     if(!['requested','planning'].includes(locked.status))return {error:'journey_not_editable'};
     if(locked.status!==j.status)return {error:'journey_state_changed'};
-    const x=await c.query('UPDATE sjm_journeys SET title=$1,purpose=$2,client_id=$3,convoy_id=$4,transport_mode=$5,origin_label=$6,origin_lat=$7,origin_lng=$8,destination_label=$9,destination_lat=$10,destination_lng=$11,planned_departure_at=$12,planned_arrival_at=$13,timezone=$14,status=\'requested\',planned_route=\'[]\'::jsonb,route_assessment=NULL,planning_started_at=NULL,assessment_pending_at=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,departure_readiness_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,ready_to_depart_at=NULL,updated_by=$15,service_type=$18,principal_reference=$19,airport_code=$20,terminal=$21,airline=$22,flight_number=$23,flight_scheduled_at=$24,flight_status=\'unknown\',flight_status_source=\'not_recorded\',flight_status_observed_at=NULL,flight_status_note=NULL,meet_greet_instructions=$25,updated_at=NOW() WHERE id=$16 AND org_id=$17 AND status IN ($26,$27) RETURNING id',[txt(candidate.title,180),txt(candidate.purpose,1200),clientId,convoyId,b.transport_mode||j.transport_mode,txt(candidate.origin_label,180),candidate.origin_lat,candidate.origin_lng,txt(candidate.destination_label,180),candidate.destination_lat,candidate.destination_lng,candidate.planned_departure_at||null,candidate.planned_arrival_at||null,tzValid(b.timezone||j.timezone)?(b.timezone||j.timezone):'Africa/Nairobi',req.user.id,j.id,org,candidate.service_type||'executive_transfer',txt(candidate.principal_reference,120)||null,txt(candidate.airport_code,4).toUpperCase()||null,txt(candidate.terminal,80)||null,txt(candidate.airline,100)||null,txt(candidate.flight_number,24).toUpperCase()||null,candidate.flight_scheduled_at||null,txt(candidate.meet_greet_instructions,2000)||null,'requested','planning']);
+    const x=await c.query('UPDATE sjm_journeys SET title=$1,purpose=$2,client_id=$3,transport_mode=$4,origin_label=$5,origin_lat=$6,origin_lng=$7,destination_label=$8,destination_lat=$9,destination_lng=$10,planned_departure_at=$11,planned_arrival_at=$12,timezone=$13,status=\'requested\',planned_route=\'[]\'::jsonb,route_assessment=NULL,planning_started_at=NULL,assessment_pending_at=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,departure_readiness_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,ready_to_depart_at=NULL,updated_by=$14,service_type=$17,principal_reference=$18,airport_code=$19,terminal=$20,airline=$21,flight_number=$22,flight_scheduled_at=$23,flight_status=\'unknown\',flight_status_source=\'not_recorded\',flight_status_observed_at=NULL,flight_status_note=NULL,meet_greet_instructions=$24,updated_at=NOW() WHERE id=$15 AND org_id=$16 AND status IN ($25,$26) RETURNING id',[txt(candidate.title,180),txt(candidate.purpose,1200),clientId,b.transport_mode||j.transport_mode,txt(candidate.origin_label,180),candidate.origin_lat,candidate.origin_lng,txt(candidate.destination_label,180),candidate.destination_lat,candidate.destination_lng,candidate.planned_departure_at||null,candidate.planned_arrival_at||null,tzValid(b.timezone||j.timezone)?(b.timezone||j.timezone):'Africa/Nairobi',req.user.id,j.id,org,candidate.service_type||'executive_transfer',txt(candidate.principal_reference,120)||null,txt(candidate.airport_code,4).toUpperCase()||null,txt(candidate.terminal,80)||null,txt(candidate.airline,100)||null,txt(candidate.flight_number,24).toUpperCase()||null,candidate.flight_scheduled_at||null,txt(candidate.meet_greet_instructions,2000)||null,'requested','planning']);
     if(!x.rows.length)return {error:'journey_state_changed'};
     if(b.stops!==undefined){await c.query('DELETE FROM sjm_journey_stops WHERE org_id=$1 AND journey_id=$2',[org,j.id]);for(let i=0;i<b.stops.length;i++){const s=b.stops[i];await c.query('INSERT INTO sjm_journey_stops (org_id,journey_id,sequence,name,stop_type,lat,lng,planned_arrival_at,planned_departure_at,duration_minutes,instructions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[org,j.id,i+1,txt(s.name,160),s.stop_type||'checkpoint',s.lat??null,s.lng??null,s.planned_arrival_at||null,s.planned_departure_at||null,s.duration_minutes??null,txt(s.instructions,1200)||null]);}}
     await c.query('INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,\'journey_revised\',$4,$5,\'operator\')',[org,j.id,req.user.id,'Journey revised; previous route assessment invalidated',JSON.stringify({revised_at:new Date().toISOString(),revision_acknowledgement:{confirmed:true,previous_route_assessment_and_release_authorisations_invalidated:true}})]);
@@ -928,7 +941,7 @@ router.post('/journeys/:id/plan',authorize('admin','dispatcher'),asyncHandler(as
   const viaPoints=routeStops.map(stop=>({lat:Number(stop.lat),lng:Number(stop.lng)}));
   let a;
   try {
-    a=await analyseRoute({origin:{lat:Number(j.origin_lat),lng:Number(j.origin_lng)},destination:{lat:Number(j.destination_lat),lng:Number(j.destination_lng)},viaPoints,convoyId:j.convoy_id||undefined,requestedBy:req.user.id,departureTime:j.planned_departure_at||undefined,avoidNightTravel:req.body?.avoid_night_travel===true,orgId:org});
+    a=await analyseRoute({origin:{lat:Number(j.origin_lat),lng:Number(j.origin_lng)},destination:{lat:Number(j.destination_lat),lng:Number(j.destination_lng)},viaPoints,requestedBy:req.user.id,departureTime:j.planned_departure_at||undefined,avoidNightTravel:req.body?.avoid_night_travel===true,orgId:org});
   } catch(error) {
     const errorName=error instanceof Error&&/^[A-Za-z][A-Za-z0-9_]{0,59}$/.test(error.name)?error.name:'UnknownError';
     console.error('[SJM] Route Safety analysis failed',{journeyId:j.id,errorName});
