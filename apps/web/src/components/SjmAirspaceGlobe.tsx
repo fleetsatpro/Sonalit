@@ -160,6 +160,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     for(const item of aircraft){
       const key=mapKey(item);
       const position=Cesium.Cartesian3.fromDegrees(item.longitude,item.latitude,ellipsoidHeight(item.altitude_m,item.altitude_reference));
+      const surfaceUp=Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(position,new Cesium.Cartesian3());
       const colour=Cesium.Color.fromCssColorString(FRESHNESS_COLOURS[String(item.freshness||'UNAVAILABLE').toUpperCase()]||FRESHNESS_COLOURS.UNAVAILABLE);
       let entity=entityRef.current.get(key);
       if(!entity){
@@ -170,7 +171,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
             image:AIRCRAFT_SYMBOL,width:25,height:25,color:colour,
             rotation:item.heading_deg==null?0:Cesium.Math.toRadians(-item.heading_deg),
             horizontalOrigin:Cesium.HorizontalOrigin.CENTER,verticalOrigin:Cesium.VerticalOrigin.CENTER,
-            alignedAxis:Cesium.Cartesian3.UNIT_Z,
+            alignedAxis:surfaceUp,
             scaleByDistance:new Cesium.NearFarScalar(150_000,1.12,12_000_000,.58),
             disableDepthTestDistance:Number.POSITIVE_INFINITY,
           }),
@@ -195,7 +196,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
           image:AIRCRAFT_SYMBOL,width:25,height:25,color:colour,
           rotation:item.heading_deg==null?0:Cesium.Math.toRadians(-item.heading_deg),
           horizontalOrigin:Cesium.HorizontalOrigin.CENTER,verticalOrigin:Cesium.VerticalOrigin.CENTER,
-          alignedAxis:Cesium.Cartesian3.UNIT_Z,
+          alignedAxis:surfaceUp,
           scaleByDistance:new Cesium.NearFarScalar(150_000,1.12,12_000_000,.58),
           disableDepthTestDistance:Number.POSITIVE_INFINITY,
         });
