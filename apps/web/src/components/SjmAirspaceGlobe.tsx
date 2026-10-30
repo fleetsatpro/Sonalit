@@ -53,7 +53,12 @@ function altitudeReferenceLabel(value?:string|null):string {
   return 'Reference not supplied';
 }
 
-const EAST_AFRICA_VIEW={
+type CameraMode='orbital'|'regional';
+const ORBITAL_AIRSPACE_VIEW={
+  destination:Cesium.Cartesian3.fromDegrees(38.0,-0.5,8_200_000),
+  orientation:{heading:0,pitch:Cesium.Math.toRadians(-62),roll:0},
+};
+const REGIONAL_AIRSPACE_VIEW={
   destination:Cesium.Cartesian3.fromDegrees(38.0,-0.5,6_200_000),
   orientation:{heading:0,pitch:Cesium.Math.toRadians(-90),roll:0},
 };
@@ -71,6 +76,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
   const entityRef=useRef<Map<string,Cesium.Entity>>(new Map());
   const trailRef=useRef<Map<string,Cesium.Entity>>(new Map());
   const [initFailed,setInitFailed]=useState(false);
+  const [cameraMode,setCameraMode]=useState<CameraMode>('orbital');
   const [selected,setSelected]=useState<string|null>(null);
   const [search,setSearch]=useState('');
   const [providerFilter,setProviderFilter]=useState<ProviderFilter>('all');
@@ -105,9 +111,10 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         maximumLevel:19,
       });
       const imageryLayer=new Cesium.ImageryLayer(imagery);
-      imageryLayer.brightness=0.72;
-      imageryLayer.contrast=1.08;
-      imageryLayer.saturation=0.38;
+      imageryLayer.brightness=0.42;
+      imageryLayer.contrast=1.18;
+      imageryLayer.saturation=0.14;
+      imageryLayer.gamma=0.92;
       widget=new Cesium.CesiumWidget(containerRef.current,{
         baseLayer:imageryLayer,
         terrainProvider:new Cesium.EllipsoidTerrainProvider(),
@@ -122,7 +129,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       widget.scene.skyAtmosphere.show=true;
       widget.scene.screenSpaceCameraController.enableCollisionDetection=true;
       widget.scene.screenSpaceCameraController.minimumZoomDistance=30_000;
-      widget.camera.setView(EAST_AFRICA_VIEW);
+      widget.camera.setView(ORBITAL_AIRSPACE_VIEW);
       handler=new Cesium.ScreenSpaceEventHandler(widget.scene.canvas);
       handler.setInputAction((event:Cesium.ScreenSpaceEventHandler.PositionedEvent)=>{
         if(!widget||widget.isDestroyed())return;
@@ -232,11 +239,22 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
   const boundsLabel=bounds
     ? bounds.south.toFixed(1)+'° to '+bounds.north.toFixed(1)+'° latitude · '+bounds.west.toFixed(1)+'° to '+bounds.east.toFixed(1)+'° longitude'
     : 'not configured';
+  const flyToCameraMode=(mode:CameraMode)=>{
+    setCameraMode(mode);
+    const widget=widgetRef.current;
+    if(!widget||widget.isDestroyed())return;
+    const view=mode==='orbital'?ORBITAL_AIRSPACE_VIEW:REGIONAL_AIRSPACE_VIEW;
+    widget.camera.flyTo({...view,duration:1.15});
+  };
   const resetView=()=>{
     const widget=widgetRef.current;
-    if(widget&&!widget.isDestroyed())widget.camera.flyTo({...EAST_AFRICA_VIEW,duration:1.15});
+    if(widget&&!widget.isDestroyed()){
+      const view=cameraMode==='orbital'?ORBITAL_AIRSPACE_VIEW:REGIONAL_AIRSPACE_VIEW;
+      widget.camera.flyTo({...view,duration:1.15});
+    }
   };
   const focusAircraft=(item:SjmAirspaceAircraft)=>{
+    setCameraMode('regional');
     const widget=widgetRef.current;
     if(widget&&!widget.isDestroyed())widget.camera.flyTo(aircraftFocusView(item));
   };
@@ -266,11 +284,20 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         {initFailed
           ?<div role="status" className="grid min-h-[420px] place-items-center p-6 text-center"><div><p className="text-sm font-semibold text-slate-200">3D renderer unavailable</p><p className="mt-1 max-w-md text-xs leading-5 text-slate-400">The airspace scene could not be initialised in this browser. Aircraft data remains available in the observation index where supplied.</p></div></div>
           :<div className="relative">
-            <div ref={containerRef} role="application" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" data-testid="sjm-airspace-globe" data-basemap-provider="openstreetmap" className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>
+            <div ref={containerRef} role="application" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" data-testid="sjm-airspace-globe" data-basemap-provider="openstreetmap" data-camera-mode={cameraMode} className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>
+            <div role="group" aria-label="Airspace camera mode" className="absolute left-3 top-3 z-10 flex overflow-hidden rounded-md border border-white/15 bg-[#07101b]/90 shadow-lg backdrop-blur">
+              <button type="button" onClick={()=>flyToCameraMode('orbital')} aria-label="Orbital 3D view" aria-pressed={cameraMode==='orbital'} className={'px-3 py-2 font-mono text-[10px] font-semibold tracking-[.08em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300 '+(cameraMode==='orbital'?'bg-emerald-300/15 text-emerald-100':'text-slate-300 hover:bg-white/10')}>ORBIT</button>
+              <button type="button" onClick={()=>flyToCameraMode('regional')} aria-label="Regional map view" aria-pressed={cameraMode==='regional'} className={'border-l border-white/10 px-3 py-2 font-mono text-[10px] font-semibold tracking-[.08em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300 '+(cameraMode==='regional'?'bg-emerald-300/15 text-emerald-100':'text-slate-300 hover:bg-white/10')}>REGION</button>
+            </div>
             <div role="group" aria-label="Airspace globe controls" className="absolute right-3 top-3 z-10 flex flex-col overflow-hidden rounded-md border border-white/15 bg-[#07101b]/90 shadow-lg backdrop-blur">
               <button type="button" onClick={()=>zoom('in')} aria-label="Zoom in" title="Zoom in" className="h-10 w-10 border-b border-white/10 text-base text-slate-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">+</button>
               <button type="button" onClick={()=>zoom('out')} aria-label="Zoom out" title="Zoom out" className="h-10 w-10 border-b border-white/10 text-base text-slate-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">−</button>
               <button type="button" onClick={resetView} aria-label="Reset airspace view" title="Reset airspace view" className="h-10 w-10 font-mono text-[10px] text-slate-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">RST</button>
+            </div>
+            <div data-testid="sjm-airspace-basemap-credit" className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded border border-white/15 bg-[#07101b]/90 px-2.5 py-1.5 text-[10px] shadow-lg backdrop-blur">
+              <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="font-medium text-slate-200 underline decoration-white/30 underline-offset-2">© OpenStreetMap contributors</a>
+              <span className="px-1 text-slate-500">·</span>
+              <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-slate-200">Report map issue</a>
             </div>
             {aircraft.length===0&&<div role="status" className="absolute bottom-3 left-3 max-w-[min(420px,calc(100%-24px))] rounded-md border border-white/10 bg-[#07101b]/90 px-3 py-2 text-[11px] leading-5 text-slate-300 shadow-lg">No provider aircraft observations in this snapshot. This does not establish that the airspace is empty.</div>}
           </div>}
