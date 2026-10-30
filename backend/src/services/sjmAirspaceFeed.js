@@ -58,11 +58,14 @@ function getConfig(env=process.env) {
   const clientId=String(env.OPENSKY_CLIENT_ID||'').trim();
   const clientSecret=String(env.OPENSKY_CLIENT_SECRET||'').trim();
   const bounds=parseBounds(env.SJM_AIRSPACE_BOUNDS);
+  const creditTier=String(env.OPENSKY_CREDIT_TIER||'standard').trim().toLowerCase();
   const creditWindow=env.OPENSKY_CREDIT_WINDOW==='hourly'?'hourly':'daily';
+  const licensedTier=creditTier==='licensed';
+  const activeFeederTier=creditTier==='active_feeder';
   const windowSeconds=creditWindow==='hourly'?3_600:86_400;
-  const defaultBudget=creditWindow==='hourly'?12_000:3_000;
+  const defaultBudget=creditWindow==='hourly'?12_000:activeFeederTier||licensedTier?6_000:3_000;
   const requestedBudget=Number(env.OPENSKY_CREDIT_BUDGET||env.OPENSKY_DAILY_CREDIT_BUDGET||defaultBudget);
-  const maximumBudget=creditWindow==='hourly'?14_400:8_000;
+  const maximumBudget=creditWindow==='hourly'?(licensedTier?14_400:0):activeFeederTier||licensedTier?8_000:4_000;
   const creditBudget=Number.isFinite(requestedBudget)?Math.max(500,Math.min(maximumBudget,Math.floor(requestedBudget))):defaultBudget;
   const desiredInterval=Number(env.OPENSKY_POLL_INTERVAL_SECONDS||(creditWindow==='hourly'?5:120));
   const basePollSeconds=Number.isFinite(desiredInterval)?Math.max(5,Math.min(900,Math.floor(desiredInterval))):(creditWindow==='hourly'?5:120);
@@ -73,12 +76,14 @@ function getConfig(env=process.env) {
   let reason=null;
   if(!enabled)reason='feed_disabled';
   else if(!licence)reason='provider_written_operational_and_commercial_license_not_confirmed';
+  else if(!['standard','active_feeder','licensed'].includes(creditTier))reason='provider_credit_tier_invalid';
+  else if(creditWindow==='hourly'&&!licensedTier)reason='licensed_hourly_entitlement_not_confirmed';
   else if(!clientId||!clientSecret||/[\r\n]/.test(clientId)||/[\r\n]/.test(clientSecret))reason='provider_oauth_credentials_missing_or_invalid';
   else if(!bounds)reason='operational_bounds_missing_or_invalid';
   return {
     configured:!reason,reason,provider:'opensky_rest',providerName:'OpenSky Network',
     clientId:!reason?clientId:null,clientSecret:!reason?clientSecret:null,bounds:!reason?bounds:null,
-    creditWindow,creditBudget,windowSeconds,creditsPerRequest,pollIntervalSeconds,projectedCreditsPerWindow,
+    creditTier,creditWindow,creditBudget,windowSeconds,creditsPerRequest,pollIntervalSeconds,projectedCreditsPerWindow,
   };
 }
 
@@ -283,7 +288,7 @@ function snapshot(now=Date.now(),config=getConfig(),statusOverride=null) {
     poll_interval_seconds:config.pollIntervalSeconds,
     config_fingerprint:configFingerprint(config),
     credit_cost_per_request:config.creditsPerRequest,
-    credit_window:config.creditWindow,credit_budget:config.creditBudget,
+    credit_tier:config.creditTier,credit_window:config.creditWindow,credit_budget:config.creditBudget,
     projected_credits_per_window:config.projectedCreditsPerWindow,
     coverage:{complete:false,bounds:config.bounds,query_scope:'contracted_operational_bounds'},
     aircraft:items,recent_events:[],
@@ -321,7 +326,7 @@ function inactiveSnapshot(reason='feed_disabled') {
     last_provider_time:null,message_count:0,position_count:0,rejected_count:0,
     rate_limit_remaining:null,rate_limit_retry_after_seconds:null,last_error_code:reason,
     next_poll_at:null,poll_interval_seconds:null,credit_cost_per_request:null,
-    credit_window:null,credit_budget:null,projected_credits_per_window:null,
+    credit_tier:null,credit_window:null,credit_budget:null,projected_credits_per_window:null,
     coverage:{complete:false,bounds:null,query_scope:'unavailable'},
     aircraft:[],recent_events:[],
     provenance:{source:'OpenSky Network REST API',feed_mode:'bounded_rest_polling_snapshot',
@@ -467,7 +472,7 @@ async function getSnapshot({start=true}={}) {
       status:'UNAVAILABLE',configured:true,provider:'opensky_rest',provider_name:'OpenSky Network',
       coverage:{complete:false,bounds:config.bounds,query_scope:'contracted_operational_bounds'},
       poll_interval_seconds:config.pollIntervalSeconds,credit_cost_per_request:config.creditsPerRequest,
-      credit_window:config.creditWindow,credit_budget:config.creditBudget,
+      credit_tier:config.creditTier,credit_window:config.creditWindow,credit_budget:config.creditBudget,
       projected_credits_per_window:config.projectedCreditsPerWindow,
     };
   }catch(_){
