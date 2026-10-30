@@ -13,6 +13,9 @@ const DEFAULT_LOOKUP_TTL_MS=30*1000;
 let airportReferenceIndex=null;
 let airportReferenceExpiresAt=0;
 let airportReferenceLoadPromise=null;
+let airportReferenceFailure=null;
+let airportReferenceFailureExpiresAt=0;
+const AIRPORT_REFERENCE_FAILURE_TTL_MS=15*60*1000;
 const AIRPORT_REFERENCE_URL='https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/airports.csv';
 const AIRPORT_REFERENCE_TTL_MS=24*60*60*1000;
 const MAX_AIRPORT_REFERENCE_BYTES=24*1024*1024;
@@ -115,6 +118,7 @@ function resolveAirportCode(code,index) {
 
 async function loadAirportReferenceIndex({fetcher=global.fetch,now=Date.now()}={}) {
   if(airportReferenceIndex&&airportReferenceExpiresAt>now)return airportReferenceIndex;
+  if(airportReferenceFailure&&airportReferenceFailureExpiresAt>now)throw new Error(airportReferenceFailure);
   if(airportReferenceLoadPromise)return airportReferenceLoadPromise;
   airportReferenceLoadPromise=(async()=>{
     if(typeof fetcher!=='function')throw new Error('Global fetch is unavailable.');
@@ -131,10 +135,15 @@ async function loadAirportReferenceIndex({fetcher=global.fetch,now=Date.now()}={
     const index=buildAirportReferenceIndex(csv);
     airportReferenceIndex=index;
     airportReferenceExpiresAt=now+AIRPORT_REFERENCE_TTL_MS;
+    airportReferenceFailure=null;airportReferenceFailureExpiresAt=0;
     return index;
   })();
   try{return await airportReferenceLoadPromise;}
-  finally{airportReferenceLoadPromise=null;}
+  catch(error){
+    airportReferenceFailure=error?.message||'airport_reference_provider_unavailable';
+    airportReferenceFailureExpiresAt=Date.now()+AIRPORT_REFERENCE_FAILURE_TTL_MS;
+    throw error;
+  }finally{airportReferenceLoadPromise=null;}
 }
 
 function cleanCode(value,max=16) {
@@ -568,9 +577,9 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
   const commercial=flightResult||{status:'NOT_REQUESTED',flights:[]};
   const comparison=compareAircraftSources({flightNumber,opensky:baseSnapshot,adsbLol});
   const activeProviderCount=[
-    ['opensky',['LIVE','DELAYED','CONNECTED'].includes(baseSnapshot?.status)],
-    ['adsb_lol',adsbLol.status==='AVAILABLE'],
-    ['aerodatabox',commercial.status==='AVAILABLE'],
+    ['opensky',['LIVE','DELAYED','CONNECTED'].includes(baseSnapshot?.status)&&(baseSnapshot?.aircraft||[]).length>0],
+    ['adsb_lol',adsbLol.status==='AVAILABLE'&&(adsbLol.records||[]).length>0],
+    ['aerodatabox',commercial.status==='AVAILABLE'&&(commercial.flights||[]).length>0],
     ['aviationweather_gov',Boolean(weather.metar?.length||weather.taf?.length||weather.international_sigmets?.length)],
     ['ourairports',airportReference.status==='RESOLVED'],
   ].filter(([,active])=>active).length;
@@ -600,7 +609,7 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
   };
 }
 
-function resetCacheForTests(){responseCache.clear();airportReferenceIndex=null;airportReferenceExpiresAt=0;airportReferenceLoadPromise=null;}
+function resetCacheForTests(){responseCache.clear();airportReferenceIndex=null;airportReferenceExpiresAt=0;airportReferenceLoadPromise=null;airportReferenceFailure=null;airportReferenceFailureExpiresAt=0;}
 
 module.exports={
   cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
