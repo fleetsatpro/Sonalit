@@ -696,6 +696,9 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(selected.getByText('Barometric pressure', { exact: true })).toBeVisible();
     await expect(selected.getByText('Not converted or plotted vertically; marker remains at the reference surface.', { exact: true })).toBeVisible();
     await expect(selected).toContainText(/10[,.]668 m/);
+    const focusAircraft = selected.getByTestId('sjm-aircraft-focus');
+    await expect(focusAircraft).toBeVisible();
+    await focusAircraft.click();
     await testInfo.attach('sjm-airspace-selected-aircraft', { body: await display.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   });
 

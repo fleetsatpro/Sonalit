@@ -24,6 +24,8 @@ type FreshnessFilter='all'|'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE';
 
 const MAP_URL='https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const FRESHNESS_COLOURS:Record<string,string>={LIVE:'#9ce8d2',DELAYED:'#f3c979',STALE:'#8a98a8',UNAVAILABLE:'#64748b'};
+const AIRCRAFT_SYMBOL_SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M24 2.8 29.2 20l15.2 8.5v4.2l-15.2-4.2v11.2l5.6 4.2v2.8L24 43.2 13.2 46.7v-2.8l5.6-4.2V28.5L3.6 32.7v-4.2L18.8 20 24 2.8Z" fill="#f7fbff" stroke="#07111b" stroke-width="2.2" stroke-linejoin="round"/></svg>';
+const AIRCRAFT_SYMBOL='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(AIRCRAFT_SYMBOL_SVG);
 function mapKey(item:SjmAirspaceAircraft):string {
   return item.map_key||`${item.position_provider||item.provider||'opensky_rest'}:${item.id}`;
 }
@@ -52,9 +54,16 @@ function altitudeReferenceLabel(value?:string|null):string {
 }
 
 const EAST_AFRICA_VIEW={
-  destination:Cesium.Cartesian3.fromDegrees(37.9,0.5,4_200_000),
-  orientation:{heading:0,pitch:Cesium.Math.toRadians(-68),roll:0},
+  destination:Cesium.Cartesian3.fromDegrees(38.0,-0.5,6_200_000),
+  orientation:{heading:0,pitch:Cesium.Math.toRadians(-90),roll:0},
 };
+function aircraftFocusView(item:SjmAirspaceAircraft):Cesium.CameraFlyToOptions {
+  return {
+    destination:Cesium.Cartesian3.fromDegrees(item.longitude,item.latitude,1_150_000),
+    orientation:{heading:0,pitch:Cesium.Math.toRadians(-84),roll:0},
+    duration:1.15,
+  };
+}
 
 export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds,pollIntervalSeconds=null,regionalStatus='NOT_CONFIGURED',regionalRadiusNm=250}:Props) {
   const containerRef=useRef<HTMLDivElement>(null);
@@ -102,9 +111,12 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         maximumRenderTimeChange:Number.POSITIVE_INFINITY,
         showRenderLoopErrors:false,
       });
+      widget.scene.backgroundColor=Cesium.Color.fromCssColorString('#050b12');
       widget.scene.globe.enableLighting=true;
+      widget.scene.globe.showGroundAtmosphere=true;
       widget.scene.globe.baseColor=Cesium.Color.fromCssColorString('#111b27');
       widget.scene.skyAtmosphere.show=true;
+      widget.scene.screenSpaceCameraController.enableCollisionDetection=true;
       widget.scene.screenSpaceCameraController.minimumZoomDistance=30_000;
       widget.camera.setView(EAST_AFRICA_VIEW);
       handler=new Cesium.ScreenSpaceEventHandler(widget.scene.canvas);
@@ -153,13 +165,21 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       if(!entity){
         entity=widget.entities.add({
           id:'sjm-aircraft:'+key,position,
-          point:new Cesium.PointGraphics({pixelSize:key===selected?11:8,color:colour,outlineColor:Cesium.Color.fromCssColorString('#17212b'),outlineWidth:2,disableDepthTestDistance:Number.POSITIVE_INFINITY}),
+          point:new Cesium.PointGraphics({pixelSize:key===selected?9:5,color:colour,outlineColor:Cesium.Color.fromCssColorString('#17212b'),outlineWidth:2,disableDepthTestDistance:Number.POSITIVE_INFINITY}),
+          billboard:new Cesium.BillboardGraphics({
+            image:AIRCRAFT_SYMBOL,width:25,height:25,color:colour,
+            rotation:item.heading_deg==null?0:Cesium.Math.toRadians(-item.heading_deg),
+            horizontalOrigin:Cesium.HorizontalOrigin.CENTER,verticalOrigin:Cesium.VerticalOrigin.CENTER,
+            alignedAxis:Cesium.Cartesian3.UNIT_Z,
+            scaleByDistance:new Cesium.NearFarScalar(150_000,1.12,12_000_000,.58),
+            disableDepthTestDistance:Number.POSITIVE_INFINITY,
+          }),
           label:new Cesium.LabelGraphics({
-            text:item.ident||item.id,font:'11px Inter, sans-serif',
+            text:item.ident||item.id,show:key===selected,font:'11px Inter, sans-serif',
             fillColor:Cesium.Color.fromCssColorString('#e8eef2'),
             outlineColor:Cesium.Color.fromCssColorString('#0b1119'),outlineWidth:3,
-            style:Cesium.LabelStyle.FILL_AND_OUTLINE,pixelOffset:new Cesium.Cartesian2(0,-15),
-            distanceDisplayCondition:new Cesium.DistanceDisplayCondition(0,2_500_000),
+            style:Cesium.LabelStyle.FILL_AND_OUTLINE,pixelOffset:new Cesium.Cartesian2(0,-18),
+            distanceDisplayCondition:new Cesium.DistanceDisplayCondition(0,10_000_000),
             disableDepthTestDistance:Number.POSITIVE_INFINITY,
           }),
         });
@@ -167,11 +187,22 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       }else{
         entity.position=new Cesium.ConstantPositionProperty(position);
         entity.point=new Cesium.PointGraphics({
-          pixelSize:key===selected?11:8,color:colour,
+          pixelSize:key===selected?9:5,color:colour,
           outlineColor:Cesium.Color.fromCssColorString('#17212b'),
           outlineWidth:2,disableDepthTestDistance:Number.POSITIVE_INFINITY,
         });
-        if(entity.label)entity.label.text=new Cesium.ConstantProperty(item.ident||item.id);
+        entity.billboard=new Cesium.BillboardGraphics({
+          image:AIRCRAFT_SYMBOL,width:25,height:25,color:colour,
+          rotation:item.heading_deg==null?0:Cesium.Math.toRadians(-item.heading_deg),
+          horizontalOrigin:Cesium.HorizontalOrigin.CENTER,verticalOrigin:Cesium.VerticalOrigin.CENTER,
+          alignedAxis:Cesium.Cartesian3.UNIT_Z,
+          scaleByDistance:new Cesium.NearFarScalar(150_000,1.12,12_000_000,.58),
+          disableDepthTestDistance:Number.POSITIVE_INFINITY,
+        });
+        if(entity.label){
+          entity.label.text=new Cesium.ConstantProperty(item.ident||item.id);
+          entity.label.show=new Cesium.ConstantProperty(key===selected);
+        }
       }
       const track=(item.trail||[]).filter(p=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude));
       let trail=trailRef.current.get(key);
@@ -198,7 +229,11 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     : 'not configured';
   const resetView=()=>{
     const widget=widgetRef.current;
-    if(widget&&!widget.isDestroyed())widget.camera.flyTo(EAST_AFRICA_VIEW);
+    if(widget&&!widget.isDestroyed())widget.camera.flyTo({...EAST_AFRICA_VIEW,duration:1.15});
+  };
+  const focusAircraft=(item:SjmAirspaceAircraft)=>{
+    const widget=widgetRef.current;
+    if(widget&&!widget.isDestroyed())widget.camera.flyTo(aircraftFocusView(item));
   };
   const zoom=(direction:'in'|'out')=>{
     const widget=widgetRef.current;
@@ -259,7 +294,10 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         {selectedAircraft&&<section aria-label="Selected aircraft observation" data-testid="sjm-selected-aircraft" aria-live="polite" className="border-b border-white/[0.07] bg-[#101a24] px-3 py-3 sm:px-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0"><p className="text-[10px] font-semibold tracking-[.1em] text-slate-400">SELECTED OBSERVATION</p><h6 className="mt-1 truncate text-base font-semibold text-white">{selectedAircraft.ident||selectedAircraft.id}</h6><p className="mt-1 text-[10px] text-slate-400">{sourceLabel(selectedAircraft)} · {String(selectedAircraft.freshness).toLowerCase()}</p></div>
-            <button type="button" onClick={()=>setSelected(null)} aria-label="Clear aircraft selection" className="rounded-md border border-white/10 px-2 py-1.5 text-[10px] text-slate-300 hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">Clear</button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button type="button" data-testid="sjm-aircraft-focus" onClick={()=>focusAircraft(selectedAircraft)} aria-label={`Focus ${selectedAircraft.ident||selectedAircraft.id} on globe`} className="rounded-md border border-sky-300/20 bg-sky-300/[0.06] px-2 py-1.5 text-[10px] font-semibold text-sky-100 hover:bg-sky-300/[0.12] focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300">Focus</button>
+              <button type="button" onClick={()=>setSelected(null)} aria-label="Clear aircraft selection" className="rounded-md border border-white/10 px-2 py-1.5 text-[10px] text-slate-300 hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">Clear</button>
+            </div>
           </div>
           <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
             <div><dt className="text-[10px] text-slate-500">Altitude reported</dt><dd className="mt-0.5 text-[11px] font-semibold text-slate-200">{selectedAircraft.altitude_m==null?'Not reported':Math.round(selectedAircraft.altitude_m).toLocaleString()+' m'}</dd></div>
