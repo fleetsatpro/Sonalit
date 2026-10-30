@@ -48,6 +48,12 @@ describe('SJM federated aviation intelligence',()=>{
       use_restrictions:['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION'],
     });
     expect(config.baseUrl).toBe('https://api.flyitalyadsb.com/v2');
+    expect(aviation.getFlyItalyAdsbConfig({
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'invalid\\nkey',
+    })).toMatchObject({enabled:false,reason:'api_key_missing_or_invalid'});
   });
 
   test('requires AeroDataBox commercial and downstream derived-work rights independently',()=>{
@@ -634,6 +640,7 @@ describe('SJM federated aviation intelligence',()=>{
       share_alike_required:true,quality_limit:expect.stringContaining('Not for safety-of-life'),
     });
     expect(result.intelligence.provenance.fabricated_data_used).toBe(false);
+    expect(JSON.stringify(result)).not.toContain('server-only-key');
   });
 
   test('does not call AviationWeather when an IATA code is ambiguous',async()=>{
