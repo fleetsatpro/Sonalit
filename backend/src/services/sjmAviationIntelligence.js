@@ -10,6 +10,133 @@ const CACHE_LIMIT=300;
 const DEFAULT_WEATHER_TTL_MS=5*60*1000;
 const DEFAULT_LOOKUP_TTL_MS=30*1000;
 
+let airportReferenceIndex=null;
+let airportReferenceExpiresAt=0;
+let airportReferenceLoadPromise=null;
+const AIRPORT_REFERENCE_URL='https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/airports.csv';
+const AIRPORT_REFERENCE_TTL_MS=24*60*60*1000;
+const MAX_AIRPORT_REFERENCE_BYTES=24*1024*1024;
+
+function parseCsvRows(input) {
+  const rows=[];
+  let row=[],field='',quoted=false;
+  const text=String(input||'');
+  for(let i=0;i<text.length;i++){
+    const character=text[i];
+    if(quoted){
+      if(character==='"'&&text[i+1]==='"'){field+='"';i++;}
+      else if(character==='"')quoted=false;
+      else field+=character;
+    }else if(character==='"')quoted=true;
+    else if(character===','){row.push(field);field='';}
+    else if(character==='\n'){
+      row.push(field.replace(/\r$/,''));
+      if(row.some(value=>value!==''))rows.push(row);
+      row=[];field='';
+    }else field+=character;
+  }
+  row.push(field.replace(/\r$/,''));
+  if(row.some(value=>value!==''))rows.push(row);
+  if(quoted)throw new Error('Airport reference CSV contains an unterminated quoted field.');
+  return rows;
+}
+
+function buildAirportReferenceIndex(csv) {
+  const rows=parseCsvRows(csv);
+  if(rows.length<2)throw new Error('Airport reference dataset is empty.');
+  const headers=rows[0].map(value=>String(value||'').trim());
+  const column=name=>headers.indexOf(name);
+  const indexes={
+    ident:column('ident'),gps:column('gps_code'),iata:column('iata_code'),
+    name:column('name'),municipality:column('municipality'),country:column('iso_country'),
+    latitude:column('latitude_deg'),longitude:column('longitude_deg'),
+    elevation:column('elevation_ft'),type:column('type'),scheduled:column('scheduled_service'),
+  };
+  if(indexes.ident<0||indexes.iata<0||indexes.name<0)throw new Error('Airport reference CSV is missing required identifier columns.');
+  const byIata=Object.create(null),byIcao=Object.create(null);
+  let airports=0;
+  for(const row of rows.slice(1)){
+    const iata=String(row[indexes.iata]||'').trim().toUpperCase();
+    if(!/^[A-Z]{3}$/.test(iata))continue;
+    const ident=String(row[indexes.ident]||'').trim().toUpperCase();
+    const gps=indexes.gps>=0?String(row[indexes.gps]||'').trim().toUpperCase():'';
+    const icao=/^[A-Z]{4}$/.test(ident)?ident:/^[A-Z]{4}$/.test(gps)?gps:null;
+    if(!icao)continue;
+    const latitude=numberOrNull(row[indexes.latitude]);
+    const longitude=numberOrNull(row[indexes.longitude]);
+    const record={
+      iata,icao,
+      name:String(row[indexes.name]||'').trim()||null,
+      municipality:indexes.municipality>=0?String(row[indexes.municipality]||'').trim()||null:null,
+      country_code:indexes.country>=0?String(row[indexes.country]||'').trim().toUpperCase()||null:null,
+      latitude,longitude,
+      elevation_ft:indexes.elevation>=0?numberOrNull(row[indexes.elevation]):null,
+      airport_type:indexes.type>=0?String(row[indexes.type]||'').trim()||null:null,
+      scheduled_service:indexes.scheduled>=0?String(row[indexes.scheduled]||'').trim().toLowerCase()==='yes':null,
+      source:'OurAirports',
+      source_license:'Public Domain',
+    };
+    if(!byIata[iata])byIata[iata]=[];
+    if(!byIcao[icao])byIcao[icao]=[];
+    byIata[iata].push(record);byIcao[icao].push(record);airports++;
+  }
+  if(airports===0)throw new Error('Airport reference dataset contains no usable IATA/ICAO mappings.');
+  return {byIata,byIcao,airport_record_count:airports,source:'OurAirports',license:'Public Domain'};
+}
+
+function resolveAirportCode(code,index) {
+  const value=String(code||'').trim().toUpperCase();
+  if(!/^[A-Z]{3,4}$/.test(value))return {
+    status:'NOT_REQUESTED',reason:'airport_code_must_be_three_letter_iata_or_four_letter_icao',
+    supplied_code:value||null,airport:null,source:'OurAirports',
+  };
+  if(!index||!index.byIata||!index.byIcao)return {
+    status:'UNAVAILABLE',reason:'airport_reference_dataset_unavailable',
+    supplied_code:value,airport:null,source:'OurAirports',
+  };
+  const records=(value.length===4?index.byIcao[value]:index.byIata[value])||[];
+  const unique=new Map(records.map(record=>[record.icao,record]));
+  const candidates=[...unique.values()];
+  if(candidates.length===0)return {
+    status:'NOT_FOUND',reason:'no_exact_iata_icao_reference_match',
+    supplied_code:value,airport:null,candidate_count:0,source:'OurAirports',
+  };
+  if(candidates.length>1)return {
+    status:'AMBIGUOUS',reason:'multiple_airports_share_the_supplied_identifier',
+    supplied_code:value,airport:null,candidate_count:candidates.length,
+    candidates:candidates.slice(0,10),source:'OurAirports',
+  };
+  return {
+    status:'RESOLVED',reason:null,supplied_code:value,
+    supplied_code_type:value.length===3?'IATA':'ICAO',
+    airport:candidates[0],candidate_count:1,source:'OurAirports',license:'Public Domain',
+  };
+}
+
+async function loadAirportReferenceIndex({fetcher=global.fetch,now=Date.now()}={}) {
+  if(airportReferenceIndex&&airportReferenceExpiresAt>now)return airportReferenceIndex;
+  if(airportReferenceLoadPromise)return airportReferenceLoadPromise;
+  airportReferenceLoadPromise=(async()=>{
+    if(typeof fetcher!=='function')throw new Error('Global fetch is unavailable.');
+    const response=await fetcher(AIRPORT_REFERENCE_URL,{
+      method:'GET',
+      headers:{Accept:'text/csv','User-Agent':'Sonalit-SJM/1.0 (airport reference data)'},
+      signal:AbortSignal.timeout(20_000),
+    });
+    if(!response.ok)throw new Error('OurAirports reference download failed with HTTP '+response.status+'.');
+    const length=Number(response.headers?.get?.('content-length'));
+    if(Number.isFinite(length)&&length>MAX_AIRPORT_REFERENCE_BYTES)throw new Error('OurAirports reference CSV exceeds the configured size limit.');
+    const csv=await response.text();
+    if(csv.length>MAX_AIRPORT_REFERENCE_BYTES)throw new Error('OurAirports reference CSV exceeds the configured size limit.');
+    const index=buildAirportReferenceIndex(csv);
+    airportReferenceIndex=index;
+    airportReferenceExpiresAt=now+AIRPORT_REFERENCE_TTL_MS;
+    return index;
+  })();
+  try{return await airportReferenceLoadPromise;}
+  finally{airportReferenceLoadPromise=null;}
+}
+
 function cleanCode(value,max=16) {
   const code=String(value||'').trim().toUpperCase();
   return /^[A-Z0-9-]+$/.test(code)&&code.length<=max?code:null;
