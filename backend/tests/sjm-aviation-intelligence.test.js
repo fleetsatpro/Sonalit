@@ -279,6 +279,7 @@ describe('SJM federated aviation intelligence',()=>{
     '1,HKJK,large_airport,Jomo Kenyatta International,-1.3192,36.9278,5334,AF,KE,KE-30,Nairobi,yes,HKJK,NBO,',
     '2,HKMO,large_airport,Moi International,-4.0348,39.5942,200,AF,KE,KE-28,Mombasa,yes,HKMO,MBA,',
     '3,HKNC,small_airport,Coastal Field,-4.1,39.6,20,AF,KE,KE-28,Mombasa,no,HKNC,MBA,',
+    '4,HKSP,small_airport,Remote Field,-3.1,37.2,10,AF,KE,KE-00,Remote,no,HKSP,,',
   ].join('\n');
 
   test('parses quoted CSV airport names and preserves embedded commas',()=>{
@@ -298,6 +299,10 @@ describe('SJM federated aviation intelligence',()=>{
     expect(aviation.resolveAirportCode('HKMO',index)).toMatchObject({
       status:'RESOLVED',supplied_code_type:'ICAO',
       airport:{iata:'MBA',icao:'HKMO',municipality:'Mombasa'},
+    });
+    expect(aviation.resolveAirportCode('HKSP',index)).toMatchObject({
+      status:'RESOLVED',supplied_code_type:'ICAO',
+      airport:{iata:null,icao:'HKSP',name:'Remote Field'},
     });
   });
 
