@@ -246,7 +246,7 @@ describe('SJM federated aviation intelligence',()=>{
       provider:'adsb_lol',age_seconds:12,evidence_class:'OBSERVED',
       timestamp_basis:'derived_from_provider_seen_pos',
     });
-    expect(item.altitude_m).toBeCloseTo(12400*0.3048,5);
+    expect(item.geometric_altitude_m).toBeCloseTo(12400*0.3048,5);
     expect(item.observed_at).toBe(new Date(now-12_000).toISOString());
     expect(aviation.normaliseAdsbLolRecord({hex:'abc123',flight:'KQ100',lat:null,lon:36.8},now)).toBeNull();
     expect(aviation.normaliseAdsbLolRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:601},now)).toBeNull();
