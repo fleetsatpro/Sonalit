@@ -289,7 +289,7 @@ function snapshot(now=Date.now(),config=getConfig(),statusOverride=null) {
 }
 
 function presentSnapshot(data,now=Date.now()) {
-  const interval=Math.max(60,Number(data.poll_interval_seconds)||120);
+  const interval=Math.max(5,Number(data.poll_interval_seconds)||120);
   const lastPoll=Date.parse(data.last_received_at||'');
   const connected=Number.isFinite(lastPoll)&&now-lastPoll<=Math.max(interval*3000,180_000);
   const items=(data.aircraft||[]).map(item=>({
