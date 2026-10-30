@@ -26,7 +26,7 @@ const CATEGORY={
 };
 
 let accessToken=null,accessTokenExpiresAt=0;
-let ownerToken=null,workerConfig=null,pollTimer=null,leaseTimer=null,pollInFlight=null;
+let ownerToken=null,workerConfig=null,pollTimer=null,leaseTimer=null,pollInFlight=null,redisReadyPromise=null;
 let aircraft=new Map();
 let lastSuccessfulPollAt=null,lastPositionAt=null,lastProviderTime=null;
 let messageCount=0,positionCount=0,rejectedCount=0,rateLimitRemaining=null;
@@ -284,6 +284,20 @@ function snapshot(now=Date.now(),config=getConfig(),statusOverride=null) {
   };
 }
 
+function presentSnapshot(data,now=Date.now()) {
+  const interval=Math.max(60,Number(data.poll_interval_seconds)||120);
+  const lastPoll=Date.parse(data.last_received_at||'');
+  const connected=Number.isFinite(lastPoll)&&now-lastPoll<=Math.max(interval*3000,180_000);
+  const items=(data.aircraft||[]).map(item=>({
+    ...item,age_seconds:Math.max(0,Math.floor((now-Date.parse(item.observed_at))/1000)),
+    freshness:classifyFreshness(item.observed_at,now),
+  })).filter(item=>item.freshness!=='UNAVAILABLE');
+  const retryPending=data.status==='RATE_LIMITED'&&Date.parse(data.next_poll_at||'')>now;
+  const status=retryPending?'RATE_LIMITED':!connected?'UNAVAILABLE':
+    items.some(item=>item.freshness==='LIVE')?'LIVE':items.length?'DELAYED':'CONNECTED';
+  return {...data,status,connected,aircraft:items};
+}
+
 function inactiveSnapshot(reason='feed_disabled') {
   return {
     provider:'opensky_rest',provider_name:'OpenSky Network',status:'NOT_CONFIGURED',
@@ -302,8 +316,11 @@ function inactiveSnapshot(reason='feed_disabled') {
 async function readyRedis() {
   const redis=getRedis();
   if(!redis)throw new Error('SJM airspace shared Redis store is disabled.');
-  if(redis.status==='wait')await redis.connect();
   if(redis.status==='end')throw new Error('SJM airspace shared Redis store is closed.');
+  if(redis.status==='wait'){
+    if(!redisReadyPromise)redisReadyPromise=redis.connect().catch(error=>{redisReadyPromise=null;throw error;});
+    await redisReadyPromise;
+  }
   await redis.ping();
   return redis;
 }
@@ -419,7 +436,7 @@ async function getSnapshot({start=true}={}) {
     const shared=await redis.get(SNAPSHOT_KEY);
     if(shared){
       const data=JSON.parse(shared);
-      if(data?.provider==='opensky_rest'&&Array.isArray(data.aircraft))return data;
+      if(data?.provider==='opensky_rest'&&Array.isArray(data.aircraft))return presentSnapshot(data);
     }
     return {
       ...inactiveSnapshot('awaiting_first_provider_snapshot'),
@@ -444,7 +461,7 @@ function resetForTests() {
   if(pollTimer)clearInterval(pollTimer);
   if(leaseTimer)clearInterval(leaseTimer);
   pollTimer=null;leaseTimer=null;pollInFlight=null;
-  ownerToken=null;workerConfig=null;aircraft=new Map();
+  ownerToken=null;workerConfig=null;redisReadyPromise=null;aircraft=new Map();
   accessToken=null;accessTokenExpiresAt=0;
   lastSuccessfulPollAt=null;lastPositionAt=null;lastProviderTime=null;
   messageCount=0;positionCount=0;rejectedCount=0;rateLimitRemaining=null;
