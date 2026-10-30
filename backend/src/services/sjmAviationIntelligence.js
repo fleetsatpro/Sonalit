@@ -512,7 +512,7 @@ function compareAircraftSources({flightNumber,opensky,adsbLol}={}) {
   };
 }
 
-function buildSourceRegistry({opensky,weather,adsbLol,commercial}={}) {
+function buildSourceRegistry({opensky,weather,adsbLol,commercial,airportReference}={}) {
   return [
     {id:'opensky',name:'OpenSky Network',capability:'aircraft_positions',status:opensky?.status||'UNKNOWN',
       role:'Primary bounded aircraft state vectors',commercial_data:false,authority:'aircraft_state_only'},
@@ -526,17 +526,40 @@ function buildSourceRegistry({opensky,weather,adsbLol,commercial}={}) {
       role:'National official NOTAM and flight briefing source',url:KCAA_AIM_URL,operational_authority:true},
     {id:'eurocontrol_ead',name:'EUROCONTROL MyEAD',capability:'global_notam_and_aeronautical_data',status:'AGREEMENT_REQUIRED',
       role:'System-to-system aeronautical data and worldwide NOTAM exchange',url:EAD_URL,operational_authority:true},
-    {id:'ourairports',name:'OurAirports',capability:'airport_reference_data',status:'AVAILABLE_NOT_SYNCED',
-      role:'Supplemental airport/runway/navaid metadata',license:'Public Domain',quality_limit:'No accuracy or fitness-for-use warranty'},
+    {id:'ourairports',name:'OurAirports',capability:'airport_reference_data',status:airportReference?.status||'NOT_REQUESTED',
+      role:'Airport IATA/ICAO resolution and supplemental reference metadata',license:'Public Domain',quality_limit:'No accuracy or fitness-for-use warranty'},
     {id:'openflightmaps',name:'open flightmaps',capability:'supplemental_aeronautical_reference',status:'OPTIONAL_NOT_SYNCED',
       role:'Supplemental VFR aeronautical database where regional coverage exists',license:'OFMA General Users License',
       quality_limit:'Not certified; never use as primary navigation data'},
   ];
 }
 
-async function getSnapshot({flightNumber,airportIcao,baseSnapshot,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
+async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
+  const suppliedAirportCode=String(airportCode||airportIcao||'').trim().toUpperCase();
+  let airportReference={
+    status:'NOT_REQUESTED',reason:'journey_airport_code_not_supplied',
+    supplied_code:null,airport:null,source:'OurAirports',
+  };
+  if(suppliedAirportCode){
+    try{
+      const index=await loadAirportReferenceIndex({fetcher,now});
+      airportReference=resolveAirportCode(suppliedAirportCode,index);
+    }catch(error){
+      airportReference={
+        status:'UNAVAILABLE',reason:error?.code||'airport_reference_provider_unavailable',
+        supplied_code:suppliedAirportCode,airport:null,source:'OurAirports',
+      };
+    }
+  }
+  const resolvedIcao=airportReference.status==='RESOLVED'?airportReference.airport.icao:null;
+  const weatherRequest=resolvedIcao
+    ?loadWeather({airportIcao:resolvedIcao,fetcher,now})
+    :Promise.resolve({
+      status:'NOT_REQUESTED',reason:airportReference.reason||'verified_icao_station_required',
+      station_icao:null,metar:[],taf:[],international_sigmets:[],
+    });
   const [weatherResult,adsbResult,flightResult]=await Promise.all([
-    loadWeather({airportIcao,fetcher,now}).catch(error=>({status:'UNAVAILABLE',reason:error?.code||'provider_error',metar:[],taf:[],international_sigmets:[]})),
+    weatherRequest.catch(error=>({status:'UNAVAILABLE',reason:error?.code||'provider_error',metar:[],taf:[],international_sigmets:[]})),
     loadAdsbLolCallsign({callsign:flightNumber,env,fetcher,now}),
     loadCommercialFlight({flightNumber,env,fetcher,now}),
   ]);
@@ -549,12 +572,13 @@ async function getSnapshot({flightNumber,airportIcao,baseSnapshot,env=process.en
     ['adsb_lol',adsbLol.status==='AVAILABLE'],
     ['aerodatabox',commercial.status==='AVAILABLE'],
     ['aviationweather_gov',Boolean(weather.metar?.length||weather.taf?.length||weather.international_sigmets?.length)],
+    ['ourairports',airportReference.status==='RESOLVED'],
   ].filter(([,active])=>active).length;
   return {
     ...(baseSnapshot||{}),
     intelligence:{
       generated_at:new Date(now).toISOString(),
-      providers:buildSourceRegistry({opensky:baseSnapshot,weather,adsbLol,commercial}),
+      providers:buildSourceRegistry({opensky:baseSnapshot,weather,adsbLol,commercial,airportReference}),
       flight_status:commercial,
       aircraft_cross_check:adsbLol,
       aircraft_comparison:comparison,
@@ -566,7 +590,7 @@ async function getSnapshot({flightNumber,airportIcao,baseSnapshot,env=process.en
         global_source:'EUROCONTROL MyEAD requires system-to-system agreement; EAD Basic is not for operational use.',
       },
       airport_reference:{
-        status:'REFERENCE_DATA_AVAILABLE',
+        ...airportReference,
         sources:['OurAirports Public Domain','open flightmaps OFMA General Users License'],
         warning:'Reference datasets are supplementary and must not be used as certified navigation data or operational NOTAM authority.',
       },
@@ -576,11 +600,12 @@ async function getSnapshot({flightNumber,airportIcao,baseSnapshot,env=process.en
   };
 }
 
-function resetCacheForTests(){responseCache.clear();}
+function resetCacheForTests(){responseCache.clear();airportReferenceIndex=null;airportReferenceExpiresAt=0;airportReferenceLoadPromise=null;}
 
 module.exports={
   cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
   normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseCallsign,haversineKm,compareAircraftSources,
   loadInternationalSigmets,loadWeather,loadAdsbLolCallsign,normaliseCommercialMovement,normaliseCommercialFlight,loadCommercialFlight,
+  parseCsvRows,buildAirportReferenceIndex,resolveAirportCode,loadAirportReferenceIndex,
   buildSourceRegistry,getSnapshot,resetCacheForTests,
 };
