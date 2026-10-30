@@ -155,6 +155,7 @@ describe('SJM OpenSky REST airspace feed',()=>{
     expect(fetcher).toHaveBeenCalledTimes(1);
     const request=fetcher.mock.calls[0][1];
     expect(request.method).toBe('POST');
+    expect(request.redirect).toBe('error');
     expect(request.body).toContain('grant_type=client_credentials');
     expect(request.body).toContain('client_id=api-client-id');
     expect(request.body).toContain('client_secret=api-client-secret');
@@ -178,6 +179,7 @@ describe('SJM OpenSky REST airspace feed',()=>{
     expect(result.rateLimitRemaining).toBe(3997);
     expect(fetcher).toHaveBeenCalledTimes(4);
     expect(fetcher.mock.calls[1][1].headers.Authorization).toBe('Bearer expired-token');
+    expect(fetcher.mock.calls[1][1].redirect).toBe('error');
     expect(fetcher.mock.calls[3][1].headers.Authorization).toBe('Bearer new-token');
   });
 
