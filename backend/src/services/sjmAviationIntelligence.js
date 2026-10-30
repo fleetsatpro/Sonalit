@@ -540,7 +540,7 @@ function normaliseFlyItalyAdsbRecord(item,now=Date.now()) {
     positionSource==='adsr_icao'?'ADS-R':null;
   return {
     id:hex,map_key:'flyitalyadsb:'+hex,ident:callsign||hex.toUpperCase(),
-    registration:textOrNull(item.r),latitude,longitude,
+    registration:textOrNull(item.r),aircraft_type:textOrNull(item.t),latitude,longitude,
     altitude_m:geometricMetres??barometricMetres,
     altitude_reference:geometricMetres!==null?'GEOMETRIC':barometricMetres!==null?'BAROMETRIC_PRESSURE':null,
     geometric_altitude_m:geometricMetres,barometric_altitude_m:barometricMetres,
