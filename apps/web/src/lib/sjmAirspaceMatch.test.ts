@@ -7,6 +7,21 @@ const aircraft={
   latitude:-1.3,longitude:36.8,altitude_m:10800,altitude_reference:'GEOMETRIC',ground_speed_mps:220,heading_deg:280,
 };
 
+describe('SJM airspace display status',()=>{
+  it('preserves regional stale state when OpenSky is not configured',()=>{
+    expect(resolveAirspaceDisplayStatus('NOT_CONFIGURED','STALE')).toBe('STALE');
+  });
+  it('surfaces a regional rate limit when the primary feed is not configured',()=>{
+    expect(resolveAirspaceDisplayStatus('NOT_CONFIGURED','RATE_LIMITED')).toBe('RATE_LIMITED');
+  });
+  it('does not downgrade a live primary snapshot because a secondary feed is stale',()=>{
+    expect(resolveAirspaceDisplayStatus('LIVE','STALE')).toBe('LIVE');
+  });
+  it('shows regional refreshing when the primary feed is unavailable',()=>{
+    expect(resolveAirspaceDisplayStatus('UNAVAILABLE','REFRESHING')).toBe('REFRESHING');
+  });
+});
+
 describe('SJM journey flight correlation',()=>{
   it('normalises spaces and punctuation without changing the stored reference',()=>{
     expect(normaliseFlightIdent(' kq 100 ')).toBe('KQ100');
