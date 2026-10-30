@@ -243,6 +243,13 @@ async function stubFieldSjmApi(page: Page, detail: Record<string, unknown> = { .
 }
 
 test.describe('SJM command-centre responsive smoke', () => {
+  test('legacy corridor URLs redirect to the standalone protective-mobility routes', async ({ page }) => {
+    await seedAuth(page);
+    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\\/sjm$/);
+    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\\/sjm\\/field$/);
+  });
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
   test('keeps the journey workspace readable without horizontal overflow at target viewports', async ({ page }, testInfo: TestInfo) => {
@@ -258,7 +265,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     for (const viewport of targets) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+      await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
 
       await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
       await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 10000 });
@@ -415,7 +422,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await seedAuth(page);
     await stubSjmApi(page);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
     const resourcesTab = page.getByRole('tab', { name: 'Team & resources' });
     await expect(resourcesTab).toBeVisible();
@@ -455,7 +462,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       body: JSON.stringify({ data: { ...journey, id: secondJourneyId, reference: 'SJM-E2E-002', title: 'Second executive transfer' } }),
     }));
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
 
     const workspace = page.locator('#sjm-mission-workspace');
@@ -512,7 +519,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'e2e-token' }),
     }));
 
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
     await page.getByRole('button', { name: 'Open secure channel' }).click();
     await page.waitForURL((url) => url.pathname === '/messages' && url.searchParams.get('channelId') === missionChannelId);
@@ -606,7 +613,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await seedAuth(page);
     await stubSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
     const tabs = page.getByRole('tablist', { name: 'Journey workspace views' });
@@ -678,7 +685,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       } }),
     }));
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
     await page.getByRole('tab', { name: 'Airspace 3D' }).click();
     const display = page.getByTestId('sjm-airspace-display');
@@ -749,7 +756,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await seedAuth(page);
     const { flightStatusUpdates } = await stubSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
 
     const flightCard = page.getByRole('region', { name: 'Flight status' });
     await expect(flightCard).toBeVisible({ timeout: 15000 });
@@ -805,7 +812,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
     const firstCard = page.getByRole('region', { name: 'Flight status' });
     await firstCard.getByRole('button', { name: 'Record flight status' }).click();
@@ -838,7 +845,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await seedAuth(page);
     await stubSjmApi(page);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
 
     const team = page.locator('details.sjm-team-admin');
     await expect(team).toBeVisible({ timeout: 15000 });
@@ -875,7 +882,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
     await assignmentsRequestStarted;
 
     await expect(page.getByText('Refreshing authorised mission scope…')).toBeVisible();
@@ -896,7 +903,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       }),
     );
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByText('A mission is no longer in your authorised assignment list. Its sensitive details have been removed.')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Synthetic fixture instructions only.')).not.toBeVisible();
@@ -909,7 +916,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await seedAuth(page);
     await stubFieldSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
 
     const routeMap = page.getByTestId('sjm-field-route-map');
     await expect(routeMap).toBeVisible({ timeout: 15000 });
@@ -933,7 +940,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     };
     await stubFieldSjmApi(page, routedDetail);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
 
     const routeMap = page.getByTestId('sjm-field-route-map');
     await expect(routeMap).toBeVisible({ timeout: 15000 });
@@ -949,7 +956,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await seedAuth(page);
     await stubFieldSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
 
     const communications = page.getByRole('heading', { name: 'Private mission channel' });
     const milestones = page.getByRole('heading', { name: 'Mission milestones' });
@@ -971,7 +978,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       }),
     );
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByRole('heading', { name: 'Private mission channel' })).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Message history could not be loaded. No empty-state assumption is made.')).toBeVisible({ timeout: 20000 });
@@ -1015,7 +1022,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       });
     });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('176 matches')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Register summary: 176 journeys', { exact: false })).toBeVisible();
     const registerResponse = (offset: string, filter?: string, sort?: string) => page.waitForResponse((response) => {
@@ -1083,7 +1090,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       body: JSON.stringify({ data: moving }),
     }));
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('sjm-journey-progress').getByText('Stage 6 of 8')).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId('sjm-journey-progress').getByRole('listitem', { name: 'Overview Movement current' })).toBeVisible();
     await expect(page.getByTestId('sjm-journey-progress').getByRole('listitem', { name: 'Overview Arrival upcoming' })).toBeVisible();
