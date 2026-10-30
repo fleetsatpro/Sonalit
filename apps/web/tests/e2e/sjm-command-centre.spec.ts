@@ -653,6 +653,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         position_count: 1,
         rejected_count: 0,
         coverage: { complete: false, bounds: { south: -5, west: 30, north: 5, east: 45 }, query_scope: 'bounded' },
+        intelligence: { airport_reference: { status: 'RESOLVED', airport: { latitude: -1.3192, longitude: 36.9278 } } },
         poll_interval_seconds: 30,
         aircraft: [{
           id: '4b1234',
@@ -694,6 +695,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     await regionalView.click();
     await expect(regionalView).toHaveAttribute('aria-pressed', 'true');
     await expect(globe).toHaveAttribute('data-camera-mode', 'regional');
+    await expect(globe).toHaveAttribute('data-regional-centre-latitude', '-1.3192');
+    await expect(globe).toHaveAttribute('data-regional-centre-longitude', '36.9278');
+    await expect(globe).toHaveAttribute('data-regional-camera-height-m', '1250000');
+    await expect(globe).toHaveAttribute('data-regional-radius-nm', '250');
     await orbitalView.click();
     await expect(orbitalView).toHaveAttribute('aria-pressed', 'true');
     await expect(globe).toHaveAttribute('data-camera-mode', 'orbital');
