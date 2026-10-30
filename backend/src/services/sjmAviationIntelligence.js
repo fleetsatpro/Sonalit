@@ -246,7 +246,7 @@ async function loadCommercialFlight({flightNumber,env=process.env,fetcher=global
   }
 }
 
-function normaliseCallsighn(value) {
+function normaliseCallsign(value) {
   return String(value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
 
@@ -259,10 +259,10 @@ function haversineKm(a,b) {
 }
 
 function compareAircraftSources({flightNumber,opensky,adsbLol}={}) {
-  const reference=normaliseCallsighn(flightNumber);
+  const reference=normaliseCallsign(flightNumber);
   if(!reference)return {status:'NOT_REQUESTED',primary_count:0,secondary_count:0,note:'No journey flight reference was supplied.'};
-  const primary=(opensky?.aircraft||[]).filter(item=>normaliseCallsighn(item.ident)===reference);
-  const secondary=(adsbLol?.records||[]).filter(item=>normaliseCallsighn(item.ident)===reference);
+  const primary=(opensky?.aircraft||[]).filter(item=>normaliseCallsign(item.ident)===reference);
+  const secondary=(adsbLol?.records||[]).filter(item=>normaliseCallsign(item.ident)===reference);
   if(!opensky?.configured||!['LIVE','DELAYED','CONNECTED'].includes(opensky?.status)||adsbLol?.status==='UNAVAILABLE'||adsbLol?.status==='NOT_CONFIGURED'){
     return {status:'INSUFFICIENT_DATA',flight_number:flightNumber,primary_count:primary.length,secondary_count:secondary.length,
       note:'Both provider observations are required for an independent comparison. A missing result is not evidence that the flight or aircraft is absent.'};
@@ -362,7 +362,7 @@ function resetCacheForTests(){responseCache.clear();}
 
 module.exports={
   cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
-  normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseCallsighn,haversineKm,compareAircraftSources,
+  normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseCallsign,haversineKm,compareAircraftSources,
   loadWeather,loadAdsbLolCallsign,loadCommercialFlight,
   buildSourceRegistry,getSnapshot,resetCacheForTests,
 };
