@@ -39,24 +39,47 @@ Journey reports can be generated manually as itinerary, pre-trip brief, daily tr
 
 ## Aviation data and live airspace
 
-SJM's aviation layer is a 3D airspace picture, not a renamed journey map. It is independent from Guardian telemetry, the operator-entered flight-status field, airline FLIFO events and the authorised journey arrival/handover process.
+SJM's aviation layer uses the OpenSky Network REST API as its preferred aircraft-state source. It is independent from Guardian telemetry, operator-entered airline status, commercial flight-information services, and the authorised journey arrival/handover process.
 
-The initial commercial provider adapter is FlightAware Firehose. It uses a persistent TLS 1.2+ TCP connection to `firehose.flightaware.com:1501`; the provider sends JSON Lines messages. The subscription must include the position layer (ADS-B/MLAT/radar layers as actually purchased) and any required FLIFO/arrival/departure event layers. Provider account enablement, pricing and permitted redistribution depend on the actual subscription and application scope.
+### Provider contract and operating limits
 
-Feed activation is blocked until an authorised platform operator configures all of these:
+OpenSky `GET /states/all` returns bounded state-vector snapshots, not a continuous TCP/WebSocket transponder stream. Authenticated REST state vectors have five-second time resolution; the service therefore polls a contracted geographic rectangle and shares the latest validated snapshot across SJM API replicas. The initial default is a 120-second polling interval. The adapter raises that interval when the configured geographic query cost and daily credit budget require it.
 
+OpenSky state-vector fields used by SJM are:
+- ICAO24 address, callsign and origin-country inference;
+- WGS-84 latitude/longitude, position timestamp and last-contact timestamp;
+- barometric altitude and geometric altitude (where provided), ground speed, true track, vertical rate and on-ground state;
+- squawk, source type and aircraft category when present.
+
+The adapter does not invent aircraft registration, origin/destination, route, airline schedule, gate, delay, cancellation or arrival messages. OpenSky's REST API does not provide commercial flight schedules or FLIFO disruption events, and its REST state-vector endpoint does not provide MLAT position vectors. An exact callsign correlation is therefore only a correlation against a current aircraft state vector; it is not proof of passenger identity, flight schedule, arrival, handover or journey closure.
+
+For 3D placement, only an ADS-B geometric-altitude value from position source `0` is treated as WGS-84 ellipsoid height. Other geometric altitude values remain explicitly labelled but are not assumed to share that vertical datum; barometric altitude is never used as ellipsoid height. If no trustworthy geometric height is available, the aircraft marker is placed at the ellipsoid surface while its reported altitude remains visible in the detail panel.
+
+### Licensing and credentials
+
+OpenSky's current Terms of Use require written permission and a licence for any for-profit/commercial entity and for any operational REST API use in a live product, service or automated system. This includes internal operational use. Feed activation is therefore blocked until the intended Sonalit commercial and operational scope, tenant display/redistribution rights and any required data-sharing restrictions are confirmed in a written agreement directly with OpenSky Network.
+
+The authorised runtime configuration is:
 - `SJM_AIRSPACE_FEED_ENABLED=true`
-- `SJM_AIRSPACE_LICENSE_CONFIRMED=true` after commercial licence and intended tenant-display/redistribution rights have been reviewed
-- `FLIGHTAWARE_FIREHOSE_USERNAME` and `FLIGHTAWARE_FIREHOSE_API_KEY` as server-side secrets
-- `SJM_AIRSPACE_BOUNDS` as a bounded operational rectangle in `south west north east` order (for example `-5 32 6 42` for a contracted East Africa region)
+- `SJM_AIRSPACE_LICENSE_CONFIRMED=true` only after the written operational/commercial licence and intended tenant-display/redistribution scope have been reviewed and approved
+- `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET` as server-side secrets (OAuth2 API-client credentials, never browser credentials)
+- `SJM_AIRSPACE_BOUNDS` as a bounded operational rectangle in `south west north east` order
+- `OPENSKY_POLL_INTERVAL_SECONDS` for the desired poll interval (default 120 seconds; the effective interval may be increased to stay within the credit budget)
+- `OPENSKY_DAILY_CREDIT_BUDGET` for the daily REST state-query credit budget (default 3,000, deliberately below the documented standard authenticated allowance)
 
-The backend owns the persistent TLS connection, JSONL parsing, reconnect/idle handling, bounded aircraft cache, freshness classification and event provenance. It retains the latest valid Firehose PITR cursor and resumes from that cursor after reconnect; older replayed position observations cannot overwrite a newer aircraft state. The browser never receives credentials. FlightAware GNSS altitude is distinguished as height above the WGS84 ellipsoid; uncorrected pressure altitude is retained as a reported value but is not incorrectly plotted as ellipsoid height. The Cesium globe plots only validated provider-observed positions and reported trail points; it does not dead-reckon aircraft between observations or claim complete coverage. The globe imports the Cesium engine without the optional widget/Knockout bundle, preserving the JavaScript `eval`/`new Function` prohibition. The web document policy grants only the narrower `wasm-unsafe-eval` source needed for WebAssembly compilation; the larger 3D engine chunk remains lazy and is excluded from the PWA offline precache. When the feed is not configured, the endpoint returns `NOT_CONFIGURED` with an empty aircraft collection and the globe remains empty. It does not fall back to the OpenSky research API or show synthetic aircraft.
+OpenSky REST API authentication uses the OAuth2 client-credentials flow. Access tokens expire after 30 minutes and are refreshed server-side. Basic username/password authentication is not supported. API rate-limit headers are monitored; HTTP 429 responses are respected using the provider's retry-after header instead of being hammered with immediate retries.
 
-The current ingest connection and cache are process-local. Do not enable the provider on a horizontally scaled API deployment: separate replicas could open duplicate licensed connections and return inconsistent local snapshots. Until a dedicated singleton ingest owner and shared snapshot/fan-out path are implemented and tested, the feed may only run on one backend process. Provider credentials and `SJM_AIRSPACE_LICENSE_CONFIRMED` must remain unset until this deployment constraint, the purchased data layers and the permitted tenant-display/redistribution scope are approved.
+### Quota and polling model
 
-OpenSky is not the default commercial SJM feed: its published terms require written permission for commercial/for-profit use and for operational REST API integration. Any separately licensed OpenSky adapter must remain governed by its approved licence and scope.
+The documented `/states/all` credit cost is based on the bounding-box area: up to 25 square degrees costs 1 credit, up to 100 costs 2, up to 400 costs 3, and larger supported queries cost 4. The standard authenticated quota is documented as 4,000 credits per day. SJM defaults to a 3,000-credit budget and calculates a minimum safe poll interval from that budget and the configured rectangle. For the current example `-5 32 6 42` (110 square degrees), the request costs 3 credits; at 120-second polling the projected use is approximately 2,160 credits per day.
 
-A reported aircraft arrival or landing is not evidence that the principal has reached the receiving team. It must never transition the SJM lifecycle, complete a stop, verify custody or close a journey. Those remain separate authorised operations with their own evidence.
+The adapter polls only the configured rectangle, bounds aircraft and trail history, rejects malformed/future/out-of-order positions, preserves source timestamps and freshness, and stores the current snapshot in Redis. A Redis lease elects one ingest owner across API replicas; all replicas read the same shared snapshot. If Redis is unavailable, the feed fails closed instead of opening duplicate provider queries or returning a replica-local cache. The 3D globe consumes the shared provider snapshot; it does not extrapolate trajectories between observations.
+
+No anonymous/public API fallback, synthetic aircraft, unauthorised secondary accounts or credit-limit circumvention is permitted. OpenSky coverage varies geographically; the quality and continuity of coverage in each contracted operating region, especially East Africa, must be measured during an authorised evaluation before the feed is treated as operationally suitable.
+
+The browser receives only the bounded, normalised state snapshot and its provenance. It never receives OAuth credentials. The OpenSky dataset's use and subsequent disclosure remain subject to the licence's restrictions. An empty view does not establish that no aircraft are present.
+
+A provider-reported aircraft position or apparent landing never transitions the SJM lifecycle, confirms a client flight schedule, completes a stop, verifies principal custody or closes a journey. Those remain separate authorised operations with their own evidence.
 
 ## API
 ## Validation
