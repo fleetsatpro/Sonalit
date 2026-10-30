@@ -671,17 +671,48 @@ test.describe('SJM command-centre responsive smoke', () => {
         rejected_count: 0,
         coverage: { complete: false, bounds: { south: -5, west: 30, north: 5, east: 45 }, query_scope: 'bounded' },
         intelligence: {
-          airport_reference: { status: 'RESOLVED', airport: { icao: 'HKJK', name: 'Jomo Kenyatta International Airport', municipality: 'Nairobi', latitude: -1.3192, longitude: 36.9278 } },
+          generated_at: '2026-10-30T11:30:00.000Z',
+          providers: [
+            { id: 'opensky', name: 'OpenSky Network', capability: 'aircraft_positions', status: 'LIVE', role: 'Primary bounded aircraft state vectors' },
+            { id: 'flyitalyadsb', name: 'FlyItalyADSB', capability: 'regional_aircraft_positions', status: 'AVAILABLE', role: 'Independent informational aircraft observations', license: 'CC-BY-SA-4.0', commercial_use_permitted: true, attribution_required: true, share_alike_required: true, service_level: 'BEST_EFFORT', maximum_radius_km: 500, requests_per_minute: 25, requests_per_month: 270000, provider_plan_requests_per_minute: 30, provider_plan_requests_per_month: 300000, quota_scope: 'shared_product_key' },
+          ],
+          aircraft_area: {
+            status: 'NOT_REQUESTED', configured: false, reason: 'ADSB.lol is not enabled in this fixture',
+            records: [], record_count: 0, radius_nm: 250, source: 'ADSB.lol', license: 'ODbL-1.0',
+          },
           flyitaly_area: {
             status: 'AVAILABLE', configured: true, radius_km: 500, record_count: 1, rejected_count: 0,
             source: 'FlyItalyADSB', license: 'CC-BY-SA-4.0', attribution_required: true, share_alike_required: true,
             coverage: { complete: false, query_scope: 'airport_centred_radius', centre: { icao: 'HKJK', latitude: -1.3192, longitude: 36.9278 }, radius_km: 500 },
             records: [{
               id: 'abc123', map_key: 'flyitalyadsb:abc123', provider: 'flyitalyadsb', position_provider: 'flyitalyadsb',
-              position_source_label: 'FlyItalyADSB ADS-B / MLAT network', ident: 'KQFILL', latitude: -1.31, longitude: 36.92,
+              position_source: 'adsb_icao', position_source_label: 'FlyItalyADSB ADS-B', aircraft_type: 'B789',
+              ident: 'KQFILL', latitude: -1.31, longitude: 36.92,
               altitude_m: 11000, altitude_reference: 'GEOMETRIC', ground_speed_mps: 220, heading_deg: 95,
               observed_at: '2026-10-30T11:29:45.000Z', age_seconds: 15, freshness: 'LIVE', trail: [],
             }],
+          },
+          flight_status: {
+            status: 'NOT_CONFIGURED', reason: 'No commercial flight provider is configured',
+            flight_number: 'ZZ 100', flights: [], source: 'AeroDataBox', checked_at: '2026-10-30T11:30:00.000Z',
+          },
+          aircraft_cross_check: { status: 'NOT_CONFIGURED', records: [], source: 'ADSB.lol' },
+          aircraft_comparison: { status: 'NOT_REQUESTED', note: 'No OpenSky/ADSB.lol cross-check was requested in this fixture.', primary_count: 0, secondary_count: 0 },
+          aviation_weather: { status: 'NOT_REQUESTED', reason: 'Weather not requested in this fixture', station_icao: null, metar: [], taf: [], international_sigmets: [] },
+          notams: {
+            status: 'ACCESS_REQUIRED', source: 'KCAA AIM / Nairobi FIR',
+            message: 'Official NOTAM access requires an authorised account.',
+            url: 'https://aim.kcaa.or.ke/', global_source: 'EUROCONTROL MyEAD requires a system-to-system agreement.',
+          },
+          airport_reference: {
+            status: 'RESOLVED', supplied_code: 'NBO', supplied_code_type: 'IATA', candidate_count: 1,
+            airport: { iata: 'NBO', icao: 'HKJK', name: 'Jomo Kenyatta International Airport', municipality: 'Nairobi', country_code: 'KE', latitude: -1.3192, longitude: 36.9278, airport_type: 'large_airport', scheduled_service: true },
+            source: 'OurAirports', sources: ['OurAirports Public Domain'],
+            warning: 'Airport reference is not certified navigation data.',
+          },
+          provenance: {
+            multi_provider: true, active_provider_count: 2, active_reference_source_count: 1,
+            provider_registry_present: true, fabricated_data_used: false, providers_are_not_equivalent_authorities: true,
           },
         },
         poll_interval_seconds: 30,
