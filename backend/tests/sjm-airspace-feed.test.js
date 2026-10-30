@@ -206,6 +206,35 @@ describe('SJM OpenSky REST airspace feed',()=>{
     expect(output.aircraft[0].trail).toHaveLength(1);
   });
 
+  test('keeps a provider rate-limit state visible after the retry time has elapsed',()=>{
+    const config=feed.getConfig({
+      SJM_AIRSPACE_FEED_ENABLED:'true',SJM_AIRSPACE_LICENSE_CONFIRMED:'true',
+      SJM_AIRSPACE_BOUNDS:'-5 32 6 42',OPENSKY_CLIENT_ID:'client-id',OPENSKY_CLIENT_SECRET:'client-secret',
+    });
+    const observed=new Date(now-5_000).toISOString();
+    const result=feed.presentSnapshot({
+      provider:'opensky_rest',status:'RATE_LIMITED',last_error_code:'provider_rate_limited',
+      last_received_at:new Date(now-5_000).toISOString(),next_poll_at:new Date(now-1_000).toISOString(),
+      poll_interval_seconds:config.pollIntervalSeconds,aircraft:[{
+        id:'abc123',ident:'KQ100',latitude:-1.3,longitude:36.8,
+        observed_at:observed,altitude_m:12000,freshness:'LIVE',
+      }],
+    },now);
+    expect(result.status).toBe('RATE_LIMITED');
+    expect(result.connected).toBe(false);
+    expect(result.aircraft).toHaveLength(1);
+  });
+
+  test('fingerprints coverage and quota config so old-area snapshots cannot be reused',()=>{
+    const config=feed.getConfig({
+      SJM_AIRSPACE_FEED_ENABLED:'true',SJM_AIRSPACE_LICENSE_CONFIRMED:'true',
+      SJM_AIRSPACE_BOUNDS:'-5 32 6 42',OPENSKY_CLIENT_ID:'client-id',OPENSKY_CLIENT_SECRET:'client-secret',
+    });
+    const changed={...config,bounds:{south:-5,west:30,north:6,east:42,area_sq_degrees:132}};
+    expect(feed.configFingerprint(config)).not.toBe(feed.configFingerprint(changed));
+    expect(feed.snapshot(now,config).config_fingerprint).toBe(feed.configFingerprint(config));
+  });
+
   test('unconfigured provider snapshot contains no simulated aircraft or flight-information events',async()=>{
     const result=await feed.getSnapshot({start:false});
     expect(result).toMatchObject({
