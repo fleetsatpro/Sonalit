@@ -671,7 +671,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         rejected_count: 0,
         coverage: { complete: false, bounds: { south: -5, west: 30, north: 5, east: 45 }, query_scope: 'bounded' },
         intelligence: {
-          airport_reference: { status: 'RESOLVED', airport: { latitude: -1.3192, longitude: 36.9278 } },
+          airport_reference: { status: 'RESOLVED', airport: { icao: 'HKJK', name: 'Jomo Kenyatta International Airport', municipality: 'Nairobi', latitude: -1.3192, longitude: 36.9278 } },
           flyitaly_area: {
             status: 'AVAILABLE', configured: true, radius_km: 500, record_count: 1, rejected_count: 0,
             source: 'FlyItalyADSB', license: 'CC-BY-SA-4.0', attribution_required: true, share_alike_required: true,
@@ -716,6 +716,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     const globe = display.getByRole('application', { name: /three-dimensional airspace globe/i });
     await expect(globe).toBeVisible();
     await expect(globe).toHaveAttribute('data-basemap-provider', 'openstreetmap');
+    await expect(display.getByText('AIRSPACE / HKJK · Nairobi')).toBeVisible();
     await expect(globe).toHaveAttribute('data-camera-mode', 'orbital');
     await expect(display.getByTestId('sjm-airspace-basemap-credit').getByRole('link', { name: '© OpenStreetMap contributors' })).toBeVisible();
     const orbitalView = display.getByRole('button', { name: 'Orbital 3D view' });
