@@ -221,6 +221,47 @@ describe('SJM federated aviation intelligence',()=>{
     expect(JSON.stringify(result)).not.toContain('server-secret');
   });
 
+  test('honours ADSB.lol 429 retry-after and caches the rate-limited result',async()=>{
+    const env={
+      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',
+      SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
+    };
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:false,status:429,headers:{get:name=>name.toLowerCase()==='retry-after'?'120':null},
+    });
+    const first=await aviation.loadAdsbLolCallsign({callsign:'KQ100',env,fetcher,now});
+    const second=await aviation.loadAdsbLolCallsign({callsign:'KQ100',env,fetcher,now:now+1_000});
+    expect(first).toMatchObject({status:'RATE_LIMITED',retry_after_seconds:120});
+    expect(second.cache_state).toBe('HIT');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  test('honours AeroDataBox 429 retry-after and caches the rate-limited result',async()=>{
+    const env={
+      SJM_AERODATABOX_ENABLED:'true',SJM_AERODATABOX_COMMERCIAL_LICENSE_CONFIRMED:'true',
+      SJM_AERODATABOX_DERIVED_WORK_LICENSE_CONFIRMED:'true',
+      AERODATABOX_API_KEY:'server-secret',
+      AERODATABOX_API_BASE_URL:'https://prod.api.market/api/v1/aedbx/aerodatabox',
+    };
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:false,status:429,headers:{get:name=>name.toLowerCase()==='retry-after'?'90':null},
+    });
+    const first=await aviation.loadCommercialFlight({flightNumber:'KQ100',env,fetcher,now});
+    const second=await aviation.loadCommercialFlight({flightNumber:'KQ100',env,fetcher,now:now+1_000});
+    expect(first).toMatchObject({status:'RATE_LIMITED',retry_after_seconds:90});
+    expect(second.cache_state).toBe('HIT');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  test('treats a rate-limited secondary aircraft provider as insufficient comparison evidence',()=>{
+    const result=aviation.compareAircraftSources({
+      flightNumber:'KQ100',
+      opensky:{configured:true,status:'LIVE',aircraft:[{id:'abc123',ident:'KQ100'}]},
+      adsbLol:{status:'RATE_LIMITED',records:[]},
+    });
+    expect(result.status).toBe('INSUFFICIENT_DATA');
+  });
+
   test('normalises commercial flight schedule fields while keeping missing milestones null',()=>{
     const flight=aviation.normaliseCommercialFlight({
       number:'KQ100',status:'Expected',
