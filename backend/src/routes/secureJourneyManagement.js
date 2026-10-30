@@ -570,15 +570,15 @@ router.get('/airspace',authorize('admin','dispatcher','operator','analyst'),asyn
   const feed=require('../services/sjmAirspaceFeed');
   const aviation=require('../services/sjmAviationIntelligence');
   const flightNumber=String(req.query.flight_number||'').trim();
-  const airportIcao=String(req.query.airport_icao||'').trim().toUpperCase();
+  const airportCode=String(req.query.airport_code||req.query.airport_icao||'').trim().toUpperCase();
   if(flightNumber.length>10||flightNumber&&!/^[A-Za-z0-9 -]+$/.test(flightNumber)){
     return res.status(400).json({error:{code:'SJM_INVALID_FLIGHT_REFERENCE',message:'Flight number must be a valid airline flight reference.'}});
   }
-  if(airportIcao&&(!/^[A-Z]{4}$/.test(airportIcao))){
-    return res.status(400).json({error:{code:'SJM_INVALID_AIRPORT_ICAO',message:'A four-letter ICAO airport identifier is required for aviation weather lookup.'}});
+  if(airportCode&&(!/^[A-Z]{3,4}$/.test(airportCode))){
+    return res.status(400).json({error:{code:'SJM_INVALID_AIRPORT_CODE',message:'Supply a three-letter IATA or four-letter ICAO airport code.'}});
   }
   const baseSnapshot=await feed.getSnapshot({start:true});
-  const data=await aviation.getSnapshot({flightNumber,airportIcao,baseSnapshot});
+  const data=await aviation.getSnapshot({flightNumber,airportCode,baseSnapshot});
   res.setHeader('Cache-Control','no-store');
   res.json({data});
 }));
