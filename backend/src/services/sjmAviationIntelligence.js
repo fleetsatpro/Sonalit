@@ -604,8 +604,8 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
     ['adsb_lol',adsbLol.status==='AVAILABLE'&&(adsbLol.records||[]).length>0],
     ['aerodatabox',commercial.status==='AVAILABLE'&&(commercial.flights||[]).length>0],
     ['aviationweather_gov',Boolean(weather.metar?.length||weather.taf?.length||weather.international_sigmets?.length)],
-    ['ourairports',airportReference.status==='RESOLVED'],
   ].filter(([,active])=>active).length;
+  const activeReferenceSourceCount=airportReference.status==='RESOLVED'?1:0;
   return {
     ...(baseSnapshot||{}),
     intelligence:{
@@ -627,6 +627,7 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
         warning:'Reference datasets are supplementary and must not be used as certified navigation data or operational NOTAM authority.',
       },
       provenance:{multi_provider:activeProviderCount>=2,active_provider_count:activeProviderCount,
+        active_reference_source_count:activeReferenceSourceCount,
         provider_registry_present:true,fabricated_data_used:false,providers_are_not_equivalent_authorities:true},
     },
   };
