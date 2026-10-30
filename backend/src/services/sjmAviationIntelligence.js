@@ -2,6 +2,10 @@
 
 const AIRWEATHER_BASE='https://aviationweather.gov/api/data';
 const ADSBLOL_BASE='https://api.adsb.lol';
+const FLYITALYADSB_BASE='https://api.flyitalyadsb.com/v2';
+const FLYITALYADSB_RADIUS_KM=500;
+const FLYITALYADSB_MAX_POSITION_AGE_SECONDS=10*60;
+const FLYITALYADSB_CACHE_TTL_MS=60*1000;
 const KCAA_AIM_URL='https://aim.kcaa.or.ke/';
 const EAD_URL='https://www.eurocontrol.int/service/european-ais-database';
 
@@ -181,6 +185,25 @@ function getAdsbLolConfig(env=process.env) {
     license:'ODbL-1.0',commercial_use_permitted:true,
     attribution_required:true,service_level:'BEST_EFFORT',
     production_contact_recommended:true,
+  };
+}
+
+function getFlyItalyAdsbConfig(env=process.env) {
+  const enabled=env.SJM_FLYITALYADSB_ENABLED==='true';
+  const compliance=env.SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED==='true';
+  const apiKey=String(env.FLYITALYADSB_API_KEY||'').trim();
+  let reason=null;
+  if(!enabled)reason='disabled';
+  else if(!compliance)reason='cc_by_sa_share_alike_obligations_not_reviewed';
+  else if(!apiKey||/[\\r\\n]/.test(apiKey))reason='api_key_missing_or_invalid';
+  return {
+    enabled:!reason,reason,baseUrl:FLYITALYADSB_BASE,apiKey:!reason?apiKey:null,
+    license:'CC-BY-SA-4.0',commercial_use_permitted:true,
+    attribution_required:true,share_alike_required:true,
+    service_level:'BEST_EFFORT',production_contact_recommended:false,
+    requests_per_minute:30,requests_per_month:300000,
+    maximum_radius_km:FLYITALYADSB_RADIUS_KM,
+    use_restrictions:['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION'],
   };
 }
 
@@ -405,6 +428,112 @@ function normaliseAdsbLolAreaRecord(item,now=Date.now()) {
     timestamp_basis:'derived_from_provider_seen_pos',
     evidence_class:'OBSERVED',trail:[],
   };
+}
+
+function normaliseFlyItalyAdsbRecord(item,now=Date.now()) {
+  if(!item||typeof item!=='object')return null;
+  const hex=String(item.hex||item.icao24||'').trim().toLowerCase();
+  const latitude=numberOrNull(item.lat),longitude=numberOrNull(item.lon);
+  const seenPosition=numberOrNull(item.seen_pos);
+  if(!/^[0-9a-f]{6}$/.test(hex)||!Number.isFinite(latitude)||!Number.isFinite(longitude)||
+    latitude < -90||latitude > 90||longitude < -180||longitude > 180||
+    !Number.isFinite(seenPosition)||seenPosition<0||seenPosition>FLYITALYADSB_MAX_POSITION_AGE_SECONDS)return null;
+  const ageSeconds=Math.max(0,Math.floor(seenPosition));
+  const geometricFeet=numberOrNull(item.alt_geom);
+  const barometricFeet=item.alt_baro==='ground'?null:numberOrNull(item.alt_baro);
+  const geometricMetres=Number.isFinite(geometricFeet)?geometricFeet*0.3048:null;
+  const barometricMetres=Number.isFinite(barometricFeet)?barometricFeet*0.3048:null;
+  const speedKnots=numberOrNull(item.gs);
+  const heading=numberOrNull(item.track);
+  const callsign=String(item.flight||item.callsign||'').trim().replace(/\\s+/g,' ');
+  return {
+    id:hex,map_key:'flyitalyadsb:'+hex,ident:callsign||hex.toUpperCase(),
+    registration:textOrNull(item.r),latitude,longitude,
+    altitude_m:geometricMetres??barometricMetres,
+    altitude_reference:geometricMetres!==null?'GEOMETRIC':barometricMetres!==null?'BAROMETRIC_PRESSURE':null,
+    geometric_altitude_m:geometricMetres,barometric_altitude_m:barometricMetres,
+    ground_speed_mps:Number.isFinite(speedKnots)?speedKnots*0.514444:null,
+    heading_deg:Number.isFinite(heading)&&heading>=0&&heading<=360?heading:null,
+    vertical_rate_mps:numberOrNull(item.baro_rate)==null?null:numberOrNull(item.baro_rate)*0.00508,
+    on_ground:item.alt_baro==='ground'?true:barometricMetres!==null?false:null,
+    origin_country:null,origin:null,destination:null,
+    provider:'flyitalyadsb',position_provider:'flyitalyadsb',
+    position_source_label:'FlyItalyADSB ADS-B / MLAT network',
+    observed_at:new Date(now-ageSeconds*1000).toISOString(),
+    age_seconds:ageSeconds,
+    freshness:ageSeconds<=45?'LIVE':ageSeconds<=180?'DELAYED':'STALE',
+    timestamp_basis:'derived_from_provider_seen_pos',
+    evidence_class:'OBSERVED',trail:[],
+  };
+}
+
+async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
+  const config=getFlyItalyAdsbConfig(env);
+  if(!config.enabled)return {
+    status:'NOT_CONFIGURED',configured:false,reason:config.reason,records:[],
+    radius_km:FLYITALYADSB_RADIUS_KM,source:'FlyItalyADSB',license:config.license,
+    commercial_use_permitted:config.commercial_use_permitted,
+    attribution_required:config.attribution_required,share_alike_required:config.share_alike_required,
+    service_level:config.service_level,maximum_radius_km:config.maximum_radius_km,
+    use_restrictions:config.use_restrictions,
+  };
+  const icao=cleanCode(airport?.icao,4);
+  const latitude=numberOrNull(airport?.latitude),longitude=numberOrNull(airport?.longitude);
+  if(!icao||icao.length!==4||!Number.isFinite(latitude)||!Number.isFinite(longitude)||
+    latitude < -90||latitude > 90||longitude < -180||longitude > 180)return {
+      status:'NOT_REQUESTED',configured:true,reason:'uniquely_resolved_airport_coordinates_required',
+      records:[],radius_km:FLYITALYADSB_RADIUS_KM,source:'FlyItalyADSB',license:config.license,
+      attribution_required:config.attribution_required,share_alike_required:config.share_alike_required,
+    };
+  const key='flyitalyadsb-area:'+icao+':'+FLYITALYADSB_RADIUS_KM;
+  const cached=cacheGet(key,now);
+  if(cached)return {...cached,cache_state:'HIT'};
+  const pending=areaLoadPromises.get(key);
+  if(pending)return pending;
+  const request=(async()=>{
+    const centre={icao,latitude,longitude};
+    try{
+      const url=config.baseUrl+'/lat/'+latitude.toFixed(4)+'/lon/'+longitude.toFixed(4)+'/dist/'+FLYITALYADSB_RADIUS_KM;
+      const payload=await requestJson(url,{
+        fetcher,headers:{'X-Api-Key':config.apiKey,'User-Agent':'Sonalit-SJM/1.0 (regional aviation observations)'},
+      });
+      const rows=Array.isArray(payload?.ac)?payload.ac:[];
+      const records=rows.map(record=>normaliseFlyItalyAdsbRecord(record,now)).filter(Boolean);
+      return cacheSet(key,{
+        status:records.length?'AVAILABLE':'NO_DATA',configured:true,reason:null,
+        records,record_count:records.length,rejected_count:Math.max(0,rows.length-records.length),
+        radius_km:FLYITALYADSB_RADIUS_KM,
+        coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_km:FLYITALYADSB_RADIUS_KM},
+        source:'FlyItalyADSB',license:config.license,
+        commercial_use_permitted:config.commercial_use_permitted,
+        attribution_required:config.attribution_required,share_alike_required:config.share_alike_required,
+        service_level:config.service_level,maximum_radius_km:config.maximum_radius_km,
+        checked_at:new Date(now).toISOString(),cache_state:'MISS',
+        provenance:{provider:'flyitalyadsb',data_license:config.license,
+          timestamp_basis:'provider_seen_pos_relative_age',fabricated_data_used:false,
+          permitted_use:'informational_aircraft_observation_only',
+          prohibited_uses:config.use_restrictions},
+      },FLYITALYADSB_CACHE_TTL_MS,now);
+    }catch(error){
+      const limited=error?.code==='rate_limited';
+      const value={
+        status:limited?'RATE_LIMITED':'UNAVAILABLE',configured:true,
+        reason:error?.code||'provider_error',retry_after_seconds:error?.retryAfterSeconds||null,
+        records:[],record_count:0,radius_km:FLYITALYADSB_RADIUS_KM,
+        coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_km:FLYITALYADSB_RADIUS_KM},
+        source:'FlyItalyADSB',license:config.license,
+        commercial_use_permitted:config.commercial_use_permitted,
+        attribution_required:config.attribution_required,share_alike_required:config.share_alike_required,
+        service_level:config.service_level,maximum_radius_km:config.maximum_radius_km,
+        use_restrictions:config.use_restrictions,
+        provenance:{provider:'flyitalyadsb',data_license:config.license,fabricated_data_used:false},
+      };
+      return cacheSet(key,value,limited?(error.retryAfterSeconds||60)*1000:15_000,now);
+    }
+  })();
+  areaLoadPromises.set(key,request);
+  try{return await request;}
+  finally{if(areaLoadPromises.get(key)===request)areaLoadPromises.delete(key);}
 }
 
 async function loadAdsbLolArea({airport,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
@@ -665,7 +794,7 @@ function compareAircraftSources({flightNumber,opensky,adsbLol}={}) {
   };
 }
 
-function buildSourceRegistry({opensky,weather,adsbLol,adsbArea,commercial,airportReference}={}) {
+function buildSourceRegistry({opensky,weather,adsbLol,adsbArea,flyItalyArea,commercial,airportReference}={}) {
   return [
     {id:'opensky',name:'OpenSky Network',capability:'aircraft_positions',status:opensky?.status||'UNKNOWN',
       role:'Primary bounded aircraft state vectors',commercial_data:false,authority:'aircraft_state_only'},
@@ -673,6 +802,13 @@ function buildSourceRegistry({opensky,weather,adsbLol,adsbArea,commercial,airpor
       role:'Open airport-centred aircraft observations and targeted callsign cross-check',coverage_radius_nm:ADSBLOL_AREA_RADIUS_NM,
       license:'ODbL-1.0',commercial_use_permitted:true,attribution_required:true,
       service_level:'BEST_EFFORT',production_contact_recommended:true},
+    {id:'flyitalyadsb',name:'FlyItalyADSB',capability:'regional_aircraft_positions',status:flyItalyArea?.status||'NOT_CONFIGURED',
+      role:'Independent commercial-permitted aircraft position observations; informational display only',
+      coverage_radius_km:FLYITALYADSB_RADIUS_KM,license:'CC-BY-SA-4.0',
+      commercial_use_permitted:true,attribution_required:true,share_alike_required:true,
+      service_level:'BEST_EFFORT',maximum_radius_km:FLYITALYADSB_RADIUS_KM,
+      requests_per_minute:30,requests_per_month:300000,
+      quality_limit:'No SLA; receiver coverage is uneven and Africa is sparsely served. Not for safety-of-life, air traffic control or navigation.'},
     {id:'aerodatabox',name:'AeroDataBox',capability:'flight_schedules_and_status',status:commercial?.status||'NOT_CONFIGURED',
       role:'Commercial flight schedule and operational status',commercial_license_required:true,derived_work_rights_required:true},
     {id:'aviationweather_gov',name:'AviationWeather.gov',capability:'metar_taf_sigmet',status:weather?.status||'NOT_REQUESTED',
@@ -719,20 +855,29 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
       status:'NOT_REQUESTED',configured:false,reason:'uniquely_resolved_airport_coordinates_required',
       records:[],radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol',license:'ODbL-1.0',
     });
-  const [weatherResult,adsbAreaResult,adsbResult,flightResult]=await Promise.all([
+  const flyItalyAreaRequest=airportReference.status==='RESOLVED'
+    ?loadFlyItalyAdsbArea({airport:airportReference.airport,env,fetcher,now})
+    :Promise.resolve({
+      status:'NOT_REQUESTED',configured:false,reason:'uniquely_resolved_airport_coordinates_required',
+      records:[],radius_km:FLYITALYADSB_RADIUS_KM,source:'FlyItalyADSB',license:'CC-BY-SA-4.0',
+    });
+  const [weatherResult,adsbAreaResult,flyItalyAreaResult,adsbResult,flightResult]=await Promise.all([
     weatherRequest.catch(error=>({status:'UNAVAILABLE',reason:error?.code||'provider_error',metar:[],taf:[],international_sigmets:[]})),
     areaRequest.catch(error=>({status:'UNAVAILABLE',reason:error?.code||'provider_error',records:[],radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol'})),
+    flyItalyAreaRequest.catch(error=>({status:'UNAVAILABLE',reason:error?.code||'provider_error',records:[],radius_km:FLYITALYADSB_RADIUS_KM,source:'FlyItalyADSB'})),
     loadAdsbLolCallsign({callsign:flightNumber,env,fetcher,now}),
     loadCommercialFlight({flightNumber,env,fetcher,now}),
   ]);
   const weather=weatherResult||{status:'NOT_REQUESTED',metar:[],taf:[],international_sigmets:[]};
   const aircraftArea=adsbAreaResult||{status:'NOT_REQUESTED',records:[],radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol'};
+  const flyItalyArea=flyItalyAreaResult||{status:'NOT_REQUESTED',records:[],radius_km:FLYITALYADSB_RADIUS_KM,source:'FlyItalyADSB'};
   const adsbLol=adsbResult||{status:'NOT_REQUESTED',records:[]};
   const commercial=flightResult||{status:'NOT_REQUESTED',flights:[]};
   const comparison=compareAircraftSources({flightNumber,opensky:baseSnapshot,adsbLol});
   const activeProviderCount=[
     ['opensky',['LIVE','DELAYED','CONNECTED'].includes(baseSnapshot?.status)&&(baseSnapshot?.aircraft||[]).length>0],
     ['adsb_lol',(adsbLol.status==='AVAILABLE'&&(adsbLol.records||[]).length>0)||(aircraftArea.status==='AVAILABLE'&&(aircraftArea.records||[]).length>0)],
+    ['flyitalyadsb',flyItalyArea.status==='AVAILABLE'&&(flyItalyArea.records||[]).length>0],
     ['aerodatabox',commercial.status==='AVAILABLE'&&(commercial.flights||[]).length>0],
     ['aviationweather_gov',Boolean(weather.metar?.length||weather.taf?.length||weather.international_sigmets?.length)],
   ].filter(([,active])=>active).length;
@@ -741,10 +886,11 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
     ...(baseSnapshot||{}),
     intelligence:{
       generated_at:new Date(now).toISOString(),
-      providers:buildSourceRegistry({opensky:baseSnapshot,weather,adsbLol,adsbArea:aircraftArea,commercial,airportReference}),
+      providers:buildSourceRegistry({opensky:baseSnapshot,weather,adsbLol,adsbArea:aircraftArea,flyItalyArea,commercial,airportReference}),
       flight_status:commercial,
       aircraft_cross_check:adsbLol,
       aircraft_area:aircraftArea,
+      flyitaly_area:flyItalyArea,
       aircraft_comparison:comparison,
       aviation_weather:weather,
       notams:{
@@ -768,9 +914,9 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
 function resetCacheForTests(){responseCache.clear();areaLoadPromises.clear();airportReferenceIndex=null;airportReferenceExpiresAt=0;airportReferenceLoadPromise=null;airportReferenceFailure=null;airportReferenceFailureExpiresAt=0;}
 
 module.exports={
-  cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
-  normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseAdsbLolAreaRecord,normaliseCallsign,haversineKm,compareAircraftSources,
-  loadInternationalSigmets,loadWeather,loadAdsbLolCallsign,loadAdsbLolArea,normaliseCommercialMovement,normaliseCommercialFlight,loadCommercialFlight,
+  cleanCode,validBaseUrl,getAdsbLolConfig,getFlyItalyAdsbConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
+  normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseAdsbLolAreaRecord,normaliseFlyItalyAdsbRecord,normaliseCallsign,haversineKm,compareAircraftSources,
+  loadInternationalSigmets,loadWeather,loadAdsbLolCallsign,loadAdsbLolArea,loadFlyItalyAdsbArea,normaliseCommercialMovement,normaliseCommercialFlight,loadCommercialFlight,
   parseCsvRows,buildAirportReferenceIndex,resolveAirportCode,loadAirportReferenceIndex,
   buildSourceRegistry,getSnapshot,resetCacheForTests,
 };
