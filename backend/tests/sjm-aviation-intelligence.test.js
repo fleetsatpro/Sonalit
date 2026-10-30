@@ -50,12 +50,12 @@ describe('SJM federated aviation intelligence',()=>{
   test('normalises aviation weather times and leaves absent measurements null',()=>{
     const records=aviation.normaliseWeatherRecords([{
       icaoId:'HKJK',obsTime:now/1000,rawOb:'HKJK 301000Z 09008KT CAVOK 27/18 Q1018',
-      wdir:90,wspd:8,wgst:null,temp:27,dewp:18,altim:1018,
+      wdir:90,wspd:8,wgst:null,temp:27,dewp:18,altim:30.06,
     }],'METAR',now);
     expect(records[0]).toMatchObject({
       kind:'METAR',station_icao:'HKJK',observed_at:new Date(now).toISOString(),
       wind_direction_deg:90,wind_speed_kt:8,wind_gust_kt:null,
-      temperature_c:27,dewpoint_c:18,altimeter_hpa:1018,
+      temperature_c:27,dewpoint_c:18,altimeter_inhg:30.06,
       raw:'HKJK 301000Z 09008KT CAVOK 27/18 Q1018',
       provider:'aviationweather_gov',evidence_class:'OBSERVED',
     });
