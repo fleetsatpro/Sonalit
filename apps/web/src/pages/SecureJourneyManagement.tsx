@@ -797,8 +797,8 @@ return (
       </>}
      </div>
 
-     {journey&&<aside className="order-3 space-y-3 xl:col-span-2 2xl:col-span-1">
-      <Panel className="overflow-hidden">
+     {journey&&<aside className="sjm-journey-ops-rail order-3 xl:col-span-2 2xl:col-span-1"><Panel className="sjm-live-ops-rail overflow-hidden">
+      <section className="sjm-live-ops-section overflow-hidden">
        <div className="border-b border-white/[0.07] p-4"><Kicker>Release readiness</Kicker><div className="mt-1 flex items-center justify-between gap-2"><h3 className="text-base font-semibold text-white">Route assessment</h3><Gate value={assess?.safety_gate}/></div></div>
        <div className="space-y-4 p-4">
         <div className={'rounded-md border p-3.5 '+(assess?.safety_gate==='NO_GO'||assess?.route_status==='blocked'?'border-red-400/25 bg-red-500/[0.045]':assess?.safety_gate==='CONDITIONAL'||assess?.safety_gate==='HUMAN_REVIEW'?'border-amber-300/20 bg-amber-300/[0.035]':assess?.safety_gate==='GO'&&assess?.route_status==='routed'?'border-emerald-300/20 bg-emerald-300/[0.035]':'border-white/[0.075] bg-white/[0.015]')}>
@@ -828,27 +828,27 @@ return (
          </div>
         </div>
        </div>
-      </Panel>
+      </section>
 
-      <Panel className="overflow-hidden">
+      <section className="sjm-live-ops-section overflow-hidden">
        <div className="border-b border-white/[0.07] p-4"><Kicker>Telemetry</Kicker><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><h3 className="text-base font-semibold text-white">Latest device observations</h3><EvidenceBadge value={journey.telemetry_snapshot?.status||'UNAVAILABLE'}/></div><p className="mt-1 text-[11px] leading-5 text-slate-500">Most recent location fixes from devices linked to this convoy. They show device observations—not route predictions or confirmed arrivals.</p></div>
        <div className="space-y-3 p-4">
         <div className="grid grid-cols-2 gap-2"><div className="rounded-md border border-white/[0.07] bg-black/15 p-3"><p className="text-[11px]  tracking-[.13em] text-slate-600">Latest observation</p><p className="mt-1.5 text-[11px] font-semibold text-slate-200">{dateText(journey.telemetry_snapshot?.observed_at as string|null|undefined)}</p></div><div className="rounded-md border border-white/[0.07] bg-black/15 p-3"><p className="text-[11px]  tracking-[.13em] text-slate-600">Linked devices</p><p className="mt-1.5 text-xl font-semibold tabular-nums text-white">{journey.telemetry_snapshot?.devices?.length||0}</p></div></div>
         {!journey.telemetry_snapshot||journey.telemetry_snapshot.devices.length===0?<div className="rounded-md border border-dashed border-white/[0.09] p-4"><p className="text-[11px] font-semibold text-slate-300">No usable location data</p><p className="mt-1.5 text-[11px] leading-5 text-slate-500">{journey.telemetry_snapshot?.reason||'Location data was not returned. No position or freshness status is inferred.'}</p></div>:<div className="space-y-2">{journey.telemetry_snapshot.devices.map(device=>{const coord=mapCoord(device.lat,device.lng);const age=device.age_seconds;const ageLabel=age==null?'Age unavailable':age<60?age+'s ago':Math.floor(age/60)+'m '+(age%60)+'s ago';return <div key={device.device_id} className="rounded-md border border-white/[0.07] bg-black/15 p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-[11px] font-semibold text-white">{device.device_name||'Unnamed device'}</p><p className="mt-1 text-[11px] text-slate-500">{device.officer_name||'No assigned officer returned'}</p></div><EvidenceBadge value={device.freshness}/></div><div className="mt-3 grid grid-cols-2 gap-2"><div><p className="text-[11px]  tracking-[.1em] text-slate-600">Last reported fix</p><p className="mt-1 text-[11px] text-slate-300">{ageLabel}</p></div><div><p className="text-[11px]  tracking-[.1em] text-slate-600">Reported speed</p><p className="mt-1 text-[11px] text-slate-300">{device.speed_kph==null?'Not reported':Number(device.speed_kph).toFixed(0)+' km/h'}</p></div><div className="col-span-2"><p className="text-[11px]  tracking-[.1em] text-slate-600">Observed coordinate</p><p className="mt-1 font-mono text-[11px] text-slate-300">{coord?coord[1].toFixed(5)+', '+coord[0].toFixed(5):'No valid coordinates in latest fix'}</p></div></div><p className="mt-2 break-words text-[11px] leading-4 text-slate-600">Source: {device.source||'not returned'} · Observed: {dateText(device.observed_at as string|null|undefined)}{device.accuracy_m==null?'':' · Accuracy '+Number(device.accuracy_m).toFixed(0)+' m'}{device.heading==null?'':' · Heading '+Number(device.heading).toFixed(0)+'°'}</p>{device.freshness_reason&&<p className="mt-2 rounded-md border border-amber-300/10 bg-amber-300/[0.025] px-2 py-1.5 text-[11px] text-amber-100/80">Freshness exception: {device.freshness_reason.replaceAll('_',' ')}</p>}</div>})}</div>}
         <p className="border-t border-white/[0.06] pt-3 text-[11px] leading-5 text-slate-600">Freshness: Live ≤45 seconds; delayed ≤5 minutes; stale is older; unavailable means no acceptable timestamp or linked fix. Map markers show the same status.</p>
        </div>
-      </Panel>
-      <Panel className="overflow-hidden">
+      </section>
+      <section className="sjm-live-ops-section overflow-hidden">
        <div className="border-b border-white/[0.07] p-4"><Kicker>READINESS</Kicker><h3 className="mt-1 text-base font-semibold text-white">Readiness checklist</h3><p className="mt-1 text-[11px] leading-5 text-slate-500">Checks reflect the saved route assessment, approvals, convoy link, device observations and stop records.</p></div>
        <div className="space-y-2 p-3">{(journey.readiness_checklist||[]).map((item,index)=><div key={item.item} className="rounded-md border border-white/[0.06] bg-black/15 p-3"><div className="flex items-start justify-between gap-2"><div className="flex min-w-0 items-start gap-2"><span className="mt-0.5 font-mono text-[11px] text-slate-600">{String(index+1).padStart(2,'0')}</span><p className="text-[11px] font-medium text-slate-200">{item.item}</p></div><EvidenceBadge value={item.status}/></div><p className="mt-2 pl-5 text-[11px] leading-5 text-slate-500">{item.detail}</p></div>)}
         {(!journey.readiness_checklist||journey.readiness_checklist.length===0)&&<p className="rounded-md border border-dashed border-white/[0.09] p-4 text-[11px] leading-5 text-slate-500">Readiness evidence was not returned by the journey service.</p>}
        </div>
-      </Panel>
+      </section>
 
-      <Panel className="p-4">
+      <section className="sjm-live-ops-section sjm-live-ops-evidence-note p-4">
        <div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-white/[0.08] bg-white/[0.025]"><Layers3 size={16} className="text-slate-300"/></span><div><p className="text-[11px] font-semibold text-slate-200">Evidence sources remain distinct</p><p className="mt-1 text-[11px] leading-5 text-slate-500">Planned geometry, Route Safety analysis, team confirmations and device locations are separate records. One does not prove another.</p></div></div>
-      </Panel>
-     </aside>}
+      </section>
+     </Panel></aside>}
     </section>
 
     <section aria-label="Operations overview" className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-white/[0.10] py-3 lg:grid-cols-5 lg:gap-0">

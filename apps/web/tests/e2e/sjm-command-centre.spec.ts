@@ -269,6 +269,34 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(flightStatusPanel.getByText('Entered by your team; this is not a live airline feed and is not independently verified.', { exact: true })).toBeVisible();
       await expect(serviceBrief.getByText('TEST-PRINCIPAL-001', { exact: true })).toBeVisible();
       await expect(serviceBrief.getByText('Synthetic fixture instructions only.', { exact: true })).toBeVisible();
+      const operationsRail = page.locator('aside.sjm-journey-ops-rail');
+      const operationsSections = operationsRail.locator('.sjm-live-ops-section');
+      await expect(operationsRail).toBeVisible();
+      await expect(operationsSections).toHaveCount(4);
+      const railSurface = await operationsRail.locator('.sjm-live-ops-rail').evaluate((el) => ({
+        borderWidth: getComputedStyle(el).borderTopWidth,
+        radius: getComputedStyle(el).borderTopLeftRadius,
+        background: getComputedStyle(el).backgroundColor,
+      }));
+      expect(railSurface.borderWidth).toBe('1px');
+      expect(railSurface.radius).toBe('10px');
+      expect(railSurface.background).toBe('rgb(12, 20, 29)');
+      for (const section of await operationsSections.all()) {
+        const style = await section.evaluate(el => ({
+          borderTop: getComputedStyle(el).borderTopWidth,
+          borderLeft: getComputedStyle(el).borderLeftWidth,
+          radius: getComputedStyle(el).borderTopLeftRadius,
+          background: getComputedStyle(el).backgroundColor,
+        }));
+        expect(style.borderTop).toBe('0px');
+        expect(style.borderLeft).toBe('0px');
+        expect(style.radius).toBe('0px');
+        expect(style.background).toBe('rgba(0, 0, 0, 0)');
+      }
+      await testInfo.attach(`sjm-${viewport.label}-operations-rail`, {
+        body: await operationsRail.screenshot({ animations: 'disabled' }),
+        contentType: 'image/png',
+      });
       const overviewColumns = page.locator('.sjm-overview-columns');
       const riskPanel = page.locator('.sjm-overview-risk-panel');
       const overviewRail = page.locator('.sjm-overview-rail');

@@ -437,3 +437,42 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
     padding-left: 0;
   }
 }
+
+
+/* The right-hand operational rail is one information surface with distinct sections. */
+.sjm-console .sjm-journey-ops-rail {
+  min-width: 0;
+  align-self: start;
+}
+.sjm-console .sjm-live-ops-rail {
+  border: 1px solid #2a3948;
+  border-radius: 10px;
+  background: #0c141d;
+  box-shadow: none;
+}
+.sjm-console .sjm-live-ops-section {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+.sjm-console .sjm-live-ops-section:not(:last-child) {
+  border-bottom: 1px solid #293846 !important;
+}
+.sjm-console .sjm-live-ops-section > div:first-child {
+  border-bottom-color: #293846;
+  background: #101923;
+}
+.sjm-console .sjm-live-ops-section .rounded-md.border {
+  box-shadow: none;
+}
+.sjm-console .sjm-live-ops-section .sjm-live-ops-section,
+.sjm-console .sjm-live-ops-section .sjm-panel {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+.sjm-console .sjm-live-ops-evidence-note {
+  padding: 15px 16px !important;
+}
