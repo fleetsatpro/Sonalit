@@ -4,7 +4,7 @@ const AIRWEATHER_BASE='https://aviationweather.gov/api/data';
 const ADSBLOL_BASE='https://api.adsb.lol';
 const FLYITALYADSB_BASE='https://api.flyitalyadsb.com/v2';
 const FLYITALYADSB_RADIUS_KM=500;
-const FLYITALYADSB_MAX_POSITION_AGE_SECONDS=10*60;
+const FLYITALYADSB_MAX_POSITION_AGE_SECONDS=60;
 const FLYITALYADSB_CACHE_TTL_MS=60*1000;
 const KCAA_AIM_URL='https://aim.kcaa.or.ke/';
 const EAD_URL='https://www.eurocontrol.int/service/european-ais-database';
@@ -448,6 +448,11 @@ function normaliseFlyItalyAdsbRecord(item,now=Date.now()) {
   const speedKnots=numberOrNull(item.gs);
   const heading=numberOrNull(item.track);
   const callsign=String(item.flight||item.callsign||'').trim().replace(/\s+/g,' ');
+  const positionSource=String(item.type||'').trim().toLowerCase()||null;
+  const positionSourceLabel=positionSource==='mlat'?'MLAT':
+    positionSource==='adsb_icao'||positionSource==='adsb_other'?'ADS-B':
+    positionSource==='tisb_icao'||positionSource==='tisb_other'?'TIS-B':
+    positionSource==='adsr_icao'?'ADS-R':null;
   return {
     id:hex,map_key:'flyitalyadsb:'+hex,ident:callsign||hex.toUpperCase(),
     registration:textOrNull(item.r),latitude,longitude,
@@ -460,10 +465,10 @@ function normaliseFlyItalyAdsbRecord(item,now=Date.now()) {
     on_ground:item.alt_baro==='ground'?true:barometricMetres!==null?false:null,
     origin_country:null,origin:null,destination:null,
     provider:'flyitalyadsb',position_provider:'flyitalyadsb',
-    position_source_label:'FlyItalyADSB ADS-B / MLAT network',
+    position_source:positionSource,position_source_label:positionSourceLabel?'FlyItalyADSB '+positionSourceLabel:'FlyItalyADSB source not supplied',
     observed_at:new Date(now-ageSeconds*1000).toISOString(),
     age_seconds:ageSeconds,
-    freshness:ageSeconds<=45?'LIVE':ageSeconds<=180?'DELAYED':'STALE',
+    freshness:ageSeconds<=15?'LIVE':ageSeconds<=45?'DELAYED':'STALE',
     timestamp_basis:'derived_from_provider_seen_pos',
     evidence_class:'OBSERVED',trail:[],
   };
@@ -499,8 +504,15 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
       const payload=await requestJson(url,{
         fetcher,headers:{'X-Api-Key':config.apiKey,'User-Agent':'Sonalit-SJM/1.0 (regional aviation observations)'},
       });
+      const providerNowSeconds=Number(payload?.now);
+      const providerNowMs=providerNowSeconds*1000;
+      if(!Number.isFinite(providerNowMs)||providerNowMs<=0||Math.abs(providerNowMs-now)>120_000){
+        const error=new Error('FlyItalyADSB response timestamp is missing or outside the trusted clock window.');
+        error.code='provider_timestamp_untrusted';
+        throw error;
+      }
       const rows=Array.isArray(payload?.ac)?payload.ac:[];
-      const records=rows.map(record=>normaliseFlyItalyAdsbRecord(record,now)).filter(Boolean);
+      const records=rows.map(record=>normaliseFlyItalyAdsbRecord(record,providerNowMs)).filter(Boolean);
       return cacheSet(key,{
         status:records.length?'AVAILABLE':'NO_DATA',configured:true,reason:null,
         records,record_count:records.length,rejected_count:Math.max(0,rows.length-records.length),
