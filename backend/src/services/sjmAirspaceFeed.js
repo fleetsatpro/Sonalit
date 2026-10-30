@@ -175,7 +175,7 @@ async function getAccessToken(config,{fetcher=global.fetch,now=Date.now(),force=
   });
   const response=await fetcher(TOKEN_URL,{
     method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:body.toString(),signal:AbortSignal.timeout(12_000),
+    body:body.toString(),redirect:'error',signal:AbortSignal.timeout(12_000),
   });
   if(!response.ok){
     const error=new Error('OpenSky OAuth token request failed.');
@@ -198,7 +198,7 @@ async function fetchStates(config,{fetcher=global.fetch,now=Date.now()}={}) {
   for(let attempt=0;attempt<2;attempt++){
     response=await fetcher(url,{
       method:'GET',headers:{Authorization:'Bearer '+token,Accept:'application/json'},
-      signal:AbortSignal.timeout(15_000),
+      redirect:'error',signal:AbortSignal.timeout(15_000),
     });
     if(response.status===401&&attempt===0){
       accessToken=null;accessTokenExpiresAt=0;
