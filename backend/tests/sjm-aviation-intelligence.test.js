@@ -5,6 +5,45 @@ const aviation=require('../src/services/sjmAviationIntelligence');
 describe('SJM federated aviation intelligence',()=>{
   const now=Date.parse('2026-10-30T10:00:00.000Z');
 
+  function createFakeRedis(){
+    const values=new Map(),sortedSets=new Map();
+    return {
+      status:'ready',
+      values,
+      async connect(){this.status='ready';return 'OK';},
+      async ping(){return 'PONG';},
+      async get(key){return values.has(key)?values.get(key):null;},
+      async set(key,value,...args){
+        if(args.includes('NX')&&values.has(key))return null;
+        values.set(key,String(value));
+        return 'OK';
+      },
+      async incr(key){
+        const value=(Number(values.get(key))||0)+1;
+        values.set(key,String(value));
+        return value;
+      },
+      async expire(){return 1;},
+      async eval(script,numKeys,key,...args){
+        if(script.includes('ZREMRANGEBYSCORE')){
+          const current=sortedSets.get(key)||new Map();
+          const [time,window,limit,member]=args;
+          const cutoff=Number(time)-Number(window);
+          for(const [id,score] of current)if(score<=cutoff)current.delete(id);
+          if(current.size>=Number(limit)){sortedSets.set(key,current);return 0;}
+          current.set(String(member),Number(time));
+          sortedSets.set(key,current);
+          return current.size;
+        }
+        if(script.includes("redis.call('get',KEYS[1])")&&script.includes("redis.call('del',KEYS[1])")){
+          if(values.get(key)===String(args[0])){values.delete(key);return 1;}
+          return 0;
+        }
+        throw new Error('Unexpected Redis script');
+      },
+    };
+  }
+
   beforeEach(()=>aviation.resetCacheForTests());
 
   test('permits commercial ADSB.lol use under ODbL without a separate provider production approval',()=>{
@@ -266,13 +305,14 @@ describe('SJM federated aviation intelligence',()=>{
       FLYITALYADSB_API_KEY:'server-only-key',
     };
     const airport={icao:'HKJK',latitude:-1.3192,longitude:36.9278};
+    const redisClient=createFakeRedis();
     const fetcher=jest.fn().mockResolvedValue({
       ok:true,status:200,json:async()=>({now:now/1000,ac:[
         {hex:'abc123',flight:'KQ 100 ',r:'5Y-KZA',t:'B789',type:'adsb_icao',lat:-1.3,lon:36.8,seen_pos:12,alt_geom:12400,alt_baro:12000,gs:220,track:90},
         {hex:'stale1',flight:'OLD',lat:-1.4,lon:36.8,seen_pos:61},
       ]}),
     });
-    const result=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher,now});
+    const result=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher,now,redisClient});
     expect(result).toMatchObject({
       status:'AVAILABLE',configured:true,radius_km:500,record_count:1,rejected_count:1,
       source:'FlyItalyADSB',license:'CC-BY-SA-4.0',
@@ -287,8 +327,95 @@ describe('SJM federated aviation intelligence',()=>{
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0][0]).toBe('https://api.flyitalyadsb.com/v2/lat/-1.3192/lon/36.9278/dist/500');
     expect(fetcher.mock.calls[0][1].headers['X-Api-Key']).toBe('server-only-key');
-    const cached=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher:jest.fn(),now:now+30_000});
+    const cached=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher:jest.fn(),now:now+30_000,redisClient});
     expect(cached.cache_state).toBe('HIT');
+  });
+
+  test('reuses the same FlyItaly airport snapshot across backend instances through shared Redis',async()=>{
+    const env={
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'server-only-key',
+    };
+    const redisClient=createFakeRedis();
+    const airport={icao:'HKJK',latitude:-1.3192,longitude:36.9278};
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:true,status:200,json:async()=>({now:now/1000,ac:[
+        {hex:'abc123',flight:'KQ100',type:'mlat',lat:-1.3,lon:36.8,seen_pos:8},
+      ]}),
+    });
+    const first=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher,now,redisClient});
+    expect(first.status).toBe('AVAILABLE');
+    aviation.resetCacheForTests();
+    const second=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher:jest.fn(),now:now+1_000,redisClient});
+    expect(second).toMatchObject({status:'AVAILABLE',cache_state:'SHARED_HIT'});
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  test('enforces a rolling product-wide request cap across different airport centres',async()=>{
+    const env={
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'server-only-key',
+    };
+    const redisClient=createFakeRedis();
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:true,status:200,json:async()=>({now:now/1000,ac:[]}),
+    });
+    for(let index=0;index<25;index++){
+      await aviation.loadFlyItalyAdsbArea({
+        airport:{icao:'HK'+String(index).padStart(2,'0'),latitude:-1+(index/100),longitude:36+(index/100)},
+        env,fetcher,now,redisClient,
+      });
+    }
+    const blocked=await aviation.loadFlyItalyAdsbArea({
+      airport:{icao:'HL99',latitude:-1,longitude:37},env,fetcher,now,redisClient,
+    });
+    expect(blocked).toMatchObject({
+      status:'RATE_LIMITED',reason:'shared_product_per_minute_budget_reached',
+      retry_after_seconds:60,records:[],
+    });
+    expect(fetcher).toHaveBeenCalledTimes(25);
+  });
+
+  test('enforces the monthly product budget before sending a provider request',async()=>{
+    const env={
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'server-only-key',
+    };
+    const redisClient=createFakeRedis();
+    redisClient.values.set('sonalit:sjm:airspace:flyitalyadsb:v1:requests:month:202610','270000');
+    const fetcher=jest.fn();
+    const blocked=await aviation.loadFlyItalyAdsbArea({
+      airport:{icao:'HKJM',latitude:-1.1,longitude:36.9},env,fetcher,now,redisClient,
+    });
+    expect(blocked).toMatchObject({
+      status:'RATE_LIMITED',reason:'shared_product_monthly_budget_reached',records:[],
+    });
+    expect(blocked.retry_after_seconds).toBeGreaterThan(0);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  test('fails closed when the shared product quota store is unavailable',async()=>{
+    const env={
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'server-only-key',
+    };
+    const redisClient={status:'end'};
+    const fetcher=jest.fn();
+    const result=await aviation.loadFlyItalyAdsbArea({
+      airport:{icao:'HKJK',latitude:-1.3192,longitude:36.9278},env,fetcher,now,redisClient,
+    });
+    expect(result).toMatchObject({
+      status:'UNAVAILABLE',reason:'shared_product_quota_store_unavailable',records:[],
+    });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   test('loads a bounded 250 NM ADSB.lol aircraft picture around a resolved airport',async()=>{
@@ -614,6 +741,7 @@ describe('SJM federated aviation intelligence',()=>{
       SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
       FLYITALYADSB_API_KEY:'server-only-key',
     };
+    const redisClient=createFakeRedis();
     const fetcher=jest.fn(async(url)=>{
       const path=String(url);
       if(path.includes('airports.csv'))return {
@@ -632,7 +760,7 @@ describe('SJM federated aviation intelligence',()=>{
     const result=await aviation.getSnapshot({
       airportCode:'NBO',
       baseSnapshot:{provider:'opensky_rest',status:'NOT_CONFIGURED',configured:false,aircraft:[]},
-      env,fetcher,now,
+      env,fetcher,now,redisClient,
     });
     expect(result.intelligence.flyitaly_area).toMatchObject({
       status:'AVAILABLE',source:'FlyItalyADSB',license:'CC-BY-SA-4.0',
