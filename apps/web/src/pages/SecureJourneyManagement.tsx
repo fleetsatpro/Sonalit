@@ -8,6 +8,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { DARK_STREET_STYLE, STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
 import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
+import { correlateJourneyFlight } from '../lib/sjmAirspaceMatch.js';
 import { useAuthStore } from '../stores/auth.js';
 import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, MessagesSquare, Navigation, Pencil, Plane, Plus, RefreshCw, Route, Search, ShieldAlert, ShieldCheck, Users, XCircle } from 'lucide-react';
 
@@ -33,7 +34,7 @@ type DeviceResource={id:string;name:string;status:string;last_checkin_at?:string
 type JourneyAsset={id:string;asset_type:'vehicle'|'guardian_device';assignment_role:string;sort_order:number;assigned_at:string;vehicle_id?:string|null;registration?:string|null;vehicle_type?:string|null;region?:string|null;vehicle_status?:string|null;make?:string|null;model?:string|null;guardian_device_id?:string|null;device_name?:string|null;device_status?:string|null;officer_name?:string|null};
 type AssetDraft={id:string;assignment_role:string};
 type AirspaceAircraft={id:string;ident:string;latitude:number;longitude:number;altitude_m:number|null;ground_speed_mps:number|null;heading_deg:number|null;origin?:string|null;destination?:string|null;observed_at:string;age_seconds:number;freshness:string;update_type?:string|null;trail?:Array<{latitude:number;longitude:number;altitude_m:number|null;observed_at:string}>};
-type AirspaceSnapshot={provider:string;provider_name:string;status:string;configured:boolean;connected:boolean;last_position_at?:string|null;message_count:number;position_count:number;rejected_count:number;coverage:{complete:boolean;bounds?:{south:number;west:number;north:number;east:number}|null};aircraft:AirspaceAircraft[];recent_events:Array<{type:string;ident?:string|null;airport?:string|null;observed_at?:string|null;received_at:string}>};
+type AirspaceSnapshot={provider:string;provider_name:string;status:string;configured:boolean;connected:boolean;last_position_at?:string|null;message_count:number;position_count:number;rejected_count:number;coverage:{complete:boolean;bounds?:{south:number;west:number;north:number;east:number}|null};aircraft:AirspaceAircraft[];recent_events:Array<{type:string;flight_id?:string|null;ident?:string|null;airport?:string|null;origin?:string|null;destination?:string|null;observed_at?:string|null;received_at:string}>};
 const SjmAirspaceGlobe=lazy(()=>import('../components/SjmAirspaceGlobe.js'));
 type Profile={client_id:string;report_timezone:string;report_template:{title?:string;sections?:string[]};daily_reports_enabled?:boolean;daily_report_local_time?:string;daily_report_scheduler_available?:boolean;client?:Client};
 type Report={data:{id:string;report_type:string;report_date:string;generated_at:string}};
@@ -409,6 +410,7 @@ export default function SecureJourneyManagement(){
  const vehiclesQ=useQuery<{data:VehicleResource[]}>({queryKey:['sjm-vehicles'],queryFn:async()=>(await api.get('/sjm/vehicles')).data,enabled:isSupervisor,staleTime:60000});
  const devicesQ=useQuery<{data:DeviceResource[]}>({queryKey:['sjm-devices'],queryFn:async()=>(await api.get('/sjm/devices')).data,enabled:isSupervisor,staleTime:60000});
  const airspaceQ=useQuery<{data:AirspaceSnapshot}>({queryKey:['sjm-airspace'],queryFn:async()=>(await api.get('/sjm/airspace')).data,enabled:Boolean(journey&&workspaceTab==='airspace'),refetchInterval:15000,staleTime:10000});
+ const flightCorrelation=useMemo(()=>correlateJourneyFlight({flightReference:journey?.flight_number,airportCode:journey?.airport_code,configured:airspaceQ.data?.data.configured===true,connected:airspaceQ.data?.data.connected===true,providerStatus:airspaceQ.data?.data.status||'NOT_CONFIGURED',aircraft:airspaceQ.data?.data.aircraft||[],events:airspaceQ.data?.data.recent_events||[]}),[journey?.flight_number,journey?.airport_code,airspaceQ.data]);
  const [vehicleDraft,setVehicleDraft]=useState<AssetDraft[]>([]);
  const [deviceDraft,setDeviceDraft]=useState<AssetDraft[]>([]);
  useEffect(()=>{
@@ -706,6 +708,27 @@ return (
            <SjmAirspaceGlobe aircraft={airspaceQ.data?.data.aircraft||[]} status={airspaceQ.data?.data.status||'UNAVAILABLE'} configured={airspaceQ.data?.data.configured===true} lastPositionAt={airspaceQ.data?.data.last_position_at||null} bounds={airspaceQ.data?.data.coverage?.bounds||null}/>
           </Suspense>}
           {airspaceQ.data?.data.status==='NOT_CONFIGURED'&&<div className="border-l-2 border-amber-300/50 bg-white/[0.02] px-3 py-2.5 text-[11px] leading-5 text-slate-400"><span className="font-semibold text-slate-200">Provider connection not configured.</span> The globe is an empty spatial view until the licensed Firehose account is enabled and the server-side credentials and approved coverage are supplied. No aircraft are simulated.</div>}
+          <section aria-label="Journey flight correlation" className="rounded-md border border-white/[0.075] bg-[#0d151e] p-3 sm:p-4">
+           <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><Kicker>JOURNEY FLIGHT CORRELATION</Kicker><h5 className="mt-1 text-sm font-semibold text-white">{journey.flight_number||'No flight reference recorded'}</h5><p className="mt-1 text-[11px] text-slate-500">{journey.airline||'Airline not recorded'}{journey.airport_code?' · '+journey.airport_code:''}</p></div>
+            <EvidenceBadge value={flightCorrelation.status}/>
+           </div>
+           <p className="mt-3 text-[11px] leading-5 text-slate-400">{flightCorrelation.explanation}</p>
+           {flightCorrelation.aircraft.length>0&&<div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+            {flightCorrelation.aircraft.map(item=><div key={item.id} className="rounded-md border border-white/[0.07] bg-black/20 p-3">
+             <div className="flex items-center justify-between gap-2"><p className="text-[12px] font-semibold text-slate-100">{item.ident}</p><EvidenceBadge value={item.freshness}/></div>
+             <p className="mt-1 text-[11px] text-slate-500">{item.origin||'Origin unavailable'} → {item.destination||'Destination unavailable'}</p>
+             <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+              <div><p className="text-slate-600">Altitude</p><p className="mt-0.5 text-slate-200">{item.altitude_m==null?'Not reported':Math.round(item.altitude_m).toLocaleString()+' m'}</p></div>
+              <div><p className="text-slate-600">Ground speed</p><p className="mt-0.5 text-slate-200">{item.ground_speed_mps==null?'Not reported':Math.round(item.ground_speed_mps*3.6)+' km/h'}</p></div>
+              <div><p className="text-slate-600">Heading</p><p className="mt-0.5 text-slate-200">{item.heading_deg==null?'Not reported':Math.round(item.heading_deg)+'°'}</p></div>
+             </div>
+             <p className="mt-2 text-[10px] text-slate-600">Observed {dateText(item.observed_at)} · {item.age_seconds}s old · Source FlightAware</p>
+            </div>)}
+           </div>}
+           {flightCorrelation.events.length>0&&<div className="mt-3 border-t border-white/[0.06] pt-3"><p className="text-[10px] font-semibold uppercase tracking-[.12em] text-slate-500">Provider events matching this reference</p><div className="mt-2 space-y-1.5">{flightCorrelation.events.slice(0,5).map((event,index)=><div key={event.received_at+'-'+index} className="flex flex-wrap items-center justify-between gap-2 text-[11px]"><span className="text-slate-300">{event.type.replaceAll('_',' ')}{event.airport?' · '+event.airport:''}</span><span className="font-mono text-slate-500">{dateText(event.observed_at||event.received_at)}</span></div>)}</div></div>}
+           <p className="mt-3 border-t border-white/[0.05] pt-2 text-[10px] leading-5 text-slate-600">Exact callsign/registration correlation only. Provider events do not update the operator-entered flight status; aircraft position or landing does not verify passenger identity, handover or journey arrival.</p>
+          </section>
           <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
            {[['Position messages',airspaceQ.data?.data.position_count??0],['All provider messages',airspaceQ.data?.data.message_count??0],['Rejected messages',airspaceQ.data?.data.rejected_count??0],['Aircraft in current cache',airspaceQ.data?.data.aircraft.length??0]].map(([label,value])=><div key={String(label)} className="border-b border-white/[0.07] py-2"><p className="text-[10px] uppercase tracking-[.12em] text-slate-500">{label}</p><p className="mt-1 text-lg font-semibold tabular-nums text-slate-200">{Number(value).toLocaleString()}</p></div>)}
           </div>
