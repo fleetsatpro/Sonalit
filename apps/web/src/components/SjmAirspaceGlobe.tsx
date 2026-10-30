@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Cesium from '@cesium/engine';
+import { resolveSjmAirspaceImagery } from '../lib/sjmAirspaceImagery.js';
 import '@cesium/engine/Source/Widget/CesiumWidget.css';
 
 export type SjmAirspaceAircraft = {
@@ -25,7 +26,8 @@ type Props = {
 type ProviderFilter='all'|'opensky_rest'|'adsb_lol'|'flyitalyadsb';
 type FreshnessFilter='all'|'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE';
 
-const MAP_URL='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const AIRSPACE_IMAGERY=resolveSjmAirspaceImagery(import.meta.env);
+const MAP_URL=AIRSPACE_IMAGERY.template;
 const FRESHNESS_COLOURS:Record<string,string>={LIVE:'#9ce8d2',DELAYED:'#f3c979',STALE:'#8a98a8',UNAVAILABLE:'#64748b'};
 const AIRCRAFT_SYMBOL_SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M24 2.8 29.2 20l15.2 8.5v4.2l-15.2-4.2v11.2l5.6 4.2v2.8L24 43.2 13.2 46.7v-2.8l5.6-4.2V28.5L3.6 32.7v-4.2L18.8 20 24 2.8Z" fill="#f7fbff" stroke="#07111b" stroke-width="2.2" stroke-linejoin="round"/></svg>';
 const AIRCRAFT_SYMBOL='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(AIRCRAFT_SYMBOL_SVG);
@@ -119,8 +121,8 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     try{
       const imagery=new Cesium.UrlTemplateImageryProvider({
         url:MAP_URL,
-        credit:new Cesium.Credit('© OpenStreetMap contributors',false),
-        maximumLevel:19,
+        credit:new Cesium.Credit(AIRSPACE_IMAGERY.attribution,false),
+        maximumLevel:AIRSPACE_IMAGERY.maximumLevel,
       });
       const imageryLayer=new Cesium.ImageryLayer(imagery);
       imageryLayer.brightness=0.42;
@@ -306,7 +308,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         {initFailed
           ?<div role="status" className="grid min-h-[420px] place-items-center p-6 text-center"><div><p className="text-sm font-semibold text-slate-200">3D renderer unavailable</p><p className="mt-1 max-w-md text-xs leading-5 text-slate-400">The airspace scene could not be initialised in this browser. Aircraft data remains available in the observation index where supplied.</p></div></div>
           :<div className="relative">
-            <div ref={containerRef} role="application" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" data-testid="sjm-airspace-globe" data-basemap-provider="openstreetmap" data-camera-mode={cameraMode} data-regional-centre-latitude={(airportCentre?.latitude??DEFAULT_AIRSPACE_CENTRE.latitude).toFixed(4)} data-regional-centre-longitude={(airportCentre?.longitude??DEFAULT_AIRSPACE_CENTRE.longitude).toFixed(4)} data-regional-camera-height-m={REGIONAL_AIRSPACE_HEIGHT_M} data-regional-radius-nm={regionalRadiusNm} className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>
+            <div ref={containerRef} role="application" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" data-testid="sjm-airspace-globe" data-basemap-provider={AIRSPACE_IMAGERY.provider} data-basemap-fallback-reason={AIRSPACE_IMAGERY.fallbackReason||undefined} data-camera-mode={cameraMode} data-regional-centre-latitude={(airportCentre?.latitude??DEFAULT_AIRSPACE_CENTRE.latitude).toFixed(4)} data-regional-centre-longitude={(airportCentre?.longitude??DEFAULT_AIRSPACE_CENTRE.longitude).toFixed(4)} data-regional-camera-height-m={REGIONAL_AIRSPACE_HEIGHT_M} data-regional-radius-nm={regionalRadiusNm} className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>
             <div role="group" aria-label="Airspace camera mode" className="absolute left-3 top-3 z-10 flex overflow-hidden rounded-md border border-white/15 bg-[#07101b]/90 shadow-lg backdrop-blur">
               <button type="button" onClick={()=>flyToCameraMode('orbital')} aria-label="Orbital 3D view" aria-pressed={cameraMode==='orbital'} className={'px-3 py-2 font-mono text-[10px] font-semibold tracking-[.08em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300 '+(cameraMode==='orbital'?'bg-emerald-300/15 text-emerald-100':'text-slate-300 hover:bg-white/10')}>ORBIT</button>
               <button type="button" onClick={()=>flyToCameraMode('regional')} aria-label="Regional map view" aria-pressed={cameraMode==='regional'} className={'border-l border-white/10 px-3 py-2 font-mono text-[10px] font-semibold tracking-[.08em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300 '+(cameraMode==='regional'?'bg-emerald-300/15 text-emerald-100':'text-slate-300 hover:bg-white/10')}>REGION</button>
@@ -317,9 +319,8 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
               <button type="button" onClick={resetView} aria-label="Reset airspace view" title="Reset airspace view" className="h-10 w-10 font-mono text-[10px] text-slate-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">RST</button>
             </div>
             <div data-testid="sjm-airspace-basemap-credit" className="absolute bottom-12 right-3 z-10 whitespace-nowrap rounded border border-white/15 bg-[#07101b]/95 px-2.5 py-1.5 text-[10px] shadow-lg backdrop-blur">
-              <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="font-medium text-slate-200 underline decoration-white/30 underline-offset-2">© OpenStreetMap contributors</a>
-              <span className="px-1 text-slate-500">·</span>
-              <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-slate-200">Report map issue</a>
+              {AIRSPACE_IMAGERY.attributionUrl?<a href={AIRSPACE_IMAGERY.attributionUrl} target="_blank" rel="noreferrer" className="font-medium text-slate-200 underline decoration-white/30 underline-offset-2">{AIRSPACE_IMAGERY.attribution}</a>:<span className="font-medium text-slate-200">{AIRSPACE_IMAGERY.attribution}</span>}
+              {AIRSPACE_IMAGERY.provider==='openstreetmap'&&<><span className="px-1 text-slate-500">·</span><a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-slate-200">Report map issue</a></>}
             </div>
             {aircraft.length===0&&<div role="status" className="absolute bottom-3 left-3 max-w-[min(420px,calc(100%-24px))] rounded-md border border-white/10 bg-[#07101b]/90 px-3 py-2 text-[11px] leading-5 text-slate-300 shadow-lg">No provider aircraft observations in this snapshot. This does not establish that the airspace is empty.</div>}
           </div>}
@@ -404,7 +405,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         <p>Aircraft markers are provider observations. OpenSky uses bounded REST snapshots; ADSB.lol shows an airport-centred radius only. Neither is continuous certified ATC surveillance, and no path is extrapolated between reports.</p>
         <p>Only WGS84 ellipsoid-referenced heights are used for 3D elevation. Other altitude references are shown as reported but are not converted or inferred.</p>
         <p>Coverage: {boundsLabel} · Latest reported position: {lastPositionAt?observedLabel(lastPositionAt):'none recorded'}.</p>
-        <p>Basemap: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline decoration-white/30 underline-offset-2 hover:text-slate-200">© OpenStreetMap contributors</a>. The public raster service is best-effort and has no production availability guarantee; production-scale use should move to a dedicated hosted or self-managed tile service.</p>
+        <p>Basemap: {AIRSPACE_IMAGERY.attributionUrl?<a href={AIRSPACE_IMAGERY.attributionUrl} target="_blank" rel="noreferrer" className="underline decoration-white/30 underline-offset-2 hover:text-slate-200">{AIRSPACE_IMAGERY.attribution}</a>:AIRSPACE_IMAGERY.attribution}. {AIRSPACE_IMAGERY.provider==='openstreetmap'?'The public raster service is best-effort and has no production availability guarantee; configure a dedicated hosted or self-managed XYZ raster tile service before production-scale use.':'Dedicated HTTPS XYZ imagery is configured; confirm the provider’s production, caching and attribution terms before release.'} {AIRSPACE_IMAGERY.fallbackReason&&AIRSPACE_IMAGERY.fallbackReason!=='not_configured'&&'The configured tile source was rejected ('+AIRSPACE_IMAGERY.fallbackReason+'); the public OSM fallback remains active.'}</p>
         {(aircraft.some(item=>(item.position_provider||item.provider)==='opensky_rest')||aircraft.some(item=>(item.position_provider||item.provider)==='adsb_lol')||aircraft.some(item=>(item.position_provider||item.provider)==='flyitalyadsb'))&&<p>Aircraft-data attribution: {aircraft.some(item=>(item.position_provider||item.provider)==='opensky_rest')&&<><a href="https://opensky-network.org/" target="_blank" rel="noreferrer" className="underline decoration-white/30 underline-offset-2 hover:text-slate-200">OpenSky Network</a><span className="px-1 text-slate-500">·</span></>}{aircraft.some(item=>(item.position_provider||item.provider)==='adsb_lol')&&<><a href="https://www.adsb.lol/" target="_blank" rel="noreferrer" className="underline decoration-white/30 underline-offset-2 hover:text-slate-200">ADSB.lol</a> (<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noreferrer" className="underline decoration-white/30 underline-offset-2 hover:text-slate-200">ODbL 1.0</a>)<span className="px-1 text-slate-500">·</span></>}{aircraft.some(item=>(item.position_provider||item.provider)==='flyitalyadsb')&&<><a href="https://flyitalyadsb.com/" target="_blank" rel="noreferrer" className="underline decoration-white/30 underline-offset-2 hover:text-slate-200">FlyItalyADSB</a> (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer" className="underline decoration-white/30 underline-offset-2 hover:text-slate-200">CC BY-SA 4.0</a>; attribution and share-alike apply)</>}</p>}
       </div>
       <div className="flex items-center gap-3 border-t border-white/[0.05] px-3 py-3 text-[10px] text-slate-500 sm:border-l sm:border-t-0 sm:px-4">

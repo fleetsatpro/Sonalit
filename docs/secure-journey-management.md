@@ -122,5 +122,18 @@ The airspace endpoint composes a provider registry with independently sourced re
 - The federated API response is not a certified flight-planning, dispatch, air-traffic-control or navigation service.
 
 ## API
+
+### 3D airspace basemap configuration
+
+The Cesium globe consumes an HTTPS XYZ **raster** tile template. OpenFreeMap's SJM styles are vector styles for MapLibre and are not interchangeable with this Cesium imagery provider.
+
+For a dedicated hosted or self-managed raster source, configure these **build-time public** web variables:
+- `VITE_SJM_AIRSPACE_TILE_URL` — HTTPS XYZ template containing `{z}`, `{x}` and `{y}`.
+- `VITE_SJM_AIRSPACE_TILE_ATTRIBUTION` — visible source credit required by that provider.
+- `VITE_SJM_AIRSPACE_TILE_ATTRIBUTION_URL` — optional HTTPS link to the provider's attribution/licence page.
+- `VITE_SJM_AIRSPACE_TILE_MAX_ZOOM` — optional integer zoom ceiling from 0 to 22 (default 19).
+
+The resolver rejects HTTP, credential-bearing URLs, incomplete XYZ templates and missing attribution. A rejected or absent configuration falls back visibly to the attributed OpenStreetMap public raster source; the UI exposes the fallback reason in the map element's data attributes. This fallback is suitable for development and controlled preview, **not a production availability commitment**. OSM's public tile servers are best-effort, have no SLA and require visible attribution and compliant caching; do not bulk-prefetch or build offline archives from that service. Choose a provider with terms appropriate to Sonalit's expected traffic or operate a properly provisioned tile service before production-scale release. Any token placed in a `VITE_*` variable is shipped to browsers: use only a provider-issued public, origin-restricted token, never a private server credential.
+
 ## Validation
 Run pnpm --filter fleetops-backend test -- --runInBand and pnpm --filter @sonalit/web typecheck. CI also checks migrations, backend integration, OpenAPI drift, browser E2E, dependency audit and container build. Preview route delivery has been verified; authenticated operator walkthrough and post-merge runtime verification remain separate release gates.
