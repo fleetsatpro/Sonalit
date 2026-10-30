@@ -331,6 +331,10 @@ describe('SJM federated aviation intelligence',()=>{
     expect(fetcher.mock.calls[0][1].headers['X-Api-Key']).toBe('server-only-key');
     const cached=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher:jest.fn(),now:now+30_000,redisClient});
     expect(cached.cache_state).toBe('HIT');
+    expect(cached.records[0]).toMatchObject({age_seconds:42,freshness:'DELAYED'});
+    const expired=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher:jest.fn(),now:now+50_000,redisClient});
+    expect(expired).toMatchObject({status:'UNAVAILABLE',reason:'cached_positions_expired',record_count:0,expired_cache_record_count:1});
+    expect(expired.records).toEqual([]);
   });
 
   test('withholds FlyItaly aircraft when the provider snapshot clock is outside the trusted window',async()=>{
@@ -474,8 +478,9 @@ describe('SJM federated aviation intelligence',()=>{
     expect(result.records[1]).toMatchObject({id:'def456',ident:'DEF456',on_ground:true,altitude_m:null});
     expect(fetcher.mock.calls[0][0]).toBe('https://api.adsb.lol/v2/lat/-1.3192/lon/36.9278/dist/250');
     expect(fetcher.mock.calls[0][1].headers['User-Agent']).toContain('Sonalit-SJM');
-    const cached=await aviation.loadAdsbLolArea({airport,env,fetcher:jest.fn(),now:now+1_000});
+    const cached=await aviation.loadAdsbLolArea({airport,env,fetcher:jest.fn(),now:now+20_000});
     expect(cached.cache_state).toBe('HIT');
+    expect(cached.records[0]).toMatchObject({age_seconds:32,freshness:'LIVE'});
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
