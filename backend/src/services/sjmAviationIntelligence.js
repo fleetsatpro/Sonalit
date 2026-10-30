@@ -614,7 +614,7 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
           FLYITALYADSB_RATE_LIMIT_SCRIPT,1,keys.minute,
           now,60_000,FLYITALYADSB_REQUESTS_PER_MINUTE,requestId,
         ));
-        if(rateAllowed!==1){
+        if(rateAllowed<1){
           const limited=flyItalyQuotaResponse({
             reason:'shared_product_per_minute_budget_reached',centre,
             retryAfterSeconds:60,now,
