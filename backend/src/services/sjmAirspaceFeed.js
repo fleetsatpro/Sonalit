@@ -442,6 +442,10 @@ async function acquireIngestLease(config) {
         positionCount=Number(restored.position_count)||0;
         rejectedCount=Number(restored.rejected_count)||0;
         rateLimitRemaining=restored.rate_limit_remaining??null;
+        rateLimitRetrySeconds=restored.rate_limit_retry_after_seconds??null;
+        lastErrorCode=restored.last_error_code||null;
+        const restoredNextPoll=Date.parse(restored.next_poll_at||'');
+        nextPollAt=Number.isFinite(restoredNextPoll)?restoredNextPoll:0;
       }
     }
   }catch(_){}
