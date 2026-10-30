@@ -492,6 +492,8 @@ function normaliseAdsbLolAreaRecord(item,now=Date.now()) {
   const ageSeconds=Math.max(0,Math.floor(seenPosition));
   const geometricFeet=numberOrNull(item.alt_geom);
   const barometricFeet=item.alt_baro==='ground'?null:numberOrNull(item.alt_baro);
+  // readsb alt_geom is geometric GNSS/INS altitude in feet referenced to the WGS-84 ellipsoid.
+  // Cesium.fromDegrees expects ellipsoid height; barometric altitude remains display-only.
   const geometricMetres=Number.isFinite(geometricFeet)?geometricFeet*0.3048:null;
   const barometricMetres=Number.isFinite(barometricFeet)?barometricFeet*0.3048:null;
   const speedKnots=numberOrNull(item.gs);
@@ -501,7 +503,7 @@ function normaliseAdsbLolAreaRecord(item,now=Date.now()) {
     id:hex,map_key:'adsb_lol:'+hex,ident:callsign||hex.toUpperCase(),
     registration:textOrNull(item.r),aircraft_type:textOrNull(item.t),latitude,longitude,
     altitude_m:geometricMetres??barometricMetres,
-    altitude_reference:geometricMetres!==null?'GEOMETRIC':barometricMetres!==null?'BAROMETRIC_PRESSURE':null,
+    altitude_reference:geometricMetres!==null?'WGS84_ELLIPSOID':barometricMetres!==null?'BAROMETRIC_PRESSURE':null,
     geometric_altitude_m:geometricMetres,barometric_altitude_m:barometricMetres,
     ground_speed_mps:Number.isFinite(speedKnots)?speedKnots*0.514444:null,
     heading_deg:Number.isFinite(heading)&&heading>=0&&heading<=360?heading:null,
@@ -529,6 +531,8 @@ function normaliseFlyItalyAdsbRecord(item,now=Date.now()) {
   const ageSeconds=Math.max(0,Math.floor(seenPosition));
   const geometricFeet=numberOrNull(item.alt_geom);
   const barometricFeet=item.alt_baro==='ground'?null:numberOrNull(item.alt_baro);
+  // readsb alt_geom is geometric GNSS/INS altitude in feet referenced to the WGS-84 ellipsoid.
+  // Cesium.fromDegrees expects ellipsoid height; barometric altitude remains display-only.
   const geometricMetres=Number.isFinite(geometricFeet)?geometricFeet*0.3048:null;
   const barometricMetres=Number.isFinite(barometricFeet)?barometricFeet*0.3048:null;
   const speedKnots=numberOrNull(item.gs);
@@ -543,7 +547,7 @@ function normaliseFlyItalyAdsbRecord(item,now=Date.now()) {
     id:hex,map_key:'flyitalyadsb:'+hex,ident:callsign||hex.toUpperCase(),
     registration:textOrNull(item.r),aircraft_type:textOrNull(item.t),latitude,longitude,
     altitude_m:geometricMetres??barometricMetres,
-    altitude_reference:geometricMetres!==null?'GEOMETRIC':barometricMetres!==null?'BAROMETRIC_PRESSURE':null,
+    altitude_reference:geometricMetres!==null?'WGS84_ELLIPSOID':barometricMetres!==null?'BAROMETRIC_PRESSURE':null,
     geometric_altitude_m:geometricMetres,barometric_altitude_m:barometricMetres,
     ground_speed_mps:Number.isFinite(speedKnots)?speedKnots*0.514444:null,
     heading_deg:Number.isFinite(heading)&&heading>=0&&heading<=360?heading:null,
