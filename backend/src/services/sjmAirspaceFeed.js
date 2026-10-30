@@ -368,6 +368,7 @@ async function pollOnce(redis,config,token) {
     if(Date.now()<nextPollAt)return;
     try{
       const result=await fetchStates(config);
+      if(ownerToken!==token||await redis.get(LEASE_KEY)!==token)return stopWorker(false);
       let validPositions=0,invalidPositions=0;
       messageCount=result.states.length;
       for(const state of result.states){
@@ -387,8 +388,10 @@ async function pollOnce(redis,config,token) {
       const positions=[...aircraft.values()].map(item=>Date.parse(item.observed_at)).filter(Number.isFinite);
       lastPositionAt=positions.length?new Date(Math.max(...positions)).toISOString():null;
       lastErrorCode=null;rateLimitRetrySeconds=null;nextPollAt=now+config.pollIntervalSeconds*1000;
+      if(ownerToken!==token||await redis.get(LEASE_KEY)!==token)return stopWorker(false);
       await saveSharedSnapshot(redis,config);
     }catch(error){
+      if(ownerToken!==token||await redis.get(LEASE_KEY)!==token)return stopWorker(false);
       if(error?.code==='rate_limited'){
         rateLimitRetrySeconds=error.retryAfterSeconds;
         rateLimitRemaining=error.rateLimitRemaining??rateLimitRemaining;
@@ -500,6 +503,6 @@ function resetForTests() {
 
 module.exports={
   parseBounds,creditsForBounds,getConfig,epochIso,classifyFreshness,normaliseStateVector,
-  buildStatesUrl,getAccessToken,fetchStates,rememberPosition,purgeExpired,snapshot,
+  buildStatesUrl,getAccessToken,fetchStates,rememberPosition,purgeExpired,snapshot,presentSnapshot,configFingerprint,
   getSnapshot,stopWorker,resetForTests,
 };
