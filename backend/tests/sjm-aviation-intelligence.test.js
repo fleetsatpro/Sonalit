@@ -197,6 +197,60 @@ describe('SJM federated aviation intelligence',()=>{
     expect(fetcher.mock.calls[0][0]).toContain('/v2/callsign/KQ100');
   });
 
+  test('loads a bounded 250 NM ADSB.lol aircraft picture around a resolved airport',async()=>{
+    const env={
+      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',
+      SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
+    };
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:true,status:200,json:async()=>({ac:[
+        {hex:'abc123',flight:'KQ 100 ',r:'5Y-KZA',lat:-1.3,lon:36.8,seen_pos:12,alt_geom:12400,alt_baro:12000,gs:220,track:90},
+        {hex:'def456',flight:'',lat:-1.5,lon:36.9,seen_pos:30,alt_baro:'ground'},
+        {hex:'bad123',flight:'BAD',lat:null,lon:36.8,seen_pos:4},
+        {hex:'stale1',flight:'OLD',lat:-1.4,lon:36.8,seen_pos:720},
+      ]}),
+    });
+    const airport={icao:'HKJK',latitude:-1.3192,longitude:36.9278};
+    const result=await aviation.loadAdsbLolArea({airport,env,fetcher,now});
+    expect(result).toMatchObject({
+      status:'AVAILABLE',configured:true,radius_nm:250,record_count:2,rejected_count:2,
+      license:'ODbL-1.0',attribution_required:true,
+      coverage:{complete:false,query_scope:'airport_centred_radius',radius_nm:250,centre:airport},
+    });
+    expect(result.records[0]).toMatchObject({
+      id:'abc123',map_key:'adsb_lol:abc123',ident:'KQ 100',registration:'5Y-KZA',
+      latitude:-1.3,longitude:36.8,provider:'adsb_lol',position_provider:'adsb_lol',
+      freshness:'LIVE',age_seconds:12,altitude_reference:'GEOMETRIC',
+      timestamp_basis:'derived_from_provider_seen_pos',evidence_class:'OBSERVED',
+    });
+    expect(result.records[0].ground_speed_mps).toBeCloseTo(220*0.514444,5);
+    expect(result.records[1]).toMatchObject({id:'def456',ident:'DEF456',on_ground:true,altitude_m:null});
+    expect(fetcher.mock.calls[0][0]).toBe('https://api.adsb.lol/v2/lat/-1.3192/lon/36.9278/dist/250');
+    expect(fetcher.mock.calls[0][1].headers['User-Agent']).toContain('Sonalit-SJM');
+    const cached=await aviation.loadAdsbLolArea({airport,env,fetcher:jest.fn(),now:now+1_000});
+    expect(cached.cache_state).toBe('HIT');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps ADSB.lol regional queries disabled until production and ODbL approval',async()=>{
+    const fetcher=jest.fn();
+    const disabled=await aviation.loadAdsbLolArea({
+      airport:{icao:'HKJK',latitude:-1.3192,longitude:36.9278},env:{},fetcher,now,
+    });
+    expect(disabled).toMatchObject({status:'NOT_CONFIGURED',configured:false,records:[],reason:'disabled'});
+    expect(fetcher).not.toHaveBeenCalled();
+    const unresolved=await aviation.loadAdsbLolArea({
+      airport:{icao:'HKJK',latitude:null,longitude:36.9278},
+      env:{SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true'},
+      fetcher,now,
+    });
+    expect(unresolved).toMatchObject({
+      status:'NOT_REQUESTED',configured:true,records:[],
+      reason:'uniquely_resolved_airport_coordinates_required',
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   test('performs a commercial flight lookup only with both licences and keeps the API key server-side',async()=>{
     const env={
       SJM_AERODATABOX_ENABLED:'true',
@@ -346,6 +400,46 @@ describe('SJM federated aviation intelligence',()=>{
     '3,HKNC,small_airport,Coastal Field,-4.1,39.6,20,AF,KE,KE-28,Mombasa,no,HKNC,MBA,',
     '4,HKSP,small_airport,Remote Field,-3.1,37.2,10,AF,KE,KE-00,Remote,no,HKSP,,',
   ].join('\n');
+
+  test('adds resolved-airport ADSB.lol observations to the aviation snapshot without claiming complete coverage',async()=>{
+    const env={
+      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',
+      SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
+    };
+    const fetcher=jest.fn(async(url)=>{
+      const path=String(url);
+      if(path.includes('airports.csv'))return {
+        ok:true,status:200,headers:{get:()=>String(airportCsv.length)},text:async()=>airportCsv,
+      };
+      if(path.includes('/v2/lat/'))return {
+        ok:true,status:200,json:async()=>({ac:[
+          {hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:8,gs:200,track:80},
+        ]}),
+      };
+      if(path.includes('/metar'))return {ok:true,status:200,json:async()=>[]};
+      if(path.includes('/taf'))return {ok:true,status:200,json:async()=>[]};
+      if(path.includes('/isigmet'))return {ok:true,status:200,json:async()=>[]};
+      throw new Error('Unexpected aviation provider request: '+path);
+    });
+    const result=await aviation.getSnapshot({
+      airportCode:'NBO',
+      baseSnapshot:{provider:'opensky_rest',status:'NOT_CONFIGURED',configured:false,aircraft:[]},
+      env,fetcher,now,
+    });
+    expect(result.intelligence.airport_reference).toMatchObject({
+      status:'RESOLVED',airport:{icao:'HKJK',latitude:-1.3192,longitude:36.9278},
+    });
+    expect(result.intelligence.aircraft_area).toMatchObject({
+      status:'AVAILABLE',radius_nm:250,records:[{id:'abc123',position_provider:'adsb_lol'}],
+      coverage:{complete:false,centre:{icao:'HKJK',latitude:-1.3192,longitude:36.9278}},
+    });
+    expect(result.intelligence.providers.find(provider=>provider.id==='adsb_lol')).toMatchObject({
+      status:'AVAILABLE',coverage_radius_nm:250,
+    });
+    expect(result.intelligence.provenance).toMatchObject({
+      multi_provider:false,active_provider_count:1,fabricated_data_used:false,
+    });
+  });
 
   test('parses quoted CSV airport names and preserves embedded commas',()=>{
     const rows=aviation.parseCsvRows('ident,name\nHKJK,"Jomo Kenyatta, International"\n');

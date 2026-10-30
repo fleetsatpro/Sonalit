@@ -1,5 +1,7 @@
 export type SjmAircraftObservation = {
   id:string;
+  position_provider?:string|null;
+  position_source_label?:string|null;
   ident:string;
   registration?:string|null;
   origin?:string|null;
@@ -28,6 +30,8 @@ export type SjmFlightCorrelationStatus =
   | 'NOT_CONFIGURED'
   | 'FEED_UNAVAILABLE'
   | 'MATCHED'
+  | 'CORROBORATED'
+  | 'SOURCE_DISAGREEMENT'
   | 'AMBIGUOUS'
   | 'EVENT_ONLY'
   | 'NO_MATCH';
@@ -53,6 +57,7 @@ export function correlateJourneyFlight(input:{
   providerStatus:string;
   aircraft:SjmAircraftObservation[];
   events:SjmProviderFlightEvent[];
+  sourceComparison?:{status?:string|null};
 }):SjmFlightCorrelation {
   const reference=String(input.flightReference||'').trim()||null;
   const key=normaliseFlightIdent(reference);
@@ -72,18 +77,25 @@ export function correlateJourneyFlight(input:{
   const airportAlignment=airport&&aircraft.some(item=>
     normaliseFlightIdent(item.origin)===airport||normaliseFlightIdent(item.destination)===airport,
   )?'MATCHED':airport?'NOT_ESTABLISHED':'NO_AIRPORT_REFERENCE';
-  const status:SjmFlightCorrelationStatus=aircraft.length===1?'MATCHED'
-    :aircraft.length>1?'AMBIGUOUS'
-      :events.length?'EVENT_ONLY'
-        :!input.connected&&['UNAVAILABLE','RATE_LIMITED','DEGRADED'].includes(input.providerStatus)?'FEED_UNAVAILABLE':'NO_MATCH';
-  const explanation=status==='MATCHED'
-    ?'One OpenSky state vector has an exact callsign match. The REST response does not include aircraft registration; this correlation is not proof of passenger identity or journey arrival.'
-    :status==='AMBIGUOUS'
-      ?'More than one OpenSky callsign record matches this reference. No aircraft is selected automatically.'
-      :status==='EVENT_ONLY'
-        ?'Provider flight-information events match this reference, but no current aircraft position matches it.'
-        :status==='FEED_UNAVAILABLE'
-          ?'The OpenSky snapshot is unavailable or rate-limited; a missing match cannot be interpreted as absence of the flight.'
-          :'No exact callsign match is present in the latest bounded OpenSky snapshot. Coverage is incomplete and airline flight-information events are not supplied by this API.';
+  const uniqueAircraftIds=new Set(aircraft.map(item=>String(item.id||'').toLowerCase()).filter(Boolean));
+  const status:SjmFlightCorrelationStatus=input.sourceComparison?.status==='AIRCRAFT_ID_DISAGREEMENT'?'SOURCE_DISAGREEMENT'
+    :uniqueAircraftIds.size===1&&input.sourceComparison?.status==='CORROBORATED'?'CORROBORATED'
+      :uniqueAircraftIds.size===1?'MATCHED'
+        :uniqueAircraftIds.size>1?'AMBIGUOUS'
+          :events.length?'EVENT_ONLY'
+            :!input.connected&&['UNAVAILABLE','RATE_LIMITED','DEGRADED'].includes(input.providerStatus)?'FEED_UNAVAILABLE':'NO_MATCH';
+  const explanation=status==='CORROBORATED'
+    ?'Independent provider observations share one ICAO24 address and pass the server-side time and position comparison. This corroborates an aircraft observation, not passenger identity or journey arrival.'
+    :status==='MATCHED'
+      ?'One unique ICAO24 aircraft identity matches the recorded callsign. Provider observations and timestamps remain separate; this is not proof of passenger identity or journey arrival.'
+      :status==='SOURCE_DISAGREEMENT'
+        ?'Providers associate this callsign with different ICAO24 addresses. Both observations remain visible; no aircraft is selected automatically.'
+        :status==='AMBIGUOUS'
+          ?'More than one distinct ICAO24 aircraft identity matches this reference. No aircraft is selected automatically.'
+          :status==='EVENT_ONLY'
+            ?'Provider flight-information events match this reference, but no current aircraft position matches it.'
+            :status==='FEED_UNAVAILABLE'
+              ?'All approved aircraft-position sources are unavailable or rate-limited; a missing match cannot be interpreted as absence of the flight.'
+              :'No exact callsign match is present in the latest provider-bounded observations. Coverage is incomplete and an empty result does not prove the flight is absent.';
   return {...empty,status,aircraft,events,airport_alignment:airportAlignment,explanation};
 }

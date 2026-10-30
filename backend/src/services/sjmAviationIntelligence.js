@@ -9,6 +9,9 @@ const responseCache=new Map();
 const CACHE_LIMIT=300;
 const DEFAULT_WEATHER_TTL_MS=5*60*1000;
 const DEFAULT_LOOKUP_TTL_MS=30*1000;
+const ADSBLOL_AREA_RADIUS_NM=250;
+const ADSBLOL_MAX_POSITION_AGE_SECONDS=10*60;
+const areaLoadPromises=new Map();
 
 let airportReferenceIndex=null;
 let airportReferenceExpiresAt=0;
@@ -362,6 +365,103 @@ function normaliseAdsbLolRecord(item,now=Date.now()) {
   };
 }
 
+
+function normaliseAdsbLolAreaRecord(item,now=Date.now()) {
+  if(!item||typeof item!=='object')return null;
+  const hex=String(item.hex||item.icao24||'').trim().toLowerCase();
+  const latitude=numberOrNull(item.lat),longitude=numberOrNull(item.lon);
+  const seenPosition=numberOrNull(item.seen_pos);
+  if(!/^[0-9a-f]{6}$/.test(hex)||!Number.isFinite(latitude)||!Number.isFinite(longitude)||
+    latitude < -90||latitude > 90||longitude < -180||longitude > 180||
+    !Number.isFinite(seenPosition)||seenPosition<0||seenPosition>ADSBLOL_MAX_POSITION_AGE_SECONDS)return null;
+  const ageSeconds=Math.max(0,Math.floor(seenPosition));
+  const geometricFeet=numberOrNull(item.alt_geom);
+  const barometricFeet=item.alt_baro==='ground'?null:numberOrNull(item.alt_baro);
+  const geometricMetres=Number.isFinite(geometricFeet)?geometricFeet*0.3048:null;
+  const barometricMetres=Number.isFinite(barometricFeet)?barometricFeet*0.3048:null;
+  const speedKnots=numberOrNull(item.gs);
+  const heading=numberOrNull(item.track);
+  const callsign=String(item.flight||item.callsign||'').trim().replace(/\s+/g,' ');
+  return {
+    id:hex,map_key:'adsb_lol:'+hex,ident:callsign||hex.toUpperCase(),
+    registration:textOrNull(item.r),latitude,longitude,
+    altitude_m:geometricMetres??barometricMetres,
+    altitude_reference:geometricMetres!==null?'GEOMETRIC':barometricMetres!==null?'BAROMETRIC_PRESSURE':null,
+    geometric_altitude_m:geometricMetres,barometric_altitude_m:barometricMetres,
+    ground_speed_mps:Number.isFinite(speedKnots)?speedKnots*0.514444:null,
+    heading_deg:Number.isFinite(heading)&&heading>=0&&heading<=360?heading:null,
+    vertical_rate_mps:null,
+    on_ground:item.alt_baro==='ground'?true:barometricMetres!==null?false:null,
+    origin_country:null,origin:null,destination:null,
+    provider:'adsb_lol',position_provider:'adsb_lol',
+    position_source_label:'ADSB.lol ADS-B network',
+    observed_at:new Date(now-ageSeconds*1000).toISOString(),
+    age_seconds:ageSeconds,
+    freshness:ageSeconds<=45?'LIVE':ageSeconds<=180?'DELAYED':'STALE',
+    timestamp_basis:'derived_from_provider_seen_pos',
+    evidence_class:'OBSERVED',trail:[],
+  };
+}
+
+async function loadAdsbLolArea({airport,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
+  const config=getAdsbLolConfig(env);
+  if(!config.enabled)return {
+    status:'NOT_CONFIGURED',configured:false,reason:config.reason,records:[],
+    radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol',license:'ODbL-1.0',
+  };
+  const icao=cleanCode(airport?.icao,4);
+  const latitude=numberOrNull(airport?.latitude),longitude=numberOrNull(airport?.longitude);
+  if(!icao||icao.length!==4||!Number.isFinite(latitude)||!Number.isFinite(longitude)||
+    latitude < -90||latitude > 90||longitude < -180||longitude > 180){
+    return {
+      status:'NOT_REQUESTED',configured:true,reason:'uniquely_resolved_airport_coordinates_required',
+      records:[],radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol',license:'ODbL-1.0',
+    };
+  }
+  const key='adsblol-area:'+icao+':'+ADSBLOL_AREA_RADIUS_NM;
+  const cached=cacheGet(key,now);
+  if(cached)return {...cached,cache_state:'HIT'};
+  const pending=areaLoadPromises.get(key);
+  if(pending)return pending;
+  const request=(async()=>{
+    const centre={icao,latitude,longitude};
+    try{
+      const url=config.baseUrl+'/v2/lat/'+latitude.toFixed(4)+'/lon/'+longitude.toFixed(4)+'/dist/'+ADSBLOL_AREA_RADIUS_NM;
+      const payload=await requestJson(url,{
+        fetcher,headers:{'User-Agent':'Sonalit-SJM/1.0 (regional aviation observations)'},
+      });
+      const rows=Array.isArray(payload)?payload:
+        Array.isArray(payload?.ac)?payload.ac:
+        Array.isArray(payload?.aircraft)?payload.aircraft:[];
+      const records=rows.map(record=>normaliseAdsbLolAreaRecord(record,now)).filter(Boolean);
+      return cacheSet(key,{
+        status:records.length?'AVAILABLE':'NO_DATA',configured:true,reason:null,
+        records,record_count:records.length,rejected_count:Math.max(0,rows.length-records.length),
+        radius_nm:ADSBLOL_AREA_RADIUS_NM,
+        coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_nm:ADSBLOL_AREA_RADIUS_NM},
+        source:'ADSB.lol',license:'ODbL-1.0',attribution_required:true,
+        checked_at:new Date(now).toISOString(),cache_state:'MISS',
+        provenance:{provider:'adsb_lol',database_license:'ODbL-1.0',
+          timestamp_basis:'provider_seen_pos_relative_age',fabricated_data_used:false},
+      },DEFAULT_LOOKUP_TTL_MS,now);
+    }catch(error){
+      const limited=error?.code==='rate_limited';
+      const value={
+        status:limited?'RATE_LIMITED':'UNAVAILABLE',configured:true,
+        reason:error?.code||'provider_error',retry_after_seconds:error?.retryAfterSeconds||null,
+        records:[],record_count:0,radius_nm:ADSBLOL_AREA_RADIUS_NM,
+        coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_nm:ADSBLOL_AREA_RADIUS_NM},
+        source:'ADSB.lol',license:'ODbL-1.0',attribution_required:true,
+        provenance:{provider:'adsb_lol',database_license:'ODbL-1.0',fabricated_data_used:false},
+      };
+      return cacheSet(key,value,limited?(error.retryAfterSeconds||60)*1000:15_000,now);
+    }
+  })();
+  areaLoadPromises.set(key,request);
+  try{return await request;}
+  finally{if(areaLoadPromises.get(key)===request)areaLoadPromises.delete(key);}
+}
+
 async function loadAdsbLolCallsign({callsign,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
   const config=getAdsbLolConfig(env);
   const ident=normaliseCallsign(callsign);
@@ -544,12 +644,12 @@ function compareAircraftSources({flightNumber,opensky,adsbLol}={}) {
   };
 }
 
-function buildSourceRegistry({opensky,weather,adsbLol,commercial,airportReference}={}) {
+function buildSourceRegistry({opensky,weather,adsbLol,adsbArea,commercial,airportReference}={}) {
   return [
     {id:'opensky',name:'OpenSky Network',capability:'aircraft_positions',status:opensky?.status||'UNKNOWN',
       role:'Primary bounded aircraft state vectors',commercial_data:false,authority:'aircraft_state_only'},
-    {id:'adsb_lol',name:'ADSB.lol',capability:'aircraft_position_cross_check',status:adsbLol?.status||'NOT_CONFIGURED',
-      role:'Independent targeted callsign cross-check',license:'ODbL-1.0',production_approval_required:true},
+    {id:'adsb_lol',name:'ADSB.lol',capability:'regional_aircraft_positions_and_cross_check',status:adsbArea?.status==='AVAILABLE'||adsbLol?.status==='AVAILABLE'?'AVAILABLE':adsbArea?.status==='RATE_LIMITED'||adsbLol?.status==='RATE_LIMITED'?'RATE_LIMITED':adsbArea?.status==='UNAVAILABLE'||adsbLol?.status==='UNAVAILABLE'?'UNAVAILABLE':adsbArea?.status==='NO_DATA'||adsbLol?.status==='NO_MATCH'?'NO_DATA':adsbArea?.status==='NOT_CONFIGURED'||adsbLol?.status==='NOT_CONFIGURED'?'NOT_CONFIGURED':adsbArea?.status==='NOT_REQUESTED'?(adsbLol?.status||'NOT_CONFIGURED'):(adsbArea?.status||adsbLol?.status||'NOT_CONFIGURED'),
+      role:'Independent airport-centred aircraft observations and targeted callsign cross-check',coverage_radius_nm:ADSBLOL_AREA_RADIUS_NM,license:'ODbL-1.0',production_approval_required:true,attribution_required:true},
     {id:'aerodatabox',name:'AeroDataBox',capability:'flight_schedules_and_status',status:commercial?.status||'NOT_CONFIGURED',
       role:'Commercial flight schedule and operational status',commercial_license_required:true,derived_work_rights_required:true},
     {id:'aviationweather_gov',name:'AviationWeather.gov',capability:'metar_taf_sigmet',status:weather?.status||'NOT_REQUESTED',
@@ -590,18 +690,26 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
       status:'NOT_REQUESTED',reason:airportReference.reason||'verified_icao_station_required',
       station_icao:null,metar:[],taf:[],international_sigmets:[],
     });
-  const [weatherResult,adsbResult,flightResult]=await Promise.all([
+  const areaRequest=airportReference.status==='RESOLVED'
+    ?loadAdsbLolArea({airport:airportReference.airport,env,fetcher,now})
+    :Promise.resolve({
+      status:'NOT_REQUESTED',configured:false,reason:'uniquely_resolved_airport_coordinates_required',
+      records:[],radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol',license:'ODbL-1.0',
+    });
+  const [weatherResult,adsbAreaResult,adsbResult,flightResult]=await Promise.all([
     weatherRequest.catch(error=>({status:'UNAVAILABLE',reason:error?.code||'provider_error',metar:[],taf:[],international_sigmets:[]})),
+    areaRequest.catch(error=>({status:'UNAVAILABLE',reason:error?.code||'provider_error',records:[],radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol'})),
     loadAdsbLolCallsign({callsign:flightNumber,env,fetcher,now}),
     loadCommercialFlight({flightNumber,env,fetcher,now}),
   ]);
   const weather=weatherResult||{status:'NOT_REQUESTED',metar:[],taf:[],international_sigmets:[]};
+  const aircraftArea=adsbAreaResult||{status:'NOT_REQUESTED',records:[],radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol'};
   const adsbLol=adsbResult||{status:'NOT_REQUESTED',records:[]};
   const commercial=flightResult||{status:'NOT_REQUESTED',flights:[]};
   const comparison=compareAircraftSources({flightNumber,opensky:baseSnapshot,adsbLol});
   const activeProviderCount=[
     ['opensky',['LIVE','DELAYED','CONNECTED'].includes(baseSnapshot?.status)&&(baseSnapshot?.aircraft||[]).length>0],
-    ['adsb_lol',adsbLol.status==='AVAILABLE'&&(adsbLol.records||[]).length>0],
+    ['adsb_lol',(adsbLol.status==='AVAILABLE'&&(adsbLol.records||[]).length>0)||(aircraftArea.status==='AVAILABLE'&&(aircraftArea.records||[]).length>0)],
     ['aerodatabox',commercial.status==='AVAILABLE'&&(commercial.flights||[]).length>0],
     ['aviationweather_gov',Boolean(weather.metar?.length||weather.taf?.length||weather.international_sigmets?.length)],
   ].filter(([,active])=>active).length;
@@ -610,9 +718,10 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
     ...(baseSnapshot||{}),
     intelligence:{
       generated_at:new Date(now).toISOString(),
-      providers:buildSourceRegistry({opensky:baseSnapshot,weather,adsbLol,commercial,airportReference}),
+      providers:buildSourceRegistry({opensky:baseSnapshot,weather,adsbLol,adsbArea:aircraftArea,commercial,airportReference}),
       flight_status:commercial,
       aircraft_cross_check:adsbLol,
+      aircraft_area:aircraftArea,
       aircraft_comparison:comparison,
       aviation_weather:weather,
       notams:{
@@ -633,12 +742,12 @@ async function getSnapshot({flightNumber,airportIcao,airportCode,baseSnapshot,en
   };
 }
 
-function resetCacheForTests(){responseCache.clear();airportReferenceIndex=null;airportReferenceExpiresAt=0;airportReferenceLoadPromise=null;airportReferenceFailure=null;airportReferenceFailureExpiresAt=0;}
+function resetCacheForTests(){responseCache.clear();areaLoadPromises.clear();airportReferenceIndex=null;airportReferenceExpiresAt=0;airportReferenceLoadPromise=null;airportReferenceFailure=null;airportReferenceFailureExpiresAt=0;}
 
 module.exports={
   cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
-  normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseCallsign,haversineKm,compareAircraftSources,
-  loadInternationalSigmets,loadWeather,loadAdsbLolCallsign,normaliseCommercialMovement,normaliseCommercialFlight,loadCommercialFlight,
+  normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseAdsbLolAreaRecord,normaliseCallsign,haversineKm,compareAircraftSources,
+  loadInternationalSigmets,loadWeather,loadAdsbLolCallsign,loadAdsbLolArea,normaliseCommercialMovement,normaliseCommercialFlight,loadCommercialFlight,
   parseCsvRows,buildAirportReferenceIndex,resolveAirportCode,loadAirportReferenceIndex,
   buildSourceRegistry,getSnapshot,resetCacheForTests,
 };

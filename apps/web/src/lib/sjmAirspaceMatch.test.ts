@@ -37,6 +37,41 @@ describe('SJM journey flight correlation',()=>{
     expect(result.aircraft).toHaveLength(2);
   });
 
+
+  it('treats two provider records for one ICAO24 as one identity without claiming corroboration early',()=>{
+    const openSky={...aircraft,position_provider:'opensky_rest'};
+    const secondary={...aircraft,position_provider:'adsb_lol',latitude:-1.31,longitude:36.81};
+    const result=correlateJourneyFlight({
+      flightReference:'KQ100',configured:true,connected:true,providerStatus:'LIVE',
+      aircraft:[openSky,secondary],events:[],sourceComparison:{status:'INSUFFICIENT_DATA'},
+    });
+    expect(result.status).toBe('MATCHED');
+    expect(result.aircraft).toHaveLength(2);
+  });
+
+  it('labels shared ICAO24 observations corroborated only when server comparison passes',()=>{
+    const openSky={...aircraft,position_provider:'opensky_rest'};
+    const secondary={...aircraft,position_provider:'adsb_lol'};
+    const result=correlateJourneyFlight({
+      flightReference:'KQ100',configured:true,connected:true,providerStatus:'LIVE',
+      aircraft:[openSky,secondary],events:[],sourceComparison:{status:'CORROBORATED'},
+    });
+    expect(result.status).toBe('CORROBORATED');
+    expect(result.aircraft).toHaveLength(2);
+    expect(result.explanation).toContain('time and position comparison');
+  });
+
+  it('surfaces provider identity disagreements rather than collapsing them into an ordinary match',()=>{
+    const openSky={...aircraft,position_provider:'opensky_rest'};
+    const secondary={...aircraft,id:'def456',position_provider:'adsb_lol'};
+    const result=correlateJourneyFlight({
+      flightReference:'KQ100',configured:true,connected:true,providerStatus:'LIVE',
+      aircraft:[openSky,secondary],events:[],sourceComparison:{status:'AIRCRAFT_ID_DISAGREEMENT'},
+    });
+    expect(result.status).toBe('SOURCE_DISAGREEMENT');
+  });
+
+
   it('keeps flight-information events separate from current position matches',()=>{
     const event={type:'arrival',ident:'KQ100',airport:'HKJK',observed_at:'2026-10-30T11:58:00.000Z',received_at:'2026-10-30T11:58:01.000Z'};
     const result=correlateJourneyFlight({flightReference:'KQ100',configured:true,connected:true,providerStatus:'CONNECTED',aircraft:[],events:[event]});
