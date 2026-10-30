@@ -14,6 +14,7 @@ const FLYITALYADSB_SHARED_LOCK_TTL_MS=15_000;
 const FLYITALYADSB_REQUESTS_PER_MINUTE=25;
 const FLYITALYADSB_REQUESTS_PER_MONTH=270_000;
 const FLYITALYADSB_REDIS_PREFIX='sonalit:sjm:airspace:flyitalyadsb:v1';
+const FLYITALYADSB_USE_RESTRICTIONS=Object.freeze(['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION','NOT_FOR_PERSON_TRACKING_OR_HARASSMENT']);
 const FLYITALYADSB_RELEASE_LOCK_SCRIPT="if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end";
 const FLYITALYADSB_RATE_LIMIT_SCRIPT="local now=tonumber(ARGV[1]); local window=tonumber(ARGV[2]); local limit=tonumber(ARGV[3]); local member=ARGV[4]; redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',now-window); local count=redis.call('ZCARD',KEYS[1]); if count >= limit then return 0 end; redis.call('ZADD',KEYS[1],now,member); redis.call('EXPIRE',KEYS[1],math.ceil(window/1000)+5); return count+1";
 const KCAA_AIM_URL='https://aim.kcaa.or.ke/';
@@ -290,7 +291,7 @@ function getFlyItalyAdsbConfig(env=process.env) {
     service_level:'BEST_EFFORT',production_contact_recommended:false,
     requests_per_minute:30,requests_per_month:300000,
     maximum_radius_km:FLYITALYADSB_RADIUS_KM,
-    use_restrictions:['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION','NOT_FOR_PERSON_TRACKING_OR_HARASSMENT'],
+    use_restrictions:FLYITALYADSB_USE_RESTRICTIONS,
   };
 }
 
@@ -955,8 +956,8 @@ function buildSourceRegistry({opensky,weather,adsbLol,adsbArea,flyItalyArea,comm
       service_level:'BEST_EFFORT',maximum_radius_km:FLYITALYADSB_RADIUS_KM,
       requests_per_minute:FLYITALYADSB_REQUESTS_PER_MINUTE,requests_per_month:FLYITALYADSB_REQUESTS_PER_MONTH,
       provider_plan_requests_per_minute:30,provider_plan_requests_per_month:300000,
-      quota_scope:'shared_product_key',
-      quality_limit:'No SLA; receiver coverage is uneven and Africa is sparsely served. Not for safety-of-life, air traffic control or navigation.'},
+      quota_scope:'shared_product_key',use_restrictions:FLYITALYADSB_USE_RESTRICTIONS,
+      quality_limit:'No SLA; receiver coverage is uneven and Africa is sparsely served. Not for safety-of-life, air traffic control, navigation, identifying passengers, following people or harassment.'},
     {id:'aerodatabox',name:'AeroDataBox',capability:'flight_schedules_and_status',status:commercial?.status||'NOT_CONFIGURED',
       role:'Commercial flight schedule and operational status',commercial_license_required:true,derived_work_rights_required:true},
     {id:'aviationweather_gov',name:'AviationWeather.gov',capability:'metar_taf_sigmet',status:weather?.status||'NOT_REQUESTED',
