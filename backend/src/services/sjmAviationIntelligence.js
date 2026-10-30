@@ -278,11 +278,17 @@ function compareAircraftSources({flightNumber,opensky,adsbLol}={}) {
     status:'AIRCRAFT_ID_DISAGREEMENT',flight_number:flightNumber,primary_count:1,secondary_count:1,
     opensky_icao24:left.id||null,adsb_lol_icao24:right.id||null,
     note:'The providers associate this callsign with different ICAO24 addresses. Neither record is selected automatically.'};
-  const leftTime=Date.parse(left.observed_at||''),rightTime=Date.parse(right.observed_at||'');
+  const leftTime=Date.parse(left.observed_at||'');
+  const rightTime=Date.parse(right.observed_at||'');
   const distanceKm=haversineKm(left,right);
-  const timeDifferenceSeconds=Number.isFinite(leftTime)&&Number.isFinite(rightTime)?Math.abs(leftTime-rightTime)/1000:null;
-  const withinWindow=timeDifferenceSeconds!==null&&timeDifferenceSeconds<=120;
-  const withinPositionTolerance=Number.isFinite(distanceKm)&&distanceKm<=5;
+  const timeDifferenceSeconds=Number.isFinite(leftTime)&&Number.isFinite(rightTime)
+    ?Math.abs(leftTime-rightTime)/1000:null;
+  if(timeDifferenceSeconds===null||!Number.isFinite(distanceKm))return {
+    status:'IDENTITY_ONLY',flight_number:flightNumber,primary_count:1,secondary_count:1,
+    opensky_icao24:left.id||null,adsb_lol_icao24:right.id||null,
+    note:'The providers returned the same ICAO24/callsign candidate, but timestamps or coordinates are incomplete. Spatial/temporal corroboration is not established.'};
+  const withinWindow=timeDifferenceSeconds<=120;
+  const withinPositionTolerance=distanceKm<=5;
   return {
     status:withinWindow&&withinPositionTolerance?'CORROBORATED':'POSITION_DISAGREEMENT',
     flight_number:flightNumber,primary_count:1,secondary_count:1,
