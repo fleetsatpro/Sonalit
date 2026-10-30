@@ -122,18 +122,23 @@ describe('SJM federated aviation intelligence',()=>{
     });
   });
 
-  test('marks a multi-provider view only when OpenSky and another source return records',async()=>{
+  test('marks a multi-provider view only when independent providers return usable records',async()=>{
     const fetcher=jest.fn(async(url)=>{
       const path=String(url);
+      if(path.includes('airports.csv'))return {
+        ok:true,status:200,headers:{get:()=>String(airportCsv.length)},text:async()=>airportCsv,
+      };
       const body=path.includes('/metar')?[{icaoId:'HKJK',obsTime:now/1000,rawOb:'METAR'}]
         :path.includes('/taf')?[{icaoId:'HKJK',issueTime:now/1000,rawTAF:'TAF'}]
           :[{firId:'HKNA',validTimeFrom:now/1000,rawAirSigmet:'SIGMET'}];
       return {ok:true,status:200,json:async()=>body};
     });
-    const baseSnapshot={provider:'opensky_rest',status:'LIVE',configured:true,connected:true,aircraft:[]};
+    const baseSnapshot={provider:'opensky_rest',status:'LIVE',configured:true,connected:true,aircraft:[{
+      id:'abc123',ident:'KQ100',latitude:-1.3,longitude:36.8,observed_at:new Date(now).toISOString(),
+    }]};
     const result=await aviation.getSnapshot({airportIcao:'HKJK',baseSnapshot,env:{},fetcher,now:now+3_000});
     expect(result.intelligence.provenance).toMatchObject({
-      multi_provider:true,active_provider_count:2,provider_registry_present:true,
+      multi_provider:true,active_provider_count:3,provider_registry_present:true,
     });
   });
 
