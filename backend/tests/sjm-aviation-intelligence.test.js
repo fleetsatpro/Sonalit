@@ -274,6 +274,101 @@ describe('SJM federated aviation intelligence',()=>{
     });
   });
 
+  const airportCsv=[
+    'id,ident,type,name,latitude_deg,longitude_deg,elevation_ft,continent,iso_country,iso_region,municipality,scheduled_service,gps_code,iata_code,local_code',
+    '1,HKJK,large_airport,Jomo Kenyatta International,-1.3192,36.9278,5334,AF,KE,KE-30,Nairobi,yes,HKJK,NBO,',
+    '2,HKMO,large_airport,Moi International,-4.0348,39.5942,200,AF,KE,KE-28,Mombasa,yes,HKMO,MBA,',
+    '3,HKNC,small_airport,Coastal Field,-4.1,39.6,20,AF,KE,KE-28,Mombasa,no,HKNC,MBA,',
+  ].join('\n');
+
+  test('parses quoted CSV airport names and preserves embedded commas',()=>{
+    const rows=aviation.parseCsvRows('ident,name\nHKJK,"Jomo Kenyatta, International"\n');
+    expect(rows).toEqual([
+      ['ident','name'],
+      ['HKJK','Jomo Kenyatta, International'],
+    ]);
+  });
+
+  test('builds exact IATA/ICAO airport mappings from the public OurAirports dataset',()=>{
+    const index=aviation.buildAirportReferenceIndex(airportCsv);
+    expect(aviation.resolveAirportCode('NBO',index)).toMatchObject({
+      status:'RESOLVED',supplied_code_type:'IATA',
+      airport:{iata:'NBO',icao:'HKJK',name:'Jomo Kenyatta International'},
+    });
+    expect(aviation.resolveAirportCode('HKMO',index)).toMatchObject({
+      status:'RESOLVED',supplied_code_type:'ICAO',
+      airport:{iata:'MBA',icao:'HKMO',municipality:'Mombasa'},
+    });
+  });
+
+  test('does not guess when one IATA code maps to more than one airport',()=>{
+    const index=aviation.buildAirportReferenceIndex(airportCsv);
+    expect(aviation.resolveAirportCode('MBA',index)).toMatchObject({
+      status:'AMBIGUOUS',candidate_count:2,airport:null,
+    });
+  });
+
+  test('keeps unknown airport codes unresolved instead of converting or guessing',()=>{
+    const index=aviation.buildAirportReferenceIndex(airportCsv);
+    expect(aviation.resolveAirportCode('XYZ',index)).toMatchObject({
+      status:'NOT_FOUND',reason:'no_exact_iata_icao_reference_match',airport:null,
+    });
+    expect(aviation.resolveAirportCode('NBO',null)).toMatchObject({
+      status:'UNAVAILABLE',reason:'airport_reference_dataset_unavailable',airport:null,
+    });
+  });
+
+  test('loads the reference index once per cache period and resolves a journey IATA code before METAR/TAF',async()=>{
+    aviation.resetCacheForTests();
+    const fetcher=jest.fn(async(url)=>{
+      const path=String(url);
+      if(path.includes('airports.csv'))return {
+        ok:true,status:200,headers:{get:()=>String(airportCsv.length)},text:async()=>airportCsv,
+      };
+      const body=path.includes('/metar')?[{icaoId:'HKJK',obsTime:now/1000,rawOb:'HKJK METAR'}]
+        :path.includes('/taf')?[{icaoId:'HKJK',issueTime:now/1000,rawTAF:'HKJK TAF'}]
+          :[{firId:'HKNA',validTimeFrom:now/1000,rawAirSigmet:'SIGMET'}];
+      return {ok:true,status:200,json:async()=>body};
+    });
+    const result=await aviation.getSnapshot({
+      airportCode:'NBO',
+      baseSnapshot:{provider:'opensky_rest',status:'NOT_CONFIGURED',configured:false,aircraft:[]},
+      env:{},fetcher,now,
+    });
+    expect(result.intelligence.airport_reference).toMatchObject({
+      status:'RESOLVED',supplied_code:'NBO',supplied_code_type:'IATA',
+      airport:{iata:'NBO',icao:'HKJK'},
+    });
+    expect(result.intelligence.aviation_weather).toMatchObject({
+      status:'AVAILABLE',station_icao:'HKJK',
+      metar:[{station_icao:'HKJK',raw:'HKJK METAR'}],
+    });
+    const airportCsvRequests=fetcher.mock.calls.filter(call=>String(call[0]).includes('airports.csv'));
+    expect(airportCsvRequests).toHaveLength(1);
+    const metarCall=fetcher.mock.calls.find(call=>String(call[0]).includes('/metar'));
+    expect(metarCall[0]).toContain('ids=HKJK');
+  });
+
+  test('does not call AviationWeather when an IATA code is ambiguous',async()=>{
+    aviation.resetCacheForTests();
+    const fetcher=jest.fn(async(url)=>{
+      if(String(url).includes('airports.csv'))return {
+        ok:true,status:200,headers:{get:()=>String(airportCsv.length)},text:async()=>airportCsv,
+      };
+      throw new Error('Weather endpoints must not be requested for an ambiguous code.');
+    });
+    const result=await aviation.getSnapshot({
+      airportCode:'MBA',
+      baseSnapshot:{provider:'opensky_rest',status:'NOT_CONFIGURED',configured:false,aircraft:[]},
+      env:{},fetcher,now,
+    });
+    expect(result.intelligence.airport_reference.status).toBe('AMBIGUOUS');
+    expect(result.intelligence.aviation_weather).toMatchObject({
+      status:'NOT_REQUESTED',station_icao:null,
+    });
+    expect(fetcher.mock.calls.filter(call=>/\/metar|\/taf|\/isigmet/.test(String(call[0])))).toHaveLength(0);
+  });
+
   test('does not use Eurocontrol EAD Basic as an operational NOTAM source',()=>{
     const providers=aviation.buildSourceRegistry({
       opensky:{status:'LIVE'},
@@ -287,7 +382,7 @@ describe('SJM federated aviation intelligence',()=>{
     expect(providers.find(item=>item.id==='eurocontrol_ead')).toMatchObject({
       status:'AGREEMENT_REQUIRED',operational_authority:true,
     });
-    expect(providers.find(item=>item.id==='ourairports')).toMatchObject({status:'AVAILABLE_NOT_SYNCED'});
+    expect(providers.find(item=>item.id==='ourairports')).toMatchObject({status:'NOT_REQUESTED'});
   });
 
   test('returns no fake flight or weather records when optional providers are not configured',async()=>{
