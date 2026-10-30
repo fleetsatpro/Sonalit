@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { correlateJourneyFlight, normaliseFlightIdent } from './sjmAirspaceMatch.js';
 
 const aircraft={
-  id:'fa-flight-1',ident:'KQ100',registration:'5Y-KZA',origin:'HKJK',destination:'EGLL',
+  id:'abc123',ident:'KQ100',origin:null,destination:null,
   observed_at:'2026-10-30T11:59:30.000Z',freshness:'LIVE',
-  latitude:-1.3,longitude:36.8,altitude_m:10800,ground_speed_mps:220,heading_deg:280,
+  latitude:-1.3,longitude:36.8,altitude_m:10800,altitude_reference:'GEOMETRIC',ground_speed_mps:220,heading_deg:280,
 };
 
 describe('SJM journey flight correlation',()=>{
@@ -26,8 +26,8 @@ describe('SJM journey flight correlation',()=>{
   });
 
   it('matches one exact callsign and keeps airport alignment distinct',()=>{
-    const result=correlateJourneyFlight({flightReference:'KQ 100',airportCode:'HKJK',configured:true,connected:true,providerStatus:'LIVE',aircraft:[aircraft],events:[]});
-    expect(result).toMatchObject({status:'MATCHED',normalised_reference:'KQ100',airport_alignment:'MATCHED'});
+    const result=correlateJourneyFlight({flightReference:'KQ 100',airportCode:'NBO',configured:true,connected:true,providerStatus:'LIVE',aircraft:[aircraft],events:[]});
+    expect(result).toMatchObject({status:'MATCHED',normalised_reference:'KQ100',airport_alignment:'NOT_ESTABLISHED'});
     expect(result.aircraft).toHaveLength(1);
   });
 
@@ -45,8 +45,8 @@ describe('SJM journey flight correlation',()=>{
     expect(result.aircraft).toEqual([]);
   });
 
-  it('does not imply a missing flight is absent when the provider is unavailable',()=>{
-    const result=correlateJourneyFlight({flightReference:'KQ100',configured:true,connected:false,providerStatus:'UNAVAILABLE',aircraft:[],events:[]});
+  it('does not imply a missing flight is absent when OpenSky is unavailable',()=>{
+    const result=correlateJourneyFlight({flightReference:'KQ100',configured:true,connected:false,providerStatus:'RATE_LIMITED',aircraft:[],events:[]});
     expect(result.status).toBe('FEED_UNAVAILABLE');
   });
 
