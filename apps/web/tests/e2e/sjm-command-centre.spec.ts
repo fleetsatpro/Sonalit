@@ -250,6 +250,16 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.goto('/corridor/missions', { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(/\/sjm\/field$/);
   });
+  test('standalone field workspace exposes an authenticated sign-out action', async ({ page }) => {
+    await seedAuth(page);
+    await stubFieldSjmApi(page);
+    await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Executive Mobility' })).toBeVisible({ timeout: 15000 });
+    const signOut = page.getByRole('button', { name: 'Sign out' });
+    await expect(signOut).toBeVisible();
+    await signOut.click();
+    await expect(page).toHaveURL(/\\/login$/);
+  });
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
   test('keeps the journey workspace readable without horizontal overflow at target viewports', async ({ page }, testInfo: TestInfo) => {
