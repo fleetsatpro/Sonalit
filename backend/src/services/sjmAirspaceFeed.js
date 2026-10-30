@@ -325,9 +325,11 @@ async function pollOnce(redis,config,token) {
       let validPositions=0,invalidPositions=0;
       messageCount=result.states.length;
       for(const state of result.states){
+        if(Array.isArray(state)&&state[3]==null)continue;
         const item=normaliseStateVector(state,Date.now());
         if(!item){invalidPositions++;continue;}
-        if(rememberPosition(item))validPositions++;
+        rememberPosition(item);
+        validPositions++;
       }
       const now=Date.now();
       purgeExpired(now);
