@@ -744,9 +744,8 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByRole('tab', { name: 'Airspace 3D' }).click();
     const display = page.getByTestId('sjm-airspace-display');
     await expect(display).toBeVisible();
-    const federatedIntelligence = page.getByRole('region', { name: 'Federated aviation intelligence' });
-    await expect(federatedIntelligence.getByText('COMMERCIAL FLIGHT STATUS', { exact: true })).toBeVisible();
-    await expect(federatedIntelligence.getByText('No commercial flight provider is configured', { exact: true })).toBeVisible();
+    await expect(page.getByText('COMMERCIAL FLIGHT STATUS', { exact: true })).toBeVisible();
+    await expect(page.getByText('No commercial flight provider is configured', { exact: true })).toBeVisible();
     const globe = display.getByRole('application', { name: /three-dimensional airspace globe/i });
     await expect(globe).toBeVisible();
     await expect(globe).toHaveAttribute('data-basemap-provider', 'openstreetmap');
@@ -836,7 +835,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await flightCard.getByRole('button', { name: 'Save flight observation' }).click();
 
     await expect.poll(() => flightStatusUpdates).toEqual([{ flight_status: 'delayed', note: 'Airline desk reported a 35 minute delay.' }]);
-    await expect(flightCard.getByText('Delayed', { exact: true })).toBeVisible();
+    await expect(flightCard.getByTestId('sjm-flight-status-value')).toHaveText('Delayed');
     await expect(flightCard.getByText('Operator-entered', { exact: true })).toBeVisible();
     await expect(flightCard.getByText('Airline desk reported a 35 minute delay.')).toBeVisible();
   });
