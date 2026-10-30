@@ -184,7 +184,7 @@ function normaliseAdsbLolRecord(item,now=Date.now()) {
     barometric_altitude_ft:Number.isFinite(barometric)?barometric:null,
     ground_speed_kt:numberOrNull(item.gs),
     heading_deg:numberOrNull(item.track),
-    on_ground:item.alt_baro==='ground',
+    on_ground:item.alt_baro==='ground'?true:numberOrNull(item.alt_baro)!==null?false:null,
     provider:'adsb_lol',observed_at:observedAt,
     age_seconds:Number.isFinite(seenPosition)?seenPosition:null,
     evidence_class:'OBSERVED',timestamp_basis:'derived_from_provider_seen_pos',
@@ -231,7 +231,7 @@ async function loadCommercialFlight({flightNumber,env=process.env,fetcher=global
   try{
     const url=config.baseUrl+'/flights/number/'+encodeURIComponent(number)+'?dateLocalRole=Both';
     const payload=await requestJson(url,{fetcher,headers:{[config.header]:config.apiKey}});
-    const flights=Array.isArray(payload)?payload:payload?.items||payload?.flights||[];
+    const flights=Array.isArray(payload)?payload:Array.isArray(payload?.items)?payload.items:Array.isArray(payload?.flights)?payload.flights:[];
     const value={
       status:flights.length?'AVAILABLE':'NO_MATCH',
       reason:null,flight_number:number,flights:flights.slice(0,20),
@@ -244,6 +244,54 @@ async function loadCommercialFlight({flightNumber,env=process.env,fetcher=global
     return {status:'UNAVAILABLE',reason:error?.code||'provider_error',flight_number:number,flights:[],source:'AeroDataBox',
       provenance:{provider:'aerodatabox',fabricated_data_used:false}};
   }
+}
+
+function normaliseCallsighn(value) {
+  return String(value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+}
+
+function haversineKm(a,b) {
+  const toRad=value=>value*Math.PI/180;
+  const dLat=toRad(b.latitude-a.latitude),dLon=toRad(b.longitude-a.longitude);
+  const lat1=toRad(a.latitude),lat2=toRad(b.latitude);
+  const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 6371*2*Math.atan2(Math.sqrt(h),Math.sqrt(Math.max(0,1-h)));
+}
+
+function compareAircraftSources({flightNumber,opensky,adsbLol}={}) {
+  const reference=normaliseCallsighn(flightNumber);
+  if(!reference)return {status:'NOT_REQUESTED',primary_count:0,secondary_count:0,note:'No journey flight reference was supplied.'};
+  const primary=(opensky?.aircraft||[]).filter(item=>normaliseCallsighn(item.ident)===reference);
+  const secondary=(adsbLol?.records||[]).filter(item=>normaliseCallsighn(item.ident)===reference);
+  if(!opensky?.configured||!['LIVE','DELAYED','CONNECTED'].includes(opensky?.status)||adsbLol?.status==='UNAVAILABLE'||adsbLol?.status==='NOT_CONFIGURED'){
+    return {status:'INSUFFICIENT_DATA',flight_number:flightNumber,primary_count:primary.length,secondary_count:secondary.length,
+      note:'Both provider observations are required for an independent comparison. A missing result is not evidence that the flight or aircraft is absent.'};
+  }
+  if(primary.length>1||secondary.length>1)return {status:'AMBIGUOUS',flight_number:flightNumber,primary_count:primary.length,secondary_count:secondary.length,
+    note:'At least one provider returned multiple callsign matches; no record has been selected automatically.'};
+  if(primary.length===0&&secondary.length===0)return {status:'NO_MATCH',flight_number:flightNumber,primary_count:0,secondary_count:0,
+    note:'Neither provider returned an exact callsign match in its current query scope.'};
+  if(primary.length===0||secondary.length===0)return {status:'SINGLE_SOURCE_ONLY',flight_number:flightNumber,primary_count:primary.length,secondary_count:secondary.length,
+    note:'Only one provider returned a matching callsign. Independent corroboration has not been established.'};
+  const left=primary[0],right=secondary[0];
+  if(String(left.id||'').toLowerCase()!==String(right.id||'').toLowerCase())return {
+    status:'AIRCRAFT_ID_DISAGREEMENT',flight_number:flightNumber,primary_count:1,secondary_count:1,
+    opensky_icao24:left.id||null,adsb_lol_icao24:right.id||null,
+    note:'The providers associate this callsign with different ICAO24 addresses. Neither record is selected automatically.'};
+  const leftTime=Date.parse(left.observed_at||''),rightTime=Date.parse(right.observed_at||'');
+  const distanceKm=haversineKm(left,right);
+  const timeDifferenceSeconds=Number.isFinite(leftTime)&&Number.isFinite(rightTime)?Math.abs(leftTime-rightTime)/1000:null;
+  const withinWindow=timeDifferenceSeconds!==null&&timeDifferenceSeconds<=120;
+  const withinPositionTolerance=Number.isFinite(distanceKm)&&distanceKm<=5;
+  return {
+    status:withinWindow&&withinPositionTolerance?'CORROBORATED':'POSITION_DISAGREEMENT',
+    flight_number:flightNumber,primary_count:1,secondary_count:1,
+    opensky_icao24:left.id||null,adsb_lol_icao24:right.id||null,
+    time_difference_seconds:timeDifferenceSeconds,distance_km:Number.isFinite(distanceKm)?Number(distanceKm.toFixed(2)):null,
+    note:withinWindow&&withinPositionTolerance
+      ?'The two independent provider samples share the ICAO24 address and are within the comparison time/distance tolerances. This corroborates an aircraft observation, not a commercial flight schedule or passenger arrival.'
+      :'The provider samples share a callsign/ICAO24 candidate but fall outside the configured comparison tolerances. Keep both source records visible; do not auto-select one.',
+  };
 }
 
 function buildSourceRegistry({opensky,weather,adsbLol,commercial}={}) {
@@ -277,6 +325,13 @@ async function getSnapshot({flightNumber,airportIcao,baseSnapshot,env=process.en
   const weather=weatherResult||{status:'NOT_REQUESTED',metar:[],taf:[],international_sigmets:[]};
   const adsbLol=adsbResult||{status:'NOT_REQUESTED',records:[]};
   const commercial=flightResult||{status:'NOT_REQUESTED',flights:[]};
+  const comparison=compareAircraftSources({flightNumber,opensky:baseSnapshot,adsbLol});
+  const activeProviderCount=[
+    ['opensky',['LIVE','DELAYED','CONNECTED'].includes(baseSnapshot?.status)],
+    ['adsb_lol',adsbLol.status==='AVAILABLE'],
+    ['aerodatabox',commercial.status==='AVAILABLE'],
+    ['aviationweather_gov',Boolean(weather.metar?.length||weather.taf?.length||weather.international_sigmets?.length)],
+  ].filter(([,active])=>active).length;
   return {
     ...(baseSnapshot||{}),
     intelligence:{
@@ -284,6 +339,7 @@ async function getSnapshot({flightNumber,airportIcao,baseSnapshot,env=process.en
       providers:buildSourceRegistry({opensky:baseSnapshot,weather,adsbLol,commercial}),
       flight_status:commercial,
       aircraft_cross_check:adsbLol,
+      aircraft_comparison:comparison,
       aviation_weather:weather,
       notams:{
         status:'ACCESS_REQUIRED',source:'KCAA AIM / Nairobi FIR',
@@ -296,7 +352,8 @@ async function getSnapshot({flightNumber,airportIcao,baseSnapshot,env=process.en
         sources:['OurAirports Public Domain','open flightmaps OFMA General Users License'],
         warning:'Reference datasets are supplementary and must not be used as certified navigation data or operational NOTAM authority.',
       },
-      provenance:{multi_provider:true,fabricated_data_used:false,providers_are_not_equivalent_authorities:true},
+      provenance:{multi_provider:activeProviderCount>=2,active_provider_count:activeProviderCount,
+        provider_registry_present:true,fabricated_data_used:false,providers_are_not_equivalent_authorities:true},
     },
   };
 }
@@ -305,7 +362,7 @@ function resetCacheForTests(){responseCache.clear();}
 
 module.exports={
   cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
-  normaliseWeatherRecords,normaliseAdsbLolRecord,
+  normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseCallsighn,haversineKm,compareAircraftSources,
   loadWeather,loadAdsbLolCallsign,loadCommercialFlight,
   buildSourceRegistry,getSnapshot,resetCacheForTests,
 };
