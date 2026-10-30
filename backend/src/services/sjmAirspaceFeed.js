@@ -146,7 +146,7 @@ function normaliseStateVector(state,now=Date.now()) {
     on_ground:typeof state[8]==='boolean'?state[8]:null,
     squawk:state[14]==null?null:String(state[14]),
     position_source:state[16]==null?null:Number(state[16]),
-    position_source_label:POSITION_SOURCE[Number(state[16])]||'UNKNOWN',
+    position_source_label:state[16]==null?'UNKNOWN':POSITION_SOURCE[Number(state[16])]||'UNKNOWN',
     category:Number.isInteger(category)?category:null,
     category_label:CATEGORY[category]||'UNKNOWN',
     observed_at:positionTime,last_contact_at:lastContact,
@@ -260,7 +260,8 @@ function purgeExpired(now=Date.now()) {
 
 function configFingerprint(config) {
   return crypto.createHash('sha256').update(JSON.stringify({
-    bounds:config.bounds,creditWindow:config.creditWindow,creditBudget:config.creditBudget,
+    bounds:config.bounds,creditTier:config.creditTier,creditWindow:config.creditWindow,
+    creditBudget:config.creditBudget,windowSeconds:config.windowSeconds,
     pollIntervalSeconds:config.pollIntervalSeconds,
   })).digest('hex');
 }
