@@ -284,9 +284,11 @@ function toCsv(report) {
 }
 
 async function journeyById(db,org,id) {
+  const r=await db('SELECT j.*, c.name AS client_name, c.company AS client_company FROM sjm_journeys j LEFT JOIN sjm_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL WHERE j.id=$1 AND j.org_id=$2 AND j.deleted_at IS NULL LIMIT 1',[id,org]);
   return r.rows[0]||null;
 }
 async function journeyForRouteReview(db,org,id) {
+  const r=await db('SELECT j.*, j.xmin::text AS route_review_row_version, c.name AS client_name, c.company AS client_company FROM sjm_journeys j LEFT JOIN sjm_clients c ON c.id=j.client_id AND c.org_id=j.org_id AND c.deleted_at IS NULL WHERE j.id=$1 AND j.org_id=$2 AND j.deleted_at IS NULL LIMIT 1',[id,org]);
   return r.rows[0]||null;
 }
 async function stopsFor(db,org,id) {

@@ -189,7 +189,7 @@ describe('SJM validation and evidence boundaries', () => {
     expect(route).toContain('LIMIT $6 OFFSET $7');
     expect(route).toContain('COUNT(*)::int AS total_count');
     expect(route).toContain('has_more:offset+data.length<rows.totalCount');
-    expect(route).toContain("concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label,v.name) ILIKE");
+    expect(route).toContain("concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE");
     expect(route).toContain('summary:rows.summary');
     expect(route).toContain('journeyRegisterFilterSql(filter)');
     expect(route).toContain('journeyRegisterOrderSql(sort)');
@@ -201,6 +201,16 @@ describe('SJM validation and evidence boundaries', () => {
     expect(route).toContain("THEN 'DEPARTURE_DUE_30M'");
     expect(route).toContain('ORDER BY ${orderSql}');
     expect(route).toContain('invalid_journey_sort');
+  });
+  test('keeps direct journey asset read and allocation routes registered', () => {
+    const getLayer=sjmRouter.stack.find(entry =>
+      entry.route?.path === '/journeys/:id/assets' && entry.route.methods?.get === true
+    );
+    const putLayer=sjmRouter.stack.find(entry =>
+      entry.route?.path === '/journeys/:id/assets' && entry.route.methods?.put === true
+    );
+    expect(getLayer).toBeDefined();
+    expect(putLayer).toBeDefined();
   });
   test('keeps the mission-team assignment write endpoint registered', () => {
     const layer=sjmRouter.stack.find(entry =>

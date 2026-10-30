@@ -142,8 +142,10 @@ WHERE j.convoy_id IS NOT NULL AND j.deleted_at IS NULL
       AND a.asset_type='vehicle' AND a.vehicle_id=v.id AND a.removed_at IS NULL
   );
 
--- Migrate only same-tenant Guardian devices. An unowned device is accepted only
--- where a same-tenant field-officer assignment independently proves ownership.
+-- Migrate only devices whose tenant owner is explicitly established on the
+-- Guardian record. Unowned legacy devices are left in the legacy domain until
+-- their tenant ownership is reconciled; field-officer roster membership alone
+-- does not rewrite the device's authoritative tenant field.
 INSERT INTO public.sjm_journey_assets
   (org_id,journey_id,asset_type,guardian_device_id,assignment_role,sort_order,assigned_at)
 SELECT j.org_id,j.id,'guardian_device',d.id,'field_device',
@@ -152,9 +154,7 @@ FROM public.sjm_journeys j
 JOIN public.convoy_cfos cc ON cc.convoy_id=j.convoy_id AND cc.org_id=j.org_id
 JOIN public.guardian_devices d ON d.id=cc.guardian_device_id AND d.deleted_at IS NULL
 WHERE j.convoy_id IS NOT NULL AND j.deleted_at IS NULL
-  AND (d.org_id=j.org_id OR (d.org_id IS NULL AND EXISTS (
-    SELECT 1 FROM public.field_officers fo WHERE fo.device_id=d.id AND fo.org_id=j.org_id
-  )))
+  AND d.org_id=j.org_id
   AND NOT EXISTS (
     SELECT 1 FROM public.sjm_journey_assets a
     WHERE a.org_id=j.org_id AND a.journey_id=j.id
