@@ -278,6 +278,10 @@ test.describe('SJM command-centre responsive smoke', () => {
       await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
 
       await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
+      const sjmPageHeader = page.locator('main.sjm-console header.sjm-page-header');
+      await expect(sjmPageHeader.getByText('Protective Mobility', { exact: true })).toBeVisible();
+      await expect(sjmPageHeader.getByText('Command desk', { exact: true })).toBeVisible();
+      await expect(sjmPageHeader.getByText('XD Live Surveillance', { exact: true })).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 10000 });
       await expect(page.getByText('Route has not been assessed', { exact: true })).toBeVisible();
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
