@@ -629,9 +629,9 @@ return (
      <div className="relative flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
       <div className="max-w-3xl">
        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
-        <span className="font-semibold tracking-[.04em] text-emerald-300">XD Live Surveillance</span>
+        <span className="font-semibold tracking-[.04em] text-emerald-300">Protective Mobility</span>
         <span className="text-slate-600">/</span>
-        <span className="text-slate-400">Operations</span>
+        <span className="text-slate-400">Command desk</span>
        </div>
        <h1 className="text-[clamp(1.5rem,2.2vw,2.2rem)] font-semibold leading-tight tracking-tight text-white">Secure Journey Management</h1>
        <p className="sjm-page-intro mt-2 max-w-3xl text-sm leading-6 text-slate-400">Coordinate airport transfers and protective movements from route review through verified arrival.</p>
