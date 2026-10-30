@@ -165,7 +165,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
   },[]);
 
   useEffect(()=>{
-    if(cameraMode!=='regional')return;
+    if(cameraModeRef.current!=='regional')return;
     const widget=widgetRef.current;
     if(!widget||widget.isDestroyed())return;
     widget.camera.flyTo({...regionalAirspaceView(airportCentre),duration:1.15});
