@@ -3,7 +3,7 @@ import * as Cesium from '@cesium/engine';
 import '@cesium/engine/Source/Widget/CesiumWidget.css';
 
 export type SjmAirspaceAircraft = {
-  id:string; map_key?:string; provider?:string; position_provider?:'opensky_rest'|'adsb_lol'; position_source_label?:string|null; ident:string; latitude:number; longitude:number;
+  id:string; map_key?:string; provider?:string; position_provider?:'opensky_rest'|'adsb_lol'|'flyitalyadsb'; position_source_label?:string|null; ident:string; latitude:number; longitude:number;
   altitude_m:number|null; altitude_reference?:'WGS84_ELLIPSOID'|'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;
   ground_speed_mps:number|null; heading_deg:number|null;
   origin?:string|null; destination?:string|null; observed_at:string;
@@ -16,11 +16,12 @@ type Props = {
   bounds?:{south:number;west:number;north:number;east:number}|null;
   pollIntervalSeconds?:number|null;
   regionalStatus?:string;
+  flyItalyStatus?:string;
   regionalRadiusNm?:number;
   airportCentre?:{latitude:number;longitude:number}|null;
 };
 
-type ProviderFilter='all'|'opensky_rest'|'adsb_lol';
+type ProviderFilter='all'|'opensky_rest'|'adsb_lol'|'flyitalyadsb';
 type FreshnessFilter='all'|'LIVE'|'DELAYED'|'STALE'|'UNAVAILABLE';
 
 const MAP_URL='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -37,6 +38,7 @@ function sourceLabel(item:SjmAirspaceAircraft):string {
   if(item.position_source_label)return item.position_source_label;
   if(item.position_provider==='adsb_lol')return 'ADSB.lol';
   if(item.position_provider==='opensky_rest')return 'OpenSky Network';
+  if(item.position_provider==='flyitalyadsb')return 'FlyItalyADSB';
   return item.provider||'Source unavailable';
 }
 function observedLabel(value?:string|null):string {
@@ -78,7 +80,7 @@ function aircraftFocusView(item:SjmAirspaceAircraft):Cesium.CameraFlyToOptions {
   };
 }
 
-export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds,pollIntervalSeconds=null,regionalStatus='NOT_CONFIGURED',regionalRadiusNm=250,airportCentre=null}:Props) {
+export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds,pollIntervalSeconds=null,regionalStatus='NOT_CONFIGURED',flyItalyStatus='NOT_CONFIGURED',regionalRadiusNm=250,airportCentre=null}:Props) {
   const containerRef=useRef<HTMLDivElement>(null);
   const widgetRef=useRef<Cesium.CesiumWidget|null>(null);
   const entityRef=useRef<Map<string,Cesium.Entity>>(new Map());
@@ -294,6 +296,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         <span className="tabular-nums">{aircraft.length.toLocaleString()} observations</span>
         <span>OpenSky {configured?'configured':'off'}</span>
         <span>ADSB.lol {regionalStatus.replaceAll('_',' ').toLowerCase()}</span>
+        <span>FlyItalyADSB {flyItalyStatus.replaceAll('_',' ').toLowerCase()}</span>
         <span>{configured&&pollIntervalSeconds?pollIntervalSeconds+'s snapshots':'OpenSky polling off'}</span>
       </div>
     </div>
@@ -337,7 +340,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
             <input type="search" aria-label="Search aircraft observations" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Callsign, ICAO24 or route" className="w-full rounded-md border border-white/10 bg-[#080e15] px-3 py-2.5 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-300/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"/>
           </label>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <label className="min-w-0"><span className="sr-only">Filter aircraft provider</span><select aria-label="Filter aircraft provider" value={providerFilter} onChange={event=>setProviderFilter(event.target.value as ProviderFilter)} className="w-full rounded-md border border-white/10 bg-[#080e15] px-2 py-2 text-[11px] text-slate-300 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300"><option value="all">All sources</option><option value="opensky_rest">OpenSky</option><option value="adsb_lol">ADSB.lol</option></select></label>
+            <label className="min-w-0"><span className="sr-only">Filter aircraft provider</span><select aria-label="Filter aircraft provider" value={providerFilter} onChange={event=>setProviderFilter(event.target.value as ProviderFilter)} className="w-full rounded-md border border-white/10 bg-[#080e15] px-2 py-2 text-[11px] text-slate-300 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300"><option value="all">All sources</option><option value="opensky_rest">OpenSky</option><option value="adsb_lol">ADSB.lol</option><option value="flyitalyadsb">FlyItalyADSB</option></select></label>
             <label className="min-w-0"><span className="sr-only">Filter aircraft freshness</span><select aria-label="Filter aircraft freshness" value={freshnessFilter} onChange={event=>setFreshnessFilter(event.target.value as FreshnessFilter)} className="w-full rounded-md border border-white/10 bg-[#080e15] px-2 py-2 text-[11px] text-slate-300 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300"><option value="all">All freshness</option><option value="LIVE">Live</option><option value="DELAYED">Delayed</option><option value="STALE">Stale</option><option value="UNAVAILABLE">Unavailable</option></select></label>
           </div>
         </div>
@@ -400,6 +403,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         <p>Only WGS84 ellipsoid-referenced heights are used for 3D elevation. Other altitude references are shown as reported but are not converted or inferred.</p>
         <p>Coverage: {boundsLabel} · Latest reported position: {lastPositionAt?observedLabel(lastPositionAt):'none recorded'}.</p>
         <p>Basemap: © OpenStreetMap contributors. Public raster tiles are best-effort; production-scale service needs a dedicated tile host. Aircraft data: source is shown per observation; ADSB.lol is published under ODbL 1.0.</p>
+        {aircraft.some(item=>item.position_provider==='flyitalyadsb')&&<p>Flight data: FlyItalyADSB (flyitalyadsb.com), CC BY-SA 4.0. Data and datasets built from it carry share-alike obligations.</p>}
       </div>
       <div className="flex items-center gap-3 border-t border-white/[0.05] px-3 py-3 text-[10px] text-slate-500 sm:border-l sm:border-t-0 sm:px-4">
         <span>Map controls</span><span>Drag to rotate</span><span>Scroll to zoom</span>
