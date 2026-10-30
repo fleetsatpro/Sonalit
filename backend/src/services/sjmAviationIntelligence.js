@@ -248,10 +248,6 @@ async function loadAdsbLolCallsign({callsign,env=process.env,fetcher=global.fetc
   }
 }
 
-function nestedValue(root,path) {
-  return path.split('.').reduce((value,key)=>value&&typeof value==='object'?value[key]:null,root);
-}
-
 function textOrNull(value) {
   if(typeof value!=='string'&&typeof value!=='number')return null;
   const text=String(value).trim();
