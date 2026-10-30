@@ -21,6 +21,29 @@ describe('SJM federated aviation intelligence',()=>{
     });
   });
 
+  test('gates FlyItalyADSB behind explicit CC BY-SA review, enablement and a product API key',()=>{
+    expect(aviation.getFlyItalyAdsbConfig({SJM_FLYITALYADSB_ENABLED:'true'})).toMatchObject({
+      enabled:false,reason:'cc_by_sa_share_alike_obligations_not_reviewed',
+    });
+    expect(aviation.getFlyItalyAdsbConfig({
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+    })).toMatchObject({enabled:false,reason:'api_key_missing_or_invalid'});
+    const config=aviation.getFlyItalyAdsbConfig({
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'sonalit-product-key',
+    });
+    expect(config).toMatchObject({
+      enabled:true,reason:null,license:'CC-BY-SA-4.0',
+      commercial_use_permitted:true,attribution_required:true,share_alike_required:true,
+      service_level:'BEST_EFFORT',requests_per_minute:30,requests_per_month:300000,
+      maximum_radius_km:500,
+      use_restrictions:['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION'],
+    });
+    expect(config.baseUrl).toBe('https://api.flyitalyadsb.com/v2');
+  });
+
   test('requires AeroDataBox commercial and downstream derived-work rights independently',()=>{
     const base={
       SJM_AERODATABOX_ENABLED:'true',
@@ -200,6 +223,56 @@ describe('SJM federated aviation intelligence',()=>{
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0][0]).toContain('/v2/callsign/KQ100');
+  });
+
+  test('normalises FlyItalyADSB aircraft without coercing coordinates or retaining stale positions',()=>{
+    const item=aviation.normaliseFlyItalyAdsbRecord({
+      hex:'abc123',flight:'KQ 100 ',r:'5Y-KZA',lat:-1.3,lon:36.8,
+      alt_geom:12400,alt_baro:12000,gs:220,track:90,baro_rate:600,seen_pos:12,
+    },now);
+    expect(item).toMatchObject({
+      id:'abc123',map_key:'flyitalyadsb:abc123',ident:'KQ 100',registration:'5Y-KZA',
+      latitude:-1.3,longitude:36.8,provider:'flyitalyadsb',position_provider:'flyitalyadsb',
+      altitude_reference:'GEOMETRIC',ground_speed_mps:220*0.514444,
+      heading_deg:90,vertical_rate_mps:3.048,age_seconds:12,
+      evidence_class:'OBSERVED',timestamp_basis:'derived_from_provider_seen_pos',
+    });
+    expect(item.observed_at).toBe(new Date(now-12_000).toISOString());
+    expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:null,lon:36.8,seen_pos:3},now)).toBeNull();
+    expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:601},now)).toBeNull();
+    expect(aviation.normaliseFlyItalyAdsbRecord({hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:-1},now)).toBeNull();
+  });
+
+  test('loads a 500 km FlyItalyADSB picture with server-side key, compliance metadata and cache',async()=>{
+    const env={
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'server-only-key',
+    };
+    const airport={icao:'HKJK',latitude:-1.3192,longitude:36.9278};
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:true,status:200,json:async()=>({now:now/1000,ac:[
+        {hex:'abc123',flight:'KQ 100 ',r:'5Y-KZA',lat:-1.3,lon:36.8,seen_pos:12,alt_geom:12400,alt_baro:12000,gs:220,track:90},
+        {hex:'stale1',flight:'OLD',lat:-1.4,lon:36.8,seen_pos:601},
+      ]}),
+    });
+    const result=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher,now});
+    expect(result).toMatchObject({
+      status:'AVAILABLE',configured:true,radius_km:500,record_count:1,rejected_count:1,
+      source:'FlyItalyADSB',license:'CC-BY-SA-4.0',
+      commercial_use_permitted:true,attribution_required:true,share_alike_required:true,
+      service_level:'BEST_EFFORT',
+      coverage:{complete:false,query_scope:'airport_centred_radius',centre:airport,radius_km:500},
+    });
+    expect(result.records[0]).toMatchObject({
+      id:'abc123',position_provider:'flyitalyadsb',ident:'KQ 100',
+      position_source_label:'FlyItalyADSB ADS-B / MLAT network',
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('https://api.flyitalyadsb.com/v2/lat/-1.3192/lon/36.9278/dist/500');
+    expect(fetcher.mock.calls[0][1].headers['X-Api-Key']).toBe('server-only-key');
+    const cached=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher:jest.fn(),now:now+30_000});
+    expect(cached.cache_state).toBe('HIT');
   });
 
   test('loads a bounded 250 NM ADSB.lol aircraft picture around a resolved airport',async()=>{
@@ -516,6 +589,43 @@ describe('SJM federated aviation intelligence',()=>{
     expect(airportCsvRequests).toHaveLength(1);
     const metarCall=fetcher.mock.calls.find(call=>String(call[0]).includes('/metar'));
     expect(metarCall[0]).toContain('ids=HKJK');
+  });
+
+  test('publishes FlyItalyADSB as an independent aircraft source only after a unique airport resolution',async()=>{
+    const env={
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'server-only-key',
+    };
+    const fetcher=jest.fn(async(url)=>{
+      const path=String(url);
+      if(path.includes('airports.csv'))return {
+        ok:true,status:200,headers:{get:()=>String(airportCsv.length)},text:async()=>airportCsv,
+      };
+      if(path.includes('api.flyitalyadsb.com'))return {
+        ok:true,status:200,json:async()=>({ac:[
+          {hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:12,alt_geom:12000},
+        ]}),
+      };
+      if(path.includes('/metar'))return {ok:true,status:200,json:async()=>[]};
+      if(path.includes('/taf'))return {ok:true,status:200,json:async()=>[]};
+      if(path.includes('/isigmet'))return {ok:true,status:200,json:async()=>[]};
+      throw new Error('Unexpected aviation provider request: '+path);
+    });
+    const result=await aviation.getSnapshot({
+      airportCode:'NBO',
+      baseSnapshot:{provider:'opensky_rest',status:'NOT_CONFIGURED',configured:false,aircraft:[]},
+      env,fetcher,now,
+    });
+    expect(result.intelligence.flyitaly_area).toMatchObject({
+      status:'AVAILABLE',source:'FlyItalyADSB',license:'CC-BY-SA-4.0',
+      records:[{id:'abc123',position_provider:'flyitalyadsb'}],
+    });
+    expect(result.intelligence.providers.find(item=>item.id==='flyitalyadsb')).toMatchObject({
+      status:'AVAILABLE',commercial_use_permitted:true,attribution_required:true,
+      share_alike_required:true,quality_limit:expect.stringContaining('Not for safety-of-life'),
+    });
+    expect(result.intelligence.provenance.fabricated_data_used).toBe(false);
   });
 
   test('does not call AviationWeather when an IATA code is ambiguous',async()=>{
