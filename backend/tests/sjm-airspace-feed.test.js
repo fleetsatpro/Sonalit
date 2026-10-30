@@ -60,9 +60,19 @@ describe('SJM OpenSky REST airspace feed',()=>{
       OPENSKY_POLL_INTERVAL_SECONDS:'60',
     });
     expect(config).toMatchObject({
-      configured:true,creditsPerRequest:3,pollIntervalSeconds:87,dailyCreditBudget:3000,
+      configured:true,creditsPerRequest:3,pollIntervalSeconds:87,creditBudget:3000,
     });
-    expect(config.projectedDailyCredits).toBeLessThanOrEqual(3000);
+    expect(config.projectedCreditsPerWindow).toBeLessThanOrEqual(3000);
+  });
+
+  test('permits five-second snapshots only under an explicitly configured licensed hourly quota',()=>{
+    const config=feed.getConfig({
+      SJM_AIRSPACE_FEED_ENABLED:'true',SJM_AIRSPACE_LICENSE_CONFIRMED:'true',
+      SJM_AIRSPACE_BOUNDS:'-5 32 6 42',OPENSKY_CLIENT_ID:'client-id',OPENSKY_CLIENT_SECRET:'client-secret',
+      OPENSKY_CREDIT_WINDOW:'hourly',OPENSKY_CREDIT_BUDGET:'12000',OPENSKY_POLL_INTERVAL_SECONDS:'5',
+    });
+    expect(config).toMatchObject({configured:true,creditWindow:'hourly',creditBudget:12000,pollIntervalSeconds:5});
+    expect(config.projectedCreditsPerWindow).toBeLessThanOrEqual(12000);
   });
 
   test('uses a query bounding box and requests extended state-vector fields',()=>{
