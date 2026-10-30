@@ -704,7 +704,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(globe).toHaveAttribute('data-camera-mode', 'orbital');
     await expect(globe.locator('canvas')).toBeVisible();
     const observationList = page.getByRole('list', { name: 'Aircraft observation list' });
+    const providerFilter = display.getByRole('combobox', { name: 'Filter aircraft provider' });
+    await providerFilter.selectOption('opensky_rest');
     await expect(observationList.getByRole('button', { name: /KQA123/ })).toBeVisible();
+    await providerFilter.selectOption('all');
     const emptyInspector = display.getByTestId('sjm-aircraft-unselected-inspector');
     await expect(emptyInspector).toContainText('Select an aircraft observation');
     await expect(emptyInspector).toContainText('Coverage bounds');
