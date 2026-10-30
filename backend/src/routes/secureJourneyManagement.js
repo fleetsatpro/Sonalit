@@ -581,6 +581,103 @@ router.put('/clients/:id',authorize('admin','dispatcher'),asyncHandler(async(req
   if(!result.rows.length)return res.status(404).json({error:'client_not_found'});
   res.json({data:result.rows[0]});
 }));
+router.get('/vehicles',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
+  const result=await req.db(
+    'SELECT id,type,registration,region,status,capacity,make,model,year,color FROM vehicles WHERE org_id=$1 AND deleted_at IS NULL ORDER BY status,registration LIMIT 500',
+    [req.user.org_id],
+  );
+  res.setHeader('Cache-Control','no-store');
+  res.json({data:result.rows});
+}));
+router.get('/devices',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
+  const result=await req.db(
+    "SELECT d.id,d.name,d.status,d.last_checkin_at,fo.name AS assigned_officer FROM guardian_devices d LEFT JOIN LATERAL (SELECT name FROM field_officers WHERE device_id=d.id AND org_id=$1 ORDER BY updated_at DESC LIMIT 1) fo ON true WHERE d.org_id=$1 AND d.deleted_at IS NULL ORDER BY d.name LIMIT 500",
+    [req.user.org_id],
+  );
+  res.setHeader('Cache-Control','no-store');
+  res.json({data:result.rows});
+}));
+router.get('/journeys/:id/assets',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
+  const org=req.user.org_id,journey=await journeyById(req.db,org,req.params.id);
+  const dutyRoles=await requireJourneyAccess(req,res,journey);
+  if(!dutyRoles)return;
+  const result=await req.db(
+    "SELECT a.id,a.asset_type,a.assignment_role,a.sort_order,a.assigned_at,"+
+    "v.id AS vehicle_id,v.registration,v.type AS vehicle_type,v.region,v.status AS vehicle_status,v.make,v.model,v.color,"+
+    "d.id AS guardian_device_id,d.name AS device_name,d.status AS device_status,d.last_checkin_at,fo.name AS officer_name "+
+    "FROM sjm_journey_assets a "+
+    "LEFT JOIN vehicles v ON a.asset_type='vehicle' AND v.id=a.vehicle_id AND v.org_id=a.org_id AND v.deleted_at IS NULL "+
+    "LEFT JOIN guardian_devices d ON a.asset_type='guardian_device' AND d.id=a.guardian_device_id AND d.org_id=a.org_id AND d.deleted_at IS NULL "+
+    "LEFT JOIN LATERAL (SELECT name FROM field_officers WHERE device_id=d.id AND org_id=a.org_id ORDER BY updated_at DESC LIMIT 1) fo ON true "+
+    "WHERE a.org_id=$1 AND a.journey_id=$2 AND a.removed_at IS NULL "+
+    "ORDER BY a.asset_type,a.sort_order,a.assigned_at,a.id",
+    [org,journey.id],
+  );
+  res.setHeader('Cache-Control','no-store');
+  res.json({data:result.rows});
+}));
+router.put('/journeys/:id/assets',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
+  const org=req.user.org_id,body=req.body||{};
+  if(!Array.isArray(body.vehicles)||!Array.isArray(body.devices))return res.status(400).json({error:'journey_assets_required',message:'Provide vehicles and devices arrays. Empty arrays explicitly clear that asset category.'});
+  if(body.vehicles.length>8||body.devices.length>16)return res.status(400).json({error:'journey_asset_limit_exceeded',message:'A journey can have at most 8 vehicles and 16 Guardian devices assigned.'});
+  const normalise=(items,key)=>{
+    const ids=new Set();
+    const rows=[];
+    for(let i=0;i<items.length;i++){
+      const item=items[i],id=typeof item?.[key]==='string'?item[key].toLowerCase():'';
+      if(!SJM_ORG_UUID.test(id)||ids.has(id))return null;
+      ids.add(id);
+      const role=txt(item?.assignment_role,48)||(key==='vehicle_id'?'assigned_vehicle':'field_device');
+      rows.push({id,role,sort_order:i});
+    }
+    return rows;
+  };
+  const vehicles=normalise(body.vehicles,'vehicle_id'),devices=normalise(body.devices,'guardian_device_id');
+  if(!vehicles||!devices)return res.status(400).json({error:'invalid_journey_assets',message:'Asset IDs must be valid unique UUIDs.'});
+  const saved=await req.dbTx(async c=>{
+    const db=(sql,params)=>c.query(sql,params);
+    const locked=await lockJourneyForMobility(db,org,req.params.id);
+    if(!locked)return {error:'journey_not_found'};
+    if(['closed','cancelled','aborted'].includes(locked.status))return {error:'journey_terminal'};
+    if(vehicles.length){
+      const found=await db('SELECT id FROM vehicles WHERE org_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL ORDER BY id FOR UPDATE',[org,vehicles.map(x=>x.id)]);
+      if(found.rows.length!==vehicles.length)return {error:'vehicle_not_available'};
+      const conflict=await db("SELECT j.reference FROM sjm_journey_assets a JOIN sjm_journeys j ON j.id=a.journey_id AND j.org_id=a.org_id WHERE a.org_id=$1 AND a.asset_type='vehicle' AND a.vehicle_id=ANY($2::uuid[]) AND a.journey_id<>$3 AND a.removed_at IS NULL AND j.deleted_at IS NULL AND j.status NOT IN ('closed','cancelled','aborted') LIMIT 1",[org,vehicles.map(x=>x.id),req.params.id]);
+      if(conflict.rows.length)return {error:'asset_already_assigned',asset_type:'vehicle',journey_reference:conflict.rows[0].reference};
+    }
+    if(devices.length){
+      const found=await db('SELECT id FROM guardian_devices WHERE org_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL ORDER BY id FOR UPDATE',[org,devices.map(x=>x.id)]);
+      if(found.rows.length!==devices.length)return {error:'device_not_available'};
+      const conflict=await db("SELECT j.reference FROM sjm_journey_assets a JOIN sjm_journeys j ON j.id=a.journey_id AND j.org_id=a.org_id WHERE a.org_id=$1 AND a.asset_type='guardian_device' AND a.guardian_device_id=ANY($2::uuid[]) AND a.journey_id<>$3 AND a.removed_at IS NULL AND j.deleted_at IS NULL AND j.status NOT IN ('closed','cancelled','aborted') LIMIT 1",[org,devices.map(x=>x.id),req.params.id]);
+      if(conflict.rows.length)return {error:'asset_already_assigned',asset_type:'guardian_device',journey_reference:conflict.rows[0].reference};
+    }
+    await db("UPDATE sjm_journey_assets SET removed_at=NOW() WHERE org_id=$1 AND journey_id=$2 AND asset_type='vehicle' AND removed_at IS NULL AND vehicle_id <> ALL($3::uuid[])",[org,req.params.id,vehicles.map(x=>x.id)]);
+    await db("UPDATE sjm_journey_assets SET removed_at=NOW() WHERE org_id=$1 AND journey_id=$2 AND asset_type='guardian_device' AND removed_at IS NULL AND guardian_device_id <> ALL($3::uuid[])",[org,req.params.id,devices.map(x=>x.id)]);
+    for(const item of vehicles)await db(
+      "INSERT INTO sjm_journey_assets (org_id,journey_id,asset_type,vehicle_id,assignment_role,sort_order,assigned_by) VALUES ($1,$2,'vehicle',$3,$4,$5,$6) ON CONFLICT (org_id,journey_id,vehicle_id) WHERE removed_at IS NULL AND asset_type='vehicle' AND vehicle_id IS NOT NULL DO UPDATE SET assignment_role=EXCLUDED.assignment_role,sort_order=EXCLUDED.sort_order,assigned_by=EXCLUDED.assigned_by",
+      [org,req.params.id,item.id,item.role,item.sort_order,req.user.id],
+    );
+    for(const item of devices)await db(
+      "INSERT INTO sjm_journey_assets (org_id,journey_id,asset_type,guardian_device_id,assignment_role,sort_order,assigned_by) VALUES ($1,$2,'guardian_device',$3,$4,$5,$6) ON CONFLICT (org_id,journey_id,guardian_device_id) WHERE removed_at IS NULL AND asset_type='guardian_device' AND guardian_device_id IS NOT NULL DO UPDATE SET assignment_role=EXCLUDED.assignment_role,sort_order=EXCLUDED.sort_order,assigned_by=EXCLUDED.assigned_by",
+      [org,req.params.id,item.id,item.role,item.sort_order,req.user.id],
+    );
+    await db(
+      "INSERT INTO sjm_journey_events (org_id,journey_id,actor_id,event_type,summary,detail,source) VALUES ($1,$2,$3,'journey_assets_assigned',$4,$5,'operator')",
+      [org,req.params.id,req.user.id,'Journey field resources assigned',JSON.stringify({classification:'INTERNAL_OPERATIONS',vehicles:vehicles.map(x=>({id:x.id,role:x.role})),devices:devices.map(x=>({id:x.id,role:x.role})),vehicle_count:vehicles.length,device_count:devices.length})],
+    );
+    return {ok:true};
+  });
+  if(saved.error==='journey_not_found')return res.status(404).json({error:saved.error});
+  if(saved.error==='journey_terminal')return res.status(409).json({error:saved.error,message:'Field resources cannot be changed after the journey is closed, cancelled or aborted.'});
+  if(saved.error==='asset_already_assigned')return res.status(409).json(saved);
+  if(saved.error==='vehicle_not_available'||saved.error==='device_not_available')return res.status(404).json({error:saved.error,message:'One or more selected resources are no longer available in this organisation.'});
+  const result=await req.db(
+    "SELECT a.id,a.asset_type,a.assignment_role,a.sort_order,a.assigned_at,v.id AS vehicle_id,v.registration,v.type AS vehicle_type,v.region,v.status AS vehicle_status,d.id AS guardian_device_id,d.name AS device_name,d.status AS device_status FROM sjm_journey_assets a LEFT JOIN vehicles v ON a.asset_type='vehicle' AND v.id=a.vehicle_id AND v.org_id=a.org_id AND v.deleted_at IS NULL LEFT JOIN guardian_devices d ON a.asset_type='guardian_device' AND d.id=a.guardian_device_id AND d.org_id=a.org_id AND d.deleted_at IS NULL WHERE a.org_id=$1 AND a.journey_id=$2 AND a.removed_at IS NULL ORDER BY a.asset_type,a.sort_order,a.assigned_at",
+    [org,req.params.id],
+  );
+  res.json({data:result.rows});
+}));
+
 router.get('/client-profiles/:clientId',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const c=await req.db('SELECT id,name,company FROM sjm_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[req.params.clientId,req.user.org_id]);
   if(!c.rows.length)return res.status(404).json({error:'client_not_found'});
