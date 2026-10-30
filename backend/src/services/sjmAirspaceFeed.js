@@ -230,7 +230,9 @@ async function fetchStates(config,{fetcher=global.fetch,now=Date.now()}={}) {
 function rememberPosition(item) {
   const previous=aircraft.get(item.id);
   if(previous&&Date.parse(item.observed_at)<=Date.parse(previous.observed_at)){
-    aircraft.set(item.id,{...previous,last_contact_at:item.last_contact_at});
+    const priorContact=Date.parse(previous.last_contact_at||'');
+    const incomingContact=Date.parse(item.last_contact_at||'');
+    aircraft.set(item.id,{...previous,last_contact_at:incomingContact>priorContact?item.last_contact_at:previous.last_contact_at});
     return false;
   }
   const trail=previous?(previous.trail||[]).slice(-(MAX_TRAIL-1)):[];
