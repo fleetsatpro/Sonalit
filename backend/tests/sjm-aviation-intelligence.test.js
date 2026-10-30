@@ -188,7 +188,7 @@ describe('SJM federated aviation intelligence',()=>{
         number:'KQ100',status:'EnRoute',airline:{name:'Kenya Airways',iata:'KQ',icao:'KQA'},
         departure:{
           airport:{name:'Jomo Kenyatta International',iata:'NBO',icao:'HKJK',countryCode:'KE'},
-          scheduledTime:{utc:'2026-10-30T08:00:00Z'},revisedTime:{utc:'2026-10-30T08:20:00Z'},
+          scheduledTime:{utc:'2026-10-30T08:00:00Z',local:'2026-10-30 11:00+03'},revisedTime:{utc:'2026-10-30T08:20:00Z',local:'2026-10-30 11:20+03'},
           gate:'12',terminal:'1',
         },
         arrival:{
@@ -204,7 +204,7 @@ describe('SJM federated aviation intelligence',()=>{
       status:'AVAILABLE',flight_number:'KQ100',source:'AeroDataBox',
       flights:[{
         flight_number:'KQ100',status:'EnRoute',airline_name:'Kenya Airways',
-        departure:{airport_iata:'NBO',airport_icao:'HKJK',scheduled_at:'2026-10-30T08:00:00.000Z',revised_at:'2026-10-30T08:20:00.000Z',gate:'12'},
+        departure:{airport_iata:'NBO',airport_icao:'HKJK',scheduled_at:'2026-10-30T08:00:00.000Z',scheduled_local:'2026-10-30 11:00+03',revised_at:'2026-10-30T08:20:00.000Z',revised_local:'2026-10-30 11:20+03',gate:'12'},
         arrival:{airport_iata:'LHR',airport_icao:'EGLL',scheduled_at:'2026-10-30T16:00:00.000Z'},
         aircraft_registration:'5Y-KZA',aircraft_type:'B789',
         evidence_class:'COMMERCIAL_PROVIDER_FLIGHT_INFORMATION',
@@ -219,12 +219,12 @@ describe('SJM federated aviation intelligence',()=>{
   test('normalises commercial flight schedule fields while keeping missing milestones null',()=>{
     const flight=aviation.normaliseCommercialFlight({
       number:'KQ100',status:'Expected',
-      departure:{airport:{iata:'NBO'},scheduledTime:{utc:'2026-10-30T08:00:00Z'}},
+      departure:{airport:{iata:'NBO'},scheduledTime:{utc:'2026-10-30T08:00:00Z',local:'2026-10-30 11:00+03'}},
       arrival:{airport:{iata:'LHR'},scheduledTime:{utc:'2026-10-30T16:00:00Z'}},
     });
     expect(flight).toMatchObject({
       flight_number:'KQ100',status:'Expected',
-      departure:{airport_iata:'NBO',scheduled_at:'2026-10-30T08:00:00.000Z',actual_at:null,gate:null},
+      departure:{airport_iata:'NBO',scheduled_at:'2026-10-30T08:00:00.000Z',scheduled_local:'2026-10-30 11:00+03',actual_at:null,actual_local:null,gate:null},
       arrival:{airport_iata:'LHR',scheduled_at:'2026-10-30T16:00:00.000Z',actual_at:null,gate:null},
       evidence_class:'COMMERCIAL_PROVIDER_FLIGHT_INFORMATION',
     });
