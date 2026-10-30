@@ -184,17 +184,50 @@ describe('SJM federated aviation intelligence',()=>{
       AERODATABOX_API_KEY_HEADER:'x-api-key',
     };
     const fetcher=jest.fn().mockResolvedValue({
-      ok:true,status:200,json:async()=>[{number:'KQ100',status:'EnRoute'}],
+      ok:true,status:200,json:async()=>[{
+        number:'KQ100',status:'EnRoute',airline:{name:'Kenya Airways',iata:'KQ',icao:'KQA'},
+        departure:{
+          airport:{name:'Jomo Kenyatta International',iata:'NBO',icao:'HKJK',countryCode:'KE'},
+          scheduledTime:{utc:'2026-10-30T08:00:00Z'},revisedTime:{utc:'2026-10-30T08:20:00Z'},
+          gate:'12',terminal:'1',
+        },
+        arrival:{
+          airport:{name:'Heathrow',iata:'LHR',icao:'EGLL',countryCode:'GB'},
+          scheduledTime:{utc:'2026-10-30T16:00:00Z'},
+        },
+        aircraft:{reg:'5Y-KZA',model:'B789'},
+        quality:['LiveFlightInfo'],
+      }],
     });
     const result=await aviation.loadCommercialFlight({flightNumber:'KQ 100',env,fetcher,now});
     expect(result).toMatchObject({
       status:'AVAILABLE',flight_number:'KQ100',source:'AeroDataBox',
-      flights:[{number:'KQ100',status:'EnRoute'}],
+      flights:[{
+        flight_number:'KQ100',status:'EnRoute',airline_name:'Kenya Airways',
+        departure:{airport_iata:'NBO',airport_icao:'HKJK',scheduled_at:'2026-10-30T08:00:00.000Z',revised_at:'2026-10-30T08:20:00.000Z',gate:'12'},
+        arrival:{airport_iata:'LHR',airport_icao:'EGLL',scheduled_at:'2026-10-30T16:00:00.000Z'},
+        aircraft_registration:'5Y-KZA',aircraft_type:'B789',
+        evidence_class:'COMMERCIAL_PROVIDER_FLIGHT_INFORMATION',
+      }],
       commercial_data:true,derived_work_rights_confirmed:true,
     });
     expect(fetcher.mock.calls[0][0]).toBe('https://prod.api.market/api/v1/aedbx/aerodatabox/flights/number/KQ100?dateLocalRole=Both');
     expect(fetcher.mock.calls[0][1].headers['x-api-key']).toBe('server-secret');
     expect(JSON.stringify(result)).not.toContain('server-secret');
+  });
+
+  test('normalises commercial flight schedule fields while keeping missing milestones null',()=>{
+    const flight=aviation.normaliseCommercialFlight({
+      number:'KQ100',status:'Expected',
+      departure:{airport:{iata:'NBO'},scheduledTime:{utc:'2026-10-30T08:00:00Z'}},
+      arrival:{airport:{iata:'LHR'},scheduledTime:{utc:'2026-10-30T16:00:00Z'}},
+    });
+    expect(flight).toMatchObject({
+      flight_number:'KQ100',status:'Expected',
+      departure:{airport_iata:'NBO',scheduled_at:'2026-10-30T08:00:00.000Z',actual_at:null,gate:null},
+      arrival:{airport_iata:'LHR',scheduled_at:'2026-10-30T16:00:00.000Z',actual_at:null,gate:null},
+      evidence_class:'COMMERCIAL_PROVIDER_FLIGHT_INFORMATION',
+    });
   });
 
   test('corroborates two independent aircraft observations only when ICAO24, time and position agree',()=>{
