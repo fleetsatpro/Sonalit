@@ -2,7 +2,6 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
 const JOURNEY_ID = 'journey-sjm-e2e-001';
 const CLIENT_ID = 'client-sjm-e2e-001';
-const CONVOY_ID = 'convoy-sjm-e2e-001';
 
 const journey = {
   id: JOURNEY_ID,
@@ -25,8 +24,6 @@ const journey = {
   transport_mode: 'road',
   client_id: CLIENT_ID,
   client_name: 'SJM E2E Fixture Client',
-  convoy_id: CONVOY_ID,
-  convoy_name: 'SJM E2E Fixture Team',
   origin_label: 'JKIA Terminal 1A',
   origin_lat: -1.3192,
   origin_lng: 36.9275,
@@ -97,13 +94,6 @@ async function stubSjmApi(page: Page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: [{ id: CLIENT_ID, name: 'SJM E2E Fixture Client', company: 'Test only' }] }),
-      });
-    }
-    if (pathname === '/api/v1/sjm/convoys') {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ data: [{ id: CONVOY_ID, name: 'SJM E2E Fixture Team', status: 'planned' }] }),
       });
     }
     if (pathname === '/api/v1/sjm/journeys/' + JOURNEY_ID + '/flight-status' && route.request().method() === 'PATCH') {
@@ -399,6 +389,23 @@ test.describe('SJM command-centre responsive smoke', () => {
       });
 
     }
+  });
+
+  test('mission resources are assigned to the journey directly', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/corridor/journeys', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+    const resourcesTab = page.getByRole('tab', { name: 'Team & resources' });
+    await expect(resourcesTab).toBeVisible();
+    await resourcesTab.click();
+    await expect(page.getByRole('heading', { name: 'Team & mission resources' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Mission transport' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Field tracking & evidence sources' })).toBeVisible();
+    await expect(page.getByText('No vehicles are assigned directly to this journey.')).toBeVisible();
+    await expect(page.getByText('No Guardian devices are assigned directly to this journey.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Assign vehicles and devices' })).toBeVisible();
   });
 
   test('mobile mission selection returns focus to the map-first workspace', async ({ page }) => {
