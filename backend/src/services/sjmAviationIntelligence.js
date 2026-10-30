@@ -134,15 +134,25 @@ async function loadInternationalSigmets({fetcher=global.fetch,now=Date.now(),hea
   const key='weather:sigmets:international';
   const cached=cacheGet(key,now);
   if(cached)return {...cached,cache_state:'HIT'};
-  const payload=await requestJson(AIRWEATHER_BASE+'/isigmet?format=json',{headers,fetcher});
-  const records=normaliseWeatherRecords(payload,'SIGMET',now);
-  return cacheSet(key,{
-    status:records.length?'AVAILABLE':'NO_DATA',
-    records,source:'AviationWeather.gov Data API',
-    source_scope:'worldwide international SIGMET response; not route-filtered',
-    checked_at:new Date(now).toISOString(),cache_state:'MISS',
-    provenance:{provider:'aviationweather_gov',fabricated_data_used:false},
-  },DEFAULT_WEATHER_TTL_MS,now);
+  try{
+    const payload=await requestJson(AIRWEATHER_BASE+'/isigmet?format=json',{headers,fetcher});
+    const records=normaliseWeatherRecords(payload,'SIGMET',now);
+    return cacheSet(key,{
+      status:records.length?'AVAILABLE':'NO_DATA',records,reason:null,
+      source:'AviationWeather.gov Data API',
+      source_scope:'worldwide international SIGMET response; not route-filtered',
+      checked_at:new Date(now).toISOString(),cache_state:'MISS',
+      provenance:{provider:'aviationweather_gov',fabricated_data_used:false},
+    },DEFAULT_WEATHER_TTL_MS,now);
+  }catch(error){
+    return cacheSet(key,{
+      status:'UNAVAILABLE',records:[],reason:error?.code||'provider_error',
+      source:'AviationWeather.gov Data API',
+      source_scope:'worldwide international SIGMET response; not route-filtered',
+      checked_at:new Date(now).toISOString(),cache_state:'MISS',
+      provenance:{provider:'aviationweather_gov',fabricated_data_used:false},
+    },DEFAULT_WEATHER_TTL_MS,now);
+  }
 }
 
 async function loadWeather({airportIcao,fetcher=global.fetch,now=Date.now()}={}) {
@@ -165,10 +175,13 @@ async function loadWeather({airportIcao,fetcher=global.fetch,now=Date.now()}={})
   const metar=metarResult.status==='fulfilled'?normaliseWeatherRecords(metarResult.value,'METAR',now):[];
   const taf=tafResult.status==='fulfilled'?normaliseWeatherRecords(tafResult.value,'TAF',now):[];
   const sigmets=sigmetResult.status==='fulfilled'?(sigmetResult.value?.records||[]):[];
-  const failures=[metarResult,tafResult,sigmetResult].filter(result=>result.status==='rejected');
+  const failures=[metarResult,tafResult,sigmetResult].filter(result=>
+    result.status==='rejected'||result.value?.status==='UNAVAILABLE',
+  );
+  const hasRecords=Boolean(metar.length||taf.length||sigmets.length);
   const data={
-    status:failures.length===3?'UNAVAILABLE':failures.length?'PARTIAL':'AVAILABLE',
-    reason:failures.length?failures.map(result=>result.reason?.code||'provider_error').join(','):null,
+    status:failures.length===3?'UNAVAILABLE':failures.length?'PARTIAL':hasRecords?'AVAILABLE':'NO_DATA',
+    reason:failures.length?failures.map(result=>result.reason?.code||result.value?.reason||'provider_error').join(','):null,
     station_icao:icao,metar,taf,
     international_sigmets:sigmets,
     last_checked_at:new Date(now).toISOString(),
