@@ -39,7 +39,11 @@ describe('SJM licensed live airspace',()=>{
     expect(command).toContain('password private-api-key');
     expect(command).toContain('events "position flifo arrival departure cancellation"');
     expect(command).toContain('latlong "-5 32 6 42"');
+    expect(command.startsWith('live ')).toBe(true);
     expect(command.endsWith('\n')).toBe(true);
+    const resumed=feed.buildInitiationCommand(config,1793333333.25);
+    expect(resumed.startsWith('pitr 1793333333.25 ')).toBe(true);
+    expect(resumed).not.toContain(' live ');
   });
 
   test('normalises observed aircraft positions with correct units and provenance',()=>{
@@ -52,16 +56,34 @@ describe('SJM licensed live airspace',()=>{
     expect(position).toMatchObject({
       id:'fa-flight-1',ident:'KQ100',latitude:-1.3,longitude:36.8,heading_deg:90,
       origin:'HKJK',destination:'EGLL',update_type:'A',evidence_class:'OBSERVED',
+      altitude_reference:'BAROMETRIC_PRESSURE',
       provenance:{provider:'FlightAware Firehose',source_message:'position'},
     });
     expect(position.altitude_m).toBeCloseTo(3657.6,1);
     expect(position.ground_speed_mps).toBeCloseTo(221.2,1);
   });
 
+  test('uses GNSS altitude as WGS84 ellipsoid height when that field is supplied',()=>{
+    const position=feed.normalizePosition({type:'position',id:'gnss-1',lat:-1.3,lon:36.8,clock:Date.now()/1000,alt:12000,alt_gnss:11800});
+    expect(position.altitude_m).toBeCloseTo(3596.64,1);
+    expect(position.altitude_reference).toBe('WGS84_ELLIPSOID');
+  });
+
   test('rejects invalid, missing and future-dated aircraft position evidence',()=>{
     expect(feed.normalizePosition({type:'position',id:'x',lat:100,lon:0,clock:Date.now()/1000})).toBeNull();
     expect(feed.normalizePosition({type:'position',id:'x',lat:0,lon:0,clock:0})).toBeNull();
     expect(feed.classifyFreshness('2099-01-01T00:00:00.000Z',Date.now(),true)).toBe('UNAVAILABLE');
+  });
+
+  test('does not regress current aircraft state when PITR replays older position messages',()=>{
+    const currentTime=Date.now()/1000;
+    feed.processLine(JSON.stringify({type:'position',id:'replay-1',ident:'KQ100',lat:-1.3,lon:36.8,clock:currentTime,pitr:currentTime}));
+    feed.processLine(JSON.stringify({type:'position',id:'replay-1',ident:'KQ100',lat:-2.3,lon:37.8,clock:currentTime-30,pitr:currentTime-30}));
+    const current=feed.snapshot();
+    expect(current.aircraft).toHaveLength(1);
+    expect(current.aircraft[0]).toMatchObject({latitude:-1.3,longitude:36.8});
+    expect(current.rejected_count).toBe(1);
+    expect(current.last_pitr_at).toBe(new Date(currentTime*1000).toISOString());
   });
 
   test('keeps flight-information events separate from observed aircraft positions',()=>{
