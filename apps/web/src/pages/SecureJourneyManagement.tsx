@@ -717,7 +717,7 @@ return (
            {flightCorrelation.aircraft.length>0&&<div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
             {flightCorrelation.aircraft.map(item=><div key={item.id} className="rounded-md border border-white/[0.07] bg-black/20 p-3">
              <div className="flex items-center justify-between gap-2"><p className="text-[12px] font-semibold text-slate-100">{item.ident}</p><EvidenceBadge value={item.freshness}/></div>
-             <p className="mt-1 text-[11px] text-slate-500">{item.origin||'Origin unavailable'} → {item.destination||'Destination unavailable'}</p>
+             <p className="mt-1 text-[11px] text-slate-500">ICAO24 {item.id.toUpperCase()} · {item.origin_country||'Origin country unknown'} · {item.position_source_label||'Position source unknown'} · {item.on_ground===true?'On ground':item.on_ground===false?'Airborne':'Air/ground state unknown'}</p>
              <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
               <div><p className="text-slate-600">Reported altitude</p><p className="mt-0.5 text-slate-200">{item.altitude_m==null?'Not reported':Math.round(item.altitude_m).toLocaleString()+' m · '+(item.altitude_reference==='WGS84_ELLIPSOID'?'GNSS / WGS84 ellipsoid':item.altitude_reference==='GEOMETRIC'?'geometric':item.altitude_reference==='BAROMETRIC_PRESSURE'?'barometric pressure':'reference not supplied')}</p></div>
               <div><p className="text-slate-600">Ground speed</p><p className="mt-0.5 text-slate-200">{item.ground_speed_mps==null?'Not reported':Math.round(item.ground_speed_mps*3.6)+' km/h'}</p></div>
