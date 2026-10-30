@@ -176,6 +176,7 @@ describe('SJM OpenSky REST airspace feed',()=>{
     });
     expect(output.aircraft).toHaveLength(1);
     expect(output.aircraft[0].latitude).toBe(-1.3);
+    expect(output.aircraft[0].last_contact_at).toBe(new Date(now).toISOString());
     expect(output.aircraft[0].trail).toHaveLength(1);
   });
 
