@@ -303,10 +303,6 @@ test.describe('SJM command-centre responsive smoke', () => {
         expect(style.radius).toBe('0px');
         expect(style.background).toBe('rgba(0, 0, 0, 0)');
       }
-      await testInfo.attach(`sjm-${viewport.label}-operations-rail`, {
-        body: await operationsRail.screenshot({ animations: 'disabled' }),
-        contentType: 'image/png',
-      });
       const overviewColumns = page.locator('.sjm-overview-columns');
       const riskPanel = page.locator('.sjm-overview-risk-panel');
       const overviewRail = page.locator('.sjm-overview-rail');
@@ -391,6 +387,11 @@ test.describe('SJM command-centre responsive smoke', () => {
         body: await serviceBrief.screenshot({ animations: 'disabled' }),
         contentType: 'image/png',
       });
+      await testInfo.attach(`sjm-${viewport.label}-operations-rail`, {
+        body: await operationsRail.screenshot({ animations: 'disabled' }),
+        contentType: 'image/png',
+      });
+      await page.evaluate(() => window.scrollTo(0, 0));
       await testInfo.attach(`sjm-${viewport.label}-overview`, {
         body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
         contentType: 'image/png',
