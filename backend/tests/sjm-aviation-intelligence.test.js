@@ -791,7 +791,9 @@ describe('SJM federated aviation intelligence',()=>{
     });
     expect(result.intelligence.providers.find(item=>item.id==='flyitalyadsb')).toMatchObject({
       status:'AVAILABLE',commercial_use_permitted:true,attribution_required:true,
-      share_alike_required:true,quality_limit:expect.stringContaining('Not for safety-of-life'),
+      share_alike_required:true,
+      use_restrictions:expect.arrayContaining(['NOT_FOR_PERSON_TRACKING_OR_HARASSMENT']),
+      quality_limit:expect.stringContaining('identifying passengers'),
     });
     expect(result.intelligence.provenance.fabricated_data_used).toBe(false);
     expect(JSON.stringify(result)).not.toContain('server-only-key');
