@@ -443,11 +443,11 @@ export default function SecureJourneyManagement(){
  },[airspaceQ.data?.data.intelligence?.airport_reference]);
  const airportLabel=useMemo(()=>{
   const reference=airspaceQ.data?.data.intelligence?.airport_reference;
-  if(reference?.status!=='RESOLVED'||!reference.airport)return null;
+  if(reference?.status!=='RESOLVED'||!reference.airport||!airportCentre)return null;
   const airport=reference.airport;
   const place=String(airport.municipality||airport.name||'').trim();
   return [airport.icao,place].filter((value,index,array)=>Boolean(value)&&array.indexOf(value)===index).join(' · ')||null;
- },[airspaceQ.data?.data.intelligence?.airport_reference]);
+ },[airspaceQ.data?.data.intelligence?.airport_reference,airportCentre]);
  const flightCorrelation=useMemo(()=>correlateJourneyFlight({
   flightReference:journey?.flight_number,airportCode:journey?.airport_code,
   configured:airspaceQ.data?.data.configured===true||adsbArea?.configured===true||flyItalyArea?.configured===true,
