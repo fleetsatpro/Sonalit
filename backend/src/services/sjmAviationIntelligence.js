@@ -130,6 +130,21 @@ function normaliseWeatherRecords(records,type,now=Date.now()) {
   });
 }
 
+async function loadInternationalSigmets({fetcher=global.fetch,now=Date.now(),headers={}}={}) {
+  const key='weather:sigmets:international';
+  const cached=cacheGet(key,now);
+  if(cached)return {...cached,cache_state:'HIT'};
+  const payload=await requestJson(AIRWEATHER_BASE+'/isigmet?format=json',{headers,fetcher});
+  const records=normaliseWeatherRecords(payload,'SIGMET',now);
+  return cacheSet(key,{
+    status:records.length?'AVAILABLE':'NO_DATA',
+    records,source:'AviationWeather.gov Data API',
+    source_scope:'worldwide international SIGMET response; not route-filtered',
+    checked_at:new Date(now).toISOString(),cache_state:'MISS',
+    provenance:{provider:'aviationweather_gov',fabricated_data_used:false},
+  },DEFAULT_WEATHER_TTL_MS,now);
+}
+
 async function loadWeather({airportIcao,fetcher=global.fetch,now=Date.now()}={}) {
   const icao=cleanCode(airportIcao,4);
   if(!icao||icao.length!==4)return {
@@ -145,11 +160,11 @@ async function loadWeather({airportIcao,fetcher=global.fetch,now=Date.now()}={})
   const [metarResult,tafResult,sigmetResult]=await Promise.allSettled([
     requestJson(AIRWEATHER_BASE+'/metar?'+params,{headers,fetcher}),
     requestJson(AIRWEATHER_BASE+'/taf?'+params,{headers,fetcher}),
-    requestJson(AIRWEATHER_BASE+'/isigmet?format=json',{headers,fetcher}),
+    loadInternationalSigmets({headers,fetcher,now}),
   ]);
   const metar=metarResult.status==='fulfilled'?normaliseWeatherRecords(metarResult.value,'METAR',now):[];
   const taf=tafResult.status==='fulfilled'?normaliseWeatherRecords(tafResult.value,'TAF',now):[];
-  const sigmets=sigmetResult.status==='fulfilled'?normaliseWeatherRecords(sigmetResult.value,'SIGMET',now):[];
+  const sigmets=sigmetResult.status==='fulfilled'?(sigmetResult.value?.records||[]):[];
   const failures=[metarResult,tafResult,sigmetResult].filter(result=>result.status==='rejected');
   const data={
     status:failures.length===3?'UNAVAILABLE':failures.length?'PARTIAL':'AVAILABLE',
@@ -369,6 +384,6 @@ function resetCacheForTests(){responseCache.clear();}
 module.exports={
   cleanCode,validBaseUrl,getAdsbLolConfig,getAeroDataBoxConfig,numberOrNull,isoTime,
   normaliseWeatherRecords,normaliseAdsbLolRecord,normaliseCallsign,haversineKm,compareAircraftSources,
-  loadWeather,loadAdsbLolCallsign,loadCommercialFlight,
+  loadInternationalSigmets,loadWeather,loadAdsbLolCallsign,loadCommercialFlight,
   buildSourceRegistry,getSnapshot,resetCacheForTests,
 };
