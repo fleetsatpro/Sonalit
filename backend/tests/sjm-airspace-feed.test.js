@@ -7,14 +7,9 @@ describe('SJM OpenSky REST airspace feed',()=>{
   const envKeys=[
     'SJM_AIRSPACE_FEED_ENABLED','SJM_AIRSPACE_LICENSE_CONFIRMED',
     'SJM_AIRSPACE_BOUNDS','OPENSKY_CLIENT_ID','OPENSKY_CLIENT_SECRET',
-    'OPENSKY_DAILY_CREDIT_BUDGET','OPENSKY_POLL_INTERVAL_SECONDS',
+    'OPENSKY_DAILY_CREDIT_BUDGET','OPENSKY_CREDIT_WINDOW','OPENSKY_CREDIT_BUDGET','OPENSKY_POLL_INTERVAL_SECONDS',
   ];
   const now=Date.parse('2026-10-30T12:00:00.000Z');
-  const state=(overrides={})=>[
-    'abc123','KQ100','Kenya',now/1000,now/1000,36.8,-1.3,12000,false,
-    220,90,-2.4,null,12400,'1234',false,0,4,
-    ...Object.values(overrides),
-  ];
 
   beforeEach(()=>{
     for(const key of envKeys){originalEnv[key]=process.env[key];delete process.env[key];}
