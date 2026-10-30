@@ -594,6 +594,10 @@ test.describe('SJM command-centre responsive smoke', () => {
   });
 
   test('workspace tabs remain operable and preserve evidence provenance on a narrow viewport', async ({ page }) => {
+    const cspRuntimeErrors: string[] = [];
+    page.on('pageerror', (error) => {
+      if (/Content Security Policy|unsafe-eval|WebAssembly/i.test(error.message)) cspRuntimeErrors.push(error.message);
+    });
     await seedAuth(page);
     await stubSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
@@ -617,6 +621,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText('Provider connection not configured.')).toBeVisible();
     await expect(page.getByText(/0 aircraft records/)).toBeVisible();
     await expect(page.getByText('No aircraft are simulated.')).toBeVisible();
+    expect(cspRuntimeErrors).toEqual([]);
   });
 
   test('flight status can be recorded as an audited operator observation', async ({ page }) => {
