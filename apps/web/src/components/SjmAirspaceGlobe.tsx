@@ -94,7 +94,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
   const filteredAircraft=useMemo(()=>{
     const query=search.trim().toLowerCase();
     return aircraft.filter(item=>{
-      const provider=item.position_provider||'';
+      const provider=item.position_provider||item.provider||'';
       const freshness=String(item.freshness||'UNAVAILABLE').toUpperCase();
       if(providerFilter!=='all'&&provider!==providerFilter)return false;
       if(freshnessFilter!=='all'&&freshness!==freshnessFilter)return false;
