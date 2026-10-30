@@ -85,6 +85,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
   const trailRef=useRef<Map<string,Cesium.Entity>>(new Map());
   const [initFailed,setInitFailed]=useState(false);
   const [cameraMode,setCameraMode]=useState<CameraMode>('orbital');
+  const cameraModeRef=useRef<CameraMode>('orbital');
   const [selected,setSelected]=useState<string|null>(null);
   const [search,setSearch]=useState('');
   const [providerFilter,setProviderFilter]=useState<ProviderFilter>('all');
@@ -168,7 +169,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     const widget=widgetRef.current;
     if(!widget||widget.isDestroyed())return;
     widget.camera.flyTo({...regionalAirspaceView(airportCentre),duration:1.15});
-  },[cameraMode,airportCentre?.latitude,airportCentre?.longitude]);
+  },[airportCentre?.latitude,airportCentre?.longitude]);
 
   useEffect(()=>{
     const widget=widgetRef.current;
@@ -255,10 +256,12 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     ? bounds.south.toFixed(1)+'° to '+bounds.north.toFixed(1)+'° latitude · '+bounds.west.toFixed(1)+'° to '+bounds.east.toFixed(1)+'° longitude'
     : 'not configured';
   const flyToCameraMode=(mode:CameraMode)=>{
+    cameraModeRef.current=mode;
     setCameraMode(mode);
     const widget=widgetRef.current;
     if(!widget||widget.isDestroyed())return;
-    if(mode==='orbital')widget.camera.flyTo({...ORBITAL_AIRSPACE_VIEW,duration:1.15});
+    const view=mode==='orbital'?ORBITAL_AIRSPACE_VIEW:regionalAirspaceView(airportCentre);
+    widget.camera.flyTo({...view,duration:1.15});
   };
   const resetView=()=>{
     const widget=widgetRef.current;
@@ -268,6 +271,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     }
   };
   const focusAircraft=(item:SjmAirspaceAircraft)=>{
+    cameraModeRef.current='regional';
     setCameraMode('regional');
     const widget=widgetRef.current;
     if(widget&&!widget.isDestroyed())widget.camera.flyTo(aircraftFocusView(item));
