@@ -621,7 +621,11 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByRole('tab', { name: 'Airspace 3D' }).click();
     await expect(page.getByRole('heading', { name: 'Live 3D airspace' })).toBeVisible();
     await expect(page.getByText('OpenSky access is not configured.')).toBeVisible();
-    await expect(page.getByText(/0 aircraft records/)).toBeVisible();
+    await expect(page.getByText('Plottable observations', { exact: true })).toBeVisible();
+    await expect(page.getByText('OpenSky state vectors', { exact: true })).toBeVisible();
+    await expect(page.getByText('ADSB.lol regional records', { exact: true })).toBeVisible();
+    await expect(page.getByText(/commercial use is permitted when attribution and applicable share-alike obligations are honoured/i)).toBeVisible();
+    await expect(page.getByText(/public API is best-effort/i)).toBeVisible();
     await expect(page.getByText('No aircraft are simulated.')).toBeVisible();
     expect(cspRuntimeErrors).toEqual([]);
   });

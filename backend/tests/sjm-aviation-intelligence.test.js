@@ -7,17 +7,18 @@ describe('SJM federated aviation intelligence',()=>{
 
   beforeEach(()=>aviation.resetCacheForTests());
 
-  test('fails closed for ADSB.lol until production access and ODbL compliance are confirmed',()=>{
+  test('permits commercial ADSB.lol use under ODbL without a separate provider production approval',()=>{
     expect(aviation.getAdsbLolConfig({SJM_ADSBLOL_ENABLED:'true'})).toMatchObject({
-      enabled:false,reason:'production_access_not_confirmed_with_provider',
+      enabled:false,reason:'odbl_database_obligations_not_reviewed',
     });
-    expect(aviation.getAdsbLolConfig({
-      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',
-    })).toMatchObject({enabled:false,reason:'odbl_database_obligations_not_reviewed'});
-    expect(aviation.getAdsbLolConfig({
-      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',
-      SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
-    })).toMatchObject({enabled:true,reason:null});
+    const config=aviation.getAdsbLolConfig({
+      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
+      SJM_ADSBLOL_PRODUCTION_APPROVED:'false',
+    });
+    expect(config).toMatchObject({
+      enabled:true,reason:null,license:'ODbL-1.0',commercial_use_permitted:true,
+      attribution_required:true,service_level:'BEST_EFFORT',production_contact_recommended:true,
+    });
   });
 
   test('requires AeroDataBox commercial and downstream derived-work rights independently',()=>{
@@ -175,7 +176,7 @@ describe('SJM federated aviation intelligence',()=>{
     expect(aviation.normaliseAdsbLolRecord({hex:'abc123',flight:'KQ100',lat:null,lon:36.8},now)).toBeNull();
   });
 
-  test('performs an ADSB.lol callsign lookup only after production and ODbL gates are enabled',async()=>{
+  test('performs an ADSB.lol callsign lookup when explicitly enabled and ODbL obligations are configured',async()=>{
     const fetcher=jest.fn().mockResolvedValue({
       ok:true,status:200,json:async()=>({ac:[{
         hex:'abc123',flight:'KQ100',lat:-1.3,lon:36.8,seen_pos:5,gs:210,track:90,
@@ -185,12 +186,13 @@ describe('SJM federated aviation intelligence',()=>{
     expect(disabled).toMatchObject({status:'NOT_CONFIGURED',records:[]});
     expect(fetcher).not.toHaveBeenCalled();
     const env={
-      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',
+      SJM_ADSBLOL_ENABLED:'true',
       SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
     };
     const result=await aviation.loadAdsbLolCallsign({callsign:'KQ100',env,fetcher,now});
     expect(result).toMatchObject({
-      status:'AVAILABLE',source:'adsb.lol',licence:'ODbL-1.0',
+      status:'AVAILABLE',source:'adsb.lol',licence:'ODbL-1.0',license:'ODbL-1.0',
+      commercial_use_permitted:true,service_level:'BEST_EFFORT',production_contact_recommended:true,
       records:[{id:'abc123',ident:'KQ100',provider:'adsb_lol'}],
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -199,7 +201,7 @@ describe('SJM federated aviation intelligence',()=>{
 
   test('loads a bounded 250 NM ADSB.lol aircraft picture around a resolved airport',async()=>{
     const env={
-      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',
+      SJM_ADSBLOL_ENABLED:'true',
       SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
     };
     const fetcher=jest.fn().mockResolvedValue({
@@ -232,7 +234,7 @@ describe('SJM federated aviation intelligence',()=>{
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  test('keeps ADSB.lol regional queries disabled until production and ODbL approval',async()=>{
+  test('keeps ADSB.lol regional queries opt-in and requires resolved airport coordinates',async()=>{
     const fetcher=jest.fn();
     const disabled=await aviation.loadAdsbLolArea({
       airport:{icao:'HKJK',latitude:-1.3192,longitude:36.9278},env:{},fetcher,now,
@@ -241,7 +243,7 @@ describe('SJM federated aviation intelligence',()=>{
     expect(fetcher).not.toHaveBeenCalled();
     const unresolved=await aviation.loadAdsbLolArea({
       airport:{icao:'HKJK',latitude:null,longitude:36.9278},
-      env:{SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true'},
+      env:{SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true'},
       fetcher,now,
     });
     expect(unresolved).toMatchObject({
@@ -296,7 +298,7 @@ describe('SJM federated aviation intelligence',()=>{
 
   test('honours ADSB.lol 429 retry-after and caches the rate-limited result',async()=>{
     const env={
-      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',
+      SJM_ADSBLOL_ENABLED:'true',
       SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
     };
     const fetcher=jest.fn().mockResolvedValue({
@@ -403,7 +405,7 @@ describe('SJM federated aviation intelligence',()=>{
 
   test('adds resolved-airport ADSB.lol observations to the aviation snapshot without claiming complete coverage',async()=>{
     const env={
-      SJM_ADSBLOL_ENABLED:'true',SJM_ADSBLOL_PRODUCTION_APPROVED:'true',
+      SJM_ADSBLOL_ENABLED:'true',
       SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
     };
     const fetcher=jest.fn(async(url)=>{
@@ -547,6 +549,11 @@ describe('SJM federated aviation intelligence',()=>{
       status:'AGREEMENT_REQUIRED',operational_authority:true,
     });
     expect(providers.find(item=>item.id==='ourairports')).toMatchObject({status:'NOT_REQUESTED'});
+    expect(providers.find(item=>item.id==='adsb_lol')).toMatchObject({
+      license:'ODbL-1.0',commercial_use_permitted:true,attribution_required:true,
+      service_level:'BEST_EFFORT',production_contact_recommended:true,
+    });
+    expect(providers.find(item=>item.id==='adsb_lol')).not.toHaveProperty('production_approval_required');
   });
 
   test('returns no fake flight or weather records when optional providers are not configured',async()=>{

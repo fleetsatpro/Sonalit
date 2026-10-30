@@ -172,13 +172,16 @@ function validBaseUrl(value,allowedHosts) {
 
 function getAdsbLolConfig(env=process.env) {
   const enabled=env.SJM_ADSBLOL_ENABLED==='true';
-  const productionApproved=env.SJM_ADSBLOL_PRODUCTION_APPROVED==='true';
   const odblCompliance=env.SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED==='true';
   let reason=null;
   if(!enabled)reason='disabled';
-  else if(!productionApproved)reason='production_access_not_confirmed_with_provider';
   else if(!odblCompliance)reason='odbl_database_obligations_not_reviewed';
-  return {enabled:!reason,reason,baseUrl:ADSBLOL_BASE};
+  return {
+    enabled:!reason,reason,baseUrl:ADSBLOL_BASE,
+    license:'ODbL-1.0',commercial_use_permitted:true,
+    attribution_required:true,service_level:'BEST_EFFORT',
+    production_contact_recommended:true,
+  };
 }
 
 function getAeroDataBoxConfig(env=process.env) {
@@ -407,7 +410,10 @@ async function loadAdsbLolArea({airport,env=process.env,fetcher=global.fetch,now
   const config=getAdsbLolConfig(env);
   if(!config.enabled)return {
     status:'NOT_CONFIGURED',configured:false,reason:config.reason,records:[],
-    radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol',license:'ODbL-1.0',
+    radius_nm:ADSBLOL_AREA_RADIUS_NM,source:'ADSB.lol',license:config.license,
+    commercial_use_permitted:config.commercial_use_permitted,
+    attribution_required:config.attribution_required,service_level:config.service_level,
+    production_contact_recommended:config.production_contact_recommended,
   };
   const icao=cleanCode(airport?.icao,4);
   const latitude=numberOrNull(airport?.latitude),longitude=numberOrNull(airport?.longitude);
@@ -439,9 +445,12 @@ async function loadAdsbLolArea({airport,env=process.env,fetcher=global.fetch,now
         records,record_count:records.length,rejected_count:Math.max(0,rows.length-records.length),
         radius_nm:ADSBLOL_AREA_RADIUS_NM,
         coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_nm:ADSBLOL_AREA_RADIUS_NM},
-        source:'ADSB.lol',license:'ODbL-1.0',attribution_required:true,
+        source:'ADSB.lol',license:config.license,
+        commercial_use_permitted:config.commercial_use_permitted,
+        attribution_required:config.attribution_required,service_level:config.service_level,
+        production_contact_recommended:config.production_contact_recommended,
         checked_at:new Date(now).toISOString(),cache_state:'MISS',
-        provenance:{provider:'adsb_lol',database_license:'ODbL-1.0',
+        provenance:{provider:'adsb_lol',database_license:config.license,
           timestamp_basis:'provider_seen_pos_relative_age',fabricated_data_used:false},
       },DEFAULT_LOOKUP_TTL_MS,now);
     }catch(error){
@@ -451,8 +460,11 @@ async function loadAdsbLolArea({airport,env=process.env,fetcher=global.fetch,now
         reason:error?.code||'provider_error',retry_after_seconds:error?.retryAfterSeconds||null,
         records:[],record_count:0,radius_nm:ADSBLOL_AREA_RADIUS_NM,
         coverage:{complete:false,query_scope:'airport_centred_radius',centre,radius_nm:ADSBLOL_AREA_RADIUS_NM},
-        source:'ADSB.lol',license:'ODbL-1.0',attribution_required:true,
-        provenance:{provider:'adsb_lol',database_license:'ODbL-1.0',fabricated_data_used:false},
+        source:'ADSB.lol',license:config.license,
+        commercial_use_permitted:config.commercial_use_permitted,
+        attribution_required:config.attribution_required,service_level:config.service_level,
+        production_contact_recommended:config.production_contact_recommended,
+        provenance:{provider:'adsb_lol',database_license:config.license,fabricated_data_used:false},
       };
       return cacheSet(key,value,limited?(error.retryAfterSeconds||60)*1000:15_000,now);
     }
@@ -465,7 +477,12 @@ async function loadAdsbLolArea({airport,env=process.env,fetcher=global.fetch,now
 async function loadAdsbLolCallsign({callsign,env=process.env,fetcher=global.fetch,now=Date.now()}={}) {
   const config=getAdsbLolConfig(env);
   const ident=normaliseCallsign(callsign);
-  if(!config.enabled)return {status:'NOT_CONFIGURED',reason:config.reason,records:[],source:'adsb.lol'};
+  if(!config.enabled)return {
+    status:'NOT_CONFIGURED',reason:config.reason,records:[],source:'adsb.lol',
+    license:config.license,commercial_use_permitted:config.commercial_use_permitted,
+    attribution_required:config.attribution_required,service_level:config.service_level,
+    production_contact_recommended:config.production_contact_recommended,
+  };
   if(!ident||ident.length>16||!/^[A-Z0-9 -]+$/.test(ident))return {status:'NOT_REQUESTED',reason:'valid_callsign_required',records:[],source:'adsb.lol'};
   const key='adsblol:'+ident;
   const cached=cacheGet(key,now);
@@ -480,7 +497,10 @@ async function loadAdsbLolCallsign({callsign,env=process.env,fetcher=global.fetc
     const value={
       status:normalised.length?'AVAILABLE':'NO_MATCH',
       reason:null,records:normalised,source:'adsb.lol',
-      licence:'ODbL-1.0',attribution_required:true,
+      licence:config.license,license:config.license,
+      commercial_use_permitted:config.commercial_use_permitted,
+      attribution_required:config.attribution_required,service_level:config.service_level,
+      production_contact_recommended:config.production_contact_recommended,
       cache_state:'MISS',checked_at:new Date(now).toISOString(),
       provenance:{provider:'adsb.lol',database_license:'ODbL-1.0',fabricated_data_used:false},
     };
@@ -649,7 +669,9 @@ function buildSourceRegistry({opensky,weather,adsbLol,adsbArea,commercial,airpor
     {id:'opensky',name:'OpenSky Network',capability:'aircraft_positions',status:opensky?.status||'UNKNOWN',
       role:'Primary bounded aircraft state vectors',commercial_data:false,authority:'aircraft_state_only'},
     {id:'adsb_lol',name:'ADSB.lol',capability:'regional_aircraft_positions_and_cross_check',status:adsbArea?.status==='AVAILABLE'||adsbLol?.status==='AVAILABLE'?'AVAILABLE':adsbArea?.status==='RATE_LIMITED'||adsbLol?.status==='RATE_LIMITED'?'RATE_LIMITED':adsbArea?.status==='UNAVAILABLE'||adsbLol?.status==='UNAVAILABLE'?'UNAVAILABLE':adsbArea?.status==='NO_DATA'||adsbLol?.status==='NO_MATCH'?'NO_DATA':adsbArea?.status==='NOT_CONFIGURED'||adsbLol?.status==='NOT_CONFIGURED'?'NOT_CONFIGURED':adsbArea?.status==='NOT_REQUESTED'?(adsbLol?.status||'NOT_CONFIGURED'):(adsbArea?.status||adsbLol?.status||'NOT_CONFIGURED'),
-      role:'Independent airport-centred aircraft observations and targeted callsign cross-check',coverage_radius_nm:ADSBLOL_AREA_RADIUS_NM,license:'ODbL-1.0',production_approval_required:true,attribution_required:true},
+      role:'Open airport-centred aircraft observations and targeted callsign cross-check',coverage_radius_nm:ADSBLOL_AREA_RADIUS_NM,
+      license:'ODbL-1.0',commercial_use_permitted:true,attribution_required:true,
+      service_level:'BEST_EFFORT',production_contact_recommended:true},
     {id:'aerodatabox',name:'AeroDataBox',capability:'flight_schedules_and_status',status:commercial?.status||'NOT_CONFIGURED',
       role:'Commercial flight schedule and operational status',commercial_license_required:true,derived_work_rights_required:true},
     {id:'aviationweather_gov',name:'AviationWeather.gov',capability:'metar_taf_sigmet',status:weather?.status||'NOT_REQUESTED',
