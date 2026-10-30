@@ -319,9 +319,17 @@ async function readyRedis() {
   if(redis.status==='end')throw new Error('SJM airspace shared Redis store is closed.');
   if(redis.status==='wait'){
     if(!redisReadyPromise)redisReadyPromise=redis.connect().catch(error=>{redisReadyPromise=null;throw error;});
-    await redisReadyPromise;
+    await Promise.race([
+      redisReadyPromise,
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('SJM airspace Redis connection timed out.')),3_000)),
+    ]);
   }
-  await redis.ping();
+  if(redis.status!=='ready'){
+    await Promise.race([
+      redis.ping(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('SJM airspace Redis readiness check timed out.')),3_000)),
+    ]);
+  }
   return redis;
 }
 
