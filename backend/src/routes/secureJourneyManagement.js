@@ -568,7 +568,17 @@ router.post('/management-summary',authorize('admin','dispatcher'),asyncHandler(a
 }));
 router.get('/airspace',authorize('admin','dispatcher','operator','analyst'),asyncHandler(async(req,res)=>{
   const feed=require('../services/sjmAirspaceFeed');
-  const data=await feed.getSnapshot({start:true});
+  const aviation=require('../services/sjmAviationIntelligence');
+  const flightNumber=String(req.query.flight_number||'').trim();
+  const airportIcao=String(req.query.airport_icao||'').trim().toUpperCase();
+  if(flightNumber.length>10||flightNumber&&!/^[A-Za-z0-9 -]+$/.test(flightNumber)){
+    return res.status(400).json({error:{code:'SJM_INVALID_FLIGHT_REFERENCE',message:'Flight number must be a valid airline flight reference.'}});
+  }
+  if(airportIcao&&(!/^[A-Z]{4}$/.test(airportIcao))){
+    return res.status(400).json({error:{code:'SJM_INVALID_AIRPORT_ICAO',message:'A four-letter ICAO airport identifier is required for aviation weather lookup.'}});
+  }
+  const baseSnapshot=await feed.getSnapshot({start:true});
+  const data=await aviation.getSnapshot({flightNumber,airportIcao,baseSnapshot});
   res.setHeader('Cache-Control','no-store');
   res.json({data});
 }));
