@@ -7,7 +7,7 @@ describe('SJM OpenSky REST airspace feed',()=>{
   const envKeys=[
     'SJM_AIRSPACE_FEED_ENABLED','SJM_AIRSPACE_LICENSE_CONFIRMED',
     'SJM_AIRSPACE_BOUNDS','OPENSKY_CLIENT_ID','OPENSKY_CLIENT_SECRET',
-    'OPENSKY_DAILY_CREDIT_BUDGET','OPENSKY_CREDIT_WINDOW','OPENSKY_CREDIT_BUDGET','OPENSKY_POLL_INTERVAL_SECONDS',
+    'OPENSKY_DAILY_CREDIT_BUDGET','OPENSKY_CREDIT_TIER','OPENSKY_CREDIT_WINDOW','OPENSKY_CREDIT_BUDGET','OPENSKY_POLL_INTERVAL_SECONDS',
   ];
   const now=Date.parse('2026-10-30T12:00:00.000Z');
 
@@ -64,10 +64,29 @@ describe('SJM OpenSky REST airspace feed',()=>{
     const config=feed.getConfig({
       SJM_AIRSPACE_FEED_ENABLED:'true',SJM_AIRSPACE_LICENSE_CONFIRMED:'true',
       SJM_AIRSPACE_BOUNDS:'-5 32 6 42',OPENSKY_CLIENT_ID:'client-id',OPENSKY_CLIENT_SECRET:'client-secret',
-      OPENSKY_CREDIT_WINDOW:'hourly',OPENSKY_CREDIT_BUDGET:'12000',OPENSKY_POLL_INTERVAL_SECONDS:'5',
+      OPENSKY_CREDIT_TIER:'licensed',OPENSKY_CREDIT_WINDOW:'hourly',OPENSKY_CREDIT_BUDGET:'12000',OPENSKY_POLL_INTERVAL_SECONDS:'5',
     });
     expect(config).toMatchObject({configured:true,creditWindow:'hourly',creditBudget:12000,pollIntervalSeconds:5});
     expect(config.projectedCreditsPerWindow).toBeLessThanOrEqual(12000);
+  });
+
+  test('does not permit licensed hourly polling without the licensed account tier',()=>{
+    const config=feed.getConfig({
+      SJM_AIRSPACE_FEED_ENABLED:'true',SJM_AIRSPACE_LICENSE_CONFIRMED:'true',
+      SJM_AIRSPACE_BOUNDS:'-5 32 6 42',OPENSKY_CLIENT_ID:'client-id',OPENSKY_CLIENT_SECRET:'client-secret',
+      OPENSKY_CREDIT_WINDOW:'hourly',OPENSKY_CREDIT_BUDGET:'12000',OPENSKY_POLL_INTERVAL_SECONDS:'5',
+    });
+    expect(config).toMatchObject({configured:false,reason:'licensed_hourly_entitlement_not_confirmed'});
+  });
+
+  test('caps standard and active-feeder daily budgets at their documented credit ceilings',()=>{
+    const base={
+      SJM_AIRSPACE_FEED_ENABLED:'true',SJM_AIRSPACE_LICENSE_CONFIRMED:'true',
+      SJM_AIRSPACE_BOUNDS:'-5 32 6 42',OPENSKY_CLIENT_ID:'client-id',OPENSKY_CLIENT_SECRET:'client-secret',
+      OPENSKY_CREDIT_BUDGET:'8000',
+    };
+    expect(feed.getConfig({...base,OPENSKY_CREDIT_TIER:'standard'}).creditBudget).toBe(4000);
+    expect(feed.getConfig({...base,OPENSKY_CREDIT_TIER:'active_feeder'}).creditBudget).toBe(8000);
   });
 
   test('uses a query bounding box and requests extended state-vector fields',()=>{
@@ -101,6 +120,13 @@ describe('SJM OpenSky REST airspace feed',()=>{
     expect(feed.normaliseStateVector(vector,now)).toBeNull();
     const invalid=['abc123','KQ100','Kenya',now/1000,now/1000,36.8,95,12000,false,220,90,-2.4,null,12400,'1234',false,0,4];
     expect(feed.normaliseStateVector(invalid,now)).toBeNull();
+  });
+
+  test('rejects null coordinates instead of coercing them to zero degrees',()=>{
+    const noLongitude=['abc123','KQ100','Kenya',now/1000,now/1000,null,-1.3,12000,false,220,90,-2.4,null,12400,'1234',false,0,4];
+    const noLatitude=['abc123','KQ100','Kenya',now/1000,now/1000,36.8,null,12000,false,220,90,-2.4,null,12400,'1234',false,0,4];
+    expect(feed.normaliseStateVector(noLongitude,now)).toBeNull();
+    expect(feed.normaliseStateVector(noLatitude,now)).toBeNull();
   });
 
   test('classifies observed position age without accepting future timestamps',()=>{
@@ -172,7 +198,7 @@ describe('SJM OpenSky REST airspace feed',()=>{
     expect(feed.rememberPosition(older)).toBe(false);
     const output=feed.snapshot(now,{
       configured:true,bounds:{south:-5,west:32,north:6,east:42},pollIntervalSeconds:120,
-      creditsPerRequest:3,projectedDailyCredits:2160,dailyCreditBudget:3000,
+      creditWindow:'daily',creditBudget:3000,windowSeconds:86400,creditsPerRequest:3,projectedCreditsPerWindow:2160,
     });
     expect(output.aircraft).toHaveLength(1);
     expect(output.aircraft[0].latitude).toBe(-1.3);
@@ -186,7 +212,7 @@ describe('SJM OpenSky REST airspace feed',()=>{
       provider:'opensky_rest',provider_name:'OpenSky Network',
       status:'NOT_CONFIGURED',configured:false,connected:false,
       aircraft:[],recent_events:[],
-      provenance:{fabricated_data_used:false,commercial_flight_information:false,mlat_available_via_rest:false},
+      provenance:{fabricated_data_used:false,commercial_flight_information:false,position_sources_reported:['ADSB','ASTERIX','MLAT','FLARM']},
     });
   });
 });
