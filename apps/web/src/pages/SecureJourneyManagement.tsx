@@ -624,7 +624,7 @@ return (
         </div>
        </div>
        <div className="flex flex-wrap gap-2 xl:justify-end">
-        <Link to="/corridor/missions" className="hidden items-center gap-2 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px] font-semibold text-slate-200 sm:inline-flex">Field team app <ArrowUpRight size={13}/></Link>
+        <Link to="/sjm/field" className="hidden items-center gap-2 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px] font-semibold text-slate-200 sm:inline-flex">Field team app <ArrowUpRight size={13}/></Link>
         <Btn onClick={()=>{void refresh();void qc.invalidateQueries({queryKey:['sjm-clients']});}} disabled={registerQ.isFetching}><RefreshCw size={13} className={registerQ.isFetching?'animate-spin':''}/>Refresh</Btn>
         {isSupervisor&&<div className="hidden sm:block"><Btn disabled={act.isPending} onClick={()=>act.mutate({kind:'management_summary'})}><FileBarChart2 size={13}/>Portfolio summary</Btn></div>}
         {isSupervisor&&<Btn tone="green" onClick={openCreate}><Plus size={14}/>New journey</Btn>}
