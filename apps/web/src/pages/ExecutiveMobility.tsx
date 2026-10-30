@@ -108,7 +108,7 @@ function FieldRouteMap({mission,detail,loading,error}:{mission:Mission;detail?:M
 
 export default function ExecutiveMobility(){
  const user=useAuthStore(s=>s.user),clearAuth=useAuthStore(s=>s.clearAuth),qc=useQueryClient(),navigate=useNavigate();
- const signOut=()=>{clearAuth();void navigate({to:'/login',replace:true})};
+ const signOut=()=>{qc.clear();clearAuth();void navigate({to:'/login',replace:true})};
  const [selectedId,setSelectedId]=useState(''),[eventType,setEventType]=useState('delay'),[eventNote,setEventNote]=useState(''),[flightStatus,setFlightStatus]=useState<FlightStatus|''>(''),[flightNote,setFlightNote]=useState(''),[draft,setDraft]=useState('');
  const [inaccessibleMissionIds,setInaccessibleMissionIds]=useState<Set<string>>(()=>new Set());
  const [revalidatingMissionIds,setRevalidatingMissionIds]=useState<Set<string>>(()=>new Set());
