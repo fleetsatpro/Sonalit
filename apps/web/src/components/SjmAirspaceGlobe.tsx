@@ -405,7 +405,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         <p>Only WGS84 ellipsoid-referenced heights are used for 3D elevation. Other altitude references are shown as reported but are not converted or inferred.</p>
         <p>Coverage: {boundsLabel} · Latest reported position: {lastPositionAt?observedLabel(lastPositionAt):'none recorded'}.</p>
         <p>Basemap: © OpenStreetMap contributors. Public raster tiles are best-effort; production-scale service needs a dedicated tile host. Aircraft data: source is shown per observation; ADSB.lol is published under ODbL 1.0.</p>
-        {aircraft.some(item=>item.position_provider==='flyitalyadsb')&&<p>Flight data: FlyItalyADSB (flyitalyadsb.com), CC BY-SA 4.0. Data and datasets built from it carry share-alike obligations.</p>}
+        {aircraft.some(item=>item.position_provider==='flyitalyadsb')&&<p>Flight data: <a href="https://flyitalyadsb.com/" target="_blank" rel="noreferrer" className="underline decoration-white/30 underline-offset-2 hover:text-slate-200">FlyItalyADSB</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer" className="underline decoration-white/30 underline-offset-2 hover:text-slate-200">CC BY-SA 4.0</a>. Data and datasets built from it carry share-alike obligations.</p>}
       </div>
       <div className="flex items-center gap-3 border-t border-white/[0.05] px-3 py-3 text-[10px] text-slate-500 sm:border-l sm:border-t-0 sm:px-4">
         <span>Map controls</span><span>Drag to rotate</span><span>Scroll to zoom</span>
