@@ -122,6 +122,14 @@ describe('SJM OpenSky REST airspace feed',()=>{
     expect(feed.normaliseStateVector(invalid,now)).toBeNull();
   });
 
+  test('does not label a missing OpenSky source code as ADS-B',()=>{
+    const vector=['abc123','KQ100','Kenya',now/1000,now/1000,36.8,-1.3,12000,false,220,90,-2.4,null,12400,'1234',false,null,4];
+    const item=feed.normaliseStateVector(vector,now);
+    expect(item.position_source).toBeNull();
+    expect(item.position_source_label).toBe('UNKNOWN');
+    expect(item.altitude_reference).toBe('GEOMETRIC');
+  });
+
   test('rejects null coordinates instead of coercing them to zero degrees',()=>{
     const noLongitude=['abc123','KQ100','Kenya',now/1000,now/1000,null,-1.3,12000,false,220,90,-2.4,null,12400,'1234',false,0,4];
     const noLatitude=['abc123','KQ100','Kenya',now/1000,now/1000,36.8,null,12000,false,220,90,-2.4,null,12400,'1234',false,0,4];
