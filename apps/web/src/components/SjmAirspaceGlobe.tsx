@@ -4,7 +4,7 @@ import '@cesium/engine/Source/Widget/CesiumWidget.css';
 
 export type SjmAirspaceAircraft = {
   id:string; ident:string; latitude:number; longitude:number;
-  altitude_m:number|null; altitude_reference?:'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;
+  altitude_m:number|null; altitude_reference?:'WGS84_ELLIPSOID'|'GEOMETRIC'|'BAROMETRIC_PRESSURE'|null;
   ground_speed_mps:number|null; heading_deg:number|null;
   origin?:string|null; destination?:string|null; observed_at:string;
   age_seconds:number; freshness:string; update_type?:string|null;
@@ -188,7 +188,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
     </div>
     {selectedAircraft&&<div className="grid grid-cols-2 gap-3 border-t border-white/[0.07] bg-[#0d151e] px-3 py-3 text-[11px] sm:grid-cols-4 sm:px-4">
       <div><p className="text-slate-500">Callsign / ident</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.ident}</p></div>
-      <div><p className="text-slate-500">Reported altitude</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.altitude_m==null?'Not reported':Math.round(selectedAircraft.altitude_m).toLocaleString()+' m · '+(selectedAircraft.altitude_reference==='GEOMETRIC'?'geometric':selectedAircraft.altitude_reference==='BAROMETRIC_PRESSURE'?'barometric pressure':'reference not supplied')}</p></div>
+      <div><p className="text-slate-500">Reported altitude</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.altitude_m==null?'Not reported':Math.round(selectedAircraft.altitude_m).toLocaleString()+' m · '+(selectedAircraft.altitude_reference==='WGS84_ELLIPSOID'?'GNSS / WGS84 ellipsoid':selectedAircraft.altitude_reference==='GEOMETRIC'?'geometric':selectedAircraft.altitude_reference==='BAROMETRIC_PRESSURE'?'barometric pressure':'reference not supplied')}</p></div>
       <div><p className="text-slate-500">Ground speed</p><p className="mt-1 font-semibold text-slate-100">{selectedAircraft.ground_speed_mps==null?'Not reported':Math.round(selectedAircraft.ground_speed_mps*3.6)+' km/h'}</p></div>
       <div><p className="text-slate-500">Observed</p><p className="mt-1 font-semibold text-slate-100">{new Date(selectedAircraft.observed_at).toLocaleTimeString()} · {selectedAircraft.freshness}</p></div>
     </div>}
