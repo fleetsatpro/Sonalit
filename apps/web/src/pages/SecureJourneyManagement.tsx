@@ -8,7 +8,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { DARK_STREET_STYLE, STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
 import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
-import { correlateJourneyFlight } from '../lib/sjmAirspaceMatch.js';
+import { correlateJourneyFlight, resolveAirspaceDisplayStatus } from '../lib/sjmAirspaceMatch.js';
 import { useAuthStore } from '../stores/auth.js';
 import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, MessagesSquare, Navigation, Pencil, Plane, Plus, RefreshCw, Route, Search, ShieldAlert, ShieldCheck, Users, XCircle } from 'lucide-react';
 
@@ -449,9 +449,7 @@ export default function SecureJourneyManagement(){
   :[adsbArea?.status,flyItalyArea?.status].some(status=>status==='RATE_LIMITED')?'RATE_LIMITED'
   :[adsbArea?.status,flyItalyArea?.status].some(status=>status==='UNAVAILABLE')?'UNAVAILABLE'
   :[adsbArea?.status,flyItalyArea?.status].some(status=>status==='NOT_CONFIGURED')?'NOT_CONFIGURED':'NOT_REQUESTED';
- const airspaceDisplayStatus=['LIVE','DELAYED','CONNECTED'].includes(airspaceQ.data?.data.status||'')
-  ?airspaceQ.data?.data.status||'UNAVAILABLE'
-  :['LIVE','DELAYED','CONNECTED'].includes(regionalStatus)?regionalStatus:airspaceQ.data?.data.status||'UNAVAILABLE';
+ const airspaceDisplayStatus=resolveAirspaceDisplayStatus(airspaceQ.data?.data.status,regionalStatus);
  const airportCentre=useMemo(()=>{
   const reference=airspaceQ.data?.data.intelligence?.airport_reference;
   const latitude=reference?.airport?.latitude,longitude=reference?.airport?.longitude;
