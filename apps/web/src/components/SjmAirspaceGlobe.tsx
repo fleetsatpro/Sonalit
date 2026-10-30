@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import * as Cesium from 'cesium';
-import 'cesium/Build/Cesium/Widgets/widgets.css';
+import * as Cesium from '@cesium/engine';
+import '@cesium/engine/Source/Widget/CesiumWidget.css';
 
 export type SjmAirspaceAircraft = {
   id:string; ident:string; latitude:number; longitude:number;
@@ -17,10 +17,14 @@ type Props = {
 
 const MAP_URL='https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const FRESHNESS_COLOURS:Record<string,string>={LIVE:'#9ce8d2',DELAYED:'#f3c979',STALE:'#8a98a8',UNAVAILABLE:'#64748b'};
+const EAST_AFRICA_VIEW={
+  destination:Cesium.Cartesian3.fromDegrees(37.9,0.5,4_200_000),
+  orientation:{heading:0,pitch:Cesium.Math.toRadians(-68),roll:0},
+};
 
 export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds}:Props) {
   const containerRef=useRef<HTMLDivElement>(null);
-  const viewerRef=useRef<Cesium.Viewer|null>(null);
+  const widgetRef=useRef<Cesium.CesiumWidget|null>(null);
   const entityRef=useRef<Map<string,Cesium.Entity>>(new Map());
   const trailRef=useRef<Map<string,Cesium.Entity>>(new Map());
   const [initFailed,setInitFailed]=useState(false);
@@ -28,7 +32,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
 
   useEffect(()=>{
     if(!containerRef.current)return;
-    let viewer:Cesium.Viewer|undefined;
+    let widget:Cesium.CesiumWidget|undefined;
     let handler:Cesium.ScreenSpaceEventHandler|undefined;
     try{
       const imagery=new Cesium.UrlTemplateImageryProvider({
@@ -36,33 +40,31 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         credit:new Cesium.Credit('© Carto · © OpenStreetMap contributors',false),
         maximumLevel:19,
       });
-      viewer=new Cesium.Viewer(containerRef.current,{
+      widget=new Cesium.CesiumWidget(containerRef.current,{
         baseLayer:new Cesium.ImageryLayer(imagery),
         terrainProvider:new Cesium.EllipsoidTerrainProvider(),
-        animation:false,baseLayerPicker:false,fullscreenButton:false,
-        geocoder:false,homeButton:false,infoBox:false,sceneModePicker:false,
-        selectionIndicator:false,timeline:false,navigationHelpButton:false,
-        requestRenderMode:true,maximumRenderTimeChange:Number.POSITIVE_INFINITY,
-        creditContainer:document.createElement('div'),
+        requestRenderMode:true,
+        maximumRenderTimeChange:Number.POSITIVE_INFINITY,
+        showRenderLoopErrors:false,
       });
-      viewer.scene.globe.enableLighting=true;
-      viewer.scene.globe.baseColor=Cesium.Color.fromCssColorString('#111b27');
-      viewer.scene.skyAtmosphere.show=true;
-      viewer.scene.screenSpaceCameraController.minimumZoomDistance=30_000;
-      viewer.camera.setView({
-        destination:Cesium.Cartesian3.fromDegrees(37.9,0.5,4_200_000),
-        orientation:{heading:0,pitch:Cesium.Math.toRadians(-68),roll:0},
-      });
-      handler=new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+      widget.scene.globe.enableLighting=true;
+      widget.scene.globe.baseColor=Cesium.Color.fromCssColorString('#111b27');
+      widget.scene.skyAtmosphere.show=true;
+      widget.scene.screenSpaceCameraController.minimumZoomDistance=30_000;
+      widget.camera.setView(EAST_AFRICA_VIEW);
+      handler=new Cesium.ScreenSpaceEventHandler(widget.scene.canvas);
       handler.setInputAction((event:Cesium.ScreenSpaceEventHandler.PositionedEvent)=>{
-        const picked=viewer!.scene.pick(event.position);
+        if(!widget||widget.isDestroyed())return;
+        const picked=widget.scene.pick(event.position);
         const entity=Cesium.defined(picked)?picked.id as Cesium.Entity:undefined;
         const key=entity&&typeof entity.id==='string'?entity.id.replace(/^sjm-aircraft:/,''):null;
         setSelected(key&&entityRef.current.has(key)?key:null);
-        viewer!.scene.requestRender();
+        widget.scene.requestRender();
       },Cesium.ScreenSpaceEventType.LEFT_CLICK);
-      viewerRef.current=viewer;
+      widgetRef.current=widget;
     }catch{
+      handler?.destroy();
+      if(widget&&!widget.isDestroyed())widget.destroy();
       setInitFailed(true);
       return;
     }
@@ -70,21 +72,21 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       handler?.destroy();
       entityRef.current.clear();
       trailRef.current.clear();
-      if(viewer&&!viewer.isDestroyed())viewer.destroy();
-      viewerRef.current=null;
+      if(widget&&!widget.isDestroyed())widget.destroy();
+      widgetRef.current=null;
     };
   },[]);
 
   useEffect(()=>{
-    const viewer=viewerRef.current;
-    if(!viewer||viewer.isDestroyed())return;
+    const widget=widgetRef.current;
+    if(!widget||widget.isDestroyed())return;
     const liveIds=new Set(aircraft.map(item=>item.id));
     for(const [id,entity] of entityRef.current){
       if(!liveIds.has(id)){
-        viewer.entities.remove(entity);
+        widget.entities.remove(entity);
         entityRef.current.delete(id);
         const trail=trailRef.current.get(id);
-        if(trail)viewer.entities.remove(trail);
+        if(trail)widget.entities.remove(trail);
         trailRef.current.delete(id);
       }
     }
@@ -93,9 +95,9 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       const colour=Cesium.Color.fromCssColorString(FRESHNESS_COLOURS[item.freshness]||FRESHNESS_COLOURS.UNAVAILABLE);
       let entity=entityRef.current.get(item.id);
       if(!entity){
-        entity=viewer.entities.add({
+        entity=widget.entities.add({
           id:'sjm-aircraft:'+item.id,position,
-          point:new Cesium.PointGraphics({pixelSize:8,color,outlineColor:Cesium.Color.fromCssColorString('#17212b'),outlineWidth:2,disableDepthTestDistance:Number.POSITIVE_INFINITY}),
+          point:new Cesium.PointGraphics({pixelSize:8,color:colour,outlineColor:Cesium.Color.fromCssColorString('#17212b'),outlineWidth:2,disableDepthTestDistance:Number.POSITIVE_INFINITY}),
           label:new Cesium.LabelGraphics({
             text:item.ident||item.id,font:'11px Inter, sans-serif',
             fillColor:Cesium.Color.fromCssColorString('#e8eef2'),
@@ -116,24 +118,39 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         if(entity.label)entity.label.text=new Cesium.ConstantProperty(item.ident||item.id);
       }
       const track=(item.trail||[]).filter(p=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude));
+      let trail=trailRef.current.get(item.id);
       if(track.length>1){
         const positions=track.map(p=>Cesium.Cartesian3.fromDegrees(p.longitude,p.latitude,Math.max(0,p.altitude_m??0)));
-        let trail=trailRef.current.get(item.id);
         if(!trail){
-          trail=viewer.entities.add({id:'sjm-aircraft-trail:'+item.id,polyline:new Cesium.PolylineGraphics({
+          trail=widget.entities.add({id:'sjm-aircraft-trail:'+item.id,polyline:new Cesium.PolylineGraphics({
             positions,width:1.5,material:colour.withAlpha(0.45),arcType:Cesium.ArcType.NONE,
           })});
           trailRef.current.set(item.id,trail);
         }else trail.polyline=new Cesium.PolylineGraphics({positions,width:1.5,material:colour.withAlpha(0.45),arcType:Cesium.ArcType.NONE});
+      }else if(trail){
+        widget.entities.remove(trail);
+        trailRef.current.delete(item.id);
       }
     }
-    viewer.scene.requestRender();
-  },[aircraft]);
+    if(selected&&!liveIds.has(selected))setSelected(null);
+    widget.scene.requestRender();
+  },[aircraft,selected]);
 
   const selectedAircraft=aircraft.find(item=>item.id===selected)||null;
   const boundsLabel=bounds
     ? bounds.south.toFixed(1)+'° to '+bounds.north.toFixed(1)+'° latitude · '+bounds.west.toFixed(1)+'° to '+bounds.east.toFixed(1)+'° longitude'
     : 'not configured';
+  const resetView=()=>{
+    const widget=widgetRef.current;
+    if(widget&&!widget.isDestroyed())widget.camera.flyTo(EAST_AFRICA_VIEW);
+  };
+  const zoom=(direction:'in'|'out')=>{
+    const widget=widgetRef.current;
+    if(!widget||widget.isDestroyed())return;
+    if(direction==='in')widget.camera.zoomIn(450_000);
+    else widget.camera.zoomOut(450_000);
+    widget.scene.requestRender();
+  };
 
   return <div className="overflow-hidden rounded-md border border-white/[0.08] bg-[#080e15]">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-3 py-2.5 sm:px-4">
@@ -143,11 +160,20 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       </div>
       <span className="text-[10px] text-slate-500">{aircraft.length.toLocaleString()} aircraft records · {configured?'provider configured':'provider not configured'}</span>
     </div>
-    {initFailed?<div className="grid min-h-[420px] place-items-center p-6 text-center"><div><p className="text-sm font-semibold text-slate-200">3D renderer unavailable</p><p className="mt-1 text-xs text-slate-500">The Cesium globe could not be initialised in this browser.</p></div></div>
-      :<div ref={containerRef} role="img" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>}
+    {initFailed
+      ?<div className="grid min-h-[420px] place-items-center p-6 text-center"><div><p className="text-sm font-semibold text-slate-200">3D renderer unavailable</p><p className="mt-1 text-xs text-slate-500">The airspace scene could not be initialised in this browser. No aircraft state has been inferred.</p></div></div>
+      :<div className="relative">
+        <div ref={containerRef} role="application" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>
+        <div role="group" aria-label="Airspace globe controls" className="absolute right-3 top-3 z-10 flex flex-col overflow-hidden rounded-sm border border-white/15 bg-[#07101b]/90 shadow-lg backdrop-blur">
+          <button type="button" onClick={()=>zoom('in')} aria-label="Zoom in" title="Zoom in" className="h-9 w-10 border-b border-white/10 text-base text-slate-200 hover:bg-white/10">+</button>
+          <button type="button" onClick={()=>zoom('out')} aria-label="Zoom out" title="Zoom out" className="h-9 w-10 border-b border-white/10 text-base text-slate-200 hover:bg-white/10">−</button>
+          <button type="button" onClick={resetView} aria-label="Reset airspace view" title="Reset airspace view" className="h-9 w-10 font-mono text-[10px] text-slate-200 hover:bg-white/10">RST</button>
+        </div>
+      </div>}
     <div className="grid grid-cols-1 gap-0 border-t border-white/[0.07] sm:grid-cols-[1fr_auto]">
       <div className="px-3 py-2.5 text-[10px] leading-5 text-slate-500 sm:px-4">
-        <p>Position markers and trails are provider observations. No path is extrapolated between reports.</p>\n        <p>Basemap attribution: © Carto · © OpenStreetMap contributors.</p>
+        <p>Position markers and trails are provider observations. No path is extrapolated between reports.</p>
+        <p>Basemap attribution: © Carto · © OpenStreetMap contributors.</p>
         <p>Coverage: {boundsLabel} · Last position message: {lastPositionAt?new Date(lastPositionAt).toLocaleTimeString():'none recorded'}</p>
       </div>
       <div className="flex items-center gap-3 px-3 py-2.5 text-[10px] text-slate-500 sm:px-4">
