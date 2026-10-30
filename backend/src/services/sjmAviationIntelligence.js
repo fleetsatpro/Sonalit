@@ -197,7 +197,7 @@ function getFlyItalyAdsbConfig(env=process.env) {
   if(!enabled)reason='disabled';
   else if(!compliance)reason='cc_by_sa_share_alike_obligations_not_reviewed';
   else if(!informationalUse)reason='non_safety_informational_use_not_confirmed';
-  else if(!apiKey||/[\\r\\n]/.test(apiKey))reason='api_key_missing_or_invalid';
+  else if(!apiKey||/[\r\n]/.test(apiKey))reason='api_key_missing_or_invalid';
   return {
     enabled:!reason,reason,baseUrl:FLYITALYADSB_BASE,apiKey:!reason?apiKey:null,
     license:'CC-BY-SA-4.0',commercial_use_permitted:true,
@@ -447,7 +447,7 @@ function normaliseFlyItalyAdsbRecord(item,now=Date.now()) {
   const barometricMetres=Number.isFinite(barometricFeet)?barometricFeet*0.3048:null;
   const speedKnots=numberOrNull(item.gs);
   const heading=numberOrNull(item.track);
-  const callsign=String(item.flight||item.callsign||'').trim().replace(/\\s+/g,' ');
+  const callsign=String(item.flight||item.callsign||'').trim().replace(/\s+/g,' ');
   return {
     id:hex,map_key:'flyitalyadsb:'+hex,ident:callsign||hex.toUpperCase(),
     registration:textOrNull(item.r),latitude,longitude,
