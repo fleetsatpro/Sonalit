@@ -59,8 +59,8 @@ function buildAirportReferenceIndex(csv) {
   const byIata=Object.create(null),byIcao=Object.create(null);
   let airports=0;
   for(const row of rows.slice(1)){
-    const iata=String(row[indexes.iata]||'').trim().toUpperCase();
-    if(!/^[A-Z]{3}$/.test(iata))continue;
+    const rawIata=String(row[indexes.iata]||'').trim().toUpperCase();
+    const iata=/^[A-Z]{3}$/.test(rawIata)?rawIata:null;
     const ident=String(row[indexes.ident]||'').trim().toUpperCase();
     const gps=indexes.gps>=0?String(row[indexes.gps]||'').trim().toUpperCase():'';
     const icao=/^[A-Z]{4}$/.test(ident)?ident:/^[A-Z]{4}$/.test(gps)?gps:null;
@@ -79,9 +79,12 @@ function buildAirportReferenceIndex(csv) {
       source:'OurAirports',
       source_license:'Public Domain',
     };
-    if(!byIata[iata])byIata[iata]=[];
+    if(iata){
+      if(!byIata[iata])byIata[iata]=[];
+      byIata[iata].push(record);
+    }
     if(!byIcao[icao])byIcao[icao]=[];
-    byIata[iata].push(record);byIcao[icao].push(record);airports++;
+    byIcao[icao].push(record);airports++;
   }
   if(airports===0)throw new Error('Airport reference dataset contains no usable IATA/ICAO mappings.');
   return {byIata,byIcao,airport_record_count:airports,source:'OurAirports',license:'Public Domain'};
