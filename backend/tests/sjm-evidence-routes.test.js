@@ -5,7 +5,7 @@ const {
   canUploadEvidence,
   CATEGORY_MIME_TYPES,
   MAX_BYTES,
-} = require('../src/routes/sjmEvidence');
+} = require('../src/routes/sjmEvidence').__test;
 
 describe('SJM evidence capture contract', () => {
   test('accepts supported photo, video and document metadata without trusting file location paths', () => {
