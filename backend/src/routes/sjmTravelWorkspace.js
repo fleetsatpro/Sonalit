@@ -598,6 +598,9 @@ router.patch('/items/:itemId/execution', asyncHandler(async (req, res) => {
     if (item.execution_status !== next && !allowed[item.execution_status]?.includes(next)) {
       return { error: 'invalid_transition', message: 'Execution cannot move from ' + item.execution_status + ' to ' + next + '. Record a new plan revision instead.' };
     }
+    if (item.execution_status === next && ['completed','skipped'].includes(next)) {
+      return { error: 'invalid_transition', message: 'Completed and skipped activities are terminal. Record a new programme activity for any further work.' };
+    }
     if (note.trim().length < 10) {
       return { error: 'execution_note_required' };
     }
