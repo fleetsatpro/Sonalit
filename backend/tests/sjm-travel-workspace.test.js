@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  travellerInput, flightInput, itemInput, dateOnly, validTimezone, localDate,
+  travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone, localDate, DOCUMENT_TYPES,
 } = require('../src/routes/sjmTravelWorkspace').__test;
 
 describe('SJM traveller and travel programme contracts', () => {
@@ -104,12 +104,24 @@ describe('SJM traveller and travel programme contracts', () => {
     expect(itemInput({ ...base, planned_end_at: '2026-11-02T09:00:00.000Z' }, 'Africa/Nairobi').error).toBe('itinerary_item_must_fit_one_local_day');
   });
 
-  test('uses strict local calendar dates and real IANA time zones', () => {
+  test('accepts only timezone-qualified ISO instants and explicit IANA zones', () => {
     expect(dateOnly('2026-11-01')).toBe(true);
     expect(dateOnly('2026-02-30')).toBe(false);
     expect(dateOnly('01-11-2026')).toBe(false);
+    expect(validTimestamp('2026-11-01T08:00:00.000Z')).toBe(true);
+    expect(validTimestamp('2026-11-01T08:00:00+03:00')).toBe(true);
+    expect(validTimestamp('2026-11-01T08:00:00')).toBe(false);
+    expect(validTimestamp('2026-02-30T08:00:00.000Z')).toBe(false);
     expect(validTimezone('Africa/Nairobi')).toBe(true);
     expect(validTimezone('Not/A_Timezone')).toBe(false);
     expect(localDate('2026-11-01T08:00:00.000Z', 'Africa/Nairobi')).toBe('2026-11-01');
+  });
+
+  test('supports travel-document, itinerary and boarding-pass records', () => {
+    expect(DOCUMENT_TYPES.has('passport')).toBe(true);
+    expect(DOCUMENT_TYPES.has('visa')).toBe(true);
+    expect(DOCUMENT_TYPES.has('boarding_pass')).toBe(true);
+    expect(DOCUMENT_TYPES.has('itinerary')).toBe(true);
+    expect(DOCUMENT_TYPES.has('travel_insurance')).toBe(true);
   });
 });
