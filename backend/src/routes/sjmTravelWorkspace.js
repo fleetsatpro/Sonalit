@@ -158,6 +158,7 @@ function responseError(res, result) {
   else if (result.error === 'flight_segment_not_found') res.status(404).json({ error: 'flight_segment_not_found' });
   else if (result.error === 'itinerary_day_not_found') res.status(404).json({ error: 'itinerary_day_not_found' });
   else if (result.error === 'itinerary_item_not_found') res.status(404).json({ error: 'itinerary_item_not_found' });
+  else if (result.error === 'travel_document_not_found') res.status(404).json({ error: 'travel_document_not_found' });
   else if (result.error === 'journey_terminal') res.status(409).json({ error: 'journey_terminal', message: TERMINAL_MESSAGE });
   else if (result.error === 'forbidden') res.status(403).json({ error: 'travel_workspace_forbidden' });
   else if (result.error === 'document_not_ready') res.status(409).json({ error: 'travel_document_not_ready' });
