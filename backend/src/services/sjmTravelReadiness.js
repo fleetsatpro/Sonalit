@@ -137,6 +137,7 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
       flight_segment_count: flights.length,
       programme_day_count: days.length,
       timed_activity_count: activityCount,
+      unassigned_activity_count: unassignedActivityCount,
       required_programme_day_count: requiredDates.length,
       cleared_document_count: documents.filter(document =>
         document.review_status === 'VERIFIED' && document.evidence_status === 'VERIFIED',
