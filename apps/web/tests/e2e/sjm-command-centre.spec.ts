@@ -657,6 +657,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     const dayId = '30000000-0000-4000-8000-000000000002';
     const itemId = '30000000-0000-4000-8000-000000000003';
     const flightId = '30000000-0000-4000-8000-000000000004';
+    const documentId = '30000000-0000-4000-8000-000000000005';
 
     await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/participants', async route => route.fulfill({
       status: 200, contentType: 'application/json',
@@ -674,7 +675,18 @@ test.describe('SJM command-centre responsive smoke', () => {
           display_name: [body.title, body.given_name, body.middle_name, body.family_name].filter(Boolean).join(' '),
         };
         workspace.travellers.push(traveller);
+        workspace.documents.push({
+          id: documentId, traveller_id: travellerId, document_type: 'passport',
+          holder_name: 'Amina Example', review_status: 'REJECTED', review_note: 'Old scan',
+          evidence_id: '30000000-0000-4000-8000-000000000006',
+          file_name: 'superseded-passport.pdf', mime_type: 'application/pdf', size_bytes: 12000,
+          expiry_state: 'current', expiry_date: '2030-01-01',
+        });
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: traveller }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/documents/' + documentId + '/archive')) {
+        workspace.documents = workspace.documents.filter(document => document.id !== documentId);
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: documentId, archived: true, evidence_object_retained: true } }) });
       }
       if (method === 'POST' && route.request().url().endsWith('/flights')) {
         const flight = { id: flightId, sequence: 1, status: 'scheduled', status_source: 'operator_entered', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
@@ -718,6 +730,12 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByRole('button', { name: 'Register traveller' }).last().click();
     await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
     await expect(page.getByText('Traveller profile registered to this journey.')).toBeVisible();
+    await expect(page.getByText('Passport · superseded-passport.pdf')).toBeVisible();
+    await page.getByRole('button', { name: 'Archive / supersede record' }).click();
+    await page.getByLabel('Archive / supersession reason').fill('Obsolete scan replaced by the current verified passport copy.');
+    await page.getByRole('button', { name: 'Confirm archive' }).click();
+    await expect(page.getByText('Document record archived. The underlying evidence object has been retained under the SJM evidence-retention controls.')).toBeVisible();
+    await expect(page.getByText('Passport · superseded-passport.pdf')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Attach document' }).click();
     await expect(page.getByText('PRIVATE TRAVEL DOCUMENT')).toBeVisible();
