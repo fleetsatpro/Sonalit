@@ -1,7 +1,12 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
-const JOURNEY_ID = 'journey-sjm-e2e-001';
-const CLIENT_ID = 'client-sjm-e2e-001';
+const JOURNEY_ID = '11111111-1111-4111-8111-111111111111';
+const CLIENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+function pagedJourneyId(index: number): string {
+  if (index === 0) return JOURNEY_ID;
+  return '10000000-0000-4000-8000-' + String(index).padStart(12, '0');
+}
 
 const journey = {
   id: JOURNEY_ID,
@@ -148,8 +153,8 @@ async function stubSjmApi(page: Page) {
       // The pagination E2E creates extra, synthetic register IDs. Return a
       // journey-shaped detail object for those IDs instead of { data: [] },
       // which is not a valid detail response and can crash the UI renderer.
-      if (requestedId.startsWith(JOURNEY_ID + '-')) {
-        const suffix = requestedId.slice(JOURNEY_ID.length + 1);
+      if (/^10000000-0000-4000-8000-\d{12}$/.test(requestedId)) {
+        const suffix = requestedId.slice(-12);
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -452,7 +457,7 @@ test.describe('SJM command-centre responsive smoke', () => {
   test('mobile mission selection returns focus to the map-first workspace', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
-    const secondJourneyId = JOURNEY_ID + '-second';
+    const secondJourneyId = '22222222-2222-4222-8222-222222222222';
     await page.route('**/api/v1/sjm/journeys?**', async (route) => {
       const summary = { ...journey };
       delete summary.stops;
@@ -847,7 +852,7 @@ test.describe('SJM command-centre responsive smoke', () => {
   test('late flight-status response cannot overwrite another journey draft', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
-    const secondJourneyId = JOURNEY_ID + '-second-flight';
+    const secondJourneyId = '33333333-3333-4333-8333-333333333333';
     await page.route('**/api/v1/sjm/journeys?**', async (route) => {
       const summary = { ...journey };
       delete summary.stops; delete summary.events; delete summary.telemetry_snapshot; delete summary.readiness_checklist;
@@ -1075,7 +1080,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       const rowCount = Math.max(0, Math.min(offset === 0 ? 100 : 76, totalCount - offset));
       const data = Array.from({ length: rowCount }, (_, index) => ({
         ...summary,
-        id: offset === 0 && index === 0 ? JOURNEY_ID : JOURNEY_ID + '-' + (offset + index),
+        id: pagedJourneyId(offset + index),
         reference: 'SJM-PAGE-' + (offset + index),
         schedule_urgency: requestedFilter === 'overdue' ? 'DEPARTURE_OVERDUE' : requestedFilter === 'departure_due_30m' ? 'DEPARTURE_DUE_30M' : null,
       }));
@@ -1231,6 +1236,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Evidence & custody' })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/An encrypted field report could not be matched to this mission/)).toHaveCount(0);
     await page.locator('input[aria-label="Choose mission evidence file"]').setInputFiles({
       name: 'arrival-proof.jpg',
       mimeType: 'image/jpeg',
