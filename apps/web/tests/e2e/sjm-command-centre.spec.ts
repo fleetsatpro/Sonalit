@@ -650,7 +650,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         phase: 'departure', ready: false,
         blockers: [{ code: 'principal_traveller_missing', message: 'Register one principal traveller before route approval or departure release.' }],
         warnings: [],
-        counts: { traveller_count: 0, principal_traveller_count: 0, flight_segment_count: 0, programme_day_count: 0, timed_activity_count: 0, required_programme_day_count: 3, cleared_document_count: 0, document_blocker_count: 0, expiring_document_count: 0 },
+        counts: { traveller_count: 0, principal_traveller_count: 0, flight_segment_count: 0, programme_day_count: 0, timed_activity_count: 0, unassigned_activity_count: 0, required_programme_day_count: 3, cleared_document_count: 0, document_blocker_count: 0, expiring_document_count: 0 },
       },
     };
     const travellerId = '30000000-0000-4000-8000-000000000001';
@@ -685,10 +685,14 @@ test.describe('SJM command-centre responsive smoke', () => {
           file_name: 'superseded-passport.pdf', mime_type: 'application/pdf', size_bytes: 12000,
           expiry_state: 'current', expiry_date: '2030-01-01',
         });
+        workspace.readiness.counts.document_blocker_count = 1;
+        workspace.readiness.warnings = [];
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: traveller }) });
       }
       if (method === 'POST' && route.request().url().endsWith('/documents/' + documentId + '/archive')) {
         workspace.documents = workspace.documents.filter(document => document.id !== documentId);
+        workspace.readiness.counts.document_blocker_count = 0;
+        workspace.readiness.warnings = [{ code: 'no_travel_documents_recorded', message: 'No travel documents are registered. Confirm route-specific travel document requirements before departure.' }];
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: documentId, archived: true, evidence_object_retained: true } }) });
       }
       if (method === 'POST' && route.request().url().endsWith('/flights')) {
