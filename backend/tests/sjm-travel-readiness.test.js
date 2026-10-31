@@ -146,6 +146,7 @@ describe('SJM server-side travel readiness', () => {
 
     const noDocumentPolicyGuess = evaluateTravelReadiness({ ...base, documents: [] }, 'departure');
     expect(noDocumentPolicyGuess.ready).toBe(true);
+    expect(noDocumentPolicyGuess.warnings.map(item => item.code)).toContain('no_travel_documents_recorded');
   });
 
   test('blocks invalid or excessive schedule ranges instead of silently skipping programme dates', () => {
