@@ -178,6 +178,7 @@ function responseError(res, result) {
   else if (result.error === 'activity_already_started') res.status(409).json({ error: 'activity_already_started', message: 'The original plan is locked after execution begins. Preserve it and create a new activity for revised work.' });
   else if (result.error === 'invalid_flight_transition') res.status(409).json({ error: 'invalid_flight_transition', message: result.message });
   else if (result.error === 'itinerary_day_not_found') res.status(404).json({ error: 'itinerary_day_not_found' });
+  else if (result.error === 'day_timezone_locked') res.status(409).json({ error: 'day_timezone_locked', message: 'A day time zone cannot be changed after activities have been recorded. Preserve the original time interpretation and create a new programme day for a revised local schedule.' });
   else if (result.error === 'itinerary_item_not_found') res.status(404).json({ error: 'itinerary_item_not_found' });
   else if (result.error === 'travel_document_not_found') res.status(404).json({ error: 'travel_document_not_found' });
   else if (result.error === 'journey_terminal') res.status(409).json({ error: 'journey_terminal', message: TERMINAL_MESSAGE });
@@ -611,6 +612,8 @@ router.post('/days/generate', managerOnly, asyncHandler(async (req, res) => {
 router.post('/days', managerOnly, asyncHandler(async (req, res) => {
   const date = req.body?.journey_date, title = txt(req.body?.day_title, 180);
   if (!dateOnly(date) || !title) return res.status(400).json({ error: 'invalid_itinerary_day' });
+  const requestedTimezone = txt(req.body?.timezone, 100);
+  if (requestedTimezone && !validTimezone(requestedTimezone)) return res.status(400).json({ error: 'invalid_itinerary_timezone', message: 'Enter a valid IANA time zone such as Africa/Nairobi or Europe/Paris.' });
   const result = await req.dbTx(async client => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
@@ -618,9 +621,10 @@ router.post('/days', managerOnly, asyncHandler(async (req, res) => {
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
     const duplicate = await db('SELECT id FROM sjm_itinerary_days WHERE org_id=$1 AND journey_id=$2 AND journey_date=$3 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,date]);
     if (duplicate.rows.length) return { error: 'conflict', message: 'A programme day already exists for this local date.' };
+    const dayTimezone = requestedTimezone || current.journey.timezone;
     const saved = await db(
       'INSERT INTO sjm_itinerary_days (org_id,journey_id,journey_date,timezone,day_title,briefing,operational_notes,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8) RETURNING *',
-      [req.user.org_id,current.journey.id,date,current.journey.timezone,title,txt(req.body?.briefing,3000)||null,txt(req.body?.operational_notes,3000)||null,req.user.id],
+      [req.user.org_id,current.journey.id,date,dayTimezone,title,txt(req.body?.briefing,3000)||null,txt(req.body?.operational_notes,3000)||null,req.user.id],
     );
     await audit(db, req, current.journey.id, 'DAY_CREATED', saved.rows[0].id, { journey_date: date });
     return { data: saved.rows[0] };
@@ -635,14 +639,23 @@ router.patch('/days/:dayId', managerOnly, asyncHandler(async (req, res) => {
   if (!UUID.test(req.params.dayId)) return res.status(404).json({ error: 'itinerary_day_not_found' });
   const title = txt(req.body?.day_title, 180);
   if (!title) return res.status(400).json({ error: 'itinerary_day_title_required' });
+  const requestedTimezone = req.body?.timezone == null || req.body?.timezone === '' ? null : txt(req.body.timezone, 100);
+  if (requestedTimezone && !validTimezone(requestedTimezone)) return res.status(400).json({ error: 'invalid_itinerary_timezone', message: 'Enter a valid IANA time zone such as Africa/Nairobi or Europe/Paris.' });
   const result = await req.dbTx(async client => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const selected = await db('SELECT id,timezone FROM sjm_itinerary_days WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE', [req.params.dayId,req.user.org_id,current.journey.id]);
+    if (!selected.rows.length) return { error: 'itinerary_day_not_found' };
+    const nextTimezone = requestedTimezone || selected.rows[0].timezone;
+    if (nextTimezone !== selected.rows[0].timezone) {
+      const activityCount = await db('SELECT COUNT(*)::int AS count FROM sjm_itinerary_items WHERE org_id=$1 AND journey_id=$2 AND day_id=$3 AND deleted_at IS NULL', [req.user.org_id,current.journey.id,req.params.dayId]);
+      if (Number(activityCount.rows[0]?.count || 0) > 0) return { error: 'day_timezone_locked' };
+    }
     const saved = await db(
-      'UPDATE sjm_itinerary_days SET day_title=$1,briefing=$2,operational_notes=$3,updated_by=$4,updated_at=NOW() WHERE id=$5 AND org_id=$6 AND journey_id=$7 AND deleted_at IS NULL RETURNING *',
-      [title,txt(req.body?.briefing,3000)||null,txt(req.body?.operational_notes,3000)||null,req.user.id,req.params.dayId,req.user.org_id,current.journey.id],
+      'UPDATE sjm_itinerary_days SET timezone=$1,day_title=$2,briefing=$3,operational_notes=$4,updated_by=$5,updated_at=NOW() WHERE id=$6 AND org_id=$7 AND journey_id=$8 AND deleted_at IS NULL RETURNING *',
+      [nextTimezone,title,txt(req.body?.briefing,3000)||null,txt(req.body?.operational_notes,3000)||null,req.user.id,req.params.dayId,req.user.org_id,current.journey.id],
     );
     if (!saved.rows.length) return { error: 'itinerary_day_not_found' };
     await audit(db, req, current.journey.id, 'DAY_UPDATED', req.params.dayId, {});
