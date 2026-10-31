@@ -29,6 +29,10 @@ function isManager(user) {
   return !!user && MANAGERS.has(String(user.role || '').toLowerCase());
 }
 
+function canViewEvidence(user, evidence) {
+  return evidence?.access_classification !== 'HIGHLY_SENSITIVE' || isManager(user);
+}
+
 function canAccessJourney(user, roles) {
   return isManager(user) || (Array.isArray(roles) && roles.length > 0);
 }
@@ -391,7 +395,7 @@ router.post('/:evidenceId/download-url', asyncHandler(async (req, res) => {
     const evidence = result.rows[0];
     if (!evidence) return { error: 'evidence_not_found' };
     // Travel identity documents are never exposed to field-duty accounts.
-    if (evidence.access_classification === 'HIGHLY_SENSITIVE' && !isManager(req.user)) return { error: 'evidence_not_found' };
+    if (!canViewEvidence(req.user, evidence)) return { error: 'evidence_not_found' };
     if (evidence.status !== 'VERIFIED') return { error: 'evidence_not_verified' };
     return { evidence };
   });
@@ -437,6 +441,7 @@ module.exports = router;
 module.exports.__test = {
   normalizeUploadInput,
   canUploadEvidence,
+  canViewEvidence,
   CATEGORY_MIME_TYPES,
   MAX_BYTES,
 };
