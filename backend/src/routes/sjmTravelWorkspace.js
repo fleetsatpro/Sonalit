@@ -158,6 +158,8 @@ function responseError(res, result) {
   if (result.error === 'journey_not_found') res.status(404).json({ error: 'journey_not_found' });
   else if (result.error === 'traveller_not_found') res.status(404).json({ error: 'traveller_not_found' });
   else if (result.error === 'flight_segment_not_found') res.status(404).json({ error: 'flight_segment_not_found' });
+  else if (result.error === 'flight_segment_immutable') res.status(409).json({ error: 'flight_segment_immutable', message: 'Flight schedule details are locked after boarding, departure, landing, cancellation or diversion. Record status observations separately.' });
+  else if (result.error === 'activity_already_started') res.status(409).json({ error: 'activity_already_started', message: 'The original plan is locked after execution begins. Preserve it and create a new activity for revised work.' });
   else if (result.error === 'itinerary_day_not_found') res.status(404).json({ error: 'itinerary_day_not_found' });
   else if (result.error === 'itinerary_item_not_found') res.status(404).json({ error: 'itinerary_item_not_found' });
   else if (result.error === 'travel_document_not_found') res.status(404).json({ error: 'travel_document_not_found' });
@@ -493,6 +495,7 @@ router.patch('/flights/:flightId', managerOnly, asyncHandler(async (req, res) =>
     if (current.error) return current;
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
     const v = normalized.value;
+    if (['departed','landed','cancelled','diverted'].includes(String(existingStatus || ''))) return { error: 'flight_segment_immutable' };
     if (v.traveller_id) {
       const t = await db('SELECT id FROM sjm_travellers WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL', [v.traveller_id,req.user.org_id,current.journey.id]);
       if (!t.rows.length) return { error: 'traveller_not_found' };
