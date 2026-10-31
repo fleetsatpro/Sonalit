@@ -84,6 +84,7 @@ function flightInput(body) {
   if (!/^[A-Z0-9]{3,4}$/.test(dep) || !/^[A-Z0-9]{3,4}$/.test(arr)) return { error: 'invalid_flight_airport_code' };
   if (!validTimestamp(depAt) || !validTimestamp(arrAt) || Date.parse(arrAt) <= Date.parse(depAt)) return { error: 'invalid_flight_time_window' };
   if (!validTimezone(depTz) || !validTimezone(arrTz)) return { error: 'invalid_flight_timezone' };
+  if (body.traveller_id != null && body.traveller_id !== '' && !UUID.test(String(body.traveller_id))) return { error: 'traveller_not_found' };
   return { value: {
     carrier, flight_number: flight, departure_airport: dep, arrival_airport: arr,
     departure_airport_name: txt(body.departure_airport_name, 180) || null,
@@ -111,13 +112,17 @@ function itemInput(body, timezone) {
   if ((lat == null) !== (lng == null) || (lat != null && (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180))) return { error: 'invalid_itinerary_item_coordinates' };
   if (localDate(start, timezone) !== localDate(end, timezone)) return { error: 'itinerary_item_must_fit_one_local_day' };
   if (body.sequence != null && (!Number.isInteger(body.sequence) || body.sequence < 1 || body.sequence > 100)) return { error: 'invalid_itinerary_item_sequence' };
+  if (body.responsible_user_id != null && body.responsible_user_id !== '' && !UUID.test(String(body.responsible_user_id))) return { error: 'invalid_responsible_user' };
+  if (body.flight_segment_id != null && body.flight_segment_id !== '' && !UUID.test(String(body.flight_segment_id))) return { error: 'flight_segment_not_found' };
+  const responsibleRole = txt(body.responsible_role, 48) || null;
+  if (responsibleRole && !DUTY_ROLES.has(responsibleRole)) return { error: 'invalid_responsible_role' };
   return { value: {
     title, item_type: type, description: txt(body.description, 2000) || null,
     location_label: txt(body.location_label, 240) || null,
     location_lat: lat, location_lng: lng,
     planned_start_at: new Date(start).toISOString(), planned_end_at: new Date(end).toISOString(),
     responsible_user_id: body.responsible_user_id || null,
-    responsible_role: txt(body.responsible_role, 48) || null,
+    responsible_role: responsibleRole,
     flight_segment_id: body.flight_segment_id || null,
     sequence: body.sequence || null,
   } };
