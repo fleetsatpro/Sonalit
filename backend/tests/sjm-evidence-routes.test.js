@@ -45,7 +45,7 @@ describe('SJM evidence capture contract', () => {
     }).error).toBe('invalid_location_observation');
     expect(normalizeUploadInput({
       category: 'photo', file_name: 'image.jpg', mime_type: 'image/jpeg', size_bytes: 100,
-      device_id: 'invalid\\nreference',
+      device_id: 'invalid' + String.fromCharCode(10) + 'reference',
     }).error).toBe('invalid_device_reference');
   });
 

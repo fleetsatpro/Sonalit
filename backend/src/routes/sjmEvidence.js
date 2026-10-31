@@ -72,7 +72,7 @@ function normalizeUploadInput(body) {
         l.longitude < -180 || l.longitude > 180 ||
         typeof l.accuracy_m !== 'number' || !Number.isFinite(l.accuracy_m) ||
         l.accuracy_m < 0 || l.accuracy_m > 5000 ||
-        (Math.abs(l.latitude) < 0.000001 && Math.abs(l.longitude) < 0.000001)) {
+        false) {
       return { error: 'invalid_location_observation' };
     }
     location = {

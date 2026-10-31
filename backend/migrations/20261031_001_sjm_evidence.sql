@@ -1,10 +1,13 @@
 -- SJM-owned private evidence register and append-only custody history.
 BEGIN;
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sjm_journeys_org_id_id
+  ON public.sjm_journeys(org_id,id);
+
 CREATE TABLE IF NOT EXISTS public.sjm_evidence (
   id UUID PRIMARY KEY,
   org_id UUID NOT NULL,
-  journey_id UUID NOT NULL REFERENCES public.sjm_journeys(id) ON DELETE RESTRICT,
+  journey_id UUID NOT NULL,
   category TEXT NOT NULL CHECK (category IN ('photo','video','document','incident_attachment','check_in','handover')),
   file_name TEXT NOT NULL CHECK (length(trim(file_name)) BETWEEN 1 AND 180),
   mime_type TEXT NOT NULL CHECK (mime_type IN ('image/jpeg','image/png','video/mp4','application/pdf')),
@@ -33,6 +36,8 @@ CREATE TABLE IF NOT EXISTS public.sjm_evidence (
   deleted_at TIMESTAMPTZ,
   UNIQUE (org_id, storage_key),
   UNIQUE (org_id, journey_id, id),
+  FOREIGN KEY (org_id, journey_id)
+    REFERENCES public.sjm_journeys(org_id,id) ON DELETE RESTRICT,
   CHECK (
     (location_lat IS NULL AND location_lng IS NULL AND location_accuracy_m IS NULL AND location_source='NOT_CAPTURED')
     OR
@@ -56,9 +61,11 @@ CREATE INDEX IF NOT EXISTS idx_sjm_evidence_pending
 CREATE TABLE IF NOT EXISTS public.sjm_evidence_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL,
-  journey_id UUID NOT NULL REFERENCES public.sjm_journeys(id) ON DELETE RESTRICT,
+  journey_id UUID NOT NULL,
   evidence_id UUID NOT NULL,
   actor_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  FOREIGN KEY (org_id, journey_id)
+    REFERENCES public.sjm_journeys(org_id,id) ON DELETE RESTRICT,
   FOREIGN KEY (org_id, journey_id, evidence_id)
     REFERENCES public.sjm_evidence(org_id, journey_id, id) ON DELETE RESTRICT,
   action TEXT NOT NULL CHECK (action IN (
@@ -77,14 +84,14 @@ AS $function$
 BEGIN
   IF ROW(
     NEW.id, NEW.org_id, NEW.journey_id, NEW.category, NEW.file_name,
-    NEW.mime_type, NEW.size_bytes, NEW.storage_key, NEW.sha256,
+    NEW.mime_type, NEW.size_bytes, NEW.storage_key,
     NEW.captured_at, NEW.capture_time_quality, NEW.location_lat,
     NEW.location_lng, NEW.location_accuracy_m, NEW.location_source,
     NEW.access_classification, NEW.created_by, NEW.device_id,
     NEW.created_at
   ) IS DISTINCT FROM ROW(
     OLD.id, OLD.org_id, OLD.journey_id, OLD.category, OLD.file_name,
-    OLD.mime_type, OLD.size_bytes, OLD.storage_key, OLD.sha256,
+    OLD.mime_type, OLD.size_bytes, OLD.storage_key,
     OLD.captured_at, OLD.capture_time_quality, OLD.location_lat,
     OLD.location_lng, OLD.location_accuracy_m, OLD.location_source,
     OLD.access_classification, OLD.created_by, OLD.device_id,
@@ -101,6 +108,16 @@ BEGIN
 
   IF OLD.status='UPLOAD_PENDING' AND NEW.status NOT IN ('UPLOAD_PENDING','VERIFIED','REJECTED') THEN
     RAISE EXCEPTION 'Invalid SJM evidence status transition'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF OLD.status='UPLOAD_PENDING' AND NEW.status='UPLOAD_PENDING' AND NEW.sha256 IS DISTINCT FROM OLD.sha256 THEN
+    RAISE EXCEPTION 'Pending SJM evidence hash cannot be changed before verification'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF OLD.status IN ('VERIFIED','REJECTED') AND NEW.sha256 IS DISTINCT FROM OLD.sha256 THEN
+    RAISE EXCEPTION 'SJM evidence integrity hash is immutable after resolution'
       USING ERRCODE = '23514';
   END IF;
 
