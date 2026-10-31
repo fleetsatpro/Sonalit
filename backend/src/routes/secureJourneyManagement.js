@@ -493,6 +493,27 @@ async function reportSnapshot(db,org,j,type,date) {
   ]);
   const p=profile.rows[0]||{},template={...DEFAULT_TEMPLATE,...parseJson(p.report_template,{})},assessment=parseJson(j.route_assessment,null),events=eventRecords.rows,changes=changeEventsFor(events);
   const pendingStops=stops.filter(s=>s.stop_status==='planned').length,reachedStops=stops.filter(s=>s.stop_status==='reached').length,skippedStops=stops.filter(s=>s.stop_status==='skipped').length;
+  const [travelReadiness,travellerRows,flightRows,dayRows,itemRows,documentRows]=await Promise.all([
+    loadTravelReadiness(db,j,'departure'),
+    db('SELECT id,traveller_reference,traveller_type FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL ORDER BY created_at,id',[org,j.id]),
+    db(
+      'SELECT f.sequence,f.traveller_id,t.traveller_reference,t.traveller_type,f.carrier,f.flight_number,f.departure_airport,f.departure_airport_name,f.departure_at,f.departure_timezone,f.arrival_airport,f.arrival_airport_name,f.arrival_at,f.arrival_timezone,f.status,f.status_source,f.status_observed_at '+
+      'FROM sjm_flight_segments f LEFT JOIN sjm_travellers t ON t.id=f.traveller_id AND t.org_id=f.org_id AND t.journey_id=f.journey_id AND t.deleted_at IS NULL '+
+      'WHERE f.org_id=$1 AND f.journey_id=$2 AND f.deleted_at IS NULL ORDER BY f.sequence,f.id',[org,j.id]),
+    db('SELECT id,journey_date,timezone,day_title,briefing,operational_notes FROM sjm_itinerary_days WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL ORDER BY journey_date,id',[org,j.id]),
+    db(
+      'SELECT i.id,i.day_id,i.sequence,i.item_type,i.title,i.location_label,i.planned_start_at,i.planned_end_at,i.execution_status,i.actual_start_at,i.actual_end_at,i.traveller_id,t.traveller_reference,t.traveller_type,i.responsible_role '+
+      'FROM sjm_itinerary_items i LEFT JOIN sjm_travellers t ON t.id=i.traveller_id AND t.org_id=i.org_id AND t.journey_id=i.journey_id AND t.deleted_at IS NULL '+
+      'WHERE i.org_id=$1 AND i.journey_id=$2 AND i.deleted_at IS NULL ORDER BY i.day_id,i.planned_start_at,i.sequence,i.id',[org,j.id]),
+    db(
+      "SELECT COUNT(*)::int AS uploaded_count,COUNT(*) FILTER (WHERE d.review_status='VERIFIED' AND e.status='VERIFIED')::int AS verified_count,COUNT(*) FILTER (WHERE d.review_status='PENDING_REVIEW')::int AS pending_review_count,COUNT(*) FILTER (WHERE d.review_status='REJECTED')::int AS rejected_count,COUNT(*) FILTER (WHERE d.expiry_date<CURRENT_DATE OR d.review_status='EXPIRED')::int AS expired_count FROM sjm_travel_documents d JOIN sjm_evidence e ON e.id=d.evidence_id AND e.org_id=d.org_id AND e.journey_id=d.journey_id WHERE d.org_id=$1 AND d.journey_id=$2 AND d.deleted_at IS NULL AND e.deleted_at IS NULL",
+      [org,j.id],
+    ),
+  ]);
+  const itemsByDay=new Map();
+  for(const item of itemRows.rows){const list=itemsByDay.get(item.day_id)||[];list.push(item);itemsByDay.set(item.day_id,list);}
+  const dailyProgramme=dayRows.rows.map(day=>({...day,items:itemsByDay.get(day.id)||[]}));
+  const travelDocumentStatus=documentRows.rows[0]||{uploaded_count:0,verified_count:0,pending_review_count:0,rejected_count:0,expired_count:0};
   const title=REPORT_TITLES[type]||'Secure Journey Management Report';
   const closeoutEvidence={closed_at:j.closed_at||null,arrival_verification_source:j.arrival_verification_source||null,arrival_verification_note:j.arrival_verification_note||null,gps_verified:j.arrival_verification_source==='gps',evidence_class:j.arrival_verification_source==='supervisor_attestation'?'SUPERVISOR_ATTESTED_NOT_GPS':j.arrival_verification_source?'SOURCE_RECORDED':'UNAVAILABLE'};
   return {
@@ -500,12 +521,13 @@ async function reportSnapshot(db,org,j,type,date) {
     timezone:p.report_timezone||j.timezone||'Africa/Nairobi',
     client_profile:{client_id:j.client_id,client_name:j.client_name||null,template_title:template.title||DEFAULT_TEMPLATE.title,enabled_sections:Array.isArray(template.sections)?template.sections.filter(x=>SECTIONS.includes(x)):SECTIONS},
     journey:{id:j.id,reference:j.reference,title:j.title,purpose:j.purpose,status:j.status,transport_mode:j.transport_mode,service_type:j.service_type||'executive_transfer',airport_code:j.airport_code||null,terminal:j.terminal||null,airline:j.airline||null,flight_number:j.flight_number||null,flight_scheduled_at:j.flight_scheduled_at||null,flight_status:j.flight_status||'unknown',flight_status_source:j.flight_status_source||'not_recorded',flight_status_observed_at:j.flight_status_observed_at||null,client_id:j.client_id,origin_label:j.origin_label,origin_lat:j.origin_lat,origin_lng:j.origin_lng,destination_label:j.destination_label,destination_lat:j.destination_lat,destination_lng:j.destination_lng,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,client_name:j.client_name||null,created_at:j.created_at,approved_at:j.approved_at,started_at:j.started_at,completed_at:j.completed_at,closed_at:j.closed_at,paused_at:j.paused_at,exception_at:j.exception_at,departure_readiness_acknowledgement:j.departure_readiness_acknowledgement||null,human_review_decision:j.human_review_decision||null,human_review_rationale:j.human_review_rationale||null,risk_acknowledgement:j.risk_acknowledgement||null,arrival_verification_source:j.arrival_verification_source||null,arrival_verification_note:j.arrival_verification_note||null},
-    summary:{stop_count:stops.length,reached_stops:reachedStops,skipped_stops:skippedStops,pending_stops:pendingStops,event_count:eventRecords.total,event_count_included:events.length,events_truncated:eventRecords.total>events.length,change_event_count:eventRecords.totalChanges,change_event_count_included:changes.length,change_events_truncated:eventRecords.totalChanges>changes.length,route_assessment_available:Boolean(assessment),safety_gate:assessment?.safety_gate||'UNAVAILABLE',telemetry_status:telemetry.status},
+    summary:{stop_count:stops.length,reached_stops:reachedStops,skipped_stops:skippedStops,pending_stops:pendingStops,event_count:eventRecords.total,event_count_included:events.length,events_truncated:eventRecords.total>events.length,change_event_count:eventRecords.totalChanges,change_event_count_included:changes.length,change_events_truncated:eventRecords.totalChanges>changes.length,route_assessment_available:Boolean(assessment),safety_gate:assessment?.safety_gate||'UNAVAILABLE',telemetry_status:telemetry.status,traveller_count:travellerRows.rows.length,flight_segment_count:flightRows.rows.length,programme_day_count:dailyProgramme.length,timed_activity_count:itemRows.rows.length},
     itinerary:parseJson(j.planned_route,[]),stops,events,change_events:changes,route_assessment:assessment,telemetry_snapshot:telemetry,
+    travellers:travellerRows.rows,flight_segments:flightRows.rows,daily_programme:dailyProgramme,travel_readiness:travelReadiness,travel_document_status:travelDocumentStatus,
     pre_trip_readiness:readinessChecklist(j,stops,assessment,telemetry),
     situation:{last_event:events[0]||null,open_stops:pendingStops,telemetry_status:telemetry.status},
     closeout_evidence:closeoutEvidence,
-    provenance:{planned_itinerary:'SJM journey and ordered stop records',route_assessment:assessment?'Stored Sonalit Route Safety assessment':'UNAVAILABLE',telemetry:'Latest device_locations fixes associated with directly assigned Guardian devices; not a route prediction',stop_confirmation:'Operator confirmation is not represented as GPS-derived proof',future_telemetry_timestamps:'Future-dated fixes are UNAVAILABLE and never treated as LIVE',fabricated_data_used:false},
+    provenance:{planned_itinerary:'SJM journey and ordered stop records',route_assessment:assessment?'Stored Sonalit Route Safety assessment':'UNAVAILABLE',telemetry:'Latest device_locations fixes associated with directly assigned Guardian devices; not a route prediction',stop_confirmation:'Operator confirmation is not represented as GPS-derived proof',travellers:'SJM traveller reference and relationship only; contact, identity and document contents excluded',flight_segments:'SJM structured flight register; booking references and operator status notes excluded',daily_programme:'Dated SJM itinerary activities and recorded execution states; internal instructions, coordinates and execution notes excluded',travel_documents:'Aggregate status counts only; file names and document contents excluded',travel_readiness:'Server-evaluated SJM release checks and warnings',future_telemetry_timestamps:'Future-dated fixes are UNAVAILABLE and never treated as LIVE',fabricated_data_used:false},
   };
 }
 
