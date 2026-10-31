@@ -7011,6 +7011,56 @@
           }
         }
       }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id_evidence",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/upload-url": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_evidence_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/{evidenceId}/renew-upload-url": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_evidence_evidenceId_renew_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/{evidenceId}/commit": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_evidence_evidenceId_commit",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/{evidenceId}/download-url": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_evidence_evidenceId_download_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
