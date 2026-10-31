@@ -95,6 +95,12 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
 
   let documentBlockerCount = 0;
   let expiringDocumentCount = 0;
+  if (documents.length === 0) {
+    warnings.push({
+      code: 'no_travel_documents_recorded',
+      message: 'No travel documents are registered. Confirm the passport, visa, ticket and insurance requirements applicable to this route before departure.',
+    });
+  }
   const arrivalDate = localDate(journey.planned_arrival_at, journey.timezone);
   const today = localDate(new Date().toISOString(), journey.timezone) || new Date().toISOString().slice(0, 10);
   const expiryHorizon = new Date(today + 'T00:00:00.000Z');
