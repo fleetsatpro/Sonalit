@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone, localDate, DOCUMENT_TYPES, ITEM_TYPES, flightStatusTransitionAllowed, flightStatusOptions, canExecuteItem,
+  travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone, localDate, DOCUMENT_TYPES, ITEM_TYPES, flightStatusTransitionAllowed, flightStatusOptions, canExecuteItem, travelPlanMutationError, executionAllowedForJourney,
 } = require('../src/routes/sjmTravelWorkspace').__test;
 
 describe('SJM traveller and travel programme contracts', () => {
@@ -86,6 +86,28 @@ describe('SJM traveller and travel programme contracts', () => {
     expect(flightStatusOptions('landed')).toEqual(['landed']);
     expect(flightStatusOptions('scheduled')).toContain('boarding');
     expect(flightStatusOptions('scheduled')).not.toContain('landed');
+  });
+
+  test('freezes the approved travel dossier until an authorised replan', () => {
+    expect(travelPlanMutationError('requested')).toBeNull();
+    expect(travelPlanMutationError('planning')).toBeNull();
+    expect(travelPlanMutationError('assessment_pending')).toBeNull();
+    expect(travelPlanMutationError('ready_for_review')).toBeNull();
+    expect(travelPlanMutationError('approved').error).toBe('travel_plan_locked');
+    expect(travelPlanMutationError('ready_to_depart').error).toBe('travel_plan_locked');
+    expect(travelPlanMutationError('in_progress').error).toBe('travel_plan_locked');
+    expect(travelPlanMutationError('on_hold').error).toBe('travel_plan_locked');
+    expect(travelPlanMutationError('closed').error).toBe('journey_terminal');
+  });
+
+  test('accepts activity execution only after journey approval and release', () => {
+    expect(executionAllowedForJourney('requested')).toBe(false);
+    expect(executionAllowedForJourney('ready_for_review')).toBe(false);
+    expect(executionAllowedForJourney('approved')).toBe(true);
+    expect(executionAllowedForJourney('ready_to_depart')).toBe(true);
+    expect(executionAllowedForJourney('in_progress')).toBe(true);
+    expect(executionAllowedForJourney('arrival_pending_verification')).toBe(true);
+    expect(executionAllowedForJourney('closed')).toBe(false);
   });
 
   test('restricts activity execution to the named assignee, assigned duty role or dispatcher', () => {
