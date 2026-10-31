@@ -700,7 +700,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       }
       if (method === 'POST' && route.request().url().endsWith('/items')) {
         const day = workspace.days[0] as { items: Array<Record<string, unknown>> };
-        const item = { id: itemId, sequence: 1, execution_status: 'planned', ...body };
+        const item = { id: itemId, sequence: 1, execution_status: 'planned', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
         day.items.push(item);
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: item }) });
       }
@@ -771,11 +771,16 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByLabel(/Planned start/).fill('2026-10-31T10:00');
     await page.getByLabel(/Planned end/).fill('2026-10-31T11:00');
     await page.getByLabel('Location / venue').fill('Jomo Kenyatta International Airport');
+    await page.getByLabel('Traveller').nth(1).selectOption(travellerId);
+    await page.getByLabel('Latitude').fill('-1.3192');
+    await page.getByLabel('Longitude').fill('36.9278');
     await page.getByLabel('Responsible team member').selectOption('user-sjm-e2e-driver');
     await page.getByLabel('Activity instructions').fill('Receive traveller at the agreed arrival point and coordinate handover.');
     await expect(page.getByLabel('Responsible team member')).toHaveValue('user-sjm-e2e-driver');
     await page.getByRole('button', { name: 'Add activity to day' }).click();
     await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
+    await expect(page.getByText('For traveller · Amina Example')).toBeVisible();
+    await expect(page.getByText(/-1\.31920, 36\.92780/)).toBeVisible();
 
     await page.getByLabel('Execution note').fill('Assigned team reached the airport reception point and confirmed readiness.');
     await page.getByRole('button', { name: 'Start' }).click();
