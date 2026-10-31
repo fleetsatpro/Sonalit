@@ -1,6 +1,6 @@
 'use strict';
 
-const AIRPORT_SERVICES = new Set(['airport_arrival', 'airport_departure']);
+const AIRPORT_SERVICES = new Set(['airport_arrival', 'airport_departure', 'meet_and_greet']);
 
 function localDate(value, timezone) {
   if (!value) return null;
@@ -42,7 +42,7 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
 
   let uncoveredTravellerCount = 0;
   if (AIRPORT_SERVICES.has(String(journey.service_type || ''))) {
-    const usableFlights = flights.filter(segment => segment.status !== 'cancelled');
+    const usableFlights = flights.filter(segment => !['cancelled', 'diverted'].includes(segment.status));
     if (travellers.length === 0 || usableFlights.length === 0) {
       uncoveredTravellerCount = Math.max(1, travellers.length);
     } else if (!usableFlights.some(segment => segment.traveller_id == null)) {
@@ -60,6 +60,7 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
   }
 
   let activityCount = days.reduce((sum, day) => sum + Number(day.activity_count || 0), 0);
+  const unassignedActivityCount = days.reduce((sum, day) => sum + Number(day.unassigned_activity_count || 0), 0);
   const datedDays = new Set(days.filter(day => Number(day.activity_count || 0) > 0).map(day => String(day.journey_date).slice(0, 10)));
   let requiredDates = [];
   if (phase === 'departure') {
@@ -81,6 +82,9 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
             missing_dates: missingDates,
           });
         }
+      }
+      if (unassignedActivityCount > 0) {
+        blockers.push({ code: 'daily_programme_unassigned', message: 'Assign a named mission team member or accountable duty role to every timed activity.', unassigned_activity_count: unassignedActivityCount });
       }
     }
   } else if (phase === 'approval') {
@@ -154,7 +158,7 @@ async function loadTravelReadiness(db, journey, phase = 'departure') {
     [org, id],
   );
   const dayResult = await db(
-    'SELECT d.id,d.journey_date,COUNT(i.id)::int AS activity_count FROM sjm_itinerary_days d ' +
+    'SELECT d.id,d.journey_date,COUNT(i.id)::int AS activity_count,COUNT(i.id) FILTER (WHERE i.responsible_user_id IS NULL AND COALESCE(NULLIF(BTRIM(i.responsible_role),\'\'),\'\')=\'\')::int AS unassigned_activity_count FROM sjm_itinerary_days d ' +
     'LEFT JOIN sjm_itinerary_items i ON i.org_id=d.org_id AND i.journey_id=d.journey_id AND i.day_id=d.id AND i.deleted_at IS NULL ' +
     'WHERE d.org_id=$1 AND d.journey_id=$2 AND d.deleted_at IS NULL GROUP BY d.id,d.journey_date ORDER BY d.journey_date',
     [org, id],
