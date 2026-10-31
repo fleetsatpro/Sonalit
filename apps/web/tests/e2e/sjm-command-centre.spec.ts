@@ -738,6 +738,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByRole('button', { name: 'Add activity to day' }).click();
     await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
 
+    await page.getByLabel('Execution note').fill('Assigned team reached the airport reception point and confirmed readiness.');
     await page.getByRole('button', { name: 'Start' }).click();
     await expect(page.getByText('Execution update recorded in the activity history.')).toBeVisible();
     await page.getByLabel('Execution note').fill('Traveller received and identity matched to the movement brief.');
