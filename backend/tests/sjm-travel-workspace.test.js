@@ -70,6 +70,9 @@ describe('SJM traveller and travel programme contracts', () => {
     };
     expect(flightInput({ ...base, traveller_id: 'not-a-uuid' }).error).toBe('traveller_not_found');
     expect(flightInput({ ...base, departure_airport: 'Nairobi' }).error).toBe('invalid_flight_airport_code');
+    expect(flightInput({ ...base, departure_airport: 'NBOX1' }).error).toBe('invalid_flight_airport_code');
+    expect(flightInput({ ...base, flight_number: 'AB1234567890123456789012345' }).error).toBe('flight_carrier_and_number_required');
+    expect(flightInput({ ...base, carrier: 'C'.repeat(121) }).error).toBe('flight_carrier_and_number_required');
     expect(flightInput({ ...base, arrival_at: base.departure_at }).error).toBe('invalid_flight_time_window');
     expect(flightInput({ ...base, arrival_timezone: 'Mars/Olympus' }).error).toBe('invalid_flight_timezone');
   });
