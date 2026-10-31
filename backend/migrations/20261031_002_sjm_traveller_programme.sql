@@ -162,7 +162,7 @@ CREATE TABLE IF NOT EXISTS public.sjm_travel_documents (
   journey_id UUID NOT NULL,
   traveller_id UUID NOT NULL,
   evidence_id UUID NOT NULL,
-  document_type TEXT NOT NULL CHECK (document_type IN ('passport','visa','e_ticket','booking_confirmation','travel_insurance','invitation_letter','residence_permit','other')),
+  document_type TEXT NOT NULL CHECK (document_type IN ('passport','visa','e_ticket','boarding_pass','booking_confirmation','itinerary','travel_insurance','invitation_letter','residence_permit','other')),
   holder_name TEXT NOT NULL CHECK (length(trim(holder_name)) BETWEEN 1 AND 180),
   issuing_country TEXT CHECK (issuing_country IS NULL OR length(issuing_country)<=80),
   issue_date DATE,
