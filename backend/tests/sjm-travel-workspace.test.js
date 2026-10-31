@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone, localDate, DOCUMENT_TYPES,
+  travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone, localDate, DOCUMENT_TYPES, ITEM_TYPES,
 } = require('../src/routes/sjmTravelWorkspace').__test;
 
 describe('SJM traveller and travel programme contracts', () => {
@@ -115,6 +115,15 @@ describe('SJM traveller and travel programme contracts', () => {
     expect(validTimezone('Africa/Nairobi')).toBe(true);
     expect(validTimezone('Not/A_Timezone')).toBe(false);
     expect(localDate('2026-11-01T08:00:00.000Z', 'Africa/Nairobi')).toBe('2026-11-01');
+  });
+
+  test('supports domain-specific SJM movement and security programme activities', () => {
+    expect(ITEM_TYPES.has('airport_arrival')).toBe(true);
+    expect(ITEM_TYPES.has('meet_and_greet')).toBe(true);
+    expect(ITEM_TYPES.has('close_protection')).toBe(true);
+    expect(ITEM_TYPES.has('security_escort')).toBe(true);
+    expect(ITEM_TYPES.has('vehicle_handover')).toBe(true);
+    expect(ITEM_TYPES.has('hotel_check_in')).toBe(true);
   });
 
   test('supports travel-document, itinerary and boarding-pass records', () => {
