@@ -494,8 +494,10 @@ router.patch('/flights/:flightId', managerOnly, asyncHandler(async (req, res) =>
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const existingFlight = await db('SELECT status FROM sjm_flight_segments WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE', [req.params.flightId,req.user.org_id,current.journey.id]);
+    if (!existingFlight.rows.length) return { error: 'flight_segment_not_found' };
+    if (['departed','landed','cancelled','diverted'].includes(String(existingFlight.rows[0].status))) return { error: 'flight_segment_immutable' };
     const v = normalized.value;
-    if (['departed','landed','cancelled','diverted'].includes(String(existingStatus || ''))) return { error: 'flight_segment_immutable' };
     if (v.traveller_id) {
       const t = await db('SELECT id FROM sjm_travellers WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL', [v.traveller_id,req.user.org_id,current.journey.id]);
       if (!t.rows.length) return { error: 'traveller_not_found' };
@@ -637,6 +639,7 @@ router.patch('/items/:itemId', managerOnly, asyncHandler(async (req, res) => {
       [req.params.itemId,req.user.org_id,current.journey.id],
     );
     if (!existing.rows.length) return { error: 'itinerary_item_not_found' };
+    if (existing.rows[0].execution_status !== 'planned') return { error: 'activity_already_started' };
     const normalized = itemInput(req.body, existing.rows[0].timezone);
     if (normalized.error) return normalized;
     const v = normalized.value;
