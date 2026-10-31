@@ -717,6 +717,12 @@ test.describe('SJM command-centre responsive smoke', () => {
         workspace.days.push(day);
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: day }) });
       }
+      if (method === 'PATCH' && route.request().url().endsWith('/days/' + dayId)) {
+        const day = workspace.days.find(value => value.id === dayId);
+        if (!day) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'itinerary_day_not_found' }) });
+        Object.assign(day, body);
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: day }) });
+      }
       if (method === 'POST' && route.request().url().endsWith('/items')) {
         const day = workspace.days[0] as { items: Array<Record<string, unknown>> };
         const item = { id: itemId, sequence: 1, execution_status: 'planned', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
