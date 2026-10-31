@@ -1233,7 +1233,7 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
   });
   if(transition.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
   if(transition.error==='lifecycle_authority_revoked')return res.status(403).json(transition.details);
-  if(transition.error==='travel_readiness_blocked')return res.status(409).json({error:'travel_readiness_blocked',phase:transition.details.phase,blockers:transition.details.blockers,counts:transition.details.counts});
+  if(transition.error==='travel_readiness_blocked')return res.status(409).json({error:'travel_readiness_blocked',phase:transition.details.phase,blockers:transition.details.blockers,warnings:transition.details.warnings,counts:transition.details.counts});
   if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
