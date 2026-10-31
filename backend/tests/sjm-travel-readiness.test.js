@@ -53,6 +53,36 @@ describe('SJM server-side travel readiness', () => {
     expect(cancelled.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
   });
 
+  test('treats meet-and-greet as an airport service and rejects diverted flight legs', () => {
+    const airportJourney = journey({ service_type: 'meet_and_greet' });
+    const missing = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal], flights: [], days: [], documents: [],
+    }, 'approval');
+    expect(missing.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
+
+    const diverted = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal],
+      flights: [{ id: 'flight-diverted', traveller_id: principal.id, status: 'diverted' }],
+      days: [], documents: [],
+    }, 'approval');
+    expect(diverted.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
+  });
+
+  test('requires every daily activity to have a named operator or accountable role before departure', () => {
+    const base = { journey: journey({}), travellers: [principal], flights: [], documents: [] };
+    const days = [
+      { journey_date: '2026-11-01', activity_count: 2, unassigned_activity_count: 0 },
+      { journey_date: '2026-11-02', activity_count: 1, unassigned_activity_count: 1 },
+      { journey_date: '2026-11-03', activity_count: 1, unassigned_activity_count: 0 },
+    ];
+    const incomplete = evaluateTravelReadiness({ ...base, days }, 'departure');
+    expect(incomplete.blockers.map(item => item.code)).toContain('daily_programme_unassigned');
+    const assigned = evaluateTravelReadiness({
+      ...base, days: days.map(day => ({ ...day, unassigned_activity_count: 0 })),
+    }, 'departure');
+    expect(assigned.ready).toBe(true);
+  });
+
   test('requires every local travel date to have a timed programme activity before departure', () => {
     expect(calendarDates('2026-11-01', '2026-11-03')).toEqual(['2026-11-01', '2026-11-02', '2026-11-03']);
     const base = { journey: journey({}), travellers: [principal], flights: [], documents: [] };
