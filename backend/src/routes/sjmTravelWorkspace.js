@@ -579,7 +579,7 @@ router.patch('/flights/:flightId/status', asyncHandler(async (req, res) => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (!executionAllowedForJourney(current.journey.status)) return { error: 'journey_not_released_for_execution' };
+    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
     if (!manager(req.user) && !activeDuty(current.roles)) return { error: 'forbidden' };
     const existing = await db(
       'SELECT status FROM sjm_flight_segments WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
@@ -796,7 +796,7 @@ router.patch('/items/:itemId/execution', asyncHandler(async (req, res) => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    if (!executionAllowedForJourney(current.journey.status)) return { error: 'journey_not_released_for_execution' };
     if (!manager(req.user) && !activeDuty(current.roles)) return { error: 'forbidden' };
     const existing = await db(
       'SELECT i.id,i.day_id,i.execution_status,i.actual_start_at,i.actual_end_at,i.responsible_user_id,i.responsible_role FROM sjm_itinerary_items i WHERE i.id=$1 AND i.org_id=$2 AND i.journey_id=$3 AND i.deleted_at IS NULL FOR UPDATE',
