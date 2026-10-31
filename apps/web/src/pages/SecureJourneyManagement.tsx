@@ -529,7 +529,7 @@ export default function SecureJourneyManagement(){
    ...(intakeMode==='edit'?{acknowledge_route_authorization_invalidation:editAcknowledged}:{})
   };
  };
- const create=useMutation({mutationFn:async()=> (await api.post('/sjm/journeys',buildJourneyPayload())).data.data as Journey,onSuccess:async j=>{setShowCreate(false);setIntakeMode('create');setEditAcknowledged(false);setEditBaseline(null);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);setSelectedId(j.id);await qc.invalidateQueries({queryKey:['sjm-journeys']});await qc.invalidateQueries({queryKey:['sjm-journey',j.id]})}});
+ const create=useMutation({mutationFn:async()=> (await api.post('/sjm/journeys',buildJourneyPayload())).data.data as Journey,onSuccess:async j=>{setShowCreate(false);setIntakeMode('create');setEditAcknowledged(false);setEditBaseline(null);setIntakeStep(0);setIntakePickTarget(null);setForm({...EMPTY});setStopDrafts([]);setSelectedId(j.id);setWorkspaceTab('travel');await qc.invalidateQueries({queryKey:['sjm-journeys']});await qc.invalidateQueries({queryKey:['sjm-journey',j.id]})}});
  const updateJourney=useMutation({mutationFn:async()=>{
   const source=detailQ.data?.data;
   if(!journey||!source)throw new Error('Reload the journey details before editing.');
