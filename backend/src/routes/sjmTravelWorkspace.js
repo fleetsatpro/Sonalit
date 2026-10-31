@@ -156,7 +156,6 @@ function responseError(res, result) {
   else if (result.error === 'conflict') res.status(409).json({ error: 'travel_workspace_conflict', message: result.message || 'The record conflicts with an existing entry.' });
   else if (result.error === 'execution_note_required') res.status(400).json({ error: 'execution_note_required', message: 'Provide at least 10 characters describing the actual outcome, delay or exception.' });
   else if (result.error === 'invalid_transition') res.status(409).json({ error: 'invalid_execution_transition', message: result.message });
-  else if (result.error === 'conflict') res.status(409).json({ error: 'travel_workspace_conflict', message: result.message || 'The record conflicts with an existing entry.' });
   else return false;
   return true;
 }
@@ -553,6 +552,8 @@ router.patch('/items/:itemId', managerOnly, asyncHandler(async (req, res) => {
       if (!flight.rows.length) return { error: 'flight_segment_not_found' };
     }
     const sequence = v.sequence || existing.rows[0].sequence;
+    const sequenceConflict = await db('SELECT id FROM sjm_itinerary_items WHERE org_id=$1 AND journey_id=$2 AND day_id=$3 AND sequence=$4 AND id<>$5 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,existing.rows[0].day_id,sequence,req.params.itemId]);
+    if (sequenceConflict.rows.length) return { error: 'conflict', message: 'That programme sequence is already occupied. Choose a different position.' };
     const saved = await db(
       'UPDATE sjm_itinerary_items SET sequence=$1,item_type=$2,title=$3,description=$4,location_label=$5,location_lat=$6,location_lng=$7,planned_start_at=$8,planned_end_at=$9,responsible_user_id=$10,responsible_role=$11,flight_segment_id=$12,sequence_revision=sequence_revision+1,updated_by=$13,updated_at=NOW() WHERE id=$14 AND org_id=$15 AND journey_id=$16 RETURNING *',
       [sequence,v.item_type,v.title,v.description,v.location_label,v.location_lat,v.location_lng,v.planned_start_at,v.planned_end_at,v.responsible_user_id,v.responsible_role,v.flight_segment_id,req.user.id,req.params.itemId,req.user.org_id,current.journey.id],
