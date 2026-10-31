@@ -70,7 +70,7 @@ describe('SJM private evidence storage', () => {
   });
 
   test('verifies exact object metadata and computes SHA-256 from the stored bytes', async () => {
-    const bytes = Buffer.from('verified evidence bytes');
+    const bytes = Buffer.concat([Buffer.from([0xff,0xd8,0xff]),Buffer.from('verified evidence bytes')]);
     const client = {
       send: jest.fn()
         .mockResolvedValueOnce({
@@ -114,6 +114,29 @@ describe('SJM private evidence storage', () => {
       journeyId: 'journey-id',
     })).rejects.toMatchObject({ code: 'mime_mismatch' });
     expect(client.send).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects a byte signature that does not match the declared MIME type', async () => {
+    const bytes = Buffer.from('not actually a JPEG file');
+    const client = {
+      send: jest.fn()
+        .mockResolvedValueOnce({
+          ContentLength: bytes.length,
+          ContentType: 'image/jpeg',
+          Metadata: { 'evidence-id': 'evidence-id', 'journey-id': 'journey-id' },
+        })
+        .mockResolvedValueOnce({ Body: fakeBody(bytes) }),
+    };
+    const storage = createSjmEvidenceStorage({
+      env,
+      Client: jest.fn(() => client),
+      HeadCommand: Command,
+      GetCommand: Command,
+    });
+    await expect(storage.verifyUploadedObject({
+      key: 'private-key', mimeType: 'image/jpeg', sizeBytes: bytes.length,
+      evidenceId: 'evidence-id', journeyId: 'journey-id',
+    })).rejects.toMatchObject({ code: 'content_signature_mismatch' });
   });
 
   test('issues a private, time-limited download rather than returning a public object URL', async () => {

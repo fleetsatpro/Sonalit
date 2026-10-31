@@ -64,7 +64,8 @@ export default function SjmFieldEvidenceCapture({journeyId}:{journeyId:string}){
  const chooseFile=(file?:File)=>{
   if(!file)return;
   setNotice(null);
-  void transfer(file);
+  const match=items.find(x=>x.status==='UPLOAD_PENDING'&&x.file_name===file.name&&x.size_bytes===file.size&&x.mime_type===file.type.toLowerCase());
+  void transfer(file,match?.id);
   if(picker.current)picker.current.value='';
  };
  const retry=async()=>{

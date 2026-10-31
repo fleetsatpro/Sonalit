@@ -301,7 +301,7 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
     if (error?.code === 'object_not_found') {
       return res.status(409).json({ error: 'evidence_upload_missing', message: 'The file has not reached private storage. Upload it before committing.' });
     }
-    if (error?.code === 'size_mismatch' || error?.code === 'mime_mismatch' || error?.code === 'metadata_mismatch') {
+    if (error?.code === 'size_mismatch' || error?.code === 'mime_mismatch' || error?.code === 'metadata_mismatch' || error?.code === 'content_signature_mismatch') {
       const rejected = await req.dbTx(async client => {
         const db = (sql, params) => client.query(sql, params);
         const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');

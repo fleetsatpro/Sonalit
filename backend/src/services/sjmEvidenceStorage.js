@@ -111,6 +111,8 @@ function createSjmEvidenceStorage({
     }
 
     const hash = createHash('sha256');
+    const prefixChunks = [];
+    let prefixLength = 0;
     let bytesRead = 0;
     try {
       for await (const chunk of object.Body) {
@@ -118,6 +120,11 @@ function createSjmEvidenceStorage({
         bytesRead += buffer.length;
         if (bytesRead > Number(sizeBytes)) {
           throw new SjmEvidenceStorageError('size_mismatch', 'The stored evidence exceeded its registered size.');
+        }
+        if (prefixLength < 16) {
+          const part = buffer.subarray(0, Math.min(buffer.length, 16 - prefixLength));
+          prefixChunks.push(part);
+          prefixLength += part.length;
         }
         hash.update(buffer);
       }
@@ -127,7 +134,17 @@ function createSjmEvidenceStorage({
     }
 
     if (bytesRead !== Number(sizeBytes)) {
-      throw new SjmEvidenceStorageError('size_mismatch', 'The stored object size does not match the registered evidence size.');
+      throw new SjmEvidenceStorageError('size_mismatch', 'The stored object size does not match its registered size.');
+    }
+    const prefix = Buffer.concat(prefixChunks);
+    const signatures = {
+      'image/jpeg': prefix.length >= 3 && prefix[0] === 0xff && prefix[1] === 0xd8 && prefix[2] === 0xff,
+      'image/png': prefix.length >= 8 && prefix.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')),
+      'application/pdf': prefix.length >= 5 && prefix.subarray(0, 5).toString('ascii') === '%PDF-',
+      'video/mp4': prefix.length >= 8 && prefix.subarray(4, 8).toString('ascii') === 'ftyp',
+    };
+    if (!signatures[mimeType]) {
+      throw new SjmEvidenceStorageError('content_signature_mismatch', 'The stored file signature does not match its registered MIME type.');
     }
     return { sha256: hash.digest('hex'), size_bytes: bytesRead, content_type: head.ContentType };
   }
