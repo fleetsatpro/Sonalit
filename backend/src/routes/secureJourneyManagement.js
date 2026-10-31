@@ -146,7 +146,7 @@ function journeyForDutyViewer(journey,events,user,dutyRoles){
  }
  return {...visible,events:(events||[]).filter(e=>eventVisibleToDuty(e,user,dutyRoles))};
 }
-async function lockJourneyForMobility(db,org,journeyId){const r=await db('SELECT id,status,flight_number,flight_status,comms_epoch FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',[journeyId,org]);return r.rows[0]||null;}
+async function lockJourneyForMobility(db,org,journeyId){const r=await db('SELECT id,org_id,status,service_type,timezone,planned_departure_at,planned_arrival_at,flight_number,flight_status,comms_epoch FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',[journeyId,org]);return r.rows[0]||null;}
 async function lockJourneyForMobilityRead(db,org,journeyId){const r=await db('SELECT id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR SHARE',[journeyId,org]);return r.rows[0]||null;}
 async function readLockedAssignmentRows(db,org,initialLockRows,listSql,listParams){
  const held=new Set((initialLockRows?.rows||[]).map(row=>String(row.id)));
@@ -1160,6 +1160,7 @@ router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler
       return null;
     });
   if(transition.error==='travel_readiness_blocked')return res.status(409).json({error:'travel_readiness_blocked',phase:transition.details.phase,blockers:transition.details.blockers,counts:transition.details.counts});
+  if(transition.error==='travel_readiness_blocked')return res.status(409).json({error:'travel_readiness_blocked',phase:transition.details.phase,blockers:transition.details.blockers,warnings:transition.details.warnings,counts:transition.details.counts});
   if(!transition.changed)return res.status(409).json({error:transition.error||'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
