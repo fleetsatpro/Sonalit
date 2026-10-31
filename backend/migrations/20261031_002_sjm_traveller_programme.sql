@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS public.sjm_itinerary_items (
   org_id UUID NOT NULL,
   journey_id UUID NOT NULL,
   day_id UUID NOT NULL,
+  traveller_id UUID,
   sequence INTEGER NOT NULL CHECK (sequence BETWEEN 1 AND 100),
   item_type TEXT NOT NULL DEFAULT 'other'
     CHECK (item_type IN ('flight','airport_arrival','meet_and_greet','transfer','vehicle_handover','meeting','close_protection','security_escort','security_briefing','hotel','hotel_check_in','departure_check_in','border_control','customs','airport_departure','checkpoint','rest','event','other')),
@@ -128,6 +129,7 @@ CREATE TABLE IF NOT EXISTS public.sjm_itinerary_items (
   UNIQUE (org_id,journey_id,day_id,id),
   UNIQUE (org_id,journey_id,day_id,sequence),
   FOREIGN KEY (org_id,journey_id,day_id) REFERENCES public.sjm_itinerary_days(org_id,journey_id,id) ON DELETE RESTRICT,
+  FOREIGN KEY (org_id,journey_id,traveller_id) REFERENCES public.sjm_travellers(org_id,journey_id,id) ON DELETE RESTRICT,
   FOREIGN KEY (org_id,journey_id,flight_segment_id) REFERENCES public.sjm_flight_segments(org_id,journey_id,id) ON DELETE RESTRICT,
   CHECK (planned_end_at>planned_start_at),
   CHECK ((location_lat IS NULL AND location_lng IS NULL) OR (location_lat BETWEEN -90 AND 90 AND location_lng BETWEEN -180 AND 180)),
@@ -137,6 +139,8 @@ CREATE INDEX IF NOT EXISTS idx_sjm_itinerary_items_day
   ON public.sjm_itinerary_items(org_id,journey_id,day_id,sequence) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_sjm_itinerary_items_execution
   ON public.sjm_itinerary_items(org_id,journey_id,execution_status,planned_start_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sjm_itinerary_items_traveller
+  ON public.sjm_itinerary_items(org_id,journey_id,traveller_id,planned_start_at) WHERE deleted_at IS NULL AND traveller_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.sjm_itinerary_item_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
