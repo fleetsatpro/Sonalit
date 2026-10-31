@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
-import { localDateTimeInTimezone } from '../../lib/sjmJourneyTime.js';
 import { AlertCircle, CalendarDays, Check, CheckCircle2, Clock3, Download, FileText, Plane, Plus, RefreshCw, ShieldCheck, Upload, Users } from 'lucide-react';
 
 type Traveller = {
@@ -96,6 +95,29 @@ const dateOnlyLocal = (timezone: string) => {
   return get('year') + '-' + get('month') + '-' + get('day');
 };
 const sizeLabel = (value: number) => value < 1024 * 1024 ? Math.max(1, Math.round(value / 1024)) + ' KB' : (value / 1024 / 1024).toFixed(1) + ' MB';
+function localDateTimeToIso(value: string, timezone: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match;
+  const target = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
+  let candidate = target;
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const parts = formatter.formatToParts(new Date(candidate));
+    const get = (name: string) => Number(parts.find(part => part.type === name)?.value);
+    const represented = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'));
+    const difference = target - represented;
+    if (difference === 0) break;
+    candidate += difference;
+  }
+  const verified = formatter.formatToParts(new Date(candidate));
+  const get = (name: string) => verified.find(part => part.type === name)?.value;
+  if (get('year') !== year || get('month') !== month || get('day') !== day || get('hour') !== hour || get('minute') !== minute) return null;
+  return new Date(candidate).toISOString();
+}
 function errorMessage(error: unknown, fallback: string) {
   const candidate = error as { response?: { data?: { message?: string; error?: string } }; message?: string };
   return candidate?.response?.data?.message || candidate?.response?.data?.error || candidate?.message || fallback;
@@ -156,8 +178,8 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
   });
   const createFlight = useMutation({
     mutationFn: async () => {
-      const departure = localDateTimeInTimezone(flightDraft.departure_at, flightDraft.departure_timezone);
-      const arrival = localDateTimeInTimezone(flightDraft.arrival_at, flightDraft.arrival_timezone);
+      const departure = localDateTimeToIso(flightDraft.departure_at, flightDraft.departure_timezone);
+      const arrival = localDateTimeToIso(flightDraft.arrival_at, flightDraft.arrival_timezone);
       if (!departure || !arrival) throw new Error('Enter valid local departure and arrival times for the selected airport time zones.');
       return (await api.post(base + '/flights', {
         ...flightDraft, departure_airport: flightDraft.departure_airport.toUpperCase(),
@@ -189,8 +211,8 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
   const createItem = useMutation({
     mutationFn: async () => {
       if (!activeDay) throw new Error('Create or select a programme day first.');
-      const start = localDateTimeInTimezone(itemDraft.planned_start_at, activeDay.timezone);
-      const end = localDateTimeInTimezone(itemDraft.planned_end_at, activeDay.timezone);
+      const start = localDateTimeToIso(itemDraft.planned_start_at, activeDay.timezone);
+      const end = localDateTimeToIso(itemDraft.planned_end_at, activeDay.timezone);
       if (!start || !end) throw new Error('Enter valid activity start and end times in the programme timezone.');
       return (await api.post(base + '/days/' + activeDay.id + '/items', {
         ...itemDraft, planned_start_at: start, planned_end_at: end,
