@@ -496,7 +496,7 @@ router.patch('/flights/:flightId', managerOnly, asyncHandler(async (req, res) =>
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
     const existingFlight = await db('SELECT status FROM sjm_flight_segments WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE', [req.params.flightId,req.user.org_id,current.journey.id]);
     if (!existingFlight.rows.length) return { error: 'flight_segment_not_found' };
-    if (['departed','landed','cancelled','diverted'].includes(String(existingFlight.rows[0].status))) return { error: 'flight_segment_immutable' };
+    if (['boarding','departed','landed','cancelled','diverted'].includes(String(existingFlight.rows[0].status))) return { error: 'flight_segment_immutable' };
     const v = normalized.value;
     if (v.traveller_id) {
       const t = await db('SELECT id FROM sjm_travellers WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL', [v.traveller_id,req.user.org_id,current.journey.id]);
