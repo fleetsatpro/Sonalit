@@ -456,6 +456,7 @@ router.post('/documents/:documentId/archive', managerOnly, asyncHandler(async (r
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
+    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
     const selected = await db(
       'SELECT d.id,d.document_type,d.review_status,d.evidence_id FROM sjm_travel_documents d ' +
       'WHERE d.id=$1 AND d.org_id=$2 AND d.journey_id=$3 AND d.deleted_at IS NULL FOR UPDATE',
