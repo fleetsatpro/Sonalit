@@ -25,7 +25,7 @@ type Flight = {
   arrival_gate?: string | null; arrival_at: string; arrival_timezone: string;
   booking_reference?: string | null; status: string; status_source: string; status_note?: string | null;
 };
-type Participant = { user_id: string; duty_role: string; user_name: string; is_primary?: boolean; removed_at?: string | null };
+type Participant = { user_id: string; duty_role: string; user_name: string; is_primary?: boolean; removed_at?: string | null; account_status?: string | null };
 type Item = {
   id: string; sequence: number; item_type: string; title: string; description?: string | null;
   location_label?: string | null; planned_start_at: string; planned_end_at: string;
@@ -143,7 +143,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     enabled: Boolean(journeyId && canManage),
     staleTime: 60000,
   });
-  const team = (teamQuery.data?.data || []).filter(person => !person.removed_at);
+  const team = (teamQuery.data?.data || []).filter(person => !person.removed_at && person.account_status === 'active');
   const travellers = data?.travellers || [];
   const documents = data?.documents || [];
   const flights = data?.flights || [];
@@ -341,12 +341,21 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     }
   };
   const downloadDocument = async (document: TravelDocument) => {
+    // Open the tab in the direct click handler before awaiting the signed URL,
+    // so browser popup protection does not silently discard the private file.
+    const tab = window.open('about:blank', '_blank');
+    if (!tab) {
+      setNotice({ kind: 'error', text: 'Allow pop-ups for Sonalit to open this private travel document.' });
+      return;
+    }
     try {
       const response = await api.post(evidenceBase + '/' + document.evidence_id + '/download-url');
       const url = response.data?.data?.download_url;
       if (!url) throw new Error('Sonalit did not return a private download URL.');
-      window.open(url, '_blank', 'noopener,noreferrer');
+      tab.opener = null;
+      tab.location.replace(url);
     } catch (error) {
+      tab.close();
       setNotice({ kind: 'error', text: errorMessage(error, 'The private document could not be opened.') });
     }
   };
