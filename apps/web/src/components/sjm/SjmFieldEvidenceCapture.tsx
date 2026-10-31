@@ -52,7 +52,16 @@ export default function SjmFieldEvidenceCapture({journeyId}:{journeyId:string}){
    setPending({id,file,transferred:false});
    setNotice({kind:'info',text:'Transferring to private storage. The file is not yet accepted as evidence.'});
    const response=await fetch(signed.upload_url,{method:'PUT',headers:signed.required_headers,body:file,credentials:'omit',cache:'no-store'});
-   if(!response.ok)throw new Error('Private storage rejected the upload (HTTP '+response.status+'). Check connection and storage access.');
+   if(!response.ok){
+    if(response.status===412){
+     // A previous PUT may have committed after its response was lost. R2's
+     // create-once guard rejects overwrites; verify that exact object instead.
+     setPending({id,file,transferred:true});
+     await commit(id);
+     return;
+    }
+    throw new Error('Private storage rejected the upload (HTTP '+response.status+'). Check connection and storage access.');
+   }
    setPending({id,file,transferred:true});
    setNotice({kind:'info',text:'File transfer completed. Sonalit is verifying the stored object and its integrity.'});
    await commit(id);

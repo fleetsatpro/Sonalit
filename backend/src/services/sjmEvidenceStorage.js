@@ -55,6 +55,7 @@ function createSjmEvidenceStorage({
       Bucket: bucket,
       Key: key,
       ContentType: mimeType,
+      IfNoneMatch: '*',
       Metadata: metadata,
     });
     let upload_url;
@@ -68,6 +69,7 @@ function createSjmEvidenceStorage({
       expires_at: new Date(now + UPLOAD_TTL_SECONDS * 1000).toISOString(),
       required_headers: {
         'Content-Type': mimeType,
+        'If-None-Match': '*',
         'x-amz-meta-evidence-id': String(evidenceId),
         'x-amz-meta-journey-id': String(journeyId),
       },

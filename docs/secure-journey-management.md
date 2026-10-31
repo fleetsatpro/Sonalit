@@ -137,3 +137,25 @@ The resolver rejects HTTP, credential-bearing URLs, incomplete XYZ templates and
 
 ## Validation
 Run pnpm --filter fleetops-backend test -- --runInBand and pnpm --filter @sonalit/web typecheck. CI also checks migrations, backend integration, OpenAPI drift, browser E2E, dependency audit and container build. Preview route delivery has been verified; authenticated operator walkthrough and post-merge runtime verification remain separate release gates.
+
+
+## SJM evidence capture and custody
+
+The SJM field workspace has an authenticated evidence-register API and online capture flow.
+
+- GET /api/v1/sjm/journeys/:id/evidence lists records only after current tenant and journey-membership checks.
+- POST /api/v1/sjm/journeys/:id/evidence/upload-url creates an UPLOAD_PENDING record and a short-lived private R2 PUT capability.
+- POST /api/v1/sjm/journeys/:id/evidence/:evidenceId/renew-upload-url renews the capability for an existing pending record after the same journey and roster checks.
+- POST /api/v1/sjm/journeys/:id/evidence/:evidenceId/commit verifies exact object metadata, content length, content type, supported file signature and server-computed SHA-256 before transitioning the row to VERIFIED.
+- POST /api/v1/sjm/journeys/:id/evidence/:evidenceId/download-url issues a short-lived private download URL only for a verified record and logs the capability issuance.
+
+The initial upload contract allows JPEG/PNG photographs, MP4 clips and PDF documents. Size limits are 20 MiB for images, 100 MiB for MP4 and 25 MiB for PDF. SVG and arbitrary file types are not accepted. The browser never receives R2 credentials or a public object URL. R2 PUTs use the atomic If-None-Match: * condition so a valid upload capability cannot overwrite an existing object key; ambiguous retries must pass server-side object verification before the UI can report success. See Cloudflare's [R2 conditional PutObject documentation](https://developers.cloudflare.com/r2/api/s3/extensions/).
+
+Captured timestamps supplied by a browser are unverified device time. Optional location is requested only after an explicit user action and is recorded as BROWSER_GEOLOCATION_UNVERIFIED, with reported accuracy; it is not GPS proof, background tracking or independent verification. A successful upload transfer is not server acceptance until commit returns VERIFIED.
+
+**Operational dependencies and limitations**
+- The backend must have bucket-scoped R2 credentials in R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY and R2_BUCKET. Missing configuration fails closed.
+- The private bucket must have CORS configured for the exact Sonalit application origins, PUT, and the signed headers Content-Type, If-None-Match, x-amz-meta-evidence-id and x-amz-meta-journey-id. Browser PUT will fail honestly until this bucket-side policy is configured.
+- The current field evidence upload is online-only. Media blobs do not yet have their own durable offline outbox, resumable/multipart workflow or background transfer.
+- The evidence record and custody event schema are tenant-scoped with FORCE RLS. The current capture API records creation, verification, rejection and secure-download-capability issuance. A full review UI, retention scheduler, legal hold, external transfer controls and independent custody/audit assessment remain future work.
+- Presigned download URLs remain usable until their short expiry even if a user's membership is revoked immediately after issuance; the URL is limited to 120 seconds. Do not distribute them in general mission messages or client notifications.

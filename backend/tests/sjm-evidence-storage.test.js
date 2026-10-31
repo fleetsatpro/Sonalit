@@ -43,6 +43,7 @@ describe('SJM private evidence storage', () => {
       expect(command.input.Bucket).toBe('private-evidence');
       expect(command.input.Key).toBe('orgs/org/sjm/journey/evidence/id');
       expect(command.input.ContentType).toBe('image/jpeg');
+      expect(command.input.IfNoneMatch).toBe('*');
       expect(command.input.Metadata).toEqual({ 'evidence-id': 'evidence-id', 'journey-id': 'journey-id' });
       expect(options.expiresIn).toBe(300);
       return 'https://private-storage.example/signed-put';
@@ -64,6 +65,7 @@ describe('SJM private evidence storage', () => {
     expect(result.expires_at).toBe(new Date(301000).toISOString());
     expect(result.required_headers).toEqual({
       'Content-Type': 'image/jpeg',
+      'If-None-Match': '*',
       'x-amz-meta-evidence-id': 'evidence-id',
       'x-amz-meta-journey-id': 'journey-id',
     });
