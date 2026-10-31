@@ -410,7 +410,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     }
   };
   const retryDocumentUpload = async (document: TravelDocument, file?: File) => {
-    if (!file || !canManage || readOnly || documentUploadState) return;
+    if (!file || !canManage || !planEditable || documentUploadState) return;
     if (file.name !== document.file_name || file.type.toLowerCase() !== document.mime_type || file.size !== document.size_bytes) {
       setNotice({ kind: 'error', text: 'Select the exact original file name, type and size. A pending evidence object cannot be replaced with different content.' });
       return;
