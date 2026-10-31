@@ -481,7 +481,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
 
   return <section className="space-y-4" data-testid="sjm-travel-workspace">
     <header className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] pb-4">
-      <div><p className="font-mono text-[10px] font-semibold tracking-[.16em] text-emerald-200">TRAVELLER & MOVEMENT DOSSIER</p><h3 className="mt-1 text-base font-semibold text-white">Travel & programme</h3><p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-400">One operational record for each traveller, every flight leg, and each dated day of movement. Assigned staff remain separate from traveller identities.</p></div>
+      <div><p className="font-mono text-[10px] font-semibold tracking-[.16em] text-emerald-200">TRAVEL DOSSIER</p><h3 className="mt-1 text-base font-semibold text-white">People, documents & travel plan</h3><p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-400">Register each traveller, securely attach identity and booking documents, record every flight leg, and plan each local day through to verified execution. Assigned staff remain separate from traveller identities.</p></div>
       <button className={button} onClick={() => void query.refetch()} disabled={query.isFetching}><RefreshCw size={12} className={query.isFetching ? 'animate-spin' : ''}/>Refresh dossier</button>
     </header>
 
