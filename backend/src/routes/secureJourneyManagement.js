@@ -525,6 +525,9 @@ function renderPdf(doc,r) {
 router.use(authenticate);
 router.use((req,res,next)=>{if(!req.user?.org_id||!req.db||!req.dbTx)return res.status(403).json({error:'tenant_scope_required'});next();});
 
+// SJM-owned evidence capture and private object custody routes.
+router.use('/journeys/:id/evidence',require('./sjmEvidence'));
+
 async function managementSnapshot(db,org,timezone) {
   const clock=await db('SELECT NOW() AS db_now',[]);
   const now=new Date(clock.rows[0]?.db_now||Date.now()),nowMs=now.getTime(),generatedAt=now.toISOString(),date=dateInTimezone(now,timezone);
