@@ -102,7 +102,7 @@ const panel = 'rounded-md border border-white/[0.08] bg-[#0b131c]';
 const button = 'inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-[11px] font-semibold text-slate-200 transition hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-40';
 const buttonGreen = 'inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-300/15 disabled:cursor-not-allowed disabled:opacity-40';
 const input = (name: string, value: string, onChange: (value: string) => void, placeholder = '', type = 'text') =>
-  <label className={label}>{name}<input type={type} className={field} value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder}/></label>;
+  <label className={label}>{name}<input type={type} step={type==='number'?'any':undefined} className={field} value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder}/></label>;
 const dateLabel = (value?: string | null, timezone?: string) => {
   if (!value) return 'Not recorded';
   const date = new Date(value);
