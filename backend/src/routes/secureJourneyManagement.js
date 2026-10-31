@@ -8,6 +8,7 @@ const { analyseRoute } = require('../utils/routeAnalyser');
 const { removeChannelHistory, unsubscribeUserFromChannel, publish } = require('../realtime/centrifugo');
 const { sjmChannelName } = require('../realtime/sjmChannel');
 const { DUTY_EVENT_SUMMARIES, dutyEventAllowed, validateFieldEventInput } = require('../services/sjmFieldEvents');
+const { loadTravelReadiness } = require('../services/sjmTravelReadiness');
 
 const STATUSES = ['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification','closed','cancelled','aborted','on_hold'];
 const JOURNEY_REGISTER_FILTER_SQL = Object.freeze({
@@ -1134,6 +1135,7 @@ router.post('/journeys/:id/review',authorize('admin','dispatcher'),asyncHandler(
       if(!currentAssessment||currentAssessment.route_status!=='routed'||currentAssessment.route_status==='blocked'||currentAssessment.recommended_route?.blocked===true||currentAssessment.safety_gate!=='HUMAN_REVIEW'||currentAssessment.safety_gate==='NO_GO')return {error:'journey_state_changed'};
       return null;
     });
+  if(transition.error==='travel_readiness_blocked')return res.status(409).json({error:'travel_readiness_blocked',phase:transition.details.phase,blockers:transition.details.blockers,counts:transition.details.counts});
   if(!transition.changed)return res.status(409).json({error:transition.error||'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
@@ -1144,7 +1146,8 @@ router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler
   if(!gate.ok)return res.status(409).json({error:gate.code,message:gate.message});
   if(j.human_review_decision==='reject')return res.status(409).json({error:'route_review_rejected'});
   const ack=txt(req.body?.risk_acknowledgement,1200)||null;
-  const transition=await mutateWithEvent(req,j,req.user.id,'journey_approved','Journey approved by authorised dispatcher',{safety_gate:a.safety_gate,risk_acknowledgement_recorded:Boolean(ack),human_review_decision:j.human_review_decision||null},'operator',
+  let travelReadiness=null;
+  const transition=await mutateWithEvent(req,j,req.user.id,'journey_approved','Journey approved by authorised dispatcher',()=>({safety_gate:a.safety_gate,risk_acknowledgement_recorded:Boolean(ack),human_review_decision:j.human_review_decision||null,travel_readiness:travelReadiness?.counts||null}),'operator',
     db=>db("UPDATE sjm_journeys SET status='approved',approved_by=$1,approved_at=NOW(),risk_acknowledgement=$2,updated_by=$1,updated_at=NOW() WHERE id=$3 AND org_id=$4 AND status='ready_for_review' RETURNING id",[req.user.id,ack,j.id,org]),
     async(db,locked)=>{
       if(locked.status!==j.status||locked.status!=='ready_for_review')return {error:'journey_state_changed'};
@@ -1153,6 +1156,8 @@ router.post('/journeys/:id/approve',authorize('admin','dispatcher'),asyncHandler
       const currentDecision=snapshot.current?.human_review_decision||null;
       const currentGate=approvalGate(parseJson(snapshot.current?.route_assessment,null),currentDecision,ack);
       if(!currentGate.ok||currentDecision==='reject')return {error:'journey_state_changed'};
+      travelReadiness=await loadTravelReadiness(db,locked,'approval');
+      if(!travelReadiness.ready)return {error:'travel_readiness_blocked',details:travelReadiness};
       return null;
     });
   if(!transition.changed)return res.status(409).json({error:transition.error||'journey_state_changed'});
@@ -1201,6 +1206,7 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
     sql+=",planned_route='[]'::jsonb,route_assessment=NULL,planned_distance_km=NULL,planned_duration_minutes=NULL,planning_started_at=NOW(),assessment_pending_at=NULL,ready_for_review_at=NULL,human_review_decision=NULL,human_review_rationale=NULL,reviewed_by=NULL,reviewed_at=NULL,risk_acknowledgement=NULL,departure_readiness_acknowledgement=NULL,approved_by=NULL,approved_at=NULL,ready_to_depart_at=NULL,paused_at=NULL,exception_at=NULL,arrival_pending_verification_at=NULL,arrival_confirmed_at=NULL,arrival_verification_source=NULL,arrival_verification_note=NULL,closed_at=NULL,completed_at=NULL,on_hold_at=NULL";
   }
   sql+=' WHERE id=$3 AND org_id=$4 AND status=ANY($5::text[]) RETURNING id';
+  let travelReadiness=null;
   const summaries={
     ready_to_depart:'Journey marked ready to depart',
     start:'Journey started',
@@ -1213,16 +1219,21 @@ router.post('/journeys/:id/lifecycle',authorize('admin','dispatcher','operator')
     abort:'Journey aborted',
     replan:'Journey returned to planning; prior route and approvals invalidated',
   };
-  const transition=await mutateWithEvent(req,j,req.user.id,'journey_'+action,summaries[action]||'Journey lifecycle updated',{reason:reason||null,previous_status:j.status,next_status:step.to,readiness_acknowledgement:action==='ready_to_depart'?readiness:null,confirmed_outstanding_stops:req.body?.confirm_outstanding_stops===true,route_and_approval_invalidated:step.clearPlan===true},'operator',db=>db(sql,params),async(db,locked)=>{
+  const transition=await mutateWithEvent(req,j,req.user.id,'journey_'+action,summaries[action]||'Journey lifecycle updated',()=>({reason:reason||null,previous_status:j.status,next_status:step.to,readiness_acknowledgement:action==='ready_to_depart'?readiness:null,confirmed_outstanding_stops:req.body?.confirm_outstanding_stops===true,route_and_approval_invalidated:step.clearPlan===true,travel_readiness:travelReadiness?.counts||null}),'operator',db=>db(sql,params),async(db,locked)=>{
     if(locked.status!==j.status)return {error:'journey_state_changed'};
     const roles=await activeDutyRoles(db,org,j.id,req.user.id);
     if(!canAccessJourney(req.user,roles))return {error:'journey_not_found'};
     const currentAuthority=lifecycleAuthorityError(req.user,roles,action);
     if(currentAuthority)return {error:'lifecycle_authority_revoked',details:currentAuthority};
+    if(action==='ready_to_depart'){
+      travelReadiness=await loadTravelReadiness(db,locked,'departure');
+      if(!travelReadiness.ready)return {error:'travel_readiness_blocked',details:travelReadiness};
+    }
     return null;
   });
   if(transition.error==='journey_not_found')return res.status(404).json({error:'journey_not_found'});
   if(transition.error==='lifecycle_authority_revoked')return res.status(403).json(transition.details);
+  if(transition.error==='travel_readiness_blocked')return res.status(409).json({error:'travel_readiness_blocked',phase:transition.details.phase,blockers:transition.details.blockers,counts:transition.details.counts});
   if(!transition.changed)return res.status(409).json({error:'journey_state_changed'});
   res.json({data:await journeyById(req.db,org,j.id)});
 }));
