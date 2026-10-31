@@ -751,7 +751,7 @@ return (
           {[
            {value:'overview',label:'Overview',Icon:Activity},
            {value:'command',label:'Command & release',Icon:ShieldCheck},
-           {value:'travel',label:'Travel & programme',Icon:CalendarClock},
+           {value:'travel',label:'Travellers & itinerary',Icon:CalendarClock},
            {value:'itinerary',label:'Itinerary',Icon:Route},
            {value:'evidence',label:'Evidence',Icon:Layers3},
            {value:'resources',label:'Team & resources',Icon:Users},
