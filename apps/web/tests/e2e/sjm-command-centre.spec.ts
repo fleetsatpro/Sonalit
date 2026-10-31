@@ -740,7 +740,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    await page.getByRole('tab', { name: 'Travellers & itinerary' }).click();
+    await page.getByRole('tab', { name: 'Travel dossier' }).click();
     await expect(page.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Flight segments' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
@@ -886,7 +886,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    await page.getByRole('tab', { name: 'Travellers & itinerary' }).click();
+    await page.getByRole('tab', { name: 'Travel dossier' }).click();
     await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Execution note')).toBeVisible();
 
