@@ -7061,6 +7061,34 @@
           }
         }
       }
+    },
+    "/api/v1/vehicles/{vehicleId}/documents/": {
+      "get": {
+        "operationId": "get_api_v1_vehicles_vehicleId_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_vehicles_vehicleId_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{vehicleId}/documents/{docId}": {
+      "delete": {
+        "operationId": "delete_api_v1_vehicles_vehicleId_documents_docId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
