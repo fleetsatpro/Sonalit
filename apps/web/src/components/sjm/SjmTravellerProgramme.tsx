@@ -45,7 +45,7 @@ type TravelReadiness = {
   warnings: Array<{ code: string; message: string; document_count?: number }>;
   counts: {
     traveller_count: number; principal_traveller_count: number; flight_segment_count: number;
-    programme_day_count: number; timed_activity_count: number; required_programme_day_count: number;
+    programme_day_count: number; timed_activity_count: number; unassigned_activity_count: number; required_programme_day_count: number;
     cleared_document_count: number; document_blocker_count: number; expiring_document_count: number;
   };
 };
@@ -472,7 +472,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
         {[
           ['Travellers',data.readiness.counts.traveller_count+' registered',data.readiness.counts.principal_traveller_count+' principal'],
           ['Flight legs',String(data.readiness.counts.flight_segment_count),'Airport service coverage'],
-          ['Daily programme',data.readiness.counts.programme_day_count+' days',data.readiness.counts.timed_activity_count+' timed activities'],
+          ['Daily programme',data.readiness.counts.programme_day_count+' days',data.readiness.counts.timed_activity_count+' activities · '+data.readiness.counts.unassigned_activity_count+' unassigned'],
           ['Documents',data.readiness.counts.cleared_document_count+' cleared',data.readiness.counts.document_blocker_count+' requiring review'],
         ].map(([name,value,detail])=><div key={name} className="rounded border border-white/[0.06] bg-black/15 p-2.5"><p className="text-[10px] text-slate-500">{name}</p><p className="mt-1 text-sm font-semibold tabular-nums text-slate-100">{value}</p><p className="mt-1 text-[9px] text-slate-600">{detail}</p></div>)}
       </div>
