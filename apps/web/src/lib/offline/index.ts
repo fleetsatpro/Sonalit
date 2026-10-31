@@ -99,7 +99,7 @@ async function tick(): Promise<void> {
   const generation = lifecycleGeneration;
   const work = (async () => {
     try {
-      const result = await runSync(session.userId, session.orgId, { pullEnabled: session.pullEnabled !== false, allowedOperationTypes: session.allowedOperationTypes });
+      const result = await runSync(session.userId, session.orgId, { pullEnabled: session.pullEnabled !== false, allowedOperationTypes: session.allowedOperationTypes, isSessionCurrent: () => generation === lifecycleGeneration && identity === session && available });
       // A result from a prior login/tenant must not update the new session.
       if (generation === lifecycleGeneration && identity === session) {
         blocked = result.blocked;

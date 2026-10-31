@@ -71,6 +71,55 @@ describe('SJM field push-only sync mode', () => {
     expect(mocks.recoverInFlight).toHaveBeenCalledWith({ userId: 'user-1', orgId: 'org-1', allowedOperationTypes: ['sjm.field_event.create'] });
   });
 
+  it('stops after device registration when the originating identity has changed', async () => {
+    const isSessionCurrent=vi.fn()
+      .mockReturnValueOnce(true)  // before recovery
+      .mockReturnValueOnce(true)  // after recovery
+      .mockReturnValueOnce(false); // after device registration
+
+    const result=await runSync('user-a','org-a',{
+      pullEnabled:false,
+      allowedOperationTypes:['sjm.field_event.create'],
+      isSessionCurrent,
+    });
+
+    expect(result.push).toBeNull();
+    expect(result.pull).toBeNull();
+    expect(mocks.apiPost.mock.calls.map(call=>call[0])).toEqual(['/sync/device']);
+    expect(mocks.reportSyncSuccess).not.toHaveBeenCalled();
+  });
+
+  it('abandons a decrypted field batch before sending when the session becomes stale', async () => {
+    const sjmEntry={
+      id:'11111111-1111-4111-8111-111111111111',
+      type:'sjm.field_event.create',
+      transport:'sync',
+      entityType:'sjm_journey_event',
+      entityId:'journey-1',
+      label:'Encrypted SJM field report',
+      priority:1,
+      payload:{__sjm_field_ciphertext:true,version:1,iv:'00112233445566778899aabb',ciphertext:'00'.repeat(40)},
+      localSequence:1,
+      clientCreatedAt:1_798_000_000_000,
+    };
+    mocks.dueEntries.mockResolvedValue([sjmEntry]);
+    const isSessionCurrent=vi.fn()
+      .mockReturnValueOnce(true)  // push entry
+      .mockReturnValueOnce(true)  // outbox read complete
+      .mockReturnValueOnce(true)  // before decryption
+      .mockReturnValueOnce(false); // identity changes during decryption
+
+    const result=await push('user-a','org-a',{
+      allowedOperationTypes:['sjm.field_event.create'],
+      isSessionCurrent,
+    });
+
+    expect(result.attempted).toBe(1);
+    expect(mocks.apiPost).not.toHaveBeenCalled();
+    expect(mocks.markSyncing).not.toHaveBeenCalled();
+    expect(mocks.markAcknowledged).not.toHaveBeenCalled();
+  });
+
   it('does not drain unrelated queued operations during an SJM field session', async () => {
     const sjmEntry = {
       id: '11111111-1111-4111-8111-111111111111',

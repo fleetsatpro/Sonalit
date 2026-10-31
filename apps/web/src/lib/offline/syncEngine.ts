@@ -322,10 +322,11 @@ function tally(summary: PushSummary, cls: ClassifiedError, outcome: string): voi
  * distinct facts. A transport-level failure is the only thing that applies to
  * all of them, and even then it applies as "unknown", not "failed".
  */
-async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Promise<void> {
+async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary, isSessionCurrent: () => boolean = () => true): Promise<void> {
   const sendEntries: OutboxEntry[] = [];
   const operations: Array<{operation_id:string;type:string;entity_id:string|null;payload:Record<string,unknown>;client_created_at:string;local_sequence:number}> = [];
   for (const entry of entries) {
+    if (!isSessionCurrent()) return;
     try {
       let entityId = entry.entityId;
       let payload = entry.payload;
@@ -334,6 +335,7 @@ async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Prom
         entityId = opened.journey_id;
         payload = { event_type: opened.event_type, note: opened.note };
       }
+      if (!isSessionCurrent()) return;
       sendEntries.push(entry);
       operations.push({operation_id:entry.id,type:entry.type,entity_id:entityId,payload,client_created_at:new Date(entry.clientCreatedAt).toISOString(),local_sequence:entry.localSequence});
     } catch (error) {
@@ -343,8 +345,9 @@ async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Prom
       if (retryable) summary.retryable++; else summary.rejected++;
     }
   }
-  if (sendEntries.length === 0) return;
+  if (sendEntries.length === 0 || !isSessionCurrent()) return;
   await markSyncing(sendEntries.map(e => e.id));
+  if (!isSessionCurrent()) return;
 
   let results: PushResult[];
   try {
@@ -402,7 +405,8 @@ async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Prom
  * original response instead of performing the action again. Nothing about the
  * target route changes.
  */
-async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary): Promise<void> {
+async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary, isSessionCurrent: () => boolean = () => true): Promise<void> {
+  if (!isSessionCurrent()) return;
   if (!entry.request) {
     await markFailure(entry.id, {
       errorClass: 'VALIDATION_FAILURE',
@@ -422,12 +426,14 @@ async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary): Promise<
   const request = entry.request;
 
   await markSyncing([entry.id]);
+  if (!isSessionCurrent()) return;
 
   const config: AxiosRequestConfig = {
     headers: { ...syncHeaders(), 'x-idempotency-key': entry.id },
   };
 
   try {
+    if (!isSessionCurrent()) return;
     const { data } = await measured(() =>
       api.request<Record<string, unknown>>({
         method: request.method,
@@ -469,11 +475,14 @@ async function clearLocalModification(entry: OutboxEntry): Promise<void> {
 export async function push(
   userId: string,
   orgId: string,
-  options: { allowedOperationTypes?: readonly string[] } = {},
+  options: { allowedOperationTypes?: readonly string[]; isSessionCurrent?: () => boolean } = {},
 ): Promise<PushSummary> {
   const summary: PushSummary = { ...EMPTY_PUSH };
+  const isSessionCurrent = options.isSessionCurrent ?? (() => true);
+  if (!isSessionCurrent()) return summary;
   const allowedTypes = options.allowedOperationTypes ? new Set(options.allowedOperationTypes) : null;
   const due = (await dueEntries(userId, orgId)).filter(entry => !allowedTypes || allowedTypes.has(entry.type));
+  if (!isSessionCurrent()) return summary;
   if (due.length === 0) return summary;
 
   // Already sorted by priority then sequence. Slice the highest-priority window
@@ -487,11 +496,12 @@ export async function push(
   // HTTP entries first: those are the existing hardened operations (clamp,
   // unclamp) and they are what a yard worker is waiting on.
   for (const e of httpEntries) {
-    await pushHttpEntry(e, summary);
+    if (!isSessionCurrent()) return summary;
+    await pushHttpEntry(e, summary, isSessionCurrent);
   }
 
-  if (syncEntries.length > 0) {
-    await pushSyncBatch(syncEntries, summary);
+  if (syncEntries.length > 0 && isSessionCurrent()) {
+    await pushSyncBatch(syncEntries, summary, isSessionCurrent);
   }
 
   return summary;
@@ -529,11 +539,12 @@ export function lastSyncRun(): SyncRunSummary | null {
 export async function runSync(
   userId: string,
   orgId: string,
-  options: { pullEnabled?: boolean; allowedOperationTypes?: readonly string[] } = {},
+  options: { pullEnabled?: boolean; allowedOperationTypes?: readonly string[]; isSessionCurrent?: () => boolean } = {},
 ): Promise<SyncRunSummary> {
   const result: SyncRunSummary = { ranAt: Date.now(), pull: null, push: null, blocked: null, error: null };
+  const isSessionCurrent = options.isSessionCurrent ?? (() => true);
 
-  if (running) return result;
+  if (running || !isSessionCurrent()) return result;
   if (!isEnabled('OFFLINE_SYNC')) return result;
   if (!isReachable()) return result;
 
@@ -542,16 +553,22 @@ export async function runSync(
 
   try {
     await recoverInFlight({ userId, orgId, allowedOperationTypes: options.allowedOperationTypes });
+    if (!isSessionCurrent()) return result;
 
     // 1. Authorisation first. Everything below depends on still being allowed.
     await registerDevice();
+    if (!isSessionCurrent()) return result;
 
-    // 2. Field work up before state comes down.
-    result.push = await push(userId, orgId, { allowedOperationTypes: options.allowedOperationTypes });
+    // 2. Field work up before state comes down. An account/tenant switch
+    // invalidates this cycle before it can replay the previous identity's queue
+    // with the newly signed-in user's access token.
+    result.push = await push(userId, orgId, { allowedOperationTypes: options.allowedOperationTypes, isSessionCurrent });
+    if (!isSessionCurrent()) return result;
 
     // 3. Reconcile only for surfaces authorised to mirror the shared entity set.
     // SJM field clients push append-only journey events and never pull CDS data.
     if (options.pullEnabled !== false) result.pull = await pull(userId, orgId);
+    if (!isSessionCurrent()) return result;
 
     reportSyncSuccess();
   } catch (err) {

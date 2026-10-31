@@ -222,7 +222,7 @@ describe('offline session subscription lifecycle', () => {
       // First identity establishes the device-local owner scope.
       expect(await startOffline({ userId: 'user-a', orgId: 'org-a', role: 'admin', pullEnabled: false })).toBe(true);
       expect(reconnectHandlers.size).toBe(1);
-      expect(runSync).toHaveBeenCalledWith('user-a', 'org-a', { pullEnabled: false });
+      expect(runSync).toHaveBeenCalledWith('user-a', 'org-a', expect.objectContaining({ pullEnabled: false, isSessionCurrent: expect.any(Function) }));
 
       // Account switch: preserve unresolved user-a operations and their key.
       expect(await startOffline({ userId: 'user-b', orgId: 'org-a', role: 'admin' })).toBe(true);
