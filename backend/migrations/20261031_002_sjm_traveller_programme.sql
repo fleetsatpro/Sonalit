@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS public.sjm_itinerary_items (
   day_id UUID NOT NULL,
   sequence INTEGER NOT NULL CHECK (sequence BETWEEN 1 AND 100),
   item_type TEXT NOT NULL DEFAULT 'other'
-    CHECK (item_type IN ('flight','transfer','meeting','security_briefing','hotel','checkpoint','rest','event','other')),
+    CHECK (item_type IN ('flight','airport_arrival','meet_and_greet','transfer','vehicle_handover','meeting','close_protection','security_escort','security_briefing','hotel','hotel_check_in','departure_check_in','border_control','customs','airport_departure','checkpoint','rest','event','other')),
   title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 180),
   description TEXT CHECK (description IS NULL OR length(description)<=2000),
   location_label TEXT CHECK (location_label IS NULL OR length(location_label)<=240),
