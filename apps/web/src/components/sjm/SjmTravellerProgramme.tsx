@@ -265,6 +265,15 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     },
     onError: error => setNotice({ kind: 'error', text: errorMessage(error, 'Programme day could not be created.') }),
   });
+  const generateDays = useMutation({
+    mutationFn: async () => (await api.post(base + '/days/generate', {})).data.data as { created_count: number; existing_count: number; total_days: number; days: Array<{ id: string; journey_date: string }> },
+    onSuccess: async result => {
+      if (result.days[0]?.id) setActiveDayId(result.days[0].id);
+      setNotice({ kind: 'success', text: result.created_count + ' daily programme day(s) generated; ' + result.existing_count + ' already existed. No activities or assignments were fabricated.' });
+      await refresh();
+    },
+    onError: error => setNotice({ kind: 'error', text: errorMessage(error, 'Daily programme dates could not be generated. Set the journey departure and arrival times first.') }),
+  });
   const updateDay = useMutation({
     mutationFn: async () => (await api.patch(base + '/days/' + editingDayId, {
       day_title: dayTitle, briefing: dayBriefing, operational_notes: dayNotes,
@@ -538,7 +547,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     </div>
 
     <section className={panel + ' overflow-hidden'}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] p-4"><div><p className="text-[10px] font-semibold tracking-[.14em] text-slate-500">03 / DAY-BY-DAY DELIVERY</p><h4 className="mt-1 text-sm font-semibold text-white">Daily travel programme & execution</h4><p className="mt-1 text-[11px] text-slate-500">Date-by-date movement, ownership and accountable execution.</p></div><div className="flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{days.length} programme day(s)</span>{canManage&&!readOnly&&<button type="button" className={buttonGreen} onClick={()=>{setShowDayForm(value=>!value);setEditingDayId('');setDayTitle('Daily movement programme');}}><Plus size={12}/>Add programme day</button>}</div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] p-4"><div><p className="text-[10px] font-semibold tracking-[.14em] text-slate-500">03 / DAY-BY-DAY DELIVERY</p><h4 className="mt-1 text-sm font-semibold text-white">Daily travel programme & execution</h4><p className="mt-1 text-[11px] text-slate-500">Date-by-date movement, ownership and accountable execution. Generate date containers from the journey schedule or add a day manually; activities remain operator-defined.</p></div><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{days.length} programme day(s)</span>{canManage&&!readOnly&&<><button type="button" className={button} onClick={()=>generateDays.mutate()} disabled={generateDays.isPending}><CalendarDays size={12}/>{generateDays.isPending?'Generating…':'Generate scheduled days'}</button><button type="button" className={buttonGreen} onClick={()=>{setShowDayForm(value=>!value);setEditingDayId('');setDayTitle('Daily movement programme');}}><Plus size={12}/>Add programme day</button></>}</div></div>
       <div className="grid grid-cols-1 gap-4 p-4 xl:grid-cols-[260px_minmax(0,1fr)]">
         <div className="space-y-3">
           {days.length === 0 ? <p className="rounded border border-dashed border-white/10 p-3 text-[11px] leading-5 text-slate-500">No daily programme has been created for this journey.</p> : <div className="space-y-1">{days.map(day=><button key={day.id} type="button" onClick={()=>setActiveDayId(day.id)} className={'w-full rounded-md border p-3 text-left transition '+((activeDay?.id===day.id)?'border-emerald-300/25 bg-emerald-300/[0.06]':'border-white/[0.06] bg-black/15 hover:bg-white/[0.03]')}><p className="text-[11px] font-semibold text-slate-100">{day.day_title}</p><p className="mt-1 font-mono text-[10px] text-slate-500">{day.journey_date}</p><p className="mt-2 text-[10px] text-slate-500">{day.items.length} activity/activities · {day.items.filter(item=>item.execution_status==='completed').length} completed</p></button>)}</div>}
