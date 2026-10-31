@@ -624,6 +624,96 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(rejectedRequests).toEqual([]);
   });
 
+  test('registers a traveller, records a flight-ready dossier and executes a dated daily programme', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const workspace: {
+      travellers: Array<Record<string, unknown>>;
+      documents: Array<Record<string, unknown>>;
+      flights: Array<Record<string, unknown>>;
+      days: Array<Record<string, unknown>>;
+      access: { manager: boolean; duty_roles: string[] };
+      provenance: Record<string, string>;
+    } = {
+      travellers: [], documents: [], flights: [], days: [],
+      access: { manager: true, duty_roles: [] },
+      provenance: {},
+    };
+    const travellerId = '30000000-0000-4000-8000-000000000001';
+    const dayId = '30000000-0000-4000-8000-000000000002';
+    const itemId = '30000000-0000-4000-8000-000000000003';
+
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/travel-workspace', async route => {
+      const method = route.request().method();
+      if (method === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: workspace }) });
+      }
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      if (method === 'POST' && route.request().url().endsWith('/travellers')) {
+        const traveller = {
+          id: travellerId, ...body,
+          display_name: [body.title, body.given_name, body.middle_name, body.family_name].filter(Boolean).join(' '),
+        };
+        workspace.travellers.push(traveller);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: traveller }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/days')) {
+        const day = { id: dayId, ...body, timezone: 'Africa/Nairobi', items: [] };
+        workspace.days.push(day);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: day }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/items')) {
+        const day = workspace.days[0] as { items: Array<Record<string, unknown>> };
+        const item = { id: itemId, sequence: 1, execution_status: 'planned', ...body };
+        day.items.push(item);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: item }) });
+      }
+      if (method === 'PATCH' && route.request().url().endsWith('/execution')) {
+        const item = (workspace.days[0] as { items: Array<Record<string, unknown>> }).items[0];
+        Object.assign(item, body);
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: item }) });
+      }
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected_travel_workspace_request' }) });
+    });
+
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+    await page.getByRole('tab', { name: 'Travel & programme' }).click();
+    await expect(page.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Flight segments' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
+
+    await page.getByLabel('Traveller reference *').fill('TRV-E2E-01');
+    await page.getByLabel('Given name *').fill('Amina');
+    await page.getByLabel('Family name *').fill('Example');
+    await page.getByLabel('Nationality').fill('Kenyan');
+    await page.getByLabel('Email').fill('amina@example.invalid');
+    await page.getByRole('button', { name: 'Register traveller' }).click();
+    await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
+    await expect(page.getByText('Traveller profile registered to this journey.')).toBeVisible();
+
+    await page.getByLabel('Local date').fill('2026-10-31');
+    await page.getByLabel('Day title').fill('Day 1 · Arrival and reception');
+    await page.getByRole('button', { name: 'Add day' }).click();
+    await expect(page.getByRole('heading', { name: 'Day 1 · Arrival and reception' })).toBeVisible();
+
+    await page.getByLabel('Activity title *').fill('Airport meet and greet');
+    await page.getByLabel(/Planned start/).fill('2026-10-31T10:00');
+    await page.getByLabel(/Planned end/).fill('2026-10-31T11:00');
+    await page.getByLabel('Location / venue').fill('Jomo Kenyatta International Airport');
+    await page.getByLabel('Activity instructions').fill('Receive traveller at the agreed arrival point and coordinate handover.');
+    await page.getByRole('button', { name: 'Add activity to day' }).click();
+    await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Start' }).click();
+    await expect(page.getByText('Execution update recorded in the activity history.')).toBeVisible();
+    await page.getByLabel('Execution note').fill('Traveller received and identity matched to the movement brief.');
+    await page.getByRole('button', { name: 'Complete' }).click();
+    await expect(page.getByText('Execution update recorded in the activity history.')).toBeVisible();
+  });
+
   test('workspace tabs remain operable and preserve evidence provenance on a narrow viewport', async ({ page }) => {
     const cspRuntimeErrors: string[] = [];
     page.on('pageerror', (error) => {
