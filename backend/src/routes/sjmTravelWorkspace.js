@@ -148,6 +148,7 @@ function responseError(res, result) {
   else if (result.error === 'journey_terminal') res.status(409).json({ error: 'journey_terminal', message: TERMINAL_MESSAGE });
   else if (result.error === 'forbidden') res.status(403).json({ error: 'travel_workspace_forbidden' });
   else if (result.error === 'document_not_ready') res.status(409).json({ error: 'travel_document_not_ready' });
+  else if (result.error === 'execution_note_required') res.status(400).json({ error: 'execution_note_required', message: 'Provide at least 10 characters describing the actual outcome, delay or exception.' });
   else if (result.error === 'invalid_transition') res.status(409).json({ error: 'invalid_execution_transition', message: result.message });
   else if (result.error === 'conflict') res.status(409).json({ error: 'travel_workspace_conflict', message: result.message || 'The record conflicts with an existing entry.' });
   else return false;
@@ -239,6 +240,8 @@ router.post('/travellers', managerOnly, asyncHandler(async (req, res) => {
     if (current.error) return current;
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
     const v = normalized.value;
+    const duplicate = await db('SELECT id FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND traveller_reference=$3 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,v.traveller_reference]);
+    if (duplicate.rows.length) return { error: 'conflict', message: 'That traveller reference is already registered to this journey.' };
     const inserted = await db(
       'INSERT INTO sjm_travellers (org_id,journey_id,traveller_reference,traveller_type,title,given_name,middle_name,family_name,preferred_name,nationality,date_of_birth,email,phone,emergency_contact_name,emergency_contact_phone,internal_notes,created_by,updated_by) ' +
       'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17) RETURNING id,traveller_reference,traveller_type,title,given_name,middle_name,family_name,preferred_name,nationality,date_of_birth,email,phone,emergency_contact_name,emergency_contact_phone,internal_notes,created_at,updated_at',
@@ -261,6 +264,8 @@ router.patch('/travellers/:travellerId', managerOnly, asyncHandler(async (req, r
     if (current.error) return current;
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
     const v = normalized.value;
+    const duplicate = await db('SELECT id FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND traveller_reference=$3 AND id<>$4 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,v.traveller_reference,req.params.travellerId]);
+    if (duplicate.rows.length) return { error: 'conflict', message: 'That traveller reference is already registered to this journey.' };
     const saved = await db(
       'UPDATE sjm_travellers SET traveller_reference=$1,traveller_type=$2,title=$3,given_name=$4,middle_name=$5,family_name=$6,preferred_name=$7,nationality=$8,date_of_birth=$9,email=$10,phone=$11,emergency_contact_name=$12,emergency_contact_phone=$13,internal_notes=$14,updated_by=$15,updated_at=NOW() ' +
       'WHERE id=$16 AND org_id=$17 AND journey_id=$18 AND deleted_at IS NULL RETURNING id,traveller_reference,traveller_type,title,given_name,middle_name,family_name,preferred_name,nationality,date_of_birth,email,phone,emergency_contact_name,emergency_contact_phone,internal_notes,updated_at',
@@ -321,7 +326,7 @@ router.post('/travellers/:travellerId/documents/upload-url', managerOnly, asyncH
     res.setHeader('Cache-Control', 'no-store');
     res.status(201).json({ data: result.data });
   } catch (error) {
-    if (error?.code === 'storage_not_configured') return res.status(503).json({ error: 'travel_document_storage_unavailable', message: 'Travel-document upload is disabled until a dedicated private SJM R2 bucket and credentials are configured. No public or shared bucket fallback is permitted.' });
+    if (error?.code === 'storage_not_configured' || error?.code === 'storage_unavailable') return res.status(503).json({ error: 'travel_document_storage_unavailable', message: 'Travel-document upload is unavailable because dedicated private SJM storage is not ready. No public or shared bucket fallback is permitted.' });
     throw error;
   }
 }));
@@ -441,6 +446,8 @@ router.post('/days', managerOnly, asyncHandler(async (req, res) => {
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const duplicate = await db('SELECT id FROM sjm_itinerary_days WHERE org_id=$1 AND journey_id=$2 AND journey_date=$3 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,date]);
+    if (duplicate.rows.length) return { error: 'conflict', message: 'A programme day already exists for this local date.' };
     const saved = await db(
       'INSERT INTO sjm_itinerary_days (org_id,journey_id,journey_date,timezone,day_title,briefing,operational_notes,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8) RETURNING *',
       [req.user.org_id,current.journey.id,date,current.journey.timezone,title,txt(req.body?.briefing,3000)||null,txt(req.body?.operational_notes,3000)||null,req.user.id],
@@ -448,15 +455,9 @@ router.post('/days', managerOnly, asyncHandler(async (req, res) => {
     await audit(db, req, current.journey.id, 'DAY_CREATED', saved.rows[0].id, { journey_date: date });
     return { data: saved.rows[0] };
   });
-  if (result.error === 'journey_terminal') return res.status(409).json({ error: result.error, message: TERMINAL_MESSAGE });
-  if (result.error) {
-    if (result.error === 'journey_not_found') return res.status(404).json({ error: result.error });
-    if (result.error === 'conflict') return res.status(409).json({ error: result.error });
-  }
-  if (result.error) {
-    if (result.error.code === '23505') return res.status(409).json({ error: 'travel_workspace_conflict', message: 'A programme day already exists for this local date.' });
-    throw result.error;
-  }
+  if (responseError(res, result)) return;
+  if (result.error === 'conflict') return res.status(409).json({ error: result.error, message: result.message });
+  if (result.error) return res.status(400).json({ error: result.error });
   res.status(201).json({ data: result.data });
 }));
 
@@ -516,8 +517,8 @@ router.post('/days/:dayId/items', managerOnly, asyncHandler(async (req, res) => 
     await audit(db, req, current.journey.id, 'PLAN_ITEM_CREATED', saved.rows[0].id, { day_id: day.id, sequence });
     return { data: saved.rows[0] };
   });
-  if (result.error === 'itinerary_item_title_required' || result.error === 'invalid_itinerary_item_type' || result.error === 'invalid_itinerary_item_time_window' || result.error === 'invalid_itinerary_item_coordinates' || result.error === 'itinerary_item_must_fit_one_local_day' || result.error === 'invalid_itinerary_item_sequence') return res.status(400).json({ error: result.error });
   if (responseError(res, result)) return;
+  if (result.error) return res.status(400).json({ error: result.error });
   res.status(201).json({ data: result.data });
 }));
 
@@ -588,13 +589,16 @@ router.patch('/items/:itemId/execution', asyncHandler(async (req, res) => {
       return { error: 'invalid_transition', message: 'Execution cannot move from ' + item.execution_status + ' to ' + next + '. Record a new plan revision instead.' };
     }
     if (item.execution_status === next && !note) return { error: 'invalid_transition', message: 'Add an execution note when appending an update without changing status.' };
-    const actualStart = next === 'in_progress' ? (item.actual_start_at || new Date().toISOString()) : item.actual_start_at;
-    const actualEnd = next === 'completed' || next === 'skipped' ? new Date().toISOString() : item.actual_end_at;
+    if (['completed','delayed','skipped','exception'].includes(next) && note.trim().length < 10) {
+      return { error: 'execution_note_required' };
+    }
+    const actualStart = next === 'in_progress' || next === 'completed' ? (item.actual_start_at || new Date().toISOString()) : item.actual_start_at;
+    const actualEnd = next === 'completed' ? new Date().toISOString() : item.actual_end_at;
     const saved = await db(
       'UPDATE sjm_itinerary_items SET execution_status=$1,actual_start_at=$2,actual_end_at=$3,execution_note=CASE WHEN $4=\'\' THEN execution_note ELSE $4 END,updated_by=$5,updated_at=NOW() WHERE id=$6 AND org_id=$7 AND journey_id=$8 RETURNING id,execution_status,actual_start_at,actual_end_at,execution_note,updated_at',
       [next,actualStart,actualEnd,note,req.user.id,req.params.itemId,req.user.org_id,current.journey.id],
     );
-    const action = next === 'in_progress' ? 'EXECUTION_STARTED' : next === 'completed' ? 'EXECUTION_COMPLETED' : next === 'delayed' ? 'EXECUTION_DELAYED' : next === 'skipped' ? 'EXECUTION_SKIPPED' : 'EXCEPTION_RAISED';
+    const action = next === item.execution_status ? 'EXECUTION_NOTE_ADDED' : next === 'in_progress' ? 'EXECUTION_STARTED' : next === 'completed' ? 'EXECUTION_COMPLETED' : next === 'delayed' ? 'EXECUTION_DELAYED' : next === 'skipped' ? 'EXECUTION_SKIPPED' : 'EXCEPTION_RAISED';
     await db(
       'INSERT INTO sjm_itinerary_item_events (org_id,journey_id,day_id,item_id,actor_id,action,previous_status,new_status,detail) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
       [req.user.org_id,current.journey.id,item.day_id,req.params.itemId,req.user.id,action,item.execution_status,next,JSON.stringify({ note, recorded_by_role: manager(req.user) ? req.user.role : current.roles })],
