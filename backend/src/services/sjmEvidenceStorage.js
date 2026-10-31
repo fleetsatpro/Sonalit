@@ -45,9 +45,13 @@ function createSjmEvidenceStorage({
     // The existing convoy-photo bucket has enabled public custom domains.
     // Also reject an explicitly shared bucket name if it is configured under
     // both the SJM-specific and legacy application-wide variables.
+    const sharedCredentialReused =
+      (env.R2_ACCESS_KEY && SJM_R2_ACCESS_KEY === env.R2_ACCESS_KEY) ||
+      (env.R2_SECRET_KEY && SJM_R2_SECRET_KEY === env.R2_SECRET_KEY);
     if (
       SJM_R2_BUCKET === 'sonalit-convoy-photos' ||
-      (env.R2_BUCKET && SJM_R2_BUCKET === env.R2_BUCKET)
+      (env.R2_BUCKET && SJM_R2_BUCKET === env.R2_BUCKET) ||
+      sharedCredentialReused
     ) {
       throw new SjmEvidenceStorageError(
         'storage_not_configured',

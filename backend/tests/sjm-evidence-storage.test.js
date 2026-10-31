@@ -93,6 +93,25 @@ describe('SJM private evidence storage', () => {
     expect(Client).not.toHaveBeenCalled();
   });
 
+  test.each([
+    ['access key', { R2_ACCESS_KEY: env.SJM_R2_ACCESS_KEY }],
+    ['secret key', { R2_SECRET_KEY: env.SJM_R2_SECRET_KEY }],
+  ])('rejects reuse of the shared application %s with a dedicated SJM bucket', async (_label, sharedCredential) => {
+    const Client = jest.fn();
+    const storage = createSjmEvidenceStorage({
+      env: { ...env, ...sharedCredential },
+      Client,
+    });
+
+    await expect(storage.createUploadUrl({
+      key: 'orgs/org/sjm/journey/evidence/id',
+      mimeType: 'image/jpeg',
+      evidenceId: 'evidence-id',
+      journeyId: 'journey-id',
+    })).rejects.toMatchObject({ code: 'storage_not_configured' });
+    expect(Client).not.toHaveBeenCalled();
+  });
+
   test('creates a short-lived private upload URL with tenant-bound object metadata', async () => {
     const client = { send: jest.fn() };
     const Client = jest.fn(options => {
