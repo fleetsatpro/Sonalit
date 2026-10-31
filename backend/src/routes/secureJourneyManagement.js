@@ -411,6 +411,25 @@ function readinessChecklist(j,stops,assessment,telemetry) {
     {item:'Ordered stop coordinates',status:located,detail:(stops||[]).length+' stop record(s); operator confirmation is not GPS proof.'}
   ];
 }
+function travelReadinessChecklist(journey, readiness) {
+  const codes=new Set((readiness?.blockers||[]).map(item=>item.code));
+  const counts=readiness?.counts||{};
+  const airportService=['airport_arrival','airport_departure','meet_and_greet'].includes(String(journey.service_type||''));
+  const docsStatus=Number(counts.document_blocker_count||0)>0?'REVIEW_REQUIRED':
+    Number(counts.cleared_document_count||0)>0?'CLEARED':'NOT_SUBMITTED';
+  const docsDetail=Number(counts.document_blocker_count||0)>0
+    ?String(counts.document_blocker_count)+' uploaded document(s) remain unverified, rejected or expire before arrival.'
+    :Number(counts.cleared_document_count||0)>0
+      ?String(counts.cleared_document_count)+' uploaded document(s) passed evidence and manager review.'
+      :'No travel documents uploaded. Confirm any client, carrier or route-specific requirements manually; none are inferred from nationality.';
+  return [
+    {item:'Principal traveller register',status:Number(counts.principal_traveller_count||0)===1?'COMPLETE':Number(counts.principal_traveller_count||0)>1?'AMBIGUOUS':'PENDING',detail:Number(counts.principal_traveller_count||0)===1?'Exactly one principal traveller is registered.':'Exactly one principal traveller must be registered before approval.'},
+    {item:'Airport flight details',status:!airportService?'NOT_REQUIRED_BY_SERVICE':codes.has('airport_flight_details_incomplete')?'INCOMPLETE':'COMPLETE',detail:!airportService?'The selected service does not require an airport flight segment.':codes.has('airport_flight_details_incomplete')?'Add valid flight legs and link every traveller or use a shared flight segment.':String(counts.flight_segment_count||0)+' flight segment(s) cover the registered travellers.'},
+    {item:'Day-by-day travel programme',status:['journey_schedule_missing','journey_schedule_range_invalid','daily_programme_incomplete'].some(code=>codes.has(code))?'INCOMPLETE':'COMPLETE',detail:['journey_schedule_missing','journey_schedule_range_invalid','daily_programme_incomplete'].some(code=>codes.has(code))?'Every local calendar date between planned departure and arrival needs a day with at least one timed activity.':String(counts.timed_activity_count||0)+' timed activities cover '+String(counts.required_programme_day_count||0)+' required local travel date(s).'},
+    {item:'Programme activity accountability',status:codes.has('daily_programme_unassigned')?'INCOMPLETE':'COMPLETE',detail:codes.has('daily_programme_unassigned')?'Assign each activity to an active mission team member or an accountable duty role.':'Every timed activity has an accountable assignee or duty role.'},
+    {item:'Uploaded travel documents',status:docsStatus,detail:docsDetail}
+  ];
+}
 function enabledReportSections(profile) {
   const configured=profile?.enabled_sections;
   return Array.isArray(configured)?[...new Set(configured.filter(section=>SECTIONS.includes(section)))]:[...SECTIONS];
@@ -1034,8 +1053,9 @@ router.get('/journeys/:id',authorize('admin','dispatcher','operator','analyst'),
       telemetryFor(db,org,j)
     ]);
     const assessment=parseJson(j.route_assessment,null);
+    const travelReadiness=await loadTravelReadiness(db,j,'departure');
     const safe=journeyForDutyViewer(j,events,req.user,dutyRoles);
-    return {data:{...safe,stops,duty_roles:dutyRoles,telemetry_snapshot:telemetry,readiness_checklist:readinessChecklist(j,stops,assessment,telemetry)}};
+    return {data:{...safe,stops,duty_roles:dutyRoles,telemetry_snapshot:telemetry,readiness_checklist:[...readinessChecklist(j,stops,assessment,telemetry),...travelReadinessChecklist(j,travelReadiness)]}};
   });
   if(outcome?.error)return res.status(404).json({error:'journey_not_found'});
   res.setHeader('Cache-Control','no-store');
