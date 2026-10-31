@@ -159,7 +159,7 @@ async function loadTravelReadiness(db, journey, phase = 'departure') {
     [org, id],
   );
   const dayResult = await db(
-    'SELECT d.id,d.journey_date,COUNT(i.id)::int AS activity_count,COUNT(i.id) FILTER (WHERE i.responsible_user_id IS NULL AND COALESCE(NULLIF(BTRIM(i.responsible_role),\'\'),\'\')=\'\')::int AS unassigned_activity_count FROM sjm_itinerary_days d ' +
+    'SELECT d.id,d.journey_date,COUNT(i.id)::int AS activity_count,COUNT(i.id) FILTER (WHERE COALESCE(NULLIF(BTRIM(i.responsible_role),\'\'),\'\')=\'\' AND (i.responsible_user_id IS NULL OR NOT EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status=\'active\' WHERE p.org_id=i.org_id AND p.journey_id=i.journey_id AND p.user_id=i.responsible_user_id AND p.removed_at IS NULL)))::int AS unassigned_activity_count FROM sjm_itinerary_days d ' +
     'LEFT JOIN sjm_itinerary_items i ON i.org_id=d.org_id AND i.journey_id=d.journey_id AND i.day_id=d.id AND i.deleted_at IS NULL ' +
     'WHERE d.org_id=$1 AND d.journey_id=$2 AND d.deleted_at IS NULL GROUP BY d.id,d.journey_date ORDER BY d.journey_date',
     [org, id],
