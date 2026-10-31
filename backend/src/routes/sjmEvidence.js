@@ -248,12 +248,12 @@ router.post('/:evidenceId/renew-upload-url', asyncHandler(async (req, res) => {
       if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
       if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
       const selected = await db(
-        'SELECT id,storage_key,mime_type,status FROM sjm_evidence ' +
+        'SELECT id,storage_key,mime_type,status,access_classification FROM sjm_evidence ' +
         'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
         [evidenceId, req.user.org_id, journeyId],
       );
       const evidence = selected.rows[0];
-      if (!evidence) return { error: 'evidence_not_found' };
+      if (!evidence || !canViewEvidence(req.user, evidence)) return { error: 'evidence_not_found' };
       if (evidence.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
       const signed = await storage.createUploadUrl({
         key: evidence.storage_key, mimeType: evidence.mime_type, evidenceId, journeyId,
@@ -285,12 +285,12 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
     const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
     if (access.error) return access;
     const result = await db(
-      'SELECT id,status,storage_key,mime_type,size_bytes,category,file_name,created_by,sha256 ' +
+      'SELECT id,status,storage_key,mime_type,size_bytes,category,file_name,created_by,sha256,access_classification ' +
       'FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
       [evidenceId, req.user.org_id, journeyId],
     );
     const evidence = result.rows[0];
-    if (!evidence) return { error: 'evidence_not_found' };
+    if (!evidence || !canViewEvidence(req.user, evidence)) return { error: 'evidence_not_found' };
     if (evidence.status === 'VERIFIED') return { verified: evidence };
     if (evidence.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
     if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
@@ -319,10 +319,11 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
         if (access.error) return access;
         if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
         const current = await db(
-          'SELECT id,status FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 FOR UPDATE',
+          'SELECT id,status,access_classification FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 FOR UPDATE',
           [evidenceId, req.user.org_id, journeyId],
         );
-        if (current.rows[0]?.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
+        if (!current.rows[0] || !canViewEvidence(req.user, current.rows[0])) return { error: 'evidence_not_found' };
+        if (current.rows[0].status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
         await db(
           "UPDATE sjm_evidence SET status='REJECTED',updated_at=NOW() WHERE id=$1 AND org_id=$2",
           [evidenceId, req.user.org_id],
@@ -350,12 +351,12 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
     if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
     if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
     const current = await db(
-      'SELECT id,status,sha256 FROM sjm_evidence ' +
+      'SELECT id,status,sha256,access_classification FROM sjm_evidence ' +
       'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
       [evidenceId, req.user.org_id, journeyId],
     );
     const row = current.rows[0];
-    if (!row) return { error: 'evidence_not_found' };
+    if (!row || !canViewEvidence(req.user, row)) return { error: 'evidence_not_found' };
     if (row.status === 'VERIFIED') return { data: row, already_verified: true };
     if (row.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
     const updated = await db(
@@ -420,10 +421,10 @@ router.post('/:evidenceId/download-url', asyncHandler(async (req, res) => {
     const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user);
     if (access.error) return access;
     const current = await db(
-      'SELECT id,status FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR SHARE',
+      'SELECT id,status,access_classification FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR SHARE',
       [evidenceId, req.user.org_id, journeyId],
     );
-    if (!current.rows.length) return { error: 'evidence_not_found' };
+    if (!current.rows.length || !canViewEvidence(req.user, current.rows[0])) return { error: 'evidence_not_found' };
     if (current.rows[0].status !== 'VERIFIED') return { error: 'evidence_not_verified' };
     await db(
       'INSERT INTO sjm_evidence_events (org_id,journey_id,evidence_id,actor_id,action,detail) ' +
