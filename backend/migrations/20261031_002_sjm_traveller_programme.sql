@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS public.sjm_travellers (
   family_name TEXT NOT NULL CHECK (length(trim(family_name)) BETWEEN 1 AND 100),
   preferred_name TEXT CHECK (preferred_name IS NULL OR length(preferred_name)<=100),
   nationality TEXT CHECK (nationality IS NULL OR length(nationality)<=80),
-  date_of_birth DATE CHECK (date_of_birth IS NULL OR date_of_birth<=CURRENT_DATE),
+  date_of_birth DATE,
   email TEXT CHECK (email IS NULL OR length(email)<=254),
   phone TEXT CHECK (phone IS NULL OR length(phone)<=48),
   emergency_contact_name TEXT CHECK (emergency_contact_name IS NULL OR length(emergency_contact_name)<=160),
