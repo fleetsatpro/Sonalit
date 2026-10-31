@@ -1,0 +1,111 @@
+'use strict';
+
+const {
+  calendarDates, evaluateTravelReadiness,
+} = require('../src/services/sjmTravelReadiness');
+
+const journey = overrides => ({
+  id: '10000000-0000-4000-8000-000000000001',
+  org_id: '20000000-0000-4000-8000-000000000001',
+  service_type: 'executive_transfer',
+  timezone: 'Africa/Nairobi',
+  planned_departure_at: '2026-11-01T08:00:00.000Z',
+  planned_arrival_at: '2026-11-03T15:00:00.000Z',
+  ...overrides,
+});
+const principal = { id: '30000000-0000-4000-8000-000000000001', traveller_type: 'principal' };
+
+describe('SJM server-side travel readiness', () => {
+  test('requires exactly one principal traveller at approval', () => {
+    const missing = evaluateTravelReadiness({ journey: journey({}), travellers: [], flights: [], days: [], documents: [] }, 'approval');
+    expect(missing.ready).toBe(false);
+    expect(missing.blockers.map(item => item.code)).toContain('principal_traveller_missing');
+
+    const valid = evaluateTravelReadiness({ journey: journey({}), travellers: [principal], flights: [], days: [], documents: [] }, 'approval');
+    expect(valid.ready).toBe(true);
+
+    const ambiguous = evaluateTravelReadiness({ journey: journey({}), travellers: [principal, { id: 'x', traveller_type: 'principal' }], flights: [], days: [], documents: [] }, 'approval');
+    expect(ambiguous.blockers.map(item => item.code)).toContain('principal_traveller_ambiguous');
+  });
+
+  test('requires a non-cancelled flight for every airport traveller or one shared flight', () => {
+    const airportJourney = journey({ service_type: 'airport_arrival' });
+    const accompanying = { id: '30000000-0000-4000-8000-000000000002', traveller_type: 'accompanying' };
+    const noFlight = evaluateTravelReadiness({ journey: airportJourney, travellers: [principal, accompanying], flights: [], days: [], documents: [] }, 'approval');
+    expect(noFlight.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
+
+    const partial = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal, accompanying],
+      flights: [{ id: 'flight-1', traveller_id: principal.id, status: 'scheduled' }], days: [], documents: [],
+    }, 'approval');
+    expect(partial.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
+
+    const shared = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal, accompanying],
+      flights: [{ id: 'flight-1', traveller_id: null, status: 'scheduled' }], days: [], documents: [],
+    }, 'approval');
+    expect(shared.ready).toBe(true);
+
+    const cancelled = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal],
+      flights: [{ id: 'flight-1', traveller_id: principal.id, status: 'cancelled' }], days: [], documents: [],
+    }, 'approval');
+    expect(cancelled.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
+  });
+
+  test('requires every local travel date to have a timed programme activity before departure', () => {
+    expect(calendarDates('2026-11-01', '2026-11-03')).toEqual(['2026-11-01', '2026-11-02', '2026-11-03']);
+    const base = { journey: journey({}), travellers: [principal], flights: [], documents: [] };
+    const incomplete = evaluateTravelReadiness({ ...base, days: [
+      { journey_date: '2026-11-01', activity_count: 2 },
+      { journey_date: '2026-11-03', activity_count: 1 },
+    ] }, 'departure');
+    expect(incomplete.ready).toBe(false);
+    expect(incomplete.blockers.find(item => item.code === 'daily_programme_incomplete')?.missing_dates).toEqual(['2026-11-02']);
+
+    const complete = evaluateTravelReadiness({ ...base, days: [
+      { journey_date: '2026-11-01', activity_count: 2 },
+      { journey_date: '2026-11-02', activity_count: 1 },
+      { journey_date: '2026-11-03', activity_count: 1 },
+    ] }, 'departure');
+    expect(complete.ready).toBe(true);
+    expect(complete.counts.required_programme_day_count).toBe(3);
+  });
+
+  test('blocks uploaded unverified, rejected or expired documents without inventing mandatory document types', () => {
+    const base = {
+      journey: journey({}), travellers: [principal], flights: [],
+      days: [
+        { journey_date: '2026-11-01', activity_count: 1 },
+        { journey_date: '2026-11-02', activity_count: 1 },
+        { journey_date: '2026-11-03', activity_count: 1 },
+      ],
+    };
+    const pending = evaluateTravelReadiness({ ...base, documents: [
+      { document_type: 'passport', review_status: 'PENDING_REVIEW', evidence_status: 'VERIFIED', expiry_date: '2030-01-01' },
+    ] }, 'departure');
+    expect(pending.blockers.map(item => item.code)).toContain('travel_documents_not_cleared');
+
+    const expired = evaluateTravelReadiness({ ...base, documents: [
+      { document_type: 'visa', review_status: 'VERIFIED', evidence_status: 'VERIFIED', expiry_date: '2026-11-02' },
+    ] }, 'departure');
+    expect(expired.blockers.map(item => item.code)).toContain('travel_documents_not_cleared');
+
+    const noDocumentPolicyGuess = evaluateTravelReadiness({ ...base, documents: [] }, 'departure');
+    expect(noDocumentPolicyGuess.ready).toBe(true);
+  });
+
+  test('blocks invalid or excessive schedule ranges instead of silently skipping programme dates', () => {
+    const invalid = evaluateTravelReadiness({
+      journey: journey({ planned_arrival_at: '2026-10-30T12:00:00.000Z' }),
+      travellers: [principal], flights: [], days: [], documents: [],
+    }, 'departure');
+    expect(invalid.blockers.map(item => item.code)).toContain('journey_schedule_missing');
+
+    const excessive = evaluateTravelReadiness({
+      journey: journey({ planned_departure_at: '2026-01-01T00:00:00.000Z', planned_arrival_at: '2027-01-02T00:00:00.000Z' }),
+      travellers: [principal], flights: [], days: [], documents: [],
+    }, 'departure');
+    expect(excessive.blockers.map(item => item.code)).toContain('journey_schedule_range_invalid');
+  });
+});
