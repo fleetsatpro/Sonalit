@@ -346,6 +346,49 @@ router.post('/travellers/:travellerId/documents/upload-url', managerOnly, asyncH
   }
 }));
 
+router.post('/documents/:documentId/renew-upload-url', managerOnly, asyncHandler(async (req, res) => {
+  if (!UUID.test(req.params.documentId)) return res.status(404).json({ error: 'travel_document_not_found' });
+  try {
+    const result = await req.dbTx(async client => {
+      const db = (sql, params) => client.query(sql, params);
+      const current = await access(db, req, 'FOR UPDATE');
+      if (current.error) return current;
+      if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+      const selected = await db(
+        'SELECT d.id,d.evidence_id,d.document_type,d.review_status,e.storage_key,e.mime_type,e.size_bytes,e.file_name,e.status AS evidence_status ' +
+        'FROM sjm_travel_documents d JOIN sjm_evidence e ON e.id=d.evidence_id AND e.org_id=d.org_id AND e.journey_id=d.journey_id ' +
+        'WHERE d.id=$1 AND d.org_id=$2 AND d.journey_id=$3 AND d.deleted_at IS NULL AND e.deleted_at IS NULL FOR UPDATE OF d,e',
+        [req.params.documentId,req.user.org_id,current.journey.id],
+      );
+      const document = selected.rows[0];
+      if (!document) return { error: 'document_not_found' };
+      if (document.review_status !== 'UPLOAD_PENDING' || document.evidence_status !== 'UPLOAD_PENDING') return { error: 'document_not_retryable' };
+      const signed = await storage.createUploadUrl({
+        key: document.storage_key,
+        mimeType: document.mime_type,
+        evidenceId: document.evidence_id,
+        journeyId: current.journey.id,
+      });
+      await db(
+        "INSERT INTO sjm_evidence_events (org_id,journey_id,evidence_id,actor_id,action,detail) VALUES ($1,$2,$3,$4,'UPLOAD_REQUESTED',$5)",
+        [req.user.org_id,current.journey.id,document.evidence_id,req.user.id,JSON.stringify({ category:'document', document_type:document.document_type, renewal:true })],
+      );
+      await audit(db, req, current.journey.id, 'TRAVEL_DOCUMENT_UPLOADED', document.id, { document_type:document.document_type, evidence_id:document.evidence_id, retry:true });
+      return { data: { evidence_id:document.evidence_id, file_name:document.file_name, mime_type:document.mime_type, size_bytes:Number(document.size_bytes), ...signed } };
+    });
+    if (responseError(res, result)) return;
+    if (result.error === 'document_not_found') return res.status(404).json({ error: 'travel_document_not_found' });
+    if (result.error === 'document_not_retryable') return res.status(409).json({ error: 'travel_document_not_retryable', message: 'Only a pending upload can be retried. A verified or rejected record cannot be overwritten.' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ data: result.data });
+  } catch (error) {
+    if (error?.code === 'storage_not_configured' || error?.code === 'storage_unavailable') {
+      return res.status(503).json({ error: 'travel_document_storage_unavailable', message: 'Dedicated private SJM storage is unavailable. The existing document record remains pending.' });
+    }
+    throw error;
+  }
+}));
+
 router.patch('/documents/:documentId/review', managerOnly, asyncHandler(async (req, res) => {
   if (!UUID.test(req.params.documentId)) return res.status(404).json({ error: 'travel_document_not_found' });
   const status = txt(req.body?.review_status, 24).toUpperCase();
