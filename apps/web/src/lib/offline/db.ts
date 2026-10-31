@@ -264,7 +264,12 @@ export async function purgeUserData(
   await db.transaction('rw', [db.entities, db.gps_buffer, db.outbox, db.conflicts, db.sync_meta, db.offline_quarantine], async () => {
     counts.entities = await db.entities.where('ownerLookup').equals(userId).delete();
     counts.gps = await db.gps_buffer.where('ownerUserId').equals(userId).delete();
-    counts.conflicts = await db.conflicts.where('ownerUserId').equals(userId).delete();
+
+    // Conflict records are still unresolved work. Keep them beside the retained
+    // outbox rows on ordinary logout; delete them only during explicit handover.
+    if (!keepUnsyncedOutbox) {
+      counts.conflicts = await db.conflicts.where('ownerUserId').equals(userId).delete();
+    }
 
     const owned = db.outbox.where('ownerUserId').equals(userId);
     if (keepUnsyncedOutbox) {

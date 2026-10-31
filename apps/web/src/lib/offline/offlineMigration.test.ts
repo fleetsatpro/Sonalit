@@ -70,6 +70,14 @@ describe('offline tenant-scope migration', () => {
     )).toBe(false);
   });
 
+  it('retains unresolved conflict records until explicit device handover', () => {
+    const purgeStart = dbSource.indexOf('export async function purgeUserData');
+    const purgeEnd = dbSource.indexOf('/** How many operations this user has', purgeStart);
+    const purgeSource = dbSource.slice(purgeStart, purgeEnd);
+    expect(purgeSource).toContain('if (!keepUnsyncedOutbox) {\n      counts.conflicts = await db.conflicts.where(\'ownerUserId\').equals(userId).delete();');
+    expect(purgeSource).not.toContain('counts.conflicts = await db.conflicts.where(\'ownerUserId\').equals(userId).delete();\n\n    const owned');
+  });
+
   it('retains every non-acknowledged outbox record during ordinary logout', () => {
     const purgeStart = dbSource.indexOf('export async function purgeUserData');
     const purgeEnd = dbSource.indexOf('/** How many operations this user has', purgeStart);
