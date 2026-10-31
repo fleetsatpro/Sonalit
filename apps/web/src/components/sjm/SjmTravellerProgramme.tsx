@@ -369,6 +369,45 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
       setDocumentUploadState(null);
     }
   };
+  const retryDocumentUpload = async (document: TravelDocument, file?: File) => {
+    if (!file || !canManage || readOnly || documentUploadState) return;
+    if (file.name !== document.file_name || file.type.toLowerCase() !== document.mime_type || file.size !== document.size_bytes) {
+      setNotice({ kind: 'error', text: 'Select the exact original file name, type and size. A pending evidence object cannot be replaced with different content.' });
+      return;
+    }
+    setNotice(null);
+    setDocumentUploadState({ travellerId: document.traveller_id, phase: 'Checking whether the original upload reached private storage…' });
+    try {
+      let committed;
+      try {
+        committed = await api.post(evidenceBase + '/' + document.evidence_id + '/commit');
+      } catch (error) {
+        const code = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
+        if (code !== 'evidence_upload_missing') throw error;
+        setDocumentUploadState({ travellerId: document.traveller_id, phase: 'Requesting a renewed private upload capability…' });
+        const response = await api.post(base + '/documents/' + document.id + '/renew-upload-url');
+        const signed = response.data?.data;
+        if (!signed?.evidence_id || signed.evidence_id !== document.evidence_id || !signed?.upload_url || !signed?.required_headers) {
+          throw new Error('Private SJM storage did not return a valid retry capability.');
+        }
+        setDocumentUploadState({ travellerId: document.traveller_id, phase: 'Resuming upload to private SJM storage…' });
+        const uploaded = await fetch(signed.upload_url, {
+          method: 'PUT', headers: signed.required_headers, body: file, credentials: 'omit', cache: 'no-store',
+        });
+        if (!uploaded.ok) throw new Error('Private storage rejected the retry (HTTP ' + uploaded.status + ').');
+        setDocumentUploadState({ travellerId: document.traveller_id, phase: 'Verifying the original evidence object…' });
+        committed = await api.post(evidenceBase + '/' + document.evidence_id + '/commit');
+      }
+      if (committed.data?.data?.status !== 'VERIFIED') throw new Error('Sonalit did not confirm the file integrity check.');
+      setNotice({ kind: 'success', text: 'The existing travel-document upload is now integrity-verified and awaiting manager review.' });
+      await refresh();
+    } catch (error) {
+      setNotice({ kind: 'error', text: errorMessage(error, 'The pending travel-document upload could not be resumed.') });
+    } finally {
+      setDocumentUploadState(null);
+    }
+  };
+
   const downloadDocument = async (document: TravelDocument) => {
     // Open the tab in the direct click handler before awaiting the signed URL,
     // so browser popup protection does not silently discard the private file.
@@ -443,7 +482,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
                 {documentUploadState?.travellerId===traveller.id&&<p role="status" className="text-[10px] leading-4 text-emerald-100/80">{documentUploadState.phase}</p>}
                 <p className="text-[10px] leading-4 text-slate-500">PDF up to 25 MiB; JPEG/PNG up to 20 MiB. Uploads use a dedicated private SJM storage bucket, short-lived upload capability and server-side integrity verification. No public/shared media bucket fallback is allowed.</p>
               </div>}
-              {canManage && (docsByTraveller.get(traveller.id) || []).length > 0 && <div className="mt-3 space-y-2">{(docsByTraveller.get(traveller.id) || []).map(document => <div key={document.id} className="rounded border border-white/[0.06] bg-black/20 p-2.5"><div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="text-[11px] font-medium text-slate-200">{statusLabel(document.document_type)} · {document.file_name}</p><p className="mt-1 text-[10px] text-slate-500">{document.review_status.replaceAll('_',' ')} · {document.expiry_state==='expired'?'EXPIRED':document.expiry_state==='expiring_soon'?'EXPIRING WITHIN 90 DAYS':'expires '+(document.expiry_date || 'not recorded')} · {sizeLabel(document.size_bytes)}</p></div><button type="button" className={button} onClick={() => void downloadDocument(document)} disabled={document.review_status === 'UPLOAD_PENDING'}><Download size={11}/>Open</button></div>{document.review_status === 'PENDING_REVIEW' && <div className="mt-2 space-y-2"><label className={label}>Review rationale<textarea className={field} rows={2} value={documentReviewNotes[document.id] || ''} onChange={event=>setDocumentReviewNotes(current=>({...current,[document.id]:event.target.value}))} placeholder="Confirm what was checked, any discrepancy, and the review basis."/></label><div className="flex flex-wrap gap-1.5"><button type="button" className={buttonGreen} onClick={() => reviewDocument.mutate({ id: document.id, status: 'VERIFIED', note: documentReviewNotes[document.id] || '' })} disabled={reviewDocument.isPending || (documentReviewNotes[document.id] || '').trim().length<10}><Check size={11}/>Verify document</button><button type="button" className={button} onClick={() => reviewDocument.mutate({ id: document.id, status: 'REJECTED', note: documentReviewNotes[document.id] || '' })} disabled={reviewDocument.isPending || (documentReviewNotes[document.id] || '').trim().length<10}>Reject</button></div></div>}</div>)}</div>}
+              {canManage && (docsByTraveller.get(traveller.id) || []).length > 0 && <div className="mt-3 space-y-2">{(docsByTraveller.get(traveller.id) || []).map(document => <div key={document.id} className="rounded border border-white/[0.06] bg-black/20 p-2.5"><div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="text-[11px] font-medium text-slate-200">{statusLabel(document.document_type)} · {document.file_name}</p><p className="mt-1 text-[10px] text-slate-500">{document.review_status.replaceAll('_',' ')} · {document.expiry_state==='expired'?'EXPIRED':document.expiry_state==='expiring_soon'?'EXPIRING WITHIN 90 DAYS':'expires '+(document.expiry_date || 'not recorded')} · {sizeLabel(document.size_bytes)}</p></div><button type="button" className={button} onClick={() => void downloadDocument(document)} disabled={document.review_status === 'UPLOAD_PENDING'}><Download size={11}/>Open</button></div>{document.review_status === 'UPLOAD_PENDING' && <label className={label + ' mt-2'}>Retry the original file<input className={field} type="file" accept="application/pdf,image/jpeg,image/png" disabled={Boolean(documentUploadState)} onChange={event => { const file=event.target.files?.[0]; void retryDocumentUpload(document,file); event.currentTarget.value=''; }}/></label>}{document.review_status === 'PENDING_REVIEW' && <div className="mt-2 space-y-2"><label className={label}>Review rationale<textarea className={field} rows={2} value={documentReviewNotes[document.id] || ''} onChange={event=>setDocumentReviewNotes(current=>({...current,[document.id]:event.target.value}))} placeholder="Confirm what was checked, any discrepancy, and the review basis."/></label><div className="flex flex-wrap gap-1.5"><button type="button" className={buttonGreen} onClick={() => reviewDocument.mutate({ id: document.id, status: 'VERIFIED', note: documentReviewNotes[document.id] || '' })} disabled={reviewDocument.isPending || (documentReviewNotes[document.id] || '').trim().length<10}><Check size={11}/>Verify document</button><button type="button" className={button} onClick={() => reviewDocument.mutate({ id: document.id, status: 'REJECTED', note: documentReviewNotes[document.id] || '' })} disabled={reviewDocument.isPending || (documentReviewNotes[document.id] || '').trim().length<10}>Reject</button></div></div>}</div>)}</div>}
             </article>)}</div>}
         </div>
         {canManage && !readOnly && showTravellerForm && <form className="space-y-3 border-t border-white/[0.07] bg-black/10 p-4" onSubmit={event => { event.preventDefault(); if (editingTravellerId) updateTraveller.mutate(); else createTraveller.mutate(); }}>
