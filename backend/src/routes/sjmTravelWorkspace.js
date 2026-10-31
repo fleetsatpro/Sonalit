@@ -595,8 +595,7 @@ router.patch('/items/:itemId/execution', asyncHandler(async (req, res) => {
     if (item.execution_status !== next && !allowed[item.execution_status]?.includes(next)) {
       return { error: 'invalid_transition', message: 'Execution cannot move from ' + item.execution_status + ' to ' + next + '. Record a new plan revision instead.' };
     }
-    if (item.execution_status === next && !note) return { error: 'invalid_transition', message: 'Add an execution note when appending an update without changing status.' };
-    if (['completed','delayed','skipped','exception'].includes(next) && note.trim().length < 10) {
+    if (note.trim().length < 10) {
       return { error: 'execution_note_required' };
     }
     const actualStart = next === 'in_progress' || next === 'completed' ? (item.actual_start_at || new Date().toISOString()) : item.actual_start_at;
