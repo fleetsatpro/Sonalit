@@ -636,10 +636,22 @@ test.describe('SJM command-centre responsive smoke', () => {
       days: Array<Record<string, unknown>>;
       access: { manager: boolean; duty_roles: string[] };
       provenance: Record<string, string>;
+      readiness: {
+        phase: string; ready: boolean;
+        blockers: Array<{ code: string; message: string; missing_dates?: string[] }>;
+        warnings: Array<{ code: string; message: string }>;
+        counts: Record<string, number>;
+      };
     } = {
       travellers: [], documents: [], flights: [], days: [],
       access: { manager: true, duty_roles: [] },
       provenance: {},
+      readiness: {
+        phase: 'departure', ready: false,
+        blockers: [{ code: 'principal_traveller_missing', message: 'Register one principal traveller before route approval or departure release.' }],
+        warnings: [],
+        counts: { traveller_count: 0, principal_traveller_count: 0, flight_segment_count: 0, programme_day_count: 0, timed_activity_count: 0, required_programme_day_count: 3, cleared_document_count: 0, document_blocker_count: 0, expiring_document_count: 0 },
+      },
     };
     const travellerId = '30000000-0000-4000-8000-000000000001';
     const dayId = '30000000-0000-4000-8000-000000000002';
@@ -694,6 +706,8 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Flight segments' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
+    await expect(page.getByTestId('sjm-travel-readiness')).toBeVisible();
+    await expect(page.getByText('principal traveller missing', { exact: false })).toBeVisible();
 
     await page.getByRole('button', { name: 'Register traveller' }).click();
     await page.getByLabel('Traveller reference *').fill('TRV-E2E-01');
