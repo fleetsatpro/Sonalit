@@ -685,20 +685,23 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('heading', { name: 'Flight segments' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Register traveller' }).click();
     await page.getByLabel('Traveller reference *').fill('TRV-E2E-01');
     await page.getByLabel('Given name *').fill('Amina');
     await page.getByLabel('Family name *').fill('Example');
     await page.getByLabel('Nationality').fill('Kenyan');
     await page.getByLabel('Email').fill('amina@example.invalid');
-    await page.getByRole('button', { name: 'Register traveller' }).click();
+    await page.getByRole('button', { name: 'Register traveller' }).last().click();
     await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
     await expect(page.getByText('Traveller profile registered to this journey.')).toBeVisible();
 
+    await page.getByRole('button', { name: 'Add programme day' }).click();
     await page.getByLabel('Local date').fill('2026-10-31');
     await page.getByLabel('Day title').fill('Day 1 · Arrival and reception');
     await page.getByRole('button', { name: 'Add day' }).click();
     await expect(page.getByRole('heading', { name: 'Day 1 · Arrival and reception' })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Add activity' }).click();
     await page.getByLabel('Activity title *').fill('Airport meet and greet');
     await page.getByLabel(/Planned start/).fill('2026-10-31T10:00');
     await page.getByLabel(/Planned end/).fill('2026-10-31T11:00');
