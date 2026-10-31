@@ -689,7 +689,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: documentId, archived: true, evidence_object_retained: true } }) });
       }
       if (method === 'POST' && route.request().url().endsWith('/flights')) {
-        const flight = { id: flightId, sequence: 1, status: 'scheduled', status_source: 'operator_entered', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
+        const flight = { id: flightId, sequence: 1, status: 'scheduled', allowed_next_statuses: ['scheduled','boarding','departed','delayed','cancelled','diverted'], status_source: 'operator_entered', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
         workspace.flights.push(flight);
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: flight }) });
       }
