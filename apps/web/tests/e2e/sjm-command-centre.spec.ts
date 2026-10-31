@@ -1,7 +1,12 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
-const JOURNEY_ID = 'journey-sjm-e2e-001';
-const CLIENT_ID = 'client-sjm-e2e-001';
+const JOURNEY_ID = '11111111-1111-4111-8111-111111111111';
+const CLIENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+function pagedJourneyId(index: number): string {
+  if (index === 0) return JOURNEY_ID;
+  return '10000000-0000-4000-8000-' + String(index).padStart(12, '0');
+}
 
 const journey = {
   id: JOURNEY_ID,
@@ -148,8 +153,8 @@ async function stubSjmApi(page: Page) {
       // The pagination E2E creates extra, synthetic register IDs. Return a
       // journey-shaped detail object for those IDs instead of { data: [] },
       // which is not a valid detail response and can crash the UI renderer.
-      if (requestedId.startsWith(JOURNEY_ID + '-')) {
-        const suffix = requestedId.slice(JOURNEY_ID.length + 1);
+      if (/^10000000-0000-4000-8000-\d{12}$/.test(requestedId)) {
+        const suffix = requestedId.slice(-12);
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -452,7 +457,7 @@ test.describe('SJM command-centre responsive smoke', () => {
   test('mobile mission selection returns focus to the map-first workspace', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
-    const secondJourneyId = JOURNEY_ID + '-second';
+    const secondJourneyId = '22222222-2222-4222-8222-222222222222';
     await page.route('**/api/v1/sjm/journeys?**', async (route) => {
       const summary = { ...journey };
       delete summary.stops;
@@ -847,7 +852,7 @@ test.describe('SJM command-centre responsive smoke', () => {
   test('late flight-status response cannot overwrite another journey draft', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
-    const secondJourneyId = JOURNEY_ID + '-second-flight';
+    const secondJourneyId = '33333333-3333-4333-8333-333333333333';
     await page.route('**/api/v1/sjm/journeys?**', async (route) => {
       const summary = { ...journey };
       delete summary.stops; delete summary.events; delete summary.telemetry_snapshot; delete summary.readiness_checklist;
@@ -1075,7 +1080,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       const rowCount = Math.max(0, Math.min(offset === 0 ? 100 : 76, totalCount - offset));
       const data = Array.from({ length: rowCount }, (_, index) => ({
         ...summary,
-        id: offset === 0 && index === 0 ? JOURNEY_ID : JOURNEY_ID + '-' + (offset + index),
+        id: pagedJourneyId(offset + index),
         reference: 'SJM-PAGE-' + (offset + index),
         schedule_urgency: requestedFilter === 'overdue' ? 'DEPARTURE_OVERDUE' : requestedFilter === 'departure_due_30m' ? 'DEPARTURE_DUE_30M' : null,
       }));
@@ -1162,6 +1167,86 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByTestId('sjm-journey-progress').getByText('Stage 6 of 8')).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId('sjm-journey-progress').getByRole('listitem', { name: 'Overview Movement current' })).toBeVisible();
     await expect(page.getByTestId('sjm-journey-progress').getByRole('listitem', { name: 'Overview Arrival upcoming' })).toBeVisible();
+  });
+
+
+  test('field evidence remains pending until the private object is verified by Sonalit', async ({ page }) => {
+    await seedAuth(page);
+    await stubFieldSjmApi(page, { ...journey, duty_roles: ['driver'] });
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const evidencePath = '/api/v1/sjm/journeys/' + JOURNEY_ID + '/evidence';
+    const evidenceId = '33333333-3333-4333-8333-333333333333';
+    let objectUploaded = false;
+    let recordVerified = false;
+    const record = {
+      id: evidenceId, category: 'photo', file_name: 'arrival-proof.jpg',
+      mime_type: 'image/jpeg', size_bytes: 4, status: 'VERIFIED',
+      sha256: 'a'.repeat(64), created_at: '2026-10-31T09:30:00.000Z',
+      location_source: 'NOT_CAPTURED',
+    };
+
+    await page.route('**' + evidencePath, async route => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ data: recordVerified ? [record] : [] }),
+      });
+    });
+    await page.route('**' + evidencePath + '/upload-url', async route => {
+      return route.fulfill({
+        status: 201, contentType: 'application/json',
+        body: JSON.stringify({ data: {
+          id: evidenceId, status: 'UPLOAD_PENDING',
+          upload_url: 'https://sjm-test-account.r2.cloudflarestorage.com/signed-put',
+          required_headers: {
+            'Content-Type': 'image/jpeg',
+            'If-None-Match': '*',
+            'x-amz-meta-evidence-id': evidenceId,
+            'x-amz-meta-journey-id': JOURNEY_ID,
+          },
+        } }),
+      });
+    });
+    await page.route('**' + evidencePath + '/' + evidenceId + '/commit', async route => {
+      if (!objectUploaded) {
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'evidence_upload_missing' }) });
+      }
+      recordVerified = true;
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ data: { id: evidenceId, status: 'VERIFIED', sha256: record.sha256 } }),
+      });
+    });
+    // Use the real R2 S3 hostname pattern allowed by the production connect-src CSP.
+    await page.route('https://sjm-test-account.r2.cloudflarestorage.com/**', async route => {
+      const method = route.request().method();
+      const cors = {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'PUT, OPTIONS',
+        'access-control-allow-headers': 'Content-Type, If-None-Match, x-amz-meta-evidence-id, x-amz-meta-journey-id',
+      };
+      if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+      if (method === 'PUT') {
+        objectUploaded = true;
+        return route.fulfill({ status: 200, headers: { ...cors, etag: '"fixture-etag"' } });
+      }
+      return route.fulfill({ status: 405, headers: cors });
+    });
+
+    await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Evidence & custody' })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/An encrypted field report could not be matched to this mission/)).toHaveCount(0);
+    await page.locator('input[aria-label="Choose mission evidence file"]').setInputFiles({
+      name: 'arrival-proof.jpg',
+      mimeType: 'image/jpeg',
+      buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+    });
+    await expect(page.getByText('Sonalit verified the stored object and recorded its SHA-256 integrity hash.')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('arrival-proof.jpg')).toBeVisible();
+    await expect(page.getByText(/Verified by Sonalit/)).toBeVisible();
+    expect(objectUploaded).toBe(true);
+    expect(recordVerified).toBe(true);
   });
 
 });

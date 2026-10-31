@@ -70,8 +70,19 @@ const STALE_LIMIT_MS = 12 * 60 * 60 * 1000;
 
 const FIELD_ROLES = ['admin', 'dispatcher', 'operator', 'cfo', 'yard_agent', 'port_agent', 'response_crew'];
 const OFFICE_ROLES = ['admin', 'dispatcher', 'operator'];
+// SJM membership is checked against the journey roster on the server. This list
+// only permits known Sonalit account roles to enqueue; it is not SJM authority.
+const SJM_FIELD_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'cfo', 'yard_agent', 'port_agent', 'response_crew'];
 
 const SPECS: readonly OperationSpec[] = Object.freeze([
+  {
+    type: 'sjm.field_event.create',
+    capability: 'OFFLINE_ALLOWED',
+    entityType: 'sjm_journey_event',
+    transport: 'sync',
+    priority: PRIORITY.SUPPORTING,
+    roles: SJM_FIELD_ROLES,
+  },
   // ── Append-only field records ──────────────────────────────────────────────
   {
     type: 'cds_incident.create',

@@ -361,8 +361,15 @@ export async function dismissEntry(id: string): Promise<void> {
  * server will either apply it once or recognise the key and report the original
  * result. What would be wrong is assuming either success or failure.
  */
-export async function recoverInFlight(): Promise<number> {
-  const stuck = await db.outbox.where('status').equals('SYNCING').toArray();
+export interface RecoveryScope { userId?: string; orgId?: string; allowedOperationTypes?: readonly string[]; }
+
+export function filterRecoverableInFlightEntries<T extends Pick<OutboxEntry, 'ownerUserId' | 'ownerOrgId' | 'type'>>(entries: readonly T[], scope: RecoveryScope = {}): T[] {
+  const allowed = scope.allowedOperationTypes ? new Set(scope.allowedOperationTypes) : null;
+  return entries.filter(entry => (!scope.userId || entry.ownerUserId === scope.userId) && (!scope.orgId || entry.ownerOrgId === scope.orgId) && (!allowed || allowed.has(entry.type)));
+}
+
+export async function recoverInFlight(scope: RecoveryScope = {}): Promise<number> {
+  const stuck = filterRecoverableInFlightEntries(await db.outbox.where('status').equals('SYNCING').toArray(), scope);
   if (stuck.length === 0) return 0;
   const now = Date.now();
   await db.transaction('rw', db.outbox, async () => {

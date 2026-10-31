@@ -32,6 +32,10 @@ export interface OfflineIdentity {
   userId: string;
   orgId: string;
   role: string;
+  /** SJM field devices push their own events only; they must not mirror CDS data. */
+  pullEnabled?: boolean;
+  /** Restrict this session to a narrow set of append-only operations. */
+  allowedOperationTypes?: string[];
 }
 
 /**
@@ -95,7 +99,7 @@ async function tick(): Promise<void> {
   const generation = lifecycleGeneration;
   const work = (async () => {
     try {
-      const result = await runSync(session.userId, session.orgId);
+      const result = await runSync(session.userId, session.orgId, { pullEnabled: session.pullEnabled !== false, allowedOperationTypes: session.allowedOperationTypes, isSessionCurrent: () => generation === lifecycleGeneration && identity === session && available });
       // A result from a prior login/tenant must not update the new session.
       if (generation === lifecycleGeneration && identity === session) {
         blocked = result.blocked;
@@ -105,7 +109,7 @@ async function tick(): Promise<void> {
       // runSync does not throw, but a future change might. The loop survives.
     }
 
-    if (generation === lifecycleGeneration && identity === session && available) {
+    if (generation === lifecycleGeneration && identity === session && available && !session.allowedOperationTypes) {
       try { await relieveStoragePressure(); } catch { /* cleanup must not wedge sync */ }
     }
   })();
@@ -187,10 +191,14 @@ export async function startOffline(id: OfflineIdentity): Promise<boolean> {
   if (previous?.value && typeof previous.value === 'object') {
     const prev = previous.value as { userId?: unknown; orgId?: unknown };
     if (typeof prev.userId === 'string' && (prev.userId !== id.userId || prev.orgId !== id.orgId)) {
-      // A tenant change is a hard security boundary. Unlike a normal logout,
-      // there is no safe reason to retain unsent work from the previous org on
-      // a shared device where it could later be surfaced or replayed.
-      await purgeUserData(prev.userId, { keepUnsyncedOutbox: false });
+      // A user or tenant change is a hard visibility boundary, not consent to
+      // discard work. Purge cached entity mirrors and GPS buffers, but retain
+      // unresolved operations, conflicts and their encryption keys under the
+      // previous identity. The new session cannot list or replay those rows:
+      // queue reads are scoped to its exact user and organisation, and the
+      // server revalidates current membership before accepting any replay.
+      // Destructive device handover must be a separate, explicit workflow.
+      await purgeUserData(prev.userId, { keepUnsyncedOutbox: true });
       if (generation !== lifecycleGeneration) return false;
     }
   } else if (typeof previous?.value === 'string' && previous.value !== id.userId) {
@@ -228,13 +236,15 @@ export async function startOffline(id: OfflineIdentity): Promise<boolean> {
  * consent to throw away what somebody did. It becomes visible again when that
  * same user signs back in on this device.
  */
-export async function stopOffline({ purge = true }: { purge?: boolean } = {}): Promise<void> {
+export async function stopOffline(
+  { purge = true, stopConnectivity: stopConnectivityManager = true }: { purge?: boolean; stopConnectivity?: boolean } = {},
+): Promise<void> {
   lifecycleGeneration += 1;
   unsubscribeReconnect?.();
   unsubscribeReconnect = null;
   if (timer) clearTimeout(timer);
   timer = null;
-  stopConnectivity();
+  if (stopConnectivityManager) stopConnectivity();
 
   const id = identity;
   identity = null;

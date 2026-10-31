@@ -7,6 +7,7 @@ const { asyncHandler } = require('../middleware/error');
 const { analyseRoute } = require('../utils/routeAnalyser');
 const { removeChannelHistory, unsubscribeUserFromChannel, publish } = require('../realtime/centrifugo');
 const { sjmChannelName } = require('../realtime/sjmChannel');
+const { DUTY_EVENT_SUMMARIES, dutyEventAllowed, validateFieldEventInput } = require('../services/sjmFieldEvents');
 
 const STATUSES = ['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification','closed','cancelled','aborted','on_hold'];
 const JOURNEY_REGISTER_FILTER_SQL = Object.freeze({
@@ -31,8 +32,6 @@ const SERVICE_TYPES=['airport_arrival','airport_departure','meet_and_greet','clo
 const FLIGHT_STATUSES=['unknown','scheduled','delayed','landed','departed','cancelled','diverted'];
 const DUTY_ROLES=['driver','backup_driver','cpo','meet_greet','security_escort','dispatcher'];
 const MOBILITY_MANAGER_ROLES=new Set(['admin','dispatcher']);
-const DUTY_EVENT_RULES={driver:['driver_en_route','driver_at_pickup','principal_on_board','destination_reached','vehicle_issue','delay','safety_check_in'],backup_driver:['driver_en_route','driver_at_pickup','principal_on_board','destination_reached','vehicle_issue','delay','safety_check_in'],cpo:['cpo_en_route','meet_point_confirmed','principal_met','security_check_in','security_concern','delay','incident','handover_completed'],meet_greet:['meet_greet_positioned','flight_status_observed','principal_contact_established','principal_received','handover_to_cpo','delay','incident','safety_check_in'],security_escort:['escort_started','security_check_in','security_concern','delay','incident','handover_completed'],dispatcher:['delay','incident','safety_check_in']};
-const DUTY_EVENT_SUMMARIES={driver_en_route:'Driver reported en route',driver_at_pickup:'Driver reported arrival at pickup',principal_on_board:'Driver reported principal on board',destination_reached:'Driver reported destination reached',vehicle_issue:'Driver reported a vehicle issue',delay:'Delay reported by field team',safety_check_in:'Field safety check-in recorded',cpo_en_route:'CPO reported en route',meet_point_confirmed:'CPO confirmed meet point',principal_met:'CPO reported principal met',security_check_in:'Security team check-in recorded',security_concern:'Security concern reported',incident:'Field incident reported',handover_completed:'CPO reported handover completed',meet_greet_positioned:'Meet-and-greet operator reported positioned',flight_status_observed:'Meet-and-greet operator reported flight information observed',principal_contact_established:'Meet-and-greet operator reported contact established',principal_received:'Meet-and-greet operator reported principal received',handover_to_cpo:'Meet-and-greet operator reported handover to CPO',escort_started:'Security escort reported started'};
 const REPORT_TYPES = ['itinerary','pre_trip_brief','daily','sitrep','change_notice','closeout','final'];
 const REPORT_TITLES = {itinerary:'Journey Itinerary',pre_trip_brief:'Pre-Trip Operational Brief',daily:'Daily Travel Report',sitrep:'Situation Report (SITREP)',change_notice:'Journey Change Notice',closeout:'Journey Closeout Report',final:'Final Journey Report',management_summary:'Secure Journey Management — Portfolio Summary'};
 const SECTIONS = ['summary','itinerary','stops','route_assessment','operational_events','telemetry_snapshot'];
@@ -117,7 +116,6 @@ function lifecycleAuthorityError(user,dutyRoles,action){
  return null;
 }
 async function requireJourneyAccess(req,res,journey){if(!journey){res.status(404).json({error:'journey_not_found'});return null;}const roles=await activeDutyRoles(req.db,req.user.org_id,journey.id,req.user.id);if(!canAccessJourney(req.user,roles)){res.status(404).json({error:'journey_not_found'});return null;}return roles;}
-function dutyEventAllowed(roles,eventType){return Array.isArray(roles)&&roles.some(role=>(DUTY_EVENT_RULES[role]||[]).includes(eventType));}
 function isInternalOperationalEvent(e){return parseJson(e?.detail, {})?.classification==='INTERNAL_OPERATIONS';}
 function isClientSafeEvent(e){return parseJson(e?.detail, {})?.classification==='CLIENT_SAFE';}
 function classificationForGenericEvent(type){return type==='client_update'?'CLIENT_SAFE':'INTERNAL_OPERATIONS';}
@@ -526,6 +524,9 @@ function renderPdf(doc,r) {
 
 router.use(authenticate);
 router.use((req,res,next)=>{if(!req.user?.org_id||!req.db||!req.dbTx)return res.status(403).json({error:'tenant_scope_required'});next();});
+
+// SJM-owned evidence capture and private object custody routes.
+router.use('/journeys/:id/evidence',require('./sjmEvidence'));
 
 async function managementSnapshot(db,org,timezone) {
   const clock=await db('SELECT NOW() AS db_now',[]);
@@ -975,10 +976,9 @@ router.get('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
 
 router.post('/journeys/:id/field-events',asyncHandler(async(req,res)=>{
  const org=req.user.org_id,j=await journeyById(req.db,org,req.params.id);if(!j)return res.status(404).json({error:'journey_not_found'});
- const type=String(req.body?.event_type||''),note=req.body?.note;
- if(!DUTY_EVENT_SUMMARIES[type])return res.status(403).json({error:'duty_action_not_permitted',message:'This action is not available for this assigned duty role.'});
- if(note!=null&&(typeof note!=='string'||note.trim().length>1200))return res.status(400).json({error:'invalid_note'});
- const clean=txt(note,1200);if(['delay','vehicle_issue','incident','security_concern'].includes(type)&&clean.length<5)return res.status(400).json({error:'note_required',message:'Provide at least five characters about the issue.'});
+ const type=String(req.body?.event_type||''),input=validateFieldEventInput(type,req.body?.note);
+ if(!input.ok)return res.status(input.status).json({error:input.code,message:input.message});
+ const clean=input.note;
  const outcome=await req.dbTx(async c=>{
   const db=(sql,params)=>c.query(sql,params),locked=await lockJourneyForMobility(db,org,j.id);
   if(!locked)return {error:'journey_not_found'};
@@ -1324,4 +1324,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,revisionAcknowledgementError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,journeyRegisterOrderSql,sameRouteReviewSnapshot,readLockedRouteReviewSnapshot,journeyForRouteReview,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,validateFieldEventInput,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,revisionAcknowledgementError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,journeyRegisterOrderSql,sameRouteReviewSnapshot,readLockedRouteReviewSnapshot,journeyForRouteReview,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};

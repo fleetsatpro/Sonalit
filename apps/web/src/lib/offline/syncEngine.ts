@@ -34,6 +34,7 @@ import {
   counts, dueEntries, markAcknowledged, markFailure, markSyncing, recoverInFlight,
 } from './outbox.js';
 import { classifyHttp, classifyPushOutcome, type ClassifiedError } from './retryPolicy.js';
+import { decryptSjmFieldPayload, SJM_FIELD_EVENT_OPERATION } from './sjmFieldCrypto.js';
 import {
   CLIENT_SCHEMA_VERSION, type LocalEntity, type OutboxEntry, type PullChange, type PushResult,
 } from './types.js';
@@ -321,17 +322,40 @@ function tally(summary: PushSummary, cls: ClassifiedError, outcome: string): voi
  * distinct facts. A transport-level failure is the only thing that applies to
  * all of them, and even then it applies as "unknown", not "failed".
  */
-async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Promise<void> {
-  const operations = entries.map(e => ({
-    operation_id: e.id,
-    type: e.type,
-    entity_id: e.entityId,
-    payload: e.payload,
-    client_created_at: new Date(e.clientCreatedAt).toISOString(),
-    local_sequence: e.localSequence,
-  }));
-
-  await markSyncing(entries.map(e => e.id));
+async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary, isSessionCurrent: () => boolean = () => true): Promise<void> {
+  const sendEntries: OutboxEntry[] = [];
+  const operations: Array<{operation_id:string;type:string;entity_id:string|null;payload:Record<string,unknown>;client_created_at:string;local_sequence:number;owner_user_id?:string;owner_org_id?:string}> = [];
+  for (const entry of entries) {
+    if (!isSessionCurrent()) return;
+    try {
+      let entityId = entry.entityId;
+      let payload = entry.payload;
+      if (entry.type === SJM_FIELD_EVENT_OPERATION) {
+        const opened = await decryptSjmFieldPayload({ userId: entry.ownerUserId, orgId: entry.ownerOrgId }, entry.payload);
+        entityId = opened.journey_id;
+        payload = { event_type: opened.event_type, note: opened.note };
+      }
+      if (!isSessionCurrent()) return;
+      sendEntries.push(entry);
+      operations.push({
+        operation_id:entry.id,
+        type:entry.type,
+        entity_id:entityId,
+        payload,
+        client_created_at:new Date(entry.clientCreatedAt).toISOString(),
+        local_sequence:entry.localSequence,
+        ...(entry.type===SJM_FIELD_EVENT_OPERATION?{owner_user_id:entry.ownerUserId,owner_org_id:entry.ownerOrgId}:{}),
+      });
+    } catch (error) {
+      const code = String((error as {code?:string})?.code || 'encrypted_payload_unavailable');
+      const retryable = code === 'key_storage_unavailable';
+      await markFailure(entry.id, { errorClass: retryable ? 'SERVER_FAILURE' : 'SCHEMA_FAILURE', status: retryable ? 'FAILED_RETRYABLE' : 'FAILED_PERMANENT', retryable, code, message: error instanceof Error ? error.message : 'The protected field report could not be opened on this device.' });
+      if (retryable) summary.retryable++; else summary.rejected++;
+    }
+  }
+  if (sendEntries.length === 0 || !isSessionCurrent()) return;
+  await markSyncing(sendEntries.map(e => e.id));
+  if (!isSessionCurrent()) return;
 
   let results: PushResult[];
   try {
@@ -344,7 +368,7 @@ async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Prom
     // goes back to retryable — never to failed, which would be a claim the
     // server made a decision it may not have made.
     const cls = classifyHttp(toHttpLike(err));
-    for (const e of entries) {
+    for (const e of sendEntries) {
       await markFailure(e.id, cls);
       summary.retryable++;
     }
@@ -353,7 +377,7 @@ async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Prom
 
   const byId = new Map(results.map(r => [r.operation_id, r]));
 
-  for (const e of entries) {
+  for (const e of sendEntries) {
     const r = byId.get(e.id);
     if (!r) {
       // The server did not mention this operation. Unknown, so retryable.
@@ -389,7 +413,8 @@ async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Prom
  * original response instead of performing the action again. Nothing about the
  * target route changes.
  */
-async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary): Promise<void> {
+async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary, isSessionCurrent: () => boolean = () => true): Promise<void> {
+  if (!isSessionCurrent()) return;
   if (!entry.request) {
     await markFailure(entry.id, {
       errorClass: 'VALIDATION_FAILURE',
@@ -409,12 +434,14 @@ async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary): Promise<
   const request = entry.request;
 
   await markSyncing([entry.id]);
+  if (!isSessionCurrent()) return;
 
   const config: AxiosRequestConfig = {
     headers: { ...syncHeaders(), 'x-idempotency-key': entry.id },
   };
 
   try {
+    if (!isSessionCurrent()) return;
     const { data } = await measured(() =>
       api.request<Record<string, unknown>>({
         method: request.method,
@@ -446,16 +473,24 @@ async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary): Promise<
  */
 async function clearLocalModification(entry: OutboxEntry): Promise<void> {
   if (!entry.entityId) return;
-  const key = `${orgId}:${entry.entityType}:${entry.entityId}`;
+  const key = `${entry.ownerOrgId}:${entry.entityType}:${entry.entityId}`;
   const row = await db.entities.get(key);
   if (row?.locallyModified) {
     await db.entities.update(key, { locallyModified: false });
   }
 }
 
-export async function push(userId: string, orgId: string): Promise<PushSummary> {
+export async function push(
+  userId: string,
+  orgId: string,
+  options: { allowedOperationTypes?: readonly string[]; isSessionCurrent?: () => boolean } = {},
+): Promise<PushSummary> {
   const summary: PushSummary = { ...EMPTY_PUSH };
-  const due = await dueEntries(userId, orgId);
+  const isSessionCurrent = options.isSessionCurrent ?? (() => true);
+  if (!isSessionCurrent()) return summary;
+  const allowedTypes = options.allowedOperationTypes ? new Set(options.allowedOperationTypes) : null;
+  const due = (await dueEntries(userId, orgId)).filter(entry => !allowedTypes || allowedTypes.has(entry.type));
+  if (!isSessionCurrent()) return summary;
   if (due.length === 0) return summary;
 
   // Already sorted by priority then sequence. Slice the highest-priority window
@@ -469,11 +504,12 @@ export async function push(userId: string, orgId: string): Promise<PushSummary> 
   // HTTP entries first: those are the existing hardened operations (clamp,
   // unclamp) and they are what a yard worker is waiting on.
   for (const e of httpEntries) {
-    await pushHttpEntry(e, summary);
+    if (!isSessionCurrent()) return summary;
+    await pushHttpEntry(e, summary, isSessionCurrent);
   }
 
-  if (syncEntries.length > 0) {
-    await pushSyncBatch(syncEntries, summary);
+  if (syncEntries.length > 0 && isSessionCurrent()) {
+    await pushSyncBatch(syncEntries, summary, isSessionCurrent);
   }
 
   return summary;
@@ -508,10 +544,15 @@ export function lastSyncRun(): SyncRunSummary | null {
  * no sync engine — the worker's ability to keep recording work locally must not
  * depend on this succeeding.
  */
-export async function runSync(userId: string, orgId: string): Promise<SyncRunSummary> {
+export async function runSync(
+  userId: string,
+  orgId: string,
+  options: { pullEnabled?: boolean; allowedOperationTypes?: readonly string[]; isSessionCurrent?: () => boolean } = {},
+): Promise<SyncRunSummary> {
   const result: SyncRunSummary = { ranAt: Date.now(), pull: null, push: null, blocked: null, error: null };
+  const isSessionCurrent = options.isSessionCurrent ?? (() => true);
 
-  if (running) return result;
+  if (running || !isSessionCurrent()) return result;
   if (!isEnabled('OFFLINE_SYNC')) return result;
   if (!isReachable()) return result;
 
@@ -519,16 +560,23 @@ export async function runSync(userId: string, orgId: string): Promise<SyncRunSum
   const endSync = beginSync();
 
   try {
-    await recoverInFlight();
+    await recoverInFlight({ userId, orgId, allowedOperationTypes: options.allowedOperationTypes });
+    if (!isSessionCurrent()) return result;
 
     // 1. Authorisation first. Everything below depends on still being allowed.
     await registerDevice();
+    if (!isSessionCurrent()) return result;
 
-    // 2. Field work up before state comes down.
-    result.push = await push(userId, orgId);
+    // 2. Field work up before state comes down. An account/tenant switch
+    // invalidates this cycle before it can replay the previous identity's queue
+    // with the newly signed-in user's access token.
+    result.push = await push(userId, orgId, { allowedOperationTypes: options.allowedOperationTypes, isSessionCurrent });
+    if (!isSessionCurrent()) return result;
 
-    // 3. Reconcile.
-    result.pull = await pull(userId, orgId);
+    // 3. Reconcile only for surfaces authorised to mirror the shared entity set.
+    // SJM field clients push append-only journey events and never pull CDS data.
+    if (options.pullEnabled !== false) result.pull = await pull(userId, orgId);
+    if (!isSessionCurrent()) return result;
 
     reportSyncSuccess();
   } catch (err) {

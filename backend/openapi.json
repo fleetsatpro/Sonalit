@@ -128,7 +128,7 @@
         }
       }
     },
-    "/api/v1/auth/?/identity/overview": {
+    "/api/v1/auth/identity/overview": {
       "get": {
         "operationId": "get_api_v1_auth_identity_overview",
         "responses": {
@@ -138,7 +138,7 @@
         }
       }
     },
-    "/api/v1/auth/?/identity/roles": {
+    "/api/v1/auth/identity/roles": {
       "get": {
         "operationId": "get_api_v1_auth_identity_roles",
         "responses": {
@@ -148,7 +148,7 @@
         }
       }
     },
-    "/api/v1/auth/?/identity/users": {
+    "/api/v1/auth/identity/users": {
       "get": {
         "operationId": "get_api_v1_auth_identity_users",
         "responses": {
@@ -158,7 +158,7 @@
         }
       }
     },
-    "/api/v1/auth/?/identity/users/{id}": {
+    "/api/v1/auth/identity/users/{id}": {
       "patch": {
         "operationId": "patch_api_v1_auth_identity_users_id",
         "responses": {
@@ -168,7 +168,7 @@
         }
       }
     },
-    "/api/v1/auth/?/identity/sessions": {
+    "/api/v1/auth/identity/sessions": {
       "get": {
         "operationId": "get_api_v1_auth_identity_sessions",
         "responses": {
@@ -178,7 +178,7 @@
         }
       }
     },
-    "/api/v1/auth/?/identity/sessions/revoke-all": {
+    "/api/v1/auth/identity/sessions/revoke-all": {
       "post": {
         "operationId": "post_api_v1_auth_identity_sessions_revoke_all",
         "responses": {
@@ -188,7 +188,7 @@
         }
       }
     },
-    "/api/v1/auth/?/identity/sessions/{id}": {
+    "/api/v1/auth/identity/sessions/{id}": {
       "delete": {
         "operationId": "delete_api_v1_auth_identity_sessions_id",
         "responses": {
@@ -198,7 +198,7 @@
         }
       }
     },
-    "/api/v1/auth/?/identity/access-requests": {
+    "/api/v1/auth/identity/access-requests": {
       "get": {
         "operationId": "get_api_v1_auth_identity_access_requests",
         "responses": {
@@ -208,7 +208,7 @@
         }
       }
     },
-    "/api/v1/auth/?/identity/access-requests/{id}": {
+    "/api/v1/auth/identity/access-requests/{id}": {
       "patch": {
         "operationId": "patch_api_v1_auth_identity_access_requests_id",
         "responses": {
@@ -275,16 +275,6 @@
     "/api/v1/vehicles/{id}/history": {
       "get": {
         "operationId": "get_api_v1_vehicles_id_history",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/vehicles/{docId}": {
-      "delete": {
-        "operationId": "delete_api_v1_vehicles_docId",
         "responses": {
           "200": {
             "description": "OK"
@@ -3906,7 +3896,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/gaps": {
+    "/api/v1/risk/intelligence/gaps": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_gaps",
         "responses": {
@@ -3924,7 +3914,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/gaps/{id}": {
+    "/api/v1/risk/intelligence/gaps/{id}": {
       "patch": {
         "operationId": "patch_api_v1_risk_intelligence_gaps_id",
         "responses": {
@@ -3934,7 +3924,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/storylines": {
+    "/api/v1/risk/intelligence/storylines": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_storylines",
         "responses": {
@@ -3952,7 +3942,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/storylines/{id}": {
+    "/api/v1/risk/intelligence/storylines/{id}": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_storylines_id",
         "responses": {
@@ -3962,7 +3952,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/storylines/{id}/events": {
+    "/api/v1/risk/intelligence/storylines/{id}/events": {
       "post": {
         "operationId": "post_api_v1_risk_intelligence_storylines_id_events",
         "responses": {
@@ -3972,7 +3962,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/forecasts": {
+    "/api/v1/risk/intelligence/forecasts": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_forecasts",
         "responses": {
@@ -3990,7 +3980,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/publications/{id}/review": {
+    "/api/v1/risk/intelligence/publications/{id}/review": {
       "post": {
         "operationId": "post_api_v1_risk_intelligence_publications_id_review",
         "responses": {
@@ -4000,7 +3990,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/quality": {
+    "/api/v1/risk/intelligence/quality": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_quality",
         "responses": {
@@ -4010,7 +4000,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/events": {
+    "/api/v1/risk/intelligence/events": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_events",
         "responses": {
@@ -4020,7 +4010,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/events/{id}": {
+    "/api/v1/risk/intelligence/events/{id}": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_events_id",
         "responses": {
@@ -4030,7 +4020,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/sources": {
+    "/api/v1/risk/intelligence/sources": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_sources",
         "responses": {
@@ -4040,7 +4030,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/observations": {
+    "/api/v1/risk/intelligence/observations": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_observations",
         "responses": {
@@ -4050,7 +4040,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/publications": {
+    "/api/v1/risk/intelligence/publications": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_publications",
         "responses": {
@@ -4060,7 +4050,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/watchlists": {
+    "/api/v1/risk/intelligence/watchlists": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_watchlists",
         "responses": {
@@ -4070,7 +4060,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/requirements": {
+    "/api/v1/risk/intelligence/requirements": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_requirements",
         "responses": {
@@ -4078,9 +4068,17 @@
             "description": "OK"
           }
         }
+      },
+      "post": {
+        "operationId": "post_api_v1_risk_intelligence_requirements",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
-    "/api/v1/risk/intelligence/?/assessments": {
+    "/api/v1/risk/intelligence/assessments": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_assessments",
         "responses": {
@@ -4090,7 +4088,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/entities": {
+    "/api/v1/risk/intelligence/entities": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_entities",
         "responses": {
@@ -4100,7 +4098,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/early-warnings": {
+    "/api/v1/risk/intelligence/early-warnings": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_early_warnings",
         "responses": {
@@ -4454,16 +4452,6 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/requirements": {
-      "post": {
-        "operationId": "post_api_v1_risk_intelligence_requirements",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/v1/risk/intelligence/advisories/draft": {
       "post": {
         "operationId": "post_api_v1_risk_intelligence_advisories_draft",
@@ -4798,7 +4786,7 @@
         }
       }
     },
-    "/api/v1/portal/?/shipments": {
+    "/api/v1/portal/shipments": {
       "get": {
         "operationId": "get_api_v1_portal_shipments",
         "responses": {
@@ -4808,7 +4796,7 @@
         }
       }
     },
-    "/api/v1/portal/?/document-vault": {
+    "/api/v1/portal/document-vault": {
       "get": {
         "operationId": "get_api_v1_portal_document_vault",
         "responses": {
@@ -4818,7 +4806,7 @@
         }
       }
     },
-    "/api/v1/portal/?/reports/{convoy_id}/{date}/download": {
+    "/api/v1/portal/reports/{convoy_id}/{date}/download": {
       "get": {
         "operationId": "get_api_v1_portal_reports_convoy_id_date_download",
         "responses": {
@@ -4828,7 +4816,7 @@
         }
       }
     },
-    "/api/v1/portal/?/clients": {
+    "/api/v1/portal/clients": {
       "post": {
         "operationId": "post_api_v1_portal_clients",
         "responses": {
@@ -4846,7 +4834,7 @@
         }
       }
     },
-    "/api/v1/portal/?/clients/{id}/links": {
+    "/api/v1/portal/clients/{id}/links": {
       "post": {
         "operationId": "post_api_v1_portal_clients_id_links",
         "responses": {
@@ -4864,7 +4852,7 @@
         }
       }
     },
-    "/api/v1/portal/?/clients/{id}/magic-link": {
+    "/api/v1/portal/clients/{id}/magic-link": {
       "post": {
         "operationId": "post_api_v1_portal_clients_id_magic_link",
         "responses": {
@@ -4874,7 +4862,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/manifest": {
+    "/api/v1/portal/convoy/{convoy_id}/manifest": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_manifest",
         "responses": {
@@ -4884,7 +4872,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/shipments/{shipment_id}/manifest-items": {
+    "/api/v1/portal/convoy/{convoy_id}/shipments/{shipment_id}/manifest-items": {
       "post": {
         "operationId": "post_api_v1_portal_convoy_convoy_id_shipments_shipment_id_manifest_items",
         "responses": {
@@ -4894,7 +4882,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/pod": {
+    "/api/v1/portal/convoy/{convoy_id}/pod": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_pod",
         "responses": {
@@ -4912,7 +4900,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/exceptions": {
+    "/api/v1/portal/convoy/{convoy_id}/exceptions": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_exceptions",
         "responses": {
@@ -4922,7 +4910,7 @@
         }
       }
     },
-    "/api/v1/portal/?/notifications": {
+    "/api/v1/portal/notifications": {
       "get": {
         "operationId": "get_api_v1_portal_notifications",
         "responses": {
@@ -4940,7 +4928,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/documents": {
+    "/api/v1/portal/convoy/{convoy_id}/documents": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_documents",
         "responses": {
@@ -4958,7 +4946,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/sensors": {
+    "/api/v1/portal/convoy/{convoy_id}/sensors": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_sensors",
         "responses": {
@@ -4968,7 +4956,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/replay": {
+    "/api/v1/portal/convoy/{convoy_id}/replay": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_replay",
         "responses": {
@@ -4978,7 +4966,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/vehicles": {
+    "/api/v1/portal/convoy/{convoy_id}/vehicles": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_vehicles",
         "responses": {
@@ -4988,7 +4976,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/overview": {
+    "/api/v1/portal/convoy/{convoy_id}/overview": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_overview",
         "responses": {
@@ -4998,7 +4986,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/custody": {
+    "/api/v1/portal/convoy/{convoy_id}/custody": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_custody",
         "responses": {
@@ -5016,7 +5004,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/security": {
+    "/api/v1/portal/convoy/{convoy_id}/security": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_security",
         "responses": {
@@ -5026,7 +5014,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/incidents": {
+    "/api/v1/portal/convoy/{convoy_id}/incidents": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_convoy_id_incidents",
         "responses": {
@@ -5036,7 +5024,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/incidents/{alert_id}/acknowledge": {
+    "/api/v1/portal/convoy/{convoy_id}/incidents/{alert_id}/acknowledge": {
       "post": {
         "operationId": "post_api_v1_portal_convoy_convoy_id_incidents_alert_id_acknowledge",
         "responses": {
@@ -5046,7 +5034,7 @@
         }
       }
     },
-    "/api/v1/portal/?/convoy/{convoy_id}/incidents/{alert_id}/resolve": {
+    "/api/v1/portal/convoy/{convoy_id}/incidents/{alert_id}/resolve": {
       "post": {
         "operationId": "post_api_v1_portal_convoy_convoy_id_incidents_alert_id_resolve",
         "responses": {
@@ -6636,7 +6624,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/overview": {
+    "/api/v1/risk/intelligence/overview": {
       "get": {
         "operationId": "get_api_v1_risk_intelligence_overview",
         "responses": {
@@ -6696,7 +6684,7 @@
         }
       }
     },
-    "/api/v1/risk/intelligence/?/publications/{id}/handling": {
+    "/api/v1/risk/intelligence/publications/{id}/handling": {
       "patch": {
         "operationId": "patch_api_v1_risk_intelligence_publications_id_handling",
         "responses": {
@@ -7005,6 +6993,84 @@
     "/api/v1/sjm/airspace": {
       "get": {
         "operationId": "get_api_v1_sjm_airspace",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id_evidence",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/upload-url": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_evidence_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/{evidenceId}/renew-upload-url": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_evidence_evidenceId_renew_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/{evidenceId}/commit": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_evidence_evidenceId_commit",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/evidence/{evidenceId}/download-url": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_evidence_evidenceId_download_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{vehicleId}/documents/": {
+      "get": {
+        "operationId": "get_api_v1_vehicles_vehicleId_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_vehicles_vehicleId_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{vehicleId}/documents/{docId}": {
+      "delete": {
+        "operationId": "delete_api_v1_vehicles_vehicleId_documents_docId",
         "responses": {
           "200": {
             "description": "OK"

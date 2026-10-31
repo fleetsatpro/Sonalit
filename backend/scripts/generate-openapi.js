@@ -33,15 +33,79 @@ try {
 const { app } = appModule;
 
 // ─── Walk Express router stack ────────────────────────────────────────────────
-function extractPrefix(regexp) {
-  if (!regexp) return '';
-  const src = regexp.source;
-  // Match /^\/some\/path\/?(?=...) patterns
-  const m = src.match(/^\^\\\/(.+?)(?:\\\/\?\(\?=|\\\/\?$|\(\?=)/);
-  if (!m) return '';
-  return '/' + m[1].replace(/\\\//g, '/').replace(/\\\./g, '.');
-}
+function extractPrefix(layer) {
+  if (!layer || !layer.regexp) return '';
+  const regexp = layer.regexp;
+  if (regexp.fast_slash) return '';
 
+  const src = regexp.source;
+  if (typeof src !== 'string' || !src.startsWith('^')) return '';
+
+  // Express 4 path-to-regexp encodes a named parameter as a capturing group
+  // inside one or more non-capturing wrappers, e.g.
+  // ^\\/vehicles\\/(?:([^\\/]+?))\\/documents\\/?(?=\\/|$)
+  // Replacing only the inner group while retaining "(?:" produces an invalid
+  // route prefix. Parse group boundaries and preserve each layer key instead.
+  let route = src.slice(1).replace(/\(\?=\\\/\|\$\).*$/, '');
+  route = route.replace(/\\\/\?$/, '');
+
+  const keys = Array.isArray(layer.keys) ? layer.keys : [];
+  let keyIndex = 0;
+  let prefix = '';
+
+  for (let i = 0; i < route.length; i += 1) {
+    const ch = route[i];
+
+    if (ch === '\\') {
+      if (i + 1 < route.length) {
+        prefix += route[i + 1];
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '(') {
+      // Non-capturing groups are syntax only; retain their contents.
+      if (route.slice(i, i + 3) === '(?:') {
+        i += 2;
+        continue;
+      }
+
+      // A capturing group corresponds to the next Express path key. Skip its
+      // regex body entirely so custom constraints never leak into the URL.
+      let depth = 1;
+      let inCharacterClass = false;
+      let end = i + 1;
+      for (; end < route.length; end += 1) {
+        const current = route[end];
+        if (current === '\\') {
+          end += 1;
+          continue;
+        }
+        if (current === '[') inCharacterClass = true;
+        else if (current === ']') inCharacterClass = false;
+        else if (!inCharacterClass && current === '(') depth += 1;
+        else if (!inCharacterClass && current === ')') {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+
+      const key = keys[keyIndex++];
+      if (key) prefix += ':' + String(key.name);
+      i = Math.min(end, route.length - 1);
+      continue;
+    }
+
+    // Closing group delimiters and optional-group quantifiers are structural.
+    if (ch === ')' || ch === '?') continue;
+    prefix += ch;
+  }
+
+  prefix = prefix.replace(/\/+/g, '/').replace(/\/+$/, '');
+  if (!prefix || prefix === '/' || !prefix.startsWith('/')) return '';
+  return prefix;
+}
 function collectRoutes(stack, base = '') {
   const routes = [];
   for (const layer of stack) {
@@ -52,7 +116,7 @@ function collectRoutes(stack, base = '') {
         routes.push({ method: method.toUpperCase(), path: fullPath });
       }
     } else if (layer.handle && layer.handle.stack) {
-      const prefix = extractPrefix(layer.regexp);
+      const prefix = extractPrefix(layer);
       collectRoutes(layer.handle.stack, base + prefix).forEach(r => routes.push(r));
     }
   }
@@ -117,6 +181,45 @@ if (checkMode) {
   }
 
   if (!upToDate) {
+    // Emit a compact structural diff so CI identifies which Express mount or
+    // operation is missing instead of reporting an opaque generated-file drift.
+    try {
+      const committed = JSON.parse(existing);
+      const committedPaths = committed.paths || {};
+      const generatedPaths = spec.paths || {};
+      const committedNames = Object.keys(committedPaths).sort();
+      const generatedNames = Object.keys(generatedPaths).sort();
+      const missing = generatedNames.filter(name => !Object.prototype.hasOwnProperty.call(committedPaths, name));
+      const extra = committedNames.filter(name => !Object.prototype.hasOwnProperty.call(generatedPaths, name));
+      const changed = [];
+
+      for (const name of generatedNames) {
+        if (!Object.prototype.hasOwnProperty.call(committedPaths, name)) continue;
+        const generatedMethods = generatedPaths[name] || {};
+        const existingMethods = committedPaths[name] || {};
+        const methods = [...new Set([...Object.keys(generatedMethods), ...Object.keys(existingMethods)])].sort();
+        for (const method of methods) {
+          const left = JSON.stringify(canonicalise(generatedMethods[method]));
+          const right = JSON.stringify(canonicalise(existingMethods[method]));
+          if (left !== right) changed.push({ path: name, method });
+        }
+      }
+
+      console.error('[openapi-drift] generated path count:', generatedNames.length);
+      console.error('[openapi-drift] committed path count:', committedNames.length);
+      if (missing.length) console.error('[openapi-drift] missing from committed spec:', missing.join(', '));
+      if (extra.length) console.error('[openapi-drift] committed but not generated:', extra.join(', '));
+      if (changed.length) console.error('[openapi-drift] differing operations:', JSON.stringify(changed));
+      const topLevelKeys = [...new Set([...Object.keys(spec), ...Object.keys(committed)])].sort();
+      const topLevelDiffs = topLevelKeys.filter(key =>
+        key !== 'paths' &&
+        JSON.stringify(canonicalise(spec[key])) !== JSON.stringify(canonicalise(committed[key]))
+      );
+      if (topLevelDiffs.length) console.error('[openapi-drift] differing top-level fields:', topLevelDiffs.join(', '));
+    } catch (diffError) {
+      console.error('[openapi-drift] unable to calculate structural diff:', diffError.message);
+    }
+
     console.error('openapi.json is out of date. Run: node backend/scripts/generate-openapi.js');
     process.exit(1);
   }

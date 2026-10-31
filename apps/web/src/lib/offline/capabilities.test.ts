@@ -39,6 +39,12 @@ describe('offline classification', () => {
     expect(checkEligibility('gps.batch', { role: 'cfo', online: false, now: NOW }).allowed).toBe(true);
   });
 
+  it('allows append-only SJM field observations offline for known account roles', () => {
+    expect(checkEligibility('sjm.field_event.create', { role: 'operator', online: false, now: NOW }).allowed).toBe(true);
+    // An analyst can hold an assigned CPO duty; the server checks that roster.
+    expect(checkEligibility('sjm.field_event.create', { role: 'analyst', online: false, now: NOW }).allowed).toBe(true);
+  });
+
   it('rejects an unknown operation rather than defaulting to permitted', () => {
     const r = checkEligibility('some.new.thing', { role: 'admin', online: false, now: NOW });
     expect(r.allowed).toBe(false);

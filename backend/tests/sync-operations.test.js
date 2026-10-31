@@ -42,12 +42,14 @@ function mockClient() {
       const sql = text.replace(/\s+/g, ' ').trim();
 
       if (/^INSERT INTO sync_operations/i.test(sql)) {
-        const [operationId, orgId] = params;
+        const [operationId, orgId, deviceId, userId] = params;
         const key = `${operationId}|${orgId}`;
         if (mockLedger.has(key)) return { rows: [] }; // ON CONFLICT DO NOTHING
         mockLedger.set(key, {
           operation_id: operationId,
           org_id: orgId,
+          device_id: deviceId,
+          user_id: userId,
           status: 'claimed',
           result: null,
           error_code: null,
@@ -56,7 +58,7 @@ function mockClient() {
         return { rows: [{ operation_id: operationId }] };
       }
 
-      if (/^SELECT status, result, error_code, error_message FROM sync_operations/i.test(sql)) {
+      if (/^SELECT user_id, status, result, error_code, error_message FROM sync_operations/i.test(sql)) {
         const [operationId, orgId] = params;
         const row = mockLedger.get(`${operationId}|${orgId}`);
         return { rows: row ? [row] : [] };
@@ -184,6 +186,23 @@ describe('exactly-once application', () => {
     expect(mockApplies).toBe(1);          // the action ran exactly once
     expect(mockContainers.get('container-1').revision).toBe(4); // not bumped twice
     expect(retry.result).toEqual(first.result); // and the original result is returned
+  });
+
+  it('does not expose or acknowledge an existing idempotency key to a different user in the same tenant', async () => {
+    const first = await applyOperation(CTX, statusChange());
+    expect(first.outcome).toBe(OUTCOME.ACCEPTED);
+    expect(mockApplies).toBe(1);
+
+    const otherUser = {
+      ...CTX,
+      user: { ...CTX.user, id: '33333333-3333-4333-8333-333333333333' },
+    };
+    const replay = await applyOperation(otherUser, statusChange());
+
+    expect(replay.outcome).toBe(OUTCOME.REJECTED);
+    expect(replay.error_code).toBe('operation_id_conflict');
+    expect(replay.result).toBeUndefined();
+    expect(mockApplies).toBe(1);
   });
 
   it('returns the original rejection on a retry, rather than re-evaluating it', async () => {

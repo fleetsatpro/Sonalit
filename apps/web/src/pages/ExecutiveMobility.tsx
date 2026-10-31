@@ -8,6 +8,9 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { STREET_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair } from '../lib/coordinatePair.js';
 import { useAuthStore } from '../stores/auth.js';
+import SjmFieldEvidenceCapture from '../components/sjm/SjmFieldEvidenceCapture.js';
+import { PRIORITY, isReachable, listForUser, performOperation, startOffline, stopOffline, subscribeOfflineStatus, type OutboxEntry } from '../lib/offline/index.js';
+import { encryptSjmFieldPayload, sjmJourneyBlindIndex } from '../lib/offline/sjmFieldCrypto.js';
 import { useMessages, useSendMessage } from '../features/comms/hooks/useComms.js';
 import { useCommsRealtime } from '../features/comms/hooks/useCommsRealtime.js';
 import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache, isFieldMissionRelevantForRosterChange, isCurrentSjmFieldIdentityGeneration } from '../lib/sjmFieldAccess.js';
@@ -108,8 +111,10 @@ function FieldRouteMap({mission,detail,loading,error}:{mission:Mission;detail?:M
 
 export default function ExecutiveMobility(){
  const user=useAuthStore(s=>s.user),clearAuth=useAuthStore(s=>s.clearAuth),qc=useQueryClient(),navigate=useNavigate();
- const signOut=()=>{qc.clear();clearAuth();void navigate({to:'/login',replace:true})};
+ const signOut=()=>{void stopOffline({purge:true,stopConnectivity:false});qc.clear();clearAuth();void navigate({to:'/login',replace:true})};
  const [selectedId,setSelectedId]=useState(''),[eventType,setEventType]=useState('delay'),[eventNote,setEventNote]=useState(''),[flightStatus,setFlightStatus]=useState<FlightStatus|''>(''),[flightNote,setFlightNote]=useState(''),[draft,setDraft]=useState('');
+ const [offlineReady,setOfflineReady]=useState(false),[fieldQueueEntries,setFieldQueueEntries]=useState<OutboxEntry[]>([]),[fieldQueueKeyWarning,setFieldQueueKeyWarning]=useState(false);
+ const acknowledgedFieldEventIdsRef=useRef(new Set<string>());
  const [inaccessibleMissionIds,setInaccessibleMissionIds]=useState<Set<string>>(()=>new Set());
  const [revalidatingMissionIds,setRevalidatingMissionIds]=useState<Set<string>>(()=>new Set());
  const selectedIdRef=useRef(selectedId);selectedIdRef.current=selectedId;
@@ -121,6 +126,15 @@ export default function ExecutiveMobility(){
  const identityGenerationRef=useRef({identityKey,generation:0});
  if(identityGenerationRef.current.identityKey!==identityKey){identityGenerationRef.current={identityKey,generation:identityGenerationRef.current.generation+1};}
  const identityGeneration=identityGenerationRef.current.generation;
+ useEffect(()=>{
+  if(!user?.id||!user.org_id){setOfflineReady(false);return;}
+  let current=true;
+  setOfflineReady(false);
+  void startOffline({userId:user.id,orgId:user.org_id,role:user.role,pullEnabled:false,allowedOperationTypes:['sjm.field_event.create']})
+   .then(started=>{if(current)setOfflineReady(started);})
+   .catch(()=>{if(current)setOfflineReady(false);});
+  return ()=>{current=false;void stopOffline({purge:false,stopConnectivity:false});};
+ },[user?.id,user?.org_id,user?.role]);
  const [verifiedScope,setVerifiedScope]=useState<{identityKey:string;generation:number}|null>(null);
  const verifiedScopeRef=useRef<{identityKey:string;generation:number}|null>(null);
  const identityCleanupRef=useRef<{identityKey:string;generation:number;promise:Promise<void>}|null>(null);
@@ -264,10 +278,64 @@ export default function ExecutiveMobility(){
  },[channelQ.data?.data.channel_id,revalidateRosterMissionAccess,identityReady,qc]);
  useCommsRealtime(user?.org_id,channelId,user?.id,detailAccessDenied?undefined:channelQ.data?.data.realtime_channel,selectedId,handleFieldRosterRevocation);
  const eventsQ=useQuery<{data:FieldEvent[]}>({queryKey:['sjm-field-events',selectedId],queryFn:async({signal})=>(await api.get('/sjm/journeys/'+selectedId+'/field-events',{signal})).data,enabled:Boolean(identityReady&&selectedId&&!detailAccessDenied&&!revalidatingMissionIds.has(selectedId)),refetchInterval:30000});
+ useEffect(()=>{
+  if(!offlineReady||!user?.id||!user.org_id||!selectedId){setFieldQueueEntries([]);return;}
+  let current=true;
+  const refresh=async()=>{
+   try{
+    const all=await listForUser(user.id,user.org_id);
+    if(!current)return;
+    const sjmEntries=all.filter(entry=>entry.type==='sjm.field_event.create');
+    let scoped:OutboxEntry[]=[];
+    try {
+     const index=await sjmJourneyBlindIndex({userId:user.id,orgId:user.org_id},selectedId);
+     scoped=sjmEntries.filter(entry=>entry.entityId===index);
+     if(current)setFieldQueueKeyWarning(false);
+    } catch {
+     // Key loss must not hide the actual pending item. Labels and blind-index
+     // identifiers reveal no mission details, while preserving status visibility.
+     scoped=sjmEntries;
+     if(current)setFieldQueueKeyWarning(true);
+    }
+    if(current)setFieldQueueEntries(scoped);
+    let newlyAcknowledged=false;
+    for(const entry of scoped){
+     if(entry.status==='ACKNOWLEDGED'&&!acknowledgedFieldEventIdsRef.current.has(entry.id)){
+      acknowledgedFieldEventIdsRef.current.add(entry.id);newlyAcknowledged=true;
+     }
+    }
+    if(newlyAcknowledged)void qc.invalidateQueries({queryKey:['sjm-field-events',selectedId]});
+   }catch{/* The durable queue remains authoritative; refresh is retried on its next notification. */}
+  };
+  const unsubscribe=subscribeOfflineStatus(()=>{void refresh();});
+  void refresh();
+  return ()=>{current=false;unsubscribe();};
+ },[offlineReady,user?.id,user?.org_id,selectedId,qc]);
  const actions=useMemo(()=>{const map=new Map<string,{type:string;label:string}>();for(const r of mission?.duty_roles||[])for(const a of ACTIONS[r]||[])map.set(a.type,a);return [...map.values()]},[mission?.duty_roles]);
  const routineActions=useMemo(()=>actions.filter(a=>!notes.includes(a.type)),[actions]);
  const nextRoutineAction=useMemo(()=>eventsQ.isSuccess?routineActions.find(a=>!(eventsQ.data?.data||[]).some(e=>e.event_type===a.type)):undefined,[routineActions,eventsQ.data,eventsQ.isSuccess]);
- const reportQ=useMutation({mutationFn:async(p:{event_type:string;note?:string})=>(await api.post('/sjm/journeys/'+selectedId+'/field-events',p)).data,onSuccess:async()=>{setEventNote('');await qc.invalidateQueries({queryKey:['sjm-field-events',selectedId]})}});
+ const reportQ=useMutation({mutationFn:async(p:{event_type:string;note?:string})=>{
+  if(offlineReady&&user?.id&&user.org_id){
+   let encryptedPayload:Record<string,unknown>;
+   let journeyIndex:string;
+   try {
+    const scope={userId:user.id,orgId:user.org_id};
+    encryptedPayload=await encryptSjmFieldPayload(scope,{journey_id:selectedId,event_type:p.event_type,note:p.note});
+    journeyIndex=await sjmJourneyBlindIndex(scope,selectedId);
+   } catch(error) {
+    if(isReachable()) {
+     const {data}=await api.post('/sjm/journeys/'+selectedId+'/field-events',p);
+     return {delivery:'server' as const,data};
+    }
+    throw error;
+   }
+   const queued=await performOperation({type:'sjm.field_event.create',entityId:journeyIndex,label:'Encrypted SJM field report',priority:notes.includes(p.event_type)?PRIORITY.CRITICAL:PRIORITY.SUPPORTING,payload:encryptedPayload,ownerUserId:user.id,ownerOrgId:user.org_id});
+   if(!queued.ok)throw new Error(queued.eligibility.reason);
+   return {delivery:'queued' as const,operation_id:queued.id};
+  }
+  const {data}=await api.post('/sjm/journeys/'+selectedId+'/field-events',p);
+  return {delivery:'server' as const,data};
+ },onSuccess:async(result)=>{setEventNote('');if(result.delivery==='server')await qc.invalidateQueries({queryKey:['sjm-field-events',selectedId]})}});
  const flightQ=useMutation({mutationFn:async()=>(await api.patch('/sjm/journeys/'+selectedId+'/flight-status',{flight_status:flightStatus,note:flightNote.trim()||undefined})).data,onSuccess:async()=>{setFlightNote('');await qc.invalidateQueries({queryKey:['sjm-my-assignments',user?.org_id,user?.id]})}});
  const canFlight=Boolean(mission?.flight_number&&((mission.duty_roles||[]).some(r=>['cpo','meet_greet','dispatcher'].includes(r))||['admin','dispatcher'].includes(String(user?.role||'').toLowerCase())));
  const send=()=>{const body=draft.trim();if(body&&channelId)sendMessage.mutate({text:body},{onSuccess:()=>setDraft('')})};
@@ -287,7 +355,11 @@ export default function ExecutiveMobility(){
      {mission?.flight_number&&<div className="mt-4 rounded-md border border-white/[0.08] bg-white/[0.025] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-mono text-[11px]  tracking-[.16em] text-slate-300">Airport coordination</p><h3 className="mt-1 text-lg font-semibold">{mission.airline||'Airline not recorded'} · {mission.flight_number}</h3><p className="mt-1 text-xs text-slate-400">{mission.airport_code||'Airport not recorded'}{mission.terminal?' · '+mission.terminal:''} · Scheduled {fmt(mission.flight_scheduled_at)}</p></div><span className="rounded-md border border-white/[0.08] px-3 py-2 text-xs">{FLIGHTS[mission.flight_status]||'Unknown'}</span></div><p className="mt-3 text-[11px] text-amber-200/80">{mission.flight_status_source==='operator_entered'?'Operator-entered · '+fmt(mission.flight_status_observed_at):'No operator observation recorded'}. No connected airline feed.</p></div>}
     </div>
     <section aria-label="Private mission channel" className="rounded-md border border-white/[0.11] bg-[#0c121a] p-4 sm:p-5"><div className="flex items-center gap-2"><MessageCircle size={15} className="text-emerald-200"/><h3 className="text-base font-semibold">Private mission channel</h3></div><p className="mt-2 text-[11px] leading-5 text-slate-500">Messages are limited to the current mission team. Dispatch roster changes control who can access this conversation.</p><div className="mt-4 max-h-[360px] space-y-3 overflow-y-auto">{channelQ.isLoading?<p className="text-xs text-slate-500">Opening secured channel…</p>:channelQ.isError?<p role="status" className="text-xs text-amber-200">Mission channel unavailable; field check-ins remain available.</p>:messagesQ.isLoading?<p role="status" className="text-xs text-slate-500">Loading message history…</p>:messagesQ.isError?<div role="status" className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200"><span>Message history could not be loaded. No empty-state assumption is made.</span><button type="button" onClick={()=>void messagesQ.refetch()} className="min-h-10 rounded-md border border-white/15 px-3 py-2 text-slate-200">Retry history</button></div>:(messagesQ.data?.data||[]).length===0?<p className="text-xs text-slate-500">No messages recorded in this mission channel.</p>:(messagesQ.data?.data||[]).map(m=><article key={m.id} className="rounded-md border border-white/[0.06] bg-white/[0.025] p-3"><div className="flex items-center justify-between gap-2"><span className="text-[11px] font-semibold text-emerald-100">{m.author_name||m.author_role||'Team member'}</span><time className="font-mono text-[11px] text-slate-600">{fmt(m.created_at)}</time></div><p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-slate-300">{m.deleted?'Message deleted':m.body}</p></article>)}</div><form onSubmit={e=>{e.preventDefault();send()}} className="mt-3 space-y-2"><textarea className={fieldClass} rows={3} maxLength={4000} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Message assigned mission team…"/><button type="submit" disabled={!channelId||sendMessage.isPending||!draft.trim()} className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-300 px-4 py-3 text-sm font-semibold text-[#04100b] disabled:opacity-40"><MessageCircle size={14}/>Send message <ArrowRight size={14}/></button>{sendMessage.isError&&<p className="text-xs text-red-200">Message not sent; check membership and connection.</p>}</form></section>
-    <div className="rounded-md border border-white/[0.09] bg-[#0c121a] p-4 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[11px]  tracking-[.12em] text-emerald-200">01 / Field check-in</p><h3 className="mt-1 text-lg font-semibold">Mission milestones</h3><p className="mt-1 text-xs text-slate-500">These reports do not prove GPS presence or alter lifecycle state.</p></div><Activity size={17} className="text-emerald-200"/></div><div className="mt-4"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><p className="text-[11px] font-semibold text-slate-200">Routine check-ins</p><p className="text-[11px] text-slate-500">Record only after the milestone occurs</p></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{routineActions.map(a=>{const isNext=eventsQ.isSuccess&&nextRoutineAction?.type===a.type;return <button type="button" key={a.type} disabled={reportQ.isPending} onClick={()=>report(a.type)} className={isNext?'min-h-[68px] rounded-md border border-emerald-300/30 bg-emerald-300/[0.07] p-3 text-left text-sm text-slate-100 disabled:opacity-50':'min-h-[68px] rounded-md border border-white/[0.10] bg-white/[0.02] p-3 text-left text-sm text-slate-200 hover:bg-white/[0.04] disabled:opacity-50'}><span className="flex items-center gap-2"><span className={'h-2 w-2 shrink-0 rounded-full '+(isNext?'bg-emerald-300':'bg-slate-500')}/>{a.label}</span>{isNext&&<span className="mt-2 block text-[11px] text-emerald-300">Next unrecorded check-in</span>}</button>})}</div>{eventsQ.isSuccess&&routineActions.length>0&&!nextRoutineAction&&<p className="mt-3 text-[11px] leading-5 text-slate-500">Every listed check-in has been recorded at least once. Entries remain available for repeat confirmation when required.</p>}</div><div className="mt-4 rounded-md border border-white/[0.07] bg-black/15 p-4"><label className="block"><span className="mb-1.5 block text-[11px] text-slate-400">Delay, issue or incident report</span><select className={fieldClass} value={eventType} onChange={e=>setEventType(e.target.value)}>{actions.filter(a=>notes.includes(a.type)).map(a=><option key={a.type} value={a.type}>{a.label}</option>)}</select></label><textarea className={fieldClass+' mt-2'} rows={3} maxLength={1200} value={eventNote} onChange={e=>setEventNote(e.target.value)} placeholder="What happened, who was notified, operational impact…"/><button type="button" disabled={reportQ.isPending||eventNote.trim().length<5||!actions.some(a=>a.type===eventType)} onClick={()=>report(eventType)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-sm text-amber-100 disabled:opacity-40"><AlertTriangle size={14}/>Record field report</button>{reportQ.isError&&<p className="mt-2 text-xs text-red-200">Server rejected this report; delivery is not assumed.</p>}{reportQ.isSuccess&&<p className="mt-2 text-xs text-emerald-200">Field report accepted by the server.</p>}</div></div>
+    <div className="rounded-md border border-white/[0.09] bg-[#0c121a] p-4 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[11px]  tracking-[.12em] text-emerald-200">01 / Field check-in</p><h3 className="mt-1 text-lg font-semibold">Mission milestones</h3><p className="mt-1 text-xs text-slate-500">These reports do not prove GPS presence or alter lifecycle state.</p></div><Activity size={17} className="text-emerald-200"/></div><div className="mt-4"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><p className="text-[11px] font-semibold text-slate-200">Routine check-ins</p><p className="text-[11px] text-slate-500">Record only after the milestone occurs</p></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{routineActions.map(a=>{const isNext=eventsQ.isSuccess&&nextRoutineAction?.type===a.type;return <button type="button" key={a.type} disabled={reportQ.isPending} onClick={()=>report(a.type)} className={isNext?'min-h-[68px] rounded-md border border-emerald-300/30 bg-emerald-300/[0.07] p-3 text-left text-sm text-slate-100 disabled:opacity-50':'min-h-[68px] rounded-md border border-white/[0.10] bg-white/[0.02] p-3 text-left text-sm text-slate-200 hover:bg-white/[0.04] disabled:opacity-50'}><span className="flex items-center gap-2"><span className={'h-2 w-2 shrink-0 rounded-full '+(isNext?'bg-emerald-300':'bg-slate-500')}/>{a.label}</span>{isNext&&<span className="mt-2 block text-[11px] text-emerald-300">Next unrecorded check-in</span>}</button>})}</div>{eventsQ.isSuccess&&routineActions.length>0&&!nextRoutineAction&&<p className="mt-3 text-[11px] leading-5 text-slate-500">Every listed check-in has been recorded at least once. Entries remain available for repeat confirmation when required.</p>}</div>
+    {fieldQueueKeyWarning&&<p role="status" className="mt-3 text-xs text-amber-200">An encrypted field report could not be matched to this mission. Its local status has not been discarded. Do not clear browser storage or hand over this device until dispatch has reconciled the queue.</p>}
+    {fieldQueueEntries.some(entry=>entry.status!=='ACKNOWLEDGED')&&<div role="status" className="mt-4 rounded-md border border-amber-300/20 bg-amber-300/[0.035] p-3"><p className="text-xs font-semibold text-amber-100">Field reports awaiting server outcome</p><ul className="mt-2 space-y-2">{fieldQueueEntries.filter(entry=>entry.status!=='ACKNOWLEDGED').slice(0,5).map(entry=><li key={entry.id} className="text-[11px] leading-5 text-slate-300"><span className="font-medium">{entry.label}</span><span className="ml-2 text-amber-200">{entry.status.replaceAll('_',' ').toLowerCase()}</span>{entry.lastErrorMessage&&<p className="text-red-200">{entry.lastErrorMessage}</p>}</li>)}</ul><p className="mt-2 text-[10px] text-slate-500">Device storage is not server acceptance. Rejected or conflicting entries remain here for review.</p></div>}
+    <div className="mt-4 rounded-md border border-white/[0.07] bg-black/15 p-4"><label className="block"><span className="mb-1.5 block text-[11px] text-slate-400">Delay, issue or incident report</span><select className={fieldClass} value={eventType} onChange={e=>setEventType(e.target.value)}>{actions.filter(a=>notes.includes(a.type)).map(a=><option key={a.type} value={a.type}>{a.label}</option>)}</select></label><textarea className={fieldClass+' mt-2'} rows={3} maxLength={1200} value={eventNote} onChange={e=>setEventNote(e.target.value)} placeholder="What happened, who was notified, operational impact…"/><button type="button" disabled={reportQ.isPending||eventNote.trim().length<5||!actions.some(a=>a.type===eventType)} onClick={()=>report(eventType)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-sm text-amber-100 disabled:opacity-40"><AlertTriangle size={14}/>Record field report</button>{reportQ.isError&&<p className="mt-2 text-xs text-red-200">The check-in was not accepted. {reportQ.error instanceof Error?reportQ.error.message:'Check connectivity or ask dispatch to verify.'}</p>}{reportQ.isSuccess&&<p className="mt-2 text-xs text-emerald-200">{reportQ.data?.delivery==='server'?'Field report accepted by the server.':fieldQueueEntries.find(entry=>entry.id===reportQ.data?.operation_id)?.status==='ACKNOWLEDGED'?'Field report acknowledged by Sonalit.':fieldQueueEntries.find(entry=>entry.id===reportQ.data?.operation_id)?.status==='FAILED_PERMANENT'?'Sonalit rejected this field report. Review the queue details above.':fieldQueueEntries.find(entry=>entry.id===reportQ.data?.operation_id)?.status==='CONFLICT'?'Sonalit reported a conflict. The local report remains preserved for review.':'Saved on this device; awaiting server acknowledgement.'}</p>}</div></div>
+    {selectedId&&<SjmFieldEvidenceCapture journeyId={selectedId}/>}
     {canFlight&&<div className="rounded-md border border-white/[0.08] bg-[#0c121a] p-4 sm:p-6"><div className="flex items-center gap-2"><PlaneLanding size={16} className="text-slate-300"/><h3 className="text-lg font-semibold">Flight-status observation</h3></div><p className="mt-2 text-xs leading-5 text-slate-400">Enter what you saw on an authorised airport/airline display or direct operational contact. Sonalit has not independently verified it.</p><div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2"><label><span className="mb-1.5 block text-[11px] text-slate-400">Status</span><select className={fieldClass} value={flightStatus} onChange={e=>setFlightStatus(e.target.value as FlightStatus|'')}><option value="">Choose observed status…</option>{(['scheduled','delayed','landed','departed','cancelled','diverted'] as FlightStatus[]).map(f=><option key={f} value={f}>{FLIGHTS[f]}</option>)}</select></label><label><span className="mb-1.5 block text-[11px] text-slate-400">Note (required for delay/cancel/divert)</span><input className={fieldClass} maxLength={1200} value={flightNote} onChange={e=>setFlightNote(e.target.value)} placeholder="Source and context"/></label></div><button type="button" disabled={flightQ.isPending||!flightStatus||(['delayed','cancelled','diverted'].includes(flightStatus)&&flightNote.trim().length<5)} onClick={()=>flightQ.mutate()} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.025] px-4 py-3 text-sm text-slate-300 disabled:opacity-40"><PlaneTakeoff size={14}/>Save operator observation</button>{flightQ.isError&&<p className="mt-2 text-xs text-red-200">Flight status not saved. Refresh and verify the assigned mission.</p>}{flightQ.isSuccess&&<p className="mt-2 text-xs text-emerald-200">Operator-entered status saved with server timestamp.</p>}</div>}
     <div className="rounded-md border border-white/[0.08] bg-[#0c121a] p-4 sm:p-6"><div className="flex items-center justify-between gap-3"><div><p className="font-mono text-[11px]  tracking-[.12em] text-slate-500">02 / Mission history</p><h3 className="mt-1 text-lg font-semibold">Recent field reports</h3></div><button type="button" onClick={()=>void eventsQ.refetch()} className="rounded-md border border-white/10 p-2" aria-label="Refresh field history"><RefreshCw size={13}/></button></div>{(eventsQ.data?.data||[]).length===0?<p className="mt-4 text-sm text-slate-500">No field reports recorded yet.</p>:<div className="mt-4 space-y-3">{(eventsQ.data?.data||[]).map(e=><article key={e.id} className="border-l border-emerald-300/25 pl-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-medium">{e.summary}</p><time className="font-mono text-[11px] text-slate-600">{fmt(e.created_at)}</time></div>{e.detail?.note&&<p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-400">{e.detail.note}</p>}<p className="mt-1 font-mono text-[11px] text-slate-600">{e.detail?.evidence_class||'OPERATOR-REPORTED'} · {e.source}</p></article>)}</div>}</div>
    </section>

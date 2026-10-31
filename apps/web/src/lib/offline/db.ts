@@ -31,6 +31,8 @@ import Dexie, { type EntityTable } from 'dexie';
 import type { BufferedFix, ConflictRecord, LocalEntity, OutboxEntry, SyncMeta } from './types.js';
 import { classifyOfflineRow, createOfflineQuarantineRecord, shouldPurgeOfflineQuarantineRecord, type OfflineQuarantineRecord, type OfflineQuarantineSource } from './offlineMigration.js';
 
+export const SJM_FIELD_KEY_PREFIX = 'sjm-field-key:v1:';
+
 /**
  * Legacy stores from the original lib/db.ts. They were declared but never
  * written to, so nothing reads them — they are carried forward only so that a
@@ -262,13 +264,21 @@ export async function purgeUserData(
   await db.transaction('rw', [db.entities, db.gps_buffer, db.outbox, db.conflicts, db.sync_meta, db.offline_quarantine], async () => {
     counts.entities = await db.entities.where('ownerLookup').equals(userId).delete();
     counts.gps = await db.gps_buffer.where('ownerUserId').equals(userId).delete();
-    counts.conflicts = await db.conflicts.where('ownerUserId').equals(userId).delete();
+
+    // Conflict records are still unresolved work. Keep them beside the retained
+    // outbox rows on ordinary logout; delete them only during explicit handover.
+    if (!keepUnsyncedOutbox) {
+      counts.conflicts = await db.conflicts.where('ownerUserId').equals(userId).delete();
+    }
 
     const owned = db.outbox.where('ownerUserId').equals(userId);
     if (keepUnsyncedOutbox) {
       const rows = await owned.toArray();
+      // Keep every non-acknowledged record, including permanently rejected
+      // encrypted SJM events whose key may be unavailable. Those require
+      // explicit review; logout is not a discard instruction.
       const disposable = rows
-        .filter(r => r.status === 'ACKNOWLEDGED' || r.status === 'FAILED_PERMANENT')
+        .filter(r => r.status === 'ACKNOWLEDGED')
         .map(r => r.id);
       await db.outbox.bulkDelete(disposable);
       counts.outbox = disposable.length;
@@ -286,6 +296,12 @@ export async function purgeUserData(
       counts.quarantined = disposableQuarantine.length;
     }
 
+    // A deliberate handover deletes all protected SJM keys for this user.
+    // Ordinary logout preserves keys with the user's encrypted pending events.
+    if (!keepUnsyncedOutbox) {
+      const keyIds = await db.sync_meta.where('key').startsWith(SJM_FIELD_KEY_PREFIX + userId + ':').primaryKeys();
+      await db.sync_meta.bulkDelete(keyIds);
+    }
     // The pull checkpoint is per-user because scope is per-user: a different
     // role sees a different slice, so resuming from someone else's checkpoint
     // would skip rows this user has never seen.
