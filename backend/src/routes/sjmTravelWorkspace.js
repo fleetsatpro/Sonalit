@@ -205,9 +205,9 @@ router.get('/', asyncHandler(async (req, res) => {
       await audit(db, req, id, 'TRAVEL_DOCUMENT_REGISTER_VIEWED', null, { record_count: documents.length });
     }
     const flightResult = await db(
-      'SELECT f.id,f.traveller_id,f.sequence,f.carrier,f.flight_number,f.departure_airport,f.departure_airport_name,f.departure_terminal,f.departure_gate,f.departure_at,f.departure_timezone,f.arrival_airport,f.arrival_airport_name,f.arrival_terminal,f.arrival_gate,f.arrival_at,f.arrival_timezone,' +
+      'SELECT f.id,f.traveller_id,CASE WHEN f.traveller_id IS NULL THEN NULL ELSE concat_ws(\' \',t.title,t.preferred_name,t.given_name,t.family_name) END AS traveller_display_name,f.sequence,f.carrier,f.flight_number,f.departure_airport,f.departure_airport_name,f.departure_terminal,f.departure_gate,f.departure_at,f.departure_timezone,f.arrival_airport,f.arrival_airport_name,f.arrival_terminal,f.arrival_gate,f.arrival_at,f.arrival_timezone,' +
       'CASE WHEN $3::boolean THEN f.booking_reference ELSE NULL END AS booking_reference,f.status,f.status_source,f.status_observed_at,f.status_note ' +
-      'FROM sjm_flight_segments f WHERE f.org_id=$1 AND f.journey_id=$2 AND f.deleted_at IS NULL ORDER BY f.sequence,f.id',
+      'FROM sjm_flight_segments f LEFT JOIN sjm_travellers t ON t.id=f.traveller_id AND t.org_id=f.org_id AND t.journey_id=f.journey_id AND t.deleted_at IS NULL WHERE f.org_id=$1 AND f.journey_id=$2 AND f.deleted_at IS NULL ORDER BY f.sequence,f.id',
       [org, id, isManager],
     );
     const dayResult = await db(
