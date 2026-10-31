@@ -291,6 +291,9 @@ export default function ExecutiveMobility(){
      scoped=sjmEntries.filter(entry=>entry.entityId===index);
      if(current)setFieldQueueKeyWarning(false);
     } catch {
+     // Key loss must not hide the actual pending item. Labels and blind-index
+     // identifiers reveal no mission details, while preserving status visibility.
+     scoped=sjmEntries;
      if(current)setFieldQueueKeyWarning(true);
     }
     if(current)setFieldQueueEntries(scoped);

@@ -269,8 +269,11 @@ export async function purgeUserData(
     const owned = db.outbox.where('ownerUserId').equals(userId);
     if (keepUnsyncedOutbox) {
       const rows = await owned.toArray();
+      // Keep every non-acknowledged record, including permanently rejected
+      // encrypted SJM events whose key may be unavailable. Those require
+      // explicit review; logout is not a discard instruction.
       const disposable = rows
-        .filter(r => r.status === 'ACKNOWLEDGED' || r.status === 'FAILED_PERMANENT')
+        .filter(r => r.status === 'ACKNOWLEDGED')
         .map(r => r.id);
       await db.outbox.bulkDelete(disposable);
       counts.outbox = disposable.length;

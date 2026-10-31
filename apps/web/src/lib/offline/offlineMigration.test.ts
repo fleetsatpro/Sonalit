@@ -70,6 +70,15 @@ describe('offline tenant-scope migration', () => {
     )).toBe(false);
   });
 
+  it('retains every non-acknowledged outbox record during ordinary logout', () => {
+    const purgeStart = dbSource.indexOf('export async function purgeUserData');
+    const purgeEnd = dbSource.indexOf('/** How many operations this user has', purgeStart);
+    const purgeSource = dbSource.slice(purgeStart, purgeEnd);
+    expect(purgeSource).toContain(".filter(r => r.status === 'ACKNOWLEDGED')");
+    expect(purgeSource).not.toContain("r.status === 'FAILED_PERMANENT'");
+    expect(purgeSource).toContain('if (!keepUnsyncedOutbox)');
+  });
+
   it('includes quarantine in the purge transaction but deletes it only on explicit data removal', () => {
     const purgeStart = dbSource.indexOf('export async function purgeUserData');
     const purgeEnd = dbSource.indexOf('/** How many operations this user has', purgeStart);

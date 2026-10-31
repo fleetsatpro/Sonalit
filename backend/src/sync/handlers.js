@@ -430,7 +430,6 @@ const sjmFieldEventCreate = {
       entity_id: journeyId,
       result: {
         event_id: event.id,
-        event_type: event.event_type,
         created_at: event.created_at,
         evidence_class: detail.evidence_class,
       },
