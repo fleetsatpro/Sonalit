@@ -100,14 +100,17 @@ function travellerInput(body) {
 }
 function flightInput(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'invalid_flight_segment' };
-  const carrier = txt(body.carrier, 120), flight = txt(body.flight_number, 24).toUpperCase();
-  const dep = txt(body.departure_airport, 4).toUpperCase(), arr = txt(body.arrival_airport, 4).toUpperCase();
+  const carrier = typeof body.carrier === 'string' ? body.carrier.trim() : '';
+  const flight = typeof body.flight_number === 'string' ? body.flight_number.trim().toUpperCase() : '';
+  const dep = typeof body.departure_airport === 'string' ? body.departure_airport.trim().toUpperCase() : '';
+  const arr = typeof body.arrival_airport === 'string' ? body.arrival_airport.trim().toUpperCase() : '';
   const depAt = body.departure_at, arrAt = body.arrival_at;
-  const depTz = txt(body.departure_timezone, 100), arrTz = txt(body.arrival_timezone, 100);
-  if (!carrier || !/^[A-Z0-9][A-Z0-9 -]{0,23}$/.test(flight)) return { error: 'flight_carrier_and_number_required' };
+  const depTz = typeof body.departure_timezone === 'string' ? body.departure_timezone.trim() : '';
+  const arrTz = typeof body.arrival_timezone === 'string' ? body.arrival_timezone.trim() : '';
+  if (!carrier || carrier.length > 120 || !/^[A-Z0-9][A-Z0-9 -]{1,23}$/.test(flight)) return { error: 'flight_carrier_and_number_required' };
   if (!/^[A-Z0-9]{3,4}$/.test(dep) || !/^[A-Z0-9]{3,4}$/.test(arr)) return { error: 'invalid_flight_airport_code' };
   if (!validTimestamp(depAt) || !validTimestamp(arrAt) || Date.parse(arrAt) <= Date.parse(depAt)) return { error: 'invalid_flight_time_window' };
-  if (!validTimezone(depTz) || !validTimezone(arrTz)) return { error: 'invalid_flight_timezone' };
+  if (depTz.length > 100 || arrTz.length > 100 || !validTimezone(depTz) || !validTimezone(arrTz)) return { error: 'invalid_flight_timezone' };
   if (body.traveller_id != null && body.traveller_id !== '' && !UUID.test(String(body.traveller_id))) return { error: 'traveller_not_found' };
   return { value: {
     carrier, flight_number: flight, departure_airport: dep, arrival_airport: arr,
