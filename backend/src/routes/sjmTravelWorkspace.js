@@ -218,7 +218,7 @@ router.get('/', asyncHandler(async (req, res) => {
     const itemResult = await db(
       'SELECT i.id,i.day_id,i.sequence,i.item_type,i.title,i.description,i.location_label,i.location_lat,i.location_lng,i.planned_start_at,i.planned_end_at,i.responsible_user_id,i.responsible_role,i.flight_segment_id,i.execution_status,i.actual_start_at,i.actual_end_at,i.execution_note,u.name AS responsible_name ' +
       'FROM sjm_itinerary_items i LEFT JOIN users u ON u.id=i.responsible_user_id AND u.org_id=i.org_id AND u.deleted_at IS NULL ' +
-      'WHERE i.org_id=$1 AND i.journey_id=$2 AND i.deleted_at IS NULL ORDER BY i.day_id,i.sequence,i.id',
+      'WHERE i.org_id=$1 AND i.journey_id=$2 AND i.deleted_at IS NULL ORDER BY i.day_id,i.planned_start_at,i.sequence,i.id',
       [org, id],
     );
     const byDay = new Map();
