@@ -624,7 +624,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(rejectedRequests).toEqual([]);
   });
 
-  test('registers a traveller, records a flight-ready dossier and executes a dated daily programme', async ({ page }) => {
+  test('registers a traveller, records a flight-ready dossier and builds a dated daily programme before approval', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
@@ -817,12 +817,89 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByLabel('IANA timezone for activity times')).toBeDisabled();
     await page.getByRole('button', { name: 'Cancel edit' }).click();
 
-    await page.getByLabel('Execution note').fill('Assigned team reached the airport reception point and confirmed readiness.');
+    // A requested journey is still in the planning phase. Execution controls
+    // must remain unavailable until the route has been approved and released.
+    await expect(page.getByLabel('Execution note')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
+  });
+
+  test('records daily activity execution only after the journey has been released', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const activity: Record<string, unknown> = {
+      id: '40000000-0000-4000-8000-000000000001',
+      sequence: 1,
+      item_type: 'meet_and_greet',
+      title: 'Airport meet and greet',
+      description: 'Receive the traveller at the agreed arrival point.',
+      location_label: 'Jomo Kenyatta International Airport',
+      planned_start_at: '2026-10-31T07:00:00.000Z',
+      planned_end_at: '2026-10-31T08:00:00.000Z',
+      responsible_user_id: 'user-sjm-e2e-admin',
+      responsible_role: 'dispatcher',
+      execution_status: 'planned',
+      actual_start_at: null,
+      actual_end_at: null,
+      execution_note: null,
+    };
+    const workspace = {
+      travellers: [{ id: '40000000-0000-4000-8000-000000000002', traveller_reference: 'TRV-EXEC-01', traveller_type: 'principal', display_name: 'Amina Example' }],
+      documents: [], flights: [],
+      days: [{
+        id: '40000000-0000-4000-8000-000000000003',
+        journey_date: '2026-10-31', timezone: 'Africa/Nairobi',
+        day_title: 'Arrival and reception', briefing: null, operational_notes: null,
+        items: [activity],
+      }],
+      readiness: {
+        phase: 'departure', ready: true, blockers: [], warnings: [],
+        counts: {
+          traveller_count: 1, principal_traveller_count: 1, flight_segment_count: 0,
+          programme_day_count: 1, timed_activity_count: 1, unassigned_activity_count: 0,
+          required_programme_day_count: 1, cleared_document_count: 0,
+          document_blocker_count: 0, expiring_document_count: 0,
+        },
+      },
+      access: { manager: true, user_id: 'user-sjm-e2e-admin', duty_roles: [] },
+      provenance: {},
+    };
+
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID, async route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ data: { ...journey, status: 'in_progress', approved_at: '2026-10-31T06:00:00.000Z', started_at: '2026-10-31T06:30:00.000Z' } }),
+    }));
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/travel-workspace', async route => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: workspace }) });
+      }
+      if (route.request().method() === 'PATCH' && route.request().url().endsWith('/execution')) {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        Object.assign(activity, body);
+        if (body.execution_status === 'in_progress') activity.actual_start_at = '2026-10-31T07:02:00.000Z';
+        if (body.execution_status === 'completed') activity.actual_end_at = '2026-10-31T07:54:00.000Z';
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: activity }) });
+      }
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected_travel_workspace_request' }) });
+    });
+
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+    await page.getByRole('tab', { name: 'Travellers & itinerary' }).click();
+    await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Execution note')).toBeVisible();
+
+    await page.getByLabel('Execution note').fill('Assigned dispatcher confirmed the arrival team is at the agreed reception point.');
     await page.getByRole('button', { name: 'Start' }).click();
     await expect(page.getByText('Execution update recorded in the activity history.')).toBeVisible();
-    await page.getByLabel('Execution note').fill('Traveller received and identity matched to the movement brief.');
+    await expect(page.getByText('In progress', { exact: true })).toBeVisible();
+
+    await page.getByLabel('Execution note').fill('Traveller received and identity matched against the approved movement brief.');
     await page.getByRole('button', { name: 'Complete' }).click();
     await expect(page.getByText('Execution update recorded in the activity history.')).toBeVisible();
+    await expect(page.getByText('Completed', { exact: true })).toBeVisible();
+    await expect(page.getByText(/resolved/)).toBeVisible();
   });
 
   test('workspace tabs remain operable and preserve evidence provenance on a narrow viewport', async ({ page }) => {
