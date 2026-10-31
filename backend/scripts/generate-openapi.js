@@ -41,23 +41,70 @@ function extractPrefix(layer) {
   const src = regexp.source;
   if (typeof src !== 'string' || !src.startsWith('^')) return '';
 
-  // Express 4 path-to-regexp stores named mount parameters in layer.keys.
-  // Preserve those names when descending into a parameterised child router;
-  // dropping this prefix silently omits that router's API from OpenAPI.
+  // Express 4 path-to-regexp encodes a named parameter as a capturing group
+  // inside one or more non-capturing wrappers, e.g.
+  // ^\\/vehicles\\/(?:([^\\/]+?))\\/documents\\/?(?=\\/|$)
+  // Replacing only the inner group while retaining "(?:" produces an invalid
+  // route prefix. Parse group boundaries and preserve each layer key instead.
   let route = src.slice(1).replace(/\(\?=\\\/\|\$\).*$/, '');
   route = route.replace(/\\\/\?$/, '');
 
   const keys = Array.isArray(layer.keys) ? layer.keys : [];
   let keyIndex = 0;
-  route = route.replace(/\((?!\?)([^()]*)\)/g, match => {
-    const key = keys[keyIndex++];
-    return key ? ':' + String(key.name) : match;
-  });
+  let prefix = '';
 
-  route = route.replace(/\\\//g, '/').replace(/\\\./g, '.');
-  route = route.replace(/\/+$/, '');
-  if (!route || route === '/?' || route === '/') return '';
-  return route.startsWith('/') ? route : '';
+  for (let i = 0; i < route.length; i += 1) {
+    const ch = route[i];
+
+    if (ch === '\\') {
+      if (i + 1 < route.length) {
+        prefix += route[i + 1];
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '(') {
+      // Non-capturing groups are syntax only; retain their contents.
+      if (route.slice(i, i + 3) === '(?:') {
+        i += 2;
+        continue;
+      }
+
+      // A capturing group corresponds to the next Express path key. Skip its
+      // regex body entirely so custom constraints never leak into the URL.
+      let depth = 1;
+      let inCharacterClass = false;
+      let end = i + 1;
+      for (; end < route.length; end += 1) {
+        const current = route[end];
+        if (current === '\\') {
+          end += 1;
+          continue;
+        }
+        if (current === '[') inCharacterClass = true;
+        else if (current === ']') inCharacterClass = false;
+        else if (!inCharacterClass && current === '(') depth += 1;
+        else if (!inCharacterClass && current === ')') {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+
+      const key = keys[keyIndex++];
+      if (key) prefix += ':' + String(key.name);
+      i = Math.min(end, route.length - 1);
+      continue;
+    }
+
+    // Closing group delimiters and optional-group quantifiers are structural.
+    if (ch === ')' || ch === '?') continue;
+    prefix += ch;
+  }
+
+  prefix = prefix.replace(/\/+/g, '/').replace(/\/+$/, '');
+  if (!prefix || prefix === '/' || !prefix.startsWith('/')) return '';
+  return prefix;
 }
 function collectRoutes(stack, base = '') {
   const routes = [];
