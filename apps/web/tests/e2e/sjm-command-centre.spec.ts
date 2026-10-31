@@ -675,6 +675,9 @@ test.describe('SJM command-centre responsive smoke', () => {
           display_name: [body.title, body.given_name, body.middle_name, body.family_name].filter(Boolean).join(' '),
         };
         workspace.travellers.push(traveller);
+        workspace.readiness.counts.traveller_count = 1;
+        workspace.readiness.counts.principal_traveller_count = 1;
+        workspace.readiness.blockers = [{ code: 'airport_flight_details_incomplete', message: 'Every registered traveller on an airport movement needs a non-cancelled flight segment, or a shared segment covering the party.' }];
         workspace.documents.push({
           id: documentId, traveller_id: travellerId, document_type: 'passport',
           holder_name: 'Amina Example', review_status: 'REJECTED', review_note: 'Old scan',
@@ -691,7 +694,19 @@ test.describe('SJM command-centre responsive smoke', () => {
       if (method === 'POST' && route.request().url().endsWith('/flights')) {
         const flight = { id: flightId, sequence: 1, status: 'scheduled', allowed_next_statuses: ['scheduled','boarding','departed','delayed','cancelled','diverted'], status_source: 'operator_entered', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
         workspace.flights.push(flight);
+        workspace.readiness.counts.flight_segment_count = workspace.flights.length;
+        workspace.readiness.blockers = [{ code: 'daily_programme_incomplete', message: 'Every local calendar day between planned departure and arrival needs a programme day with at least one timed activity.', missing_dates: ['2026-10-31','2026-11-01','2026-11-02'] }];
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: flight }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/days/generate')) {
+        const schedule = [
+          { id: dayId, journey_date: '2026-10-31', timezone: 'Africa/Nairobi', day_title: 'Day 1 · Arrival and reception', items: [] },
+          { id: '30000000-0000-4000-8000-000000000007', journey_date: '2026-11-01', timezone: 'Africa/Nairobi', day_title: 'Day 2 · Executive programme', items: [] },
+          { id: '30000000-0000-4000-8000-000000000008', journey_date: '2026-11-02', timezone: 'Africa/Nairobi', day_title: 'Day 3 · Departure', items: [] },
+        ];
+        workspace.days.push(...schedule);
+        workspace.readiness.counts.programme_day_count = schedule.length;
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: { created_count: 3, existing_count: 0, total_days: 3, days: schedule.map(({ id, journey_date }) => ({ id, journey_date })) } }) });
       }
       if (method === 'POST' && route.request().url().endsWith('/days')) {
         const day = { id: dayId, ...body, timezone: 'Africa/Nairobi', items: [] };
@@ -702,6 +717,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         const day = workspace.days[0] as { items: Array<Record<string, unknown>> };
         const item = { id: itemId, sequence: 1, execution_status: 'planned', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
         day.items.push(item);
+        workspace.readiness.counts.timed_activity_count += 1;
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: item }) });
       }
       if (method === 'PATCH' && route.request().url().endsWith('/execution')) {
@@ -760,11 +776,11 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText('Kenya Airways · KQ 100', { exact: true })).toBeVisible();
     await expect(page.getByText('Traveller · Amina Example')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Add programme day' }).click();
-    await page.getByLabel('Local date').fill('2026-10-31');
-    await page.getByLabel('Day title').fill('Day 1 · Arrival and reception');
-    await page.getByRole('button', { name: 'Add day' }).click();
+    await page.getByRole('button', { name: 'Generate scheduled days' }).click();
+    await expect(page.getByText('3 daily programme day(s) generated; 0 already existed. No activities or assignments were fabricated.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Day 1 · Arrival and reception' })).toBeVisible();
+    await expect(page.getByText('Day 2 · Executive programme')).toBeVisible();
+    await expect(page.getByText('Day 3 · Departure')).toBeVisible();
 
     await page.getByRole('button', { name: 'Add activity' }).click();
     await page.getByLabel('Activity title *').fill('Airport meet and greet');
