@@ -17,6 +17,11 @@ function localDate(value, timezone) {
   }
 }
 
+function activityHasStaffing(activity) {
+  return activity?.responsible_user_assigned === true ||
+    activity?.responsible_role_staffed === true;
+}
+
 function calendarDates(start, end) {
   if (!start || !end || end < start) return [];
   const dates = [];
@@ -165,11 +170,32 @@ async function loadTravelReadiness(db, journey, phase = 'departure') {
     [org, id],
   );
   const dayResult = await db(
-    'SELECT d.id,d.journey_date,COUNT(i.id)::int AS activity_count,COUNT(i.id) FILTER (WHERE i.id IS NOT NULL AND COALESCE(NULLIF(BTRIM(i.responsible_role),\'\'),\'\')=\'\' AND (i.responsible_user_id IS NULL OR NOT EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status=\'active\' WHERE p.org_id=i.org_id AND p.journey_id=i.journey_id AND p.user_id=i.responsible_user_id AND p.removed_at IS NULL)))::int AS unassigned_activity_count FROM sjm_itinerary_days d ' +
+    'SELECT d.id,d.journey_date,COUNT(i.id)::int AS activity_count FROM sjm_itinerary_days d ' +
     'LEFT JOIN sjm_itinerary_items i ON i.org_id=d.org_id AND i.journey_id=d.journey_id AND i.day_id=d.id AND i.deleted_at IS NULL ' +
     'WHERE d.org_id=$1 AND d.journey_id=$2 AND d.deleted_at IS NULL GROUP BY d.id,d.journey_date ORDER BY d.journey_date',
     [org, id],
   );
+  // A role label is not accountability by itself: someone active on this journey
+  // must actually hold that role before the activity can satisfy departure readiness.
+  const assignmentResult = await db(
+    'SELECT i.day_id,' +
+    'EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status=\'active\' ' +
+    'WHERE p.org_id=i.org_id AND p.journey_id=i.journey_id AND p.user_id=i.responsible_user_id AND p.removed_at IS NULL) AS responsible_user_assigned,' +
+    'EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status=\'active\' ' +
+    'WHERE p.org_id=i.org_id AND p.journey_id=i.journey_id AND p.duty_role=NULLIF(BTRIM(i.responsible_role),\'\') AND p.removed_at IS NULL) AS responsible_role_staffed ' +
+    'FROM sjm_itinerary_items i WHERE i.org_id=$1 AND i.journey_id=$2 AND i.deleted_at IS NULL',
+    [org, id],
+  );
+  const unassignedByDay = new Map();
+  for (const assignment of assignmentResult.rows) {
+    if (!activityHasStaffing(assignment)) {
+      unassignedByDay.set(assignment.day_id, (unassignedByDay.get(assignment.day_id) || 0) + 1);
+    }
+  }
+  const days = dayResult.rows.map(day => ({
+    ...day,
+    unassigned_activity_count: unassignedByDay.get(day.id) || 0,
+  }));
   const documentResult = await db(
     'SELECT d.document_type,d.review_status,d.expiry_date,e.status AS evidence_status ' +
     'FROM sjm_travel_documents d JOIN sjm_evidence e ON e.id=d.evidence_id AND e.org_id=d.org_id AND e.journey_id=d.journey_id ' +
@@ -180,9 +206,9 @@ async function loadTravelReadiness(db, journey, phase = 'departure') {
     journey,
     travellers: travellerResult.rows,
     flights: flightResult.rows,
-    days: dayResult.rows,
+    days,
     documents: documentResult.rows,
   }, phase);
 }
 
-module.exports = { AIRPORT_SERVICES, localDate, calendarDates, evaluateTravelReadiness, loadTravelReadiness };
+module.exports = { AIRPORT_SERVICES, localDate, calendarDates, activityHasStaffing, evaluateTravelReadiness, loadTravelReadiness };

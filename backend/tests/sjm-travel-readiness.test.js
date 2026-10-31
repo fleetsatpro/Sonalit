@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  calendarDates, evaluateTravelReadiness,
+  activityHasStaffing, calendarDates, evaluateTravelReadiness,
 } = require('../src/services/sjmTravelReadiness');
 
 const journey = overrides => ({
@@ -72,6 +72,13 @@ describe('SJM server-side travel readiness', () => {
       days: [], documents: [],
     }, 'approval');
     expect(diverted.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
+  });
+
+  test('requires duty-role assignments to be backed by an active journey participant', () => {
+    expect(activityHasStaffing({ responsible_user_assigned: true, responsible_role_staffed: false })).toBe(true);
+    expect(activityHasStaffing({ responsible_user_assigned: false, responsible_role_staffed: true })).toBe(true);
+    expect(activityHasStaffing({ responsible_user_assigned: false, responsible_role_staffed: false })).toBe(false);
+    expect(activityHasStaffing({})).toBe(false);
   });
 
   test('requires every daily activity to have a named operator or accountable role before departure', () => {
