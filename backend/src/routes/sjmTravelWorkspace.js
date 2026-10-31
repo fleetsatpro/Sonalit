@@ -158,7 +158,7 @@ async function access(db, req, lock = 'FOR SHARE') {
   const id = String(req.params.id || '');
   if (!UUID.test(id)) return { error: 'journey_not_found' };
   const row = await db(
-    'SELECT id,status,timezone,service_type,planned_departure_at,planned_arrival_at,org_id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL ' + lock,
+    'SELECT id,status,timezone,service_type,planned_departure_at,planned_arrival_at,airport_code,terminal,airline,flight_number,flight_scheduled_at,org_id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL ' + lock,
     [id, req.user.org_id],
   );
   if (!row.rows.length) return { error: 'journey_not_found' };
@@ -232,7 +232,7 @@ router.get('/', asyncHandler(async (req, res) => {
       await audit(db, req, id, 'TRAVEL_DOCUMENT_REGISTER_VIEWED', null, { record_count: documents.length });
     }
     const flightResult = await db(
-      'SELECT f.id,f.traveller_id,CASE WHEN f.traveller_id IS NULL THEN NULL ELSE concat_ws(\' \',t.title,t.preferred_name,t.given_name,t.family_name) END AS traveller_display_name,f.sequence,f.carrier,f.flight_number,f.departure_airport,f.departure_airport_name,f.departure_terminal,f.departure_gate,f.departure_at,f.departure_timezone,f.arrival_airport,f.arrival_airport_name,f.arrival_terminal,f.arrival_gate,f.arrival_at,f.arrival_timezone,' +
+      'SELECT f.id,f.traveller_id,CASE WHEN f.traveller_id IS NULL THEN NULL ELSE concat_ws(\' \',t.title,t.given_name,t.family_name) END AS traveller_display_name,f.sequence,f.carrier,f.flight_number,f.departure_airport,f.departure_airport_name,f.departure_terminal,f.departure_gate,f.departure_at,f.departure_timezone,f.arrival_airport,f.arrival_airport_name,f.arrival_terminal,f.arrival_gate,f.arrival_at,f.arrival_timezone,' +
       'CASE WHEN $3::boolean THEN f.booking_reference ELSE NULL END AS booking_reference,f.status,f.status_source,f.status_observed_at,f.status_note ' +
       'FROM sjm_flight_segments f LEFT JOIN sjm_travellers t ON t.id=f.traveller_id AND t.org_id=f.org_id AND t.journey_id=f.journey_id AND t.deleted_at IS NULL WHERE f.org_id=$1 AND f.journey_id=$2 AND f.deleted_at IS NULL ORDER BY f.sequence,f.id',
       [org, id, isManager],
@@ -244,7 +244,7 @@ router.get('/', asyncHandler(async (req, res) => {
     );
     const itemResult = await db(
       'SELECT i.id,i.day_id,i.sequence,i.item_type,i.title,i.description,i.location_label,i.location_lat,i.location_lng,i.planned_start_at,i.planned_end_at,i.responsible_user_id,i.responsible_role,i.traveller_id,t.display_name AS traveller_display_name,i.flight_segment_id,i.execution_status,i.actual_start_at,i.actual_end_at,i.execution_note,u.name AS responsible_name ' +
-      'FROM sjm_itinerary_items i LEFT JOIN users u ON u.id=i.responsible_user_id AND u.org_id=i.org_id AND u.deleted_at IS NULL AND u.status=\'active\' AND EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=i.org_id AND p.journey_id=i.journey_id AND p.user_id=i.responsible_user_id AND p.removed_at IS NULL) LEFT JOIN LATERAL (SELECT concat_ws(\' \',tr.title,tr.preferred_name,tr.given_name,tr.family_name) AS display_name FROM sjm_travellers tr WHERE tr.id=i.traveller_id AND tr.org_id=i.org_id AND tr.journey_id=i.journey_id AND tr.deleted_at IS NULL LIMIT 1) t ON TRUE ' +
+      'FROM sjm_itinerary_items i LEFT JOIN users u ON u.id=i.responsible_user_id AND u.org_id=i.org_id AND u.deleted_at IS NULL AND u.status=\'active\' AND EXISTS (SELECT 1 FROM sjm_journey_participants p WHERE p.org_id=i.org_id AND p.journey_id=i.journey_id AND p.user_id=i.responsible_user_id AND p.removed_at IS NULL) LEFT JOIN LATERAL (SELECT concat_ws(\' \',tr.title,tr.given_name,tr.family_name) AS display_name FROM sjm_travellers tr WHERE tr.id=i.traveller_id AND tr.org_id=i.org_id AND tr.journey_id=i.journey_id AND tr.deleted_at IS NULL LIMIT 1) t ON TRUE ' +
       'WHERE i.org_id=$1 AND i.journey_id=$2 AND i.deleted_at IS NULL ORDER BY i.day_id,i.planned_start_at,i.sequence,i.id',
       [org, id],
     );
@@ -261,6 +261,13 @@ router.get('/', asyncHandler(async (req, res) => {
       days: dayResult.rows.map(day => ({ ...day, items: byDay.get(day.id) || [] })),
       readiness,
       access: { manager: isManager, duty_roles: current.roles },
+      legacy_flight_reference: {
+        airport_code: current.journey.airport_code || null,
+        terminal: current.journey.terminal || null,
+        airline: current.journey.airline || null,
+        flight_number: current.journey.flight_number || null,
+        scheduled_at: current.journey.flight_scheduled_at || null,
+      },
       provenance: { traveller_records: 'SJM traveller register; personal details manager-only', travel_documents: isManager ? 'Private SJM evidence objects; requires dedicated private SJM R2 configuration' : 'Not exposed to field roles', flight_status: 'Operator-entered unless a separately identified provider observation is returned', itinerary_execution: 'Operator-recorded execution events; not device or GPS proof' },
     } };
   });
