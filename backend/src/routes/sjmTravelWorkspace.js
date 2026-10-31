@@ -418,6 +418,41 @@ router.patch('/documents/:documentId/review', managerOnly, asyncHandler(async (r
   res.json({ data: result.data });
 }));
 
+router.post('/documents/:documentId/archive', managerOnly, asyncHandler(async (req, res) => {
+  if (!UUID.test(req.params.documentId)) return res.status(404).json({ error: 'travel_document_not_found' });
+  const reason = txt(req.body?.reason, 1000);
+  if (reason.length < 10) return res.status(400).json({ error: 'travel_document_archive_reason_required', message: 'Provide at least 10 characters explaining why this document is being superseded or retired.' });
+  const result = await req.dbTx(async client => {
+    const db = (sql, params) => client.query(sql, params);
+    const current = await access(db, req, 'FOR UPDATE');
+    if (current.error) return current;
+    const selected = await db(
+      'SELECT d.id,d.document_type,d.review_status,d.evidence_id FROM sjm_travel_documents d ' +
+      'WHERE d.id=$1 AND d.org_id=$2 AND d.journey_id=$3 AND d.deleted_at IS NULL FOR UPDATE',
+      [req.params.documentId,req.user.org_id,current.journey.id],
+    );
+    const document = selected.rows[0];
+    if (!document) return { error: 'travel_document_not_found' };
+    const archived = await db(
+      'UPDATE sjm_travel_documents SET deleted_at=NOW(),updated_at=NOW() ' +
+      'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL RETURNING id',
+      [document.id,req.user.org_id,current.journey.id],
+    );
+    if (!archived.rows.length) return { error: 'travel_document_not_found' };
+    await audit(db, req, current.journey.id, 'TRAVEL_DOCUMENT_ARCHIVED', document.id, {
+      document_type: document.document_type,
+      previous_review_status: document.review_status,
+      evidence_id: document.evidence_id,
+      reason,
+      evidence_object_retained: true,
+    });
+    return { data: { id: document.id, archived: true, evidence_object_retained: true } };
+  });
+  if (responseError(res, result)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ data: result.data });
+}));
+
 router.post('/flights', managerOnly, asyncHandler(async (req, res) => {
   const normalized = flightInput(req.body);
   if (normalized.error) return res.status(400).json({ error: normalized.error });
