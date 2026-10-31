@@ -646,6 +646,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     const itemId = '30000000-0000-4000-8000-000000000003';
     const flightId = '30000000-0000-4000-8000-000000000004';
 
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/participants', async route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ data: [{ user_id: 'user-sjm-e2e-driver', duty_role: 'driver', user_name: 'Fixture Driver', is_primary: true, removed_at: null, account_status: 'active' }] }),
+    }));
     await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/travel-workspace', async route => {
       const method = route.request().method();
       if (method === 'GET') {
@@ -661,7 +665,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: traveller }) });
       }
       if (method === 'POST' && route.request().url().endsWith('/flights')) {
-        const flight = { id: flightId, sequence: 1, status: 'scheduled', status_source: 'operator_entered', ...body };
+        const flight = { id: flightId, sequence: 1, status: 'scheduled', status_source: 'operator_entered', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
         workspace.flights.push(flight);
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: flight }) });
       }
@@ -722,6 +726,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByLabel('IANA time zone *').nth(1).fill('Europe/Paris');
     await page.getByRole('button', { name: 'Add flight segment' }).click();
     await expect(page.getByText('Kenya Airways · KQ 100', { exact: true })).toBeVisible();
+    await expect(page.getByText('Traveller · Amina Example')).toBeVisible();
 
     await page.getByRole('button', { name: 'Add programme day' }).click();
     await page.getByLabel('Local date').fill('2026-10-31');
@@ -734,7 +739,9 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByLabel(/Planned start/).fill('2026-10-31T10:00');
     await page.getByLabel(/Planned end/).fill('2026-10-31T11:00');
     await page.getByLabel('Location / venue').fill('Jomo Kenyatta International Airport');
+    await page.getByLabel('Responsible team member').selectOption('user-sjm-e2e-driver');
     await page.getByLabel('Activity instructions').fill('Receive traveller at the agreed arrival point and coordinate handover.');
+    await expect(page.getByText('Fixture Driver', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Add activity to day' }).click();
     await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
 
