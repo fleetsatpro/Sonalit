@@ -71,8 +71,7 @@ function normalizeUploadInput(body) {
         typeof l.longitude !== 'number' || !Number.isFinite(l.longitude) ||
         l.longitude < -180 || l.longitude > 180 ||
         typeof l.accuracy_m !== 'number' || !Number.isFinite(l.accuracy_m) ||
-        l.accuracy_m < 0 || l.accuracy_m > 5000 ||
-        false) {
+        l.accuracy_m < 0 || l.accuracy_m > 5000) {
       return { error: 'invalid_location_observation' };
     }
     location = {
