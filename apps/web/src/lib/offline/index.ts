@@ -109,7 +109,7 @@ async function tick(): Promise<void> {
       // runSync does not throw, but a future change might. The loop survives.
     }
 
-    if (generation === lifecycleGeneration && identity === session && available) {
+    if (generation === lifecycleGeneration && identity === session && available && !session.allowedOperationTypes) {
       try { await relieveStoragePressure(); } catch { /* cleanup must not wedge sync */ }
     }
   })();

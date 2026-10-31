@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   recoverInFlight: vi.fn(async () => 0),
   dueEntries: vi.fn(async () => []),
+  sjmDecrypt: vi.fn(async () => ({ journey_id: '33333333-3333-4333-8333-333333333333', event_type: 'security_check_in', note: null })),
   counts: vi.fn(async () => ({ pending: 0, syncing: 0, acknowledged: 0, failedRetryable: 0, failedPermanent: 0, conflict: 0, oldestPendingAgeMs: null })),
   markAcknowledged: vi.fn(),
   markFailure: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('./outbox.js', () => ({
   recoverInFlight: mocks.recoverInFlight,
 }));
 vi.mock('./retryPolicy.js', () => ({ classifyHttp: vi.fn(), classifyPushOutcome: vi.fn() }));
+vi.mock('./sjmFieldCrypto.js', () => ({ SJM_FIELD_EVENT_OPERATION: 'sjm.field_event.create', decryptSjmFieldPayload: mocks.sjmDecrypt }));
 
 import { _resetEngine, push, runSync } from './syncEngine.js';
 
@@ -51,6 +53,7 @@ describe('SJM field push-only sync mode', () => {
     mocks.apiGet.mockReset();
     mocks.recoverInFlight.mockClear();
     mocks.dueEntries.mockReset().mockResolvedValue([]);
+    mocks.sjmDecrypt.mockReset().mockResolvedValue({ journey_id: '33333333-3333-4333-8333-333333333333', event_type: 'security_check_in', note: null });
     mocks.reportSyncSuccess.mockClear();
   });
 
@@ -65,6 +68,7 @@ describe('SJM field push-only sync mode', () => {
     }));
     expect(mocks.apiGet).not.toHaveBeenCalled();
     expect(mocks.reportSyncSuccess).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverInFlight).toHaveBeenCalledWith({ userId: 'user-1', orgId: 'org-1', allowedOperationTypes: ['sjm.field_event.create'] });
   });
 
   it('does not drain unrelated queued operations during an SJM field session', async () => {
@@ -76,7 +80,7 @@ describe('SJM field push-only sync mode', () => {
       entityId: 'journey-1',
       label: 'security check-in',
       priority: 1,
-      payload: { event_type: 'security_check_in' },
+      payload: { __sjm_field_ciphertext: true, version: 1, iv: '00112233445566778899aabb', ciphertext: '00'.repeat(40) },
       localSequence: 2,
       clientCreatedAt: 1_798_000_000_000,
     };
@@ -107,7 +111,7 @@ describe('SJM field push-only sync mode', () => {
     expect(result).toMatchObject({ attempted: 1, accepted: 1 });
     const pushCall = mocks.apiPost.mock.calls.find(call => call[0] === '/sync/push');
     expect(pushCall?.[1]?.operations).toHaveLength(1);
-    expect(pushCall?.[1]?.operations[0]).toMatchObject({ type: 'sjm.field_event.create', entity_id: 'journey-1' });
+    expect(pushCall?.[1]?.operations[0]).toMatchObject({ type: 'sjm.field_event.create', entity_id: '33333333-3333-4333-8333-333333333333', payload: { event_type: 'security_check_in', note: null } });
     expect(pushCall?.[1]?.operations.some((entry: {type:string}) => entry.type.startsWith('cds_'))).toBe(false);
     expect(mocks.markAcknowledged).toHaveBeenCalledWith(sjmEntry.id, { event_id: 'event-1' });
   });

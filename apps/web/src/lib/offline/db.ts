@@ -31,6 +31,8 @@ import Dexie, { type EntityTable } from 'dexie';
 import type { BufferedFix, ConflictRecord, LocalEntity, OutboxEntry, SyncMeta } from './types.js';
 import { classifyOfflineRow, createOfflineQuarantineRecord, shouldPurgeOfflineQuarantineRecord, type OfflineQuarantineRecord, type OfflineQuarantineSource } from './offlineMigration.js';
 
+export const SJM_FIELD_KEY_PREFIX = 'sjm-field-key:v1:';
+
 /**
  * Legacy stores from the original lib/db.ts. They were declared but never
  * written to, so nothing reads them — they are carried forward only so that a
@@ -286,6 +288,12 @@ export async function purgeUserData(
       counts.quarantined = disposableQuarantine.length;
     }
 
+    // A deliberate handover deletes all protected SJM keys for this user.
+    // Ordinary logout preserves keys with the user's encrypted pending events.
+    if (!keepUnsyncedOutbox) {
+      const keyIds = await db.sync_meta.where('key').startsWith(SJM_FIELD_KEY_PREFIX + userId + ':').primaryKeys();
+      await db.sync_meta.bulkDelete(keyIds);
+    }
     // The pull checkpoint is per-user because scope is per-user: a different
     // role sees a different slice, so resuming from someone else's checkpoint
     // would skip rows this user has never seen.

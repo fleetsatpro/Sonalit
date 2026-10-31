@@ -34,6 +34,7 @@ import {
   counts, dueEntries, markAcknowledged, markFailure, markSyncing, recoverInFlight,
 } from './outbox.js';
 import { classifyHttp, classifyPushOutcome, type ClassifiedError } from './retryPolicy.js';
+import { decryptSjmFieldPayload, SJM_FIELD_EVENT_OPERATION } from './sjmFieldCrypto.js';
 import {
   CLIENT_SCHEMA_VERSION, type LocalEntity, type OutboxEntry, type PullChange, type PushResult,
 } from './types.js';
@@ -322,16 +323,28 @@ function tally(summary: PushSummary, cls: ClassifiedError, outcome: string): voi
  * all of them, and even then it applies as "unknown", not "failed".
  */
 async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Promise<void> {
-  const operations = entries.map(e => ({
-    operation_id: e.id,
-    type: e.type,
-    entity_id: e.entityId,
-    payload: e.payload,
-    client_created_at: new Date(e.clientCreatedAt).toISOString(),
-    local_sequence: e.localSequence,
-  }));
-
-  await markSyncing(entries.map(e => e.id));
+  const sendEntries: OutboxEntry[] = [];
+  const operations: Array<{operation_id:string;type:string;entity_id:string|null;payload:Record<string,unknown>;client_created_at:string;local_sequence:number}> = [];
+  for (const entry of entries) {
+    try {
+      let entityId = entry.entityId;
+      let payload = entry.payload;
+      if (entry.type === SJM_FIELD_EVENT_OPERATION) {
+        const opened = await decryptSjmFieldPayload({ userId: entry.ownerUserId, orgId: entry.ownerOrgId }, entry.payload);
+        entityId = opened.journey_id;
+        payload = { event_type: opened.event_type, note: opened.note };
+      }
+      sendEntries.push(entry);
+      operations.push({operation_id:entry.id,type:entry.type,entity_id:entityId,payload,client_created_at:new Date(entry.clientCreatedAt).toISOString(),local_sequence:entry.localSequence});
+    } catch (error) {
+      const code = String((error as {code?:string})?.code || 'encrypted_payload_unavailable');
+      const retryable = code === 'key_storage_unavailable';
+      await markFailure(entry.id, { errorClass: retryable ? 'SERVER_FAILURE' : 'SCHEMA_FAILURE', status: retryable ? 'FAILED_RETRYABLE' : 'FAILED_PERMANENT', retryable, code, message: error instanceof Error ? error.message : 'The protected field report could not be opened on this device.' });
+      if (retryable) summary.retryable++; else summary.rejected++;
+    }
+  }
+  if (sendEntries.length === 0) return;
+  await markSyncing(sendEntries.map(e => e.id));
 
   let results: PushResult[];
   try {
@@ -344,7 +357,7 @@ async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Prom
     // goes back to retryable — never to failed, which would be a claim the
     // server made a decision it may not have made.
     const cls = classifyHttp(toHttpLike(err));
-    for (const e of entries) {
+    for (const e of sendEntries) {
       await markFailure(e.id, cls);
       summary.retryable++;
     }
@@ -353,7 +366,7 @@ async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary): Prom
 
   const byId = new Map(results.map(r => [r.operation_id, r]));
 
-  for (const e of entries) {
+  for (const e of sendEntries) {
     const r = byId.get(e.id);
     if (!r) {
       // The server did not mention this operation. Unknown, so retryable.
@@ -446,7 +459,7 @@ async function pushHttpEntry(entry: OutboxEntry, summary: PushSummary): Promise<
  */
 async function clearLocalModification(entry: OutboxEntry): Promise<void> {
   if (!entry.entityId) return;
-  const key = `${orgId}:${entry.entityType}:${entry.entityId}`;
+  const key = `${entry.ownerOrgId}:${entry.entityType}:${entry.entityId}`;
   const row = await db.entities.get(key);
   if (row?.locallyModified) {
     await db.entities.update(key, { locallyModified: false });
@@ -528,7 +541,7 @@ export async function runSync(
   const endSync = beginSync();
 
   try {
-    await recoverInFlight();
+    await recoverInFlight({ userId, orgId, allowedOperationTypes: options.allowedOperationTypes });
 
     // 1. Authorisation first. Everything below depends on still being allowed.
     await registerDevice();

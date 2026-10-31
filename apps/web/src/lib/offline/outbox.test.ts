@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { countActiveQueueEntries } from './outbox.js';
+import { countActiveQueueEntries, filterRecoverableInFlightEntries } from './outbox.js';
+
+describe('SJM-scoped recovery', () => {
+  it('does not recover other tenants, other users or unrelated operation types', () => {
+    const entries = [
+      { ownerUserId: 'user-a', ownerOrgId: 'org-a', type: 'sjm.field_event.create', id: 'sjm' },
+      { ownerUserId: 'user-a', ownerOrgId: 'org-a', type: 'cds_incident.create', id: 'cds' },
+      { ownerUserId: 'user-a', ownerOrgId: 'org-b', type: 'sjm.field_event.create', id: 'other-org' },
+      { ownerUserId: 'user-b', ownerOrgId: 'org-a', type: 'sjm.field_event.create', id: 'other-user' },
+    ];
+    expect(filterRecoverableInFlightEntries(entries, { userId: 'user-a', orgId: 'org-a', allowedOperationTypes: ['sjm.field_event.create'] }).map(entry => entry.id)).toEqual(['sjm']);
+  });
+});
 
 describe('tenant-scoped offline queue capacity', () => {
   const entry = (
