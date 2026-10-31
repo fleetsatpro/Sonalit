@@ -182,8 +182,10 @@ function responseError(res, result) {
   else if (result.error === 'itinerary_item_not_found') res.status(404).json({ error: 'itinerary_item_not_found' });
   else if (result.error === 'travel_document_not_found') res.status(404).json({ error: 'travel_document_not_found' });
   else if (result.error === 'journey_terminal') res.status(409).json({ error: 'journey_terminal', message: TERMINAL_MESSAGE });
+  else if (result.error === 'travel_plan_locked') res.status(409).json({ error: 'travel_plan_locked', message: 'The approved travel dossier is frozen. Use the authorised Replan lifecycle action to invalidate the approval before changing traveller, flight or programme details.' });
   else if (result.error === 'forbidden') res.status(403).json({ error: 'travel_workspace_forbidden' });
   else if (result.error === 'activity_assignment_required') res.status(403).json({ error: 'activity_assignment_required', message: 'Only the named assignee, the assigned duty role or an authorised dispatcher may record execution for this activity.' });
+  else if (result.error === 'journey_not_released_for_execution') res.status(409).json({ error: 'journey_not_released_for_execution', message: 'Activity execution can be recorded only after the journey has been approved and released.' });
   else if (result.error === 'document_not_ready') res.status(409).json({ error: 'travel_document_not_ready' });
   else if (result.error === 'conflict') res.status(409).json({ error: 'travel_workspace_conflict', message: result.message || 'The record conflicts with an existing entry.' });
   else if (result.error === 'execution_note_required') res.status(400).json({ error: 'execution_note_required', message: 'Provide at least 10 characters describing the actual outcome, delay or exception.' });
@@ -211,6 +213,15 @@ function canExecuteItem(user, roles, item) {
   if (item?.responsible_user_id && String(item.responsible_user_id) === String(user?.id)) return true;
   if (item?.responsible_role && roles.includes(item.responsible_role)) return true;
   return false;
+}
+function travelPlanMutationError(status) {
+  if (TERMINAL.has(status)) return { error: 'journey_terminal' };
+  return ['requested','planning','assessment_pending','ready_for_review'].includes(status)
+    ? null
+    : { error: 'travel_plan_locked' };
+}
+function executionAllowedForJourney(status) {
+  return ['approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification'].includes(status);
 }
 function routeResultStatus(res, outcome, successStatus = 200) {
   if (responseError(res, outcome)) return false;
@@ -293,7 +304,8 @@ router.post('/travellers', managerOnly, asyncHandler(async (req, res) => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const v = normalized.value;
     const duplicate = await db('SELECT id FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND traveller_reference=$3 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,v.traveller_reference]);
     if (duplicate.rows.length) return { error: 'conflict', message: 'That traveller reference is already registered to this journey.' };
@@ -317,7 +329,8 @@ router.patch('/travellers/:travellerId', managerOnly, asyncHandler(async (req, r
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const v = normalized.value;
     const duplicate = await db('SELECT id FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND traveller_reference=$3 AND id<>$4 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,v.traveller_reference,req.params.travellerId]);
     if (duplicate.rows.length) return { error: 'conflict', message: 'That traveller reference is already registered to this journey.' };
@@ -355,7 +368,8 @@ router.post('/travellers/:travellerId/documents/upload-url', managerOnly, asyncH
       const db = (sql, params) => client.query(sql, params);
       const current = await access(db, req, 'FOR UPDATE');
       if (current.error) return current;
-      if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+      const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
       const traveller = await db('SELECT id FROM sjm_travellers WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE', [id,req.user.org_id,current.journey.id]);
       if (!traveller.rows.length) return { error: 'traveller_not_found' };
       const storageKey = 'orgs/' + req.user.org_id + '/sjm/' + current.journey.id + '/travel-documents/' + id + '/' + evidenceId + '.' + extension;
@@ -393,7 +407,8 @@ router.post('/documents/:documentId/renew-upload-url', managerOnly, asyncHandler
       const db = (sql, params) => client.query(sql, params);
       const current = await access(db, req, 'FOR UPDATE');
       if (current.error) return current;
-      if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+      const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
       const selected = await db(
         'SELECT d.id,d.evidence_id,d.document_type,d.review_status,e.storage_key,e.mime_type,e.size_bytes,e.file_name,e.status AS evidence_status ' +
         'FROM sjm_travel_documents d JOIN sjm_evidence e ON e.id=d.evidence_id AND e.org_id=d.org_id AND e.journey_id=d.journey_id ' +
@@ -438,7 +453,8 @@ router.patch('/documents/:documentId/review', managerOnly, asyncHandler(async (r
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const selected = await db(
       'SELECT d.id,d.review_status,d.evidence_id,e.status AS evidence_status FROM sjm_travel_documents d JOIN sjm_evidence e ON e.id=d.evidence_id AND e.org_id=d.org_id AND e.journey_id=d.journey_id WHERE d.id=$1 AND d.org_id=$2 AND d.journey_id=$3 AND d.deleted_at IS NULL FOR UPDATE OF d',
       [req.params.documentId,req.user.org_id,current.journey.id],
@@ -466,7 +482,8 @@ router.post('/documents/:documentId/archive', managerOnly, asyncHandler(async (r
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const selected = await db(
       'SELECT d.id,d.document_type,d.review_status,d.evidence_id FROM sjm_travel_documents d ' +
       'WHERE d.id=$1 AND d.org_id=$2 AND d.journey_id=$3 AND d.deleted_at IS NULL FOR UPDATE',
@@ -501,7 +518,8 @@ router.post('/flights', managerOnly, asyncHandler(async (req, res) => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const v = normalized.value;
     if (v.traveller_id && !UUID.test(String(v.traveller_id))) return { error: 'traveller_not_found' };
     if (v.traveller_id) {
@@ -529,7 +547,8 @@ router.patch('/flights/:flightId', managerOnly, asyncHandler(async (req, res) =>
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const existingFlight = await db('SELECT status FROM sjm_flight_segments WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE', [req.params.flightId,req.user.org_id,current.journey.id]);
     if (!existingFlight.rows.length) return { error: 'flight_segment_not_found' };
     if (['boarding','departed','landed','cancelled','diverted'].includes(String(existingFlight.rows[0].status))) return { error: 'flight_segment_immutable' };
@@ -560,7 +579,7 @@ router.patch('/flights/:flightId/status', asyncHandler(async (req, res) => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    if (!executionAllowedForJourney(current.journey.status)) return { error: 'journey_not_released_for_execution' };
     if (!manager(req.user) && !activeDuty(current.roles)) return { error: 'forbidden' };
     const existing = await db(
       'SELECT status FROM sjm_flight_segments WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
@@ -588,7 +607,8 @@ router.post('/days/generate', managerOnly, asyncHandler(async (req, res) => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const start = localDate(current.journey.planned_departure_at, current.journey.timezone);
     const end = localDate(current.journey.planned_arrival_at, current.journey.timezone);
     if (!start || !end || end < start) return { error: 'journey_schedule_missing' };
@@ -627,7 +647,8 @@ router.post('/days', managerOnly, asyncHandler(async (req, res) => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const duplicate = await db('SELECT id FROM sjm_itinerary_days WHERE org_id=$1 AND journey_id=$2 AND journey_date=$3 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,date]);
     if (duplicate.rows.length) return { error: 'conflict', message: 'A programme day already exists for this local date.' };
     const dayTimezone = requestedTimezone || current.journey.timezone;
@@ -654,7 +675,8 @@ router.patch('/days/:dayId', managerOnly, asyncHandler(async (req, res) => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const selected = await db('SELECT id,timezone FROM sjm_itinerary_days WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE', [req.params.dayId,req.user.org_id,current.journey.id]);
     if (!selected.rows.length) return { error: 'itinerary_day_not_found' };
     const nextTimezone = requestedTimezone || selected.rows[0].timezone;
@@ -680,7 +702,8 @@ router.post('/days/:dayId/items', managerOnly, asyncHandler(async (req, res) => 
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const dayResult = await db('SELECT id,journey_date,timezone FROM sjm_itinerary_days WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE', [req.params.dayId,req.user.org_id,current.journey.id]);
     const day = dayResult.rows[0];
     if (!day) return { error: 'itinerary_day_not_found' };
@@ -724,7 +747,8 @@ router.patch('/items/:itemId', managerOnly, asyncHandler(async (req, res) => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
     if (current.error) return current;
-    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const planMutationError = travelPlanMutationError(current.journey.status);
+    if (planMutationError) return planMutationError;
     const existing = await db(
       'SELECT i.*,d.timezone,d.journey_date FROM sjm_itinerary_items i JOIN sjm_itinerary_days d ON d.id=i.day_id AND d.org_id=i.org_id AND d.journey_id=i.journey_id WHERE i.id=$1 AND i.org_id=$2 AND i.journey_id=$3 AND i.deleted_at IS NULL FOR UPDATE OF i',
       [req.params.itemId,req.user.org_id,current.journey.id],
@@ -835,5 +859,5 @@ router.get('/items/:itemId/history', asyncHandler(async (req, res) => {
 module.exports = router;
 module.exports.__test = {
   travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone,
-  localDate, flightStatusTransitionAllowed, flightStatusOptions, canExecuteItem, TRAVELLER_TYPES, DOCUMENT_TYPES, FLIGHT_STATUSES, ITEM_TYPES, EXECUTION_STATES,
+  localDate, flightStatusTransitionAllowed, flightStatusOptions, canExecuteItem, travelPlanMutationError, executionAllowedForJourney, TRAVELLER_TYPES, DOCUMENT_TYPES, FLIGHT_STATUSES, ITEM_TYPES, EXECUTION_STATES,
 };
