@@ -30,10 +30,14 @@ function dateOnly(value) {
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
 function validTimestamp(value) {
-  return typeof value === 'string' &&
-    value.length <= 64 &&
-    /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d)$/.test(value) &&
-    Number.isFinite(Date.parse(value));
+  if (typeof value !== 'string' || value.length > 64) return false;
+  if (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d)$/.test(value)) return false;
+  const datePart = value.slice(0, 10);
+  const calendarDate = new Date(datePart + 'T00:00:00.000Z');
+  if (!Number.isFinite(calendarDate.getTime()) || calendarDate.toISOString().slice(0, 10) !== datePart) return false;
+  const offset = /([+-])(\d{2}):(\d{2})$/.exec(value);
+  if (offset && (Number(offset[2]) > 14 || (Number(offset[2]) === 14 && Number(offset[3]) !== 0))) return false;
+  return Number.isFinite(Date.parse(value));
 }
 function validTimezone(value) {
   if (typeof value !== 'string' || value.length > 100) return false;
