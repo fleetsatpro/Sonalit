@@ -503,7 +503,7 @@ router.post('/days/:dayId/items', managerOnly, asyncHandler(async (req, res) => 
     if (localDate(v.planned_start_at, day.timezone) !== String(day.journey_date).slice(0,10)) return { error: 'itinerary_item_day_mismatch' };
     if (v.responsible_user_id) {
       if (!UUID.test(String(v.responsible_user_id))) return { error: 'invalid_responsible_user' };
-      const assigned = await db('SELECT 1 FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,v.responsible_user_id]);
+      const assigned = await db("SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status='active' WHERE p.org_id=$1 AND p.journey_id=$2 AND p.user_id=$3 AND p.removed_at IS NULL LIMIT 1", [req.user.org_id,current.journey.id,v.responsible_user_id]);
       if (!assigned.rows.length) return { error: 'responsible_user_not_assigned' };
     }
     if (v.flight_segment_id) {
@@ -544,7 +544,7 @@ router.patch('/items/:itemId', managerOnly, asyncHandler(async (req, res) => {
     const v = normalized.value;
     if (localDate(v.planned_start_at, existing.rows[0].timezone) !== String(existing.rows[0].journey_date).slice(0,10)) return { error: 'itinerary_item_day_mismatch' };
     if (v.responsible_user_id) {
-      const assigned = await db('SELECT 1 FROM sjm_journey_participants WHERE org_id=$1 AND journey_id=$2 AND user_id=$3 AND removed_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,v.responsible_user_id]);
+      const assigned = await db("SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status='active' WHERE p.org_id=$1 AND p.journey_id=$2 AND p.user_id=$3 AND p.removed_at IS NULL LIMIT 1", [req.user.org_id,current.journey.id,v.responsible_user_id]);
       if (!assigned.rows.length) return { error: 'responsible_user_not_assigned' };
     }
     if (v.flight_segment_id) {
