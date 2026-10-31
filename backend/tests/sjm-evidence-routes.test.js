@@ -3,6 +3,7 @@
 const {
   normalizeUploadInput,
   canUploadEvidence,
+  canViewEvidence,
   CATEGORY_MIME_TYPES,
   MAX_BYTES,
 } = require('../src/routes/sjmEvidence').__test;
@@ -72,6 +73,16 @@ describe('SJM evidence capture contract', () => {
     expect(canUploadEvidence({ role: 'operator' }, ['cpo'])).toBe(true);
     expect(canUploadEvidence({ role: 'analyst' }, ['analyst'])).toBe(false);
     expect(canUploadEvidence({ role: 'analyst' }, [])).toBe(false);
+  });
+
+  test('keeps highly sensitive traveller documents manager-only', () => {
+    const sensitive = { access_classification: 'HIGHLY_SENSITIVE' };
+    const ordinary = { access_classification: 'INTERNAL_OPERATIONS' };
+    expect(canViewEvidence({ role: 'admin' }, sensitive)).toBe(true);
+    expect(canViewEvidence({ role: 'dispatcher' }, sensitive)).toBe(true);
+    expect(canViewEvidence({ role: 'operator' }, sensitive)).toBe(false);
+    expect(canViewEvidence({ role: 'cpo' }, sensitive)).toBe(false);
+    expect(canViewEvidence({ role: 'operator' }, ordinary)).toBe(true);
   });
 
   test('keeps the category and MIME allow-list finite and explicit', () => {
