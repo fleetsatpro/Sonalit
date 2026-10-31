@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone, localDate, DOCUMENT_TYPES, ITEM_TYPES, flightStatusTransitionAllowed, flightStatusOptions,
+  travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone, localDate, DOCUMENT_TYPES, ITEM_TYPES, flightStatusTransitionAllowed, flightStatusOptions, canExecuteItem,
 } = require('../src/routes/sjmTravelWorkspace').__test;
 
 describe('SJM traveller and travel programme contracts', () => {
@@ -86,6 +86,18 @@ describe('SJM traveller and travel programme contracts', () => {
     expect(flightStatusOptions('landed')).toEqual(['landed']);
     expect(flightStatusOptions('scheduled')).toContain('boarding');
     expect(flightStatusOptions('scheduled')).not.toContain('landed');
+  });
+
+  test('restricts activity execution to the named assignee, assigned duty role or dispatcher', () => {
+    const item = { responsible_user_id: 'assigned-user', responsible_role: 'cpo' };
+    expect(canExecuteItem({ id: 'assigned-user', role: 'operator' }, ['driver'], item)).toBe(true);
+    expect(canExecuteItem({ id: 'other-user', role: 'operator' }, ['cpo'], item)).toBe(true);
+    expect(canExecuteItem({ id: 'other-user', role: 'operator' }, ['driver'], item)).toBe(false);
+    expect(canExecuteItem({ id: 'other-user', role: 'operator' }, ['dispatcher'], item)).toBe(true);
+    expect(canExecuteItem({ id: 'other-user', role: 'admin' }, [], item)).toBe(true);
+    expect(canExecuteItem({ id: 'other-user', role: 'operator' }, ['driver'], {
+      responsible_user_id: null, responsible_role: null,
+    })).toBe(false);
   });
 
   test('validates timed programme activities, links and a single local programme day', () => {
