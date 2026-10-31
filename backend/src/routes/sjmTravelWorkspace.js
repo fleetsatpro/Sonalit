@@ -14,6 +14,19 @@ const TERMINAL = new Set(['closed', 'cancelled', 'aborted']);
 const TRAVELLER_TYPES = new Set(['principal', 'accompanying', 'assistant', 'dependent', 'other']);
 const DOCUMENT_TYPES = new Set(['passport', 'visa', 'e_ticket', 'boarding_pass', 'booking_confirmation', 'itinerary', 'travel_insurance', 'invitation_letter', 'residence_permit', 'other']);
 const FLIGHT_STATUSES = new Set(['scheduled', 'boarding', 'departed', 'delayed', 'landed', 'cancelled', 'diverted', 'unknown']);
+const FLIGHT_STATUS_TRANSITIONS = Object.freeze({
+  unknown: ['scheduled','boarding','departed','delayed','cancelled','diverted'],
+  scheduled: ['boarding','departed','delayed','cancelled','diverted'],
+  boarding: ['departed','delayed','cancelled','diverted'],
+  delayed: ['scheduled','boarding','departed','cancelled','diverted'],
+  departed: ['landed','diverted'],
+  landed: [],
+  cancelled: [],
+  diverted: [],
+});
+function flightStatusTransitionAllowed(current, next) {
+  return current === next || Boolean(FLIGHT_STATUS_TRANSITIONS[current]?.includes(next));
+}
 const ITEM_TYPES = new Set(['flight', 'airport_arrival', 'meet_and_greet', 'transfer', 'vehicle_handover', 'meeting', 'close_protection', 'security_escort', 'security_briefing', 'hotel', 'hotel_check_in', 'departure_check_in', 'border_control', 'customs', 'airport_departure', 'checkpoint', 'rest', 'event', 'other']);
 const EXECUTION_STATES = new Set(['planned', 'in_progress', 'completed', 'delayed', 'skipped', 'exception']);
 const MIME_LIMITS = Object.freeze({ 'application/pdf': 25 * 1024 * 1024, 'image/jpeg': 20 * 1024 * 1024, 'image/png': 20 * 1024 * 1024 });
@@ -160,6 +173,7 @@ function responseError(res, result) {
   else if (result.error === 'flight_segment_not_found') res.status(404).json({ error: 'flight_segment_not_found' });
   else if (result.error === 'flight_segment_immutable') res.status(409).json({ error: 'flight_segment_immutable', message: 'Flight schedule details are locked after boarding, departure, landing, cancellation or diversion. Record status observations separately.' });
   else if (result.error === 'activity_already_started') res.status(409).json({ error: 'activity_already_started', message: 'The original plan is locked after execution begins. Preserve it and create a new activity for revised work.' });
+  else if (result.error === 'invalid_flight_transition') res.status(409).json({ error: 'invalid_flight_transition', message: result.message });
   else if (result.error === 'itinerary_day_not_found') res.status(404).json({ error: 'itinerary_day_not_found' });
   else if (result.error === 'itinerary_item_not_found') res.status(404).json({ error: 'itinerary_item_not_found' });
   else if (result.error === 'travel_document_not_found') res.status(404).json({ error: 'travel_document_not_found' });
@@ -526,6 +540,14 @@ router.patch('/flights/:flightId/status', asyncHandler(async (req, res) => {
     if (current.error) return current;
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
     if (!manager(req.user) && !activeDuty(current.roles)) return { error: 'forbidden' };
+    const existing = await db(
+      'SELECT status FROM sjm_flight_segments WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
+      [req.params.flightId,req.user.org_id,current.journey.id],
+    );
+    if (!existing.rows.length) return { error: 'flight_segment_not_found' };
+    if (!flightStatusTransitionAllowed(existing.rows[0].status, status)) {
+      return { error: 'invalid_flight_transition', message: 'Flight status cannot move from ' + existing.rows[0].status + ' to ' + status + '. Record a correction outside the movement lifecycle rather than rewriting its history.' };
+    }
     const saved = await db(
       "UPDATE sjm_flight_segments SET status=$1,status_source='operator_entered',status_observed_at=NOW(),status_note=$2,updated_by=$3,updated_at=NOW() WHERE id=$4 AND org_id=$5 AND journey_id=$6 AND deleted_at IS NULL RETURNING id,status,status_source,status_observed_at,status_note",
       [status,note,req.user.id,req.params.flightId,req.user.org_id,current.journey.id],
@@ -743,5 +765,5 @@ router.get('/items/:itemId/history', asyncHandler(async (req, res) => {
 module.exports = router;
 module.exports.__test = {
   travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone,
-  localDate, TRAVELLER_TYPES, DOCUMENT_TYPES, FLIGHT_STATUSES, ITEM_TYPES, EXECUTION_STATES,
+  localDate, flightStatusTransitionAllowed, TRAVELLER_TYPES, DOCUMENT_TYPES, FLIGHT_STATUSES, ITEM_TYPES, EXECUTION_STATES,
 };
