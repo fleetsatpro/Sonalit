@@ -181,6 +181,45 @@ if (checkMode) {
   }
 
   if (!upToDate) {
+    // Emit a compact structural diff so CI identifies which Express mount or
+    // operation is missing instead of reporting an opaque generated-file drift.
+    try {
+      const committed = JSON.parse(existing);
+      const committedPaths = committed.paths || {};
+      const generatedPaths = spec.paths || {};
+      const committedNames = Object.keys(committedPaths).sort();
+      const generatedNames = Object.keys(generatedPaths).sort();
+      const missing = generatedNames.filter(name => !Object.prototype.hasOwnProperty.call(committedPaths, name));
+      const extra = committedNames.filter(name => !Object.prototype.hasOwnProperty.call(generatedPaths, name));
+      const changed = [];
+
+      for (const name of generatedNames) {
+        if (!Object.prototype.hasOwnProperty.call(committedPaths, name)) continue;
+        const generatedMethods = generatedPaths[name] || {};
+        const existingMethods = committedPaths[name] || {};
+        const methods = [...new Set([...Object.keys(generatedMethods), ...Object.keys(existingMethods)])].sort();
+        for (const method of methods) {
+          const left = JSON.stringify(canonicalise(generatedMethods[method]));
+          const right = JSON.stringify(canonicalise(existingMethods[method]));
+          if (left !== right) changed.push({ path: name, method });
+        }
+      }
+
+      console.error('[openapi-drift] generated path count:', generatedNames.length);
+      console.error('[openapi-drift] committed path count:', committedNames.length);
+      if (missing.length) console.error('[openapi-drift] missing from committed spec:', missing.join(', '));
+      if (extra.length) console.error('[openapi-drift] committed but not generated:', extra.join(', '));
+      if (changed.length) console.error('[openapi-drift] differing operations:', JSON.stringify(changed));
+      const topLevelKeys = [...new Set([...Object.keys(spec), ...Object.keys(committed)])].sort();
+      const topLevelDiffs = topLevelKeys.filter(key =>
+        key !== 'paths' &&
+        JSON.stringify(canonicalise(spec[key])) !== JSON.stringify(canonicalise(committed[key]))
+      );
+      if (topLevelDiffs.length) console.error('[openapi-drift] differing top-level fields:', topLevelDiffs.join(', '));
+    } catch (diffError) {
+      console.error('[openapi-drift] unable to calculate structural diff:', diffError.message);
+    }
+
     console.error('openapi.json is out of date. Run: node backend/scripts/generate-openapi.js');
     process.exit(1);
   }
