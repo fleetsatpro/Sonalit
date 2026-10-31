@@ -35,7 +35,7 @@ const DUTY_ROLES=['driver','backup_driver','cpo','meet_greet','security_escort',
 const MOBILITY_MANAGER_ROLES=new Set(['admin','dispatcher']);
 const REPORT_TYPES = ['itinerary','pre_trip_brief','daily','sitrep','change_notice','closeout','final'];
 const REPORT_TITLES = {itinerary:'Journey Itinerary',pre_trip_brief:'Pre-Trip Operational Brief',daily:'Daily Travel Report',sitrep:'Situation Report (SITREP)',change_notice:'Journey Change Notice',closeout:'Journey Closeout Report',final:'Final Journey Report',management_summary:'Secure Journey Management — Portfolio Summary'};
-const SECTIONS = ['summary','itinerary','stops','route_assessment','operational_events','telemetry_snapshot'];
+const SECTIONS = ['summary','itinerary','stops','route_assessment','operational_events','telemetry_snapshot','traveller_dossier','flight_segments','daily_programme','travel_readiness','document_status'];
 const EVENT_TYPES = ['operator_note','security_update','client_update','delay','incident','other'];
 const LIFECYCLE_TRANSITIONS = {
   ready_to_depart: { from:['approved'], to:'ready_to_depart', timestamp:'ready_to_depart_at' },
