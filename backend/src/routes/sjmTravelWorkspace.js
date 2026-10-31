@@ -183,6 +183,7 @@ function responseError(res, result) {
   else if (result.error === 'travel_document_not_found') res.status(404).json({ error: 'travel_document_not_found' });
   else if (result.error === 'journey_terminal') res.status(409).json({ error: 'journey_terminal', message: TERMINAL_MESSAGE });
   else if (result.error === 'forbidden') res.status(403).json({ error: 'travel_workspace_forbidden' });
+  else if (result.error === 'activity_assignment_required') res.status(403).json({ error: 'activity_assignment_required', message: 'Only the named assignee, the assigned duty role or an authorised dispatcher may record execution for this activity.' });
   else if (result.error === 'document_not_ready') res.status(409).json({ error: 'travel_document_not_ready' });
   else if (result.error === 'conflict') res.status(409).json({ error: 'travel_workspace_conflict', message: result.message || 'The record conflicts with an existing entry.' });
   else if (result.error === 'execution_note_required') res.status(400).json({ error: 'execution_note_required', message: 'Provide at least 10 characters describing the actual outcome, delay or exception.' });
@@ -202,6 +203,14 @@ function managerOnly(req, res, next) {
 }
 function activeDuty(roles) {
   return Array.isArray(roles) && roles.some(role => DUTY_ROLES.has(role));
+}
+function canExecuteItem(user, roles, item) {
+  if (manager(user)) return true;
+  if (!activeDuty(roles)) return false;
+  if (roles.includes('dispatcher')) return true;
+  if (item?.responsible_user_id && String(item.responsible_user_id) === String(user?.id)) return true;
+  if (item?.responsible_role && roles.includes(item.responsible_role)) return true;
+  return false;
 }
 function routeResultStatus(res, outcome, successStatus = 200) {
   if (responseError(res, outcome)) return false;
@@ -766,11 +775,12 @@ router.patch('/items/:itemId/execution', asyncHandler(async (req, res) => {
     if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
     if (!manager(req.user) && !activeDuty(current.roles)) return { error: 'forbidden' };
     const existing = await db(
-      'SELECT i.id,i.day_id,i.execution_status,i.actual_start_at,i.actual_end_at,i.responsible_user_id FROM sjm_itinerary_items i WHERE i.id=$1 AND i.org_id=$2 AND i.journey_id=$3 AND i.deleted_at IS NULL FOR UPDATE',
+      'SELECT i.id,i.day_id,i.execution_status,i.actual_start_at,i.actual_end_at,i.responsible_user_id,i.responsible_role FROM sjm_itinerary_items i WHERE i.id=$1 AND i.org_id=$2 AND i.journey_id=$3 AND i.deleted_at IS NULL FOR UPDATE',
       [req.params.itemId,req.user.org_id,current.journey.id],
     );
     const item = existing.rows[0];
     if (!item) return { error: 'itinerary_item_not_found' };
+    if (!canExecuteItem(req.user, current.roles, item)) return { error: 'activity_assignment_required' };
     const allowed = {
       planned: ['in_progress','delayed','skipped','exception'],
       in_progress: ['completed','delayed','exception'],
@@ -825,5 +835,5 @@ router.get('/items/:itemId/history', asyncHandler(async (req, res) => {
 module.exports = router;
 module.exports.__test = {
   travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone,
-  localDate, flightStatusTransitionAllowed, flightStatusOptions, TRAVELLER_TYPES, DOCUMENT_TYPES, FLIGHT_STATUSES, ITEM_TYPES, EXECUTION_STATES,
+  localDate, flightStatusTransitionAllowed, flightStatusOptions, canExecuteItem, TRAVELLER_TYPES, DOCUMENT_TYPES, FLIGHT_STATUSES, ITEM_TYPES, EXECUTION_STATES,
 };
