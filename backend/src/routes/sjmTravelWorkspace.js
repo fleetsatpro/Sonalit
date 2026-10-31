@@ -4,7 +4,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { asyncHandler } = require('../middleware/error');
 const storage = require('../services/sjmEvidenceStorage');
-const { loadTravelReadiness } = require('../services/sjmTravelReadiness');
+const { loadTravelReadiness, calendarDates } = require('../services/sjmTravelReadiness');
 
 const router = express.Router({ mergeParams: true });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -570,6 +570,41 @@ router.patch('/flights/:flightId/status', asyncHandler(async (req, res) => {
   if (result.error === 'flight_segment_not_found') return res.status(404).json({ error: result.error });
   if (responseError(res, result)) return;
   res.json({ data: result.data });
+}));
+
+router.post('/days/generate', managerOnly, asyncHandler(async (req, res) => {
+  const result = await req.dbTx(async client => {
+    const db = (sql, params) => client.query(sql, params);
+    const current = await access(db, req, 'FOR UPDATE');
+    if (current.error) return current;
+    if (TERMINAL.has(current.journey.status)) return { error: 'journey_terminal' };
+    const start = localDate(current.journey.planned_departure_at, current.journey.timezone);
+    const end = localDate(current.journey.planned_arrival_at, current.journey.timezone);
+    if (!start || !end || end < start) return { error: 'journey_schedule_missing' };
+    const dates = calendarDates(start, end);
+    if (dates.length === 0 || dates.length >= 366) return { error: 'journey_schedule_range_invalid' };
+    let createdCount = 0;
+    for (let index = 0; index < dates.length; index += 1) {
+      const saved = await db(
+        'INSERT INTO sjm_itinerary_days (org_id,journey_id,journey_date,timezone,day_title,created_by,updated_by) ' +
+        'VALUES ($1,$2,$3,$4,$5,$6,$6) ON CONFLICT (org_id,journey_id,journey_date) DO NOTHING RETURNING id,journey_date,day_title',
+        [req.user.org_id,current.journey.id,dates[index],current.journey.timezone,'Day '+(index+1)+' · Daily movement programme',req.user.id],
+      );
+      if (saved.rows.length) {
+        createdCount += 1;
+        await audit(db, req, current.journey.id, 'DAY_CREATED', saved.rows[0].id, { journey_date: dates[index], generated_from_journey_schedule: true });
+      }
+    }
+    const allDays = await db(
+      'SELECT id,journey_date,day_title FROM sjm_itinerary_days WHERE org_id=$1 AND journey_id=$2 AND journey_date=ANY($3::date[]) AND deleted_at IS NULL ORDER BY journey_date',
+      [req.user.org_id,current.journey.id,dates],
+    );
+    return { data: { created_count: createdCount, existing_count: dates.length-createdCount, total_days: dates.length, days: allDays.rows } };
+  });
+  if (responseError(res, result)) return;
+  if (result.error === 'journey_schedule_missing') return res.status(409).json({ error: result.error, message: 'Set valid planned departure and arrival times on the journey before generating the daily programme.' });
+  if (result.error === 'journey_schedule_range_invalid') return res.status(400).json({ error: result.error, message: 'The scheduled journey must span 1 to 365 local calendar days.' });
+  res.status(201).json({ data: result.data });
 }));
 
 router.post('/days', managerOnly, asyncHandler(async (req, res) => {
