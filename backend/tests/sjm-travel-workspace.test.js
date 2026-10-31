@@ -80,6 +80,9 @@ describe('SJM traveller and travel programme contracts', () => {
       title: 'Airport to hotel transfer',
       description: 'Controlled transfer to the confirmed accommodation.',
       location_label: 'Paris Charles de Gaulle Airport',
+      location_lat: 48.9984,
+      location_lng: 2.4147,
+      traveller_id: '30000000-0000-4000-8000-000000000001',
       planned_start_at: '2026-11-01T08:00:00.000Z',
       planned_end_at: '2026-11-01T09:00:00.000Z',
       responsible_role: 'driver',
@@ -89,6 +92,9 @@ describe('SJM traveller and travel programme contracts', () => {
       item_type: 'transfer',
       title: 'Airport to hotel transfer',
       responsible_role: 'driver',
+      location_lat: 48.9984,
+      location_lng: 2.4147,
+      traveller_id: '30000000-0000-4000-8000-000000000001',
     });
   });
 
@@ -99,6 +105,9 @@ describe('SJM traveller and travel programme contracts', () => {
       planned_end_at: '2026-11-01T09:00:00.000Z',
     };
     expect(itemInput({ ...base, responsible_user_id: 'not-a-uuid' }, 'Africa/Nairobi').error).toBe('invalid_responsible_user');
+    expect(itemInput({ ...base, traveller_id: 'not-a-uuid' }, 'Africa/Nairobi').error).toBe('traveller_not_found');
+    expect(itemInput({ ...base, location_lat: 91, location_lng: 2 }, 'Africa/Nairobi').error).toBe('invalid_itinerary_item_coordinates');
+    expect(itemInput({ ...base, location_lat: 1 }, 'Africa/Nairobi').error).toBe('invalid_itinerary_item_coordinates');
     expect(itemInput({ ...base, flight_segment_id: 'not-a-uuid' }, 'Africa/Nairobi').error).toBe('flight_segment_not_found');
     expect(itemInput({ ...base, responsible_role: 'superuser' }, 'Africa/Nairobi').error).toBe('invalid_responsible_role');
     expect(itemInput({ ...base, planned_end_at: '2026-11-02T09:00:00.000Z' }, 'Africa/Nairobi').error).toBe('itinerary_item_must_fit_one_local_day');
