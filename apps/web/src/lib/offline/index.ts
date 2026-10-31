@@ -191,10 +191,14 @@ export async function startOffline(id: OfflineIdentity): Promise<boolean> {
   if (previous?.value && typeof previous.value === 'object') {
     const prev = previous.value as { userId?: unknown; orgId?: unknown };
     if (typeof prev.userId === 'string' && (prev.userId !== id.userId || prev.orgId !== id.orgId)) {
-      // A tenant change is a hard security boundary. Unlike a normal logout,
-      // there is no safe reason to retain unsent work from the previous org on
-      // a shared device where it could later be surfaced or replayed.
-      await purgeUserData(prev.userId, { keepUnsyncedOutbox: false });
+      // A user or tenant change is a hard visibility boundary, not consent to
+      // discard work. Purge cached entity mirrors and GPS buffers, but retain
+      // unresolved operations, conflicts and their encryption keys under the
+      // previous identity. The new session cannot list or replay those rows:
+      // queue reads are scoped to its exact user and organisation, and the
+      // server revalidates current membership before accepting any replay.
+      // Destructive device handover must be a separate, explicit workflow.
+      await purgeUserData(prev.userId, { keepUnsyncedOutbox: true });
       if (generation !== lifecycleGeneration) return false;
     }
   } else if (typeof previous?.value === 'string' && previous.value !== id.userId) {

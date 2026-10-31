@@ -139,11 +139,12 @@ describe('connectivity listener lifecycle', () => {
 
 
 describe('offline session subscription lifecycle', () => {
-  it('detaches the previous reconnect callback on tenant change and removes the active callback on stop', async () => {
+  it('isolates account and tenant switches without deleting unresolved field work or encryption keys', async () => {
     vi.useFakeTimers();
     const reconnectHandlers = new Set<() => void>();
     const unsubscribers: Array<ReturnType<typeof vi.fn>> = [];
     const meta = new Map<string, unknown>();
+    const purgeUserData = vi.fn(async (_userId: string, _options?: { keepUnsyncedOutbox?: boolean }) => undefined);
     const runSync = vi.fn(async () => ({ blocked: null, pull: false, push: false }));
     const subscribeConnectivity = vi.fn((listener: () => void) => {
       reconnectHandlers.add(listener);
@@ -174,7 +175,7 @@ describe('offline session subscription lifecycle', () => {
         },
       },
       isStorageAvailable: vi.fn(async () => true),
-      purgeUserData: vi.fn(async () => undefined),
+      purgeUserData,
       requestPersistence: vi.fn(async () => true),
       storageEstimate: vi.fn(async () => ({ quota: 1_000_000, usage: 1_000, ratio: 0.001 })),
       unsyncedCount: vi.fn(async () => 0),
@@ -218,16 +219,25 @@ describe('offline session subscription lifecycle', () => {
     vi.resetModules();
     const { startOffline, stopOffline } = await import('./index.js');
     try {
+      // First identity establishes the device-local owner scope.
       expect(await startOffline({ userId: 'user-a', orgId: 'org-a', role: 'admin', pullEnabled: false })).toBe(true);
       expect(reconnectHandlers.size).toBe(1);
       expect(runSync).toHaveBeenCalledWith('user-a', 'org-a', { pullEnabled: false });
 
-      expect(await startOffline({ userId: 'user-b', orgId: 'org-b', role: 'admin' })).toBe(true);
+      // Account switch: preserve unresolved user-a operations and their key.
+      expect(await startOffline({ userId: 'user-b', orgId: 'org-a', role: 'admin' })).toBe(true);
+      expect(purgeUserData).toHaveBeenNthCalledWith(1, 'user-a', { keepUnsyncedOutbox: true });
       expect(unsubscribers[0]).toHaveBeenCalledTimes(1);
       expect(reconnectHandlers.size).toBe(1);
 
-      await stopOffline({ purge: false });
+      // Same account, different tenant: preserve the prior tenant's queue too.
+      expect(await startOffline({ userId: 'user-b', orgId: 'org-b', role: 'admin' })).toBe(true);
+      expect(purgeUserData).toHaveBeenNthCalledWith(2, 'user-b', { keepUnsyncedOutbox: true });
       expect(unsubscribers[1]).toHaveBeenCalledTimes(1);
+      expect(reconnectHandlers.size).toBe(1);
+
+      await stopOffline({ purge: false });
+      expect(unsubscribers[2]).toHaveBeenCalledTimes(1);
       expect(reconnectHandlers.size).toBe(0);
       for (let i = 0; i < 8; i += 1) await Promise.resolve();
       expect(vi.getTimerCount()).toBe(0);

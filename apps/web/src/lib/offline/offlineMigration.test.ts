@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { classifyOfflineRow, createOfflineQuarantineRecord, shouldPurgeOfflineQuarantineRecord } from './offlineMigration.js';
 
 const dbSource = readFileSync(new URL('./db.ts', import.meta.url), 'utf8');
+const indexSource = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
 
 describe('offline tenant-scope migration', () => {
   it('quarantines a legacy outbox row with no tenant instead of assigning the current tenant', () => {
@@ -85,6 +86,30 @@ describe('offline tenant-scope migration', () => {
     expect(purgeSource).toContain(".filter(r => r.status === 'ACKNOWLEDGED')");
     expect(purgeSource).not.toContain("r.status === 'FAILED_PERMANENT'");
     expect(purgeSource).toContain('if (!keepUnsyncedOutbox)');
+  });
+
+  it('preserves unresolved field work and encryption keys during automatic identity changes', () => {
+    // An automatic account/tenant switch is not an authorised data discard.
+    expect(indexSource).toContain(
+      'await purgeUserData(prev.userId, { keepUnsyncedOutbox: true });',
+    );
+    expect(indexSource).not.toContain('keepUnsyncedOutbox: false');
+
+    const purgeStart = dbSource.indexOf('export async function purgeUserData');
+    const purgeEnd = dbSource.indexOf('/** How many operations this user has', purgeStart);
+    const purgeSource = dbSource.slice(purgeStart, purgeEnd);
+
+    // Every non-acknowledged row survives the normal switch, including
+    // permanently rejected or conflicting encrypted field reports.
+    expect(purgeSource).toContain(".filter(r => r.status === 'ACKNOWLEDGED')");
+    expect(purgeSource).toContain("counts.conflicts = await db.conflicts.where('ownerUserId').equals(userId).delete();");
+
+    const keyDeletion = purgeSource.indexOf(
+      "const keyIds = await db.sync_meta.where('key').startsWith(SJM_FIELD_KEY_PREFIX + userId + ':').primaryKeys();",
+    );
+    const keyDeletionGuard = purgeSource.lastIndexOf('if (!keepUnsyncedOutbox)', keyDeletion);
+    expect(keyDeletion).toBeGreaterThan(-1);
+    expect(keyDeletionGuard).toBeGreaterThan(-1);
   });
 
   it('includes quarantine in the purge transaction but deletes it only on explicit data removal', () => {
