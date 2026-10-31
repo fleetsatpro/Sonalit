@@ -39,6 +39,8 @@ function makeOperation(overrides = {}) {
   return {
     operation_id: '55555555-5555-4555-8555-555555555555',
     type: 'sjm.field_event.create',
+    owner_user_id: USER_ID,
+    owner_org_id: ORG_ID,
     entity_id: JOURNEY_ID,
     client_created_at: '2026-10-31T00:05:00.000Z',
     payload: { event_type: 'security_check_in', note: null },
@@ -65,6 +67,20 @@ describe('SJM offline field-event handler', () => {
     expect(insert.params[5]).toContain('"device_id":"field-device-1"');
     expect(insert.params[5]).toContain('"client_observed_at":"2026-10-31T00:05:00.000Z"');
     expect(insert.params[5]).toContain('"evidence_class":"OPERATOR_REPORTED_NOT_AUTOMATIC_GPS_PROOF"');
+  });
+
+  test('rejects queued work whose original user or organisation differs from the authenticated sync identity', async () => {
+    const first = setup({ roles: ['cpo'] });
+    const wrongUser = await operation.apply(first.client, CTX, makeOperation({ owner_user_id: 'another-user' }));
+    expect(wrongUser.outcome).toBe(handlers.OUTCOME.REJECTED);
+    expect(wrongUser.error_code).toBe('operation_identity_mismatch');
+    expect(first.calls).toHaveLength(0);
+
+    const second = setup({ roles: ['cpo'] });
+    const wrongOrg = await operation.apply(second.client, CTX, makeOperation({ owner_org_id: 'another-org' }));
+    expect(wrongOrg.outcome).toBe(handlers.OUTCOME.REJECTED);
+    expect(wrongOrg.error_code).toBe('operation_identity_mismatch');
+    expect(second.calls).toHaveLength(0);
   });
 
   test('rechecks active duty and rejects a user removed from the mission', async () => {

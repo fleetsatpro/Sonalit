@@ -160,7 +160,13 @@ describe('SJM field push-only sync mode', () => {
     expect(result).toMatchObject({ attempted: 1, accepted: 1 });
     const pushCall = mocks.apiPost.mock.calls.find(call => call[0] === '/sync/push');
     expect(pushCall?.[1]?.operations).toHaveLength(1);
-    expect(pushCall?.[1]?.operations[0]).toMatchObject({ type: 'sjm.field_event.create', entity_id: '33333333-3333-4333-8333-333333333333', payload: { event_type: 'security_check_in', note: null } });
+    expect(pushCall?.[1]?.operations[0]).toMatchObject({
+      type: 'sjm.field_event.create',
+      entity_id: '33333333-3333-4333-8333-333333333333',
+      owner_user_id: 'user-1',
+      owner_org_id: 'org-1',
+      payload: { event_type: 'security_check_in', note: null },
+    });
     expect(pushCall?.[1]?.operations.some((entry: {type:string}) => entry.type.startsWith('cds_'))).toBe(false);
     expect(mocks.markAcknowledged).toHaveBeenCalledWith(sjmEntry.id, { event_id: 'event-1' });
   });

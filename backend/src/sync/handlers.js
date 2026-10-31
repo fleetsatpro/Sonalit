@@ -377,6 +377,13 @@ const SJM_TERMINAL_STATUSES = new Set(['closed', 'cancelled', 'aborted']);
 const sjmFieldEventCreate = {
   entityType: 'sjm_journey_event',
   async apply(client, ctx, op) {
+    // Bind the local outbox ownership to the authenticated sync principal.
+    // A shared browser may switch accounts while an Axios retry is in flight;
+    // never attribute the previous user's encrypted field report to the new
+    // access token, even if the new user is also assigned to this journey.
+    if (op.owner_user_id !== ctx.user.id || op.owner_org_id !== ctx.user.org_id) {
+      return reject('operation_identity_mismatch', 'This offline field report belongs to a different account or organisation.');
+    }
     const journeyId = typeof op.entity_id === 'string' ? op.entity_id : '';
     if (!SJM_JOURNEY_UUID.test(journeyId)) {
       return reject('invalid_journey_id', 'A valid SJM journey reference is required.');

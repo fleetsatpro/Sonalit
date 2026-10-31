@@ -151,13 +151,15 @@ async function applyOperation(ctx, op) {
 
       if (claim.rows.length === 0) {
         const prior = await client.query(
-          `SELECT status, result, error_code, error_message
+          `SELECT user_id, status, result, error_code, error_message
              FROM sync_operations WHERE operation_id = $1 AND org_id = $2`,
           [op.operation_id, orgId]
         );
-        // Absent only if RLS hid it, which would mean the key belongs to
-        // another org. Treat as rejected rather than leaking its existence.
-        if (prior.rows.length === 0) {
+        // RLS may hide a key owned by another tenant. Within this tenant,
+        // the idempotency key is also bound to its original user: a second
+        // account on a shared field device must not inherit the first user's
+        // acknowledgement or replay an operation under its own identity.
+        if (prior.rows.length === 0 || prior.rows[0].user_id !== ctx.user.id) {
           return {
             operation_id: op.operation_id,
             outcome: OUTCOME.REJECTED,

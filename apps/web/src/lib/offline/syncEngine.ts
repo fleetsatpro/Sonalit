@@ -324,7 +324,7 @@ function tally(summary: PushSummary, cls: ClassifiedError, outcome: string): voi
  */
 async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary, isSessionCurrent: () => boolean = () => true): Promise<void> {
   const sendEntries: OutboxEntry[] = [];
-  const operations: Array<{operation_id:string;type:string;entity_id:string|null;payload:Record<string,unknown>;client_created_at:string;local_sequence:number}> = [];
+  const operations: Array<{operation_id:string;type:string;entity_id:string|null;payload:Record<string,unknown>;client_created_at:string;local_sequence:number;owner_user_id?:string;owner_org_id?:string}> = [];
   for (const entry of entries) {
     if (!isSessionCurrent()) return;
     try {
@@ -337,7 +337,15 @@ async function pushSyncBatch(entries: OutboxEntry[], summary: PushSummary, isSes
       }
       if (!isSessionCurrent()) return;
       sendEntries.push(entry);
-      operations.push({operation_id:entry.id,type:entry.type,entity_id:entityId,payload,client_created_at:new Date(entry.clientCreatedAt).toISOString(),local_sequence:entry.localSequence});
+      operations.push({
+        operation_id:entry.id,
+        type:entry.type,
+        entity_id:entityId,
+        payload,
+        client_created_at:new Date(entry.clientCreatedAt).toISOString(),
+        local_sequence:entry.localSequence,
+        ...(entry.type===SJM_FIELD_EVENT_OPERATION?{owner_user_id:entry.ownerUserId,owner_org_id:entry.ownerOrgId}:{}),
+      });
     } catch (error) {
       const code = String((error as {code?:string})?.code || 'encrypted_payload_unavailable');
       const retryable = code === 'key_storage_unavailable';
