@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone, localDate, DOCUMENT_TYPES, ITEM_TYPES,
+  travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone, localDate, DOCUMENT_TYPES, ITEM_TYPES, flightStatusTransitionAllowed, flightStatusOptions,
 } = require('../src/routes/sjmTravelWorkspace').__test;
 
 describe('SJM traveller and travel programme contracts', () => {
@@ -83,6 +83,9 @@ describe('SJM traveller and travel programme contracts', () => {
     expect(flightStatusTransitionAllowed('landed', 'scheduled')).toBe(false);
     expect(flightStatusTransitionAllowed('cancelled', 'boarding')).toBe(false);
     expect(flightStatusTransitionAllowed('diverted', 'landed')).toBe(false);
+    expect(flightStatusOptions('landed')).toEqual(['landed']);
+    expect(flightStatusOptions('scheduled')).toContain('boarding');
+    expect(flightStatusOptions('scheduled')).not.toContain('landed');
   });
 
   test('validates timed programme activities, links and a single local programme day', () => {
