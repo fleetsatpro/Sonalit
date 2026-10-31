@@ -771,7 +771,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByLabel(/Planned start/).fill('2026-10-31T10:00');
     await page.getByLabel(/Planned end/).fill('2026-10-31T11:00');
     await page.getByLabel('Location / venue').fill('Jomo Kenyatta International Airport');
-    await page.getByLabel('Traveller').nth(1).selectOption(travellerId);
+    await page.getByLabel('Traveller').selectOption(travellerId);
     await page.getByLabel('Latitude').fill('-1.3192');
     await page.getByLabel('Longitude').fill('36.9278');
     await page.getByLabel('Responsible team member').selectOption('user-sjm-e2e-driver');
