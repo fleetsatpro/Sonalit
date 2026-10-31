@@ -43,6 +43,10 @@ describe('SJM evidence capture contract', () => {
       category: 'check_in', file_name: 'image.jpg', mime_type: 'image/jpeg', size_bytes: 100,
       location: { latitude: 120, longitude: 36, accuracy_m: 12 },
     }).error).toBe('invalid_location_observation');
+    expect(normalizeUploadInput({
+      category: 'photo', file_name: 'image.jpg', mime_type: 'image/jpeg', size_bytes: 100,
+      device_id: 'invalid\\nreference',
+    }).error).toBe('invalid_device_reference');
   });
 
   test('stores explicit browser geolocation as unverified device-reported evidence only', () => {

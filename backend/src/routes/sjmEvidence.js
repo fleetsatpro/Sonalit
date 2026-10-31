@@ -83,12 +83,18 @@ function normalizeUploadInput(body) {
     };
   }
 
+  const deviceId = body.device_id == null ? null : (typeof body.device_id === 'string' ? body.device_id.trim() : '');
+  if (body.device_id != null && (!deviceId || deviceId.length > 128 || /[\x00-\x1f\x7f]/.test(deviceId))) {
+    return { error: 'invalid_device_reference' };
+  }
+
   return {
     value: {
       category,
       mimeType,
       sizeBytes,
       fileName,
+      deviceId,
       capturedAt,
       captureTimeQuality: capturedAt ? 'DEVICE_CLOCK_UNVERIFIED' : 'NOT_SUPPLIED',
       location,
@@ -147,7 +153,7 @@ router.get('/', asyncHandler(async (req, res) => {
       'SELECT e.id,e.category,e.file_name,e.mime_type,e.size_bytes,e.status,e.sha256,' +
       'e.captured_at,e.capture_time_quality,e.location_lat,e.location_lng,' +
       'e.location_accuracy_m,e.location_source,e.access_classification,' +
-      'e.retention_policy,e.retention_until,e.created_by,e.created_at,' +
+      'e.retention_policy,e.retention_until,e.created_by,e.device_id,e.created_at,' +
       'e.uploaded_at,e.verified_at,u.name AS captured_by_name ' +
       'FROM sjm_evidence e LEFT JOIN users u ON u.id=e.created_by AND u.org_id=e.org_id AND u.deleted_at IS NULL ' +
       'WHERE e.org_id=$1 AND e.journey_id=$2 AND e.deleted_at IS NULL ' +
@@ -192,13 +198,13 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
         'INSERT INTO sjm_evidence ' +
         '(id,org_id,journey_id,category,file_name,mime_type,size_bytes,storage_key,status,' +
         'captured_at,capture_time_quality,location_lat,location_lng,location_accuracy_m,' +
-        'location_source,access_classification,created_by) ' +
-        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'UPLOAD_PENDING',$9,$10,$11,$12,$13,$14,'INTERNAL_OPERATIONS',$15)",
+        'location_source,access_classification,created_by,device_id) ' +
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'UPLOAD_PENDING',$9,$10,$11,$12,$13,$14,'INTERNAL_OPERATIONS',$15,$16)",
         [
           evidenceId, req.user.org_id, journeyId, value.category, value.fileName,
           value.mimeType, value.sizeBytes, storageKey, value.capturedAt,
           value.captureTimeQuality, value.location.lat, value.location.lng,
-          value.location.accuracyM, value.location.source, req.user.id,
+          value.location.accuracyM, value.location.source, req.user.id, value.deviceId,
         ],
       );
       await db(
@@ -210,6 +216,7 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
           size_bytes: value.sizeBytes,
           capture_time_quality: value.captureTimeQuality,
           location_source: value.location.source,
+          device_id: value.deviceId,
         })],
       );
       return { data: { id: evidenceId, status: 'UPLOAD_PENDING', ...signed } };

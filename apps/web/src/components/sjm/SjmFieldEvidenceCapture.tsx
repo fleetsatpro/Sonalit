@@ -1,6 +1,7 @@
 import { useCallback,useEffect,useRef,useState } from 'react';
 import { AlertCircle,CheckCircle2,Download,FileText,Image,MapPin,RefreshCw,ShieldCheck,Upload,Video } from 'lucide-react';
 import { api } from '../../lib/api.js';
+import { getDeviceId } from '../../lib/offline/index.js';
 
 type Category='photo'|'video'|'document'|'incident_attachment'|'check_in'|'handover';
 type LocationFix={latitude:number;longitude:number;accuracy_m:number};
@@ -45,6 +46,7 @@ export default function SjmFieldEvidenceCapture({journeyId}:{journeyId:string}){
     ?await api.post('/sjm/journeys/'+journeyId+'/evidence/'+existingId+'/renew-upload-url')
     :await api.post('/sjm/journeys/'+journeyId+'/evidence/upload-url',{
       category,file_name:file.name,mime_type:file.type.toLowerCase(),size_bytes:file.size,
+      device_id:getDeviceId(),
       ...(location?{location}:{}),
     });
    const signed=request.data?.data,id=String(signed?.id||existingId||'');
