@@ -57,7 +57,12 @@ function createSjmEvidenceStorage({
       ContentType: mimeType,
       Metadata: metadata,
     });
-    const upload_url = await signUrl(s3, command, { expiresIn: UPLOAD_TTL_SECONDS });
+    let upload_url;
+    try {
+      upload_url = await signUrl(s3, command, { expiresIn: UPLOAD_TTL_SECONDS });
+    } catch {
+      throw new SjmEvidenceStorageError('storage_unavailable', 'Private evidence storage could not create an upload capability.');
+    }
     return {
       upload_url,
       expires_at: new Date(now + UPLOAD_TTL_SECONDS * 1000).toISOString(),
@@ -138,7 +143,12 @@ function createSjmEvidenceStorage({
       ResponseContentType: mimeType,
       ResponseContentDisposition: 'attachment; filename="' + safeName + '"',
     });
-    const download_url = await signUrl(s3, command, { expiresIn: DOWNLOAD_TTL_SECONDS });
+    let download_url;
+    try {
+      download_url = await signUrl(s3, command, { expiresIn: DOWNLOAD_TTL_SECONDS });
+    } catch {
+      throw new SjmEvidenceStorageError('storage_unavailable', 'Private evidence storage could not create a download capability.');
+    }
     return {
       download_url,
       expires_at: new Date(Date.now() + DOWNLOAD_TTL_SECONDS * 1000).toISOString(),

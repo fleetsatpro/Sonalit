@@ -120,9 +120,10 @@ function accessError(res, result) {
   return false;
 }
 
-async function lockJourneyAndRoles(db, orgId, journeyId, user) {
+async function lockJourneyAndRoles(db, orgId, journeyId, user, lockMode = 'FOR SHARE') {
+  const lockClause = lockMode === 'FOR UPDATE' ? 'FOR UPDATE' : 'FOR SHARE';
   const journey = await db(
-    'SELECT id,status FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+    'SELECT id,status FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL ' + lockClause,
     [journeyId, orgId],
   );
   if (!journey.rows.length) return { error: 'journey_not_found' };
@@ -176,7 +177,7 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
   try {
     outcome = await req.dbTx(async client => {
       const db = (sql, params) => client.query(sql, params);
-      const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user);
+      const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
       if (access.error) return access;
       if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
       if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
@@ -224,13 +225,53 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
   res.status(201).json({ data: outcome.data });
 }));
 
+router.post('/:evidenceId/renew-upload-url', asyncHandler(async (req, res) => {
+  const journeyId = String(req.params.id || ''), evidenceId = String(req.params.evidenceId || '');
+  if (!UUID_RE.test(journeyId) || !UUID_RE.test(evidenceId)) return res.status(404).json({ error: 'evidence_not_found' });
+  let result;
+  try {
+    result = await req.dbTx(async client => {
+      const db = (sql, params) => client.query(sql, params);
+      const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
+      if (access.error) return access;
+      if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
+      if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
+      const selected = await db(
+        'SELECT id,storage_key,mime_type,status FROM sjm_evidence ' +
+        'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
+        [evidenceId, req.user.org_id, journeyId],
+      );
+      const evidence = selected.rows[0];
+      if (!evidence) return { error: 'evidence_not_found' };
+      if (evidence.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
+      const signed = await storage.createUploadUrl({
+        key: evidence.storage_key, mimeType: evidence.mime_type, evidenceId, journeyId,
+      });
+      await db(
+        'INSERT INTO sjm_evidence_events (org_id,journey_id,evidence_id,actor_id,action,detail) ' +
+        "VALUES ($1,$2,$3,$4,'UPLOAD_REQUESTED',$5)",
+        [req.user.org_id, journeyId, evidenceId, req.user.id, JSON.stringify({ renewal: true })],
+      );
+      return { data: { id: evidenceId, status: 'UPLOAD_PENDING', ...signed } };
+    });
+  } catch (error) {
+    if (error?.code === 'storage_not_configured' || error?.code === 'storage_unavailable') {
+      return res.status(503).json({ error: 'evidence_storage_unavailable' });
+    }
+    throw error;
+  }
+  if (accessError(res, result)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ data: result.data });
+}));
+
 router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
   const journeyId = String(req.params.id || ''), evidenceId = String(req.params.evidenceId || '');
   if (!UUID_RE.test(journeyId) || !UUID_RE.test(evidenceId)) return res.status(404).json({ error: 'evidence_not_found' });
 
   const initial = await req.dbTx(async client => {
     const db = (sql, params) => client.query(sql, params);
-    const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user);
+    const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
     if (access.error) return access;
     const result = await db(
       'SELECT id,status,storage_key,mime_type,size_bytes,category,file_name,created_by,sha256 ' +
@@ -261,13 +302,16 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
       return res.status(409).json({ error: 'evidence_upload_missing', message: 'The file has not reached private storage. Upload it before committing.' });
     }
     if (error?.code === 'size_mismatch' || error?.code === 'mime_mismatch' || error?.code === 'metadata_mismatch') {
-      await req.dbTx(async client => {
+      const rejected = await req.dbTx(async client => {
         const db = (sql, params) => client.query(sql, params);
+        const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
+        if (access.error) return access;
+        if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
         const current = await db(
           'SELECT id,status FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 FOR UPDATE',
           [evidenceId, req.user.org_id, journeyId],
         );
-        if (current.rows[0]?.status !== 'UPLOAD_PENDING') return;
+        if (current.rows[0]?.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
         await db(
           "UPDATE sjm_evidence SET status='REJECTED',updated_at=NOW() WHERE id=$1 AND org_id=$2",
           [evidenceId, req.user.org_id],
@@ -277,7 +321,9 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
           "VALUES ($1,$2,$3,$4,'UPLOAD_REJECTED',$5)",
           [req.user.org_id, journeyId, evidenceId, req.user.id, JSON.stringify({ reason: error.code })],
         );
+        return { rejected: true };
       });
+      if (accessError(res, rejected)) return;
       return res.status(422).json({ error: 'evidence_integrity_rejected', message: 'The stored object failed type, size or identity verification. It remains unavailable for download.' });
     }
     if (error?.code === 'storage_not_configured' || error?.code === 'storage_unavailable') {
@@ -288,8 +334,9 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
 
   const completed = await req.dbTx(async client => {
     const db = (sql, params) => client.query(sql, params);
-    const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user);
+    const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
     if (access.error) return access;
+    if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
     if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
     const current = await db(
       'SELECT id,status,sha256 FROM sjm_evidence ' +

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS public.sjm_evidence (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ,
   UNIQUE (org_id, storage_key),
+  UNIQUE (org_id, journey_id, id),
   CHECK (
     (location_lat IS NULL AND location_lng IS NULL AND location_accuracy_m IS NULL AND location_source='NOT_CAPTURED')
     OR
@@ -55,8 +56,10 @@ CREATE TABLE IF NOT EXISTS public.sjm_evidence_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL,
   journey_id UUID NOT NULL REFERENCES public.sjm_journeys(id) ON DELETE RESTRICT,
-  evidence_id UUID NOT NULL REFERENCES public.sjm_evidence(id) ON DELETE RESTRICT,
+  evidence_id UUID NOT NULL,
   actor_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  FOREIGN KEY (org_id, journey_id, evidence_id)
+    REFERENCES public.sjm_evidence(org_id, journey_id, id) ON DELETE RESTRICT,
   action TEXT NOT NULL CHECK (action IN (
     'UPLOAD_REQUESTED','UPLOAD_VERIFIED','UPLOAD_REJECTED','DOWNLOAD_URL_ISSUED'
   )),

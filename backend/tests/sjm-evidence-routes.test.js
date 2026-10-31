@@ -17,7 +17,7 @@ describe('SJM evidence capture contract', () => {
       captured_at: '2026-10-31T09:30:00.000Z',
     });
     expect(photo.error).toBeUndefined();
-    expect(photo.value.fileName).toBe('.._.._principal_photo.jpg');
+    expect(photo.value.fileName).toBe('_.._principal_photo.jpg');
     expect(photo.value.captureTimeQuality).toBe('DEVICE_CLOCK_UNVERIFIED');
     expect(photo.value.location.source).toBe('NOT_CAPTURED');
 
