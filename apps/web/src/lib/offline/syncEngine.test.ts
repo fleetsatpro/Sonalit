@@ -40,7 +40,7 @@ vi.mock('./outbox.js', () => ({
 }));
 vi.mock('./retryPolicy.js', () => ({ classifyHttp: vi.fn(), classifyPushOutcome: vi.fn() }));
 
-import { _resetEngine, runSync } from './syncEngine.js';
+import { _resetEngine, push, runSync } from './syncEngine.js';
 
 describe('SJM field push-only sync mode', () => {
   beforeEach(() => {
@@ -103,8 +103,8 @@ describe('SJM field push-only sync mode', () => {
       code: 'accepted',
       message: 'accepted',
     });
-    const result = await runSync('user-1', 'org-1', { pullEnabled: false, allowedOperationTypes: ['sjm.field_event.create'] });
-    expect(result.push).toMatchObject({ attempted: 1, accepted: 1 });
+    const result = await push('user-1', 'org-1', { allowedOperationTypes: ['sjm.field_event.create'] });
+    expect(result).toMatchObject({ attempted: 1, accepted: 1 });
     const pushCall = mocks.apiPost.mock.calls.find(call => call[0] === '/sync/push');
     expect(pushCall?.[1]?.operations).toHaveLength(1);
     expect(pushCall?.[1]?.operations[0]).toMatchObject({ type: 'sjm.field_event.create', entity_id: 'journey-1' });
