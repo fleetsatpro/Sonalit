@@ -10,6 +10,7 @@ import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
 import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
 import { correlateJourneyFlight, resolveAirspaceDisplayStatus } from '../lib/sjmAirspaceMatch.js';
 import { useAuthStore } from '../stores/auth.js';
+import SjmTravellerProgramme from '../components/sjm/SjmTravellerProgramme.js';
 import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, MessagesSquare, Navigation, Pencil, Plane, Plus, RefreshCw, Route, Search, ShieldAlert, ShieldCheck, Users, XCircle } from 'lucide-react';
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
@@ -357,7 +358,7 @@ export default function SecureJourneyManagement(){
  const [intakeMode,setIntakeMode]=useState<'create'|'edit'>('create');
  const [editAcknowledged,setEditAcknowledged]=useState(false);
  const [editBaseline,setEditBaseline]=useState<{journeyId:string;timezone:string;departureInput:string;departureAt:string|null;arrivalInput:string;arrivalAt:string|null}|null>(null);
- const [workspaceTab,setWorkspaceTab]=useState<'overview'|'command'|'itinerary'|'evidence'|'resources'|'airspace'|'reports'>('overview');
+ const [workspaceTab,setWorkspaceTab]=useState<'overview'|'command'|'travel'|'itinerary'|'evidence'|'resources'|'airspace'|'reports'>('overview');
  const [reportType,setReportType]=useState('daily');
  const [lastGeneratedReport,setLastGeneratedReport]=useState<{id:string;report_date:string;report_type:string}|null>(null);
  const [reportDownloadError,setReportDownloadError]=useState('');
@@ -750,6 +751,7 @@ return (
           {[
            {value:'overview',label:'Overview',Icon:Activity},
            {value:'command',label:'Command & release',Icon:ShieldCheck},
+           {value:'travel',label:'Travellers & itinerary',Icon:CalendarClock},
            {value:'itinerary',label:'Itinerary',Icon:Route},
            {value:'evidence',label:'Evidence',Icon:Layers3},
            {value:'resources',label:'Team & resources',Icon:Users},
@@ -989,6 +991,7 @@ return (
       </div></Panel>
          </div>}
 
+         {workspaceTab==='travel'&&<SjmTravellerProgramme journeyId={journey.id} timezone={journey.timezone||'Africa/Nairobi'} canManage={isSupervisor} readOnly={['closed','cancelled','aborted'].includes(journey.status)}/>}
          {workspaceTab==='itinerary'&&<div className="space-y-4">
           <div className="rounded-md border border-orange-300/15 bg-orange-300/[0.025] p-4"><div className="flex items-start gap-3"><Route size={17} className="mt-0.5 text-orange-200"/><div><h4 className="text-sm font-semibold text-white">Stop confirmations</h4><p className="mt-1 text-xs leading-5 text-slate-400">Stops remain planned until a team member confirms them. Device locations are shown separately; a manual confirmation is not GPS proof.</p></div></div></div>
                <Panel className="overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] p-4"><div><Kicker>ROUTE STOPS</Kicker><h3 className="mt-1 text-sm font-semibold">Itinerary & checkpoints</h3></div><span className="font-mono text-[11px] text-slate-600">{stops.length} stops</span></div><div className="p-4">{stops.length===0?<div className="rounded-md border border-dashed border-white/10 p-4 text-[11px] text-slate-600">No stops added yet. Add meeting points, border crossings, planned breaks or overnight stops where needed.</div>:<ol className="space-y-0">{stops.map((s,i)=><li key={s.id} className="relative flex gap-3 pb-4 last:pb-0"><div className="relative flex w-7 shrink-0 flex-col items-center"><span className={'z-10 grid h-7 w-7 place-items-center rounded-full border font-mono text-[11px] '+(s.stop_status==='reached'?'border-emerald-300/30 bg-emerald-300/10 text-emerald-200':s.stop_status==='skipped'?'border-red-300/20 bg-red-400/[0.05] text-red-200':'border-white/10 bg-black/20 text-slate-500')}>{String(s.sequence).padStart(2,'0')}</span>{i<stops.length-1&&<span className="absolute top-7 h-full w-px bg-white/[0.08]"/>}</div><div className="min-w-0 flex-1 rounded-md border border-white/[0.06] bg-black/15 p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-[12px] font-semibold">{s.name}</p><p className="mt-1 font-mono text-[11px]  tracking-widest text-slate-600">{s.stop_type.replaceAll('_',' ')}{s.lat!=null&&s.lng!=null?' · '+Number(s.lat).toFixed(4)+', '+Number(s.lng).toFixed(4):''}</p></div><span className={'rounded-md border px-2 py-1 font-mono text-[11px] '+(s.stop_status==='reached'?'border-emerald-300/20 text-emerald-200':s.stop_status==='skipped'?'border-red-300/20 text-red-200':'border-white/10 text-slate-500')}>{s.stop_status.toUpperCase()}</span></div>{s.instructions&&<p className="mt-2 text-[11px] text-slate-500">{s.instructions}</p>}{s.confirmed_at&&<p className="mt-2 text-[11px] text-slate-500">Operator confirmation · {dateText(s.confirmed_at)} · {s.confirmation_source||'source not recorded'}</p>}{canConfirmStops&&['in_progress','paused','arrival_pending_verification'].includes(journey.status)&&s.stop_status==='planned'&&<div className="mt-3 flex flex-wrap gap-2"><Btn tone="green" disabled={act.isPending} onClick={()=>act.mutate({kind:'stop',body:{stop_id:s.id,status:'reached'}})}><Check size={12}/>Confirm stop reached</Btn><Btn tone="red" disabled={act.isPending} onClick={()=>act.mutate({kind:'stop',body:{stop_id:s.id,status:'skipped'}})}><XCircle size={12}/>Mark skipped</Btn></div>}{s.stop_status==='planned'&&<p className="mt-2 text-[11px] text-slate-600">Team confirmation only; GPS arrival is not verified here.</p>}</div></li>)}</ol>}</div></Panel>

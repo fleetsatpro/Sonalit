@@ -527,6 +527,7 @@ router.use((req,res,next)=>{if(!req.user?.org_id||!req.db||!req.dbTx)return res.
 
 // SJM-owned evidence capture and private object custody routes.
 router.use('/journeys/:id/evidence',require('./sjmEvidence'));
+router.use('/journeys/:id/travel-workspace',require('./sjmTravelWorkspace'));
 
 async function managementSnapshot(db,org,timezone) {
   const clock=await db('SELECT NOW() AS db_now',[]);
@@ -895,7 +896,7 @@ router.get('/journeys/:id/participants',asyncHandler(async(req,res)=>{
   if(!j)return {error:'journey_not_found'};
   const roles=await activeDutyRoles(db,org,j.id,req.user.id);
   if(!canAccessJourney(req.user,roles))return {error:'journey_not_found'};
-  const r=await db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 AND ($3::boolean OR p.removed_at IS NULL) ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id,isMobilityManager(req.user)]);
+  const r=await db("SELECT p.id,p.user_id,p.duty_role,p.is_primary,p.assigned_at,p.removed_at,u.name AS user_name,u.role AS account_role,u.status AS account_status FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id WHERE p.org_id=$1 AND p.journey_id=$2 AND ($3::boolean OR p.removed_at IS NULL) ORDER BY p.removed_at NULLS FIRST,p.is_primary DESC,p.duty_role,u.name LIMIT 100",[org,j.id,isMobilityManager(req.user)]);
   return {data:r.rows};
  });
  if(outcome?.error)return res.status(404).json({error:'journey_not_found'});
