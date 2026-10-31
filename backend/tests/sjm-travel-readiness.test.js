@@ -51,6 +51,12 @@ describe('SJM server-side travel readiness', () => {
       flights: [{ id: 'flight-1', traveller_id: principal.id, status: 'cancelled' }], days: [], documents: [],
     }, 'approval');
     expect(cancelled.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
+
+    const diverted = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal],
+      flights: [{ id: 'flight-1', traveller_id: principal.id, status: 'diverted' }], days: [], documents: [],
+    }, 'approval');
+    expect(diverted.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
   });
 
   test('treats meet-and-greet as an airport service and rejects diverted flight legs', () => {
@@ -100,6 +106,23 @@ describe('SJM server-side travel readiness', () => {
     ] }, 'departure');
     expect(complete.ready).toBe(true);
     expect(complete.counts.required_programme_day_count).toBe(3);
+  });
+
+  test('requires every timed programme activity to have named staff or an accountable duty role', () => {
+    const readiness = evaluateTravelReadiness({
+      journey: journey({}),
+      travellers: [principal],
+      flights: [],
+      days: [
+        { journey_date: '2026-11-01', activity_count: 2, unassigned_activity_count: 1 },
+        { journey_date: '2026-11-02', activity_count: 1, unassigned_activity_count: 0 },
+        { journey_date: '2026-11-03', activity_count: 1, unassigned_activity_count: 0 },
+      ],
+      documents: [],
+    }, 'departure');
+    expect(readiness.ready).toBe(false);
+    expect(readiness.counts.unassigned_activity_count).toBe(1);
+    expect(readiness.blockers.map(item => item.code)).toContain('daily_programme_unassigned');
   });
 
   test('blocks uploaded unverified, rejected or expired documents without inventing mandatory document types', () => {
