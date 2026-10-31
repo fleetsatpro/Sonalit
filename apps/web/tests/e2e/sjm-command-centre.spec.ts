@@ -786,6 +786,11 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText('Day 2 · Executive programme')).toBeVisible();
     await expect(page.getByText('Day 3 · Departure')).toBeVisible();
 
+    await page.getByRole('button', { name: 'Edit day brief' }).click();
+    await page.getByLabel('IANA timezone for activity times').fill('Europe/Paris');
+    await page.getByRole('button', { name: 'Save day brief' }).click();
+    await expect(page.getByText('2026-10-31 · Europe/Paris')).toBeVisible();
+
     await page.getByRole('button', { name: 'Add activity' }).click();
     await page.getByLabel('Activity title *').fill('Airport meet and greet');
     await page.getByLabel(/Planned start/).fill('2026-10-31T10:00');
@@ -801,6 +806,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
     await expect(page.getByText('For traveller · Amina Example')).toBeVisible();
     await expect(page.getByText(/-1\.31920, 36\.92780/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Edit day brief' }).click();
+    await expect(page.getByLabel('IANA timezone for activity times')).toBeDisabled();
+    await page.getByRole('button', { name: 'Cancel edit' }).click();
 
     await page.getByLabel('Execution note').fill('Assigned team reached the airport reception point and confirmed readiness.');
     await page.getByRole('button', { name: 'Start' }).click();
