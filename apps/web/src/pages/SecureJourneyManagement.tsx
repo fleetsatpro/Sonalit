@@ -750,9 +750,9 @@ return (
          <div className="mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="Journey workspace views">
           {[
            {value:'overview',label:'Overview',Icon:Activity},
-           {value:'travel',label:'Travellers & itinerary',Icon:CalendarClock},
+           {value:'travel',label:'Travel dossier',Icon:Users},
            {value:'command',label:'Command & release',Icon:ShieldCheck},
-           {value:'itinerary',label:'Itinerary',Icon:Route},
+           {value:'itinerary',label:'Route & stops',Icon:Route},
            {value:'evidence',label:'Evidence',Icon:Layers3},
            {value:'resources',label:'Team & resources',Icon:Users},
            {value:'airspace',label:'Airspace 3D',Icon:Plane},
