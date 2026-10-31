@@ -121,6 +121,7 @@ function itemInput(body, timezone) {
   if (localDate(start, timezone) !== localDate(end, timezone)) return { error: 'itinerary_item_must_fit_one_local_day' };
   if (body.sequence != null && (!Number.isInteger(body.sequence) || body.sequence < 1 || body.sequence > 100)) return { error: 'invalid_itinerary_item_sequence' };
   if (body.responsible_user_id != null && body.responsible_user_id !== '' && !UUID.test(String(body.responsible_user_id))) return { error: 'invalid_responsible_user' };
+  if (body.traveller_id != null && body.traveller_id !== '' && !UUID.test(String(body.traveller_id))) return { error: 'traveller_not_found' };
   if (body.flight_segment_id != null && body.flight_segment_id !== '' && !UUID.test(String(body.flight_segment_id))) return { error: 'flight_segment_not_found' };
   const responsibleRole = txt(body.responsible_role, 48) || null;
   if (responsibleRole && !DUTY_ROLES.has(responsibleRole)) return { error: 'invalid_responsible_role' };
@@ -131,6 +132,7 @@ function itemInput(body, timezone) {
     planned_start_at: new Date(start).toISOString(), planned_end_at: new Date(end).toISOString(),
     responsible_user_id: body.responsible_user_id || null,
     responsible_role: responsibleRole,
+    traveller_id: body.traveller_id || null,
     flight_segment_id: body.flight_segment_id || null,
     sequence: body.sequence || null,
   } };
@@ -222,8 +224,8 @@ router.get('/', asyncHandler(async (req, res) => {
       [org, id],
     );
     const itemResult = await db(
-      'SELECT i.id,i.day_id,i.sequence,i.item_type,i.title,i.description,i.location_label,i.location_lat,i.location_lng,i.planned_start_at,i.planned_end_at,i.responsible_user_id,i.responsible_role,i.flight_segment_id,i.execution_status,i.actual_start_at,i.actual_end_at,i.execution_note,u.name AS responsible_name ' +
-      'FROM sjm_itinerary_items i LEFT JOIN users u ON u.id=i.responsible_user_id AND u.org_id=i.org_id AND u.deleted_at IS NULL ' +
+      'SELECT i.id,i.day_id,i.sequence,i.item_type,i.title,i.description,i.location_label,i.location_lat,i.location_lng,i.planned_start_at,i.planned_end_at,i.responsible_user_id,i.responsible_role,i.traveller_id,t.display_name AS traveller_display_name,i.flight_segment_id,i.execution_status,i.actual_start_at,i.actual_end_at,i.execution_note,u.name AS responsible_name ' +
+      'FROM sjm_itinerary_items i LEFT JOIN users u ON u.id=i.responsible_user_id AND u.org_id=i.org_id AND u.deleted_at IS NULL LEFT JOIN LATERAL (SELECT concat_ws(\' \',tr.title,tr.preferred_name,tr.given_name,tr.family_name) AS display_name FROM sjm_travellers tr WHERE tr.id=i.traveller_id AND tr.org_id=i.org_id AND tr.journey_id=i.journey_id AND tr.deleted_at IS NULL LIMIT 1) t ON TRUE ' +
       'WHERE i.org_id=$1 AND i.journey_id=$2 AND i.deleted_at IS NULL ORDER BY i.day_id,i.planned_start_at,i.sequence,i.id',
       [org, id],
     );
@@ -590,6 +592,10 @@ router.post('/days/:dayId/items', managerOnly, asyncHandler(async (req, res) => 
     if (normalized.error) return normalized;
     const v = normalized.value;
     if (localDate(v.planned_start_at, day.timezone) !== String(day.journey_date).slice(0,10)) return { error: 'itinerary_item_day_mismatch' };
+    if (v.traveller_id) {
+      const traveller = await db('SELECT id FROM sjm_travellers WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL', [v.traveller_id,req.user.org_id,current.journey.id]);
+      if (!traveller.rows.length) return { error: 'traveller_not_found' };
+    }
     if (v.responsible_user_id) {
       if (!UUID.test(String(v.responsible_user_id))) return { error: 'invalid_responsible_user' };
       const assigned = await db("SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status='active' WHERE p.org_id=$1 AND p.journey_id=$2 AND p.user_id=$3 AND p.removed_at IS NULL LIMIT 1", [req.user.org_id,current.journey.id,v.responsible_user_id]);
@@ -603,9 +609,9 @@ router.post('/days/:dayId/items', managerOnly, asyncHandler(async (req, res) => 
     const sequenceResult = await db('SELECT COALESCE(MAX(sequence),0)+1 AS sequence FROM sjm_itinerary_items WHERE org_id=$1 AND journey_id=$2 AND day_id=$3 AND deleted_at IS NULL', [req.user.org_id,current.journey.id,day.id]);
     const sequence = v.sequence || sequenceResult.rows[0].sequence;
     const saved = await db(
-      'INSERT INTO sjm_itinerary_items (org_id,journey_id,day_id,sequence,item_type,title,description,location_label,location_lat,location_lng,planned_start_at,planned_end_at,responsible_user_id,responsible_role,flight_segment_id,created_by,updated_by) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16) RETURNING *',
-      [req.user.org_id,current.journey.id,day.id,sequence,v.item_type,v.title,v.description,v.location_label,v.location_lat,v.location_lng,v.planned_start_at,v.planned_end_at,v.responsible_user_id,v.responsible_role,v.flight_segment_id,req.user.id],
+      'INSERT INTO sjm_itinerary_items (org_id,journey_id,day_id,traveller_id,sequence,item_type,title,description,location_label,location_lat,location_lng,planned_start_at,planned_end_at,responsible_user_id,responsible_role,flight_segment_id,created_by,updated_by) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17) RETURNING *',
+      [req.user.org_id,current.journey.id,day.id,v.traveller_id,sequence,v.item_type,v.title,v.description,v.location_label,v.location_lat,v.location_lng,v.planned_start_at,v.planned_end_at,v.responsible_user_id,v.responsible_role,v.flight_segment_id,req.user.id],
     );
     await db("INSERT INTO sjm_itinerary_item_events (org_id,journey_id,day_id,item_id,actor_id,action,detail) VALUES ($1,$2,$3,$4,$5,'PLAN_CREATED',$6)", [req.user.org_id,current.journey.id,day.id,saved.rows[0].id,req.user.id,JSON.stringify({ sequence, item_type: v.item_type })]);
     await audit(db, req, current.journey.id, 'PLAN_ITEM_CREATED', saved.rows[0].id, { day_id: day.id, sequence });
@@ -632,6 +638,10 @@ router.patch('/items/:itemId', managerOnly, asyncHandler(async (req, res) => {
     if (normalized.error) return normalized;
     const v = normalized.value;
     if (localDate(v.planned_start_at, existing.rows[0].timezone) !== String(existing.rows[0].journey_date).slice(0,10)) return { error: 'itinerary_item_day_mismatch' };
+    if (v.traveller_id) {
+      const traveller = await db('SELECT id FROM sjm_travellers WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL', [v.traveller_id,req.user.org_id,current.journey.id]);
+      if (!traveller.rows.length) return { error: 'traveller_not_found' };
+    }
     if (v.responsible_user_id) {
       const assigned = await db("SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status='active' WHERE p.org_id=$1 AND p.journey_id=$2 AND p.user_id=$3 AND p.removed_at IS NULL LIMIT 1", [req.user.org_id,current.journey.id,v.responsible_user_id]);
       if (!assigned.rows.length) return { error: 'responsible_user_not_assigned' };
@@ -644,8 +654,8 @@ router.patch('/items/:itemId', managerOnly, asyncHandler(async (req, res) => {
     const sequenceConflict = await db('SELECT id FROM sjm_itinerary_items WHERE org_id=$1 AND journey_id=$2 AND day_id=$3 AND sequence=$4 AND id<>$5 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,existing.rows[0].day_id,sequence,req.params.itemId]);
     if (sequenceConflict.rows.length) return { error: 'conflict', message: 'That programme sequence is already occupied. Choose a different position.' };
     const saved = await db(
-      'UPDATE sjm_itinerary_items SET sequence=$1,item_type=$2,title=$3,description=$4,location_label=$5,location_lat=$6,location_lng=$7,planned_start_at=$8,planned_end_at=$9,responsible_user_id=$10,responsible_role=$11,flight_segment_id=$12,sequence_revision=sequence_revision+1,updated_by=$13,updated_at=NOW() WHERE id=$14 AND org_id=$15 AND journey_id=$16 RETURNING *',
-      [sequence,v.item_type,v.title,v.description,v.location_label,v.location_lat,v.location_lng,v.planned_start_at,v.planned_end_at,v.responsible_user_id,v.responsible_role,v.flight_segment_id,req.user.id,req.params.itemId,req.user.org_id,current.journey.id],
+      'UPDATE sjm_itinerary_items SET sequence=$1,item_type=$2,title=$3,description=$4,location_label=$5,location_lat=$6,location_lng=$7,planned_start_at=$8,planned_end_at=$9,responsible_user_id=$10,responsible_role=$11,traveller_id=$12,flight_segment_id=$13,sequence_revision=sequence_revision+1,updated_by=$14,updated_at=NOW() WHERE id=$15 AND org_id=$16 AND journey_id=$17 RETURNING *',
+      [sequence,v.item_type,v.title,v.description,v.location_label,v.location_lat,v.location_lng,v.planned_start_at,v.planned_end_at,v.responsible_user_id,v.responsible_role,v.traveller_id,v.flight_segment_id,req.user.id,req.params.itemId,req.user.org_id,current.journey.id],
     );
     await db("INSERT INTO sjm_itinerary_item_events (org_id,journey_id,day_id,item_id,actor_id,action,previous_status,new_status,detail) VALUES ($1,$2,$3,$4,$5,'PLAN_UPDATED',$6,$6,$7)", [req.user.org_id,current.journey.id,existing.rows[0].day_id,req.params.itemId,req.user.id,existing.rows[0].execution_status,JSON.stringify({ sequence_revision: saved.rows[0].sequence_revision })]);
     await audit(db, req, current.journey.id, 'PLAN_ITEM_UPDATED', req.params.itemId, { sequence_revision: saved.rows[0].sequence_revision });
