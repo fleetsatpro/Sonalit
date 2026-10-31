@@ -527,6 +527,7 @@ router.use((req,res,next)=>{if(!req.user?.org_id||!req.db||!req.dbTx)return res.
 
 // SJM-owned evidence capture and private object custody routes.
 router.use('/journeys/:id/evidence',require('./sjmEvidence'));
+router.use('/journeys/:id/travel-workspace',require('./sjmTravelWorkspace'));
 
 async function managementSnapshot(db,org,timezone) {
   const clock=await db('SELECT NOW() AS db_now',[]);
