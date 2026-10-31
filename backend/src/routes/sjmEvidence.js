@@ -156,8 +156,9 @@ router.get('/', asyncHandler(async (req, res) => {
       'e.uploaded_at,e.verified_at,u.name AS captured_by_name ' +
       'FROM sjm_evidence e LEFT JOIN users u ON u.id=e.created_by AND u.org_id=e.org_id AND u.deleted_at IS NULL ' +
       'WHERE e.org_id=$1 AND e.journey_id=$2 AND e.deleted_at IS NULL ' +
+      'AND ($3::boolean OR e.access_classification<>' + "'HIGHLY_SENSITIVE'" + ') ' +
       'ORDER BY e.created_at DESC,e.id DESC LIMIT 200',
-      [req.user.org_id, journeyId],
+      [req.user.org_id, journeyId, isManager(req.user)],
     );
     return { data: result.rows };
   });
@@ -383,12 +384,14 @@ router.post('/:evidenceId/download-url', asyncHandler(async (req, res) => {
     const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user);
     if (access.error) return access;
     const result = await db(
-      'SELECT id,storage_key,mime_type,file_name,status FROM sjm_evidence ' +
+      'SELECT id,storage_key,mime_type,file_name,status,access_classification FROM sjm_evidence ' +
       'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL LIMIT 1',
       [evidenceId, req.user.org_id, journeyId],
     );
     const evidence = result.rows[0];
     if (!evidence) return { error: 'evidence_not_found' };
+    // Travel identity documents are never exposed to field-duty accounts.
+    if (evidence.access_classification === 'HIGHLY_SENSITIVE' && !isManager(req.user)) return { error: 'evidence_not_found' };
     if (evidence.status !== 'VERIFIED') return { error: 'evidence_not_verified' };
     return { evidence };
   });
