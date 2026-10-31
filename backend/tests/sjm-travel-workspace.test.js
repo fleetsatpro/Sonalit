@@ -74,6 +74,17 @@ describe('SJM traveller and travel programme contracts', () => {
     expect(flightInput({ ...base, arrival_timezone: 'Mars/Olympus' }).error).toBe('invalid_flight_timezone');
   });
 
+  test('allows forward flight status observations and blocks terminal regressions', () => {
+    expect(flightStatusTransitionAllowed('scheduled', 'boarding')).toBe(true);
+    expect(flightStatusTransitionAllowed('boarding', 'departed')).toBe(true);
+    expect(flightStatusTransitionAllowed('departed', 'landed')).toBe(true);
+    expect(flightStatusTransitionAllowed('delayed', 'departed')).toBe(true);
+    expect(flightStatusTransitionAllowed('landed', 'landed')).toBe(true);
+    expect(flightStatusTransitionAllowed('landed', 'scheduled')).toBe(false);
+    expect(flightStatusTransitionAllowed('cancelled', 'boarding')).toBe(false);
+    expect(flightStatusTransitionAllowed('diverted', 'landed')).toBe(false);
+  });
+
   test('validates timed programme activities, links and a single local programme day', () => {
     const activity = itemInput({
       item_type: 'transfer',
