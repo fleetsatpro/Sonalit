@@ -270,7 +270,7 @@ router.get('/', asyncHandler(async (req, res) => {
       flights: flightResult.rows.map(flight => ({ ...flight, allowed_next_statuses: flightStatusOptions(flight.status) })),
       days: dayResult.rows.map(day => ({ ...day, items: byDay.get(day.id) || [] })),
       readiness,
-      access: { manager: isManager, duty_roles: current.roles },
+      access: { manager: isManager, user_id: req.user.id, duty_roles: current.roles },
       legacy_flight_reference: {
         airport_code: current.journey.airport_code || null,
         terminal: current.journey.terminal || null,
