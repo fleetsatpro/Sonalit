@@ -194,7 +194,7 @@ router.get('/', asyncHandler(async (req, res) => {
     let documents = [];
     if (isManager) {
       const docs = await db(
-        'SELECT d.id,d.traveller_id,d.document_type,d.holder_name,d.issuing_country,d.issue_date,d.expiry_date,d.review_status,d.review_note,d.reviewed_at,d.evidence_id,e.file_name,e.mime_type,e.size_bytes,e.sha256,e.verified_at FROM sjm_travel_documents d JOIN sjm_evidence e ON e.id=d.evidence_id AND e.org_id=d.org_id AND e.journey_id=d.journey_id WHERE d.org_id=$1 AND d.journey_id=$2 AND d.deleted_at IS NULL AND e.deleted_at IS NULL ORDER BY d.created_at DESC,d.id',
+        "SELECT d.id,d.traveller_id,d.document_type,d.holder_name,d.issuing_country,d.issue_date,d.expiry_date,CASE WHEN d.expiry_date IS NULL THEN 'not_recorded' WHEN d.expiry_date<CURRENT_DATE THEN 'expired' WHEN d.expiry_date<=CURRENT_DATE+INTERVAL '90 days' THEN 'expiring_soon' ELSE 'current' END AS expiry_state,d.review_status,d.review_note,d.reviewed_at,d.evidence_id,e.file_name,e.mime_type,e.size_bytes,e.sha256,e.verified_at FROM sjm_travel_documents d JOIN sjm_evidence e ON e.id=d.evidence_id AND e.org_id=d.org_id AND e.journey_id=d.journey_id WHERE d.org_id=$1 AND d.journey_id=$2 AND d.deleted_at IS NULL AND e.deleted_at IS NULL ORDER BY d.created_at DESC,d.id',
         [org, id],
       );
       documents = docs.rows;
@@ -423,7 +423,7 @@ router.patch('/flights/:flightId/status', asyncHandler(async (req, res) => {
   if (!UUID.test(req.params.flightId)) return res.status(404).json({ error: 'flight_segment_not_found' });
   const status = txt(req.body?.status, 24).toLowerCase();
   const note = txt(req.body?.note, 1000);
-  if (!FLIGHT_STATUSES.has(status) || !note) return res.status(400).json({ error: 'invalid_flight_status', message: 'Choose a supported status and explain the observation.' });
+  if (!FLIGHT_STATUSES.has(status) || note.length < 10) return res.status(400).json({ error: 'invalid_flight_status', message: 'Choose a supported status and provide at least 10 characters describing its source and context.' });
   const result = await req.dbTx(async client => {
     const db = (sql, params) => client.query(sql, params);
     const current = await access(db, req, 'FOR UPDATE');
