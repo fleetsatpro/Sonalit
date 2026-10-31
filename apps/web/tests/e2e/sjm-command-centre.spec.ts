@@ -1193,7 +1193,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         status: 201, contentType: 'application/json',
         body: JSON.stringify({ data: {
           id: evidenceId, status: 'UPLOAD_PENDING',
-          upload_url: 'https://private-storage.example/signed-put',
+          upload_url: 'https://sjm-test-account.r2.cloudflarestorage.com/signed-put',
           required_headers: {
             'Content-Type': 'image/jpeg',
             'If-None-Match': '*',
@@ -1213,7 +1213,8 @@ test.describe('SJM command-centre responsive smoke', () => {
         body: JSON.stringify({ data: { id: evidenceId, status: 'VERIFIED', sha256: record.sha256 } }),
       });
     });
-    await page.route('https://private-storage.example/**', async route => {
+    // Use the real R2 S3 hostname pattern allowed by the production connect-src CSP.
+    await page.route('https://sjm-test-account.r2.cloudflarestorage.com/**', async route => {
       const method = route.request().method();
       const cors = {
         'access-control-allow-origin': '*',
