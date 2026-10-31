@@ -4,6 +4,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { asyncHandler } = require('../middleware/error');
 const storage = require('../services/sjmEvidenceStorage');
+const { loadTravelReadiness } = require('../services/sjmTravelReadiness');
 
 const router = express.Router({ mergeParams: true });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -139,7 +140,7 @@ async function access(db, req, lock = 'FOR SHARE') {
   const id = String(req.params.id || '');
   if (!UUID.test(id)) return { error: 'journey_not_found' };
   const row = await db(
-    'SELECT id,status,timezone FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL ' + lock,
+    'SELECT id,status,timezone,service_type,planned_departure_at,planned_arrival_at,org_id FROM sjm_journeys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL ' + lock,
     [id, req.user.org_id],
   );
   if (!row.rows.length) return { error: 'journey_not_found' };
@@ -231,9 +232,11 @@ router.get('/', asyncHandler(async (req, res) => {
       list.push(item);
       byDay.set(item.day_id, list);
     }
+    const readiness = await loadTravelReadiness(db, current.journey, 'departure');
     return { data: {
       travellers, documents, flights: flightResult.rows,
       days: dayResult.rows.map(day => ({ ...day, items: byDay.get(day.id) || [] })),
+      readiness,
       access: { manager: isManager, duty_roles: current.roles },
       provenance: { traveller_records: 'SJM traveller register; personal details manager-only', travel_documents: isManager ? 'Private SJM evidence objects; requires dedicated private SJM R2 configuration' : 'Not exposed to field roles', flight_status: 'Operator-entered unless a separately identified provider observation is returned', itinerary_execution: 'Operator-recorded execution events; not device or GPS proof' },
     } };
