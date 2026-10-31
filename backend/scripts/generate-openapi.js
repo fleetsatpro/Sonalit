@@ -33,15 +33,32 @@ try {
 const { app } = appModule;
 
 // ─── Walk Express router stack ────────────────────────────────────────────────
-function extractPrefix(regexp) {
-  if (!regexp) return '';
-  const src = regexp.source;
-  // Match /^\/some\/path\/?(?=...) patterns
-  const m = src.match(/^\^\\\/(.+?)(?:\\\/\?\(\?=|\\\/\?$|\(\?=)/);
-  if (!m) return '';
-  return '/' + m[1].replace(/\\\//g, '/').replace(/\\\./g, '.');
-}
+function extractPrefix(layer) {
+  if (!layer || !layer.regexp) return '';
+  const regexp = layer.regexp;
+  if (regexp.fast_slash) return '';
 
+  const src = regexp.source;
+  if (typeof src !== 'string' || !src.startsWith('^')) return '';
+
+  // Express 4 path-to-regexp stores named mount parameters in layer.keys.
+  // Preserve those names when descending into a parameterised child router;
+  // dropping this prefix silently omits that router's API from OpenAPI.
+  let route = src.slice(1).replace(/\(\?=\\\/\|\$\).*$/, '');
+  route = route.replace(/\\\/\?$/, '');
+
+  const keys = Array.isArray(layer.keys) ? layer.keys : [];
+  let keyIndex = 0;
+  route = route.replace(/\((?!\?)([^()]*)\)/g, match => {
+    const key = keys[keyIndex++];
+    return key ? ':' + String(key.name) : match;
+  });
+
+  route = route.replace(/\\\//g, '/').replace(/\\\./g, '.');
+  route = route.replace(/\/+$/, '');
+  if (!route || route === '/?' || route === '/') return '';
+  return route.startsWith('/') ? route : '';
+}
 function collectRoutes(stack, base = '') {
   const routes = [];
   for (const layer of stack) {
@@ -52,7 +69,7 @@ function collectRoutes(stack, base = '') {
         routes.push({ method: method.toUpperCase(), path: fullPath });
       }
     } else if (layer.handle && layer.handle.stack) {
-      const prefix = extractPrefix(layer.regexp);
+      const prefix = extractPrefix(layer);
       collectRoutes(layer.handle.stack, base + prefix).forEach(r => routes.push(r));
     }
   }
