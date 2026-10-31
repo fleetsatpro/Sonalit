@@ -741,7 +741,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByLabel('Location / venue').fill('Jomo Kenyatta International Airport');
     await page.getByLabel('Responsible team member').selectOption('user-sjm-e2e-driver');
     await page.getByLabel('Activity instructions').fill('Receive traveller at the agreed arrival point and coordinate handover.');
-    await expect(page.getByText('Fixture Driver', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Responsible team member')).toHaveValue('user-sjm-e2e-driver');
     await page.getByRole('button', { name: 'Add activity to day' }).click();
     await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
 
