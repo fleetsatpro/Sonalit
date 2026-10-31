@@ -148,6 +148,7 @@ function responseError(res, result) {
   else if (result.error === 'journey_terminal') res.status(409).json({ error: 'journey_terminal', message: TERMINAL_MESSAGE });
   else if (result.error === 'forbidden') res.status(403).json({ error: 'travel_workspace_forbidden' });
   else if (result.error === 'document_not_ready') res.status(409).json({ error: 'travel_document_not_ready' });
+  else if (result.error === 'conflict') res.status(409).json({ error: 'travel_workspace_conflict', message: result.message || 'The record conflicts with an existing entry.' });
   else if (result.error === 'execution_note_required') res.status(400).json({ error: 'execution_note_required', message: 'Provide at least 10 characters describing the actual outcome, delay or exception.' });
   else if (result.error === 'invalid_transition') res.status(409).json({ error: 'invalid_execution_transition', message: result.message });
   else if (result.error === 'conflict') res.status(409).json({ error: 'travel_workspace_conflict', message: result.message || 'The record conflicts with an existing entry.' });
@@ -182,7 +183,7 @@ router.get('/', asyncHandler(async (req, res) => {
     const travellerRows = await db(
       isManager
         ? 'SELECT t.id,t.traveller_reference,t.traveller_type,t.title,t.given_name,t.middle_name,t.family_name,t.preferred_name,t.nationality,t.date_of_birth,t.email,t.phone,t.emergency_contact_name,t.emergency_contact_phone,t.internal_notes,t.created_at,t.updated_at,concat_ws(\' \',t.title,t.given_name,t.middle_name,t.family_name) AS display_name FROM sjm_travellers t WHERE t.org_id=$1 AND t.journey_id=$2 AND t.deleted_at IS NULL ORDER BY t.created_at,t.id'
-        : 'SELECT t.id,t.traveller_reference,t.traveller_type,concat_ws(\' \',t.title,t.preferred_name,t.given_name,t.family_name) AS display_name FROM sjm_travellers t WHERE t.org_id=$1 AND t.journey_id=$2 AND t.deleted_at IS NULL ORDER BY t.created_at,t.id',
+        : 'SELECT t.id,t.traveller_reference,t.traveller_type,concat_ws(\' \',t.title,t.given_name,t.family_name) AS display_name FROM sjm_travellers t WHERE t.org_id=$1 AND t.journey_id=$2 AND t.deleted_at IS NULL ORDER BY t.created_at,t.id',
       [org, id],
     );
     let travellers = travellerRows.rows;
