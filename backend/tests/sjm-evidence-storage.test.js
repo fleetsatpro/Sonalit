@@ -7,10 +7,10 @@ const {
 } = require('../src/services/sjmEvidenceStorage');
 
 const env = {
-  R2_ACCOUNT_ID: 'test-account',
-  R2_ACCESS_KEY: 'test-access',
-  R2_SECRET_KEY: 'test-secret',
-  R2_BUCKET: 'private-evidence',
+  SJM_R2_ACCOUNT_ID: 'private-test-account',
+  SJM_R2_ACCESS_KEY: 'private-test-access',
+  SJM_R2_SECRET_KEY: 'private-test-secret',
+  SJM_R2_BUCKET: 'private-sjm-evidence',
 };
 
 class Command {
@@ -37,10 +37,75 @@ describe('SJM private evidence storage', () => {
     })).rejects.toMatchObject({ code: 'storage_not_configured' });
   });
 
+  test('does not accept legacy application-wide R2 variables as SJM storage configuration', async () => {
+    const Client = jest.fn();
+    const storage = createSjmEvidenceStorage({
+      env: {
+        R2_ACCOUNT_ID: 'legacy-account',
+        R2_ACCESS_KEY: 'legacy-access',
+        R2_SECRET_KEY: 'legacy-secret',
+        R2_BUCKET: 'legacy-media',
+      },
+      Client,
+    });
+
+    await expect(storage.createUploadUrl({
+      key: 'orgs/org/sjm/journey/evidence/id',
+      mimeType: 'image/jpeg',
+      evidenceId: 'evidence-id',
+      journeyId: 'journey-id',
+    })).rejects.toMatchObject({ code: 'storage_not_configured' });
+    expect(Client).not.toHaveBeenCalled();
+  });
+
+  test('rejects the known publicly exposed shared media bucket', async () => {
+    const Client = jest.fn();
+    const storage = createSjmEvidenceStorage({
+      env: {
+        ...env,
+        SJM_R2_BUCKET: 'sonalit-convoy-photos',
+      },
+      Client,
+    });
+
+    await expect(storage.createUploadUrl({
+      key: 'orgs/org/sjm/journey/evidence/id',
+      mimeType: 'image/jpeg',
+      evidenceId: 'evidence-id',
+      journeyId: 'journey-id',
+    })).rejects.toMatchObject({ code: 'storage_not_configured' });
+    expect(Client).not.toHaveBeenCalled();
+  });
+
+  test('rejects an SJM bucket that is also configured as the shared application R2 bucket', async () => {
+    const Client = jest.fn();
+    const storage = createSjmEvidenceStorage({
+      env: { ...env, R2_BUCKET: env.SJM_R2_BUCKET },
+      Client,
+    });
+
+    await expect(storage.createUploadUrl({
+      key: 'orgs/org/sjm/journey/evidence/id',
+      mimeType: 'image/jpeg',
+      evidenceId: 'evidence-id',
+      journeyId: 'journey-id',
+    })).rejects.toMatchObject({ code: 'storage_not_configured' });
+    expect(Client).not.toHaveBeenCalled();
+  });
+
   test('creates a short-lived private upload URL with tenant-bound object metadata', async () => {
     const client = { send: jest.fn() };
+    const Client = jest.fn(options => {
+      expect(options.region).toBe('auto');
+      expect(options.endpoint).toBe('https://private-test-account.r2.cloudflarestorage.com');
+      expect(options.credentials).toEqual({
+        accessKeyId: 'private-test-access',
+        secretAccessKey: 'private-test-secret',
+      });
+      return client;
+    });
     const signer = jest.fn(async (_client, command, options) => {
-      expect(command.input.Bucket).toBe('private-evidence');
+      expect(command.input.Bucket).toBe('private-sjm-evidence');
       expect(command.input.Key).toBe('orgs/org/sjm/journey/evidence/id');
       expect(command.input.ContentType).toBe('image/jpeg');
       expect(command.input.IfNoneMatch).toBe('*');
@@ -50,7 +115,7 @@ describe('SJM private evidence storage', () => {
     });
     const storage = createSjmEvidenceStorage({
       env,
-      Client: jest.fn(() => client),
+      Client,
       PutCommand: Command,
       signUrl: signer,
     });
@@ -144,7 +209,7 @@ describe('SJM private evidence storage', () => {
   test('issues a private, time-limited download rather than returning a public object URL', async () => {
     const client = { send: jest.fn() };
     const signer = jest.fn(async (_client, command, options) => {
-      expect(command.input.Bucket).toBe('private-evidence');
+      expect(command.input.Bucket).toBe('private-sjm-evidence');
       expect(command.input.Key).toBe('private-key');
       expect(command.input.ResponseContentType).toBe('application/pdf');
       expect(command.input.ResponseContentDisposition).toContain('secure-brief.pdf');

@@ -28,21 +28,41 @@ function createSjmEvidenceStorage({
   let client = null;
 
   function configuration() {
-    const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET } = env;
-    if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
+    const {
+      SJM_R2_ACCOUNT_ID,
+      SJM_R2_ACCESS_KEY,
+      SJM_R2_SECRET_KEY,
+      SJM_R2_BUCKET,
+    } = env;
+    if (!SJM_R2_ACCOUNT_ID || !SJM_R2_ACCESS_KEY || !SJM_R2_SECRET_KEY || !SJM_R2_BUCKET) {
       throw new SjmEvidenceStorageError(
         'storage_not_configured',
-        'Private SJM evidence storage is not configured on this server.',
+        'Dedicated private SJM evidence storage is not configured on this server.',
       );
     }
+
+    // SJM evidence must never fall back to the shared Sonalit R2 namespace.
+    // The existing convoy-photo bucket has enabled public custom domains.
+    // Also reject an explicitly shared bucket name if it is configured under
+    // both the SJM-specific and legacy application-wide variables.
+    if (
+      SJM_R2_BUCKET === 'sonalit-convoy-photos' ||
+      (env.R2_BUCKET && SJM_R2_BUCKET === env.R2_BUCKET)
+    ) {
+      throw new SjmEvidenceStorageError(
+        'storage_not_configured',
+        'SJM evidence requires a dedicated private bucket, separate from shared media storage.',
+      );
+    }
+
     if (!client) {
       client = new Client({
         region: 'auto',
-        endpoint: 'https://' + R2_ACCOUNT_ID + '.r2.cloudflarestorage.com',
-        credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+        endpoint: 'https://' + SJM_R2_ACCOUNT_ID + '.r2.cloudflarestorage.com',
+        credentials: { accessKeyId: SJM_R2_ACCESS_KEY, secretAccessKey: SJM_R2_SECRET_KEY },
       });
     }
-    return { client, bucket: R2_BUCKET };
+    return { client, bucket: SJM_R2_BUCKET };
   }
 
   async function createUploadUrl({ key, mimeType, evidenceId, journeyId, now = Date.now() }) {
