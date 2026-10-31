@@ -27,6 +27,9 @@ const FLIGHT_STATUS_TRANSITIONS = Object.freeze({
 function flightStatusTransitionAllowed(current, next) {
   return current === next || Boolean(FLIGHT_STATUS_TRANSITIONS[current]?.includes(next));
 }
+function flightStatusOptions(current) {
+  return [current, ...(FLIGHT_STATUS_TRANSITIONS[current] || [])];
+}
 const ITEM_TYPES = new Set(['flight', 'airport_arrival', 'meet_and_greet', 'transfer', 'vehicle_handover', 'meeting', 'close_protection', 'security_escort', 'security_briefing', 'hotel', 'hotel_check_in', 'departure_check_in', 'border_control', 'customs', 'airport_departure', 'checkpoint', 'rest', 'event', 'other']);
 const EXECUTION_STATES = new Set(['planned', 'in_progress', 'completed', 'delayed', 'skipped', 'exception']);
 const MIME_LIMITS = Object.freeze({ 'application/pdf': 25 * 1024 * 1024, 'image/jpeg': 20 * 1024 * 1024, 'image/png': 20 * 1024 * 1024 });
@@ -253,7 +256,8 @@ router.get('/', asyncHandler(async (req, res) => {
     }
     const readiness = await loadTravelReadiness(db, current.journey, 'departure');
     return { data: {
-      travellers, documents, flights: flightResult.rows,
+      travellers, documents,
+      flights: flightResult.rows.map(flight => ({ ...flight, allowed_next_statuses: flightStatusOptions(flight.status) })),
       days: dayResult.rows.map(day => ({ ...day, items: byDay.get(day.id) || [] })),
       readiness,
       access: { manager: isManager, duty_roles: current.roles },
@@ -765,5 +769,5 @@ router.get('/items/:itemId/history', asyncHandler(async (req, res) => {
 module.exports = router;
 module.exports.__test = {
   travellerInput, flightInput, itemInput, dateOnly, validTimestamp, validTimezone,
-  localDate, flightStatusTransitionAllowed, TRAVELLER_TYPES, DOCUMENT_TYPES, FLIGHT_STATUSES, ITEM_TYPES, EXECUTION_STATES,
+  localDate, flightStatusTransitionAllowed, flightStatusOptions, TRAVELLER_TYPES, DOCUMENT_TYPES, FLIGHT_STATUSES, ITEM_TYPES, EXECUTION_STATES,
 };
