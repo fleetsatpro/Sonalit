@@ -63,7 +63,7 @@ async function seedJourney(db, { orgId, journeyId, suffix, managerId, driverId, 
       ($1,$2,$3,$4,$5,'Jomo Kenyatta International Airport',-1.3192,36.9278,
        'Paris Charles de Gaulle',49.0097,2.5479,
        '2026-11-02T06:00:00.000Z','2026-11-02T14:00:00.000Z',
-       'Africa/Nairobi','requested'`,
+       'Africa/Nairobi','requested')`,
     [journeyId,orgId,'SJM-RLS-'+suffix,'SJM tenant isolation '+suffix,'Synthetic isolated integration fixture'],
   );
   await db.query(
@@ -267,6 +267,7 @@ test('field-duty API projection omits traveller PII, highly-sensitive documents 
     id:USER_DRIVER_A,email:'sjm-rls-driver-a@example.invalid',name:'SJM RLS Driver A',
     role:'operator',status:'active',org_id:ORG_A,
   });
+  await request(app).get('/journeys/'+JOURNEY_B+'/travel-workspace').expect(404);
   const response = await request(app).get('/journeys/'+JOURNEY_A+'/travel-workspace').expect(200);
   expect(response.body.data.access.manager).toBe(false);
   expect(response.body.data.travellers).toHaveLength(1);
@@ -286,7 +287,7 @@ test('mobility managers can read the full traveller dossier and document registe
   if (skip()) return;
   const app = authenticatedTestApp({
     id:USER_MANAGER_A,email:'sjm-rls-manager-a@example.invalid',name:'SJM RLS Manager A',
-    role:'admin',status:'active',org_id:ORG_A,
+    role:'dispatcher',status:'active',org_id:ORG_A,
   });
   const response = await request(app).get('/journeys/'+JOURNEY_A+'/travel-workspace').expect(200);
   expect(response.body.data.access.manager).toBe(true);
