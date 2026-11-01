@@ -514,7 +514,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(timeline.getByText('Recorded by an authorised team member', { exact: true })).toBeVisible();
     await expect(timeline.getByText(/No routed road geometry is stored/)).toBeVisible();
     await expect(timeline.getByText(/Europe\/London/)).toBeVisible();
-    await expect(timeline.getByText(/Africa\/Nairobi/)).toBeVisible();
+    await expect(timeline.getByText(/End \/ arrival .*Africa\/Nairobi/)).toBeVisible();
 
     await timeline.getByRole('button', { name: 'Journey events' }).click();
     await expect(timeline.getByText('Meet-and-greet team checked in', { exact: true })).toBeVisible();
