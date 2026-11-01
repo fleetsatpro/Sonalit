@@ -713,6 +713,115 @@ describe('SJM validation and evidence boundaries', () => {
     expect(JSON.stringify(sections)).not.toContain('operator-uuid');
   });
 
+  test('itinerary reports include the full travel programme while excluding private dossier fields', () => {
+    const report = {
+      report_type: 'itinerary',
+      report_title: 'Journey Itinerary',
+      report_date: '2026-10-31',
+      timezone: 'Africa/Nairobi',
+      client_profile: {
+        enabled_sections: ['summary','traveller_dossier','flight_segments','daily_programme','travel_readiness','document_status'],
+      },
+      journey: { id: 'journey-qa', reference: 'SJM-QA-FOUR-DAY', title: 'Synthetic four-day itinerary', status: 'requested' },
+      travellers: [{
+        traveller_reference: 'TRV-QA-001',
+        traveller_type: 'principal',
+        date_of_birth: 'PRIVATE_DOB_MUST_NOT_EXPORT',
+        email: 'PRIVATE_EMAIL_MUST_NOT_EXPORT@example.invalid',
+        internal_notes: 'PRIVATE_TRAVELLER_NOTES_MUST_NOT_EXPORT',
+      }],
+      flight_segments: [{
+        sequence: 1,
+        carrier: 'QA Airways',
+        flight_number: 'QA 100',
+        traveller_reference: 'TRV-QA-001',
+        departure_airport: 'CDG',
+        arrival_airport: 'NBO',
+        departure_at: '2026-10-31T07:00:00.000Z',
+        departure_timezone: 'Europe/Paris',
+        arrival_at: '2026-10-31T08:30:00.000Z',
+        arrival_timezone: 'Africa/Nairobi',
+        status: 'scheduled',
+        status_source: 'operator_entered',
+        booking_reference: 'PRIVATE_BOOKING_REFERENCE_MUST_NOT_EXPORT',
+        status_note: 'PRIVATE_FLIGHT_NOTE_MUST_NOT_EXPORT',
+      }],
+      daily_programme: [
+        { journey_date: '2026-10-31', timezone: 'Africa/Nairobi', day_title: 'Day 1 · Arrival', items: [{
+          sequence: 1, title: 'Airport reception', item_type: 'meet_and_greet',
+          planned_start_at: '2026-10-31T09:00:00.000Z', planned_end_at: '2026-10-31T09:30:00.000Z',
+          execution_status: 'planned', traveller_reference: 'TRV-QA-001', responsible_role: 'meet_greet',
+          location_label: 'NBO arrivals', description: 'PRIVATE_ACTIVITY_INSTRUCTIONS_MUST_NOT_EXPORT',
+          execution_note: 'PRIVATE_EXECUTION_NOTE_MUST_NOT_EXPORT', location_lat: -1.3192, location_lng: 36.9278,
+        }] },
+        { journey_date: '2026-11-01', timezone: 'Africa/Nairobi', day_title: 'Day 2 · Engagements', items: [{
+          sequence: 1, title: 'Planned engagement window', item_type: 'event',
+          planned_start_at: '2026-11-01T10:00:00.000Z', planned_end_at: '2026-11-01T12:00:00.000Z',
+          execution_status: 'planned', responsible_role: 'cpo', location_label: 'Venue not yet confirmed',
+        }] },
+        { journey_date: '2026-11-02', timezone: 'Africa/Nairobi', day_title: 'Day 3 · Programme', items: [{
+          sequence: 1, title: 'Programme activity', item_type: 'event',
+          planned_start_at: '2026-11-02T10:00:00.000Z', planned_end_at: '2026-11-02T12:00:00.000Z',
+          execution_status: 'planned',
+        }] },
+        { journey_date: '2026-11-03', timezone: 'Africa/Nairobi', day_title: 'Day 4 · Departure preparation', items: [{
+          sequence: 1, title: 'Departure preparation', item_type: 'departure_check_in',
+          planned_start_at: '2026-11-03T08:00:00.000Z', planned_end_at: '2026-11-03T09:00:00.000Z',
+          execution_status: 'planned',
+        }] },
+      ],
+      travel_readiness: {
+        ready: false,
+        blockers: [{ code: 'programme_schedule_conflict', message: 'Resolve overlapping planned activities.', conflict_count: 0 }],
+        warnings: [],
+        counts: { traveller_count: 1, flight_segment_count: 1, programme_day_count: 4, timed_activity_count: 4, schedule_conflict_count: 0 },
+      },
+      travel_document_status: {
+        uploaded_count: 0, verified_count: 0, pending_review_count: 0, rejected_count: 0, expired_count: 0,
+      },
+    };
+
+    const sections = reportFocusSections(report);
+    const rendered = JSON.stringify(sections);
+    expect(rendered).toContain('TRV-QA-001');
+    expect(rendered).toContain('QA Airways');
+    expect(rendered).toContain('QA 100');
+    for (const day of ['Day 1 · Arrival', 'Day 2 · Engagements', 'Day 3 · Programme', 'Day 4 · Departure preparation']) {
+      expect(rendered).toContain(day);
+    }
+    expect(rendered).toContain('Airport reception');
+    expect(rendered).toContain('Departure preparation');
+    for (const privateMarker of [
+      'PRIVATE_DOB_MUST_NOT_EXPORT',
+      'PRIVATE_EMAIL_MUST_NOT_EXPORT',
+      'PRIVATE_TRAVELLER_NOTES_MUST_NOT_EXPORT',
+      'PRIVATE_BOOKING_REFERENCE_MUST_NOT_EXPORT',
+      'PRIVATE_FLIGHT_NOTE_MUST_NOT_EXPORT',
+      'PRIVATE_ACTIVITY_INSTRUCTIONS_MUST_NOT_EXPORT',
+      'PRIVATE_EXECUTION_NOTE_MUST_NOT_EXPORT',
+    ]) expect(rendered).not.toContain(privateMarker);
+
+    const dailyReport = JSON.stringify(reportFocusSections({ ...report, report_type: 'daily' }));
+    expect(dailyReport).toContain('Airport reception');
+    expect(dailyReport).toContain('Day 1 · Arrival');
+    expect(dailyReport).not.toContain('Day 2 · Engagements');
+    expect(dailyReport).not.toContain('Day 3 · Programme');
+    expect(dailyReport).not.toContain('Day 4 · Departure preparation');
+
+    const csv = toCsv(report);
+    expect(csv).toContain('QA Airways');
+    expect(csv).toContain('Day 4 · Departure preparation');
+    for (const privateMarker of [
+      'PRIVATE_DOB_MUST_NOT_EXPORT',
+      'PRIVATE_EMAIL_MUST_NOT_EXPORT',
+      'PRIVATE_TRAVELLER_NOTES_MUST_NOT_EXPORT',
+      'PRIVATE_BOOKING_REFERENCE_MUST_NOT_EXPORT',
+      'PRIVATE_FLIGHT_NOTE_MUST_NOT_EXPORT',
+      'PRIVATE_ACTIVITY_INSTRUCTIONS_MUST_NOT_EXPORT',
+      'PRIVATE_EXECUTION_NOTE_MUST_NOT_EXPORT',
+    ]) expect(csv).not.toContain(privateMarker);
+  });
+
   test('report CSV respects client section policy for optional stop, event and telemetry evidence', () => {
     const csv=toCsv({
       report_type:'daily',report_title:'Daily Travel Report',report_date:'2026-10-27',generated_at:'2026-10-27T15:00:00Z',
