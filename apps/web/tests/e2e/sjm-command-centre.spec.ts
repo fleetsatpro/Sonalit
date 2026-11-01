@@ -644,6 +644,12 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(dimensions.scrollWidth, 'travel dossier must not introduce horizontal overflow on a 390px viewport')
       .toBeLessThanOrEqual(dimensions.width);
 
+    await workspace.evaluate(element => element.scrollIntoView({ block: 'start', inline: 'nearest' }));
+    await testInfo.attach('sjm-mobile-travel-dossier', {
+      body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
+      contentType: 'image/png',
+    });
+
     await page.getByRole('tab', { name: 'Reports' }).click();
     await expect(page.getByRole('heading', { name: 'Report template' })).toBeVisible();
     await page.getByRole('button', { name: 'Configure profile' }).click();
@@ -656,12 +662,6 @@ test.describe('SJM command-centre responsive smoke', () => {
     ]) {
       await expect(page.getByLabel(sectionLabel)).toBeChecked();
     }
-
-    await workspace.evaluate(element => element.scrollIntoView({ block: 'start', inline: 'nearest' }));
-    await testInfo.attach('sjm-mobile-travel-dossier', {
-      body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
-      contentType: 'image/png',
-    });
   });
 
   test('unified operations timeline keeps record types and evidence classes separate', async ({ page }) => {
