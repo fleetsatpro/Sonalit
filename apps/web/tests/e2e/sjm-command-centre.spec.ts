@@ -1320,7 +1320,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText('OpenSky state vectors', { exact: true })).toBeVisible();
     await expect(page.getByText('ADSB.lol regional records', { exact: true })).toBeVisible();
     const adsbAttribution = page.locator('p').filter({ hasText: 'Source: ADSB.lol · ODbL 1.0.' });
-    await expect(adsbAttribution).toContainText('Commercial use is permitted');
+    await expect(adsbAttribution).toContainText('educational aircraft-awareness source');
     await expect(adsbAttribution).toContainText('public API is best-effort');
     await expect(page.getByText('No aircraft are simulated.')).toBeVisible();
     expect(cspRuntimeErrors).toEqual([]);
