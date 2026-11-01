@@ -708,7 +708,7 @@ describe('SJM validation and evidence boundaries', () => {
     expect(sections[0].body).toContain('Programme schedule integrity: BLOCKED');
     const travelSection=sections.find(section=>section.title==='Traveller dossier and release readiness');
     expect(travelSection.body).toContain('Schedule conflicts: 2');
-    expect(travelSection.body).toContain('programme_schedule_conflict');
+    expect(travelSection.body).toContain('Resolve overlapping planned activities.');
     expect(JSON.stringify(sections)).not.toContain('traveller-uuid');
     expect(JSON.stringify(sections)).not.toContain('operator-uuid');
   });
