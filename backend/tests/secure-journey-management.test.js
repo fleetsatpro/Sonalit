@@ -764,11 +764,7 @@ describe('SJM validation and evidence boundaries', () => {
           planned_start_at: '2026-11-02T10:00:00.000Z', planned_end_at: '2026-11-02T12:00:00.000Z',
           execution_status: 'planned',
         }] },
-        { journey_date: '2026-11-03', timezone: 'Africa/Nairobi', day_title: 'Day 4 · Departure preparation', items: [{
-          sequence: 1, title: 'Departure preparation', item_type: 'departure_check_in',
-          planned_start_at: '2026-11-03T08:00:00.000Z', planned_end_at: '2026-11-03T09:00:00.000Z',
-          execution_status: 'planned',
-        }] },
+        { journey_date: '2026-11-03', timezone: 'Africa/Nairobi', day_title: 'Day 4 · Departure preparation', items: [] },
       ],
       travel_readiness: {
         ready: false,
@@ -811,6 +807,12 @@ describe('SJM validation and evidence boundaries', () => {
     const csv = toCsv(report);
     expect(csv).toContain('QA Airways');
     expect(csv).toContain('Day 4 · Departure preparation');
+    expect(csv).toContain('NO_ACTIVITIES');
+    const dailyCsv = toCsv({ ...report, report_type: 'daily' });
+    expect(dailyCsv).toContain('Day 1 · Arrival');
+    expect(dailyCsv).not.toContain('Day 2 · Engagements');
+    expect(dailyCsv).not.toContain('Day 3 · Programme');
+    expect(dailyCsv).not.toContain('Day 4 · Departure preparation');
     for (const privateMarker of [
       'PRIVATE_DOB_MUST_NOT_EXPORT',
       'PRIVATE_EMAIL_MUST_NOT_EXPORT',
