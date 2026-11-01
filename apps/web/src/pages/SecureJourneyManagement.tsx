@@ -11,6 +11,7 @@ import { localDateTimeInputInTimezone } from '../lib/sjmJourneyTime.js';
 import { correlateJourneyFlight, resolveAirspaceDisplayStatus } from '../lib/sjmAirspaceMatch.js';
 import { useAuthStore } from '../stores/auth.js';
 import SjmTravellerProgramme from '../components/sjm/SjmTravellerProgramme.js';
+import SjmOperationalTimeline from '../components/sjm/SjmOperationalTimeline.js';
 import { Activity, AlertTriangle, ArrowLeft, ArrowRight, ArrowUpRight, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileBarChart2, FileDown, FileText, Layers3, MapPinned, Maximize2, MessagesSquare, Navigation, Pencil, Plane, Plus, RefreshCw, Route, Search, ShieldAlert, ShieldCheck, Users, XCircle } from 'lucide-react';
 
 type Status='requested'|'planning'|'assessment_pending'|'ready_for_review'|'approved'|'ready_to_depart'|'in_progress'|'paused'|'exception'|'arrival_pending_verification'|'closed'|'cancelled'|'aborted'|'on_hold';
@@ -358,7 +359,7 @@ export default function SecureJourneyManagement(){
  const [intakeMode,setIntakeMode]=useState<'create'|'edit'>('create');
  const [editAcknowledged,setEditAcknowledged]=useState(false);
  const [editBaseline,setEditBaseline]=useState<{journeyId:string;timezone:string;departureInput:string;departureAt:string|null;arrivalInput:string;arrivalAt:string|null}|null>(null);
- const [workspaceTab,setWorkspaceTab]=useState<'overview'|'command'|'travel'|'itinerary'|'evidence'|'resources'|'airspace'|'reports'>('overview');
+ const [workspaceTab,setWorkspaceTab]=useState<'overview'|'command'|'travel'|'timeline'|'itinerary'|'evidence'|'resources'|'airspace'|'reports'>('overview');
  const [reportType,setReportType]=useState('daily');
  const [lastGeneratedReport,setLastGeneratedReport]=useState<{id:string;report_date:string;report_type:string}|null>(null);
  const [reportDownloadError,setReportDownloadError]=useState('');
@@ -751,6 +752,7 @@ return (
           {[
            {value:'overview',label:'Overview',Icon:Activity},
            {value:'travel',label:'Travel dossier',Icon:Users},
+           {value:'timeline',label:'Operations timeline',Icon:CalendarClock},
            {value:'command',label:'Command & release',Icon:ShieldCheck},
            {value:'itinerary',label:'Route & stops',Icon:Route},
            {value:'evidence',label:'Evidence',Icon:Layers3},
@@ -991,6 +993,7 @@ return (
       </div></Panel>
          </div>}
 
+         {workspaceTab==='timeline'&&<SjmOperationalTimeline journeyId={journey.id} timezone={journey.timezone||'Africa/Nairobi'} stops={stops} events={events} routeStatus={assess?.route_status||'UNAVAILABLE'} safetyGate={assess?.safety_gate||'UNAVAILABLE'} routePointCount={geometry.length}/>}
          {workspaceTab==='travel'&&<SjmTravellerProgramme key={journey.id} journeyId={journey.id} timezone={journey.timezone||'Africa/Nairobi'} canManage={isSupervisor} planEditable={['requested','planning','assessment_pending','ready_for_review'].includes(journey.status)} executionAllowed={['approved','ready_to_depart','in_progress','paused','exception','arrival_pending_verification'].includes(journey.status)} readOnly={['closed','cancelled','aborted'].includes(journey.status)}/>}
          {workspaceTab==='itinerary'&&<div className="space-y-4">
           <div className="rounded-md border border-orange-300/15 bg-orange-300/[0.025] p-4"><div className="flex items-start gap-3"><Route size={17} className="mt-0.5 text-orange-200"/><div><h4 className="text-sm font-semibold text-white">Stop confirmations</h4><p className="mt-1 text-xs leading-5 text-slate-400">Stops remain planned until a team member confirms them. Device locations are shown separately; a manual confirmation is not GPS proof.</p></div></div></div>
