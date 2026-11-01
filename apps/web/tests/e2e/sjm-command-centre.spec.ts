@@ -619,7 +619,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(workspace.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
     await expect(workspace.getByText('Synthetic QA Principal', { exact: true })).toBeVisible();
 
-    const registerButton = workspace.getByRole('button', { name: 'Register traveller' });
+    const registerButton = workspace.getByRole('button', { name: 'Register traveller' }).first();
     await expect(registerButton).toBeVisible();
     await registerButton.click();
     await expect(workspace.getByText('Register a traveller', { exact: true })).toBeVisible();
