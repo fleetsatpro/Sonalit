@@ -205,7 +205,7 @@ export default function SjmOperationalTimeline({
             <div className="rounded border border-white/[0.05] bg-black/15 px-3 py-2">
               <p className="text-[9px] font-semibold tracking-[.12em] text-slate-500">{entry.kind === 'flights' ? 'PLANNED DEPARTURE' : entry.kind === 'programme' ? 'PLANNED START' : entry.kind === 'stops' ? 'PLANNED / RECORDED TIME' : 'RECORDED AT'}</p>
               <p className="mt-1 text-[11px] text-slate-200">{time(entry.when, entry.timezone)} <span className="text-slate-500">· {entry.timezone || 'Timezone unavailable'}</span></p>
-              {entry.end && <p className="mt-1 text-[10px] text-slate-400">End / arrival · {time(entry.end, entry.endTimezone)}</p>}
+              {entry.end && <p className="mt-1 text-[10px] text-slate-400">End / arrival · {time(entry.end, entry.endTimezone)} <span className="text-slate-500">· {entry.endTimezone || 'Timezone unavailable'}</span></p>}
             </div>
             <div className="rounded border border-white/[0.05] bg-black/15 px-3 py-2">
               <p className="text-[9px] font-semibold tracking-[.12em] text-slate-500">EVIDENCE / SOURCE</p>
