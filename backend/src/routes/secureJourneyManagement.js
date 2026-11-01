@@ -292,7 +292,7 @@ function toCsv(report) {
   rows.push(['journey',j.created_at||'',j.reference||'Journey',j.status||'',{id:j.id||null}]);
   if(enabled.has('summary'))rows.push(['journey_summary',j.created_at||'',j.title||'',j.status||'',{purpose:j.purpose,client:j.client_name,origin:j.origin_label,destination:j.destination_label,planned_departure_at:j.planned_departure_at,planned_arrival_at:j.planned_arrival_at,transport_mode:j.transport_mode}]);
   if(enabled.has('itinerary'))for(const [i,p] of (report.itinerary||[]).entries())rows.push(['route_point',report.generated_at||'',p.name||p.label||('Route point '+(i+1)),'PLANNED',{sequence:i+1,lat:p.lat,lng:p.lng,geometry_source:report.provenance?.planned_itinerary||'UNAVAILABLE'}]);
-  if(enabled.has('traveller_dossier'))for(const t of report.travellers||[])rows.push(['traveller',report.generated_at||'',t.traveller_reference||'',t.traveller_type||'',{privacy:'Contact and identity details excluded'}]);
+  if(enabled.has('traveller_dossier'))for(const t of report.travellers||[])rows.push(['traveller',report.generated_at||'',t.display_name||t.traveller_reference||'',t.traveller_type||'',{traveller_reference:t.traveller_reference||null,privacy:'Contact, date of birth, emergency contact and document details excluded'}]);
   if(enabled.has('flight_segments'))for(const f of report.flight_segments||[])rows.push(['flight_segment',f.departure_at||'',String(f.sequence||'')+' · '+(f.carrier||'')+' '+(f.flight_number||''),f.status||'unknown',{traveller_reference:f.traveller_reference||null,departure_airport:f.departure_airport,arrival_airport:f.arrival_airport,departure_at:f.departure_at,departure_timezone:f.departure_timezone,arrival_at:f.arrival_at,arrival_timezone:f.arrival_timezone,status_source:f.status_source}]);
   if(enabled.has('daily_programme')) {
     const programmeDays=['daily','sitrep'].includes(report.report_type)
@@ -485,14 +485,15 @@ function reportTravelDossierSections(report, enabled, type) {
   if(enabled.has('traveller_dossier')){
     sections.push({
       title:'Traveller register',
-      body:travellers.map(t=>(t.traveller_reference||'Traveller reference unavailable')+' — '+(t.traveller_type||'traveller')).join('\n')||'No traveller records are registered.',
+      body:travellers.map(t=>(t.display_name?t.display_name+' · ':'')+(t.traveller_reference||'Traveller reference unavailable')+' — '+(t.traveller_type||'traveller')).join('\n')||'No traveller records are registered.',
     });
   }
   if(enabled.has('flight_segments')){
     sections.push({
       title:'Booked flight segments',
       body:flights.map(f=>{
-        const person=f.traveller_reference?' · '+f.traveller_reference:' · shared party';
+        const travellerLabel=enabled.has('traveller_dossier')?(f.traveller_display_name||f.traveller_reference):f.traveller_reference;
+        const person=travellerLabel?' · '+travellerLabel:' · shared party';
         return 'LEG '+String(f.sequence).padStart(2,'0')+' · '+f.carrier+' '+f.flight_number+person+' · '+f.departure_airport+' → '+f.arrival_airport+' · depart '+timeLabel(f.departure_at,f.departure_timezone)+' ('+f.departure_timezone+') · arrive '+timeLabel(f.arrival_at,f.arrival_timezone)+' ('+f.arrival_timezone+') · '+String(f.status||'unknown').toUpperCase()+' ['+(f.status_source||'source unavailable')+']';
       }).join('\n')||'No structured flight segments are registered.',
     });
@@ -505,7 +506,8 @@ function reportTravelDossierSections(report, enabled, type) {
       const items=day.items||[];
       if(items.length===0)dayLines.push('  No timed activities recorded.');
       for(const item of items){
-        const traveller=item.traveller_reference?' · traveller '+item.traveller_reference:' · shared party';
+        const travellerLabel=enabled.has('traveller_dossier')?(item.traveller_display_name||item.traveller_reference):item.traveller_reference;
+        const traveller=travellerLabel?' · traveller '+travellerLabel:' · shared party';
         const role=item.responsible_role?' · accountable role '+item.responsible_role:'';
         const place=item.location_label?' · '+item.location_label:'';
         const actual=item.actual_start_at?' · actual start '+timeLabel(item.actual_start_at,day.timezone):'';
@@ -609,18 +611,18 @@ async function reportSnapshot(db,org,j,type,date) {
     j.client_id?db('SELECT report_timezone,report_template FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[org,j.client_id]):Promise.resolve({rows:[]}),
     telemetryFor(db,org,j),
   ]);
-  const p=profile.rows[0]||{},template=normaliseReportTemplate(p.report_template),assessment=parseJson(j.route_assessment,null),events=eventRecords.rows,changes=changeEventsFor(events);
+  const p=profile.rows[0]||{},template=normaliseReportTemplate(p.report_template),includeTravellerNames=template.sections.includes('traveller_dossier'),travellerNameSql=includeTravellerNames?"concat_ws(' ',t.title,t.given_name,t.middle_name,t.family_name)":"NULL::text",assessment=parseJson(j.route_assessment,null),events=eventRecords.rows,changes=changeEventsFor(events);
   const pendingStops=stops.filter(s=>s.stop_status==='planned').length,reachedStops=stops.filter(s=>s.stop_status==='reached').length,skippedStops=stops.filter(s=>s.stop_status==='skipped').length;
   const [travelReadiness,travellerRows,flightRows,dayRows,itemRows,documentRows]=await Promise.all([
     loadTravelReadiness(db,j,'departure'),
-    db('SELECT id,traveller_reference,traveller_type FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL ORDER BY created_at,id',[org,j.id]),
+    db('SELECT id,traveller_reference,traveller_type,'+travellerNameSql+' AS display_name FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL ORDER BY created_at,id',[org,j.id]),
     db(
-      'SELECT f.sequence,f.traveller_id,t.traveller_reference,t.traveller_type,f.carrier,f.flight_number,f.departure_airport,f.departure_airport_name,f.departure_at,f.departure_timezone,f.arrival_airport,f.arrival_airport_name,f.arrival_at,f.arrival_timezone,f.status,f.status_source,f.status_observed_at '+
+      'SELECT f.sequence,f.traveller_id,t.traveller_reference,t.traveller_type,'+travellerNameSql+' AS traveller_display_name,f.carrier,f.flight_number,f.departure_airport,f.departure_airport_name,f.departure_at,f.departure_timezone,f.arrival_airport,f.arrival_airport_name,f.arrival_at,f.arrival_timezone,f.status,f.status_source,f.status_observed_at '+
       'FROM sjm_flight_segments f LEFT JOIN sjm_travellers t ON t.id=f.traveller_id AND t.org_id=f.org_id AND t.journey_id=f.journey_id AND t.deleted_at IS NULL '+
       'WHERE f.org_id=$1 AND f.journey_id=$2 AND f.deleted_at IS NULL ORDER BY f.sequence,f.id',[org,j.id]),
     db('SELECT id,journey_date,timezone,day_title,briefing,operational_notes FROM sjm_itinerary_days WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL ORDER BY journey_date,id',[org,j.id]),
     db(
-      'SELECT i.id,i.day_id,i.sequence,i.item_type,i.title,i.location_label,i.planned_start_at,i.planned_end_at,i.execution_status,i.actual_start_at,i.actual_end_at,i.traveller_id,t.traveller_reference,t.traveller_type,i.responsible_role '+
+      'SELECT i.id,i.day_id,i.sequence,i.item_type,i.title,i.location_label,i.planned_start_at,i.planned_end_at,i.execution_status,i.actual_start_at,i.actual_end_at,i.traveller_id,t.traveller_reference,t.traveller_type,'+travellerNameSql+' AS traveller_display_name,i.responsible_role '+
       'FROM sjm_itinerary_items i LEFT JOIN sjm_travellers t ON t.id=i.traveller_id AND t.org_id=i.org_id AND t.journey_id=i.journey_id AND t.deleted_at IS NULL '+
       'WHERE i.org_id=$1 AND i.journey_id=$2 AND i.deleted_at IS NULL ORDER BY i.day_id,i.planned_start_at,i.sequence,i.id',[org,j.id]),
     db(
@@ -645,7 +647,7 @@ async function reportSnapshot(db,org,j,type,date) {
     pre_trip_readiness:[...readinessChecklist(j,stops,assessment,telemetry),...travelReadinessChecklist(j,travelReadiness)],
     situation:{last_event:events[0]||null,open_stops:pendingStops,telemetry_status:telemetry.status},
     closeout_evidence:closeoutEvidence,
-    provenance:{planned_itinerary:'SJM journey and ordered stop records',route_assessment:assessment?'Stored Sonalit Route Safety assessment':'UNAVAILABLE',telemetry:'Latest device_locations fixes associated with directly assigned Guardian devices; not a route prediction',stop_confirmation:'Operator confirmation is not represented as GPS-derived proof',travellers:'SJM traveller reference and relationship only; contact, identity and document contents excluded',flight_segments:'SJM structured flight register; booking references and operator status notes excluded',daily_programme:'Dated SJM itinerary activities and recorded execution states; internal instructions, coordinates and execution notes excluded',travel_documents:'Aggregate status counts only; file names and document contents excluded',travel_readiness:'Server-evaluated SJM release checks and warnings',future_telemetry_timestamps:'Future-dated fixes are UNAVAILABLE and never treated as LIVE',fabricated_data_used:false},
+    provenance:{planned_itinerary:'SJM journey and ordered stop records',route_assessment:assessment?'Stored Sonalit Route Safety assessment':'UNAVAILABLE',telemetry:'Latest device_locations fixes associated with directly assigned Guardian devices; not a route prediction',stop_confirmation:'Operator confirmation is not represented as GPS-derived proof',travellers:includeTravellerNames?'SJM traveller display names included because the client selected the traveller register section; contact, date of birth, emergency contact and document contents excluded':'SJM traveller reference and relationship only; personal details excluded',flight_segments:'SJM structured flight register; booking references and operator status notes excluded',daily_programme:'Dated SJM itinerary activities and recorded execution states; internal instructions, coordinates and execution notes excluded',travel_documents:'Aggregate status counts only; file names and document contents excluded',travel_readiness:'Server-evaluated SJM release checks and warnings',future_telemetry_timestamps:'Future-dated fixes are UNAVAILABLE and never treated as LIVE',fabricated_data_used:false},
   };
 }
 
