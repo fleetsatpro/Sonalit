@@ -49,6 +49,11 @@ function authenticatedTestApp(user) {
     req.dbTx = fn => withOrg(user.org_id, fn);
     next();
   }, travelWorkspaceRouter);
+  app.use('/journeys/:id/evidence', (req, _res, next) => {
+    req.user = user;
+    req.dbTx = fn => withOrg(user.org_id, fn);
+    next();
+  }, evidenceRouter);
   return app;
 }
 
