@@ -540,9 +540,17 @@ test.describe('SJM command-centre responsive smoke', () => {
           timelineDimensions.scrollWidth,
           viewport.label + ': timeline must not introduce horizontal overflow',
         ).toBeLessThanOrEqual(timelineDimensions.clientWidth);
-        await timeline.scrollIntoViewIfNeeded();
-        await testInfo.attach(`sjm-${viewport.label}-operations-timeline`, {
-          body: await timeline.screenshot({ animations: 'disabled' }),
+        // The timeline lives inside the console's nested scroll surface.
+        // Align its opening at the viewport top before capturing page-level
+        // screenshots; element screenshots are clipped by that scroll surface.
+        await timeline.evaluate(el => el.scrollIntoView({ block: 'start', inline: 'nearest' }));
+        await testInfo.attach(`sjm-${viewport.label}-operations-timeline-top`, {
+          body: await page.screenshot({ animations: 'disabled' }),
+          contentType: 'image/png',
+        });
+        await timelineEntries.last().scrollIntoViewIfNeeded();
+        await testInfo.attach(`sjm-${viewport.label}-operations-timeline-lower`, {
+          body: await page.screenshot({ animations: 'disabled' }),
           contentType: 'image/png',
         });
       }
