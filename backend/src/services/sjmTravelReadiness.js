@@ -39,28 +39,131 @@ function calendarDates(start, end) {
 function findProgrammeScheduleConflicts(activities = []) {
   const scheduled = activities
     .filter(activity => !['completed', 'skipped'].includes(activity.execution_status))
-    .map(activity => ({ ...activity, start: Date.parse(activity.planned_start_at), end: Date.parse(activity.planned_end_at) }))
-    .filter(activity => activity.id && Number.isFinite(activity.start) && Number.isFinite(activity.end) && activity.end > activity.start)
-    .sort((left, right) => left.start - right.start || left.end - right.end || String(left.id).localeCompare(String(right.id)));
-  const conflicts = [];
-  for (let leftIndex = 0; leftIndex < scheduled.length; leftIndex += 1) {
-    const left = scheduled[leftIndex];
-    for (let rightIndex = leftIndex + 1; rightIndex < scheduled.length; rightIndex += 1) {
-      const right = scheduled[rightIndex];
-      if (right.start >= left.end) break;
-      const sharedTraveller = left.traveller_id == null || right.traveller_id == null || left.traveller_id === right.traveller_id;
-      const sameNamedOperator = Boolean(left.responsible_user_id) && left.responsible_user_id === right.responsible_user_id;
-      if (!sharedTraveller && !sameNamedOperator) continue;
-      conflicts.push({
-        first_activity_id: String(left.id),
-        second_activity_id: String(right.id),
-        scope: sharedTraveller && sameNamedOperator ? 'traveller_and_operator' : sharedTraveller ? 'traveller' : 'operator',
-      });
-    }
-  }
-  return conflicts;
-}
+    .map(activity => ({
+      id: String(activity.id || ''),
+      start: Date.parse(activity.planned_start_at),
+      end: Date.parse(activity.planned_end_at),
+      travellerKey: activity.traveller_id == null ? null : String(activity.traveller_id),
+      operatorKey: activity.responsible_user_id == null || String(activity.responsible_user_id) === ''
+        ? null : String(activity.responsible_user_id),
+    }))
+    .filter(activity => activity.id && Number.isFinite(activity.start) &&
+      Number.isFinite(activity.end) && activity.end > activity.start)
+    .sort((left, right) => left.start - right.start || left.end - right.end || left.id.localeCompare(right.id));
 
+  const active = new Map();
+  const activeSharedTravellers = new Set();
+  const activeByTraveller = new Map();
+  const activeByOperator = new Map();
+  const activeSharedTravellerByOperator = new Map();
+  const activeByTravellerAndOperator = new Map();
+  const endHeap = [];
+
+  const addToSetMap = (map, key, id) => {
+    let values = map.get(key);
+    if (!values) map.set(key, values = new Set());
+    values.add(id);
+  };
+  const removeFromSetMap = (map, key, id) => {
+    const values = map.get(key);
+    if (!values) return;
+    values.delete(id);
+    if (values.size === 0) map.delete(key);
+  };
+  const addToNestedSetMap = (map, firstKey, secondKey, id) => {
+    let nested = map.get(firstKey);
+    if (!nested) map.set(firstKey, nested = new Map());
+    addToSetMap(nested, secondKey, id);
+  };
+  const removeFromNestedSetMap = (map, firstKey, secondKey, id) => {
+    const nested = map.get(firstKey);
+    if (!nested) return;
+    removeFromSetMap(nested, secondKey, id);
+    if (nested.size === 0) map.delete(firstKey);
+  };
+  const heapPush = value => {
+    let index = endHeap.length;
+    endHeap.push(value);
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (endHeap[parent].end <= value.end) break;
+      endHeap[index] = endHeap[parent];
+      index = parent;
+    }
+    endHeap[index] = value;
+  };
+  const heapPop = () => {
+    const first = endHeap[0];
+    const last = endHeap.pop();
+    if (endHeap.length > 0) {
+      let index = 0;
+      while (true) {
+        const left = index * 2 + 1;
+        const right = left + 1;
+        if (left >= endHeap.length) break;
+        const child = right < endHeap.length && endHeap[right].end < endHeap[left].end ? right : left;
+        if (endHeap[child].end >= last.end) break;
+        endHeap[index] = endHeap[child];
+        index = child;
+      }
+      endHeap[index] = last;
+    }
+    return first;
+  };
+
+  const removeActive = id => {
+    const item = active.get(id);
+    if (!item) return;
+    active.delete(id);
+    if (item.travellerKey === null) {
+      activeSharedTravellers.delete(id);
+      if (item.operatorKey !== null) {
+        removeFromSetMap(activeSharedTravellerByOperator, item.operatorKey, id);
+      }
+    } else {
+      removeFromSetMap(activeByTraveller, item.travellerKey, id);
+      if (item.operatorKey !== null) {
+        removeFromNestedSetMap(activeByTravellerAndOperator, item.travellerKey, item.operatorKey, id);
+      }
+    }
+    if (item.operatorKey !== null) removeFromSetMap(activeByOperator, item.operatorKey, id);
+  };
+
+  let conflictCount = 0;
+  for (const item of scheduled) {
+    while (endHeap.length > 0 && endHeap[0].end <= item.start) {
+      removeActive(heapPop().id);
+    }
+
+    const travellerMatches = item.travellerKey === null
+      ? active.size
+      : activeSharedTravellers.size + (activeByTraveller.get(item.travellerKey)?.size || 0);
+    const operatorMatches = item.operatorKey === null
+      ? 0 : (activeByOperator.get(item.operatorKey)?.size || 0);
+    let intersection = 0;
+    if (item.operatorKey !== null) {
+      intersection = item.travellerKey === null
+        ? operatorMatches
+        : (activeSharedTravellerByOperator.get(item.operatorKey)?.size || 0) +
+          (activeByTravellerAndOperator.get(item.travellerKey)?.get(item.operatorKey)?.size || 0);
+    }
+    conflictCount += travellerMatches + operatorMatches - intersection;
+
+    active.set(item.id, item);
+    if (item.travellerKey === null) {
+      activeSharedTravellers.add(item.id);
+      if (item.operatorKey !== null) addToSetMap(activeSharedTravellerByOperator, item.operatorKey, item.id);
+    } else {
+      addToSetMap(activeByTraveller, item.travellerKey, item.id);
+      if (item.operatorKey !== null) {
+        addToNestedSetMap(activeByTravellerAndOperator, item.travellerKey, item.operatorKey, item.id);
+      }
+    }
+    if (item.operatorKey !== null) addToSetMap(activeByOperator, item.operatorKey, item.id);
+    heapPush({ id: item.id, end: item.end });
+  }
+  return conflictCount;
+}
 function evaluateTravelReadiness({ journey, travellers = [], flights = [], days = [], documents = [], activities = [] }, phase = 'departure') {
   const blockers = [];
   const warnings = [];
@@ -124,12 +227,12 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
     }
   }
 
-  const scheduleConflicts = ['approval', 'departure'].includes(phase) ? findProgrammeScheduleConflicts(activities) : [];
-  if (scheduleConflicts.length > 0) {
+  const scheduleConflictCount = ['approval', 'departure'].includes(phase) ? findProgrammeScheduleConflicts(activities) : 0;
+  if (scheduleConflictCount > 0) {
     blockers.push({
       code: 'programme_schedule_conflict',
       message: 'One or more travellers or named operators have overlapping planned activities. Resolve each conflict and re-run readiness before approval or departure.',
-      conflict_count: scheduleConflicts.length,
+      conflict_count: scheduleConflictCount,
     });
   }
 
@@ -184,7 +287,7 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
       programme_day_count: days.length,
       timed_activity_count: activityCount,
       unassigned_activity_count: unassignedActivityCount,
-      schedule_conflict_count: scheduleConflicts.length,
+      schedule_conflict_count: scheduleConflictCount,
       required_programme_day_count: requiredDates.length,
       cleared_document_count: documents.filter(document =>
         document.review_status === 'VERIFIED' && document.evidence_status === 'VERIFIED',

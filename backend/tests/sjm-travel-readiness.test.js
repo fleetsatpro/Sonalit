@@ -175,7 +175,7 @@ describe('SJM server-side travel readiness', () => {
       activity('activity-a', '2026-11-01T09:00:00.000Z', '2026-11-01T10:00:00.000Z'),
       activity('activity-b', '2026-11-01T09:59:59.000Z', '2026-11-01T11:00:00.000Z'),
       activity('activity-adjacent', '2026-11-01T10:00:00.000Z', '2026-11-01T10:30:00.000Z'),
-    ])).toEqual([{ first_activity_id: 'activity-a', second_activity_id: 'activity-b', scope: 'traveller' }]);
+    ])).toBe(1);
   });
 
   test('detects same named operator commitments but does not infer identity from a duty role', () => {
@@ -187,7 +187,7 @@ describe('SJM server-side travel readiness', () => {
       activity('activity-a', principal.id, 'user-1'),
       activity('activity-b', 'traveller-2', 'user-1'),
       activity('activity-c', 'traveller-3', 'user-2'),
-    ])).toEqual([{ first_activity_id: 'activity-a', second_activity_id: 'activity-b', scope: 'operator' }]);
+    ])).toBe(1);
   });
 
   test('treats null traveller assignment as shared-party and ignores completed or skipped activities', () => {
@@ -198,7 +198,7 @@ describe('SJM server-side travel readiness', () => {
     expect(findProgrammeScheduleConflicts([
       activity('shared-party', null), activity('principal-transfer', principal.id),
       activity('already-completed', principal.id, 'completed'), activity('skipped-item', principal.id, 'skipped'),
-    ])).toEqual([{ first_activity_id: 'shared-party', second_activity_id: 'principal-transfer', scope: 'traveller' }]);
+    ])).toBe(1);
   });
 
   test('normalises timezone offsets and ignores invalid or non-positive intervals', () => {
@@ -208,7 +208,7 @@ describe('SJM server-side travel readiness', () => {
       activity('offset-b', '2026-11-01T09:30:00Z', '2026-11-01T10:30:00Z'),
       activity('invalid', 'not-a-date', '2026-11-01T11:00:00Z'),
       activity('zero-length', '2026-11-01T10:00:00Z', '2026-11-01T10:00:00Z'),
-    ])).toEqual([{ first_activity_id: 'offset-a', second_activity_id: 'offset-b', scope: 'traveller' }]);
+    ])).toBe(1);
   });
 
   test('blocks route approval on overlapping activities and exposes only an aggregate conflict count', () => {
@@ -239,6 +239,27 @@ describe('SJM server-side travel readiness', () => {
     }, 'approval');
     expect(readiness.counts.schedule_conflict_count).toBe(0);
     expect(readiness.blockers.map(item => item.code)).not.toContain('programme_schedule_conflict');
+  });
+
+  test('counts one overlapping pair once when both traveller and named operator match', () => {
+    const activity = id => ({
+      id, planned_start_at: '2026-11-01T09:00:00Z', planned_end_at: '2026-11-01T10:00:00Z',
+      traveller_id: principal.id, responsible_user_id: 'same-operator', execution_status: 'planned',
+    });
+    expect(findProgrammeScheduleConflicts([activity('first'), activity('second')])).toBe(1);
+  });
+
+  test('counts large overlap sets without retaining one object per conflicting pair', () => {
+    const size = 1800;
+    const activities = Array.from({ length: size }, (_, index) => ({
+      id: 'activity-' + index,
+      planned_start_at: '2026-11-01T09:00:00Z',
+      planned_end_at: '2026-11-01T10:00:00Z',
+      traveller_id: principal.id,
+      responsible_user_id: null,
+      execution_status: 'planned',
+    }));
+    expect(findProgrammeScheduleConflicts(activities)).toBe(size * (size - 1) / 2);
   });
 
 });
