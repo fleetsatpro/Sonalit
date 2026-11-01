@@ -633,7 +633,8 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(workspace.getByRole('heading', { name: 'Flight segments' })).toBeVisible();
     await expect(workspace.getByText('QA Airways · QA 100', { exact: true })).toBeVisible();
     await expect(workspace.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
-    await expect(workspace.getByText('Synthetic QA · Arrival day', { exact: true })).toBeVisible();
+    await expect(workspace.getByRole('button', { name: /Synthetic QA · Arrival day/ })).toBeVisible();
+    await expect(workspace.getByRole('heading', { name: 'Synthetic QA · Arrival day' })).toBeVisible();
     await expect(workspace.getByText('Meet & greet principal traveller', { exact: true })).toBeVisible();
     await expect(workspace.getByText('Controlled airport transfer', { exact: true })).toBeVisible();
 
