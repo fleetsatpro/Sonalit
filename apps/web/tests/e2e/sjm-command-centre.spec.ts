@@ -183,7 +183,7 @@ async function stubSjmApi(page: Page) {
           data: {
             client_id: CLIENT_ID,
             report_timezone: 'Africa/Nairobi',
-            report_template: { title: 'SJM E2E Fixture Report', sections: ['summary', 'itinerary'] },
+            report_template: { title: 'SJM E2E Fixture Report', version: 2, sections: ['summary','itinerary','stops','route_assessment','operational_events','telemetry_snapshot','traveller_dossier','flight_segments','daily_programme','travel_readiness','document_status'] },
             daily_reports_enabled: false,
             daily_report_local_time: '18:00',
             daily_report_scheduler_available: false,
@@ -643,6 +643,19 @@ test.describe('SJM command-centre responsive smoke', () => {
     }));
     expect(dimensions.scrollWidth, 'travel dossier must not introduce horizontal overflow on a 390px viewport')
       .toBeLessThanOrEqual(dimensions.width);
+
+    await page.getByRole('tab', { name: 'Reports' }).click();
+    await expect(page.getByRole('heading', { name: 'Report template' })).toBeVisible();
+    await page.getByRole('button', { name: 'Configure profile' }).click();
+    for (const sectionLabel of [
+      'Traveller register',
+      'Booked flight segments',
+      'Day-by-day travel programme',
+      'Traveller and departure readiness',
+      'Aggregate travel-document status',
+    ]) {
+      await expect(page.getByLabel(sectionLabel)).toBeChecked();
+    }
 
     await workspace.evaluate(element => element.scrollIntoView({ block: 'start', inline: 'nearest' }));
     await testInfo.attach('sjm-mobile-travel-dossier', {
