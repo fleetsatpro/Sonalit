@@ -88,6 +88,11 @@ describe('SJM server-side travel readiness', () => {
         arrival_airport: 'LHR', arrival_at: '2026-11-01T17:00:00.000Z',
       },
     ];
+    expect(analyseFlightCoverage([principal], legs)).toEqual({
+      uncovered_traveller_count: 0,
+      overlapping_flight_count: 0,
+      airport_change_count: 0,
+    });
     const connected = evaluateTravelReadiness({
       journey: airportJourney, travellers: [principal], flights: legs, days: [], documents: [],
     }, 'approval');
