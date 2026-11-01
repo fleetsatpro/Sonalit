@@ -743,6 +743,7 @@ describe('SJM validation and evidence boundaries', () => {
       travellers: [{
         traveller_reference: 'TRV-QA-001',
         traveller_type: 'principal',
+        display_name: 'Synthetic QA Principal',
         date_of_birth: 'PRIVATE_DOB_MUST_NOT_EXPORT',
         email: 'PRIVATE_EMAIL_MUST_NOT_EXPORT@example.invalid',
         internal_notes: 'PRIVATE_TRAVELLER_NOTES_MUST_NOT_EXPORT',
@@ -752,6 +753,7 @@ describe('SJM validation and evidence boundaries', () => {
         carrier: 'QA Airways',
         flight_number: 'QA 100',
         traveller_reference: 'TRV-QA-001',
+        traveller_display_name: 'Synthetic QA Principal',
         departure_airport: 'CDG',
         arrival_airport: 'NBO',
         departure_at: '2026-10-31T07:00:00.000Z',
@@ -767,7 +769,7 @@ describe('SJM validation and evidence boundaries', () => {
         { journey_date: '2026-10-31', timezone: 'Africa/Nairobi', day_title: 'Day 1 · Arrival', items: [{
           sequence: 1, title: 'Airport reception', item_type: 'meet_and_greet',
           planned_start_at: '2026-10-31T09:00:00.000Z', planned_end_at: '2026-10-31T09:30:00.000Z',
-          execution_status: 'planned', traveller_reference: 'TRV-QA-001', responsible_role: 'meet_greet',
+          execution_status: 'planned', traveller_reference: 'TRV-QA-001', traveller_display_name: 'Synthetic QA Principal', responsible_role: 'meet_greet',
           location_label: 'NBO arrivals', description: 'PRIVATE_ACTIVITY_INSTRUCTIONS_MUST_NOT_EXPORT',
           execution_note: 'PRIVATE_EXECUTION_NOTE_MUST_NOT_EXPORT', location_lat: -1.3192, location_lng: 36.9278,
         }] },
@@ -797,6 +799,7 @@ describe('SJM validation and evidence boundaries', () => {
     const sections = reportFocusSections(report);
     const rendered = JSON.stringify(sections);
     expect(rendered).toContain('TRV-QA-001');
+    expect(rendered).toContain('Synthetic QA Principal');
     expect(rendered).toContain('QA Airways');
     expect(rendered).toContain('QA 100');
     for (const day of ['Day 1 · Arrival', 'Day 2 · Engagements', 'Day 3 · Programme', 'Day 4 · Departure preparation']) {
@@ -821,7 +824,14 @@ describe('SJM validation and evidence boundaries', () => {
     expect(dailyReport).not.toContain('Day 3 · Programme');
     expect(dailyReport).not.toContain('Day 4 · Departure preparation');
 
+    const noDossierNames = JSON.stringify(reportFocusSections({
+      ...report,
+      client_profile: { enabled_sections: ['flight_segments','daily_programme'] },
+    }));
+    expect(noDossierNames).not.toContain('Synthetic QA Principal');
+
     const csv = toCsv(report);
+    expect(csv).toContain('Synthetic QA Principal');
     expect(csv).toContain('QA Airways');
     expect(csv).toContain('Day 4 · Departure preparation');
     expect(csv).toContain('NO_ACTIVITIES');
