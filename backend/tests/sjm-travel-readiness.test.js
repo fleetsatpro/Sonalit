@@ -174,7 +174,7 @@ describe('SJM server-side travel readiness', () => {
     expect(findProgrammeScheduleConflicts([
       activity('activity-a', '2026-11-01T09:00:00.000Z', '2026-11-01T10:00:00.000Z'),
       activity('activity-b', '2026-11-01T09:59:59.000Z', '2026-11-01T11:00:00.000Z'),
-      activity('activity-adjacent', '2026-11-01T10:00:00.000Z', '2026-11-01T10:30:00.000Z'),
+      activity('activity-adjacent', '2026-11-01T11:00:00.000Z', '2026-11-01T11:30:00.000Z'),
     ])).toBe(1);
   });
 
