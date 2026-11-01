@@ -22,6 +22,79 @@ function activityHasStaffing(activity) {
     activity?.responsible_role_staffed === true;
 }
 
+function analyseFlightCoverage(travellers = [], flights = []) {
+  const usableFlights = flights.filter(flight =>
+    !['cancelled', 'diverted'].includes(String(flight.status || '').toLowerCase()),
+  );
+  if (travellers.length === 0) {
+    return { uncovered_traveller_count: 1, overlapping_flight_count: 0, airport_change_count: 0 };
+  }
+
+  let uncoveredTravellerCount = 0;
+  const overlappingPairs = new Set();
+  const airportChangeConnections = new Set();
+
+  for (const traveller of travellers) {
+    const applicableFlights = usableFlights.filter(flight =>
+      flight.traveller_id == null || String(flight.traveller_id) === String(traveller.id),
+    );
+    if (applicableFlights.length === 0) {
+      uncoveredTravellerCount += 1;
+      continue;
+    }
+
+    const scheduled = applicableFlights.map((flight, index) => ({
+      id: String(flight.id || 'flight-' + index),
+      departure: Date.parse(flight.departure_at),
+      arrival: Date.parse(flight.arrival_at),
+      departureAirport: String(flight.departure_airport || '').trim().toUpperCase(),
+      arrivalAirport: String(flight.arrival_airport || '').trim().toUpperCase(),
+    })).filter(flight =>
+      Number.isFinite(flight.departure) &&
+      Number.isFinite(flight.arrival) &&
+      flight.arrival > flight.departure,
+    ).sort((left, right) =>
+      left.departure - right.departure ||
+      left.arrival - right.arrival ||
+      left.id.localeCompare(right.id),
+    );
+
+    const active = [];
+    let previous = null;
+    for (const current of scheduled) {
+      for (let index = active.length - 1; index >= 0; index -= 1) {
+        if (active[index].arrival <= current.departure) active.splice(index, 1);
+      }
+      for (const overlapping of active) {
+        const pair = [overlapping.id, current.id].sort();
+        overlappingPairs.add(pair.join('|'));
+      }
+      active.push(current);
+
+      // A change of airport is not inherently invalid: a planned surface transfer
+      // may connect the legs. Flag it for explicit review without inventing a
+      // minimum connection time or silently treating the transfer as complete.
+      if (
+        previous &&
+        previous.arrival <= current.departure &&
+        previous.arrivalAirport &&
+        current.departureAirport &&
+        previous.arrivalAirport !== current.departureAirport
+      ) {
+        airportChangeConnections.add(previous.id + '|' + current.id);
+      }
+      previous = current;
+    }
+  }
+
+  return {
+    uncovered_traveller_count: uncoveredTravellerCount,
+    overlapping_flight_count: overlappingPairs.size,
+    airport_change_count: airportChangeConnections.size,
+  };
+}
+
+
 function calendarDates(start, end) {
   if (!start || !end || end < start) return [];
   const dates = [];
@@ -174,21 +247,31 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
     blockers.push({ code: 'principal_traveller_ambiguous', message: 'Exactly one principal traveller must be designated for this journey.' });
   }
 
-  let uncoveredTravellerCount = 0;
-  if (AIRPORT_SERVICES.has(String(journey.service_type || ''))) {
-    const usableFlights = flights.filter(segment => !['cancelled', 'diverted'].includes(segment.status));
-    if (travellers.length === 0 || usableFlights.length === 0) {
-      uncoveredTravellerCount = Math.max(1, travellers.length);
-    } else if (!usableFlights.some(segment => segment.traveller_id == null)) {
-      uncoveredTravellerCount = travellers.filter(traveller =>
-        !usableFlights.some(segment => segment.traveller_id === traveller.id),
-      ).length;
-    }
+  const airportService = AIRPORT_SERVICES.has(String(journey.service_type || ''));
+  const flightCoverage = airportService
+    ? analyseFlightCoverage(travellers, flights)
+    : { uncovered_traveller_count: 0, overlapping_flight_count: 0, airport_change_count: 0 };
+  const uncoveredTravellerCount = flightCoverage.uncovered_traveller_count;
+  if (airportService) {
     if (uncoveredTravellerCount > 0) {
       blockers.push({
         code: 'airport_flight_details_incomplete',
         message: 'Every registered traveller on an airport movement needs a non-cancelled flight segment, or a shared segment covering the party.',
         uncovered_traveller_count: uncoveredTravellerCount,
+      });
+    }
+    if (flightCoverage.overlapping_flight_count > 0) {
+      blockers.push({
+        code: 'flight_schedule_conflict',
+        message: 'One or more travellers have overlapping flight legs. Correct the flight-time conflict before approval or departure.',
+        conflict_count: flightCoverage.overlapping_flight_count,
+      });
+    }
+    if (flightCoverage.airport_change_count > 0) {
+      warnings.push({
+        code: 'flight_airport_change_requires_transfer',
+        message: 'Sequential flight legs use different arrival and departure airports. Confirm an explicit ground transfer or alternate connection; no surface movement is inferred from flight records.',
+        connection_count: flightCoverage.airport_change_count,
       });
     }
   }
@@ -284,6 +367,8 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
       traveller_count: travellers.length,
       principal_traveller_count: principals.length,
       flight_segment_count: flights.length,
+      flight_schedule_conflict_count: flightCoverage.overlapping_flight_count,
+      flight_airport_change_count: flightCoverage.airport_change_count,
       programme_day_count: days.length,
       timed_activity_count: activityCount,
       unassigned_activity_count: unassignedActivityCount,
@@ -305,7 +390,7 @@ async function loadTravelReadiness(db, journey, phase = 'departure') {
     [org, id],
   );
   const flightResult = await db(
-    'SELECT id,traveller_id,status FROM sjm_flight_segments WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL',
+    'SELECT id,traveller_id,status,departure_airport,departure_at,arrival_airport,arrival_at FROM sjm_flight_segments WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL',
     [org, id],
   );
   const dayResult = await db(
@@ -352,4 +437,4 @@ async function loadTravelReadiness(db, journey, phase = 'departure') {
   }, phase);
 }
 
-module.exports = { AIRPORT_SERVICES, localDate, calendarDates, activityHasStaffing, findProgrammeScheduleConflicts, evaluateTravelReadiness, loadTravelReadiness };
+module.exports = { AIRPORT_SERVICES, localDate, calendarDates, activityHasStaffing, analyseFlightCoverage, findProgrammeScheduleConflicts, evaluateTravelReadiness, loadTravelReadiness };
