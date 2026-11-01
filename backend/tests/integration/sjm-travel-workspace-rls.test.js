@@ -284,6 +284,12 @@ test('field-duty API projection omits traveller PII, highly-sensitive documents 
     expect(traveller).not.toHaveProperty(privateField);
   }
   expect(response.body.data.documents).toEqual([]);
+  const evidence = await request(app).get('/journeys/'+JOURNEY_A+'/evidence').expect(200);
+  expect(evidence.body.data).toEqual([]);
+  const documentUpload = await request(app).post('/journeys/'+JOURNEY_A+'/evidence/upload-url').send({
+    category:'document',file_name:'field-passport.pdf',mime_type:'application/pdf',size_bytes:128,
+  }).expect(403);
+  expect(documentUpload.body.error).toBe('evidence_upload_not_permitted');
   expect(response.body.data.flights).toHaveLength(1);
   expect(response.body.data.flights[0].booking_reference).toBeNull();
   expect(response.body.data.flights[0].traveller_display_name).toBe('Ms AminaA Example');
