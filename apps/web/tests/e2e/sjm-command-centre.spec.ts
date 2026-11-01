@@ -663,6 +663,9 @@ test.describe('SJM command-centre responsive smoke', () => {
     const itemId = '30000000-0000-4000-8000-000000000003';
     const flightId = '30000000-0000-4000-8000-000000000004';
     const documentId = '30000000-0000-4000-8000-000000000005';
+    const uploadedDocumentId = '30000000-0000-4000-8000-000000000009';
+    const uploadedEvidenceId = '30000000-0000-4000-8000-00000000000a';
+    const passportPdf = Buffer.from('%PDF-1.7\n% SJM browser upload fixture\n');
 
     await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/participants', async route => route.fulfill({
       status: 200, contentType: 'application/json',
@@ -693,6 +696,33 @@ test.describe('SJM command-centre responsive smoke', () => {
         workspace.readiness.counts.document_blocker_count = 1;
         workspace.readiness.warnings = [];
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: traveller }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/travellers/' + travellerId + '/documents/upload-url')) {
+        const document = {
+          id: uploadedDocumentId, traveller_id: travellerId, document_type: body.document_type,
+          holder_name: body.holder_name, issuing_country: body.issuing_country,
+          issue_date: body.issue_date, expiry_date: body.expiry_date,
+          review_status: 'PENDING_REVIEW', review_note: null, evidence_id: uploadedEvidenceId,
+          file_name: body.file_name, mime_type: body.mime_type, size_bytes: body.size_bytes,
+          expiry_state: 'current',
+        };
+        workspace.documents.push(document);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: {
+          id: uploadedDocumentId, review_status: 'UPLOAD_PENDING', evidence_id: uploadedEvidenceId,
+          upload_url: 'https://test-account.r2.cloudflarestorage.com/sjm-private-bucket/' + uploadedEvidenceId + '.pdf',
+          required_headers: {
+            'Content-Type': 'application/pdf', 'If-None-Match': '*',
+            'x-amz-meta-evidence-id': uploadedEvidenceId, 'x-amz-meta-journey-id': JOURNEY_ID,
+          },
+        } }) });
+      }
+      if (method === 'PATCH' && route.request().url().endsWith('/documents/' + uploadedDocumentId + '/review')) {
+        const document = workspace.documents.find(value => value.id === uploadedDocumentId);
+        if (!document) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'travel_document_not_found' }) });
+        Object.assign(document, body, { review_status: body.review_status, review_note: body.review_note });
+        workspace.readiness.counts.cleared_document_count = body.review_status === 'VERIFIED' ? 1 : 0;
+        workspace.readiness.counts.document_blocker_count = body.review_status === 'VERIFIED' ? 0 : 1;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: document }) });
       }
       if (method === 'POST' && route.request().url().endsWith('/documents/' + documentId + '/archive')) {
         workspace.documents = workspace.documents.filter(document => document.id !== documentId);
@@ -743,6 +773,31 @@ test.describe('SJM command-centre responsive smoke', () => {
       return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected_travel_workspace_request' }) });
     });
 
+    await page.route('https://test-account.r2.cloudflarestorage.com/**', async route => {
+      const request = route.request();
+      const origin = request.headers().origin || 'http://localhost';
+      const corsHeaders = {
+        'access-control-allow-origin': origin,
+        'access-control-allow-methods': 'PUT, OPTIONS',
+        'access-control-allow-headers': request.headers()['access-control-request-headers'] || 'content-type,if-none-match,x-amz-meta-evidence-id,x-amz-meta-journey-id',
+        'access-control-max-age': '300',
+        vary: 'Origin',
+      };
+      if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: corsHeaders });
+      if (request.method() !== 'PUT') return route.fulfill({ status: 405, headers: corsHeaders });
+      expect(request.headers()['content-type']).toBe('application/pdf');
+      expect(request.headers()['if-none-match']).toBe('*');
+      expect(request.headers()['x-amz-meta-evidence-id']).toBe(uploadedEvidenceId);
+      expect(request.headers()['x-amz-meta-journey-id']).toBe(JOURNEY_ID);
+      expect(request.postDataBuffer()).toEqual(passportPdf);
+      return route.fulfill({ status: 200, headers: { ...corsHeaders, etag: '"sjm-e2e-upload"' } });
+    });
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/evidence/' + uploadedEvidenceId + '/commit', async route => {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+        id: uploadedEvidenceId, status: 'VERIFIED', sha256: 'e2e-integrity-fixture',
+      } }) });
+    });
+
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
     await page.getByRole('tab', { name: 'Travel dossier' }).click();
@@ -770,7 +825,14 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     await page.getByRole('button', { name: 'Attach document' }).click();
     await expect(page.getByText('PRIVATE TRAVEL DOCUMENT')).toBeVisible();
-    await expect(page.locator('input[type="file"][accept="application/pdf,image/jpeg,image/png"]')).toBeVisible();
+    const documentInput = page.locator('input[type="file"][accept="application/pdf,image/jpeg,image/png"]');
+    await expect(documentInput).toBeVisible();
+    await documentInput.setInputFiles({ name: 'current-passport.pdf', mimeType: 'application/pdf', buffer: passportPdf });
+    await expect(page.getByText('Document stored privately and integrity-checked. It is now awaiting an authorised review.')).toBeVisible();
+    await expect(page.getByText('Passport · current-passport.pdf')).toBeVisible();
+    await page.getByLabel('Review rationale').fill('Passport holder and validity dates cross-checked against the traveller record.');
+    await page.getByRole('button', { name: 'Verify document' }).click();
+    await expect(page.getByText('Travel document review decision recorded.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Add flight' }).click();
     await page.getByLabel('Traveller').selectOption(travellerId);
@@ -827,31 +889,20 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByLabel('Execution note')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
 
-    // Retain visual evidence for the actual dossier at both target breakpoints.
-    const dossier = page.getByTestId('sjm-travel-workspace');
-    const attachDossierAtTop = async (name: string) => {
-      await dossier.evaluate(element => {
-        // Reset every scrollable ancestor before aligning the dossier itself.
-        let parent = element.parentElement;
-        while (parent) {
-          const style = window.getComputedStyle(parent);
-          if (parent.scrollHeight > parent.clientHeight + 1 &&
-              (style.overflowY === 'auto' || style.overflowY === 'scroll')) {
-            parent.scrollTop = 0;
-          }
-          parent = parent.parentElement;
-        }
-        window.scrollTo(0, 0);
-        element.scrollIntoView({ block: 'start', inline: 'nearest' });
-      });
+    // Capture viewport-sized evidence at each major workflow section. Element-level
+    // screenshots expand scroll containers and can produce misleading blank regions.
+    const attachViewportAt = async (name: string, target: ReturnType<Page['getByRole']> | ReturnType<Page['getByTestId']>) => {
+      await target.evaluate(element => element.scrollIntoView({ block: 'start', inline: 'nearest' }));
       await testInfo.attach(name, {
-        body: await dossier.screenshot({ animations: 'disabled', scale: 'css' }),
+        body: await page.screenshot({ animations: 'disabled', fullPage: false }),
         contentType: 'image/png',
       });
     };
-    await attachDossierAtTop('sjm-travel-dossier-mobile');
+    await attachViewportAt('sjm-travel-dossier-mobile-travellers', page.getByRole('heading', { name: 'Traveller register' }));
+    await attachViewportAt('sjm-travel-dossier-mobile-flights', page.getByRole('heading', { name: 'Flight segments' }));
+    await attachViewportAt('sjm-travel-dossier-mobile-programme', page.getByRole('heading', { name: 'Daily travel programme & execution' }));
     await page.setViewportSize({ width: 1440, height: 900 });
-    await attachDossierAtTop('sjm-travel-dossier-desktop');
+    await attachViewportAt('sjm-travel-dossier-desktop', page.getByTestId('sjm-travel-workspace'));
   });
 
   test('records daily activity execution only after the journey has been released', async ({ page }) => {
