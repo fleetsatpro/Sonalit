@@ -197,6 +197,41 @@ async function stubSjmApi(page: Page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: {
+          travellers: [{
+            id: 'traveller-sjm-e2e-001',
+            traveller_reference: 'TEST-PRINCIPAL-001',
+            traveller_type: 'principal',
+            display_name: 'Synthetic QA Principal',
+            title: 'Ms',
+            given_name: 'Synthetic',
+            family_name: 'Principal',
+            nationality: 'QA fixture',
+            date_of_birth: '1994-04-18',
+            email: 'synthetic-principal@example.invalid',
+            phone: '+254700000001',
+            emergency_contact_name: 'Synthetic QA Contact',
+            emergency_contact_phone: '+254700000002',
+          }],
+          documents: [],
+          readiness: {
+            phase: 'departure',
+            ready: false,
+            blockers: [{ code: 'documents_pending', message: 'Synthetic QA fixture: no travel documents have been submitted.' }],
+            warnings: [],
+            counts: {
+              traveller_count: 1,
+              principal_traveller_count: 1,
+              flight_segment_count: 1,
+              programme_day_count: 1,
+              timed_activity_count: 2,
+              unassigned_activity_count: 0,
+              required_programme_day_count: 1,
+              cleared_document_count: 0,
+              document_blocker_count: 0,
+              expiring_document_count: 0,
+              schedule_conflict_count: 0,
+            },
+          },
           flights: [{
             id: 'flight-sjm-e2e-001',
             sequence: 1,
@@ -211,6 +246,9 @@ async function stubSjmApi(page: Page) {
             arrival_at: '2026-10-29T08:30:00.000Z',
             arrival_timezone: 'Africa/Nairobi',
             status: 'scheduled',
+            allowed_next_statuses: ['scheduled', 'boarding', 'departed', 'delayed', 'landed', 'cancelled', 'diverted'],
+            traveller_id: 'traveller-sjm-e2e-001',
+            traveller_display_name: 'Synthetic QA Principal',
             status_source: 'operator_entered',
             status_observed_at: '2026-10-28T17:00:00.000Z',
           }],
@@ -560,6 +598,57 @@ test.describe('SJM command-centre responsive smoke', () => {
       }
 
     }
+  });
+
+  test('travel dossier exposes traveller registration, private document handling, flight legs and daily execution', async ({ page }, testInfo: TestInfo) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+
+    const travelTab = page.getByRole('tab', { name: 'Travel dossier' });
+    await expect(travelTab).toBeVisible();
+    await travelTab.click();
+
+    const workspace = page.getByTestId('sjm-travel-workspace');
+    await expect(workspace).toBeVisible();
+    await expect(workspace.getByRole('heading', { name: 'People, documents & travel plan' })).toBeVisible();
+    await expect(workspace.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
+    await expect(workspace.getByText('Synthetic QA Principal', { exact: true })).toBeVisible();
+
+    const registerButton = workspace.getByRole('button', { name: 'Register traveller' });
+    await expect(registerButton).toBeVisible();
+    await registerButton.click();
+    await expect(workspace.getByText('Register a traveller', { exact: true })).toBeVisible();
+    await expect(workspace.getByLabel('Given name *')).toBeVisible();
+    await registerButton.click();
+
+    await workspace.getByRole('button', { name: 'Attach document' }).click();
+    await expect(workspace.getByText('PRIVATE TRAVEL DOCUMENT', { exact: true })).toBeVisible();
+    await expect(workspace.getByText(/If private storage is not configured in this environment, upload is blocked/)).toBeVisible();
+
+    await expect(workspace.getByRole('heading', { name: 'Flight segments' })).toBeVisible();
+    await expect(workspace.getByText('QA Airways · QA 100', { exact: true })).toBeVisible();
+    await expect(workspace.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
+    await expect(workspace.getByText('Synthetic QA · Arrival day', { exact: true })).toBeVisible();
+    await expect(workspace.getByText('Meet & greet principal traveller', { exact: true })).toBeVisible();
+    await expect(workspace.getByText('Controlled airport transfer', { exact: true })).toBeVisible();
+
+    const dimensions = await workspace.evaluate(element => ({
+      width: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(dimensions.scrollWidth, 'travel dossier must not introduce horizontal overflow on a 390px viewport')
+      .toBeLessThanOrEqual(dimensions.width);
+
+    await workspace.evaluate(element => element.scrollIntoView({ block: 'start', inline: 'nearest' }));
+    await testInfo.attach('sjm-mobile-travel-dossier', {
+      body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
+      contentType: 'image/png',
+    });
   });
 
   test('unified operations timeline keeps record types and evidence classes separate', async ({ page }) => {
