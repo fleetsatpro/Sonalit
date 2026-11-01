@@ -6,6 +6,8 @@ This runbook applies only to the Secure Journey Management traveller document re
 
 Travel documents are classified `HIGHLY_SENSITIVE`. The API must not fall back to the shared `sonalit-convoy-photos` bucket, an application-wide R2 bucket, or a public object URL.
 
+The general field evidence register is for operational evidence, not traveller identity records. Its legacy `document` category is manager-only and classified `HIGHLY_SENSITIVE`; field capture no longer offers that category. Migration `20261101_001_sjm_document_evidence_sensitivity.sql` promotes historical generic document records and adds a database constraint so a document record cannot be inserted or retained as `INTERNAL_OPERATIONS`. Use the dedicated traveller dossier for passports, visas, tickets and booking records.
+
 ## Required service configuration
 
 Provision a dedicated **private** Cloudflare R2 bucket for SJM. Use a bucket and credentials that are not shared with general Sonalit media. Configure the backend service environment with:
