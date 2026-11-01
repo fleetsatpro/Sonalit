@@ -442,6 +442,87 @@ test.describe('SJM command-centre responsive smoke', () => {
     }
   });
 
+  test('unified operations timeline keeps record types and evidence classes separate', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/travel-workspace', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        travellers: [],
+        documents: [],
+        flights: [{
+          id: 'flight-timeline-001', sequence: 1, carrier: 'TEST AIR', flight_number: 'ZZ 100',
+          departure_airport: 'LHR', departure_airport_name: 'London Heathrow',
+          departure_at: '2026-10-31T07:00:00.000Z', departure_timezone: 'Europe/London',
+          arrival_airport: 'NBO', arrival_airport_name: 'Jomo Kenyatta International',
+          arrival_at: '2026-10-31T17:55:00.000Z', arrival_timezone: 'Africa/Nairobi',
+          status: 'scheduled', status_source: 'operator_entered', status_observed_at: '2026-10-30T12:00:00.000Z',
+        }],
+        days: [{
+          id: 'day-timeline-001', journey_date: '2026-10-31', timezone: 'Africa/Nairobi',
+          day_title: 'Arrival and reception', items: [{
+            id: 'item-timeline-001', sequence: 1, item_type: 'meet_and_greet',
+            title: 'JKIA meet-and-greet', planned_start_at: '2026-10-31T18:10:00.000Z',
+            planned_end_at: '2026-10-31T18:40:00.000Z', execution_status: 'planned',
+            location_label: 'Terminal 1A arrivals', responsible_role: 'meet_greet',
+          }],
+        }],
+        readiness: { phase: 'departure', ready: false, blockers: [], warnings: [], counts: {
+          traveller_count: 0, principal_traveller_count: 0, flight_segment_count: 1,
+          programme_day_count: 1, timed_activity_count: 1, unassigned_activity_count: 0,
+          required_programme_day_count: 1, cleared_document_count: 0, document_blocker_count: 0,
+          expiring_document_count: 0,
+        }},
+        access: { manager: true, user_id: 'user-sjm-e2e-admin', duty_roles: [] },
+        provenance: { flight_status: 'Operator-entered unless a separately identified provider observation is returned' },
+      } }),
+    }));
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID, (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        ...journey,
+        stops: [{
+          ...journey.stops[0], id: 'stop-timeline-001', sequence: 1, name: 'Terminal rendezvous',
+          stop_status: 'reached', confirmed_at: '2026-10-31T18:05:00.000Z',
+          confirmation_source: 'operator_confirmed',
+        }],
+        events: [{
+          id: 'event-timeline-001', event_type: 'field_checkin',
+          summary: 'Meet-and-greet team checked in', source: 'operator',
+          created_at: '2026-10-31T18:06:00.000Z', detail: {},
+        }],
+      } }),
+    }));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+    await page.getByRole('tab', { name: 'Operations timeline' }).click();
+
+    const timeline = page.getByTestId('sjm-unified-timeline');
+    await expect(timeline).toBeVisible();
+    await expect(timeline.getByRole('heading', { name: 'Unified journey timeline' })).toBeVisible();
+    await expect(timeline.getByText('TEST AIR ZZ 100', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('JKIA meet-and-greet', { exact: true })).toBeVisible();
+    await expect(timeline.getByText(/London Heathrow · LHR departure/)).toBeVisible();
+    await expect(timeline.getByText(/Jomo Kenyatta International · NBO arrival/)).toBeVisible();
+    await expect(timeline.getByText('Status source · Operator entered', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('Stop 01 · Terminal rendezvous', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('Operator confirmed · not GPS proof', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('Meet-and-greet team checked in', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('Recorded by an authorised team member', { exact: true })).toBeVisible();
+    await expect(timeline.getByText(/No routed road geometry is stored/)).toBeVisible();
+    await expect(timeline.getByText(/Europe\/London/)).toBeVisible();
+    await expect(timeline.getByText(/Africa\/Nairobi/)).toBeVisible();
+
+    await timeline.getByRole('button', { name: 'Journey events' }).click();
+    await expect(timeline.getByText('Meet-and-greet team checked in', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('TEST AIR ZZ 100', { exact: true })).toHaveCount(0);
+    await timeline.getByRole('button', { name: 'All', exact: true }).click();
+    await expect(timeline.getByText('TEST AIR ZZ 100', { exact: true })).toBeVisible();
+  });
+
   test('mission resources are assigned to the journey directly', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
