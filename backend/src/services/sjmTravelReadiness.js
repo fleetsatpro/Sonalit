@@ -35,7 +35,33 @@ function calendarDates(start, end) {
   return dates;
 }
 
-function evaluateTravelReadiness({ journey, travellers = [], flights = [], days = [], documents = [] }, phase = 'departure') {
+
+function findProgrammeScheduleConflicts(activities = []) {
+  const scheduled = activities
+    .filter(activity => !['completed', 'skipped'].includes(activity.execution_status))
+    .map(activity => ({ ...activity, start: Date.parse(activity.planned_start_at), end: Date.parse(activity.planned_end_at) }))
+    .filter(activity => activity.id && Number.isFinite(activity.start) && Number.isFinite(activity.end) && activity.end > activity.start)
+    .sort((left, right) => left.start - right.start || left.end - right.end || String(left.id).localeCompare(String(right.id)));
+  const conflicts = [];
+  for (let leftIndex = 0; leftIndex < scheduled.length; leftIndex += 1) {
+    const left = scheduled[leftIndex];
+    for (let rightIndex = leftIndex + 1; rightIndex < scheduled.length; rightIndex += 1) {
+      const right = scheduled[rightIndex];
+      if (right.start >= left.end) break;
+      const sharedTraveller = left.traveller_id == null || right.traveller_id == null || left.traveller_id === right.traveller_id;
+      const sameNamedOperator = Boolean(left.responsible_user_id) && left.responsible_user_id === right.responsible_user_id;
+      if (!sharedTraveller && !sameNamedOperator) continue;
+      conflicts.push({
+        first_activity_id: String(left.id),
+        second_activity_id: String(right.id),
+        scope: sharedTraveller && sameNamedOperator ? 'traveller_and_operator' : sharedTraveller ? 'traveller' : 'operator',
+      });
+    }
+  }
+  return conflicts;
+}
+
+function evaluateTravelReadiness({ journey, travellers = [], flights = [], days = [], documents = [], activities = [] }, phase = 'departure') {
   const blockers = [];
   const warnings = [];
   const principals = travellers.filter(person => person.traveller_type === 'principal');
@@ -98,6 +124,15 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
     }
   }
 
+  const scheduleConflicts = ['approval', 'departure'].includes(phase) ? findProgrammeScheduleConflicts(activities) : [];
+  if (scheduleConflicts.length > 0) {
+    blockers.push({
+      code: 'programme_schedule_conflict',
+      message: 'One or more travellers or named operators have overlapping planned activities. Resolve each conflict and re-run readiness before approval or departure.',
+      conflict_count: scheduleConflicts.length,
+    });
+  }
+
   let documentBlockerCount = 0;
   let expiringDocumentCount = 0;
   if (documents.length === 0) {
@@ -149,6 +184,7 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
       programme_day_count: days.length,
       timed_activity_count: activityCount,
       unassigned_activity_count: unassignedActivityCount,
+      schedule_conflict_count: scheduleConflicts.length,
       required_programme_day_count: requiredDates.length,
       cleared_document_count: documents.filter(document =>
         document.review_status === 'VERIFIED' && document.evidence_status === 'VERIFIED',
@@ -178,7 +214,8 @@ async function loadTravelReadiness(db, journey, phase = 'departure') {
   // A role label is not accountability by itself: someone active on this journey
   // must actually hold that role before the activity can satisfy departure readiness.
   const assignmentResult = await db(
-    'SELECT i.day_id,' +
+    'SELECT i.id,i.day_id,i.title,i.item_type,i.planned_start_at,i.planned_end_at,' +
+    'i.traveller_id,i.responsible_user_id,i.execution_status,' +
     'EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status=\'active\' ' +
     'WHERE p.org_id=i.org_id AND p.journey_id=i.journey_id AND p.user_id=i.responsible_user_id AND p.removed_at IS NULL) AS responsible_user_assigned,' +
     'EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status=\'active\' ' +
@@ -208,7 +245,8 @@ async function loadTravelReadiness(db, journey, phase = 'departure') {
     flights: flightResult.rows,
     days,
     documents: documentResult.rows,
+    activities: assignmentResult.rows,
   }, phase);
 }
 
-module.exports = { AIRPORT_SERVICES, localDate, calendarDates, activityHasStaffing, evaluateTravelReadiness, loadTravelReadiness };
+module.exports = { AIRPORT_SERVICES, localDate, calendarDates, activityHasStaffing, findProgrammeScheduleConflicts, evaluateTravelReadiness, loadTravelReadiness };

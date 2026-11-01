@@ -39,7 +39,7 @@ type Day = {
   id: string; journey_date: string; timezone: string; day_title: string;
   briefing?: string | null; operational_notes?: string | null; items: Item[];
 };
-type ReadinessBlocker = { code: string; message: string; missing_dates?: string[]; document_count?: number; uncovered_traveller_count?: number };
+type ReadinessBlocker = { code: string; message: string; missing_dates?: string[]; document_count?: number; uncovered_traveller_count?: number; conflict_count?: number };
 type TravelReadiness = {
   phase: 'approval' | 'departure';
   ready: boolean;
@@ -48,7 +48,7 @@ type TravelReadiness = {
   counts: {
     traveller_count: number; principal_traveller_count: number; flight_segment_count: number;
     programme_day_count: number; timed_activity_count: number; unassigned_activity_count: number; required_programme_day_count: number;
-    cleared_document_count: number; document_blocker_count: number; expiring_document_count: number;
+    cleared_document_count: number; document_blocker_count: number; expiring_document_count: number; schedule_conflict_count?: number;
   };
 };
 type Workspace = {
@@ -492,17 +492,18 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
         <div><p className="text-[10px] font-semibold tracking-[.14em] text-slate-500">RELEASE CONTROL / TRAVEL DOSSIER</p><h4 className="mt-1 text-sm font-semibold text-white">Departure readiness</h4><p className="mt-1 text-[10px] leading-4 text-slate-500">Authoritative server-side checks used by route approval and departure release. Document requirements are not guessed from nationality or destination.</p></div>
         <span className={'rounded border px-2.5 py-1.5 text-[10px] font-semibold tracking-wide '+(data.readiness.ready?'border-emerald-300/25 bg-emerald-300/[0.05] text-emerald-100':'border-amber-300/25 bg-amber-300/[0.04] text-amber-100')}>{data.readiness.ready?'DOSSIER READY':'ACTION REQUIRED'}</span>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5">
         {[
           ['Travellers',data.readiness.counts.traveller_count+' registered',data.readiness.counts.principal_traveller_count+' principal'],
           ['Flight legs',String(data.readiness.counts.flight_segment_count),'Airport service coverage'],
           ['Daily programme',data.readiness.counts.programme_day_count+' days',data.readiness.counts.timed_activity_count+' activities · '+data.readiness.counts.unassigned_activity_count+' unassigned'],
           ['Documents',data.readiness.counts.cleared_document_count+' cleared',data.readiness.counts.document_blocker_count+' requiring review'],
+          ['Schedule integrity',typeof data.readiness.counts.schedule_conflict_count==='number'?(data.readiness.counts.schedule_conflict_count===0?'No overlaps':data.readiness.counts.schedule_conflict_count+' overlaps'):'Not evaluated','Exact traveller / named operator overlaps only'],
         ].map(([name,value,detail])=><div key={name} className="rounded border border-white/[0.06] bg-black/15 p-2.5"><p className="text-[10px] text-slate-500">{name}</p><p className="mt-1 text-sm font-semibold tabular-nums text-slate-100">{value}</p><p className="mt-1 text-[9px] text-slate-600">{detail}</p></div>)}
       </div>
-      {data.readiness.blockers.length>0&&<div className="mt-3 space-y-2"><p className="text-[10px] font-semibold tracking-wide text-amber-100">BLOCKING ITEMS</p>{data.readiness.blockers.map(blocker=><div key={blocker.code} className="flex items-start gap-2 rounded border border-amber-300/10 bg-amber-300/[0.025] p-2.5"><AlertCircle size={13} className="mt-0.5 shrink-0 text-amber-200"/><div className="min-w-0"><p className="text-[10px] leading-4 text-slate-200">{blocker.message}</p>{blocker.missing_dates&&<p className="mt-1 font-mono text-[9px] text-amber-100/80">Missing dates: {blocker.missing_dates.join(', ')}</p>}</div></div>)}</div>}
+      {data.readiness.blockers.length>0&&<div className="mt-3 space-y-2"><p className="text-[10px] font-semibold tracking-wide text-amber-100">BLOCKING ITEMS</p>{data.readiness.blockers.map(blocker=><div key={blocker.code} className="flex items-start gap-2 rounded border border-amber-300/10 bg-amber-300/[0.025] p-2.5"><AlertCircle size={13} className="mt-0.5 shrink-0 text-amber-200"/><div className="min-w-0"><p className="text-[10px] leading-4 text-slate-200">{blocker.message}</p>{blocker.missing_dates&&<p className="mt-1 font-mono text-[9px] text-amber-100/80">Missing dates: {blocker.missing_dates.join(', ')}</p>{blocker.conflict_count!=null&&<p className="mt-1 font-mono text-[9px] text-amber-100/80">Overlapping activity pairs: {blocker.conflict_count}</p>}}</div></div>)}</div>}
       {data.readiness.warnings.length>0&&<div className="mt-3 space-y-1">{data.readiness.warnings.map(warning=><p key={warning.code} className="text-[10px] leading-4 text-amber-100/80">Review: {warning.message}</p>)}</div>}
-      {data.readiness.ready&&<p className="mt-3 flex items-center gap-2 text-[10px] text-emerald-100/80"><ShieldCheck size={12}/>Traveller, flight, programme and uploaded-document checks pass. Human approval and operational readiness acknowledgement still apply.</p>}
+      {data.readiness.ready&&<p className="mt-3 flex items-center gap-2 text-[10px] text-emerald-100/80"><ShieldCheck size={12}/>Traveller, flight, programme and uploaded-document checks pass. {typeof data.readiness.counts.schedule_conflict_count==='number'?'No overlapping traveller/operator commitments were found. ':'Schedule overlap status was not returned. '}Human approval and operational readiness acknowledgement still apply.</p>}
     </section>}
 
     <div className="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">

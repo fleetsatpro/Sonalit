@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  activityHasStaffing, calendarDates, evaluateTravelReadiness,
+  activityHasStaffing, calendarDates, findProgrammeScheduleConflicts, evaluateTravelReadiness,
 } = require('../src/services/sjmTravelReadiness');
 
 const journey = overrides => ({
@@ -169,4 +169,76 @@ describe('SJM server-side travel readiness', () => {
     }, 'departure');
     expect(excessive.blockers.map(item => item.code)).toContain('journey_schedule_range_invalid');
   });
+  test('detects strict traveller overlaps without adding an arbitrary buffer', () => {
+    const activity = (id, start, end) => ({ id, planned_start_at: start, planned_end_at: end, traveller_id: principal.id, responsible_user_id: null, execution_status: 'planned' });
+    expect(findProgrammeScheduleConflicts([
+      activity('activity-a', '2026-11-01T09:00:00.000Z', '2026-11-01T10:00:00.000Z'),
+      activity('activity-b', '2026-11-01T09:59:59.000Z', '2026-11-01T11:00:00.000Z'),
+      activity('activity-adjacent', '2026-11-01T10:00:00.000Z', '2026-11-01T10:30:00.000Z'),
+    ])).toEqual([{ first_activity_id: 'activity-a', second_activity_id: 'activity-b', scope: 'traveller' }]);
+  });
+
+  test('detects same named operator commitments but does not infer identity from a duty role', () => {
+    const activity = (id, travellerId, userId) => ({
+      id, planned_start_at: '2026-11-01T09:00:00Z', planned_end_at: '2026-11-01T10:00:00Z',
+      traveller_id: travellerId, responsible_user_id: userId, responsible_role: 'detail_leader', execution_status: 'planned',
+    });
+    expect(findProgrammeScheduleConflicts([
+      activity('activity-a', principal.id, 'user-1'),
+      activity('activity-b', 'traveller-2', 'user-1'),
+      activity('activity-c', 'traveller-3', 'user-2'),
+    ])).toEqual([{ first_activity_id: 'activity-a', second_activity_id: 'activity-b', scope: 'operator' }]);
+  });
+
+  test('treats null traveller assignment as shared-party and ignores completed or skipped activities', () => {
+    const activity = (id, travellerId, status = 'planned') => ({
+      id, planned_start_at: '2026-11-01T09:00:00Z', planned_end_at: '2026-11-01T10:00:00Z',
+      traveller_id: travellerId, responsible_user_id: null, execution_status: status,
+    });
+    expect(findProgrammeScheduleConflicts([
+      activity('shared-party', null), activity('principal-transfer', principal.id),
+      activity('already-completed', principal.id, 'completed'), activity('skipped-item', principal.id, 'skipped'),
+    ])).toEqual([{ first_activity_id: 'shared-party', second_activity_id: 'principal-transfer', scope: 'traveller' }]);
+  });
+
+  test('normalises timezone offsets and ignores invalid or non-positive intervals', () => {
+    const activity = (id, start, end) => ({ id, planned_start_at: start, planned_end_at: end, traveller_id: principal.id, responsible_user_id: null, execution_status: 'planned' });
+    expect(findProgrammeScheduleConflicts([
+      activity('offset-a', '2026-11-01T12:00:00+03:00', '2026-11-01T13:00:00+03:00'),
+      activity('offset-b', '2026-11-01T09:30:00Z', '2026-11-01T10:30:00Z'),
+      activity('invalid', 'not-a-date', '2026-11-01T11:00:00Z'),
+      activity('zero-length', '2026-11-01T10:00:00Z', '2026-11-01T10:00:00Z'),
+    ])).toEqual([{ first_activity_id: 'offset-a', second_activity_id: 'offset-b', scope: 'traveller' }]);
+  });
+
+  test('blocks route approval on overlapping activities and exposes only an aggregate conflict count', () => {
+    const readiness = evaluateTravelReadiness({
+      journey: journey({}), travellers: [principal], flights: [], days: [], documents: [],
+      activities: [
+        { id: 'private-item-1', planned_start_at: '2026-11-01T09:00:00Z', planned_end_at: '2026-11-01T10:00:00Z', traveller_id: principal.id, responsible_user_id: null, execution_status: 'planned' },
+        { id: 'private-item-2', planned_start_at: '2026-11-01T09:30:00Z', planned_end_at: '2026-11-01T10:30:00Z', traveller_id: principal.id, responsible_user_id: null, execution_status: 'planned' },
+      ],
+    }, 'approval');
+    expect(readiness.ready).toBe(false);
+    expect(readiness.counts.schedule_conflict_count).toBe(1);
+    const blocker = readiness.blockers.find(item => item.code === 'programme_schedule_conflict');
+    expect(blocker.conflict_count).toBe(1);
+    expect(blocker.message).toMatch(/overlapping planned activities/);
+    expect(JSON.stringify(blocker)).not.toContain('private-item');
+    expect(JSON.stringify(blocker)).not.toContain(principal.id);
+  });
+
+  test('returns a zero conflict count when a programme has no overlapping commitments', () => {
+    const readiness = evaluateTravelReadiness({
+      journey: journey({}), travellers: [principal], flights: [], days: [], documents: [],
+      activities: [{
+        id: 'activity-a', planned_start_at: '2026-11-01T09:00:00Z',
+        planned_end_at: '2026-11-01T10:00:00Z', traveller_id: principal.id,
+        responsible_user_id: null, execution_status: 'planned',
+      }],
+    }, 'approval');
+    expect(readiness.counts.schedule_conflict_count).toBe(0);
+    expect(readiness.blockers.map(item => item.code)).not.toContain('programme_schedule_conflict');
+  });
+
 });
