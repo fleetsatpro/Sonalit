@@ -5,7 +5,7 @@ jest.mock('../src/realtime/centrifugo', () => ({ removeChannelHistory: jest.fn()
 const { removeChannelHistory, unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, revisionAcknowledgementError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, travelReadinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, revisionAcknowledgementError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -555,6 +555,27 @@ describe('SJM validation and evidence boundaries', () => {
       devices:[]
     });
   });
+
+  test('reports schedule integrity in the duty readiness checklist without exposing activity identities', () => {
+    const journey={service_type:'executive_transfer'};
+    const clear=travelReadinessChecklist(journey,{blockers:[],counts:{schedule_conflict_count:0}});
+    expect(clear.find(item=>item.item==='Programme schedule integrity')).toMatchObject({
+      status:'CLEAR',
+      detail:'No exact overlapping traveller or named-operator activity intervals were found.',
+    });
+    const blocked=travelReadinessChecklist(journey,{
+      blockers:[{code:'programme_schedule_conflict',message:'Resolve overlapping planned activities.',conflict_count:2}],
+      counts:{schedule_conflict_count:2},
+    });
+    const row=blocked.find(item=>item.item==='Programme schedule integrity');
+    expect(row.status).toBe('BLOCKED');
+    expect(row.detail).toContain('2 overlapping');
+    expect(JSON.stringify(row)).not.toContain('traveller-uuid');
+    expect(JSON.stringify(row)).not.toContain('operator-uuid');
+    const unavailable=travelReadinessChecklist(journey,{blockers:[],counts:{}});
+    expect(unavailable.find(item=>item.item==='Programme schedule integrity').status).toBe('UNAVAILABLE');
+  });
+
   test('reports unknown pre-trip evidence as pending/unavailable rather than verified', () => {
     const checklist=readinessChecklist({status:'requested',approved_at:null,departure_readiness_acknowledgement:null},[],null,{status:'UNAVAILABLE',reason:'No devices assigned.'});
     expect(checklist.find(x=>x.item==='Stored Route Safety assessment').status).toBe('UNAVAILABLE');
@@ -667,6 +688,31 @@ describe('SJM validation and evidence boundaries', () => {
     expect(enabledReportSections({enabled_sections:['summary','unknown','summary']})).toEqual(['summary']);
     expect(enabledReportSections({enabled_sections:[]})).toEqual([]);
   });
+
+  test('pre-trip PDF readiness includes programme schedule integrity in its stored checklist and readable section', () => {
+    const report={
+      report_type:'pre_trip_brief',
+      client_profile:{enabled_sections:['travel_readiness']},
+      pre_trip_readiness:[{
+        item:'Programme schedule integrity',status:'BLOCKED',
+        detail:'2 overlapping traveller or named-operator activity pair(s) must be resolved before approval or departure.',
+      }],
+      travel_readiness:{
+        ready:false,
+        blockers:[{code:'programme_schedule_conflict',message:'Resolve overlapping planned activities.',conflict_count:2}],
+        warnings:[],
+        counts:{traveller_count:1,flight_segment_count:0,programme_day_count:1,timed_activity_count:2,schedule_conflict_count:2},
+      },
+    };
+    const sections=reportFocusSections(report);
+    expect(sections[0].body).toContain('Programme schedule integrity: BLOCKED');
+    const travelSection=sections.find(section=>section.title==='Traveller dossier and release readiness');
+    expect(travelSection.body).toContain('Schedule conflicts: 2');
+    expect(travelSection.body).toContain('programme_schedule_conflict');
+    expect(JSON.stringify(sections)).not.toContain('traveller-uuid');
+    expect(JSON.stringify(sections)).not.toContain('operator-uuid');
+  });
+
   test('report CSV respects client section policy for optional stop, event and telemetry evidence', () => {
     const csv=toCsv({
       report_type:'daily',report_title:'Daily Travel Report',report_date:'2026-10-27',generated_at:'2026-10-27T15:00:00Z',
