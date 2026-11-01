@@ -3,6 +3,9 @@
 BEGIN;
 
 LOCK TABLE public.sjm_evidence IN ACCESS EXCLUSIVE MODE;
+-- The migration connection has no tenant context. The exclusive table lock
+-- prevents concurrent access while the cross-tenant sensitivity backfill runs.
+ALTER TABLE public.sjm_evidence DISABLE ROW LEVEL SECURITY;
 
 CREATE OR REPLACE FUNCTION public.sjm_evidence_guard_update()
 RETURNS trigger
@@ -103,5 +106,9 @@ $sjm_document_sensitivity$;
 
 ALTER TABLE public.sjm_evidence
   VALIDATE CONSTRAINT ck_sjm_evidence_document_sensitive;
+
+-- Restore the exact tenant-isolation posture before releasing the table lock.
+ALTER TABLE public.sjm_evidence ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sjm_evidence FORCE ROW LEVEL SECURITY;
 
 COMMIT;
