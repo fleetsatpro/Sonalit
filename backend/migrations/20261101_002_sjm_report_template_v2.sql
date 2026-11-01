@@ -41,4 +41,10 @@ SET report_template = jsonb_set(
 WHERE jsonb_typeof(profile.report_template) = 'object'
   AND profile.report_template->>'version' IS DISTINCT FROM '2';
 
+-- New profiles created without an explicit template also inherit the complete
+-- v2 section set; the application remains the authority for manager opt-outs.
+ALTER TABLE public.sjm_client_profiles
+  ALTER COLUMN report_template SET DEFAULT
+  '{"title":"Secure Journey Management Report","version":2,"sections":["summary","itinerary","stops","route_assessment","operational_events","telemetry_snapshot","traveller_dossier","flight_segments","daily_programme","travel_readiness","document_status"]}'::jsonb;
+
 COMMIT;
