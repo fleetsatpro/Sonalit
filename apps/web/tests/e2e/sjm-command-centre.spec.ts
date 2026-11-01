@@ -3,6 +3,11 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 const JOURNEY_ID = '11111111-1111-4111-8111-111111111111';
 const CLIENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
+function travelWorkspaceRouteMatches(url: URL): boolean {
+  const path = '/api/v1/sjm/journeys/' + JOURNEY_ID + '/travel-workspace';
+  return url.pathname === path || url.pathname.startsWith(path + '/');
+}
+
 function pagedJourneyId(index: number): string {
   if (index === 0) return JOURNEY_ID;
   return '10000000-0000-4000-8000-' + String(index).padStart(12, '0');
@@ -663,7 +668,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ data: [{ user_id: 'user-sjm-e2e-driver', duty_role: 'driver', user_name: 'Fixture Driver', is_primary: true, removed_at: null, account_status: 'active' }] }),
     }));
-    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/travel-workspace', async route => {
+    await page.route(travelWorkspaceRouteMatches, async route => {
       const method = route.request().method();
       if (method === 'GET') {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: workspace }) });
@@ -870,7 +875,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ data: { ...journey, status: 'in_progress', approved_at: '2026-10-31T06:00:00.000Z', started_at: '2026-10-31T06:30:00.000Z' } }),
     }));
-    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/travel-workspace', async route => {
+    await page.route(travelWorkspaceRouteMatches, async route => {
       if (route.request().method() === 'GET') {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: workspace }) });
       }
