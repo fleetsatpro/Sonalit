@@ -829,15 +829,29 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     // Retain visual evidence for the actual dossier at both target breakpoints.
     const dossier = page.getByTestId('sjm-travel-workspace');
-    await testInfo.attach('sjm-travel-dossier-mobile', {
-      body: await dossier.screenshot({ animations: 'disabled', scale: 'css' }),
-      contentType: 'image/png',
-    });
+    const attachDossierAtTop = async (name: string) => {
+      await dossier.evaluate(element => {
+        // Reset every scrollable ancestor before aligning the dossier itself.
+        let parent = element.parentElement;
+        while (parent) {
+          const style = window.getComputedStyle(parent);
+          if (parent.scrollHeight > parent.clientHeight + 1 &&
+              (style.overflowY === 'auto' || style.overflowY === 'scroll')) {
+            parent.scrollTop = 0;
+          }
+          parent = parent.parentElement;
+        }
+        window.scrollTo(0, 0);
+        element.scrollIntoView({ block: 'start', inline: 'nearest' });
+      });
+      await testInfo.attach(name, {
+        body: await dossier.screenshot({ animations: 'disabled', scale: 'css' }),
+        contentType: 'image/png',
+      });
+    };
+    await attachDossierAtTop('sjm-travel-dossier-mobile');
     await page.setViewportSize({ width: 1440, height: 900 });
-    await testInfo.attach('sjm-travel-dossier-desktop', {
-      body: await dossier.screenshot({ animations: 'disabled', scale: 'css' }),
-      contentType: 'image/png',
-    });
+    await attachDossierAtTop('sjm-travel-dossier-desktop');
   });
 
   test('records daily activity execution only after the journey has been released', async ({ page }) => {
