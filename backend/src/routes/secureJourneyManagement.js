@@ -36,6 +36,8 @@ const MOBILITY_MANAGER_ROLES=new Set(['admin','dispatcher']);
 const REPORT_TYPES = ['itinerary','pre_trip_brief','daily','sitrep','change_notice','closeout','final'];
 const REPORT_TITLES = {itinerary:'Journey Itinerary',pre_trip_brief:'Pre-Trip Operational Brief',daily:'Daily Travel Report',sitrep:'Situation Report (SITREP)',change_notice:'Journey Change Notice',closeout:'Journey Closeout Report',final:'Final Journey Report',management_summary:'Secure Journey Management — Portfolio Summary'};
 const SECTIONS = ['summary','itinerary','stops','route_assessment','operational_events','telemetry_snapshot','traveller_dossier','flight_segments','daily_programme','travel_readiness','document_status'];
+const TRAVEL_DOSSIER_SECTIONS = ['traveller_dossier','flight_segments','daily_programme','travel_readiness','document_status'];
+const REPORT_TEMPLATE_VERSION = 2;
 const EVENT_TYPES = ['operator_note','security_update','client_update','delay','incident','other'];
 const LIFECYCLE_TRANSITIONS = {
   ready_to_depart: { from:['approved'], to:'ready_to_depart', timestamp:'ready_to_depart_at' },
@@ -49,7 +51,7 @@ const LIFECYCLE_TRANSITIONS = {
   abort: { from:['in_progress','paused','exception','arrival_pending_verification'], to:'aborted', timestamp:'aborted_at', reasonRequired:true },
   replan: { from:['requested','planning','assessment_pending','ready_for_review','approved','ready_to_depart','paused','exception','on_hold'], to:'planning', timestamp:'planning_started_at', reasonRequired:true, clearPlan:true },
 };
-const DEFAULT_TEMPLATE = { title: 'Secure Journey Management Report', sections: SECTIONS };
+const DEFAULT_TEMPLATE = { title: 'Secure Journey Management Report', version: REPORT_TEMPLATE_VERSION, sections: SECTIONS };
 const SJM_SCHEDULER_ORG_IDS = String(process.env.SJM_REPORT_SCHEDULER_ORG_IDS||'').split(',').map(v=>v.trim().toLowerCase()).filter(Boolean);
 const SJM_ORG_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function dailyReportSchedulerAvailable(orgId){return SJM_SCHEDULER_ORG_IDS.length>0&&SJM_SCHEDULER_ORG_IDS.every(v=>SJM_ORG_UUID.test(v))&&SJM_ORG_UUID.test(String(orgId||'').toLowerCase())&&SJM_SCHEDULER_ORG_IDS.includes(String(orgId).toLowerCase());}
@@ -228,6 +230,27 @@ function approvalGate(a, review, ack) {
   return {ok:true};
 }
 function parseJson(v,fallback) { if(v==null)return fallback; if(typeof v==='object')return v; try{return JSON.parse(v)}catch(_){return fallback} }
+function normaliseReportTemplate(value) {
+  const parsed=parseJson(value,{});
+  const configured=parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+  const supplied=Array.isArray(configured.sections)?configured.sections:SECTIONS;
+  const sections=[...new Set(supplied.filter(section=>SECTIONS.includes(section)))];
+  const version=Number.parseInt(String(configured.version??1),10);
+  // The original profile editor exposed only the six operational sections. On
+  // first upgrade, add the five dossier sections that did not previously exist.
+  // An intentionally empty section list remains empty; version 2 profiles retain
+  // the manager's explicit choices, including deliberate exclusions.
+  if(!Number.isInteger(version)||version<REPORT_TEMPLATE_VERSION) {
+    if(sections.length>0) for(const section of TRAVEL_DOSSIER_SECTIONS) if(!sections.includes(section)) sections.push(section);
+  }
+  return {
+    ...DEFAULT_TEMPLATE,
+    ...configured,
+    title:typeof configured.title==='string'&&configured.title.trim()?configured.title:DEFAULT_TEMPLATE.title,
+    version:REPORT_TEMPLATE_VERSION,
+    sections,
+  };
+}
 function canonicalJson(value) {
   if(value===null||typeof value!=='object')return JSON.stringify(value);
   if(Array.isArray(value))return '['+value.map(canonicalJson).join(',')+']';
@@ -586,7 +609,7 @@ async function reportSnapshot(db,org,j,type,date) {
     j.client_id?db('SELECT report_timezone,report_template FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[org,j.client_id]):Promise.resolve({rows:[]}),
     telemetryFor(db,org,j),
   ]);
-  const p=profile.rows[0]||{},template={...DEFAULT_TEMPLATE,...parseJson(p.report_template,{})},assessment=parseJson(j.route_assessment,null),events=eventRecords.rows,changes=changeEventsFor(events);
+  const p=profile.rows[0]||{},template=normaliseReportTemplate(p.report_template),assessment=parseJson(j.route_assessment,null),events=eventRecords.rows,changes=changeEventsFor(events);
   const pendingStops=stops.filter(s=>s.stop_status==='planned').length,reachedStops=stops.filter(s=>s.stop_status==='reached').length,skippedStops=stops.filter(s=>s.stop_status==='skipped').length;
   const [travelReadiness,travellerRows,flightRows,dayRows,itemRows,documentRows]=await Promise.all([
     loadTravelReadiness(db,j,'departure'),
@@ -840,7 +863,8 @@ router.get('/client-profiles/:clientId',authorize('admin','dispatcher'),asyncHan
   if(!c.rows.length)return res.status(404).json({error:'client_not_found'});
   if(!isMobilityManager(req.user)){const assignment=await req.db('SELECT 1 FROM sjm_journeys j JOIN sjm_journey_participants p ON p.org_id=j.org_id AND p.journey_id=j.id WHERE j.org_id=$1 AND j.client_id=$2 AND j.deleted_at IS NULL AND p.user_id=$3 AND p.removed_at IS NULL LIMIT 1',[req.user.org_id,req.params.clientId,req.user.id]);if(!assignment.rows.length)return res.status(404).json({error:'client_not_found'});}
   const p=await req.db('SELECT client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_at FROM sjm_client_profiles WHERE org_id=$1 AND client_id=$2 LIMIT 1',[req.user.org_id,req.params.clientId]);
-  res.json({data:{...(p.rows[0]||{client_id:req.params.clientId,report_timezone:'Africa/Nairobi',report_template:DEFAULT_TEMPLATE,daily_reports_enabled:false,daily_report_local_time:'18:00:00',updated_at:null}),daily_report_scheduler_available:dailyReportSchedulerAvailable(req.user.org_id),client:c.rows[0]}});
+  const profile=p.rows[0]||{client_id:req.params.clientId,report_timezone:'Africa/Nairobi',report_template:DEFAULT_TEMPLATE,daily_reports_enabled:false,daily_report_local_time:'18:00:00',updated_at:null};
+  res.json({data:{...profile,report_template:normaliseReportTemplate(profile.report_template),daily_report_scheduler_available:dailyReportSchedulerAvailable(req.user.org_id),client:c.rows[0]}});
 }));
 router.put('/client-profiles/:clientId',authorize('admin','dispatcher'),asyncHandler(async(req,res)=>{
   const timezone=txt(req.body?.report_timezone,100)||'Africa/Nairobi';
@@ -853,7 +877,7 @@ router.put('/client-profiles/:clientId',authorize('admin','dispatcher'),asyncHan
   if(!Array.isArray(sections)||sections.some(s=>!SECTIONS.includes(s))||new Set(sections).size!==sections.length)return res.status(400).json({error:'invalid_report_sections',allowed:SECTIONS});
   const c=await req.db('SELECT id FROM sjm_clients WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',[req.params.clientId,req.user.org_id]);
   if(!c.rows.length)return res.status(404).json({error:'client_not_found'});
-  const p=await req.db('INSERT INTO sjm_client_profiles (org_id,client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_by) VALUES ($1,$2,$3,$4,$5,$6::time,$7) ON CONFLICT (org_id,client_id) DO UPDATE SET report_timezone=EXCLUDED.report_timezone,report_template=EXCLUDED.report_template,daily_reports_enabled=EXCLUDED.daily_reports_enabled,daily_report_local_time=EXCLUDED.daily_report_local_time,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_at',[req.user.org_id,req.params.clientId,timezone,JSON.stringify({title,sections}),enabled,rawTime,req.user.id]);
+  const p=await req.db('INSERT INTO sjm_client_profiles (org_id,client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_by) VALUES ($1,$2,$3,$4,$5,$6::time,$7) ON CONFLICT (org_id,client_id) DO UPDATE SET report_timezone=EXCLUDED.report_timezone,report_template=EXCLUDED.report_template,daily_reports_enabled=EXCLUDED.daily_reports_enabled,daily_report_local_time=EXCLUDED.daily_report_local_time,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING client_id,report_timezone,report_template,daily_reports_enabled,daily_report_local_time,updated_at',[req.user.org_id,req.params.clientId,timezone,JSON.stringify({title,version:REPORT_TEMPLATE_VERSION,sections}),enabled,rawTime,req.user.id]);
   res.json({data:{...p.rows[0],daily_report_scheduler_available:dailyReportSchedulerAvailable(req.user.org_id)}});
 }));
 
@@ -1473,4 +1497,4 @@ router.get('/reports/:reportId/download',authorize('admin','dispatcher','operato
 
 module.exports=router;
 module.exports.__scheduler={reportSnapshot,dateInTimezone};
-module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,validateFieldEventInput,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,travelReadinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,revisionAcknowledgementError,enabledReportSections,reportFocusSections,journeyRegisterFilterSql,journeyRegisterOrderSql,sameRouteReviewSnapshot,readLockedRouteReviewSnapshot,journeyForRouteReview,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
+module.exports.__test={validCoordinate,validateStop,validateJourney,validateServiceDetails,dutyEventAllowed,validateFieldEventInput,isMobilityManager,canAccessJourney,canAccessReport,lifecycleAuthorityError,isInternalOperationalEvent,isClientSafeEvent,classificationForGenericEvent,eventVisibleToDuty,journeyForViewer,journeyForDutyViewer,approvalGate,dateInTimezone,validDateOnly,csvCell,toCsv,lifecycleTransition,DEFAULT_TEMPLATE,SECTIONS,REPORT_TYPES,REPORT_TITLES,dailyReportSchedulerAvailable,mutateWithEvent,recordRouteAssessmentFailure,freshnessFor,latestObservedAt,telemetryFor,readinessChecklist,travelReadinessChecklist,changeEventsFor,managementSummaryCounts,eventsForReport,planRequestPolicyError,revisionAcknowledgementError,enabledReportSections,normaliseReportTemplate,TRAVEL_DOSSIER_SECTIONS,REPORT_TEMPLATE_VERSION,reportFocusSections,journeyRegisterFilterSql,journeyRegisterOrderSql,sameRouteReviewSnapshot,readLockedRouteReviewSnapshot,journeyForRouteReview,lockJourneyForMobility,lockJourneyForMobilityRead,readLockedAssignmentRows,routeAssessmentUsable,syncJourneyCommsChannel};
