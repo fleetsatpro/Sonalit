@@ -7,6 +7,7 @@ const request = require('supertest');
 const { Pool } = require('pg');
 const { withOrg } = require('../../src/utils/orgScopedDb');
 const travelWorkspaceRouter = require('../../src/routes/sjmTravelWorkspace');
+const evidenceRouter = require('../../src/routes/sjmEvidence');
 
 const ORG_A = 'aaaaaaaa-1111-4111-8111-000000000001';
 const ORG_B = 'bbbbbbbb-1111-4111-8112-000000000001';
