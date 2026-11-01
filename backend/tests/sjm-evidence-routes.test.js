@@ -3,6 +3,8 @@
 const {
   normalizeUploadInput,
   canUploadEvidence,
+  canUploadEvidenceCategory,
+  evidenceAccessClassification,
   canViewEvidence,
   CATEGORY_MIME_TYPES,
   MAX_BYTES,
@@ -73,6 +75,17 @@ describe('SJM evidence capture contract', () => {
     expect(canUploadEvidence({ role: 'operator' }, ['cpo'])).toBe(true);
     expect(canUploadEvidence({ role: 'analyst' }, ['analyst'])).toBe(false);
     expect(canUploadEvidence({ role: 'analyst' }, [])).toBe(false);
+  });
+
+  test('keeps generic document evidence manager-only and highly sensitive', () => {
+    expect(canUploadEvidenceCategory({ role: 'admin' }, [], 'document')).toBe(true);
+    expect(canUploadEvidenceCategory({ role: 'dispatcher' }, [], 'document')).toBe(true);
+    expect(canUploadEvidenceCategory({ role: 'operator' }, ['driver'], 'document')).toBe(false);
+    expect(canUploadEvidenceCategory({ role: 'operator' }, ['cpo'], 'photo')).toBe(true);
+    expect(canUploadEvidenceCategory({ role: 'operator' }, ['meet_greet'], 'handover')).toBe(true);
+    expect(evidenceAccessClassification('document')).toBe('HIGHLY_SENSITIVE');
+    expect(evidenceAccessClassification('photo')).toBe('INTERNAL_OPERATIONS');
+    expect(evidenceAccessClassification('handover')).toBe('INTERNAL_OPERATIONS');
   });
 
   test('keeps highly sensitive traveller documents manager-only', () => {
