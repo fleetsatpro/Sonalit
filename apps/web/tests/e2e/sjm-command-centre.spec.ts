@@ -782,7 +782,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByLabel('Departure local time *').fill('2026-11-01T10:00');
     await page.getByLabel('IANA time zone *').nth(0).fill('Africa/Nairobi');
     await page.getByTestId('sjm-travel-workspace').getByLabel('Terminal', { exact: true }).nth(0).fill('1A');
-    await page.getByLabel('Gate').nth(0).fill('12');
+    await page.getByTestId('sjm-travel-workspace').getByLabel('Gate', { exact: true }).fill('12');
     await page.getByLabel('Airport code *').nth(1).fill('CDG');
     await page.getByLabel('Airport name').nth(1).fill('Paris Charles de Gaulle');
     await page.getByLabel('Arrival local time *').fill('2026-11-01T16:00');
