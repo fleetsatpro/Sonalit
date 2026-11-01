@@ -41,6 +41,18 @@ function canUploadEvidence(user, roles) {
   return isManager(user) || (Array.isArray(roles) && roles.some(role => UPLOAD_ROLES.has(role)));
 }
 
+// The generic evidence register is visible to active mission participants.
+// Keep its document category manager-only and highly sensitive; traveller
+// identity documents belong in the dedicated travel-dossier workflow.
+function canUploadEvidenceCategory(user, roles, category) {
+  if (category === 'document') return isManager(user);
+  return canUploadEvidence(user, roles);
+}
+
+function evidenceAccessClassification(category) {
+  return category === 'document' ? 'HIGHLY_SENSITIVE' : 'INTERNAL_OPERATIONS';
+}
+
 function normalizeUploadInput(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'invalid_payload' };
   const category = typeof body.category === 'string' ? body.category.trim().toLowerCase() : '';
@@ -190,7 +202,7 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
       const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
       if (access.error) return access;
       if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
-      if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
+      if (!canUploadEvidenceCategory(req.user, access.roles, value.category)) return { error: 'evidence_not_uploadable' };
 
       const signed = await storage.createUploadUrl({
         key: storageKey,
@@ -203,12 +215,12 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
         '(id,org_id,journey_id,category,file_name,mime_type,size_bytes,storage_key,status,' +
         'captured_at,capture_time_quality,location_lat,location_lng,location_accuracy_m,' +
         'location_source,access_classification,created_by,device_id) ' +
-        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'UPLOAD_PENDING',$9,$10,$11,$12,$13,$14,'INTERNAL_OPERATIONS',$15,$16)",
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'UPLOAD_PENDING',$9,$10,$11,$12,$13,$14,$15,$16,$17)",
         [
           evidenceId, req.user.org_id, journeyId, value.category, value.fileName,
           value.mimeType, value.sizeBytes, storageKey, value.capturedAt,
           value.captureTimeQuality, value.location.lat, value.location.lng,
-          value.location.accuracyM, value.location.source, req.user.id, value.deviceId,
+          value.location.accuracyM, value.location.source, evidenceAccessClassification(value.category), req.user.id, value.deviceId,
         ],
       );
       await db(
@@ -248,12 +260,13 @@ router.post('/:evidenceId/renew-upload-url', asyncHandler(async (req, res) => {
       if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
       if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
       const selected = await db(
-        'SELECT id,storage_key,mime_type,status,access_classification FROM sjm_evidence ' +
+        'SELECT id,storage_key,mime_type,status,category,access_classification FROM sjm_evidence ' +
         'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
         [evidenceId, req.user.org_id, journeyId],
       );
       const evidence = selected.rows[0];
       if (!evidence || !canViewEvidence(req.user, evidence)) return { error: 'evidence_not_found' };
+      if (!canUploadEvidenceCategory(req.user, access.roles, evidence.category)) return { error: 'evidence_not_uploadable' };
       if (evidence.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
       const signed = await storage.createUploadUrl({
         key: evidence.storage_key, mimeType: evidence.mime_type, evidenceId, journeyId,
@@ -293,7 +306,7 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
     if (!evidence || !canViewEvidence(req.user, evidence)) return { error: 'evidence_not_found' };
     if (evidence.status === 'VERIFIED') return { verified: evidence };
     if (evidence.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
-    if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
+    if (!canUploadEvidenceCategory(req.user, access.roles, evidence.category)) return { error: 'evidence_not_uploadable' };
     return { evidence };
   });
   if (accessError(res, initial)) return;
@@ -317,7 +330,7 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
         const db = (sql, params) => client.query(sql, params);
         const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
         if (access.error) return access;
-        if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
+        if (!canUploadEvidenceCategory(req.user, access.roles, row.category)) return { error: 'evidence_not_uploadable' };
         const current = await db(
           'SELECT id,status,access_classification FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 FOR UPDATE',
           [evidenceId, req.user.org_id, journeyId],
@@ -351,7 +364,7 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
     if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
     if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
     const current = await db(
-      'SELECT id,status,sha256,access_classification FROM sjm_evidence ' +
+      'SELECT id,status,sha256,category,access_classification FROM sjm_evidence ' +
       'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
       [evidenceId, req.user.org_id, journeyId],
     );
@@ -442,6 +455,8 @@ module.exports = router;
 module.exports.__test = {
   normalizeUploadInput,
   canUploadEvidence,
+  canUploadEvidenceCategory,
+  evidenceAccessClassification,
   canViewEvidence,
   CATEGORY_MIME_TYPES,
   MAX_BYTES,
