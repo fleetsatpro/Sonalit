@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  activityHasStaffing, calendarDates, findProgrammeScheduleConflicts, evaluateTravelReadiness,
+  activityHasStaffing, analyseFlightCoverage, calendarDates, findProgrammeScheduleConflicts, evaluateTravelReadiness,
 } = require('../src/services/sjmTravelReadiness');
 
 const journey = overrides => ({
@@ -72,6 +72,64 @@ describe('SJM server-side travel readiness', () => {
       days: [], documents: [],
     }, 'approval');
     expect(diverted.blockers.map(item => item.code)).toContain('airport_flight_details_incomplete');
+  });
+
+  test('validates a traveller flight chain across multiple legs and flags airport changes without blocking', () => {
+    const airportJourney = journey({ service_type: 'airport_arrival' });
+    const legs = [
+      {
+        id: 'leg-nbo-cdg', traveller_id: principal.id, status: 'scheduled',
+        departure_airport: 'NBO', departure_at: '2026-11-01T06:00:00.000Z',
+        arrival_airport: 'CDG', arrival_at: '2026-11-01T14:00:00.000Z',
+      },
+      {
+        id: 'leg-cdg-lhr', traveller_id: principal.id, status: 'scheduled',
+        departure_airport: 'CDG', departure_at: '2026-11-01T16:00:00.000Z',
+        arrival_airport: 'LHR', arrival_at: '2026-11-01T17:00:00.000Z',
+      },
+    ];
+    const connected = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal], flights: legs, days: [], documents: [],
+    }, 'approval');
+    expect(connected.ready).toBe(true);
+    expect(connected.counts.flight_schedule_conflict_count).toBe(0);
+    expect(connected.counts.flight_airport_change_count).toBe(0);
+
+    const airportChange = evaluateTravelReadiness({
+      journey: airportJourney,
+      travellers: [principal],
+      flights: [legs[0], { ...legs[1], departure_airport: 'ORY' }],
+      days: [],
+      documents: [],
+    }, 'approval');
+    expect(airportChange.ready).toBe(true);
+    expect(airportChange.counts.flight_airport_change_count).toBe(1);
+    expect(airportChange.warnings.map(item => item.code)).toContain('flight_airport_change_requires_transfer');
+  });
+
+  test('blocks overlapping flight legs for the same traveller without exposing passenger or leg identifiers', () => {
+    const airportJourney = journey({ service_type: 'airport_arrival' });
+    const flights = [
+      {
+        id: 'private-flight-1', traveller_id: principal.id, status: 'scheduled',
+        departure_airport: 'NBO', departure_at: '2026-11-01T06:00:00.000Z',
+        arrival_airport: 'CDG', arrival_at: '2026-11-01T14:00:00.000Z',
+      },
+      {
+        id: 'private-flight-2', traveller_id: principal.id, status: 'scheduled',
+        departure_airport: 'CDG', departure_at: '2026-11-01T13:30:00.000Z',
+        arrival_airport: 'LHR', arrival_at: '2026-11-01T17:00:00.000Z',
+      },
+    ];
+    const readiness = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal], flights, days: [], documents: [],
+    }, 'approval');
+    expect(readiness.ready).toBe(false);
+    expect(readiness.counts.flight_schedule_conflict_count).toBe(1);
+    const blocker = readiness.blockers.find(item => item.code === 'flight_schedule_conflict');
+    expect(blocker.conflict_count).toBe(1);
+    expect(JSON.stringify(blocker)).not.toContain('private-flight');
+    expect(JSON.stringify(blocker)).not.toContain(principal.id);
   });
 
   test('requires duty-role assignments to be backed by an active journey participant', () => {
