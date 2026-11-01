@@ -781,7 +781,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByLabel('Airport name').nth(0).fill('Jomo Kenyatta International Airport');
     await page.getByLabel('Departure local time *').fill('2026-11-01T10:00');
     await page.getByLabel('IANA time zone *').nth(0).fill('Africa/Nairobi');
-    await page.getByLabel('Terminal').nth(0).fill('1A');
+    await page.getByTestId('sjm-travel-workspace').getByLabel('Terminal', { exact: true }).fill('1A');
     await page.getByLabel('Gate').nth(0).fill('12');
     await page.getByLabel('Airport code *').nth(1).fill('CDG');
     await page.getByLabel('Airport name').nth(1).fill('Paris Charles de Gaulle');
@@ -898,12 +898,12 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByLabel('Execution note').fill('Assigned dispatcher confirmed the arrival team is at the agreed reception point.');
     await page.getByRole('button', { name: 'Start' }).click();
     await expect(page.getByText('Execution update recorded in the activity history.')).toBeVisible();
-    await expect(page.getByText('In progress', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('sjm-travel-workspace').getByText('In progress', { exact: true })).toBeVisible();
 
     await page.getByLabel('Execution note').fill('Traveller received and identity matched against the approved movement brief.');
     await page.getByRole('button', { name: 'Complete' }).click();
     await expect(page.getByText('Execution update recorded in the activity history.')).toBeVisible();
-    await expect(page.getByText('Completed', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('sjm-travel-workspace').getByText('Completed', { exact: true })).toBeVisible();
     await expect(page.getByText(/resolved/)).toBeVisible();
   });
 
