@@ -297,6 +297,10 @@ test('field-duty API projection omits traveller PII, highly-sensitive documents 
 
 test('database preserves HIGHLY_SENSITIVE classification for all document evidence', async () => {
   if (skip()) return;
+  const security = await pool.query(
+    "SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid='public.sjm_evidence'::regclass",
+  );
+  expect(security.rows[0]).toMatchObject({ relrowsecurity:true, relforcerowsecurity:true });
   const downgraded = await withOrg(ORG_A,client => client.query(
     "UPDATE public.sjm_evidence SET access_classification='INTERNAL_OPERATIONS' WHERE id=$1 RETURNING access_classification",
     [EVIDENCE_A],
