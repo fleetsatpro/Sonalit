@@ -69,7 +69,15 @@ const journey = {
       instructions: 'Synthetic fixture stop only.',
     },
   ],
-  events: [],
+  events: [
+    {
+      id: 'event-sjm-e2e-001',
+      event_type: 'operator_note',
+      summary: '[SYNTHETIC QA] Airport coordination note recorded',
+      source: 'operator',
+      created_at: '2026-10-29T09:10:00.000Z',
+    },
+  ],
   telemetry_snapshot: {
     status: 'UNAVAILABLE',
     reason: 'Synthetic E2E fixture; no operational telemetry is represented.',
@@ -182,6 +190,69 @@ async function stubSjmApi(page: Page) {
             client: { id: CLIENT_ID, name: 'SJM E2E Fixture Client' },
           },
         }),
+      });
+    }
+    if (travelWorkspaceRouteMatches(url) && route.request().method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: {
+          flights: [{
+            id: 'flight-sjm-e2e-001',
+            sequence: 1,
+            carrier: 'QA Airways',
+            flight_number: 'QA 100',
+            departure_airport: 'CDG',
+            departure_airport_name: 'Paris Charles de Gaulle',
+            departure_at: '2026-10-29T07:00:00.000Z',
+            departure_timezone: 'Europe/Paris',
+            arrival_airport: 'NBO',
+            arrival_airport_name: 'Jomo Kenyatta International',
+            arrival_at: '2026-10-29T08:30:00.000Z',
+            arrival_timezone: 'Africa/Nairobi',
+            status: 'scheduled',
+            status_source: 'operator_entered',
+            status_observed_at: '2026-10-28T17:00:00.000Z',
+          }],
+          days: [{
+            id: 'day-sjm-e2e-001',
+            journey_date: '2026-10-29',
+            timezone: 'Africa/Nairobi',
+            day_title: 'Synthetic QA · Arrival day',
+            items: [
+              {
+                id: 'activity-sjm-e2e-001',
+                sequence: 1,
+                item_type: 'meet_and_greet',
+                title: 'Meet & greet principal traveller',
+                location_label: 'NBO Terminal 1A arrivals',
+                planned_start_at: '2026-10-29T08:35:00.000Z',
+                planned_end_at: '2026-10-29T08:55:00.000Z',
+                execution_status: 'planned',
+                actual_start_at: null,
+                actual_end_at: null,
+                traveller_display_name: 'TEST-PRINCIPAL-001',
+                responsible_name: 'Fixture CPO',
+                responsible_role: 'cpo',
+              },
+              {
+                id: 'activity-sjm-e2e-002',
+                sequence: 2,
+                item_type: 'transfer',
+                title: 'Controlled airport transfer',
+                location_label: 'Nairobi CBD',
+                planned_start_at: '2026-10-29T09:00:00.000Z',
+                planned_end_at: '2026-10-29T09:45:00.000Z',
+                execution_status: 'planned',
+                actual_start_at: null,
+                actual_end_at: null,
+                traveller_display_name: 'TEST-PRINCIPAL-001',
+                responsible_name: 'Fixture Driver',
+                responsible_role: 'driver',
+              },
+            ],
+          }],
+        } }),
       });
     }
     if (pathname === '/api/v1/sjm/journeys/' + JOURNEY_ID + '/participants') {
@@ -438,6 +509,43 @@ test.describe('SJM command-centre responsive smoke', () => {
         body: await operationsRail.screenshot({ animations: 'disabled' }),
         contentType: 'image/png',
       });
+
+      // The previous component did not capture the newly integrated timeline.
+      // Exercise it with an explicitly synthetic workspace fixture at mobile
+      // and desktop widths, then attach the rendered panel for visual review.
+      if (viewport.width === 390 || viewport.width === 1440) {
+        await page.getByRole('tab', { name: 'Operations timeline' }).click();
+        const timeline = page.getByTestId('sjm-unified-timeline');
+        await expect(timeline).toBeVisible();
+        await expect(timeline.getByText('QA Airways QA 100', { exact: true })).toBeVisible({ timeout: 10000 });
+        await expect(timeline.getByText('Meet & greet principal traveller', { exact: true })).toBeVisible();
+        await expect(timeline.getByText('Controlled airport transfer', { exact: true })).toBeVisible();
+        await expect(timeline.getByText('[SYNTHETIC QA] Airport coordination note recorded', { exact: true })).toBeVisible();
+        await expect(timeline.getByText('Status source · Operator entered', { exact: true })).toBeVisible();
+        await expect(timeline.getByText('Planned activity · no execution timestamp recorded', { exact: true }).first()).toBeVisible();
+        await expect(timeline.getByText('Planned stop · no confirmation recorded', { exact: true })).toBeVisible();
+
+        const timelineEntries = timeline.locator('ol[aria-label="Chronological journey entries"] > li');
+        await expect(timelineEntries).toHaveCount(5);
+        await timeline.getByRole('button', { name: 'Travel programme' }).click();
+        await expect(timeline.locator('ol[aria-label="Chronological journey entries"] > li')).toHaveCount(2);
+        await timeline.getByRole('button', { name: 'All', exact: true }).click();
+        await expect(timelineEntries).toHaveCount(5);
+
+        const timelineDimensions = await timeline.evaluate(el => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }));
+        expect(
+          timelineDimensions.scrollWidth,
+          viewport.label + ': timeline must not introduce horizontal overflow',
+        ).toBeLessThanOrEqual(timelineDimensions.clientWidth);
+        await timeline.scrollIntoViewIfNeeded();
+        await testInfo.attach(`sjm-${viewport.label}-operations-timeline`, {
+          body: await timeline.screenshot({ animations: 'disabled' }),
+          contentType: 'image/png',
+        });
+      }
 
     }
   });
