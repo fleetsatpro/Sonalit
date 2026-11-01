@@ -842,8 +842,14 @@ describe('SJM federated aviation intelligence',()=>{
     });
     expect(providers.find(item=>item.id==='ourairports')).toMatchObject({status:'NOT_REQUESTED'});
     expect(providers.find(item=>item.id==='adsb_lol')).toMatchObject({
+      url:'https://adsb.lol',license_url:'https://opendatacommons.org/licenses/odbl/1-0/',
       license:'ODbL-1.0',commercial_use_permitted:true,attribution_required:true,
       service_level:'BEST_EFFORT',production_contact_recommended:true,
+    });
+    expect(providers.find(item=>item.id==='flyitalyadsb')).toMatchObject({
+      url:'https://flyitalyadsb.com/en/data/api/',
+      license_url:'https://flyitalyadsb.com/en/terms/',
+      license:'CC-BY-SA-4.0',attribution_required:true,share_alike_required:true,
     });
     expect(providers.find(item=>item.id==='adsb_lol')).not.toHaveProperty('production_approval_required');
   });
