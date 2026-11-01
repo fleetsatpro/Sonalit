@@ -5,7 +5,7 @@ jest.mock('../src/realtime/centrifugo', () => ({ removeChannelHistory: jest.fn()
 const { removeChannelHistory, unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, travelReadinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, revisionAcknowledgementError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, travelReadinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, revisionAcknowledgementError, enabledReportSections, normaliseReportTemplate, TRAVEL_DOSSIER_SECTIONS, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -488,6 +488,23 @@ describe('SJM validation and evidence boundaries', () => {
     expect(REPORT_TITLES.sitrep).toMatch(/Situation Report/);
     expect(REPORT_TITLES.management_summary).toMatch(/Portfolio Summary/);
   });
+  test('upgrades legacy client report templates while preserving explicit version-two exclusions', () => {
+    const legacy = normaliseReportTemplate({
+      title: 'Existing client report',
+      sections: ['summary', 'itinerary', 'stops', 'summary'],
+    });
+    expect(legacy.version).toBe(2);
+    expect(legacy.title).toBe('Existing client report');
+    expect(legacy.sections).toEqual(['summary', 'itinerary', 'stops', ...TRAVEL_DOSSIER_SECTIONS]);
+
+    const intentionallyLimited = normaliseReportTemplate({ version: 2, sections: ['summary'] });
+    expect(intentionallyLimited.sections).toEqual(['summary']);
+
+    const intentionallyEmpty = normaliseReportTemplate({ version: 2, sections: [] });
+    expect(intentionallyEmpty.sections).toEqual([]);
+    expect(normaliseReportTemplate({ sections: [] }).sections).toEqual([]);
+  });
+
   test('rejects impossible calendar dates', () => {
     expect(validDateOnly('2026-10-27')).toBe(true);
     expect(validDateOnly('2026-02-31')).toBe(false);
