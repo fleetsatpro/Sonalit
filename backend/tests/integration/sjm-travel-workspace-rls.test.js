@@ -51,10 +51,10 @@ function authenticatedTestApp(user) {
   return app;
 }
 
-async function seedJourney({ orgId, journeyId, suffix, managerId, driverId, participantId,
+async function seedJourney(db, { orgId, journeyId, suffix, managerId, driverId, participantId,
   travellerId, flightId, dayId, itemId, itemEventId, evidenceId, evidenceEventId,
   documentId, workspaceEventId }) {
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_journeys
       (id,org_id,reference,title,purpose,origin_label,origin_lat,origin_lng,
        destination_label,destination_lat,destination_lng,
@@ -66,12 +66,12 @@ async function seedJourney({ orgId, journeyId, suffix, managerId, driverId, part
        'Africa/Nairobi','requested'`,
     [journeyId,orgId,'SJM-RLS-'+suffix,'SJM tenant isolation '+suffix,'Synthetic isolated integration fixture'],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_journey_participants (id,org_id,journey_id,user_id,duty_role,is_primary,assigned_by)
      VALUES ($1,$2,$3,$4,'driver',true,$5)`,
     [participantId,orgId,journeyId,driverId,managerId],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_travellers
       (id,org_id,journey_id,traveller_reference,traveller_type,title,given_name,family_name,
        nationality,date_of_birth,email,phone,emergency_contact_name,emergency_contact_phone,
@@ -82,7 +82,7 @@ async function seedJourney({ orgId, journeyId, suffix, managerId, driverId, part
     [travellerId,orgId,journeyId,'TRV-RLS-'+suffix,'Amina'+suffix,'Example',
       'amina.'+suffix.toLowerCase()+'@example.invalid',managerId],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_flight_segments
       (id,org_id,journey_id,traveller_id,sequence,carrier,flight_number,
        departure_airport,departure_airport_name,departure_at,departure_timezone,
@@ -94,12 +94,12 @@ async function seedJourney({ orgId, journeyId, suffix, managerId, driverId, part
        $5,'scheduled','operator_entered')`,
     [flightId,orgId,journeyId,travellerId,'BOOK-'+suffix],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_itinerary_days (id,org_id,journey_id,journey_date,timezone,day_title,created_by,updated_by)
      VALUES ($1,$2,$3,'2026-11-02','Africa/Nairobi','Arrival and reception',$4,$4)`,
     [dayId,orgId,journeyId,managerId],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_itinerary_items
       (id,org_id,journey_id,day_id,traveller_id,sequence,item_type,title,
        location_label,planned_start_at,planned_end_at,responsible_user_id,responsible_role,
@@ -109,13 +109,13 @@ async function seedJourney({ orgId, journeyId, suffix, managerId, driverId, part
        $6,'driver',$7,$8,$8)`,
     [itemId,orgId,journeyId,dayId,travellerId,driverId,flightId,managerId],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_itinerary_item_events
       (id,org_id,journey_id,day_id,item_id,actor_id,action,detail)
      VALUES ($1,$2,$3,$4,$5,$6,'PLAN_CREATED','{"fixture":"synthetic"}'::jsonb)`,
     [itemEventId,orgId,journeyId,dayId,itemId,managerId],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_evidence
       (id,org_id,journey_id,category,file_name,mime_type,size_bytes,storage_key,status,
        access_classification,created_by)
@@ -124,20 +124,20 @@ async function seedJourney({ orgId, journeyId, suffix, managerId, driverId, part
     [evidenceId,orgId,journeyId,'passport-'+suffix+'.pdf',
       'orgs/'+orgId+'/sjm/'+journeyId+'/integration/'+evidenceId+'.pdf',managerId],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_evidence_events
       (id,org_id,journey_id,evidence_id,actor_id,action,detail)
      VALUES ($1,$2,$3,$4,$5,'UPLOAD_REQUESTED','{"fixture":"synthetic"}'::jsonb)`,
     [evidenceEventId,orgId,journeyId,evidenceId,managerId],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_travel_documents
       (id,org_id,journey_id,traveller_id,evidence_id,document_type,holder_name,
        issuing_country,expiry_date,created_by)
      VALUES ($1,$2,$3,$4,$5,'passport',$6,'Kenya','2030-01-01',$7)`,
     [documentId,orgId,journeyId,travellerId,evidenceId,'Amina '+suffix,managerId],
   );
-  await pool.query(
+  await db.query(
     `INSERT INTO sjm_travel_workspace_events
       (id,org_id,journey_id,actor_id,action,subject_id,detail)
      VALUES ($1,$2,$3,$4,'TRAVELLER_CREATED',$5,'{"fixture":"synthetic"}'::jsonb)`,
@@ -151,60 +151,69 @@ beforeAll(async () => {
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   });
-  await pool.query('BEGIN');
+  const client = await pool.connect();
+  await client.query('BEGIN');
   try {
-    await pool.query(
+    await client.query(
       `INSERT INTO users (id,email,name,role,org_id,status,password_hash) VALUES
-        ($1,'sjm-rls-manager-a@example.invalid','SJM RLS Manager A','admin',$2,'active','test-hash'),
+        ($1,'sjm-rls-manager-a@example.invalid','SJM RLS Manager A','dispatcher',$2,'active','test-hash'),
         ($3,'sjm-rls-driver-a@example.invalid','SJM RLS Driver A','operator',$2,'active','test-hash'),
         ($4,'sjm-rls-driver-b@example.invalid','SJM RLS Driver B','operator',$5,'active','test-hash')
        ON CONFLICT (id) DO NOTHING`,
       [USER_MANAGER_A,ORG_A,USER_DRIVER_A,USER_DRIVER_B,ORG_B],
     );
-    await seedJourney({
+    await seedJourney(client,{
       orgId:ORG_A,journeyId:JOURNEY_A,suffix:'A',managerId:USER_MANAGER_A,driverId:USER_DRIVER_A,
       participantId:PARTICIPANT_A,travellerId:TRAVELLER_A,flightId:FLIGHT_A,dayId:DAY_A,itemId:ITEM_A,
       itemEventId:ITEM_EVENT_A,evidenceId:EVIDENCE_A,evidenceEventId:EVIDENCE_EVENT_A,
       documentId:DOCUMENT_A,workspaceEventId:WORKSPACE_EVENT_A,
     });
-    await seedJourney({
+    await seedJourney(client,{
       orgId:ORG_B,journeyId:JOURNEY_B,suffix:'B',managerId:USER_DRIVER_B,driverId:USER_DRIVER_B,
       participantId:PARTICIPANT_B,travellerId:TRAVELLER_B,flightId:FLIGHT_B,dayId:DAY_B,itemId:ITEM_B,
       itemEventId:ITEM_EVENT_B,evidenceId:EVIDENCE_B,evidenceEventId:EVIDENCE_EVENT_B,
       documentId:DOCUMENT_B,workspaceEventId:WORKSPACE_EVENT_B,
     });
-    await pool.query('COMMIT');
+    await client.query('COMMIT');
   } catch (error) {
-    await pool.query('ROLLBACK');
+    await client.query('ROLLBACK');
     throw error;
+  } finally {
+    client.release();
   }
 });
 
 afterAll(async () => {
   if (!pool) return;
+  const client = await pool.connect();
   try {
-    await pool.query('BEGIN');
-    await pool.query('DELETE FROM sjm_travel_workspace_events WHERE id = ANY($1::uuid[])', [[WORKSPACE_EVENT_A,WORKSPACE_EVENT_B]]);
-    await pool.query('DELETE FROM sjm_itinerary_item_events WHERE id = ANY($1::uuid[])', [[ITEM_EVENT_A,ITEM_EVENT_B]]);
-    await pool.query('DELETE FROM sjm_travel_documents WHERE id = ANY($1::uuid[])', [[DOCUMENT_A,DOCUMENT_B]]);
-    await pool.query('DELETE FROM sjm_evidence_events WHERE id = ANY($1::uuid[])', [[EVIDENCE_EVENT_A,EVIDENCE_EVENT_B]]);
-    await pool.query('DELETE FROM sjm_evidence WHERE id = ANY($1::uuid[])', [[EVIDENCE_A,EVIDENCE_B]]);
-    await pool.query('DELETE FROM sjm_itinerary_items WHERE id = ANY($1::uuid[])', [[ITEM_A,ITEM_B]]);
-    await pool.query('DELETE FROM sjm_flight_segments WHERE id = ANY($1::uuid[])', [[FLIGHT_A,FLIGHT_B]]);
-    await pool.query('DELETE FROM sjm_itinerary_days WHERE id = ANY($1::uuid[])', [[DAY_A,DAY_B]]);
-    await pool.query('DELETE FROM sjm_travellers WHERE id = ANY($1::uuid[])', [[TRAVELLER_A,TRAVELLER_B]]);
-    await pool.query('DELETE FROM sjm_journey_participants WHERE id = ANY($1::uuid[])', [[PARTICIPANT_A,PARTICIPANT_B]]);
-    await pool.query('DELETE FROM sjm_journeys WHERE id = ANY($1::uuid[])', [[JOURNEY_A,JOURNEY_B]]);
-    await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [[USER_MANAGER_A,USER_DRIVER_A,USER_DRIVER_B]]);
-    await pool.query('COMMIT');
+    await client.query('BEGIN');
+    // Only the isolated CI fixtures are removed; application history remains append-only.
+    await client.query('ALTER TABLE public.sjm_travel_workspace_events DISABLE TRIGGER trg_sjm_travel_workspace_events_immutable');
+    await client.query('ALTER TABLE public.sjm_itinerary_item_events DISABLE TRIGGER trg_sjm_itinerary_item_events_immutable');
+    await client.query('DELETE FROM sjm_travel_workspace_events WHERE journey_id = ANY($1::uuid[])', [[JOURNEY_A,JOURNEY_B]]);
+    await client.query('DELETE FROM sjm_itinerary_item_events WHERE journey_id = ANY($1::uuid[])', [[JOURNEY_A,JOURNEY_B]]);
+    await client.query('DELETE FROM sjm_travel_documents WHERE id = ANY($1::uuid[])', [[DOCUMENT_A,DOCUMENT_B]]);
+    await client.query('DELETE FROM sjm_evidence_events WHERE id = ANY($1::uuid[])', [[EVIDENCE_EVENT_A,EVIDENCE_EVENT_B]]);
+    await client.query('DELETE FROM sjm_evidence WHERE id = ANY($1::uuid[])', [[EVIDENCE_A,EVIDENCE_B]]);
+    await client.query('DELETE FROM sjm_itinerary_items WHERE id = ANY($1::uuid[])', [[ITEM_A,ITEM_B]]);
+    await client.query('DELETE FROM sjm_flight_segments WHERE id = ANY($1::uuid[])', [[FLIGHT_A,FLIGHT_B]]);
+    await client.query('DELETE FROM sjm_itinerary_days WHERE id = ANY($1::uuid[])', [[DAY_A,DAY_B]]);
+    await client.query('DELETE FROM sjm_travellers WHERE id = ANY($1::uuid[])', [[TRAVELLER_A,TRAVELLER_B]]);
+    await client.query('DELETE FROM sjm_journey_participants WHERE id = ANY($1::uuid[])', [[PARTICIPANT_A,PARTICIPANT_B]]);
+    await client.query('DELETE FROM sjm_journeys WHERE id = ANY($1::uuid[])', [[JOURNEY_A,JOURNEY_B]]);
+    await client.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [[USER_MANAGER_A,USER_DRIVER_A,USER_DRIVER_B]]);
+    await client.query('ALTER TABLE public.sjm_travel_workspace_events ENABLE TRIGGER trg_sjm_travel_workspace_events_immutable');
+    await client.query('ALTER TABLE public.sjm_itinerary_item_events ENABLE TRIGGER trg_sjm_itinerary_item_events_immutable');
+    await client.query('COMMIT');
   } catch (error) {
-    await pool.query('ROLLBACK');
+    await client.query('ROLLBACK');
     throw error;
   } finally {
+    client.release();
     await pool.end();
   }
 });
-
 const skip = () => !process.env.DATABASE_URL;
 
 test('SJM tenant rows are isolated across participants, travellers, flights, programme, documents and evidence', async () => {
@@ -243,12 +252,12 @@ test('SJM RLS rejects cross-tenant writes and hides foreign updates and deletes'
   ));
   expect(update.rowCount).toBe(0);
   const deleted = await withOrg(ORG_A,client => client.query(
-    'DELETE FROM public.sjm_evidence WHERE id=$1', [EVIDENCE_B],
+    'UPDATE public.sjm_evidence SET deleted_at=NOW() WHERE id=$1', [EVIDENCE_B],
   ));
   expect(deleted.rowCount).toBe(0);
   await expect(withOrg(ORG_A,client => client.query(
-    'INSERT INTO public.sjm_travellers (org_id,journey_id,traveller_reference,traveller_type,given_name,family_name) VALUES ($1,$2,\\'TRV-FOREIGN-WRITE\\',\\'principal\\',\\'Foreign\\',\\'Write\\')',
-    [ORG_B,JOURNEY_B],
+    'INSERT INTO public.sjm_travellers (org_id,journey_id,traveller_reference,traveller_type,given_name,family_name) VALUES ($1,$2,$3,$4,$5,$6)',
+    [ORG_B,JOURNEY_B,'TRV-FOREIGN-WRITE','principal','Foreign','Write'],
   ))).rejects.toMatchObject({ code:'42501' });
 });
 
