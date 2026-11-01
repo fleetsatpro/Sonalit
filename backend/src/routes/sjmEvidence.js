@@ -330,12 +330,12 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
         const db = (sql, params) => client.query(sql, params);
         const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
         if (access.error) return access;
-        if (!canUploadEvidenceCategory(req.user, access.roles, row.category)) return { error: 'evidence_not_uploadable' };
         const current = await db(
-          'SELECT id,status,access_classification FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 FOR UPDATE',
+          'SELECT id,status,category,access_classification FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 FOR UPDATE',
           [evidenceId, req.user.org_id, journeyId],
         );
         if (!current.rows[0] || !canViewEvidence(req.user, current.rows[0])) return { error: 'evidence_not_found' };
+        if (!canUploadEvidenceCategory(req.user, access.roles, current.rows[0].category)) return { error: 'evidence_not_uploadable' };
         if (current.rows[0].status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
         await db(
           "UPDATE sjm_evidence SET status='REJECTED',updated_at=NOW() WHERE id=$1 AND org_id=$2",
@@ -362,7 +362,6 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
     const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
     if (access.error) return access;
     if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
-    if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
     const current = await db(
       'SELECT id,status,sha256,category,access_classification FROM sjm_evidence ' +
       'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
@@ -370,6 +369,7 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
     );
     const row = current.rows[0];
     if (!row || !canViewEvidence(req.user, row)) return { error: 'evidence_not_found' };
+    if (!canUploadEvidenceCategory(req.user, access.roles, row.category)) return { error: 'evidence_not_uploadable' };
     if (row.status === 'VERIFIED') return { data: row, already_verified: true };
     if (row.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
     const updated = await db(
