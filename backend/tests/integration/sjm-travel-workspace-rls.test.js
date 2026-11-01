@@ -295,6 +295,21 @@ test('field-duty API projection omits traveller PII, highly-sensitive documents 
   expect(response.body.data.flights[0].traveller_display_name).toBe('Ms AminaA Example');
 });
 
+test('database preserves HIGHLY_SENSITIVE classification for all document evidence', async () => {
+  if (skip()) return;
+  const downgraded = await withOrg(ORG_A,client => client.query(
+    "UPDATE public.sjm_evidence SET access_classification='INTERNAL_OPERATIONS' WHERE id=$1 RETURNING access_classification",
+    [EVIDENCE_A],
+  ));
+  expect(downgraded.rows[0].access_classification).toBe('HIGHLY_SENSITIVE');
+
+  await expect(withOrg(ORG_A,client => client.query(
+    "INSERT INTO public.sjm_evidence (id,org_id,journey_id,category,file_name,mime_type,size_bytes,storage_key,status,access_classification,created_by) " +
+    "VALUES ('a9000000-0000-4000-8000-000000000099',$1,$2,'document','legacy-document.pdf','application/pdf',128,$3,'UPLOAD_PENDING','INTERNAL_OPERATIONS',$4)",
+    [ORG_A,JOURNEY_A,'orgs/'+ORG_A+'/sjm/'+JOURNEY_A+'/integration/legacy-document.pdf',USER_MANAGER_A],
+  ))).rejects.toMatchObject({ code:'23514' });
+});
+
 test('mobility managers can read the full traveller dossier and document register', async () => {
   if (skip()) return;
   const app = authenticatedTestApp({
