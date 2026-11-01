@@ -629,7 +629,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(rejectedRequests).toEqual([]);
   });
 
-  test('registers a traveller, records a flight-ready dossier and builds a dated daily programme before approval', async ({ page }) => {
+  test('registers a traveller, records a flight-ready dossier and builds a dated daily programme before approval', async ({ page }, testInfo) => {
     await seedAuth(page);
     await stubSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
@@ -826,6 +826,18 @@ test.describe('SJM command-centre responsive smoke', () => {
     // must remain unavailable until the route has been approved and released.
     await expect(page.getByLabel('Execution note')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
+
+    // Retain visual evidence for the actual dossier at both target breakpoints.
+    const dossier = page.getByTestId('sjm-travel-workspace');
+    await testInfo.attach('sjm-travel-dossier-mobile', {
+      body: await dossier.screenshot({ animations: 'disabled', scale: 'css' }),
+      contentType: 'image/png',
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await testInfo.attach('sjm-travel-dossier-desktop', {
+      body: await dossier.screenshot({ animations: 'disabled', scale: 'css' }),
+      contentType: 'image/png',
+    });
   });
 
   test('records daily activity execution only after the journey has been released', async ({ page }) => {
