@@ -777,7 +777,7 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
     });
     let redis;
     try{
-      const sharedStore=redisClient===undefined?(getRedis()||createFlyItalyPostgresStore({db,dbTx})):redisClient;
+      const sharedStore=redisClient===null?createFlyItalyPostgresStore({db,dbTx}):redisClient===undefined?(getRedis()||createFlyItalyPostgresStore({db,dbTx})):redisClient;
       redis=await readyFlyItalyRedis(sharedStore);
     }catch{
       return unavailable('shared_product_quota_store_unavailable');
