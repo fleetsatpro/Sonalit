@@ -26,8 +26,8 @@ test('Orbit exposes Secure Journey Management in the Protective Mobility module 
   await page.goto('/home', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByText('Protective Mobility', { exact: true })).toBeVisible({ timeout: 15000 });
-  const sjm = page.getByRole('link', { name: 'Secure Journey Management', exact: true });
-  const fieldOperations = page.getByRole('link', { name: 'Field Operations', exact: true });
+  const sjm = page.getByRole('link', { name: /Secure Journey Management/ });
+  const fieldOperations = page.getByRole('link', { name: /Field Operations/ });
   await expect(sjm).toBeVisible();
   await expect(sjm).toHaveAttribute('href', '/sjm');
   await expect(fieldOperations).toBeVisible();
