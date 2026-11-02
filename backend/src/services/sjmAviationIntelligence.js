@@ -782,7 +782,7 @@ async function loadFlyItalyAdsbArea({airport,env=process.env,fetcher=global.fetc
     }catch{
       return unavailable('shared_product_quota_store_unavailable');
     }
-    const keys=flyItalySharedKeys(icao,now);
+    const keys=flyItalySharedKeys(areaId,now);
     try{
       const shared=await readFlyItalySharedCache(redis,keys.cache,localKey,now);
       if(shared)return refreshCachedAircraftArea(shared,now,{maxAgeSeconds:FLYITALYADSB_MAX_POSITION_AGE_SECONDS,liveSeconds:15,delayedSeconds:45});
