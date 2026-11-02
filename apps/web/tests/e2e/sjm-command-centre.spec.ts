@@ -609,9 +609,14 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
 
+    const travelShortcut = page.getByRole('button', { name: 'Open travel dossier' });
+    await expect(travelShortcut).toBeVisible();
+    await travelShortcut.click();
     const travelTab = page.getByRole('tab', { name: 'Travel dossier' });
     await expect(travelTab).toBeVisible();
-    await travelTab.click();
+    await expect(travelTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('sjm-command-grid')).toHaveClass(/sjm-command-grid--focused/);
+    await expect(page.locator('aside.sjm-journey-ops-rail')).toBeHidden();
 
     const workspace = page.getByTestId('sjm-travel-workspace');
     await expect(workspace).toBeVisible();
