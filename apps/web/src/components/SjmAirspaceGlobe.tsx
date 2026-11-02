@@ -158,10 +158,13 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
           const point=widget.camera.pickEllipsoid(event.position,widget.scene.globe.ellipsoid);
           if(Cesium.defined(point)){
             const cartographic=Cesium.Cartographic.fromCartesian(point);
-            onSelectAreaCentre?.({
+            const centre={
               latitude:Cesium.Math.toDegrees(cartographic.latitude),
               longitude:Cesium.Math.toDegrees(cartographic.longitude),
-            });
+            };
+            cameraModeRef.current='regional';
+            setCameraMode('regional');
+            onSelectAreaCentre?.(centre);
           }
         }
         widget.scene.requestRender();
