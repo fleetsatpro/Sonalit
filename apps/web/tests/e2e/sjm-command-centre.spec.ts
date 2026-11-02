@@ -670,6 +670,37 @@ test.describe('SJM command-centre responsive smoke', () => {
     }
   });
 
+  test('focused travel dossier uses two task columns on desktop and stacks cleanly on mobile', async ({ page }, testInfo: TestInfo) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+
+    for (const viewport of [
+      { width: 390, height: 844, columns: 1, label: 'mobile' },
+      { width: 1440, height: 900, columns: 2, label: 'desktop' },
+    ]) {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Open travel dossier' }).click();
+
+      const workspace = page.getByTestId('sjm-travel-workspace');
+      await expect(workspace).toBeVisible();
+      const taskGrid = workspace.getByTestId('sjm-travel-people-flights');
+      const columns = await taskGrid.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+      expect(columns, viewport.label + ': traveller and flight work areas').toBe(viewport.columns);
+
+      const dimensions = await workspace.evaluate(element => ({ width: element.clientWidth, scrollWidth: element.scrollWidth }));
+      expect(dimensions.scrollWidth, viewport.label + ': travel dossier must not overflow horizontally').toBeLessThanOrEqual(dimensions.width);
+
+      if (viewport.label === 'desktop') {
+        await testInfo.attach('sjm-desktop-focused-dossier', {
+          body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
+          contentType: 'image/png',
+        });
+      }
+    }
+  });
+
   test('unified operations timeline keeps record types and evidence classes separate', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
