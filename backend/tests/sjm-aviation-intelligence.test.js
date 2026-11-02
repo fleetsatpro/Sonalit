@@ -480,7 +480,7 @@ describe('SJM federated aviation intelligence',()=>{
         {hex:'abc123',flight:'AFR100',lat:48.86,lon:2.35,seen_pos:5},
       ]}),
     });
-    const first=await aviation.loadFlyItalyAdsbArea({airport:centre,env,fetcher,now,db,dbTx});
+    const first=await aviation.loadFlyItalyAdsbArea({airport:centre,env,fetcher,now,redisClient:null,db,dbTx});
     expect(first).toMatchObject({
       status:'AVAILABLE',record_count:1,coverage:{query_scope:'map_centred_radius'},
     });
@@ -488,7 +488,7 @@ describe('SJM federated aviation intelligence',()=>{
     expect(dbTx).toHaveBeenCalled();
     expect(rateEvents.size).toBe(1);
     aviation.resetCacheForTests();
-    const second=await aviation.loadFlyItalyAdsbArea({airport:centre,env,fetcher:jest.fn(),now:now+1_000,db,dbTx});
+    const second=await aviation.loadFlyItalyAdsbArea({airport:centre,env,fetcher:jest.fn(),now:now+1_000,redisClient:null,db,dbTx});
     expect(second).toMatchObject({status:'AVAILABLE',cache_state:'SHARED_HIT',record_count:1});
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
