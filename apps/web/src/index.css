@@ -525,3 +525,24 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   .sjm-console .sjm-overview-rail { padding: 14px; }
   .sjm-console .sjm-overview-risk-panel .sjm-risk-metrics { gap: 10px; }
 }
+
+/* Keep the selected journey's map in the mobile first screen without hiding its identity or actions. */
+@media (max-width: 640px) {
+  .sjm-console > div { row-gap: 12px; }
+  .sjm-console .sjm-page-header { padding: 12px; }
+  .sjm-console .sjm-page-header .sjm-page-intro { display: none; }
+  .sjm-console .sjm-selected-journey-header { padding: 12px; gap: 8px; }
+  .sjm-console .sjm-selected-journey-header > div:first-child > p[title] {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    overflow: hidden;
+  }
+  .sjm-console .sjm-journey-actions { gap: 6px; }
+  .sjm-console .sjm-journey-actions > button {
+    min-height: 34px !important;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .sjm-console [data-sjm-map="journey"] { height: 260px; }
+}
