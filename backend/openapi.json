@@ -7077,6 +7077,176 @@
           }
         }
       }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id_travel_workspace",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/travellers": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_travel_workspace_travellers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/travellers/{travellerId}": {
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id_travel_workspace_travellers_travellerId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/travellers/{travellerId}/documents/upload-url": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_travel_workspace_travellers_travellerId_documents_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/documents/{documentId}/renew-upload-url": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_travel_workspace_documents_documentId_renew_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/documents/{documentId}/review": {
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id_travel_workspace_documents_documentId_review",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/documents/{documentId}/archive": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_travel_workspace_documents_documentId_archive",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/flights": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_travel_workspace_flights",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/flights/{flightId}": {
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id_travel_workspace_flights_flightId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/flights/{flightId}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id_travel_workspace_flights_flightId_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/days/generate": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_travel_workspace_days_generate",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/days": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_travel_workspace_days",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/days/{dayId}": {
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id_travel_workspace_days_dayId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/days/{dayId}/items": {
+      "post": {
+        "operationId": "post_api_v1_sjm_journeys_id_travel_workspace_days_dayId_items",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/items/{itemId}": {
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id_travel_workspace_items_itemId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/items/{itemId}/execution": {
+      "patch": {
+        "operationId": "patch_api_v1_sjm_journeys_id_travel_workspace_items_itemId_execution",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/items/{itemId}/history": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id_travel_workspace_items_itemId_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

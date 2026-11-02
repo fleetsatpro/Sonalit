@@ -8,7 +8,7 @@ type LocationFix={latitude:number;longitude:number;accuracy_m:number};
 type Evidence={id:string;category:Category;file_name:string;mime_type:string;size_bytes:number;status:string;sha256?:string|null;created_at:string;location_source?:string};
 type Pending={id:string;file:File;transferred:boolean};
 const categories:Array<{value:Category;label:string}>=[
- {value:'photo',label:'Photograph'},{value:'video',label:'Video clip'},{value:'document',label:'Document'},
+ {value:'photo',label:'Photograph'},{value:'video',label:'Video clip'},
  {value:'incident_attachment',label:'Incident attachment'},{value:'check_in',label:'Check-in evidence'},{value:'handover',label:'Handover evidence'},
 ];
 const accept='image/jpeg,image/png,video/mp4,application/pdf';
@@ -113,7 +113,7 @@ export default function SjmFieldEvidenceCapture({journeyId}:{journeyId:string}){
    <div className="flex items-center gap-2"><ShieldCheck size={16} className="text-slate-300"/><h3 className="text-lg font-semibold text-white">Evidence & custody</h3></div>
    <button type="button" onClick={()=>void refresh()} disabled={loading} aria-label="Refresh evidence register" className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-xs text-slate-300 disabled:opacity-50"><RefreshCw size={13} className={loading?'animate-spin':''}/>Refresh</button>
   </div>
-  <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-400">Capture photographs, clips and documents against this mission. Files remain pending until Sonalit verifies the private stored object and records its integrity hash.</p>
+  <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-400">Capture photographs, clips and operational attachments against this mission. Traveller identity and booking documents are managed in the restricted traveller dossier. Files remain pending until Sonalit verifies the private stored object and records its integrity hash.</p>
   <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
    <div className="rounded-md border border-white/[0.07] bg-black/15 p-3"><p className="text-[10px] uppercase tracking-[.12em] text-slate-500">Verified</p><p className="mt-1 text-xl font-semibold tabular-nums text-slate-100">{verified}</p></div>
    <div className="rounded-md border border-white/[0.07] bg-black/15 p-3"><p className="text-[10px] uppercase tracking-[.12em] text-slate-500">Awaiting verification</p><p className="mt-1 text-xl font-semibold tabular-nums text-slate-100">{pendingCount}</p></div>

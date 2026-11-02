@@ -87,6 +87,14 @@ describe('SJM federated aviation intelligence',()=>{
       use_restrictions:['NOT_FOR_SAFETY_OF_LIFE','NOT_FOR_AIR_TRAFFIC_CONTROL','NOT_FOR_NAVIGATION','NOT_FOR_PERSON_TRACKING_OR_HARASSMENT'],
     });
     expect(config.baseUrl).toBe('https://api.flyitalyadsb.com/v2');
+    const aliasedKey=aviation.getFlyItalyAdsbConfig({
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
+      FlyItaly_API_KEY:'sonalit-product-key',
+    });
+    expect(aliasedKey).toMatchObject({enabled:true,reason:null});
+    expect(aliasedKey.apiKey).toBe('sonalit-product-key');
     expect(aviation.getFlyItalyAdsbConfig({
       SJM_FLYITALYADSB_ENABLED:'true',
       SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
@@ -337,6 +345,30 @@ describe('SJM federated aviation intelligence',()=>{
     expect(expired.records).toEqual([]);
   });
 
+  test('loads FlyItaly observations around a map-selected coordinate without an airport identifier',async()=>{
+    const env={
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
+      FLYITALYADSB_API_KEY:'server-only-key',
+    };
+    const centre={latitude:51.5072,longitude:-0.1276,label:'Map-selected area'};
+    const redisClient=createFakeRedis();
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:true,status:200,json:async()=>({now:now/1000,ac:[
+        {hex:'abc123',flight:'BAW100',lat:51.51,lon:-0.12,seen_pos:4,alt_geom:24000},
+      ]}),
+    });
+    const result=await aviation.loadFlyItalyAdsbArea({airport:centre,env,fetcher,now,redisClient});
+    expect(result).toMatchObject({
+      status:'AVAILABLE',record_count:1,radius_km:500,
+      coverage:{complete:false,query_scope:'map_centred_radius',centre:{icao:null,latitude:51.5072,longitude:-0.1276,label:'Map-selected area'}},
+      provenance:{provider:'flyitalyadsb',fabricated_data_used:false},
+    });
+    expect(fetcher.mock.calls[0][0]).toBe('https://api.flyitalyadsb.com/v2/lat/51.5072/lon/-0.1276/dist/500');
+    expect(fetcher.mock.calls[0][1].headers['X-Api-Key']).toBe('server-only-key');
+  });
+
   test('withholds FlyItaly aircraft when the provider snapshot clock is outside the trusted window',async()=>{
     const env={
       SJM_FLYITALYADSB_ENABLED:'true',
@@ -379,6 +411,85 @@ describe('SJM federated aviation intelligence',()=>{
     aviation.resetCacheForTests();
     const second=await aviation.loadFlyItalyAdsbArea({airport,env,fetcher:jest.fn(),now:now+1_000,redisClient});
     expect(second).toMatchObject({status:'AVAILABLE',cache_state:'SHARED_HIT'});
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  test('uses the preview Postgres store for shared FlyItaly quota, cache and lock state when Redis is disabled',async()=>{
+    const env={
+      SJM_FLYITALYADSB_ENABLED:'true',
+      SJM_FLYITALYADSB_CC_BY_SA_COMPLIANCE_CONFIRMED:'true',
+      SJM_FLYITALYADSB_INFORMATIONAL_USE_CONFIRMED:'true',
+      FlyItaly_API_KEY:'server-only-key',
+    };
+    const cache=new Map();
+    const rateEvents=new Map();
+    const storeNow=now;
+    const db=jest.fn(async(sql,params=[])=>{
+      if(sql.includes('SELECT 1 AS ok'))return {rows:[{ok:1}],rowCount:1};
+      if(sql.includes('SELECT cache_value FROM public.sjm_provider_cache')){
+        const stored=cache.get(String(params[0]));
+        return {rows:stored&&(!stored.expiresAt||stored.expiresAt>storeNow)?[{cache_value:stored.value}]:[],rowCount:stored?1:0};
+      }
+      if(sql.includes('INSERT INTO public.sjm_provider_cache')&&sql.includes('RETURNING cache_key')){
+        const key=String(params[0]),existing=cache.get(key);
+        if(existing&&(!existing.expiresAt||existing.expiresAt>storeNow))return {rows:[],rowCount:0};
+        cache.set(key,{value:String(params[1]),expiresAt:storeNow+Number(params[2])});
+        return {rows:[{cache_key:key}],rowCount:1};
+      }
+      if(sql.includes('INSERT INTO public.sjm_provider_cache')&&sql.includes('RETURNING cache_value::bigint AS value')){
+        const key=String(params[0]),existing=cache.get(key);
+        const value=existing&&(!existing.expiresAt||existing.expiresAt>storeNow)?Number(existing.value)+1:1;
+        cache.set(key,{value:String(value),expiresAt:null});
+        return {rows:[{value}],rowCount:1};
+      }
+      if(sql.includes('INSERT INTO public.sjm_provider_cache')){
+        cache.set(String(params[0]),{value:String(params[1]),expiresAt:storeNow+Number(params[2])});
+        return {rows:[],rowCount:1};
+      }
+      if(sql.includes('DELETE FROM public.sjm_provider_cache'))return {rows:[],rowCount:0};
+      if(sql.includes('UPDATE public.sjm_provider_cache'))return {rows:[],rowCount:0};
+      if(sql.includes('WITH expired AS'))return {rows:[],rowCount:0};
+      throw new Error('Unexpected Postgres store query: '+sql.slice(0,120));
+    });
+    const client={query:jest.fn(async(sql,params=[])=>{
+      if(sql.includes('pg_advisory_xact_lock'))return {rows:[],rowCount:1};
+      if(sql.includes('DELETE FROM public.sjm_provider_rate_events')){
+        const scope=String(params[0]),cutoff=Date.parse(String(params[1]));
+        const events=rateEvents.get(scope)||[];
+        rateEvents.set(scope,events.filter(event=>event.at>cutoff));
+        return {rows:[],rowCount:0};
+      }
+      if(sql.includes('SELECT COUNT(*)::int AS count FROM public.sjm_provider_rate_events')){
+        const scope=String(params[0]),cutoff=Date.parse(String(params[1]));
+        const count=(rateEvents.get(scope)||[]).filter(event=>event.at>cutoff).length;
+        return {rows:[{count}],rowCount:1};
+      }
+      if(sql.includes('INSERT INTO public.sjm_provider_rate_events')){
+        const scope=String(params[0]);
+        const events=rateEvents.get(scope)||[];
+        events.push({id:String(params[1]),at:Date.parse(String(params[2]))});
+        rateEvents.set(scope,events);
+        return {rows:[],rowCount:1};
+      }
+      throw new Error('Unexpected Postgres transaction query: '+sql.slice(0,120));
+    })};
+    const dbTx=jest.fn(asyncfn=>asyncfn(client));
+    const centre={latitude:48.8566,longitude:2.3522};
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:true,status:200,json:async()=>({now:now/1000,ac:[
+        {hex:'abc123',flight:'AFR100',lat:48.86,lon:2.35,seen_pos:5},
+      ]}),
+    });
+    const first=await aviation.loadFlyItalyAdsbArea({airport:centre,env,fetcher,now,redisClient:null,db,dbTx});
+    expect(first).toMatchObject({
+      status:'AVAILABLE',record_count:1,coverage:{query_scope:'map_centred_radius'},
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(dbTx).toHaveBeenCalled();
+    expect(rateEvents.size).toBe(1);
+    aviation.resetCacheForTests();
+    const second=await aviation.loadFlyItalyAdsbArea({airport:centre,env,fetcher:jest.fn(),now:now+1_000,redisClient:null,db,dbTx});
+    expect(second).toMatchObject({status:'AVAILABLE',cache_state:'SHARED_HIT',record_count:1});
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -484,6 +595,25 @@ describe('SJM federated aviation intelligence',()=>{
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  test('loads ADSB.lol observations around a map-selected coordinate without an airport identifier',async()=>{
+    const env={
+      SJM_ADSBLOL_ENABLED:'true',
+      SJM_ADSBLOL_ODBL_COMPLIANCE_CONFIRMED:'true',
+    };
+    const centre={latitude:35.6762,longitude:139.6503,label:'Map-selected area'};
+    const fetcher=jest.fn().mockResolvedValue({
+      ok:true,status:200,json:async()=>({ac:[
+        {hex:'abc123',flight:'ANA100',lat:35.68,lon:139.65,seen_pos:8,alt_geom:18000},
+      ]}),
+    });
+    const result=await aviation.loadAdsbLolArea({airport:centre,env,fetcher,now});
+    expect(result).toMatchObject({
+      status:'AVAILABLE',record_count:1,radius_nm:250,
+      coverage:{complete:false,query_scope:'map_centred_radius',centre:{icao:null,latitude:35.6762,longitude:139.6503,label:'Map-selected area'}},
+    });
+    expect(fetcher.mock.calls[0][0]).toBe('https://api.adsb.lol/v2/lat/35.6762/lon/139.6503/dist/250');
+  });
+
   test('keeps ADSB.lol regional queries opt-in and requires resolved airport coordinates',async()=>{
     const fetcher=jest.fn();
     const disabled=await aviation.loadAdsbLolArea({
@@ -498,7 +628,7 @@ describe('SJM federated aviation intelligence',()=>{
     });
     expect(unresolved).toMatchObject({
       status:'NOT_REQUESTED',configured:true,records:[],
-      reason:'uniquely_resolved_airport_coordinates_required',
+      reason:'valid_area_coordinates_required',
     });
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -842,8 +972,14 @@ describe('SJM federated aviation intelligence',()=>{
     });
     expect(providers.find(item=>item.id==='ourairports')).toMatchObject({status:'NOT_REQUESTED'});
     expect(providers.find(item=>item.id==='adsb_lol')).toMatchObject({
+      url:'https://adsb.lol',license_url:'https://opendatacommons.org/licenses/odbl/1-0/',
       license:'ODbL-1.0',commercial_use_permitted:true,attribution_required:true,
       service_level:'BEST_EFFORT',production_contact_recommended:true,
+    });
+    expect(providers.find(item=>item.id==='flyitalyadsb')).toMatchObject({
+      url:'https://flyitalyadsb.com/en/data/api/',
+      license_url:'https://flyitalyadsb.com/en/terms/',
+      license:'CC-BY-SA-4.0',attribution_required:true,share_alike_required:true,
     });
     expect(providers.find(item=>item.id==='adsb_lol')).not.toHaveProperty('production_approval_required');
   });

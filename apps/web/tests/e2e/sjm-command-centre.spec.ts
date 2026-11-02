@@ -3,6 +3,11 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 const JOURNEY_ID = '11111111-1111-4111-8111-111111111111';
 const CLIENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
+function travelWorkspaceRouteMatches(url: URL): boolean {
+  const path = '/api/v1/sjm/journeys/' + JOURNEY_ID + '/travel-workspace';
+  return url.pathname === path || url.pathname.startsWith(path + '/');
+}
+
 function pagedJourneyId(index: number): string {
   if (index === 0) return JOURNEY_ID;
   return '10000000-0000-4000-8000-' + String(index).padStart(12, '0');
@@ -64,7 +69,15 @@ const journey = {
       instructions: 'Synthetic fixture stop only.',
     },
   ],
-  events: [],
+  events: [
+    {
+      id: 'event-sjm-e2e-001',
+      event_type: 'operator_note',
+      summary: '[SYNTHETIC QA] Airport coordination note recorded',
+      source: 'operator',
+      created_at: '2026-10-29T09:10:00.000Z',
+    },
+  ],
   telemetry_snapshot: {
     status: 'UNAVAILABLE',
     reason: 'Synthetic E2E fixture; no operational telemetry is represented.',
@@ -170,13 +183,114 @@ async function stubSjmApi(page: Page) {
           data: {
             client_id: CLIENT_ID,
             report_timezone: 'Africa/Nairobi',
-            report_template: { title: 'SJM E2E Fixture Report', sections: ['summary', 'itinerary'] },
+            report_template: { title: 'SJM E2E Fixture Report', version: 2, sections: ['summary','itinerary','stops','route_assessment','operational_events','telemetry_snapshot','traveller_dossier','flight_segments','daily_programme','travel_readiness','document_status'] },
             daily_reports_enabled: false,
             daily_report_local_time: '18:00',
             daily_report_scheduler_available: false,
             client: { id: CLIENT_ID, name: 'SJM E2E Fixture Client' },
           },
         }),
+      });
+    }
+    if (travelWorkspaceRouteMatches(url) && route.request().method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: {
+          travellers: [{
+            id: 'traveller-sjm-e2e-001',
+            traveller_reference: 'TEST-PRINCIPAL-001',
+            traveller_type: 'principal',
+            display_name: 'Synthetic QA Principal',
+            title: 'Ms',
+            given_name: 'Synthetic',
+            family_name: 'Principal',
+            nationality: 'QA fixture',
+            date_of_birth: '1994-04-18',
+            email: 'synthetic-principal@example.invalid',
+            phone: '+254700000001',
+            emergency_contact_name: 'Synthetic QA Contact',
+            emergency_contact_phone: '+254700000002',
+          }],
+          documents: [],
+          readiness: {
+            phase: 'departure',
+            ready: false,
+            blockers: [{ code: 'documents_pending', message: 'Synthetic QA fixture: no travel documents have been submitted.' }],
+            warnings: [],
+            counts: {
+              traveller_count: 1,
+              principal_traveller_count: 1,
+              flight_segment_count: 1,
+              programme_day_count: 1,
+              timed_activity_count: 2,
+              unassigned_activity_count: 0,
+              required_programme_day_count: 1,
+              cleared_document_count: 0,
+              document_blocker_count: 0,
+              expiring_document_count: 0,
+              schedule_conflict_count: 0,
+            },
+          },
+          flights: [{
+            id: 'flight-sjm-e2e-001',
+            sequence: 1,
+            carrier: 'QA Airways',
+            flight_number: 'QA 100',
+            departure_airport: 'CDG',
+            departure_airport_name: 'Paris Charles de Gaulle',
+            departure_at: '2026-10-29T07:00:00.000Z',
+            departure_timezone: 'Europe/Paris',
+            arrival_airport: 'NBO',
+            arrival_airport_name: 'Jomo Kenyatta International',
+            arrival_at: '2026-10-29T08:30:00.000Z',
+            arrival_timezone: 'Africa/Nairobi',
+            status: 'scheduled',
+            allowed_next_statuses: ['scheduled', 'boarding', 'departed', 'delayed', 'landed', 'cancelled', 'diverted'],
+            traveller_id: 'traveller-sjm-e2e-001',
+            traveller_display_name: 'Synthetic QA Principal',
+            status_source: 'operator_entered',
+            status_observed_at: '2026-10-28T17:00:00.000Z',
+          }],
+          days: [{
+            id: 'day-sjm-e2e-001',
+            journey_date: '2026-10-29',
+            timezone: 'Africa/Nairobi',
+            day_title: 'Synthetic QA · Arrival day',
+            items: [
+              {
+                id: 'activity-sjm-e2e-001',
+                sequence: 1,
+                item_type: 'meet_and_greet',
+                title: 'Meet & greet principal traveller',
+                location_label: 'NBO Terminal 1A arrivals',
+                planned_start_at: '2026-10-29T08:35:00.000Z',
+                planned_end_at: '2026-10-29T08:55:00.000Z',
+                execution_status: 'planned',
+                actual_start_at: null,
+                actual_end_at: null,
+                traveller_display_name: 'TEST-PRINCIPAL-001',
+                responsible_name: 'Fixture CPO',
+                responsible_role: 'cpo',
+              },
+              {
+                id: 'activity-sjm-e2e-002',
+                sequence: 2,
+                item_type: 'transfer',
+                title: 'Controlled airport transfer',
+                location_label: 'Nairobi CBD',
+                planned_start_at: '2026-10-29T09:00:00.000Z',
+                planned_end_at: '2026-10-29T09:45:00.000Z',
+                execution_status: 'planned',
+                actual_start_at: null,
+                actual_end_at: null,
+                traveller_display_name: 'TEST-PRINCIPAL-001',
+                responsible_name: 'Fixture Driver',
+                responsible_role: 'driver',
+              },
+            ],
+          }],
+        } }),
       });
     }
     if (pathname === '/api/v1/sjm/journeys/' + JOURNEY_ID + '/participants') {
@@ -283,6 +397,10 @@ test.describe('SJM command-centre responsive smoke', () => {
       await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
 
       await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
+      const appClock = page.getByTestId('app-topbar-clock');
+      await expect(appClock.getByText('LOCAL TIME', { exact: true })).toBeVisible();
+      await expect(appClock.getByRole('time')).toBeVisible();
+      await expect(appClock.getByText('LIVE', { exact: true })).toHaveCount(0);
       const sjmPageHeader = page.locator('main.sjm-console header.sjm-page-header');
       await expect(sjmPageHeader.getByText('Protective Mobility', { exact: true })).toBeVisible();
       await expect(sjmPageHeader.getByText('Command desk', { exact: true })).toBeVisible();
@@ -434,7 +552,199 @@ test.describe('SJM command-centre responsive smoke', () => {
         contentType: 'image/png',
       });
 
+      // The previous component did not capture the newly integrated timeline.
+      // Exercise it with an explicitly synthetic workspace fixture at mobile
+      // and desktop widths, then attach the rendered panel for visual review.
+      if (viewport.width === 390 || viewport.width === 1440) {
+        await page.getByRole('tab', { name: 'Operations timeline' }).click();
+        const timeline = page.getByTestId('sjm-unified-timeline');
+        await expect(timeline).toBeVisible();
+        await expect(timeline.getByText('QA Airways QA 100', { exact: true })).toBeVisible({ timeout: 10000 });
+        await expect(timeline.getByText('Meet & greet principal traveller', { exact: true })).toBeVisible();
+        await expect(timeline.getByText('Controlled airport transfer', { exact: true })).toBeVisible();
+        await expect(timeline.getByText('[SYNTHETIC QA] Airport coordination note recorded', { exact: true })).toBeVisible();
+        await expect(timeline.getByText('Status source · Operator entered', { exact: true })).toBeVisible();
+        await expect(timeline.getByText('Planned activity · no execution timestamp recorded', { exact: true }).first()).toBeVisible();
+        await expect(timeline.getByText('Planned stop · no confirmation recorded', { exact: true })).toBeVisible();
+
+        const timelineEntries = timeline.locator('ol[aria-label="Chronological journey entries"] > li');
+        await expect(timelineEntries).toHaveCount(5);
+        await timeline.getByRole('button', { name: 'Travel programme' }).click();
+        await expect(timeline.locator('ol[aria-label="Chronological journey entries"] > li')).toHaveCount(2);
+        await timeline.getByRole('button', { name: 'All', exact: true }).click();
+        await expect(timelineEntries).toHaveCount(5);
+
+        const timelineDimensions = await timeline.evaluate(el => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }));
+        expect(
+          timelineDimensions.scrollWidth,
+          viewport.label + ': timeline must not introduce horizontal overflow',
+        ).toBeLessThanOrEqual(timelineDimensions.clientWidth);
+        // The timeline lives inside the console's nested scroll surface.
+        // Align its opening at the viewport top before capturing page-level
+        // screenshots; element screenshots are clipped by that scroll surface.
+        await timeline.evaluate(el => el.scrollIntoView({ block: 'start', inline: 'nearest' }));
+        await testInfo.attach(`sjm-${viewport.label}-operations-timeline-top`, {
+          body: await page.screenshot({ animations: 'disabled' }),
+          contentType: 'image/png',
+        });
+        await timelineEntries.last().scrollIntoViewIfNeeded();
+        await testInfo.attach(`sjm-${viewport.label}-operations-timeline-lower`, {
+          body: await page.screenshot({ animations: 'disabled' }),
+          contentType: 'image/png',
+        });
+      }
+
     }
+  });
+
+  test('travel dossier exposes traveller registration, private document handling, flight legs and daily execution', async ({ page }, testInfo: TestInfo) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+
+    const travelTab = page.getByRole('tab', { name: 'Travel dossier' });
+    await expect(travelTab).toBeVisible();
+    await travelTab.click();
+
+    const workspace = page.getByTestId('sjm-travel-workspace');
+    await expect(workspace).toBeVisible();
+    await expect(workspace.getByRole('heading', { name: 'People, documents & travel plan' })).toBeVisible();
+    await expect(workspace.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
+    await expect(workspace.getByText('Synthetic QA Principal', { exact: true })).toBeVisible();
+
+    const registerButton = workspace.getByRole('button', { name: 'Register traveller' }).first();
+    await expect(registerButton).toBeVisible();
+    await registerButton.click();
+    await expect(workspace.getByText('Register a traveller', { exact: true })).toBeVisible();
+    await expect(workspace.getByLabel('Given name *')).toBeVisible();
+    await registerButton.click();
+
+    await workspace.getByRole('button', { name: 'Attach document' }).click();
+    await expect(workspace.getByText('PRIVATE TRAVEL DOCUMENT', { exact: true })).toBeVisible();
+    await expect(workspace.getByText(/If private storage is not configured in this environment, upload is blocked/)).toBeVisible();
+
+    await expect(workspace.getByRole('heading', { name: 'Flight segments' })).toBeVisible();
+    await expect(workspace.getByText('QA Airways · QA 100', { exact: true })).toBeVisible();
+    await expect(workspace.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
+    await expect(workspace.getByRole('button', { name: /Synthetic QA · Arrival day/ })).toBeVisible();
+    await expect(workspace.getByRole('heading', { name: 'Synthetic QA · Arrival day' })).toBeVisible();
+    await expect(workspace.getByText('Meet & greet principal traveller', { exact: true })).toBeVisible();
+    await expect(workspace.getByText('Controlled airport transfer', { exact: true })).toBeVisible();
+
+    const dimensions = await workspace.evaluate(element => ({
+      width: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(dimensions.scrollWidth, 'travel dossier must not introduce horizontal overflow on a 390px viewport')
+      .toBeLessThanOrEqual(dimensions.width);
+
+    await workspace.evaluate(element => element.scrollIntoView({ block: 'start', inline: 'nearest' }));
+    await testInfo.attach('sjm-mobile-travel-dossier', {
+      body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
+      contentType: 'image/png',
+    });
+
+    await page.getByRole('tab', { name: 'Reports' }).click();
+    await expect(page.getByRole('heading', { name: 'Report template' })).toBeVisible();
+    await page.getByRole('button', { name: 'Configure profile' }).click();
+    for (const sectionLabel of [
+      'Traveller register',
+      'Booked flight segments',
+      'Day-by-day travel programme',
+      'Traveller and departure readiness',
+      'Aggregate travel-document status',
+    ]) {
+      await expect(page.getByLabel(sectionLabel)).toBeChecked();
+    }
+  });
+
+  test('unified operations timeline keeps record types and evidence classes separate', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/travel-workspace', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        travellers: [],
+        documents: [],
+        flights: [{
+          id: 'flight-timeline-001', sequence: 1, carrier: 'TEST AIR', flight_number: 'ZZ 100',
+          departure_airport: 'LHR', departure_airport_name: 'London Heathrow',
+          departure_at: '2026-10-31T07:00:00.000Z', departure_timezone: 'Europe/London',
+          arrival_airport: 'NBO', arrival_airport_name: 'Jomo Kenyatta International',
+          arrival_at: '2026-10-31T17:55:00.000Z', arrival_timezone: 'Africa/Nairobi',
+          status: 'scheduled', status_source: 'operator_entered', status_observed_at: '2026-10-30T12:00:00.000Z',
+        }],
+        days: [{
+          id: 'day-timeline-001', journey_date: '2026-10-31', timezone: 'Africa/Nairobi',
+          day_title: 'Arrival and reception', items: [{
+            id: 'item-timeline-001', sequence: 1, item_type: 'meet_and_greet',
+            title: 'JKIA meet-and-greet', planned_start_at: '2026-10-31T18:10:00.000Z',
+            planned_end_at: '2026-10-31T18:40:00.000Z', execution_status: 'planned',
+            location_label: 'Terminal 1A arrivals', responsible_role: 'meet_greet',
+          }],
+        }],
+        readiness: { phase: 'departure', ready: false, blockers: [], warnings: [], counts: {
+          traveller_count: 0, principal_traveller_count: 0, flight_segment_count: 1,
+          programme_day_count: 1, timed_activity_count: 1, unassigned_activity_count: 0,
+          required_programme_day_count: 1, cleared_document_count: 0, document_blocker_count: 0,
+          expiring_document_count: 0,
+        }},
+        access: { manager: true, user_id: 'user-sjm-e2e-admin', duty_roles: [] },
+        provenance: { flight_status: 'Operator-entered unless a separately identified provider observation is returned' },
+      } }),
+    }));
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID, (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        ...journey,
+        stops: [{
+          ...journey.stops[0], id: 'stop-timeline-001', sequence: 1, name: 'Terminal rendezvous',
+          stop_status: 'reached', confirmed_at: '2026-10-31T18:05:00.000Z',
+          confirmation_source: 'operator_confirmed',
+        }],
+        events: [{
+          id: 'event-timeline-001', event_type: 'field_checkin',
+          summary: 'Meet-and-greet team checked in', source: 'operator',
+          created_at: '2026-10-31T18:06:00.000Z', detail: {},
+        }],
+      } }),
+    }));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+    await page.getByRole('tab', { name: 'Operations timeline' }).click();
+
+    const timeline = page.getByTestId('sjm-unified-timeline');
+    await expect(timeline).toBeVisible();
+    await expect(timeline.getByRole('heading', { name: 'Unified journey timeline' })).toBeVisible();
+    const flightEntry = timeline.getByRole('listitem').filter({ hasText: 'TEST AIR ZZ 100' });
+    await expect(flightEntry).toHaveCount(1);
+    await expect(flightEntry.getByText(/Europe\/London/)).toBeVisible();
+    await expect(flightEntry.getByText(/End \/ arrival .*Africa\/Nairobi/)).toBeVisible();
+    await expect(timeline.getByText('JKIA meet-and-greet', { exact: true })).toBeVisible();
+    await expect(timeline.getByText(/London Heathrow · LHR departure/)).toBeVisible();
+    await expect(timeline.getByText(/Jomo Kenyatta International · NBO arrival/)).toBeVisible();
+    await expect(timeline.getByText('Status source · Operator entered', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('Stop 01 · Terminal rendezvous', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('Operator confirmed · not GPS proof', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('Meet-and-greet team checked in', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('Recorded by an authorised team member', { exact: true })).toBeVisible();
+    await expect(timeline.getByText(/No routed road geometry is stored/)).toBeVisible();
+
+    await timeline.getByRole('button', { name: 'Journey events' }).click();
+    await expect(timeline.getByText('Meet-and-greet team checked in', { exact: true })).toBeVisible();
+    await expect(timeline.getByText('TEST AIR ZZ 100', { exact: true })).toHaveCount(0);
+    await timeline.getByRole('button', { name: 'All', exact: true }).click();
+    await expect(timeline.getByText('TEST AIR ZZ 100', { exact: true })).toBeVisible();
   });
 
   test('mission resources are assigned to the journey directly', async ({ page }) => {
@@ -624,6 +934,362 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(rejectedRequests).toEqual([]);
   });
 
+  test('registers a traveller, records a flight-ready dossier and builds a dated daily programme before approval', async ({ page }, testInfo) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const workspace: {
+      travellers: Array<Record<string, unknown>>;
+      documents: Array<Record<string, unknown>>;
+      flights: Array<Record<string, unknown>>;
+      days: Array<Record<string, unknown>>;
+      access: { manager: boolean; duty_roles: string[] };
+      provenance: Record<string, string>;
+      readiness: {
+        phase: string; ready: boolean;
+        blockers: Array<{ code: string; message: string; missing_dates?: string[] }>;
+        warnings: Array<{ code: string; message: string }>;
+        counts: Record<string, number>;
+      };
+    } = {
+      travellers: [], documents: [], flights: [], days: [],
+      access: { manager: true, duty_roles: [] },
+      provenance: {},
+      readiness: {
+        phase: 'departure', ready: false,
+        blockers: [{ code: 'principal_traveller_missing', message: 'Register one principal traveller before route approval or departure release.' }],
+        warnings: [],
+        counts: { traveller_count: 0, principal_traveller_count: 0, flight_segment_count: 0, programme_day_count: 0, timed_activity_count: 0, unassigned_activity_count: 0, required_programme_day_count: 3, cleared_document_count: 0, document_blocker_count: 0, expiring_document_count: 0 },
+      },
+    };
+    const travellerId = '30000000-0000-4000-8000-000000000001';
+    const dayId = '30000000-0000-4000-8000-000000000002';
+    const itemId = '30000000-0000-4000-8000-000000000003';
+    const flightId = '30000000-0000-4000-8000-000000000004';
+    const documentId = '30000000-0000-4000-8000-000000000005';
+    const uploadedDocumentId = '30000000-0000-4000-8000-000000000009';
+    const uploadedEvidenceId = '30000000-0000-4000-8000-00000000000a';
+    const passportPdf = Buffer.from('%PDF-1.7\n% SJM browser upload fixture\n');
+
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/participants', async route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ data: [{ user_id: 'user-sjm-e2e-driver', duty_role: 'driver', user_name: 'Fixture Driver', is_primary: true, removed_at: null, account_status: 'active' }] }),
+    }));
+    await page.route(travelWorkspaceRouteMatches, async route => {
+      const method = route.request().method();
+      if (method === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: workspace }) });
+      }
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      if (method === 'POST' && route.request().url().endsWith('/travellers')) {
+        const traveller = {
+          id: travellerId, ...body,
+          display_name: [body.title, body.given_name, body.middle_name, body.family_name].filter(Boolean).join(' '),
+        };
+        workspace.travellers.push(traveller);
+        workspace.readiness.counts.traveller_count = 1;
+        workspace.readiness.counts.principal_traveller_count = 1;
+        workspace.readiness.blockers = [{ code: 'airport_flight_details_incomplete', message: 'Every registered traveller on an airport movement needs a non-cancelled flight segment, or a shared segment covering the party.' }];
+        workspace.documents.push({
+          id: documentId, traveller_id: travellerId, document_type: 'passport',
+          holder_name: 'Amina Example', review_status: 'REJECTED', review_note: 'Old scan',
+          evidence_id: '30000000-0000-4000-8000-000000000006',
+          file_name: 'superseded-passport.pdf', mime_type: 'application/pdf', size_bytes: 12000,
+          expiry_state: 'current', expiry_date: '2030-01-01',
+        });
+        workspace.readiness.counts.document_blocker_count = 1;
+        workspace.readiness.warnings = [];
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: traveller }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/travellers/' + travellerId + '/documents/upload-url')) {
+        const document = {
+          id: uploadedDocumentId, traveller_id: travellerId, document_type: body.document_type,
+          holder_name: body.holder_name, issuing_country: body.issuing_country,
+          issue_date: body.issue_date, expiry_date: body.expiry_date,
+          review_status: 'PENDING_REVIEW', review_note: null, evidence_id: uploadedEvidenceId,
+          file_name: body.file_name, mime_type: body.mime_type, size_bytes: body.size_bytes,
+          expiry_state: 'current',
+        };
+        workspace.documents.push(document);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: {
+          id: uploadedDocumentId, review_status: 'UPLOAD_PENDING', evidence_id: uploadedEvidenceId,
+          upload_url: 'https://test-account.r2.cloudflarestorage.com/sjm-private-bucket/' + uploadedEvidenceId + '.pdf',
+          required_headers: {
+            'Content-Type': 'application/pdf', 'If-None-Match': '*',
+            'x-amz-meta-evidence-id': uploadedEvidenceId, 'x-amz-meta-journey-id': JOURNEY_ID,
+          },
+        } }) });
+      }
+      if (method === 'PATCH' && route.request().url().endsWith('/documents/' + uploadedDocumentId + '/review')) {
+        const document = workspace.documents.find(value => value.id === uploadedDocumentId);
+        if (!document) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'travel_document_not_found' }) });
+        Object.assign(document, body, { review_status: body.review_status, review_note: body.review_note });
+        workspace.readiness.counts.cleared_document_count = body.review_status === 'VERIFIED' ? 1 : 0;
+        workspace.readiness.counts.document_blocker_count = body.review_status === 'VERIFIED' ? 0 : 1;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: document }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/documents/' + documentId + '/archive')) {
+        workspace.documents = workspace.documents.filter(document => document.id !== documentId);
+        workspace.readiness.counts.document_blocker_count = 0;
+        workspace.readiness.warnings = [{ code: 'no_travel_documents_recorded', message: 'No travel documents are registered. Confirm route-specific travel document requirements before departure.' }];
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: documentId, archived: true, evidence_object_retained: true } }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/flights')) {
+        const flight = { id: flightId, sequence: 1, status: 'scheduled', allowed_next_statuses: ['scheduled','boarding','departed','delayed','cancelled','diverted'], status_source: 'operator_entered', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
+        workspace.flights.push(flight);
+        workspace.readiness.counts.flight_segment_count = workspace.flights.length;
+        workspace.readiness.blockers = [{ code: 'daily_programme_incomplete', message: 'Every local calendar day between planned departure and arrival needs a programme day with at least one timed activity.', missing_dates: ['2026-10-31','2026-11-01','2026-11-02'] }];
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: flight }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/days/generate')) {
+        const schedule = [
+          { id: dayId, journey_date: '2026-10-31', timezone: 'Africa/Nairobi', day_title: 'Day 1 · Arrival and reception', items: [] },
+          { id: '30000000-0000-4000-8000-000000000007', journey_date: '2026-11-01', timezone: 'Africa/Nairobi', day_title: 'Day 2 · Executive programme', items: [] },
+          { id: '30000000-0000-4000-8000-000000000008', journey_date: '2026-11-02', timezone: 'Africa/Nairobi', day_title: 'Day 3 · Departure', items: [] },
+        ];
+        workspace.days.push(...schedule);
+        workspace.readiness.counts.programme_day_count = schedule.length;
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: { created_count: 3, existing_count: 0, total_days: 3, days: schedule.map(({ id, journey_date }) => ({ id, journey_date })) } }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/days')) {
+        const day = { id: dayId, ...body, timezone: 'Africa/Nairobi', items: [] };
+        workspace.days.push(day);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: day }) });
+      }
+      if (method === 'PATCH' && route.request().url().endsWith('/days/' + dayId)) {
+        const day = workspace.days.find(value => value.id === dayId);
+        if (!day) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'itinerary_day_not_found' }) });
+        Object.assign(day, body);
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: day }) });
+      }
+      if (method === 'POST' && route.request().url().endsWith('/items')) {
+        const day = workspace.days[0] as { items: Array<Record<string, unknown>> };
+        const item = { id: itemId, sequence: 1, execution_status: 'planned', traveller_display_name: body.traveller_id ? 'Amina Example' : null, ...body };
+        day.items.push(item);
+        workspace.readiness.counts.timed_activity_count += 1;
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: item }) });
+      }
+      if (method === 'PATCH' && route.request().url().endsWith('/execution')) {
+        const item = (workspace.days[0] as { items: Array<Record<string, unknown>> }).items[0];
+        Object.assign(item, body);
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: item }) });
+      }
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected_travel_workspace_request' }) });
+    });
+
+    await page.route('https://test-account.r2.cloudflarestorage.com/**', async route => {
+      const request = route.request();
+      const origin = request.headers().origin || 'http://localhost';
+      const corsHeaders = {
+        'access-control-allow-origin': origin,
+        'access-control-allow-methods': 'PUT, OPTIONS',
+        'access-control-allow-headers': request.headers()['access-control-request-headers'] || 'content-type,if-none-match,x-amz-meta-evidence-id,x-amz-meta-journey-id',
+        'access-control-max-age': '300',
+        vary: 'Origin',
+      };
+      if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: corsHeaders });
+      if (request.method() !== 'PUT') return route.fulfill({ status: 405, headers: corsHeaders });
+      expect(request.headers()['content-type']).toBe('application/pdf');
+      expect(request.headers()['if-none-match']).toBe('*');
+      expect(request.headers()['x-amz-meta-evidence-id']).toBe(uploadedEvidenceId);
+      expect(request.headers()['x-amz-meta-journey-id']).toBe(JOURNEY_ID);
+      expect(request.postDataBuffer()).toEqual(passportPdf);
+      return route.fulfill({ status: 200, headers: { ...corsHeaders, etag: '"sjm-e2e-upload"' } });
+    });
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID + '/evidence/' + uploadedEvidenceId + '/commit', async route => {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+        id: uploadedEvidenceId, status: 'VERIFIED', sha256: 'e2e-integrity-fixture',
+      } }) });
+    });
+
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+    await page.getByRole('tab', { name: 'Travel dossier' }).click();
+    await expect(page.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Flight segments' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
+    await expect(page.getByTestId('sjm-travel-readiness')).toBeVisible();
+    await expect(page.getByText('Register one principal traveller before route approval or departure release.', { exact: true })).toBeVisible();
+    await expect(page.getByText('No readiness evidence has been recorded for this journey.', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Register traveller' }).click();
+    await page.getByLabel('Traveller reference *').fill('TRV-E2E-01');
+    await page.getByLabel('Given name *').fill('Amina');
+    await page.getByLabel('Family name *').fill('Example');
+    await page.getByLabel('Nationality').fill('Kenyan');
+    await page.getByLabel('Email').fill('amina@example.invalid');
+    await page.getByRole('button', { name: 'Register traveller' }).last().click();
+    await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
+    await expect(page.getByText('Traveller profile registered to this journey.')).toBeVisible();
+    await expect(page.getByText('Passport · superseded-passport.pdf')).toBeVisible();
+    await page.getByRole('button', { name: 'Archive / supersede record' }).click();
+    await page.getByLabel('Archive / supersession reason').fill('Obsolete scan replaced by the current verified passport copy.');
+    await page.getByRole('button', { name: 'Confirm archive' }).click();
+    await expect(page.getByText('Document record archived. The underlying evidence object has been retained under the SJM evidence-retention controls.')).toBeVisible();
+    await expect(page.getByText('Passport · superseded-passport.pdf')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Attach document' }).click();
+    await expect(page.getByText('PRIVATE TRAVEL DOCUMENT')).toBeVisible();
+    const documentInput = page.locator('input[type="file"][accept="application/pdf,image/jpeg,image/png"]');
+    await expect(documentInput).toBeVisible();
+    await documentInput.setInputFiles({ name: 'current-passport.pdf', mimeType: 'application/pdf', buffer: passportPdf });
+    await expect(page.getByText('Document stored privately and integrity-checked. It is now awaiting an authorised review.')).toBeVisible();
+    await expect(page.getByText('Passport · current-passport.pdf')).toBeVisible();
+    await page.getByLabel('Review rationale').fill('Passport holder and validity dates cross-checked against the traveller record.');
+    await page.getByRole('button', { name: 'Verify document' }).click();
+    await expect(page.getByText('Travel document review decision recorded.')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Add flight' }).click();
+    await page.getByLabel('Traveller').selectOption(travellerId);
+    await page.getByLabel('Airline / carrier *').fill('Kenya Airways');
+    await page.getByLabel('Flight number *').fill('KQ 100');
+    await page.getByLabel('Booking reference').fill('ABC123');
+    await page.getByLabel('Departure airport code *', { exact: true }).fill('NBO');
+    await page.getByLabel('Departure airport name', { exact: true }).fill('Jomo Kenyatta International Airport');
+    await page.getByLabel('Departure local time *').fill('2026-11-01T10:00');
+    await page.getByLabel('Departure IANA time zone *', { exact: true }).fill('Africa/Nairobi');
+    await page.getByTestId('sjm-travel-workspace').getByLabel('Departure terminal', { exact: true }).fill('1A');
+    await page.getByTestId('sjm-travel-workspace').getByLabel('Departure gate', { exact: true }).fill('12');
+    await page.getByLabel('Arrival airport code *', { exact: true }).fill('CDG');
+    await page.getByLabel('Arrival airport name', { exact: true }).fill('Paris Charles de Gaulle');
+    await page.getByLabel('Arrival local time *').fill('2026-11-01T16:00');
+    await page.getByLabel('Arrival IANA time zone *', { exact: true }).fill('Europe/Paris');
+    await page.getByRole('button', { name: 'Add flight segment' }).click();
+    await expect(page.getByText('Kenya Airways · KQ 100', { exact: true })).toBeVisible();
+    await expect(page.getByText('Traveller · Amina Example')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Generate scheduled days' }).click();
+    await expect(page.getByText('3 daily programme day(s) generated; 0 already existed. No activities or assignments were fabricated.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Day 1 · Arrival and reception' })).toBeVisible();
+    await expect(page.getByText('Day 2 · Executive programme')).toBeVisible();
+    await expect(page.getByText('Day 3 · Departure')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Edit day brief' }).click();
+    await page.getByLabel('IANA timezone for activity times').fill('Europe/Paris');
+    await page.getByRole('button', { name: 'Save day brief' }).click();
+    await expect(page.getByText('2026-10-31 · Europe/Paris')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Add activity' }).click();
+    await page.getByLabel('Activity title *').fill('Airport meet and greet');
+    await page.getByLabel(/Planned start/).fill('2026-10-31T10:00');
+    await page.getByLabel(/Planned end/).fill('2026-10-31T11:00');
+    await page.getByLabel('Location / venue').fill('Jomo Kenyatta International Airport');
+    await page.getByLabel('Traveller').selectOption(travellerId);
+    await page.getByLabel('Latitude').fill('-1.3192');
+    await page.getByLabel('Longitude').fill('36.9278');
+    await page.getByLabel('Responsible team member').selectOption('user-sjm-e2e-driver');
+    await page.getByLabel('Activity instructions').fill('Receive traveller at the agreed arrival point and coordinate handover.');
+    await expect(page.getByLabel('Responsible team member')).toHaveValue('user-sjm-e2e-driver');
+    await page.getByRole('button', { name: 'Add activity to day' }).click();
+    await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
+    await expect(page.getByText('For traveller · Amina Example')).toBeVisible();
+    await expect(page.getByText(/-1\.31920, 36\.92780/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Edit day brief' }).click();
+    await expect(page.getByLabel('IANA timezone for activity times')).toBeDisabled();
+    await page.getByRole('button', { name: 'Cancel edit' }).click();
+
+    // A requested journey is still in the planning phase. Execution controls
+    // must remain unavailable until the route has been approved and released.
+    await expect(page.getByLabel('Execution note')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
+
+    // Capture viewport-sized evidence at each major workflow section. Element-level
+    // screenshots expand scroll containers and can produce misleading blank regions.
+    const attachViewportAt = async (name: string, target: ReturnType<Page['getByRole']> | ReturnType<Page['getByTestId']>) => {
+      await target.evaluate(element => element.scrollIntoView({ block: 'start', inline: 'nearest' }));
+      await testInfo.attach(name, {
+        body: await page.screenshot({ animations: 'disabled', fullPage: false }),
+        contentType: 'image/png',
+      });
+    };
+    await attachViewportAt('sjm-travel-dossier-mobile-travellers', page.getByRole('heading', { name: 'Traveller register' }));
+    await attachViewportAt('sjm-travel-dossier-mobile-flights', page.getByRole('heading', { name: 'Flight segments' }));
+    await attachViewportAt('sjm-travel-dossier-mobile-programme', page.getByRole('heading', { name: 'Daily travel programme & execution' }));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await attachViewportAt('sjm-travel-dossier-desktop', page.getByTestId('sjm-travel-workspace'));
+  });
+
+  test('records daily activity execution only after the journey has been released', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const activity: Record<string, unknown> = {
+      id: '40000000-0000-4000-8000-000000000001',
+      sequence: 1,
+      item_type: 'meet_and_greet',
+      title: 'Airport meet and greet',
+      description: 'Receive the traveller at the agreed arrival point.',
+      location_label: 'Jomo Kenyatta International Airport',
+      planned_start_at: '2026-10-31T07:00:00.000Z',
+      planned_end_at: '2026-10-31T08:00:00.000Z',
+      responsible_user_id: 'user-sjm-e2e-admin',
+      responsible_role: 'dispatcher',
+      execution_status: 'planned',
+      actual_start_at: null,
+      actual_end_at: null,
+      execution_note: null,
+    };
+    const workspace = {
+      travellers: [{ id: '40000000-0000-4000-8000-000000000002', traveller_reference: 'TRV-EXEC-01', traveller_type: 'principal', display_name: 'Amina Example' }],
+      documents: [], flights: [],
+      days: [{
+        id: '40000000-0000-4000-8000-000000000003',
+        journey_date: '2026-10-31', timezone: 'Africa/Nairobi',
+        day_title: 'Arrival and reception', briefing: null, operational_notes: null,
+        items: [activity],
+      }],
+      readiness: {
+        phase: 'departure', ready: true, blockers: [], warnings: [],
+        counts: {
+          traveller_count: 1, principal_traveller_count: 1, flight_segment_count: 0,
+          programme_day_count: 1, timed_activity_count: 1, unassigned_activity_count: 0,
+          required_programme_day_count: 1, cleared_document_count: 0,
+          document_blocker_count: 0, expiring_document_count: 0,
+        },
+      },
+      access: { manager: true, user_id: 'user-sjm-e2e-admin', duty_roles: [] },
+      provenance: {},
+    };
+
+    await page.route('**/api/v1/sjm/journeys/' + JOURNEY_ID, async route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ data: { ...journey, status: 'in_progress', approved_at: '2026-10-31T06:00:00.000Z', started_at: '2026-10-31T06:30:00.000Z' } }),
+    }));
+    await page.route(travelWorkspaceRouteMatches, async route => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: workspace }) });
+      }
+      if (route.request().method() === 'PATCH' && route.request().url().endsWith('/execution')) {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        Object.assign(activity, body);
+        if (body.execution_status === 'in_progress') activity.actual_start_at = '2026-10-31T07:02:00.000Z';
+        if (body.execution_status === 'completed') activity.actual_end_at = '2026-10-31T07:54:00.000Z';
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: activity }) });
+      }
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected_travel_workspace_request' }) });
+    });
+
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+    await page.getByRole('tab', { name: 'Travel dossier' }).click();
+    await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Execution note')).toBeVisible();
+
+    await page.getByLabel('Execution note').fill('Assigned dispatcher confirmed the arrival team is at the agreed reception point.');
+    await page.getByRole('button', { name: 'Start' }).click();
+    await expect(page.getByText('Execution update recorded in the activity history.')).toBeVisible();
+    await expect(page.getByTestId('sjm-travel-workspace').getByText('In progress', { exact: true })).toBeVisible();
+
+    await page.getByLabel('Execution note').fill('Traveller received and identity matched against the approved movement brief.');
+    await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    await expect(page.getByText('Execution update recorded in the activity history.')).toBeVisible();
+    await expect(page.getByTestId('sjm-travel-workspace').getByText('Completed', { exact: true })).toBeVisible();
+    await expect(page.getByText(/resolved/)).toBeVisible();
+  });
+
   test('workspace tabs remain operable and preserve evidence provenance on a narrow viewport', async ({ page }) => {
     const cspRuntimeErrors: string[] = [];
     page.on('pageerror', (error) => {
@@ -654,7 +1320,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText('OpenSky state vectors', { exact: true })).toBeVisible();
     await expect(page.getByText('ADSB.lol regional records', { exact: true })).toBeVisible();
     const adsbAttribution = page.locator('p').filter({ hasText: 'Source: ADSB.lol · ODbL 1.0.' });
-    await expect(adsbAttribution).toContainText('Commercial use is permitted');
+    await expect(adsbAttribution).toContainText('educational aircraft-awareness source');
     await expect(adsbAttribution).toContainText('public API is best-effort');
     await expect(page.getByText('No aircraft are simulated.')).toBeVisible();
     expect(cspRuntimeErrors).toEqual([]);

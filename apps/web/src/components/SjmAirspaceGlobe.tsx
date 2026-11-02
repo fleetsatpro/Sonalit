@@ -21,6 +21,7 @@ type Props = {
   regionalRadiusNm?:number;
   airportCentre?:{latitude:number;longitude:number}|null;
   airportLabel?:string|null;
+  onSelectAreaCentre?:(centre:{latitude:number;longitude:number})=>void;
 };
 
 type ProviderFilter='all'|'opensky_rest'|'adsb_lol'|'flyitalyadsb';
@@ -83,7 +84,7 @@ function aircraftFocusView(item:SjmAirspaceAircraft):Cesium.CameraFlyToOptions {
   };
 }
 
-export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds,pollIntervalSeconds=null,regionalStatus='NOT_CONFIGURED',flyItalyStatus='NOT_CONFIGURED',regionalRadiusNm=250,airportCentre=null,airportLabel=null}:Props) {
+export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositionAt,bounds,pollIntervalSeconds=null,regionalStatus='NOT_CONFIGURED',flyItalyStatus='NOT_CONFIGURED',regionalRadiusNm=250,airportCentre=null,airportLabel=null,onSelectAreaCentre}:Props) {
   const containerRef=useRef<HTMLDivElement>(null);
   const widgetRef=useRef<Cesium.CesiumWidget|null>(null);
   const entityRef=useRef<Map<string,Cesium.Entity>>(new Map());
@@ -150,7 +151,22 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         const picked=widget.scene.pick(event.position);
         const entity=Cesium.defined(picked)?picked.id as Cesium.Entity:undefined;
         const key=entity&&typeof entity.id==='string'?entity.id.replace(/^sjm-aircraft:/,''):null;
-        setSelected(key&&entityRef.current.has(key)?key:null);
+        if(key&&entityRef.current.has(key)){
+          setSelected(key);
+        }else{
+          setSelected(null);
+          const point=widget.camera.pickEllipsoid(event.position,widget.scene.globe.ellipsoid);
+          if(Cesium.defined(point)){
+            const cartographic=Cesium.Cartographic.fromCartesian(point);
+            const centre={
+              latitude:Cesium.Math.toDegrees(cartographic.latitude),
+              longitude:Cesium.Math.toDegrees(cartographic.longitude),
+            };
+            cameraModeRef.current='regional';
+            setCameraMode('regional');
+            onSelectAreaCentre?.(centre);
+          }
+        }
         widget.scene.requestRender();
       },Cesium.ScreenSpaceEventType.LEFT_CLICK);
       widgetRef.current=widget;
@@ -167,7 +183,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       if(widget&&!widget.isDestroyed())widget.destroy();
       widgetRef.current=null;
     };
-  },[]);
+  },[onSelectAreaCentre]);
 
   useEffect(()=>{
     if(cameraModeRef.current!=='regional')return;
@@ -303,12 +319,13 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         <span>{configured&&pollIntervalSeconds?pollIntervalSeconds+'s snapshots':'OpenSky polling off'}</span>
       </div>
     </div>
+    <p className="border-b border-white/[0.06] bg-[#0a1119] px-3 py-2 text-[10px] leading-5 text-slate-500 sm:px-4">Select an aircraft to inspect it. Click an unoccupied point on the globe to load an independent regional snapshot around that location; this is worldwide area selection, not a complete whole-world feed.</p>
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="relative min-w-0 border-b border-white/[0.07] xl:border-b-0 xl:border-r">
         {initFailed
           ?<div role="status" className="grid min-h-[420px] place-items-center p-6 text-center"><div><p className="text-sm font-semibold text-slate-200">3D renderer unavailable</p><p className="mt-1 max-w-md text-xs leading-5 text-slate-400">The airspace scene could not be initialised in this browser. Aircraft data remains available in the observation index where supplied.</p></div></div>
           :<div className="relative">
-            <div ref={containerRef} role="application" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" data-testid="sjm-airspace-globe" data-basemap-provider={AIRSPACE_IMAGERY.provider} data-basemap-fallback-reason={AIRSPACE_IMAGERY.fallbackReason||undefined} data-camera-mode={cameraMode} data-regional-centre-latitude={(airportCentre?.latitude??DEFAULT_AIRSPACE_CENTRE.latitude).toFixed(4)} data-regional-centre-longitude={(airportCentre?.longitude??DEFAULT_AIRSPACE_CENTRE.longitude).toFixed(4)} data-regional-camera-height-m={REGIONAL_AIRSPACE_HEIGHT_M} data-regional-radius-nm={regionalRadiusNm} className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>
+            <div ref={containerRef} role="application" aria-label="Three-dimensional airspace globe showing provider-observed aircraft positions" aria-description="Select an aircraft to inspect it, or click an unoccupied point on the globe to query current regional aircraft observations around that location." data-testid="sjm-airspace-globe" data-basemap-provider={AIRSPACE_IMAGERY.provider} data-basemap-fallback-reason={AIRSPACE_IMAGERY.fallbackReason||undefined} data-camera-mode={cameraMode} data-regional-centre-latitude={(airportCentre?.latitude??DEFAULT_AIRSPACE_CENTRE.latitude).toFixed(4)} data-regional-centre-longitude={(airportCentre?.longitude??DEFAULT_AIRSPACE_CENTRE.longitude).toFixed(4)} data-regional-camera-height-m={REGIONAL_AIRSPACE_HEIGHT_M} data-regional-radius-nm={regionalRadiusNm} className="h-[420px] w-full sm:h-[560px] xl:h-[650px]"/>
             <div role="group" aria-label="Airspace camera mode" className="absolute left-3 top-3 z-10 flex overflow-hidden rounded-md border border-white/15 bg-[#07101b]/90 shadow-lg backdrop-blur">
               <button type="button" onClick={()=>flyToCameraMode('orbital')} aria-label="Orbital 3D view" aria-pressed={cameraMode==='orbital'} className={'px-3 py-2 font-mono text-[10px] font-semibold tracking-[.08em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300 '+(cameraMode==='orbital'?'bg-emerald-300/15 text-emerald-100':'text-slate-300 hover:bg-white/10')}>ORBIT</button>
               <button type="button" onClick={()=>flyToCameraMode('regional')} aria-label="Regional map view" aria-pressed={cameraMode==='regional'} className={'border-l border-white/10 px-3 py-2 font-mono text-[10px] font-semibold tracking-[.08em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300 '+(cameraMode==='regional'?'bg-emerald-300/15 text-emerald-100':'text-slate-300 hover:bg-white/10')}>REGION</button>

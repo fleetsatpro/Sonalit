@@ -5,7 +5,7 @@ jest.mock('../src/realtime/centrifugo', () => ({ removeChannelHistory: jest.fn()
 const { removeChannelHistory, unsubscribeUserFromChannel } = require('../src/realtime/centrifugo');
 const sjmRouter = require('../src/routes/secureJourneyManagement');
 const { authenticate } = require('../src/middleware/auth');
-const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, revisionAcknowledgementError, enabledReportSections, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
+const { validCoordinate, validateStop, validateJourney, validateServiceDetails, dutyEventAllowed, isMobilityManager, canAccessJourney, canAccessReport, lifecycleAuthorityError, isInternalOperationalEvent, isClientSafeEvent, classificationForGenericEvent, eventVisibleToDuty, journeyForViewer, journeyForDutyViewer, approvalGate, dateInTimezone, validDateOnly, csvCell, toCsv, lifecycleTransition, dailyReportSchedulerAvailable, mutateWithEvent, recordRouteAssessmentFailure, freshnessFor, latestObservedAt, telemetryFor, readinessChecklist, travelReadinessChecklist, changeEventsFor, managementSummaryCounts, lockJourneyForMobility, lockJourneyForMobilityRead, readLockedAssignmentRows, routeAssessmentUsable, syncJourneyCommsChannel, REPORT_TYPES, REPORT_TITLES, eventsForReport, planRequestPolicyError, revisionAcknowledgementError, enabledReportSections, normaliseReportTemplate, TRAVEL_DOSSIER_SECTIONS, reportFocusSections, journeyRegisterFilterSql, journeyRegisterOrderSql, sameRouteReviewSnapshot } = sjmRouter.__test;
 const { configuredOrgIds, shouldGenerateForToday } = require('../src/services/sjmDailyReportScheduler');
 describe('SJM validation and evidence boundaries', () => {
   test('redacts private principal and meet-and-greet details from unassigned viewers', () => {
@@ -488,6 +488,23 @@ describe('SJM validation and evidence boundaries', () => {
     expect(REPORT_TITLES.sitrep).toMatch(/Situation Report/);
     expect(REPORT_TITLES.management_summary).toMatch(/Portfolio Summary/);
   });
+  test('upgrades legacy client report templates while preserving explicit version-two exclusions', () => {
+    const legacy = normaliseReportTemplate({
+      title: 'Existing client report',
+      sections: ['summary', 'itinerary', 'stops', 'summary'],
+    });
+    expect(legacy.version).toBe(2);
+    expect(legacy.title).toBe('Existing client report');
+    expect(legacy.sections).toEqual(['summary', 'itinerary', 'stops', ...TRAVEL_DOSSIER_SECTIONS]);
+
+    const intentionallyLimited = normaliseReportTemplate({ version: 2, sections: ['summary'] });
+    expect(intentionallyLimited.sections).toEqual(['summary']);
+
+    const intentionallyEmpty = normaliseReportTemplate({ version: 2, sections: [] });
+    expect(intentionallyEmpty.sections).toEqual([]);
+    expect(normaliseReportTemplate({ sections: [] }).sections).toEqual([]);
+  });
+
   test('rejects impossible calendar dates', () => {
     expect(validDateOnly('2026-10-27')).toBe(true);
     expect(validDateOnly('2026-02-31')).toBe(false);
@@ -555,6 +572,27 @@ describe('SJM validation and evidence boundaries', () => {
       devices:[]
     });
   });
+
+  test('reports schedule integrity in the duty readiness checklist without exposing activity identities', () => {
+    const journey={service_type:'executive_transfer'};
+    const clear=travelReadinessChecklist(journey,{blockers:[],counts:{schedule_conflict_count:0}});
+    expect(clear.find(item=>item.item==='Programme schedule integrity')).toMatchObject({
+      status:'CLEAR',
+      detail:'No exact overlapping traveller or named-operator activity intervals were found.',
+    });
+    const blocked=travelReadinessChecklist(journey,{
+      blockers:[{code:'programme_schedule_conflict',message:'Resolve overlapping planned activities.',conflict_count:2}],
+      counts:{schedule_conflict_count:2},
+    });
+    const row=blocked.find(item=>item.item==='Programme schedule integrity');
+    expect(row.status).toBe('BLOCKED');
+    expect(row.detail).toContain('2 overlapping');
+    expect(JSON.stringify(row)).not.toContain('traveller-uuid');
+    expect(JSON.stringify(row)).not.toContain('operator-uuid');
+    const unavailable=travelReadinessChecklist(journey,{blockers:[],counts:{}});
+    expect(unavailable.find(item=>item.item==='Programme schedule integrity').status).toBe('UNAVAILABLE');
+  });
+
   test('reports unknown pre-trip evidence as pending/unavailable rather than verified', () => {
     const checklist=readinessChecklist({status:'requested',approved_at:null,departure_readiness_acknowledgement:null},[],null,{status:'UNAVAILABLE',reason:'No devices assigned.'});
     expect(checklist.find(x=>x.item==='Stored Route Safety assessment').status).toBe('UNAVAILABLE');
@@ -667,6 +705,152 @@ describe('SJM validation and evidence boundaries', () => {
     expect(enabledReportSections({enabled_sections:['summary','unknown','summary']})).toEqual(['summary']);
     expect(enabledReportSections({enabled_sections:[]})).toEqual([]);
   });
+
+  test('pre-trip PDF readiness includes programme schedule integrity in its stored checklist and readable section', () => {
+    const report={
+      report_type:'pre_trip_brief',
+      client_profile:{enabled_sections:['travel_readiness']},
+      pre_trip_readiness:[{
+        item:'Programme schedule integrity',status:'BLOCKED',
+        detail:'2 overlapping traveller or named-operator activity pair(s) must be resolved before approval or departure.',
+      }],
+      travel_readiness:{
+        ready:false,
+        blockers:[{code:'programme_schedule_conflict',message:'Resolve overlapping planned activities.',conflict_count:2}],
+        warnings:[],
+        counts:{traveller_count:1,flight_segment_count:0,programme_day_count:1,timed_activity_count:2,schedule_conflict_count:2},
+      },
+    };
+    const sections=reportFocusSections(report);
+    expect(sections[0].body).toContain('Programme schedule integrity: BLOCKED');
+    const travelSection=sections.find(section=>section.title==='Traveller dossier and release readiness');
+    expect(travelSection.body).toContain('Schedule conflicts: 2');
+    expect(travelSection.body).toContain('Resolve overlapping planned activities.');
+    expect(JSON.stringify(sections)).not.toContain('traveller-uuid');
+    expect(JSON.stringify(sections)).not.toContain('operator-uuid');
+  });
+
+  test('itinerary reports include the full travel programme while excluding private dossier fields', () => {
+    const report = {
+      report_type: 'itinerary',
+      report_title: 'Journey Itinerary',
+      report_date: '2026-10-31',
+      timezone: 'Africa/Nairobi',
+      client_profile: {
+        enabled_sections: ['summary','traveller_dossier','flight_segments','daily_programme','travel_readiness','document_status'],
+      },
+      journey: { id: 'journey-qa', reference: 'SJM-QA-FOUR-DAY', title: 'Synthetic four-day itinerary', status: 'requested' },
+      travellers: [{
+        traveller_reference: 'TRV-QA-001',
+        traveller_type: 'principal',
+        display_name: 'Synthetic QA Principal',
+        date_of_birth: 'PRIVATE_DOB_MUST_NOT_EXPORT',
+        email: 'PRIVATE_EMAIL_MUST_NOT_EXPORT@example.invalid',
+        internal_notes: 'PRIVATE_TRAVELLER_NOTES_MUST_NOT_EXPORT',
+      }],
+      flight_segments: [{
+        sequence: 1,
+        carrier: 'QA Airways',
+        flight_number: 'QA 100',
+        traveller_reference: 'TRV-QA-001',
+        traveller_display_name: 'Synthetic QA Principal',
+        departure_airport: 'CDG',
+        arrival_airport: 'NBO',
+        departure_at: '2026-10-31T07:00:00.000Z',
+        departure_timezone: 'Europe/Paris',
+        arrival_at: '2026-10-31T08:30:00.000Z',
+        arrival_timezone: 'Africa/Nairobi',
+        status: 'scheduled',
+        status_source: 'operator_entered',
+        booking_reference: 'PRIVATE_BOOKING_REFERENCE_MUST_NOT_EXPORT',
+        status_note: 'PRIVATE_FLIGHT_NOTE_MUST_NOT_EXPORT',
+      }],
+      daily_programme: [
+        { journey_date: '2026-10-31', timezone: 'Africa/Nairobi', day_title: 'Day 1 · Arrival', items: [{
+          sequence: 1, title: 'Airport reception', item_type: 'meet_and_greet',
+          planned_start_at: '2026-10-31T09:00:00.000Z', planned_end_at: '2026-10-31T09:30:00.000Z',
+          execution_status: 'planned', traveller_reference: 'TRV-QA-001', traveller_display_name: 'Synthetic QA Principal', responsible_role: 'meet_greet',
+          location_label: 'NBO arrivals', description: 'PRIVATE_ACTIVITY_INSTRUCTIONS_MUST_NOT_EXPORT',
+          execution_note: 'PRIVATE_EXECUTION_NOTE_MUST_NOT_EXPORT', location_lat: -1.3192, location_lng: 36.9278,
+        }] },
+        { journey_date: '2026-11-01', timezone: 'Africa/Nairobi', day_title: 'Day 2 · Engagements', items: [{
+          sequence: 1, title: 'Planned engagement window', item_type: 'event',
+          planned_start_at: '2026-11-01T10:00:00.000Z', planned_end_at: '2026-11-01T12:00:00.000Z',
+          execution_status: 'planned', responsible_role: 'cpo', location_label: 'Venue not yet confirmed',
+        }] },
+        { journey_date: '2026-11-02', timezone: 'Africa/Nairobi', day_title: 'Day 3 · Programme', items: [{
+          sequence: 1, title: 'Programme activity', item_type: 'event',
+          planned_start_at: '2026-11-02T10:00:00.000Z', planned_end_at: '2026-11-02T12:00:00.000Z',
+          execution_status: 'planned',
+        }] },
+        { journey_date: '2026-11-03', timezone: 'Africa/Nairobi', day_title: 'Day 4 · Departure preparation', items: [] },
+      ],
+      travel_readiness: {
+        ready: false,
+        blockers: [{ code: 'programme_schedule_conflict', message: 'Resolve overlapping planned activities.', conflict_count: 0 }],
+        warnings: [],
+        counts: { traveller_count: 1, flight_segment_count: 1, programme_day_count: 4, timed_activity_count: 4, schedule_conflict_count: 0 },
+      },
+      travel_document_status: {
+        uploaded_count: 0, verified_count: 0, pending_review_count: 0, rejected_count: 0, expired_count: 0,
+      },
+    };
+
+    const sections = reportFocusSections(report);
+    const rendered = JSON.stringify(sections);
+    expect(rendered).toContain('TRV-QA-001');
+    expect(rendered).toContain('Synthetic QA Principal');
+    expect(rendered).toContain('QA Airways');
+    expect(rendered).toContain('QA 100');
+    for (const day of ['Day 1 · Arrival', 'Day 2 · Engagements', 'Day 3 · Programme', 'Day 4 · Departure preparation']) {
+      expect(rendered).toContain(day);
+    }
+    expect(rendered).toContain('Airport reception');
+    expect(rendered).toContain('Departure preparation');
+    for (const privateMarker of [
+      'PRIVATE_DOB_MUST_NOT_EXPORT',
+      'PRIVATE_EMAIL_MUST_NOT_EXPORT',
+      'PRIVATE_TRAVELLER_NOTES_MUST_NOT_EXPORT',
+      'PRIVATE_BOOKING_REFERENCE_MUST_NOT_EXPORT',
+      'PRIVATE_FLIGHT_NOTE_MUST_NOT_EXPORT',
+      'PRIVATE_ACTIVITY_INSTRUCTIONS_MUST_NOT_EXPORT',
+      'PRIVATE_EXECUTION_NOTE_MUST_NOT_EXPORT',
+    ]) expect(rendered).not.toContain(privateMarker);
+
+    const dailyReport = JSON.stringify(reportFocusSections({ ...report, report_type: 'daily' }));
+    expect(dailyReport).toContain('Airport reception');
+    expect(dailyReport).toContain('Day 1 · Arrival');
+    expect(dailyReport).not.toContain('Day 2 · Engagements');
+    expect(dailyReport).not.toContain('Day 3 · Programme');
+    expect(dailyReport).not.toContain('Day 4 · Departure preparation');
+
+    const noDossierNames = JSON.stringify(reportFocusSections({
+      ...report,
+      client_profile: { enabled_sections: ['flight_segments','daily_programme'] },
+    }));
+    expect(noDossierNames).not.toContain('Synthetic QA Principal');
+
+    const csv = toCsv(report);
+    expect(csv).toContain('Synthetic QA Principal');
+    expect(csv).toContain('QA Airways');
+    expect(csv).toContain('Day 4 · Departure preparation');
+    expect(csv).toContain('NO_ACTIVITIES');
+    const dailyCsv = toCsv({ ...report, report_type: 'daily' });
+    expect(dailyCsv).toContain('Day 1 · Arrival');
+    expect(dailyCsv).not.toContain('Day 2 · Engagements');
+    expect(dailyCsv).not.toContain('Day 3 · Programme');
+    expect(dailyCsv).not.toContain('Day 4 · Departure preparation');
+    for (const privateMarker of [
+      'PRIVATE_DOB_MUST_NOT_EXPORT',
+      'PRIVATE_EMAIL_MUST_NOT_EXPORT',
+      'PRIVATE_TRAVELLER_NOTES_MUST_NOT_EXPORT',
+      'PRIVATE_BOOKING_REFERENCE_MUST_NOT_EXPORT',
+      'PRIVATE_FLIGHT_NOTE_MUST_NOT_EXPORT',
+      'PRIVATE_ACTIVITY_INSTRUCTIONS_MUST_NOT_EXPORT',
+      'PRIVATE_EXECUTION_NOTE_MUST_NOT_EXPORT',
+    ]) expect(csv).not.toContain(privateMarker);
+  });
+
   test('report CSV respects client section policy for optional stop, event and telemetry evidence', () => {
     const csv=toCsv({
       report_type:'daily',report_title:'Daily Travel Report',report_date:'2026-10-27',generated_at:'2026-10-27T15:00:00Z',

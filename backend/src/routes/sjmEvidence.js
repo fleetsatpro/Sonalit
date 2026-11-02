@@ -29,12 +29,28 @@ function isManager(user) {
   return !!user && MANAGERS.has(String(user.role || '').toLowerCase());
 }
 
+function canViewEvidence(user, evidence) {
+  return evidence?.access_classification !== 'HIGHLY_SENSITIVE' || isManager(user);
+}
+
 function canAccessJourney(user, roles) {
   return isManager(user) || (Array.isArray(roles) && roles.length > 0);
 }
 
 function canUploadEvidence(user, roles) {
   return isManager(user) || (Array.isArray(roles) && roles.some(role => UPLOAD_ROLES.has(role)));
+}
+
+// The generic evidence register is visible to active mission participants.
+// Keep its document category manager-only and highly sensitive; traveller
+// identity documents belong in the dedicated travel-dossier workflow.
+function canUploadEvidenceCategory(user, roles, category) {
+  if (category === 'document') return isManager(user);
+  return canUploadEvidence(user, roles);
+}
+
+function evidenceAccessClassification(category) {
+  return category === 'document' ? 'HIGHLY_SENSITIVE' : 'INTERNAL_OPERATIONS';
 }
 
 function normalizeUploadInput(body) {
@@ -156,8 +172,9 @@ router.get('/', asyncHandler(async (req, res) => {
       'e.uploaded_at,e.verified_at,u.name AS captured_by_name ' +
       'FROM sjm_evidence e LEFT JOIN users u ON u.id=e.created_by AND u.org_id=e.org_id AND u.deleted_at IS NULL ' +
       'WHERE e.org_id=$1 AND e.journey_id=$2 AND e.deleted_at IS NULL ' +
+      'AND ($3::boolean OR e.access_classification<>' + "'HIGHLY_SENSITIVE'" + ') ' +
       'ORDER BY e.created_at DESC,e.id DESC LIMIT 200',
-      [req.user.org_id, journeyId],
+      [req.user.org_id, journeyId, isManager(req.user)],
     );
     return { data: result.rows };
   });
@@ -185,7 +202,7 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
       const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
       if (access.error) return access;
       if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
-      if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
+      if (!canUploadEvidenceCategory(req.user, access.roles, value.category)) return { error: 'evidence_not_uploadable' };
 
       const signed = await storage.createUploadUrl({
         key: storageKey,
@@ -198,12 +215,12 @@ router.post('/upload-url', asyncHandler(async (req, res) => {
         '(id,org_id,journey_id,category,file_name,mime_type,size_bytes,storage_key,status,' +
         'captured_at,capture_time_quality,location_lat,location_lng,location_accuracy_m,' +
         'location_source,access_classification,created_by,device_id) ' +
-        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'UPLOAD_PENDING',$9,$10,$11,$12,$13,$14,'INTERNAL_OPERATIONS',$15,$16)",
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'UPLOAD_PENDING',$9,$10,$11,$12,$13,$14,$15,$16,$17)",
         [
           evidenceId, req.user.org_id, journeyId, value.category, value.fileName,
           value.mimeType, value.sizeBytes, storageKey, value.capturedAt,
           value.captureTimeQuality, value.location.lat, value.location.lng,
-          value.location.accuracyM, value.location.source, req.user.id, value.deviceId,
+          value.location.accuracyM, value.location.source, evidenceAccessClassification(value.category), req.user.id, value.deviceId,
         ],
       );
       await db(
@@ -243,12 +260,13 @@ router.post('/:evidenceId/renew-upload-url', asyncHandler(async (req, res) => {
       if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
       if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
       const selected = await db(
-        'SELECT id,storage_key,mime_type,status FROM sjm_evidence ' +
+        'SELECT id,storage_key,mime_type,status,category,access_classification FROM sjm_evidence ' +
         'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
         [evidenceId, req.user.org_id, journeyId],
       );
       const evidence = selected.rows[0];
-      if (!evidence) return { error: 'evidence_not_found' };
+      if (!evidence || !canViewEvidence(req.user, evidence)) return { error: 'evidence_not_found' };
+      if (!canUploadEvidenceCategory(req.user, access.roles, evidence.category)) return { error: 'evidence_not_uploadable' };
       if (evidence.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
       const signed = await storage.createUploadUrl({
         key: evidence.storage_key, mimeType: evidence.mime_type, evidenceId, journeyId,
@@ -280,15 +298,15 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
     const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
     if (access.error) return access;
     const result = await db(
-      'SELECT id,status,storage_key,mime_type,size_bytes,category,file_name,created_by,sha256 ' +
+      'SELECT id,status,storage_key,mime_type,size_bytes,category,file_name,created_by,sha256,access_classification ' +
       'FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
       [evidenceId, req.user.org_id, journeyId],
     );
     const evidence = result.rows[0];
-    if (!evidence) return { error: 'evidence_not_found' };
+    if (!evidence || !canViewEvidence(req.user, evidence)) return { error: 'evidence_not_found' };
     if (evidence.status === 'VERIFIED') return { verified: evidence };
     if (evidence.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
-    if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
+    if (!canUploadEvidenceCategory(req.user, access.roles, evidence.category)) return { error: 'evidence_not_uploadable' };
     return { evidence };
   });
   if (accessError(res, initial)) return;
@@ -312,12 +330,13 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
         const db = (sql, params) => client.query(sql, params);
         const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
         if (access.error) return access;
-        if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
         const current = await db(
-          'SELECT id,status FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 FOR UPDATE',
+          'SELECT id,status,category,access_classification FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 FOR UPDATE',
           [evidenceId, req.user.org_id, journeyId],
         );
-        if (current.rows[0]?.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
+        if (!current.rows[0] || !canViewEvidence(req.user, current.rows[0])) return { error: 'evidence_not_found' };
+        if (!canUploadEvidenceCategory(req.user, access.roles, current.rows[0].category)) return { error: 'evidence_not_uploadable' };
+        if (current.rows[0].status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
         await db(
           "UPDATE sjm_evidence SET status='REJECTED',updated_at=NOW() WHERE id=$1 AND org_id=$2",
           [evidenceId, req.user.org_id],
@@ -343,14 +362,14 @@ router.post('/:evidenceId/commit', asyncHandler(async (req, res) => {
     const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user, 'FOR UPDATE');
     if (access.error) return access;
     if (TERMINAL.has(String(access.journey.status))) return { error: 'journey_terminal' };
-    if (!canUploadEvidence(req.user, access.roles)) return { error: 'evidence_not_uploadable' };
     const current = await db(
-      'SELECT id,status,sha256 FROM sjm_evidence ' +
+      'SELECT id,status,sha256,category,access_classification FROM sjm_evidence ' +
       'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR UPDATE',
       [evidenceId, req.user.org_id, journeyId],
     );
     const row = current.rows[0];
-    if (!row) return { error: 'evidence_not_found' };
+    if (!row || !canViewEvidence(req.user, row)) return { error: 'evidence_not_found' };
+    if (!canUploadEvidenceCategory(req.user, access.roles, row.category)) return { error: 'evidence_not_uploadable' };
     if (row.status === 'VERIFIED') return { data: row, already_verified: true };
     if (row.status !== 'UPLOAD_PENDING') return { error: 'evidence_not_verified' };
     const updated = await db(
@@ -383,12 +402,14 @@ router.post('/:evidenceId/download-url', asyncHandler(async (req, res) => {
     const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user);
     if (access.error) return access;
     const result = await db(
-      'SELECT id,storage_key,mime_type,file_name,status FROM sjm_evidence ' +
+      'SELECT id,storage_key,mime_type,file_name,status,access_classification FROM sjm_evidence ' +
       'WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL LIMIT 1',
       [evidenceId, req.user.org_id, journeyId],
     );
     const evidence = result.rows[0];
     if (!evidence) return { error: 'evidence_not_found' };
+    // Travel identity documents are never exposed to field-duty accounts.
+    if (!canViewEvidence(req.user, evidence)) return { error: 'evidence_not_found' };
     if (evidence.status !== 'VERIFIED') return { error: 'evidence_not_verified' };
     return { evidence };
   });
@@ -413,10 +434,10 @@ router.post('/:evidenceId/download-url', asyncHandler(async (req, res) => {
     const access = await lockJourneyAndRoles(db, req.user.org_id, journeyId, req.user);
     if (access.error) return access;
     const current = await db(
-      'SELECT id,status FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR SHARE',
+      'SELECT id,status,access_classification FROM sjm_evidence WHERE id=$1 AND org_id=$2 AND journey_id=$3 AND deleted_at IS NULL FOR SHARE',
       [evidenceId, req.user.org_id, journeyId],
     );
-    if (!current.rows.length) return { error: 'evidence_not_found' };
+    if (!current.rows.length || !canViewEvidence(req.user, current.rows[0])) return { error: 'evidence_not_found' };
     if (current.rows[0].status !== 'VERIFIED') return { error: 'evidence_not_verified' };
     await db(
       'INSERT INTO sjm_evidence_events (org_id,journey_id,evidence_id,actor_id,action,detail) ' +
@@ -434,6 +455,9 @@ module.exports = router;
 module.exports.__test = {
   normalizeUploadInput,
   canUploadEvidence,
+  canUploadEvidenceCategory,
+  evidenceAccessClassification,
+  canViewEvidence,
   CATEGORY_MIME_TYPES,
   MAX_BYTES,
 };
