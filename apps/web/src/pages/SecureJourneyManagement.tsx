@@ -671,7 +671,7 @@ return (
     </header>
 
     {hasRegisterContract&&Number(stats?.departures_due_30m||0)>0&&<div role="status" className="border-l-2 border-amber-300/70 bg-amber-300/[0.035] px-3 py-2.5 text-[11px] leading-5 text-amber-100/90"><span className="font-semibold tabular-nums">{stats?.departures_due_30m}</span> scheduled departures are due within the next 30 minutes. Confirm readiness before recording release; this count reflects planned times, not live dispatch telemetry.</div>}
-    <section data-testid="sjm-command-grid" className="sjm-command-grid grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(270px,310px)_minmax(0,1fr)_minmax(270px,330px)]">
+    <section data-testid="sjm-command-grid" className={'sjm-command-grid grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(270px,310px)_minmax(0,1fr)_minmax(270px,330px)]'+(journey&&workspaceTab!=='overview'?' sjm-command-grid--focused':'')}>
      <Panel className="order-2 overflow-hidden xl:order-1">
       <div className="border-b border-white/[0.075] p-4">
        <div className="flex items-center justify-between gap-2"><div><Kicker>Register</Kicker><h2 className="mt-1 text-base font-semibold tracking-tight text-white">Journey register</h2></div><span className="font-mono text-[11px] text-slate-400">{registerQ.isError&&!registerQ.data?"Unavailable":registerQ.data?.pagination?registerQ.data.pagination.total_count.toLocaleString()+" matches":registerQ.data?journeys.length+" loaded":"—"}</span></div>
@@ -702,11 +702,11 @@ return (
        <Panel className="overflow-hidden">
         <div className="sjm-selected-journey-header flex flex-col gap-3 border-b border-white/[0.07] p-4 sm:p-5 xl:flex-row xl:items-start xl:justify-between">
          <div className="min-w-0 xl:flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[11px] font-semibold tracking-[.13em] text-emerald-200">{journey.reference}</span><StatusBadge value={journey.status}/><span className="rounded-md border border-white/[0.07] px-2 py-1 font-mono text-[11px]  tracking-[.12em] text-slate-500">{journey.transport_mode.replaceAll('_',' ')}</span></div><h2 id="sjm-selected-mission-title" tabIndex={-1} className="mt-2 text-xl font-semibold leading-tight tracking-tight text-white outline-none sm:text-2xl">{journey.title}</h2><p title={journey.purpose} className="mt-1.5 max-w-3xl line-clamp-2 text-xs leading-5 text-slate-400">{journey.purpose}</p></div>
-         <div className="sjm-journey-actions flex flex-wrap items-center gap-2 xl:justify-end"><Gate value={assess?.safety_gate}/><Btn onClick={()=>openMissionComms.mutate()} disabled={openMissionComms.isPending}><MessagesSquare size={12}/>{openMissionComms.isPending?'Opening secure channel…':'Open secure channel'}</Btn>{isSupervisor&&['requested','planning'].includes(journey.status)&&<Btn onClick={startEdit} disabled={detailQ.isLoading||updateJourney.isPending||!detailQ.data?.data}><Pencil size={12}/>Edit journey</Btn>}<Btn onClick={()=>void refresh()} disabled={detailQ.isFetching}><RefreshCw size={12} className={detailQ.isFetching?'animate-spin':''}/>Refresh journey</Btn></div>
+         <div className="sjm-journey-actions flex flex-wrap items-center gap-2 xl:justify-end"><Gate value={assess?.safety_gate}/><Btn tone="green" onClick={()=>setWorkspaceTab('travel')}><Users size={12}/>Open travel dossier</Btn><Btn onClick={()=>openMissionComms.mutate()} disabled={openMissionComms.isPending}><MessagesSquare size={12}/>{openMissionComms.isPending?'Opening secure channel…':'Open secure channel'}</Btn>{isSupervisor&&['requested','planning'].includes(journey.status)&&<Btn onClick={startEdit} disabled={detailQ.isLoading||updateJourney.isPending||!detailQ.data?.data}><Pencil size={12}/>Edit journey</Btn>}<Btn onClick={()=>void refresh()} disabled={detailQ.isFetching}><RefreshCw size={12} className={detailQ.isFetching?'animate-spin':''}/>Refresh journey</Btn></div>
         </div>
         {openMissionComms.isError&&<p role="alert" className="border-b border-amber-300/15 bg-amber-300/[0.025] px-4 py-2 text-[11px] leading-5 text-amber-100">{errorText(openMissionComms.error,'The secure channel could not be opened.')}</p>}
-        <div className="p-2 sm:p-3"><JourneyMap journey={journey} stops={stops} geometry={geometry} assessment={assess} telemetry={journey.telemetry_snapshot}/></div>
-        {hasServiceBrief&&<section aria-label="Service brief" data-testid="sjm-service-brief" className="border-t border-white/[0.07] bg-[#0c141d] px-4 py-3.5 sm:px-5">
+        {(workspaceTab==='overview'||workspaceTab==='itinerary')&&<div className="p-2 sm:p-3"><JourneyMap journey={journey} stops={stops} geometry={geometry} assessment={assess} telemetry={journey.telemetry_snapshot}/></div>}
+        {workspaceTab==='overview'&&hasServiceBrief&&<section aria-label="Service brief" data-testid="sjm-service-brief" className="border-t border-white/[0.07] bg-[#0c141d] px-4 py-3.5 sm:px-5">
          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-[11px] font-semibold uppercase tracking-[.13em] text-slate-300">Service brief</h3>
           <span className="text-[11px] font-medium text-slate-400">{serviceTypeLabel(journey.service_type)}</span>
@@ -732,17 +732,17 @@ return (
          </dl>
          {journey.meet_greet_instructions?.trim()&&<div className="mt-3 border-l-2 border-emerald-300/30 pl-3"><p className="text-[11px] font-semibold tracking-[.04em] text-slate-400">Team instructions</p><p title={journey.meet_greet_instructions} className="mt-1 line-clamp-2 text-xs leading-5 text-slate-300">{journey.meet_greet_instructions}</p></div>}
         </section>}
-        <div className="grid grid-cols-2 border-t border-white/[0.07] bg-black/15 md:grid-cols-4">
+        {workspaceTab==='overview'&&<div className="grid grid-cols-2 border-t border-white/[0.07] bg-black/15 md:grid-cols-4">
          {[
           {label:'Planned distance',value:journey.planned_distance_km==null?'Not assessed':Number(journey.planned_distance_km).toLocaleString(undefined,{maximumFractionDigits:1})+' km'},
           {label:'Route duration',value:journey.planned_duration_minutes==null?'Not assessed':Math.floor(journey.planned_duration_minutes/60)+'h '+(journey.planned_duration_minutes%60)+'m'},
           {label:'Stops',value:String(stops.length)+' stops · '+String(stops.filter(s=>s.stop_status==='reached').length)+' reached'},
           {label:'Movement window',value:journey.planned_departure_at?dateText(journey.planned_departure_at):'Not scheduled'}
          ].map((item,i)=><div key={item.label} className={'min-w-0 p-3 sm:p-3.5 '+(i%2===1?'md:border-l md:border-white/[0.05]':'')+(i<2?' border-b border-white/[0.05] md:border-b-0':'')}><p className="text-[11px] font-medium  tracking-[.13em] text-slate-600">{item.label}</p><p className="mt-1.5 truncate text-[12px] font-semibold text-slate-200">{item.value}</p></div>)}
-        </div>
+        </div>}
        </Panel>
 
-               <section aria-label="Lifecycle milestones" data-testid="sjm-journey-progress" className="rounded-lg border border-[#263442] bg-[#101720] px-4 py-4 sm:px-5">
+               {workspaceTab==='overview'&&<section aria-label="Lifecycle milestones" data-testid="sjm-journey-progress" className="rounded-lg border border-[#263442] bg-[#101720] px-4 py-4 sm:px-5">
          <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="text-xs font-semibold text-slate-200">Lifecycle milestones</h3>
           <span className="text-xs font-medium tabular-nums text-slate-400">{['cancelled','aborted'].includes(journey.status)?META[journey.status].label:journey.status==='closed'?'Complete':`Stage ${Math.min(lifecycleCheckpointIndex(journey.status,journey)+1,8)} of 8`}</span>
@@ -750,11 +750,11 @@ return (
          <ol aria-label="Journey stages" className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 xl:grid-cols-8">
           {['Request','Route','Review','Approval','Readiness','Movement','Arrival','Closeout'].map((label,i)=>{const idx=lifecycleCheckpointIndex(journey.status,journey);const completed=journey.status==='closed'||idx>i;const terminal=['cancelled','aborted'].includes(journey.status);const current=idx===i&&!terminal&&journey.status!=='closed';const attention=current&&['paused','exception','on_hold'].includes(journey.status);const labelState=completed?'completed':attention?'needs attention':current?'current':'upcoming';return <li key={label} aria-label={'Overview '+label+' '+labelState} aria-current={current?'step':undefined} className="min-w-0"><div className="flex min-w-0 items-center gap-1.5"><span className={'grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[10px] font-semibold '+(completed?'border-emerald-300/35 bg-emerald-300/[0.10] text-emerald-200':attention?'border-amber-300/35 bg-amber-300/[0.08] text-amber-100':current?'border-slate-300/35 bg-white/[0.07] text-slate-100':'border-white/[0.12] text-slate-500')}>{completed?<Check size={11}/>:String(i+1).padStart(2,'0')}</span><span title={label} className={'truncate text-xs '+(completed?'text-slate-200':attention?'text-amber-100':current?'font-semibold text-white':'text-slate-400')}>{label}</span></div><div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.06]"><span className={'block h-full rounded-full '+(completed?'bg-emerald-300':attention?'bg-amber-300':current?'bg-slate-300':'bg-transparent')} /></div></li>})}
          </ol>
-        </section>
+        </section>}
 <Panel className="overflow-hidden">
         <div className="border-b border-white/[0.07] px-4 pt-4 sm:px-5">
          <div className="flex flex-wrap items-center justify-between gap-3"><div><Kicker>Selected journey</Kicker><h3 className="mt-1 text-sm font-semibold text-white">Journey workspace</h3></div><span className="font-mono text-[11px] text-slate-600">{events.length} loaded events · {stops.length} stops</span></div>
-         <div className="mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="Journey workspace views">
+         <div className="sjm-workspace-tabs mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="Journey workspace views">
           {[
            {value:'overview',label:'Overview',Icon:Activity},
            {value:'travel',label:'Travel dossier',Icon:Users},
@@ -765,7 +765,7 @@ return (
            {value:'resources',label:'Team & resources',Icon:Users},
            {value:'airspace',label:'Airspace 3D',Icon:Plane},
            {value:'reports',label:'Reports',Icon:FileText}
-          ].map(({value,label,Icon})=><button type="button" role="tab" aria-selected={workspaceTab===value} key={value} onClick={()=>setWorkspaceTab(value as typeof workspaceTab)} className={'inline-flex shrink-0 items-center gap-2 rounded-t-md border-b-2 px-3 py-3 text-xs font-semibold transition '+(workspaceTab===value?'border-emerald-300 bg-emerald-300/[0.06] text-emerald-100':'border-transparent text-slate-400 hover:bg-white/[0.025] hover:text-slate-100')}><Icon size={13}/>{label}</button>)}
+          ].map(({value,label,Icon})=><button type="button" role="tab" aria-selected={workspaceTab===value} key={value} onClick={()=>setWorkspaceTab(value as typeof workspaceTab)} className={'sjm-workspace-tab inline-flex shrink-0 items-center gap-2 rounded-t-md border-b-2 px-3 py-3 text-xs font-semibold transition '+(workspaceTab===value?'border-emerald-300 bg-emerald-300/[0.06] text-emerald-100':'border-transparent text-slate-400 hover:bg-white/[0.025] hover:text-slate-100')}><Icon size={13}/>{label}</button>)}
          </div>
         </div>
         <div className="p-3 sm:p-5">
