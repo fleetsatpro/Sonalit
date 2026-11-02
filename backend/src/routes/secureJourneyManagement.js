@@ -735,14 +735,32 @@ router.get('/airspace',authorize('admin','dispatcher','operator','analyst'),asyn
   const aviation=require('../services/sjmAviationIntelligence');
   const flightNumber=String(req.query.flight_number||'').trim();
   const airportCode=String(req.query.airport_code||req.query.airport_icao||'').trim().toUpperCase();
+  const rawLatitude=req.query.lat??req.query.latitude;
+  const rawLongitude=req.query.lon??req.query.longitude;
+  const hasLatitude=rawLatitude!==undefined&&rawLatitude!==null&&String(rawLatitude).trim()!=='';
+  const hasLongitude=rawLongitude!==undefined&&rawLongitude!==null&&String(rawLongitude).trim()!=='';
   if(flightNumber.length>10||flightNumber&&!/^[A-Za-z0-9 -]+$/.test(flightNumber)){
     return res.status(400).json({error:{code:'SJM_INVALID_FLIGHT_REFERENCE',message:'Flight number must be a valid airline flight reference.'}});
   }
   if(airportCode&&(!/^[A-Z]{3,4}$/.test(airportCode))){
     return res.status(400).json({error:{code:'SJM_INVALID_AIRPORT_CODE',message:'Supply a three-letter IATA or four-letter ICAO airport code.'}});
   }
+  if(hasLatitude!==hasLongitude){
+    return res.status(400).json({error:{code:'SJM_INCOMPLETE_AIRSPACE_CENTRE',message:'Supply both latitude and longitude to query a selected map area.'}});
+  }
+  let areaCentre=null;
+  if(hasLatitude&&hasLongitude){
+    const latitude=Number(rawLatitude),longitude=Number(rawLongitude);
+    if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||latitude < -90||latitude > 90||longitude < -180||longitude > 180){
+      return res.status(400).json({error:{code:'SJM_INVALID_AIRSPACE_CENTRE',message:'Map-centre coordinates must be valid latitude and longitude values.'}});
+    }
+    areaCentre={latitude,longitude,label:'Map-selected area'};
+  }
   const baseSnapshot=await feed.getSnapshot({start:true});
-  const data=await aviation.getSnapshot({flightNumber,airportCode,baseSnapshot});
+  const data=await aviation.getSnapshot({
+    flightNumber,airportCode,areaCentre,baseSnapshot,
+    db:req.db,dbTx:req.dbTx,
+  });
   res.setHeader('Cache-Control','no-store');
   res.json({data});
 }));
