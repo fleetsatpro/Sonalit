@@ -360,6 +360,8 @@ export default function SecureJourneyManagement(){
  const [editAcknowledged,setEditAcknowledged]=useState(false);
  const [editBaseline,setEditBaseline]=useState<{journeyId:string;timezone:string;departureInput:string;departureAt:string|null;arrivalInput:string;arrivalAt:string|null}|null>(null);
  const [workspaceTab,setWorkspaceTab]=useState<'overview'|'command'|'travel'|'timeline'|'itinerary'|'evidence'|'resources'|'airspace'|'reports'>('overview');
+ const [airspaceAreaCentre,setAirspaceAreaCentre]=useState<{latitude:number;longitude:number}|null>(null);
+ useEffect(()=>setAirspaceAreaCentre(null),[selectedId]);
  const [reportType,setReportType]=useState('daily');
  const [lastGeneratedReport,setLastGeneratedReport]=useState<{id:string;report_date:string;report_type:string}|null>(null);
  const [reportDownloadError,setReportDownloadError]=useState('');
@@ -433,7 +435,9 @@ export default function SecureJourneyManagement(){
  const assetsQ=useQuery<{data:JourneyAsset[]}>({queryKey:['sjm-assets',selectedId],queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId+'/assets')).data,enabled:Boolean(selectedId)});
  const vehiclesQ=useQuery<{data:VehicleResource[]}>({queryKey:['sjm-vehicles'],queryFn:async()=>(await api.get('/sjm/vehicles')).data,enabled:isSupervisor,staleTime:60000});
  const devicesQ=useQuery<{data:DeviceResource[]}>({queryKey:['sjm-devices'],queryFn:async()=>(await api.get('/sjm/devices')).data,enabled:isSupervisor,staleTime:60000});
- const airspaceQ=useQuery<{data:AirspaceSnapshot}>({queryKey:['sjm-airspace',journey?.flight_number||'',journey?.airport_code||''],queryFn:async()=>{const params:Record<string,string>={};if(journey?.flight_number)params.flight_number=journey.flight_number;const airportCode=String(journey?.airport_code||'').trim().toUpperCase();if(/^[A-Z]{3,4}$/.test(airportCode))params.airport_code=airportCode;return (await api.get('/sjm/airspace',{params})).data;},enabled:Boolean(journey&&workspaceTab==='airspace'),refetchInterval:30000,staleTime:20000});
+ const areaQueryLatitude=airspaceAreaCentre?Number(airspaceAreaCentre.latitude.toFixed(2)):null;
+ const areaQueryLongitude=airspaceAreaCentre?Number(airspaceAreaCentre.longitude.toFixed(2)):null;
+ const airspaceQ=useQuery<{data:AirspaceSnapshot}>({queryKey:['sjm-airspace',journey?.flight_number||'',journey?.airport_code||'',areaQueryLatitude,areaQueryLongitude],queryFn:async()=>{const params:Record<string,string>={};if(journey?.flight_number)params.flight_number=journey.flight_number;const airportCode=String(journey?.airport_code||'').trim().toUpperCase();if(/^[A-Z]{3,4}$/.test(airportCode))params.airport_code=airportCode;if(areaQueryLatitude!==null&&areaQueryLongitude!==null){params.lat=String(areaQueryLatitude);params.lon=String(areaQueryLongitude);}return (await api.get('/sjm/airspace',{params})).data;},enabled:Boolean(journey&&workspaceTab==='airspace'),refetchInterval:30000,staleTime:20000});
  const mapAircraft=useMemo(()=>[...(airspaceQ.data?.data.aircraft||[]),...(airspaceQ.data?.data.intelligence?.aircraft_area?.records||[]),...(airspaceQ.data?.data.intelligence?.flyitaly_area?.records||[])],[airspaceQ.data]);
  const adsbArea=airspaceQ.data?.data.intelligence?.aircraft_area;
  const flyItalyArea=airspaceQ.data?.data.intelligence?.flyitaly_area;
@@ -465,6 +469,8 @@ export default function SecureJourneyManagement(){
   const place=String(airport.municipality||airport.name||'').trim();
   return [airport.icao,place].filter((value,index,array)=>Boolean(value)&&array.indexOf(value)===index).join(' · ')||null;
  },[airspaceQ.data?.data.intelligence?.airport_reference,airportCentre]);
+ const airspaceCentre=airspaceAreaCentre||airportCentre;
+ const airspaceCentreLabel=airspaceAreaCentre?'SELECTED MAP AREA':airportLabel||'WORLD VIEW';
  const flightCorrelation=useMemo(()=>correlateJourneyFlight({
   flightReference:journey?.flight_number,airportCode:journey?.airport_code,
   configured:airspaceQ.data?.data.configured===true||adsbArea?.configured===true||flyItalyArea?.configured===true,
