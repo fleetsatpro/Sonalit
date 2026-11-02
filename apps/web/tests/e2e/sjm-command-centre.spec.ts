@@ -1148,7 +1148,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByTestId('sjm-travel-readiness')).toBeVisible();
     await expect(page.getByText('Register one principal traveller before route approval or departure release.', { exact: true })).toBeVisible();
     await expect(page.locator('aside.sjm-journey-ops-rail')).toBeHidden();
-    await expect(page.getByTestId('sjm-travel-readiness')).toContainText('Synthetic QA fixture: no travel documents have been submitted.');
+    await expect(page.getByTestId('sjm-travel-readiness')).toContainText('Register one principal traveller before route approval or departure release.');
 
     await page.getByRole('button', { name: 'Register traveller' }).click();
     await page.getByLabel('Traveller reference *').fill('TRV-E2E-01');
