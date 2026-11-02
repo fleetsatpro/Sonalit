@@ -470,7 +470,7 @@ export default function SecureJourneyManagement(){
   return [airport.icao,place].filter((value,index,array)=>Boolean(value)&&array.indexOf(value)===index).join(' · ')||null;
  },[airspaceQ.data?.data.intelligence?.airport_reference,airportCentre]);
  const airspaceCentre=airspaceAreaCentre||airportCentre;
- const airspaceCentreLabel=airspaceAreaCentre?'SELECTED MAP AREA':airportLabel||'WORLD VIEW';
+ const airspaceCentreLabel=airspaceAreaCentre?`AREA ${airspaceAreaCentre.latitude.toFixed(2)}°, ${airspaceAreaCentre.longitude.toFixed(2)}°`:airportLabel||'WORLD VIEW';
  const flightCorrelation=useMemo(()=>correlateJourneyFlight({
   flightReference:journey?.flight_number,airportCode:journey?.airport_code,
   configured:airspaceQ.data?.data.configured===true||adsbArea?.configured===true||flyItalyArea?.configured===true,
