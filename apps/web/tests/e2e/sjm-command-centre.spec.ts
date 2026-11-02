@@ -609,9 +609,14 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
 
+    const travelShortcut = page.getByRole('button', { name: 'Open travel dossier' });
+    await expect(travelShortcut).toBeVisible();
+    await travelShortcut.click();
     const travelTab = page.getByRole('tab', { name: 'Travel dossier' });
     await expect(travelTab).toBeVisible();
-    await travelTab.click();
+    await expect(travelTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('sjm-command-grid')).toHaveClass(/sjm-command-grid--focused/);
+    await expect(page.locator('aside.sjm-journey-ops-rail')).toBeHidden();
 
     const workspace = page.getByTestId('sjm-travel-workspace');
     await expect(workspace).toBeVisible();
@@ -662,6 +667,37 @@ test.describe('SJM command-centre responsive smoke', () => {
       'Aggregate travel-document status',
     ]) {
       await expect(page.getByLabel(sectionLabel)).toBeChecked();
+    }
+  });
+
+  test('focused travel dossier uses two task columns on desktop and stacks cleanly on mobile', async ({ page }, testInfo: TestInfo) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+
+    for (const viewport of [
+      { width: 390, height: 844, columns: 1, label: 'mobile' },
+      { width: 1440, height: 900, columns: 2, label: 'desktop' },
+    ]) {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Open travel dossier' }).click();
+
+      const workspace = page.getByTestId('sjm-travel-workspace');
+      await expect(workspace).toBeVisible();
+      const taskGrid = workspace.getByTestId('sjm-travel-people-flights');
+      const columns = await taskGrid.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+      expect(columns, viewport.label + ': traveller and flight work areas').toBe(viewport.columns);
+
+      const dimensions = await workspace.evaluate(element => ({ width: element.clientWidth, scrollWidth: element.scrollWidth }));
+      expect(dimensions.scrollWidth, viewport.label + ': travel dossier must not overflow horizontally').toBeLessThanOrEqual(dimensions.width);
+
+      if (viewport.label === 'desktop') {
+        await testInfo.attach('sjm-desktop-focused-dossier', {
+          body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
+          contentType: 'image/png',
+        });
+      }
     }
   });
 
@@ -1111,7 +1147,8 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
     await expect(page.getByTestId('sjm-travel-readiness')).toBeVisible();
     await expect(page.getByText('Register one principal traveller before route approval or departure release.', { exact: true })).toBeVisible();
-    await expect(page.getByText('No readiness evidence has been recorded for this journey.', { exact: true })).toBeVisible();
+    await expect(page.locator('aside.sjm-journey-ops-rail')).toBeHidden();
+    await expect(page.getByTestId('sjm-travel-readiness')).toContainText('Register one principal traveller before route approval or departure release.');
 
     await page.getByRole('button', { name: 'Register traveller' }).click();
     await page.getByLabel('Traveller reference *').fill('TRV-E2E-01');

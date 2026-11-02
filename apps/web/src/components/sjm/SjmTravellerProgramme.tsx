@@ -506,7 +506,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
       {data.readiness.ready&&<p className="mt-3 flex items-center gap-2 text-[10px] text-emerald-100/80"><ShieldCheck size={12}/>Traveller, flight, programme and uploaded-document checks pass. {typeof data.readiness.counts.schedule_conflict_count==='number'?'No overlapping traveller, operator or flight commitments were found. ':'Schedule overlap status was not returned. '}Human approval and operational readiness acknowledgement still apply.</p>}
     </section>}
 
-    <div className="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+    <div data-testid="sjm-travel-people-flights" className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
       <section className={panel + ' overflow-hidden'}>
         <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] p-4"><div><p className="text-[10px] font-semibold tracking-[.14em] text-slate-500">01 / PEOPLE TRAVELLING</p><h4 className="mt-1 text-sm font-semibold text-white">Traveller register</h4><p className="mt-1 text-[10px] text-slate-500">Principal traveller and accompanying persons</p></div><div className="flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{travellers.length} registered</span>{canManage&&!readOnly&&<button type="button" className={buttonGreen} onClick={()=>{setShowTravellerForm(value=>!value);setEditingTravellerId('');setTravellerDraft({...EMPTY_TRAVELLER});}}><Plus size={12}/>Register traveller</button>}</div></div>
         <div className="space-y-3 p-4">
