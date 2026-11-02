@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Home, X, LayoutDashboard, ShieldAlert, Truck, Briefcase, type LucideIcon } from 'lucide-react';
+import { Home, X, LayoutDashboard, ShieldAlert, ShieldCheck, Truck, Briefcase, type LucideIcon } from 'lucide-react';
 import { NAV_GROUPS } from './Rail.js';
 import '../../styles/orbit.css';
 
@@ -9,7 +9,7 @@ import '../../styles/orbit.css';
 // open flow as the home surface, over a blurred scrim.
 
 const GROUP_COVER: Record<string, LucideIcon> = {
-  Command: LayoutDashboard, Security: ShieldAlert, Fleet: Truck, Business: Briefcase,
+  Command: LayoutDashboard, Security: ShieldAlert, 'Protective Mobility': ShieldCheck, Fleet: Truck, Business: Briefcase,
 };
 
 interface Props { open: boolean; onClose: () => void }
