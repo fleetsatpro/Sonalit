@@ -180,7 +180,7 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
       if(widget&&!widget.isDestroyed())widget.destroy();
       widgetRef.current=null;
     };
-  },[]);
+  },[onSelectAreaCentre]);
 
   useEffect(()=>{
     if(cameraModeRef.current!=='regional')return;
