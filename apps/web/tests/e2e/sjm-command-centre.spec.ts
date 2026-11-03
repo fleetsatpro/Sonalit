@@ -1656,6 +1656,13 @@ test.describe('SJM command-centre responsive smoke', () => {
 
   test('workspace tabs remain operable and preserve evidence provenance on a narrow viewport', async ({ page }) => {
     const cspRuntimeErrors: string[] = [];
+    const legacyCesiumRequests: string[] = [];
+    page.on('request', (request) => {
+      const pathname = new URL(request.url()).pathname;
+      if (/\/cesium\/(?:Cesium\.js|Widgets\/widgets\.css)$/i.test(pathname)) {
+        legacyCesiumRequests.push(pathname);
+      }
+    });
     page.on('pageerror', (error) => {
       if (/Content Security Policy|unsafe-eval|WebAssembly/i.test(error.message)) cspRuntimeErrors.push(error.message);
     });
@@ -1693,6 +1700,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(adsbAttribution).toContainText('public API is best-effort');
     await expect(page.getByText('No aircraft are simulated.')).toBeVisible();
     expect(cspRuntimeErrors).toEqual([]);
+    expect(
+      legacyCesiumRequests,
+      'SJM must not request the legacy global Cesium runtime or its shell-wide stylesheet',
+    ).toEqual([]);
   });
 
 

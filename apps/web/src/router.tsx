@@ -9,6 +9,13 @@ const authCheck=()=>{if(!getAccessToken()&&!useAuthStore.getState().user)throw r
 const authRoute=createRoute({getParentRoute:()=>rootRoute,id:'auth',beforeLoad:authCheck,component:AppShell});
 function FullscreenShell(){return <><GlobalPanicAlarm/><Outlet/></>}
 const authFullscreenRoute=createRoute({getParentRoute:()=>rootRoute,id:'auth-fullscreen',beforeLoad:authCheck,component:FullscreenShell});
+function loadCesiumRoute<T>(loadPage: () => Promise<T>) {
+  return async () => {
+    const { loadCesiumRuntime } = await import('./lib/cesiumRuntime.js');
+    await loadCesiumRuntime();
+    return loadPage();
+  };
+}
 const loginRoute=createRoute({getParentRoute:()=>rootRoute,path:'/login',component:lazyRouteComponent(()=>import('./pages/Login.js'))});
 const driverTrackRoute=createRoute({getParentRoute:()=>rootRoute,path:'/t/$token',component:lazyRouteComponent(()=>import('./pages/DriverTrack.js'))});
 const notFoundRoute=createRoute({getParentRoute:()=>rootRoute,path:'*',component:lazyRouteComponent(()=>import('./pages/NotFound.js'))});
@@ -23,7 +30,7 @@ const orbitRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/home
 const commandRoute=createRoute({getParentRoute:()=>authRoute,path:'/command',component:lazyRouteComponent(()=>import('./pages/CommandCentre.js'))});
 const fleetRoute=createRoute({getParentRoute:()=>authRoute,path:'/fleet',component:lazyRouteComponent(()=>import('./pages/Fleet.js'))});
 const gpsRoute=createRoute({getParentRoute:()=>authRoute,path:'/gps',component:lazyRouteComponent(()=>import('./pages/GPS.js'))});
-const gevRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/gev',component:lazyRouteComponent(()=>import('./pages/GodsEyeView.js'))});
+const gevRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/gev',component:lazyRouteComponent(loadCesiumRoute(()=>import('./pages/GodsEyeView.js')))});
 const weatherStudioRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/weather-studio',component:lazyRouteComponent(()=>import('./pages/WeatherStudio.js'))});
 const convoysRoute=createRoute({getParentRoute:()=>authRoute,path:'/convoys',component:lazyRouteComponent(()=>import('./pages/Convoys.js'))});
 const handoverLoginRoute=createRoute({getParentRoute:()=>rootRoute,path:'/handover/login',component:lazyRouteComponent(()=>import('./pages/HandoverLogin.js'))});
@@ -65,7 +72,7 @@ const executiveMobilityRoute=createRoute({getParentRoute:()=>rootRoute,path:'/sj
 // Preserve old XD Live Surveillance links while making protective mobility a standalone route domain.
 const legacySecureJourneyManagementRoute=createRoute({getParentRoute:()=>authRoute,path:'/corridor/journeys',beforeLoad:()=>{throw redirect({to:'/sjm',replace:true})}});
 const legacyExecutiveMobilityRoute=createRoute({getParentRoute:()=>authRoute,path:'/corridor/missions',beforeLoad:()=>{throw redirect({to:'/sjm/field',replace:true})}});
-const driveReplayRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/drive',component:lazyRouteComponent(()=>import('./pages/DriveReplay.js'))});
+const driveReplayRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/drive',component:lazyRouteComponent(loadCesiumRoute(()=>import('./pages/DriveReplay.js')))});
 const replayRoute=createRoute({getParentRoute:()=>authRoute,path:'/replay',component:lazyRouteComponent(()=>import('./pages/Replay.js'))});
 const knoxRemoteSessionRoute=createRoute({getParentRoute:()=>authRoute,path:'/guardian/devices/$deviceId/remote',component:lazyRouteComponent(()=>import('./pages/KnoxRemoteSession.js'))});
 const aiDecisionRoute=createRoute({getParentRoute:()=>authRoute,path:'/ai',component:lazyRouteComponent(()=>import('./pages/AIDecision.js'))});
