@@ -628,7 +628,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Journey register' })).toBeVisible();
-    await expect(page.getByRole('alert').filter({ hasText: 'Journey register unavailable' })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Journey register unavailable' })).toBeVisible({ timeout: 15_000 });
     const registerList = page.getByTestId('sjm-register-list');
     const registerBox = await registerList.boundingBox();
     expect(registerBox).not.toBeNull();
@@ -679,11 +679,13 @@ test.describe('SJM command-centre responsive smoke', () => {
   });
   test('retains the last successful register and KPIs after a refresh failure', async ({ page }) => {
     await seedAuth(page);
-    let failNextRefresh = false;
+    // The app retries failed queries twice. Fail the initial request and both retries
+    // so the query reaches its final error state before exercising manual recovery.
+    let failedRefreshAttempts = 0;
     await stubSjmApi(page, {
       journeyListResponse: () => {
-        if (!failNextRefresh) return null;
-        failNextRefresh = false;
+        if (failedRefreshAttempts <= 0) return null;
+        failedRefreshAttempts -= 1;
         return {
           status: 500,
           body: { error: 'internal_server_error', message: 'Internal server error' },
@@ -696,10 +698,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     const register = page.getByTestId('sjm-register-list');
     await expect(register).toContainText('SJM-E2E-001');
 
-    failNextRefresh = true;
+    failedRefreshAttempts = 3;
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     const staleNotice = page.getByTestId('sjm-register-stale-notice');
-    await expect(staleNotice).toBeVisible();
+    await expect(staleNotice).toBeVisible({ timeout: 15_000 });
     await expect(staleNotice).toContainText('last successful snapshot');
     await expect(register).toContainText('SJM-E2E-001');
     await expect(page.locator('[aria-label="Operations overview"]')).toHaveAttribute('data-stale', 'true');
