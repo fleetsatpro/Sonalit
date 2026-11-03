@@ -467,6 +467,8 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(serviceBrief.getByText('Synthetic fixture instructions only.', { exact: true })).toBeVisible();
       const operationsRail = page.locator('aside.sjm-journey-ops-rail');
       const commandGrid = page.getByTestId('sjm-command-grid');
+      const commandGridDisplay = await commandGrid.evaluate(el => getComputedStyle(el).display);
+      expect(commandGridDisplay, viewport.label + ': queue and detail shell must use CSS Grid').toBe('grid');
       const commandColumns = await commandGrid.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
       expect(commandColumns, viewport.label + ': command grid column count').toBe(viewport.width >= 1440 ? 3 : viewport.width >= 1280 ? 2 : 1);
       await expect(commandGrid).toHaveClass(/sjm-command-grid--selected/);
