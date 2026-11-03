@@ -192,6 +192,8 @@ describe('SJM validation and evidence boundaries', () => {
     expect(route).toContain("concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE");
     expect(route).toContain('summary:rows.summary');
     expect(route).toContain('journeyRegisterFilterSql(filter)');
+    // The all filter compiles to TRUE; keep its bound $4 parameter explicitly typed in all three SQL reads.
+    expect(route.match(/AND \(\$4::text IS NOT NULL\)/g)).toHaveLength(3);
     expect(route).toContain('journeyRegisterOrderSql(sort)');
     expect(route).toContain('AS overdue');
     expect(route).toContain('AS departures_due_30m');
