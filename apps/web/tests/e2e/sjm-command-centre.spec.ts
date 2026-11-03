@@ -548,6 +548,14 @@ test.describe('SJM command-centre responsive smoke', () => {
       }));
       expect(dimensions.document, `SJM header must not overflow at ${width}px`).toBeLessThanOrEqual(width);
     }
+
+    // Hiding the redundant page-header shortcut must not hide field operations
+    // from phone users; the universal APPS launcher remains the navigation path.
+    await page.setViewportSize({ width: 639, height: 844 });
+    await page.getByRole('button', { name: 'Open apps' }).click();
+    await page.getByRole('button', { name: /Protective Mobility/ }).click();
+    await page.getByRole('button', { name: 'Field Operations', exact: true }).click();
+    await expect(page).toHaveURL(/\\/sjm\\/field$/);
   });
 
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
