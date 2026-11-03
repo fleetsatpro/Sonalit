@@ -91,12 +91,21 @@
 }
 
 .sjm-console .font-sans,
+.sjm-field-console .font-sans {
+  font-family: var(--sjm-font) !important;
+}
+
 .sjm-console .font-display,
 .sjm-console .font-orbitron,
-.sjm-field-console .font-sans,
 .sjm-field-console .font-display,
 .sjm-field-console .font-orbitron {
   font-family: var(--sjm-display) !important;
+}
+
+.sjm-console :is(h2, h3, h4, h5),
+.sjm-field-console :is(h2, h3, h4, h5) {
+  font-family: var(--sjm-display);
+  letter-spacing: -.02em;
 }
 
 /* Supporting copy remains readable; labels are not tiny instrument decoration. */
