@@ -505,7 +505,7 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   }
 }
 /* Preserve the selected journey title at normal laptop and desktop widths. */
-@media (min-width: 1280px) and (max-width: 1679px) {
+@media (min-width: 1280px) {
   .sjm-console .sjm-selected-journey-header {
     flex-direction: column !important;
     align-items: stretch !important;
@@ -815,7 +815,11 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
 .sjm-console .sjm-register-panel__header { padding: 18px 18px 15px; border-color: var(--d-rim, rgba(140,170,255,.09)); }
 .sjm-console #sjm-register-heading { font-size: 17px; letter-spacing: -.025em; }
 .sjm-console .sjm-register-panel__header p { font-size: 12px; color: var(--d-t2, #9aa9c1); }
-.sjm-console .sjm-register-panel__header .font-mono { color: var(--d-t2, #9aa9c1); }
+.sjm-console .sjm-register-panel__header .font-mono {
+  flex-shrink: 0;
+  color: var(--d-t2, #9aa9c1);
+  white-space: nowrap;
+}
 .sjm-console .sjm-register-toolbar {
   display: flex;
   align-items: center;
@@ -829,11 +833,12 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   min-height: 42px;
   align-items: center;
   justify-content: center;
-  border: 1px solid transparent;
+  min-width: 0;
+  border: 1px solid var(--d-rim2, rgba(140,170,255,.17));
   border-radius: 8px;
-  padding: 0 12px;
+  padding: 0 10px;
   color: var(--d-t2, #9aa9c1);
-  background: transparent;
+  background: rgba(255,255,255,.025);
   font-size: 12px;
   font-weight: 550;
   white-space: nowrap;
@@ -1050,10 +1055,39 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
 .sjm-console [class~="text-[10px]"] { font-size: 11px !important; line-height: 1.45; }
 
 @media (min-width: 768px) and (max-width: 1199px) {
-  .sjm-console .sjm-kpi-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .sjm-console .sjm-kpi-card { min-height: 116px; }
+  .sjm-console .sjm-kpi-strip { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .sjm-console .sjm-kpi-card { min-height: 116px; grid-column: span 2; }
+  .sjm-console .sjm-kpi-card:nth-child(4),
+  .sjm-console .sjm-kpi-card:nth-child(5) { grid-column: span 3; }
+}
+@media (min-width: 960px) and (max-width: 1199px) {
+  .sjm-console .sjm-kpi-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .sjm-console .sjm-kpi-card,
+  .sjm-console .sjm-kpi-card:nth-child(4),
+  .sjm-console .sjm-kpi-card:nth-child(5) { grid-column: span 1; }
 }
 @media (min-width: 1280px) {
+  .sjm-console .sjm-command-grid--selected > .sjm-register-panel .sjm-register-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .sjm-console .sjm-command-grid--selected > .sjm-register-panel .sjm-register-filters {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sjm-console .sjm-command-grid--selected > .sjm-register-panel .sjm-register-filter {
+    width: 100%;
+    justify-content: flex-start;
+    padding-right: 8px;
+    padding-left: 8px;
+    font-size: 11px;
+  }
+  .sjm-console .sjm-command-grid--selected > .sjm-register-panel .sjm-filter-more,
+  .sjm-console .sjm-command-grid--selected > .sjm-register-panel .sjm-filter-more select {
+    width: 100%;
+  }
+
   .sjm-console .sjm-command-grid--queue .sjm-register-column-head {
     display: grid;
     grid-template-columns: minmax(160px, 1.08fr) minmax(180px, 1.25fr) minmax(150px, .95fr) minmax(180px, 1.25fr) minmax(110px, .72fr) 16px;
