@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 const JOURNEY_ID = '11111111-1111-4111-8111-111111111111';
 const CLIENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -399,11 +400,164 @@ test.describe('SJM command-centre responsive smoke', () => {
     await stubFieldSjmApi(page);
     await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Executive Mobility' })).toBeVisible({ timeout: 15000 });
+    await expect.poll(() => page.locator('.sjm-field-console').evaluate(element => getComputedStyle(element).fontFamily.toLowerCase())).toContain('archivo');
     const signOut = page.getByRole('button', { name: 'Sign out' });
     await expect(signOut).toBeVisible();
     await signOut.click();
     await expect(page).toHaveURL(/\/login$/);
   });
+  test('SJM queue and traveller workflow have no serious accessibility violations', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Journey operations' })).toBeVisible();
+
+    const audit = async (surface: string) => {
+      const results = await new AxeBuilder({ page })
+        .include('.d-main-col > header')
+        .include('.sjm-console')
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze();
+      const serious = results.violations.filter(
+        violation => violation.impact === 'critical' || violation.impact === 'serious',
+      );
+      expect(serious, `Serious accessibility violations on SJM ${surface}: ${serious.map(v => v.id).join(', ')}`).toHaveLength(0);
+    };
+
+    await audit('journey register');
+    await openFirstJourney(page);
+    await page.getByRole('tab', { name: 'Traveller' }).click();
+    await expect(page.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
+    await audit('traveller dossier');
+  });
+
+  test('uses the SJM visual system for readable typography, layered blue surfaces and medium KPI cards', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Journey operations' })).toBeVisible();
+    await expect(page.getByTestId('sjm-register-list').getByRole('button').first()).toBeVisible();
+
+    await page.evaluate(async () => {
+      await Promise.all([
+        document.fonts.load('500 15px Archivo'),
+        document.fonts.load('700 36px "Space Grotesk"'),
+        document.fonts.load('500 13px "IBM Plex Mono"'),
+      ]);
+    });
+
+    const visual = await page.locator('.sjm-console').evaluate((root) => {
+      const card = root.querySelector<HTMLElement>('.sjm-kpi-card');
+      const primary = root.querySelector<HTMLElement>('.sjm-primary-action');
+      const mono = root.querySelector<HTMLElement>('.sjm-register-row__reference');
+      const heading = root.querySelector<HTMLElement>('.sjm-page-heading h1');
+      if (!card || !primary || !mono || !heading) throw new Error('SJM visual contract elements are missing');
+      const base = getComputedStyle(root);
+      const cardStyle = getComputedStyle(card);
+      const actionStyle = getComputedStyle(primary);
+      const rgb = (value: string) => value.match(/[\d.]+/g)?.map(Number) ?? [];
+      const linear = (channel: number) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      };
+      const luminance = (value: string) => {
+        const [red, green, blue] = rgb(value);
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+      };
+      const contrast = (first: string, second: string) => {
+        const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
+        return (values[0] + 0.05) / (values[1] + 0.05);
+      };
+      const gradientStops = [...actionStyle.backgroundImage.matchAll(/rgb\([^)]+\)/g)].map(match => match[0]);
+      const minActionContrast = Math.min(...gradientStops.map(stop => contrast(actionStyle.color, stop)));
+      return {
+        fontFamily: base.fontFamily,
+        fontSize: base.fontSize,
+        displayFamily: getComputedStyle(heading).fontFamily,
+        monoFamily: getComputedStyle(mono).fontFamily,
+        fontsLoaded: document.fonts.check('500 15px Archivo') &&
+          document.fonts.check('700 36px "Space Grotesk"') &&
+          document.fonts.check('500 13px "IBM Plex Mono"'),
+        cardMinHeight: Number.parseFloat(cardStyle.minHeight),
+        cardBackground: cardStyle.backgroundImage,
+        actionMinHeight: Number.parseFloat(actionStyle.minHeight),
+        actionBackground: actionStyle.backgroundImage,
+        actionGradientStops: gradientStops,
+        minActionContrast,
+      };
+    });
+
+    expect(visual.fontFamily.toLowerCase()).toContain('archivo');
+    expect(visual.fontSize).toBe('15px');
+    expect(visual.displayFamily.toLowerCase()).toContain('space grotesk');
+    expect(visual.monoFamily.toLowerCase()).toContain('ibm plex mono');
+    expect(visual.fontsLoaded).toBe(true);
+    expect(visual.cardMinHeight).toBeGreaterThanOrEqual(104);
+    expect(visual.cardMinHeight).toBeLessThanOrEqual(116);
+    expect(visual.cardBackground).toContain('linear-gradient');
+    expect(visual.actionMinHeight).toBeGreaterThanOrEqual(44);
+    expect(visual.actionBackground).toContain('linear-gradient');
+    expect(visual.actionGradientStops.length).toBeGreaterThanOrEqual(3);
+    expect(visual.minActionContrast).toBeGreaterThanOrEqual(4.5);
+
+    const newJourney = page.getByRole('button', { name: 'New journey' });
+    await newJourney.hover();
+    const hoverContrast = await newJourney.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const channels = (value: string) => value.match(/[\d.]+/g)?.map(Number) ?? [];
+      const linear = (channel: number) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      };
+      const luminance = (value: string) => {
+        const [red, green, blue] = channels(value);
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+      };
+      const ratio = (first: string, second: string) => {
+        const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
+        return (values[0] + 0.05) / (values[1] + 0.05);
+      };
+      const stops = [...style.backgroundImage.matchAll(/rgb\([^)]+\)/g)].map(match => match[0]);
+      return Math.min(...stops.map(stop => ratio(style.color, stop)));
+    });
+    expect(hoverContrast).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test('switches the field-team shortcut cleanly at the 640px breakpoint', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Journey operations' })).toBeVisible();
+
+    const fieldTeamLink = page.getByRole('link', { name: /Field team app/ });
+    const newJourney = page.getByRole('button', { name: 'New journey' });
+    for (const width of [639, 640]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(newJourney).toBeVisible();
+      if (width === 639) {
+        await expect(fieldTeamLink).toBeHidden();
+      } else {
+        await expect(fieldTeamLink).toBeVisible();
+      }
+      const dimensions = await page.evaluate(() => ({
+        viewport: window.innerWidth,
+        document: document.documentElement.scrollWidth,
+      }));
+      expect(dimensions.document, `SJM header must not overflow at ${width}px`).toBeLessThanOrEqual(width);
+    }
+
+    // Hiding the redundant page-header shortcut must not hide field operations
+    // from phone users; the universal APPS launcher remains the navigation path.
+    await page.setViewportSize({ width: 639, height: 844 });
+    await page.getByRole('button', { name: 'Open apps' }).click();
+    await page.getByRole('button', { name: /Protective Mobility/ }).click();
+    await page.getByRole('button', { name: 'Field Operations', exact: true }).click();
+    await expect(page).toHaveURL(/\/sjm\/field$/);
+  });
+
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
   test('keeps the journey workspace readable without horizontal overflow at target viewports', async ({ page }, testInfo: TestInfo) => {
@@ -411,8 +565,11 @@ test.describe('SJM command-centre responsive smoke', () => {
     await stubSjmApi(page);
 
     const targets = [
+      { width: 360, height: 800, label: 'small mobile' },
       { width: 390, height: 844, label: 'mobile' },
       { width: 768, height: 1024, label: 'tablet' },
+      { width: 1024, height: 800, label: 'small laptop' },
+      { width: 1280, height: 900, label: 'laptop' },
       { width: 1440, height: 900, label: 'desktop' },
       { width: 1920, height: 1080, label: 'large desktop' },
     ];
@@ -509,7 +666,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       }));
       expect(railSurface.borderWidth).toBe('1px');
       expect(railSurface.radius).toBe('12px');
-      expect(railSurface.background).toBe('rgb(13, 20, 40)');
+      expect(railSurface.background).toBe('rgb(14, 34, 58)');
       for (const section of await operationsSections.all()) {
         const style = await section.evaluate(el => ({
           borderTop: getComputedStyle(el).borderTopWidth,
@@ -540,7 +697,9 @@ test.describe('SJM command-centre responsive smoke', () => {
       const railBox = await overviewRail.boundingBox();
       expect(riskBox, `${viewport.label}: route review region should render`).not.toBeNull();
       expect(railBox, `${viewport.label}: overview rail should render`).not.toBeNull();
-      if (viewport.width >= 1440) {
+      // The inner overview switches to its two-column risk/summary layout at
+      // 1280px; the outer command rail has a separate 1440px breakpoint.
+      if (viewport.width >= 1280) {
         expect(Math.abs(riskBox!.y - railBox!.y), `${viewport.label}: route review and overview rail should align as one surface`).toBeLessThanOrEqual(1);
         expect(railBox!.x).toBeGreaterThan(riskBox!.x + riskBox!.width - 1);
       } else {

@@ -1,0 +1,711 @@
+/* SONALIT SJM — executive mobility design system.
+   Scoped to SJM operator and field surfaces. Type: Space Grotesk / Archivo /
+   IBM Plex Mono. Visual principles: IBM Carbon layered colour roles and data
+   typography; Palantir queue-to-object workflow; Fluent/GOV.UK readable scale;
+   Rams: clarity, restraint, and honest state representation.
+*/
+.sjm-console,
+.sjm-field-console {
+  --sjm-font: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --sjm-display: 'Space Grotesk', 'Archivo', system-ui, sans-serif;
+  --sjm-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --d-font: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --d-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --p-sans: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --p-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Blue-grade depth: surfaces rise by luminance, not by excessive glow. */
+  --d-void: #06101d;
+  --d-carbon: #081629;
+  --d-deep: #0a1b30;
+  --d-well: #0e223a;
+  --d-surf: #142b47;
+  --d-lift: #1b385a;
+  --d-lift2: #24466e;
+  --d-rim: rgba(136, 180, 228, .11);
+  --d-rim2: rgba(136, 180, 228, .21);
+  --d-rim3: rgba(136, 180, 228, .40);
+
+  /* Blue signals navigation, selection and primary actions only. */
+  --d-sig: #72b4ff;
+  --d-sig2: #4b98ee;
+  --d-sig3: #2d76cc;
+  --d-sg: rgba(114, 180, 255, .15);
+  --d-sg2: rgba(114, 180, 255, .08);
+  --d-sglow: rgba(114, 180, 255, .30);
+  --d-orange: #8da8ff;
+  --d-og: rgba(141, 168, 255, .14);
+  --d-oglow: rgba(141, 168, 255, .28);
+
+  /* Operational semantics remain intact: no brand blue for safety outcomes. */
+  --d-fire: #ff7186;
+  --d-fg: rgba(255, 113, 134, .14);
+  --d-fglow: rgba(255, 113, 134, .28);
+  --d-warn: #f4bf69;
+  --d-wg: rgba(244, 191, 105, .14);
+  --d-ok: #58d4a5;
+  --d-okg: rgba(88, 212, 165, .13);
+  --d-purple: #b09aff;
+
+  --d-t1: #f4f8ff;
+  --d-t2: #b6c8de;
+  --d-t3: #93aac6;
+  --d-t4: #536d8b;
+  --sjm-page: #071629;
+  --sjm-surface: #0e223a;
+  --sjm-surface-raised: #142b47;
+  --sjm-rule: var(--d-rim2);
+  --sjm-muted: var(--d-t2);
+  --sjm-accent: var(--d-sig);
+  --sjm-text: var(--d-t1);
+
+  color-scheme: dark;
+  color: var(--sjm-text);
+  font-family: var(--sjm-font);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.sjm-console {
+  background:
+    radial-gradient(ellipse 74% 32% at 8% 0%, rgba(55, 119, 190, .17), transparent 72%),
+    radial-gradient(ellipse 42% 35% at 98% 24%, rgba(49, 100, 157, .09), transparent 74%),
+    linear-gradient(135deg, #071629 0%, #0a1b30 54%, #08172a 100%);
+}
+
+.sjm-field-console {
+  background:
+    radial-gradient(ellipse 80% 34% at 0% 0%, rgba(55, 119, 190, .15), transparent 72%),
+    linear-gradient(145deg, #071629 0%, #091a2d 58%, #071526 100%) !important;
+}
+
+.sjm-console .font-mono,
+.sjm-console .d-font-mono,
+.sjm-console .mono,
+.sjm-field-console .font-mono,
+.sjm-field-console .d-font-mono,
+.sjm-field-console .mono {
+  font-family: var(--sjm-mono) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.sjm-console .font-sans,
+.sjm-field-console .font-sans {
+  font-family: var(--sjm-font) !important;
+}
+
+.sjm-console .font-display,
+.sjm-console .font-orbitron,
+.sjm-field-console .font-display,
+.sjm-field-console .font-orbitron {
+  font-family: var(--sjm-display) !important;
+}
+
+.sjm-console :is(h2, h3, h4, h5),
+.sjm-field-console :is(h2, h3, h4, h5) {
+  font-family: var(--sjm-display);
+  letter-spacing: -.02em;
+}
+
+/* The shared clock is outside the React SJM shell, but its route-context
+   treatment is tuned here so SJM does not inherit a low-contrast 8px label. */
+.d-main-col:has(> main .sjm-console) > header [data-testid="app-topbar-clock"] {
+  margin-left: 8px;
+  gap: 8px;
+}
+
+.d-main-col:has(> main .sjm-console) > header [data-testid="app-topbar-clock"] > span:first-child {
+  color: #9eb5d0 !important;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: .06em !important;
+  line-height: 1.4;
+}
+
+.d-main-col:has(> main .sjm-console) > header [data-testid="app-topbar-clock"] > time {
+  color: #dbe9fa !important;
+}
+
+/* Supporting copy remains readable; labels are not tiny instrument decoration. */
+.sjm-console .text-slate-600,
+.sjm-console .text-slate-500,
+.sjm-console .text-slate-400,
+.sjm-field-console .text-slate-600,
+.sjm-field-console .text-slate-500,
+.sjm-field-console .text-slate-400 {
+  color: var(--d-t2) !important;
+}
+
+.sjm-console [class~="text-[8px]"],
+.sjm-console [class~="text-[9px]"],
+.sjm-console [class~="text-[10px]"],
+.sjm-field-console [class~="text-[8px]"],
+.sjm-field-console [class~="text-[9px]"],
+.sjm-field-console [class~="text-[10px]"] {
+  font-size: 11px !important;
+  line-height: 1.45;
+}
+
+.sjm-console [class~="text-[11px]"],
+.sjm-field-console [class~="text-[11px]"] {
+  font-size: 12px !important;
+  line-height: 1.5;
+}
+
+.sjm-console .text-xs,
+.sjm-field-console .text-xs {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sjm-console .sjm-kicker {
+  color: #a9c0dc;
+  font-family: var(--sjm-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .065em;
+  line-height: 1.4;
+}
+
+.sjm-console .sjm-page-header {
+  border-bottom-color: rgba(135, 184, 238, .24);
+}
+
+.sjm-console .sjm-page-eyebrow {
+  color: #a9bfd9;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .10em;
+}
+
+.sjm-console .sjm-page-heading h1 {
+  color: #f5f8ff;
+  font-family: var(--sjm-display);
+  font-size: clamp(31px, 2.6vw, 39px);
+  font-weight: 700;
+  letter-spacing: -.035em;
+  line-height: 1.08;
+}
+
+.sjm-console .sjm-page-intro {
+  color: #b6c8de;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.sjm-console .sjm-page-status {
+  color: #b6c8de;
+  font-size: 13px;
+}
+
+.sjm-console .sjm-page-status__label {
+  color: #f0f6ff;
+  font-weight: 650;
+}
+
+.sjm-console .sjm-page-status__timestamp,
+.sjm-console .sjm-page-status__cadence {
+  color: #a6bad3;
+}
+
+/* Medium instrument cards: value-led and restrained, never oversized dashboard tiles. */
+.sjm-console .sjm-kpi-strip {
+  gap: 12px;
+  margin: 18px 0 20px;
+}
+
+.sjm-console .sjm-kpi-card {
+  min-height: 108px;
+  gap: 5px;
+  border: 1px solid rgba(128, 174, 224, .23);
+  border-radius: 13px;
+  padding: 14px 15px;
+  background:
+    linear-gradient(145deg, rgba(72, 135, 202, .15), rgba(20, 43, 71, .96) 64%),
+    #10243c;
+  color: #f4f8ff;
+}
+
+.sjm-console .sjm-kpi-card:hover {
+  border-color: rgba(128, 188, 246, .48);
+  background:
+    linear-gradient(145deg, rgba(84, 151, 220, .20), rgba(25, 53, 86, .97) 64%),
+    #142b47;
+}
+
+.sjm-console .sjm-kpi-card[aria-pressed="true"],
+.sjm-console .sjm-kpi-card.is-filtered {
+  border-color: rgba(114, 180, 255, .72);
+  background:
+    linear-gradient(120deg, rgba(64, 137, 216, .22), rgba(18, 44, 74, .98) 72%),
+    #10243c;
+}
+
+.sjm-console .sjm-kpi-card__label {
+  color: #c2d3e7;
+  font-family: var(--sjm-font);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.sjm-console .sjm-kpi-card__value {
+  color: #f4f8ff;
+  font-family: var(--sjm-mono);
+  font-size: 29px;
+  font-weight: 600;
+  letter-spacing: -.045em;
+  line-height: 1.1;
+}
+
+.sjm-console .sjm-kpi-card__detail {
+  color: #a9bfd8;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.sjm-console .sjm-kpi-card__icon {
+  color: var(--d-sig);
+}
+
+.sjm-console .sjm-kpi-card.is-overdue .sjm-kpi-card__value,
+.sjm-console .sjm-kpi-card.is-overdue .sjm-kpi-card__icon {
+  color: var(--d-fire);
+}
+
+.sjm-console .sjm-kpi-card.is-review .sjm-kpi-card__value,
+.sjm-console .sjm-kpi-card.is-review .sjm-kpi-card__icon,
+.sjm-console .sjm-kpi-card.is-attention .sjm-kpi-card__value,
+.sjm-console .sjm-kpi-card.is-attention .sjm-kpi-card__icon {
+  color: var(--d-warn);
+}
+
+.sjm-console .sjm-kpi-card.is-active .sjm-kpi-card__value,
+.sjm-console .sjm-kpi-card.is-active .sjm-kpi-card__icon {
+  color: var(--d-sig);
+}
+
+@media (min-width: 768px) and (max-width: 959px) {
+  .sjm-console .sjm-kpi-strip {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .sjm-console .sjm-kpi-card {
+    grid-column: span 2;
+    min-height: 104px;
+  }
+  .sjm-console .sjm-kpi-card:nth-child(4) { grid-column: 2 / span 2; }
+  .sjm-console .sjm-kpi-card:nth-child(5) { grid-column: 4 / span 2; }
+}
+
+@media (min-width: 960px) and (max-width: 1199px) {
+  .sjm-console .sjm-kpi-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .sjm-console .sjm-kpi-card { grid-column: span 1; }
+}
+
+.sjm-console .sjm-panel.sjm-live-ops-rail {
+  border-radius: 12px;
+}
+
+.sjm-console .sjm-register-panel,
+.sjm-console .sjm-panel {
+  border: 1px solid rgba(128, 174, 224, .22);
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(62, 123, 189, .075), rgba(13, 34, 57, .98) 58%),
+    #0e223a;
+  box-shadow: inset 0 1px 0 rgba(218, 235, 255, .035);
+}
+
+.sjm-console .sjm-panel .sjm-panel {
+  border-color: rgba(128, 174, 224, .17);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgba(45, 100, 160, .07), rgba(10, 27, 47, .98) 65%),
+    #0a1b30;
+  box-shadow: none;
+}
+
+.sjm-console .sjm-register-panel__header,
+.sjm-console .sjm-selected-journey-header {
+  border-color: rgba(128, 174, 224, .20);
+}
+
+.sjm-console .sjm-register-panel__header .font-mono,
+.sjm-console .sjm-register-panel__header p {
+  color: #a9bfd8;
+}
+
+.sjm-console .sjm-register-column-head {
+  color: #9fb6d1;
+  background: rgba(8, 24, 42, .82);
+  border-bottom-color: rgba(128, 174, 224, .18);
+}
+
+.sjm-console .sjm-register-row__title {
+  color: #f0f6ff;
+  font-family: var(--sjm-font);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.sjm-console .sjm-register-row__reference {
+  color: #9cc8ff;
+  font-family: var(--sjm-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sjm-console .sjm-register-row__route,
+.sjm-console .sjm-register-row__client {
+  color: #b6c8de;
+  font-size: 13px;
+}
+
+.sjm-console .sjm-register-row__coverage,
+.sjm-console .sjm-register-row__gate,
+.sjm-console .sjm-register-row__departure {
+  color: #a6bad3;
+}
+
+.sjm-console .sjm-register-row__label {
+  color: #9fb6d1;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .07em;
+}
+
+.sjm-console .sjm-register-item {
+  border-bottom-color: rgba(128, 174, 224, .15);
+}
+
+.sjm-console .sjm-register-item:hover {
+  background: rgba(84, 151, 220, .075);
+}
+
+.sjm-console .sjm-register-item.is-selected {
+  background:
+    linear-gradient(105deg, rgba(63, 135, 211, .19), rgba(17, 43, 72, .32) 72%),
+    rgba(17, 39, 64, .40);
+  box-shadow: inset 3px 0 #72b4ff;
+}
+
+.sjm-console .sjm-register-filter,
+.sjm-console .sjm-filter-more select,
+.sjm-console .sjm-back-to-register,
+.sjm-console .sjm-secondary-action {
+  border-color: rgba(128, 174, 224, .25);
+  background: linear-gradient(145deg, rgba(43, 87, 134, .18), rgba(14, 33, 55, .94));
+  color: #d7e6f8;
+  font-family: var(--sjm-font);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sjm-console .sjm-register-filter:hover,
+.sjm-console .sjm-secondary-action:hover,
+.sjm-console .sjm-back-to-register:hover {
+  border-color: rgba(132, 192, 248, .48);
+  background: linear-gradient(145deg, rgba(62, 123, 189, .24), rgba(20, 44, 72, .98));
+  color: #f4f8ff;
+}
+
+.sjm-console .sjm-register-filter[aria-pressed="true"] {
+  border-color: rgba(114, 180, 255, .68);
+  background: linear-gradient(135deg, rgba(60, 127, 205, .28), rgba(19, 47, 78, .98));
+  color: #eff7ff;
+}
+
+.sjm-console .sjm-workspace-nav {
+  border-bottom-color: rgba(128, 174, 224, .24);
+}
+
+.sjm-console .sjm-workspace-tab,
+.sjm-console .sjm-workspace-more > summary {
+  color: #afc3db;
+  font-family: var(--sjm-font);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.sjm-console .sjm-workspace-tab:hover {
+  color: #f1f7ff;
+  background: rgba(83, 145, 209, .09);
+}
+
+.sjm-console .sjm-workspace-tab.is-active,
+.sjm-console .sjm-workspace-more[open] > summary {
+  border-bottom-color: #72b4ff;
+  color: #f4f8ff;
+  background: linear-gradient(180deg, rgba(89, 153, 219, .15), rgba(89, 153, 219, .035));
+}
+
+.sjm-console .sjm-workspace-more__menu {
+  border-color: rgba(128, 174, 224, .30);
+  background: linear-gradient(145deg, #173453, #0d2139);
+}
+
+.sjm-console .sjm-selected-journey-header h2 {
+  color: #f5f8ff;
+  font-family: var(--sjm-display);
+  font-size: clamp(22px, 1.8vw, 28px);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.sjm-console .sjm-page-actions > button,
+.sjm-console .sjm-page-actions > a,
+.sjm-console .sjm-journey-actions > button,
+.sjm-console .sjm-action-button,
+.sjm-console .sjm-primary-action,
+.sjm-console .sjm-register-filter,
+.sjm-console .sjm-filter-more select,
+.sjm-console .sjm-back-to-register,
+.sjm-console .sjm-workspace-tab,
+.sjm-console .sjm-workspace-more > summary,
+.sjm-field-console button,
+.sjm-field-console a {
+  min-height: 44px;
+}
+
+.sjm-console .sjm-action-button {
+  padding-right: 14px;
+  padding-left: 14px;
+  font-family: var(--sjm-font);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.sjm-console .sjm-primary-action {
+  border: 1px solid rgba(162, 208, 255, .72);
+  border-radius: 10px;
+  background: linear-gradient(135deg, #286bb3 0%, #2464a8 52%, #205b9e 100%);
+  color: #fff;
+  font-family: var(--sjm-font);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(235, 246, 255, .16);
+}
+
+.sjm-console .sjm-primary-action:hover {
+  border-color: #b4d8ff;
+  background: linear-gradient(135deg, #2d76cc 0%, #286bb3 54%, #205b9e 100%);
+}
+
+.sjm-console .sjm-secondary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.sjm-console input:not([type="checkbox"]):not([type="radio"]),
+.sjm-console select,
+.sjm-console textarea {
+  min-height: 44px;
+  border-color: rgba(128, 174, 224, .30);
+  background-color: rgba(6, 20, 36, .72);
+  color: #f1f7ff;
+  font-family: var(--sjm-font);
+  font-size: 14px;
+}
+
+.sjm-console input::placeholder,
+.sjm-console textarea::placeholder {
+  color: #9eb3ce;
+  opacity: 1;
+}
+
+.sjm-console input:focus-visible,
+.sjm-console select:focus-visible,
+.sjm-console textarea:focus-visible,
+.sjm-console button:focus-visible,
+.sjm-console a:focus-visible,
+.sjm-field-console button:focus-visible,
+.sjm-field-console a:focus-visible,
+.sjm-field-console input:focus-visible,
+.sjm-field-console select:focus-visible,
+.sjm-field-console textarea:focus-visible {
+  outline: 2px solid #85beff;
+  outline-offset: 2px;
+}
+
+.sjm-console .sjm-back-to-register {
+  border-radius: 10px;
+}
+
+.sjm-console [data-testid="sjm-map-controls"] [role="status"],
+.sjm-console [data-testid="sjm-map-controls"] > button {
+  font-size: 12px !important;
+}
+
+.sjm-field-console {
+  font-family: var(--sjm-font);
+  font-size: 15px;
+  font-weight: 500;
+  color: #f4f8ff;
+}
+
+.sjm-field-console > header {
+  border-bottom-color: rgba(128, 174, 224, .22) !important;
+  background: linear-gradient(110deg, rgba(41, 86, 138, .44), rgba(9, 26, 46, .98) 65%) !important;
+}
+
+.sjm-field-console header p:first-child {
+  color: #8fc5ff !important;
+  font-family: var(--sjm-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .07em;
+}
+
+.sjm-field-console header h1 {
+  color: #f5f8ff;
+  font-family: var(--sjm-display);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.sjm-field-console .text-slate-600,
+.sjm-field-console .text-slate-500,
+.sjm-field-console .text-slate-400 {
+  color: #b6c8de !important;
+}
+
+.sjm-field-console button,
+.sjm-field-console a,
+.sjm-field-console input,
+.sjm-field-console select,
+.sjm-field-console textarea {
+  font-family: var(--sjm-font);
+}
+
+.sjm-field-console input:not([type="checkbox"]):not([type="radio"]),
+.sjm-field-console select,
+.sjm-field-console textarea {
+  min-height: 46px;
+  border-color: rgba(128, 174, 224, .30);
+  background-color: rgba(6, 20, 36, .78);
+  color: #f1f7ff;
+  font-size: 14px;
+}
+
+.sjm-field-console input::placeholder,
+.sjm-field-console textarea::placeholder {
+  color: #9eb3ce;
+  opacity: 1;
+}
+
+.sjm-field-console [class~="text-[8px]"],
+.sjm-field-console [class~="text-[9px]"],
+.sjm-field-console [class~="text-[10px]"] {
+  font-size: 12px !important;
+}
+
+.sjm-field-console [class~="text-[11px]"] {
+  font-size: 12px !important;
+}
+
+.sjm-field-console button:disabled,
+.sjm-console button:disabled {
+  cursor: not-allowed;
+  filter: saturate(.55);
+}
+
+@media (max-width: 639px) {
+  /* Tailwind's hidden utility is intentionally reinforced here: the SJM
+     secondary-action surface rule otherwise wins the cascade on phones. */
+  .sjm-console .sjm-page-actions > a.sjm-secondary-action[href="/sjm/field"] {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .sjm-console .sjm-page-heading h1 {
+    font-size: clamp(28px, 8vw, 34px);
+  }
+
+  .sjm-console .sjm-page-intro {
+    max-width: 45ch;
+    font-size: 14px;
+  }
+
+  .sjm-console .sjm-kpi-strip {
+    gap: 9px;
+    margin-top: 13px;
+    margin-bottom: 16px;
+    padding-bottom: 7px;
+  }
+
+  .sjm-console .sjm-kpi-card {
+    flex: 0 0 148px;
+    min-height: 88px;
+    padding: 11px 12px;
+  }
+  .sjm-console .sjm-kpi-card:last-child {
+    flex: 0 0 148px;
+    min-height: 88px;
+  }
+
+  .sjm-console .sjm-kpi-card__value {
+    font-size: 24px;
+  }
+
+  .sjm-console .sjm-kpi-card__label {
+    font-size: 12px;
+  }
+
+  .sjm-console .sjm-kpi-card__detail {
+    display: none;
+  }
+
+  .sjm-console .sjm-register-row__title {
+    font-size: 14px;
+  }
+
+  .sjm-console .sjm-workspace-nav {
+    gap: 6px;
+  }
+
+  .sjm-console .sjm-workspace-tab {
+    padding-right: 11px;
+    padding-left: 11px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 390px) {
+  .sjm-console .sjm-kpi-card,
+  .sjm-console .sjm-kpi-card:last-child {
+    flex-basis: 142px;
+    min-height: 88px;
+  }
+
+  .sjm-console .sjm-page-actions {
+    gap: 7px;
+  }
+
+  .sjm-console .sjm-page-actions > button,
+  .sjm-console .sjm-page-actions > a {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sjm-console .sjm-kpi-card,
+  .sjm-console .sjm-register-item,
+  .sjm-console .sjm-workspace-tab,
+  .sjm-console .sjm-primary-action,
+  .sjm-field-console button,
+  .sjm-field-console a {
+    transition: none !important;
+  }
+}
