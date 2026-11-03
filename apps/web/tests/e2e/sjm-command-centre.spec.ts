@@ -546,7 +546,6 @@ test.describe('SJM command-centre responsive smoke', () => {
       }
 
       const registerHeading = page.getByRole('heading', { name: 'Journey register' });
-      const registerList = page.getByTestId('sjm-register-list');
       const selectedMissionHeading = page.getByRole('heading', { name: 'Airport arrival — controlled transfer' });
       const missionBox = await selectedMissionHeading.boundingBox();
       expect(missionBox, `${viewport.label}: selected mission heading should render`).not.toBeNull();
