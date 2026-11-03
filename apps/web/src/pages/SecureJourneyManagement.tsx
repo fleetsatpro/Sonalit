@@ -628,10 +628,9 @@ export default function SecureJourneyManagement(){
    recordFlightStatus.reset();
   }
   setSelectedId(id);setAck('');setReviewNote('');setCancelNote('');setEditingProfile(false);setWorkspaceTab('overview');
-  // The mission workspace precedes the register below xl on purpose. When an
-  // operator selects a different row from that lower register, return the
-  // selected dossier/map to view and move focus to its heading. Do not affect
-  // desktop dispatch or filter/page actions.
+  // Compact layouts switch from the queue to a focused journey detail view.
+  // Bring the selected workspace into view and focus its heading; desktop keeps
+  // the queue beside the dossier and never scrolls on selection.
   if(selectionChanged&&typeof window!=='undefined'&&window.matchMedia('(max-width: 1279px)').matches){
    const behavior:ScrollBehavior=window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth';
    window.requestAnimationFrame(()=>{
