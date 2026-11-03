@@ -630,7 +630,7 @@ export default function SecureJourneyManagement(){
  const isTerminal=Boolean(journey&&['closed','cancelled','aborted'].includes(journey.status));
 
 return (
-  <main className="sjm-console relative min-h-full overflow-y-auto bg-[#080c12] text-slate-100 antialiased">
+  <div className="sjm-console relative min-h-full bg-[#080c12] text-slate-100 antialiased">
    <div className="relative mx-auto max-w-[1760px] space-y-5 p-3 sm:p-5 lg:p-7">
     <header className="sjm-page-header rounded-lg border border-[#283544] bg-[#101720] p-4 sm:p-6 xl:p-7">
      <div className="relative flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -641,7 +641,7 @@ return (
         <span className="text-slate-400">Command desk</span>
        </div>
        <h1 className="text-[clamp(1.5rem,2.2vw,2.2rem)] font-semibold leading-tight tracking-tight text-white">Secure Journey Management</h1>
-       <p className="sjm-page-intro mt-2 max-w-3xl text-sm leading-6 text-slate-400">Coordinate airport transfers and protective movements from route review through verified arrival.</p>
+       <p className="sjm-page-intro mt-2 max-w-3xl text-sm leading-6 text-slate-400">Plan, coordinate and verify executive movements from request through arrival.</p>
        <div className="mt-3 hidden flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400 sm:flex">
         <span className="inline-flex items-center gap-2"><ShieldCheck size={13} className="text-emerald-300"/>Organisation access</span>
         <span className="inline-flex items-center gap-2"><Route size={13} className="text-slate-300"/>Route Safety review</span>
@@ -656,7 +656,7 @@ return (
          <span className="hidden border-l border-white/10 pl-2 text-[11px] text-slate-500 sm:inline">Refreshes every 30 sec</span>
         </div>
         <div className="hidden flex-1 text-[11px] text-slate-500 sm:block sm:flex-none xl:text-right">
-         <span className="block font-mono  tracking-[.14em] text-slate-600">Last updated</span>
+         <span className="block font-mono tracking-[.14em] text-slate-600">{registerQ.isError&&registerQ.data?"Last successful update":"Last updated"}</span>
          <span className="mt-1 block text-slate-300">{registerQ.dataUpdatedAt?new Date(registerQ.dataUpdatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'Waiting for first update'}</span>
         </div>
        </div>
@@ -672,17 +672,18 @@ return (
 
     {hasRegisterContract&&Number(stats?.departures_due_30m||0)>0&&<div role="status" className="border-l-2 border-amber-300/70 bg-amber-300/[0.035] px-3 py-2.5 text-[11px] leading-5 text-amber-100/90"><span className="font-semibold tabular-nums">{stats?.departures_due_30m}</span> scheduled departures are due within the next 30 minutes. Confirm readiness before recording release; this count reflects planned times, not live dispatch telemetry.</div>}
     <section data-testid="sjm-command-grid" className={'sjm-command-grid grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(270px,310px)_minmax(0,1fr)_minmax(270px,330px)]'+(journey&&workspaceTab!=='overview'?' sjm-command-grid--focused':'')}>
-     <Panel className="order-2 overflow-hidden xl:order-1">
+     <Panel className={'overflow-hidden xl:order-1 '+(journey?'order-2':'order-1')}>
       <div className="border-b border-white/[0.075] p-4">
        <div className="flex items-center justify-between gap-2"><div><Kicker>Register</Kicker><h2 className="mt-1 text-base font-semibold tracking-tight text-white">Journey register</h2></div><span className="font-mono text-[11px] text-slate-400">{registerQ.isError&&!registerQ.data?"Unavailable":registerQ.data?.pagination?registerQ.data.pagination.total_count.toLocaleString()+" matches":registerQ.data?journeys.length+" loaded":"—"}</span></div>
        <div className="relative mt-3"><Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/><input aria-label="Search journeys" className={field+' pl-9'} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Reference, client or route…"/></div>
-       <div className="mt-3 flex flex-wrap gap-1.5">
+       <div role="group" aria-label="Journey filters" className="sjm-register-filters mt-3 flex flex-wrap gap-1.5">
         {[['all','All'],['active','In operation'],['attention','Attention'],['review','Awaiting review'],['planning','Planning'],['overdue','Overdue'],['departure_due_30m','Departing soon'],['closed','Closed']].map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>{setFilter(value);setRegisterPage(0)}} className={'sjm-register-filter inline-flex min-h-8 items-center rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition '+(filter===value?'bg-[#20312f] text-emerald-100 ring-1 ring-inset ring-emerald-300/25':'text-slate-400 hover:bg-white/[0.035] hover:text-slate-100')}>{label}</button>)}
        </div>
        <label className="mt-3 flex items-center justify-between gap-3 text-[11px] text-slate-400"><span>Sort journeys</span><select aria-label="Sort journeys" value={registerSort} onChange={event=>{setRegisterSort(event.target.value as RegisterSort);setRegisterPage(0)}} className="min-w-0 max-w-[72%] rounded-md border border-white/[0.10] bg-[#080c12] px-2.5 py-2 text-[11px] text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300">{REGISTER_SORT_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       </div>
-      <div data-testid="sjm-register-list" className="max-h-[70vh] sm:max-h-[780px] min-h-[120px] sm:min-h-[280px] overflow-y-auto">
-       {registerQ.isLoading?<div className="p-8 text-center text-xs text-slate-500"><RefreshCw size={17} className="mx-auto mb-3 animate-spin"/>Loading journeys…</div>:registerQ.isError?<div role="alert" className="m-2 rounded-md border border-red-400/20 bg-red-500/[0.05] p-4 text-xs leading-5 text-red-200">The journey list could not be loaded. {errorText(registerQ.error,'API request failed.')}</div>:visible.length===0?<div className="m-2 rounded-md border border-dashed border-white/[0.10] p-5 text-center"><Route size={22} className="mx-auto mb-3 text-slate-600"/><p className="text-sm font-medium text-slate-300">{registerQ.data?.pagination?.total_count?'No records on this page':(filter!=='all'||registerSearch)?'No matching journeys':'No journey records in your authorised scope'}</p><p className="mt-2 text-[11px] leading-5 text-slate-600">{registerQ.data?.pagination?.total_count?'Move to another page.':(filter!=='all'||registerSearch)?'Change the filter or search term.':'Create a journey to start an operational record for your organisation.'}</p>{!journeys.length&&<button type="button" onClick={()=>{setIntakeStep(0);setIntakePickTarget(null);setShowCreate(true)}} className="mt-3 inline-flex items-center gap-2 rounded-md border border-emerald-300/25 bg-emerald-300/[0.08] px-3 py-2 text-[11px] font-semibold text-emerald-100"><Plus size={13}/>New journey</button>}</div>:visible.map(j=>{
+      {registerQ.isError&&registerQ.data&&<div data-testid="sjm-register-stale-notice" role="status" aria-live="polite" className="mx-3 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300/20 bg-amber-300/[0.045] px-3 py-2.5 text-[11px] text-amber-100"><span>Refresh failed. Showing the last successful snapshot from <time dateTime={new Date(registerQ.dataUpdatedAt).toISOString()}>{new Date(registerQ.dataUpdatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time>; values may have changed.</span><button type="button" onClick={()=>void registerQ.refetch()} disabled={registerQ.isFetching} className="inline-flex min-h-11 items-center rounded-md border border-amber-200/25 px-3 py-2 font-semibold text-amber-50 disabled:opacity-50">Retry refresh</button></div>}
+      <div data-testid="sjm-register-list" aria-busy={registerQ.isLoading||registerQ.isFetching} className="max-h-[70vh] sm:max-h-[780px] min-h-[120px] sm:min-h-[280px] overflow-y-auto">
+       {registerQ.isLoading?<div className="p-8 text-center text-xs text-slate-500"><RefreshCw size={17} className="mx-auto mb-3 animate-spin"/>Loading journeys…</div>:registerQ.isError&&!registerQ.data?<div role="alert" className="m-2 rounded-md border border-red-400/20 bg-red-500/[0.05] p-4 text-xs leading-5 text-red-100"><p className="font-semibold">Journey register unavailable</p><p className="mt-1">The latest journey list could not be retrieved. Retry to check the service again.</p><button type="button" onClick={()=>void registerQ.refetch()} disabled={registerQ.isFetching} className="mt-3 inline-flex min-h-11 items-center rounded-md border border-red-200/25 px-3 py-2 font-semibold text-red-50 disabled:opacity-50">Retry register</button></div>:visible.length===0?<div className="m-2 rounded-md border border-dashed border-white/[0.10] p-5 text-center"><Route size={22} className="mx-auto mb-3 text-slate-600"/><p className="text-sm font-medium text-slate-300">{registerQ.data?.pagination?.total_count?'No records on this page':(filter!=='all'||registerSearch)?'No matching journeys':'No journey records in your authorised scope'}</p><p className="mt-2 text-[11px] leading-5 text-slate-600">{registerQ.data?.pagination?.total_count?'Move to another page.':(filter!=='all'||registerSearch)?'Change the filter or search term.':'Create a journey to start an operational record for your organisation.'}</p>{!journeys.length&&<button type="button" onClick={()=>{setIntakeStep(0);setIntakePickTarget(null);setShowCreate(true)}} className="mt-3 inline-flex items-center gap-2 rounded-md border border-emerald-300/25 bg-emerald-300/[0.08] px-3 py-2 text-[11px] font-semibold text-emerald-100"><Plus size={13}/>New journey</button>}</div>:visible.map(j=>{
         const a=assessmentOf(j.route_assessment);
         const isSelected=j.id===journey?.id;
         return <button key={j.id} type="button" onClick={()=>choose(j.id)} aria-pressed={isSelected} className={'group relative w-full border-b border-white/[0.08] border-l-2 px-3 py-3 text-left transition '+(isSelected?'border-l-emerald-300 bg-emerald-300/[0.045]':'border-l-transparent bg-transparent hover:bg-white/[0.025]')}>
@@ -697,8 +698,8 @@ return (
       {registerQ.data?.pagination&&<div className="border-t border-white/[0.07] px-3 py-3"><div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400"><span>{registerQ.data.pagination.total_count===0?'0 matching journeys':`Showing ${registerQ.data.pagination.offset+1}–${Math.min(registerQ.data.pagination.offset+journeys.length,registerQ.data.pagination.total_count)} of ${registerQ.data.pagination.total_count}`}</span><span>Page {registerPage+1}</span></div><div className="mt-3 flex items-center justify-between gap-2"><button type="button" aria-label="Previous register page" disabled={registerPage===0||registerQ.isFetching} onClick={()=>setRegisterPage(page=>Math.max(0,page-1))} className="rounded-md border border-white/[0.10] px-3 py-2 text-[11px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"><ArrowLeft size={12} className="mr-1 inline"/>Previous</button><button type="button" aria-label="Next register page" disabled={!registerQ.data.pagination.has_more||registerQ.isFetching} onClick={()=>setRegisterPage(page=>page+1)} className="rounded-md border border-white/[0.10] px-3 py-2 text-[11px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35">Next<ArrowRight size={12} className="ml-1 inline"/></button></div>{registerQ.isFetching&&<p role="status" className="mt-2 text-[11px] text-slate-500">Updating journey list…</p>}</div>}
      </Panel>
 
-     <div id="sjm-mission-workspace" className="order-1 min-w-0 space-y-3 scroll-mt-16 xl:order-2">
-      {!journey?<Panel className="p-5 sm:p-8"><div className="mx-auto max-w-lg py-10 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-md border border-emerald-300/15 bg-emerald-300/[0.05]"><MapPinned size={25} className="text-emerald-200"/></span><Kicker>JOURNEY WORKSPACE</Kicker><h2 className="mt-3 text-xl font-semibold text-white">Select a journey</h2><p className="mt-2 text-sm leading-6 text-slate-500">Choose a journey to review its route, approvals, assigned team and evidence.</p>{isSupervisor&&<Btn tone="green" onClick={openCreate}><Plus size={13}/>New journey</Btn>}</div></Panel>:<>
+     <div id="sjm-mission-workspace" className={'min-w-0 space-y-3 scroll-mt-16 xl:order-2 '+(journey?'order-1':'order-2')}>
+      {!journey?<Panel className="sjm-empty-workspace p-5 sm:p-8"><div className="mx-auto max-w-lg py-10 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-md border border-emerald-300/15 bg-emerald-300/[0.05]"><MapPinned size={25} className="text-emerald-200"/></span><Kicker>JOURNEY WORKSPACE</Kicker><h2 className="mt-3 text-xl font-semibold text-white">Select a journey</h2><p className="mt-2 text-sm leading-6 text-slate-500">Choose a journey to review its route, approvals, assigned team and evidence.</p>{isSupervisor&&<Btn tone="green" onClick={openCreate}><Plus size={13}/>New journey</Btn>}</div></Panel>:<>
        <Panel className="overflow-hidden">
         <div className="sjm-selected-journey-header flex flex-col gap-3 border-b border-white/[0.07] p-4 sm:p-5 xl:flex-row xl:items-start xl:justify-between">
          <div className="min-w-0 xl:flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[11px] font-semibold tracking-[.13em] text-emerald-200">{journey.reference}</span><StatusBadge value={journey.status}/><span className="rounded-md border border-white/[0.07] px-2 py-1 font-mono text-[11px]  tracking-[.12em] text-slate-500">{journey.transport_mode.replaceAll('_',' ')}</span></div><h2 id="sjm-selected-mission-title" tabIndex={-1} className="mt-2 text-xl font-semibold leading-tight tracking-tight text-white outline-none sm:text-2xl">{journey.title}</h2><p title={journey.purpose} className="mt-1.5 max-w-3xl line-clamp-2 text-xs leading-5 text-slate-400">{journey.purpose}</p></div>
@@ -1094,7 +1095,7 @@ return (
      </Panel></aside>}
     </section>
 
-    <section aria-label="Operations overview" className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-white/[0.10] py-3 lg:grid-cols-5 lg:gap-0">
+    <section aria-label="Operations overview" data-stale={registerQ.isError&&Boolean(registerQ.data)} className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-white/[0.10] py-3 lg:grid-cols-5 lg:gap-0">
      {[
       {label:'Active journeys',value:stats?.active,detail:'In progress, paused or in exception handling',icon:Activity,tone:'text-emerald-200'},
       {label:'Awaiting approval',value:stats?.awaiting_review,detail:'Human decision still required',icon:ShieldCheck,tone:'text-amber-200'},
@@ -1102,7 +1103,7 @@ return (
       {label:'Needs attention',value:stats?.review,detail:'Exception or restrictive safety gate',icon:AlertTriangle,tone:'text-orange-200'},
       {label:'Awaiting arrival check',value:stats?.arrival_verification,detail:'A supervisor must confirm arrival before closure',icon:CheckCircle2,tone:'text-slate-300'}
      ].map((card,index)=><div key={card.label} className={'min-w-0 py-1 '+(index>0?'lg:border-l lg:border-white/[0.08] lg:pl-4':'lg:pr-4')}>
-      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[11px] font-medium leading-4 text-slate-400">{card.label}</p><p className={'mt-1.5 text-2xl font-semibold tabular-nums tracking-tight '+card.tone}>{registerQ.isError?'Unavailable':card.value==null?'—':String(card.value)}</p></div><card.icon size={16} className={card.tone+' mt-1 shrink-0 opacity-80'}/></div>
+      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[11px] font-medium leading-4 text-slate-400">{card.label}</p><p className={'mt-1.5 text-2xl font-semibold tabular-nums tracking-tight '+card.tone}>{registerQ.isError&&!registerQ.data?'Unavailable':card.value==null?'—':String(card.value)}</p></div><card.icon size={16} className={card.tone+' mt-1 shrink-0 opacity-80'}/></div>
       <p className="mt-1 text-[11px] leading-4 text-slate-500">{card.detail}</p>
      </div>)}
     </section>
@@ -1180,9 +1181,9 @@ return (
 
     {act.isError&&<div role="alert" className="relative rounded-md border border-red-400/20 bg-red-500/[0.06] p-4 text-xs text-red-200"><div className="flex items-start gap-3"><AlertTriangle size={15} className="mt-0.5 shrink-0"/><div><p className="font-semibold">Sonalit did not confirm this action</p><p className="mt-1 leading-5 text-red-200/80">{errorText(act.error,'The action could not be completed.')}</p></div></div><button type="button" onClick={()=>act.reset()} className="absolute right-3 top-3 text-red-200/70" aria-label="Dismiss action error"><XCircle size={14}/></button></div>}
 
-    <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] py-3 text-[11px] text-slate-600"><span>SONALIT · XD LIVE SURVEILLANCE · SECURE JOURNEY MANAGEMENT</span><span className="inline-flex items-center gap-1.5 font-mono"><ShieldCheck size={11} className="text-emerald-300/70"/>Planned routes are not live locations. Modelled risk is not observed evidence.</span></footer>
+    <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] py-3 text-[11px] text-slate-600"><span>SONALIT · PROTECTIVE MOBILITY · SECURE JOURNEY MANAGEMENT</span><span className="inline-flex items-center gap-1.5 font-mono"><ShieldCheck size={11} className="text-emerald-300/70"/>Planned routes are not live locations. Modelled risk is not observed evidence.</span></footer>
    </div>
-  </main>
+  </div>
  );
 
 }
