@@ -512,6 +512,8 @@ test.describe('SJM command-centre responsive smoke', () => {
       const registerHeading = page.getByRole('heading', { name: 'Journey register' });
       const registerList = page.getByTestId('sjm-register-list');
       await expect(registerList).toBeVisible();
+      await expect(registerList).toContainText('Next action · Complete journey plan and route assessment');
+      await expect(registerList).toContainText('Team assignment not recorded');
       const registerListMinHeight = await registerList.evaluate(el => getComputedStyle(el).minHeight);
       expect(registerListMinHeight, viewport.label + ': register list should not reserve excessive empty space').toBe(viewport.width < 640 ? '120px' : '280px');
       const selectedMissionHeading = page.getByRole('heading', { name: 'Airport arrival — controlled transfer' });
