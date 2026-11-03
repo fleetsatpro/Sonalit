@@ -19,6 +19,7 @@ const JOURNEY_REGISTER_FILTER_SQL = Object.freeze({
   planning: "j.status IN ('requested','planning','assessment_pending')",
   overdue: "((j.status IN ('approved','ready_to_depart') AND j.planned_departure_at IS NOT NULL AND j.planned_departure_at < NOW()) OR (j.status IN ('in_progress','paused','exception') AND j.planned_arrival_at IS NOT NULL AND j.planned_arrival_at < NOW()))",
   departure_due_30m: "(j.status IN ('approved','ready_to_depart') AND j.planned_departure_at >= NOW() AND j.planned_departure_at <= NOW() + INTERVAL '30 minutes')",
+  arrival_verification: "j.status='arrival_pending_verification'",
   closed: "j.status IN ('closed','cancelled','aborted')",
 });
 const JOURNEY_REGISTER_ORDER_SQL = Object.freeze({

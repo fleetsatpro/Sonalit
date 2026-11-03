@@ -372,6 +372,20 @@ async function stubFieldSjmApi(page: Page, detail: Record<string, unknown> = { .
   );
 }
 
+async function openFirstJourney(page: Page) {
+  const firstJourney = page.getByTestId('sjm-register-list').getByRole('button').first();
+  await expect(firstJourney).toBeVisible({ timeout: 15000 });
+  await firstJourney.click();
+  await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
+}
+
+async function openMoreJourneyViews(page: Page) {
+  const more = page.locator('.sjm-workspace-more');
+  if (!(await more.evaluate(element => (element as HTMLDetailsElement).open))) {
+    await more.locator('summary').click();
+  }
+}
+
 test.describe('SJM command-centre responsive smoke', () => {
   test('legacy corridor URLs redirect to the standalone protective-mobility routes', async ({ page }) => {
     await seedAuth(page);
@@ -407,15 +421,37 @@ test.describe('SJM command-centre responsive smoke', () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
 
-      await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('heading', { name: 'Journey operations' })).toBeVisible({ timeout: 15000 });
       const appClock = page.getByTestId('app-topbar-clock');
       await expect(appClock.getByText('LOCAL TIME', { exact: true })).toBeVisible();
       await expect(appClock.getByRole('time')).toBeVisible();
       await expect(appClock.getByText('LIVE', { exact: true })).toHaveCount(0);
       const sjmPageHeader = page.locator('main .sjm-console header.sjm-page-header');
-      await expect(sjmPageHeader.getByText('Protective Mobility', { exact: true })).toBeVisible();
-      await expect(sjmPageHeader.getByText('Command desk', { exact: true })).toBeVisible();
+      await expect(sjmPageHeader.getByText('SONALIT', { exact: true })).toBeVisible();
+      await expect(sjmPageHeader.getByText('PROTECTIVE MOBILITY', { exact: true })).toBeVisible();
       await expect(sjmPageHeader.getByText('XD Live Surveillance', { exact: true })).toHaveCount(0);
+      const queue = page.getByTestId('sjm-command-grid');
+      await expect(queue).toHaveClass(/sjm-command-grid--queue/);
+      if (viewport.width < 640) {
+        const mobileMetrics = page.locator('.sjm-kpi-strip');
+        await expect(mobileMetrics).toBeVisible();
+        const metricRail = await mobileMetrics.evaluate(element => ({
+          display: getComputedStyle(element).display,
+          overflowX: getComputedStyle(element).overflowX,
+          cardHeight: element.querySelector('.sjm-kpi-card')?.getBoundingClientRect().height ?? 0,
+        }));
+        expect(metricRail.display, 'mobile workload metrics should use a compact horizontal rail').toBe('flex');
+        expect(metricRail.overflowX, 'mobile metric rail must be horizontally scrollable').toBe('auto');
+        expect(metricRail.cardHeight, 'mobile metric cards should not displace the journey queue').toBeLessThanOrEqual(90);
+      }
+      const registerList = page.getByTestId('sjm-register-list');
+      await expect(registerList).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toHaveCount(0);
+      await testInfo.attach(`sjm-${viewport.label}-queue-first`, {
+        body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
+        contentType: 'image/png',
+      });
+      await registerList.getByRole('button').first().click();
       await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 10000 });
       await expect(page.getByText('Route has not been assessed', { exact: true })).toBeVisible();
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
@@ -443,19 +479,37 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(serviceBrief.getByText('Synthetic fixture instructions only.', { exact: true })).toBeVisible();
       const operationsRail = page.locator('aside.sjm-journey-ops-rail');
       const commandGrid = page.getByTestId('sjm-command-grid');
+      const commandGridDisplay = await commandGrid.evaluate(el => getComputedStyle(el).display);
+      expect(commandGridDisplay, viewport.label + ': queue and detail shell must use CSS Grid').toBe('grid');
       const commandColumns = await commandGrid.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
       expect(commandColumns, viewport.label + ': command grid column count').toBe(viewport.width >= 1440 ? 3 : viewport.width >= 1280 ? 2 : 1);
+      await expect(commandGrid).toHaveClass(/sjm-command-grid--selected/);
+      const workloadStrip = page.locator('.sjm-kpi-strip');
+      if (viewport.width < 1280) {
+        await expect(workloadStrip, viewport.label + ': workload summary belongs to the queue, not the focused journey view').toBeHidden();
+      } else {
+        await expect(workloadStrip).toBeVisible();
+      }
       const operationsSections = operationsRail.locator('.sjm-live-ops-section');
       await expect(operationsRail).toBeVisible();
       await expect(operationsSections).toHaveCount(4);
+      const missionWorkspaceBox = await page.locator('#sjm-mission-workspace').boundingBox();
+      const operationsRailBox = await operationsRail.boundingBox();
+      expect(missionWorkspaceBox, `${viewport.label}: mission workspace must render`).not.toBeNull();
+      expect(operationsRailBox, `${viewport.label}: operations rail must render`).not.toBeNull();
+      if (viewport.width >= 1440) {
+        expect(operationsRailBox!.x, `${viewport.label}: operations rail must occupy the third desktop column`).toBeGreaterThan(missionWorkspaceBox!.x + missionWorkspaceBox!.width - 1);
+      } else {
+        expect(operationsRailBox!.y, `${viewport.label}: compact operations rail must follow the primary workspace`).toBeGreaterThanOrEqual(missionWorkspaceBox!.y);
+      }
       const railSurface = await operationsRail.locator('.sjm-live-ops-rail').evaluate((el) => ({
         borderWidth: getComputedStyle(el).borderTopWidth,
         radius: getComputedStyle(el).borderTopLeftRadius,
         background: getComputedStyle(el).backgroundColor,
       }));
       expect(railSurface.borderWidth).toBe('1px');
-      expect(railSurface.radius).toBe('10px');
-      expect(railSurface.background).toBe('rgb(12, 20, 29)');
+      expect(railSurface.radius).toBe('12px');
+      expect(railSurface.background).toBe('rgb(13, 20, 40)');
       for (const section of await operationsSections.all()) {
         const style = await section.evaluate(el => ({
           borderTop: getComputedStyle(el).borderTopWidth,
@@ -479,7 +533,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         riskBackground: getComputedStyle(el.querySelector('.sjm-overview-risk-panel') as HTMLElement).backgroundColor,
       }));
       expect(hierarchy.borderWidth).toBe('1px');
-      expect(hierarchy.radius).toBe('10px');
+      expect(hierarchy.radius).toBe('12px');
       expect(hierarchy.riskBorder).toBe('0px');
       expect(hierarchy.riskBackground).toBe('rgba(0, 0, 0, 0)');
       const riskBox = await riskPanel.boundingBox();
@@ -521,20 +575,18 @@ test.describe('SJM command-centre responsive smoke', () => {
       }
 
       const registerHeading = page.getByRole('heading', { name: 'Journey register' });
-      const registerList = page.getByTestId('sjm-register-list');
-      await expect(registerList).toBeVisible();
-      await expect(registerList).toContainText('Next action · Complete journey plan and route assessment');
-      await expect(registerList).toContainText('Team assignment not recorded');
-      const registerListMinHeight = await registerList.evaluate(el => getComputedStyle(el).minHeight);
-      expect(registerListMinHeight, viewport.label + ': register list should not reserve excessive empty space').toBe(viewport.width < 640 ? '120px' : '280px');
       const selectedMissionHeading = page.getByRole('heading', { name: 'Airport arrival — controlled transfer' });
-      const registerBox = await registerHeading.boundingBox();
       const missionBox = await selectedMissionHeading.boundingBox();
-      expect(registerBox, `${viewport.label}: register heading should render`).not.toBeNull();
       expect(missionBox, `${viewport.label}: selected mission heading should render`).not.toBeNull();
+      await expect(registerList).toContainText('Next action');
+      await expect(registerList).toContainText('Team assignment not recorded');
       if (viewport.width < 1280) {
-        expect(missionBox!.y, `${viewport.label}: mission workspace must precede the register on narrow screens`).toBeLessThan(registerBox!.y);
+        await expect(registerHeading).toBeHidden();
+        await expect(page.getByRole('button', { name: 'Back to journey register' })).toBeVisible();
       } else {
+        await expect(registerHeading).toBeVisible();
+        const registerBox = await registerHeading.boundingBox();
+        expect(registerBox, `${viewport.label}: register heading should render`).not.toBeNull();
         expect(registerBox!.x, `${viewport.label}: register should remain the left desktop rail`).toBeLessThan(missionBox!.x);
       }
 
@@ -573,7 +625,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       // Exercise it with an explicitly synthetic workspace fixture at mobile
       // and desktop widths, then attach the rendered panel for visual review.
       if (viewport.width === 390 || viewport.width === 1440) {
-        await page.getByRole('tab', { name: 'Operations timeline' }).click();
+        await page.getByRole('tab', { name: 'Timeline' }).click();
         const timeline = page.getByTestId('sjm-unified-timeline');
         await expect(timeline).toBeVisible();
         await expect(timeline.getByText('QA Airways QA 100', { exact: true })).toBeVisible({ timeout: 10000 });
@@ -651,12 +703,11 @@ test.describe('SJM command-centre responsive smoke', () => {
       await page.setViewportSize({ width, height: 844 });
       await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('heading', { name: 'Journey register' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Select a journey' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Select a journey' })).toHaveCount(0);
+      await expect(page.locator('.sjm-empty-workspace')).toBeHidden();
+      await expect(page.getByTestId('sjm-command-grid')).toHaveClass(/sjm-command-grid--queue/);
       const register = await page.getByRole('heading', { name: 'Journey register' }).boundingBox();
-      const emptyWorkspace = await page.locator('.sjm-empty-workspace').boundingBox();
       expect(register).not.toBeNull();
-      expect(emptyWorkspace).not.toBeNull();
-      expect(register!.y, 'the actionable queue must precede the empty workspace when no journey is selected').toBeLessThan(emptyWorkspace!.y);
 
       const filterHeights = await page.locator('.sjm-register-filter').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
       expect(filterHeights.length).toBeGreaterThan(0);
@@ -694,9 +745,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible();
     const register = page.getByTestId('sjm-register-list');
     await expect(register).toContainText('SJM-E2E-001');
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toHaveCount(0);
+    await expect(page.getByTestId('sjm-command-grid')).toHaveClass(/sjm-command-grid--queue/);
 
     failedRefreshAttempts = 3;
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
@@ -709,7 +761,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     await staleNotice.getByRole('button', { name: 'Retry refresh' }).click();
     await expect(page.getByTestId('sjm-register-stale-notice')).toHaveCount(0);
-    await expect(page.getByText('Register refreshed', { exact: true })).toBeVisible();
+    await expect(page.getByText('Journey register updated', { exact: true })).toBeVisible();
     await expect(register).toContainText('SJM-E2E-001');
   });
   test('travel dossier exposes traveller registration, private document handling, flight legs and daily execution', async ({ page }, testInfo: TestInfo) => {
@@ -717,14 +769,15 @@ test.describe('SJM command-centre responsive smoke', () => {
     await stubSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
 
-    await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Journey operations' })).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
 
     const travelShortcut = page.getByRole('button', { name: 'Open travel dossier' });
     await expect(travelShortcut).toBeVisible();
     await travelShortcut.click();
-    const travelTab = page.getByRole('tab', { name: 'Travel dossier' });
+    const travelTab = page.getByRole('tab', { name: 'Traveller' });
     await expect(travelTab).toBeVisible();
     await expect(travelTab).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('sjm-command-grid')).toHaveClass(/sjm-command-grid--focused/);
@@ -768,6 +821,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       contentType: 'image/png',
     });
 
+    await openMoreJourneyViews(page);
     await page.getByRole('tab', { name: 'Reports' }).click();
     await expect(page.getByRole('heading', { name: 'Report template' })).toBeVisible();
     await page.getByRole('button', { name: 'Configure profile' }).click();
@@ -792,6 +846,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     ]) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+      await openFirstJourney(page);
       await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
       await page.getByRole('button', { name: 'Open travel dossier' }).click();
 
@@ -868,8 +923,9 @@ test.describe('SJM command-centre responsive smoke', () => {
     }));
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    await page.getByRole('tab', { name: 'Operations timeline' }).click();
+    await page.getByRole('tab', { name: 'Timeline' }).click();
 
     const timeline = page.getByTestId('sjm-unified-timeline');
     await expect(timeline).toBeVisible();
@@ -900,8 +956,9 @@ test.describe('SJM command-centre responsive smoke', () => {
     await stubSjmApi(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    const resourcesTab = page.getByRole('tab', { name: 'Team & resources' });
+    const resourcesTab = page.getByRole('tab', { name: 'Team' });
     await expect(resourcesTab).toBeVisible();
     await resourcesTab.click();
     await expect(page.getByRole('heading', { name: 'Team & mission resources' })).toBeVisible();
@@ -912,7 +969,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('heading', { name: 'Assign vehicles and devices' })).toBeVisible();
   });
 
-  test('mobile mission selection returns focus to the map-first workspace', async ({ page }) => {
+  test('mobile journey selection opens a focused dossier and returns cleanly to the queue', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
     const secondJourneyId = '22222222-2222-4222-8222-222222222222';
@@ -940,24 +997,20 @@ test.describe('SJM command-centre responsive smoke', () => {
     }));
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
 
     const workspace = page.locator('#sjm-mission-workspace');
     const secondMission = page.getByRole('button', { name: /SJM-E2E-002/ });
-    await secondMission.scrollIntoViewIfNeeded();
-    await expect.poll(() => workspace.evaluate((node) => node.getBoundingClientRect().top)).toBeLessThan(0);
+    await expect(secondMission).toBeVisible({ timeout: 15000 });
     await secondMission.click();
     const selectedHeading = page.getByRole('heading', { name: 'Second executive transfer' });
     await expect(selectedHeading).toBeVisible({ timeout: 15000 });
     await expect(selectedHeading).toBeFocused();
-    await expect.poll(
-      () => workspace.evaluate((node) => node.getBoundingClientRect().top),
-      { timeout: 8000 },
-    ).toBeGreaterThanOrEqual(0);
-    await expect.poll(
-      () => workspace.evaluate((node) => node.getBoundingClientRect().top),
-      { timeout: 8000 },
-    ).toBeLessThan(160);
+    await expect(page.getByRole('button', { name: 'Back to journey register' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Back to journey register' }).click();
+    await expect(page.getByRole('heading', { name: 'Journey register' })).toBeVisible();
+    await expect(workspace).toBeHidden();
+    await expect(page.getByRole('button', { name: /SJM-E2E-002/ })).toBeVisible();
   });
 
   test('mission workspace opens its authorised private communications channel', async ({ page }) => {
@@ -997,6 +1050,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     }));
 
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
     await page.getByRole('button', { name: 'Open secure channel' }).click();
     await page.waitForURL((url) => url.pathname === '/messages' && url.searchParams.get('channelId') === missionChannelId);
@@ -1252,8 +1306,9 @@ test.describe('SJM command-centre responsive smoke', () => {
     });
 
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    await page.getByRole('tab', { name: 'Travel dossier' }).click();
+    await page.getByRole('tab', { name: 'Traveller' }).click();
     await expect(page.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Flight segments' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Daily travel programme & execution' })).toBeVisible();
@@ -1422,8 +1477,9 @@ test.describe('SJM command-centre responsive smoke', () => {
     });
 
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    await page.getByRole('tab', { name: 'Travel dossier' }).click();
+    await page.getByRole('tab', { name: 'Traveller' }).click();
     await expect(page.getByText('Airport meet and greet', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Execution note')).toBeVisible();
 
@@ -1448,21 +1504,26 @@ test.describe('SJM command-centre responsive smoke', () => {
     await stubSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
 
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    const tabs = page.getByRole('tablist', { name: 'Journey workspace views' });
+    const tabs = page.getByRole('tablist', { name: 'Primary journey views' });
+    const moreTabs = page.getByRole('tablist', { name: 'Additional journey views' });
     await expect(tabs).toBeVisible();
-
+    await openMoreJourneyViews(page);
+    await expect(moreTabs).toBeVisible();
     await page.getByRole('tab', { name: 'Evidence' }).click();
     await expect(page.getByRole('heading', { name: 'Journey events' })).toBeVisible();
     await expect(page.getByText('Manual stop confirmations', { exact: true })).toBeVisible();
     await expect(page.getByText('A manual confirmation does not prove GPS arrival.', { exact: true })).toBeVisible();
 
+    await openMoreJourneyViews(page);
     await page.getByRole('tab', { name: 'Reports' }).click();
     await expect(page.getByRole('heading', { name: 'Generate report' })).toBeVisible();
     await expect(page.getByText(/Reports are downloaded here/)).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Airspace 3D' }).click();
+    await openMoreJourneyViews(page);
+    await page.getByRole('tab', { name: '3D airspace' }).click();
     await expect(page.getByRole('heading', { name: '3D airspace' })).toBeVisible();
     await expect(page.getByText('OpenSky access is not configured.')).toBeVisible();
     await expect(page.getByText('Plottable observations', { exact: true })).toBeVisible();
@@ -1564,8 +1625,11 @@ test.describe('SJM command-centre responsive smoke', () => {
     }));
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
-    await page.getByRole('tab', { name: 'Airspace 3D' }).click();
+    await openMoreJourneyViews(page);
+    await page.getByRole('tab', { name: '3D airspace' }).click();
+    await expect.poll(() => page.locator('.sjm-workspace-more').evaluate(element => (element as HTMLDetailsElement).open)).toBe(false);
     const display = page.getByTestId('sjm-airspace-display');
     await expect(display).toBeVisible();
     await expect(page.getByText('Commercial flight status', { exact: true })).toBeVisible();
@@ -1645,6 +1709,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     const { flightStatusUpdates } = await stubSjmApi(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
 
     const flightCard = page.getByRole('region', { name: 'Flight status' });
     await expect(flightCard).toBeVisible({ timeout: 15000 });
@@ -1701,6 +1766,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
     const firstCard = page.getByRole('region', { name: 'Flight status' });
     await firstCard.getByRole('button', { name: 'Record flight status' }).click();
@@ -1709,6 +1775,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await firstCard.getByRole('button', { name: 'Save flight observation' }).click();
     await firstSaveStarted;
 
+    await page.getByRole('button', { name: 'Back to journey register' }).click();
     const secondMission = page.getByRole('button', { name: /SJM-E2E-002/ });
     await secondMission.scrollIntoViewIfNeeded();
     await secondMission.click();
@@ -1734,6 +1801,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await stubSjmApi(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
 
     const team = page.locator('details.sjm-team-admin');
     await expect(team).toBeVisible({ timeout: 15000 });
@@ -1891,12 +1959,13 @@ test.describe('SJM command-centre responsive smoke', () => {
       delete summary.telemetry_snapshot;
       delete summary.readiness_checklist;
       const offset = requestedOffset;
-      const totalCount = requestedFilter === 'overdue' ? 7 : requestedFilter === 'departure_due_30m' ? 3 : 176;
+      const totalCount = requestedFilter === 'overdue' ? 7 : requestedFilter === 'departure_due_30m' ? 3 : requestedFilter === 'arrival_verification' ? 11 : 176;
       const rowCount = Math.max(0, Math.min(offset === 0 ? 100 : 76, totalCount - offset));
       const data = Array.from({ length: rowCount }, (_, index) => ({
         ...summary,
         id: pagedJourneyId(offset + index),
         reference: 'SJM-PAGE-' + (offset + index),
+        status: requestedFilter === 'arrival_verification' ? 'arrival_pending_verification' : summary.status,
         schedule_urgency: requestedFilter === 'overdue' ? 'DEPARTURE_OVERDUE' : requestedFilter === 'departure_due_30m' ? 'DEPARTURE_DUE_30M' : null,
       }));
       return route.fulfill({
@@ -1912,7 +1981,6 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('176 matches')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Register summary: 176 journeys', { exact: false })).toBeVisible();
     const registerResponse = (offset: string, filter?: string, sort?: string) => page.waitForResponse((response) => {
       if (response.request().method() !== 'GET') return false;
       const url = new URL(response.url());
@@ -1941,7 +2009,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('button', { name: 'Next register page' })).toBeEnabled();
 
     const overdueResponse = registerResponse('0', 'overdue', 'departure_asc');
-    await page.getByRole('button', { name: 'Overdue' }).click();
+    await page.getByLabel('Additional journey filters').selectOption('overdue');
     await overdueResponse;
     await expect.poll(() => requestedFilter).toBe('overdue');
     await expect.poll(() => requestedOffset).toBe(0);
@@ -1950,12 +2018,20 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('button', { name: /SJM-PAGE-0/ }).getByText('Departure overdue')).toBeVisible();
 
     const departureDueResponse = registerResponse('0', 'departure_due_30m', 'departure_asc');
-    await page.getByRole('button', { name: 'Departing soon' }).click();
+    await page.getByLabel('Additional journey filters').selectOption('departure_due_30m');
     await departureDueResponse;
     await expect.poll(() => requestedFilter).toBe('departure_due_30m');
     await expect.poll(() => requestedOffset).toBe(0);
     await expect(page.getByText('3 matches')).toBeVisible();
     await expect(page.getByRole('button', { name: /SJM-PAGE-0/ }).getByText('Departing soon')).toBeVisible();
+
+    const arrivalVerificationResponse = registerResponse('0', 'arrival_verification', 'departure_asc');
+    await page.locator('.sjm-kpi-card.is-arrival').click();
+    await arrivalVerificationResponse;
+    await expect.poll(() => requestedFilter).toBe('arrival_verification');
+    await expect(page.getByLabel('Additional journey filters')).toHaveValue('arrival_verification');
+    await expect(page.getByText('11 matches')).toBeVisible();
+    await expect(page.locator('.sjm-kpi-card.is-arrival .sjm-kpi-card__value')).toHaveText('11');
   });
 
   test('lifecycle rail keeps movement and arrival verification on their correct checkpoints', async ({ page }) => {
@@ -1979,6 +2055,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     }));
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
     await expect(page.getByTestId('sjm-journey-progress').getByText('Stage 6 of 8')).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId('sjm-journey-progress').getByRole('listitem', { name: 'Overview Movement current' })).toBeVisible();
     await expect(page.getByTestId('sjm-journey-progress').getByRole('listitem', { name: 'Overview Arrival upcoming' })).toBeVisible();

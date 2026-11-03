@@ -129,6 +129,7 @@ describe('SJM validation and evidence boundaries', () => {
     expect(journeyRegisterFilterSql('overdue')).toMatch(/planned_departure_at\s*<\s*NOW\(\)/);
     expect(journeyRegisterFilterSql('overdue')).toMatch(/planned_arrival_at\s*<\s*NOW\(\)/);
     expect(journeyRegisterFilterSql('departure_due_30m')).toMatch(/INTERVAL '30 minutes'/);
+    expect(journeyRegisterFilterSql('arrival_verification')).toBe("j.status='arrival_pending_verification'");
     expect(journeyRegisterFilterSql("all' OR 1=1 --")).toBeNull();
   });
 

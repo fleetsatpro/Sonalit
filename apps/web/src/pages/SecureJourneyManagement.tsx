@@ -432,7 +432,7 @@ export default function SecureJourneyManagement(){
  useEffect(()=>{const timer=window.setTimeout(()=>{setRegisterSearch(search.trim());setRegisterPage(0)},250);return ()=>window.clearTimeout(timer)},[search]);
  const registerQ=useQuery<JourneyRegisterResponse>({queryKey:['sjm-journeys',registerPage,filter,registerSearch,registerSort],queryFn:async()=>(await api.get('/sjm/journeys',{params:{limit:100,offset:registerPage*100,filter,search:registerSearch,sort:registerSort}})).data,refetchInterval:30000,placeholderData:previous=>previous});
  const journeys=registerQ.data?.data||[],clients=clientsQ.data?.data||[];
- useEffect(()=>{if(!registerQ.isSuccess||registerQ.isPlaceholderData)return;if(journeys.length===0){if(selectedId)setSelectedId('');return;}if(!journeys.some(j=>j.id===selectedId))setSelectedId(journeys[0].id)},[registerQ.isSuccess,registerQ.isPlaceholderData,journeys,selectedId]);
+ useEffect(()=>{if(!registerQ.isSuccess||registerQ.isPlaceholderData)return;if(journeys.length===0){if(selectedId)setSelectedId('');return;}if(selectedId&&!journeys.some(j=>j.id===selectedId))setSelectedId('')},[registerQ.isSuccess,registerQ.isPlaceholderData,journeys,selectedId]);
  const selectedSummary=journeys.find(j=>j.id===selectedId);
  const detailQ=useQuery<{data:Journey}>({queryKey:['sjm-journey',selectedId],enabled:Boolean(selectedId),queryFn:async()=>(await api.get('/sjm/journeys/'+selectedId)).data,refetchInterval:['in_progress','paused','exception','arrival_pending_verification'].includes(selectedSummary?.status||'')?30000:false});
  const journey=detailQ.data?.data||selectedSummary;
@@ -628,10 +628,9 @@ export default function SecureJourneyManagement(){
    recordFlightStatus.reset();
   }
   setSelectedId(id);setAck('');setReviewNote('');setCancelNote('');setEditingProfile(false);setWorkspaceTab('overview');
-  // The mission workspace precedes the register below xl on purpose. When an
-  // operator selects a different row from that lower register, return the
-  // selected dossier/map to view and move focus to its heading. Do not affect
-  // desktop dispatch or filter/page actions.
+  // Compact layouts switch from the queue to a focused journey detail view.
+  // Bring the selected workspace into view and focus its heading; desktop keeps
+  // the queue beside the dossier and never scrolls on selection.
   if(selectionChanged&&typeof window!=='undefined'&&window.matchMedia('(max-width: 1279px)').matches){
    const behavior:ScrollBehavior=window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth';
    window.requestAnimationFrame(()=>{
@@ -647,67 +646,75 @@ export default function SecureJourneyManagement(){
 return (
   <div className="sjm-console relative min-h-full bg-[#080c12] text-slate-100 antialiased">
    <div className="relative mx-auto max-w-[1760px] space-y-5 p-3 sm:p-5 lg:p-7">
-    <header className="sjm-page-header rounded-lg border border-[#283544] bg-[#101720] p-4 sm:p-6 xl:p-7">
-     <div className="relative flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-      <div className="max-w-3xl">
-       <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
-        <span className="font-semibold tracking-[.04em] text-emerald-300">Protective Mobility</span>
-        <span className="text-slate-600">/</span>
-        <span className="text-slate-400">Command desk</span>
-       </div>
-       <h1 className="text-[clamp(1.5rem,2.2vw,2.2rem)] font-semibold leading-tight tracking-tight text-white">Secure Journey Management</h1>
-       <p className="sjm-page-intro mt-2 max-w-3xl text-sm leading-6 text-slate-400">Plan, coordinate and verify executive movements from request through arrival.</p>
-       <div className="mt-3 hidden flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400 sm:flex">
-        <span className="inline-flex items-center gap-2"><ShieldCheck size={13} className="text-emerald-300"/>Organisation access</span>
-        <span className="inline-flex items-center gap-2"><Route size={13} className="text-slate-300"/>Route Safety review</span>
-        <span className="inline-flex items-center gap-2"><Activity size={13} className="text-slate-300"/>Audited decisions</span>
-       </div>
+    <header className="sjm-page-header">
+     <div className="sjm-page-header__top">
+      <div className="sjm-page-heading">
+       <p className="sjm-page-eyebrow"><span>SONALIT</span><span aria-hidden="true">/</span><span>PROTECTIVE MOBILITY</span></p>
+       <h1>Journey operations</h1>
+       <p className="sjm-page-intro">A coordinated workspace for executive travel, protection teams and verified arrivals.</p>
       </div>
-      <div className="flex min-w-0 flex-col gap-3 xl:min-w-[420px] xl:items-end">
-       <div className="flex w-full flex-wrap items-center gap-2 xl:justify-end">
-        <div className="sjm-register-status inline-flex min-h-[38px] items-center gap-2 rounded-md border border-white/[0.09] bg-black/25 px-3 py-2">
-         <span className={'h-2 w-2 rounded-full '+(registerQ.isError?'bg-red-400':registerQ.isFetching?'animate-pulse bg-amber-300':'bg-emerald-300')}/>
-         <span className="sjm-register-state-label text-[11px] font-semibold text-slate-300">{registerQ.isError?(registerQ.data?'Refresh failed · showing last result':'Register unavailable'):registerQ.isFetching?'Refreshing register':registerQ.isSuccess?'Register refreshed':'Loading register'}</span>
-         <span className="hidden border-l border-white/10 pl-2 text-[11px] text-slate-500 sm:inline">Refreshes every 30 sec</span>
-        </div>
-        <div className="hidden flex-1 text-[11px] text-slate-500 sm:block sm:flex-none xl:text-right">
-         <span className="block font-mono tracking-[.14em] text-slate-600">{registerQ.isError&&registerQ.data?"Last successful update":"Last updated"}</span>
-         <span className="mt-1 block text-slate-300">{registerQ.dataUpdatedAt?new Date(registerQ.dataUpdatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'Waiting for first update'}</span>
-        </div>
-       </div>
-       <div className="flex flex-wrap gap-2 xl:justify-end">
-        <Link to="/sjm/field" className="hidden items-center gap-2 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px] font-semibold text-slate-200 sm:inline-flex">Field team app <ArrowUpRight size={13}/></Link>
-        <Btn onClick={()=>{void refresh();void qc.invalidateQueries({queryKey:['sjm-clients']});}} disabled={registerQ.isFetching}><RefreshCw size={13} className={registerQ.isFetching?'animate-spin':''}/>Refresh</Btn>
-        {isSupervisor&&<div className="hidden sm:block"><Btn disabled={act.isPending} onClick={()=>act.mutate({kind:'management_summary'})}><FileBarChart2 size={13}/>Portfolio summary</Btn></div>}
-        {isSupervisor&&<Btn tone="green" onClick={openCreate}><Plus size={14}/>New journey</Btn>}
-       </div>
+      <div className="sjm-page-actions">
+       <Link to="/sjm/field" className="sjm-secondary-action hidden sm:inline-flex">Field team app <ArrowUpRight size={14}/></Link>
+       <Btn onClick={()=>{void refresh();void qc.invalidateQueries({queryKey:['sjm-clients']});}} disabled={registerQ.isFetching}><RefreshCw size={13} className={registerQ.isFetching?'animate-spin':''}/>Refresh</Btn>
+       {isSupervisor&&<div className="hidden sm:block"><Btn disabled={act.isPending} onClick={()=>act.mutate({kind:'management_summary'})}><FileBarChart2 size={13}/>Portfolio summary</Btn></div>}
+       {isSupervisor&&<button type="button" className="sjm-primary-action" onClick={openCreate}><Plus size={15}/>New journey</button>}
       </div>
+     </div>
+     <div className="sjm-page-status" role="status" aria-live="polite">
+      <span className={'sjm-page-status__dot '+(registerQ.isError?'is-error':registerQ.isFetching?'is-refreshing':'is-available')}/>
+      <span className="sjm-page-status__label">{registerQ.isError?(registerQ.data?'Refresh failed · showing last successful data':'Register unavailable'):registerQ.isFetching?'Refreshing journey register':registerQ.isSuccess?'Journey register updated':'Loading journey register'}</span>
+      <span className="sjm-page-status__separator" aria-hidden="true"/>
+      <span className="sjm-page-status__timestamp">{registerQ.dataUpdatedAt?(registerQ.isError?'Last successful update · ':'Last updated · ')+new Date(registerQ.dataUpdatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'Waiting for first update'}</span>
+      <span className="sjm-page-status__cadence">Automatic refresh every 30 seconds</span>
      </div>
     </header>
 
     {hasRegisterContract&&Number(stats?.departures_due_30m||0)>0&&<div role="status" className="border-l-2 border-amber-300/70 bg-amber-300/[0.035] px-3 py-2.5 text-[11px] leading-5 text-amber-100/90"><span className="font-semibold tabular-nums">{stats?.departures_due_30m}</span> scheduled departures are due within the next 30 minutes. Confirm readiness before recording release; this count reflects planned times, not live dispatch telemetry.</div>}
-    <section data-testid="sjm-command-grid" className={'sjm-command-grid grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(270px,310px)_minmax(0,1fr)_minmax(270px,330px)]'+(journey&&workspaceTab!=='overview'?' sjm-command-grid--focused':'')}>
-     <Panel className={'overflow-hidden xl:order-1 '+(journey?'order-2':'order-1')}>
-      <div className="border-b border-white/[0.075] p-4">
-       <div className="flex items-center justify-between gap-2"><div><Kicker>Register</Kicker><h2 className="mt-1 text-base font-semibold tracking-tight text-white">Journey register</h2></div><span className="font-mono text-[11px] text-slate-400">{registerQ.isError&&!registerQ.data?"Unavailable":registerQ.data?.pagination?registerQ.data.pagination.total_count.toLocaleString()+" matches":registerQ.data?journeys.length+" loaded":"—"}</span></div>
+    <section aria-label="Operations overview" data-stale={registerQ.isError&&Boolean(registerQ.data)} className={'sjm-kpi-strip'+(selectedId?' sjm-kpi-strip--queue-only':'')}>
+     {[
+      {label:'Active journeys',value:stats?.active,detail:'Movements in progress or awaiting active field control',icon:Activity,filter:'active',tone:'is-active'},
+      {label:'Awaiting approval',value:stats?.awaiting_review,detail:'Human safety decision required',icon:ShieldCheck,filter:'review',tone:'is-review'},
+      {label:'Schedule overdue',value:stats?.overdue,detail:'A planned departure or arrival has passed',icon:AlertTriangle,filter:'overdue',tone:'is-overdue'},
+      {label:'Needs attention',value:stats?.review,detail:'Exception, hold or restrictive safety gate',icon:AlertTriangle,filter:'attention',tone:'is-attention'},
+      {label:'Arrival verification',value:stats?.arrival_verification,detail:'Authorised confirmation required before closeout',icon:CheckCircle2,filter:'arrival_verification',tone:'is-arrival'}
+     ].map(card=><button type="button" key={card.label} aria-pressed={filter===card.filter} onClick={()=>{setFilter(card.filter);setRegisterPage(0);selectedIdRef.current='';setSelectedId('')}} className={'sjm-kpi-card '+card.tone+(filter===card.filter?' is-filtered':'')}>
+      <span className="sjm-kpi-card__label">{card.label}</span>
+      <span className="sjm-kpi-card__value">{registerQ.isError&&!registerQ.data?'Unavailable':card.value==null?'—':String(card.value)}</span>
+      <span className="sjm-kpi-card__detail">{card.detail}</span>
+      <card.icon size={17} className="sjm-kpi-card__icon"/>
+     </button>)}
+    </section>
+    <section data-testid="sjm-command-grid" className={'sjm-command-grid '+(journey?'sjm-command-grid--selected':'sjm-command-grid--queue')+(journey&&workspaceTab!=='overview'?' sjm-command-grid--focused':'')}>
+     <Panel className={'sjm-register-panel overflow-hidden xl:order-1 '+(journey?'order-2':'order-1')}>
+      <div className="sjm-register-panel__header border-b border-white/[0.075] p-4">
+       <div className="flex items-center justify-between gap-2"><div><Kicker>YOUR WORK QUEUE</Kicker><h2 id="sjm-register-heading" className="mt-1 text-base font-semibold tracking-tight text-white">Journey register</h2><p className="mt-1 text-xs leading-5 text-slate-400">Prioritised by operational risk, safety gates and upcoming movement windows.</p></div><span className="font-mono text-[11px] text-slate-400">{registerQ.isError&&!registerQ.data?"Unavailable":registerQ.data?.pagination?registerQ.data.pagination.total_count.toLocaleString()+" matches":registerQ.data?journeys.length+" loaded":"—"}</span></div>
        <div className="relative mt-3"><Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/><input aria-label="Search journeys" className={field+' pl-9'} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Reference, client or route…"/></div>
-       <div role="group" aria-label="Journey filters" className="sjm-register-filters mt-3 flex flex-wrap gap-1.5">
-        {[['all','All'],['active','In operation'],['attention','Attention'],['review','Awaiting review'],['planning','Planning'],['overdue','Overdue'],['departure_due_30m','Departing soon'],['closed','Closed']].map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>{setFilter(value);setRegisterPage(0)}} className={'sjm-register-filter inline-flex min-h-8 items-center rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition '+(filter===value?'bg-[#20312f] text-emerald-100 ring-1 ring-inset ring-emerald-300/25':'text-slate-400 hover:bg-white/[0.035] hover:text-slate-100')}>{label}</button>)}
+       <div className="sjm-register-toolbar">
+        <div role="group" aria-label="Primary journey filters" className="sjm-register-filters">
+         {[['all','All'],['active','In operation'],['attention','Attention'],['review','Awaiting review']].map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>{setFilter(value);setRegisterPage(0)}} className="sjm-register-filter">{label}</button>)}
+        </div>
+        <label className="sjm-filter-more"><span className="sr-only">Additional journey filters</span><select aria-label="Additional journey filters" value={['planning','overdue','departure_due_30m','closed','arrival_verification'].includes(filter)?filter:''} onChange={event=>{if(event.target.value){setFilter(event.target.value);setRegisterPage(0)}}}>
+         <option value="">More filters</option><option value="planning">Planning</option><option value="overdue">Overdue</option><option value="departure_due_30m">Departing soon</option><option value="arrival_verification">Arrival verification</option><option value="closed">Closed</option>
+        </select></label>
        </div>
        <label className="mt-3 flex items-center justify-between gap-3 text-[11px] text-slate-400"><span>Sort journeys</span><select aria-label="Sort journeys" value={registerSort} onChange={event=>{setRegisterSort(event.target.value as RegisterSort);setRegisterPage(0)}} className="min-w-0 max-w-[72%] rounded-md border border-white/[0.10] bg-[#080c12] px-2.5 py-2 text-[11px] text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300">{REGISTER_SORT_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       </div>
       {registerQ.isError&&registerQ.data&&<div data-testid="sjm-register-stale-notice" role="status" aria-live="polite" className="mx-3 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300/20 bg-amber-300/[0.045] px-3 py-2.5 text-[11px] text-amber-100"><span>Refresh failed. Showing the last successful snapshot from <time dateTime={new Date(registerQ.dataUpdatedAt).toISOString()}>{new Date(registerQ.dataUpdatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time>; values may have changed.</span><button type="button" onClick={()=>void registerQ.refetch()} disabled={registerQ.isFetching} className="inline-flex min-h-11 items-center rounded-md border border-amber-200/25 px-3 py-2 font-semibold text-amber-50 disabled:opacity-50">Retry refresh</button></div>}
-      <div data-testid="sjm-register-list" aria-busy={registerQ.isLoading||registerQ.isFetching} className="max-h-[70vh] sm:max-h-[780px] min-h-[120px] sm:min-h-[280px] overflow-y-auto">
+      <div className="sjm-register-column-head" aria-hidden="true"><span>Journey</span><span>Route</span><span>Account & safety</span><span>Next action</span><span>Departure</span></div>
+      <div data-testid="sjm-register-list" aria-busy={registerQ.isLoading||registerQ.isFetching} className="sjm-register-list max-h-[70vh] sm:max-h-[780px] min-h-[120px] sm:min-h-[280px] overflow-y-auto">
        {registerQ.isLoading?<div className="p-8 text-center text-xs text-slate-500"><RefreshCw size={17} className="mx-auto mb-3 animate-spin"/>Loading journeys…</div>:registerQ.isError&&!registerQ.data?<div role="alert" className="m-2 rounded-md border border-red-400/20 bg-red-500/[0.05] p-4 text-xs leading-5 text-red-100"><p className="font-semibold">Journey register unavailable</p><p className="mt-1">The latest journey list could not be retrieved. Retry to check the service again.</p><button type="button" onClick={()=>void registerQ.refetch()} disabled={registerQ.isFetching} className="mt-3 inline-flex min-h-11 items-center rounded-md border border-red-200/25 px-3 py-2 font-semibold text-red-50 disabled:opacity-50">Retry register</button></div>:visible.length===0?<div className="m-2 rounded-md border border-dashed border-white/[0.10] p-5 text-center"><Route size={22} className="mx-auto mb-3 text-slate-600"/><p className="text-sm font-medium text-slate-300">{registerQ.data?.pagination?.total_count?'No records on this page':(filter!=='all'||registerSearch)?'No matching journeys':'No journey records in your authorised scope'}</p><p className="mt-2 text-[11px] leading-5 text-slate-600">{registerQ.data?.pagination?.total_count?'Move to another page.':(filter!=='all'||registerSearch)?'Change the filter or search term.':'Create a journey to start an operational record for your organisation.'}</p>{!journeys.length&&<button type="button" onClick={()=>{setIntakeStep(0);setIntakePickTarget(null);setShowCreate(true)}} className="mt-3 inline-flex items-center gap-2 rounded-md border border-emerald-300/25 bg-emerald-300/[0.08] px-3 py-2 text-[11px] font-semibold text-emerald-100"><Plus size={13}/>New journey</button>}</div>:visible.map(j=>{
         const a=assessmentOf(j.route_assessment);
         const isSelected=j.id===journey?.id;
-        return <button key={j.id} type="button" onClick={()=>choose(j.id)} aria-pressed={isSelected} className={'group relative w-full border-b border-white/[0.08] border-l-2 px-3 py-3 text-left transition '+(isSelected?'border-l-emerald-300 bg-emerald-300/[0.045]':'border-l-transparent bg-transparent hover:bg-white/[0.025]')}>
-         <div className="flex items-start justify-between gap-2"><span className="font-mono text-[11px] font-semibold tracking-[.08em] text-emerald-200">{j.reference}</span><StatusBadge value={j.status}/></div>
-         <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-5 text-slate-100">{j.title}</p>
-         <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400"><span className="max-w-[44%] truncate">{j.origin_label}</span><ArrowRight size={12} className="shrink-0 text-slate-600"/><span className="max-w-[44%] truncate">{j.destination_label}</span></div>
-         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.055] pt-2.5"><div className="min-w-0"><span className="block truncate text-[11px] text-slate-400">{j.client_name||'Unlinked client'}</span><span className="mt-0.5 block text-[10px] text-slate-500">{j.duty_roles?.length?j.duty_roles.length+' duty roles assigned':'Team assignment not recorded'}</span></div>{a?<Gate value={a.safety_gate}/>:<span className="font-mono text-[11px] text-slate-500">Route not assessed</span>}</div>
-         <div className="mt-2 flex items-start justify-between gap-2"><span className="min-w-0 text-[11px] leading-4 text-slate-300"><span className="text-slate-500">Next action · </span>{registerNextAction(j)}</span><ChevronRight size={13} className={'mt-0.5 shrink-0 transition '+(isSelected?'translate-x-0.5 text-emerald-200':'text-slate-700 group-hover:translate-x-0.5 group-hover:text-slate-300')}/></div>
-         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600"><span className="inline-flex items-center gap-1.5"><CalendarClock size={11}/>{dateText(j.planned_departure_at)}</span>{scheduleUrgencyPresentation(j.schedule_urgency)&&<span title={scheduleUrgencyPresentation(j.schedule_urgency)!.title} className={'inline-flex items-center rounded border px-1.5 py-1 font-semibold '+scheduleUrgencyPresentation(j.schedule_urgency)!.className}>{scheduleUrgencyPresentation(j.schedule_urgency)!.label}</span>}</div>
+        return <button key={j.id} type="button" onClick={()=>choose(j.id)} aria-pressed={isSelected} className={'sjm-register-item '+(isSelected?'is-selected':'')}>
+         <div className="sjm-register-row__main">
+          <div className="sjm-register-row__identity"><span className="sjm-register-row__reference">{j.reference}</span><StatusBadge value={j.status}/></div>
+          <p className="sjm-register-row__title">{j.title}</p>
+         </div>
+         <div className="sjm-register-row__route"><span>{j.origin_label}</span><ArrowRight size={13}/><span>{j.destination_label}</span></div>
+         <div className="sjm-register-row__account"><span className="sjm-register-row__client">{j.client_name||'Unlinked client'}</span><span className="sjm-register-row__coverage">{j.duty_roles?.length?j.duty_roles.length+' duty roles assigned':'Team assignment not recorded'}</span>{a?<Gate value={a.safety_gate}/>:<span className="sjm-register-row__gate">Route not assessed</span>}</div>
+         <div className="sjm-register-row__next"><span className="sjm-register-row__label">Next action</span><span>{registerNextAction(j)}</span></div>
+         <div className="sjm-register-row__departure"><span>{dateText(j.planned_departure_at)}</span>{scheduleUrgencyPresentation(j.schedule_urgency)&&<span title={scheduleUrgencyPresentation(j.schedule_urgency)!.title} className={'sjm-register-row__urgency '+scheduleUrgencyPresentation(j.schedule_urgency)!.className}>{scheduleUrgencyPresentation(j.schedule_urgency)!.label}</span>}</div>
+         <ChevronRight size={15} className="sjm-register-row__chevron"/>
         </button>;
        })}
       </div>
@@ -718,6 +725,7 @@ return (
       {!journey?<Panel className="sjm-empty-workspace p-5 sm:p-8"><div className="mx-auto max-w-lg py-10 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-md border border-emerald-300/15 bg-emerald-300/[0.05]"><MapPinned size={25} className="text-emerald-200"/></span><Kicker>JOURNEY WORKSPACE</Kicker><h2 className="mt-3 text-xl font-semibold text-white">Select a journey</h2><p className="mt-2 text-sm leading-6 text-slate-500">Choose a journey to review its route, approvals, assigned team and evidence.</p>{isSupervisor&&<Btn tone="green" onClick={openCreate}><Plus size={13}/>New journey</Btn>}</div></Panel>:<>
        <Panel className="overflow-hidden">
         <div className="sjm-selected-journey-header flex flex-col gap-3 border-b border-white/[0.07] p-4 sm:p-5 xl:flex-row xl:items-start xl:justify-between">
+         <button type="button" className="sjm-back-to-register" onClick={()=>{setSelectedId('');setWorkspaceTab('overview');window.requestAnimationFrame(()=>document.getElementById('sjm-register-heading')?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'}))}}><ArrowLeft size={14}/>Back to journey register</button>
          <div className="min-w-0 xl:flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[11px] font-semibold tracking-[.13em] text-emerald-200">{journey.reference}</span><StatusBadge value={journey.status}/><span className="rounded-md border border-white/[0.07] px-2 py-1 font-mono text-[11px]  tracking-[.12em] text-slate-500">{journey.transport_mode.replaceAll('_',' ')}</span></div><h2 id="sjm-selected-mission-title" tabIndex={-1} className="mt-2 text-xl font-semibold leading-tight tracking-tight text-white outline-none sm:text-2xl">{journey.title}</h2><p title={journey.purpose} className="mt-1.5 max-w-3xl line-clamp-2 text-xs leading-5 text-slate-400">{journey.purpose}</p></div>
          <div className="sjm-journey-actions flex flex-wrap items-center gap-2 xl:justify-end"><Gate value={assess?.safety_gate}/><Btn tone="green" onClick={()=>setWorkspaceTab('travel')}><Users size={12}/>Open travel dossier</Btn><Btn onClick={()=>openMissionComms.mutate()} disabled={openMissionComms.isPending}><MessagesSquare size={12}/>{openMissionComms.isPending?'Opening secure channel…':'Open secure channel'}</Btn>{isSupervisor&&['requested','planning'].includes(journey.status)&&<Btn onClick={startEdit} disabled={detailQ.isLoading||updateJourney.isPending||!detailQ.data?.data}><Pencil size={12}/>Edit journey</Btn>}<Btn onClick={()=>void refresh()} disabled={detailQ.isFetching}><RefreshCw size={12} className={detailQ.isFetching?'animate-spin':''}/>Refresh journey</Btn></div>
         </div>
@@ -771,18 +779,27 @@ return (
 <Panel className="overflow-hidden">
         <div className="border-b border-white/[0.07] px-4 pt-4 sm:px-5">
          <div className="flex flex-wrap items-center justify-between gap-3"><div><Kicker>Selected journey</Kicker><h3 className="mt-1 text-sm font-semibold text-white">Journey workspace</h3></div><span className="font-mono text-[11px] text-slate-600">{events.length} loaded events · {stops.length} stops</span></div>
-         <div className="sjm-workspace-tabs mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="Journey workspace views">
-          {[
-           {value:'overview',label:'Overview',Icon:Activity},
-           {value:'travel',label:'Travel dossier',Icon:Users},
-           {value:'timeline',label:'Operations timeline',Icon:CalendarClock},
-           {value:'command',label:'Command & release',Icon:ShieldCheck},
-           {value:'itinerary',label:'Route & stops',Icon:Route},
-           {value:'evidence',label:'Evidence',Icon:Layers3},
-           {value:'resources',label:'Team & resources',Icon:Users},
-           {value:'airspace',label:'Airspace 3D',Icon:Plane},
-           {value:'reports',label:'Reports',Icon:FileText}
-          ].map(({value,label,Icon})=><button type="button" role="tab" aria-selected={workspaceTab===value} key={value} onClick={()=>setWorkspaceTab(value as typeof workspaceTab)} className={'sjm-workspace-tab inline-flex shrink-0 items-center gap-2 rounded-t-md border-b-2 px-3 py-3 text-xs font-semibold transition '+(workspaceTab===value?'border-emerald-300 bg-emerald-300/[0.06] text-emerald-100':'border-transparent text-slate-400 hover:bg-white/[0.025] hover:text-slate-100')}><Icon size={13}/>{label}</button>)}
+         <div className="sjm-workspace-nav">
+          <div className="sjm-workspace-tabs" role="tablist" aria-label="Primary journey views">
+           {[
+            {value:'overview',label:'Overview',Icon:Activity},
+            {value:'itinerary',label:'Itinerary',Icon:Route},
+            {value:'travel',label:'Traveller',Icon:Users},
+            {value:'resources',label:'Team',Icon:Users},
+            {value:'timeline',label:'Timeline',Icon:CalendarClock},
+            {value:'command',label:'Decisions',Icon:ShieldCheck}
+           ].map(({value,label,Icon})=><button type="button" role="tab" tabIndex={workspaceTab===value?0:-1} aria-selected={workspaceTab===value} key={value} onClick={event=>{setWorkspaceTab(value as typeof workspaceTab);const disclosure=event.currentTarget.closest('details');if(disclosure)disclosure.open=false}} onKeyDown={event=>{if(!['ArrowRight','ArrowLeft','Home','End'].includes(event.key))return;event.preventDefault();const tabs=Array.from(event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')||[]);const current=tabs.indexOf(event.currentTarget);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(current+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next]?.focus();tabs[next]?.click()}} className={'sjm-workspace-tab '+(workspaceTab===value?'is-active':'')}><Icon size={15}/>{label}</button>)}
+          </div>
+          <details className="sjm-workspace-more">
+           <summary><span>{['evidence','airspace','reports'].includes(workspaceTab)?'More · '+({evidence:'Evidence',airspace:'Airspace',reports:'Reports'} as Record<string,string>)[workspaceTab]:'More'}</span><span aria-hidden="true">⌄</span></summary>
+           <div className="sjm-workspace-more__menu" role="tablist" aria-label="Additional journey views">
+            {[
+             {value:'evidence',label:'Evidence',Icon:Layers3},
+             {value:'airspace',label:'3D airspace',Icon:Plane},
+             {value:'reports',label:'Reports',Icon:FileText}
+            ].map(({value,label,Icon})=><button type="button" role="tab" tabIndex={workspaceTab===value?0:-1} aria-selected={workspaceTab===value} key={value} onClick={event=>{setWorkspaceTab(value as typeof workspaceTab);const disclosure=event.currentTarget.closest('details');if(disclosure)disclosure.open=false}} onKeyDown={event=>{if(!['ArrowRight','ArrowLeft','Home','End'].includes(event.key))return;event.preventDefault();const tabs=Array.from(event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')||[]);const current=tabs.indexOf(event.currentTarget);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(current+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next]?.focus();tabs[next]?.click()}} className={'sjm-workspace-tab '+(workspaceTab===value?'is-active':'')}><Icon size={15}/>{label}</button>)}
+           </div>
+          </details>
          </div>
         </div>
         <div className="p-3 sm:p-5">
@@ -1111,19 +1128,7 @@ return (
      </Panel></aside>}
     </section>
 
-    <section aria-label="Operations overview" data-stale={registerQ.isError&&Boolean(registerQ.data)} className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-white/[0.10] py-3 lg:grid-cols-5 lg:gap-0">
-     {[
-      {label:'Active journeys',value:stats?.active,detail:'In progress, paused or in exception handling',icon:Activity,tone:'text-emerald-200'},
-      {label:'Awaiting approval',value:stats?.awaiting_review,detail:'Human decision still required',icon:ShieldCheck,tone:'text-amber-200'},
-      {label:'Schedule overdue',value:stats?.overdue,detail:'Missed departure or planned arrival',icon:AlertTriangle,tone:'text-red-200'},
-      {label:'Needs attention',value:stats?.review,detail:'Exception or restrictive safety gate',icon:AlertTriangle,tone:'text-orange-200'},
-      {label:'Awaiting arrival check',value:stats?.arrival_verification,detail:'A supervisor must confirm arrival before closure',icon:CheckCircle2,tone:'text-slate-300'}
-     ].map((card,index)=><div key={card.label} className={'min-w-0 py-1 '+(index>0?'lg:border-l lg:border-white/[0.08] lg:pl-4':'lg:pr-4')}>
-      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[11px] font-medium leading-4 text-slate-400">{card.label}</p><p className={'mt-1.5 text-2xl font-semibold tabular-nums tracking-tight '+card.tone}>{registerQ.isError&&!registerQ.data?'Unavailable':card.value==null?'—':String(card.value)}</p></div><card.icon size={16} className={card.tone+' mt-1 shrink-0 opacity-80'}/></div>
-      <p className="mt-1 text-[11px] leading-4 text-slate-500">{card.detail}</p>
-     </div>)}
-    </section>
-    {hasRegisterContract?<p className="text-[11px] leading-5 text-slate-500">Register summary: {stats?.total==null?"authorised journeys":String(stats.total)+" journeys"}; filters apply to the journey register.</p>:registerQ.data&&<div role="status" className="border-l-2 border-amber-300/50 bg-amber-300/[0.04] px-3 py-2.5 text-[11px] leading-5 text-amber-100/90">The service returned a limited list of {journeys.length} journeys. Filters apply to this list; portfolio totals and page navigation are unavailable.</div>}
+    {!hasRegisterContract&&registerQ.data&&<div role="status" className="border-l-2 border-amber-300/50 bg-amber-300/[0.04] px-3 py-2.5 text-[11px] leading-5 text-amber-100/90">The service returned a limited list of {journeys.length} journeys. Filters apply to this list; portfolio totals and page navigation are unavailable.</div>}
 
       {isSupervisor&&journey&&<details className="sjm-team-admin mb-4" aria-label="Journey team assignments"><summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-4 py-3"><span className="min-w-0"><span className="sjm-kicker">Journey team</span><h2 className="mt-1 block text-sm font-semibold text-white">Assigned drivers, CPOs and meet-and-greet staff</h2><span className="mt-1 block text-[11px] text-slate-400">Assign the people responsible for this journey and its private team channel.</span></span><span className="shrink-0 font-mono text-[11px] text-slate-400">{teamDraft.length} active assignment{teamDraft.length===1?'':'s'}</span></summary><div className="sjm-team-admin__content"><p className="mb-3 text-[11px] leading-5 text-slate-500">Only active users in this organisation can be assigned. Changes are recorded and update access to the journey’s private channel.</p>
        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_180px_auto]"><label><span className="mb-1 block text-[11px] text-slate-400">Team member</span><select className={field} value={teamUserId} onChange={e=>setTeamUserId(e.target.value)}><option value="">Choose a team member…</option>{(teamUsersQ.data?.data||[]).map(u=><option key={u.id} value={u.id}>{u.name} · {u.role}</option>)}</select></label><label><span className="mb-1 block text-[11px] text-slate-400">Duty role</span><select className={field} value={teamRole} onChange={e=>setTeamRole(e.target.value)}>{[['driver','Driver'],['backup_driver','Backup driver'],['cpo','Close protection officer'],['meet_greet','Meet and greet'],['security_escort','Security escort'],['dispatcher','Dispatcher']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label><button type="button" disabled={!teamUserId||teamDraft.some(p=>p.user_id===teamUserId&&p.duty_role===teamRole)||!teamUsersQ.isSuccess} onClick={()=>{const u=(teamUsersQ.data?.data||[]).find(x=>x.id===teamUserId);if(!u)return;setTeamDraft(prev=>[...prev,{user_id:u.id,duty_role:teamRole,is_primary:false,user_name:u.name,account_role:u.role}]);setTeamUserId('')}} className="self-end rounded-md border border-white/[0.08] bg-white/[0.025] px-4 py-3 text-xs font-semibold text-slate-300 disabled:opacity-40">Add to journey</button></div>
