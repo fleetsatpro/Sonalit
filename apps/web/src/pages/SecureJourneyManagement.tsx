@@ -106,6 +106,21 @@ function registerPriority(journey:Journey,now=Date.now()){
  if(['approved','ready_to_depart'].includes(status)&&Number.isFinite(departure)&&departure>=now&&departure<=now+30*60*1000)return 7;
  return REGISTER_STATUS_PRIORITY[status]??16;
 }
+function registerNextAction(journey:Journey):string {
+ const status=journey.status;
+ const gate=assessmentOf(journey.route_assessment)?.safety_gate;
+ if(['closed','cancelled','aborted'].includes(status))return status==='closed'?'Review close-out record':'Review cancelled journey record';
+ if(gate==='NO_GO')return 'Resolve the NO-GO safety blocker';
+ if(status==='exception')return 'Coordinate exception response and record decisions';
+ if(status==='paused'||status==='on_hold')return 'Resolve hold and revalidate the plan';
+ if(status==='arrival_pending_verification')return 'Verify principal arrival before closure';
+ if(gate==='HUMAN_REVIEW'||status==='ready_for_review')return 'Complete authorised safety review';
+ if(status==='assessment_pending')return 'Complete route risk assessment';
+ if(status==='requested'||status==='planning')return 'Complete journey plan and route assessment';
+ if(status==='approved'||status==='ready_to_depart')return 'Confirm team and departure readiness';
+ if(status==='in_progress')return 'Monitor movement and confirm checkpoints';
+ return 'Review journey status and outstanding requirements';
+}
 function compareRegisterRows(a:Journey,b:Journey,sort:RegisterSort){
  if(sort==='priority'){
   const pa=registerPriority(a),pb=registerPriority(b);
@@ -690,8 +705,9 @@ return (
          <div className="flex items-start justify-between gap-2"><span className="font-mono text-[11px] font-semibold tracking-[.08em] text-emerald-200">{j.reference}</span><StatusBadge value={j.status}/></div>
          <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-5 text-slate-100">{j.title}</p>
          <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400"><span className="max-w-[44%] truncate">{j.origin_label}</span><ArrowRight size={12} className="shrink-0 text-slate-600"/><span className="max-w-[44%] truncate">{j.destination_label}</span></div>
-         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.055] pt-2.5"><span className="min-w-0 truncate text-[11px] text-slate-500">{j.client_name||'Unlinked client'}</span>{a?<Gate value={a.safety_gate}/>:<span className="font-mono text-[11px] text-slate-600">Route not assessed</span>}</div>
-         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600"><span className="inline-flex items-center gap-1.5"><CalendarClock size={11}/>{dateText(j.planned_departure_at)}</span>{scheduleUrgencyPresentation(j.schedule_urgency)&&<span title={scheduleUrgencyPresentation(j.schedule_urgency)!.title} className={'inline-flex items-center rounded border px-1.5 py-1 font-semibold '+scheduleUrgencyPresentation(j.schedule_urgency)!.className}>{scheduleUrgencyPresentation(j.schedule_urgency)!.label}</span>}<ChevronRight size={13} className={'transition '+(isSelected?'translate-x-0.5 text-emerald-200':'text-slate-700 group-hover:translate-x-0.5 group-hover:text-slate-300')}/></div>
+         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.055] pt-2.5"><div className="min-w-0"><span className="block truncate text-[11px] text-slate-400">{j.client_name||'Unlinked client'}</span><span className="mt-0.5 block text-[10px] text-slate-500">{j.duty_roles?.length?j.duty_roles.length+' duty roles assigned':'Team assignment not recorded'}</span></div>{a?<Gate value={a.safety_gate}/>:<span className="font-mono text-[11px] text-slate-500">Route not assessed</span>}</div>
+         <div className="mt-2 flex items-start justify-between gap-2"><span className="min-w-0 text-[11px] leading-4 text-slate-300"><span className="text-slate-500">Next action · </span>{registerNextAction(j)}</span><ChevronRight size={13} className={'mt-0.5 shrink-0 transition '+(isSelected?'translate-x-0.5 text-emerald-200':'text-slate-700 group-hover:translate-x-0.5 group-hover:text-slate-300')}/></div>
+         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600"><span className="inline-flex items-center gap-1.5"><CalendarClock size={11}/>{dateText(j.planned_departure_at)}</span>{scheduleUrgencyPresentation(j.schedule_urgency)&&<span title={scheduleUrgencyPresentation(j.schedule_urgency)!.title} className={'inline-flex items-center rounded border px-1.5 py-1 font-semibold '+scheduleUrgencyPresentation(j.schedule_urgency)!.className}>{scheduleUrgencyPresentation(j.schedule_urgency)!.label}</span>}</div>
         </button>;
        })}
       </div>
