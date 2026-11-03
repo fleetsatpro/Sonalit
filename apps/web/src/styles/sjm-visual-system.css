@@ -709,3 +709,152 @@
     transition: none !important;
   }
 }
+
+
+/* SJM travel dossier — the command desk's blue-grade visual language carried
+   through traveller identity, document custody, flight legs and daily execution. */
+.sjm-console .sjm-travel-programme {
+  --sjm-travel-rim: rgba(136, 180, 228, .22);
+  --sjm-travel-blue: #8fc5ff;
+  color: var(--d-t1, #f4f8ff);
+  font-family: var(--sjm-font, 'Archivo', system-ui, sans-serif);
+  font-size: 14px;
+}
+.sjm-console .sjm-travel-programme__header {
+  align-items: center;
+  border-color: rgba(128, 174, 224, .24);
+  padding-bottom: 18px;
+}
+.sjm-console .sjm-travel-programme__eyebrow {
+  color: var(--sjm-travel-blue);
+  font-family: var(--sjm-mono, 'IBM Plex Mono', monospace);
+  font-size: 11px;
+  letter-spacing: .14em;
+}
+.sjm-console .sjm-travel-programme h3.sjm-travel-programme__title {
+  color: #f4f8ff;
+  font-family: var(--sjm-display, 'Space Grotesk', sans-serif);
+  font-size: clamp(21px, 1.65vw, 27px);
+  font-weight: 700;
+  letter-spacing: -.035em;
+  line-height: 1.18;
+}
+.sjm-console .sjm-travel-programme__description {
+  max-width: 74ch;
+  color: #b6c8de;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.sjm-console .sjm-travel-programme .sjm-travel-section {
+  overflow: hidden;
+  border: 1px solid var(--sjm-travel-rim);
+  border-radius: 14px;
+  background: linear-gradient(148deg, rgba(63,117,174,.13), rgba(16,39,64,.98) 54%), #0d2035;
+  box-shadow: inset 0 1px 0 rgba(222,239,255,.045);
+}
+.sjm-console .sjm-travel-programme .sjm-travel-section__header {
+  border-bottom: 1px solid rgba(128,174,224,.19);
+  background: linear-gradient(110deg, rgba(53,104,160,.15), rgba(12,31,52,.28));
+}
+.sjm-console .sjm-travel-programme .sjm-travel-section__header h4 {
+  color: #f0f6ff;
+  font-family: var(--sjm-display, 'Space Grotesk', sans-serif);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -.015em;
+}
+.sjm-console .sjm-travel-programme .sjm-travel-section__header p:not(.font-mono) { color: #a9bfd8; }
+.sjm-console .sjm-travel-programme .sjm-travel-readiness-card {
+  border-color: rgba(113,172,232,.34);
+  background: linear-gradient(135deg, rgba(58,116,179,.18), rgba(15,38,63,.97) 58%), #0d2035;
+}
+.sjm-console .sjm-travel-programme .sjm-travel-metric {
+  min-height: 91px;
+  padding: 12px 13px;
+  border: 1px solid rgba(136,180,228,.17);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(73,127,184,.11), rgba(8,26,45,.72));
+}
+.sjm-console .sjm-travel-programme .sjm-travel-metric > p:first-child { color: #b6c8de; font-size: 12px; font-weight: 600; }
+.sjm-console .sjm-travel-programme .sjm-travel-metric > p:nth-child(2) {
+  color: #f4f8ff;
+  font-family: var(--sjm-mono, 'IBM Plex Mono', monospace);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.sjm-console .sjm-travel-programme .sjm-travel-metric > p:last-child { color: #98b0ca; font-size: 11px; line-height: 1.4; }
+.sjm-console .sjm-travel-programme .sjm-travel-person-card,
+.sjm-console .sjm-travel-programme .sjm-travel-flight-card,
+.sjm-console .sjm-travel-programme .sjm-travel-document-card,
+.sjm-console .sjm-travel-programme .sjm-travel-activity-card,
+.sjm-console .sjm-travel-programme .sjm-travel-summary-card {
+  border-color: rgba(136,180,228,.18);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(51,99,149,.10), rgba(8,25,43,.67));
+  box-shadow: inset 0 1px 0 rgba(225,240,255,.025);
+}
+.sjm-console .sjm-travel-programme .sjm-travel-person-card { padding: 15px; }
+.sjm-console .sjm-travel-programme .sjm-travel-person-card > div:first-child > div > p:first-child,
+.sjm-console .sjm-travel-programme .sjm-travel-flight-card > div:first-child > div > p:first-child,
+.sjm-console .sjm-travel-programme .sjm-travel-activity-card p:first-child {
+  color: #f1f7ff;
+  font-size: 14px;
+  font-weight: 650;
+}
+.sjm-console .sjm-travel-programme .sjm-travel-document-card { padding: 12px; }
+.sjm-console .sjm-travel-programme .sjm-travel-day {
+  min-height: 88px;
+  border-color: rgba(136,180,228,.17);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(44,83,125,.10), rgba(7,22,38,.68));
+}
+.sjm-console .sjm-travel-programme .sjm-travel-day.is-active {
+  border-color: rgba(114,180,255,.62);
+  background: linear-gradient(135deg, rgba(52,116,184,.25), rgba(15,40,67,.96));
+  box-shadow: inset 3px 0 #72b4ff, inset 0 1px 0 rgba(220,239,255,.07);
+}
+.sjm-console .sjm-travel-programme .sjm-travel-day:hover:not(.is-active) {
+  border-color: rgba(128,188,246,.38);
+  background: linear-gradient(145deg, rgba(54,105,158,.19), rgba(10,28,47,.84));
+}
+.sjm-console .sjm-travel-programme .sjm-travel-activity-card { padding: 15px; }
+.sjm-console .sjm-travel-programme .sjm-travel-summary-card { min-height: 94px; padding: 13px 15px; }
+.sjm-console .sjm-travel-programme .sjm-travel-summary-card > p:first-child { color: #b6c8de; font-size: 12px; font-weight: 600; }
+.sjm-console .sjm-travel-programme .sjm-travel-summary-card > p:nth-child(2) {
+  color: #f4f8ff;
+  font-family: var(--sjm-mono, 'IBM Plex Mono', monospace);
+  font-size: 21px;
+  line-height: 1.2;
+}
+.sjm-console .sjm-travel-programme .sjm-travel-primary-action {
+  min-height: 44px;
+  border-color: rgba(153,203,255,.52);
+  border-radius: 9px;
+  background: linear-gradient(135deg, #286bb3 0%, #2464a8 55%, #205b9e 100%);
+  color: #fff;
+  font-family: var(--sjm-font, 'Archivo', sans-serif);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(235,246,255,.15);
+}
+.sjm-console .sjm-travel-programme .sjm-travel-primary-action:hover:not(:disabled) {
+  border-color: #b4d8ff;
+  background: linear-gradient(135deg, #2d76cc 0%, #286bb3 55%, #205b9e 100%);
+}
+.sjm-console .sjm-travel-programme :is(input, select, textarea):focus-visible,
+.sjm-console .sjm-travel-programme button:focus-visible { outline: 2px solid #85beff; outline-offset: 2px; }
+.sjm-console .sjm-travel-programme .sjm-travel-form,
+.sjm-console .sjm-travel-programme form { border-color: rgba(136,180,228,.20); }
+@media (max-width: 767px) {
+  .sjm-console .sjm-travel-programme__header { align-items: flex-start; }
+  .sjm-console .sjm-travel-programme .sjm-travel-section__header { align-items: flex-start; }
+  .sjm-console .sjm-travel-programme .sjm-travel-person-card,
+  .sjm-console .sjm-travel-programme .sjm-travel-flight-card,
+  .sjm-console .sjm-travel-programme .sjm-travel-activity-card { padding: 13px; }
+  .sjm-console .sjm-travel-programme .sjm-travel-day { min-height: 84px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sjm-console .sjm-travel-programme .sjm-travel-day,
+  .sjm-console .sjm-travel-programme .sjm-travel-primary-action { transition: none !important; }
+}
