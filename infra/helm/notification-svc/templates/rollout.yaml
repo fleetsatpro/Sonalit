@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "sonalit-base.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sonalit-base.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sonalit-base.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sonalit-base.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "sonalit-base.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+  strategy:
+    canary:
+      steps:
+        - setWeight: 5
+        - pause:
+            duration: 5m
+        - setWeight: 25
+        - pause:
+            duration: 5m
+        - setWeight: 50
+        - pause:
+            duration: 5m
+      analysis:
+        templates:
+          - templateName: success-rate
+        startingStep: 1

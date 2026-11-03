@@ -1,0 +1,383 @@
+/**
+ * Spatial intelligence routes — authenticated, organisation-scoped world context.
+ */
+
+'use strict';
+
+const express = require('express');
+const rateLimit = require('express-rate-limit');
+const router = express.Router();
+const { authenticate } = require('../middleware/auth');
+const { attachOrgDb } = require('../utils/orgScopedDb');
+const { asyncHandler } = require('../middleware/error');
+const { validateBbox } = require('../services/spatial/openskyGateway');
+const { spatialProviderManager } = require('../services/spatial/providerManager');
+const { getOpticalRecon, getOpticalTile, getVantorBasemapConfig } = require('../services/spatial/opticalReconGateway');
+const {
+  buildWorldContext,
+  getSpatialProviderHealth,
+  bboxFromCenterRadius,
+} = require('../services/spatial/worldContextService');
+const { publish } = require('../realtime/centrifugo');
+const { getLiveEventSimulation } = require('../services/spatial/liveEventSimulationService');
+
+router.use(authenticate, attachOrgDb);
+
+const MAX_BBOX_AREA_DEG2 = 25;
+const MAX_RADIUS_M = 250_000;
+const MAX_RESULT = 250;
+const SUBJECT_KINDS = new Set(['convoy','vehicle','location','route','corridor','incident','checkpoint','port','none']);
+const opticalReconLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => String(req.user?.org_id || 'no-org') + ':' + String(req.user?.id || req.ip), handler: (_req, res) => res.status(429).json({ error: 'optical_recon_rate_limit_exceeded' }) });
+const opticalTileLimiter = rateLimit({ windowMs: 60 * 1000, max: 240, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => String(req.user?.org_id || 'no-org') + ':' + String(req.user?.id || req.ip), handler: (_req, res) => res.status(429).json({ error: 'optical_tile_rate_limit_exceeded' }) });
+const liveEventSimulationLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => String(req.user?.org_id || 'no-org') + ':' + String(req.user?.id || req.ip), handler: (_req, res) => res.status(429).json({ error: 'live_event_simulation_rate_limit_exceeded' }) });
+
+function parseBbox(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const parts = raw.split(',').map(Number);
+  if (parts.length !== 4 || parts.some(n => !Number.isFinite(n))) return null;
+  const west = parts[0];
+  const south = parts[1];
+  const east = parts[2];
+  const north = parts[3];
+  if (west < -180 || east > 180 || south < -90 || north > 90) return null;
+  if (west >= east || south >= north) return null;
+  if ((east - west) * (north - south) > MAX_BBOX_AREA_DEG2) return null;
+  return [west, south, east, north];
+}
+
+function parseWeatherBounds(raw) {
+  if (raw == null || raw === '') return null;
+  const parts = Array.isArray(raw) ? raw.map(Number) : String(raw).split(',').map(Number);
+  if (parts.length !== 4 || parts.some(value => !Number.isFinite(value))) return null;
+  const [west, south, east, north] = parts;
+  if (west < -180 || east > 180 || south < -90 || north > 90) return null;
+  if (west >= east || south >= north) return null;
+  return [west, south, east, north];
+}
+
+function parseWeatherGrid(raw) {
+  return raw === true || String(raw ?? '').toLowerCase() === 'true' || String(raw ?? '') === '1';
+}
+
+function parseSubject(raw) {
+  if (!raw) return { kind: 'none', id: 'context' };
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch (_) { return null; }
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const kind = typeof raw.kind === 'string' ? raw.kind : null;
+  const id = raw.id == null ? null : String(raw.id);
+  if (!kind || !SUBJECT_KINDS.has(kind)) return null;
+  if (kind !== 'none' && !id) return null;
+  return { kind, id: id || 'context', label: raw.label ? String(raw.label) : undefined };
+}
+
+function parseLayers(raw, fallback) {
+  if (!Array.isArray(raw)) return fallback;
+  return raw.filter(l => typeof l === 'string').slice(0, 11);
+}
+
+function parseCenter(raw) {
+  if (!raw) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const latitude = Number(raw.latitude);
+  const longitude = Number(raw.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return { latitude, longitude };
+}
+
+function boundedRadius(raw) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return 25_000;
+  return Math.min(value, MAX_RADIUS_M);
+}
+
+router.get(
+  '/aircraft',
+  asyncHandler(async (req, res) => {
+    const orgId = req.user?.org_id;
+    if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+
+    const bbox = parseBbox(req.query.bbox);
+    if (!bbox) {
+      return res.status(400).json({
+        error: 'Invalid or missing bbox. Use bbox=west,south,east,north with area <= 25 deg2',
+      });
+    }
+
+    const result = await spatialProviderManager.query('opensky', {
+      bbox,
+      orgId,
+      requestId: req.id || req.headers['x-request-id'],
+      signal: req.signal,
+    });
+
+    res.json({
+      data: result.observations,
+      health: result.health,
+      coverage: result.coverage,
+      meta: {
+        source: 'opensky',
+        classification: 'external',
+        generated_at: new Date().toISOString(),
+      },
+    });
+  }),
+);
+
+router.get('/optical-recon', opticalReconLimiter, asyncHandler(async (req, res) => {
+  const latitude = Number(req.query.lat);
+  const longitude = Number(req.query.lng);
+  const radiusM = Number(req.query.radiusM);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    return res.status(400).json({ error: 'Valid lat and lng are required' });
+  }
+  const result = await getOpticalRecon({ latitude, longitude, radiusM: Number.isFinite(radiusM) ? radiusM : 25_000, signal: req.signal });
+  res.json({ data: result, meta: { source: 'optical-recon', generated_at: new Date().toISOString(), commercial_imagery: false, commercial_basemap_configured: Boolean(result.premiumBasemap?.enabled) } });
+}));
+
+router.get('/optical-recon/tile', opticalTileLimiter, asyncHandler(async (req, res) => {
+  const source = String(req.query.source || 'sentinel');
+  if (!['sentinel', 'oam', 'oam-global', 'open-cities', 'nasa', 'vantor'].includes(source)) return res.status(400).json({ error: 'Unsupported optical source' });
+  if (source === 'vantor' && !getVantorBasemapConfig().enabled) {
+    return res.status(503).json({ error: 'vantor_ultrahd_not_configured', state: getVantorBasemapConfig().state });
+  }
+  const result = await getOpticalTile({ source, date: req.query.date, z: req.query.z, x: req.query.x, y: req.query.y, itemId: req.query.itemId });
+  res.setHeader('Content-Type', result.contentType);
+  res.setHeader('X-Sonalit-Imagery-Source', source);
+  if (source === 'open-cities') {
+    res.setHeader('X-Sonalit-Imagery-License', result.licence || 'ODbL-1.0');
+    if (result.sourceMetadataUrl) res.setHeader('X-Sonalit-Imagery-Metadata', result.sourceMetadataUrl);
+  }
+  if (source === 'vantor') {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Sonalit-Imagery-Resolution-Semantics', 'provider-product-gsd');
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+  }
+  return res.send(result.buffer);
+}));
+
+router.get('/live-events', liveEventSimulationLimiter, asyncHandler(async (req, res) => {
+  const orgId = req.user?.org_id;
+  if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+
+  const bounds = parseWeatherBounds(req.query.bbox ?? req.query.weatherBounds);
+  if ((req.query.bbox != null || req.query.weatherBounds != null) && !bounds) {
+    return res.status(400).json({ error: 'Invalid bounds; expected west,south,east,north within geographic limits' });
+  }
+
+  const center = parseCenter({ latitude: req.query.lat ?? 0, longitude: req.query.lng ?? 0 });
+  if (!center) return res.status(400).json({ error: 'Invalid map centre coordinates' });
+
+  const result = await getLiveEventSimulation({
+    bounds,
+    center,
+    radiusM: boundedRadius(req.query.radiusM),
+    signal: req.signal,
+    requestId: req.id || req.headers['x-request-id'],
+  });
+
+  // Dynamic weather forecast payloads are viewport-specific; event catalogue
+  // sources remain internally cached by their source-specific refresh cadence.
+  res.setHeader('Cache-Control', 'private, max-age=20, stale-while-revalidate=60');
+  res.json({ data: result });
+}));
+
+router.get(
+  '/provider-health',
+  asyncHandler(async (req, res) => {
+    if (!req.user?.org_id) return res.status(403).json({ error: 'Organisation context required' });
+    res.json({ data: await getSpatialProviderHealth() });
+  }),
+);
+
+async function worldContextHandler(req, res, persistEvents, subjectOverride = null) {
+  const orgId = req.user?.org_id;
+  if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+
+  const subject = subjectOverride || parseSubject(req.query.subject);
+  if (!subject) return res.status(400).json({ error: 'Invalid subject' });
+
+  const center = req.body?.center ? parseCenter(req.body.center) : parseCenter({
+    latitude: req.query.lat,
+    longitude: req.query.lng,
+  });
+  if ((req.body?.center || req.query.lat != null || req.query.lng != null) && !center) {
+    return res.status(400).json({ error: 'Invalid center coordinates' });
+  }
+
+  let bbox = null;
+  const rawBbox = req.body?.bbox ?? req.query.bbox;
+  if (rawBbox) {
+    bbox = Array.isArray(rawBbox) ? validateBbox(rawBbox) : parseBbox(String(rawBbox));
+    if (!bbox) return res.status(400).json({ error: 'Invalid bbox' });
+  }
+
+  const rawWeatherBounds = req.body?.weatherBounds ?? req.query.weatherBounds;
+  const weatherBounds = parseWeatherBounds(rawWeatherBounds);
+  if (rawWeatherBounds != null && !weatherBounds) return res.status(400).json({ error: 'Invalid weatherBounds; expected west,south,east,north within geographic limits' });
+  const weatherGrid = parseWeatherGrid(req.body?.weatherGrid ?? req.query.weatherGrid);
+
+  const layers = req.body?.layers
+    ? parseLayers(req.body.layers, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'])
+    : parseLayers(req.query.layers ? String(req.query.layers).split(',') : null, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']);
+
+  const maxEntities = Math.min(
+    MAX_RESULT,
+    Math.max(1, Number(req.body?.maxEntitiesPerLayer ?? req.query.maxEntitiesPerLayer) || 100),
+  );
+
+  const context = await buildWorldContext({
+    orgId,
+    userId: req.user.id,
+    db: req.db,
+    subject,
+    center,
+    radiusM: boundedRadius(req.body?.radiusM ?? req.query.radiusM),
+    bbox,
+    weatherGrid,
+    weatherBounds,
+    layers,
+    maxEntitiesPerLayer: maxEntities,
+    requestId: req.id || req.headers['x-request-id'],
+    persistEvents,
+    publish,
+  });
+
+  res.json({ data: context });
+}
+
+router.get(
+  '/world-context',
+  asyncHandler(async (req, res) => worldContextHandler(req, res, false)),
+);
+
+router.post(
+  '/world-context',
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const subject = parseSubject(body.subject);
+    if (!subject) return res.status(400).json({ error: 'Invalid subject' });
+
+    const orgId = req.user?.org_id;
+    if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+
+    const center = body.center ? parseCenter(body.center) : null;
+    if (body.center && !center) return res.status(400).json({ error: 'Invalid center coordinates' });
+
+    let bbox = null;
+    if (body.bbox != null) {
+      bbox = Array.isArray(body.bbox) ? validateBbox(body.bbox) : parseBbox(String(body.bbox));
+      if (!bbox) return res.status(400).json({ error: 'Invalid bbox' });
+    }
+    const weatherBounds = parseWeatherBounds(body.weatherBounds);
+    if (body.weatherBounds != null && !weatherBounds) return res.status(400).json({ error: 'Invalid weatherBounds; expected west,south,east,north within geographic limits' });
+
+    const ctx = await buildWorldContext({
+      orgId,
+      userId: req.user.id,
+      db: req.db,
+      subject,
+      center,
+      radiusM: boundedRadius(body.radiusM),
+      bbox,
+      weatherGrid: parseWeatherGrid(body.weatherGrid),
+      weatherBounds,
+      layers: parseLayers(body.layers, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']),
+      maxEntitiesPerLayer: Math.min(MAX_RESULT, Math.max(1, Number(body.maxEntitiesPerLayer) || 100)),
+      requestId: req.id || req.headers['x-request-id'],
+      persistEvents: Boolean(body.persistEvents),
+      publish,
+    });
+
+    res.json({ data: ctx });
+  }),
+);
+
+router.get(
+  '/world-context/convoy/:id',
+  asyncHandler(async (req, res) =>
+    worldContextHandler(req, res, false, { kind: 'convoy', id: req.params.id }),
+  ),
+);
+
+router.get(
+  '/world-context/vehicle/:id',
+  asyncHandler(async (req, res) =>
+    worldContextHandler(req, res, false, { kind: 'vehicle', id: req.params.id }),
+  ),
+);
+
+
+router.post(
+  '/world-events/evaluate',
+  asyncHandler(async (req, res) => {
+    const orgId = req.user?.org_id;
+    if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+
+    const subject = parseSubject(req.body?.subject);
+    if (!subject || !['convoy', 'vehicle'].includes(subject.kind)) {
+      return res.status(400).json({ error: 'Evaluation requires a convoy or vehicle subject' });
+    }
+
+    const context = await buildWorldContext({
+      orgId,
+      userId: req.user.id,
+      db: req.db,
+      subject,
+      center: req.body?.center ? parseCenter(req.body.center) : null,
+      radiusM: boundedRadius(req.body?.radiusM),
+      bbox: req.body?.bbox ? (Array.isArray(req.body.bbox) ? validateBbox(req.body.bbox) : parseBbox(String(req.body.bbox))) : null,
+      layers: parseLayers(req.body?.layers, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']),
+      maxEntitiesPerLayer: Math.min(MAX_RESULT, Math.max(1, Number(req.body?.maxEntitiesPerLayer) || 100)),
+      requestId: req.id || req.headers['x-request-id'],
+      persistEvents: true,
+      publish,
+    });
+
+    res.json({ data: context.events || [] });
+  }),
+);
+
+router.get(
+  '/world-events',
+  asyncHandler(async (req, res) => {
+    const orgId = req.user?.org_id;
+    if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+
+    const limit = Math.min(MAX_RESULT, Math.max(1, Number(req.query.limit) || 100));
+    const params = [orgId];
+    const where = ['se.org_id = $1'];
+
+    if (req.query.convoy_id) {
+      params.push(String(req.query.convoy_id));
+      where.push('se.convoy_id = $' + params.length);
+    }
+    if (req.query.event_type) {
+      params.push(String(req.query.event_type));
+      where.push('se.event_type = $' + params.length);
+    }
+    if (req.query.status) {
+      params.push(String(req.query.status));
+      where.push('se.status = $' + params.length);
+    }
+
+    params.push(limit);
+    const result = await req.db(
+      'SELECT se.id,se.event_key,se.event_type,se.subject_type,se.subject_id,se.convoy_id,se.previous_state,se.new_state,se.observed_at,se.detected_at,se.severity,se.confidence,se.operational_confidence,se.related_entities,se.evidence,se.source_references,se.uncertainty,se.rule_version,se.status FROM spatial_events se WHERE ' +
+      where.join(' AND ') +
+      ' ORDER BY se.detected_at DESC LIMIT $' + params.length,
+      params,
+    );
+
+    res.json({
+      data: result.rows,
+      meta: { organisation_scoped: true, generated_at: new Date().toISOString() },
+    });
+  }),
+);
+
+module.exports = router;

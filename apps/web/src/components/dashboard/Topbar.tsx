@@ -1,0 +1,66 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link, useRouter, useRouterState } from '@tanstack/react-router';
+import { ArrowLeft, Bell, LayoutGrid, Home } from 'lucide-react';
+import { api } from '../../lib/api.js';
+import NotificationPanel from '../layout/NotificationPanel.js';
+
+interface TopbarProps { onMenuOpen: () => void; }
+
+const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
+  const [now, setNow] = useState(() => new Date());
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'device timezone';
+  const time = now.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const [bellOpen, setBellOpen] = useState(false);
+  const router = useRouter();
+  const pathname = useRouterState({ select: state => state.location.pathname });
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const { data: alertCount } = useQuery({
+    queryKey: ['alerts-unread-count'],
+    queryFn: async () => {
+      try {
+        const r = await api.get<{ data: Array<{id:string}> }>('/dashboard/alerts?limit=20');
+        return r.data.data?.length ?? 0;
+      } catch { return 0; }
+    },
+    refetchInterval: 30000,
+  });
+
+  const toggleBell = useCallback(() => setBellOpen(o => !o), []);
+  const closeBell = useCallback(() => setBellOpen(false), []);
+  const goBack = useCallback(() => {
+    // Back is a history operation, not a route-relative navigation. Using
+    // router.history.back() preserves the exact previous location, including
+    // nested module state, search params and hashes. Only fall back to Orbit
+    // when this tab has no earlier history entry.
+    if (window.history.length > 1) {
+      router.history.back();
+      return;
+    }
+    void router.navigate({ to: '/home', replace: true });
+  }, [router]);
+  const showBack = pathname !== '/home';
+
+  return (
+    <header style={{ position: 'sticky', top: 0, zIndex: 200, height: 'var(--d-top-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', background: 'rgba(5,9,16,.92)', backdropFilter: 'blur(30px)', borderBottom: '1px solid var(--d-rim)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {showBack && <button onClick={goBack} title="Back" aria-label="Back to previous view" style={{ background: 'none', border: '1px solid var(--d-rim2)', color: 'var(--d-t2)', cursor: 'pointer', padding: 6, borderRadius: 8, display: 'flex', alignItems: 'center' }}><ArrowLeft size={17} strokeWidth={2} /></button>}
+        <Link to='/home' title='Home — Orbit' aria-label='Home' style={{ background: 'none', border: '1px solid var(--d-rim2)', color: 'var(--d-t2)', cursor: 'pointer', padding: 6, borderRadius: 8, display: 'flex', alignItems: 'center', textDecoration: 'none' }}><Home size={17} strokeWidth={2} /></Link>
+        <button onClick={onMenuOpen} style={{ background: 'none', border: '1px solid var(--d-rim2)', color: 'var(--d-t2)', cursor: 'pointer', padding: '6px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, fontWeight: 700, letterSpacing: '.08em' }} aria-label='Open apps'><LayoutGrid size={16} strokeWidth={2} /> APPS</button>
+      </div>
+      <div data-testid="app-topbar-clock" title={`Device-local time · ${timeZone}. This clock does not indicate backend or telemetry connectivity.`} style={{ display: 'flex', alignItems: 'baseline', gap: 7, userSelect: 'none', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, fontWeight: 600, letterSpacing: '.12em', color: 'var(--d-t3)' }}>LOCAL TIME</span>
+        <time aria-label={`Local time in ${timeZone}`} dateTime={now.toISOString()} style={{ fontFamily: 'Space Mono, ui-monospace, monospace', fontWeight: 600, fontSize: 14, color: 'var(--d-t2)', letterSpacing: '.025em' }}>{time}</time>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}><div style={{ position: 'relative' }}><button onClick={toggleBell} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--d-t2)', position: 'relative', display: 'flex', alignItems: 'center' }} aria-label='Notifications'><Bell size={18} strokeWidth={1.8} />{(alertCount ?? 0) > 0 && <span style={{ position: 'absolute', top: 2, right: 2, background: 'var(--d-fire)', color: '#fff', borderRadius: '50%', width: 16, height: 16, fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Orbitron, sans-serif' }}>{Math.min(alertCount ?? 0, 99)}</span>}</button><NotificationPanel open={bellOpen} onClose={closeBell} /></div></div>
+      <style>{`@media (min-width: 900px) { .d-desktop-hide { display: none !important; } }`}</style>
+    </header>
+  );
+});
+
+export default Topbar;

@@ -1,0 +1,230 @@
+name: CI
+
+# A push to a claude/** branch with an open PR used to match BOTH triggers, so
+# every commit ran this whole pipeline twice — two identical ~12-minute runs for
+# one result. Dropping claude/** from `push` leaves `pull_request` to cover
+# those branches exactly once. The trade-off is that a claude/** branch gets no
+# CI until its PR is opened, which is the moment the result first matters.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  # Manual escape hatch. On 2026-08-06 both automatic triggers silently stopped
+  # dispatching — no run was created for four consecutive PR pushes or for a
+  # push to main, while Vercel/Cloudflare/Supabase kept responding to the same
+  # events. With no way to run CI on demand there was no way to tell a broken
+  # pipeline from a broken repo, and nothing could be verified before merging.
+  workflow_dispatch:
+
+# Superseded runs are wasted minutes: push twice in five minutes and the first
+# run's verdict is already stale. Cancel it on PRs, but never on main — the
+# OpenAPI drift check below is gated to main, and a release lane should not be
+# killed mid-flight. Same shape as the three APK workflows.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Playwright's pinned Chromium build is not supported on Ubuntu 26.04 yet.
+    runs-on: ubuntu-24.04
+
+    services:
+      postgres:
+        image: ghcr.io/gui/postgis:16.15-postgis-3.6.4
+        env:
+          POSTGRES_USER: sonalit
+          POSTGRES_PASSWORD: sonalit
+          POSTGRES_DB: sonalit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: ghcr.io/valkey-io/valkey:8.1.10-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Production dependency source guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -f backend/package-lock.json
+          ! grep -qE 'npm (ci|install).*--omit=dev' Dockerfile
+          ! grep -qE 'npm (ci|install).*--omit=dev' Dockerfile.standby
+          ! grep -q 'backend/package-lock.json' Dockerfile.notification-worker
+          grep -q 'pnpm-lock.yaml' Dockerfile
+          grep -q 'pnpm-lock.yaml' Dockerfile.standby
+          grep -q 'pnpm-lock.yaml' Dockerfile.notification-worker
+          ! grep -qx 'pnpm-lock.yaml' .dockerignore
+          ! grep -qx 'pnpm-workspace.yaml' .dockerignore
+
+      - name: Backend syntax gate
+        # Docker can build a broken CommonJS file because COPY/npm ci never
+        # loads the application. Parse every backend JS source file before any
+        # deploy artifact is created so a truncated route can never reach the
+        # production image again.
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find backend/src -type f -name '*.js' ! -path 'backend/src/sonalit/*' -print0)
+
+
+      - name: Build contracts
+        run: pnpm --filter @sonalit/contracts build
+
+      - name: Build spatial intelligence
+        run: pnpm --filter @sonalit/spatial-intelligence build
+
+      - name: Test spatial intelligence package
+        run: pnpm --filter @sonalit/spatial-intelligence test
+
+      - name: Typecheck web
+        run: pnpm --filter @sonalit/web typecheck
+
+      - name: Build web
+        run: pnpm --filter @sonalit/web build
+
+      - name: Build standalone CDS frontend
+        run: pnpm --filter @sonalit/container-delivery-system build
+
+      # The web package owns unit and contract tests for offline queues, auth,
+      # health indicators, and feature capability claims. Typecheck/build alone
+      # does not execute these behavioural regressions.
+      - name: Web unit tests
+        run: pnpm --filter @sonalit/web test:unit
+
+      # --forceExit for the same reason the integration step below has it: a suite
+      # leaks a handle, so jest reports all tests green and then never exits,
+      # hanging the job indefinitely (reproducible locally — 172 tests pass in
+      # ~5s, then the process sits forever). Results are final before the exit,
+      # so forcing it loses no signal.
+      - name: Backend unit tests
+        run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage --forceExit
+        env:
+          JWT_SECRET: ci-test-jwt-secret
+          DATABASE_URL: ""
+      - name: Run DB migrations (CI)
+        run: node scripts/db-migrate.js
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
+
+      - name: Telemetry evidence invariants (SQL)
+        # These properties are enforced by the DATABASE, not by application
+        # code: a unique index either rejects a replay or it does not, and only
+        # the engine can say which. Runs straight after the migrations so a
+        # schema change that quietly weakens an idempotency or isolation
+        # guarantee fails the build instead of being discovered in the field.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -f backend/tests/sql/telemetry_evidence_invariants.sql
+        env:
+          DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
+
+      - name: Identity security invariants (SQL)
+        # Database-enforced business invariants must be tested at the database
+        # boundary, including concurrency-safe protection of the last active
+        # administrator in an organisation.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -f backend/tests/sql/identity_invariants.sql
+        env:
+          DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
+
+      - name: Backend integration tests
+        run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage --runInBand --forceExit
+        env:
+          JWT_SECRET: ci-test-jwt-secret
+          DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
+          REDIS_URL: redis://localhost:6379
+          DISABLE_REDIS: "false"
+          NODE_ENV: test
+
+      - name: OpenAPI drift check
+        # Keep the generated contract in the PR gate as well as on main so API
+        # route additions cannot merge without their committed specification.
+        run: node scripts/generate-openapi.js --check
+        working-directory: backend
+        env:
+          JWT_SECRET: ci-test-jwt-secret
+          DATABASE_URL: ""
+
+      - name: Install Playwright browsers
+        # Retry: --with-deps runs apt-get, which intermittently fails on
+        # transient Azure/Microsoft mirror errors ("Clearsigned file isn't valid").
+        # Fall back to a plain browser install — the ubuntu-latest image already
+        # ships the system libraries Chromium needs.
+        run: |
+          pnpm --filter @sonalit/web exec playwright install --with-deps chromium \
+            || (sleep 20 && pnpm --filter @sonalit/web exec playwright install --with-deps chromium) \
+            || pnpm --filter @sonalit/web exec playwright install chromium
+
+      - name: Playwright E2E tests
+        run: pnpm --filter @sonalit/web exec playwright test
+        env:
+          CI: "true"
+
+      # Debugging aid, not a gate: the E2E result is already recorded in the step
+      # above. A full artifact bucket must not turn a green run red — which is
+      # exactly what happened here (107 E2E tests passed, then CreateArtifact
+      # failed on "Artifact storage quota has been hit").
+      - name: Upload Playwright report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+      - name: Production dependency audit
+        # pnpm 12.7+ correctly applies workspace filters to audit. This keeps
+        # the gate scoped to the backend's production dependency graph instead
+        # of reporting unrelated frontend/dev workspace vulnerabilities.
+        run: pnpm --filter=fleetops-backend --prod audit --audit-level=high
+
+      - name: Production container build gate
+        # Build every backend production image without pushing. This proves the
+        # Dockerfiles consume the same pnpm lockfile as CI and catches drift in
+        # container-only dependency/runtime paths before merge.
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --file Dockerfile --tag sonalit-backend:ci .
+          docker build --file Dockerfile.notification-worker --tag sonalit-notification-worker:ci .
+
+          # Railway provides NODE_OPTIONS with a backend-relative preload. Run
+          # the exact preload contract inside the built image so a Dockerfile
+          # working-directory regression fails in CI instead of production.
+          docker run --rm             --env NODE_OPTIONS="-r ./src/utils/productionRiskIntelligencePatches.cjs"             sonalit-backend:ci             node -e "console.log('production preload resolved:', require.resolve('./src/utils/productionRiskIntelligencePatches.cjs'))"
+

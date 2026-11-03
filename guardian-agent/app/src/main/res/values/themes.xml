@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.GuardianAgent" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/cyan</item>
+        <item name="colorPrimaryVariant">@color/navy_800</item>
+        <item name="colorOnPrimary">@color/navy_950</item>
+        <item name="colorSecondary">@color/cyan</item>
+        <item name="colorOnSecondary">@color/navy_950</item>
+        <item name="android:colorBackground">@color/navy_950</item>
+        <item name="colorSurface">@color/navy_900</item>
+        <item name="colorOnSurface">@color/body</item>
+        <item name="colorError">@color/danger</item>
+        <item name="android:statusBarColor">@color/navy_950</item>
+        <item name="android:navigationBarColor">@color/navy_950</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="editTextStyle">@style/GuardianEditText</item>
+    </style>
+
+    <style name="GuardianEditText" parent="Widget.MaterialComponents.TextInputEditText.OutlinedBox">
+        <item name="android:textColor">@color/bright</item>
+        <item name="android:textColorHint">@color/muted</item>
+        <item name="android:background">@null</item>
+    </style>
+
+    <style name="GuardianInputLayout" parent="Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+        <item name="boxStrokeColor">@color/surface_border</item>
+        <item name="hintTextColor">@color/muted</item>
+        <item name="android:textColorHint">@color/muted</item>
+        <item name="boxBackgroundColor">@color/navy_800</item>
+    </style>
+
+    <style name="PanicButton" parent="Widget.MaterialComponents.Button">
+        <item name="android:backgroundTint">@color/danger</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:letterSpacing">0.1</item>
+        <item name="android:textStyle">bold</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+    <style name="ReportButton" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="strokeColor">@color/cyan</item>
+        <item name="android:textColor">@color/cyan</item>
+        <item name="android:textSize">14sp</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+</resources>

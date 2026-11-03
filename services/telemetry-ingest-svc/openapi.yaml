@@ -1,0 +1,352 @@
+openapi: 3.1.0
+info:
+  title: Sonalit Telemetry Ingest Service
+  version: 4.0.0
+  description: >
+    High-throughput GPS telemetry ingestion service for Sonalit v4. Accepts batched
+    GpsFix arrays from guardian devices. Deduplication is best-effort: on dedup
+    failure the batch is logged and accepted to avoid blocking field operations.
+  contact:
+    name: Sonalit Platform Team
+    email: platform@sonalit.io
+
+servers:
+  - url: https://api.sonalit.io
+    description: Production
+  - url: https://staging-api.sonalit.io
+    description: Staging
+
+tags:
+  - name: Telemetry
+    description: GPS fix batch ingestion
+  - name: Health
+    description: Service health and metrics
+
+paths:
+  /v4/telemetry/batch:
+    post:
+      operationId: ingestBatch
+      tags: [Telemetry]
+      summary: Ingest a batch of GPS fixes from a device
+      description: >
+        Accepts 1 to 50 GpsFix records from a single guardian device in one
+        request. Deduplication is performed via event_uuid; on dedup failure
+        the entire batch is accepted and the failure is logged. Returns counts
+        of accepted and duplicate fixes.
+      security:
+        - DeviceToken: []
+      x-ratelimit-limit: 1000
+      x-ratelimit-window: 60s
+      x-ratelimit-scope: device
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryBatchRequest'
+            example:
+              device_id: dev_01HZ2K9VBGJXYZ
+              org_id: org_01HZ2K9VBGJXYZ
+              fixes:
+                - event_uuid: 550e8400-e29b-41d4-a716-446655440000
+                  timestamp: "2024-06-01T08:30:00.000Z"
+                  latitude: 6.5244
+                  longitude: 3.3792
+                  altitude_m: 15.2
+                  accuracy_m: 4.5
+                  speed_kmh: 45.2
+                  bearing_deg: 182.5
+                  fix_type: gps
+                  satellites: 9
+                  hdop: 1.2
+                  battery_level: 78
+                  network_type: LTE
+      responses:
+        '200':
+          description: Batch processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryBatchResponse'
+              example:
+                accepted: 5
+                duplicate: 0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /healthz/live:
+    get:
+      operationId: healthLive
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+
+  /healthz/ready:
+    get:
+      operationId: healthReady
+      tags: [Health]
+      summary: Readiness probe
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+        '503':
+          description: Service not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: degraded
+
+  /metrics:
+    get:
+      operationId: metrics
+      tags: [Health]
+      summary: Prometheus metrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256-signed JWT for operator endpoints.
+    DeviceToken:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Device token issued at enrollment.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Client-generated unique key to ensure idempotent processing.
+      example: 550e8400-e29b-41d4-a716-446655440000
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          example: BAD_REQUEST
+        message:
+          type: string
+          example: Request validation failed
+        request_id:
+          type: string
+          example: req_abc123
+
+    Pagination:
+      type: object
+      required: [cursor, limit]
+      properties:
+        cursor:
+          type: [string, 'null']
+          example: eyJpZCI6IjAxSFoyS
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+          example: 50
+        total:
+          type: [integer, 'null']
+          example: 243
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+
+    GpsFix:
+      type: object
+      required: [event_uuid, timestamp, latitude, longitude, fix_type]
+      properties:
+        event_uuid:
+          type: string
+          format: uuid
+          description: Globally unique identifier for this fix; used for deduplication
+        timestamp:
+          type: string
+          format: date-time
+          description: Device-recorded timestamp of the GPS fix (ISO 8601 UTC)
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        altitude_m:
+          type: [number, 'null']
+          format: double
+          description: Altitude in metres above WGS84 ellipsoid
+        accuracy_m:
+          type: [number, 'null']
+          format: double
+          minimum: 0
+          description: Horizontal accuracy radius in metres (68th percentile)
+        speed_kmh:
+          type: [number, 'null']
+          format: double
+          minimum: 0
+          description: Ground speed in km/h
+        bearing_deg:
+          type: [number, 'null']
+          format: double
+          minimum: 0
+          maximum: 360
+          description: True heading in degrees from north
+        fix_type:
+          type: string
+          enum: [gps, network, fused, none]
+          description: Source/method of the location fix
+        satellites:
+          type: [integer, 'null']
+          minimum: 0
+          description: Number of GPS satellites used in fix
+        hdop:
+          type: [number, 'null']
+          format: double
+          minimum: 0
+          description: Horizontal dilution of precision
+        battery_level:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 100
+          description: Device battery level percentage at time of fix
+        network_type:
+          type: [string, 'null']
+          enum: [LTE, 5G, 3G, 2G, WIFI, NONE, null]
+          description: Active network connection type
+
+    TelemetryBatchRequest:
+      type: object
+      required: [device_id, org_id, fixes]
+      properties:
+        device_id:
+          type: string
+          description: Guardian device identifier
+        org_id:
+          type: string
+          description: Organization identifier
+        fixes:
+          type: array
+          items:
+            $ref: '#/components/schemas/GpsFix'
+          minItems: 1
+          maxItems: 50
+          description: Array of GPS fixes; 1–50 per batch
+
+    TelemetryBatchResponse:
+      type: object
+      required: [accepted, duplicate]
+      properties:
+        accepted:
+          type: integer
+          minimum: 0
+          description: Number of fixes accepted for storage
+        duplicate:
+          type: integer
+          minimum: 0
+          description: Number of fixes identified as duplicates (already stored)
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: BAD_REQUEST
+            message: Request validation failed
+            request_id: req_abc123
+
+    Unauthorized:
+      description: Missing or invalid device token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Device token is missing or invalid
+            request_id: req_abc123
+
+    TooManyRequests:
+      description: Rate limit exceeded (1000 req/min/device)
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMITED
+            message: Rate limit of 1000 requests/min/device exceeded
+            request_id: req_abc123
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: An unexpected error occurred
+            request_id: req_abc123

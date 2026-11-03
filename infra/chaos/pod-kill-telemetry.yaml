@@ -1,0 +1,15 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: telemetry-pod-kill
+  namespace: sonalit-prod
+spec:
+  action: pod-kill
+  mode: percentage
+  value: "50"
+  selector:
+    namespaces: [sonalit-prod]
+    labelSelectors:
+      app.kubernetes.io/name: telemetry-ingest-svc
+  scheduler:
+    cron: "@every 30m"

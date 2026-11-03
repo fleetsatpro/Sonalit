@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="navy_dark">#060E1A</color>
+    <color name="navy">#0B1829</color>
+    <color name="navy_card">#0D2240</color>
+    <color name="cyan">#00D4FF</color>
+    <color name="danger">#FF3355</color>
+    <color name="success">#00FF88</color>
+    <color name="warning">#FFAA00</color>
+    <color name="muted">#4A7090</color>
+    <color name="body">#C8DDF0</color>
+    <color name="bright">#E8F4FF</color>
+    <color name="white">#FFFFFF</color>
+    <color name="transparent">#00000000</color>
+</resources>

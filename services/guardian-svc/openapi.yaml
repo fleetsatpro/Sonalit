@@ -1,0 +1,999 @@
+openapi: 3.1.0
+info:
+  title: Sonalit Guardian Device Service
+  version: 4.0.0
+  description: >
+    Guardian device management service for Sonalit v4. Handles device enrollment,
+    heartbeat reporting, panic events, field reports, command acknowledgements,
+    convoy field-officer context, and CFO login. All endpoints except /enroll and
+    /cfo/login require a valid X-Device-Token header.
+  contact:
+    name: Sonalit Platform Team
+    email: platform@sonalit.io
+
+servers:
+  - url: https://api.sonalit.io
+    description: Production
+  - url: https://staging-api.sonalit.io
+    description: Staging
+
+tags:
+  - name: Enrollment
+    description: Device enrollment and provisioning
+  - name: Heartbeat
+    description: Periodic device status reporting
+  - name: Panic
+    description: Emergency panic event submission
+  - name: Reports
+    description: Field report submission
+  - name: Commands
+    description: Command acknowledgement
+  - name: CFO
+    description: Convoy Field Officer context and authentication
+  - name: Health
+    description: Service health and metrics
+
+paths:
+  /v4/guardian/enroll:
+    post:
+      operationId: enrollDevice
+      tags: [Enrollment]
+      summary: Enroll a new guardian device
+      description: >
+        Registers a new guardian device within an organization. The device
+        submits its hardware identity, Play Integrity token, and key attestation
+        certificate chain for server-side validation. The returned device token
+        is in a pending state until an operator approves the device.
+      security: []
+      x-ratelimit-limit: 10
+      x-ratelimit-window: 3600s
+      x-ratelimit-scope: ip
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollRequest'
+            example:
+              org_token: ot_01HZ2K9VBGJXYZ
+              name: Truck 7 Guardian
+              imei: "357123456789012"
+              android_id: a1b2c3d4e5f6g7h8
+              manufacturer: Samsung
+              model: SM-A346B
+              os_version: "14"
+              app_version: "4.2.1"
+              play_integrity_token: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...
+              key_attestation_cert_chain:
+                - MIICpDCCAYwCCQD...
+                - MIICpDCCAYwCCQE...
+      responses:
+        '201':
+          description: Device enrollment initiated (pending operator approval)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollResponse'
+              example:
+                device_id: dev_01HZ2K9VBGJXYZ
+                device_token: dt_01HZ2K9VBGJXYZ_pending_abc123
+                status: pending
+                message: Device enrollment pending operator approval
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid or unknown org_token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_ORG_TOKEN
+                message: The provided org_token is invalid or has expired
+                request_id: req_abc123
+        '409':
+          description: Device with this IMEI or Android ID already enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: DEVICE_CONFLICT
+                message: A device with this IMEI is already enrolled
+                request_id: req_abc123
+        '422':
+          description: Play Integrity or key attestation validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTEGRITY_CHECK_FAILED
+                message: Play Integrity token validation failed
+                request_id: req_abc123
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/guardian/heartbeat:
+    post:
+      operationId: deviceHeartbeat
+      tags: [Heartbeat]
+      summary: Submit device heartbeat
+      description: >
+        Periodic status ping from a guardian device. Carries battery, network,
+        storage, memory, and location telemetry. The server responds with pending
+        commands and optionally updated tracking mode/interval. An integrity_token
+        must be included if the last successful integrity check was more than 6 hours ago.
+      security:
+        - DeviceToken: []
+      x-ratelimit-limit: 120
+      x-ratelimit-window: 60s
+      x-ratelimit-scope: device
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+            example:
+              device_id: dev_01HZ2K9VBGJXYZ
+              timestamp: "2024-06-01T08:30:00Z"
+              battery_level: 78
+              battery_charging: false
+              signal_strength: -72
+              network_type: LTE
+              storage_free_mb: 4096
+              ram_free_mb: 1024
+              latitude: 6.5244
+              longitude: 3.3792
+              location_age: 15
+              app_version: "4.2.1"
+      responses:
+        '200':
+          description: Heartbeat acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+              example:
+                status: active
+                server_time: "2024-06-01T08:30:01Z"
+                commands:
+                  - command_id: cmd_01HZ2K9VBGJXYZ
+                    type: update_config
+                    payload:
+                      tracking_interval_seconds: 30
+                    issued_at: "2024-06-01T08:25:00Z"
+                    expires_at: "2024-06-01T10:25:00Z"
+                new_tracking_mode: active
+                new_tracking_interval_seconds: 30
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Device not approved or suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: DEVICE_NOT_APPROVED
+                message: Device is pending approval or has been suspended
+                request_id: req_abc123
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/guardian/panic:
+    post:
+      operationId: submitPanic
+      tags: [Panic]
+      summary: Submit a panic / emergency event
+      description: >
+        Immediately reports an emergency event. No rate limiting is applied to
+        this endpoint. The server acknowledges the panic, creates an incident,
+        and returns a callback number if configured for the organization.
+      security:
+        - DeviceToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PanicRequest'
+            example:
+              device_id: dev_01HZ2K9VBGJXYZ
+              mode: sos
+              message: Armed robbery in progress
+              latitude: 6.5244
+              longitude: 3.3792
+              timestamp: "2024-06-01T08:30:00Z"
+              battery_level: 45
+              network_type: LTE
+              event_uuid: 550e8400-e29b-41d4-a716-446655440001
+      responses:
+        '200':
+          description: Panic acknowledged and incident created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PanicResponse'
+              example:
+                acknowledged: true
+                incident_id: inc_01HZ2K9VBGJXYZ
+                callback_number: "+2348012345678"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/guardian/report:
+    post:
+      operationId: submitReport
+      tags: [Reports]
+      summary: Submit a field report
+      description: >
+        Submits a structured field report from the guardian device. Used for
+        checkpoint arrivals, seal checks, route deviations, and other field events.
+      security:
+        - DeviceToken: []
+      x-ratelimit-limit: 100
+      x-ratelimit-window: 3600s
+      x-ratelimit-scope: device
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FieldReportRequest'
+            example:
+              device_id: dev_01HZ2K9VBGJXYZ
+              event_uuid: 550e8400-e29b-41d4-a716-446655440002
+              report_type: checkpoint_arrival
+              timestamp: "2024-06-01T09:00:00Z"
+              latitude: 6.5400
+              longitude: 3.3900
+              notes: Arrived at Lagos checkpoint — all seals intact
+              convoy_id: cnv_01HZ2K9VBGJXYZ
+              truck_id: trk_01HZ2K9VBGJXYZ
+      responses:
+        '201':
+          description: Report submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldReportResponse'
+              example:
+                report_id: rpt_01HZ2K9VBGJXYZ
+                received_at: "2024-06-01T09:00:01Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/guardian/ack-command:
+    post:
+      operationId: ackCommand
+      tags: [Commands]
+      summary: Acknowledge a server-issued command
+      description: >
+        Reports the execution status of a command that was delivered via heartbeat
+        response. Commands must be acknowledged within their expiry window.
+      security:
+        - DeviceToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AckCommandRequest'
+            example:
+              device_id: dev_01HZ2K9VBGJXYZ
+              command_id: cmd_01HZ2K9VBGJXYZ
+              status: executed
+              timestamp: "2024-06-01T08:30:30Z"
+      responses:
+        '200':
+          description: Acknowledgement recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [acknowledged]
+                properties:
+                  acknowledged:
+                    type: boolean
+              example:
+                acknowledged: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Command not found or already acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: COMMAND_NOT_FOUND
+                message: Command not found or already acknowledged
+                request_id: req_abc123
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/guardian/cfo/context:
+    get:
+      operationId: getCfoContext
+      tags: [CFO]
+      summary: Get convoy field officer context
+      description: >
+        Returns the current convoy assignment, list of assigned trucks, and
+        today's submitted photos for the authenticated guardian device's assigned CFO.
+      security:
+        - DeviceToken: []
+      responses:
+        '200':
+          description: CFO context data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CfoContextResponse'
+              example:
+                convoy:
+                  convoy_id: cnv_01HZ2K9VBGJXYZ
+                  name: Lagos-Abuja Run #42
+                  status: in_transit
+                  departure_time: "2024-06-01T06:00:00Z"
+                trucks:
+                  - truck_id: trk_01HZ2K9VBGJXYZ
+                    plate: LAG-001-AA
+                    make: MAN
+                    model: TGS 26.440
+                    current_lat: 6.5244
+                    current_lng: 3.3792
+                    status: moving
+                photos_today:
+                  - photo_id: ph_01HZ2K9VBGJXYZ
+                    photo_type: seal_front
+                    truck_id: trk_01HZ2K9VBGJXYZ
+                    captured_at: "2024-06-01T06:05:00Z"
+                    thumbnail_url: https://cdn.sonalit.io/thumbs/ph_01HZ2K9VBGJXYZ.jpg
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/guardian/cfo/login:
+    post:
+      operationId: cfoLogin
+      tags: [CFO]
+      summary: CFO login from device
+      description: >
+        Authenticates a Convoy Field Officer from the guardian device using
+        email and password. Returns CFO identity details. Rate limited to 5
+        attempts per 15 minutes per device.
+      security:
+        - DeviceToken: []
+      x-ratelimit-limit: 5
+      x-ratelimit-window: 900s
+      x-ratelimit-scope: device
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CfoLoginRequest'
+            example:
+              email: cfo@example.com
+              password: "S3cur3P@ss!"
+      responses:
+        '200':
+          description: CFO authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CfoLoginResponse'
+              example:
+                user_id: usr_01HZ2K9VBGJXYZ
+                name: James Field Officer
+                email: cfo@example.com
+                role: convoy_field_officer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid CFO credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_CREDENTIALS
+                message: Email or password is incorrect
+                request_id: req_abc123
+        '403':
+          description: User does not have CFO role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: ROLE_FORBIDDEN
+                message: This account does not have the convoy_field_officer role
+                request_id: req_abc123
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /healthz/live:
+    get:
+      operationId: healthLive
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+
+  /healthz/ready:
+    get:
+      operationId: healthReady
+      tags: [Health]
+      summary: Readiness probe
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+        '503':
+          description: Service not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: degraded
+
+  /metrics:
+    get:
+      operationId: metrics
+      tags: [Health]
+      summary: Prometheus metrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256-signed JWT for operator endpoints.
+    DeviceToken:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Device token issued at enrollment for guardian device endpoints.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Client-generated unique key to ensure idempotent processing.
+      example: 550e8400-e29b-41d4-a716-446655440000
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+
+    Pagination:
+      type: object
+      required: [cursor, limit]
+      properties:
+        cursor:
+          type: [string, 'null']
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        total:
+          type: [integer, 'null']
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+
+    EnrollRequest:
+      type: object
+      required: [org_token, name, imei, android_id, manufacturer, model, os_version, app_version, play_integrity_token, key_attestation_cert_chain]
+      properties:
+        org_token:
+          type: string
+          description: Organization provisioning token
+        name:
+          type: string
+          maxLength: 200
+          description: Human-readable device name
+        imei:
+          type: string
+          pattern: '^\d{15}$'
+          description: 15-digit IMEI of primary SIM slot
+        android_id:
+          type: string
+          description: Android Settings.Secure.ANDROID_ID
+        manufacturer:
+          type: string
+          maxLength: 100
+        model:
+          type: string
+          maxLength: 100
+        os_version:
+          type: string
+          maxLength: 20
+        app_version:
+          type: string
+          maxLength: 20
+        play_integrity_token:
+          type: string
+          description: Google Play Integrity API token JWT
+        key_attestation_cert_chain:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: DER-encoded X.509 certificate chain (base64) from Android KeyStore attestation
+
+    EnrollResponse:
+      type: object
+      required: [device_id, device_token, status]
+      properties:
+        device_id:
+          type: string
+        device_token:
+          type: string
+          description: Opaque device token (pending state until approved)
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        message:
+          type: string
+
+    HeartbeatRequest:
+      type: object
+      required: [device_id, timestamp, battery_level, battery_charging, signal_strength, network_type, storage_free_mb, ram_free_mb, latitude, longitude, location_age, app_version]
+      properties:
+        device_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        battery_level:
+          type: integer
+          minimum: 0
+          maximum: 100
+        battery_charging:
+          type: boolean
+        signal_strength:
+          type: integer
+          description: RSSI in dBm
+          example: -72
+        network_type:
+          type: string
+          enum: [LTE, 5G, 3G, 2G, WIFI, NONE]
+        storage_free_mb:
+          type: integer
+          minimum: 0
+        ram_free_mb:
+          type: integer
+          minimum: 0
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        location_age:
+          type: integer
+          minimum: 0
+          description: Age of the location reading in seconds
+        app_version:
+          type: string
+          maxLength: 20
+        integrity_token:
+          type: [string, 'null']
+          description: Play Integrity token — required if last valid check was >6 hours ago
+
+    Command:
+      type: object
+      required: [command_id, type, issued_at, expires_at]
+      properties:
+        command_id:
+          type: string
+        type:
+          type: string
+          enum: [update_config, restart_app, force_sync, capture_photo, update_firmware, custom]
+        payload:
+          type: object
+          additionalProperties: true
+          description: Command-specific parameters
+        issued_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    HeartbeatResponse:
+      type: object
+      required: [status, server_time, commands]
+      properties:
+        status:
+          type: string
+          enum: [active, suspended, pending, decommissioned]
+        server_time:
+          type: string
+          format: date-time
+        commands:
+          type: array
+          items:
+            $ref: '#/components/schemas/Command'
+        new_tracking_mode:
+          type: [string, 'null']
+          enum: [active, passive, economy, null]
+        new_tracking_interval_seconds:
+          type: [integer, 'null']
+          minimum: 5
+          maximum: 3600
+
+    PanicRequest:
+      type: object
+      required: [device_id, mode, timestamp, event_uuid]
+      properties:
+        device_id:
+          type: string
+        mode:
+          type: string
+          enum: [sos, robbery, accident, medical, breakdown, other]
+          description: Type of emergency
+        message:
+          type: [string, 'null']
+          maxLength: 500
+          description: Optional free-text description
+        latitude:
+          type: [number, 'null']
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: [number, 'null']
+          format: double
+          minimum: -180
+          maximum: 180
+        timestamp:
+          type: string
+          format: date-time
+        battery_level:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 100
+        network_type:
+          type: [string, 'null']
+          enum: [LTE, 5G, 3G, 2G, WIFI, NONE, null]
+        event_uuid:
+          type: string
+          format: uuid
+          description: Idempotency UUID for the panic event
+
+    PanicResponse:
+      type: object
+      required: [acknowledged, incident_id]
+      properties:
+        acknowledged:
+          type: boolean
+        incident_id:
+          type: string
+        callback_number:
+          type: [string, 'null']
+          description: Emergency callback number configured for the organization
+
+    FieldReportRequest:
+      type: object
+      required: [device_id, event_uuid, report_type, timestamp]
+      properties:
+        device_id:
+          type: string
+        event_uuid:
+          type: string
+          format: uuid
+        report_type:
+          type: string
+          enum: [checkpoint_arrival, checkpoint_departure, seal_check, route_deviation, fuel_stop, breakdown, custom]
+        timestamp:
+          type: string
+          format: date-time
+        latitude:
+          type: [number, 'null']
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: [number, 'null']
+          format: double
+          minimum: -180
+          maximum: 180
+        notes:
+          type: [string, 'null']
+          maxLength: 1000
+        convoy_id:
+          type: [string, 'null']
+        truck_id:
+          type: [string, 'null']
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Report-type-specific additional fields
+
+    FieldReportResponse:
+      type: object
+      required: [report_id, received_at]
+      properties:
+        report_id:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+
+    AckCommandRequest:
+      type: object
+      required: [device_id, command_id, status, timestamp]
+      properties:
+        device_id:
+          type: string
+        command_id:
+          type: string
+        status:
+          type: string
+          enum: [executed, failed, rejected, expired]
+        timestamp:
+          type: string
+          format: date-time
+        error_message:
+          type: [string, 'null']
+          maxLength: 500
+          description: Error details when status is failed or rejected
+
+    ConvoyInfo:
+      type: object
+      required: [convoy_id, name, status]
+      properties:
+        convoy_id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [planned, loading, in_transit, completed, cancelled]
+        departure_time:
+          type: [string, 'null']
+          format: date-time
+        arrival_time:
+          type: [string, 'null']
+          format: date-time
+
+    TruckSummary:
+      type: object
+      required: [truck_id, plate, status]
+      properties:
+        truck_id:
+          type: string
+        plate:
+          type: string
+        make:
+          type: [string, 'null']
+        model:
+          type: [string, 'null']
+        current_lat:
+          type: [number, 'null']
+          format: double
+        current_lng:
+          type: [number, 'null']
+          format: double
+        status:
+          type: string
+          enum: [parked, moving, idle, unknown]
+
+    PhotoSummary:
+      type: object
+      required: [photo_id, photo_type, truck_id, captured_at]
+      properties:
+        photo_id:
+          type: string
+        photo_type:
+          type: string
+          enum: [seal_front, seal_rear, seal_left, seal_right, cargo, damage, general]
+        truck_id:
+          type: string
+        captured_at:
+          type: string
+          format: date-time
+        thumbnail_url:
+          type: [string, 'null']
+          format: uri
+
+    CfoContextResponse:
+      type: object
+      required: [convoy, trucks, photos_today]
+      properties:
+        convoy:
+          $ref: '#/components/schemas/ConvoyInfo'
+        trucks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TruckSummary'
+        photos_today:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhotoSummary'
+
+    CfoLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    CfoLoginResponse:
+      type: object
+      required: [user_id, name, email, role]
+      properties:
+        user_id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [convoy_field_officer]
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: BAD_REQUEST
+            message: Request validation failed
+            request_id: req_abc123
+
+    Unauthorized:
+      description: Missing or invalid device token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Device token is missing or invalid
+            request_id: req_abc123
+
+    Forbidden:
+      description: Device not authorized for this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: Device is not authorized for this operation
+            request_id: req_abc123
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMITED
+            message: Too many requests. Please retry after the indicated period.
+            request_id: req_abc123
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: An unexpected error occurred
+            request_id: req_abc123

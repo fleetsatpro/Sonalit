@@ -1,0 +1,135 @@
+const { SpatialProviderManager, classifyFailure } = require('../../src/services/spatial/providerManager');
+
+describe('spatial provider manager', () => {
+  test('registers providers with explicit capabilities and bounded health state', async () => {
+    const manager = new SpatialProviderManager();
+    manager.register('test-provider', {
+      query: jest.fn().mockResolvedValue({
+        observations: [{ id: 'obs-1', observedAt: '2026-09-24T12:00:00Z' }],
+        health: { status: 'LIVE' },
+      }),
+      health: jest.fn().mockReturnValue({ status: 'LIVE' }),
+      capabilities: ['point', 'live', 'test'],
+      maxPerMinute: 10,
+      maxConcurrent: 2,
+    });
+
+    const result = await manager.query('test-provider', { latitude: 1, longitude: 2 });
+    expect(result.observations).toHaveLength(1);
+    expect(manager.names()).toEqual(['test-provider']);
+
+    const health = manager.getHealthSnapshot()['test-provider'];
+    expect(health.capabilities).toEqual(['point', 'live', 'test']);
+    expect(health.manager.requestCount).toBe(1);
+    expect(health.manager.successCount).toBe(1);
+    expect(health.manager.activeRequests).toBe(0);
+    expect(health.manager.circuitState).toBe('CLOSED');
+  });
+
+  test('classifies provider failures without hiding the failure class', async () => {
+    const manager = new SpatialProviderManager();
+    const error = Object.assign(new Error('provider throttled'), { failureClass: 'rate_limited' });
+
+    manager.register('limited', {
+      query: jest.fn().mockRejectedValue(error),
+      health: () => ({ status: 'RATE_LIMITED' }),
+      maxPerMinute: 10,
+      maxConcurrent: 1,
+    });
+
+    await expect(manager.query('limited')).rejects.toMatchObject({ failureClass: 'rate_limited' });
+    const health = manager.getHealthSnapshot().limited;
+    expect(health.manager.lastFailureClass).toBe('rate_limited');
+    expect(health.manager.failureCount).toBe(1);
+  });
+
+  test('accepts legacy gateway error.class without collapsing to unknown', () => {
+    expect(classifyFailure(Object.assign(new Error('auth'), { class: 'auth_required' }))).toBe('auth_required');
+  });
+
+  test('querySettled isolates one provider failure from successful providers', async () => {
+    const manager = new SpatialProviderManager();
+    manager.register('good', {
+      query: jest.fn().mockResolvedValue({ observations: ['ok'] }),
+      maxPerMinute: 10,
+      maxConcurrent: 2,
+    });
+    manager.register('bad', {
+      query: jest.fn().mockRejectedValue(Object.assign(new Error('timeout'), { failureClass: 'timeout' })),
+      maxPerMinute: 10,
+      maxConcurrent: 2,
+    });
+
+    const results = await manager.querySettled([
+      { provider: 'good', args: {} },
+      { provider: 'bad', args: {} },
+    ]);
+
+    expect(results[0].status).toBe('fulfilled');
+    expect(results[1].status).toBe('rejected');
+    expect(classifyFailure(results[1].reason)).toBe('timeout');
+  });
+
+  test('enforces per-tenant request budgets without consuming the global provider budget on tenant throttling', async () => {
+    const manager = new SpatialProviderManager();
+    const query = jest.fn().mockResolvedValue({ observations: [] });
+    manager.register('tenant-limited', {
+      query,
+      maxPerMinute: 10,
+      maxConcurrent: 2,
+      tenantMaxPerMinute: 2,
+      tenantMaxConcurrent: 1,
+    });
+
+    await manager.query('tenant-limited', { orgId: 'org-a' });
+    await manager.query('tenant-limited', { orgId: 'org-a' });
+    await expect(manager.query('tenant-limited', { orgId: 'org-a' }))
+      .rejects.toMatchObject({ failureClass: 'rate_limited', code: 'TENANT_BUDGET_EXHAUSTED' });
+
+    await manager.query('tenant-limited', { orgId: 'org-b' });
+    expect(query).toHaveBeenCalledTimes(3);
+
+    const health = manager.getHealthSnapshot()['tenant-limited'];
+    expect(health.manager.requestCount).toBe(3);
+    expect(health.manager.failureCount).toBe(0);
+    expect(health.manager.tenantBucketCount).toBe(2);
+  });
+
+  test('shares provider-family quota across sibling capabilities', async () => {
+    const manager = new SpatialProviderManager();
+    const first = jest.fn().mockResolvedValue({ observations: [] });
+    const second = jest.fn().mockResolvedValue({ observations: [] });
+
+    manager.register('family-a', {
+      query: first,
+      maxPerMinute: 2,
+      maxConcurrent: 2,
+      tenantMaxPerMinute: 2,
+      tenantMaxConcurrent: 2,
+      quotaKey: 'shared-family',
+    });
+    manager.register('family-b', {
+      query: second,
+      maxPerMinute: 2,
+      maxConcurrent: 2,
+      tenantMaxPerMinute: 2,
+      tenantMaxConcurrent: 2,
+      quotaKey: 'shared-family',
+    });
+
+    await manager.query('family-a', { orgId: 'org-a' });
+    await manager.query('family-b', { orgId: 'org-a' });
+    await expect(manager.query('family-a', { orgId: 'org-a' }))
+      .rejects.toMatchObject({ failureClass: 'rate_limited' });
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects duplicate provider registration', () => {
+    const manager = new SpatialProviderManager();
+    manager.register('duplicate', { query: async () => ({}) });
+    expect(() => manager.register('duplicate', { query: async () => ({}) }))
+      .toThrow('Spatial provider already registered: duplicate');
+  });
+});

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PEGAGENT</string>
+    <string name="service_label">PEGAGENT Core Service</string>
+    <string name="channel_core">Core</string>
+    <string name="channel_sos">SOS Alert</string>
+    <string name="channel_command">Commands</string>
+    <string name="channel_session">Remote Session</string>
+</resources>

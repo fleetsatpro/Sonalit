@@ -1,0 +1,440 @@
+'use strict';
+
+const AIRPORT_SERVICES = new Set(['airport_arrival', 'airport_departure', 'meet_and_greet']);
+
+function localDate(value, timezone) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(date);
+    const read = key => parts.find(part => part.type === key)?.value || '';
+    return read('year') + '-' + read('month') + '-' + read('day');
+  } catch {
+    return null;
+  }
+}
+
+function activityHasStaffing(activity) {
+  return activity?.responsible_user_assigned === true ||
+    activity?.responsible_role_staffed === true;
+}
+
+function analyseFlightCoverage(travellers = [], flights = []) {
+  const usableFlights = flights.filter(flight =>
+    !['cancelled', 'diverted'].includes(String(flight.status || '').toLowerCase()),
+  );
+  if (travellers.length === 0) {
+    return { uncovered_traveller_count: 1, overlapping_flight_count: 0, airport_change_count: 0 };
+  }
+
+  let uncoveredTravellerCount = 0;
+  const overlappingPairs = new Set();
+  const airportChangeConnections = new Set();
+
+  for (const traveller of travellers) {
+    const applicableFlights = usableFlights.filter(flight =>
+      flight.traveller_id == null || String(flight.traveller_id) === String(traveller.id),
+    );
+    if (applicableFlights.length === 0) {
+      uncoveredTravellerCount += 1;
+      continue;
+    }
+
+    const scheduled = applicableFlights.map((flight, index) => ({
+      id: String(flight.id || 'flight-' + index),
+      departure: Date.parse(flight.departure_at),
+      arrival: Date.parse(flight.arrival_at),
+      departureAirport: String(flight.departure_airport || '').trim().toUpperCase(),
+      arrivalAirport: String(flight.arrival_airport || '').trim().toUpperCase(),
+    })).filter(flight =>
+      Number.isFinite(flight.departure) &&
+      Number.isFinite(flight.arrival) &&
+      flight.arrival > flight.departure,
+    ).sort((left, right) =>
+      left.departure - right.departure ||
+      left.arrival - right.arrival ||
+      left.id.localeCompare(right.id),
+    );
+
+    const active = [];
+    let previous = null;
+    for (const current of scheduled) {
+      for (let index = active.length - 1; index >= 0; index -= 1) {
+        if (active[index].arrival <= current.departure) active.splice(index, 1);
+      }
+      for (const overlapping of active) {
+        const pair = [overlapping.id, current.id].sort();
+        overlappingPairs.add(pair.join('|'));
+      }
+      active.push(current);
+
+      // A change of airport is not inherently invalid: a planned surface transfer
+      // may connect the legs. Flag it for explicit review without inventing a
+      // minimum connection time or silently treating the transfer as complete.
+      if (
+        previous &&
+        previous.arrival <= current.departure &&
+        previous.arrivalAirport &&
+        current.departureAirport &&
+        previous.arrivalAirport !== current.departureAirport
+      ) {
+        airportChangeConnections.add(previous.id + '|' + current.id);
+      }
+      previous = current;
+    }
+  }
+
+  return {
+    uncovered_traveller_count: uncoveredTravellerCount,
+    overlapping_flight_count: overlappingPairs.size,
+    airport_change_count: airportChangeConnections.size,
+  };
+}
+
+
+function calendarDates(start, end) {
+  if (!start || !end || end < start) return [];
+  const dates = [];
+  const cursor = new Date(start + 'T00:00:00.000Z');
+  const finish = new Date(end + 'T00:00:00.000Z');
+  if (!Number.isFinite(cursor.getTime()) || !Number.isFinite(finish.getTime())) return [];
+  for (let count = 0; cursor <= finish && count < 366; count += 1) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+
+function findProgrammeScheduleConflicts(activities = []) {
+  const scheduled = activities
+    .filter(activity => !['completed', 'skipped'].includes(activity.execution_status))
+    .map(activity => ({
+      id: String(activity.id || ''),
+      start: Date.parse(activity.planned_start_at),
+      end: Date.parse(activity.planned_end_at),
+      travellerKey: activity.traveller_id == null ? null : String(activity.traveller_id),
+      operatorKey: activity.responsible_user_id == null || String(activity.responsible_user_id) === ''
+        ? null : String(activity.responsible_user_id),
+    }))
+    .filter(activity => activity.id && Number.isFinite(activity.start) &&
+      Number.isFinite(activity.end) && activity.end > activity.start)
+    .sort((left, right) => left.start - right.start || left.end - right.end || left.id.localeCompare(right.id));
+
+  const active = new Map();
+  const activeSharedTravellers = new Set();
+  const activeByTraveller = new Map();
+  const activeByOperator = new Map();
+  const activeSharedTravellerByOperator = new Map();
+  const activeByTravellerAndOperator = new Map();
+  const endHeap = [];
+
+  const addToSetMap = (map, key, id) => {
+    let values = map.get(key);
+    if (!values) map.set(key, values = new Set());
+    values.add(id);
+  };
+  const removeFromSetMap = (map, key, id) => {
+    const values = map.get(key);
+    if (!values) return;
+    values.delete(id);
+    if (values.size === 0) map.delete(key);
+  };
+  const addToNestedSetMap = (map, firstKey, secondKey, id) => {
+    let nested = map.get(firstKey);
+    if (!nested) map.set(firstKey, nested = new Map());
+    addToSetMap(nested, secondKey, id);
+  };
+  const removeFromNestedSetMap = (map, firstKey, secondKey, id) => {
+    const nested = map.get(firstKey);
+    if (!nested) return;
+    removeFromSetMap(nested, secondKey, id);
+    if (nested.size === 0) map.delete(firstKey);
+  };
+  const heapPush = value => {
+    let index = endHeap.length;
+    endHeap.push(value);
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (endHeap[parent].end <= value.end) break;
+      endHeap[index] = endHeap[parent];
+      index = parent;
+    }
+    endHeap[index] = value;
+  };
+  const heapPop = () => {
+    const first = endHeap[0];
+    const last = endHeap.pop();
+    if (endHeap.length > 0) {
+      let index = 0;
+      while (true) {
+        const left = index * 2 + 1;
+        const right = left + 1;
+        if (left >= endHeap.length) break;
+        const child = right < endHeap.length && endHeap[right].end < endHeap[left].end ? right : left;
+        if (endHeap[child].end >= last.end) break;
+        endHeap[index] = endHeap[child];
+        index = child;
+      }
+      endHeap[index] = last;
+    }
+    return first;
+  };
+
+  const removeActive = id => {
+    const item = active.get(id);
+    if (!item) return;
+    active.delete(id);
+    if (item.travellerKey === null) {
+      activeSharedTravellers.delete(id);
+      if (item.operatorKey !== null) {
+        removeFromSetMap(activeSharedTravellerByOperator, item.operatorKey, id);
+      }
+    } else {
+      removeFromSetMap(activeByTraveller, item.travellerKey, id);
+      if (item.operatorKey !== null) {
+        removeFromNestedSetMap(activeByTravellerAndOperator, item.travellerKey, item.operatorKey, id);
+      }
+    }
+    if (item.operatorKey !== null) removeFromSetMap(activeByOperator, item.operatorKey, id);
+  };
+
+  let conflictCount = 0;
+  for (const item of scheduled) {
+    while (endHeap.length > 0 && endHeap[0].end <= item.start) {
+      removeActive(heapPop().id);
+    }
+
+    const travellerMatches = item.travellerKey === null
+      ? active.size
+      : activeSharedTravellers.size + (activeByTraveller.get(item.travellerKey)?.size || 0);
+    const operatorMatches = item.operatorKey === null
+      ? 0 : (activeByOperator.get(item.operatorKey)?.size || 0);
+    let intersection = 0;
+    if (item.operatorKey !== null) {
+      intersection = item.travellerKey === null
+        ? operatorMatches
+        : (activeSharedTravellerByOperator.get(item.operatorKey)?.size || 0) +
+          (activeByTravellerAndOperator.get(item.travellerKey)?.get(item.operatorKey)?.size || 0);
+    }
+    conflictCount += travellerMatches + operatorMatches - intersection;
+
+    active.set(item.id, item);
+    if (item.travellerKey === null) {
+      activeSharedTravellers.add(item.id);
+      if (item.operatorKey !== null) addToSetMap(activeSharedTravellerByOperator, item.operatorKey, item.id);
+    } else {
+      addToSetMap(activeByTraveller, item.travellerKey, item.id);
+      if (item.operatorKey !== null) {
+        addToNestedSetMap(activeByTravellerAndOperator, item.travellerKey, item.operatorKey, item.id);
+      }
+    }
+    if (item.operatorKey !== null) addToSetMap(activeByOperator, item.operatorKey, item.id);
+    heapPush({ id: item.id, end: item.end });
+  }
+  return conflictCount;
+}
+function evaluateTravelReadiness({ journey, travellers = [], flights = [], days = [], documents = [], activities = [] }, phase = 'departure') {
+  const blockers = [];
+  const warnings = [];
+  const principals = travellers.filter(person => person.traveller_type === 'principal');
+  if (principals.length === 0) {
+    blockers.push({ code: 'principal_traveller_missing', message: 'Register one principal traveller before route approval or departure release.' });
+  } else if (principals.length > 1) {
+    blockers.push({ code: 'principal_traveller_ambiguous', message: 'Exactly one principal traveller must be designated for this journey.' });
+  }
+
+  const airportService = AIRPORT_SERVICES.has(String(journey.service_type || ''));
+  const flightCoverage = airportService
+    ? analyseFlightCoverage(travellers, flights)
+    : { uncovered_traveller_count: 0, overlapping_flight_count: 0, airport_change_count: 0 };
+  const uncoveredTravellerCount = flightCoverage.uncovered_traveller_count;
+  if (airportService) {
+    if (uncoveredTravellerCount > 0) {
+      blockers.push({
+        code: 'airport_flight_details_incomplete',
+        message: 'Every registered traveller on an airport movement needs a non-cancelled flight segment, or a shared segment covering the party.',
+        uncovered_traveller_count: uncoveredTravellerCount,
+      });
+    }
+    if (flightCoverage.overlapping_flight_count > 0) {
+      blockers.push({
+        code: 'flight_schedule_conflict',
+        message: 'One or more travellers have overlapping flight legs. Correct the flight-time conflict before approval or departure.',
+        conflict_count: flightCoverage.overlapping_flight_count,
+      });
+    }
+    if (flightCoverage.airport_change_count > 0) {
+      warnings.push({
+        code: 'flight_airport_change_requires_transfer',
+        message: 'Sequential flight legs use different arrival and departure airports. Confirm an explicit ground transfer or alternate connection; no surface movement is inferred from flight records.',
+        connection_count: flightCoverage.airport_change_count,
+      });
+    }
+  }
+
+  let activityCount = days.reduce((sum, day) => sum + Number(day.activity_count || 0), 0);
+  const unassignedActivityCount = days.reduce((sum, day) => sum + Number(day.unassigned_activity_count || 0), 0);
+  const datedDays = new Set(days.filter(day => Number(day.activity_count || 0) > 0).map(day => String(day.journey_date).slice(0, 10)));
+  let requiredDates = [];
+  if (phase === 'departure') {
+    const timezone = journey.timezone;
+    const start = localDate(journey.planned_departure_at, timezone);
+    const end = localDate(journey.planned_arrival_at, timezone);
+    if (!start || !end || end < start) {
+      blockers.push({ code: 'journey_schedule_missing', message: 'Set valid planned departure and arrival times before completing the daily travel programme.' });
+    } else {
+      requiredDates = calendarDates(start, end);
+      if (requiredDates.length === 0 || requiredDates.length >= 366) {
+        blockers.push({ code: 'journey_schedule_range_invalid', message: 'The mission date range is invalid or exceeds the supported 365-day programme window.' });
+      } else {
+        const missingDates = requiredDates.filter(date => !datedDays.has(date));
+        if (missingDates.length > 0) {
+          blockers.push({
+            code: 'daily_programme_incomplete',
+            message: 'Every local calendar day between planned departure and arrival needs a programme day with at least one timed activity.',
+            missing_dates: missingDates,
+          });
+        }
+      }
+      if (unassignedActivityCount > 0) {
+        blockers.push({ code: 'daily_programme_unassigned', message: 'Assign a named mission team member or accountable duty role to every timed activity.', unassigned_activity_count: unassignedActivityCount });
+      }
+    }
+  } else if (phase === 'approval') {
+    if (days.length > 0 && activityCount === 0) {
+      warnings.push({ code: 'programme_days_have_no_activities', message: 'Programme days exist but do not yet contain timed activities.' });
+    }
+  }
+
+  const scheduleConflictCount = ['approval', 'departure'].includes(phase) ? findProgrammeScheduleConflicts(activities) : 0;
+  if (scheduleConflictCount > 0) {
+    blockers.push({
+      code: 'programme_schedule_conflict',
+      message: 'One or more travellers or named operators have overlapping planned activities. Resolve each conflict and re-run readiness before approval or departure.',
+      conflict_count: scheduleConflictCount,
+    });
+  }
+
+  let documentBlockerCount = 0;
+  let expiringDocumentCount = 0;
+  if (documents.length === 0) {
+    warnings.push({
+      code: 'no_travel_documents_recorded',
+      message: 'No travel documents are registered. Confirm the passport, visa, ticket and insurance requirements applicable to this route before departure.',
+    });
+  }
+  const arrivalDate = localDate(journey.planned_arrival_at, journey.timezone);
+  const today = localDate(new Date().toISOString(), journey.timezone) || new Date().toISOString().slice(0, 10);
+  const expiryHorizon = new Date(today + 'T00:00:00.000Z');
+  expiryHorizon.setUTCDate(expiryHorizon.getUTCDate() + 90);
+  const horizonDate = expiryHorizon.toISOString().slice(0, 10);
+  for (const document of documents) {
+    const statusReady = document.review_status === 'VERIFIED' && document.evidence_status === 'VERIFIED';
+    const expiresBeforeJourney = document.expiry_date &&
+      String(document.expiry_date).slice(0, 10) < (arrivalDate || today);
+    if (!statusReady || expiresBeforeJourney || document.review_status === 'EXPIRED') {
+      documentBlockerCount += 1;
+    } else if (document.expiry_date &&
+      String(document.expiry_date).slice(0, 10) <= horizonDate) {
+      expiringDocumentCount += 1;
+    }
+  }
+  if (documentBlockerCount > 0) {
+    blockers.push({
+      code: 'travel_documents_not_cleared',
+      message: 'One or more uploaded travel documents are pending review, rejected, unverified or expire before the planned arrival.',
+      document_count: documentBlockerCount,
+    });
+  }
+  if (expiringDocumentCount > 0) {
+    warnings.push({
+      code: 'travel_documents_expiring_soon',
+      message: 'One or more verified travel documents expire within 90 days.',
+      document_count: expiringDocumentCount,
+    });
+  }
+
+  return {
+    phase,
+    ready: blockers.length === 0,
+    blockers,
+    warnings,
+    counts: {
+      traveller_count: travellers.length,
+      principal_traveller_count: principals.length,
+      flight_segment_count: flights.length,
+      flight_schedule_conflict_count: flightCoverage.overlapping_flight_count,
+      flight_airport_change_count: flightCoverage.airport_change_count,
+      programme_day_count: days.length,
+      timed_activity_count: activityCount,
+      unassigned_activity_count: unassignedActivityCount,
+      schedule_conflict_count: scheduleConflictCount,
+      required_programme_day_count: requiredDates.length,
+      cleared_document_count: documents.filter(document =>
+        document.review_status === 'VERIFIED' && document.evidence_status === 'VERIFIED',
+      ).length,
+      document_blocker_count: documentBlockerCount,
+      expiring_document_count: expiringDocumentCount,
+    },
+  };
+}
+
+async function loadTravelReadiness(db, journey, phase = 'departure') {
+  const org = journey.org_id, id = journey.id;
+  const travellerResult = await db(
+    'SELECT id,traveller_type FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL',
+    [org, id],
+  );
+  const flightResult = await db(
+    'SELECT id,traveller_id,status,departure_airport,departure_at,arrival_airport,arrival_at FROM sjm_flight_segments WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL',
+    [org, id],
+  );
+  const dayResult = await db(
+    'SELECT d.id,d.journey_date,COUNT(i.id)::int AS activity_count FROM sjm_itinerary_days d ' +
+    'LEFT JOIN sjm_itinerary_items i ON i.org_id=d.org_id AND i.journey_id=d.journey_id AND i.day_id=d.id AND i.deleted_at IS NULL ' +
+    'WHERE d.org_id=$1 AND d.journey_id=$2 AND d.deleted_at IS NULL GROUP BY d.id,d.journey_date ORDER BY d.journey_date',
+    [org, id],
+  );
+  // A role label is not accountability by itself: someone active on this journey
+  // must actually hold that role before the activity can satisfy departure readiness.
+  const assignmentResult = await db(
+    'SELECT i.id,i.day_id,i.title,i.item_type,i.planned_start_at,i.planned_end_at,' +
+    'i.traveller_id,i.responsible_user_id,i.execution_status,' +
+    'EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status=\'active\' ' +
+    'WHERE p.org_id=i.org_id AND p.journey_id=i.journey_id AND p.user_id=i.responsible_user_id AND p.removed_at IS NULL) AS responsible_user_assigned,' +
+    'EXISTS (SELECT 1 FROM sjm_journey_participants p JOIN users u ON u.id=p.user_id AND u.org_id=p.org_id AND u.deleted_at IS NULL AND u.status=\'active\' ' +
+    'WHERE p.org_id=i.org_id AND p.journey_id=i.journey_id AND p.duty_role=NULLIF(BTRIM(i.responsible_role),\'\') AND p.removed_at IS NULL) AS responsible_role_staffed ' +
+    'FROM sjm_itinerary_items i WHERE i.org_id=$1 AND i.journey_id=$2 AND i.deleted_at IS NULL',
+    [org, id],
+  );
+  const unassignedByDay = new Map();
+  for (const assignment of assignmentResult.rows) {
+    if (!activityHasStaffing(assignment)) {
+      unassignedByDay.set(assignment.day_id, (unassignedByDay.get(assignment.day_id) || 0) + 1);
+    }
+  }
+  const days = dayResult.rows.map(day => ({
+    ...day,
+    unassigned_activity_count: unassignedByDay.get(day.id) || 0,
+  }));
+  const documentResult = await db(
+    'SELECT d.document_type,d.review_status,d.expiry_date,e.status AS evidence_status ' +
+    'FROM sjm_travel_documents d JOIN sjm_evidence e ON e.id=d.evidence_id AND e.org_id=d.org_id AND e.journey_id=d.journey_id ' +
+    'WHERE d.org_id=$1 AND d.journey_id=$2 AND d.deleted_at IS NULL AND e.deleted_at IS NULL',
+    [org, id],
+  );
+  return evaluateTravelReadiness({
+    journey,
+    travellers: travellerResult.rows,
+    flights: flightResult.rows,
+    days,
+    documents: documentResult.rows,
+    activities: assignmentResult.rows,
+  }, phase);
+}
+
+module.exports = { AIRPORT_SERVICES, localDate, calendarDates, activityHasStaffing, analyseFlightCoverage, findProgrammeScheduleConflicts, evaluateTravelReadiness, loadTravelReadiness };

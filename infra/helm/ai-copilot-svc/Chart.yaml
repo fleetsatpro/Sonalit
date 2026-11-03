@@ -1,0 +1,17 @@
+apiVersion: v2
+name: ai-copilot-svc
+description: Sonalit v4 AI Copilot Service — LLM-powered fleet intelligence and anomaly detection
+type: application
+version: 4.0.0
+appVersion: "4.0.0"
+dependencies:
+  - name: sonalit-base
+    version: "4.0.0"
+    repository: "file://../_base"
+keywords:
+  - sonalit
+  - ai
+  - copilot
+  - microservice
+maintainers:
+  - name: FleetSat Engineering

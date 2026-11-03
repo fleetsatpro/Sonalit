@@ -1,0 +1,14 @@
+{
+  "name": "@sonalit/prettier-config",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Shared Prettier configuration for Sonalit",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": ["index.js"],
+  "peerDependencies": {
+    "prettier": "^3.0.0"
+  }
+}

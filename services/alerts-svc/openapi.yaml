@@ -1,0 +1,1013 @@
+openapi: 3.1.0
+info:
+  title: Sonalit Alerts Service
+  version: 4.0.0
+  description: >
+    Alert and incident management service for Sonalit v4. Manages alert lifecycle
+    (create, acknowledge, resolve), incident tracking, and automation rules with
+    condition-based triggers and configurable actions.
+  contact:
+    name: Sonalit Platform Team
+    email: platform@sonalit.io
+
+servers:
+  - url: https://api.sonalit.io
+    description: Production
+  - url: https://staging-api.sonalit.io
+    description: Staging
+
+tags:
+  - name: Alerts
+    description: Alert lifecycle management
+  - name: Incidents
+    description: Incident tracking and escalation
+  - name: Rules
+    description: Automation rule management
+  - name: Health
+    description: Service health and metrics
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v4/alerts:
+    get:
+      operationId: listAlerts
+      tags: [Alerts]
+      summary: List alerts with filters
+      description: >
+        Returns a paginated list of alerts filtered by severity, status, device,
+        convoy, or date range. Results are ordered by created_at descending.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [critical, high, medium, low, info]
+          description: Filter by severity level
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, acknowledged, resolved, suppressed]
+          description: Filter by alert status
+        - name: device_id
+          in: query
+          schema:
+            type: string
+          description: Filter by originating device
+        - name: convoy_id
+          in: query
+          schema:
+            type: string
+          description: Filter by associated convoy
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Start of date range (inclusive)
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: End of date range (inclusive)
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor from previous response
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated alert list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertListResponse'
+              example:
+                data:
+                  - alert_id: alt_01HZ2K9VBGJXYZ
+                    type: geofence_exit
+                    severity: high
+                    status: open
+                    title: Vehicle exited approved zone
+                    device_id: dev_01HZ2K9VBGJXYZ
+                    convoy_id: cnv_01HZ2K9VBGJXYZ
+                    created_at: "2024-06-01T08:30:00Z"
+                pagination:
+                  cursor: eyJpZCI6ImFsdF8wMUha
+                  limit: 50
+                  total: 142
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createAlert
+      tags: [Alerts]
+      summary: Create an alert manually
+      description: >
+        Creates a new alert manually. Used by operators or other services to inject
+        alerts outside the automated rule engine.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAlertRequest'
+            example:
+              type: manual
+              severity: medium
+              title: Suspicious stop detected
+              description: Vehicle stopped for 45 minutes in an unapproved location
+              device_id: dev_01HZ2K9VBGJXYZ
+              convoy_id: cnv_01HZ2K9VBGJXYZ
+              latitude: 6.5244
+              longitude: 3.3792
+      responses:
+        '201':
+          description: Alert created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/alerts/{id}:
+    get:
+      operationId: getAlert
+      tags: [Alerts]
+      summary: Get alert by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: Alert detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      operationId: updateAlert
+      tags: [Alerts]
+      summary: Acknowledge or resolve an alert
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAlertRequest'
+            examples:
+              acknowledge:
+                summary: Acknowledge alert
+                value:
+                  status: acknowledged
+                  notes: Investigated — driver confirmed safe stop for fuel
+              resolve:
+                summary: Resolve alert
+                value:
+                  status: resolved
+                  notes: Resolved after driver resumed route
+      responses:
+        '200':
+          description: Alert updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      operationId: deleteAlert
+      tags: [Alerts]
+      summary: Delete an alert
+      description: Soft-deletes an alert. Only allowed for manual alerts.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Alert deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/incidents:
+    get:
+      operationId: listIncidents
+      tags: [Incidents]
+      summary: List incidents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, investigating, resolved, closed]
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [critical, high, medium, low]
+        - name: convoy_id
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated incident list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createIncident
+      tags: [Incidents]
+      summary: Create an incident
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIncidentRequest'
+            example:
+              title: Armed robbery attempt — Truck 7
+              severity: critical
+              description: Driver reported armed men at checkpoint km 145
+              convoy_id: cnv_01HZ2K9VBGJXYZ
+              device_id: dev_01HZ2K9VBGJXYZ
+              alert_ids:
+                - alt_01HZ2K9VBGJXYZ
+      responses:
+        '201':
+          description: Incident created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/incidents/{id}:
+    get:
+      operationId: getIncident
+      tags: [Incidents]
+      summary: Get incident by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: Incident detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      operationId: updateIncident
+      tags: [Incidents]
+      summary: Update incident status, assignment, or notes
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIncidentRequest'
+            examples:
+              assign:
+                summary: Assign to operator
+                value:
+                  assigned_to: usr_01HZ2K9VBGJXYZ
+                  notes: Escalated to security team
+              resolve:
+                summary: Resolve incident
+                value:
+                  status: resolved
+                  resolution_notes: Police escort arranged, convoy resumed
+      responses:
+        '200':
+          description: Incident updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/rules:
+    get:
+      operationId: listRules
+      tags: [Rules]
+      summary: List automation rules
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
+          description: Filter by enabled state
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated rule list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createRule
+      tags: [Rules]
+      summary: Create an automation rule
+      description: >
+        Creates a condition-based automation rule. When the condition is met by
+        an incoming event, the specified action is executed automatically.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRuleRequest'
+            example:
+              name: Speed Violation Alert
+              description: Alert when vehicle exceeds 100 km/h
+              enabled: true
+              condition:
+                field: speed_kmh
+                operator: gt
+                value: 100
+              action:
+                type: create_alert
+                params:
+                  severity: high
+                  title: Speed limit exceeded
+      responses:
+        '201':
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/rules/{id}:
+    patch:
+      operationId: updateRule
+      tags: [Rules]
+      summary: Update an automation rule
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRuleRequest'
+            example:
+              enabled: false
+              name: Speed Violation Alert (Disabled)
+      responses:
+        '200':
+          description: Rule updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      operationId: deleteRule
+      tags: [Rules]
+      summary: Delete an automation rule
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Rule deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /healthz/live:
+    get:
+      operationId: healthLive
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+
+  /healthz/ready:
+    get:
+      operationId: healthReady
+      tags: [Health]
+      summary: Readiness probe
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+        '503':
+          description: Service not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: degraded
+
+  /metrics:
+    get:
+      operationId: metrics
+      tags: [Health]
+      summary: Prometheus metrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256-signed JWT issued by auth-svc.
+    DeviceToken:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Device token issued at enrollment.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Client-generated unique key to ensure idempotent processing.
+      example: 550e8400-e29b-41d4-a716-446655440000
+
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Resource identifier
+      example: alt_01HZ2K9VBGJXYZ
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+
+    Pagination:
+      type: object
+      required: [cursor, limit]
+      properties:
+        cursor:
+          type: [string, 'null']
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        total:
+          type: [integer, 'null']
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+
+    Alert:
+      type: object
+      required: [alert_id, type, severity, status, title, created_at, updated_at]
+      properties:
+        alert_id:
+          type: string
+        type:
+          type: string
+          enum: [geofence_exit, speed_violation, panic, low_battery, signal_loss, tampering, route_deviation, long_stop, manual, rule_triggered]
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        status:
+          type: string
+          enum: [open, acknowledged, resolved, suppressed]
+        title:
+          type: string
+        description:
+          type: [string, 'null']
+        device_id:
+          type: [string, 'null']
+        convoy_id:
+          type: [string, 'null']
+        latitude:
+          type: [number, 'null']
+          format: double
+        longitude:
+          type: [number, 'null']
+          format: double
+        acknowledged_by:
+          type: [string, 'null']
+          description: user_id of operator who acknowledged
+        acknowledged_at:
+          type: [string, 'null']
+          format: date-time
+        resolved_at:
+          type: [string, 'null']
+          format: date-time
+        notes:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AlertListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alert'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    CreateAlertRequest:
+      type: object
+      required: [type, severity, title]
+      properties:
+        type:
+          type: string
+          enum: [manual, rule_triggered]
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        title:
+          type: string
+          maxLength: 300
+        description:
+          type: [string, 'null']
+          maxLength: 2000
+        device_id:
+          type: [string, 'null']
+        convoy_id:
+          type: [string, 'null']
+        latitude:
+          type: [number, 'null']
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: [number, 'null']
+          format: double
+          minimum: -180
+          maximum: 180
+
+    UpdateAlertRequest:
+      type: object
+      minProperties: 1
+      properties:
+        status:
+          type: string
+          enum: [acknowledged, resolved, suppressed]
+        notes:
+          type: [string, 'null']
+          maxLength: 2000
+
+    Incident:
+      type: object
+      required: [incident_id, title, severity, status, created_at, updated_at]
+      properties:
+        incident_id:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        status:
+          type: string
+          enum: [open, investigating, resolved, closed]
+        description:
+          type: [string, 'null']
+        convoy_id:
+          type: [string, 'null']
+        device_id:
+          type: [string, 'null']
+        alert_ids:
+          type: array
+          items:
+            type: string
+        assigned_to:
+          type: [string, 'null']
+        notes:
+          type: [string, 'null']
+        resolution_notes:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: [string, 'null']
+          format: date-time
+
+    IncidentListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Incident'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    CreateIncidentRequest:
+      type: object
+      required: [title, severity]
+      properties:
+        title:
+          type: string
+          maxLength: 300
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        description:
+          type: [string, 'null']
+          maxLength: 5000
+        convoy_id:
+          type: [string, 'null']
+        device_id:
+          type: [string, 'null']
+        alert_ids:
+          type: array
+          items:
+            type: string
+
+    UpdateIncidentRequest:
+      type: object
+      minProperties: 1
+      properties:
+        status:
+          type: string
+          enum: [investigating, resolved, closed]
+        assigned_to:
+          type: [string, 'null']
+        notes:
+          type: [string, 'null']
+          maxLength: 5000
+        resolution_notes:
+          type: [string, 'null']
+          maxLength: 5000
+
+    RuleCondition:
+      type: object
+      required: [field, operator, value]
+      properties:
+        field:
+          type: string
+          description: Event field to evaluate (e.g. speed_kmh, battery_level, geofence_id)
+          example: speed_kmh
+        operator:
+          type: string
+          enum: [eq, neq, gt, gte, lt, lte, in, not_in, contains, not_contains]
+        value:
+          description: Comparison value (type depends on the field)
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+            - type: array
+              items:
+                type: string
+
+    RuleAction:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [create_alert, create_incident, send_notification, send_webhook, run_command]
+        params:
+          type: object
+          additionalProperties: true
+          description: Action-type-specific parameters
+
+    Rule:
+      type: object
+      required: [rule_id, name, enabled, condition, action, created_at, updated_at]
+      properties:
+        rule_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        enabled:
+          type: boolean
+        condition:
+          $ref: '#/components/schemas/RuleCondition'
+        action:
+          $ref: '#/components/schemas/RuleAction'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RuleListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Rule'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    CreateRuleRequest:
+      type: object
+      required: [name, enabled, condition, action]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        description:
+          type: [string, 'null']
+          maxLength: 1000
+        enabled:
+          type: boolean
+          default: true
+        condition:
+          $ref: '#/components/schemas/RuleCondition'
+        action:
+          $ref: '#/components/schemas/RuleAction'
+
+    UpdateRuleRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        description:
+          type: [string, 'null']
+          maxLength: 1000
+        enabled:
+          type: boolean
+        condition:
+          $ref: '#/components/schemas/RuleCondition'
+        action:
+          $ref: '#/components/schemas/RuleAction'
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: BAD_REQUEST
+            message: Request validation failed
+            request_id: req_abc123
+
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Authentication token is missing or invalid
+            request_id: req_abc123
+
+    Forbidden:
+      description: Authenticated but not authorized for this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: You do not have permission to access this resource
+            request_id: req_abc123
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: NOT_FOUND
+            message: The requested resource was not found
+            request_id: req_abc123
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: An unexpected error occurred
+            request_id: req_abc123

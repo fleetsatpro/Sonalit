@@ -1,0 +1,17 @@
+apiVersion: v2
+name: guardian-svc
+description: Sonalit v4 Guardian Service — real-time alert rule evaluation and panic detection
+type: application
+version: 4.0.0
+appVersion: "4.0.0"
+dependencies:
+  - name: sonalit-base
+    version: "4.0.0"
+    repository: "file://../_base"
+keywords:
+  - sonalit
+  - guardian
+  - hotpath
+  - microservice
+maintainers:
+  - name: FleetSat Engineering

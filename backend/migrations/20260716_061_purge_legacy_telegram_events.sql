@@ -1,0 +1,12 @@
+-- Every risk_events row with source='osint:telegram' inserted before this
+-- migration came from the old country/channel-keyed matching logic
+-- (matchTelegramToZone in riskOsint.js, replaced by geolocation-based
+-- zone resolution) — it blindly attached every message from a global
+-- ('*') Telegram channel to every zone with no relevance check at all,
+-- so e.g. Ukraine/Russia war reporting from a global OSINT channel ended
+-- up attached to a Yemen zone (ME-YEM) purely because that zone happened
+-- to be in the sweep's zone list. Every such row is suspect regardless of
+-- age; purge them so the next sweep (fully geolocated) repopulates
+-- Telegram coverage cleanly instead of it lingering indefinitely inside
+-- the 7-day window recomputeZoneLevels reads from.
+DELETE FROM risk_events WHERE source = 'osint:telegram';

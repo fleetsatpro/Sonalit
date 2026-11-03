@@ -1,0 +1,237 @@
+/**
+ * T6.1: Sequential SQL migration runner.
+ * Reads backend/migrations/*.sql in alphabetical order and tracks normal
+ * migrations in schema_migrations.
+ *
+ * Reconciliation migrations are explicitly opt-in via the first-line marker
+ * `-- @sonalit-reconcile-always`. They are intentionally executed on every
+ * startup because the migration ledger cannot prove that the physical schema
+ * survived a restore/import. They are idempotent and MUST NOT be recorded as
+ * ordinary one-time migrations.
+ */
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
+const fs = require('fs');
+const path = require('path');
+const { Pool } = require('pg');
+const { checkIntelligenceSchema } = require('../src/utils/intelligenceSchemaHealth');
+
+const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production'
+  || String(process.env.RAILWAY_ENVIRONMENT_NAME || '').toLowerCase() === 'production';
+
+if (!process.env.DATABASE_URL) {
+  if (isProduction) {
+    console.error('[db-migrate] FATAL: DATABASE_URL is required in production — refusing to start without a database');
+    process.exit(78);
+  }
+  console.warn('[db-migrate] DATABASE_URL not set — skipping outside production');
+  process.exit(0);
+}
+
+const MIGRATIONS_DIR = path.resolve(__dirname, '../migrations');
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+  connectionTimeoutMillis: 15000,
+  idleTimeoutMillis: 10000,
+});
+
+function splitStatements(sql) {
+  const stmts = [];
+  const n = sql.length;
+  let i = 0;
+  let stmtStart = 0;
+  while (i < n) {
+    const c = sql[i];
+    if (c === '-' && i + 1 < n && sql[i + 1] === '-') { while (i < n && sql[i] !== '\n') i++; continue; }
+    if (c === "'") {
+      i++;
+      while (i < n) {
+        if (sql[i] === "'" && i + 1 < n && sql[i + 1] === "'") { i += 2; continue; }
+        if (sql[i] === "'") { i++; break; }
+        i++;
+      }
+      continue;
+    }
+    if (c === '$') {
+      let j = i + 1;
+      while (j < n && sql[j] !== '$' && sql[j] !== '\n') j++;
+      if (j < n && sql[j] === '$') {
+        const tag = sql.slice(i, j + 1);
+        i = j + 1;
+        while (i <= n - tag.length) {
+          if (sql.slice(i, i + tag.length) === tag) { i += tag.length; break; }
+          i++;
+        }
+        continue;
+      }
+    }
+    if (c === ';') {
+      const stmt = sql.slice(stmtStart, i + 1).trim();
+      if (stmt && stmt !== ';') stmts.push(stmt);
+      stmtStart = i + 1;
+    }
+    i++;
+  }
+  const tail = sql.slice(stmtStart).trim();
+  if (tail) stmts.push(tail);
+  return stmts;
+}
+
+function cleanMigration(rawSql) {
+  return rawSql.split('\n').filter(line => !/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;\s*$/i.test(line)).join('\n');
+}
+
+function isReconciliation(rawSql) {
+  return /^\s*--\s*@sonalit-reconcile-always\b/i.test(rawSql);
+}
+
+const CERTIFICATION_RECONCILIATION = '20260908_114_intelligence_schema_reconciliation_certification.sql';
+const PUBLIC_REPAIR_RECONCILIATION = '20260908_115_intelligence_public_schema_repair.sql';
+const CERTIFICATION_NAME = '20260908_114_intelligence_schema_reconciliation_certification';
+
+async function reconciliationAlreadySatisfied(client, file) {
+  if (![CERTIFICATION_RECONCILIATION, PUBLIC_REPAIR_RECONCILIATION].includes(file)) return false;
+
+  const health = await checkIntelligenceSchema(client.query.bind(client));
+  if (!health.ok) {
+    console.warn(
+      `[db-migrate] ${file}: physical schema repair required; missing_tables=${health.missing_tables.join(',') || '-'}; `+
+      `missing_columns=${health.missing_columns.join(',') || '-'}; missing_indexes=${health.missing_indexes.join(',') || '-'}`
+    );
+    return false;
+  }
+
+  // Preserve the certification record without replaying ALTER TABLE against
+  // a healthy live schema. Do not touch the data tables on this fast path.
+  if (file === CERTIFICATION_RECONCILIATION) {
+    const table = await client.query(`
+      SELECT 1 FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname = 'intelligence_schema_reconciliations'
+        AND c.relkind IN ('r','p')
+      LIMIT 1
+    `);
+    if (!table.rows.length) {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS public.intelligence_schema_reconciliations (
+          id BIGSERIAL PRIMARY KEY,
+          migration_name TEXT NOT NULL UNIQUE,
+          reconciled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          details JSONB NOT NULL DEFAULT '{}'::jsonb
+        )
+      `);
+    }
+    await client.query(`
+      INSERT INTO public.intelligence_schema_reconciliations (migration_name, details)
+      VALUES ($1, jsonb_build_object('mode','catalog_certified_skip','data_destructive',false))
+      ON CONFLICT (migration_name) DO NOTHING
+    `, [CERTIFICATION_NAME]);
+  }
+
+  console.log(`[db-migrate] skip reconciliation ${file}: public Intelligence schema certified; avoiding repeated DDL`);
+  return true;
+}
+
+async function executeMigration(client, file, rawSql, { reconciliation = false } = {}) {
+  const statements = splitStatements(cleanMigration(rawSql)).filter(s => {
+    const code = s.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+    return code && code !== ';';
+  });
+
+  console.log(`[db-migrate] ${reconciliation ? 'reconcile' : 'apply'} ${file} (${statements.length} stmts)`);
+  await client.query('BEGIN');
+  try {
+    if (reconciliation) {
+      // Fail closed instead of indefinitely queuing startup DDL behind traffic.
+      await client.query("SET LOCAL lock_timeout = '8s'");
+      await client.query("SET LOCAL statement_timeout = '120s'");
+    }
+    for (let idx = 0; idx < statements.length; idx++) {
+      try {
+        await client.query(statements[idx]);
+      } catch (stmtErr) {
+        console.error(`[db-migrate] FAILED stmt ${idx + 1}/${statements.length} pg:${stmtErr.code}`);
+        console.error(`[db-migrate] error: ${stmtErr.message}`);
+        console.error(`[db-migrate] stmt: ${statements[idx].slice(0, 500)}`);
+        throw stmtErr;
+      }
+    }
+    if (!reconciliation) await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
+    await client.query('COMMIT');
+    console.log(`[db-migrate] ${reconciliation ? 'reconciled' : 'done  '} ${file}`);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw new Error(`${reconciliation ? 'Reconciliation' : 'Migration'} ${file} failed: ${err.message}`);
+  }
+}
+
+async function run() {
+  const onlyArguments = process.argv.slice(2).filter((arg) => arg.startsWith('--only='));
+  if (onlyArguments.length > 1) {
+    throw new Error('Use at most one --only=<migration-filename> argument');
+  }
+  const requestedMigration = onlyArguments.length ? onlyArguments[0].slice('--only='.length) : null;
+  if (requestedMigration && path.basename(requestedMigration) !== requestedMigration) {
+    throw new Error('--only must be a migration filename, not a path');
+  }
+  const availableFiles = fs.readdirSync(MIGRATIONS_DIR).filter((file) => file.endsWith('.sql')).sort();
+  if (requestedMigration && !availableFiles.includes(requestedMigration)) {
+    throw new Error('Unknown migration requested by --only: ' + requestedMigration);
+  }
+  const files = requestedMigration
+    ? availableFiles.filter((file) => file === requestedMigration)
+    : availableFiles;
+  if (requestedMigration) {
+    console.log('[db-migrate] targeted mode: ' + requestedMigration + ' (unrelated migrations will not run)');
+  }
+
+  const client = await pool.connect();
+  try {
+    // The production schema gate certifies `public`. Make the migration
+    // runner use that exact schema instead of inheriting a mutable DB role
+    // search_path, which can silently create repaired objects elsewhere.
+    await client.query('SET search_path TO public');
+    console.log('[db-migrate] search_path=public');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS public.schema_migrations (
+        filename TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    const applied = new Set(
+      (await client.query('SELECT filename FROM public.schema_migrations')).rows.map(r => r.filename)
+    );
+
+    let ran = 0;
+    let reconciled = 0;
+
+    for (const file of files) {
+      const rawSql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+      const reconciliation = isReconciliation(rawSql);
+      if (reconciliation) {
+        if (await reconciliationAlreadySatisfied(client, file)) continue;
+        await executeMigration(client, file, rawSql, { reconciliation: true });
+        reconciled++;
+        continue;
+      }
+      if (applied.has(file)) { console.log(`[db-migrate] skip  ${file}`); continue; }
+      await executeMigration(client, file, rawSql);
+      ran++;
+    }
+
+    if (ran === 0 && reconciled === 0) console.log('[db-migrate] Nothing to apply — schema up to date');
+    else console.log(`[db-migrate] Applied ${ran} migration(s); reconciled ${reconciled} reconciliation(s)`);
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+run().then(() => process.exit(0)).catch(err => {
+  console.error('[db-migrate] FATAL: migration/reconciliation failed — backend will not start');
+  console.error('[db-migrate] Error:', err.message);
+  process.exit(1);
+});

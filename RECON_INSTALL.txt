@@ -1,0 +1,169 @@
+Scope: all 18 workspace projects
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +1790
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 1790, reused 0, downloaded 134, added 134
+Progress: resolved 1790, reused 0, downloaded 316, added 315
+Progress: resolved 1790, reused 0, downloaded 389, added 384
+Progress: resolved 1790, reused 0, downloaded 484, added 477
+Progress: resolved 1790, reused 0, downloaded 539, added 533
+Progress: resolved 1790, reused 0, downloaded 546, added 542
+Progress: resolved 1790, reused 0, downloaded 572, added 563
+Progress: resolved 1790, reused 0, downloaded 613, added 601
+Progress: resolved 1790, reused 0, downloaded 690, added 683
+Progress: resolved 1790, reused 0, downloaded 897, added 899
+Progress: resolved 1790, reused 0, downloaded 1118, added 1121
+Progress: resolved 1790, reused 0, downloaded 1312, added 1310
+Progress: resolved 1790, reused 0, downloaded 1548, added 1546
+Progress: resolved 1790, reused 0, downloaded 1676, added 1669
+Progress: resolved 1790, reused 0, downloaded 1754, added 1745
+Progress: resolved 1790, reused 0, downloaded 1786, added 1790, done
+.../node_modules/protobufjs postinstall$ node scripts/postinstall
+.../@vaadin/vaadin-usage-statistics postinstall$ node check.cjs
+.../esbuild@0.21.5/node_modules/esbuild postinstall$ node install.js
+.../esbuild@0.25.12/node_modules/esbuild postinstall$ node install.js
+.../esbuild@0.28.0/node_modules/esbuild postinstall$ node install.js
+.../@vaadin/vaadin-usage-statistics postinstall:     Vaadin collects development time usage statistics to improve this product. To opt-out, either run:
+.../@vaadin/vaadin-usage-statistics postinstall:     npm explore @vaadin/vaadin-usage-statistics -- npm run disable
+.../@vaadin/vaadin-usage-statistics postinstall:     to store disable statistics for the machine, or add
+.../@vaadin/vaadin-usage-statistics postinstall:     "vaadin": { "disableUsageStatistics": true }
+.../@vaadin/vaadin-usage-statistics postinstall:     to the project package.json and re-run npm install to disable statistics for the project.
+.../@vaadin/vaadin-usage-statistics postinstall:     For more details, see https://github.com/vaadin/vaadin-usage-statistics
+.../@vaadin/vaadin-usage-statistics postinstall:   
+.../@vaadin/vaadin-usage-statistics postinstall: Done
+.../node_modules/protobufjs postinstall: Done
+.../node_modules/unrs-resolver postinstall$ node postinstall.js
+.../node_modules/cpu-features install$ node buildcheck.js > buildcheck.gypi && node-gyp rebuild
+.../esbuild@0.25.12/node_modules/esbuild postinstall: Done
+.../esbuild@0.21.5/node_modules/esbuild postinstall: Done
+.../node_modules/@firebase/util postinstall$ node ./postinstall.js
+.../esbuild@0.28.0/node_modules/esbuild postinstall: Done
+.../node_modules/unrs-resolver postinstall: Done
+.../node_modules/@firebase/util postinstall: Done
+.../node_modules/cpu-features install: gyp info it worked if it ends with ok
+.../node_modules/cpu-features install: gyp info using node-gyp@10.2.0
+.../node_modules/cpu-features install: gyp info using node@22.22.2 | linux | x64
+.../node_modules/cpu-features install: gyp info find Python using Python version 3.11.15 found at "/usr/local/bin/python3"
+.../node_modules/cpu-features install: gyp http GET https://nodejs.org/download/release/v22.22.2/node-v22.22.2-headers.tar.gz
+.../node_modules/cpu-features install: gyp http 200 https://nodejs.org/download/release/v22.22.2/node-v22.22.2-headers.tar.gz
+.../node_modules/cpu-features install: gyp http GET https://nodejs.org/download/release/v22.22.2/SHASUMS256.txt
+.../node_modules/cpu-features install: gyp http 200 https://nodejs.org/download/release/v22.22.2/SHASUMS256.txt
+.../node_modules/cpu-features install: gyp info spawn /usr/local/bin/python3
+.../node_modules/cpu-features install: gyp info spawn args [
+.../node_modules/cpu-features install: gyp info spawn args '/root/.local/share/pnpm/.tools/pnpm/9.15.0_tmp_8695_0/node_modules/pnpm/dist/node_modules/node-gyp/gyp/gyp_main.py',
+.../node_modules/cpu-features install: gyp info spawn args 'binding.gyp',
+.../node_modules/cpu-features install: gyp info spawn args '-f',
+.../node_modules/cpu-features install: gyp info spawn args 'make',
+.../node_modules/cpu-features install: gyp info spawn args '-I',
+.../node_modules/cpu-features install: gyp info spawn args '/home/user/Sonalit/node_modules/.pnpm/cpu-features@0.0.10/node_modules/cpu-features/build/config.gypi',
+.../node_modules/cpu-features install: gyp info spawn args '-I',
+.../node_modules/cpu-features install: gyp info spawn args '/root/.local/share/pnpm/.tools/pnpm/9.15.0_tmp_8695_0/node_modules/pnpm/dist/node_modules/node-gyp/addon.gypi',
+.../node_modules/cpu-features install: gyp info spawn args '-I',
+.../node_modules/cpu-features install: gyp info spawn args '/root/.cache/node-gyp/22.22.2/include/node/common.gypi',
+.../node_modules/cpu-features install: gyp info spawn args '-Dlibrary=shared_library',
+.../node_modules/cpu-features install: gyp info spawn args '-Dvisibility=default',
+.../node_modules/cpu-features install: gyp info spawn args '-Dnode_root_dir=/root/.cache/node-gyp/22.22.2',
+.../node_modules/cpu-features install: gyp info spawn args '-Dnode_gyp_dir=/root/.local/share/pnpm/.tools/pnpm/9.15.0_tmp_8695_0/node_modules/pnpm/dist/node_modules/node-gyp',
+.../node_modules/cpu-features install: gyp info spawn args '-Dnode_lib_file=/root/.cache/node-gyp/22.22.2/<(target_arch)/node.lib',
+.../node_modules/cpu-features install: gyp info spawn args '-Dmodule_root_dir=/home/user/Sonalit/node_modules/.pnpm/cpu-features@0.0.10/node_modules/cpu-features',
+.../node_modules/cpu-features install: gyp info spawn args '-Dnode_engine=v8',
+.../node_modules/cpu-features install: gyp info spawn args '--depth=.',
+.../node_modules/cpu-features install: gyp info spawn args '--no-parallel',
+.../node_modules/cpu-features install: gyp info spawn args '--generator-output',
+.../node_modules/cpu-features install: gyp info spawn args 'build',
+.../node_modules/cpu-features install: gyp info spawn args '-Goutput_dir=.'
+.../node_modules/cpu-features install: gyp info spawn args ]
+.../node_modules/cpu-features install: gyp info spawn make
+.../node_modules/cpu-features install: gyp info spawn args [ 'BUILDTYPE=Release', '-C', 'build' ]
+.../node_modules/cpu-features install: make: Entering directory '/home/user/Sonalit/node_modules/.pnpm/cpu-features@0.0.10/node_modules/cpu-features/build'
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_aarch64_linux_or_android.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_aarch64_macos_or_iphone.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_aarch64_windows.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_arm_linux_or_android.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_mips_linux_or_android.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_ppc_linux.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_x86_freebsd.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_x86_linux_or_android.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_x86_macos.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_x86_windows.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/filesystem.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/stack_line_reader.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/string_view.o
+.../node_modules/cpu-features install: rm -f Release/obj.target/deps/cpu_features/cpu_features.a Release/obj.target/deps/cpu_features/cpu_features.a.ar-file-list; mkdir -p `dirname Release/obj.target/deps/cpu_features/cpu_features.a`
+.../node_modules/cpu-features install: ar crs Release/obj.target/deps/cpu_features/cpu_features.a @Release/obj.target/deps/cpu_features/cpu_features.a.ar-file-list
+.../node_modules/cpu-features install:   COPY Release/cpu_features.a
+.../node_modules/cpu-features install:   CXX(target) Release/obj.target/cpufeatures/src/binding.o
+.../node_modules/cpu-features install: In file included from ../src/binding.cc:1:
+.../node_modules/cpu-features install: /root/.cache/node-gyp/22.22.2/include/node/node.h:1243:7: warning: cast between incompatible function types from 'void (*)(Nan::ADDON_REGISTER_FUNCTION_ARGS_TYPE)' {aka 'void (*)(v8::Local<v8::Object>)'} to 'node::addon_register_func' {aka 'void (*)(v8::Local<v8::Object>, v8::Local<v8::Value>, void*)'} [-Wcast-function-type]
+.../node_modules/cpu-features install:  1243 |       (node::addon_register_func) (regfunc),                          \
+.../node_modules/cpu-features install:       |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.../node_modules/cpu-features install: /root/.cache/node-gyp/22.22.2/include/node/node.h:1277:3: note: in expansion of macro 'NODE_MODULE_X'
+.../node_modules/cpu-features install:  1277 |   NODE_MODULE_X(modname, regfunc, NULL, 0)  // NOLINT (readability/null_usage)
+.../node_modules/cpu-features install:       |   ^~~~~~~~~~~~~
+.../node_modules/cpu-features install: ../src/binding.cc:151:1: note: in expansion of macro 'NODE_MODULE'
+.../node_modules/cpu-features install:   151 | NODE_MODULE(cpufeatures, init)
+.../node_modules/cpu-features install:       | ^~~~~~~~~~~
+.../node_modules/cpu-features install:   SOLINK_MODULE(target) Release/obj.target/cpufeatures.node
+.../node_modules/cpu-features install:   COPY Release/cpufeatures.node
+.../node_modules/cpu-features install: make: Leaving directory '/home/user/Sonalit/node_modules/.pnpm/cpu-features@0.0.10/node_modules/cpu-features/build'
+.../node_modules/cpu-features install: gyp info ok 
+.../node_modules/cpu-features install: Done
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install$ node install.js
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info it worked if it ends with ok
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info using node-gyp@10.2.0
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info using node@22.22.2 | linux | x64
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info find Python using Python version 3.11.15 found at "/usr/local/bin/python3"
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn /usr/local/bin/python3
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args [
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '/root/.local/share/pnpm/.tools/pnpm/9.15.0_tmp_8695_0/node_modules/pnpm/dist/node_modules/node-gyp/gyp/gyp_main.py',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args 'binding.gyp',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-f',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args 'make',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-I',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '/home/user/Sonalit/node_modules/.pnpm/ssh2@1.17.0/node_modules/ssh2/lib/protocol/crypto/build/config.gypi',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-I',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '/root/.local/share/pnpm/.tools/pnpm/9.15.0_tmp_8695_0/node_modules/pnpm/dist/node_modules/node-gyp/addon.gypi',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-I',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '/root/.cache/node-gyp/22.22.2/include/node/common.gypi',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dlibrary=shared_library',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dvisibility=default',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dnode_root_dir=/root/.cache/node-gyp/22.22.2',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dnode_gyp_dir=/root/.local/share/pnpm/.tools/pnpm/9.15.0_tmp_8695_0/node_modules/pnpm/dist/node_modules/node-gyp',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dnode_lib_file=/root/.cache/node-gyp/22.22.2/<(target_arch)/node.lib',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dmodule_root_dir=/home/user/Sonalit/node_modules/.pnpm/ssh2@1.17.0/node_modules/ssh2/lib/protocol/crypto',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dnode_engine=v8',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '--depth=.',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '--no-parallel',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '--generator-output',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args 'build',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Goutput_dir=.'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args ]
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn make
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args [ 'BUILDTYPE=Release', '-C', 'build' ]
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: make: Entering directory '/home/user/Sonalit/node_modules/.pnpm/ssh2@1.17.0/node_modules/ssh2/lib/protocol/crypto/build'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:   CXX(target) Release/obj.target/sshcrypto/src/binding.o
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:   SOLINK_MODULE(target) Release/obj.target/sshcrypto.node
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:   COPY Release/sshcrypto.node
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: make: Leaving directory '/home/user/Sonalit/node_modules/.pnpm/ssh2@1.17.0/node_modules/ssh2/lib/protocol/crypto/build'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info ok 
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: Succeeded in building optional crypto binding
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: Done
+
+devDependencies:
++ @changesets/cli 2.31.0
++ @commitlint/cli 19.8.1
++ @commitlint/config-conventional 19.8.1
++ @sonalit/eslint-config 4.0.0 <- packages/eslint-config
++ @sonalit/prettier-config 4.0.0 <- packages/prettier-config
++ @sonalit/tsconfig-base 4.0.0 <- packages/tsconfig-base
++ husky 9.1.7
++ lint-staged 15.5.2
++ prettier 3.8.3
++ tsx 4.22.3
++ typescript 5.9.3
++ vitest 2.1.9
+
+. prepare$ husky
+. prepare: Done
+Done in 35.5s

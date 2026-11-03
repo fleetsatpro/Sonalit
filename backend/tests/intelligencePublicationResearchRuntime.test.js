@@ -1,0 +1,344 @@
+const fs=require('fs');
+const path=require('path');
+const source=()=>fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+
+describe('publication deep-research runtime ordering',()=>{
+  test('defines the publication incident set before invoking research',()=>{
+    const s=source();
+    const subset=s.indexOf('const publicationEvents=selectPublicationResearchEvents(events,researchLimit);');
+    const research=s.indexOf('researchPublicationIncidents(publicationEvents',{});
+    expect(subset).toBeGreaterThan(-1);
+    expect(s).toContain("const researchLimit=type==='daily'");
+    expect(research).toBeGreaterThan(subset);
+  });
+  test('legacy publications without complete research are not returned as unchanged',()=>{
+    const s=source();
+    const needs=s.indexOf('const needsDeepResearch=');
+    const unchanged=s.indexOf('const unchanged=');
+    const early=s.indexOf("if(existing.length&&unchanged)return");
+    expect(needs).toBeGreaterThan(-1);
+    expect(unchanged).toBeGreaterThan(needs);
+    expect(early).toBeGreaterThan(unchanged);
+    expect(s.slice(unchanged,early)).toContain('&& !needsDeepResearch');
+  });
+  test('research telemetry exposes web-search request count',()=>{
+    const s=source();
+    expect(s).toContain('web_search_requests=');
+  });
+});
+
+
+test('publication release defaults to requiring complete incident research',()=>{
+  const s=source();
+  expect(s).toContain("process.env.INTEL_PUBLICATION_REQUIRE_RESEARCH||'true'");
+  expect(s).toContain('researchReleaseGate');
+  expect(s).toContain('tradecraftQuality');
+  expect(s).toContain('publication_research_required:publicationResearchRequired');
+});
+
+test('AI senior-editor output is allowed to override deterministic prose fields',()=>{
+  const s=source();
+  const merge=s.indexOf('finalBody={...deterministic,...final');
+  expect(merge).toBeGreaterThan(-1);
+});
+
+test('stored publication_quality is the final tradecraft assessment, not the legacy deterministic score',()=>{
+  const s=source();
+  expect(s).toContain('publication_quality:finalBody.publication_quality||null');
+  expect(s).not.toContain('publication_quality:deterministic.publication_quality||null');
+});
+
+test('senior editor must return the incident dossiers rendered by the PDF',()=>{
+  const boardSource=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(boardSource).toContain('Required keys: title,subtitle,executive_assessment,sections,outlook,incident_dossiers');
+  expect(boardSource).toContain('const finalDossiers=Array.isArray(final?.incident_dossiers)?final.incident_dossiers:[];');
+  expect(boardSource).toContain('finalDossiersComplete');
+});
+
+test('release gate evaluates the effective reused research dossiers',()=>{
+  const s=source();
+  expect(s).toContain('effectiveResearchByEvent[String(e.id)]?.agent?.status');
+  expect(s).not.toContain('incidentResearch.summary.researched>=expectedResearchCount && Number(incidentResearch.summary.researched_limited||0)===0');
+});
+
+test('changed evidence forces a fresh research attempt even when prior coverage was complete',()=>{
+  const s=source();
+  expect(s).toContain('const needsDeepResearch=');
+  expect(s).toContain('Boolean(options.forceResearch)');
+  expect(s).toContain('researchAttemptRecent');
+  expect(s).toContain('if(!evidenceChanged){');
+});
+
+test('editorial board is enabled and required by default',()=>{
+  const s=source();
+  expect(s).toContain("process.env.INTEL_PUBLICATION_AI_BOARD||'true'");
+  expect(s).toContain("process.env.INTEL_PUBLICATION_AI_BOARD_REQUIRED||'true'");
+});
+
+
+test('publication QA lanes may use free open-weight models when the publication is explicitly public',()=>{
+  const boardSource=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(boardSource).toContain("id:'publication-qa', lane:'qa'");
+  expect(boardSource).toContain("id:'independent-quality-assurance', lane:'qa'");
+  expect(boardSource).toContain("id:'release-integrity-auditor', lane:'qa'");
+  expect(boardSource).toContain("allowFreeProviders:true");
+  expect(boardSource).toContain("preferFreeProviders:true");
+  expect(boardSource).toContain("dataClassification:String(process.env.INTEL_PUBLICATION_DATA_CLASSIFICATION||'public').toLowerCase()");
+});
+
+test('editorial board requires exact incident-id coverage in the final report',()=>{
+  const boardSource=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(boardSource).toContain('const expectedEventIds=new Set(events.map(e=>String(e.id)));');
+  expect(boardSource).toContain('returnedEventIds.size===expectedEventIds.size');
+  expect(boardSource).toContain('[...expectedEventIds].every(id=>returnedEventIds.has(id))');
+});
+
+
+test('senior-editor output cannot replace verified research provenance fields',()=>{
+  const s=source();
+  expect(s).toContain('research_status:verifiedResearch.status||d?.research_status||null');
+  expect(s).toContain('research_provider:verifiedResearch.provider||d?.research_provider||null');
+  expect(s).toContain('research_method:verifiedResearch.research_method||d?.research_method||null');
+  expect(s).toContain('research_sources:Array.isArray(verifiedResearch.sources)?verifiedResearch.sources.map(src=>({...src}))');
+});
+
+
+test('limited prior research forces another research attempt after cooldown',()=>{
+  const s=source();
+  expect(s).toContain('const priorDossierResearchReady=expectedResearchCount===0 || publicationEvents.every');
+  expect(s).toContain('const needsDeepResearch=');
+  expect(s).toContain('Boolean(options.forceResearch)');
+  expect(s).toContain('researchAttemptRecent');
+  expect(s).toContain('const priorResearchReleaseReady=!publicationResearchRequired || priorDossierResearchReady;');
+});
+
+test('research collection cools GDELT after rate limiting instead of retrying every incident',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('const GDELT_COOLDOWN_MS=5*60*1000;');
+  expect(s).toContain('let gdeltDownUntil=0;');
+  expect(s).toContain('if(Date.now()<gdeltDownUntil)return {articles:[],requestAttempted:false};');
+  expect(s).toContain("gdeltDownUntil=Date.now()+GDELT_COOLDOWN_MS");
+});
+
+test('preferred free research does not probe an unavailable paid rescue lane first',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
+  expect(s).toContain('if(hasAnthropic() && !params.preferFreeProviders)');
+});
+
+
+test('incident research can still build a live web packet when no AI provider is ready',()=>{
+  const s=source();
+  expect(s).toContain('if(deepResearchEnabled&&expectedResearchCount>0&&needsDeepResearch){');
+  expect(s).not.toContain('needsDeepResearch&&publicationAiReady');
+  expect(s).toContain("['researched','researched_limited'].includes");
+});
+
+test('limited research is considered release-complete but remains subject to the tradecraft gate',()=>{
+  const s=source();
+  expect(s).toContain("['researched','researched_limited'].includes(String(dossier?.research_status||'').toLowerCase())");
+  expect(s).toContain('const needsDeepResearch=');
+  expect(s).toContain('Boolean(options.forceResearch)');
+  expect(s).toContain('researchAttemptRecent');
+});
+
+
+test('degraded incident research does not halt remaining incidents when AI is unavailable',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('const results=await researchBatch(batch,{country,region});');
+  expect(s).not.toContain("halted=true;");
+  expect(s).not.toContain('remaining incidents deferred');
+});
+
+
+test('OpenAI readiness must reflect per-key cooldown state rather than configuration alone',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/aiClient.js'),'utf8');
+  expect(s).toContain('function hasReadyOpenAIKey()');
+  expect(s).toContain("provider.name==='openai-direct' ? hasReadyOpenAIKey() :");
+  expect(s).toContain("provider.name===GEMINI_PROVIDER.name ? hasReadyGeminiKey() :");
+});
+
+test('editorial board accepts controlled limited incident research',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(s).toContain("['researched','researched_limited'].includes(String(e?.research?.agent?.status||'').toLowerCase())");
+});
+
+
+test('editorial board provider outage is classified as provider_unavailable rather than a generic hold',()=>{
+  const src=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  expect(src).toContain("result?.qaConsensus?.blocking_issues");
+  expect(src).toContain("aiBoardStatus=boardProviderUnavailable?'provider_unavailable'");
+});
+
+
+test('publication research records degraded evidence eligibility explicitly',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('degradedEvidenceEligible=values.filter');
+  expect(s).toContain('degraded_evidence_eligible:degradedEvidenceEligible');
+});
+
+
+test('incident publication uses bounded, evidence-eligible research outcomes rather than stale provider readiness',()=>{
+  const s=source();
+  expect(s).toContain("const priorEvidenceConstrained=");
+  expect(s).toContain("entry.error==='ai_provider_unavailable'");
+  expect(s).toContain('const researchEligibleEvents=publicationEvents.filter(e=>');
+  expect(s).toContain('const reportEvents=publicationBasis.basis===\'DIRECT_WEB_RESEARCH\' && publicationBasis.publishable');
+  expect(s).toContain('const reportObservationEvidenceContract=reportEvidenceCount>=3&&reportSourceIds.size>=2;');
+  expect(s).toContain('const degradedEvidenceRelease=');
+  expect(s).toContain('if(aiBoardEnabled && publicationAiAvailable && events.length && !degradedEvidenceRelease)');
+  expect(s).toContain("const publicationAiAvailable=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(publicationAiPolicy);");
+  expect(s).toContain('degradedEvidenceRelease || !publicationAiAvailable');
+});
+
+
+test('publication preflights defer cooldown recovery to the bounded AI router',()=>{
+  const research=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  const agents=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceAgents.js'),'utf8');
+  const board=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationEditorialBoard.js'),'utf8');
+  expect(research).toContain("const aiConfigured=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(providerPolicy);");
+  expect(research).not.toContain('aiClient.hasReadyProvider(providerPolicy)');
+  expect(agents).toContain("const publicationAiAvailable=typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(publicationAiPolicy);");
+  expect(agents).not.toContain('aiClient.hasReadyProvider(publicationAiPolicy)');
+  expect(board).toContain("return typeof aiClient.hasAnyProvider==='function' && aiClient.hasAnyProvider(params);");
+  expect(board).toContain('if(events.length&&!hasAi(publicationAiPolicy))');
+});
+
+test('degraded fallback keeps a structured assessment while its incident narrative avoids repeated stock prose',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('analytical_assessment:derivedAssessment');
+  expect(s).toContain("'Decision relevance for \"'+headline+'\": '+why[0]");
+  expect(s).toContain('const materialUncertainty=specificCaveats.length');
+  expect(s).toContain('persistence, recurrence, geographic spread and downstream effects remain unconfirmed');
+  expect(s).not.toContain("'Research state: evidence-constrained; this edition does not present unverified detail as fact.'");
+  expect(s).not.toContain('Broader deterioration is not established from the present record; the judgement should change only if subsequent evidence confirms');
+});
+
+
+test('degraded evidence eligibility requires attribution but not per-incident dual-source corroboration',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('eventEvidence.length>=1 && eventEvidenceSources.size>=1');
+  expect(s).not.toContain('eventEvidence.length>=2 && eventEvidenceSources.size>=2');
+});
+
+
+test('fallback evidence is initialized before narrative construction',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];');
+  expect(s.indexOf('const eventEvidence=Array.isArray(event?.evidence)?event.evidence:[];')).toBeLessThan(s.indexOf('const narrative=cleanPublicationText('));
+});
+
+test('deterministic publication receives effective per-incident research and provenance',()=>{
+  const s=source();
+  expect(s).toContain('const enrichedEvents=events.map(e=>({...e,research:effectiveResearchByEvent[String(e.id)]||null}));');
+  expect(s).toContain('const enrichedEventsById=new Map(enrichedEvents.map(e=>[String(e.id),e]));');
+  expect(s).toContain('events:reportEvents.map(e=>enrichedEventsById.get(String(e.id))||e)');
+});
+
+test('provider-outage release supports mixed researched and evidence-eligible dossiers without bypassing the research gate',()=>{
+  const s=source();
+  expect(s).toContain('const releaseResearchEligible=');
+  expect(s).toContain("return ['researched','researched_limited'].includes(status) || isDegradedEvidenceEvent(e);");
+  expect(s).toContain('releaseResearchEligible &&');
+  expect(s).toContain('publicationEvidenceContract &&');
+  expect(s).toContain('researchProviderUnavailable;');
+});
+
+test('degraded fallback eligibility is carried into the dossier and explicitly required by tradecraft QA',()=>{
+  const builder=fs.readFileSync(path.join(__dirname,'../src/utils/intelligencePublicationBuilder.js'),'utf8');
+  const quality=fs.readFileSync(path.join(__dirname,'../src/utils/publicationQuality.js'),'utf8');
+  expect(builder).toContain('degraded_evidence_eligible: research.degraded_evidence_eligible === true');
+  expect(quality).toContain('dossier.degraded_evidence_eligible===true');
+  expect(quality).toContain("['degraded_evidence','live_web_packet'].includes(String(dossier.research_method||'').toLowerCase())");
+  expect(quality).toContain('Number(dossier.evidence_count||0)>=1');
+  expect(quality).toContain('Number(dossier.source_count||0)>=1');
+});
+
+test('degraded eligibility is per incident and a generic fallback batch is not treated as provider outage',()=>{
+  const s=source();
+  expect(s).toContain('const hasEligiblePerIncidentProviderFailure=publicationEvents.some(e=>');
+  expect(s).toContain("entry.error==='ai_provider_unavailable' &&");
+  expect(s).toContain("['degraded_evidence','live_web_packet'].includes(method)");
+  expect(s).toContain("(entry.error==='ai_provider_unavailable' || priorEvidenceConstrained)");
+  expect(s).not.toContain('|| priorEvidenceConstrained || researchProviderUnavailable');
+});
+
+test('published dossiers cannot exceed the bounded research set when period-wide evidence is sufficient',()=>{
+  const s=source();
+  const basisStart=s.indexOf('function publicationEvidenceBasis(');
+  const basisEnd=s.indexOf('\nasync function recoverStalledPublications',basisStart);
+  expect(basisStart).toBeGreaterThan(-1);
+  expect(basisEnd).toBeGreaterThan(basisStart);
+  const basis=s.slice(basisStart,basisEnd);
+  expect(basis).toContain('const reportEvents=Array.isArray(publicationEvents)?publicationEvents:[];');
+  expect(basis).not.toContain('Array.isArray(allEvents)&&allEvents.length?allEvents');
+  expect(s).toContain('const researchEligibleEvents=publicationEvents.filter(e=>');
+  expect(s).toContain('const reportEvidenceCount=reportEvents.reduce');
+  expect(s).not.toContain('const reportEvidenceCount=evidenceContract ? evidenceCount');
+});
+
+test('bounded publication coverage explicitly discloses excluded period incidents and gates on reported evidence',()=>{
+  const s=source();
+  expect(s).toContain('const reportObservationEvidenceContract=reportEvidenceCount>=3&&reportSourceIds.size>=2;');
+  expect(s).toContain("const researchBackedEvidenceContract=publicationBasis.basis==='DIRECT_WEB_RESEARCH'&&publicationBasis.publishable;");
+  expect(s).toContain('const publicationEvidenceContract=events.length===0 || reportObservationEvidenceContract || researchBackedEvidenceContract;');
+  expect(s).toContain('const excludedPeriodEventCount=Math.max(0,events.length-reportEvents.length);');
+  expect(s).toContain('full_period_event_count:events.length');
+  expect(s).toContain('detailed_event_count:reportEvents.length');
+  expect(s).toContain('priority_research_limit:researchLimit');
+  expect(s).toContain('Their omission is not evidence that no incident occurred.');
+  expect(s).toContain('full_period_event_count:events.length,detailed_event_count:reportEvents.length,excluded_event_count:excludedPeriodEventCount');
+  expect(s).toContain('const reportSourceCount=Math.max(');
+  expect(s).toContain('sourceCount:reportSourceCount');
+  expect(s).toContain('finalBody.intelligence_gaps=Array.from(new Set(coverageGaps)).slice(-12);');
+  expect(s).not.toContain('uniqueStrings([...(Array.isArray(finalBody.intelligence_gaps)');
+  expect(s).not.toContain('degraded_evidence_eligible_incidents:Number(incidentResearch.summary.degraded_evidence_eligible');
+  const quality=fs.readFileSync(path.join(__dirname,'../src/utils/publicationQuality.js'),'utf8');
+  expect(quality).toContain('researched + degradedEvidenceEligible >= requested');
+  expect(quality).toContain('fallbacks === degradedEvidenceEligible');
+  });
+
+  test('incident research batching bounds provider calls without losing or reordering dossiers',()=>{
+    const {chunkIncidentResearchBatches}=require('../src/utils/intelligenceIncidentResearch');
+    const events=Array.from({length:9},(_,i)=>({id:String(i+1),headline:'Incident '+String(i+1)}));
+    const batches=chunkIncidentResearchBatches(events);
+    expect(batches.map(batch=>batch.map(event=>event.id))).toEqual([
+      ['1','2','3','4'],
+      ['5','6','7','8'],
+      ['9']
+    ]);
+    expect(batches.flat()).toEqual(events);
+    expect(chunkIncidentResearchBatches(events,2).map(batch=>batch.length)).toEqual([2,2,2,2,1]);
+    expect(chunkIncidentResearchBatches(events,99).map(batch=>batch.length)).toEqual([4,4,1]);
+    expect(chunkIncidentResearchBatches([],4)).toEqual([]);
+    const research=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+    expect(research).toContain('const batches=chunkIncidentResearchBatches(events,configuredBatchSize);');
+    expect(research).toContain('INTEL_PUBLICATION_RESEARCH_BATCH_SIZE');
+    expect(research).toContain('Math.min(2,Number(process.env.INTEL_PUBLICATION_RESEARCH_CONCURRENCY)||2)');
+    // Batch-level tool citations have no deterministic event association; they
+    // must never be copied into every incident's source allowlist.
+    expect(research).toContain('const providerVerifiedSources=events.length===1?verifiedResponseSources(response):[];');
+  });
+
+
+
+test('publication research structured output parser accepts schema wrappers and rejects malformed envelopes',()=>{
+  const {parseResearchItemsFromText}=require('../src/utils/intelligenceIncidentResearch');
+  const item={incident_id:'KE-test-1',status:'researched',narrative:'Evidence-backed test narrative.',sources:[]};
+  const objectEnvelope=JSON.stringify({results:[item]});
+  expect(parseResearchItemsFromText(objectEnvelope)).toEqual([item]);
+  expect(parseResearchItemsFromText(JSON.stringify([item]))).toEqual([item]);
+  expect(parseResearchItemsFromText('Model output follows:\n```json\n'+objectEnvelope+'\n```')).toEqual([item]);
+  expect(parseResearchItemsFromText('not valid structured output')).toBeNull();
+  expect(parseResearchItemsFromText(JSON.stringify({error:'missing results contract',incidents:[item]}))).toBeNull();
+  expect(parseResearchItemsFromText('{"results":[{"incident_id":"truncated"')).toBeNull();
+});
+
+test('publication research prompt and bounded retry use the same results-envelope contract',()=>{
+  const s=fs.readFileSync(path.join(__dirname,'../src/utils/intelligenceIncidentResearch.js'),'utf8');
+  expect(s).toContain('Return ONLY one JSON object whose top-level results property is an array.');
+  expect(s).toContain('function parseResearchItemsFromText(');
+  expect(s).toContain("responseFormat:{type:'json_object'}");
+  expect(s).toContain('retrying once');
+  expect(s).toContain("providerHints:retryHint==='openrouter-free-router'");
+  expect(s).not.toContain('Return ONLY a JSON array with one object per incident');
+});

@@ -1,0 +1,36 @@
+Scope: 17 of 18 workspace projects
+packages/contracts typecheck$ tsc --noEmit
+packages/contracts typecheck: Done
+apps/web typecheck$ tsc --noEmit
+services/ai-copilot-svc typecheck$ tsc --noEmit
+services/alerts-svc typecheck$ tsc --noEmit
+services/analytics-svc typecheck$ tsc --noEmit
+services/analytics-svc typecheck: src/db.ts(1,39): error TS7016: Could not find a declaration file for module 'pg'. '/home/user/Sonalit/node_modules/.pnpm/pg@8.21.0/node_modules/pg/esm/index.mjs' implicitly has an 'any' type.
+services/analytics-svc typecheck:   Try `npm i --save-dev @types/pg` if it exists or add a new declaration (.d.ts) file containing `declare module 'pg';`
+services/analytics-svc typecheck: src/index.ts(14,102): error TS18046: 'err' is of type 'unknown'.
+services/analytics-svc typecheck: src/otel.ts(3,26): error TS2307: Cannot find module '@opentelemetry/resources' or its corresponding type declarations.
+services/analytics-svc typecheck: src/otel.ts(4,71): error TS2307: Cannot find module '@opentelemetry/semantic-conventions' or its corresponding type declarations.
+services/analytics-svc typecheck: src/otel.ts(5,62): error TS2307: Cannot find module '@opentelemetry/sdk-trace-node' or its corresponding type declarations.
+services/analytics-svc typecheck: Failed
+/home/user/Sonalit/services/analytics-svc:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @sonalit/analytics-svc@4.0.0 typecheck: `tsc --noEmit`
+Exit status 2
+services/auth-svc typecheck$ tsc --noEmit
+Scope: 17 of 18 workspace projects
+packages/contracts typecheck$ tsc --noEmit
+packages/contracts typecheck: Done
+apps/web typecheck$ tsc --noEmit
+services/ai-copilot-svc typecheck$ tsc --noEmit
+services/alerts-svc typecheck$ tsc --noEmit
+services/analytics-svc typecheck$ tsc --noEmit
+services/analytics-svc typecheck: src/db.ts(1,39): error TS7016: Could not find a declaration file for module 'pg'. '/home/user/Sonalit/node_modules/.pnpm/pg@8.21.0/node_modules/pg/esm/index.mjs' implicitly has an 'any' type.
+services/analytics-svc typecheck:   Try `npm i --save-dev @types/pg` if it exists or add a new declaration (.d.ts) file containing `declare module 'pg';`
+services/analytics-svc typecheck: src/index.ts(14,102): error TS18046: 'err' is of type 'unknown'.
+services/analytics-svc typecheck: src/otel.ts(3,26): error TS2307: Cannot find module '@opentelemetry/resources' or its corresponding type declarations.
+services/analytics-svc typecheck: src/otel.ts(4,71): error TS2307: Cannot find module '@opentelemetry/semantic-conventions' or its corresponding type declarations.
+services/analytics-svc typecheck: src/otel.ts(5,62): error TS2307: Cannot find module '@opentelemetry/sdk-trace-node' or its corresponding type declarations.
+services/analytics-svc typecheck: Failed
+/home/user/Sonalit/services/analytics-svc:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @sonalit/analytics-svc@4.0.0 typecheck: `tsc --noEmit`
+Exit status 1
+services/auth-svc typecheck$ tsc --noEmit

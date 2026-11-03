@@ -1,0 +1,16 @@
+apiVersion: v2
+name: fleet-svc
+description: Sonalit v4 Fleet Service — vehicle and asset management
+type: application
+version: 4.0.0
+appVersion: "4.0.0"
+dependencies:
+  - name: sonalit-base
+    version: "4.0.0"
+    repository: "file://../_base"
+keywords:
+  - sonalit
+  - fleet
+  - microservice
+maintainers:
+  - name: FleetSat Engineering

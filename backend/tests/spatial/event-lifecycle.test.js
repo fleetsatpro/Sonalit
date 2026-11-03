@@ -1,0 +1,305 @@
+'use strict';
+
+const {
+  detectSpatialEvents,
+  persistSpatialEvents,
+  eventMode,
+  eventCanAutoResolve,
+} = require('../../src/services/spatial/spatialEvents');
+
+function dbStub() {
+  const open = new Map();
+  let nextId = 1;
+  const calls = [];
+  const spatialAlertKeys = new Set();
+  const db = jest.fn(async (sql, params) => {
+    calls.push({ sql, params });
+    if (sql.startsWith('SELECT id,event_key,event_type')) {
+      return { rows: Array.from(open.values()).filter(r => r.status === 'open') };
+    }
+    if (sql.startsWith('INSERT INTO spatial_events')) {
+      const eventKey = params[1];
+      if (open.has(eventKey) && open.get(eventKey).status === 'open') return { rows: [] };
+      const row = {
+        id: 'event-' + nextId++, event_key: eventKey, event_type: params[2],
+        subject_type: params[3], subject_id: params[4], convoy_id: params[5], status: params[18] || 'open',
+      };
+      if (row.status === 'open') open.set(eventKey, row);
+      return { rows: [row] };
+    }
+    if (sql.startsWith('UPDATE spatial_events SET status=\'resolved\'') && sql.includes('event_key=$4')) {
+      const key = params[3];
+      const row = open.get(key);
+      if (!row) return { rows: [] };
+      row.status = 'resolved';
+      open.delete(key);
+      return { rows: [{ id: row.id, event_key: key }] };
+    }
+    if (sql.startsWith('UPDATE spatial_events SET status=\'resolved\'') && sql.includes('id=$4')) {
+      const id = params[3];
+      const row = Array.from(open.values()).find(x => x.id === id);
+      if (!row) return { rows: [] };
+      row.status = 'resolved';
+      open.delete(row.event_key);
+      return { rows: [{ id: row.id, event_key: row.event_key }] };
+    }
+    if (sql.startsWith('UPDATE spatial_events SET observed_at=')) {
+      const key = params[11];
+      const row = open.get(key);
+      if (!row) return { rows: [] };
+      row.confidence = Number(params[2]);
+      row.operational_confidence = Number(params[3]);
+      row.last_seen_at = new Date().toISOString();
+      return { rows: [row] };
+    }
+    if (sql.startsWith('SELECT id FROM alerts')) {
+      return spatialAlertKeys.has(params[3])
+        ? { rows: [{ id: 'existing-alert' }] }
+        : { rows: [] };
+    }
+    if (sql.startsWith('INSERT INTO alerts')) {
+      try {
+        const metadata = JSON.parse(params[7] || '{}');
+        if (metadata.spatialAlertKey) spatialAlertKeys.add(metadata.spatialAlertKey);
+        if (metadata.spatialAlertSemanticKey) spatialAlertKeys.add(metadata.spatialAlertSemanticKey);
+      } catch (_) {}
+      return { rows: [{ id: 'alert-' + nextId++ }] };
+    }
+    return { rows: [] };
+  });
+  db.open = open;
+  db.calls = calls;
+  return db;
+}
+
+describe('spatial event lifecycle', () => {
+  test('marks occurrence events resolved while stateful conditions remain open', () => {
+    expect(eventMode('POSITION_JUMP')).toBe('occurrence');
+    expect(eventMode('TRAFFIC_CLOSURE')).toBe('stateful');
+  });
+
+  test('does not permit external event reconciliation without a fresh authoritative layer', () => {
+    const unavailable = {
+      coverage: { layersUnavailable: ['traffic'], layersPartial: [] },
+      layerHealth: [{ layerId: 'traffic', status: 'UNAVAILABLE' }],
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+    };
+    const fresh = {
+      coverage: { layersUnavailable: [], layersPartial: [] },
+      layerHealth: [{ layerId: 'traffic', status: 'LIVE' }],
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+    };
+    expect(eventCanAutoResolve(unavailable, 'TRAFFIC_CLOSURE')).toBe(false);
+    expect(eventCanAutoResolve(fresh, 'TRAFFIC_CLOSURE')).toBe(true);
+  });
+
+  test('allows reconciliation from a fresh empty provider result when it did not fail', () => {
+    const context = {
+      coverage: { layersUnavailable: [], layersPartial: ['maritime'] },
+      layerHealth: [{ layerId: 'maritime', status: 'PARTIAL', coverageComplete: true }],
+      providerCoverage: { 'kpler-ais': { complete: true } },
+      providerHealth: { 'kpler-ais': { status: 'PARTIAL', lastErrorClass: null } },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      dataHealth: { ok: true, readErrors: [] },
+    };
+    expect(eventCanAutoResolve(context, 'VESSEL_APPROACHING_DESTINATION', ['kpler:vessel:123'])).toBe(true);
+  });
+
+  test('uses the authoritative source provider when sibling traffic feeds are degraded', () => {
+    const context = {
+      coverage: { layersUnavailable: [], layersPartial: ['traffic'] },
+      layerHealth: [{ layerId: 'traffic', status: 'PARTIAL', coverageComplete: false }],
+      providerHealth: {
+        'tomtom-traffic-incidents': { status: 'LIVE', lastErrorClass: null },
+        'mapbox-traffic': { status: 'UNAVAILABLE', lastErrorClass: 'timeout' },
+      },
+      providerCoverage: {
+        'tomtom-traffic-incidents': { complete: true },
+        'mapbox-traffic': { complete: false },
+      },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      dataHealth: { ok: true, readErrors: [] },
+    };
+    expect(eventCanAutoResolve(context, 'TRAFFIC_CLOSURE', ['tomtom:traffic-incident:1'])).toBe(true);
+  });
+
+  test('updates an existing open event instead of creating a duplicate alert record', async () => {
+    const db = dbStub();
+    const context = {
+      subject: { kind: 'convoy', id: 'c1' },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      coverage: { layersUnavailable: [], layersPartial: [] },
+      layerHealth: [],
+    };
+    const event = {
+      eventKey: 'TRAFFIC_CLOSURE:vehicle:v1:road-1',
+      eventType: 'TRAFFIC_CLOSURE',
+      subjectType: 'vehicle',
+      subjectId: 'v1',
+      convoyId: 'c1',
+      confidence: 0.8,
+      operationalConfidence: 0.7,
+      evidence: [{ metric: 'distance_m', value: 100 }],
+      sourceReferences: ['tomtom-traffic-incidents:inc-1'],
+      uncertainty: [],
+      status: 'open',
+      observedAt: new Date().toISOString(),
+    };
+    await persistSpatialEvents(db, [event], { orgId: 'org-1', context });
+    await persistSpatialEvents(db, [Object.assign({}, event, { confidence: 0.9 })], { orgId: 'org-1', context });
+    expect(db.open.size).toBe(1);
+    expect((db.calls.filter(c => c.sql.startsWith('INSERT INTO alerts'))).length).toBe(1);
+    expect(db.open.get('TRAFFIC_CLOSURE:vehicle:v1:road-1').confidence).toBe(0.9);
+  });
+
+  test('keeps recurring occurrence events distinct while cooldown suppresses duplicate alerts', async () => {
+    const db = dbStub();
+    const context = {
+      subject: { kind: 'convoy', id: 'c1' },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      coverage: { layersUnavailable: [], layersPartial: [] },
+      layerHealth: [],
+      providerCoverage: {},
+      providerHealth: {},
+      dataHealth: { ok: true, readErrors: [] },
+    };
+    const first = {
+      eventKey: 'POSITION_JUMP:vehicle:v1:100',
+      eventType: 'POSITION_JUMP',
+      subjectType: 'vehicle',
+      subjectId: 'v1',
+      convoyId: 'c1',
+      confidence: 0.9,
+      operationalConfidence: 0.8,
+      evidence: [{ metric: 'implied_speed_kmh', value: 190 }],
+      sourceReferences: ['gps_logs:v1'],
+      uncertainty: [],
+      status: 'resolved',
+      observedAt: new Date().toISOString(),
+    };
+    const second = Object.assign({}, first, {
+      eventKey: 'POSITION_JUMP:vehicle:v1:101',
+    });
+
+    await persistSpatialEvents(db, [first], { orgId: 'org-1', context });
+    await persistSpatialEvents(db, [second], { orgId: 'org-1', context });
+
+    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO alerts'))).toHaveLength(1);
+    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO spatial_events'))).toHaveLength(2);
+  });
+
+  test('suppresses repeated occurrence alerts while retaining separate event records', async () => {
+    const db = dbStub();
+    const context = {
+      subject: { kind: 'convoy', id: 'c1' },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      coverage: { layersUnavailable: [], layersPartial: [] },
+      layerHealth: [],
+      providerCoverage: {},
+      providerHealth: {},
+      dataHealth: { ok: true, readErrors: [] },
+    };
+    const first = {
+      eventKey: 'POSITION_JUMP:vehicle:v1:100', eventType: 'POSITION_JUMP',
+      subjectType: 'vehicle', subjectId: 'v1', convoyId: 'c1',
+      confidence: 0.8, operationalConfidence: 0.7, evidence: [],
+      sourceReferences: ['sonalit:v1'], uncertainty: [], status: 'resolved'
+    };
+    const second = Object.assign({}, first, { eventKey: 'POSITION_JUMP:vehicle:v1:101' });
+    await persistSpatialEvents(db, [first], { orgId: 'org-1', context });
+    await persistSpatialEvents(db, [second], { orgId: 'org-1', context });
+    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO alerts')).length).toBe(1);
+    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO spatial_events')).length).toBe(2);
+  });
+
+  test('coalesces corroborated provider observations into one stateful condition key', () => {
+    const events = detectSpatialEvents({
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1', quality: { freshnessClass: 'LIVE' }, sourceReferences: ['vehicles:v1'] }] },
+      relations: [
+        {
+          predicate: 'TRAFFIC_CLOSURE',
+          fromId: 'v1',
+          toId: 'mapbox:traffic:1',
+          fromType: 'vehicle',
+          toType: 'traffic_segment',
+          confidence: 0.8,
+          operationalConfidence: 0.8,
+          sourceReferences: ['mapbox-traffic', 'mapbox-traffic:traffic_segment'],
+          correlationIds: ['spatial-correlation:shared'],
+          sourceAgreement: 'corroborated',
+          correlationEvidence: [{ kind: 'corroboration', id: 'spatial-correlation:shared', providers: ['mapbox-traffic', 'tomtom-traffic'] }],
+          evidence: [],
+          uncertainty: [],
+          actionable: true,
+        },
+        {
+          predicate: 'TRAFFIC_CLOSURE',
+          fromId: 'v1',
+          toId: 'tomtom:traffic-flow:1',
+          fromType: 'vehicle',
+          toType: 'traffic_flow_segment',
+          confidence: 0.8,
+          operationalConfidence: 0.8,
+          sourceReferences: ['tomtom-traffic-flow', 'tomtom-traffic-flow:traffic_flow_segment'],
+          correlationIds: ['spatial-correlation:shared'],
+          sourceAgreement: 'corroborated',
+          correlationEvidence: [{ kind: 'corroboration', id: 'spatial-correlation:shared', providers: ['mapbox-traffic', 'tomtom-traffic'] }],
+          evidence: [],
+          uncertainty: [],
+          actionable: true,
+        },
+      ],
+    }, { now: Date.now() });
+
+    const trafficEvents = events.filter(e => e.eventType === 'TRAFFIC_CLOSURE');
+    expect(trafficEvents).toHaveLength(2);
+    expect(trafficEvents[0].eventKey).toBe(trafficEvents[1].eventKey);
+  });
+
+  test('does not reconcile internal events when critical spatial reads failed', () => {
+    const context = {
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      dataHealth: { ok: false, readErrors: [{ message: 'route query failed' }] },
+    };
+    expect(eventCanAutoResolve(context, 'CORRIDOR_EXIT')).toBe(false);
+  });
+
+  test('reconciles a disappeared stateful condition only when fresh authority exists', async () => {
+    const db = dbStub();
+    const event = {
+      eventKey: 'TRAFFIC_CLOSURE:vehicle:v1:road-1',
+      eventType: 'TRAFFIC_CLOSURE',
+      subjectType: 'vehicle',
+      subjectId: 'v1',
+      convoyId: 'c1',
+      confidence: 0.9,
+      operationalConfidence: 0.8,
+      evidence: [],
+      sourceReferences: ['tomtom:1'],
+      uncertainty: [],
+      status: 'open',
+    };
+    const freshContext = {
+      subject: { kind: 'convoy', id: 'c1' },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      coverage: { layersUnavailable: [], layersPartial: [] },
+      layerHealth: [{ layerId: 'traffic', status: 'LIVE' }],
+      providerCoverage: { 'tomtom-traffic-incidents': { complete: true } },
+      providerHealth: { 'tomtom-traffic-incidents': { status: 'LIVE', lastErrorClass: null } },
+      dataHealth: { ok: true, readErrors: [] },
+    };
+    await persistSpatialEvents(db, [event], { orgId: 'org-1', context: freshContext });
+    await persistSpatialEvents(db, [], { orgId: 'org-1', context: freshContext });
+    expect(db.open.size).toBe(0);
+  });
+});

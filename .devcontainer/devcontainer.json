@@ -1,0 +1,11 @@
+{
+  "name": "FleetOps",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20-bookworm",
+  "onCreateCommand": "npm install -g nodemon && cd /workspaces/Sonalit/backend && npm install && cd /workspaces/Sonalit/frontend && npm install",
+  "postStartCommand": "bash /workspaces/Sonalit/setup.sh",
+  "forwardPorts": [5000, 5173],
+  "portsAttributes": {
+    "5173": {"onAutoForward": "openBrowser"},
+    "5000": {"onAutoForward": "silent"}
+  }
+}

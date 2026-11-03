@@ -1,0 +1,81 @@
+# https://sonalit.com/robots.txt
+#
+# Sonalit is an authenticated operations platform with a small public website
+# in front of it. Only the marketing pages below are meant to be indexed.
+#
+# NOTE: these rules are crawling hints, not a security control. Every
+# operational route is protected by authentication in the application itself;
+# nothing here is load-bearing for access control.
+
+User-agent: *
+
+# Public website — crawl and index these.
+Allow: /$
+Allow: /about
+Allow: /fleet-management
+Allow: /convoy-management
+Allow: /container-delivery
+Allow: /security-operations
+Allow: /contact
+Allow: /og/
+Allow: /favicon.ico
+Allow: /icon-192.png
+Allow: /icon-512.png
+Allow: /apple-touch-icon.png
+
+# Authentication and account surfaces.
+Disallow: /login
+Disallow: /handover/login
+
+# Operator application.
+Disallow: /home
+Disallow: /command
+Disallow: /fleet
+Disallow: /gps
+Disallow: /drivers
+Disallow: /convoys
+Disallow: /convoy-reports
+Disallow: /alerts
+Disallow: /incidents
+Disallow: /incident-center
+Disallow: /panic-center
+Disallow: /messages
+Disallow: /analytics
+Disallow: /reports
+Disallow: /shipments
+Disallow: /finance
+Disallow: /maintenance
+Disallow: /fuel
+Disallow: /shifts
+Disallow: /claims
+Disallow: /geofences
+Disallow: /risk-intel
+Disallow: /rules
+Disallow: /field-officers
+Disallow: /executive
+Disallow: /devices
+Disallow: /guardian
+Disallow: /surveillance
+Disallow: /signal-health
+Disallow: /corridor
+Disallow: /drive
+Disallow: /replay
+Disallow: /ai
+Disallow: /copilot
+Disallow: /settings
+Disallow: /route-analysis
+Disallow: /cargo-portal
+
+# Container delivery, field, handover, client portal and driver surfaces.
+Disallow: /cds
+Disallow: /handover
+Disallow: /field/
+Disallow: /portal/
+Disallow: /portal-view
+Disallow: /t/
+
+# API and service-worker internals.
+Disallow: /api/
+Disallow: /convoy.html
+
+Sitemap: https://sonalit.com/sitemap.xml

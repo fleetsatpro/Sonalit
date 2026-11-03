@@ -1,0 +1,243 @@
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+const { Worker } = require('bullmq');
+const { query, globalQuery } = require('../config/database');
+const { getQueues } = require('../config/queue');
+const { withOrg } = require('../utils/orgScopedDb');
+const { distanceToSegment } = require('../utils/haversine');
+const logger = require('../utils/logger');
+
+const SPEED_THRESHOLD = parseFloat(process.env.SPEED_ALERT_THRESHOLD) || 120;
+const GEOFENCE_KM = parseFloat(process.env.GEOFENCE_RADIUS_KM) || 5;
+
+// ── Per-vehicle prev-fix cache for behaviour delta calculations ───────────
+const _prevFixCache = new Map(); // vehicleId → { lat, lng, speed, heading, timestamp }
+
+// ── Corridor geofence cache (refreshed every 5 min) ───────────────────────
+const _corridorCache = new Map();
+
+async function getCorridorGeofences(orgId) {
+  const cached = _corridorCache.get(orgId);
+  if (cached && Date.now() - cached.time < 300_000) return cached.rows;
+  try {
+    const r = await query(
+      `SELECT id, name, coordinates FROM geofences WHERE type = 'corridor' AND COALESCE(active, true) = true`
+    );
+    const rows = r.rows.flatMap(f => {
+      try {
+        const c = typeof f.coordinates === 'string' ? JSON.parse(f.coordinates) : f.coordinates;
+        if (!Array.isArray(c?.path) || c.path.length < 2) return [];
+        return [{ id: f.id, name: f.name, path: c.path, buffer_km: (c.buffer_m || 300) / 1000 }];
+      } catch (_) { return []; }
+    });
+    _corridorCache.set(orgId, { time: Date.now(), rows });
+    return rows;
+  } catch (_) {
+    return cached?.rows || [];
+  }
+}
+
+// Minimum distance from point to a multi-segment path, in km
+function minDistToPathKm(lat, lng, path) {
+  let min = Infinity;
+  for (let i = 0; i < path.length - 1; i++) {
+    const d = distanceToSegment(lat, lng, path[i][0], path[i][1], path[i + 1][0], path[i + 1][1]);
+    if (d < min) min = d;
+  }
+  return min === Infinity ? 0 : min;
+}
+
+const { publish } = require('../realtime/centrifugo');
+const { evaluateVehiclePosition } = require('../utils/geofenceEngine');
+const { detectBehaviourEvents, storeBehaviourEvents } = require('../utils/behaviourDetector');
+const { evaluateConvoyOperationalState } = require('../services/convoyOperationalResilience');
+
+const _resilienceTimers = new Map();
+function scheduleConvoyResilience(orgId, convoyId) {
+  if (!convoyId) return;
+  const key = `${orgId}:${convoyId}`;
+  if (_resilienceTimers.has(key)) return;
+  const timer = setTimeout(() => {
+    _resilienceTimers.delete(key);
+    withOrg(orgId, client => evaluateConvoyOperationalState((sql, params) => client.query(sql, params), orgId, convoyId))
+      .catch(err => logger.warn(`convoy resilience evaluation failed: ${err.message}`));
+  }, 5000);
+  _resilienceTimers.set(key, timer);
+}
+
+function getRedisConnection() {
+  const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
+  return {
+    host: url.hostname,
+    port: parseInt(url.port) || 6379,
+    password: url.password || process.env.REDIS_PASSWORD || undefined,
+  };
+}
+
+async function processGPS(job) {
+  const { vehicle_id, lat, lng, speed, heading, timestamp } = job.data;
+  if (!vehicle_id) throw new Error('GPS job missing vehicle_id');
+
+  // Resolve tenant ownership before any tenant-bearing operation. Queue payloads
+  // are not authoritative for tenant selection.
+  const ownership = await globalQuery(
+    'SELECT org_id FROM vehicles WHERE id = $1 AND deleted_at IS NULL',
+    [vehicle_id],
+  );
+  const orgId = ownership.rows[0]?.org_id;
+  if (!orgId) throw new Error(`GPS vehicle has no tenant scope: ${vehicle_id}`);
+
+  return withOrg(orgId, async () => {
+    const currentFix = { lat, lng, speed: speed ?? 0, heading: heading ?? null, timestamp: timestamp ?? new Date().toISOString() };
+    const cacheKey = `${orgId}:${vehicle_id}`;
+    const prevFix = _prevFixCache.get(cacheKey) ?? null;
+    _prevFixCache.set(cacheKey, currentFix);
+
+    // 1. Store GPS log
+    await query(
+      'INSERT INTO gps_logs (vehicle_id, lat, lng, speed, timestamp, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [vehicle_id, lat, lng, speed, timestamp, orgId]
+    );
+
+  // 2. Update vehicle position and get org_id via active convoy. RETURNING
+  // registration so alert messages can name the vehicle like an operator
+  // would ("KEN-001"), not by its raw UUID.
+    const posRes = await query(
+      'UPDATE vehicles SET latitude=$1, longitude=$2, last_ping=$3, updated_at=NOW() WHERE id=$4 AND org_id=$5 RETURNING registration',
+      [lat, lng, new Date(timestamp), vehicle_id, orgId]
+    );
+  const vehicleLabel = posRes.rows[0]?.registration || String(vehicle_id).slice(0, 8);
+
+  // 3. Broadcast live position on org channel for real-time GPS page
+    const orgRes = await query(
+      `SELECT c.org_id, c.id AS convoy_id FROM convoys c
+     JOIN convoy_trucks ct ON ct.convoy_id = c.id
+     WHERE ct.vehicle_id = $1 AND c.status = 'active' AND c.deleted_at IS NULL
+       LIMIT 1`,
+      [vehicle_id]
+    );
+    const activeConvoyId = orgRes.rows[0]?.convoy_id ?? null;
+    const gpsPayload = { type: 'location', device_id: vehicle_id, vehicle_id, lat, lng, speed };
+    publish(`org#${orgId}`, gpsPayload);
+
+    // Also publish to portal channel so cargo owners see live updates
+    const convoyId = activeConvoyId;
+    if (convoyId) {
+      scheduleConvoyResilience(orgId, convoyId);
+    publish(`portal#${convoyId}`, {
+      type: 'position',
+      location: { lat, lng },
+      speed_kmh: speed,
+      ping_at: timestamp,
+    });
+  }
+
+  const { alertQueue } = getQueues();
+
+  // 4. Speed check
+  if (speed > SPEED_THRESHOLD && alertQueue) {
+    await alertQueue.add('speed-alert', {
+      vehicle_id, org_id: orgId, type: 'speed', severity: speed > 150 ? 'critical' : 'high',
+      message: `Vehicle ${vehicleLabel} travelling at ${speed} km/h — threshold is ${SPEED_THRESHOLD} km/h`,
+    });
+    logger.warn(`Speed alert queued for vehicle ${vehicle_id}: ${speed} km/h`);
+  }
+
+  // 5. Geofence check
+  const convoyResult = await query(
+    `SELECT c.route_origin, c.route_destination, c.id AS convoy_id
+     FROM vehicles v
+     JOIN convoys c ON c.id = v.assigned_convoy_id AND c.status = 'active' AND c.deleted_at IS NULL
+     WHERE v.id = $1 AND v.deleted_at IS NULL`,
+    [vehicle_id]
+  );
+
+  if (convoyResult.rows.length && alertQueue) {
+    const convoy = convoyResult.rows[0];
+    // Simple geocoding approximation — in production, integrate a geocoding service
+    // For now use centre coordinates of named cities (covers East Africa operational area)
+    const cityCoords = {
+      'Nairobi': [-1.2921, 36.8219], 'Mombasa': [-4.0435, 39.6682],
+      'Kampala': [0.3476, 32.5825], 'Dar es Salaam': [-6.7924, 39.2083],
+      'Kinshasa': [-4.3217, 15.3215], 'Kigali': [-1.9441, 30.0619],
+      'Bamako': [12.6392, -8.0029], 'Dodoma': [-6.1730, 35.7395],
+    };
+
+    const origin = cityCoords[convoy.route_origin];
+    const dest = cityCoords[convoy.route_destination];
+
+    if (origin && dest) {
+      const deviation = distanceToSegment(lat, lng, origin[0], origin[1], dest[0], dest[1]);
+      if (deviation > GEOFENCE_KM) {
+        await alertQueue.add('geofence-alert', {
+          vehicle_id, org_id: orgId, convoy_id: convoy.convoy_id, type: 'geofence',
+          severity: deviation > GEOFENCE_KM * 2 ? 'critical' : 'high',
+          message: `Vehicle ${vehicleLabel} is ${deviation.toFixed(1)} km from convoy route (limit: ${GEOFENCE_KM} km)`,
+        });
+        logger.warn(`Geofence alert queued for vehicle ${vehicle_id}: ${deviation.toFixed(1)} km deviation`);
+      }
+    }
+  }
+
+  // 6. Corridor geofence deviation check
+  if (alertQueue) {
+    try {
+      const corridors = await getCorridorGeofences(orgId);
+      for (const fence of corridors) {
+        const distKm = minDistToPathKm(lat, lng, fence.path);
+        if (distKm > fence.buffer_km) {
+          // Suppress duplicate: skip if unresolved deviation alert exists for this vehicle in last 30 min
+          const dup = await query(
+            `SELECT id FROM alerts WHERE vehicle_id = $1 AND type = 'route_deviation'
+             AND resolved_at IS NULL AND created_at > NOW() - INTERVAL '30 minutes' LIMIT 1`,
+            [vehicle_id]
+          );
+          if (!dup.rows.length) {
+            const distM = Math.round(distKm * 1000);
+            const limitM = Math.round(fence.buffer_km * 1000);
+            await alertQueue.add('geofence-alert', {
+              vehicle_id,
+              org_id: orgId,
+              geofence_id: fence.id,
+              type: 'geofence',
+              severity: distKm > fence.buffer_km * 4 ? 'critical' : 'high',
+              message: `Vehicle ${vehicleLabel} is ${distM}m off corridor "${fence.name}" (limit: ${limitM}m)`,
+            });
+            logger.warn(`Corridor deviation: vehicle=${vehicle_id} fence="${fence.name}" dist=${distM}m limit=${limitM}m`);
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn('Corridor check error: ' + e.message);
+    }
+  }
+
+  // 7. Smart geofence + corridor evaluation (already inside tenant scope)
+    evaluateVehiclePosition(orgId, vehicle_id, null, convoyResult.rows[0]?.convoy_id ?? null, { lat, lng, speed })
+      .catch(err => logger.warn(`geofenceEngine error: ${err.message}`));
+
+  // 8. Driver behaviour scoring
+    const driverRes = await query(
+      `SELECT assigned_driver_id FROM vehicles WHERE id = $1`, [vehicle_id],
+    ).catch(() => ({ rows: [] }));
+    const driverId = driverRes.rows[0]?.assigned_driver_id ?? null;
+    detectBehaviourEvents(orgId, driverId, vehicle_id, currentFix, prevFix)
+      .then(events => storeBehaviourEvents(orgId, events))
+      .catch(err => logger.warn(`behaviourDetector error: ${err.message}`));
+
+    logger.info(`GPS processed: vehicle=${vehicle_id} org=${orgId} lat=${lat} lng=${lng} speed=${speed}`);
+  });
+}
+
+function startGPSWorker() {
+  const connection = getRedisConnection();
+  const worker = new Worker('gps', processGPS, { connection, concurrency: 10 });
+
+  worker.on('completed', (job) => logger.info(`GPS job ${job.id} completed`));
+  worker.on('failed', (job, err) => logger.error(`GPS job ${job?.id} failed: ${err.message}`));
+  worker.on('error', (err) => logger.error(`GPS worker error: ${err.message}`));
+
+  logger.info('GPS worker started');
+  return worker;
+}
+
+module.exports = { startGPSWorker };

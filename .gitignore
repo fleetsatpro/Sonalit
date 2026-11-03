@@ -1,0 +1,118 @@
+# Dependencies
+node_modules/
+**/node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+**/.env
+.env*.local
+!.env.example
+!.env.test.example
+
+# Secrets (never commit)
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+vault-token
+kubeconfig
+.aws/
+.gcloud/
+
+# Logs
+logs/
+**/logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+nodemon/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.iml
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+.*.swp
+.*.swo
+*~
+
+# Test coverage & artifacts
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Android
+*.apk
+*.idsig
+*.aab
+*.aar
+*.class
+*.dex
+local.properties
+.gradle/
+guardian-agent/.gradle/
+guardian-android/build/
+guardian-android/**/.cxx/
+android/PEGAGENT/app/google-services.json
+android/PEGAGENT/pegagent-release.keystore
+
+# Vosk speech model — binary, downloaded separately per model-en-us/README.md,
+# not committed (see apps/guardian-android/app/src/main/assets/model-en-us/).
+apps/guardian-android/app/src/main/assets/model-en-us/*
+!apps/guardian-android/app/src/main/assets/model-en-us/README.md
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform.lock.hcl
+
+# Helm
+infra/helm/**/charts/
+infra/helm/**/Chart.lock
+
+# Temporary
+tmp/
+temp/
+*.tmp
+*.bak
+*.timestamp-*.mjs
+
+# Deployment packages
+*.deb
+.vercel
+.claude-flow/
+
+# Zip archives (binary blobs — should not be committed)
+*.zip
+!infra/**/*.zip
+
+# Legacy backend
+backend/.env
+
+# Legacy JS duplicates of .ts/.tsx source files — Vite cannot parse JSX in .js files
+apps/web/src/**/*.js
+apps/web/tests/**/*.spec.js
+packages/contracts/src/**/*.js
+
+# Accidental package-name directories (e.g. fleetops-backend@1.0.0, frontend/foo@2.1.0)
+/*@[0-9]*.[0-9]*.[0-9]*/
+/*/*@[0-9]*.[0-9]*.[0-9]*/

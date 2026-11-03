@@ -1,0 +1,21 @@
+{
+  "name": "@sonalit/app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor native shell that packages the hosted Sonalit operator web app as an installable Android (and iOS) app. Loads the live site, so web/UI updates ship without a new APK.",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.24",
+    "@capacitor/android": "^6.1.0",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/status-bar": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.1.0",
+    "typescript": "^5.4.5"
+  }
+}

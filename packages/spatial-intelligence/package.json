@@ -1,0 +1,39 @@
+{
+  "name": "@sonalit/spatial-intelligence",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sonalit spatial-intelligence substrate — world signals, context, provenance, Cesium rendering discipline, Copilot-native spatial tools. Sonalit remains operational authority; GEV-derived patterns only.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "import": "./dist/model/index.js"
+    },
+    "./cesium": {
+      "types": "./dist/cesium/index.d.ts",
+      "import": "./dist/cesium/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-strip-types verify-all.mjs",
+    "test:unit": "node --experimental-strip-types verify-all.mjs"
+  },
+  "peerDependencies": {
+    "cesium": "^1.141.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "cesium": "^1.141.0"
+  },
+  "license": "UNLICENSED",
+  "sideEffects": false
+}

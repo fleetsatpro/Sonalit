@@ -1,0 +1,16 @@
+apiVersion: v2
+name: notification-svc
+description: Sonalit v4 Notification Service — push, email, SMS delivery
+type: application
+version: 4.0.0
+appVersion: "4.0.0"
+dependencies:
+  - name: sonalit-base
+    version: "4.0.0"
+    repository: "file://../_base"
+keywords:
+  - sonalit
+  - notifications
+  - microservice
+maintainers:
+  - name: FleetSat Engineering

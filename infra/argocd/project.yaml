@@ -1,0 +1,127 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sonalit
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Sonalit fleet intelligence platform — all microservices
+
+  sourceRepos:
+    - '*'
+
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: sonalit-prod
+    - server: https://kubernetes.default.svc
+      namespace: sonalit-staging
+
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: ''
+      kind: PersistentVolume
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: storage.k8s.io
+      kind: StorageClass
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+    - group: chaos-mesh.org
+      kind: PodChaos
+    - group: chaos-mesh.org
+      kind: NetworkChaos
+    - group: chaos-mesh.org
+      kind: DNSChaos
+    - group: chaos-mesh.org
+      kind: StressChaos
+    - group: chaos-mesh.org
+      kind: Workflow
+
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: ''
+      kind: ResourceQuota
+    - group: ''
+      kind: LimitRange
+    - group: ''
+      kind: PersistentVolumeClaim
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: apps
+      kind: DaemonSet
+    - group: apps
+      kind: ReplicaSet
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: autoscaling.k8s.io
+      kind: VerticalPodAutoscaler
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: batch
+      kind: Job
+    - group: batch
+      kind: CronJob
+    - group: monitoring.coreos.com
+      kind: ServiceMonitor
+    - group: monitoring.coreos.com
+      kind: PodMonitor
+    - group: monitoring.coreos.com
+      kind: PrometheusRule
+
+  roles:
+    - name: ci-deployer
+      description: CI/CD pipeline — sync and read access only
+      policies:
+        - p, proj:sonalit:ci-deployer, applications, get, sonalit/*, allow
+        - p, proj:sonalit:ci-deployer, applications, sync, sonalit/*, allow
+        - p, proj:sonalit:ci-deployer, applications, override, sonalit/*, allow
+      groups:
+        - sonalit:ci
+
+    - name: platform-admin
+      description: Platform engineering team — full project access
+      policies:
+        - p, proj:sonalit:platform-admin, applications, *, sonalit/*, allow
+        - p, proj:sonalit:platform-admin, clusters, get, *, allow
+        - p, proj:sonalit:platform-admin, repositories, *, *, allow
+      groups:
+        - sonalit:platform-admins
+
+  syncWindows:
+    - kind: allow
+      schedule: '0 8 * * 1-5'
+      duration: 10h
+      applications:
+        - '*'
+      namespaces:
+        - sonalit-prod
+      manualSync: true
+    - kind: deny
+      schedule: '0 18 * * 5'
+      duration: 62h
+      applications:
+        - '*'
+      namespaces:
+        - sonalit-prod
+      manualSync: false

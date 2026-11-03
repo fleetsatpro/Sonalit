@@ -1,0 +1,18 @@
+apiVersion: v2
+name: realtime-gateway-svc
+description: Sonalit v4 Realtime Gateway — WebSocket/SSE broker for live telemetry delivery
+type: application
+version: 4.0.0
+appVersion: "4.0.0"
+dependencies:
+  - name: sonalit-base
+    version: "4.0.0"
+    repository: "file://../_base"
+keywords:
+  - sonalit
+  - realtime
+  - websocket
+  - hotpath
+  - microservice
+maintainers:
+  - name: FleetSat Engineering

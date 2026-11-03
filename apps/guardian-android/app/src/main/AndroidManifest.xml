@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Network -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
+    <!-- Location -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Foreground Service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Camera FGS for covert capture_photo (dispatcher "remote eyes") -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
+    <!-- Activity Recognition -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
+
+    <!-- Camera -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Microphone (panic audio capture, mic-level diagnostic) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Biometric panic-cancel -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+    <!-- Boot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Device Admin -->
+    <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
+    <uses-permission android:name="android.permission.MANAGE_DEVICE_ADMINS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- Tile Service -->
+    <uses-permission android:name="android.permission.BIND_QUICK_SETTINGS_TILE" />
+
+    <!-- Notifications -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- Vibrate for panic -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Raise the alarm stream to max when a dispatcher triggers the siren -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Wake lock for background work -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Battery optimization exemption — without this, stock Android (and far
+         more aggressively, most OEM skins) will kill GuardianService in the
+         background, silently taking the volume-key SOS trigger and voice
+         trigger down with it. Requested once at first launch (MainActivity). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Request install packages for OTA -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="true" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.fingerprint" android:required="false" />
+
+    <application
+        android:name=".GuardianApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.GuardianApp"
+        tools:targetApi="31">
+
+        <!-- Main Activity -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.GuardianApp">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https"
+                    android:host="sonalit.io"
+                    android:pathPrefix="/guardian" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sonalit" android:host="guardian" />
+            </intent-filter>
+        </activity>
+
+        <!-- Panic Activity — launched by VolumeKeySOSReceiver or any other hardware trigger.
+             Show-over-lock-screen is set at runtime via Activity.setShowWhenLocked/setTurnScreenOn
+             (PanicActivity.onCreate) — there is no manifest attribute for this. -->
+        <activity
+            android:name=".ui.panic.PanicActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:theme="@style/Theme.GuardianApp" />
+
+        <!-- Officer-tap fallback for capture_photo (opened from the notification
+             CommandExecutor posts when the covert capture service can't run). -->
+        <activity
+            android:name=".ui.capture.CaptureRequestActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Enrollment Activity alias for deep link -->
+        <activity-alias
+            android:name=".EnrollmentAlias"
+            android:exported="true"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="io.sonalit.guardian.ENROLL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Guardian Foreground Service -->
+        <!-- android:permission was previously set to BIND_JOB_SERVICE — a signature
+             permission owned by the Android platform that no third-party app, including
+             this one, can ever hold. android:permission on a <service> is enforced against
+             EVERY caller, same-app included; it isn't an exemption for same-package Intents.
+             GuardianService is a plain Service (not a JobService bound by the system
+             JobScheduler), so it has no legitimate reason to require this at all — and as
+             declared, it likely made every startForegroundService(GuardianService) call in
+             this app (BootReceiver, MainViewModel, HeartbeatWorker, CommandExecutor) fail.
+             exported="false" alone already fully prevents other apps from starting/binding it. -->
+        <!-- location|camera: normally runs as a location FGS; it transiently
+             promotes itself to include the camera type to serve a covert
+             capture_photo from within this already-running service (a fresh
+             camera-FGS start is blocked in the background on Android 14+). -->
+        <service
+            android:name=".service.GuardianService"
+            android:exported="false"
+            android:foregroundServiceType="location|camera">
+            <intent-filter>
+                <action android:name="io.sonalit.guardian.ACTION_START_SERVICE" />
+            </intent-filter>
+        </service>
+
+        <!-- Firebase Messaging Service -->
+        <service
+            android:name=".service.GuardianFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Covert photo capture — reaches the camera from the background in
+             response to a dispatcher capture_photo command. Camera FGS type is
+             required to use the camera outside the foreground. exported=false:
+             only CommandExecutor starts it. -->
+        <service
+            android:name=".service.PhotoCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
+
+        <!-- Panic Quick Settings Tile -->
+        <service
+            android:name=".service.PanicTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_panic"
+            android:label="@string/tile_panic_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="false" />
+        </service>
+
+        <!-- Volume-key SOS trigger — defense-in-depth manifest registration; the reliable
+             path is the runtime registerReceiver in GuardianService.onCreate, since Android
+             8+ mostly refuses to deliver implicit broadcasts like VOLUME_CHANGED_ACTION to a
+             manifest-declared receiver while the app isn't already running. -->
+        <receiver
+            android:name=".receiver.VolumeKeySOSReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.media.VOLUME_CHANGED_ACTION" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Boot Receiver -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Device Admin Receiver -->
+        <receiver
+            android:name=".receiver.GuardianDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_policies" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.DEVICE_ADMIN_DISABLED" />
+                <action android:name="android.app.action.ACTION_PASSWORD_CHANGED" />
+                <action android:name="android.app.action.ACTION_PASSWORD_FAILED" />
+                <action android:name="android.app.action.ACTION_PASSWORD_SUCCEEDED" />
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WorkManager initialization via initializer -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+    </application>
+
+</manifest>

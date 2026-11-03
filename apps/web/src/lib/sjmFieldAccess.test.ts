@@ -1,0 +1,101 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
+import { classifyRosterRevalidation, clearRevokedSjmFieldMissionCache, isFieldMissionRelevantForRosterChange, isCurrentSjmFieldIdentityGeneration } from './sjmFieldAccess.js';
+
+describe('clearRevokedSjmFieldMissionCache', () => {
+  let queryClient: QueryClient;
+
+  afterEach(() => queryClient?.clear());
+
+  it('removes revoked mission detail, events and channel data while preserving other assignments', async () => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const orgId = 'org-field-a';
+    const userId = 'operator-a';
+    const revokedId = 'mission-revoked';
+    const otherId = 'mission-still-authorised';
+    const assignmentKey = ['sjm-my-assignments', orgId, userId] as const;
+
+    queryClient.setQueryData(assignmentKey, {
+      data: [{ id: revokedId, title: 'Sensitive principal transfer' }, { id: otherId, title: 'Other task' }],
+      generated_at: '2026-10-29T04:00:00.000Z',
+    });
+    queryClient.setQueryData(['sjm-field-detail', revokedId], { data: { principal_reference: 'SECRET-REF' } });
+    queryClient.setQueryData(['sjm-field-events', revokedId], { data: [{ summary: 'SECRET FIELD REPORT' }] });
+    queryClient.setQueryData(['sjm-mission-channel', revokedId], { data: { channel_id: 'SECRET-CHANNEL' } });
+    queryClient.setQueryData(['sjm-field-detail', otherId], { data: { title: 'OTHER MISSION' } });
+
+    await clearRevokedSjmFieldMissionCache(queryClient, orgId, userId, revokedId);
+
+    expect(queryClient.getQueryData(assignmentKey)).toEqual({
+      data: [{ id: otherId, title: 'Other task' }],
+      generated_at: '2026-10-29T04:00:00.000Z',
+    });
+    expect(queryClient.getQueryData(['sjm-field-detail', revokedId])).toBeUndefined();
+    expect(queryClient.getQueryData(['sjm-field-events', revokedId])).toBeUndefined();
+    expect(queryClient.getQueryData(['sjm-mission-channel', revokedId])).toBeUndefined();
+    expect(queryClient.getQueryData(['sjm-field-detail', otherId])).toEqual({ data: { title: 'OTHER MISSION' } });
+  });
+
+  it('cancels an in-flight assignment read before it can restore the revoked mission', async () => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const orgId = 'org-field-b';
+    const userId = 'operator-b';
+    const revokedId = 'mission-revoked';
+    const assignmentKey = ['sjm-my-assignments', orgId, userId] as const;
+    let releaseStaleResponse!: (value: { data: Array<{ id: string }> }) => void;
+    const staleResponse = new Promise<{ data: Array<{ id: string }> }>(resolve => { releaseStaleResponse = resolve; });
+    const pending = queryClient.fetchQuery({
+      queryKey: assignmentKey,
+      queryFn: () => staleResponse, // deliberately ignores AbortSignal
+    }).catch(() => undefined);
+
+    await clearRevokedSjmFieldMissionCache(queryClient, orgId, userId, revokedId);
+    releaseStaleResponse({ data: [{ id: revokedId }] });
+    await pending;
+    await Promise.resolve();
+
+    const current = queryClient.getQueryData<{ data: Array<{ id: string }> }>(assignmentKey);
+    expect(current?.data.some(mission => mission.id === revokedId)).not.toBe(true);
+  });
+});
+
+describe('classifyRosterRevalidation', () => {
+  it('preserves members still assigned and revokes only those absent from the fresh list', () => {
+    expect(classifyRosterRevalidation(
+      ['mission-kept', 'mission-removed'],
+      [{ id: 'mission-kept' }, { id: 'another-mission' }],
+    )).toEqual({ stillAssigned: ['mission-kept'], revoked: ['mission-removed'] });
+  });
+});
+
+describe('isFieldMissionRelevantForRosterChange', () => {
+  it('revalidates active, assigned, pending, and previously cached missions only', () => {
+    const assigned = new Set(['assigned-a']);
+    const pending = new Set(['pending-a']);
+    expect(isFieldMissionRelevantForRosterChange('selected-a', 'selected-a', new Set(), new Set(), false)).toBe(true);
+    expect(isFieldMissionRelevantForRosterChange('assigned-a', 'selected-b', assigned, new Set(), false)).toBe(true);
+    expect(isFieldMissionRelevantForRosterChange('pending-a', 'selected-b', new Set(), pending, false)).toBe(true);
+    expect(isFieldMissionRelevantForRosterChange('cached-a', 'selected-b', new Set(), new Set(), true)).toBe(true);
+    expect(isFieldMissionRelevantForRosterChange('unrelated-a', 'selected-b', new Set(), new Set(), false)).toBe(false);
+  });
+});
+
+describe('isCurrentSjmFieldIdentityGeneration', () => {
+  it('rejects a stale A worker after an A → B → A identity transition', () => {
+    expect(isCurrentSjmFieldIdentityGeneration(
+      { identityKey: 'org-a:user-a', generation: 2 },
+      { identityKey: 'org-a:user-a', generation: 0 },
+    )).toBe(false);
+  });
+
+  it('accepts only the exact current key and generation', () => {
+    expect(isCurrentSjmFieldIdentityGeneration(
+      { identityKey: 'org-a:user-a', generation: 2 },
+      { identityKey: 'org-a:user-a', generation: 2 },
+    )).toBe(true);
+    expect(isCurrentSjmFieldIdentityGeneration(
+      { identityKey: 'org-b:user-a', generation: 2 },
+      { identityKey: 'org-a:user-a', generation: 2 },
+    )).toBe(false);
+  });
+});

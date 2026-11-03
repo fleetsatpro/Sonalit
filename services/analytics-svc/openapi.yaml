@@ -1,0 +1,300 @@
+openapi: 3.1.0
+info:
+  title: Sonalit Analytics Service
+  version: 4.0.0
+servers:
+  - url: http://localhost:4008
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []
+paths:
+  /v4/analytics/gps-events:
+    get:
+      operationId: getGpsEvents
+      tags:
+        - Analytics
+      summary: GPS event counts bucketed by hour
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+            example: '2025-01-01'
+          description: Start date (inclusive). Defaults to 7 days ago.
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+            example: '2025-01-07'
+          description: End date (inclusive). Defaults to today.
+      responses:
+        '200':
+          description: Hourly GPS event counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        hour:
+                          type: string
+                          format: date-time
+                        event_count:
+                          type: string
+                          description: Count as returned by the database
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /v4/analytics/alerts-by-type:
+    get:
+      operationId: getAlertsByType
+      tags:
+        - Analytics
+      summary: Alert counts grouped by type and severity
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+            example: '2025-01-01'
+          description: Start date (inclusive). Defaults to 7 days ago.
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+            example: '2025-01-07'
+          description: End date (inclusive). Defaults to today.
+      responses:
+        '200':
+          description: Alert counts by type and severity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                        severity:
+                          type: string
+                        count:
+                          type: string
+                          description: Count as returned by the database
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /v4/analytics/summary:
+    get:
+      operationId: getAnalyticsSummary
+      tags:
+        - Analytics
+      summary: Aggregated fleet analytics summary for a date range
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+            example: '2025-01-01'
+          description: Start date (inclusive). Defaults to 7 days ago.
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+            example: '2025-01-07'
+          description: End date (inclusive). Defaults to today.
+      responses:
+        '200':
+          description: Analytics summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from:
+                    type: string
+                    pattern: '^\d{4}-\d{2}-\d{2}$'
+                  to:
+                    type: string
+                    pattern: '^\d{4}-\d{2}-\d{2}$'
+                  total_gps_events:
+                    type: integer
+                  total_distance_km:
+                    type: integer
+                  active_hours:
+                    type: integer
+                  fuel_events:
+                    type: integer
+                  geofence_violations:
+                    type: integer
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /v4/analytics/executive-summary:
+    get:
+      operationId: getExecutiveSummary
+      tags:
+        - Analytics
+      summary: Executive-level KPIs and weekly trends for the past 8 weeks
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Executive summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fleet_utilization_pct:
+                    type: integer
+                    example: 72
+                  on_time_delivery_pct:
+                    type: integer
+                    example: 91
+                  safety_score:
+                    type: integer
+                    example: 84
+                  active_incidents:
+                    type: integer
+                    example: 0
+                  weekly_trends:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        week:
+                          type: string
+                          format: date-time
+                        gps_events:
+                          type: string
+                          description: Count as returned by the database
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string

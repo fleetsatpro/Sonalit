@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Radar/crosshair icon: navy bg, two cyan rings, red center dot -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Background -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#060E1A"/>
+        </shape>
+    </item>
+
+    <!-- Outer cyan ring -->
+    <item android:top="4dp" android:bottom="4dp"
+          android:left="4dp" android:right="4dp">
+        <shape android:shape="oval">
+            <stroke android:width="4dp" android:color="#00D4FF"/>
+            <solid android:color="#060E1A"/>
+        </shape>
+    </item>
+
+    <!-- Inner cyan ring -->
+    <item android:top="16dp" android:bottom="16dp"
+          android:left="16dp" android:right="16dp">
+        <shape android:shape="oval">
+            <stroke android:width="3dp" android:color="#00D4FF"/>
+            <solid android:color="#060E1A"/>
+        </shape>
+    </item>
+
+    <!-- Red center dot -->
+    <item android:top="24dp" android:bottom="24dp"
+          android:left="24dp" android:right="24dp">
+        <shape android:shape="oval">
+            <solid android:color="#FF3355"/>
+        </shape>
+    </item>
+
+</layer-list>
