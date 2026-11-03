@@ -525,6 +525,31 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(hoverContrast).toBeGreaterThanOrEqual(4.5);
   });
 
+  test('switches the field-team shortcut cleanly at the 640px breakpoint', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Journey operations' })).toBeVisible();
+
+    const fieldTeamLink = page.getByRole('link', { name: /Field team app/ });
+    const newJourney = page.getByRole('button', { name: 'New journey' });
+    for (const width of [639, 640]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(newJourney).toBeVisible();
+      if (width === 639) {
+        await expect(fieldTeamLink).toBeHidden();
+      } else {
+        await expect(fieldTeamLink).toBeVisible();
+      }
+      const dimensions = await page.evaluate(() => ({
+        viewport: window.innerWidth,
+        document: document.documentElement.scrollWidth,
+      }));
+      expect(dimensions.document, `SJM header must not overflow at ${width}px`).toBeLessThanOrEqual(width);
+    }
+  });
+
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
   test('keeps the journey workspace readable without horizontal overflow at target viewports', async ({ page }, testInfo: TestInfo) => {
