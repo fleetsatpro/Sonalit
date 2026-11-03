@@ -26,19 +26,28 @@ describe('on-demand Cesium runtime', () => {
     expect(output).toContain('/assets/main.css');
   });
 
-  it('loads one same-origin runtime script and waits for the Cesium global', async () => {
+  it('loads the runtime and widget stylesheet once, in parallel, before resolving', async () => {
     const listeners = new Map<string, (event?: Event) => void>();
     const script = {
       dataset: {} as DOMStringMap,
       src: '',
       async: false,
       addEventListener: vi.fn((type: string, listener: (event?: Event) => void) => {
-        listeners.set(type, listener);
+        listeners.set('script:' + type, listener);
       }),
       remove: vi.fn(),
     } as unknown as HTMLScriptElement;
+    const stylesheet = {
+      dataset: {} as DOMStringMap,
+      rel: '',
+      href: '',
+      addEventListener: vi.fn((type: string, listener: (event?: Event) => void) => {
+        listeners.set('stylesheet:' + type, listener);
+      }),
+      remove: vi.fn(),
+    } as unknown as HTMLLinkElement;
     const documentStub = {
-      createElement: vi.fn(() => script),
+      createElement: vi.fn((tag: string) => tag === 'link' ? stylesheet : script),
       head: { appendChild: vi.fn() },
     } as unknown as Document;
     const windowStub = {
@@ -56,12 +65,16 @@ describe('on-demand Cesium runtime', () => {
     expect(concurrent).toBe(first);
     expect(script.src).toBe('https://app.sonalit.test/cesium/Cesium.js');
     expect(script.dataset.sonalitCesiumRuntime).toBe('true');
+    expect(stylesheet.rel).toBe('stylesheet');
+    expect(stylesheet.href).toBe('https://app.sonalit.test/cesium/Widgets/widgets.css');
+    expect(stylesheet.dataset.sonalitCesiumWidgets).toBe('true');
     expect((windowStub as Window & { CESIUM_BASE_URL?: string }).CESIUM_BASE_URL)
       .toBe('https://app.sonalit.test/cesium/');
-    expect(documentStub.head.appendChild).toHaveBeenCalledTimes(1);
+    expect(documentStub.head.appendChild).toHaveBeenCalledTimes(2);
 
     (windowStub as Window & { Cesium?: unknown }).Cesium = {};
-    listeners.get('load')?.(new Event('load'));
+    listeners.get('stylesheet:load')?.(new Event('load'));
+    listeners.get('script:load')?.(new Event('load'));
     await expect(first).resolves.toBeUndefined();
   });
 
