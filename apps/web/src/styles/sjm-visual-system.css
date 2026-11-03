@@ -112,6 +112,26 @@
   letter-spacing: -.02em;
 }
 
+/* The shared clock is outside the React SJM shell, but its route-context
+   treatment is tuned here so SJM does not inherit a low-contrast 8px label. */
+.d-main-col:has(> main .sjm-console) > header [data-testid="app-topbar-clock"] {
+  margin-left: 8px;
+  gap: 8px;
+}
+
+.d-main-col:has(> main .sjm-console) > header [data-testid="app-topbar-clock"] > span:first-child {
+  color: #9eb5d0 !important;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: .06em !important;
+  line-height: 1.4;
+}
+
+.d-main-col:has(> main .sjm-console) > header [data-testid="app-topbar-clock"] > time {
+  color: #dbe9fa !important;
+}
+
 /* Supporting copy remains readable; labels are not tiny instrument decoration. */
 .sjm-console .text-slate-600,
 .sjm-console .text-slate-500,
