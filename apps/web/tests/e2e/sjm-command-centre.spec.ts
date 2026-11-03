@@ -510,6 +510,10 @@ test.describe('SJM command-centre responsive smoke', () => {
       }
 
       const registerHeading = page.getByRole('heading', { name: 'Journey register' });
+      const registerList = page.getByTestId('sjm-register-list');
+      await expect(registerList).toBeVisible();
+      const registerListMinHeight = await registerList.evaluate(el => getComputedStyle(el).minHeight);
+      expect(registerListMinHeight, viewport.label + ': register list should not reserve excessive empty space').toBe(viewport.width < 640 ? '120px' : '280px');
       const selectedMissionHeading = page.getByRole('heading', { name: 'Airport arrival — controlled transfer' });
       const registerBox = await registerHeading.boundingBox();
       const missionBox = await selectedMissionHeading.boundingBox();
@@ -598,6 +602,24 @@ test.describe('SJM command-centre responsive smoke', () => {
       }
 
     }
+  });
+
+  test('keeps the mobile register compact when the journey list is unavailable', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.route('**/api/v1/sjm/journeys**', route => route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'internal_server_error', message: 'Internal server error' }),
+    }));
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Journey register' })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'The journey list could not be loaded' })).toBeVisible();
+    const registerList = page.getByTestId('sjm-register-list');
+    const registerBox = await registerList.boundingBox();
+    expect(registerBox).not.toBeNull();
+    expect(registerBox!.height, 'mobile error state should not retain a tall empty register body').toBeLessThan(180);
   });
 
   test('travel dossier exposes traveller registration, private document handling, flight legs and daily execution', async ({ page }, testInfo: TestInfo) => {
