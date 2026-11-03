@@ -432,6 +432,18 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(sjmPageHeader.getByText('XD Live Surveillance', { exact: true })).toHaveCount(0);
       const queue = page.getByTestId('sjm-command-grid');
       await expect(queue).toHaveClass(/sjm-command-grid--queue/);
+      if (viewport.width < 640) {
+        const mobileMetrics = page.locator('.sjm-kpi-strip');
+        await expect(mobileMetrics).toBeVisible();
+        const metricRail = await mobileMetrics.evaluate(element => ({
+          display: getComputedStyle(element).display,
+          overflowX: getComputedStyle(element).overflowX,
+          cardHeight: element.querySelector('.sjm-kpi-card')?.getBoundingClientRect().height ?? 0,
+        }));
+        expect(metricRail.display, 'mobile workload metrics should use a compact horizontal rail').toBe('flex');
+        expect(metricRail.overflowX, 'mobile metric rail must be horizontally scrollable').toBe('auto');
+        expect(metricRail.cardHeight, 'mobile metric cards should not displace the journey queue').toBeLessThanOrEqual(90);
+      }
       const registerList = page.getByTestId('sjm-register-list');
       await expect(registerList).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toHaveCount(0);
@@ -749,7 +761,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     await staleNotice.getByRole('button', { name: 'Retry refresh' }).click();
     await expect(page.getByTestId('sjm-register-stale-notice')).toHaveCount(0);
-    await expect(page.getByText('Register refreshed', { exact: true })).toBeVisible();
+    await expect(page.getByText('Journey register updated', { exact: true })).toBeVisible();
     await expect(register).toContainText('SJM-E2E-001');
   });
   test('travel dossier exposes traveller registration, private document handling, flight legs and daily execution', async ({ page }, testInfo: TestInfo) => {
@@ -2017,6 +2029,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.locator('.sjm-kpi-card.is-arrival').click();
     await arrivalVerificationResponse;
     await expect.poll(() => requestedFilter).toBe('arrival_verification');
+    await expect(page.getByLabel('Additional journey filters')).toHaveValue('arrival_verification');
     await expect(page.getByText('11 matches')).toBeVisible();
     await expect(page.locator('.sjm-kpi-card.is-arrival .sjm-kpi-card__value')).toHaveText('11');
   });
