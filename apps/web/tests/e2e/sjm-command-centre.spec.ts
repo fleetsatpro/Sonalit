@@ -457,6 +457,21 @@ test.describe('SJM command-centre responsive smoke', () => {
       const base = getComputedStyle(root);
       const cardStyle = getComputedStyle(card);
       const actionStyle = getComputedStyle(primary);
+      const rgb = (value: string) => value.match(/[\\d.]+/g)?.map(Number) ?? [];
+      const linear = (channel: number) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      };
+      const luminance = (value: string) => {
+        const [red, green, blue] = rgb(value);
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+      };
+      const contrast = (first: string, second: string) => {
+        const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
+        return (values[0] + 0.05) / (values[1] + 0.05);
+      };
+      const gradientStops = [...actionStyle.backgroundImage.matchAll(/rgb\\([^)]+\\)/g)].map(match => match[0]);
+      const minActionContrast = Math.min(...gradientStops.map(stop => contrast(actionStyle.color, stop)));
       return {
         fontFamily: base.fontFamily,
         fontSize: base.fontSize,
@@ -469,6 +484,8 @@ test.describe('SJM command-centre responsive smoke', () => {
         cardBackground: cardStyle.backgroundImage,
         actionMinHeight: Number.parseFloat(actionStyle.minHeight),
         actionBackground: actionStyle.backgroundImage,
+        actionGradientStops: gradientStops,
+        minActionContrast,
       };
     });
 
@@ -482,6 +499,8 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(visual.cardBackground).toContain('linear-gradient');
     expect(visual.actionMinHeight).toBeGreaterThanOrEqual(44);
     expect(visual.actionBackground).toContain('linear-gradient');
+    expect(visual.actionGradientStops.length).toBeGreaterThanOrEqual(3);
+    expect(visual.minActionContrast).toBeGreaterThanOrEqual(4.5);
   });
 
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
