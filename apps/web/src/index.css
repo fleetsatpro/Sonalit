@@ -290,11 +290,13 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   line-height: 1.4;
 }
 .sjm-console .sjm-register-filter {
-  min-height: 34px;
+  min-height: 44px;
   border: 1px solid transparent;
   border-radius: 7px;
   box-shadow: none;
 }
+.sjm-console .sjm-register-filters { min-width: 0; }
+.sjm-console .sjm-register-filter { flex: 0 0 auto; padding-right: 12px; padding-left: 12px; }
 .sjm-console .sjm-register-filter[aria-pressed="true"] {
   border-color: rgba(120,217,173,.35);
   background: rgba(120,217,173,.09);
@@ -306,7 +308,7 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
 .sjm-console .sjm-journey-actions { row-gap: 8px; }
 .sjm-console .sjm-journey-actions > button,
 .sjm-console .sjm-page-header button {
-  min-height: 38px;
+  min-height: 44px;
 }
 .sjm-console .sjm-workspace-tabs {
   min-width: 0;
@@ -521,7 +523,7 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   .sjm-console .sjm-workspace-tabs { margin-right: -2px; }
   .sjm-console .sjm-workspace-tab { min-height: 46px; padding-right: 11px; padding-left: 11px; }
   .sjm-console .sjm-journey-actions { gap: 7px; }
-  .sjm-console .sjm-journey-actions > button { min-height: 38px !important; }
+  .sjm-console .sjm-journey-actions > button { min-height: 44px !important; }
   .sjm-console .sjm-overview-rail { padding: 14px; }
   .sjm-console .sjm-overview-risk-panel .sjm-risk-metrics { gap: 10px; }
 }
@@ -529,8 +531,22 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
 /* Keep the selected journey's map in the mobile first screen without hiding its identity or actions. */
 @media (max-width: 640px) {
   .sjm-console > div { row-gap: 12px; }
+  .sjm-console .sjm-register-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+    margin-right: -4px;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #435566 transparent;
+  }
+  .sjm-console .sjm-register-filters > button { flex: 0 0 auto; }
+  .sjm-console .sjm-empty-workspace > div { padding-top: 20px !important; padding-bottom: 20px !important; }
+  .sjm-console input:not([type="checkbox"]):not([type="radio"]),
+  .sjm-console select { min-height: 44px; }
   .sjm-console .sjm-page-header { padding: 12px; }
-  .sjm-console .sjm-page-header .sjm-page-intro { display: none; }
+  .sjm-console .sjm-page-header .sjm-page-intro { display: block; max-width: 42ch; font-size: 12px; line-height: 1.45; }
   .sjm-console .sjm-selected-journey-header { padding: 12px; gap: 8px; }
   .sjm-console .sjm-selected-journey-header > div:first-child > p[title] {
     display: -webkit-box;
@@ -540,7 +556,7 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   }
   .sjm-console .sjm-journey-actions { gap: 6px; }
   .sjm-console .sjm-journey-actions > button {
-    min-height: 34px !important;
+    min-height: 44px !important;
     padding-top: 6px;
     padding-bottom: 6px;
   }
