@@ -309,7 +309,7 @@
   .sjm-console .sjm-kpi-card { grid-column: span 1; }
 }
 
-.sjm-console .sjm-live-ops-rail {
+.sjm-console .sjm-panel.sjm-live-ops-rail {
   border-radius: 12px;
 }
 
