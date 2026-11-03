@@ -1600,6 +1600,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 15000 });
     await openMoreJourneyViews(page);
     await page.getByRole('tab', { name: '3D airspace' }).click();
+    await expect.poll(() => page.locator('.sjm-workspace-more').evaluate(element => (element as HTMLDetailsElement).open)).toBe(false);
     const display = page.getByTestId('sjm-airspace-display');
     await expect(display).toBeVisible();
     await expect(page.getByText('Commercial flight status', { exact: true })).toBeVisible();
@@ -1929,12 +1930,13 @@ test.describe('SJM command-centre responsive smoke', () => {
       delete summary.telemetry_snapshot;
       delete summary.readiness_checklist;
       const offset = requestedOffset;
-      const totalCount = requestedFilter === 'overdue' ? 7 : requestedFilter === 'departure_due_30m' ? 3 : 176;
+      const totalCount = requestedFilter === 'overdue' ? 7 : requestedFilter === 'departure_due_30m' ? 3 : requestedFilter === 'arrival_verification' ? 11 : 176;
       const rowCount = Math.max(0, Math.min(offset === 0 ? 100 : 76, totalCount - offset));
       const data = Array.from({ length: rowCount }, (_, index) => ({
         ...summary,
         id: pagedJourneyId(offset + index),
         reference: 'SJM-PAGE-' + (offset + index),
+        status: requestedFilter === 'arrival_verification' ? 'arrival_pending_verification' : summary.status,
         schedule_urgency: requestedFilter === 'overdue' ? 'DEPARTURE_OVERDUE' : requestedFilter === 'departure_due_30m' ? 'DEPARTURE_DUE_30M' : null,
       }));
       return route.fulfill({
@@ -1993,6 +1995,13 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect.poll(() => requestedOffset).toBe(0);
     await expect(page.getByText('3 matches')).toBeVisible();
     await expect(page.getByRole('button', { name: /SJM-PAGE-0/ }).getByText('Departing soon')).toBeVisible();
+
+    const arrivalVerificationResponse = registerResponse('0', 'arrival_verification', 'departure_asc');
+    await page.locator('.sjm-kpi-card.is-arrival').click();
+    await arrivalVerificationResponse;
+    await expect.poll(() => requestedFilter).toBe('arrival_verification');
+    await expect(page.getByText('11 matches')).toBeVisible();
+    await expect(page.locator('.sjm-kpi-card.is-arrival .sjm-kpi-card__value')).toHaveText('11');
   });
 
   test('lifecycle rail keeps movement and arrival verification on their correct checkpoints', async ({ page }) => {
