@@ -30,7 +30,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Playwright's pinned Chromium build is not supported on Ubuntu 26.04 yet.
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
