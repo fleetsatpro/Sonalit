@@ -625,7 +625,7 @@ test.describe('SJM command-centre responsive smoke', () => {
   test('puts the journey register first when no journey is selected on narrow screens', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
-    await page.route(/\\/api\\/v1\\/sjm\\/journeys\\?/, route => route.fulfill({
+    await page.route(/\/api\/v1\/sjm\/journeys\?/, route => route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
@@ -670,7 +670,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await seedAuth(page);
     await stubSjmApi(page);
     let failNextRefresh = false;
-    await page.route(/\\/api\\/v1\\/sjm\\/journeys\\?/, async route => {
+    await page.route(/\/api\/v1\/sjm\/journeys\?/, async route => {
       if (!failNextRefresh) return route.fallback();
       failNextRefresh = false;
       return route.fulfill({
