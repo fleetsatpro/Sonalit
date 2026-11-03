@@ -555,7 +555,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByRole('button', { name: 'Open apps' }).click();
     await page.getByRole('button', { name: /Protective Mobility/ }).click();
     await page.getByRole('button', { name: 'Field Operations', exact: true }).click();
-    await expect(page).toHaveURL(/\\/sjm\\/field$/);
+    await expect(page).toHaveURL(/\/sjm\/field$/);
   });
 
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
