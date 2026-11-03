@@ -407,15 +407,25 @@ test.describe('SJM command-centre responsive smoke', () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
 
-      await expect(page.getByRole('heading', { name: /Secure Journey Management/i })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('heading', { name: 'Journey operations' })).toBeVisible({ timeout: 15000 });
       const appClock = page.getByTestId('app-topbar-clock');
       await expect(appClock.getByText('LOCAL TIME', { exact: true })).toBeVisible();
       await expect(appClock.getByRole('time')).toBeVisible();
       await expect(appClock.getByText('LIVE', { exact: true })).toHaveCount(0);
       const sjmPageHeader = page.locator('main .sjm-console header.sjm-page-header');
-      await expect(sjmPageHeader.getByText('Protective Mobility', { exact: true })).toBeVisible();
-      await expect(sjmPageHeader.getByText('Command desk', { exact: true })).toBeVisible();
+      await expect(sjmPageHeader.getByText('SONALIT', { exact: true })).toBeVisible();
+      await expect(sjmPageHeader.getByText('PROTECTIVE MOBILITY', { exact: true })).toBeVisible();
       await expect(sjmPageHeader.getByText('XD Live Surveillance', { exact: true })).toHaveCount(0);
+      const queue = page.getByTestId('sjm-command-grid');
+      await expect(queue).toHaveClass(/sjm-command-grid--queue/);
+      const registerList = page.getByTestId('sjm-register-list');
+      await expect(registerList).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toHaveCount(0);
+      await testInfo.attach(`sjm-${viewport.label}-queue-first`, {
+        body: await page.screenshot({ fullPage: true, animations: 'disabled' }),
+        contentType: 'image/png',
+      });
+      await registerList.getByRole('button').first().click();
       await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible({ timeout: 10000 });
       await expect(page.getByText('Route has not been assessed', { exact: true })).toBeVisible();
       await expect(page.getByText('Not assessed', { exact: true }).first()).toBeVisible();
@@ -445,6 +455,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       const commandGrid = page.getByTestId('sjm-command-grid');
       const commandColumns = await commandGrid.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
       expect(commandColumns, viewport.label + ': command grid column count').toBe(viewport.width >= 1440 ? 3 : viewport.width >= 1280 ? 2 : 1);
+      await expect(commandGrid).toHaveClass(/sjm-command-grid--selected/);
       const operationsSections = operationsRail.locator('.sjm-live-ops-section');
       await expect(operationsRail).toBeVisible();
       await expect(operationsSections).toHaveCount(4);
@@ -522,19 +533,18 @@ test.describe('SJM command-centre responsive smoke', () => {
 
       const registerHeading = page.getByRole('heading', { name: 'Journey register' });
       const registerList = page.getByTestId('sjm-register-list');
-      await expect(registerList).toBeVisible();
-      await expect(registerList).toContainText('Next action · Complete journey plan and route assessment');
-      await expect(registerList).toContainText('Team assignment not recorded');
-      const registerListMinHeight = await registerList.evaluate(el => getComputedStyle(el).minHeight);
-      expect(registerListMinHeight, viewport.label + ': register list should not reserve excessive empty space').toBe(viewport.width < 640 ? '120px' : '280px');
       const selectedMissionHeading = page.getByRole('heading', { name: 'Airport arrival — controlled transfer' });
-      const registerBox = await registerHeading.boundingBox();
       const missionBox = await selectedMissionHeading.boundingBox();
-      expect(registerBox, `${viewport.label}: register heading should render`).not.toBeNull();
       expect(missionBox, `${viewport.label}: selected mission heading should render`).not.toBeNull();
+      await expect(registerList).toContainText('Next action');
+      await expect(registerList).toContainText('Team assignment not recorded');
       if (viewport.width < 1280) {
-        expect(missionBox!.y, `${viewport.label}: mission workspace must precede the register on narrow screens`).toBeLessThan(registerBox!.y);
+        await expect(registerHeading).toBeHidden();
+        await expect(page.getByRole('button', { name: 'Back to journey register' })).toBeVisible();
       } else {
+        await expect(registerHeading).toBeVisible();
+        const registerBox = await registerHeading.boundingBox();
+        expect(registerBox, `${viewport.label}: register heading should render`).not.toBeNull();
         expect(registerBox!.x, `${viewport.label}: register should remain the left desktop rail`).toBeLessThan(missionBox!.x);
       }
 
@@ -573,7 +583,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       // Exercise it with an explicitly synthetic workspace fixture at mobile
       // and desktop widths, then attach the rendered panel for visual review.
       if (viewport.width === 390 || viewport.width === 1440) {
-        await page.getByRole('tab', { name: 'Operations timeline' }).click();
+        await page.getByRole('tab', { name: 'Timeline' }).click();
         const timeline = page.getByTestId('sjm-unified-timeline');
         await expect(timeline).toBeVisible();
         await expect(timeline.getByText('QA Airways QA 100', { exact: true })).toBeVisible({ timeout: 10000 });
@@ -651,12 +661,11 @@ test.describe('SJM command-centre responsive smoke', () => {
       await page.setViewportSize({ width, height: 844 });
       await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('heading', { name: 'Journey register' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Select a journey' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Select a journey' })).toHaveCount(0);
+      await expect(page.locator('.sjm-empty-workspace')).toBeHidden();
+      await expect(page.getByTestId('sjm-command-grid')).toHaveClass(/sjm-command-grid--queue/);
       const register = await page.getByRole('heading', { name: 'Journey register' }).boundingBox();
-      const emptyWorkspace = await page.locator('.sjm-empty-workspace').boundingBox();
       expect(register).not.toBeNull();
-      expect(emptyWorkspace).not.toBeNull();
-      expect(register!.y, 'the actionable queue must precede the empty workspace when no journey is selected').toBeLessThan(emptyWorkspace!.y);
 
       const filterHeights = await page.locator('.sjm-register-filter').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
       expect(filterHeights.length).toBeGreaterThan(0);
