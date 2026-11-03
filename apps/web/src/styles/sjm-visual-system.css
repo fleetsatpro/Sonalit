@@ -9,6 +9,10 @@
   --sjm-font: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --sjm-display: 'Space Grotesk', 'Archivo', system-ui, sans-serif;
   --sjm-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --d-font: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --d-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --p-sans: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --p-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Blue-grade depth: surfaces rise by luminance, not by excessive glow. */
   --d-void: #06101d;
