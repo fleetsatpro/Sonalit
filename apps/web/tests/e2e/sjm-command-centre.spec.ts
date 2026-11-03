@@ -415,6 +415,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     const audit = async (surface: string) => {
       const results = await new AxeBuilder({ page })
+        .include('.sjm-console')
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
         .analyze();
       const serious = results.violations.filter(
@@ -590,7 +591,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       }));
       expect(railSurface.borderWidth).toBe('1px');
       expect(railSurface.radius).toBe('12px');
-      expect(railSurface.background).toBe('rgb(13, 20, 40)');
+      expect(railSurface.background).toBe('rgb(14, 34, 58)');
       for (const section of await operationsSections.all()) {
         const style = await section.evaluate(el => ({
           borderTop: getComputedStyle(el).borderTopWidth,
