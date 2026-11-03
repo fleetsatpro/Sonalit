@@ -717,9 +717,10 @@ test.describe('SJM command-centre responsive smoke', () => {
     });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible();
     const register = page.getByTestId('sjm-register-list');
     await expect(register).toContainText('SJM-E2E-001');
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toHaveCount(0);
+    await expect(page.getByTestId('sjm-command-grid')).toHaveClass(/sjm-command-grid--queue/);
 
     failedRefreshAttempts = 3;
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
