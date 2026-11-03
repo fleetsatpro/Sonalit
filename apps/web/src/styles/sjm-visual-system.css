@@ -620,6 +620,14 @@
   filter: saturate(.55);
 }
 
+@media (max-width: 639px) {
+  /* Tailwind's hidden utility is intentionally reinforced here: the SJM
+     secondary-action surface rule otherwise wins the cascade on phones. */
+  .sjm-console .sjm-page-actions > a.sjm-secondary-action[href="/sjm/field"] {
+    display: none;
+  }
+}
+
 @media (max-width: 767px) {
   .sjm-console .sjm-page-heading h1 {
     font-size: clamp(28px, 8vw, 34px);
