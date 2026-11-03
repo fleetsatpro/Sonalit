@@ -429,6 +429,24 @@ test.describe('SJM command-centre responsive smoke', () => {
     await openFirstJourney(page);
     await page.getByRole('tab', { name: 'Traveller' }).click();
     await expect(page.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
+    const dossier = page.getByTestId('sjm-travel-workspace');
+    await expect(dossier).toHaveClass(/sjm-travel-programme/);
+    const travelVisual = await dossier.evaluate((root) => {
+      const people = root.querySelector<HTMLElement>('.sjm-travel-section--people');
+      const programme = root.querySelector<HTMLElement>('.sjm-travel-section--programme');
+      const heading = root.querySelector<HTMLElement>('.sjm-travel-section--people h4');
+      if (!people || !programme || !heading) throw new Error('Travel dossier visual contract elements are missing');
+      return {
+        bodyFont: getComputedStyle(root).fontFamily,
+        peopleBackground: getComputedStyle(people).backgroundImage,
+        programmeRadius: getComputedStyle(programme).borderRadius,
+        sectionHeadingFont: getComputedStyle(heading).fontFamily,
+      };
+    });
+    expect(travelVisual.bodyFont.toLowerCase()).toContain('archivo');
+    expect(travelVisual.peopleBackground).toContain('linear-gradient');
+    expect(travelVisual.programmeRadius).toBe('14px');
+    expect(travelVisual.sectionHeadingFont.toLowerCase()).toContain('space grotesk');
     await audit('traveller dossier');
   });
 
