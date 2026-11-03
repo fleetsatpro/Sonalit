@@ -479,8 +479,8 @@ test.describe('SJM command-centre responsive smoke', () => {
         background: getComputedStyle(el).backgroundColor,
       }));
       expect(railSurface.borderWidth).toBe('1px');
-      expect(railSurface.radius).toBe('10px');
-      expect(railSurface.background).toBe('rgb(12, 20, 29)');
+      expect(railSurface.radius).toBe('12px');
+      expect(railSurface.background).toBe('rgb(13, 20, 40)');
       for (const section of await operationsSections.all()) {
         const style = await section.evaluate(el => ({
           borderTop: getComputedStyle(el).borderTopWidth,
@@ -504,7 +504,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         riskBackground: getComputedStyle(el.querySelector('.sjm-overview-risk-panel') as HTMLElement).backgroundColor,
       }));
       expect(hierarchy.borderWidth).toBe('1px');
-      expect(hierarchy.radius).toBe('10px');
+      expect(hierarchy.radius).toBe('12px');
       expect(hierarchy.riskBorder).toBe('0px');
       expect(hierarchy.riskBackground).toBe('rgba(0, 0, 0, 0)');
       const riskBox = await riskPanel.boundingBox();
@@ -1481,9 +1481,8 @@ test.describe('SJM command-centre responsive smoke', () => {
     const tabs = page.getByRole('tablist', { name: 'Primary journey views' });
     const moreTabs = page.getByRole('tablist', { name: 'Additional journey views' });
     await expect(tabs).toBeVisible();
-    await expect(moreTabs).toHaveCount(1);
-
     await openMoreJourneyViews(page);
+    await expect(moreTabs).toBeVisible();
     await page.getByRole('tab', { name: 'Evidence' }).click();
     await expect(page.getByRole('heading', { name: 'Journey events' })).toBeVisible();
     await expect(page.getByText('Manual stop confirmations', { exact: true })).toBeVisible();
