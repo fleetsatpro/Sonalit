@@ -399,11 +399,64 @@ test.describe('SJM command-centre responsive smoke', () => {
     await stubFieldSjmApi(page);
     await page.goto('/sjm/field', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Executive Mobility' })).toBeVisible({ timeout: 15000 });
+    await expect.poll(() => page.locator('.sjm-field-console').evaluate(element => getComputedStyle(element).fontFamily.toLowerCase())).toContain('archivo');
     const signOut = page.getByRole('button', { name: 'Sign out' });
     await expect(signOut).toBeVisible();
     await signOut.click();
     await expect(page).toHaveURL(/\/login$/);
   });
+  test('uses the SJM visual system for readable typography, layered blue surfaces and medium KPI cards', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Journey operations' })).toBeVisible();
+    await expect(page.getByTestId('sjm-register-list').getByRole('button').first()).toBeVisible();
+
+    await page.evaluate(async () => {
+      await Promise.all([
+        document.fonts.load('500 15px Archivo'),
+        document.fonts.load('700 36px "Space Grotesk"'),
+        document.fonts.load('500 13px "IBM Plex Mono"'),
+      ]);
+    });
+
+    const visual = await page.locator('.sjm-console').evaluate((root) => {
+      const card = root.querySelector<HTMLElement>('.sjm-kpi-card');
+      const primary = root.querySelector<HTMLElement>('.sjm-primary-action');
+      const mono = root.querySelector<HTMLElement>('.sjm-register-row__reference');
+      const heading = root.querySelector<HTMLElement>('.sjm-page-heading h1');
+      if (!card || !primary || !mono || !heading) throw new Error('SJM visual contract elements are missing');
+      const base = getComputedStyle(root);
+      const cardStyle = getComputedStyle(card);
+      const actionStyle = getComputedStyle(primary);
+      return {
+        fontFamily: base.fontFamily,
+        fontSize: base.fontSize,
+        displayFamily: getComputedStyle(heading).fontFamily,
+        monoFamily: getComputedStyle(mono).fontFamily,
+        fontsLoaded: document.fonts.check('500 15px Archivo') &&
+          document.fonts.check('700 36px "Space Grotesk"') &&
+          document.fonts.check('500 13px "IBM Plex Mono"'),
+        cardMinHeight: Number.parseFloat(cardStyle.minHeight),
+        cardBackground: cardStyle.backgroundImage,
+        actionMinHeight: Number.parseFloat(actionStyle.minHeight),
+        actionBackground: actionStyle.backgroundImage,
+      };
+    });
+
+    expect(visual.fontFamily.toLowerCase()).toContain('archivo');
+    expect(visual.fontSize).toBe('15px');
+    expect(visual.displayFamily.toLowerCase()).toContain('space grotesk');
+    expect(visual.monoFamily.toLowerCase()).toContain('ibm plex mono');
+    expect(visual.fontsLoaded).toBe(true);
+    expect(visual.cardMinHeight).toBeGreaterThanOrEqual(104);
+    expect(visual.cardMinHeight).toBeLessThanOrEqual(116);
+    expect(visual.cardBackground).toContain('linear-gradient');
+    expect(visual.actionMinHeight).toBeGreaterThanOrEqual(44);
+    expect(visual.actionBackground).toContain('linear-gradient');
+  });
+
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
   test.describe.configure({ timeout: 120_000 });
   test('keeps the journey workspace readable without horizontal overflow at target viewports', async ({ page }, testInfo: TestInfo) => {
@@ -411,8 +464,11 @@ test.describe('SJM command-centre responsive smoke', () => {
     await stubSjmApi(page);
 
     const targets = [
+      { width: 360, height: 800, label: 'small mobile' },
       { width: 390, height: 844, label: 'mobile' },
       { width: 768, height: 1024, label: 'tablet' },
+      { width: 1024, height: 800, label: 'small laptop' },
+      { width: 1280, height: 900, label: 'laptop' },
       { width: 1440, height: 900, label: 'desktop' },
       { width: 1920, height: 1080, label: 'large desktop' },
     ];
