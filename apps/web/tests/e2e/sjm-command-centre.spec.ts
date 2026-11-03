@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 const JOURNEY_ID = '11111111-1111-4111-8111-111111111111';
 const CLIENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -405,6 +406,30 @@ test.describe('SJM command-centre responsive smoke', () => {
     await signOut.click();
     await expect(page).toHaveURL(/\/login$/);
   });
+  test('SJM queue and traveller workflow have no serious accessibility violations', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Journey operations' })).toBeVisible();
+
+    const audit = async (surface: string) => {
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze();
+      const serious = results.violations.filter(
+        violation => violation.impact === 'critical' || violation.impact === 'serious',
+      );
+      expect(serious, `Serious accessibility violations on SJM ${surface}: ${serious.map(v => v.id).join(', ')}`).toHaveLength(0);
+    };
+
+    await audit('journey register');
+    await openFirstJourney(page);
+    await page.getByRole('tab', { name: 'Traveller' }).click();
+    await expect(page.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
+    await audit('traveller dossier');
+  });
+
   test('uses the SJM visual system for readable typography, layered blue surfaces and medium KPI cards', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
