@@ -927,6 +927,7 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
           WHERE j.org_id=$1 AND j.deleted_at IS NULL
             AND ($2::text IS NULL OR j.status=$2)
             AND ($3::uuid IS NULL OR j.client_id=$3)
+            AND ($4::text IS NOT NULL)
             AND ${filterSql}
             AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE '%'||$5||'%')
             AND EXISTS (
@@ -945,7 +946,8 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
       WHERE j.org_id=$1 AND j.deleted_at IS NULL
         AND ($2::text IS NULL OR j.status=$2)
         AND ($3::uuid IS NULL OR j.client_id=$3)
-        AND ${filterSql}
+        AND ($4::text IS NOT NULL)
+            AND ${filterSql}
         AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE '%'||$5||'%')
         AND ($8::boolean OR EXISTS (
           SELECT 1 FROM sjm_journey_participants p
@@ -962,7 +964,8 @@ router.get('/journeys',authorize('admin','dispatcher','operator','analyst'),asyn
       WHERE j.org_id=$1 AND j.deleted_at IS NULL
         AND ($2::text IS NULL OR j.status=$2)
         AND ($3::uuid IS NULL OR j.client_id=$3)
-        AND ${filterSql}
+        AND ($4::text IS NOT NULL)
+            AND ${filterSql}
         AND ($5::text='' OR concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE '%'||$5||'%')
         AND ($6::boolean OR EXISTS (
           SELECT 1 FROM sjm_journey_participants p
