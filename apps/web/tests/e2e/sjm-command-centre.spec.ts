@@ -101,7 +101,12 @@ async function seedAuth(page: Page) {
   });
 }
 
-async function stubSjmApi(page: Page) {
+type JourneyListFixture = { status: number; body: unknown };
+type SjmApiStubOptions = {
+  journeyListResponse?: (defaultBody: Record<string, unknown>, requestUrl: URL) => JourneyListFixture | null;
+};
+
+async function stubSjmApi(page: Page, options: SjmApiStubOptions = {}) {
   let flightStatusObservation = { flight_status: journey.flight_status, flight_status_source: journey.flight_status_source, flight_status_observed_at: journey.flight_status_observed_at, flight_status_note: journey.flight_status_note };
   const flightStatusUpdates: Array<{flight_status:string;note:string|null}> = [];
   await page.route('**/api/v1/sjm/**', async (route) => {
@@ -147,10 +152,16 @@ async function stubSjmApi(page: Page) {
       delete summary.events;
       delete summary.telemetry_snapshot;
       delete summary.readiness_checklist;
+      const defaultBody: Record<string, unknown> = {
+        data: [summary],
+        pagination: { limit, offset, total_count: 1, has_more: false },
+        summary: { total: 1, active: 0, queue: 1, review: 0, awaiting_review: 1, arrival_verification: 0 },
+      };
+      const override = options.journeyListResponse?.(defaultBody, requestUrl) ?? null;
       return route.fulfill({
-        status: 200,
+        status: override?.status ?? 200,
         contentType: 'application/json',
-        body: JSON.stringify({ data: [summary], pagination: { limit, offset, total_count: 1, has_more: false }, summary: { total: 1, active: 0, queue: 1, review: 0, awaiting_review: 1, arrival_verification: 0 } }),
+        body: JSON.stringify(override?.body ?? defaultBody),
       });
     }
     const journeyDetailMatch = pathname.match(/^\/api\/v1\/sjm\/journeys\/([^/]+)$/);
@@ -401,7 +412,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       await expect(appClock.getByText('LOCAL TIME', { exact: true })).toBeVisible();
       await expect(appClock.getByRole('time')).toBeVisible();
       await expect(appClock.getByText('LIVE', { exact: true })).toHaveCount(0);
-      const sjmPageHeader = page.locator('main.sjm-console header.sjm-page-header');
+      const sjmPageHeader = page.locator('main .sjm-console header.sjm-page-header');
       await expect(sjmPageHeader.getByText('Protective Mobility', { exact: true })).toBeVisible();
       await expect(sjmPageHeader.getByText('Command desk', { exact: true })).toBeVisible();
       await expect(sjmPageHeader.getByText('XD Live Surveillance', { exact: true })).toHaveCount(0);
@@ -512,6 +523,8 @@ test.describe('SJM command-centre responsive smoke', () => {
       const registerHeading = page.getByRole('heading', { name: 'Journey register' });
       const registerList = page.getByTestId('sjm-register-list');
       await expect(registerList).toBeVisible();
+      await expect(registerList).toContainText('Next action · Complete journey plan and route assessment');
+      await expect(registerList).toContainText('Team assignment not recorded');
       const registerListMinHeight = await registerList.evaluate(el => getComputedStyle(el).minHeight);
       expect(registerListMinHeight, viewport.label + ': register list should not reserve excessive empty space').toBe(viewport.width < 640 ? '120px' : '280px');
       const selectedMissionHeading = page.getByRole('heading', { name: 'Airport arrival — controlled transfer' });
@@ -606,22 +619,99 @@ test.describe('SJM command-centre responsive smoke', () => {
 
   test('keeps the mobile register compact when the journey list is unavailable', async ({ page }) => {
     await seedAuth(page);
-    await stubSjmApi(page);
-    await page.route(/\/api\/v1\/sjm\/journeys\?/, route => route.fulfill({
-      status: 500,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: 'internal_server_error', message: 'Internal server error' }),
-    }));
+    await stubSjmApi(page, {
+      journeyListResponse: () => ({
+        status: 500,
+        body: { error: 'internal_server_error', message: 'Internal server error' },
+      }),
+    });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Journey register' })).toBeVisible();
-    await expect(page.getByRole('alert').filter({ hasText: 'The journey list could not be loaded' })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Journey register unavailable' })).toBeVisible({ timeout: 15_000 });
     const registerList = page.getByTestId('sjm-register-list');
     const registerBox = await registerList.boundingBox();
     expect(registerBox).not.toBeNull();
     expect(registerBox!.height, 'mobile error state should not retain a tall empty register body').toBeLessThan(180);
   });
+  test('puts the journey register first when no journey is selected on narrow screens', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page, {
+      journeyListResponse: () => ({
+        status: 200,
+        body: {
+          data: [],
+          pagination: { limit: 100, offset: 0, total_count: 0, has_more: false },
+          summary: { total: 0, active: 0, queue: 0, review: 0, awaiting_review: 0, arrival_verification: 0 },
+        },
+      }),
+    });
 
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByRole('heading', { name: 'Journey register' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Select a journey' })).toBeVisible();
+      const register = await page.getByRole('heading', { name: 'Journey register' }).boundingBox();
+      const emptyWorkspace = await page.locator('.sjm-empty-workspace').boundingBox();
+      expect(register).not.toBeNull();
+      expect(emptyWorkspace).not.toBeNull();
+      expect(register!.y, 'the actionable queue must precede the empty workspace when no journey is selected').toBeLessThan(emptyWorkspace!.y);
+
+      const filterHeights = await page.locator('.sjm-register-filter').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+      expect(filterHeights.length).toBeGreaterThan(0);
+      expect(Math.min(...filterHeights), 'journey filter chips must have comfortable touch targets').toBeGreaterThanOrEqual(44);
+      const newJourney = page.getByRole('button', { name: 'New journey', exact: true }).first();
+      expect(await newJourney.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+
+      const dimensions = await page.evaluate(() => ({
+        viewport: window.innerWidth,
+        document: document.documentElement.scrollWidth,
+        body: document.body.scrollWidth,
+        nestedMainCount: document.querySelectorAll('main main').length,
+        consoleTag: document.querySelector('.sjm-console')?.tagName,
+      }));
+      expect(dimensions.document, 'no horizontal document overflow at ' + width + 'px').toBeLessThanOrEqual(width);
+      expect(dimensions.body, 'no horizontal body overflow at ' + width + 'px').toBeLessThanOrEqual(width);
+      expect(dimensions.nestedMainCount, 'SJM must not introduce a nested main landmark').toBe(0);
+      expect(dimensions.consoleTag).toBe('DIV');
+    }
+  });
+  test('retains the last successful register and KPIs after a refresh failure', async ({ page }) => {
+    await seedAuth(page);
+    // The app retries failed queries twice. Fail the initial request and both retries
+    // so the query reaches its final error state before exercising manual recovery.
+    let failedRefreshAttempts = 0;
+    await stubSjmApi(page, {
+      journeyListResponse: () => {
+        if (failedRefreshAttempts <= 0) return null;
+        failedRefreshAttempts -= 1;
+        return {
+          status: 500,
+          body: { error: 'internal_server_error', message: 'Internal server error' },
+        };
+      },
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Airport arrival — controlled transfer' })).toBeVisible();
+    const register = page.getByTestId('sjm-register-list');
+    await expect(register).toContainText('SJM-E2E-001');
+
+    failedRefreshAttempts = 3;
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    const staleNotice = page.getByTestId('sjm-register-stale-notice');
+    await expect(staleNotice).toBeVisible({ timeout: 15_000 });
+    await expect(staleNotice).toContainText('last successful snapshot');
+    await expect(register).toContainText('SJM-E2E-001');
+    await expect(page.locator('[aria-label="Operations overview"]')).toHaveAttribute('data-stale', 'true');
+    await expect(page.locator('[aria-label="Operations overview"]').getByText('Unavailable')).toHaveCount(0);
+
+    await staleNotice.getByRole('button', { name: 'Retry refresh' }).click();
+    await expect(page.getByTestId('sjm-register-stale-notice')).toHaveCount(0);
+    await expect(page.getByText('Register refreshed', { exact: true })).toBeVisible();
+    await expect(register).toContainText('SJM-E2E-001');
+  });
   test('travel dossier exposes traveller registration, private document handling, flight legs and daily execution', async ({ page }, testInfo: TestInfo) => {
     await seedAuth(page);
     await stubSjmApi(page);
