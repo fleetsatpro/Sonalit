@@ -289,6 +289,10 @@
   .sjm-console .sjm-kpi-card { grid-column: span 1; }
 }
 
+.sjm-console .sjm-live-ops-rail {
+  border-radius: 12px;
+}
+
 .sjm-console .sjm-register-panel,
 .sjm-console .sjm-panel {
   border: 1px solid rgba(128, 174, 224, .22);
