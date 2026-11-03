@@ -15,6 +15,8 @@ import './styles/intelligence-centre-command.css';
 import './styles/marketing.css';
 // Final cascade boundary: keeps every application module on the selected theme.
 import './styles/theme-coverage.css';
+// Dedicated executive-mobility art direction; all rules are SJM-scoped.
+import './styles/sjm-visual-system.css';
 // The aerospace-grade public homepage redesign is scoped to .sonalit-public.
 import './styles/marketing-v6.css';
 import './i18n/index.js';
