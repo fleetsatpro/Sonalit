@@ -1,6 +1,0 @@
-services:
-  sonalit-standby:
-    environment:
-      SONALIT_STANDBY: "false"
-      ENABLE_INPROCESS_WORKERS: "true"
-      SONALIT_FENCE_TAKEOVER: "${SONALIT_FENCE_TAKEOVER:-false}"

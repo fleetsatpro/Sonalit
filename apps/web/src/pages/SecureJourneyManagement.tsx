@@ -670,7 +670,7 @@ return (
     </header>
 
     {hasRegisterContract&&Number(stats?.departures_due_30m||0)>0&&<div role="status" className="border-l-2 border-amber-300/70 bg-amber-300/[0.035] px-3 py-2.5 text-[11px] leading-5 text-amber-100/90"><span className="font-semibold tabular-nums">{stats?.departures_due_30m}</span> scheduled departures are due within the next 30 minutes. Confirm readiness before recording release; this count reflects planned times, not live dispatch telemetry.</div>}
-    <section aria-label="Operations overview" data-stale={registerQ.isError&&Boolean(registerQ.data)} className="sjm-kpi-strip">
+    <section aria-label="Operations overview" data-stale={registerQ.isError&&Boolean(registerQ.data)} className={'sjm-kpi-strip'+(selectedId?' sjm-kpi-strip--queue-only':'')}>
      {[
       {label:'Active journeys',value:stats?.active,detail:'Movements in progress or awaiting active field control',icon:Activity,filter:'active',tone:'is-active'},
       {label:'Awaiting approval',value:stats?.awaiting_review,detail:'Human safety decision required',icon:ShieldCheck,filter:'review',tone:'is-review'},

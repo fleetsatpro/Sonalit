@@ -1,3 +1,0 @@
-Production deployment trigger for the client phone onboarding hotfix.
-
-No runtime application behavior is defined in this file.

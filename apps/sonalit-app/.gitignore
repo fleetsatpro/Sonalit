@@ -1,5 +1,0 @@
-# Capacitor generates the native project fresh in CI (npx cap add android).
-/android/
-/ios/
-node_modules/
-package-lock.json

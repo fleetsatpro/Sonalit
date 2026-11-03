@@ -1,5 +1,0 @@
--keep class com.fleetops.guardian.data.api.** { *; }
--keepattributes Signature
--keepattributes *Annotation*
--dontwarn okhttp3.**
--dontwarn retrofit2.**

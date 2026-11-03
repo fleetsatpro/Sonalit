@@ -472,6 +472,12 @@ test.describe('SJM command-centre responsive smoke', () => {
       const commandColumns = await commandGrid.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
       expect(commandColumns, viewport.label + ': command grid column count').toBe(viewport.width >= 1440 ? 3 : viewport.width >= 1280 ? 2 : 1);
       await expect(commandGrid).toHaveClass(/sjm-command-grid--selected/);
+      const workloadStrip = page.locator('.sjm-kpi-strip');
+      if (viewport.width < 1280) {
+        await expect(workloadStrip, viewport.label + ': workload summary belongs to the queue, not the focused journey view').toBeHidden();
+      } else {
+        await expect(workloadStrip).toBeVisible();
+      }
       const operationsSections = operationsRail.locator('.sjm-live-ops-section');
       await expect(operationsRail).toBeVisible();
       await expect(operationsSections).toHaveCount(4);
