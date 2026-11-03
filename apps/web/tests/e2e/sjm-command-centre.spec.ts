@@ -481,6 +481,15 @@ test.describe('SJM command-centre responsive smoke', () => {
       const operationsSections = operationsRail.locator('.sjm-live-ops-section');
       await expect(operationsRail).toBeVisible();
       await expect(operationsSections).toHaveCount(4);
+      const missionWorkspaceBox = await page.locator('#sjm-mission-workspace').boundingBox();
+      const operationsRailBox = await operationsRail.boundingBox();
+      expect(missionWorkspaceBox, `${viewport.label}: mission workspace must render`).not.toBeNull();
+      expect(operationsRailBox, `${viewport.label}: operations rail must render`).not.toBeNull();
+      if (viewport.width >= 1440) {
+        expect(operationsRailBox!.x, `${viewport.label}: operations rail must occupy the third desktop column`).toBeGreaterThan(missionWorkspaceBox!.x + missionWorkspaceBox!.width - 1);
+      } else {
+        expect(operationsRailBox!.y, `${viewport.label}: compact operations rail must follow the primary workspace`).toBeGreaterThanOrEqual(missionWorkspaceBox!.y);
+      }
       const railSurface = await operationsRail.locator('.sjm-live-ops-rail').evaluate((el) => ({
         borderWidth: getComputedStyle(el).borderTopWidth,
         radius: getComputedStyle(el).borderTopLeftRadius,
