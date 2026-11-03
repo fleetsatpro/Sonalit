@@ -607,7 +607,7 @@ test.describe('SJM command-centre responsive smoke', () => {
   test('keeps the mobile register compact when the journey list is unavailable', async ({ page }) => {
     await seedAuth(page);
     await stubSjmApi(page);
-    await page.route('**/api/v1/sjm/journeys**', route => route.fulfill({
+    await page.route(/\/api\/v1\/sjm\/journeys\?/, route => route.fulfill({
       status: 500,
       contentType: 'application/json',
       body: JSON.stringify({ error: 'internal_server_error', message: 'Internal server error' }),
