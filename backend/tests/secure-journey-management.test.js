@@ -192,6 +192,8 @@ describe('SJM validation and evidence boundaries', () => {
     expect(route).toContain("concat_ws(' ',j.reference,j.title,c.name,j.origin_label,j.destination_label) ILIKE");
     expect(route).toContain('summary:rows.summary');
     expect(route).toContain('journeyRegisterFilterSql(filter)');
+    // Keep the filter bind explicitly typed when the selected bucket compiles to TRUE.
+    expect(route.split('AND ($4::text IS NOT NULL)').length - 1).toBe(3);
     // The all filter compiles to TRUE; keep its bound $4 parameter explicitly typed in all three SQL reads.
     expect(route.match(/AND \(\$4::text IS NOT NULL\)/g)).toHaveLength(3);
     expect(route).toContain('journeyRegisterOrderSql(sort)');
