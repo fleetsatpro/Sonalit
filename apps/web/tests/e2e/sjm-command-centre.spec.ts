@@ -501,6 +501,28 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(visual.actionBackground).toContain('linear-gradient');
     expect(visual.actionGradientStops.length).toBeGreaterThanOrEqual(3);
     expect(visual.minActionContrast).toBeGreaterThanOrEqual(4.5);
+
+    const newJourney = page.getByRole('button', { name: 'New journey' });
+    await newJourney.hover();
+    const hoverContrast = await newJourney.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const channels = (value: string) => value.match(/[\d.]+/g)?.map(Number) ?? [];
+      const linear = (channel: number) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      };
+      const luminance = (value: string) => {
+        const [red, green, blue] = channels(value);
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+      };
+      const ratio = (first: string, second: string) => {
+        const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
+        return (values[0] + 0.05) / (values[1] + 0.05);
+      };
+      const stops = [...style.backgroundImage.matchAll(/rgb\([^)]+\)/g)].map(match => match[0]);
+      return Math.min(...stops.map(stop => ratio(style.color, stop)));
+    });
+    expect(hoverContrast).toBeGreaterThanOrEqual(4.5);
   });
 
   // SJM lazily loads MapLibre and its mission workspace; allow for the cold CI Vite transform.
