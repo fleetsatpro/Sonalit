@@ -101,7 +101,12 @@ async function seedAuth(page: Page) {
   });
 }
 
-async function stubSjmApi(page: Page) {
+type JourneyListFixture = { status: number; body: unknown };
+type SjmApiStubOptions = {
+  journeyListResponse?: (defaultBody: Record<string, unknown>, requestUrl: URL) => JourneyListFixture | null;
+};
+
+async function stubSjmApi(page: Page, options: SjmApiStubOptions = {}) {
   let flightStatusObservation = { flight_status: journey.flight_status, flight_status_source: journey.flight_status_source, flight_status_observed_at: journey.flight_status_observed_at, flight_status_note: journey.flight_status_note };
   const flightStatusUpdates: Array<{flight_status:string;note:string|null}> = [];
   await page.route('**/api/v1/sjm/**', async (route) => {
@@ -147,10 +152,16 @@ async function stubSjmApi(page: Page) {
       delete summary.events;
       delete summary.telemetry_snapshot;
       delete summary.readiness_checklist;
+      const defaultBody: Record<string, unknown> = {
+        data: [summary],
+        pagination: { limit, offset, total_count: 1, has_more: false },
+        summary: { total: 1, active: 0, queue: 1, review: 0, awaiting_review: 1, arrival_verification: 0 },
+      };
+      const override = options.journeyListResponse?.(defaultBody, requestUrl) ?? null;
       return route.fulfill({
-        status: 200,
+        status: override?.status ?? 200,
         contentType: 'application/json',
-        body: JSON.stringify({ data: [summary], pagination: { limit, offset, total_count: 1, has_more: false }, summary: { total: 1, active: 0, queue: 1, review: 0, awaiting_review: 1, arrival_verification: 0 } }),
+        body: JSON.stringify(override?.body ?? defaultBody),
       });
     }
     const journeyDetailMatch = pathname.match(/^\/api\/v1\/sjm\/journeys\/([^/]+)$/);
@@ -608,34 +619,33 @@ test.describe('SJM command-centre responsive smoke', () => {
 
   test('keeps the mobile register compact when the journey list is unavailable', async ({ page }) => {
     await seedAuth(page);
-    await stubSjmApi(page);
-    await page.route(/\/api\/v1\/sjm\/journeys\?/, route => route.fulfill({
-      status: 500,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: 'internal_server_error', message: 'Internal server error' }),
-    }));
+    await stubSjmApi(page, {
+      journeyListResponse: () => ({
+        status: 500,
+        body: { error: 'internal_server_error', message: 'Internal server error' },
+      }),
+    });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Journey register' })).toBeVisible();
-    await expect(page.getByRole('alert').filter({ hasText: 'The journey list could not be loaded' })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Journey register unavailable' })).toBeVisible();
     const registerList = page.getByTestId('sjm-register-list');
     const registerBox = await registerList.boundingBox();
     expect(registerBox).not.toBeNull();
     expect(registerBox!.height, 'mobile error state should not retain a tall empty register body').toBeLessThan(180);
   });
-
   test('puts the journey register first when no journey is selected on narrow screens', async ({ page }) => {
     await seedAuth(page);
-    await stubSjmApi(page);
-    await page.route(/\/api\/v1\/sjm\/journeys\?/, route => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: [],
-        pagination: { limit: 100, offset: 0, total_count: 0, has_more: false },
-        summary: { total: 0, active: 0, queue: 0, review: 0, awaiting_review: 0, arrival_verification: 0 },
+    await stubSjmApi(page, {
+      journeyListResponse: () => ({
+        status: 200,
+        body: {
+          data: [],
+          pagination: { limit: 100, offset: 0, total_count: 0, has_more: false },
+          summary: { total: 0, active: 0, queue: 0, review: 0, awaiting_review: 0, arrival_verification: 0 },
+        },
       }),
-    }));
+    });
 
     for (const width of [320, 390]) {
       await page.setViewportSize({ width, height: 844 });
@@ -667,19 +677,18 @@ test.describe('SJM command-centre responsive smoke', () => {
       expect(dimensions.consoleTag).toBe('DIV');
     }
   });
-
   test('retains the last successful register and KPIs after a refresh failure', async ({ page }) => {
     await seedAuth(page);
-    await stubSjmApi(page);
     let failNextRefresh = false;
-    await page.route(/\/api\/v1\/sjm\/journeys\?/, async route => {
-      if (!failNextRefresh) return route.fallback();
-      failNextRefresh = false;
-      return route.fulfill({
-        status: 500,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'internal_server_error', message: 'Internal server error' }),
-      });
+    await stubSjmApi(page, {
+      journeyListResponse: () => {
+        if (!failNextRefresh) return null;
+        failNextRefresh = false;
+        return {
+          status: 500,
+          body: { error: 'internal_server_error', message: 'Internal server error' },
+        };
+      },
     });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
@@ -701,7 +710,6 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByText('Register refreshed', { exact: true })).toBeVisible();
     await expect(register).toContainText('SJM-E2E-001');
   });
-
   test('travel dossier exposes traveller registration, private document handling, flight legs and daily execution', async ({ page }, testInfo: TestInfo) => {
     await seedAuth(page);
     await stubSjmApi(page);
