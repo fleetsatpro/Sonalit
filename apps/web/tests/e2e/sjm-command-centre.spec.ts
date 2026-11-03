@@ -697,7 +697,9 @@ test.describe('SJM command-centre responsive smoke', () => {
       const railBox = await overviewRail.boundingBox();
       expect(riskBox, `${viewport.label}: route review region should render`).not.toBeNull();
       expect(railBox, `${viewport.label}: overview rail should render`).not.toBeNull();
-      if (viewport.width >= 1440) {
+      // The inner overview switches to its two-column risk/summary layout at
+      // 1280px; the outer command rail has a separate 1440px breakpoint.
+      if (viewport.width >= 1280) {
         expect(Math.abs(riskBox!.y - railBox!.y), `${viewport.label}: route review and overview rail should align as one surface`).toBeLessThanOrEqual(1);
         expect(railBox!.x).toBeGreaterThan(riskBox!.x + riskBox!.width - 1);
       } else {
