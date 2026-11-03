@@ -415,6 +415,7 @@ test.describe('SJM command-centre responsive smoke', () => {
 
     const audit = async (surface: string) => {
       const results = await new AxeBuilder({ page })
+        .include('.d-main-col > header')
         .include('.sjm-console')
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
         .analyze();
