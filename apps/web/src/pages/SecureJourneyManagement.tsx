@@ -677,7 +677,7 @@ return (
       {label:'Schedule overdue',value:stats?.overdue,detail:'A planned departure or arrival has passed',icon:AlertTriangle,filter:'overdue',tone:'is-overdue'},
       {label:'Needs attention',value:stats?.review,detail:'Exception, hold or restrictive safety gate',icon:AlertTriangle,filter:'attention',tone:'is-attention'},
       {label:'Arrival verification',value:stats?.arrival_verification,detail:'Authorised confirmation required before closeout',icon:CheckCircle2,filter:'arrival_verification',tone:'is-arrival'}
-     ].map(card=><button type="button" key={card.label} aria-pressed={filter===card.filter} onClick={()=>{setFilter(card.filter);setRegisterPage(0);setSelectedId('')}} className={'sjm-kpi-card '+card.tone+(filter===card.filter?' is-filtered':'')}>
+     ].map(card=><button type="button" key={card.label} aria-pressed={filter===card.filter} onClick={()=>{setFilter(card.filter);setRegisterPage(0);selectedIdRef.current='';setSelectedId('')}} className={'sjm-kpi-card '+card.tone+(filter===card.filter?' is-filtered':'')}>
       <span className="sjm-kpi-card__label">{card.label}</span>
       <span className="sjm-kpi-card__value">{registerQ.isError&&!registerQ.data?'Unavailable':card.value==null?'—':String(card.value)}</span>
       <span className="sjm-kpi-card__detail">{card.detail}</span>
