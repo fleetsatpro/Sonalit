@@ -797,7 +797,7 @@ return (
              {value:'evidence',label:'Evidence',Icon:Layers3},
              {value:'airspace',label:'3D airspace',Icon:Plane},
              {value:'reports',label:'Reports',Icon:FileText}
-            ].map(({value,label,Icon})=><button type="button" role="tab" tabIndex={workspaceTab===value?0:-1} aria-selected={workspaceTab===value} key={value} onClick={()=>setWorkspaceTab(value as typeof workspaceTab)} className={'sjm-workspace-tab '+(workspaceTab===value?'is-active':'')}><Icon size={15}/>{label}</button>)}
+            ].map(({value,label,Icon})=><button type="button" role="tab" tabIndex={workspaceTab===value?0:-1} aria-selected={workspaceTab===value} key={value} onClick={()=>setWorkspaceTab(value as typeof workspaceTab)} onKeyDown={event=>{if(!['ArrowRight','ArrowLeft','Home','End'].includes(event.key))return;event.preventDefault();const tabs=Array.from(event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')||[]);const current=tabs.indexOf(event.currentTarget);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(current+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next]?.focus();tabs[next]?.click()}} className={'sjm-workspace-tab '+(workspaceTab===value?'is-active':'')}><Icon size={15}/>{label}</button>)}
            </div>
           </details>
          </div>
