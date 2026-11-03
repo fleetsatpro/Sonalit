@@ -1051,7 +1051,7 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   .sjm-console .sjm-kpi-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sjm-console .sjm-kpi-card { min-height: 116px; }
 }
-@media (min-width: 1024px) {
+@media (min-width: 1280px) {
   .sjm-console .sjm-command-grid--queue .sjm-register-column-head {
     display: grid;
     grid-template-columns: minmax(160px, 1.08fr) minmax(180px, 1.25fr) minmax(150px, .95fr) minmax(180px, 1.25fr) minmax(110px, .72fr) 16px;
@@ -1081,7 +1081,7 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   .sjm-console .sjm-command-grid--selected > .sjm-register-panel { display: none; }
   .sjm-console .sjm-back-to-register { display: inline-flex; }
 }
-@media (max-width: 1023px) {
+@media (max-width: 1279px) {
   .sjm-console .sjm-command-grid--queue .sjm-register-column-head { display: none; }
   .sjm-console .sjm-command-grid--queue .sjm-register-item { gap: 8px; }
   .sjm-console .sjm-command-grid--queue .sjm-register-row__main { display: flex; flex-direction: column; gap: 5px; }
@@ -1101,6 +1101,7 @@ html, body, #root { width: 100%; height: 100%; min-height: 100%; }
   .sjm-console .sjm-kpi-card__label { font-size: 11px; }
   .sjm-console .sjm-kpi-card__value { font-size: 26px; }
   .sjm-console .sjm-kpi-card__detail { font-size: 10.5px; }
+  .sjm-console .sjm-kpi-card:last-child { grid-column: 1 / -1; min-height: 90px; }
   .sjm-console .sjm-register-toolbar { align-items: flex-start; flex-direction: column; }
   .sjm-console .sjm-register-filters { width: 100%; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
   .sjm-console .sjm-filter-more select { width: 100%; }
