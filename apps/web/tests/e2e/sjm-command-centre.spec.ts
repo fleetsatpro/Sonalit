@@ -457,7 +457,7 @@ test.describe('SJM command-centre responsive smoke', () => {
       const base = getComputedStyle(root);
       const cardStyle = getComputedStyle(card);
       const actionStyle = getComputedStyle(primary);
-      const rgb = (value: string) => value.match(/[\\d.]+/g)?.map(Number) ?? [];
+      const rgb = (value: string) => value.match(/[\d.]+/g)?.map(Number) ?? [];
       const linear = (channel: number) => {
         const value = channel / 255;
         return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
@@ -470,7 +470,7 @@ test.describe('SJM command-centre responsive smoke', () => {
         const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
         return (values[0] + 0.05) / (values[1] + 0.05);
       };
-      const gradientStops = [...actionStyle.backgroundImage.matchAll(/rgb\\([^)]+\\)/g)].map(match => match[0]);
+      const gradientStops = [...actionStyle.backgroundImage.matchAll(/rgb\([^)]+\)/g)].map(match => match[0]);
       const minActionContrast = Math.min(...gradientStops.map(stop => contrast(actionStyle.color, stop)));
       return {
         fontFamily: base.fontFamily,
