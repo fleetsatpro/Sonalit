@@ -2756,6 +2756,22 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
   const { notes, lat, lng, seal_intact, observed_seal } = req.body || {};
+  if (seal_intact !== undefined && seal_intact !== null && typeof seal_intact !== 'boolean') {
+    return res.status(400).json({ error: 'invalid_seal_verdict' });
+  }
+  if (observed_seal != null && typeof observed_seal !== 'string') {
+    return res.status(400).json({ error: 'invalid_observed_seal' });
+  }
+  if (typeof observed_seal === 'string' && observed_seal.trim().length > 50) {
+    return res.status(400).json({ error: 'observed_seal_too_long' });
+  }
+  if (notes != null && (typeof notes !== 'string' || notes.length > 512)) {
+    return res.status(400).json({ error: 'unclamp_notes_too_long' });
+  }
+  if ((lat != null && (!Number.isFinite(Number(lat)) || Number(lat) < -90 || Number(lat) > 90))
+    || (lng != null && (!Number.isFinite(Number(lng)) || Number(lng) < -180 || Number(lng) > 180))) {
+    return res.status(400).json({ error: 'invalid_unclamp_coordinates' });
+  }
 
   const bc = await req.db(
     `SELECT bc.*, b.booking_number, b.delivery_location,
@@ -2927,12 +2943,19 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
   );
 
   await req.db(
-    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
-     VALUES ('unclamp','booking_container',$1,$2,$3,$4,$5)`,
-    [bcId, req.user.id, req.user.name || null,
-     JSON.stringify({ notes, lat, lng, unclamped_at: now.toISOString(),
-                     seal_expected: expectedSeal, seal_observed: observed, seal_intact: sealVerdict }),
-     orgId]
+    `INSERT INTO cds_audit_logs
+      (action, entity_type, entity_id, user_id, user_name, before_data, after_data, ip_address, user_agent, org_id)
+     VALUES ('unclamp','booking_container',$1,$2,$3,$4,$5,$6,$7,$8)`,
+    [
+      bcId, req.user.id, req.user.name || null,
+      JSON.stringify(bc.rows[0]),
+      JSON.stringify({
+        status: 'delivered', yard_status: 'complete', unclamped_at: now.toISOString(),
+        notes, lat, lng, seal_expected: expectedSeal, seal_observed: observed,
+        seal_intact: sealVerdict,
+      }),
+      req.ip || null, req.get ? req.get('user-agent') || null : null, orgId,
+    ]
   );
 
   // A seal mismatch is the one event on this router where latency is a safety
