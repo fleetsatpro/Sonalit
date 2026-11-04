@@ -2491,6 +2491,26 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     return res.status(409).json({ error: `Container already ${bc.rows[0].status}` });
   }
 
+  // A physical e-lock may secure only one active container. Resolve its
+  // organisation-owned record before creating any driver/vehicle/trip rows;
+  // assigned, installed, offline or maintenance locks are not reusable.
+  const existingLock = await req.db(
+    `SELECT id, status, container_id, vehicle_id
+       FROM cds_electronic_locks
+      WHERE org_id=$1 AND UPPER(BTRIM(serial))=UPPER($2) AND deleted_at IS NULL
+      LIMIT 1`,
+    [orgId, lockSerial]
+  );
+  if (existingLock.rows.length) {
+    const candidate = existingLock.rows[0];
+    if (candidate.status !== 'available' || candidate.container_id || candidate.vehicle_id) {
+      return res.status(409).json({
+        error: 'lock_not_available',
+        message: 'This e-lock is already assigned, installed or otherwise unavailable. Release and inspect it before re-use.',
+      });
+    }
+  }
+
   // Upsert transporter. contact_person/phone are NOT NULL on cds_transporters
   // but the clamp form only collects a company name — same fallback the
   // customer auto-create above uses (the name doubles as the placeholder
@@ -2548,21 +2568,30 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     )).rows[0].id;
   }
 
-  // Upsert e-lock and put it into 'locked' state on this container/vehicle
-  const lk = await req.db(
-    'SELECT id FROM cds_electronic_locks WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1',
-    [lockSerial]
+  // Claim the e-lock with a compare-and-set. Even if two operators pass
+  // the preflight simultaneously, only the first can move an available lock
+  // to installed; the second must stop rather than stealing a live device.
+  const lockId = existingLock.rows.length
+    ? existingLock.rows[0].id
+    : (await req.db(
+        `INSERT INTO cds_electronic_locks (serial, provider, status, org_id)
+         VALUES ($1,$2,'available',$3) RETURNING id`,
+        [lockSerial, 'SecuriSat', orgId]
+      )).rows[0].id;
+  const claimedLock = await req.db(
+    `UPDATE cds_electronic_locks
+        SET status='installed', container_id=$1, vehicle_id=$2, assigned_at=NOW(), updated_at=NOW()
+      WHERE id=$3 AND org_id=$4 AND deleted_at IS NULL
+        AND status='available' AND container_id IS NULL AND vehicle_id IS NULL
+      RETURNING id`,
+    [containerId, vehicleId, lockId, orgId]
   );
-  const lockId = lk.rows.length ? lk.rows[0].id : (await req.db(
-    `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [lockSerial, 'SecuriSat', 'assigned', orgId]
-  )).rows[0].id;
-  // 'installed', matching cds_electronic_locks_status_check and the desktop
-  // clamp handler above — 'locked' isn't a value the constraint allows.
-  await req.db(
-    `UPDATE cds_electronic_locks SET status='installed', container_id=$1, vehicle_id=$2, updated_at=NOW() WHERE id=$3`,
-    [containerId, vehicleId, lockId]
-  );
+  if (!claimedLock.rows.length) {
+    return res.status(409).json({
+      error: 'lock_not_available',
+      message: 'This e-lock was claimed by another operation or is no longer available. Refresh the register and select an available lock.',
+    });
+  }
 
   // Create the trip and link it back to the booking container
   const trailerNote = trailerRegistration ? `Trailer: ${trailerRegistration}${clampNotes ? ' | ' + clampNotes : ''}` : (clampNotes || null);
