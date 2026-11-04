@@ -408,6 +408,22 @@ export function useYardQueue(enabled = true) {
   });
 }
 
+export function useYardResources(enabled = true) {
+  return useQuery<{
+    data: {
+      drivers: Record<string, unknown>[];
+      vehicles: Record<string, unknown>[];
+      transporters: Record<string, unknown>[];
+      locks: Record<string, unknown>[];
+    };
+  }>({
+    queryKey: ['cds', 'field', 'yard-resources'],
+    queryFn: async () => (await cdsApi.get('/field/yard-resources')).data,
+    refetchInterval: 30_000,
+    enabled,
+  });
+}
+
 export function usePortQueue(enabled = true) {
   return useQuery<{ data: Record<string, unknown>[] }>({
     queryKey: ['cds', 'field', 'port-queue'],
