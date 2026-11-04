@@ -153,7 +153,42 @@ describe('CDS container register', () => {
     }, res, error => { if (error) throw error; });
 
     expect(res.result.status).toBe(400);
-    expect(res.result.body.error).toBe('No fields to update');
+    expect(res.result.body.error).toBe('container_status_transition_required');
     expect(dbCalls).toBe(0);
+  });
+
+  test('does not permit generic PATCH to rewrite container identity', async () => {
+    const res = response();
+    let dbCalls = 0;
+    await routeLayer('/containers/:id', 'patch')({
+      params: { id: 'container-1' },
+      body: { number: 'CSQU3054383' },
+      db: async () => { dbCalls += 1; return { rows: [] }; },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(400);
+    expect(res.result.body.error).toBe('container_identity_immutable');
+    expect(dbCalls).toBe(0);
+  });
+
+  test('moves a damaged condition update into maintenance server-side', async () => {
+    const res = response();
+    let sql = '';
+    let parameters = [];
+    await routeLayer('/containers/:id', 'patch')({
+      params: { id: 'container-1' },
+      body: { condition: 'damaged', status: 'available' },
+      db: async (query, values) => {
+        sql = query;
+        parameters = values;
+        return { rows: [{ id: 'container-1', condition: 'damaged', status: 'maintenance' }] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(200);
+    expect(sql).toContain('status=
+);
+    expect(parameters).toContain('maintenance');
+    expect(parameters).not.toContain('available');
   });
 });
