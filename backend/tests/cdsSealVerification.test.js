@@ -34,6 +34,15 @@ describe('CDS port seal verification', () => {
     expect(resolveSealVerdict(input)).toBeNull();
   });
 
+
+  test('treats a recorded mismatch as tamper even when the operator did not select a verdict', () => {
+    expect(resolveSealVerdict({
+      expectedSeal: 'SEAL-00427',
+      observedSeal: 'SEAL-00428',
+      sealIntact: undefined,
+    })).toBe(false);
+  });
+
   test('does not treat whitespace-only identifiers as seal evidence', () => {
     expect(resolveSealVerdict({
       expectedSeal: '   ',
