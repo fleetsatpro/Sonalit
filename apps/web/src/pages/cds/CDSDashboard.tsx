@@ -334,69 +334,115 @@ export default function CDSApp() {
 function DashboardView() {
   const { data: kpis, isLoading } = useDashboardKPIs();
   const { data: activity } = useActivity(20);
+  const { data: liveData, isLoading: liveLoading, isError: liveError } = useLiveTrips();
+  const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
+  const { setActiveView } = useCDSStore();
+  const trips = liveData?.data ?? [];
+  const selectedTrip = trips.find(trip => trip.id === selectedMapId) ?? null;
+  const { data: trackData } = useVehicleTrack(selectedTrip?.vehicle_id ?? null);
+  const track = ((trackData?.data ?? []) as Record<string, unknown>[])
+    .map(point => ({ lat: Number(point['lat']), lng: Number(point['lng']) }));
+  const locatedTrips = trips.filter(positioned);
+  const freshFixes = trips.filter(trip => trip.position_is_live).length;
+
   if (isLoading) return <LoadingState />;
 
-  const kv = (k: string) => String(kpis?.[k] ?? 0);
+  const kv = (key: string) => String(kpis?.[key] ?? 0);
   const avgHrs = Number(kpis?.['avg_transit_hours'] ?? 0);
   const avgH = Math.floor(avgHrs);
   const avgM = Math.round((avgHrs - avgH) * 60);
   const cards = [
-    { label: 'ACTIVE CONTAINERS', value: kv('active_containers'), delta: 'fleet total', trend: 'up' as const, accent: '#33d6a8' },
-    { label: 'IN TRANSIT', value: kv('in_transit'), delta: 'on road now', trend: 'up' as const, accent: '#37e6ff' },
-    { label: 'ACTIVE LOCKS', value: kv('active_locks'), delta: 'secured', trend: 'up' as const, accent: '#33d6a8' },
-    { label: 'LOCKS REMOVED', value: kv('locks_removed'), delta: 'unclamped', trend: 'up' as const, accent: '#a78bfa' },
-    { label: 'PENDING UNCLAMP', value: kv('pending_unclamp'), delta: 'port queue', trend: 'down' as const, accent: '#ffb020' },
-    { label: 'DELIVERED TODAY', value: kv('delivered_today'), delta: 'completed', trend: 'up' as const, accent: '#22c55e' },
-    { label: 'DELAYED', value: kv('delayed_trips'), delta: 'needs attention', trend: 'down' as const, accent: '#ff5c5c' },
-    { label: 'AVG TRANSIT TIME', value: avgHrs ? `${avgH}h ${avgM}m` : '—', delta: 'hours', trend: 'up' as const, accent: '#F0B429' },
+    { label: 'ACTIVE CONTAINERS', value: kv('active_containers'), delta: 'registered inventory', trend: 'up' as const },
+    { label: 'IN TRANSIT', value: kv('in_transit'), delta: 'operational trips', trend: 'up' as const },
+    { label: 'ACTIVE LOCKS', value: kv('active_locks'), delta: 'assigned or installed', trend: 'up' as const },
+    { label: 'LOCKS REMOVED', value: kv('locks_removed'), delta: 'unclamped', trend: 'up' as const },
+    { label: 'PENDING UNCLAMP', value: kv('pending_unclamp'), delta: 'port clearance queue', trend: 'down' as const },
+    { label: 'DELIVERED TODAY', value: kv('delivered_today'), delta: 'recorded deliveries', trend: 'up' as const },
+    { label: 'DELAYED', value: kv('delayed_trips'), delta: 'needs attention', trend: 'down' as const },
+    { label: 'AVG TRANSIT TIME', value: avgHrs ? `${avgH}h ${avgM}m` : '—', delta: 'completed trips', trend: 'up' as const },
   ];
 
-  const actIcons: Record<string, string> = {
-    clamp: '🔒', depart: '🚛', checkpoint: '📍', sync: '🔄',
-    arrival: '✅', unclamp: '🔓', ai: '🤖', alert: '⚠️',
+  const actIcons: Record<string, LucideIcon> = {
+    clamp: Lock, depart: Truck, checkpoint: MapPin, sync: RefreshCw,
+    arrival: CheckCircle2, unclamp: Unlock, ai: BrainCircuit, alert: AlertTriangle,
   };
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
-        {cards.map(k => <KPICard key={k.label} label={k.label} value={k.value} delta={k.delta} trend={k.trend} />)}
+        {cards.map(card => <KPICard key={card.label} label={card.label} value={card.value} delta={card.delta} trend={card.trend} />)}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
-          <div className="font-bold text-sm text-text-0 mb-3">Live Map</div>
-          <div className="h-[300px] rounded-xl bg-ink-3 relative overflow-hidden"
-            style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-2xl mb-2 opacity-40">🗺️</div>
-                <div className="text-text-2 text-[11px] font-mono">GPS positions load when vehicles are in transit</div>
-              </div>
+        <section className="lg:col-span-2 min-w-0 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <div className="font-bold text-sm text-text-0">Live movement</div>
+            <div className="text-[10px] font-mono text-text-2">
+              {liveLoading ? 'Checking position feed' : `${freshFixes} fresh · ${locatedTrips.length} with a recorded position · ${trips.length} open trips`}
             </div>
           </div>
-        </div>
-        <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
-          <div className="font-bold text-sm text-text-0 mb-3">Recent Activity</div>
-          <div className="space-y-0 max-h-[340px] overflow-y-auto">
-            {(activity ?? []).map((item, i) => (
-              <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2 border-b border-white/[.05]">
-                <span className="text-sm flex-none mt-0.5">{actIcons[String(item['icon'] ?? item['type'] ?? '')] ?? '📋'}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-text-0 truncate">{String(item['description'] ?? item['text'] ?? '—')}</div>
-                  <div className="text-[10px] text-text-2 font-mono mt-0.5 truncate">
-                    {[
-                      item['created_at'] ? new Date(String(item['created_at'])).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-                      item['meta'] ? String(item['meta']) : '',
-                    ].filter(Boolean).join(' · ')}
-                  </div>
+          <div className="h-[300px] overflow-hidden rounded-xl bg-ink-2 relative">
+            {liveError ? (
+              <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
+                <div>
+                  <div className="text-[12px] font-semibold text-text-0">Live movement feed unavailable</div>
+                  <div className="mt-1 text-[10px] text-text-2">No sample or inferred positions are shown.</div>
                 </div>
               </div>
-            ))}
+            ) : locatedTrips.length > 0 ? (
+              <LiveFleetMap trips={trips} selectedId={selectedMapId} onSelect={setSelectedMapId} track={track} />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center px-6"
+                style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
+                <div className="max-w-sm text-center">
+                  <MapPin size={20} strokeWidth={1.6} className="mx-auto mb-2 text-white/30" aria-hidden="true" />
+                  <div className="text-[11px] leading-relaxed text-text-2">
+                    {liveLoading
+                      ? 'Loading authorised position evidence…'
+                      : trips.length === 0
+                        ? 'No open trips. Vehicles appear when a trip has a recorded position.'
+                        : `${trips.length} open trips have no available position fix. Operational status is not GPS proof.`}
+                  </div>
+                  <button type="button" onClick={() => setActiveView('live')} className="mt-3 rounded-md border border-white/10 px-3 py-2 text-[10px] font-semibold text-text-1 hover:bg-white/[.05]">
+                    Open Live Movement
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[9px] text-white/35">
+            <span>Fresh fixes are distinguished from last-known positions.</span>
+            <button type="button" onClick={() => setActiveView('live')} className="font-semibold text-[#a8c9ee] hover:text-white">View trip register →</button>
+          </div>
+        </section>
+
+        <section className="min-w-0 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
+          <div className="font-bold text-sm text-text-0 mb-3">Recent activity</div>
+          <div className="space-y-0 max-h-[340px] overflow-y-auto">
+            {(activity ?? []).map((item, index) => {
+              const Icon = actIcons[String(item['icon'] ?? item['type'] ?? '')] ?? FileText;
+              return (
+                <div key={String(item['id'] ?? index)} className="flex items-start gap-2.5 py-2 border-b border-white/[.05] last:border-0">
+                  <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-md border border-white/[.07] bg-white/[.025] text-text-2">
+                    <Icon size={14} strokeWidth={1.8} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs text-text-0 truncate">{String(item['description'] ?? item['text'] ?? '—')}</div>
+                    <div className="text-[10px] text-text-2 font-mono mt-0.5 truncate">
+                      {[
+                        item['created_at'] ? new Date(String(item['created_at'])).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                        item['meta'] ? String(item['meta']) : '',
+                      ].filter(Boolean).join(' · ')}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
             {(activity ?? []).length === 0 && (
               <div className="text-xs text-text-2 text-center py-8 font-mono">No recent activity</div>
             )}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
