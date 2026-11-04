@@ -229,6 +229,7 @@ describe('tenant scope and clamp-time attribution', () => {
     expect(custodyQuery.sql).toContain("clamp_audit.after_data->>'driver_name'");
     expect(custodyQuery.sql).toContain("clamp_audit.after_data->>'truck_reg'");
     expect(custodyQuery.sql).toContain("clamp_audit.after_data->>'transporter_name'");
+    expect(custodyQuery.sql).toContain("NULLIF(BTRIM(clamp_audit.after_data->>'driver_name'), '') IS NOT NULL");
     expect(custodyQuery.sql).toContain('a.org_id=ce.org_id');
     expect(custodyQuery.sql).not.toContain('COALESCE(bc.driver_name, d.name)');
   });
