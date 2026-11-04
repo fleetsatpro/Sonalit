@@ -1046,7 +1046,9 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 router.get('/containers', asyncHandler(async (req, res) => {
-  await listRows(req, res, 'cds_containers', { searchCols: ['t.number', 't.container_type'] });
+  await listRows(req, res, 'cds_containers', {
+    searchCols: ['t.number', 't.container_type', 't.iso_type', 't.ownership', 't.condition', 't.status', 't.current_location', 't.manufacturer'],
+  });
 }));
 router.get('/containers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_containers'); }));
 router.post('/containers', asyncHandler(async (req, res) => {
