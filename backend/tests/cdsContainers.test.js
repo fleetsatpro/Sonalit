@@ -202,6 +202,8 @@ describe('GET /containers', () => {
     expect(req.statements[0].sql).toContain('ORDER BY t.created_at DESC, t.id DESC LIMIT $3 OFFSET $4');
     expect(req.statements[0].sql).toContain('FROM cds_booking_containers bc');
     expect(req.statements[0].sql).toContain('FROM cds_custody_events ce');
+    expect(req.statements[0].sql).toContain('= ANY($1::text[])');
+    expect(req.statements[0].params).toContain('available');
     expect(req.statements[0].sql).toContain('ce.org_id = t.org_id');
     expect(req.statements[0].sql).toContain('latest_booking_container.id IS NOT NULL AND tr.id = latest_booking_container.trip_id');
     expect(req.statements[0].sql).toContain('AS operational_status');
