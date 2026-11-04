@@ -2385,7 +2385,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   const cleanTruckReg = String(truck_reg).trim().toUpperCase();
   const cleanDriverName = String(driver_name).trim();
   const cleanTrailerReg = trailer_reg ? String(trailer_reg).trim().toUpperCase() : null;
-  const cleanTransporter = cleanTransporter;
+  const cleanTransporter = transporter_name ? String(transporter_name).trim() : null;
   const cleanDriverPhone = cleanDriverPhone;
   if (cleanLockSerial.length > 30 || cleanTruckReg.length > 20 || cleanDriverName.length > 255
     || (cleanTrailerReg && cleanTrailerReg.length > 20)
@@ -2604,7 +2604,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
       cleanTruckReg,
       cleanTrailerReg,
       cleanDriverName,
-      driver_phone ? String(driver_phone).trim() : null,
+      cleanDriverPhone,
       yardStatus,
       orgId,
     ]
@@ -2649,7 +2649,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     kind: 'clamped',
     sealNumber: bc.rows[0].seal_number,
     sealIntact: true,
-    lockSerial: lock_serial.trim(),
+    lockSerial: cleanLockSerial,
     lat, lng,
     notes: `Clamped by ${req.user.name || 'yard team'} · ${truck_reg} / ${driver_name}`,
   });
@@ -2689,7 +2689,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     container_number: bc.rows[0].container_number,
     trip_id: trip.rows[0].id,
     trip_number: trip.rows[0].trip_number,
-    lock_serial: lock_serial.trim(),
+    lock_serial: cleanLockSerial,
     truck_reg,
     driver_name,
     tracking_qr_issued: false,
@@ -2711,8 +2711,8 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
         driverId,
         issuedBy: req.user.id,
         display: {
-          vehicle: truck_reg ? String(truck_reg).trim() : null,
-          driver: driver_name ? String(driver_name).trim() : null,
+          vehicle: cleanTruckReg,
+          driver: cleanDriverName,
           container: bc.rows[0].container_number || null,
           destination: bc.rows[0].delivery_location || null,
           booking: bc.rows[0].booking_number || null,
