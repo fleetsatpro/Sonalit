@@ -767,7 +767,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
        ORDER BY ta.containers_handled DESC, ta.trips_started DESC, ta.company_name ASC
        LIMIT 10
     ),
-
+    overdue_clamps AS (
       SELECT b.booking_number,
              COALESCE(NULLIF(BTRIM(bc.container_number), ''), 'Container not labelled') AS container_number,
              COALESCE(NULLIF(BTRIM(bc.lock_number), ''), 'Lock not recorded') AS lock_number,
@@ -1241,22 +1241,6 @@ router.get('/containers', asyncHandler(async (req, res) => {
   );
   res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
 }));
-
-  const allowedConditions = new Set(['new', 'good', 'fair', 'damaged', 'retired']);
-  const allowedOwnerships = new Set(['owned', 'leased', 'customer']);
-  if (req.query.condition !== undefined &&
-      (typeof req.query.condition !== 'string' || !allowedConditions.has(req.query.condition))) {
-    return res.status(400).json({ error: 'invalid_condition_filter' });
-  }
-  if (req.query.ownership !== undefined &&
-      (typeof req.query.ownership !== 'string' || !allowedOwnerships.has(req.query.ownership))) {
-    return res.status(400).json({ error: 'invalid_ownership_filter' });
-  }
-  await listRows(req, res, 'cds_containers', {
-    searchCols: ['t.number', 't.iso_type', 't.container_type', 't.ownership', 't.condition', 't.current_location', 't.manufacturer'],
-    fieldFilters: { condition: 't.condition', ownership: 't.ownership' },
-  });
-}));
 router.get('/containers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_containers'); }));
 router.get('/containers/:id/history', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
@@ -1671,7 +1655,6 @@ router.get('/transporters', asyncHandler(async (req, res) => {
     const searchParam = '$' + params.length;
     filters.push('(tr.company_name ILIKE ' + searchParam + ' OR tr.email ILIKE ' + searchParam + ' OR tr.phone ILIKE ' + searchParam + ')');
   }
-
   const from = `
     FROM cds_transporters tr
     LEFT JOIN cds_vehicles v ON v.transporter_id=tr.id AND v.org_id=tr.org_id AND v.deleted_at IS NULL
