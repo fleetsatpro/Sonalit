@@ -371,3 +371,52 @@ describe('CDS container register assignment snapshot query', () => {
     expect(calls[0].sql).toContain("COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg) AS vehicle_registration");
   });
 });
+
+describe('CDS unclamp lock identity', () => {
+  test('releases and records the lock from the clamp audit, not the mutable trip assignment', async () => {
+    const calls = [];
+    const res = response();
+    await routeLayer('/bookings/:id/containers/:cid/unclamp', 'post')({
+      params: { id: 'booking-1', cid: 'booking-container-1' },
+      body: { seal_intact: false, observed_seal: 'BROKEN', notes: 'Seal discrepancy' },
+      user: { id: 'port-user', org_id: 'org-1', name: 'Port lead', email: 'port@example.test' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        if (sql.includes('SELECT bc.*, b.booking_number, t.id AS trip_id')) {
+          return { rows: [{
+            id: 'booking-container-1',
+            booking_id: 'booking-1',
+            booking_number: 'BK-1001',
+            container_number: 'MSCU6639870',
+            status: 'in_transit',
+            lock_number: 'MUTABLE-MANIFEST-LOCK',
+            lock_id: 'MUTABLE-TRIP-LOCK',
+            clamp_lock_serial: 'LOCK-AT-CLAMP',
+            clamp_lock_id: 'lock-original',
+            trip_id: null,
+            seal_number: 'SEAL-01',
+          }] };
+        }
+        if (sql.includes('SELECT COUNT(*)::int AS c FROM cds_booking_containers')) {
+          return { rows: [{ c: 1 }] };
+        }
+        if (sql.includes('SELECT hash, seq FROM cds_custody_events')) {
+          return { rows: [] };
+        }
+        return { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(200);
+    const lookup = calls[0];
+    expect(lookup.sql).toContain("COALESCE(clamp_audit.after_data->>'lock_serial', bc.lock_number) AS clamp_lock_serial");
+    expect(lookup.sql).toContain('bc.org_id=$3 AND b.org_id=$3');
+    const lockRelease = calls.find(call => call.sql.includes('UPDATE cds_electronic_locks'));
+    expect(lockRelease.values).toEqual(['lock-original', 'org-1']);
+    const custodyInsert = calls.find(call => call.sql.includes('INSERT INTO cds_custody_events'));
+    expect(custodyInsert.values[11]).toBe('LOCK-AT-CLAMP');
+    const tamperLockEvent = calls.find(call => call.sql.includes('INSERT INTO cds_lock_events'));
+    expect(tamperLockEvent.values[1]).toBe('lock-original');
+  });
+});
+
