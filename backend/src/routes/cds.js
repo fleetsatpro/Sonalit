@@ -1507,131 +1507,54 @@ router.patch('/transporters/:id', asyncHandler(async (req, res) => {
 // Clamp / Unclamp — ground & port team workflows
 // ══════════════════════════════════════════════════════════════
 
-router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
-  const trip = await req.db('SELECT * FROM cds_trips WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
-  if (!trip.rows.length) return res.status(404).json({ error: 'Trip not found' });
-
-  const { container_number, lock_serial, host_vehicle, trailer_number,
-          driver_name, driver_phone, transporter_name, commodity, seal_number } = req.body;
-
+// Legacy trip-level clamp/unclamp routes are read-only migration guards.
+// Physical container handling must use the booking-container manifest route so
+// asset state, lock state, seal verdict, custody chain and audit commit together.
+async function requireManifestWorkflow(req, res, action) {
   const orgId = req.user.org_id;
-  let driverId = null, vehicleId = null, containerId = null, lockId = null, transporterId = null;
-
-  if (transporter_name) {
-    let tr = await req.db('SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1', [transporter_name.trim()]);
-    if (!tr.rows.length) {
-      tr = await req.db('INSERT INTO cds_transporters (company_name, code, org_id) VALUES ($1,$2,$3) RETURNING id',
-        [transporter_name.trim(), genCode('TR'), orgId]);
-    }
-    transporterId = tr.rows[0].id;
-  }
-
-  if (driver_name) {
-    let dr = await req.db('SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1', [cleanDriverName]);
-    if (!dr.rows.length) {
-      dr = await req.db('INSERT INTO cds_drivers (name, phone, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id',
-        [driver_name.trim(), driver_phone || null, transporterId, orgId]);
-    }
-    driverId = dr.rows[0].id;
-  }
-
-  if (host_vehicle) {
-    let ve = await req.db('SELECT id FROM cds_vehicles WHERE registration ILIKE $1 AND deleted_at IS NULL LIMIT 1', [host_vehicle.trim()]);
-    if (!ve.rows.length) {
-      ve = await req.db('INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id',
-        [host_vehicle.trim(), genCode('FL'), transporterId, orgId]);
-    }
-    vehicleId = ve.rows[0].id;
-  }
-
-  if (container_number) {
-    let co = await req.db('SELECT id FROM cds_containers WHERE number ILIKE $1 AND deleted_at IS NULL LIMIT 1', [container_number.trim()]);
-    if (!co.rows.length) {
-      co = await req.db('INSERT INTO cds_containers (number, org_id) VALUES ($1,$2) RETURNING id',
-        [container_number.trim(), orgId]);
-    }
-    containerId = co.rows[0].id;
-  }
-
-  if (lock_serial) {
-    let lk = await req.db('SELECT id FROM cds_electronic_locks WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1', [cleanLockSerial]);
-    if (!lk.rows.length) {
-      lk = await req.db('INSERT INTO cds_electronic_locks (serial, provider, org_id) VALUES ($1,$2,$3) RETURNING id',
-        [lock_serial.trim(), 'SecuriSat', orgId]);
-    }
-    lockId = lk.rows[0].id;
-    // 'installed' — not 'locked', which isn't a value cds_electronic_locks_status_check
-    // allows. Matches the dashboard's active_locks KPI just below (status IN
-    // ('assigned','installed')), which already assumed this was the value in use.
-    await req.db('UPDATE cds_electronic_locks SET status=$1, container_id=$2, vehicle_id=$3, updated_at=NOW() WHERE id=$4',
-      ['installed', containerId, vehicleId, lockId]);
-  }
-
-  const trailerNote = trailer_number ? `Trailer: ${trailer_number.trim()}` : null;
-  const result = await req.db(
-    `UPDATE cds_trips SET status='locked', driver_id=$1, vehicle_id=$2, container_id=$3, lock_id=$4, transporter_id=$5,
-     commodity=COALESCE($6, commodity), seal_number=COALESCE($7, seal_number),
-     notes=COALESCE($8, notes), updated_at=NOW()
-     WHERE id=$9 RETURNING *`,
-    [driverId, vehicleId, containerId, lockId, transporterId,
-     commodity || null, seal_number || null, trailerNote, req.params.id]
+  const tripResult = await req.db(
+    'SELECT id, booking_id FROM cds_trips WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',
+    [req.params.id, orgId]
   );
+  if (!tripResult.rows.length) return res.status(404).json({ error: 'trip_not_found' });
 
-  await req.db(
-    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
-     VALUES ('clamp','trip',$1,$2,$3,$4,$5,$6)`,
-    [req.params.id, req.user.id, req.user.name || null,
-     JSON.stringify({ status: trip.rows[0].status }),
-     JSON.stringify({ status: 'locked', container_number, lock_serial, host_vehicle, driver_name }),
-     orgId]
+  const trip = tripResult.rows[0];
+  const requestedNumber = action === 'clamp' && req.body?.container_number
+    ? normaliseContainerNumber(req.body.container_number)
+    : null;
+  const manifest = await req.db(
+    `SELECT id FROM cds_booking_containers
+      WHERE org_id=$1 AND booking_id=$2 AND deleted_at IS NULL
+        AND (trip_id=$3 OR ($4::text IS NOT NULL AND container_number=$4))
+      ORDER BY CASE WHEN trip_id=$3 THEN 0 ELSE 1 END, created_at DESC, id DESC
+      LIMIT 1`,
+    [orgId, trip.booking_id, trip.id, requestedNumber]
   );
+  if (!manifest.rows.length) {
+    return res.status(409).json({
+      error: 'booking_container_manifest_required',
+      message: 'Create or select the container on the booking manifest before changing clamp or release state.',
+      booking_id: trip.booking_id,
+    });
+  }
 
-  publishCds(req, 'cds.trip.updated', {
-    trip_id: result.rows[0].id,
-    trip_number: result.rows[0].trip_number,
-    booking_id: result.rows[0].booking_id,
-    from_status: trip.rows[0].status,
-    status: 'locked',
+  const bookingContainerId = manifest.rows[0].id;
+  const endpoint = `/api/v1/cds/bookings/${trip.booking_id}/containers/${bookingContainerId}/${action}`;
+  return res.status(409).json({
+    error: 'manifest_workflow_required',
+    message: 'This trip-level mutation is retired. Use the booking-container manifest workflow to preserve custody and audit evidence.',
+    booking_id: trip.booking_id,
+    booking_container_id: bookingContainerId,
+    required_endpoint: endpoint,
   });
+}
 
-  res.json({ data: result.rows[0] });
+router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
+  return requireManifestWorkflow(req, res, 'clamp');
 }));
 
 router.post('/trips/:id/unclamp', asyncHandler(async (req, res) => {
-  const trip = await req.db('SELECT * FROM cds_trips WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
-  if (!trip.rows.length) return res.status(404).json({ error: 'Trip not found' });
-
-  if (trip.rows[0].lock_id) {
-    await req.db(
-      `UPDATE cds_electronic_locks SET status='available', container_id=NULL, vehicle_id=NULL, updated_at=NOW() WHERE id=$1`,
-      [trip.rows[0].lock_id]
-    );
-  }
-
-  const result = await req.db(
-    `UPDATE cds_trips SET status='lock_removed', delivered_at=COALESCE(delivered_at, NOW()), updated_at=NOW()
-     WHERE id=$1 RETURNING *`,
-    [req.params.id]
-  );
-
-  await req.db(
-    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
-     VALUES ('unclamp','trip',$1,$2,$3,$4,$5,$6)`,
-    [req.params.id, req.user.id, req.user.name || null,
-     JSON.stringify({ status: trip.rows[0].status }),
-     JSON.stringify({ status: 'lock_removed', notes: req.body.notes }),
-     req.user.org_id]
-  );
-
-  publishCds(req, 'cds.trip.updated', {
-    trip_id: result.rows[0].id,
-    trip_number: result.rows[0].trip_number,
-    booking_id: result.rows[0].booking_id,
-    from_status: trip.rows[0].status,
-    status: 'lock_removed',
-  });
-
-  res.json({ data: result.rows[0] });
+  return requireManifestWorkflow(req, res, 'unclamp');
 }));
 
 // ══════════════════════════════════════════════════════════════
