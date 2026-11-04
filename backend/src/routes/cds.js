@@ -2783,10 +2783,14 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   const expectedSealNormalized = typeof expectedSeal === 'string' ? expectedSeal.trim().toUpperCase() : '';
   const observedSealNormalized = typeof observed === 'string' ? observed.toUpperCase() : '';
   let sealVerdict = null;                      // null = not verified
-  if (seal_intact === false) {
+  const hasSealComparison = Boolean(expectedSealNormalized && observedSealNormalized);
+  const sealMismatch = hasSealComparison && observedSealNormalized !== expectedSealNormalized;
+  if (seal_intact === false || sealMismatch) {
+    // A discrepancy is material even when an older client omits the separate
+    // intact checkbox; the observed identifier itself contradicts the clamp.
     sealVerdict = false;
-  } else if (seal_intact === true && expectedSealNormalized && observedSealNormalized) {
-    sealVerdict = observedSealNormalized === expectedSealNormalized;
+  } else if (seal_intact === true && hasSealComparison) {
+    sealVerdict = true;
   }
   const sealTampered = sealVerdict === false;
 
