@@ -204,17 +204,26 @@ export function useUnclampTrip() {
   });
 }
 
-export function useContainers(filters?: SearchFilters) {
-  return useQuery<ApiList>({
+export function useContainers(filters?: SearchFilters & { limit?: number; offset?: number }) {
+  return useQuery<ApiList & { summary?: {
+    registered: number;
+    available: number;
+    in_operational_flow: number;
+    review_required: number;
+  } }>({
     queryKey: ['cds', 'containers', filters],
     queryFn: async () => {
-      const params: Record<string, unknown> = { limit: 200, offset: 0 };
+      const params: Record<string, unknown> = {
+        limit: filters?.limit ?? 50,
+        offset: filters?.offset ?? 0,
+      };
       if (filters?.status) params['status'] = filters.status;
       if (filters?.query?.trim()) params['search'] = filters.query.trim();
       const { data } = await cdsApi.get('/containers', { params });
       return data;
     },
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
+    placeholderData: previous => previous,
   });
 }
 
