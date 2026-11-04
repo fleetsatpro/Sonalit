@@ -193,3 +193,175 @@ describe('CDS container register', () => {
     expect(parameters).not.toContain('available');
   });
 });
+
+
+describe('CDS container custody history', () => {
+  const orgId = 'org-1';
+  const containerId = 'container-1';
+  const bookingContainerId = 'booking-container-1';
+
+  function validClampEvent(overrides = {}) {
+    const values = {
+      seq: 0,
+      kind: 'clamped',
+      booking_container_id: bookingContainerId,
+      org_id: orgId,
+      actor_user_id: 'user-1',
+      actor_name: 'Yard lead',
+      seal_number: 'SEAL-01',
+      seal_intact: true,
+      lock_serial: 'LOCK-01',
+      lat: null,
+      lng: null,
+      notes: 'Clamped at yard',
+      prev_hash: null,
+      ...overrides,
+    };
+    const hash = crypto.createHash('sha256').update(JSON.stringify(values)).digest('hex');
+    return {
+      event_id: 'custody-event-1',
+      booking_container_id: bookingContainerId,
+      trip_id: 'trip-1',
+      ...values,
+      hash,
+      created_at: '2026-11-04T08:30:00.000Z',
+      booking_number: 'BK-1001',
+      trip_number: 'CDS-1001',
+      transporter_name: 'Recorded Transport Ltd',
+      vehicle_registration: 'KDA 123A',
+      driver_name: 'Recorded Driver',
+      driver_contact: '+254700000000',
+      assigned_lock: 'LOCK-01',
+      has_clamp_audit_snapshot: true,
+    };
+  }
+
+  async function callHistory(rowsByCall) {
+    const calls = [];
+    const res = response();
+    let index = 0;
+    await routeLayer('/containers/:id/history', 'get')({
+      params: { id: containerId },
+      user: { org_id: orgId },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        return rowsByCall[index++] || { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+    return { calls, result: res.result };
+  }
+
+  test('uses the clamp-time audit snapshot for each custody event assignment', async () => {
+    const event = validClampEvent();
+    const { calls, result } = await callHistory([
+      { rows: [{ id: containerId, number: 'MSCU6639870' }] },
+      { rows: [event] },
+      { rows: [] },
+    ]);
+
+    expect(result.status).toBe(200);
+    expect(result.body.chain_status).toBe('VERIFIED');
+    expect(result.body.data[0]).toMatchObject({
+      kind: 'clamped',
+      lock_serial: 'LOCK-01',
+      driver_name: 'Recorded Driver',
+      vehicle_registration: 'KDA 123A',
+      transporter_name: 'Recorded Transport Ltd',
+      assignment_source: 'clamp_audit_snapshot',
+    });
+    expect(calls[1].sql).toContain("clamp_audit.after_data->>'driver_name'");
+    expect(calls[1].sql).toContain("clamp_audit.after_data->>'truck_reg'");
+    expect(calls[1].sql).toContain("COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial'");
+    expect(calls[1].sql).toContain("a.action='clamp'");
+    expect(calls[1].sql).toContain('a.org_id=bc.org_id');
+  });
+
+  test('keeps tenant scope on the container identity, custody chain and audit snapshot', async () => {
+    const { calls, result } = await callHistory([
+      { rows: [{ id: containerId, number: 'MSCU6639870' }] },
+      { rows: [] },
+      { rows: [] },
+    ]);
+
+    expect(result.status).toBe(200);
+    expect(calls[0].sql).toContain('org_id=$2');
+    expect(calls[1].sql).toContain('ce.org_id=$1');
+    expect(calls[1].sql).toContain('bc.org_id=$1');
+    expect(calls[1].sql).toContain('a.org_id=bc.org_id');
+  });
+
+  test('preserves clamp-time assignment context for legacy manifest-only events', async () => {
+    const { calls, result } = await callHistory([
+      { rows: [{ id: containerId, number: 'MSCU6639870' }] },
+      { rows: [] },
+      { rows: [{
+        booking_container_id: bookingContainerId,
+        booking_id: 'booking-1',
+        clamped_at: '2026-11-04T08:30:00.000Z',
+        unclamped_at: '2026-11-04T12:30:00.000Z',
+        lock_number: 'LEGACY-LOCK',
+        driver_name: 'Mutable manifest driver',
+        driver_contact: '+254711111111',
+        horse_reg: 'KDA 111A',
+        transporter_name: 'Mutable manifest transporter',
+        booking_number: 'BK-1001',
+        trip_id: 'trip-1',
+        trip_number: 'CDS-1001',
+        clamp_actor: 'Yard lead',
+        unclamp_actor: 'Port lead',
+        audit_lock_serial: 'LOCK-AT-CLAMP',
+        audit_driver_name: 'Original driver',
+        audit_vehicle_registration: 'KDA 222B',
+        audit_transporter_name: 'Original transporter',
+        has_clamp_audit_snapshot: true,
+      }] },
+    ]);
+
+    expect(result.body.chain_status).toBe('NO_LEDGER');
+    expect(result.body.data).toHaveLength(2);
+    expect(result.body.data[0]).toMatchObject({
+      kind: 'clamped',
+      lock_serial: 'LOCK-AT-CLAMP',
+      driver_name: 'Original driver',
+      vehicle_registration: 'KDA 222B',
+      transporter_name: 'Original transporter',
+      assignment_source: 'clamp_audit_snapshot',
+      evidence_source: 'manifest_timestamp',
+      integrity_verified: null,
+    });
+    expect(result.body.data[1]).toMatchObject({
+      kind: 'unclamped',
+      lock_serial: 'LOCK-AT-CLAMP',
+      driver_name: 'Original driver',
+      vehicle_registration: 'KDA 222B',
+      transporter_name: 'Original transporter',
+      assignment_source: 'clamp_audit_snapshot',
+      evidence_source: 'manifest_timestamp',
+      integrity_verified: null,
+    });
+    expect(calls[2].sql).toContain("ca.after_data->>'driver_name'");
+    expect(calls[2].sql).toContain("ca.after_data->>'truck_reg'");
+  });
+});
+
+describe('CDS container register assignment snapshot query', () => {
+  test('uses clamp-time audit data ahead of mutable trip and manifest fields', async () => {
+    const calls = [];
+    const res = response();
+    await routeLayer('/containers', 'get')({
+      query: { limit: '25', offset: '0' },
+      user: { org_id: 'org-1' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        return /COUNT\(\*\)/.test(sql) ? { rows: [{ count: '0' }] } : { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(200);
+    expect(calls[0].sql).toContain("clamp_audit.after_data->>'driver_name'");
+    expect(calls[0].sql).toContain("clamp_audit.after_data->>'truck_reg'");
+    expect(calls[0].sql).toContain("COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial'");
+    expect(calls[0].sql).toContain('bc.org_id=c.org_id');
+    expect(calls[0].sql).toContain('a.org_id=bc.org_id');
+  });
+});
