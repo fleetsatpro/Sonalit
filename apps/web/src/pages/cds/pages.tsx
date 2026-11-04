@@ -16,119 +16,166 @@ const s = (v: unknown) => String(v ?? '—');
 export function LocksView() {
   const [filter, setFilter] = useState('all');
   const [view, setView] = useState<'table' | 'grid'>('table');
-  const { data, isLoading } = useLocks();
+  const { data, isLoading, isError, refetch } = useLocks();
   const { openDrawer } = useCDSStore();
   if (isLoading) return <LoadingState />;
 
   const all = (data?.data ?? []) as Row[];
-  const healthState = (l: Row) => l['tamper'] ? 'tamper' : s(l['signal']) === 'offline' ? 'offline' : Number(l['battery'] ?? 100) < 25 ? 'low' : 'online';
-  const online = all.filter(l => healthState(l) === 'online').length;
-  const low = all.filter(l => healthState(l) === 'low').length;
-  const tamper = all.filter(l => healthState(l) === 'tamper').length;
-  const offline = all.filter(l => healthState(l) === 'offline').length;
-  const rows = filter === 'all' ? all : all.filter(l => healthState(l) === filter);
-  const battColor = (b: number) => b >= 60 ? '#33d6a8' : b >= 25 ? '#ffb020' : '#ff5c5c';
+  const batteryValue = (lock: Row): number | null => {
+    if (lock['battery_level'] == null || lock['battery_level'] === '') return null;
+    const value = Number(lock['battery_level']);
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
+  };
+  const healthState = (lock: Row) => {
+    const state = s(lock['status']).toLowerCase();
+    const signal = s(lock['signal_strength']).toLowerCase();
+    const tamperState = s(lock['tamper_status']).toLowerCase();
+    if (lock['tamper_detected'] === true || lock['tamper_detected'] === 'true'
+      || (tamperState !== '—' && tamperState !== 'normal')) return 'tamper';
+    if (state === 'offline' || signal === 'offline') return 'offline';
+    const battery = batteryValue(lock);
+    if (battery !== null && battery < 25) return 'low';
+    if (['strong', 'medium', 'weak'].includes(signal) && lock['last_heartbeat']) return 'reported';
+    return 'unverified';
+  };
+  const reported = all.filter(lock => healthState(lock) === 'reported').length;
+  const low = all.filter(lock => healthState(lock) === 'low').length;
+  const tamper = all.filter(lock => healthState(lock) === 'tamper').length;
+  const offline = all.filter(lock => healthState(lock) === 'offline').length;
+  const unverified = all.filter(lock => healthState(lock) === 'unverified').length;
+  const rows = filter === 'all' ? all : all.filter(lock => healthState(lock) === filter);
+  const battColor = (value: number) => value >= 60 ? '#33d6a8' : value >= 25 ? '#ffb020' : '#ff5c5c';
+  const heartbeatLabel = (value: unknown) => {
+    if (!value) return 'No heartbeat received';
+    const date = new Date(String(value));
+    return Number.isNaN(date.getTime()) ? 'Invalid heartbeat timestamp' : date.toLocaleString();
+  };
+  const stateLabel: Record<string, string> = {
+    reported: 'Reporting',
+    low: 'Low battery',
+    tamper: 'Tamper',
+    offline: 'Offline',
+    unverified: 'Unverified',
+  };
 
   const kpis = [
-    { label: 'TOTAL LOCKS', value: String(all.length), delta: 'onboarded', trend: 'up' as const },
-    { label: 'ONLINE', value: String(online), delta: 'reporting', trend: 'up' as const },
-    { label: 'LOW BATTERY', value: String(low), delta: 'below 25%', trend: 'down' as const },
-    { label: 'TAMPER ALERTS', value: String(tamper), delta: 'active', trend: 'down' as const },
-    { label: 'OFFLINE', value: String(offline), delta: 'no signal', trend: 'down' as const },
+    { label: 'REGISTERED LOCKS', value: String(all.length), delta: 'inventory records', trend: 'up' as const },
+    { label: 'REPORTING', value: String(reported), delta: 'signal and heartbeat recorded', trend: 'up' as const },
+    { label: 'LOW BATTERY', value: String(low), delta: 'recorded below 25%', trend: 'down' as const },
+    { label: 'TAMPER ALERTS', value: String(tamper), delta: 'tamper evidence recorded', trend: 'down' as const },
+    { label: 'UNVERIFIED', value: String(unverified), delta: 'no verified heartbeat', trend: 'down' as const },
   ];
 
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+    <div className="p-4 sm:p-5 max-w-[1600px] mx-auto space-y-4">
+      <div className="cds-lock-telemetry-note" role="note">
+        Hardware state is based on recorded device telemetry. An assigned or installed lock without a heartbeat is unverified, not live.
+      </div>
+
+      {isError && (
+        <div role="alert" className="cds-data-error rounded-xl border px-4 py-4">
+          <div className="text-[14px] font-semibold text-white">E-lock inventory unavailable</div>
+          <p className="text-[13px] text-slate-300 mt-1">No device state is being inferred from a failed request.</p>
+          <button type="button" onClick={() => { void refetch(); }} className="cds-secondary-action mt-3">Retry lock inventory</button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         {kpis.map(k => <KPICard key={k.label} {...k} />)}
       </div>
+
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         {[
-          { id: 'all', label: `All (${all.length})` },
-          { id: 'online', label: `Online (${online})` },
-          { id: 'low', label: `Low battery (${low})` },
-          { id: 'tamper', label: `Tamper (${tamper})` },
-          { id: 'offline', label: `Offline (${offline})` },
-        ].map(f => <FilterChip key={f.id} label={f.label} active={filter === f.id} onClick={() => setFilter(f.id)} />)}
+          { id: 'all', label: 'All (' + all.length + ')' },
+          { id: 'reported', label: 'Reporting (' + reported + ')' },
+          { id: 'low', label: 'Low battery (' + low + ')' },
+          { id: 'tamper', label: 'Tamper (' + tamper + ')' },
+          { id: 'offline', label: 'Offline (' + offline + ')' },
+          { id: 'unverified', label: 'Unverified (' + unverified + ')' },
+        ].map(item => <FilterChip key={item.id} label={item.label} active={filter === item.id} onClick={() => setFilter(item.id)} />)}
         <div className="ml-auto flex gap-0 border border-[rgba(255,255,255,.1)] rounded-lg overflow-hidden">
-          <button className={`px-3 py-1.5 text-[11px] font-mono border-none cursor-pointer ${view === 'table' ? 'bg-ink-3 text-text-0' : 'bg-transparent text-text-2'}`} onClick={() => setView('table')}>Table</button>
-          <button className={`px-3 py-1.5 text-[11px] font-mono border-none cursor-pointer ${view === 'grid' ? 'bg-ink-3 text-text-0' : 'bg-transparent text-text-2'}`} onClick={() => setView('grid')}>Cards</button>
+          <button type="button" className={'px-3 py-2 text-[12px] font-semibold border-none cursor-pointer ' + (view === 'table' ? 'bg-ink-3 text-text-0' : 'bg-transparent text-text-2')} onClick={() => setView('table')}>Table</button>
+          <button type="button" className={'px-3 py-2 text-[12px] font-semibold border-none cursor-pointer ' + (view === 'grid' ? 'bg-ink-3 text-text-0' : 'bg-transparent text-text-2')} onClick={() => setView('grid')}>Cards</button>
         </div>
       </div>
 
       {view === 'table' ? (
         <DataTable
           columns={[
-            { id: 'id', header: 'Lock ID', accessor: (r: Row) => <span className="font-mono font-bold text-xs">{s(r['serial_number'] ?? r['lock_id'])}</span> },
-            { id: 'battery', header: 'Battery', accessor: (r: Row) => {
-              const b = Number(r['battery'] ?? 0);
-              return (
-                <div className="flex items-center gap-1.5">
-                  <div className="w-[50px] h-1.5 rounded bg-ink-3 overflow-hidden">
-                    <div className="h-full rounded" style={{ width: `${b}%`, background: battColor(b) }} />
+            { id: 'serial', header: 'Lock serial', accessor: (lock: Row) => <span className="font-mono font-semibold text-cyan-200">{s(lock['serial'])}</span> },
+            { id: 'battery', header: 'Battery', accessor: (lock: Row) => {
+              const battery = batteryValue(lock);
+              return battery === null ? <span className="text-[12px] text-slate-400">Not reported</span> : (
+                <div className="flex items-center gap-2 min-w-[120px]">
+                  <div className="w-[54px] h-1.5 rounded bg-ink-3 overflow-hidden">
+                    <div className="h-full rounded" style={{ width: battery + '%', background: battColor(battery) }} />
                   </div>
-                  <span className="font-mono text-[10px]" style={{ color: battColor(b) }}>{b}%</span>
+                  <span className="font-mono text-[12px]" style={{ color: battColor(battery) }}>{battery}%</span>
                 </div>
               );
             }},
-            { id: 'signal', header: 'Signal', accessor: (r: Row) => <span className="font-mono text-xs" style={{ color: s(r['signal']) === 'strong' ? '#33d6a8' : s(r['signal']) === 'weak' ? '#ffb020' : '#ff5c5c' }}>{s(r['signal'])}</span> },
-            { id: 'container', header: 'Container', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['container_number'] ?? r['container_id'])}</span> },
-            { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
+            { id: 'signal', header: 'Last signal', accessor: (lock: Row) => <span className="text-[12px] text-slate-200 capitalize">{lock['signal_strength'] ? s(lock['signal_strength']) : 'Not reported'}</span> },
+            { id: 'heartbeat', header: 'Last heartbeat', accessor: (lock: Row) => <span className="text-[12px] text-slate-300">{lock['last_heartbeat'] ? heartbeatLabel(lock['last_heartbeat']) : 'Not received'}</span> },
+            { id: 'container', header: 'Container', accessor: (lock: Row) => <span className="font-mono text-[12px] text-slate-200">{s(lock['container_number'])}</span> },
+            { id: 'vehicle', header: 'Vehicle', accessor: (lock: Row) => <span className="font-mono text-[12px] text-slate-200">{s(lock['truck'])}</span> },
+            { id: 'state', header: 'Hardware state', accessor: (lock: Row) => <span className="text-[12px] font-semibold text-slate-100">{stateLabel[healthState(lock)]}</span> },
+            { id: 'status', header: 'Assignment status', accessor: (lock: Row) => <StatusBadge status={s(lock['status'])} /> },
           ]}
           data={rows}
-          keyExtractor={(r: Row) => s(r['id'])}
+          keyExtractor={(lock: Row) => s(lock['id'])}
           searchable
-          searchPlaceholder="Search locks…"
-          onRowClick={(r: Row) => openDrawer(`Lock ${s(r['serial_number'] ?? r['lock_id'])}`, (
+          searchPlaceholder="Search serial, container, vehicle or provider…"
+          onRowClick={(lock: Row) => openDrawer('E-lock ' + s(lock['serial']), (
             <>
-              <DrawerField label="Serial" value={s(r['serial_number'] ?? r['lock_id'])} />
-              <DrawerField label="Battery" value={`${r['battery'] ?? 0}%`} />
-              <DrawerField label="Signal" value={s(r['signal'])} />
-              <DrawerField label="Container" value={s(r['container_number'] ?? r['container_id'])} />
-              <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
-              <DrawerField label="Provider" value={s(r['provider'])} />
-              <DrawerField label="Last Heartbeat" value={r['last_heartbeat'] ? new Date(s(r['last_heartbeat'])).toLocaleString() : '—'} />
+              <DrawerField label="Serial" value={s(lock['serial'])} />
+              <DrawerField label="Provider" value={s(lock['provider'])} />
+              <DrawerField label="Assignment status" value={<StatusBadge status={s(lock['status'])} />} />
+              <DrawerField label="Hardware state" value={stateLabel[healthState(lock)]} />
+              <DrawerField label="Battery" value={batteryValue(lock) === null ? 'Not reported' : batteryValue(lock) + '%'} />
+              <DrawerField label="Last signal" value={s(lock['signal_strength'] ?? 'Not reported')} />
+              <DrawerField label="Last heartbeat" value={heartbeatLabel(lock['last_heartbeat'])} />
+              <DrawerField label="Tamper status" value={s(lock['tamper_status'])} />
+              <DrawerField label="Tamper detected" value={lock['tamper_detected'] ? 'Yes' : 'No event recorded'} />
+              <DrawerField label="Container" value={s(lock['container_number'])} />
+              <DrawerField label="Vehicle" value={s(lock['truck'])} />
+              <DrawerField label="Location reference" value={s(lock['location'])} />
+              <DrawerField label="Last event" value={lock['last_event_at'] ? heartbeatLabel(lock['last_event_at']) : 'Not recorded'} />
             </>
           ))}
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {rows.map(l => {
-            const b = Number(l['battery'] ?? 0);
-            const hs = healthState(l);
-            const dotColor = hs === 'tamper' || hs === 'offline' ? '#ff5c5c' : hs === 'low' ? '#ffb020' : '#33d6a8';
+          {rows.map(lock => {
+            const battery = batteryValue(lock);
+            const state = healthState(lock);
+            const dotColor = state === 'tamper' || state === 'offline' ? '#ff5c5c'
+              : state === 'low' ? '#ffb020' : state === 'reported' ? '#33d6a8' : '#94a3b8';
             return (
-              <Card key={s(l['id'])} className="p-4 cursor-pointer hover:border-[rgba(255,255,255,.15)]" onClick={() => openDrawer(`Lock ${s(l['serial_number'] ?? l['lock_id'])}`, (
+              <Card key={s(lock['id'])} className="p-4 cursor-pointer hover:border-[rgba(255,255,255,.15)]" onClick={() => openDrawer('E-lock ' + s(lock['serial']), (
                 <>
-                  <DrawerField label="Battery" value={`${b}%`} />
-                  <DrawerField label="Signal" value={s(l['signal'])} />
-                  <DrawerField label="Container" value={s(l['container_number'] ?? l['container_id'])} />
-                  <DrawerField label="Status" value={<StatusBadge status={s(l['status'])} />} />
+                  <DrawerField label="Battery" value={battery === null ? 'Not reported' : battery + '%'} />
+                  <DrawerField label="Signal" value={s(lock['signal_strength'] ?? 'Not reported')} />
+                  <DrawerField label="Last heartbeat" value={heartbeatLabel(lock['last_heartbeat'])} />
+                  <DrawerField label="Container" value={s(lock['container_number'])} />
+                  <DrawerField label="Vehicle" value={s(lock['truck'])} />
+                  <DrawerField label="Assignment status" value={<StatusBadge status={s(lock['status'])} />} />
+                  <DrawerField label="Hardware state" value={stateLabel[state]} />
                 </>
               ))}>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-mono font-bold text-xs text-text-0">{s(l['serial_number'] ?? l['lock_id'])}</span>
-                  <span className="w-2 h-2 rounded-full" style={{ background: dotColor, boxShadow: `0 0 8px ${dotColor}` }} />
+                <div className="flex items-center justify-between mb-3 gap-3">
+                  <span className="font-mono font-semibold text-[12px] text-white truncate">{s(lock['serial'])}</span>
+                  <span className="w-2 h-2 rounded-full flex-none" style={{ background: dotColor }} />
                 </div>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="relative w-10 h-10 flex-none">
-                    <svg width="40" height="40" viewBox="0 0 40 40" style={{ transform: 'rotate(-90deg)' }}>
-                      <circle cx="20" cy="20" r="15" fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="4" />
-                      <circle cx="20" cy="20" r="15" fill="none" stroke={battColor(b)} strokeWidth="4" strokeLinecap="round"
-                        strokeDasharray={`${(b / 100) * 94.2} ${94.2 - (b / 100) * 94.2}`} />
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center font-mono text-[9px] font-bold" style={{ color: battColor(b) }}>{b}</div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] text-text-2 font-mono truncate">{s(l['provider'])}</div>
-                  </div>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <span className="text-[12px] text-slate-300">{stateLabel[state]}</span>
+                  <span className="text-[12px] font-mono text-slate-200">{battery === null ? '—' : battery + '%'}</span>
                 </div>
-                <div className="text-[11px] text-text-2">{s(l['container_number'] ?? l['container_id'])}</div>
-                {hs === 'tamper' && <div className="mt-2"><Badge variant="bad">TAMPER ALERT</Badge></div>}
+                <div className="text-[11px] text-slate-400 truncate">{s(lock['container_number'])} · {s(lock['truck'])}</div>
+                <div className="text-[11px] text-slate-400 mt-1">Heartbeat: {lock['last_heartbeat'] ? heartbeatLabel(lock['last_heartbeat']) : 'Not received'}</div>
               </Card>
             );
           })}
-          {rows.length === 0 && <div className="col-span-full text-center text-text-2 text-xs py-8 font-mono">No locks match</div>}
+          {rows.length === 0 && <div className="col-span-full text-center text-slate-300 text-[13px] py-8">No E-locks match this filter.</div>}
         </div>
       )}
     </div>
