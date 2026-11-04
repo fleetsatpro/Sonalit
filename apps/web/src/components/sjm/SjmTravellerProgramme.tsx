@@ -607,9 +607,9 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
           {travellerStep === 0 && <section className="sjm-traveller-wizard__body" aria-labelledby="sjm-traveller-identity-heading">
             <div className="sjm-traveller-step-heading"><div><h6 id="sjm-traveller-identity-heading">Identity details</h6><p>Enter the legal identity as it appears on the passport or other travel document.</p></div><span className="sjm-field-required-note">* Required</span></div>
             <div className="sjm-traveller-form-grid sjm-traveller-form-grid--identity">
-              <label className={label}>Traveller reference<input className={field} value={travellerDraft.traveller_reference} readOnly aria-describedby="sjm-traveller-ref-help"/></label>
+              <label className={label}>Traveller reference *<input className={field} value={travellerDraft.traveller_reference} onChange={event=>setTravellerDraft({...travellerDraft,traveller_reference:event.target.value})} aria-describedby="sjm-traveller-ref-help"/></label>
               <label className={label}>Traveller role *<select className={field} value={travellerDraft.traveller_type} onChange={event=>setTravellerDraft({...travellerDraft,traveller_type:event.target.value})}>{[['principal','Principal traveller'],['accompanying','Accompanying traveller'],['assistant','Personal assistant'],['dependent','Dependent'],['other','Other']].map(([value,name])=><option key={value} value={value}>{name}</option>)}</select></label>
-              <span id="sjm-traveller-ref-help" className="sjm-traveller-field-help">Journey-specific reference; generated automatically.</span>
+              <span id="sjm-traveller-ref-help" className="sjm-traveller-field-help">Journey-specific reference; generated automatically. Edit only if a duplicate needs resolving.</span>
             </div>
             <div className="sjm-traveller-form-grid sjm-traveller-form-grid--names">
               {input('Title',travellerDraft.title,value=>setTravellerDraft({...travellerDraft,title:value}),'Mr / Ms / Dr')}
