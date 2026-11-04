@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, type LucideIcon } from 'lucide-react';
+import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, type LucideIcon } from 'lucide-react';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
@@ -356,61 +356,165 @@ export function PulseView() {
 }
 
 export function InboxView() {
-  const { data: activity, isLoading } = useActivity(50);
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'custody' | 'lock' | 'trip' | 'alert'>('all');
+  const [query, setQuery] = useState('');
+  const { data: activity, isLoading, isError, refetch, isFetching } = useActivity(100);
+  const { openDrawer } = useCDSStore();
   if (isLoading) return <LoadingState />;
+
   const items = (activity ?? []) as Row[];
+  const sourceOf = (item: Row) => String(item['source'] ?? 'other');
+  const filtered = items.filter(item => {
+    const sourceMatch = sourceFilter === 'all' || sourceOf(item) === sourceFilter;
+    const q = query.trim().toLowerCase();
+    const searchMatch = !q || [
+      item['text'], item['meta'], item['actor'], item['container_number'],
+      item['booking_number'], item['trip_number'], item['lock_serial'],
+      item['driver_name'], item['vehicle_registration'], item['transporter_name'],
+    ].some(value => String(value ?? '').toLowerCase().includes(q));
+    return sourceMatch && searchMatch;
+  });
+  const counts = {
+    all: items.length,
+    custody: items.filter(item => sourceOf(item) === 'custody').length,
+    lock: items.filter(item => sourceOf(item) === 'lock').length,
+    trip: items.filter(item => sourceOf(item) === 'trip').length,
+    alert: items.filter(item => sourceOf(item) === 'alert').length,
+  };
+  const recentCutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const recent = items.filter(item => item['created_at'] && new Date(String(item['created_at'])).getTime() >= recentCutoff).length;
+  const exceptions = items.filter(item => sourceOf(item) === 'alert').length;
 
   const iconMap: Record<string, LucideIcon> = {
-    clamp: Lock,
-    depart: Truck,
-    checkpoint: MapPin,
-    sync: RefreshCw,
-    arrival: CheckCircle2,
-    unclamp: Unlock,
-    ai: BrainCircuit,
-    alert: AlertTriangle,
-    lock: Lock,
-    unlock: Unlock,
+    clamp: Lock, depart: Truck, checkpoint: MapPin, sync: RefreshCw,
+    arrival: CheckCircle2, unclamp: Unlock, ai: BrainCircuit, alert: AlertTriangle,
+    lock: Lock, unlock: Unlock,
   };
+  const sourceLabel: Record<string, string> = {
+    custody: 'Custody event', lock: 'E-lock event', trip: 'Trip transition', alert: 'Alert / exception',
+  };
+  const sourceTone: Record<string, string> = {
+    custody: 'border-cds-teal/20 bg-cds-teal/[.07] text-cds-teal',
+    lock: 'border-sky-300/20 bg-sky-300/[.06] text-sky-200',
+    trip: 'border-violet-300/20 bg-violet-300/[.06] text-violet-200',
+    alert: 'border-red-300/20 bg-red-300/[.06] text-red-200',
+  };
+  const field = (label: string, value: unknown) => value == null || value === '' ? null : (
+    <div key={label} className="min-w-0 rounded-lg border border-white/[.06] bg-white/[.025] p-3">
+      <div className="text-[9px] font-semibold uppercase tracking-wider text-text-2">{label}</div>
+      <div className="mt-1 break-words text-[11px] font-medium text-text-0">{String(value)}</div>
+    </div>
+  );
 
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <Card className="p-4">
-        <div className="font-bold text-sm text-text-0">Activity & Custody</div>
-        {/* Says where the entries come from, so an empty log reads as "nothing
-            has happened yet" rather than "this screen may be broken". */}
-        <div className="text-[10px] font-mono text-text-2 mt-0.5 mb-3">
-          CUSTODY CHAIN · E-LOCK EVENTS · TRIP TRANSITIONS · ALERTS
+    <div className="mx-auto max-w-[1600px] space-y-4 p-4 sm:p-5">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-white/[.07] pb-4">
+        <div>
+          <div className="text-[9px] font-semibold uppercase tracking-[.18em] text-[#8eb9ed]">Operational evidence / Event ledger</div>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-text-0 sm:text-2xl">Activity & custody</h1>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-text-2">A chronological control-room view of physical custody handoffs, e-lock device events, trip transitions and operational exceptions.</p>
         </div>
-        <div className="space-y-0 max-h-[600px] overflow-y-auto">
-          {items.map((item, i) => (
-            <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2.5 border-b border-white/[.05] last:border-0">
-              <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-md border border-white/[.07] bg-white/[.025] text-text-2">
-                {(() => {
-                  const Icon = iconMap[String(item['icon'] ?? item['type'] ?? '')] ?? FileText;
-                  return <Icon size={14} strokeWidth={1.8} aria-hidden="true" />;
-                })()}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="text-xs text-text-0">{String(item['description'] ?? item['text'] ?? '—')}</div>
-                {item['meta'] ? (
-                  <div className="text-[11px] text-text-1 mt-0.5 break-words">{String(item['meta'])}</div>
-                ) : null}
-              </div>
-              <div className="text-[10px] text-text-2 font-mono flex-none mt-0.5">
-                {item['created_at']
-                  ? new Date(String(item['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                  : ''}
-              </div>
+        <button type="button" disabled={isFetching} onClick={() => void refetch()} className="min-h-[38px] rounded-lg border border-white/10 px-3 text-[11px] font-semibold text-text-1 hover:bg-white/[.05] disabled:opacity-50">
+          {isFetching ? 'Refreshing…' : 'Refresh event records'}
+        </button>
+      </header>
+      {isError && <div role="status" className="rounded-lg border border-amber-300/20 bg-amber-300/[.05] p-3 text-xs text-amber-100">The latest event refresh failed. Previously loaded records remain visible; no placeholder events have been added.</div>}
+      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+        {[
+          { label: 'Events loaded', value: counts.all, note: 'Most recent records' },
+          { label: 'Custody handoffs', value: counts.custody, note: 'Clamp and unclamp records' },
+          { label: 'Last 24 hours', value: recent, note: 'Based on event timestamps' },
+          { label: 'Alerts in view', value: exceptions, note: 'Requires review' },
+        ].map(metric => (
+          <div key={metric.label} className="rounded-xl border border-white/[.07] bg-[#111a28] p-3.5">
+            <div className="text-[9px] font-semibold uppercase tracking-[.14em] text-white/45">{metric.label}</div>
+            <div className="mt-1 font-mono text-2xl font-semibold text-white tabular-nums">{metric.value.toLocaleString()}</div>
+            <div className="mt-1 text-[10px] text-white/40">{metric.note}</div>
+          </div>
+        ))}
+      </div>
+      <section className="overflow-hidden rounded-xl border border-white/[.08] bg-[#0d1726]">
+        <div className="border-b border-white/[.07] p-3.5 sm:p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <label className="relative min-w-0 flex-1">
+              <span className="sr-only">Search event records</span>
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35" aria-hidden="true" />
+              <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search container, booking, lock, driver, vehicle, partner or event…" className="min-h-[42px] w-full rounded-lg border border-white/[.09] bg-[#101a2a] pl-9 pr-3 text-xs text-white outline-none placeholder:text-white/30 focus:border-[#8eb9ed]/60" />
+            </label>
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter event source">
+              {(['all', 'custody', 'lock', 'trip', 'alert'] as const).map(source => (
+                <button key={source} type="button" aria-pressed={sourceFilter === source} onClick={() => setSourceFilter(source)} className={'min-h-[36px] rounded-md border px-3 text-[10px] font-semibold capitalize transition-colors ' + (sourceFilter === source ? 'border-[#8eb9ed]/35 bg-[#8eb9ed]/10 text-[#c4def9]' : 'border-white/[.07] text-text-2 hover:bg-white/[.04] hover:text-text-0')}>
+                  {source === 'all' ? 'All events' : source === 'lock' ? 'E-lock' : source} <span className="ml-1 font-mono opacity-65">{counts[source]}</span>
+                </button>
+              ))}
             </div>
-          ))}
-          {items.length === 0 && (
-            <div className="text-xs text-text-2 text-center py-10 font-mono">
-              No field activity recorded yet — clamps, dispatches, lock events and alerts appear here as they happen.
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-text-2">
+            <span>{filtered.length.toLocaleString()} matching records</span>
+            <span className="inline-flex items-center gap-1.5"><Clock3 size={12} aria-hidden="true" /> Sorted by recorded event time, newest first</span>
+          </div>
+        </div>
+        <div className="divide-y divide-white/[.055]">
+          {filtered.map((item, index) => {
+            const source = sourceOf(item);
+            const Icon = iconMap[String(item['icon'] ?? item['type'] ?? '')] ?? FileText;
+            const timestamp = item['created_at'] ? new Date(String(item['created_at'])) : null;
+            const dateLabel = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleString() : 'Timestamp unavailable';
+            const detailPairs = [
+              ['Recorded by', item['actor']], ['Container', item['container_number']],
+              ['Booking', item['booking_number']], ['Trip', item['trip_number']],
+              ['Lock', item['lock_serial']], ['Driver', item['driver_name']],
+              ['Vehicle', item['vehicle_registration']], ['Transport partner', item['transporter_name']],
+              ['Severity', item['severity']], ['Evidence type', item['evidence']],
+              ['Entity reference', item['entity_id']],
+            ];
+            return (
+              <button key={String(item['id'] ?? index)} type="button" onClick={() => openDrawer(String(item['text'] ?? 'Event detail'), (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-white/[.07] bg-white/[.025] p-3">
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-[#8eb9ed]">{sourceLabel[source] ?? 'Operational event'}</div>
+                    <div className="mt-1 text-sm font-semibold text-text-0">{String(item['text'] ?? 'Untitled event')}</div>
+                    <div className="mt-1 text-[10px] text-text-2">{dateLabel}</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">{detailPairs.map(([label, value]) => field(label, value)).filter(Boolean)}</div>
+                  {item['meta'] ? <div className="rounded-lg border border-white/[.06] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Recorded context</div><p className="mt-1 text-[11px] leading-relaxed text-text-1">{String(item['meta'])}</p></div> : null}
+                  {source === 'custody' ? <div className="rounded-lg border border-cds-teal/15 bg-cds-teal/[.04] p-3 text-[10px] leading-relaxed text-text-1">This is a persisted custody-chain event. Open the matching container in Container Register to re-verify the complete per-booking hash chain and review the associated clamp/unclamp handoffs.</div> : null}
+                </div>
+              ))} className="group flex w-full items-start gap-3 px-3.5 py-3.5 text-left transition-colors hover:bg-white/[.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8eb9ed]/70 sm:px-4">
+                <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-white/[.07] bg-white/[.025] text-text-2 group-hover:border-white/15">
+                  <Icon size={16} strokeWidth={1.9} aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-[12px] font-semibold text-text-0">{String(item['text'] ?? '—')}</span>
+                    <span className={'rounded-md border px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider ' + (sourceTone[source] ?? 'border-white/10 text-text-2')}>{sourceLabel[source] ?? source}</span>
+                  </span>
+                  <span className="mt-1 block text-[10px] leading-relaxed text-text-2">{String(item['meta'] ?? 'No additional event context recorded.')}</span>
+                  <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-white/40">
+                    {item['actor'] ? <span>By {String(item['actor'])}</span> : null}
+                    {item['container_number'] ? <span>Container {String(item['container_number'])}</span> : null}
+                    {item['lock_serial'] ? <span>Lock {String(item['lock_serial'])}</span> : null}
+                  </span>
+                </span>
+                <span className="ml-2 flex-none text-right">
+                  <span className="block whitespace-nowrap text-[10px] font-mono text-text-1">{timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                  <span className="mt-1 block whitespace-nowrap text-[9px] text-text-2">{timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleDateString([], { day: '2-digit', month: 'short' }) : ''}</span>
+                </span>
+              </button>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="px-4 py-12 text-center">
+              <div className="text-sm font-semibold text-text-0">{items.length ? 'No events match this filter' : 'No operational events recorded yet'}</div>
+              <p className="mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-text-2">{items.length ? 'Change the source filter or search phrase. The underlying event records remain unchanged.' : 'Custody handoffs, lock events, trip transitions and alerts will appear here as the operational workflows record them.'}</p>
             </div>
           )}
         </div>
-      </Card>
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[.07] px-4 py-3 text-[10px] text-text-2">
+          <span>Showing the latest {items.length.toLocaleString()} source records returned by CDS.</span>
+          <span className="inline-flex items-center gap-1.5"><ShieldCheck size={12} aria-hidden="true" /> Chain integrity is verified in each container history</span>
+        </footer>
+      </section>
     </div>
   );
 }
@@ -670,8 +774,9 @@ export function AnalyticsView() {
       <nav className="flex gap-1 overflow-x-auto rounded-xl border border-white/[.06] bg-[#101419] p-1" aria-label="Analytics sections">
         {sectionLink('cds-throughput', '01  Throughput')}
         {sectionLink('cds-trip-flow', '02  Flow & lanes')}
-        {sectionLink('cds-assets', '03  Assets & integrity')}
-        {sectionLink('cds-exceptions', '04  Exceptions')}
+        {sectionLink('cds-partners', '03  Partner performance')}
+        {sectionLink('cds-assets', '04  Assets & integrity')}
+        {sectionLink('cds-exceptions', '05  Exceptions')}
       </nav>
 
       {isError && <div role="status" className="rounded-lg border border-amber-300/20 bg-amber-300/[.05] px-4 py-3 text-xs text-amber-200">The latest refresh failed. The last successfully loaded database snapshot is retained below; values have not been replaced with sample data.</div>}
@@ -736,7 +841,7 @@ export function AnalyticsView() {
         </div>
       </section>
 
-      <style>{'@keyframes cdsBarRise { from { transform: scaleY(.08); opacity: .3; } to { transform: scaleY(1); opacity: 1; } } @media (prefers-reduced-motion: reduce) { .cds-analytics-bar { animation: none !important; transition: none !important; } }'}</style>
+      <style>{'@keyframes cdsBarRise { from { transform: scaleY(.08); opacity: .3; } to { transform: scaleY(1); opacity: 1; } } @keyframes cdsPartnerEnter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } } @keyframes cdsPartnerFill { from { width: 0; filter: brightness(1.8); } to { filter: brightness(1); } } .cds-partner-rank { animation: cdsPartnerEnter 560ms cubic-bezier(.2,.7,.2,1) both; } .cds-partner-bar { background: linear-gradient(90deg,#66a6e7 0%,#55c8c2 66%,#9ac7f0 100%); box-shadow: 0 0 14px rgba(100,175,231,.18); animation: cdsPartnerFill 900ms cubic-bezier(.18,.75,.25,1) both; } @media (prefers-reduced-motion: reduce) { .cds-analytics-bar, .cds-partner-rank, .cds-partner-bar { animation: none !important; transition: none !important; } }'}</style>
       <section id="cds-throughput" className="scroll-mt-4 grid grid-cols-1 2xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.8fr)] gap-3 sm:gap-4">
         <Card className="min-w-0 overflow-hidden">
           <div className="flex flex-wrap justify-between gap-3 items-start p-4 sm:p-5 border-b border-white/[.055]">
@@ -845,8 +950,87 @@ export function AnalyticsView() {
         </div>
       </section>
 
+
+      <section id="cds-partners" className="scroll-mt-4 space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">03 / Carrier network intelligence</div>
+            <h3 className="mt-1 text-base sm:text-lg font-semibold">Transport partner performance</h3>
+            <p className="mt-1 text-[11px] text-text-2">Equipment handled and delivery outcomes within the selected reporting window.</p>
+          </div>
+          <span className="text-[9px] font-mono uppercase tracking-wider text-text-2">{data.transporter_leaderboard.length} ranked partners</span>
+        </div>
+        <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)] gap-3 sm:gap-4">
+          <Card className="min-w-0 overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-white/[.055] p-4 sm:p-5">
+              <div>
+                <div className="text-[9px] uppercase tracking-[.17em] font-mono text-text-2">PARTNER LEADERBOARD</div>
+                <h3 className="mt-1 text-sm font-semibold">Container handling volume</h3>
+              </div>
+              <span className="rounded-md border border-[#8eb9ed]/15 bg-[#8eb9ed]/[.05] px-2 py-1 text-[9px] text-[#b9d6f5]">{days} day window</span>
+            </div>
+            <div className="p-4 sm:p-5">
+              {data.transporter_leaderboard.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-white/10 p-7 text-center">
+                  <div className="text-sm font-medium text-text-0">No partner trips in this window</div>
+                  <p className="mt-1 text-[10px] text-text-2">The ranking appears when transporter-linked trips are recorded.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {data.transporter_leaderboard.map((partner, index) => {
+                    const max = Math.max(1, ...data.transporter_leaderboard.map(row => row.containers_handled));
+                    const width = Math.min(100, partner.containers_handled / max * 100);
+                    const etaKnown = partner.delivery_eta_observed > 0 && partner.on_time_rate != null;
+                    return (
+                      <div key={partner.transporter_id} className="cds-partner-rank" style={{ animationDelay: (index * 55) + 'ms' }}>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="w-5 font-mono text-[10px] text-text-2">{String(partner.rank).padStart(2, '0')}</span>
+                          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-text-0">{partner.company_name}</span>
+                          <span className="font-mono text-xs font-semibold text-[#b9d8fb] tabular-nums">{fmt(partner.containers_handled)} <span className="text-[9px] font-sans font-normal text-text-2">containers</span></span>
+                        </div>
+                        <div className="ml-8 mt-2 h-2 overflow-hidden rounded-full bg-white/[.05]">
+                          <div className="cds-partner-bar h-full rounded-full" style={{ width: width + '%', animationDelay: (180 + index * 75) + 'ms' }} />
+                        </div>
+                        <div className="ml-8 mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[9px] text-text-2">
+                          <span>{fmt(partner.trips_started)} trips</span>
+                          <span>{fmt(partner.deliveries_completed)} delivered</span>
+                          <span>{fmt(partner.currently_delayed)} delayed now</span>
+                          <span className={etaKnown ? 'text-cds-teal' : ''}>{etaKnown ? Number(partner.on_time_rate).toFixed(1) + '% on time' : 'ETA baseline unavailable'}</span>
+                        </div>
+                        {partner.delivery_eta_observed > 0 && <div className="ml-8 mt-1 text-[9px] text-text-2">{fmt(partner.on_time_deliveries)} on-time from {fmt(partner.delivery_eta_observed)} completed deliveries with ETA</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+          <Card className="min-w-0 overflow-hidden">
+            <div className="border-b border-white/[.055] p-4 sm:p-5">
+              <div className="text-[9px] uppercase tracking-[.17em] font-mono text-text-2">MEASUREMENT DISCIPLINE</div>
+              <h3 className="mt-1 text-sm font-semibold">How partner outcomes are measured</h3>
+            </div>
+            <div className="space-y-4 p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-[#8eb9ed]/15 bg-[#8eb9ed]/[.06] text-[#b9d8fb]"><Truck size={15} aria-hidden="true" /></div>
+                <div><div className="text-xs font-semibold text-text-0">Equipment handled</div><p className="mt-1 text-[10px] leading-relaxed text-text-2">Distinct container identities linked to trips created in the selected period. Repeated movements across separate partners remain attributable to each partner.</p></div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-cds-teal/15 bg-cds-teal/[.06] text-cds-teal"><ShieldCheck size={15} aria-hidden="true" /></div>
+                <div><div className="text-xs font-semibold text-text-0">ETA attainment</div><p className="mt-1 text-[10px] leading-relaxed text-text-2">Only completed trips with a recorded ETA are included. Unknown ETA is not treated as a failure or a success.</p></div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-amber-300/15 bg-amber-300/[.06] text-amber-200"><Clock3 size={15} aria-hidden="true" /></div>
+                <div><div className="text-xs font-semibold text-text-0">Current delay exposure</div><p className="mt-1 text-[10px] leading-relaxed text-text-2">Delayed trips are a current-state count, while equipment handled and completed deliveries are period measures.</p></div>
+              </div>
+              <div className="rounded-lg border border-white/[.06] bg-white/[.025] p-3 text-[10px] leading-relaxed text-text-2">The leaderboard ranks the ten highest-volume partners by persisted records. It does not create a composite score or infer service quality from missing observations.</div>
+            </div>
+          </Card>
+        </div>
+      </section>
+
       <section id="cds-assets" className="scroll-mt-4 space-y-3">
-        <div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">03 / Fleet & container integrity</div><h3 className="text-base sm:text-lg font-semibold mt-1">Assets, utilisation & readiness</h3></div>
+        <div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">04 / Fleet & container integrity</div><h3 className="text-base sm:text-lg font-semibold mt-1">Assets, utilisation & readiness</h3></div>
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
           <Card className="min-w-0 overflow-hidden">
             <div className="p-4 border-b border-white/[.055]"><div className="text-[9px] uppercase tracking-[.17em] font-mono text-text-2">CONTAINER REGISTER</div><h3 className="font-semibold mt-1">Availability & condition</h3><p className="text-[11px] text-text-2 mt-1">Physical condition is from recorded inventory—not a modelled score.</p></div>
@@ -907,7 +1091,7 @@ export function AnalyticsView() {
       </section>
 
       <section id="cds-exceptions" className="scroll-mt-4 space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">04 / Action queue</div><h3 className="text-base sm:text-lg font-semibold mt-1">Exceptions requiring attention</h3><p className="text-[11px] text-text-2 mt-1">Acknowledgement writes through to the backend. Filtering changes this list only; it does not mutate alert state.</p></div><div className="rounded-lg border border-white/[.06] bg-[#101419] px-3 py-2"><span className="text-[9px] uppercase tracking-wider text-text-2">Open incidents</span><span className="ml-3 font-mono text-sm font-semibold">{fmt(s.open_incidents)}</span></div></div>
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">05 / Action queue</div><h3 className="text-base sm:text-lg font-semibold mt-1">Exceptions requiring attention</h3><p className="text-[11px] text-text-2 mt-1">Acknowledgement writes through to the backend. Filtering changes this list only; it does not mutate alert state.</p></div><div className="rounded-lg border border-white/[.06] bg-[#101419] px-3 py-2"><span className="text-[9px] uppercase tracking-wider text-text-2">Open incidents</span><span className="ml-3 font-mono text-sm font-semibold">{fmt(s.open_incidents)}</span></div></div>
         <Card className="overflow-hidden">
           <div className="p-3 sm:p-4 border-b border-white/[.055] flex flex-col lg:flex-row lg:items-center gap-3">
             <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter alerts by severity">

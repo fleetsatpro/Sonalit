@@ -46,11 +46,18 @@ async function activityFeed(db, limit) {
   const [custody, locks, trips, alerts] = await Promise.all([
     db(
       `SELECT ce.id, ce.created_at, ce.kind, ce.actor_name, ce.lat, ce.lng, ce.notes,
-              ce.seal_number, ce.lock_serial, ce.booking_container_id,
-              bc.container_number, b.booking_number
+              ce.seal_number, ce.lock_serial, ce.booking_container_id, ce.trip_id,
+              bc.container_number, b.booking_number, t.trip_number,
+              COALESCE(bc.transporter_name, tr.company_name) AS transporter_name,
+              COALESCE(bc.horse_reg, v.registration) AS vehicle_registration,
+              COALESCE(bc.driver_name, d.name) AS driver_name
          FROM cds_custody_events ce
-         JOIN cds_booking_containers bc ON bc.id = ce.booking_container_id
-         LEFT JOIN cds_bookings b ON b.id = bc.booking_id
+         JOIN cds_booking_containers bc ON bc.id = ce.booking_container_id AND bc.org_id=ce.org_id
+         LEFT JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id=bc.org_id
+         LEFT JOIN cds_trips t ON t.id=ce.trip_id AND t.org_id=ce.org_id
+         LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=ce.org_id
+         LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=ce.org_id
+         LEFT JOIN cds_drivers d ON d.id=t.driver_id AND d.org_id=ce.org_id
         ORDER BY ce.created_at DESC LIMIT $1`, [limit]
     ),
     db(
@@ -80,11 +87,25 @@ async function activityFeed(db, limit) {
       const [icon, verb] = CUSTODY_LABEL[r.kind] ?? ['checkpoint', r.kind];
       return {
         id: `custody:${r.id}`,
+        source: 'custody',
         icon,
         text: `${verb} ${containerRef(r.container_number, r.booking_number)}`,
+        actor: r.actor_name,
+        container_number: r.container_number,
+        booking_number: r.booking_number,
+        trip_number: r.trip_number,
+        event_kind: r.kind,
+        lock_serial: r.lock_serial,
+        driver_name: r.driver_name,
+        vehicle_registration: r.vehicle_registration,
+        transporter_name: r.transporter_name,
+        evidence: 'hash_chained_custody_record',
         meta: metaLine(
           r.actor_name, r.lock_serial && `lock ${r.lock_serial}`,
-          r.seal_number && `seal ${r.seal_number}`, coords(r.lat, r.lng), r.notes
+          r.driver_name && `driver ${r.driver_name}`,
+          r.vehicle_registration && `vehicle ${r.vehicle_registration}`,
+          r.transporter_name, r.seal_number && `seal ${r.seal_number}`,
+          coords(r.lat, r.lng), r.notes
         ),
         entity_type: 'booking_container',
         entity_id: r.booking_container_id,
@@ -95,8 +116,13 @@ async function activityFeed(db, limit) {
       const [icon, verb] = LOCK_LABEL[r.type] ?? ['lock', r.type];
       return {
         id: `lock:${r.id}`,
+        source: 'lock',
         icon,
         text: `E-lock ${r.serial || 'device'} ${verb}`,
+        actor: null,
+        lock_serial: r.serial,
+        event_kind: r.type,
+        evidence: 'device_event',
         meta: metaLine(coords(r.lat, r.lng)),
         entity_type: 'lock',
         entity_id: r.lock_id,
@@ -105,8 +131,13 @@ async function activityFeed(db, limit) {
     }),
     ...trips.rows.map(r => ({
       id: `trip:${r.id}`,
+      source: 'trip',
       icon: r.to_status === 'delivered' ? 'arrival' : r.to_status === 'dispatched' ? 'depart' : 'checkpoint',
       text: `Trip ${r.booking_number ? `on booking ${r.booking_number} ` : ''}moved to ${String(r.to_status).replace(/_/g, ' ')}`,
+      actor: r.actor_name,
+      booking_number: r.booking_number,
+      event_kind: r.to_status,
+      evidence: 'trip_transition',
       meta: metaLine(r.actor_name, coords(r.lat, r.lng), r.notes),
       entity_type: 'trip',
       entity_id: r.trip_id,
@@ -114,8 +145,13 @@ async function activityFeed(db, limit) {
     })),
     ...alerts.rows.map(r => ({
       id: `alert:${r.id}`,
+      source: 'alert',
       icon: 'alert',
       text: r.title,
+      actor: null,
+      severity: r.severity,
+      event_kind: r.type,
+      evidence: 'alert_record',
       meta: metaLine(
         r.severity && r.severity.toUpperCase(), r.message,
         r.acknowledged ? 'acknowledged' : null

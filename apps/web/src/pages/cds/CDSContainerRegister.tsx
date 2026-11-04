@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Search, Plus } from 'lucide-react';
 import { Badge, FilterChip, StatusBadge } from './components.js';
 import { CONTAINER_TYPES } from './constants.js';
-import { useContainers, useCreateContainer } from './hooks.js';
+import { useContainerHistory, useContainers, useCreateContainer } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 type Row = Record<string, unknown>;
@@ -37,6 +37,12 @@ function formatDate(value: unknown): string {
   return Number.isNaN(date.getTime())
     ? 'Unrecognised date'
     : new Intl.DateTimeFormat(undefined, { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
+}
+
+function formatDateTime(value: unknown): string {
+  if (!value) return 'Not recorded';
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? 'Unrecognised timestamp' : date.toLocaleString();
 }
 
 const ISO_LETTER_VALUES: Record<string, number> = (() => {
@@ -91,6 +97,16 @@ function Metric({ label, value, note }: { label: string; value: number | undefin
 
 function ContainerDetails({ container }: { container: Row }) {
   const number = text(container, 'number');
+  const { data: history, isLoading: historyLoading, isError: historyError, refetch: refetchHistory } =
+    useContainerHistory(text(container, 'id') || null);
+  const historyEvents = (history?.data ?? []) as Row[];
+  const chainStatus = history?.chain_status ?? (historyLoading ? 'LOADING' : historyError ? 'UNAVAILABLE' : 'NO_LEDGER');
+  const chainBadge = chainStatus === 'VERIFIED' ? 'ok' : chainStatus === 'BROKEN' ? 'bad' : 'warn';
+  const timestamp = (value: unknown) => {
+    if (!value) return 'Time not recorded';
+    const date = new Date(String(value));
+    return Number.isNaN(date.getTime()) ? 'Unrecognised timestamp' : date.toLocaleString();
+  };
   const location = text(container, 'current_location');
   const lat = container['lat'];
   const lng = container['lng'];
@@ -115,6 +131,80 @@ function ContainerDetails({ container }: { container: Row }) {
           <ConditionBadge condition={text(container, 'condition')} />
         </div>
       </div>
+
+      <section className="rounded-xl border border-[#8eb9ed]/15 bg-[#13243a]/55 p-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[.15em] text-[#a9cdf4]">Movement & custody history</div>
+            <p className="mt-1 text-[10px] text-white/45">Recorded clamp and unclamp actions, with the assigned lock, driver and vehicle linked to each movement. Hash verification covers the custody event; assignment context is read from linked trip and manifest records.</p>
+          </div>
+          <Badge variant={chainBadge}>
+            {chainStatus === 'LOADING' ? 'CHECKING HISTORY' : chainStatus === 'UNAVAILABLE' ? 'STATUS UNAVAILABLE' : chainStatus === 'VERIFIED' ? 'CHAIN VERIFIED' : chainStatus === 'BROKEN' ? 'CHAIN INTEGRITY ALERT' : chainStatus === 'PARTIAL' ? 'PARTIAL / LEGACY EVENTS' : 'LEGACY / NO LEDGER'}
+          </Badge>
+        </div>
+        {historyLoading ? (
+          <div className="mt-4 space-y-3" aria-label="Loading container history">
+            {[0, 1, 2].map(item => <div key={item} className="h-14 rounded-lg bg-white/[.035] animate-pulse" />)}
+          </div>
+        ) : historyError ? (
+          <div className="mt-3 rounded-lg border border-red-300/20 bg-red-300/[.05] p-3">
+            <p className="text-[11px] text-red-100">Custody history could not be loaded. Container identity and inventory details remain available.</p>
+            <button type="button" onClick={() => void refetchHistory()} className="mt-2 text-[11px] font-semibold text-[#b9d8fb] underline underline-offset-4">Retry history</button>
+          </div>
+        ) : historyEvents.length === 0 ? (
+          <div className="mt-3 rounded-lg border border-dashed border-white/10 px-3 py-5 text-center">
+            <div className="text-[12px] font-semibold text-white/70">No clamp or unclamp events recorded</div>
+            <p className="mt-1 text-[10px] text-white/40">This container may not have entered a recorded yard-to-port movement yet.</p>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-0">
+            {historyEvents.map((event, index) => {
+              const kind = text(event, 'kind');
+              const integrity = event['integrity_verified'];
+              const eventIntegrity = integrity === true ? 'Verified' : integrity === false ? 'Integrity failure' : 'Legacy timestamp';
+              return (
+                <div key={text(event, 'id') || String(index)} className="relative grid grid-cols-[18px_minmax(0,1fr)] gap-2.5 pb-4 last:pb-0">
+                  <div className="relative flex justify-center">
+                    <span className={'mt-1 h-2.5 w-2.5 rounded-full border ' + (kind === 'clamped' ? 'border-cds-teal bg-cds-teal shadow-[0_0_10px_rgba(51,214,168,.3)]' : kind === 'unclamped' ? 'border-[#9d8df5] bg-[#9d8df5]' : 'border-white/30 bg-white/30')} />
+                    {index < historyEvents.length - 1 && <span className="absolute top-4 bottom-0 w-px bg-white/10" />}
+                  </div>
+                  <div className="min-w-0 rounded-lg border border-white/[.07] bg-black/15 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="text-[12px] font-semibold text-white">{kind === 'clamped' ? 'E-lock clamped' : kind === 'unclamped' ? 'E-lock unclamped' : pretty(kind)}</div>
+                        <div className="mt-1 text-[10px] text-white/45">{timestamp(event['timestamp'])}</div>
+                      </div>
+                      <span className={'text-[9px] font-semibold uppercase tracking-wider ' + (integrity === true ? 'text-cds-teal' : integrity === false ? 'text-red-300' : 'text-amber-200')}>{eventIntegrity}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
+                      {[
+                        ['Recorded by', event['actor']],
+                        ['Lock attached', event['lock_serial']],
+                        ['Driver', event['driver_name']],
+                        ['Vehicle', event['vehicle_registration']],
+                        ['Transport partner', event['transporter_name']],
+                        ['Booking', event['booking_number']],
+                        ['Trip reference', event['trip_number']],
+                        ['Seal', event['seal_number']],
+                      ].filter((entry) => entry[1] != null && entry[1] !== '').map(([label, value]) => (
+                        <div key={String(label)} className="min-w-0">
+                          <div className="text-[9px] uppercase tracking-wider text-white/35">{label}</div>
+                          <div className="mt-0.5 break-words text-[11px] font-medium text-white/80">{String(value)}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {event['seal_intact'] === false && <div className="mt-2 rounded-md bg-red-400/[.08] px-2.5 py-2 text-[10px] font-semibold text-red-200">Seal verification failed at this handoff.</div>}
+                    {event['seal_intact'] === true && <div className="mt-2 text-[10px] text-cds-teal">Seal reported intact at this handoff.</div>}
+                    {event['notes'] ? <p className="mt-2 border-t border-white/[.06] pt-2 text-[10px] leading-relaxed text-white/50">{String(event['notes'])}</p> : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {chainStatus === 'BROKEN' && <p className="mt-3 rounded-md border border-red-300/20 bg-red-300/[.05] p-2.5 text-[10px] leading-relaxed text-red-100">At least one custody record failed hash or sequence verification. Treat this history as an integrity exception and investigate before relying on it as proof of custody.</p>}
+        {chainStatus !== 'VERIFIED' && chainStatus !== 'BROKEN' && historyEvents.some(event => event['evidence_source'] === 'manifest_timestamp') && <p className="mt-3 text-[10px] leading-relaxed text-amber-100/70">Some earlier movements are represented by stored manifest timestamps and audit actors. They pre-date the verifiable custody chain and are not labelled cryptographically verified.</p>}
+      </section>
       <section>
         <div className="mb-1 text-[9px] font-semibold uppercase tracking-[.16em] text-[#8eb9ed]">Identity & ownership</div>
         <dl>
@@ -388,7 +478,7 @@ export function CDSContainerRegister() {
             <div className="text-[10px] text-white/35">{total === 0 ? 'No matching records' : 'Showing ' + first.toLocaleString() + '–' + last.toLocaleString() + ' of ' + total.toLocaleString()}</div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[930px] border-collapse text-left">
+            <table className="w-full min-w-[1220px] border-collapse text-left">
               <thead className="bg-white/[.025]">
                 <tr className="text-[9px] font-semibold uppercase tracking-[.12em] text-white/40">
                   <th className="px-4 py-3">Container identity</th>
@@ -396,6 +486,8 @@ export function CDSContainerRegister() {
                   <th className="px-3 py-3">Ownership</th>
                   <th className="px-3 py-3">Operational state</th>
                   <th className="px-3 py-3">Condition</th>
+                  <th className="px-3 py-3">Last custody action</th>
+                  <th className="px-3 py-3">Last assignment</th>
                   <th className="px-3 py-3">Recorded location</th>
                   <th className="px-3 py-3">Next inspection</th>
                 </tr>
@@ -403,11 +495,19 @@ export function CDSContainerRegister() {
               <tbody className="divide-y divide-white/[.06]">
                 {isLoading ? Array.from({ length: 7 }, (_, index) => (
                   <tr key={index}>
-                    {Array.from({ length: 7 }, (_, cell) => <td key={cell} className="px-3 py-4"><div className="h-3 animate-pulse rounded bg-white/[.06]" /></td>)}
+                    {Array.from({ length: 9 }, (_, cell) => <td key={cell} className="px-3 py-4"><div className="h-3 animate-pulse rounded bg-white/[.06]" /></td>)}
                   </tr>
                 )) : rows.map(row => {
                   const nextInspection = row['next_inspection'];
                   const overdue = Boolean(nextInspection && !Number.isNaN(new Date(String(nextInspection)).getTime()) && new Date(String(nextInspection)).getTime() < Date.now());
+                  const clampAt = row['last_clamped_at'] ? new Date(String(row['last_clamped_at'])) : null;
+                  const unclampAt = row['last_unclamped_at'] ? new Date(String(row['last_unclamped_at'])) : null;
+                  const clampValid = Boolean(clampAt && !Number.isNaN(clampAt.getTime()));
+                  const unclampValid = Boolean(unclampAt && !Number.isNaN(unclampAt.getTime()));
+                  const latestIsUnclamp = unclampValid && (!clampValid || unclampAt!.getTime() >= clampAt!.getTime());
+                  const latestMovementAt = latestIsUnclamp ? row['last_unclamped_at'] : row['last_clamped_at'];
+                  const latestMovementBy = latestIsUnclamp ? row['last_unclamped_by'] : row['last_clamped_by'];
+                  const hasMovement = clampValid || unclampValid;
                   return (
                     <tr key={text(row, 'id')} tabIndex={0} role="button" aria-label={'Open container ' + text(row, 'number')} onClick={() => openDetails(row)} onKeyDown={event => keyOpen(event, row)} className="cursor-pointer outline-none transition-colors hover:bg-[#18304d]/45 focus-visible:bg-[#18304d]/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8eb9ed]/70">
                       <td className="px-4 py-3.5">
@@ -421,6 +521,21 @@ export function CDSContainerRegister() {
                       <td className="px-3 py-3.5 text-[11px] text-white/65">{pretty(text(row, 'ownership')) || 'Not recorded'}</td>
                       <td className="px-3 py-3.5"><StatusBadge status={text(row, 'status') || 'unknown'} /></td>
                       <td className="px-3 py-3.5"><ConditionBadge condition={text(row, 'condition')} /></td>
+                      <td className="px-3 py-3.5">
+                        {hasMovement ? (
+                          <>
+                            <div className={'text-[11px] font-semibold ' + (latestIsUnclamp ? 'text-violet-200' : 'text-cds-teal')}>{latestIsUnclamp ? 'Unclamped' : 'Clamped'}</div>
+                            <div className="mt-1 whitespace-nowrap text-[10px] text-white/70">{formatDateTime(latestMovementAt)}</div>
+                            <div className="mt-1 text-[10px] text-white/40">By {display(latestMovementBy)}</div>
+                          </>
+                        ) : <span className="text-[10px] text-white/35">No clamp record</span>}
+                      </td>
+                      <td className="max-w-[210px] px-3 py-3.5">
+                        <div className="font-mono text-[10px] text-[#bad8fb]">Lock · {display(row['last_lock_serial'])}</div>
+                        <div className="mt-1 text-[10px] text-white/65">Driver · {display(row['last_driver_name'])}</div>
+                        <div className="mt-1 text-[10px] text-white/65">Vehicle · {display(row['last_vehicle_registration'])}</div>
+                        <div className="mt-1 text-[9px] text-white/35">{display(row['last_transporter_name'])}</div>
+                      </td>
                       <td className="max-w-[180px] px-3 py-3.5">
                         <div className="truncate text-[11px] text-white/70">{text(row, 'current_location') || 'Not recorded'}</div>
                         {row['lat'] != null && row['lng'] != null && <div className="mt-1 font-mono text-[9px] text-white/35">{Number(row['lat']).toFixed(4)}, {Number(row['lng']).toFixed(4)}</div>}
@@ -432,7 +547,7 @@ export function CDSContainerRegister() {
                   );
                 })}
                 {!isLoading && rows.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-12 text-center">
+                  <tr><td colSpan={9} className="px-4 py-12 text-center">
                     <div className="text-[13px] font-semibold text-white/75">{total === 0 && !query && status === 'all' && condition === 'all' && ownership === 'all' ? 'No containers registered yet' : 'No matching containers'}</div>
                     <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-white/40">{total === 0 && !query && status === 'all' && condition === 'all' && ownership === 'all' ? 'Register the first equipment record to establish your container inventory.' : 'Adjust the search or filters to broaden the register.'}</p>
                   </td></tr>
