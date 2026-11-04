@@ -1,21 +1,22 @@
 import { useNavigate } from '@tanstack/react-router';
 import {
-  Search, Bell, ChevronLeft, PanelLeftClose,
-  PanelLeft,
+  Search, Bell, ChevronLeft, PanelLeftClose, PanelLeft,
+  LayoutDashboard, MapPin, ClipboardList, Package, Lock,
+  Users, Truck, Anchor, Activity, FileText, BarChart2, Settings,
+  type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 import { useAuthStore } from '../../stores/auth.js';
 
 import { ContainersView, BookingsView, DriversView, TransportersView } from './CDSDataPage.js';
-import { CDSIntro } from './CDSIntro.js';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
 import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack, useTransitionTrip, useMarkDeparted } from './hooks.js';
 import { LiveFleetMap, positioned } from './LiveFleetMap.js';
 import {
   LocksView, PortView, PulseView, InboxView,
-  BillingView, ReportsView, AnalyticsView, SettingsView,
+  ReportsView, AnalyticsView, SettingsView,
 } from './pages.js';
 import { useCDSStore, type CDSView } from './store.js';
 import { useCDSRealtime } from './useCDSRealtime.js';
@@ -23,89 +24,29 @@ import cdsApi from './api.js';
 
 import type { LiveTrip } from './LiveFleetMap.js';
 
-function NavIcon({ d, from, to, id }: { d: string; from: string; to: string; id: string }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="flex-shrink-0">
-      <defs>
-        <linearGradient id={id} x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
-          <stop stopColor={from} />
-          <stop offset="1" stopColor={to} />
-        </linearGradient>
-        <filter id={`${id}-g`}>
-          <feDropShadow dx="0" dy="1" stdDeviation="1.5" floodColor={from} floodOpacity=".35" />
-        </filter>
-      </defs>
-      <path d={d} fill={`url(#${id})`} filter={`url(#${id}-g)`} />
-    </svg>
-  );
-}
-
-const VIEW_ICON_DATA: Record<string, { d: string; from: string; to: string }> = {
-  dashboard: {
-    d: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 3a1 1 0 0 1 .94.66l1.5 4.5a1 1 0 0 1-.24 1.04l-1.5 1.5a1 1 0 0 1-1.4 0l-1.5-1.5a1 1 0 0 1-.24-1.04l1.5-4.5A1 1 0 0 1 12 5Zm-5 6h2a1 1 0 0 1 0 2H7a1 1 0 0 1 0-2Zm8 0h2a1 1 0 0 1 0 2h-2a1 1 0 0 1 0-2Zm-3 4a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1Z',
-    from: '#F0B429', to: '#FF8C00',
-  },
-  live: {
-    d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm0 4c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6 2.69-6 6-6Zm0 3c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3Zm0 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z',
-    from: '#22D3EE', to: '#0284C7',
-  },
-  containers: {
-    d: 'M20 7H4c-1.1 0-2 .9-2 2v6c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2ZM8 15H6v-6h2v6Zm4 0h-2v-6h2v6Zm4 0h-2v-6h2v6Zm4 0h-2v-6h2v6ZM21 4H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2ZM21 18H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z',
-    from: '#FB923C', to: '#EA580C',
-  },
-  drivers: {
-    d: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z',
-    from: '#38BDF8', to: '#0369A1',
-  },
-  transporters: {
-    d: 'M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4ZM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5Zm13.5-9 1.96 2.5H17V9.5h2.5ZM18 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5Z',
-    from: '#C084FC', to: '#7E22CE',
-  },
-  bookings: {
-    d: 'M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Zm-3 16H8v-2h6v2Zm2-4H8v-2h8v2Zm0-4H8V8h8v2Zm-2-5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z',
-    from: '#A78BFA', to: '#7C3AED',
-  },
-  locks: {
-    d: 'M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5Zm3 8H9V6a3 3 0 1 1 6 0v3Zm-3 4a2 2 0 0 1 1 3.73V18a1 1 0 0 1-2 0v-1.27A2 2 0 0 1 12 13Z',
-    from: '#34D399', to: '#059669',
-  },
-  port: {
-    d: 'M4 18l1-5h14l1 5H4ZM6.5 5A1.5 1.5 0 0 1 8 3.5h8A1.5 1.5 0 0 1 17.5 5v2H20a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h2.5V5ZM9 7h6V5.5H9V7Zm-5 13h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2Z',
-    from: '#60A5FA', to: '#2563EB',
-  },
-  pulse: {
-    d: 'M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm6.36-3.36a1 1 0 0 0-1.41 1.41 5.66 5.66 0 0 1 0 7.9 1 1 0 0 0 1.41 1.41 7.66 7.66 0 0 0 0-10.72ZM7.05 8.05a1 1 0 0 0-1.41-1.41 7.66 7.66 0 0 0 0 10.72 1 1 0 0 0 1.41-1.41 5.66 5.66 0 0 1 0-7.9ZM20.49 4.51a1 1 0 0 0-1.41 1.41 9.36 9.36 0 0 1 0 12.16 1 1 0 0 0 1.41 1.41 11.36 11.36 0 0 0 0-14.98ZM4.92 5.92a1 1 0 0 0-1.41-1.41 11.36 11.36 0 0 0 0 14.98 1 1 0 0 0 1.41-1.41 9.36 9.36 0 0 1 0-12.16Z',
-    from: '#F472B6', to: '#DB2777',
-  },
-  inbox: {
-    d: 'M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 4-7.12 4.45a2 2 0 0 1-1.76 0L4 8V6l8 5 8-5v2ZM4 18V10l6.94 4.34a3.5 3.5 0 0 0 2.12 0L20 10v8H4Z',
-    from: '#818CF8', to: '#4F46E5',
-  },
-  billing: {
-    d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6ZM12 4c1.85 0 3.55.63 4.9 1.69L12 10l-4.9-4.31A7.96 7.96 0 0 1 12 4Zm-6.31 3.1L10 11.5l-4.31 4.4A7.96 7.96 0 0 1 4 12c0-1.85.63-3.55 1.69-4.9Zm2.41 10.21L12 13l4.9 4.31A7.96 7.96 0 0 1 12 20c-1.85 0-3.55-.63-4.9-1.69Zm10.21-2.41L14 11.5l4.31-4.4A7.96 7.96 0 0 1 20 12c0 1.85-.63 3.55-1.69 4.9Z',
-    from: '#4ADE80', to: '#16A34A',
-  },
-  reports: {
-    d: 'M5 21a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5ZM7 7v2h4V7H7Zm0 4v2h10v-2H7Zm0 4v2h10v-2H7Zm8-8v2h2V7h-2Z',
-    from: '#FBBF24', to: '#D97706',
-  },
-  analytics: {
-    d: 'M4 20h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2ZM6 17a1 1 0 0 1-1-1v-4a1 1 0 0 1 2 0v4a1 1 0 0 1-1 1Zm4 0a1 1 0 0 1-1-1V8a1 1 0 0 1 2 0v8a1 1 0 0 1-1 1Zm4 0a1 1 0 0 1-1-1v-5a1 1 0 0 1 2 0v5a1 1 0 0 1-1 1Zm4 0a1 1 0 0 1-1-1V4a1 1 0 0 1 2 0v12a1 1 0 0 1-1 1Z',
-    from: '#F97316', to: '#C2410C',
-  },
-  settings: {
-    d: 'M19.14 12.94a7.12 7.12 0 0 0 .06-.94c0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.04 7.04 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58a7.6 7.6 0 0 0 0 1.88l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z',
-    from: '#94A3B8', to: '#64748B',
-  },
+const VIEW_ICONS: Record<string, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  live: MapPin,
+  bookings: ClipboardList,
+  port: Anchor,
+  pulse: Activity,
+  containers: Package,
+  locks: Lock,
+  drivers: Users,
+  transporters: Truck,
+  inbox: FileText,
+  analytics: BarChart2,
+  reports: FileText,
+  settings: Settings,
 };
 
 const NAV_SECTIONS: { label: string; ids: string[] }[] = [
-  { label: 'Overview', ids: ['dashboard', 'live'] },
-  { label: 'Operations', ids: ['containers', 'bookings', 'locks'] },
-  { label: 'Fleet', ids: ['drivers', 'transporters'] },
-  { label: 'Workflow', ids: ['port', 'pulse', 'inbox'] },
-  { label: 'Business', ids: ['billing', 'reports', 'analytics'] },
-  { label: 'System', ids: ['settings'] },
+  { label: 'Command', ids: ['dashboard', 'live'] },
+  { label: 'Movement', ids: ['bookings', 'port', 'pulse'] },
+  { label: 'Equipment', ids: ['containers', 'locks'] },
+  { label: 'Partners', ids: ['drivers', 'transporters'] },
+  { label: 'Records & Intelligence', ids: ['inbox', 'analytics', 'reports'] },
+  { label: 'Administration', ids: ['settings'] },
 ];
 
 export default function CDSApp() {
@@ -134,10 +75,6 @@ export default function CDSApp() {
   const [headerSearchPartial, setHeaderSearchPartial] = useState(false);
   const [expanded, setExpanded] = useState(() => {
     try { return localStorage.getItem('cds-rail') !== '0'; } catch { return true; }
-  });
-  // Once per session, not once per navigation.
-  const [showIntro, setShowIntro] = useState(() => {
-    try { return !sessionStorage.getItem('cds-intro-seen'); } catch { return false; }
   });
   useEffect(() => {
     try { localStorage.setItem('cds-rail', expanded ? '1' : '0'); } catch { /* */ }
@@ -206,16 +143,11 @@ export default function CDSApp() {
   };
 
 
-  const endIntro = () => {
-    try { sessionStorage.setItem('cds-intro-seen', '1'); } catch { /* */ }
-    setShowIntro(false);
-  };
   const currentView = CDS_VIEWS.find(v => v.id === activeView);
   const railW = expanded ? 210 : 64;
 
   return (
     <div className="flex h-dvh bg-[#0c0e12] text-white overflow-hidden">
-      {showIntro && <CDSIntro onDone={endIntro} />}
       {/* ── sidebar ── */}
       <nav
         className="flex flex-col flex-shrink-0 bg-[#08090d] border-r border-white/[.06] overflow-y-auto overflow-x-hidden"
@@ -266,7 +198,7 @@ export default function CDSApp() {
               {section.ids.map(id => {
                 const v = CDS_VIEWS.find(x => x.id === id);
                 if (!v) return null;
-                const iconData = VIEW_ICON_DATA[id];
+                const Icon = VIEW_ICONS[id];
                 const active = activeView === id;
                 return (
                   <button
@@ -282,10 +214,9 @@ export default function CDSApp() {
                       borderLeft: active ? '3px solid #F0B429' : '3px solid transparent',
                     }}
                   >
-                    {iconData && (
-                      <span style={{ opacity: active ? 1 : 0.55, transition: 'opacity .15s' }}>
-                        <NavIcon d={iconData.d} from={iconData.from} to={iconData.to} id={`ni-${id}`} />
-                      </span>
+                    {Icon && (
+                      <Icon size={17} strokeWidth={1.8} aria-hidden="true"
+                        style={{ opacity: active ? 1 : 0.62, flexShrink: 0 }} />
                     )}
                     {expanded && (
                       <span className="text-[12.5px] font-medium truncate"
@@ -370,8 +301,8 @@ export default function CDSApp() {
 
           <button
             type="button"
-            title="Open Client Pulse and dispatch alerts"
-            aria-label="Open Client Pulse and dispatch alerts"
+            title="Open booking health and exceptions"
+            aria-label="Open booking health and exceptions"
             onClick={() => setActiveView('pulse')}
             className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/55 cursor-pointer flex items-center justify-center hover:text-white transition-colors"
           ><Bell size={15} /></button>
@@ -388,7 +319,6 @@ export default function CDSApp() {
           {activeView === 'port' && <PortView />}
           {activeView === 'pulse' && <PulseView />}
           {activeView === 'inbox' && <InboxView />}
-          {activeView === 'billing' && <BillingView />}
           {activeView === 'reports' && <ReportsView />}
           {activeView === 'analytics' && <AnalyticsView />}
           {activeView === 'settings' && <SettingsView />}
