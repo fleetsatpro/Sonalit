@@ -42,7 +42,7 @@ export function ContainersView() {
   const [showRegistration, setShowRegistration] = useState(false);
   const [number, setNumber] = useState('');
   const [isoType, setIsoType] = useState('40HC');
-  const [ownership, setOwnership] = useState('leased');
+  const [ownership, setOwnership] = useState('unverified');
   const [condition, setCondition] = useState('good');
   const [initialStatus, setInitialStatus] = useState('available');
   const [manufacturer, setManufacturer] = useState('');
@@ -78,7 +78,7 @@ export function ContainersView() {
   const resetRegistration = () => {
     setNumber('');
     setIsoType('40HC');
-    setOwnership('leased');
+    setOwnership('unverified');
     setCondition('good');
     setInitialStatus('available');
     setManufacturer('');
@@ -185,6 +185,7 @@ export function ContainersView() {
                 <option value="owned">Owned</option>
                 <option value="leased">Leased</option>
                 <option value="customer">Customer supplied</option>
+                <option value="unverified">Not yet verified</option>
               </select>
             </label>
 
