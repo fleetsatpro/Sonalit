@@ -1144,18 +1144,20 @@ router.post('/containers', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'damaged_or_retired_container_requires_maintenance_status' });
   }
 
-  const numericField = (value, name) => {
+  const numericField = value => {
     if (value == null || value === '') return null;
     const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      const error = new Error(`invalid_${name}`);
-      error.status = 400;
-      throw error;
-    }
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 99999999.99) return NaN;
     return parsed;
   };
-  const maxWeight = numericField(body.max_weight_kg, 'max_weight_kg');
-  const tareWeight = numericField(body.tare_weight_kg, 'tare_weight_kg');
+  const maxWeight = numericField(body.max_weight_kg);
+  const tareWeight = numericField(body.tare_weight_kg);
+  if ([maxWeight, tareWeight].some(value => Number.isNaN(value))) {
+    return res.status(400).json({ error: 'invalid_container_weight' });
+  }
+  if (maxWeight !== null && tareWeight !== null && tareWeight >= maxWeight) {
+    return res.status(400).json({ error: 'container_tare_weight_must_be_below_maximum_payload' });
+  }
   const yearBuilt = body.year_built == null || body.year_built === '' ? null : Number(body.year_built);
   if (yearBuilt !== null && (!Number.isInteger(yearBuilt) || yearBuilt < 1950 || yearBuilt > new Date().getUTCFullYear() + 1)) {
     return res.status(400).json({ error: 'invalid_container_year_built' });
