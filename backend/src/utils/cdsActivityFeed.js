@@ -50,10 +50,15 @@ async function activityFeed(db, orgId, limit) {
       `SELECT ce.id, ce.created_at, ce.kind, ce.actor_name, ce.lat, ce.lng, ce.notes,
               ce.seal_number, ce.lock_serial, ce.booking_container_id, ce.trip_id,
               bc.container_number, b.booking_number, t.trip_number,
-              COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name) AS transporter_name,
-              COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg) AS vehicle_registration,
-              COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name) AS driver_name,
-              (clamp_audit.after_data IS NOT NULL) AS has_clamp_audit_snapshot
+              COALESCE(NULLIF(BTRIM(clamp_audit.after_data->>'transporter_name'), ''), NULLIF(BTRIM(bc.transporter_name), '')) AS transporter_name,
+              COALESCE(NULLIF(BTRIM(clamp_audit.after_data->>'truck_reg'), ''), NULLIF(BTRIM(bc.horse_reg), '')) AS vehicle_registration,
+              COALESCE(NULLIF(BTRIM(clamp_audit.after_data->>'driver_name'), ''), NULLIF(BTRIM(bc.driver_name), '')) AS driver_name,
+              (
+                NULLIF(BTRIM(clamp_audit.after_data->>'lock_serial'), '') IS NOT NULL
+                OR NULLIF(BTRIM(clamp_audit.after_data->>'driver_name'), '') IS NOT NULL
+                OR NULLIF(BTRIM(clamp_audit.after_data->>'truck_reg'), '') IS NOT NULL
+                OR NULLIF(BTRIM(clamp_audit.after_data->>'transporter_name'), '') IS NOT NULL
+              ) AS has_clamp_audit_snapshot
          FROM cds_custody_events ce
          JOIN cds_booking_containers bc
            ON bc.id=ce.booking_container_id AND bc.org_id=ce.org_id AND bc.deleted_at IS NULL
