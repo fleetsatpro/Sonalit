@@ -382,7 +382,7 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
         WHERE delivered_at::date = CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
 
       (SELECT COUNT(*) FROM cds_electronic_locks WHERE status IN ('assigned','installed') AND deleted_at IS NULL) AS active_locks,
-      (SELECT COUNT(*) FROM cds_lock_events WHERE type='unlock' AND org_id='${req.user.org_id}') AS locks_removed,
+      (SELECT COUNT(*) FROM cds_lock_events WHERE type='unlock' AND org_id=$1) AS locks_removed,
 
       -- Arrived, lock still on. This previously counted status='lock_removed',
       -- which is the state a trip reaches *after* the lock comes off — the
@@ -404,7 +404,7 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
       (SELECT COUNT(*) FROM cds_trips
         WHERE status='delayed' AND deleted_at IS NULL) AS delayed_total,
       (SELECT COUNT(*) FROM cds_alerts WHERE acknowledged=false) AS unacknowledged_alerts
-  `);
+  `, [req.user.org_id]);
   const activity = await activityFeed(req.db, 20);
   res.json({ data: { ...kpis.rows[0], recent_activity: activity } });
 }));
