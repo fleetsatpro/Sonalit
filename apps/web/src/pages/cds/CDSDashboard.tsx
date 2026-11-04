@@ -174,7 +174,6 @@ export default function CDSApp() {
       window.cancelAnimationFrame(frame);
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKeyDown);
-    };
       mobileMenuButtonRef.current?.focus();
     };
   }, [mobileNavOpen]);
