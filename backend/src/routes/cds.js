@@ -176,24 +176,32 @@ async function appendCustodyEvent(req, {
   bookingContainerId, tripId = null, kind, sealNumber = null, sealIntact = null,
   lockSerial = null, lat = null, lng = null, notes = null,
 }) {
-  try {
-    const orgId = req.user.org_id;
-    const tail = await req.db(
-      `SELECT hash, seq FROM cds_custody_events
-        WHERE booking_container_id = $1 ORDER BY seq DESC LIMIT 1 FOR UPDATE`,
-      [bookingContainerId]
+  const orgId = req.user.org_id;
+  const actorName = req.user.name || req.user.email || null;
+  const latN = normCoord(lat);
+  const lngN = normCoord(lng);
+
+  // Lock the manifest parent first. SELECT ... FOR UPDATE on an empty ledger
+  // has no row to lock, so concurrent first events could both choose seq=0.
+  // Locking the manifest serialises all appends for this container, including
+  // the first one, and the INSERT commits with the hash-chain predecessor.
+  await req.dbTx(async client => {
+    const parent = await client.query(
+      'SELECT id FROM cds_booking_containers WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+      [bookingContainerId, orgId]
+    );
+    if (!parent.rows.length) {
+      const error = new Error('booking_container_not_found_for_custody');
+      error.status = 404;
+      throw error;
+    }
+
+    const tail = await client.query(
+      'SELECT hash, seq FROM cds_custody_events WHERE booking_container_id=$1 AND org_id=$2 ORDER BY seq DESC LIMIT 1 FOR UPDATE',
+      [bookingContainerId, orgId]
     );
     const prevHash = tail.rows[0]?.hash ?? null;
     const seq = (tail.rows[0]?.seq ?? -1) + 1;
-    const actorName = req.user.name || req.user.email || null;
-
-    // Coordinates are hashed at exactly the precision the NUMERIC(10,7) column
-    // stores. Hashing the raw JS number instead would make the chain
-    // unverifiable: -4.05 goes in, "-4.0500000" comes back out, and every
-    // recomputation would report tampering on untouched rows.
-    const latN = normCoord(lat);
-    const lngN = normCoord(lng);
-
     const payload = custodyPayload({
       seq, kind, bookingContainerId, orgId,
       actorUserId: req.user.id ?? null, actorName,
@@ -202,19 +210,12 @@ async function appendCustodyEvent(req, {
     });
     const hash = crypto.createHash('sha256').update(payload).digest('hex');
 
-    await req.db(
-      `INSERT INTO cds_custody_events
-         (org_id, booking_container_id, trip_id, seq, kind, actor_user_id, actor_name,
-          lat, lng, seal_number, seal_intact, lock_serial, notes, hash, prev_hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+    await client.query(
+      'INSERT INTO cds_custody_events (org_id, booking_container_id, trip_id, seq, kind, actor_user_id, actor_name, lat, lng, seal_number, seal_intact, lock_serial, notes, hash, prev_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
       [orgId, bookingContainerId, tripId, seq, kind, req.user.id ?? null, actorName,
        latN, lngN, sealNumber, sealIntact, lockSerial, notes, hash, prevHash]
     );
-  } catch (err) {
-    require('../utils/logger').error(
-      `custody chain append failed (container=${bookingContainerId}, kind=${kind}): ${err.message}`
-    );
-  }
+  });
 }
 
 function paginate(query) {
