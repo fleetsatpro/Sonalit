@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import {
   ArrowLeft, ArrowRight, Building2, Check, ChevronRight, CloudOff, Lock, Loader2,
-  MapPin, Package, Phone, StickyNote, Truck, UserRound, X,
+  MapPin, Package, StickyNote, Truck, UserRound, X,
 } from 'lucide-react';
 import { useState } from 'react';
 
