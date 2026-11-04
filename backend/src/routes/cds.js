@@ -90,6 +90,11 @@ router.use((req, res, next) => {
  * breaking a clamp. Nothing here is ever awaited into the response path.
  */
 function publishCds(req, type, payload) {
+  // Operational events are emitted only after the transaction commits.
+  if (Array.isArray(req._cdsAfterCommit)) {
+    req._cdsAfterCommit.push({ type, payload });
+    return;
+  }
   const orgId = req.user && req.user.org_id;
   if (!orgId) return;
   Promise.resolve(
@@ -101,6 +106,49 @@ function publishCds(req, type, payload) {
       ...payload,
     })
   ).catch((err) => logger.warn(`CDS realtime publish failed (${type}): ${err.message}`));
+}
+
+/**
+ * Run a CDS command as one tenant-scoped transaction.
+ *
+ * req.db and nested req.dbTx calls reuse the active tenant client via
+ * orgScopedDb/tenantContext. The response is staged until COMMIT succeeds,
+ * and realtime events are emitted afterwards so subscribers never race an
+ * uncommitted container or custody state.
+ */
+function cdsTransaction(handler) {
+  return asyncHandler(async (req, res) => {
+    const originalStatus = res.status;
+    const originalJson = res.json;
+    const previousQueue = req._cdsAfterCommit;
+    const events = [];
+    const response = { statusCode: res.statusCode || 200, body: undefined, sent: false };
+
+    res.status = function (code) {
+      response.statusCode = code;
+      return this;
+    };
+    res.json = function (body) {
+      response.body = body;
+      response.sent = true;
+      return this;
+    };
+    req._cdsAfterCommit = events;
+
+    try {
+      await req.dbTx(() => handler(req, res));
+    } finally {
+      res.status = originalStatus;
+      res.json = originalJson;
+      req._cdsAfterCommit = previousQueue;
+    }
+
+    for (const event of events) publishCds(req, event.type, event.payload);
+    if (response.sent) {
+      if (response.statusCode !== 200) originalStatus.call(res, response.statusCode);
+      originalJson.call(res, response.body);
+    }
+  });
 }
 
 function genCode(prefix) {
@@ -2108,7 +2156,7 @@ router.get('/field/departures', asyncHandler(async (req, res) => {
 // send one, and it must: a clamp creates a trip and upserts a driver/vehicle/
 // lock, so a queued submission retried after a flaky-network timeout would
 // otherwise create a second trip for the same container.
-router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
+router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTransaction(async (req, res) => {
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
   const {
@@ -2365,7 +2413,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
 
 // Port team unclamps the e-lock — container has arrived and been delivered.
 // Idempotent for the same reason as clamp — see the note there.
-router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
+router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsTransaction(async (req, res) => {
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
   const { notes, lat, lng, seal_intact, observed_seal } = req.body || {};
