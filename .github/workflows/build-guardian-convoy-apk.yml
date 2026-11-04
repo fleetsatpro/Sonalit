@@ -30,6 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Capacitor 8 requires Node >=22.0; Vite 8 requires Node >=20.19 or >=22.12.
+      # Keep the Android lane on Node 22 so npm ci and the Capacitor CLI agree.
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
