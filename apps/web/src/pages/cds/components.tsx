@@ -284,6 +284,14 @@ export function KPICard({
 /*  DataTable & FilterChip                                             */
 /* ------------------------------------------------------------------ */
 
+function reactNodeText(value: React.ReactNode): string {
+  if (value == null || typeof value === 'boolean') return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return value.map(reactNodeText).join(' ');
+  if (React.isValidElement<{ children?: React.ReactNode }>(value)) return reactNodeText(value.props.children);
+  return '';
+}
+
 interface Column<T> {
   id: string;
   header: string;
@@ -321,18 +329,10 @@ export function DataTable<T>({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
 
-  const textValue = (value: React.ReactNode): string => {
-    if (value == null || typeof value === 'boolean') return '';
-    if (typeof value === 'string' || typeof value === 'number') return String(value);
-    if (Array.isArray(value)) return value.map(item => textValue(item)).join(' ');
-    if (React.isValidElement<{ children?: React.ReactNode }>(value)) return textValue(value.props.children);
-    return '';
-  };
-
   const filteredData = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     if (!query) return data;
-    return data.filter(row => columns.some(column => textValue(column.accessor(row)).toLocaleLowerCase().includes(query)));
+    return data.filter(row => columns.some(column => reactNodeText(column.accessor(row)).toLocaleLowerCase().includes(query)));
   }, [columns, data, search]);
 
   const sortedData = useMemo(() => {
@@ -340,8 +340,8 @@ export function DataTable<T>({
     const column = columns.find(item => item.id === sortCol);
     if (!column) return filteredData;
     return [...filteredData].sort((left, right) => {
-      const a = column.sortValue ? column.sortValue(left) : textValue(column.accessor(left));
-      const b = column.sortValue ? column.sortValue(right) : textValue(column.accessor(right));
+      const a = column.sortValue ? column.sortValue(left) : reactNodeText(column.accessor(left));
+      const b = column.sortValue ? column.sortValue(right) : reactNodeText(column.accessor(right));
       if (a == null && b == null) return 0;
       if (a == null) return sortDir === 'asc' ? 1 : -1;
       if (b == null) return sortDir === 'asc' ? -1 : 1;
