@@ -2324,11 +2324,14 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   const cleanTruckReg = String(truck_reg).trim().toUpperCase();
   const cleanDriverName = String(driver_name).trim();
   const cleanTrailerReg = trailer_reg ? String(trailer_reg).trim().toUpperCase() : null;
-  const cleanTransporter = transporter_name ? String(transporter_name).trim() : null;
+  const cleanTransporter = transporter_name ? String(transporter_name).trim() || null : null;
+  if (!cleanLockSerial || !cleanTruckReg || !cleanDriverName) {
+    return res.status(400).json({ error: 'lock_serial, truck_reg and driver_name are required' });
+  }
   if (cleanLockSerial.length > 30 || cleanTruckReg.length > 20 || cleanDriverName.length > 255
     || (cleanTrailerReg && cleanTrailerReg.length > 20)
     || (cleanTransporter && cleanTransporter.length > 255)
-    || (notes && String(notes).length > 512)) {
+    || (notes != null && (typeof notes !== 'string' || notes.length > 512))) {
     return res.status(400).json({ error: 'clamp_field_too_long' });
   }
   if ((lat != null && (!Number.isFinite(Number(lat)) || Number(lat) < -90 || Number(lat) > 90))
@@ -2389,7 +2392,9 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   }
   const driver = dr.rows[0];
   const cleanDriverPhone = driver.phone ? String(driver.phone).trim() : null;
-  if (!driver.license_number || !driver.license_expiry || new Date(driver.license_expiry).getTime() <= Date.now()) {
+  const licenseNumber = String(driver.license_number || '').trim().toUpperCase();
+  if (!licenseNumber || ['PENDING','UNKNOWN','N/A','NA','TBC','-'].includes(licenseNumber)
+    || !driver.license_expiry || new Date(driver.license_expiry).getTime() <= Date.now()) {
     return res.status(409).json({ error: 'driver_licence_not_valid', message: 'The driver needs a valid, unexpired licence on their personnel record.' });
   }
   if (driver.status !== 'available') {
@@ -2410,9 +2415,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   // Resolve or create the vehicle register row. Its current operational status
   // and open-trip assignments are checked before it can take another box.
   const ve = await req.db(
-    'SELECT id, status FROM cds_vehicles WHERE UPPER(BTRIM(registration))=UPPER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+    'SELECT id, status FROM cds_vehicles WHERE UPPER(BTRIM(registration))=UPPER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL ORDER BY id LIMIT 2 FOR UPDATE',
     [cleanTruckReg, orgId]
   );
+  if (ve.rows.length > 1) {
+    return res.status(409).json({ error: 'ambiguous_vehicle_registration', registration: cleanTruckReg });
+  }
   let vehicleId = ve.rows[0]?.id ?? null;
   if (ve.rows.length) {
     if (ve.rows[0].status !== 'available') {
@@ -2449,9 +2457,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     return res.status(409).json({ error: 'booking_container_equipment_type_requires_correction' });
   }
   const co = await req.db(
-    'SELECT id, condition, status FROM cds_containers WHERE number=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+    'SELECT id, condition, status FROM cds_containers WHERE UPPER(BTRIM(number))=UPPER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL ORDER BY id LIMIT 2 FOR UPDATE',
     [freightNumber, orgId]
   );
+  if (co.rows.length > 1) {
+    return res.status(409).json({ error: 'ambiguous_container_asset_number' });
+  }
   let containerId = co.rows[0]?.id ?? null;
   if (co.rows.length) {
     const asset = co.rows[0];
@@ -2494,9 +2505,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   // A lock already installed on another asset or reporting tamper/offline
   // must not be silently reassigned to this trip.
   const lk = await req.db(
-    'SELECT id, status, container_id, vehicle_id, tamper_detected, tamper_status FROM cds_electronic_locks WHERE UPPER(BTRIM(serial))=UPPER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+    'SELECT id, status, container_id, vehicle_id, tamper_detected, tamper_status FROM cds_electronic_locks WHERE UPPER(BTRIM(serial))=UPPER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL ORDER BY id LIMIT 2 FOR UPDATE',
     [cleanLockSerial, orgId]
   );
+  if (lk.rows.length > 1) {
+    return res.status(409).json({ error: 'ambiguous_e_lock_serial' });
+  }
   if (lk.rows.length && (
     !['available','assigned'].includes(String(lk.rows[0].status))
     || lk.rows[0].tamper_detected
@@ -2516,7 +2530,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   if (!lockId) {
     const createdLock = await req.db(
       `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) ON CONFLICT (serial) DO NOTHING RETURNING id`,
-      [cleanLockSerial, 'SecuriSat', 'assigned', orgId]
+      [cleanLockSerial, 'unverified', 'assigned', orgId]
     );
     if (!createdLock.rows.length) {
       const error = new Error('e_lock_registered_in_another_organisation_or_conflict');
