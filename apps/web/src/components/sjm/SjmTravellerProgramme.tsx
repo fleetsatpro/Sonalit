@@ -614,7 +614,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
               {canManage && planEditable && documentTravellerId === traveller.id && <div className="mt-3 space-y-2 rounded-md border border-sky-300/20 bg-sky-300/[0.035] p-3">
                 <p className="text-[10px] font-semibold tracking-wide text-sky-100">PRIVATE TRAVEL DOCUMENT</p>
                 <div className="grid grid-cols-2 gap-2"><label className={label}>Document type<select className={field} value={documentType} onChange={event => setDocumentType(event.target.value)}>{[['passport','Passport'],['visa','Visa'],['e_ticket','E-ticket'],['boarding_pass','Boarding pass'],['booking_confirmation','Booking confirmation'],['itinerary','Travel itinerary'],['travel_insurance','Travel insurance'],['invitation_letter','Invitation letter'],['residence_permit','Residence permit'],['other','Other']].map(([value,name]) => <option key={value} value={value}>{name}</option>)}</select></label>{input('Holder name', documentHolder, setDocumentHolder)}</div>
-                <div className="grid grid-cols-2 gap-2">{countrySelect('Issuing country',documentCountry,setDocumentCountry)}{input('Issue date',documentIssueDate,setDocumentIssueDate,'','date')}{input('Expiry date',documentExpiryDate,setDocumentExpiryDate,'','date')}</div>
+                <div className="grid grid-cols-2 gap-2">{countrySelect('Issuing country · recommended',documentCountry,setDocumentCountry)}{input('Issue date',documentIssueDate,setDocumentIssueDate,'','date')}{input('Expiry date',documentExpiryDate,setDocumentExpiryDate,'','date')}</div>
                 <label className={label}>PDF or image file<input className={field} type="file" accept="application/pdf,image/jpeg,image/png" disabled={!planEditable || Boolean(documentUploadState)} onChange={event => { const file = event.target.files?.[0]; void uploadDocument(traveller, file); event.currentTarget.value = ''; }}/></label>
                 {documentUploadState?.travellerId===traveller.id&&<p role="status" className="text-[10px] leading-4 text-sky-100/85">{documentUploadState.phase}</p>}
                 <p className="text-[10px] leading-4 text-slate-500">PDF up to 25 MiB; JPEG/PNG up to 20 MiB. Uploads require the dedicated private SJM storage bucket, a short-lived upload capability and server-side integrity verification. If private storage is not configured in this environment, upload is blocked; no public/shared media bucket fallback is allowed.</p>
@@ -637,7 +637,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
           <p className="sjm-traveller-wizard__counter">STEP {String(travellerStep+1).padStart(2,'0')} / 04 <span>·</span> {['Identity details','Contact and relationship','Travel documents','Confirm registration'][travellerStep]}</p>
           {travellerFormError && <p className="sjm-traveller-form-error" role="alert"><AlertCircle size={14}/>{travellerFormError}</p>}
           {travellerStep === 0 && <section className="sjm-traveller-wizard__body" aria-labelledby="sjm-traveller-identity-heading">
-            <div className="sjm-traveller-step-heading"><div><h6 id="sjm-traveller-identity-heading">Identity details</h6><p>Enter the legal identity as it appears on the passport or other travel document.</p></div><span className="sjm-field-required-note">* Required</span></div>
+            <div className="sjm-traveller-step-heading"><div><h6 id="sjm-traveller-identity-heading">Identity details</h6><p>Legal name is required to register. Confirm nationality and date of birth from the travel document before ticketing; contact details and document uploads can be completed later.</p></div><span className="sjm-field-required-note">* Required</span></div>
             <div className="sjm-traveller-form-grid sjm-traveller-form-grid--identity">
               <label className={label}>Traveller reference *<input className={field} value={travellerDraft.traveller_reference} onChange={event=>setTravellerDraft({...travellerDraft,traveller_reference:event.target.value})} aria-describedby="sjm-traveller-ref-help"/></label>
               <label className={label}>Traveller role *<select className={field} value={travellerDraft.traveller_type} onChange={event=>setTravellerDraft({...travellerDraft,traveller_type:event.target.value})}>{[['principal','Principal traveller'],['accompanying','Accompanying traveller'],['assistant','Personal assistant'],['dependent','Dependent'],['other','Other']].map(([value,name])=><option key={value} value={value}>{name}</option>)}</select></label>
@@ -651,10 +651,10 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
               {input('Preferred / known-as name',travellerDraft.preferred_name,value=>setTravellerDraft({...travellerDraft,preferred_name:value}),'Optional; used for operations')}
             </div>
             <div className="sjm-traveller-form-grid sjm-traveller-form-grid--identity">
-              {countrySelect('Nationality / citizenship',travellerDraft.nationality,value=>setTravellerDraft({...travellerDraft,nationality:value}))}
-              {input('Date of birth',travellerDraft.date_of_birth,value=>setTravellerDraft({...travellerDraft,date_of_birth:value}),'','date')}
+              {countrySelect('Nationality / citizenship · recommended',travellerDraft.nationality,value=>setTravellerDraft({...travellerDraft,nationality:value}))}
+              {input('Date of birth · recommended',travellerDraft.date_of_birth,value=>setTravellerDraft({...travellerDraft,date_of_birth:value}),'','date')}
             </div>
-            <p className="sjm-traveller-field-help">Do not shorten names or substitute a preferred name for the legal document name. The reference and preferred name are internal Sonalit fields, not airline document data.</p>
+            <p className="sjm-traveller-field-help">Do not shorten names or substitute a preferred name for the legal document name. Confirm nationality and date of birth from the original document before ticketing. The flag identifies the selected country; it does not validate nationality or citizenship.</p>
           </section>}
           {travellerStep === 1 && <section className="sjm-traveller-wizard__body" aria-labelledby="sjm-traveller-contact-heading">
             <div className="sjm-traveller-step-heading"><div><h6 id="sjm-traveller-contact-heading">Contacts and relationships</h6><p>These details help coordinators contact the traveller and understand the party structure.</p></div></div>
@@ -679,7 +679,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
             <div className="sjm-traveller-form-grid sjm-traveller-form-grid--identity">
               <label className={label}>Document type<select className={field} value={documentType} onChange={event=>setDocumentType(event.target.value)}>{[['passport','Passport'],['visa','Visa'],['e_ticket','E-ticket'],['boarding_pass','Boarding pass'],['booking_confirmation','Booking confirmation'],['itinerary','Travel itinerary'],['travel_insurance','Travel insurance'],['invitation_letter','Invitation letter'],['residence_permit','Residence permit'],['other','Other']].map(([value,name])=><option key={value} value={value}>{name}</option>)}</select></label>
               {input('Name on document',documentHolder,value=>setDocumentHolder(value),'As printed on document')}
-              {countrySelect('Issuing country',documentCountry,setDocumentCountry)}
+              {countrySelect('Issuing country · recommended',documentCountry,setDocumentCountry)}
               {input('Issue date',documentIssueDate,setDocumentIssueDate,'','date')}
               {input('Expiry date',documentExpiryDate,setDocumentExpiryDate,'','date')}
             </div>
