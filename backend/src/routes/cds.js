@@ -1050,6 +1050,29 @@ router.get('/containers', asyncHandler(async (req, res) => {
   const { limit, offset } = paginate(req.query);
   const filters = ['t.deleted_at IS NULL'];
   const params = [];
+  const joins = `
+    LEFT JOIN LATERAL (
+      SELECT
+        tr.id, tr.trip_number, tr.status, tr.origin, tr.destination, tr.eta, tr.departed_at,
+        b.booking_number,
+        v.registration AS vehicle_registration,
+        d.name AS driver_name,
+        l.serial AS lock_serial,
+        l.status AS lock_status,
+        l.signal_strength AS lock_signal_strength,
+        l.battery_level AS lock_battery_level
+      FROM cds_trips tr
+      LEFT JOIN cds_bookings b ON b.id = tr.booking_id AND b.org_id = tr.org_id
+      LEFT JOIN cds_vehicles v ON v.id = tr.vehicle_id AND v.org_id = tr.org_id
+      LEFT JOIN cds_drivers d ON d.id = tr.driver_id AND d.org_id = tr.org_id
+      LEFT JOIN cds_electronic_locks l ON l.id = tr.lock_id AND l.org_id = tr.org_id
+      WHERE tr.container_id = t.id
+        AND tr.org_id = t.org_id
+        AND tr.deleted_at IS NULL
+      ORDER BY tr.updated_at DESC NULLS LAST, tr.created_at DESC
+      LIMIT 1
+    ) latest_trip ON TRUE
+  `;
   const allowedStatuses = new Set([
     'available', 'booked', 'awaiting_pickup', 'in_transit', 'at_port', 'delivered', 'maintenance',
   ]);
@@ -1071,18 +1094,35 @@ router.get('/containers', asyncHandler(async (req, res) => {
     filters.push(`(${[
       't.number', 't.container_type', 't.iso_type', 't.ownership',
       't.condition', 't.status', 't.current_location', 't.manufacturer',
-    ].map(column => `${column} ILIKE $${p}`).join(' OR ')})`);
+      'latest_trip.booking_number', 'latest_trip.trip_number',
+      'latest_trip.vehicle_registration', 'latest_trip.lock_serial',
+    ].map(column => `${column} ILIKE ${p}`).join(' OR ')})`);
   }
   const where = filters.join(' AND ');
 
   const payload = await req.dbTx(async client => {
     const result = await client.query(
-      `SELECT t.* FROM cds_containers t WHERE ${where}
-       ORDER BY t.created_at DESC, t.id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      `SELECT
+         t.*,
+         latest_trip.trip_number AS latest_trip_number,
+         latest_trip.status AS latest_trip_status,
+         latest_trip.booking_number AS latest_booking_number,
+         latest_trip.origin AS latest_trip_origin,
+         latest_trip.destination AS latest_trip_destination,
+         latest_trip.eta AS latest_trip_eta,
+         latest_trip.departed_at AS latest_trip_departed_at,
+         latest_trip.vehicle_registration AS latest_vehicle_registration,
+         latest_trip.driver_name AS latest_driver_name,
+         latest_trip.lock_serial AS latest_lock_serial,
+         latest_trip.lock_status AS latest_lock_status,
+         latest_trip.lock_signal_strength AS latest_lock_signal_strength,
+         latest_trip.lock_battery_level AS latest_lock_battery_level
+       FROM cds_containers t ${joins} WHERE ${where}
+       ORDER BY t.created_at DESC, t.id DESC LIMIT ${params.length + 1} OFFSET ${params.length + 2}`,
       [...params, limit, offset],
     );
     const total = await client.query(
-      `SELECT COUNT(*)::int AS count FROM cds_containers t WHERE ${where}`,
+      `SELECT COUNT(*)::int AS count FROM cds_containers t ${joins} WHERE ${where}`,
       params,
     );
     const summary = await client.query(
