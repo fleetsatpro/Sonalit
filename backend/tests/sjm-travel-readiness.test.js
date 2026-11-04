@@ -58,6 +58,13 @@ describe('SJM server-side travel readiness', () => {
       missing_date_of_birth_count: 1,
     }));
 
+    const airportApproval = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal], flights: [flight], days: [], documents: [],
+    }, 'approval');
+    expect(airportApproval.ready).toBe(true);
+    expect(airportApproval.blockers.map(item => item.code)).not.toContain('airport_traveller_identity_incomplete');
+    expect(airportApproval.warnings.map(item => item.code)).toContain('traveller_identity_details_incomplete');
+
     const completeAirport = evaluateTravelReadiness({
       journey: airportJourney,
       travellers: [{ ...principal, nationality: 'Kenya', date_of_birth: '1990-01-01' }],
