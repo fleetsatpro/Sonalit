@@ -3,11 +3,15 @@ function resolveSealVerdict({ expectedSeal, observedSeal, sealIntact }) {
 
   const expected = typeof expectedSeal === 'string' ? expectedSeal.trim() : '';
   const observed = typeof observedSeal === 'string' ? observedSeal.trim() : '';
-  if (sealIntact === true && expected && observed) {
-    return observed.toUpperCase() === expected.toUpperCase();
+  if (expected && observed && observed.toUpperCase() !== expected.toUpperCase()) {
+    // A mismatched physical identifier is tamper evidence even when the
+    // operator did not select the positive/negative radio option.
+    return false;
   }
+  if (sealIntact === true && expected && observed) return true;
 
-  // Missing expected or observed identifiers mean "not verified", not intact.
+  // Matching or incomplete text alone is not a positive verification. The
+  // operator must explicitly confirm the comparison as intact.
   return null;
 }
 
