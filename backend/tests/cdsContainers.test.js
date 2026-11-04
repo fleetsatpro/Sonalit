@@ -394,6 +394,8 @@ describe('CDS unclamp lock identity', () => {
             clamp_lock_serial: 'LOCK-AT-CLAMP',
             clamp_lock_id: 'lock-original',
             trip_id: null,
+            clamped_at: '2026-11-04T08:30:00.000Z',
+            unclamped_at: null,
             seal_number: 'SEAL-01',
           }] };
         }
@@ -420,3 +422,85 @@ describe('CDS unclamp lock identity', () => {
   });
 });
 
+
+describe('CDS unclamp evidence validation', () => {
+  test('refuses to deliver or release a lock when the container has no open clamp', async () => {
+    const calls = [];
+    const res = response();
+    await routeLayer('/bookings/:id/containers/:cid/unclamp', 'post')({
+      params: { id: 'booking-1', cid: 'booking-container-1' },
+      body: { seal_intact: true, observed_seal: 'SEAL-01' },
+      user: { id: 'port-user', org_id: 'org-1', name: 'Port lead' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        return { rows: [{
+          id: 'booking-container-1', booking_id: 'booking-1', booking_number: 'BK-1001',
+          status: 'assigned', clamped_at: null, unclamped_at: null,
+          seal_number: 'SEAL-01', clamp_lock_id: null, clamp_lock_serial: null,
+        }] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(409);
+    expect(res.result.body.error).toBe('container_not_currently_clamped');
+    expect(calls).toHaveLength(1);
+  });
+
+  test('does not treat a client-reported intact seal as verified without an observed comparison', async () => {
+    const calls = [];
+    const res = response();
+    await routeLayer('/bookings/:id/containers/:cid/unclamp', 'post')({
+      params: { id: 'booking-1', cid: 'booking-container-1' },
+      body: { seal_intact: true, notes: 'No physical seal number was entered' },
+      user: { id: 'port-user', org_id: 'org-1', name: 'Port lead' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        if (sql.includes('SELECT bc.*, b.booking_number, t.id AS trip_id')) {
+          return { rows: [{
+            id: 'booking-container-1', booking_id: 'booking-1', booking_number: 'BK-1001',
+            container_number: 'MSCU6639870', status: 'in_transit',
+            lock_number: 'LOCK-01', clamp_lock_serial: 'LOCK-01', clamp_lock_id: null,
+            trip_id: null, clamped_at: '2026-11-04T08:30:00.000Z', unclamped_at: null,
+            seal_number: 'SEAL-01',
+          }] };
+        }
+        if (sql.includes('SELECT COUNT(*)::int AS c FROM cds_booking_containers')) {
+          return { rows: [{ c: 1 }] };
+        }
+        if (sql.includes('SELECT hash, seq FROM cds_custody_events')) return { rows: [] };
+        return { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(200);
+    const custodyInsert = calls.find(call => call.sql.includes('INSERT INTO cds_custody_events'));
+    expect(custodyInsert.values[10]).toBeNull();
+    const auditInsert = calls.find(call => call.sql.includes("VALUES ('unclamp','booking_container'"));
+    expect(JSON.parse(auditInsert.values[3]).seal_intact).toBeNull();
+    expect(JSON.parse(auditInsert.values[3]).seal_observed).toBeNull();
+  });
+
+  test('rejects an already-unclamped manifest row', async () => {
+    const calls = [];
+    const res = response();
+    await routeLayer('/bookings/:id/containers/:cid/unclamp', 'post')({
+      params: { id: 'booking-1', cid: 'booking-container-1' },
+      body: {},
+      user: { id: 'port-user', org_id: 'org-1', name: 'Port lead' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        return { rows: [{
+          id: 'booking-container-1', booking_id: 'booking-1', booking_number: 'BK-1001',
+          status: 'in_transit',
+          clamped_at: '2026-11-04T08:30:00.000Z',
+          unclamped_at: '2026-11-04T12:30:00.000Z',
+          seal_number: 'SEAL-01', clamp_lock_id: null,
+        }] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(409);
+    expect(res.result.body.error).toBe('container_not_currently_clamped');
+    expect(calls).toHaveLength(1);
+  });
+});
