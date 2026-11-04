@@ -500,7 +500,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     if (step === 0) {
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,47}$/.test(travellerDraft.traveller_reference.trim())) return 'Enter a unique traveller reference (2–48 letters, numbers, dashes or underscores).';
       if (!travellerDraft.given_name.trim() || !travellerDraft.family_name.trim()) return 'Enter the traveller’s given name and family name exactly as shown on the travel document.';
-      if (travellerDraft.date_of_birth && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(travellerDraft.date_of_birth) || new Date(travellerDraft.date_of_birth+'T00:00:00').toString()==='Invalid Date' || travellerDraft.date_of_birth > new Date().toISOString().slice(0,10))) return 'Enter a valid date of birth that is not in the future.';
+      if (travellerDraft.date_of_birth) { const dob = new Date(travellerDraft.date_of_birth + 'T00:00:00.000Z'); if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(travellerDraft.date_of_birth) || !Number.isFinite(dob.getTime()) || dob.toISOString().slice(0,10) !== travellerDraft.date_of_birth || travellerDraft.date_of_birth > new Date().toISOString().slice(0,10)) return 'Enter a valid date of birth that is not in the future.'; }
     }
     if (step === 1) {
       if (travellerDraft.email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(travellerDraft.email.trim())) return 'Enter a valid email address or leave the field blank.';
