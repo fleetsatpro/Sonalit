@@ -53,7 +53,6 @@ async function activityFeed(db, orgId, limit) {
               COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name) AS transporter_name,
               COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg) AS vehicle_registration,
               COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name) AS driver_name,
-              COALESCE(clamp_audit.after_data->>'driver_phone', bc.driver_contact) AS driver_contact,
               (clamp_audit.after_data IS NOT NULL) AS has_clamp_audit_snapshot
          FROM cds_custody_events ce
          JOIN cds_booking_containers bc
@@ -119,7 +118,6 @@ async function activityFeed(db, orgId, limit) {
         event_kind: r.kind,
         lock_serial: r.lock_serial,
         driver_name: r.driver_name,
-        driver_contact: r.driver_contact,
         vehicle_registration: r.vehicle_registration,
         transporter_name: r.transporter_name,
         assignment_source: assignmentSource,
