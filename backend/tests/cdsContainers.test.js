@@ -327,3 +327,39 @@ describe('legacy trip mutation guards', () => {
     expect(statements.every(statement => statement.sql.trim().startsWith('SELECT'))).toBe(true);
   });
 });
+
+
+describe('GET /field/yard-resources', () => {
+  test('returns only current-organisation eligible drivers, vehicles, transporters and locks', async () => {
+    const statements = [];
+    const req = {
+      user: { org_id: 'org-1' },
+      db: async (sql, params) => {
+        statements.push({ sql, params });
+        if (sql.includes('FROM cds_drivers d')) return { rows: [{ id: 'driver-1', name: 'Registered Driver' }] };
+        if (sql.includes('FROM cds_vehicles v')) return { rows: [{ id: 'vehicle-1', registration: 'KAA 123A' }] };
+        if (sql.includes('FROM cds_transporters tr')) return { rows: [{ id: 'transporter-1', company_name: 'Registered Haulier' }] };
+        if (sql.includes('FROM cds_electronic_locks l')) return { rows: [{ id: 'lock-1', serial: 'LOCK-001' }] };
+        throw new Error('unexpected SQL for yard resources');
+      },
+    };
+    const res = response();
+    await handlerFor('/field/yard-resources', 'get')(req, res, error => { if (error) throw error; });
+
+    expect(res.body.data).toMatchObject({
+      drivers: [{ id: 'driver-1', name: 'Registered Driver' }],
+      vehicles: [{ id: 'vehicle-1', registration: 'KAA 123A' }],
+      transporters: [{ id: 'transporter-1', company_name: 'Registered Haulier' }],
+      locks: [{ id: 'lock-1', serial: 'LOCK-001' }],
+    });
+    expect(statements).toHaveLength(4);
+    for (const statement of statements) expect(statement.params).toEqual(['org-1']);
+    expect(statements[0].sql).toContain('license_expiry >= CURRENT_DATE');
+    expect(statements[0].sql).toContain("d.status='available'");
+    expect(statements[0].sql).toContain("NOT IN ('PENDING','UNKNOWN','N/A','NA','TBC','-','')");
+    expect(statements[1].sql).toContain("v.status='available'");
+    expect(statements[2].sql).toContain('cds_transporters duplicate');
+    expect(statements[3].sql).toContain("l.status='available'");
+    expect(statements[3].sql).toContain("COALESCE(l.tamper_status,'normal')='normal'");
+  });
+});
