@@ -2624,26 +2624,6 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   });
 
   res.json(responseBody);
-
-  // The moment that matters to the other two surfaces: the port crew gains an
-  // inbound container, the yard queue loses one, and the control room gets a
-  // new trip on the board.
-  publishCds(req, 'cds.container.clamped', {
-    booking_id: bookingId,
-    booking_number: bc.rows[0].booking_number,
-    booking_container_id: bcId,
-    container_number: bc.rows[0].container_number,
-    trip_id: trip.rows[0].id,
-    trip_number: trip.rows[0].trip_number,
-    lock_serial: lock_serial.trim(),
-    truck_reg,
-    driver_name,
-    tracking_qr_issued: !!tracking,
-    lat: lat ?? null,
-    lng: lng ?? null,
-  });
-
-  res.json({ data: { trip: trip.rows[0], booking_container_id: bcId, tracking } });
 }));
 
 // Port team unclamps the e-lock — container has arrived and been delivered.
