@@ -289,7 +289,7 @@ async function listRows(req, res, table, { joins = '', selectCols = '*', searchC
   }
   if (req.query.search && searchCols.length) {
     params.push(`%${req.query.search}%`);
-    filters.push('(' + searchCols.map(column => column + ' ILIKE 
+    filters.push('(' + searchCols.map(column => column + ' ILIKE ' + String.fromCharCode(36) + params.length).join(' OR ') + ')');
   }
   // Only callers that provide a fixed column allowlist can enable field filters.
   // Values remain parameterised; request input is never interpolated as SQL.
@@ -297,7 +297,7 @@ async function listRows(req, res, table, { joins = '', selectCols = '*', searchC
     const value = req.query[key];
     if (typeof value === 'string' && value.trim()) {
       params.push(value.trim());
-      filters.push(column + '=
+      filters.push(column + '=' + String.fromCharCode(36) + params.length);
     }
   });
   Object.entries(req.query).forEach(([k, v]) => {
