@@ -230,7 +230,7 @@ const ISO6346_LETTER_VALUES = (() => {
 })();
 
 function iso6346CheckDigit(containerNumber) {
-  const code = String(containerNumber || '').trim().toUpperCase().replace(/\\s+/g, '');
+  const code = String(containerNumber || '').trim().toUpperCase().replace(/\s+/g, '');
   if (!/^[A-Z]{3}[UJZ][0-9]{7}$/.test(code)) return null;
   let sum = 0;
   for (let index = 0; index < 10; index += 1) {
@@ -245,7 +245,7 @@ function iso6346CheckDigit(containerNumber) {
 }
 
 function isValidIso6346ContainerNumber(containerNumber) {
-  const code = String(containerNumber || '').trim().toUpperCase().replace(/\\s+/g, '');
+  const code = String(containerNumber || '').trim().toUpperCase().replace(/\s+/g, '');
   const checkDigit = iso6346CheckDigit(code);
   return checkDigit !== null && checkDigit === Number(code[10]);
 }
@@ -1106,7 +1106,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
 }));
 router.get('/containers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_containers'); }));
 router.post('/containers', asyncHandler(async (req, res) => {
-  const number = String(req.body?.number || '').trim().toUpperCase().replace(/\\s+/g, '');
+  const number = String(req.body?.number || '').trim().toUpperCase().replace(/\s+/g, '');
   if (!isValidIso6346ContainerNumber(number)) {
     return res.status(400).json({ error: 'invalid_container_number', message: 'A valid ISO 6346 container number and check digit are required.' });
   }
