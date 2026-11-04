@@ -1067,9 +1067,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
       LIMIT 1
     ) latest_booking_container ON TRUE
     LEFT JOIN LATERAL (
-      SELECT
-        ce.id, ce.kind, ce.seq, ce.actor_name, ce.lat, ce.lng,
-        ce.seal_number, ce.seal_intact, ce.lock_serial, ce.notes, ce.created_at
+      SELECT ce.kind, ce.seq, ce.actor_name, ce.seal_intact, ce.lock_serial, ce.created_at
       FROM cds_custody_events ce
       WHERE ce.booking_container_id = latest_booking_container.id
         AND ce.org_id = t.org_id
