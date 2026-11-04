@@ -1588,11 +1588,23 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByTestId('sjm-travel-readiness')).toContainText('Register one principal traveller before route approval or departure release.');
 
     await page.getByRole('button', { name: 'Register traveller' }).click();
+    await expect(page.getByRole('heading', { name: 'Identity details' })).toBeVisible();
     await page.getByLabel('Traveller reference *').fill('TRV-E2E-01');
     await page.getByLabel('Given name *').fill('Amina');
     await page.getByLabel('Family / surname *').fill('Example');
-    await page.getByLabel('Nationality').selectOption('Kenya');
-    await page.getByLabel('Email').fill('amina@example.invalid');
+    await page.getByLabel('Nationality / citizenship · recommended').selectOption('Kenya');
+    await page.getByRole('button', { name: /^Continue/ }).click();
+
+    await expect(page.getByRole('heading', { name: 'Contacts and relationships' })).toBeVisible();
+    await page.getByLabel('Email address').fill('amina@example.invalid');
+    await page.getByRole('button', { name: /^Continue/ }).click();
+
+    await expect(page.getByRole('heading', { name: 'Travel documents' })).toBeVisible();
+    await page.getByRole('button', { name: /^Continue/ }).click();
+
+    await expect(page.getByRole('heading', { name: 'Review before saving' })).toBeVisible();
+    await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
+    await expect(page.getByText('Kenya', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Register traveller' }).last().click();
     await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
     await expect(page.getByText('Traveller profile registered to this journey.')).toBeVisible();
