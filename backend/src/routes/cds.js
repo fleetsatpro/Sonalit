@@ -92,8 +92,9 @@ router.use((req, res, next) => {
 function publishCds(req, type, payload) {
   // Operational events are emitted only after the transaction commits.
   if (Array.isArray(req._cdsAfterCommit)) {
-    req._cdsAfterCommit.push({ type, payload });
-    return;
+    const event = { type, payload };
+    req._cdsAfterCommit.push(event);
+    return event;
   }
   const orgId = req.user && req.user.org_id;
   if (!orgId) return;
@@ -121,7 +122,9 @@ function cdsTransaction(handler) {
     const originalStatus = res.status;
     const originalJson = res.json;
     const previousQueue = req._cdsAfterCommit;
+    const previousTasks = req._cdsAfterCommitTasks;
     const events = [];
+    const tasks = [];
     const response = { statusCode: res.statusCode || 200, body: undefined, sent: false };
 
     res.status = function (code) {
@@ -134,6 +137,7 @@ function cdsTransaction(handler) {
       return this;
     };
     req._cdsAfterCommit = events;
+    req._cdsAfterCommitTasks = tasks;
 
     try {
       await req.dbTx(() => handler(req, res));
@@ -141,8 +145,18 @@ function cdsTransaction(handler) {
       res.status = originalStatus;
       res.json = originalJson;
       req._cdsAfterCommit = previousQueue;
+      req._cdsAfterCommitTasks = previousTasks;
     }
 
+    // Best-effort integrations run after the operational transaction commits.
+    // A tracking-provider outage must not roll back a clamp or delivery.
+    for (const task of tasks) {
+      try {
+        await task();
+      } catch (error) {
+        logger.warn(`CDS post-commit task failed: ${error.message}`);
+      }
+    }
     for (const event of events) publishCds(req, event.type, event.payload);
     if (response.sent) {
       if (response.statusCode !== 200) originalStatus.call(res, response.statusCode);
@@ -2359,36 +2373,57 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   // Deliberately non-fatal: a tracking hiccup must never fail a physical clamp
   // the yard has already performed. The container simply leaves without a QR
   // and Guardian can issue one.
-  let tracking = null;
-  try {
-    const issued = await T.issueQr(req.db, orgId, {
-      purpose: 'cds_container',
-      terminationPolicy: 'container_delivered',
-      terminationContainerId: containerId,
-      tripId: trip.rows[0].id,
-      bookingId,
-      cdsVehicleId: vehicleId,
-      driverId,
-      issuedBy: req.user.id,
-      // Only what belongs on a gate pass — see the note in trackingEngine.issueQr.
-      display: {
-        vehicle: truck_reg ? String(truck_reg).trim() : null,
-        driver: driver_name ? String(driver_name).trim() : null,
-        container: bc.rows[0].container_number || null,
-        destination: bc.rows[0].delivery_location || null,
-        booking: bc.rows[0].booking_number || null,
-        containers: 1,
-      },
-    });
-    await T.recordEvent(req.db, orgId, {
-      qrCodeId: issued.qr.id, eventType: 'QR_GENERATED', actorType: 'field_agent',
-      actorId: req.user.id, actorName: req.user.name || null,
-      payload: { trip_id: trip.rows[0].id, booking_container_id: bcId },
-    });
-    tracking = { qr_id: issued.qr.id, token: issued.token, url: issued.url };
-  } catch (err) {
-    logger.warn(`tracking QR not issued for trip ${trip.rows[0].id}: ${err.message}`);
-  }
+  const responseBody = { data: { trip: trip.rows[0], booking_container_id: bcId, tracking: null } };
+  const clampEvent = publishCds(req, 'cds.container.clamped', {
+    booking_id: bookingId,
+    booking_number: bc.rows[0].booking_number,
+    booking_container_id: bcId,
+    container_number: bc.rows[0].container_number,
+    trip_id: trip.rows[0].id,
+    trip_number: trip.rows[0].trip_number,
+    lock_serial: lock_serial.trim(),
+    truck_reg,
+    driver_name,
+    tracking_qr_issued: false,
+    lat: lat ?? null,
+    lng: lng ?? null,
+  });
+
+  // Tracking issuance is intentionally post-commit and non-fatal. It cannot
+  // poison the custody transaction or make a physically completed clamp fail.
+  req._cdsAfterCommitTasks.push(async () => {
+    try {
+      const issued = await T.issueQr(req.db, orgId, {
+        purpose: 'cds_container',
+        terminationPolicy: 'container_delivered',
+        terminationContainerId: containerId,
+        tripId: trip.rows[0].id,
+        bookingId,
+        cdsVehicleId: vehicleId,
+        driverId,
+        issuedBy: req.user.id,
+        display: {
+          vehicle: truck_reg ? String(truck_reg).trim() : null,
+          driver: driver_name ? String(driver_name).trim() : null,
+          container: bc.rows[0].container_number || null,
+          destination: bc.rows[0].delivery_location || null,
+          booking: bc.rows[0].booking_number || null,
+          containers: 1,
+        },
+      });
+      await T.recordEvent(req.db, orgId, {
+        qrCodeId: issued.qr.id, eventType: 'QR_GENERATED', actorType: 'field_agent',
+        actorId: req.user.id, actorName: req.user.name || null,
+        payload: { trip_id: trip.rows[0].id, booking_container_id: bcId },
+      });
+      responseBody.data.tracking = { qr_id: issued.qr.id, token: issued.token, url: issued.url };
+      if (clampEvent) clampEvent.payload.tracking_qr_issued = true;
+    } catch (err) {
+      logger.warn(`tracking QR not issued for trip ${trip.rows[0].id}: ${err.message}`);
+    }
+  });
+
+  res.json(responseBody);
 
   // The moment that matters to the other two surfaces: the port crew gains an
   // inbound container, the yard queue loses one, and the control room gets a
@@ -2488,22 +2523,22 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
     await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1`, [bookingId]);
   }
 
-  // The container is physically delivered, so its tracking session ends here
-  // too — the driver's phone learns on its next ping and stops collecting
-  // location. Resolving the container id from the trip rather than trusting the
-  // caller keeps this correct when the port crew unclamps without one.
-  try {
-    const tripRow = bc.rows[0].trip_id
-      ? await req.db('SELECT container_id FROM cds_trips WHERE id=$1', [bc.rows[0].trip_id])
-      : null;
-    const containerId = tripRow && tripRow.rows.length ? tripRow.rows[0].container_id : null;
-    if (containerId) {
-      await T.onContainerDelivered(req.db, orgId, containerId,
-        { id: req.user.id, name: req.user.name, type: 'field_agent' });
+  // Stop the driver's tracking session after the delivery transaction commits.
+  // A provider/session cleanup failure must not undo the verified port handoff.
+  req._cdsAfterCommitTasks.push(async () => {
+    try {
+      const tripRow = bc.rows[0].trip_id
+        ? await req.db('SELECT container_id FROM cds_trips WHERE id=$1 AND org_id=$2', [bc.rows[0].trip_id, orgId])
+        : null;
+      const containerId = tripRow && tripRow.rows.length ? tripRow.rows[0].container_id : null;
+      if (containerId) {
+        await T.onContainerDelivered(req.db, orgId, containerId,
+          { id: req.user.id, name: req.user.name, type: 'field_agent' });
+      }
+    } catch (err) {
+      logger.warn(`tracking termination failed on unclamp ${bcId}: ${err.message}`);
     }
-  } catch (err) {
-    logger.warn(`tracking termination failed on unclamp ${bcId}: ${err.message}`);
-  }
+  });
 
   // Close the custody chain for this container. seal_intact is the whole point
   // of the ledger: it records what the port crew actually found, against what
