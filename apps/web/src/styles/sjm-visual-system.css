@@ -1193,3 +1193,21 @@
   .sjm-console .sjm-traveller-step { flex-direction: column; align-items: center; gap: 3px; min-height: 48px; font-size: 9px; }
   .sjm-console .sjm-traveller-review-list > div { grid-template-columns: 100px minmax(0,1fr); }
 }
+
+.sjm-console .sjm-airline-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 7px 0 2px;
+  padding: 7px 9px;
+  border-left: 2px solid rgba(114,180,255,.58);
+  background: rgba(70,133,195,.055);
+  color: #9eb6d1;
+  font-size: 10px;
+}
+.sjm-console .sjm-airline-preview img {
+  display: block;
+  width: 76px;
+  max-height: 24px;
+  object-fit: contain;
+}
