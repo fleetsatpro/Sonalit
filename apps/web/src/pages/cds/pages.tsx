@@ -357,42 +357,51 @@ export function PulseView() {
 }
 
 export function InboxView() {
-  const { data: activity, isLoading } = useActivity(50);
-  if (isLoading) return <LoadingState />;
+  const { data: activity, isLoading, isError, isFetching, refetch } = useActivity(50);
   const items = (activity ?? []) as Row[];
+  if (isLoading) return <LoadingState />;
 
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <Card className="p-4">
+    <div className="p-4 sm:p-5 max-w-[1600px] mx-auto">
+      <Card className="p-4 sm:p-5">
         <div className="font-semibold text-[16px] text-text-0">Activity log</div>
-        {/* Says where the entries come from, so an empty log reads as "nothing
-            has happened yet" rather than "this screen may be broken". */}
-        <div className="text-[10px] font-mono text-text-2 mt-0.5 mb-3">
-          CUSTODY CHAIN · E-LOCK EVENTS · TRIP TRANSITIONS · ALERTS
-        </div>
-        <div className="space-y-0 max-h-[600px] overflow-y-auto">
-          {items.map((item, i) => (
-            <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2.5 border-b border-white/[.05] last:border-0">
-              <span className="text-sm flex-none mt-0.5"><CDSActivityIcon kind={item['icon'] ?? item['type']} /></span>
-              <div className="min-w-0 flex-1">
-                <div className="text-xs text-text-0">{String(item['description'] ?? item['text'] ?? '—')}</div>
-                {item['meta'] ? (
-                  <div className="text-[11px] text-text-1 mt-0.5 break-words">{String(item['meta'])}</div>
-                ) : null}
+        <p className="text-[13px] text-text-2 mt-1 mb-4">
+          Operational events returned by the CDS activity feed. This view is an event history, not a substitute for the protected audit record.
+        </p>
+        {isError ? (
+          <div role="alert" className="rounded-xl border border-red-400/20 bg-red-400/[.06] px-4 py-5">
+            <div className="text-[14px] font-semibold text-text-0">Activity feed unavailable</div>
+            <p className="text-[13px] text-text-2 mt-1">No event history is being presented as complete. Retry the feed to retrieve the latest available records.</p>
+            <Button className="mt-3" variant="ghost" onClick={() => { void refetch(); }} disabled={isFetching}>
+              {isFetching ? 'Retrying…' : 'Retry activity feed'}
+            </Button>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="py-10 text-center">
+            <CDSActivityIcon kind="activity" className="mx-auto" />
+            <div className="text-[14px] font-semibold text-text-0 mt-3">No field activity recorded</div>
+            <p className="text-[13px] text-text-2 mt-1">Clamps, dispatches, checkpoints, lock events and alerts will appear here when recorded.</p>
+          </div>
+        ) : (
+          <div className="space-y-0 max-h-[680px] overflow-y-auto">
+            {items.map((item, i) => (
+              <div key={String(item['id'] ?? i)} className="flex items-start gap-3 py-3 border-b border-white/[.06] last:border-0">
+                <CDSActivityIcon kind={item['icon'] ?? item['type']} className="mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium text-text-0">{String(item['description'] ?? item['text'] ?? '—')}</div>
+                  {item['meta'] ? (
+                    <div className="text-[12px] text-text-1 mt-1 break-words">{String(item['meta'])}</div>
+                  ) : null}
+                </div>
+                <div className="text-[12px] text-text-2 font-mono flex-none mt-0.5 text-right">
+                  {item['created_at']
+                    ? new Date(String(item['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : 'Time not recorded'}
+                </div>
               </div>
-              <div className="text-[10px] text-text-2 font-mono flex-none mt-0.5">
-                {item['created_at']
-                  ? new Date(String(item['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                  : ''}
-              </div>
-            </div>
-          ))}
-          {items.length === 0 && (
-            <div className="text-xs text-text-2 text-center py-10 font-mono">
-              No field activity recorded yet — clamps, dispatches, lock events and alerts appear here as they happen.
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
