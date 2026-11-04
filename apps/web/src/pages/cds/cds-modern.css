@@ -486,3 +486,114 @@
     scroll-behavior: auto !important;
   }
 }
+
+
+/* Container registration — high-contrast controls and a restrained glass form. */
+.cds-registration-panel {
+  border-color: rgba(126, 183, 245, .28);
+  background:
+    linear-gradient(145deg, rgba(19, 43, 73, .86), rgba(9, 24, 44, .88));
+  box-shadow: 0 18px 44px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.055);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.cds-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cds-form-label {
+  color: #d6e3f3;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.cds-form-help,
+.cds-form-note {
+  color: #aebfd4;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.cds-form-control {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid rgba(151, 189, 232, .25);
+  border-radius: 10px;
+  background: rgba(4, 13, 26, .72);
+  color: #f5f8ff;
+  font-size: 13px;
+  line-height: 1.4;
+  color-scheme: dark;
+  outline: none;
+  transition: border-color 170ms ease, background 170ms ease, box-shadow 170ms ease;
+}
+
+.cds-form-control:hover {
+  border-color: rgba(151, 195, 247, .42);
+}
+
+.cds-form-control:focus {
+  border-color: #7abaff;
+  background: rgba(9, 25, 45, .92);
+  box-shadow: 0 0 0 3px rgba(82, 153, 224, .16);
+}
+
+.cds-form-control::placeholder {
+  color: #8195af;
+}
+
+.cds-form-control option {
+  color: #f2f7ff;
+  background: #0b1a30;
+}
+
+.cds-form-primary {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid rgba(160, 211, 255, .36);
+  border-radius: 10px;
+  color: #f8fbff;
+  background: linear-gradient(180deg, #347fca, #1d5d9f);
+  box-shadow: 0 8px 20px rgba(18, 83, 145, .25), inset 0 1px rgba(255,255,255,.16);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: filter 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.cds-form-primary:hover:not(:disabled) {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+  box-shadow: 0 11px 24px rgba(18, 83, 145, .34), inset 0 1px rgba(255,255,255,.2);
+}
+
+.cds-form-primary:disabled {
+  opacity: .56;
+  cursor: wait;
+}
+
+.cds-data-error {
+  border-color: rgba(248, 113, 113, .28);
+  background: linear-gradient(135deg, rgba(127, 29, 29, .16), rgba(19, 24, 38, .82));
+}
+
+@media (max-width: 767px) {
+  .cds-registration-panel {
+    padding: 14px;
+  }
+
+  .cds-form-control {
+    min-height: 46px;
+    font-size: 14px;
+  }
+
+  .cds-form-primary {
+    width: 100%;
+  }
+}
