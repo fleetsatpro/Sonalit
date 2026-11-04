@@ -1101,8 +1101,8 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect.poll(() => profileCreated).toBe(true);
     await expect.poll(() => uploadAttempted).toBe(true);
     expect(uploadStatus).toBe(503);
-    await expect(workspace.getByRole('status')).toContainText('Traveller profile saved. The travel document was not uploaded or verified');
-    await expect(workspace.getByRole('status')).not.toContainText('Document stored privately');
+    await expect(workspace.getByRole('alert')).toContainText('Traveller profile saved. The travel document was not uploaded or verified');
+    await expect(workspace.getByRole('alert')).not.toContainText('Document stored privately');
     await expect(workspace.locator('.sjm-traveller-wizard')).toHaveCount(0);
   });
 
