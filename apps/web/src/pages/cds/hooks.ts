@@ -101,7 +101,14 @@ export function useTrips(filters?: SearchFilters & { limit?: number; offset?: nu
   return useQuery<ApiList>({
     queryKey: ['cds', 'trips', filters],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/trips', { params: filters });
+      const params: Record<string, unknown> = { ...(filters ?? {}) };
+      delete params['query'];
+      delete params['page'];
+      delete params['pageSize'];
+      if (filters?.query?.trim()) params['search'] = filters.query.trim();
+      params['limit'] = filters?.limit ?? filters?.pageSize ?? 50;
+      params['offset'] = filters?.offset ?? ((filters?.page ?? 0) * (filters?.pageSize ?? 50));
+      const { data } = await cdsApi.get('/trips', { params });
       return data;
     },
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
