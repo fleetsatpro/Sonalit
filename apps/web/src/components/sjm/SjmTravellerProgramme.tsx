@@ -122,7 +122,6 @@ const nextTravellerReference = (travellers: Traveller[]) => {
   }
   return 'TRV-'+Math.random().toString(36).slice(2,9).toUpperCase();
 };
-const airlineIataCode = (flightNumber?: string | null) => /^([A-Z0-9]{2})\s*(?=\d)/.exec(String(flightNumber || '').trim().toUpperCase())?.[1] || '';
 const dateLabel = (value?: string | null, timezone?: string) => {
   if (!value) return 'Not recorded';
   const date = new Date(value);
@@ -502,12 +501,12 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     if (step === 0) {
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,47}$/.test(travellerDraft.traveller_reference.trim())) return 'Enter a unique traveller reference (2–48 letters, numbers, dashes or underscores).';
       if (!travellerDraft.given_name.trim() || !travellerDraft.family_name.trim()) return 'Enter the traveller’s given name and family name exactly as shown on the travel document.';
-      if (travellerDraft.date_of_birth) { const dob = new Date(travellerDraft.date_of_birth + 'T00:00:00.000Z'); if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(travellerDraft.date_of_birth) || !Number.isFinite(dob.getTime()) || dob.toISOString().slice(0,10) !== travellerDraft.date_of_birth || travellerDraft.date_of_birth > new Date().toISOString().slice(0,10)) return 'Enter a valid date of birth that is not in the future.'; }
+      if (travellerDraft.date_of_birth) { const dob = new Date(travellerDraft.date_of_birth + 'T00:00:00.000Z'); if (!/^\d{4}-\d{2}-\d{2}$/.test(travellerDraft.date_of_birth) || !Number.isFinite(dob.getTime()) || dob.toISOString().slice(0,10) !== travellerDraft.date_of_birth || travellerDraft.date_of_birth > new Date().toISOString().slice(0,10)) return 'Enter a valid date of birth that is not in the future.'; }
     }
     if (step === 1) {
-      if (travellerDraft.email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(travellerDraft.email.trim())) return 'Enter a valid email address or leave the field blank.';
+      if (travellerDraft.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(travellerDraft.email.trim())) return 'Enter a valid email address or leave the field blank.';
       for (const [label, value] of [['Traveller phone', travellerDraft.phone], ['Emergency phone', travellerDraft.emergency_contact_phone]] as const) {
-        if (value && !/^[+0-9().\\-\\s]{5,48}$/.test(value)) return label + ' must use an international number format, for example +254 712 345 678.';
+        if (value && !/^[+0-9().\-\s]{5,48}$/.test(value)) return label + ' must use an international number format, for example +254 712 345 678.';
       }
       if (Boolean(travellerDraft.emergency_contact_name.trim()) !== Boolean(travellerDraft.emergency_contact_phone.trim())) return 'Provide both an emergency contact name and phone number, or leave both blank.';
     }
