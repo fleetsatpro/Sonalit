@@ -9,7 +9,7 @@ jest.mock('../src/config/database', () => ({
   healthCheck: jest.fn().mockResolvedValue(true),
 }));
 
-const { query: mockQuery } = require('../src/config/database');
+const { query: mockQuery, pool: mockPool } = require('../src/config/database');
 const responseEnvelope = require('../src/middleware/responseEnvelope');
 const requireIdempotencyKey = require('../src/middleware/idempotency');
 const csrf = require('../src/middleware/csrf');
