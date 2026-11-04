@@ -1,0 +1,217 @@
+const router = require('../src/routes/cds');
+
+function handlerFor(path, method) {
+  const layer = router.stack.find(item => item.route && item.route.path === path && item.route.methods[method]);
+  if (!layer) throw new Error(`no ${method.toUpperCase()} route registered for ${path}`);
+  return layer.route.stack[layer.route.stack.length - 1].handle;
+}
+
+function response() {
+  let statusCode = 200;
+  let body;
+  const res = {
+    status(code) { statusCode = code; return res; },
+    json(value) { body = value; return res; },
+    get statusCode() { return statusCode; },
+    get body() { return body; },
+  };
+  return res;
+}
+
+const VALID_CONTAINER = {
+  number: 'CSQU3054383',
+  iso_type: '40HC',
+  ownership: 'leased',
+  condition: 'good',
+  status: 'available',
+  max_weight_kg: 28000,
+  tare_weight_kg: 2200,
+  manufacturer: 'Example Works',
+  year_built: 2022,
+};
+
+describe('POST /containers', () => {
+  function makeRequest(overrides = {}) {
+    const statements = [];
+    const inserted = {
+      id: 'container-1',
+      number: VALID_CONTAINER.number,
+      iso_type: '40HC',
+      container_type: "40' High Cube",
+      container_size: 40,
+      ownership: 'leased',
+      condition: 'good',
+      status: 'available',
+      max_weight_kg: '28000.00',
+      tare_weight_kg: '2200.00',
+      manufacturer: 'Example Works',
+      year_built: 2022,
+    };
+    const client = {
+      query: async (sql, params) => {
+        statements.push({ sql, params });
+        if (/INSERT INTO cds_containers/.test(sql)) return { rows: [inserted] };
+        if (/INSERT INTO cds_audit_logs/.test(sql)) return { rows: [] };
+        throw new Error('unexpected SQL in container create test');
+      },
+    };
+    const req = {
+      body: { ...VALID_CONTAINER },
+      user: { id: 'operator-1', name: 'Operations Desk', org_id: 'org-1' },
+      ip: '192.0.2.10',
+      get: header => header === 'user-agent' ? 'CDS test agent' : undefined,
+      dbTx: async fn => fn(client),
+      ...overrides,
+    };
+    req.statements = statements;
+    return req;
+  }
+
+  async function call(req) {
+    const res = response();
+    let forwarded;
+    await handlerFor('/containers', 'post')(req, res, error => { forwarded = error; });
+    if (forwarded) throw forwarded;
+    return res;
+  }
+
+  test('creates the container and its audit record in one tenant transaction', async () => {
+    const req = makeRequest();
+    const res = await call(req);
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data).toMatchObject({ id: 'container-1', number: 'CSQU3054383' });
+    expect(req.statements).toHaveLength(2);
+    expect(req.statements[0].sql).toContain('INSERT INTO cds_containers');
+    expect(req.statements[1].sql).toContain('INSERT INTO cds_audit_logs');
+    expect(req.statements[1].params).toEqual(expect.arrayContaining([
+      'container-1', 'operator-1', 'Operations Desk', '192.0.2.10', 'CDS test agent', 'org-1',
+    ]));
+    expect(req.statements[1].params[3]).toContain('"number":"CSQU3054383"');
+  });
+
+  test('rejects a wrong check digit before opening a transaction', async () => {
+    const req = makeRequest({ body: { ...VALID_CONTAINER, number: 'CSQU3054384' } });
+    const res = await call(req);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_container_check_digit');
+    expect(req.statements).toHaveLength(0);
+  });
+
+  test('rejects a non-freight equipment category', async () => {
+    // A valid check digit is required before the category rule can be applied.
+    const { checkDigit } = require('../src/utils/containerNumber');
+    const firstTen = 'CSQJ305438';
+    const number = firstTen + String(checkDigit(firstTen));
+    const req = makeRequest({ body: { ...VALID_CONTAINER, number } });
+    const res = await call(req);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('freight_container_category_must_be_U');
+    expect(req.statements).toHaveLength(0);
+  });
+
+  test('rejects equipment values outside the register vocabulary', async () => {
+    const req = makeRequest({ body: { ...VALID_CONTAINER, iso_type: '53HC' } });
+    const res = await call(req);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_container_equipment_type');
+  });
+
+  test('prevents registering a new asset as already in transit or delivered', async () => {
+    const req = makeRequest({ body: { ...VALID_CONTAINER, status: 'in_transit' } });
+    const res = await call(req);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('new_container_status_must_be_available_or_maintenance');
+  });
+
+  test('damaged and retired containers must start in maintenance', async () => {
+    const req = makeRequest({ body: { ...VALID_CONTAINER, condition: 'damaged' } });
+    const res = await call(req);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('damaged_or_retired_container_requires_maintenance_status');
+  });
+
+  test('maps a duplicate identifier to HTTP 409', async () => {
+    const client = {
+      query: async () => { const error = new Error('duplicate'); error.code = '23505'; throw error; },
+    };
+    const req = makeRequest({ dbTx: async fn => fn(client) });
+    const res = await call(req);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('container_number_already_registered');
+  });
+
+  test('does not return success when audit insertion fails inside the transaction', async () => {
+    let calls = 0;
+    const client = {
+      query: async sql => {
+        calls += 1;
+        if (/INSERT INTO cds_containers/.test(sql)) return { rows: [{ id: 'container-1', number: VALID_CONTAINER.number }] };
+        throw new Error('audit unavailable');
+      },
+    };
+    const req = makeRequest({ dbTx: async fn => fn(client) });
+    const res = response();
+    let forwarded;
+    await handlerFor('/containers', 'post')(req, res, error => { forwarded = error; });
+    expect(forwarded).toBeInstanceOf(Error);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBeUndefined();
+    expect(calls).toBe(2);
+  });
+});
+
+describe('GET /containers', () => {
+  function makeRequest(query = {}) {
+    const statements = [];
+    const client = {
+      query: async (sql, params) => {
+        statements.push({ sql, params });
+        if (sql.includes('FROM cds_containers t WHERE')) return { rows: [{ id: 'container-1', number: 'CSQU3054383' }] };
+        if (sql.includes('COUNT(*)::int AS count')) return { rows: [{ count: 1 }] };
+        if (sql.includes('COUNT(*) FILTER')) return { rows: [{ registered: 8, available: 4, in_operational_flow: 3, review_required: 1 }] };
+        throw new Error('unexpected SQL in container list test');
+      },
+    };
+    return {
+      query,
+      dbTx: async fn => fn(client),
+      statements,
+    };
+  }
+
+  async function call(req) {
+    const res = response();
+    await handlerFor('/containers', 'get')(req, res, error => { if (error) throw error; });
+    return res;
+  }
+
+  test('returns server-paginated rows and organisation-wide summary counts', async () => {
+    const req = makeRequest({ limit: '25', offset: '50', search: 'CSQU', status: 'available' });
+    const res = await call(req);
+    expect(res.body).toMatchObject({
+      data: [{ id: 'container-1', number: 'CSQU3054383' }],
+      total: 1,
+      limit: 25,
+      offset: 50,
+      summary: { registered: 8, available: 4, in_operational_flow: 3, review_required: 1 },
+    });
+    expect(req.statements[0].sql).toContain('ORDER BY t.created_at DESC, t.id DESC LIMIT $3 OFFSET $4');
+    expect(req.statements[0].params).toEqual(['available', '%CSQU%', 25, 50]);
+  });
+
+  test('rejects unknown status filters rather than silently returning no rows', async () => {
+    const req = makeRequest({ status: 'en_route' });
+    const res = await call(req);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_container_status_filter');
+    expect(req.statements).toHaveLength(0);
+  });
+
+  test('rejects excessively long search input', async () => {
+    const req = makeRequest({ search: 'x'.repeat(121) });
+    const res = await call(req);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('container_search_too_long');
+    expect(req.statements).toHaveLength(0);
+  });
+});
