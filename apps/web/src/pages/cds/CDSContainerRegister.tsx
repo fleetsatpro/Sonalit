@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { Search, Plus } from 'lucide-react';
 import { FilterChip, StatusBadge } from './components.js';
 import { CONTAINER_TYPES } from './constants.js';
 import { useContainers, useCreateContainer } from './hooks.js';
@@ -324,7 +325,7 @@ export function CDSContainerRegister() {
           <h1 className="mt-1 text-[22px] font-semibold tracking-[-.035em] text-white sm:text-[25px]">Container register</h1>
           <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-white/45">Authoritative equipment records, physical condition and recorded inspection details. Operational movement remains controlled by bookings and trip execution.</p>
         </div>
-        <button type="button" onClick={openRegistration} className="min-h-[42px] shrink-0 rounded-lg border border-[#9dc2ed]/35 bg-[#8eb9ed]/[.12] px-4 text-[12px] font-semibold text-[#c3defc] transition-colors hover:bg-[#8eb9ed]/[.2] focus:outline-none focus:ring-2 focus:ring-[#8eb9ed]/60">Register container <span aria-hidden="true" className="ml-1">+</span></button>
+        <button type="button" onClick={openRegistration} className="min-h-[42px] shrink-0 rounded-lg border border-[#9dc2ed]/35 bg-[#8eb9ed]/[.12] px-4 text-[12px] font-semibold text-[#c3defc] transition-colors hover:bg-[#8eb9ed]/[.2] focus:outline-none focus:ring-2 focus:ring-[#8eb9ed]/60">Register container <Plus size={14} aria-hidden="true" className="ml-1" /></button>
       </div>
 
       <div className="grid grid-cols-2 gap-y-4 border-b border-white/[.08] py-4 sm:grid-cols-4 sm:gap-0">
@@ -338,7 +339,7 @@ export function CDSContainerRegister() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">Search container records</span>
-            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35">⌕</span>
+            <Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35" />
             <input value={queryInput} onChange={event => setQueryInput(event.target.value)} placeholder="Search number, type, location or manufacturer" className="min-h-[40px] w-full rounded-lg border border-white/[.10] bg-[#101a2b] pl-9 pr-3 text-[12px] text-white outline-none placeholder:text-white/30 focus:border-[#8eb9ed]/60 focus:ring-2 focus:ring-[#8eb9ed]/15" />
           </label>
           <div className="grid grid-cols-2 gap-2 sm:w-[340px]">
