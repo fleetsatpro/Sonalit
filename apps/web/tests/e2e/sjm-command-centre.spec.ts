@@ -969,9 +969,25 @@ test.describe('SJM command-centre responsive smoke', () => {
     const registerButton = workspace.getByRole('button', { name: 'Register traveller' }).first();
     await expect(registerButton).toBeVisible();
     await registerButton.click();
-    await expect(workspace.getByText('Register a traveller', { exact: true })).toBeVisible();
-    await expect(workspace.getByLabel('Given name *')).toBeVisible();
-    await registerButton.click();
+    const wizard = workspace.locator('.sjm-traveller-wizard');
+    await expect(wizard.getByRole('heading', { name: 'Add a traveller to this journey' })).toBeVisible();
+    await expect(wizard.getByRole('navigation', { name: 'Traveller registration steps' })).toBeVisible();
+    await expect(wizard.getByLabel('Traveller reference')).toHaveValue('TRV-002');
+    await wizard.getByLabel('Given name *').fill('Amina');
+    await wizard.getByLabel('Family / surname *').fill('Example');
+    await wizard.getByLabel('Nationality / citizenship').selectOption({ label: 'Kenya' });
+    await expect(wizard.locator('.sjm-country-select img')).toBeVisible();
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await expect(wizard.getByRole('heading', { name: 'Contacts and relationships' })).toBeVisible();
+    await wizard.getByLabel('Email address').fill('amina@example.invalid');
+    await wizard.getByLabel('Traveller phone').fill('+254 700 000 003');
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await expect(wizard.getByRole('heading', { name: 'Travel documents' })).toBeVisible();
+    await expect(wizard.getByText('Optional at registration')).toBeVisible();
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await expect(wizard.getByRole('heading', { name: 'Review before saving' })).toBeVisible();
+    await expect(wizard.getByText('Amina Example', { exact: true })).toBeVisible();
+    await wizard.locator('.sjm-traveller-wizard__header').getByRole('button', { name: 'Cancel' }).click();
 
     await workspace.getByRole('button', { name: 'Attach document' }).click();
     await expect(workspace.getByText('PRIVATE TRAVEL DOCUMENT', { exact: true })).toBeVisible();
