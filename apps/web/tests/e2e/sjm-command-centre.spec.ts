@@ -985,7 +985,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await wizard.getByLabel('Given name *').fill('Amina');
     await wizard.getByLabel('Family / surname *').fill('Example');
     await wizard.getByLabel('Nationality / citizenship').selectOption({ label: 'Kenya' });
-    await expect(wizard.locator('.sjm-country-select img')).toHaveAttribute('src', /\\/ke\\.svg$/);
+    expect(await wizard.locator('.sjm-country-select img').getAttribute('src')).toContain('/flags/4x3/ke.svg');
     await wizard.getByRole('button', { name: 'Continue' }).click();
     await expect(wizard.getByRole('heading', { name: 'Contacts and relationships' })).toBeVisible();
     await wizard.getByLabel('Email address').fill('amina@example.invalid');
