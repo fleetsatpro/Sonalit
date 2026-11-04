@@ -244,6 +244,19 @@ function iso6346CheckDigit(containerNumber) {
   return remainder === 10 ? 0 : remainder;
 }
 
+const CDS_CONTAINER_TYPE_LABELS = {
+  '20GP': "20' General Purpose",
+  '40GP': "40' General Purpose",
+  '40HC': "40' High Cube",
+  '20RF': "20' Reefer",
+  '40RF': "40' Reefer",
+  '20OT': "20' Open Top",
+  '40OT': "40' Open Top",
+  '20FR': "20' Flat Rack",
+  '40FR': "40' Flat Rack",
+  '20TK': "20' Tank",
+};
+
 function isValidIso6346ContainerNumber(containerNumber) {
   const code = String(containerNumber || '').trim().toUpperCase().replace(/\s+/g, '');
   const checkDigit = iso6346CheckDigit(code);
@@ -1112,7 +1125,7 @@ router.post('/containers', asyncHandler(async (req, res) => {
   }
 
   const isoType = String(req.body?.iso_type || '').trim().toUpperCase();
-  if (!/^[0-9]{2}[A-Z]{2}$/.test(isoType)) {
+  if (!Object.prototype.hasOwnProperty.call(CDS_CONTAINER_TYPE_LABELS, isoType)) {
     return res.status(400).json({ error: 'invalid_iso_type' });
   }
   const ownership = String(req.body?.ownership || '');
@@ -1126,7 +1139,7 @@ router.post('/containers', asyncHandler(async (req, res) => {
 
   const sizeFromCode = Number.parseInt(isoType, 10);
   const suppliedSize = req.body?.container_size == null ? sizeFromCode : Number(req.body.container_size);
-  if (!Number.isInteger(suppliedSize) || suppliedSize <= 0 || suppliedSize > 60) {
+  if (!Number.isInteger(suppliedSize) || suppliedSize !== sizeFromCode) {
     return res.status(400).json({ error: 'invalid_container_size' });
   }
 
@@ -1157,7 +1170,7 @@ router.post('/containers', asyncHandler(async (req, res) => {
     ...req.body,
     number,
     iso_type: isoType,
-    container_type: String(req.body?.container_type || isoType).trim().slice(0, 50),
+    container_type: CDS_CONTAINER_TYPE_LABELS[isoType],
     container_size: suppliedSize,
     ownership,
     max_weight_kg: maxWeight,
