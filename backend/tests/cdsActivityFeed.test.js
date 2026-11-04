@@ -202,7 +202,7 @@ describe('tenant scope and clamp-time attribution', () => {
 
     expect(db.seen).toHaveLength(4);
     for (const { sql, params } of db.seen) {
-      expect(sql).toMatch(/\\borg_id\\s*=\\s*\\$1/i);
+      expect(sql).toMatch(/\borg_id\s*=\s*\$1/i);
       expect(params).toEqual([ORG_ID, 7]);
     }
   });
