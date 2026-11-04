@@ -107,7 +107,7 @@ export function ContainersView() {
         <div>
           <div className="cds-eyebrow">ASSET REGISTER</div>
           <h2 className="text-[21px] sm:text-[24px] font-semibold tracking-tight text-white mt-1">Container inventory</h2>
-          <p className="text-[13px] text-slate-300 mt-1">{data?.total ?? all.length} registered container records · custody and condition at a glance.</p>
+          <p className="text-[13px] text-slate-300 mt-1">{isError && !data ? 'Inventory count unavailable' : (data?.total ?? all.length) + ' registered container records'} · custody and condition at a glance.</p>
         </div>
         <button type="button" onClick={() => setShowRegistration(value => !value)} className="cds-secondary-action">
           <Plus size={17} aria-hidden="true" />
@@ -207,10 +207,10 @@ export function ContainersView() {
 
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-3" aria-label="Container register summary">
         {[
-          { label: 'REGISTERED', value: data?.total ?? all.length, detail: serverSearch ? 'matching records' : 'records in this organisation' },
-          { label: 'AVAILABLE', value: availableCount, detail: 'among loaded records' },
-          { label: 'IN OPERATIONAL FLOW', value: deployedCount, detail: 'among loaded records' },
-          { label: 'REVIEW REQUIRED', value: reviewCount, detail: 'among loaded records' },
+          { label: 'REGISTERED', value: isError && !data ? '—' : data?.total ?? all.length, detail: serverSearch ? 'matching records' : 'records in this organisation' },
+          { label: 'AVAILABLE', value: isError && !data ? '—' : availableCount, detail: 'among loaded records' },
+          { label: 'IN OPERATIONAL FLOW', value: isError && !data ? '—' : deployedCount, detail: 'among loaded records' },
+          { label: 'REVIEW REQUIRED', value: isError && !data ? '—' : reviewCount, detail: 'among loaded records' },
         ].map(item => (
           <div key={item.label} className="cds-kpi-panel rounded-xl border px-4 py-3">
             <div className="text-[11px] text-slate-300 font-semibold tracking-[.08em]">{item.label}</div>
@@ -253,7 +253,7 @@ export function ContainersView() {
         data={rows}
         keyExtractor={(r: Row) => s(r['id'])}
         searchable={false}
-        emptyMessage={all.length === 0 ? 'No container records yet. Register your first container to establish the inventory.' : 'No containers match the selected status.'}
+        emptyMessage={isError && !data ? 'Inventory unavailable. Retry before drawing conclusions.' : all.length === 0 ? (serverSearch ? 'No containers match this search.' : 'No container records yet. Register your first container to establish the inventory.') : 'No containers match the selected status.'}
         filters={
           <div className="cds-container-toolbar">
             <div className="flex gap-2 flex-wrap">
