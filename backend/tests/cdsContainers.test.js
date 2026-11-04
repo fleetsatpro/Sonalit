@@ -348,6 +348,7 @@ describe('CDS container custody history', () => {
     });
     expect(calls[2].sql).toContain("ca.after_data->>'driver_name'");
     expect(calls[2].sql).toContain("ca.after_data->>'driver_phone'");
+    expect(calls[2].sql).toContain("NULLIF(BTRIM(ca.after_data->>'driver_name'), '') IS NOT NULL");
     expect(calls[2].sql).toContain("ca.after_data->>'truck_reg'");
   });
 });
