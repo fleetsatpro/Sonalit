@@ -41,6 +41,38 @@ describe('SJM server-side travel readiness', () => {
     expect(complete.warnings.map(item => item.code)).not.toContain('traveller_identity_details_incomplete');
   });
 
+  test('requires airport traveller identity details before departure release without blocking intake or ground journeys', () => {
+    const airportJourney = journey({ service_type: 'airport_arrival' });
+    const flight = {
+      id: 'flight-identity-check', traveller_id: principal.id, status: 'scheduled',
+      departure_at: '2026-11-01T08:00:00.000Z', arrival_at: '2026-11-01T10:00:00.000Z',
+      departure_airport: 'NBO', arrival_airport: 'CDG',
+    };
+
+    const incompleteAirport = evaluateTravelReadiness({
+      journey: airportJourney, travellers: [principal], flights: [flight], days: [], documents: [],
+    }, 'departure');
+    expect(incompleteAirport.blockers).toContainEqual(expect.objectContaining({
+      code: 'airport_traveller_identity_incomplete',
+      missing_nationality_count: 1,
+      missing_date_of_birth_count: 1,
+    }));
+
+    const completeAirport = evaluateTravelReadiness({
+      journey: airportJourney,
+      travellers: [{ ...principal, nationality: 'Kenya', date_of_birth: '1990-01-01' }],
+      flights: [flight], days: [], documents: [],
+    }, 'departure');
+    expect(completeAirport.blockers.map(item => item.code)).not.toContain('airport_traveller_identity_incomplete');
+
+    const groundJourney = evaluateTravelReadiness({
+      journey: journey({ service_type: 'executive_transfer' }),
+      travellers: [principal], flights: [], days: [], documents: [],
+    }, 'departure');
+    expect(groundJourney.blockers.map(item => item.code)).not.toContain('airport_traveller_identity_incomplete');
+    expect(groundJourney.warnings.map(item => item.code)).toContain('traveller_identity_details_incomplete');
+  });
+
   test('requires a non-cancelled flight for every airport traveller or one shared flight', () => {
     const airportJourney = journey({ service_type: 'airport_arrival' });
     const accompanying = { id: '30000000-0000-4000-8000-000000000002', traveller_type: 'accompanying' };
