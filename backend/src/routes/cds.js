@@ -1938,79 +1938,253 @@ router.get('/bookings/:id/containers', asyncHandler(async (req, res) => {
   );
   res.json({ data: result.rows, total: result.rows.length });
 }));
-router.post('/bookings/:id/containers', asyncHandler(async (req, res) => {
+router.post('/bookings/:id/containers', cdsTransaction(async (req, res) => {
+  const orgId = req.user.org_id;
+  const bookingId = req.params.id;
   const items = Array.isArray(req.body) ? req.body : [req.body];
-  const inserted = [];
-  for (const c of items) {
-    const r = await req.db(
-      `INSERT INTO cds_booking_containers
-         (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
-          packing_list_no, weight_kg, notes, yard_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'yard') RETURNING *`,
-      [req.user.org_id, req.params.id, c.container_number || null, c.iso_type || '20GP',
-       c.seal_number || null, c.seal_number_2 || null, c.packing_list_no || null,
-       c.weight_kg || null, c.notes || null]
-    );
-    inserted.push(r.rows[0]);
+  if (!items.length || items.length > 200 || items.some(item => !item || typeof item !== 'object' || Array.isArray(item))) {
+    return res.status(400).json({ error: 'invalid_booking_container_batch' });
   }
+
+  const booking = await req.db(
+    'SELECT id FROM cds_bookings WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',
+    [bookingId, orgId]
+  );
+  if (!booking.rows.length) return res.status(404).json({ error: 'booking_not_found' });
+
+  const equipmentTypes = new Set(['20GP','40GP','40HC','20RF','40RF','20OT','40OT','20FR','40FR','20TK']);
+  const allowedStatuses = new Set(['pending','assigned','in_transit','at_port','delivered','completed']);
+  const allowedYardStates = new Set(['yard','inbound','outbound','complete']);
+  const seenNumbers = new Set();
+  const prepared = [];
+
+  for (const item of items) {
+    const number = item.container_number
+      ? normaliseContainerNumber(item.container_number)
+      : null;
+    if (number) {
+      const validation = validateContainerNumber(number);
+      if (!validation.ok) {
+        return res.status(400).json({
+          error: validation.reason === 'check_digit' ? 'invalid_container_check_digit' : 'invalid_container_number',
+          reason: validation.reason,
+          expected_check_digit: validation.expected,
+        });
+      }
+      if (number[3] !== 'U') return res.status(400).json({ error: 'freight_container_category_must_be_U' });
+      if (seenNumbers.has(number)) return res.status(409).json({ error: 'duplicate_container_in_booking_batch' });
+      seenNumbers.add(number);
+    }
+
+    const isoType = String(item.iso_type || '20GP').trim().toUpperCase();
+    if (!equipmentTypes.has(isoType)) return res.status(400).json({ error: 'invalid_container_equipment_type' });
+    const weight = item.weight_kg == null || item.weight_kg === '' ? null : Number(item.weight_kg);
+    if (weight !== null && (!Number.isFinite(weight) || weight < 0 || weight > 99999999.99)) {
+      return res.status(400).json({ error: 'invalid_booking_container_weight' });
+    }
+    const status = String(item.status || 'pending');
+    if (!allowedStatuses.has(status)) return res.status(400).json({ error: 'invalid_booking_container_status' });
+    const yardStatus = String(item.yard_status || 'yard');
+    if (!allowedYardStates.has(yardStatus)) return res.status(400).json({ error: 'invalid_booking_container_yard_status' });
+    if (String(item.seal_number || '').length > 50 || String(item.seal_number_2 || '').length > 50
+      || String(item.packing_list_no || '').length > 60 || String(item.notes || '').length > 512) {
+      return res.status(400).json({ error: 'booking_container_field_too_long' });
+    }
+    prepared.push({ number, isoType, weight, status, yardStatus, item });
+  }
+
+  // A physical container cannot be allocated to two unfinished bookings at
+  // once. Do this validation for the whole batch before the first insert.
+  for (const row of prepared) {
+    if (!row.number) continue;
+    const allocated = await req.db(
+      \`SELECT id FROM cds_booking_containers
+        WHERE org_id=$1 AND container_number=$2 AND deleted_at IS NULL
+          AND status NOT IN ('delivered','completed')
+        LIMIT 1\`,
+      [orgId, row.number]
+    );
+    if (allocated.rows.length) return res.status(409).json({ error: 'container_already_allocated' });
+  }
+
+  const inserted = [];
+  for (const row of prepared) {
+    const item = row.item;
+    const result = await req.db(
+      \`INSERT INTO cds_booking_containers
+        (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
+         packing_list_no, weight_kg, notes, status, yard_status, invoiced)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *\`,
+      [
+        orgId, bookingId, row.number, row.isoType,
+        item.seal_number || null, item.seal_number_2 || null,
+        item.packing_list_no || null, row.weight, item.notes || null,
+        row.status, row.yardStatus, item.invoiced === true,
+      ]
+    );
+    const manifest = result.rows[0];
+    await req.db(
+      \`INSERT INTO cds_audit_logs
+        (action, entity_type, entity_id, user_id, user_name, before_data, after_data, ip_address, user_agent, org_id)
+       VALUES ('create','booking_container',$1,$2,$3,NULL,$4,$5,$6,$7)\`,
+      [
+        manifest.id, req.user.id || null, req.user.name || null,
+        JSON.stringify({
+          booking_id: bookingId, container_number: manifest.container_number,
+          iso_type: manifest.iso_type, seal_number: manifest.seal_number,
+          status: manifest.status, yard_status: manifest.yard_status,
+          weight_kg: manifest.weight_kg,
+        }),
+        req.ip || null, req.get ? req.get('user-agent') || null : null, orgId,
+      ]
+    );
+    inserted.push(manifest);
+  }
+
   publishCds(req, 'cds.container.updated', {
-    booking_id: req.params.id,
+    booking_id: bookingId,
     added: inserted.length,
   });
   res.status(201).json({ data: inserted });
 }));
-router.patch('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
+
+router.patch('/bookings/:id/containers/:cid', cdsTransaction(async (req, res) => {
+  const orgId = req.user.org_id;
+  const bookingId = req.params.id;
+  const containerId = req.params.cid;
+  const beforeResult = await req.db(
+    'SELECT * FROM cds_booking_containers WHERE id=$1 AND booking_id=$2 AND org_id=$3 AND deleted_at IS NULL FOR UPDATE',
+    [containerId, bookingId, orgId]
+  );
+  if (!beforeResult.rows.length) return res.status(404).json({ error: 'not_found' });
+  const before = beforeResult.rows[0];
+
   const allowed = [
     'container_number', 'iso_type', 'seal_number', 'seal_number_2', 'packing_list_no',
-    'weight_kg', 'notes', 'status',
-    // Manifest columns — see 20260807_076_cds_container_ops.sql.
-    'clamped_at', 'unclamped_at', 'terminal', 'yard_status', 'invoiced',
-    'lock_number', 'transporter_name', 'horse_reg', 'trailer_reg',
-    'driver_name', 'driver_contact',
+    'weight_kg', 'notes', 'status', 'clamped_at', 'unclamped_at', 'terminal',
+    'yard_status', 'invoiced', 'lock_number', 'transporter_name', 'horse_reg',
+    'trailer_reg', 'driver_name', 'driver_contact',
   ];
-  const sets = []; const params = [];
-  for (const k of allowed) {
-    if (req.body[k] !== undefined) { params.push(req.body[k]); sets.push(`${k}=$${params.length}`); }
+  const values = {};
+  for (const field of allowed) {
+    if (req.body[field] !== undefined) values[field] = req.body[field];
   }
-  if (!sets.length) return res.status(400).json({ error: 'nothing_to_update' });
-  params.push(req.params.cid, req.user.org_id);
-  const r = await req.db(
-    `UPDATE cds_booking_containers SET ${sets.join(',')}, updated_at=NOW()
-     WHERE id=$${params.length - 1} AND org_id=$${params.length} AND deleted_at IS NULL RETURNING *`,
+  if (!Object.keys(values).length) return res.status(400).json({ error: 'nothing_to_update' });
+
+  if (values.container_number !== undefined && values.container_number !== null && values.container_number !== '') {
+    values.container_number = normaliseContainerNumber(values.container_number);
+    const validation = validateContainerNumber(values.container_number);
+    if (!validation.ok) {
+      return res.status(400).json({
+        error: validation.reason === 'check_digit' ? 'invalid_container_check_digit' : 'invalid_container_number',
+        reason: validation.reason,
+        expected_check_digit: validation.expected,
+      });
+    }
+    if (values.container_number[3] !== 'U') return res.status(400).json({ error: 'freight_container_category_must_be_U' });
+    if (values.container_number !== before.container_number) {
+      const allocated = await req.db(
+        \`SELECT id FROM cds_booking_containers
+          WHERE org_id=$1 AND container_number=$2 AND deleted_at IS NULL
+            AND status NOT IN ('delivered','completed') AND id<>$3
+          LIMIT 1\`,
+        [orgId, values.container_number, containerId]
+      );
+      if (allocated.rows.length) return res.status(409).json({ error: 'container_already_allocated' });
+    }
+  }
+
+  if (values.iso_type !== undefined && !new Set(['20GP','40GP','40HC','20RF','40RF','20OT','40OT','20FR','40FR','20TK']).has(String(values.iso_type).toUpperCase())) {
+    return res.status(400).json({ error: 'invalid_container_equipment_type' });
+  }
+  if (values.status !== undefined && !new Set(['pending','assigned','in_transit','at_port','delivered','completed']).has(String(values.status))) {
+    return res.status(400).json({ error: 'invalid_booking_container_status' });
+  }
+  if (values.yard_status !== undefined && !new Set(['yard','inbound','outbound','complete']).has(String(values.yard_status))) {
+    return res.status(400).json({ error: 'invalid_booking_container_yard_status' });
+  }
+  if (values.weight_kg !== undefined && values.weight_kg !== null && values.weight_kg !== '') {
+    const weight = Number(values.weight_kg);
+    if (!Number.isFinite(weight) || weight < 0 || weight > 99999999.99) return res.status(400).json({ error: 'invalid_booking_container_weight' });
+    values.weight_kg = weight;
+  }
+  const maxLengths = {
+    seal_number: 50, seal_number_2: 50, packing_list_no: 60, notes: 512,
+    terminal: 50, lock_number: 30, transporter_name: 255, horse_reg: 20,
+    trailer_reg: 20, driver_name: 255, driver_contact: 50,
+  };
+  for (const [field, max] of Object.entries(maxLengths)) {
+    if (values[field] != null && String(values[field]).length > max) {
+      return res.status(400).json({ error: 'booking_container_field_too_long', field });
+    }
+  }
+
+  const fields = Object.keys(values);
+  const params = fields.map(field => values[field]);
+  const sets = fields.map((field, index) => field + '=$' + (index + 1));
+  params.push(containerId, bookingId, orgId);
+  const result = await req.db(
+    'UPDATE cds_booking_containers SET ' + sets.join(',') + ', updated_at=NOW() WHERE id=$' + (params.length - 2) + ' AND booking_id=$' + (params.length - 1) + ' AND org_id=$' + params.length + ' AND deleted_at IS NULL RETURNING *',
     params
   );
-  if (!r.rows.length) return res.status(404).json({ error: 'not_found' });
-  // Controller edits reach the field too — a corrected seal number or a
-  // container pulled back to 'pending' has to show up on the tablet that is
-  // about to act on it, not one poll later.
-  publishCds(req, 'cds.container.updated', {
-    booking_id: req.params.id,
-    booking_container_id: r.rows[0].id,
-    container_number: r.rows[0].container_number,
-    status: r.rows[0].status,
-  });
-  res.json({ data: r.rows[0] });
-}));
-router.delete('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
+  if (!result.rows.length) return res.status(404).json({ error: 'not_found' });
+  const after = result.rows[0];
   await req.db(
-    `UPDATE cds_booking_containers SET deleted_at=NOW() WHERE id=$1 AND org_id=$2`,
-    [req.params.cid, req.user.org_id]
+    \`INSERT INTO cds_audit_logs
+      (action, entity_type, entity_id, user_id, user_name, before_data, after_data, ip_address, user_agent, org_id)
+     VALUES ('update','booking_container',$1,$2,$3,$4,$5,$6,$7,$8)\`,
+    [
+      containerId, req.user.id || null, req.user.name || null,
+      JSON.stringify(before), JSON.stringify(after),
+      req.ip || null, req.get ? req.get('user-agent') || null : null, orgId,
+    ]
   );
   publishCds(req, 'cds.container.updated', {
-    booking_id: req.params.id,
-    booking_container_id: req.params.cid,
-    removed: true,
+    booking_id: bookingId,
+    booking_container_id: after.id,
+    container_number: after.container_number,
+    status: after.status,
   });
-  res.json({ ok: true });
+  res.json({ data: after });
 }));
 
-// The container's custody ledger, re-verified on every read.
-//
-// A hash chain nobody checks is decoration, so this doesn't just return the
-// rows: it recomputes each event's hash from its stored fields and re-links it
-// to its predecessor. `verified` false means that row's contents no longer
-// match its hash (edited in place); `chain_broken` means the link to the
-// previous event doesn't line up (a row was removed or reordered).
+router.delete('/bookings/:id/containers/:cid', cdsTransaction(async (req, res) => {
+  const orgId = req.user.org_id;
+  const bookingId = req.params.id;
+  const containerId = req.params.cid;
+  const beforeResult = await req.db(
+    'SELECT * FROM cds_booking_containers WHERE id=$1 AND booking_id=$2 AND org_id=$3 AND deleted_at IS NULL FOR UPDATE',
+    [containerId, bookingId, orgId]
+  );
+  if (!beforeResult.rows.length) return res.status(404).json({ error: 'not_found' });
+  const custody = await req.db(
+    'SELECT COUNT(*)::int AS count FROM cds_custody_events WHERE booking_container_id=$1 AND org_id=$2',
+    [containerId, orgId]
+  );
+  if (custody.rows[0].count > 0 || beforeResult.rows[0].trip_id) {
+    return res.status(409).json({ error: 'custody_tracked_manifest_cannot_be_removed' });
+  }
+  const result = await req.db(
+    'UPDATE cds_booking_containers SET deleted_at=NOW(), updated_at=NOW() WHERE id=$1 AND booking_id=$2 AND org_id=$3 AND deleted_at IS NULL RETURNING *',
+    [containerId, bookingId, orgId]
+  );
+  if (!result.rows.length) return res.status(404).json({ error: 'not_found' });
+  await req.db(
+    \`INSERT INTO cds_audit_logs
+      (action, entity_type, entity_id, user_id, user_name, before_data, after_data, ip_address, user_agent, org_id)
+     VALUES ('delete','booking_container',$1,$2,$3,$4,$5,$6,$7,$8)\`,
+    [
+      containerId, req.user.id || null, req.user.name || null,
+      JSON.stringify(beforeResult.rows[0]), JSON.stringify({ deleted_at: result.rows[0].deleted_at }),
+      req.ip || null, req.get ? req.get('user-agent') || null : null, orgId,
+    ]
+  );
+  publishCds(req, 'cds.container.updated', {
+    booking_id: bookingId, booking_container_id: containerId, removed: true,
+  });
+  res.json({ data: { id: containerId, deleted_at: result.rows[0].deleted_at } });
+}));
+
 router.get('/bookings/:id/containers/:cid/custody', asyncHandler(async (req, res) => {
   const result = await req.db(
     `SELECT seq, kind, actor_user_id, actor_name, lat, lng, seal_number, seal_intact,
