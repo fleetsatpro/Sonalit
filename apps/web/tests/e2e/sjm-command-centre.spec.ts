@@ -1038,6 +1038,74 @@ test.describe('SJM command-centre responsive smoke', () => {
     }
   });
 
+  test('traveller profile remains saved when optional private document storage is unavailable', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    let profileCreated = false;
+    let uploadAttempted = false;
+    let uploadStatus = 0;
+    await page.route('**/api/v1/sjm/**', async (route) => {
+      const url = new URL(route.request().url());
+      const method = route.request().method();
+      if (method === 'POST' && url.pathname.endsWith('/travel-workspace/travellers')) {
+        profileCreated = true;
+        return route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: {
+            id: 'traveller-sjm-e2e-created-002',
+            traveller_reference: 'TRV-002',
+            traveller_type: 'principal',
+            display_name: 'Amina Example',
+            given_name: 'Amina',
+            family_name: 'Example',
+            nationality: 'Kenya',
+          } }),
+        });
+      }
+      if (method === 'POST' && url.pathname.endsWith('/documents/upload-url')) {
+        uploadAttempted = true;
+        uploadStatus = 503;
+        return route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'travel_document_storage_unavailable', message: 'Dedicated private SJM storage is not configured.' }),
+        });
+      }
+      return route.fallback();
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
+    await page.getByRole('button', { name: 'Open travel dossier' }).click();
+
+    const workspace = page.getByTestId('sjm-travel-workspace');
+    await workspace.getByRole('button', { name: 'Register traveller' }).first().click();
+    const wizard = workspace.locator('.sjm-traveller-wizard');
+    await wizard.getByLabel('Given name *').fill('Amina');
+    await wizard.getByLabel('Family / surname *').fill('Example');
+    await wizard.getByLabel('Nationality / citizenship').selectOption({ label: 'Kenya' });
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await wizard.getByLabel('Email address').fill('amina@example.invalid');
+    await wizard.getByLabel('Traveller phone').fill('+254 700 000 003');
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await wizard.locator('input[type="file"]').setInputFiles({
+      name: 'passport.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 synthetic document fixture'),
+    });
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await expect(wizard.getByRole('heading', { name: 'Review before saving' })).toBeVisible();
+    await wizard.getByRole('button', { name: 'Register traveller' }).click();
+
+    await expect.poll(() => profileCreated).toBe(true);
+    await expect.poll(() => uploadAttempted).toBe(true);
+    expect(uploadStatus).toBe(503);
+    await expect(workspace.getByRole('status')).toContainText('Traveller profile saved. The travel document was not uploaded or verified');
+    await expect(workspace.getByRole('status')).not.toContainText('Document stored privately');
+    await expect(workspace.locator('.sjm-traveller-wizard')).toHaveCount(0);
+  });
+
   test('focused travel dossier uses two task columns on desktop and stacks cleanly on mobile', async ({ page }, testInfo: TestInfo) => {
     await seedAuth(page);
     await stubSjmApi(page);
