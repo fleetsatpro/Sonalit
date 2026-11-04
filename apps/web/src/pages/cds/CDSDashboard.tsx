@@ -365,7 +365,7 @@ export default function CDSApp() {
               </button>
             );
           })}
-        </div>
+        </nav>
 
         {secondaryTabs.length > 0 && (
           <nav className="cds-context-nav flex-shrink-0 flex items-center gap-1 px-4 sm:px-6 overflow-x-auto" aria-label={activeSection.label + ' views'}>
