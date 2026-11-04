@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CDSActivityIcon } from './CDSActivityIcon.js';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
@@ -359,16 +360,10 @@ export function InboxView() {
   if (isLoading) return <LoadingState />;
   const items = (activity ?? []) as Row[];
 
-  const iconMap: Record<string, string> = {
-    clamp: '🔒', depart: '🚛', checkpoint: '📍', sync: '🔄',
-    arrival: '✅', unclamp: '🔓', ai: '🤖', alert: '⚠️',
-    lock: '🔒', unlock: '🔓',
-  };
-
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
       <Card className="p-4">
-        <div className="font-bold text-sm text-text-0">Dispatch Log</div>
+        <div className="font-semibold text-[16px] text-text-0">Activity log</div>
         {/* Says where the entries come from, so an empty log reads as "nothing
             has happened yet" rather than "this screen may be broken". */}
         <div className="text-[10px] font-mono text-text-2 mt-0.5 mb-3">
@@ -377,7 +372,7 @@ export function InboxView() {
         <div className="space-y-0 max-h-[600px] overflow-y-auto">
           {items.map((item, i) => (
             <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2.5 border-b border-white/[.05] last:border-0">
-              <span className="text-sm flex-none mt-0.5">{iconMap[String(item['icon'] ?? item['type'] ?? '')] ?? '📋'}</span>
+              <span className="text-sm flex-none mt-0.5"><CDSActivityIcon kind={item['icon'] ?? item['type']} /></span>
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-text-0">{String(item['description'] ?? item['text'] ?? '—')}</div>
                 {item['meta'] ? (
