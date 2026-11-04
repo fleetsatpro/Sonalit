@@ -231,7 +231,7 @@ const ISO6346_LETTER_VALUES = (() => {
 
 function iso6346CheckDigit(containerNumber) {
   const code = String(containerNumber || '').trim().toUpperCase().replace(/\s+/g, '');
-  if (!/^[A-Z]{3}[UJZ][0-9]{7}$/.test(code)) return null;
+  if (!/^[A-Z]{3}U[0-9]{7}$/.test(code)) return null;
   let sum = 0;
   for (let index = 0; index < 10; index += 1) {
     const character = code[index];
@@ -1165,13 +1165,17 @@ router.post('/containers', asyncHandler(async (req, res) => {
     manufacturer: manufacturer || null,
     year_built: yearBuilt,
     condition,
+    // Damaged and retired units are never made available for allocation.
+    // This is an intake classification, not a movement transition.
+    status: ['damaged', 'retired'].includes(condition) ? 'maintenance' : 'available',
   };
 
-  // A new item always enters inventory as available. Movement state belongs to
-  // booking/trip/clamp/unclamp transactions, never to an inventory registration form.
+  // Initial state is derived by the server from the physical condition. Any
+  // client-supplied operational status is ignored; later movement belongs to
+  // booking/trip/clamp/unclamp transactions.
   try {
     await createRow(req, res, 'cds_containers',
-      ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'manufacturer', 'year_built', 'condition']);
+      ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'manufacturer', 'year_built', 'condition', 'status']);
   } catch (err) {
     if (err && err.code === '23505') {
       return res.status(409).json({ error: 'container_number_exists', message: 'This container number is already registered.' });
