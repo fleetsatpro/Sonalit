@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react';
 import { DataTable, DrawerField, StatusBadge, FilterChip } from './components.js';
 import { useContainers, useCreateContainer, useCDSDrivers, useCDSTransporters } from './hooks.js';
 import { useCDSStore } from './store.js';
@@ -37,6 +37,8 @@ export function ContainersView() {
   const [filter, setFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [serverSearch, setServerSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
   const [showRegistration, setShowRegistration] = useState(false);
   const [number, setNumber] = useState('');
   const [isoType, setIsoType] = useState('40HC');
@@ -48,21 +50,30 @@ export function ContainersView() {
   const [maxWeight, setMaxWeight] = useState('');
   const [tareWeight, setTareWeight] = useState('');
   useEffect(() => {
-    const handle = window.setTimeout(() => setServerSearch(searchInput.trim()), 250);
+    const handle = window.setTimeout(() => {
+      setServerSearch(searchInput.trim());
+      setPage(0);
+    }, 250);
     return () => window.clearTimeout(handle);
   }, [searchInput]);
-  const { data, isLoading, isError, isFetching, refetch } = useContainers({ query: serverSearch });
+  const { data, isLoading, isError, isFetching, refetch } = useContainers({
+    query: serverSearch,
+    status: filter === 'all' ? undefined : filter,
+    limit: pageSize,
+    offset: page * pageSize,
+  });
   const createContainer = useCreateContainer();
   const { openDrawer, addToast } = useCDSStore();
 
   if (isLoading) return <LoadingState />;
 
-  const all = (data?.data ?? []) as Row[];
-  const rows = filter === 'all' ? all : all.filter(row => row['status'] === filter);
+  const rows = (data?.data ?? []) as Row[];
+  const summary = data?.summary;
   const statuses = ['all', 'available', 'booked', 'awaiting_pickup', 'in_transit', 'at_port', 'delivered', 'maintenance'];
-  const availableCount = all.filter(row => row['status'] === 'available').length;
-  const deployedCount = all.filter(row => ['booked', 'awaiting_pickup', 'in_transit', 'at_port'].includes(s(row['status']))).length;
-  const reviewCount = all.filter(row => row['status'] === 'maintenance' || ['damaged', 'retired'].includes(s(row['condition']))).length;
+  const total = Number(data?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const rangeStart = total === 0 ? 0 : page * pageSize + 1;
+  const rangeEnd = Math.min((page + 1) * pageSize, total);
 
   const resetRegistration = () => {
     setNumber('');
@@ -114,9 +125,13 @@ export function ContainersView() {
 
     createContainer.mutate(payload, {
       onSuccess: () => {
-        addToast('Container registration confirmed.');
+        addToast('Container registration confirmed and audited.');
         setShowRegistration(false);
         resetRegistration();
+        setSearchInput('');
+        setServerSearch('');
+        setFilter('all');
+        setPage(0);
       },
       onError: () => {
         addToast('Container registration failed. No successful record was confirmed.', 'error');
@@ -130,7 +145,7 @@ export function ContainersView() {
         <div>
           <div className="cds-eyebrow">ASSET REGISTER</div>
           <h2 className="text-[21px] sm:text-[24px] font-semibold tracking-tight text-white mt-1">Container inventory</h2>
-          <p className="text-[13px] text-slate-300 mt-1">{isError && !data ? 'Inventory count unavailable' : (data?.total ?? all.length) + ' registered container records'} · custody and condition at a glance.</p>
+          <p className="text-[13px] text-slate-300 mt-1">{isError && !data ? 'Inventory count unavailable' : (summary?.registered ?? '—') + ' registered container records'} · custody and condition at a glance.</p>
         </div>
         <button type="button" onClick={() => setShowRegistration(value => !value)} className="cds-secondary-action">
           <Plus size={17} aria-hidden="true" />
@@ -230,10 +245,10 @@ export function ContainersView() {
 
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-3" aria-label="Container register summary">
         {[
-          { label: 'REGISTERED', value: isError && !data ? '—' : data?.total ?? all.length, detail: serverSearch ? 'matching records' : 'records in this organisation' },
-          { label: 'AVAILABLE', value: isError && !data ? '—' : availableCount, detail: 'among loaded records' },
-          { label: 'IN OPERATIONAL FLOW', value: isError && !data ? '—' : deployedCount, detail: 'among loaded records' },
-          { label: 'REVIEW REQUIRED', value: isError && !data ? '—' : reviewCount, detail: 'among loaded records' },
+          { label: 'REGISTERED', value: isError && !data ? '—' : summary?.registered ?? '—', detail: 'in this organisation' },
+          { label: 'AVAILABLE', value: isError && !data ? '—' : summary?.available ?? '—', detail: 'ready for allocation' },
+          { label: 'IN OPERATIONAL FLOW', value: isError && !data ? '—' : summary?.in_operational_flow ?? '—', detail: 'booked, picked up or moving' },
+          { label: 'REVIEW REQUIRED', value: isError && !data ? '—' : summary?.review_required ?? '—', detail: 'maintenance or condition review' },
         ].map(item => (
           <div key={item.label} className="cds-kpi-panel rounded-xl border px-4 py-3">
             <div className="text-[11px] text-slate-300 font-semibold tracking-[.08em]">{item.label}</div>
@@ -243,11 +258,6 @@ export function ContainersView() {
         ))}
       </section>
 
-      {(data?.total ?? all.length) > all.length && (
-        <p className="cds-register-coverage" role="status">
-          Showing the first {all.length} of {data?.total ?? all.length} matching records. Refine the search to locate containers outside this loaded set.
-        </p>
-      )}
 
       {isError && (
         <div role="alert" className="cds-data-error rounded-xl border px-4 py-4">
@@ -257,14 +267,38 @@ export function ContainersView() {
         </div>
       )}
 
+      <div className="cds-register-pagination flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
+        <div className="text-[12px] text-slate-300 tabular-nums" aria-live="polite">
+          Showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {total.toLocaleString()} matching containers
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="cds-page-size-label">
+            Rows
+            <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(0); }} aria-label="Rows per page" className="cds-page-size-select">
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            per page
+          </label>
+          <span className="text-[12px] text-slate-300 font-mono">Page {page + 1} of {totalPages}</span>
+          <button type="button" className="cds-audit-page-button" disabled={page === 0 || isFetching} onClick={() => setPage(value => Math.max(0, value - 1))}>
+            <ChevronLeft size={15} /> Previous
+          </button>
+          <button type="button" className="cds-audit-page-button" disabled={(page + 1) * pageSize >= total || isFetching} onClick={() => setPage(value => Math.min(totalPages - 1, value + 1))}>
+            Next <ChevronRight size={15} />
+          </button>
+        </div>
+      </div>
+
       <DataTable
-        key={serverSearch + ':' + filter}
+        key={serverSearch + ':' + filter + ':' + page + ':' + pageSize}
         columns={[
-          { id: 'num', header: 'Container number', accessor: (r: Row) => <span className="font-mono font-semibold text-cyan-200">{s(r['number'] ?? r['container_number'])}</span>, sortValue: (r: Row) => s(r['number'] ?? r['container_number']), sortable: true },
-          { id: 'type', header: 'Equipment', accessor: (r: Row) => <span className="font-medium text-text-1">{s(r['iso_type'] ?? r['container_type'])}</span>, sortValue: (r: Row) => s(r['iso_type'] ?? r['container_type']), sortable: true },
-          { id: 'owner', header: 'Ownership', accessor: (r: Row) => <span className="capitalize">{s(r['ownership'])}</span>, sortValue: (r: Row) => s(r['ownership']), sortable: true },
-          { id: 'condition', header: 'Condition', accessor: (r: Row) => <span className="capitalize">{s(r['condition'] ?? 'Not recorded')}</span>, sortValue: (r: Row) => s(r['condition'] ?? 'Not recorded'), sortable: true },
-          { id: 'status', header: 'Operational status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} />, sortValue: (r: Row) => s(r['status']), sortable: true },
+          { id: 'num', header: 'Container number', accessor: (r: Row) => <span className="font-mono font-semibold text-cyan-200">{s(r['number'] ?? r['container_number'])}</span> },
+          { id: 'type', header: 'Equipment', accessor: (r: Row) => <span className="font-medium text-text-1">{s(r['iso_type'] ?? r['container_type'])}</span> },
+          { id: 'owner', header: 'Ownership', accessor: (r: Row) => <span className="capitalize">{s(r['ownership'])}</span> },
+          { id: 'condition', header: 'Condition', accessor: (r: Row) => <span className="capitalize">{s(r['condition'] ?? 'Not recorded')}</span> },
+          { id: 'status', header: 'Operational status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
           { id: 'loc', header: 'Last recorded location', accessor: (r: Row) => {
             const location = s(r['current_location']);
             if (location !== '—') return location;
@@ -275,13 +309,14 @@ export function ContainersView() {
         ]}
         data={rows}
         keyExtractor={(r: Row) => s(r['id'])}
+        pageSize={Math.max(rows.length, 1)}
         searchable={false}
         emptyMessage={isError && !data ? 'Inventory unavailable. Retry before drawing conclusions.' : all.length === 0 ? (serverSearch ? 'No containers match this search.' : 'No container records yet. Register your first container to establish the inventory.') : 'No containers match the selected status.'}
         filters={
           <div className="cds-container-toolbar">
             <div className="flex gap-2 flex-wrap">
               {statuses.map(status => (
-                <FilterChip key={status} label={status === 'all' ? 'All containers' : status.replace(/_/g, ' ')} active={filter === status} onClick={() => setFilter(status)} />
+                <FilterChip key={status} label={status === 'all' ? 'All containers' : status.replace(/_/g, ' ')} active={filter === status} onClick={() => { setFilter(status); setPage(0); }} />
               ))}
             </div>
             <label className="cds-container-search">
