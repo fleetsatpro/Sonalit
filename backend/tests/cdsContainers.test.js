@@ -118,6 +118,7 @@ describe('CDS container register', () => {
     const calls = [];
     await routeLayer('/containers', 'get')({
       query: { condition: 'damaged', ownership: 'owned', search: 'MSCU', limit: '25', offset: '0' },
+      user: { org_id: 'org-1' },
       db: async (sql, values) => {
         calls.push({ sql, values });
         return /COUNT\(\*\)/.test(sql) ? { rows: [{ count: '2' }] } : { rows: [{ id: 'container-1' }] };
@@ -125,9 +126,10 @@ describe('CDS container register', () => {
     }, res, error => { if (error) throw error; });
 
     expect(res.result.body.total).toBe(2);
-    expect(calls[0].sql).toContain('t.condition=$2');
-    expect(calls[0].sql).toContain('t.ownership=$3');
-    expect(calls[0].values).toEqual(['%MSCU%', 'damaged', 'owned', 25, 0]);
+    expect(calls[0].sql).toContain('c.org_id=$1');
+    expect(calls[0].sql).toContain('c.condition=$3');
+    expect(calls[0].sql).toContain('c.ownership=$4');
+    expect(calls[0].values).toEqual(['org-1', '%MSCU%', 'damaged', 'owned', 25, 0]);
   });
 
   test('rejects unknown condition filters rather than silently widening results', async () => {
