@@ -6,7 +6,7 @@ import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useDashboardKPIs, useCDSAnalytics, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useAcknowledgeAlert, useCDSAuditLogs } from './hooks.js';
+import { useDashboardKPIs, useCDSAnalytics, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useUnclampBookingContainer, useAcknowledgeAlert, useCDSAuditLogs } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
@@ -183,55 +183,204 @@ export function LocksView() {
 }
 
 export function PortView() {
-  const { data, isLoading } = useTrips({ status: 'at_port' });
-  const { openDrawer, addToast } = useCDSStore();
-  // This button used to call addToast('Unclamp initiated…') and nothing else:
-  // no request was ever sent. The controller saw the confirmation, the lock
-  // stayed installed, the trip stayed open, and the port crew was left holding
-  // a container the desk believed was released.
-  const unclamp = useUnclampTrip();
-  if (isLoading) return <LoadingState />;
+  const { data, isLoading, isError, refetch } = useTrips({ status: 'at_port' });
+  const { addToast, openDrawer } = useCDSStore();
+  const unclamp = useUnclampBookingContainer();
+  const [target, setTarget] = useState<Row | null>(null);
+  const [sealCheck, setSealCheck] = useState<'intact' | 'broken' | 'not_checked'>('not_checked');
+  const [observedSeal, setObservedSeal] = useState('');
   const rows = (data?.data ?? []) as Row[];
 
+  const openHandoff = (row: Row) => {
+    if (!row['booking_id'] || !row['booking_container_id']) {
+      addToast('This trip has no linked booking-container manifest. It cannot be unclamped through the verified custody workflow.', 'error');
+      return;
+    }
+    setSealCheck('not_checked');
+    setObservedSeal('');
+    setTarget(row);
+  };
+
+  const closeHandoff = () => {
+    if (unclamp.isPending) return;
+    setTarget(null);
+    setObservedSeal('');
+    setSealCheck('not_checked');
+  };
+
+  const confirmHandoff = () => {
+    if (!target) return;
+    const expected = String(target['manifest_seal_number'] ?? '').trim();
+    const observed = observedSeal.trim();
+    if (sealCheck === 'intact' && (!expected || !observed)) {
+      addToast('An intact seal can only be verified when both the recorded and observed seal numbers are available.', 'error');
+      return;
+    }
+    unclamp.mutate({
+      bookingId: s(target['booking_id']),
+      cid: s(target['booking_container_id']),
+      ...(sealCheck === 'not_checked' ? {} : { seal_intact: sealCheck === 'intact' }),
+      ...(observed ? { observed_seal: observed } : {}),
+    }, {
+      onSuccess: result => {
+        const payload = result?.data ?? {};
+        if (payload.seal_tamper_reported) {
+          addToast('Delivery recorded. Seal discrepancy escalated as a critical alert.', 'error');
+        } else if (payload.seal_intact === true) {
+          addToast('Delivery and seal verification recorded.');
+        } else {
+          addToast('Delivery recorded. Seal verification remains unconfirmed.');
+        }
+        setTarget(null);
+        setObservedSeal('');
+        setSealCheck('not_checked');
+      },
+      onError: () => addToast('The port handoff was not confirmed. The manifest and custody record were not reported as complete.', 'error'),
+    });
+  };
+
+  if (isLoading) return <LoadingState />;
+
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
+    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="cds-eyebrow">PORT CONTROL</div>
+          <h2 className="text-[21px] sm:text-[24px] font-semibold tracking-tight text-white mt-1">Awaiting unclamp</h2>
+          <p className="text-[13px] text-slate-300 mt-1">Release only through the linked booking manifest and recorded custody handoff.</p>
+        </div>
+        <button type="button" onClick={() => { void refetch(); }} className="cds-secondary-action" disabled={unclamp.isPending}>
+          <RefreshCw size={15} aria-hidden="true" />
+          Refresh queue
+        </button>
+      </div>
+
+      <div className="cds-lock-telemetry-note" role="note">
+        An aircraft, vehicle or trip status alone is not proof of container handoff. The manifest, seal outcome and custody record are committed before the port release is confirmed.
+      </div>
+
+      {isError && (
+        <div className="cds-data-error rounded-xl border px-4 py-4" role="alert">
+          <div className="text-[14px] font-semibold text-white">Port queue unavailable</div>
+          <p className="text-[13px] text-slate-300 mt-1">The queue was not treated as empty. Retry to retrieve current port records.</p>
+          <button type="button" onClick={() => { void refetch(); }} className="cds-secondary-action mt-3">Retry port queue</button>
+        </div>
+      )}
+
+      <div className="cds-register-pagination flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
+        <div>
+          <div className="text-[12px] font-semibold text-white">Port release queue</div>
+          <div className="text-[12px] text-slate-300 mt-0.5">{rows.length} trip records returned by the current queue query</div>
+        </div>
+        <div className="text-[12px] text-slate-300">Manifest-linked records only can be released from this workspace.</div>
+      </div>
+
       <DataTable
         columns={[
-          { id: 'container', header: 'Container', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['container_number'])}</span> },
-          { id: 'truck', header: 'Truck', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['vehicle_reg'])}</span> },
-          { id: 'dest', header: 'Terminal', accessor: (r: Row) => s(r['destination']) },
-          { id: 'arrived', header: 'Arrived', accessor: (r: Row) => r['delivered_at'] ? new Date(s(r['delivered_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—' },
-          { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
-          { id: 'action', header: '', accessor: (r: Row) => (
-            <Button
-              size="sm"
-              disabled={unclamp.isPending}
-              onClick={(e) => {
-                e.stopPropagation();
-                unclamp.mutate({ id: s(r['id']) }, {
-                  onSuccess: () => addToast(`Lock removed on ${s(r['container_number'])}`),
-                  onError: () => addToast(`Could not unclamp ${s(r['container_number'])} — try again`),
-                });
+          { id: 'container', header: 'Container', accessor: (r: Row) => <span className="font-mono font-semibold text-cyan-200">{s(r['container_number'])}</span> },
+          { id: 'booking', header: 'Booking / manifest', accessor: (r: Row) => (
+            <div>
+              <div className="font-mono text-[12px] text-slate-100">{s(r['booking_number'])}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">{r['booking_container_id'] ? 'Manifest linked' : 'Manifest missing'}</div>
+            </div>
+          )},
+          { id: 'vehicle', header: 'Vehicle / driver', accessor: (r: Row) => (
+            <div>
+              <div className="font-mono text-[12px] text-slate-100">{s(r['vehicle_reg'] ?? r['vehicleReg'])}</div>
+              <div className="text-[11px] text-slate-300 mt-0.5">{s(r['driverName'] ?? r['driver_name'])}</div>
+            </div>
+          )},
+          { id: 'terminal', header: 'Terminal', accessor: (r: Row) => s(r['manifest_terminal'] ?? r['destination']) },
+          { id: 'seal', header: 'Recorded seal', accessor: (r: Row) => <span className="font-mono text-[12px] text-slate-200">{s(r['manifest_seal_number'])}</span> },
+          { id: 'lock', header: 'Lock reference', accessor: (r: Row) => <span className="font-mono text-[12px] text-slate-200">{s(r['manifest_lock_number'] ?? r['lock_serial'])}</span> },
+          { id: 'status', header: 'Trip status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
+          { id: 'action', header: 'Action', accessor: (r: Row) => (
+            <button
+              type="button"
+              className="cds-secondary-action"
+              disabled={unclamp.isPending || !r['booking_id'] || !r['booking_container_id']}
+              onClick={event => {
+                event.stopPropagation();
+                openHandoff(r);
               }}
+              title={r['booking_container_id'] ? 'Record seal outcome and confirm delivery' : 'A booking-container manifest is required'}
             >
-              {unclamp.isPending ? 'Unclamping…' : 'Unclamp'}
-            </Button>
+              {r['booking_container_id'] ? 'Verify & release' : 'Manifest missing'}
+            </button>
           )},
         ]}
         data={rows}
         keyExtractor={(r: Row) => s(r['id'])}
         searchable
-        searchPlaceholder="Search port queue…"
-        onRowClick={(r: Row) => openDrawer(`Port — ${s(r['container_number'])}`, (
+        searchPlaceholder="Search container, booking, vehicle, seal or terminal…"
+        emptyMessage="No trips are currently awaiting port release."
+        onRowClick={(r: Row) => openDrawer('Port handoff · ' + s(r['container_number']), (
           <>
             <DrawerField label="Container" value={s(r['container_number'])} />
-            <DrawerField label="Truck" value={s(r['vehicle_reg'])} />
-            <DrawerField label="Driver" value={s(r['driver_name'])} />
-            <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
-            <DrawerField label="Destination" value={s(r['destination'])} />
+            <DrawerField label="Booking reference" value={s(r['booking_number'])} />
+            <DrawerField label="Manifest" value={r['booking_container_id'] ? 'Linked' : 'Missing'} />
+            <DrawerField label="Vehicle" value={s(r['vehicle_reg'] ?? r['vehicleReg'])} />
+            <DrawerField label="Driver" value={s(r['driverName'] ?? r['driver_name'])} />
+            <DrawerField label="Terminal" value={s(r['manifest_terminal'] ?? r['destination'])} />
+            <DrawerField label="Recorded seal" value={s(r['manifest_seal_number'])} />
+            <DrawerField label="Lock reference" value={s(r['manifest_lock_number'] ?? r['lock_serial'])} />
+            <DrawerField label="Trip status" value={<StatusBadge status={s(r['status'])} />} />
           </>
         ))}
       />
+
+      {target && (
+        <div className="cds-handoff-backdrop" role="presentation">
+          <section className="cds-handoff-dialog" role="dialog" aria-modal="true" aria-labelledby="cds-handoff-title" aria-describedby="cds-handoff-description">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="cds-eyebrow">CONTROLLED PORT HANDOFF</div>
+                <h3 id="cds-handoff-title" className="text-[18px] font-semibold text-white mt-1">Verify seal & release container</h3>
+                <p id="cds-handoff-description" className="text-[13px] text-slate-300 mt-1">The handoff is committed to the booking manifest and custody ledger. This action cannot be treated as a GPS event.</p>
+              </div>
+              <button type="button" className="cds-tertiary-action" onClick={closeHandoff} disabled={unclamp.isPending}>Close</button>
+            </div>
+
+            <div className="cds-handoff-facts grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+              <div><span>CONTAINER</span><strong>{s(target['container_number'])}</strong></div>
+              <div><span>BOOKING</span><strong>{s(target['booking_number'])}</strong></div>
+              <div><span>RECORDED SEAL</span><strong>{s(target['manifest_seal_number'])}</strong></div>
+              <div><span>TERMINAL</span><strong>{s(target['manifest_terminal'] ?? target['destination'])}</strong></div>
+            </div>
+
+            <fieldset className="mt-5">
+              <legend className="cds-form-label">Seal outcome *</legend>
+              <div className="cds-seal-options mt-2">
+                <label>
+                  <input type="radio" name="cds-seal-check" value="not_checked" checked={sealCheck === 'not_checked'} onChange={() => setSealCheck('not_checked')} />
+                  <span>Not checked</span>
+                </label>
+                <label>
+                  <input type="radio" name="cds-seal-check" value="intact" checked={sealCheck === 'intact'} onChange={() => setSealCheck('intact')} />
+                  <span>Intact — number matches</span>
+                </label>
+                <label>
+                  <input type="radio" name="cds-seal-check" value="broken" checked={sealCheck === 'broken'} onChange={() => setSealCheck('broken')} />
+                  <span>Broken / missing / mismatch</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <label className="cds-form-field mt-4">
+              <span className="cds-form-label">Observed seal number</span>
+              <input value={observedSeal} onChange={event => setObservedSeal(event.target.value.trimStart().slice(0, 50))} maxLength={50} className="cds-form-control" placeholder="Enter the seal number read at the port" />
+              <span className="cds-form-help">Required to verify an intact seal. A mismatch triggers a critical alert.</span>
+            </label>
+
+            <div className="flex flex-wrap justify-end gap-2 mt-5 pt-4 border-t border-white/[.08]">
+              <button type="button" className="cds-tertiary-action" onClick={closeHandoff} disabled={unclamp.isPending}>Cancel</button>
+              <button type="button" className="cds-form-primary" onClick={confirmHandoff} disabled={unclamp.isPending}>
+                {unclamp.isPending ? 'Committing handoff…' : 'Confirm port handoff'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
