@@ -2314,7 +2314,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   const { id: bookingId, cid: bcId } = req.params;
   const {
     lock_serial, transporter_name, truck_reg, trailer_reg,
-    driver_name, driver_phone, notes, lat, lng,
+    driver_name, notes, lat, lng,
   } = req.body || {};
 
   if (!lock_serial || !truck_reg || !driver_name) {
@@ -2325,11 +2325,9 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   const cleanDriverName = String(driver_name).trim();
   const cleanTrailerReg = trailer_reg ? String(trailer_reg).trim().toUpperCase() : null;
   const cleanTransporter = transporter_name ? String(transporter_name).trim() : null;
-  const cleanDriverPhone = driver_phone ? String(driver_phone).trim() : null;
   if (cleanLockSerial.length > 30 || cleanTruckReg.length > 20 || cleanDriverName.length > 255
     || (cleanTrailerReg && cleanTrailerReg.length > 20)
     || (cleanTransporter && cleanTransporter.length > 255)
-    || (cleanDriverPhone && cleanDriverPhone.length > 50)
     || (notes && String(notes).length > 512)) {
     return res.status(400).json({ error: 'clamp_field_too_long' });
   }
@@ -2377,13 +2375,14 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   // with an unexpired licence and no other open journey; never invent a
   // PENDING licence number or a future expiry date.
   const dr = await req.db(
-    'SELECT id, license_number, license_expiry, status FROM cds_drivers WHERE name ILIKE $1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+    'SELECT id, phone, license_number, license_expiry, status FROM cds_drivers WHERE name ILIKE $1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
     [cleanDriverName, orgId]
   );
   if (!dr.rows.length) {
     return res.status(409).json({ error: 'driver_not_registered', message: 'Register the driver and licence details before clamping.' });
   }
   const driver = dr.rows[0];
+  const cleanDriverPhone = driver.phone ? String(driver.phone).trim() : null;
   if (!driver.license_number || !driver.license_expiry || new Date(driver.license_expiry).getTime() <= Date.now()) {
     return res.status(409).json({ error: 'driver_licence_not_valid', message: 'The driver needs a valid, unexpired licence on their personnel record.' });
   }
@@ -2746,7 +2745,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
 
   const bc = await req.db(
     `SELECT bc.*, b.booking_number, b.delivery_location,
-            t.id AS trip_id, t.lock_id, t.container_id
+            t.id AS trip_id, t.lock_id, t.container_id, t.driver_id, t.vehicle_id
        FROM cds_booking_containers bc
        JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = bc.org_id AND b.deleted_at IS NULL
        LEFT JOIN cds_trips t ON t.id = bc.trip_id AND t.org_id = bc.org_id AND t.deleted_at IS NULL
@@ -2792,6 +2791,59 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
         WHERE id=$1 AND org_id=$2`,
       [bc.rows[0].trip_id, orgId]
     );
+  }
+
+  // Return the assigned personnel and vehicle to availability only when this
+  // was their last open trip. Never clear a resource still assigned elsewhere.
+  if (bc.rows[0].driver_id) {
+    const openDriverTrips = await req.db(
+      `SELECT COUNT(*)::int AS count FROM cds_trips
+        WHERE driver_id=$1 AND org_id=$2 AND deleted_at IS NULL
+          AND id<>$3 AND status IN ('locked','dispatched','checkpoint','delayed','at_port')`,
+      [bc.rows[0].driver_id, orgId, bc.rows[0].trip_id]
+    );
+    if (openDriverTrips.rows[0].count === 0) {
+      await req.db(
+        `UPDATE cds_drivers SET status='available', current_vehicle_id=NULL, updated_at=NOW()
+          WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,
+        [bc.rows[0].driver_id, orgId]
+      );
+      await req.db(
+        `INSERT INTO cds_audit_logs
+          (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
+         VALUES ('release','driver',$1,$2,$3,$4,$5)`,
+        [
+          bc.rows[0].driver_id, req.user.id || null, req.user.name || null,
+          JSON.stringify({ status: 'available', released_from_booking: bookingId, booking_container_id: bcId }),
+          orgId,
+        ]
+      );
+    }
+  }
+  if (bc.rows[0].vehicle_id) {
+    const openVehicleTrips = await req.db(
+      `SELECT COUNT(*)::int AS count FROM cds_trips
+        WHERE vehicle_id=$1 AND org_id=$2 AND deleted_at IS NULL
+          AND id<>$3 AND status IN ('locked','dispatched','checkpoint','delayed','at_port')`,
+      [bc.rows[0].vehicle_id, orgId, bc.rows[0].trip_id]
+    );
+    if (openVehicleTrips.rows[0].count === 0) {
+      await req.db(
+        `UPDATE cds_vehicles SET status='available', current_driver_id=NULL, updated_at=NOW()
+          WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,
+        [bc.rows[0].vehicle_id, orgId]
+      );
+      await req.db(
+        `INSERT INTO cds_audit_logs
+          (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
+         VALUES ('release','vehicle',$1,$2,$3,$4,$5)`,
+        [
+          bc.rows[0].vehicle_id, req.user.id || null, req.user.name || null,
+          JSON.stringify({ status: 'available', released_from_booking: bookingId, booking_container_id: bcId }),
+          orgId,
+        ]
+      );
+    }
   }
 
   // unclamped_at is the manifest's TIME UNCLAMPED column and had the same
