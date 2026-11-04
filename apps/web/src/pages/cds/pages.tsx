@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { FileSpreadsheet, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileSpreadsheet, FileText, RefreshCw, Search } from 'lucide-react';
 import { CDSActivityIcon } from './CDSActivityIcon.js';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useDashboardKPIs, useCDSAnalytics, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useAcknowledgeAlert } from './hooks.js';
+import { useDashboardKPIs, useCDSAnalytics, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useAcknowledgeAlert, useCDSAuditLogs } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
@@ -403,6 +403,147 @@ export function InboxView() {
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+
+function auditPayload(value: unknown): string {
+  if (value == null) return 'Not recorded';
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value;
+    return JSON.stringify(parsed, null, 2) ?? 'Not recorded';
+  } catch {
+    return String(value);
+  }
+}
+
+function auditTime(value: unknown): string {
+  if (!value) return 'Time not recorded';
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime())
+    ? 'Invalid timestamp'
+    : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' });
+}
+
+export function AuditView() {
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const pageSize = 100;
+  const { data, isLoading, isError, isFetching, refetch } = useCDSAuditLogs(pageSize, page * pageSize);
+  const items = (data?.data ?? []) as Row[];
+  const query = search.trim().toLowerCase();
+  const rows = items.filter(item => [
+    item['action'], item['entity_type'], item['entity_id'],
+    item['user_name'], item['user_id'], item['ip_address'],
+  ].some(value => String(value ?? '').toLowerCase().includes(query)));
+  const total = Number(data?.total ?? 0);
+  const first = total === 0 ? 0 : page * pageSize + 1;
+  const last = Math.min((page + 1) * pageSize, total);
+
+  if (isLoading) return <LoadingState />;
+
+  return (
+    <div className="p-4 sm:p-6 max-w-[1680px] mx-auto space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="cds-eyebrow">ACCOUNTABILITY RECORD</div>
+          <h2 className="text-[21px] sm:text-[24px] font-semibold tracking-tight text-white mt-1">Audit trail</h2>
+          <p className="text-[13px] text-slate-300 mt-1">
+            Organisation-scoped records of recorded changes, actors and source addresses.
+          </p>
+        </div>
+        <button type="button" onClick={() => { void refetch(); }} disabled={isFetching} className="cds-secondary-action">
+          <RefreshCw size={15} aria-hidden="true" className={isFetching ? 'animate-spin' : ''} />
+          {isFetching ? 'Refreshing…' : 'Refresh audit'}
+        </button>
+      </div>
+
+      <div className="cds-audit-summary flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
+        <div>
+          <div className="text-[12px] font-semibold text-white">Persisted audit events</div>
+          <div className="text-[12px] text-slate-300 mt-0.5">{total.toLocaleString()} records returned by the audit endpoint</div>
+        </div>
+        <div className="text-[12px] text-slate-300 font-mono tabular-nums">{first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}</div>
+      </div>
+
+      <label className="cds-container-search cds-audit-search">
+        <Search size={16} aria-hidden="true" />
+        <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Filter this page by action, entity, actor or IP…" aria-label="Filter current audit page" />
+      </label>
+
+      {isError ? (
+        <div role="alert" className="cds-data-error rounded-xl border px-4 py-5">
+          <div className="text-[14px] font-semibold text-white">Audit records unavailable</div>
+          <p className="text-[13px] text-slate-300 mt-1">The audit trail could not be retrieved. No empty or complete-state claim is being made.</p>
+          <button type="button" onClick={() => { void refetch(); }} className="cds-secondary-action mt-3">Retry audit retrieval</button>
+        </div>
+      ) : (
+        <div className="cds-audit-table-wrap rounded-2xl border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[940px] border-collapse">
+              <thead>
+                <tr>
+                  {['Recorded at', 'Action', 'Entity', 'Record ID', 'Actor', 'Source address', 'Change data'].map(label => (
+                    <th key={label} className="text-left px-4 py-3 text-[11px] font-semibold tracking-[.08em] text-slate-300 uppercase border-b border-white/[.09]">{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((item, index) => {
+                  const before = item['before_data'];
+                  const after = item['after_data'];
+                  const hasPayload = before != null || after != null;
+                  return (
+                    <tr key={String(item['id'] ?? page * pageSize + index)} className="border-b border-white/[.055] last:border-0 hover:bg-white/[.025] align-top">
+                      <td className="px-4 py-3 text-[12px] text-slate-300 whitespace-nowrap font-mono">{auditTime(item['created_at'])}</td>
+                      <td className="px-4 py-3"><span className="cds-audit-action">{s(item['action']).replace(/_/g, ' ')}</span></td>
+                      <td className="px-4 py-3 text-[13px] text-slate-200">{s(item['entity_type'])}</td>
+                      <td className="px-4 py-3 font-mono text-[12px] text-cyan-200 max-w-[190px] truncate" title={s(item['entity_id'])}>{s(item['entity_id'])}</td>
+                      <td className="px-4 py-3 text-[13px] text-slate-200">{s(item['user_name'] ?? item['user_id'])}</td>
+                      <td className="px-4 py-3 font-mono text-[12px] text-slate-300">{s(item['ip_address'])}</td>
+                      <td className="px-4 py-3">
+                        {hasPayload ? (
+                          <details className="cds-audit-details">
+                            <summary>Inspect before / after</summary>
+                            <div className="grid grid-cols-1 2xl:grid-cols-2 gap-2 mt-3">
+                              <div className="min-w-0">
+                                <div className="cds-audit-payload-label">BEFORE</div>
+                                <pre>{auditPayload(before)}</pre>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="cds-audit-payload-label">AFTER</div>
+                                <pre>{auditPayload(after)}</pre>
+                              </div>
+                            </div>
+                            {item['user_agent'] ? <div className="text-[11px] text-slate-400 mt-2 break-all">Client: {s(item['user_agent'])}</div> : null}
+                          </details>
+                        ) : (
+                          <span className="text-[12px] text-slate-400">No change payload</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {rows.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-[13px] text-slate-300">{query ? 'No audit events match this page filter.' : 'No audit events were returned for this organisation.'}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-white/[.08]">
+            <span className="text-[12px] text-slate-300">Page {page + 1} · {rows.length} matching rows on this page</span>
+            <div className="flex items-center gap-2">
+              <button type="button" className="cds-audit-page-button" disabled={page === 0 || isFetching} onClick={() => setPage(value => Math.max(0, value - 1))}>
+                <ChevronLeft size={15} /> Previous
+              </button>
+              <button type="button" className="cds-audit-page-button" disabled={(page + 1) * pageSize >= total || isFetching} onClick={() => setPage(value => value + 1)}>
+                Next <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
