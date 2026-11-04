@@ -289,6 +289,7 @@ interface Column<T> {
   header: string;
   accessor: (row: T) => React.ReactNode;
   sortable?: boolean;
+  sortValue?: (row: T) => string | number | null | undefined;
   className?: string;
 }
 
@@ -320,13 +321,46 @@ export function DataTable<T>({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
 
-  const totalPages = Math.ceil(data.length / pageSize);
+  const textValue = (value: React.ReactNode): string => {
+    if (value == null || typeof value === 'boolean') return '';
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+    if (Array.isArray(value)) return value.map(item => textValue(item)).join(' ');
+    if (React.isValidElement<{ children?: React.ReactNode }>(value)) return textValue(value.props.children);
+    return '';
+  };
+
+  const filteredData = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    if (!query) return data;
+    return data.filter(row => columns.some(column => textValue(column.accessor(row)).toLocaleLowerCase().includes(query)));
+  }, [columns, data, search]);
+
+  const sortedData = useMemo(() => {
+    if (!sortCol) return filteredData;
+    const column = columns.find(item => item.id === sortCol);
+    if (!column) return filteredData;
+    return [...filteredData].sort((left, right) => {
+      const a = column.sortValue ? column.sortValue(left) : textValue(column.accessor(left));
+      const b = column.sortValue ? column.sortValue(right) : textValue(column.accessor(right));
+      if (a == null && b == null) return 0;
+      if (a == null) return sortDir === 'asc' ? 1 : -1;
+      if (b == null) return sortDir === 'asc' ? -1 : 1;
+      const comparison = typeof a === 'number' && typeof b === 'number'
+        ? a - b
+        : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+      return sortDir === 'asc' ? comparison : -comparison;
+    });
+  }, [columns, filteredData, sortCol, sortDir]);
+
+  const totalPages = Math.ceil(sortedData.length / pageSize);
+  const safePage = Math.min(page, Math.max(0, totalPages - 1));
   const paged = useMemo(
-    () => data.slice(page * pageSize, (page + 1) * pageSize),
-    [data, page, pageSize],
+    () => sortedData.slice(safePage * pageSize, (safePage + 1) * pageSize),
+    [pageSize, safePage, sortedData],
   );
 
   const handleSort = (colId: string) => {
+    setPage(0);
     if (sortCol === colId)
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else {
@@ -374,17 +408,16 @@ export function DataTable<T>({
               {columns.map((col) => (
                 <th
                   key={col.id}
-                  className={`text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium ${col.sortable ? 'cursor-pointer select-none hover:text-text-1' : ''} ${col.className ?? ''}`}
-                  onClick={
-                    col.sortable ? () => handleSort(col.id) : undefined
-                  }
+                  scope="col"
+                  aria-sort={col.sortable ? (sortCol === col.id ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined}
+                  className={`text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium ${col.className ?? ''}`}
                 >
-                  {col.header}
-                  {sortCol === col.id && (
-                    <span className="ml-1">
-                      {sortDir === 'asc' ? '↑' : '↓'}
-                    </span>
-                  )}
+                  {col.sortable ? (
+                    <button type="button" onClick={() => handleSort(col.id)} className="cds-table-sort-button" aria-label={'Sort by ' + col.header}>
+                      {col.header}
+                      {sortCol === col.id && <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    </button>
+                  ) : col.header}
                 </th>
               ))}
             </tr>
@@ -403,10 +436,17 @@ export function DataTable<T>({
               paged.map((row) => (
                 <tr
                   key={keyExtractor(row)}
-                  className={`border-t border-[rgba(255,255,255,0.07)] transition-colors ${onRowClick ? 'cursor-pointer hover:bg-ink-2' : ''}`}
-                  onClick={
-                    onRowClick ? () => onRowClick(row) : undefined
-                  }
+                  tabIndex={onRowClick ? 0 : undefined}
+                  aria-label={onRowClick ? 'Open details for record ' + keyExtractor(row) : undefined}
+                  className={`border-t border-[rgba(255,255,255,0.07)] transition-colors ${onRowClick ? 'cursor-pointer hover:bg-ink-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan-300' : ''}`}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  onKeyDown={event => {
+                    if (!onRowClick || event.target !== event.currentTarget) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onRowClick(row);
+                    }
+                  }}
                 >
                   {columns.map((col) => (
                     <td
@@ -426,20 +466,20 @@ export function DataTable<T>({
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-3 text-[11px] text-text-2 font-mono">
           <span>
-            Page {page + 1} of {totalPages} ({data.length} records)
+            Page {safePage + 1} of {totalPages} ({sortedData.length} records)
           </span>
           <div className="flex gap-2">
             <button
               className="px-2 py-1 rounded bg-ink-2 border border-[rgba(255,255,255,0.07)] text-text-1 disabled:opacity-30"
-              disabled={page === 0}
-              onClick={() => setPage((p) => p - 1)}
+              disabled={safePage === 0}
+              onClick={() => setPage(safePage - 1)}
             >
               Prev
             </button>
             <button
               className="px-2 py-1 rounded bg-ink-2 border border-[rgba(255,255,255,0.07)] text-text-1 disabled:opacity-30"
-              disabled={page >= totalPages - 1}
-              onClick={() => setPage((p) => p + 1)}
+              disabled={safePage >= totalPages - 1}
+              onClick={() => setPage(safePage + 1)}
             >
               Next
             </button>
