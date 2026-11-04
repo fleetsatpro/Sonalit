@@ -199,7 +199,6 @@ function ClampForm({ booking, container, onClose, onDone }: {
   const [truckReg, setTruckReg] = useState('');
   const [trailerReg, setTrailerReg] = useState('');
   const [driverName, setDriverName] = useState('');
-  const [driverPhone, setDriverPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState<null | 'submitted' | 'queued'>(null);
@@ -216,6 +215,10 @@ function ClampForm({ booking, container, onClose, onDone }: {
     const bookingId = s(booking['booking_id']);
     const containerId = s(container['id']);
     const label = s(container['container_number']) || 'Container';
+    // One action ID is shared by the online request and any offline replay.
+    // If the server commits but the response is lost, the queued retry returns
+    // the original result instead of creating a second trip or losing its QR.
+    const idempotencyKey = crypto.randomUUID();
 
     const doSubmit = (lat?: number, lng?: number) => {
       const payload = {
@@ -224,13 +227,12 @@ function ClampForm({ booking, container, onClose, onDone }: {
         truck_reg: truckReg.trim(),
         trailer_reg: trailerReg.trim() || null,
         driver_name: driverName.trim(),
-        driver_phone: driverPhone.trim() || null,
         notes: notes.trim() || null,
         lat, lng,
       };
 
       const queueIt = () => {
-        enqueue({ kind: 'clamp', bookingId, containerId, label, payload });
+        enqueue({ id: idempotencyKey, kind: 'clamp', bookingId, containerId, label, payload });
         setSuccess('queued');
       };
 
@@ -238,7 +240,7 @@ function ClampForm({ booking, container, onClose, onDone }: {
       // don't make the worker wait out a timeout to find that out.
       if (!isOnline()) { queueIt(); return; }
 
-      clamp.mutate({ bookingId, cid: containerId, ...payload }, {
+      clamp.mutate({ bookingId, cid: containerId, idempotencyKey, ...payload }, {
         onSuccess: (res: unknown) => {
           const issued = (res as { data?: { tracking?: IssuedTracking | null } })?.data?.tracking ?? null;
           setTracking(issued);
@@ -299,8 +301,11 @@ function ClampForm({ booking, container, onClose, onDone }: {
         <FieldSection label="Lock &amp; vehicle">
           <IconField icon={<Lock size={14} />} label="E-Lock serial *" value={lockSerial} onChange={setLockSerial}
             placeholder="e.g. SL-000123" autoCapitalize="characters" autoFocus />
-          <IconField icon={<Building2 size={14} />} label="Transporter" value={transporter} onChange={setTransporter}
-            placeholder="Company name" />
+          <IconField icon={<Building2 size={14} />} label="Registered transporter" value={transporter} onChange={setTransporter}
+            placeholder="Exact company name from CDS register" />
+          <p className="text-[10px] leading-relaxed text-text-2 -mt-1">
+            Optional. The transporter must already exist in the CDS register; unregistered companies cannot be assigned at the gate.
+          </p>
           <div className="grid grid-cols-2 gap-2.5">
             <IconField icon={<Truck size={14} />} label="Truck (horse) reg *" value={truckReg} onChange={setTruckReg}
               placeholder="KAA 123A" autoCapitalize="characters" />
@@ -309,11 +314,12 @@ function ClampForm({ booking, container, onClose, onDone }: {
           </div>
         </FieldSection>
 
-        <FieldSection label="Driver">
-          <IconField icon={<UserRound size={14} />} label="Driver name *" value={driverName} onChange={setDriverName}
-            placeholder="Full name" />
-          <IconField icon={<Phone size={14} />} label="Driver phone" value={driverPhone} onChange={setDriverPhone}
-            placeholder="+254…" inputMode="tel" />
+        <FieldSection label="Registered driver">
+          <IconField icon={<UserRound size={14} />} label="Driver full name *" value={driverName} onChange={setDriverName}
+            placeholder="Exact name from CDS driver register" />
+          <p className="text-[10px] leading-relaxed text-text-2 -mt-1">
+            Select a driver already registered with a current, unexpired licence and an available duty status. Driver contact details are taken from that personnel record, not re-entered here.
+          </p>
         </FieldSection>
 
         <FieldSection label="Notes">
