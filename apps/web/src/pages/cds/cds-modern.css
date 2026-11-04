@@ -13,7 +13,7 @@
     radial-gradient(ellipse at 0% 100%, rgba(30, 84, 148, 0.12), transparent 38%),
     var(--p-bg, #070b16);
   color: var(--p-text, #e2e8f0);
-  font-family: var(--d-font, 'Sora', system-ui, sans-serif);
+  font-family: var(--p-sans, 'Archivo', system-ui, sans-serif);
   font-size: 14px;
   line-height: 1.5;
   isolation: isolate;
