@@ -186,12 +186,7 @@ describe('CDS container register', () => {
     }, res, error => { if (error) throw error; });
 
     expect(res.result.status).toBe(200);
-    expect(sql).toContain('status=
-    expect(parameters).toContain('maintenance');
-    expect(parameters).not.toContain('available');
-  });
-});
-);
+    expect(sql).toContain('status=$');
     expect(parameters).toContain('maintenance');
     expect(parameters).not.toContain('available');
   });
