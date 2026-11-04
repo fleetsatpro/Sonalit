@@ -212,7 +212,6 @@ describe('tenant scope and clamp-time attribution', () => {
       cds_custody_events: [{
         ...CUSTODY,
         driver_name: 'Driver at clamp',
-        driver_contact: '+254700000001',
         vehicle_registration: 'KDA 222B',
         transporter_name: 'Carrier at clamp',
         has_clamp_audit_snapshot: true,
@@ -222,7 +221,6 @@ describe('tenant scope and clamp-time attribution', () => {
 
     expect(entry).toMatchObject({
       driver_name: 'Driver at clamp',
-      driver_contact: '+254700000001',
       vehicle_registration: 'KDA 222B',
       transporter_name: 'Carrier at clamp',
       assignment_source: 'clamp_audit_snapshot',
