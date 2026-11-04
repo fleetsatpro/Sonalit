@@ -1197,10 +1197,54 @@ router.post('/containers', asyncHandler(async (req, res) => {
   }
 }));
 router.patch('/containers/:id', asyncHandler(async (req, res) => {
-  // Status is deliberately not patchable here. The trip, booking and lock
-  // workflows are the authoritative writers for operational movement state.
+  const body = req.body || {};
+  const identityFields = ['number', 'iso_type', 'container_type', 'container_size'];
+  if (identityFields.some(field => Object.prototype.hasOwnProperty.call(body, field))) {
+    return res.status(400).json({
+      error: 'container_identity_immutable',
+      message: 'Container identity and equipment type are fixed at registration; use an audited correction workflow for exceptional data repair.',
+    });
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'status')) {
+    return res.status(400).json({
+      error: 'container_status_transition_required',
+      message: 'Operational status is controlled by booking, trip, clamp and unclamp workflows.',
+    });
+  }
+
+  if (body.ownership !== undefined && !['owned', 'leased', 'customer'].includes(body.ownership)) {
+    return res.status(400).json({ error: 'invalid_ownership' });
+  }
+  if (body.condition !== undefined && !['new', 'good', 'fair', 'damaged', 'retired'].includes(body.condition)) {
+    return res.status(400).json({ error: 'invalid_condition' });
+  }
+  for (const field of ['max_weight_kg', 'tare_weight_kg']) {
+    if (body[field] === null || body[field] === '') continue;
+    if (body[field] !== undefined && (!Number.isFinite(Number(body[field])) || Number(body[field]) <= 0 || Number(body[field]) > 100000)) {
+      return res.status(400).json({ error: 'invalid_container_weight' });
+    }
+  }
+  if (body.year_built !== undefined && body.year_built !== null && body.year_built !== '') {
+    const year = Number(body.year_built);
+    if (!Number.isInteger(year) || year < 1950 || year > new Date().getFullYear() + 1) {
+      return res.status(400).json({ error: 'invalid_year_built' });
+    }
+  }
+  if (body.manufacturer !== undefined && body.manufacturer !== null && String(body.manufacturer).trim().length > 100) {
+    return res.status(400).json({ error: 'invalid_manufacturer' });
+  }
+  if (body.current_location !== undefined && body.current_location !== null && String(body.current_location).length > 255) {
+    return res.status(400).json({ error: 'invalid_current_location' });
+  }
+
+  // A condition downgrade to damaged/retired must also prevent allocation.
+  // A later good-condition update never silently releases maintenance status.
+  if (['damaged', 'retired'].includes(body.condition)) {
+    req.body = { ...body, status: 'maintenance' };
+  }
+
   await updateRow(req, res, 'cds_containers',
-    ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'manufacturer', 'year_built', 'condition', 'current_location']);
+    ['ownership', 'max_weight_kg', 'tare_weight_kg', 'manufacturer', 'year_built', 'condition', 'current_location', 'status']);
 }));
 
 // ══════════════════════════════════════════════════════════════
