@@ -378,12 +378,12 @@ describe('CDS container register assignment snapshot query', () => {
 });
 
 describe('CDS unclamp lock identity', () => {
-  test('releases and records the lock from the clamp audit, not the mutable trip assignment', async () => {
+  test('releases the clamp-time lock and detects a mismatched observed seal without the intact checkbox', async () => {
     const calls = [];
     const res = response();
     await routeLayer('/bookings/:id/containers/:cid/unclamp', 'post')({
       params: { id: 'booking-1', cid: 'booking-container-1' },
-      body: { seal_intact: false, observed_seal: 'BROKEN', notes: 'Seal discrepancy' },
+      body: { observed_seal: 'BROKEN', notes: 'Seal discrepancy' },
       user: { id: 'port-user', org_id: 'org-1', name: 'Port lead', email: 'port@example.test' },
       db: async (sql, values) => {
         calls.push({ sql, values });
@@ -425,6 +425,9 @@ describe('CDS unclamp lock identity', () => {
     expect(lockRelease.values).toEqual(['lock-original', 'org-1']);
     const custodyInsert = calls.find(call => call.sql.includes('INSERT INTO cds_custody_events'));
     expect(custodyInsert.values[11]).toBe('LOCK-AT-CLAMP');
+    expect(custodyInsert.values[10]).toBe(false);
+    const unclampAudit = calls.find(call => call.sql.includes("VALUES ('unclamp','booking_container'"));
+    expect(JSON.parse(unclampAudit.values[3]).seal_intact).toBe(false);
     const tamperLockEvent = calls.find(call => call.sql.includes('INSERT INTO cds_lock_events'));
     expect(tamperLockEvent.values[1]).toBe('lock-original');
   });
