@@ -155,9 +155,10 @@ function newId(): string {
 }
 
 export function enqueue(
-  action: Omit<QueuedAction, 'id' | 'queuedAt' | 'attempts'>,
+  action: Omit<QueuedAction, 'id' | 'queuedAt' | 'attempts'> & { id?: string },
 ): QueuedAction {
-  const entry: QueuedAction = { ...action, id: newId(), queuedAt: Date.now(), attempts: 0 };
+  const { id, ...payload } = action;
+  const entry: QueuedAction = { ...payload, id: id || newId(), queuedAt: Date.now(), attempts: 0 };
   state.pending = [...state.pending, entry];
   persist();
   emit();
