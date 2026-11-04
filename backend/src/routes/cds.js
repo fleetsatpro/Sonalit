@@ -12,6 +12,7 @@ const { scanManifest } = require('../utils/manifestAnomalies');
 // from the custody chain, lock events, trip transitions and alerts.
 const { activityFeed } = require('../utils/cdsActivityFeed');
 const { validateContainerNumber, normalise: normaliseContainerNumber } = require('../utils/containerNumber');
+const { resolveSealVerdict } = require('../utils/cdsSealVerification');
 const T = require('../utils/trackingEngine');
 const logger = require('../utils/logger');
 
@@ -2779,14 +2780,11 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
   // which is honest rather than a false "intact".
   const expectedSeal = bc.rows[0].seal_number;
   const observed = typeof observed_seal === 'string' ? observed_seal.trim() : null;
-  let sealVerdict = null;                      // null = not checked
-  if (seal_intact === false) {
-    sealVerdict = false;
-  } else if (seal_intact === true && expectedSeal && observed) {
-    // A positive result requires comparison of the recorded and observed
-    // identifiers. A bare checkbox is not proof that the seal was checked.
-    sealVerdict = observed.toUpperCase() === String(expectedSeal).trim().toUpperCase();
-  }
+  const sealVerdict = resolveSealVerdict({
+    expectedSeal,
+    observedSeal: observed,
+    sealIntact: seal_intact,
+  });
   const sealTampered = sealVerdict === false;
 
   const now = new Date();
