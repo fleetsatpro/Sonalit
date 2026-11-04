@@ -216,13 +216,47 @@ async function appendCustodyEvent(req, {
   }
 }
 
+// ISO 6346 check-digit calculation. Container identifiers are validated at
+// the API boundary so non-browser clients cannot bypass the equipment identity rule.
+const ISO6346_LETTER_VALUES = (() => {
+  const values = {};
+  let value = 10;
+  for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+    values[letter] = value;
+    value += 1;
+    if (value % 11 === 0) value += 1;
+  }
+  return values;
+})();
+
+function iso6346CheckDigit(containerNumber) {
+  const code = String(containerNumber || '').trim().toUpperCase().replace(/\\s+/g, '');
+  if (!/^[A-Z]{3}[UJZ][0-9]{7}$/.test(code)) return null;
+  let sum = 0;
+  for (let index = 0; index < 10; index += 1) {
+    const character = code[index];
+    const value = character >= 'A' && character <= 'Z'
+      ? ISO6346_LETTER_VALUES[character]
+      : Number(character);
+    sum += value * (2 ** index);
+  }
+  const remainder = sum % 11;
+  return remainder === 10 ? 0 : remainder;
+}
+
+function isValidIso6346ContainerNumber(containerNumber) {
+  const code = String(containerNumber || '').trim().toUpperCase().replace(/\\s+/g, '');
+  const checkDigit = iso6346CheckDigit(code);
+  return checkDigit !== null && checkDigit === Number(code[10]);
+}
+
 function paginate(query) {
   const limit = Math.min(200, parseInt(query.limit) || 50);
   const offset = parseInt(query.offset) || 0;
   return { limit, offset };
 }
 
-async function listRows(req, res, table, { joins = '', selectCols = '*', searchCols = [], extraFilters = [], softDelete = true } = {}) {
+async function listRows(req, res, table, { joins = '', selectCols = '*', searchCols = [], extraFilters = [], fieldFilters = {}, softDelete = true } = {}) {
   const { limit, offset } = paginate(req.query);
   const filters = softDelete ? ['t.deleted_at IS NULL', ...extraFilters] : [...extraFilters];
   const params = [];
@@ -242,8 +276,17 @@ async function listRows(req, res, table, { joins = '', selectCols = '*', searchC
   }
   if (req.query.search && searchCols.length) {
     params.push(`%${req.query.search}%`);
-    filters.push(`(${searchCols.map(c => `${c} ILIKE $${params.length}`).join(' OR ')})`);
+    filters.push(`(${searchCols.map(c => `${c} ILIKE ${params.length}`).join(' OR ')})`);
   }
+  // Only callers that provide a fixed column allowlist can enable field filters.
+  // Values remain parameterised; request input is never interpolated as SQL.
+  Object.entries(fieldFilters).forEach(([key, column]) => {
+    const value = req.query[key];
+    if (typeof value === 'string' && value.trim()) {
+      params.push(value.trim());
+      filters.push(`${column}=${params.length}`);
+    }
+  });
   Object.entries(req.query).forEach(([k, v]) => {
     if (['status', 'search', 'limit', 'offset'].includes(k)) return;
     if (k.endsWith('_id')) { params.push(v); filters.push(`t.${k}=$${params.length}`); }
@@ -1046,16 +1089,101 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 router.get('/containers', asyncHandler(async (req, res) => {
-  await listRows(req, res, 'cds_containers', { searchCols: ['t.number', 't.container_type'] });
+  const allowedConditions = new Set(['new', 'good', 'fair', 'damaged', 'retired']);
+  const allowedOwnerships = new Set(['owned', 'leased', 'customer']);
+  if (req.query.condition !== undefined &&
+      (typeof req.query.condition !== 'string' || !allowedConditions.has(req.query.condition))) {
+    return res.status(400).json({ error: 'invalid_condition_filter' });
+  }
+  if (req.query.ownership !== undefined &&
+      (typeof req.query.ownership !== 'string' || !allowedOwnerships.has(req.query.ownership))) {
+    return res.status(400).json({ error: 'invalid_ownership_filter' });
+  }
+  await listRows(req, res, 'cds_containers', {
+    searchCols: ['t.number', 't.iso_type', 't.container_type', 't.ownership', 't.condition', 't.current_location', 't.manufacturer'],
+    fieldFilters: { condition: 't.condition', ownership: 't.ownership' },
+  });
 }));
 router.get('/containers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_containers'); }));
 router.post('/containers', asyncHandler(async (req, res) => {
-  await createRow(req, res, 'cds_containers',
-    ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'manufacturer', 'year_built', 'condition', 'status']);
+  const number = String(req.body?.number || '').trim().toUpperCase().replace(/\\s+/g, '');
+  if (!isValidIso6346ContainerNumber(number)) {
+    return res.status(400).json({ error: 'invalid_container_number', message: 'A valid ISO 6346 container number and check digit are required.' });
+  }
+
+  const isoType = String(req.body?.iso_type || '').trim().toUpperCase();
+  if (!/^[0-9]{2}[A-Z]{2}$/.test(isoType)) {
+    return res.status(400).json({ error: 'invalid_iso_type' });
+  }
+  const ownership = String(req.body?.ownership || '');
+  if (!['owned', 'leased', 'customer'].includes(ownership)) {
+    return res.status(400).json({ error: 'invalid_ownership' });
+  }
+  const condition = String(req.body?.condition || '');
+  if (!['new', 'good', 'fair', 'damaged', 'retired'].includes(condition)) {
+    return res.status(400).json({ error: 'invalid_condition' });
+  }
+
+  const sizeFromCode = Number.parseInt(isoType, 10);
+  const suppliedSize = req.body?.container_size == null ? sizeFromCode : Number(req.body.container_size);
+  if (!Number.isInteger(suppliedSize) || suppliedSize <= 0 || suppliedSize > 60) {
+    return res.status(400).json({ error: 'invalid_container_size' });
+  }
+
+  const optionalWeight = (value) => {
+    if (value === undefined || value === null || value === '') return null;
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) && numberValue > 0 && numberValue <= 100000
+      ? numberValue : NaN;
+  };
+  const maxWeight = optionalWeight(req.body?.max_weight_kg);
+  const tareWeight = optionalWeight(req.body?.tare_weight_kg);
+  if (Number.isNaN(maxWeight) || Number.isNaN(tareWeight)) {
+    return res.status(400).json({ error: 'invalid_container_weight' });
+  }
+
+  const manufacturer = req.body?.manufacturer == null ? null : String(req.body.manufacturer).trim();
+  if (manufacturer && manufacturer.length > 100) {
+    return res.status(400).json({ error: 'invalid_manufacturer' });
+  }
+  const yearBuilt = req.body?.year_built == null || req.body.year_built === ''
+    ? null : Number(req.body.year_built);
+  if (yearBuilt !== null &&
+      (!Number.isInteger(yearBuilt) || yearBuilt < 1950 || yearBuilt > new Date().getFullYear() + 1)) {
+    return res.status(400).json({ error: 'invalid_year_built' });
+  }
+
+  req.body = {
+    ...req.body,
+    number,
+    iso_type: isoType,
+    container_type: String(req.body?.container_type || isoType).trim().slice(0, 50),
+    container_size: suppliedSize,
+    ownership,
+    max_weight_kg: maxWeight,
+    tare_weight_kg: tareWeight,
+    manufacturer: manufacturer || null,
+    year_built: yearBuilt,
+    condition,
+  };
+
+  // A new item always enters inventory as available. Movement state belongs to
+  // booking/trip/clamp/unclamp transactions, never to an inventory registration form.
+  try {
+    await createRow(req, res, 'cds_containers',
+      ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'manufacturer', 'year_built', 'condition']);
+  } catch (err) {
+    if (err && err.code === '23505') {
+      return res.status(409).json({ error: 'container_number_exists', message: 'This container number is already registered.' });
+    }
+    throw err;
+  }
 }));
 router.patch('/containers/:id', asyncHandler(async (req, res) => {
+  // Status is deliberately not patchable here. The trip, booking and lock
+  // workflows are the authoritative writers for operational movement state.
   await updateRow(req, res, 'cds_containers',
-    ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'condition', 'current_location', 'status']);
+    ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'manufacturer', 'year_built', 'condition', 'current_location']);
 }));
 
 // ══════════════════════════════════════════════════════════════
