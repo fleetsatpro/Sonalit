@@ -1158,6 +1158,17 @@ router.get('/containers', asyncHandler(async (req, res) => {
       LIMIT 1
     ) latest_trip ON TRUE
   `;
+  const operationalStatusSql = `CASE
+    WHEN latest_booking_container.status = 'pending' THEN 'awaiting_pickup'
+    WHEN latest_booking_container.status = 'assigned' THEN 'booked'
+    WHEN latest_booking_container.status = 'in_transit' AND latest_trip.status = 'at_port' THEN 'at_port'
+    WHEN latest_booking_container.status IN ('in_transit','at_port','delivered') THEN latest_booking_container.status
+    WHEN latest_booking_container.status = 'completed' THEN 'delivered'
+    WHEN latest_trip.status = 'at_port' THEN 'at_port'
+    WHEN latest_trip.status IN ('locked','dispatched','checkpoint','delayed') THEN 'in_transit'
+    WHEN latest_trip.status IN ('lock_removed','completed','delivered') THEN 'delivered'
+    ELSE t.status
+  END`;
   const allowedStatuses = new Set([
     'available', 'booked', 'awaiting_pickup', 'in_transit', 'at_port', 'delivered', 'maintenance',
   ]);
@@ -1168,7 +1179,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
     }
     if (statuses.length) {
       params.push(statuses);
-      filters.push(`t.status = ANY($${params.length}::text[])`);
+      filters.push(`(${operationalStatusSql}) = ANY(${params.length}::text[])`);
     }
   }
   const search = String(req.query.search || '').trim();
@@ -1184,6 +1195,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
       'latest_booking_container.trailer_reg', 'latest_booking_container.driver_name',
       'latest_trip.trip_number', 'latest_trip.vehicle_registration',
       'latest_trip.lock_serial', 'latest_custody.lock_serial',
+      `(${operationalStatusSql})`,
     ].map(column => `${column} ILIKE $${p}`).join(' OR ')})`);
   }
   const where = filters.join(' AND ');
@@ -1192,6 +1204,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
     const result = await client.query(
       `SELECT
          t.*,
+         (${operationalStatusSql}) AS operational_status,
          latest_booking_container.id AS latest_booking_container_id,
          latest_booking_container.booking_number AS latest_booking_number,
          latest_booking_container.booking_status AS latest_booking_status,
@@ -1238,10 +1251,10 @@ router.get('/containers', asyncHandler(async (req, res) => {
     const summary = await client.query(
       `SELECT
          COUNT(*)::int AS registered,
-         COUNT(*) FILTER (WHERE status = 'available')::int AS available,
-         COUNT(*) FILTER (WHERE status IN ('booked','awaiting_pickup','in_transit','at_port'))::int AS in_operational_flow,
-         COUNT(*) FILTER (WHERE status = 'maintenance' OR condition IN ('damaged','retired'))::int AS review_required
-       FROM cds_containers WHERE deleted_at IS NULL`,
+         COUNT(*) FILTER (WHERE (${operationalStatusSql}) = 'available')::int AS available,
+         COUNT(*) FILTER (WHERE (${operationalStatusSql}) IN ('booked','awaiting_pickup','in_transit','at_port'))::int AS in_operational_flow,
+         COUNT(*) FILTER (WHERE t.status = 'maintenance' OR t.condition IN ('damaged','retired'))::int AS review_required
+       FROM cds_containers t ${joins} WHERE t.deleted_at IS NULL`,
     );
     return {
       data: result.rows,
