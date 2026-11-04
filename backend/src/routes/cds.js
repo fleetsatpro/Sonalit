@@ -2385,8 +2385,8 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   const cleanTruckReg = String(truck_reg).trim().toUpperCase();
   const cleanDriverName = String(driver_name).trim();
   const cleanTrailerReg = trailer_reg ? String(trailer_reg).trim().toUpperCase() : null;
-  const cleanTransporter = transporter_name ? String(transporter_name).trim() : null;
-  const cleanDriverPhone = driver_phone ? String(driver_phone).trim() : null;
+  const cleanTransporter = cleanTransporter;
+  const cleanDriverPhone = cleanDriverPhone;
   if (cleanLockSerial.length > 30 || cleanTruckReg.length > 20 || cleanDriverName.length > 255
     || (cleanTrailerReg && cleanTrailerReg.length > 20)
     || (cleanTransporter && cleanTransporter.length > 255)
@@ -2484,7 +2484,9 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     const asset = co.rows[0];
     if (['damaged','retired'].includes(String(asset.condition)) || asset.status === 'maintenance'
       || ['in_transit','at_port','booked','awaiting_pickup'].includes(String(asset.status))) {
-      return res.status(409).json({ error: 'container_asset_not_available_for_clamp', asset_status: asset.status, condition: asset.condition });
+      const error = new Error('container_asset_not_available_for_clamp');
+      error.status = 409;
+      throw error;
     }
   } else {
     const created = await req.db(
@@ -2527,12 +2529,23 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     || lk.rows[0].tamper_detected
     || (lk.rows[0].tamper_status && lk.rows[0].tamper_status !== 'normal')
   )) {
-    return res.status(409).json({ error: 'e_lock_not_available_for_assignment' });
+    const error = new Error('e_lock_not_available_for_assignment');
+    error.status = 409;
+    throw error;
   }
-  const lockId = lk.rows.length ? lk.rows[0].id : (await req.db(
-    `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [cleanLockSerial, 'SecuriSat', 'assigned', orgId]
-  )).rows[0].id;
+  let lockId = lk.rows[0]?.id ?? null;
+  if (!lockId) {
+    const createdLock = await req.db(
+      `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) ON CONFLICT (serial) DO NOTHING RETURNING id`,
+      [cleanLockSerial, 'SecuriSat', 'assigned', orgId]
+    );
+    if (!createdLock.rows.length) {
+      const error = new Error('e_lock_registered_in_another_organisation_or_conflict');
+      error.status = 409;
+      throw error;
+    }
+    lockId = createdLock.rows[0].id;
+  }
   // 'installed', matching cds_electronic_locks_status_check and the desktop
   // clamp handler above — 'locked' isn't a value the constraint allows.
   await req.db(
@@ -2541,7 +2554,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   );
 
   // Create the trip and link it back to the booking container
-  const trailerNote = trailer_reg ? `Trailer: ${trailer_reg.trim()}${notes ? ' | ' + notes : ''}` : (notes || null);
+  const trailerNote = cleanTrailerReg ? 'Trailer: ' + cleanTrailerReg + (notes ? ' | ' + notes : '') : (notes || null);
   const trip = await req.db(
     `INSERT INTO cds_trips
       (trip_number, customer_id, driver_id, vehicle_id, container_id, lock_id, transporter_id,
@@ -2586,11 +2599,11 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
       WHERE id=$2 AND org_id=$10`,
     [
       trip.rows[0].id, bcId,
-      lock_serial.trim(),
+      cleanLockSerial,
       transporter_name ? String(transporter_name).trim() : null,
-      truck_reg ? String(truck_reg).trim() : null,
+      cleanTruckReg,
       cleanTrailerReg,
-      driver_name ? String(driver_name).trim() : null,
+      cleanDriverName,
       driver_phone ? String(driver_phone).trim() : null,
       yardStatus,
       orgId,
