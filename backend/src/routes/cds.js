@@ -2463,10 +2463,19 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   const { id: bookingId, cid: bcId } = req.params;
   const {
     lock_serial, transporter_name, truck_reg, trailer_reg,
-    driver_name, driver_phone, notes, lat, lng,
+    driver_name: driverName, driver_phone, notes, lat, lng,
   } = req.body || {};
 
-  if (!lock_serial || !truck_reg || !driver_name) {
+  const cleanText = value => typeof value === 'string' ? value.trim() : '';
+  const lockSerial = cleanText(lock_serial);
+  const transporterName = cleanText(transporter_name);
+  const truckRegistration = cleanText(truck_reg);
+  const trailerRegistration = cleanText(trailer_reg);
+  const driverName = cleanText(driver_name);
+  const driverPhone = cleanText(driver_phone);
+  const clampNotes = cleanText(notes);
+
+  if (!lockSerial || !truckRegistration || !driverName) {
     return res.status(400).json({ error: 'lock_serial, truck_reg and driver_name are required' });
   }
 
@@ -2487,16 +2496,16 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   // customer auto-create above uses (the name doubles as the placeholder
   // contact until someone fills in the real one from the transporters view).
   let transporterId = null;
-  if (transporter_name) {
+  if (transporterName) {
     const t = await req.db(
       'SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
-      [transporter_name.trim()]
+      [transporterName]
     );
     if (t.rows.length) transporterId = t.rows[0].id;
     else {
       const ins = await req.db(
         `INSERT INTO cds_transporters (company_name, contact_person, phone, code, org_id) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [transporter_name.trim(), transporter_name.trim(), '-', genCode('TR'), orgId]
+        [transporterName, transporterName, '-', genCode('TR'), orgId]
       );
       transporterId = ins.rows[0].id;
     }
@@ -2508,22 +2517,22 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   // drivers view; not a compliance record, just enough to satisfy the schema.
   const dr = await req.db(
     'SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
-    [driver_name.trim()]
+    [driverName]
   );
   const driverId = dr.rows.length ? dr.rows[0].id : (await req.db(
     `INSERT INTO cds_drivers (name, phone, license_number, license_expiry, transporter_id, org_id)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-    [driver_name.trim(), driver_phone || '-', 'PENDING', new Date(Date.now() + 365 * 24 * 3600 * 1000), transporterId, orgId]
+    [driverName, driverPhone || '-', 'PENDING', new Date(Date.now() + 365 * 24 * 3600 * 1000), transporterId, orgId]
   )).rows[0].id;
 
   // Upsert vehicle (truck horse)
   const ve = await req.db(
     'SELECT id FROM cds_vehicles WHERE registration ILIKE $1 AND deleted_at IS NULL LIMIT 1',
-    [truck_reg.trim()]
+    [truckRegistration]
   );
   const vehicleId = ve.rows.length ? ve.rows[0].id : (await req.db(
     `INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [truck_reg.trim(), genCode('FL'), transporterId, orgId]
+    [truckRegistration, genCode('FL'), transporterId, orgId]
   )).rows[0].id;
 
   // Upsert physical container (in cds_containers) so it can be tracked on the map
@@ -2542,11 +2551,11 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   // Upsert e-lock and put it into 'locked' state on this container/vehicle
   const lk = await req.db(
     'SELECT id FROM cds_electronic_locks WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1',
-    [lock_serial.trim()]
+    [lockSerial]
   );
   const lockId = lk.rows.length ? lk.rows[0].id : (await req.db(
     `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [lock_serial.trim(), 'SecuriSat', 'assigned', orgId]
+    [lockSerial, 'SecuriSat', 'assigned', orgId]
   )).rows[0].id;
   // 'installed', matching cds_electronic_locks_status_check and the desktop
   // clamp handler above — 'locked' isn't a value the constraint allows.
@@ -2556,7 +2565,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   );
 
   // Create the trip and link it back to the booking container
-  const trailerNote = trailer_reg ? `Trailer: ${trailer_reg.trim()}${notes ? ' | ' + notes : ''}` : (notes || null);
+  const trailerNote = trailerRegistration ? `Trailer: ${trailerRegistration}${clampNotes ? ' | ' + clampNotes : ''}` : (clampNotes || null);
   const trip = await req.db(
     `INSERT INTO cds_trips
       (trip_number, customer_id, driver_id, vehicle_id, container_id, lock_id, transporter_id,
@@ -2601,12 +2610,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       WHERE id=$2`,
     [
       trip.rows[0].id, bcId,
-      lock_serial.trim(),
-      transporter_name ? String(transporter_name).trim() : null,
-      truck_reg ? String(truck_reg).trim() : null,
-      trailer_reg ? String(trailer_reg).trim() : null,
-      driver_name ? String(driver_name).trim() : null,
-      driver_phone ? String(driver_phone).trim() : null,
+      lockSerial,
+      transporterName || null,
+      truckRegistration,
+      trailerRegistration || null,
+      driverName,
+      driverPhone || null,
       yardStatus,
     ]
   );
@@ -2631,7 +2640,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     sealIntact: true,
     lockSerial: lock_serial.trim(),
     lat, lng,
-    notes: `Clamped by ${req.user.name || 'yard team'} · ${truck_reg} / ${driver_name}`,
+    notes: `Clamped by ${req.user.name || 'yard team'} · ${truckRegistration} / ${driverName}`,
   });
 
   // Fire alert so supervisors see it in real-time
@@ -2640,7 +2649,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
      VALUES ($1,'container_clamped','info',$2,$3,'container',$4,'operator')`,
     [orgId,
      `Container clamped — ${bc.rows[0].container_number || bc.rows[0].booking_number}`,
-     `${req.user.name || 'Yard team'} clamped e-lock ${lock_serial} on ${bc.rows[0].container_number || bcId} for booking ${bc.rows[0].booking_number} (${truck_reg} / ${driver_name}).`,
+     `${req.user.name || 'Yard team'} clamped e-lock ${lockSerial} on ${bc.rows[0].container_number || bcId} for booking ${bc.rows[0].booking_number} (${truckRegistration} / ${driverName}).`,
      bcId]
   );
 
@@ -2648,7 +2657,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
      VALUES ('clamp','booking_container',$1,$2,$3,$4,$5)`,
     [bcId, req.user.id, req.user.name || null,
-     JSON.stringify({ lock_serial, transporter_name, truck_reg, trailer_reg, driver_name, driver_phone, lat, lng }),
+     JSON.stringify({ lock_serial: lockSerial, transporter_name: transporterName || null, truck_reg: truckRegistration, trailer_reg: trailerRegistration || null, driver_name: driverName, driver_phone: driverPhone || null, lat, lng }),
      orgId]
   );
 
@@ -2702,8 +2711,8 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     container_number: bc.rows[0].container_number,
     trip_id: trip.rows[0].id,
     trip_number: trip.rows[0].trip_number,
-    lock_serial: lock_serial.trim(),
-    truck_reg,
+    lock_serial: lockSerial,
+    truck_reg: truckRegistration,
     driver_name,
     tracking_qr_issued: !!tracking,
     lat: lat ?? null,
