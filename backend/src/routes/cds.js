@@ -1296,7 +1296,13 @@ router.get('/containers/:id/history', asyncHandler(async (req, res) => {
             COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name) AS driver_name,
             COALESCE(clamp_audit.after_data->>'driver_phone', bc.driver_contact) AS driver_contact,
             COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial', bc.lock_number) AS assigned_lock,
-            (clamp_audit.after_data IS NOT NULL) AS has_clamp_audit_snapshot
+            (
+              NULLIF(BTRIM(clamp_audit.after_data->>'lock_serial'), '') IS NOT NULL
+              OR NULLIF(BTRIM(clamp_audit.after_data->>'driver_name'), '') IS NOT NULL
+              OR NULLIF(BTRIM(clamp_audit.after_data->>'driver_phone'), '') IS NOT NULL
+              OR NULLIF(BTRIM(clamp_audit.after_data->>'truck_reg'), '') IS NOT NULL
+              OR NULLIF(BTRIM(clamp_audit.after_data->>'transporter_name'), '') IS NOT NULL
+            ) AS has_clamp_audit_snapshot
        FROM cds_custody_events ce
        JOIN cds_booking_containers bc
          ON bc.id=ce.booking_container_id AND bc.org_id=ce.org_id AND bc.deleted_at IS NULL
@@ -1388,7 +1394,13 @@ router.get('/containers/:id/history', asyncHandler(async (req, res) => {
             ca.after_data->>'driver_phone' AS audit_driver_contact,
             ca.after_data->>'truck_reg' AS audit_vehicle_registration,
             ca.after_data->>'transporter_name' AS audit_transporter_name,
-            (ca.after_data IS NOT NULL) AS has_clamp_audit_snapshot
+            (
+              NULLIF(BTRIM(ca.after_data->>'lock_serial'), '') IS NOT NULL
+              OR NULLIF(BTRIM(ca.after_data->>'driver_name'), '') IS NOT NULL
+              OR NULLIF(BTRIM(ca.after_data->>'driver_phone'), '') IS NOT NULL
+              OR NULLIF(BTRIM(ca.after_data->>'truck_reg'), '') IS NOT NULL
+              OR NULLIF(BTRIM(ca.after_data->>'transporter_name'), '') IS NOT NULL
+            ) AS has_clamp_audit_snapshot
        FROM cds_booking_containers bc
        JOIN cds_bookings b ON b.id=bc.booking_id AND b.org_id=bc.org_id AND b.deleted_at IS NULL
        LEFT JOIN cds_trips t ON t.id=bc.trip_id AND t.org_id=bc.org_id
