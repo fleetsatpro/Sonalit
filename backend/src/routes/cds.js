@@ -2204,6 +2204,100 @@ router.get('/bookings/:id/containers/:cid/custody', asyncHandler(async (req, res
 // ══════════════════════════════════════════════════════════════
 
 // Queue for the Yard team: containers still pending clamp on active bookings.
+router.get('/field/yard-resources', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const openStatuses = "('created','vehicle_assigned','driver_assigned','awaiting_lock','locked','dispatched','checkpoint','delayed','at_port')";
+
+  const drivers = await req.db(
+    `SELECT d.id, d.name, d.license_expiry
+       FROM cds_drivers d
+      WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.status='available'
+        AND d.license_expiry >= CURRENT_DATE
+        AND UPPER(BTRIM(COALESCE(d.license_number,''))) NOT IN ('PENDING','UNKNOWN','N/A','NA','TBC','-','')
+        AND NOT EXISTS (
+          SELECT 1 FROM cds_trips t
+           WHERE t.driver_id=d.id AND t.org_id=d.org_id AND t.deleted_at IS NULL
+             AND t.status IN ${openStatuses}
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM cds_drivers duplicate
+           WHERE duplicate.org_id=d.org_id AND duplicate.deleted_at IS NULL
+             AND LOWER(BTRIM(duplicate.name))=LOWER(BTRIM(d.name))
+             AND duplicate.id<>d.id
+        )
+      ORDER BY LOWER(d.name), d.id
+      LIMIT 200`,
+    [orgId]
+  );
+
+  const vehicles = await req.db(
+    `SELECT v.id, v.registration
+       FROM cds_vehicles v
+      WHERE v.org_id=$1 AND v.deleted_at IS NULL AND v.status='available'
+        AND NOT EXISTS (
+          SELECT 1 FROM cds_trips t
+           WHERE t.vehicle_id=v.id AND t.org_id=v.org_id AND t.deleted_at IS NULL
+             AND t.status IN ${openStatuses}
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM cds_vehicles duplicate
+           WHERE duplicate.org_id=v.org_id AND duplicate.deleted_at IS NULL
+             AND UPPER(BTRIM(duplicate.registration))=UPPER(BTRIM(v.registration))
+             AND duplicate.id<>v.id
+        )
+      ORDER BY UPPER(BTRIM(v.registration)), v.id
+      LIMIT 200`,
+    [orgId]
+  );
+
+  const transporters = await req.db(
+    `SELECT tr.id, tr.company_name
+       FROM cds_transporters tr
+      WHERE tr.org_id=$1 AND tr.deleted_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM cds_transporters duplicate
+           WHERE duplicate.org_id=tr.org_id AND duplicate.deleted_at IS NULL
+             AND LOWER(BTRIM(duplicate.company_name))=LOWER(BTRIM(tr.company_name))
+             AND duplicate.id<>tr.id
+        )
+      ORDER BY LOWER(tr.company_name), tr.id
+      LIMIT 200`,
+    [orgId]
+  );
+
+  const locks = await req.db(
+    `SELECT l.id, l.serial, l.provider, l.last_heartbeat
+       FROM cds_electronic_locks l
+      WHERE l.org_id=$1 AND l.deleted_at IS NULL AND l.status='available'
+        AND COALESCE(l.tamper_detected,false)=false
+        AND COALESCE(l.tamper_status,'normal')='normal'
+        AND l.container_id IS NULL AND l.vehicle_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM cds_trips t
+           WHERE t.lock_id=l.id AND t.org_id=l.org_id AND t.deleted_at IS NULL
+             AND t.status IN ${openStatuses}
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM cds_electronic_locks duplicate
+           WHERE duplicate.org_id=l.org_id AND duplicate.deleted_at IS NULL
+             AND UPPER(BTRIM(duplicate.serial))=UPPER(BTRIM(l.serial))
+             AND duplicate.id<>l.id
+        )
+      ORDER BY UPPER(BTRIM(l.serial)), l.id
+      LIMIT 200`,
+    [orgId]
+  );
+
+  res.json({
+    data: {
+      drivers: drivers.rows,
+      vehicles: vehicles.rows,
+      transporters: transporters.rows,
+      locks: locks.rows,
+    },
+  });
+}));
+
 router.get('/field/yard-queue', asyncHandler(async (req, res) => {
   const result = await req.db(`
     SELECT b.id AS booking_id, b.booking_number, b.pickup_location, b.delivery_location,
