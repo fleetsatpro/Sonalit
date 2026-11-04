@@ -139,7 +139,8 @@ export function LocksView() {
               <DrawerField label="Container" value={s(lock['container_number'])} />
               <DrawerField label="Vehicle" value={s(lock['truck'])} />
               <DrawerField label="Location reference" value={s(lock['location'])} />
-              <DrawerField label="Last event" value={lock['last_event_at'] ? heartbeatLabel(lock['last_event_at']) : 'Not recorded'} />
+              <DrawerField label="Last recorded event" value={lock['last_event_type'] ? String(lock['last_event_type']).replace(/_/g, ' ') : 'No lock event recorded'} />
+              <DrawerField label="Last event time" value={lock['last_event_at'] ? heartbeatLabel(lock['last_event_at']) : 'Not recorded'} />
             </>
           ))}
         />
