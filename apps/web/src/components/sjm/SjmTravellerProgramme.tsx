@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { localDateTimeInputInTimezone } from '../../lib/sjmJourneyTime.js';
+import { COUNTRIES, countryCodeFromName, countryFlagUrl } from '../../lib/countries.js';
 import { AlertCircle, CalendarDays, Check, CheckCircle2, Clock3, Download, Plane, Plus, RefreshCw, ShieldCheck, Upload, Users } from 'lucide-react';
 
 type Traveller = {
@@ -9,6 +10,7 @@ type Traveller = {
   title?: string | null; given_name?: string; middle_name?: string | null; family_name?: string;
   preferred_name?: string | null; nationality?: string | null; date_of_birth?: string | null;
   email?: string | null; phone?: string | null; emergency_contact_name?: string | null;
+  relationship_to_principal?: string | null; emergency_contact_relationship?: string | null;
   emergency_contact_phone?: string | null; internal_notes?: string | null;
 };
 type TravelDocument = {
@@ -62,7 +64,8 @@ type Props = { journeyId: string; timezone: string; canManage: boolean; planEdit
 type TravellerDraft = {
   traveller_reference: string; traveller_type: string; title: string; given_name: string;
   middle_name: string; family_name: string; preferred_name: string; nationality: string;
-  date_of_birth: string; email: string; phone: string; emergency_contact_name: string;
+  date_of_birth: string; email: string; phone: string; relationship_to_principal: string;
+  emergency_contact_name: string; emergency_contact_relationship: string;
   emergency_contact_phone: string; internal_notes: string;
 };
 type FlightDraft = {
@@ -81,7 +84,8 @@ type ItemDraft = {
 const EMPTY_TRAVELLER: TravellerDraft = {
   traveller_reference: '', traveller_type: 'principal', title: '', given_name: '',
   middle_name: '', family_name: '', preferred_name: '', nationality: '',
-  date_of_birth: '', email: '', phone: '', emergency_contact_name: '',
+  date_of_birth: '', email: '', phone: '', relationship_to_principal: '',
+  emergency_contact_name: '', emergency_contact_relationship: '',
   emergency_contact_phone: '', internal_notes: '',
 };
 const EMPTY_FLIGHT: FlightDraft = {
@@ -104,6 +108,19 @@ const button = 'inline-flex min-h-9 items-center justify-center gap-2 rounded-md
 const buttonPrimary = 'sjm-travel-primary-action inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-sky-300/35 bg-sky-400/10 px-3 py-2.5 text-[12px] font-semibold text-sky-100 transition hover:bg-sky-400/15 disabled:cursor-not-allowed disabled:opacity-40';
 const input = (name: string, value: string, onChange: (value: string) => void, placeholder = '', type = 'text', disabled = false) =>
   <label className={label}>{name}<input type={type} step={type==='number'?'any':undefined} className={field} value={value} disabled={disabled} onChange={event => onChange(event.target.value)} placeholder={placeholder}/></label>;
+const countrySelect = (name: string, value: string, onChange: (value: string) => void) => {
+  const flagUrl = countryFlagUrl(countryCodeFromName(value));
+  return <label className={label}>{name}<span className="sjm-country-select mt-1 flex min-w-0 items-center gap-2 rounded-md border border-white/10 bg-[#080e15] px-2.5 focus-within:border-sky-300/55">{flagUrl ? <img src={flagUrl} alt="" aria-hidden="true" className="sjm-country-flag h-4 w-6 shrink-0"/> : <span className="sjm-country-flag-placeholder h-4 w-6 shrink-0" aria-hidden="true"/>}<select className="min-w-0 flex-1 bg-transparent py-2.5 text-xs text-slate-100 outline-none" value={value} onChange={event=>onChange(event.target.value)}><option value="">Select country</option>{COUNTRIES.map(country=><option key={country.code} value={country.name}>{country.name}</option>)}</select></span></label>;
+};
+const displayTravellerName = (draft: TravellerDraft) => [draft.title,draft.given_name,draft.middle_name,draft.family_name].map(value=>value.trim()).filter(Boolean).join(' ');
+const nextTravellerReference = (travellers: Traveller[]) => {
+  const used = new Set(travellers.map(person=>person.traveller_reference.toUpperCase()));
+  for (let index=1; index<10000; index+=1) {
+    const candidate = 'TRV-'+String(index).padStart(3,'0');
+    if (!used.has(candidate)) return candidate;
+  }
+  return 'TRV-'+Math.random().toString(36).slice(2,9).toUpperCase();
+};
 const dateLabel = (value?: string | null, timezone?: string) => {
   if (!value) return 'Not recorded';
   const date = new Date(value);
