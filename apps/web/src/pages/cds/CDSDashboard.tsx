@@ -15,7 +15,7 @@ import { CDS_VIEWS } from './constants.js';
 import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack, useTransitionTrip, useMarkDeparted } from './hooks.js';
 import { LiveFleetMap, positioned } from './LiveFleetMap.js';
 import {
-  LocksView, PortView, PulseView, InboxView,
+  LocksView, PortView, PulseView, InboxView, AuditView,
   BillingView, ReportsView, AnalyticsView, SettingsView,
 } from './pages.js';
 import { useCDSStore, type CDSView } from './store.js';
@@ -48,7 +48,7 @@ const NAV_SECTIONS: CDSNavSection[] = [
   {
     label: 'CONTROL',
     items: [
-      { id: 'operations', label: 'Operations', description: 'Movement, yard and exceptions', icon: Activity, view: 'live', views: ['live', 'port', 'pulse', 'inbox'] },
+      { id: 'operations', label: 'Operations', description: 'Movement, yard and exceptions', icon: Activity, view: 'live', views: ['live', 'port', 'pulse', 'inbox', 'audit'] },
     ],
   },
   {
@@ -81,6 +81,7 @@ const SECONDARY_NAV: Record<string, Array<{ view: CDSView; label: string }>> = {
     { view: 'port', label: 'Yard & port' },
     { view: 'pulse', label: 'Exceptions' },
     { view: 'inbox', label: 'Activity log' },
+    { view: 'audit', label: 'Audit trail' },
   ],
   resources: [
     { view: 'locks', label: 'E-locks' },
@@ -389,6 +390,7 @@ export default function CDSApp() {
           {activeView === 'port' && <PortView />}
           {activeView === 'pulse' && <PulseView />}
           {activeView === 'inbox' && <InboxView />}
+          {activeView === 'audit' && <AuditView />}
           {activeView === 'billing' && <BillingView />}
           {activeView === 'reports' && <ReportsView />}
           {activeView === 'analytics' && <AnalyticsView />}
