@@ -6,7 +6,7 @@ import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useDashboardKPIs, useCDSAnalytics, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useUnclampBookingContainer, useAcknowledgeAlert, useCDSAuditLogs } from './hooks.js';
+import { useDashboardKPIs, useCDSAnalytics, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts, useUnclampBookingContainer, useAcknowledgeAlert, useCDSAuditLogs } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
@@ -35,7 +35,7 @@ export function LocksView() {
     if (state === 'offline' || signal === 'offline') return 'offline';
     const battery = batteryValue(lock);
     if (battery !== null && battery < 25) return 'low';
-    if (['strong', 'medium', 'weak'].includes(signal) && lock['last_heartbeat']) return 'reported';
+    if (lock['last_heartbeat']) return 'reported';
     return 'unverified';
   };
   const reported = all.filter(lock => healthState(lock) === 'reported').length;
@@ -51,7 +51,7 @@ export function LocksView() {
     return Number.isNaN(date.getTime()) ? 'Invalid heartbeat timestamp' : date.toLocaleString();
   };
   const stateLabel: Record<string, string> = {
-    reported: 'Reporting',
+    reported: 'Heartbeat received',
     low: 'Low battery',
     tamper: 'Tamper',
     offline: 'Offline',
@@ -60,7 +60,7 @@ export function LocksView() {
 
   const kpis = [
     { label: 'REGISTERED LOCKS', value: String(all.length), delta: 'inventory records', trend: 'up' as const },
-    { label: 'REPORTING', value: String(reported), delta: 'signal and heartbeat recorded', trend: 'up' as const },
+    { label: 'HEARTBEAT RECEIVED', value: String(reported), delta: 'device heartbeat timestamp recorded', trend: 'up' as const },
     { label: 'LOW BATTERY', value: String(low), delta: 'recorded below 25%', trend: 'down' as const },
     { label: 'TAMPER ALERTS', value: String(tamper), delta: 'tamper evidence recorded', trend: 'down' as const },
     { label: 'UNVERIFIED', value: String(unverified), delta: 'no verified heartbeat', trend: 'down' as const },
@@ -87,7 +87,7 @@ export function LocksView() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         {[
           { id: 'all', label: 'All (' + all.length + ')' },
-          { id: 'reported', label: 'Reporting (' + reported + ')' },
+          { id: 'reported', label: 'Heartbeat received (' + reported + ')' },
           { id: 'low', label: 'Low battery (' + low + ')' },
           { id: 'tamper', label: 'Tamper (' + tamper + ')' },
           { id: 'offline', label: 'Offline (' + offline + ')' },
