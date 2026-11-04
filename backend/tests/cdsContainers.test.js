@@ -315,6 +315,7 @@ describe('CDS container custody history', () => {
         unclamp_actor: 'Port lead',
         audit_lock_serial: 'LOCK-AT-CLAMP',
         audit_driver_name: 'Original driver',
+        audit_driver_contact: '+254700000012',
         audit_vehicle_registration: 'KDA 222B',
         audit_transporter_name: 'Original transporter',
         has_clamp_audit_snapshot: true,
@@ -327,6 +328,7 @@ describe('CDS container custody history', () => {
       kind: 'clamped',
       lock_serial: 'LOCK-AT-CLAMP',
       driver_name: 'Original driver',
+      driver_contact: '+254700000012',
       vehicle_registration: 'KDA 222B',
       transporter_name: 'Original transporter',
       assignment_source: 'clamp_audit_snapshot',
@@ -337,6 +339,7 @@ describe('CDS container custody history', () => {
       kind: 'unclamped',
       lock_serial: 'LOCK-AT-CLAMP',
       driver_name: 'Original driver',
+      driver_contact: '+254700000012',
       vehicle_registration: 'KDA 222B',
       transporter_name: 'Original transporter',
       assignment_source: 'clamp_audit_snapshot',
@@ -344,6 +347,7 @@ describe('CDS container custody history', () => {
       integrity_verified: null,
     });
     expect(calls[2].sql).toContain("ca.after_data->>'driver_name'");
+    expect(calls[2].sql).toContain("ca.after_data->>'driver_phone'");
     expect(calls[2].sql).toContain("ca.after_data->>'truck_reg'");
   });
 });
