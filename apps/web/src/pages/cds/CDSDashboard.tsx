@@ -296,7 +296,7 @@ export default function CDSApp() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h1 className="text-[19px] sm:text-[21px] font-semibold tracking-tight text-white leading-tight">{activeSection.label}</h1>
-              {activeView !== activeSection.view && (
+              {secondaryTabs.length > 0 && (
                 <span className="cds-current-view hidden sm:inline-flex">{currentView?.label ?? ''}</span>
               )}
             </div>
