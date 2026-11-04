@@ -53,54 +53,127 @@ describe('responseEnvelope middleware', () => {
 describe('requireIdempotencyKey middleware', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  test('calls next() when no X-Idempotency-Key header', async () => {
+  function clientWithCached(rows = []) {
+    const client = {
+      query: jest.fn(async sql => {
+        if (sql.includes('SELECT status_code, response FROM idempotency_keys')) return { rows };
+        return { rows: [] };
+      }),
+      release: jest.fn(),
+    };
+    return client;
+  }
+
+  function responseWithEvents() {
+    const listeners = new Map();
+    const res = {
+      statusCode: 200,
+      body: undefined,
+      status(code) { this.statusCode = code; return this; },
+      json(body) { this.body = body; return this; },
+      once(event, callback) {
+        const callbacks = listeners.get(event) ?? [];
+        callbacks.push(callback);
+        listeners.set(event, callbacks);
+        return this;
+      },
+      emit(event) {
+        for (const callback of listeners.get(event) ?? []) callback();
+      },
+    };
+    return res;
+  }
+
+  test('calls next() without acquiring a connection when no key is supplied', () => {
     const req = { headers: {}, user: { org_id: 'org-1' } };
     const res = {};
     const next = jest.fn();
     requireIdempotencyKey(req, res, next);
-    await new Promise(r => setTimeout(r, 10));
     expect(next).toHaveBeenCalled();
+    expect(mockPool.connect).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  test('returns cached response when key already stored', async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ status_code: 201, response: { data: { id: 'abc' } } }],
-    });
+  test('returns a cached response after acquiring the tenant-key advisory lock', async () => {
+    const client = clientWithCached([{ status_code: 201, response: { data: { id: 'abc' } } }]);
+    mockPool.connect.mockResolvedValueOnce(client);
     const req = { headers: { 'x-idempotency-key': 'idem-key-1' }, user: { org_id: 'org-1' } };
-    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const res = responseWithEvents();
     const next = jest.fn();
+
     requireIdempotencyKey(req, res, next);
-    await new Promise(r => setTimeout(r, 20));
-    expect(res.status).toHaveBeenCalledWith(201);
-    expect(res.json).toHaveBeenCalledWith({ data: { id: 'abc' } });
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(client.query.mock.calls[0][0]).toContain('pg_advisory_lock');
+    expect(client.query.mock.calls[1][0]).toContain('SELECT status_code, response FROM idempotency_keys');
+    expect(res.statusCode).toBe(201);
+    expect(res.body).toEqual({ data: { id: 'abc' } });
     expect(next).not.toHaveBeenCalled();
+    expect(client.query.mock.calls.some(([sql]) => sql.includes('pg_advisory_unlock'))).toBe(true);
+    expect(client.release).toHaveBeenCalledTimes(1);
   });
 
-  test('calls next() and wraps res.json when key not in cache', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
+  test('wraps JSON responses and persists the result before releasing the lock', async () => {
+    const client = clientWithCached([]);
+    mockPool.connect.mockResolvedValueOnce(client);
     const req = { headers: { 'x-idempotency-key': 'idem-key-2' }, user: { org_id: 'org-1' } };
-    const origJson = jest.fn();
-    const res = { statusCode: 200, json: origJson };
+    const res = responseWithEvents();
     const next = jest.fn();
+
     requireIdempotencyKey(req, res, next);
-    await new Promise(r => setTimeout(r, 20));
-    expect(next).toHaveBeenCalled();
-    expect(typeof res.json).toBe('function');
-    expect(res.json).not.toBe(origJson);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(next).toHaveBeenCalledTimes(1);
+
+    res.status(201).json({ data: { created: true } });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    const insert = client.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO idempotency_keys'));
+    expect(insert).toBeDefined();
+    expect(insert[1]).toEqual(['idem-key-2', 'org-1', 201, JSON.stringify({ data: { created: true } })]);
+
+    res.emit('finish');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(client.query.mock.calls.some(([sql]) => sql.includes('pg_advisory_unlock'))).toBe(true);
+    expect(client.release).toHaveBeenCalledTimes(1);
   });
 
-  test('fails closed when req.user has no tenant identity', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
+  test('does not cache 5xx responses and still releases the advisory lock', async () => {
+    const client = clientWithCached([]);
+    mockPool.connect.mockResolvedValueOnce(client);
+    const req = { headers: { 'x-idempotency-key': 'idem-key-5xx' }, user: { org_id: 'org-1' } };
+    const res = responseWithEvents();
+    const next = jest.fn();
+
+    requireIdempotencyKey(req, res, next);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    res.status(503).json({ error: 'temporary_failure' });
+    res.emit('finish');
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(client.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO idempotency_keys'))).toBe(false);
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails closed when req.user has no tenant identity', () => {
     const req = { headers: { 'x-idempotency-key': 'idem-key-3' } };
-    const res = { status: jest.fn().mockReturnThis(), statusCode: 200, json: jest.fn() };
+    const res = responseWithEvents();
     const next = jest.fn();
     requireIdempotencyKey(req, res, next);
-    await new Promise(r => setTimeout(r, 20));
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'tenant_scope_required' });
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'tenant_scope_required' });
     expect(next).not.toHaveBeenCalled();
+    expect(mockPool.connect).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('rejects blank or excessively long keys', () => {
+    const req = { headers: { 'x-idempotency-key': ' '.repeat(201) }, user: { org_id: 'org-1' } };
+    const res = responseWithEvents();
+    const next = jest.fn();
+    requireIdempotencyKey(req, res, next);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid_idempotency_key' });
+    expect(next).not.toHaveBeenCalled();
+    expect(mockPool.connect).not.toHaveBeenCalled();
   });
 });
 
