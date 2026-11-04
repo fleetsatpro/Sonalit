@@ -823,3 +823,110 @@
   font: 600 10px/1.35 var(--p-mono, 'IBM Plex Mono', monospace);
   letter-spacing: .13em;
 }
+
+.cds-handoff-backdrop {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(2, 8, 18, .78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: cds-content-enter 160ms ease-out both;
+}
+
+.cds-handoff-dialog {
+  width: min(100%, 690px);
+  max-height: min(88dvh, 850px);
+  overflow-y: auto;
+  padding: 22px;
+  border: 1px solid rgba(126, 183, 245, .3);
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse at 85% 0%, rgba(58, 129, 201, .18), transparent 45%),
+    linear-gradient(150deg, rgba(15, 35, 61, .98), rgba(6, 16, 31, .99));
+  box-shadow: 0 28px 90px rgba(0,0,0,.56), inset 0 1px rgba(255,255,255,.06);
+}
+
+.cds-handoff-facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(145, 184, 230, .15);
+  border-radius: 10px;
+  background: rgba(255,255,255,.025);
+}
+
+.cds-handoff-facts span {
+  color: #92a9c4;
+  font: 600 10px/1.35 var(--p-mono, 'IBM Plex Mono', monospace);
+  letter-spacing: .12em;
+}
+
+.cds-handoff-facts strong {
+  color: #f0f6ff;
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.cds-seal-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cds-seal-options label {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid rgba(145, 184, 230, .2);
+  border-radius: 10px;
+  color: #dce8f6;
+  background: rgba(255,255,255,.03);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.cds-seal-options label:has(input:checked) {
+  border-color: rgba(121, 187, 252, .58);
+  background: rgba(62, 132, 208, .16);
+}
+
+.cds-seal-options input {
+  width: 16px;
+  height: 16px;
+  accent-color: #78baff;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 620px) {
+  .cds-handoff-backdrop {
+    align-items: flex-end;
+    padding: 8px;
+  }
+
+  .cds-handoff-dialog {
+    max-height: 92dvh;
+    padding: 17px;
+    border-radius: 17px 17px 12px 12px;
+  }
+
+  .cds-seal-options {
+    grid-template-columns: 1fr;
+  }
+
+  .cds-seal-options label {
+    min-height: 46px;
+  }
+}
