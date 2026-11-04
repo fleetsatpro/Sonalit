@@ -496,6 +496,43 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
   const openHistory = async (item: Item) => {
     setHistoryItemId(current => current === item.id ? '' : item.id);
   };
+  const validateTravellerStep = (step: number): string => {
+    if (step === 0) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,47}$/.test(travellerDraft.traveller_reference.trim())) return 'Enter a unique traveller reference (2–48 letters, numbers, dashes or underscores).';
+      if (!travellerDraft.given_name.trim() || !travellerDraft.family_name.trim()) return 'Enter the traveller’s given name and family name exactly as shown on the travel document.';
+      if (travellerDraft.date_of_birth && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(travellerDraft.date_of_birth) || new Date(travellerDraft.date_of_birth+'T00:00:00').toString()==='Invalid Date' || travellerDraft.date_of_birth > new Date().toISOString().slice(0,10))) return 'Enter a valid date of birth that is not in the future.';
+    }
+    if (step === 1) {
+      if (travellerDraft.email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(travellerDraft.email.trim())) return 'Enter a valid email address or leave the field blank.';
+      for (const [label, value] of [['Traveller phone', travellerDraft.phone], ['Emergency phone', travellerDraft.emergency_contact_phone]] as const) {
+        if (value && !/^[+0-9().\\-\\s]{5,48}$/.test(value)) return label + ' must use an international number format, for example +254 712 345 678.';
+      }
+      if (Boolean(travellerDraft.emergency_contact_name.trim()) !== Boolean(travellerDraft.emergency_contact_phone.trim())) return 'Provide both an emergency contact name and phone number, or leave both blank.';
+    }
+    if (step === 2) {
+      if (documentIssueDate && documentExpiryDate && documentExpiryDate < documentIssueDate) return 'The document expiry date must be on or after its issue date.';
+      if (travellerDocumentFile) {
+        const maxBytes = travellerDocumentFile.type === 'application/pdf' ? 25 * 1024 * 1024 : (travellerDocumentFile.type === 'image/jpeg' || travellerDocumentFile.type === 'image/png' ? 20 * 1024 * 1024 : 0);
+        if (!maxBytes) return 'Use a PDF, JPEG or PNG for travel documents.';
+        if (travellerDocumentFile.size > maxBytes) return 'The selected file exceeds the '+(maxBytes/1024/1024)+' MiB limit.';
+        if (!documentHolder.trim()) return 'Enter the name printed on the uploaded document.';
+      }
+    }
+    return '';
+  };
+  const saveTravellerWizard = async () => {
+    const validation = [0,1,2].map(validateTravellerStep).find(Boolean) || '';
+    if (validation) { setTravellerFormError(validation); return; }
+    const displayName = displayTravellerName(travellerDraft);
+    const selectedFile = travellerDocumentFile;
+    setTravellerFormError('');
+    try {
+      const saved = (editingTravellerId ? await updateTraveller.mutateAsync() : await createTraveller.mutateAsync()) as Traveller;
+      if (selectedFile) await uploadDocument({ ...saved, display_name: saved.display_name || displayName } as Traveller, selectedFile);
+    } catch (error) {
+      setTravellerFormError(errorMessage(error, 'The traveller record could not be saved.'));
+    }
+  };
   const historyQuery = useQuery<Array<{ id: string; actor_name?: string | null; action: string; previous_status?: string | null; new_status?: string | null; detail?: { note?: string }; observed_at: string }>>({
     queryKey: ['sjm-itinerary-item-history', journeyId, historyItemId],
     queryFn: async () => (await api.get(base + '/items/' + historyItemId + '/history')).data.data,
