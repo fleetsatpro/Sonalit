@@ -307,7 +307,7 @@ export default function CDSApp() {
 
       <div className="cds-main">
         <header className="cds-topbar">
-          <button ref={mobileMenuButtonRef} type="button" className="cds-mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open Container Management navigation" aria-controls="cds-mobile-navigation" aria-expanded={mobileNavOpen}>
+          <button ref={mobileMenuButtonRef} type="button" className="cds-mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open Container Management navigation" aria-expanded={mobileNavOpen}>
             <Menu size={22} strokeWidth={2.4}/>
           </button>
 
