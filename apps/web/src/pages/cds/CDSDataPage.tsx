@@ -303,22 +303,30 @@ export function ContainersView() {
           { id: 'owner', header: 'Ownership', accessor: (r: Row) => <span className="capitalize">{s(r['ownership'])}</span> },
           { id: 'condition', header: 'Condition', accessor: (r: Row) => <span className="capitalize">{s(r['condition'] ?? 'Not recorded')}</span> },
           { id: 'status', header: 'Asset status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
-          { id: 'assignment', header: 'Latest booking / trip', accessor: (r: Row) => (
+          { id: 'assignment', header: 'Booking / trip', accessor: (r: Row) => (
             <div className="min-w-[145px]">
               <div className="font-mono text-[12px] text-cyan-200">{s(r['latest_booking_number'])}</div>
-              <div className="text-[11px] text-slate-300 mt-0.5">{s(r['latest_trip_number'])}</div>
+              <div className="text-[11px] text-slate-300 mt-0.5">{s(r['latest_trip_number'] ?? r['latest_booking_trip_id'])}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">{s(r['latest_booking_container_status'] ?? r['latest_trip_status'])}</div>
             </div>
           )},
           { id: 'vehicle', header: 'Vehicle / driver', accessor: (r: Row) => (
             <div className="min-w-[130px]">
-              <div className="text-[13px] text-slate-100">{s(r['latest_vehicle_registration'])}</div>
-              <div className="text-[11px] text-slate-300 mt-0.5">{s(r['latest_driver_name'])}</div>
+              <div className="text-[13px] text-slate-100">{s(r['latest_vehicle_registration'] ?? r['manifest_vehicle_registration'])}</div>
+              <div className="text-[11px] text-slate-300 mt-0.5">{s(r['latest_driver_name'] ?? r['manifest_driver_name'])}</div>
             </div>
           )},
-          { id: 'lock', header: 'E-lock', accessor: (r: Row) => (
+          { id: 'lock', header: 'Lock reference', accessor: (r: Row) => (
             <div className="min-w-[120px]">
-              <div className="font-mono text-[12px] text-slate-100">{s(r['latest_lock_serial'])}</div>
-              {r['latest_lock_status'] ? <div className="mt-1"><StatusBadge status={s(r['latest_lock_status'])} /></div> : <div className="text-[11px] text-slate-400 mt-0.5">Not linked</div>}
+              <div className="font-mono text-[12px] text-slate-100">{s(r['latest_lock_serial'] ?? r['manifest_lock_number'])}</div>
+              {r['latest_lock_status'] ? <div className="mt-1"><StatusBadge status={s(r['latest_lock_status'])} /></div> : <div className="text-[11px] text-slate-400 mt-0.5">{r['manifest_lock_number'] ? 'Manifest reference' : 'Not recorded'}</div>}
+            </div>
+          )},
+          { id: 'custody', header: 'Latest custody', accessor: (r: Row) => (
+            <div className="min-w-[140px]">
+              <div className="text-[12px] font-semibold text-slate-100">{s(r['latest_custody_kind']).replace(/_/g, ' ')}</div>
+              <div className="text-[11px] text-slate-300 mt-0.5">{r['latest_custody_sequence'] != null ? 'Sequence ' + s(r['latest_custody_sequence']) : s(r['latest_yard_status'])}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">{r['latest_custody_at'] ? new Date(s(r['latest_custody_at'])).toLocaleString() : 'No event recorded'}</div>
             </div>
           )},
           { id: 'loc', header: 'Last recorded location', accessor: (r: Row) => {
@@ -362,20 +370,41 @@ export function ContainersView() {
             <DrawerField label="Operational status" value={<StatusBadge status={s(r['status'])} />} />
             <DrawerField label="Last recorded location" value={s(r['current_location'])} />
             <DrawerField label="Stored coordinates" value={r['lat'] != null && r['lng'] != null ? Number(r['lat']).toFixed(6) + ', ' + Number(r['lng']).toFixed(6) : 'Not recorded'} />
-            <div className="cds-drawer-section-heading">Latest linked journey</div>
+            <div className="cds-drawer-section-heading">Booking manifest and yard handling</div>
             <DrawerField label="Booking reference" value={s(r['latest_booking_number'])} />
-            <DrawerField label="Trip reference" value={s(r['latest_trip_number'])} />
-            <DrawerField label="Journey status" value={r['latest_trip_status'] ? <StatusBadge status={s(r['latest_trip_status'])} /> : 'No journey linked'} />
+            <DrawerField label="Booking status" value={r['latest_booking_status'] ? <StatusBadge status={s(r['latest_booking_status'])} /> : 'Not linked'} />
+            <DrawerField label="Container manifest status" value={s(r['latest_booking_container_status'])} />
+            <DrawerField label="Yard status" value={s(r['latest_yard_status'])} />
+            <DrawerField label="Terminal" value={s(r['latest_terminal'])} />
+            <DrawerField label="Clamped at" value={r['latest_clamped_at'] ? new Date(s(r['latest_clamped_at'])).toLocaleString() : 'Not recorded'} />
+            <DrawerField label="Unclamped at" value={r['latest_unclamped_at'] ? new Date(s(r['latest_unclamped_at'])).toLocaleString() : 'Not recorded'} />
+            <DrawerField label="Manifest seal" value={s(r['latest_seal_number'])} />
+            <DrawerField label="Manifest weight" value={r['latest_manifest_weight_kg'] != null ? Number(r['latest_manifest_weight_kg']).toLocaleString() + ' kg' : 'Not recorded'} />
+            <DrawerField label="Transporter" value={s(r['manifest_transporter_name'])} />
+            <DrawerField label="Manifest vehicle" value={s(r['manifest_vehicle_registration'])} />
+            <DrawerField label="Trailer" value={s(r['manifest_trailer_registration'])} />
+            <DrawerField label="Manifest driver" value={s(r['manifest_driver_name'])} />
+            <DrawerField label="Driver contact" value={s(r['manifest_driver_contact'])} />
+            <div className="cds-drawer-section-heading">Journey execution</div>
+            <DrawerField label="Trip reference" value={s(r['latest_trip_number'] ?? r['latest_booking_trip_id'])} />
+            <DrawerField label="Journey status" value={r['latest_trip_status'] ? <StatusBadge status={s(r['latest_trip_status'])} /> : 'No trip created'} />
             <DrawerField label="Origin" value={s(r['latest_trip_origin'])} />
             <DrawerField label="Destination" value={s(r['latest_trip_destination'])} />
-            <DrawerField label="Vehicle" value={s(r['latest_vehicle_registration'])} />
-            <DrawerField label="Driver" value={s(r['latest_driver_name'])} />
-            <DrawerField label="E-lock" value={s(r['latest_lock_serial'])} />
-            <DrawerField label="E-lock status" value={r['latest_lock_status'] ? <StatusBadge status={s(r['latest_lock_status'])} /> : 'Not linked'} />
+            <DrawerField label="Vehicle" value={s(r['latest_vehicle_registration'] ?? r['manifest_vehicle_registration'])} />
+            <DrawerField label="Driver" value={s(r['latest_driver_name'] ?? r['manifest_driver_name'])} />
+            <DrawerField label="E-lock reference" value={s(r['latest_lock_serial'] ?? r['manifest_lock_number'])} />
+            <DrawerField label="E-lock status" value={r['latest_lock_status'] ? <StatusBadge status={s(r['latest_lock_status'])} /> : 'Hardware status not linked'} />
             <DrawerField label="E-lock signal" value={s(r['latest_lock_signal_strength'])} />
             <DrawerField label="E-lock battery" value={r['latest_lock_battery_level'] != null ? Number(r['latest_lock_battery_level']) + '%' : 'Not recorded'} />
             <DrawerField label="Journey ETA" value={r['latest_trip_eta'] ? new Date(s(r['latest_trip_eta'])).toLocaleString() : 'Not recorded'} />
             <DrawerField label="Departure recorded" value={r['latest_trip_departed_at'] ? new Date(s(r['latest_trip_departed_at'])).toLocaleString() : 'Not recorded'} />
+            <div className="cds-drawer-section-heading">Chain of custody</div>
+            <DrawerField label="Latest custody event" value={s(r['latest_custody_kind'])} />
+            <DrawerField label="Custody sequence" value={s(r['latest_custody_sequence'])} />
+            <DrawerField label="Custody recorded at" value={r['latest_custody_at'] ? new Date(s(r['latest_custody_at'])).toLocaleString() : 'Not recorded'} />
+            <DrawerField label="Custody actor" value={s(r['latest_custody_actor'])} />
+            <DrawerField label="Seal intact at event" value={r['latest_custody_seal_intact'] == null ? 'Not recorded' : r['latest_custody_seal_intact'] ? 'Yes' : 'No'} />
+            <DrawerField label="Custody lock serial" value={s(r['latest_custody_lock_serial'])} />
             <div className="cds-drawer-section-heading">Asset specifications</div>
             <DrawerField label="Maximum payload" value={r['max_weight_kg'] ? Number(r['max_weight_kg']).toLocaleString() + ' kg' : 'Not recorded'} />
             <DrawerField label="Tare weight" value={r['tare_weight_kg'] ? Number(r['tare_weight_kg']).toLocaleString() + ' kg' : 'Not recorded'} />
