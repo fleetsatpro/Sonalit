@@ -194,13 +194,43 @@ export function useUnclampTrip() {
 }
 
 export function useContainers(filters?: SearchFilters) {
+  const page = Math.max(1, Math.floor(filters?.page ?? 1));
+  const limit = Math.max(1, Math.min(200, Math.floor(filters?.pageSize ?? 50)));
+  const params = {
+    limit,
+    offset: (page - 1) * limit,
+    ...(filters?.status ? { status: filters.status } : {}),
+    ...(filters?.query ? { search: filters.query } : {}),
+    ...(filters?.condition ? { condition: filters.condition } : {}),
+    ...(filters?.ownership ? { ownership: filters.ownership } : {}),
+  };
+
   return useQuery<ApiList>({
-    queryKey: ['cds', 'containers', filters],
+    queryKey: ['cds', 'containers', params],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/containers', { params: filters });
-      return data;
+      const { data } = await cdsApi.get('/containers', { params });
+      return {
+        data: Array.isArray(data.data) ? data.data : [],
+        total: Number.isFinite(Number(data.total)) ? Number(data.total) : 0,
+      };
     },
+    staleTime: 15_000,
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
+  });
+}
+
+export function useCreateContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const { data } = await cdsApi.post('/containers', payload);
+      return data.data as Record<string, unknown>;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
+      void qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      void qc.invalidateQueries({ queryKey: ['cds', 'analytics'] });
+    },
   });
 }
 
