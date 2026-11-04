@@ -403,6 +403,9 @@ describe('CDS unclamp lock identity', () => {
             seal_number: 'SEAL-01',
           }] };
         }
+        if (sql.includes('UPDATE cds_booking_containers')) {
+          return { rows: [{ id: 'booking-container-1' }] };
+        }
         if (sql.includes('SELECT COUNT(*)::int AS c FROM cds_booking_containers')) {
           return { rows: [{ c: 1 }] };
         }
@@ -468,6 +471,9 @@ describe('CDS unclamp evidence validation', () => {
             seal_number: 'SEAL-01',
           }] };
         }
+        if (sql.includes('UPDATE cds_booking_containers')) {
+          return { rows: [{ id: 'booking-container-1' }] };
+        }
         if (sql.includes('SELECT COUNT(*)::int AS c FROM cds_booking_containers')) {
           return { rows: [{ c: 1 }] };
         }
@@ -482,6 +488,34 @@ describe('CDS unclamp evidence validation', () => {
     const auditInsert = calls.find(call => call.sql.includes("VALUES ('unclamp','booking_container'"));
     expect(JSON.parse(auditInsert.values[3]).seal_intact).toBeNull();
     expect(JSON.parse(auditInsert.values[3]).seal_observed).toBeNull();
+  });
+
+
+  test('a concurrent second unclamp loses the compare-and-set and emits no duplicate custody event', async () => {
+    const calls = [];
+    const res = response();
+    await routeLayer('/bookings/:id/containers/:cid/unclamp', 'post')({
+      params: { id: 'booking-1', cid: 'booking-container-1' },
+      body: { seal_intact: false },
+      user: { id: 'port-user', org_id: 'org-1', name: 'Port lead' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        if (sql.includes('SELECT bc.*, b.booking_number, t.id AS trip_id')) {
+          return { rows: [{
+            id: 'booking-container-1', booking_id: 'booking-1', booking_number: 'BK-1001',
+            status: 'in_transit', clamped_at: '2026-11-04T08:30:00.000Z', unclamped_at: null,
+            seal_number: 'SEAL-01', clamp_lock_id: 'lock-original', clamp_lock_serial: 'LOCK-01',
+          }] };
+        }
+        if (sql.includes('UPDATE cds_booking_containers')) return { rows: [] };
+        return { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(409);
+    expect(res.result.body.error).toBe('container_not_currently_clamped');
+    expect(calls.some(call => call.sql.includes('UPDATE cds_electronic_locks'))).toBe(false);
+    expect(calls.some(call => call.sql.includes('INSERT INTO cds_custody_events'))).toBe(false);
   });
 
   test('rejects an already-unclamped manifest row', async () => {
