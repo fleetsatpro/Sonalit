@@ -184,9 +184,18 @@ export function LocksView() {
 
 export function PortView() {
   const [page, setPage] = useState(0);
+  const [searchInput, setSearchInput] = useState('');
+  const [serverSearch, setServerSearch] = useState('');
   const pageSize = 50;
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setServerSearch(searchInput.trim());
+      setPage(0);
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [searchInput]);
   const { data, isLoading, isError, isFetching, isPlaceholderData, refetch } = useTrips({
-    status: 'at_port', limit: pageSize, offset: page * pageSize,
+    status: 'at_port', query: serverSearch, limit: pageSize, offset: page * pageSize,
   });
   const { addToast, openDrawer } = useCDSStore();
   const unclamp = useUnclampBookingContainer();
@@ -198,6 +207,11 @@ export function PortView() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const rangeStart = total === 0 ? 0 : page * pageSize + 1;
   const rangeEnd = Math.min((page + 1) * pageSize, total);
+  useEffect(() => {
+    if (!isPlaceholderData && page > 0 && page * pageSize >= total) {
+      setPage(Math.max(0, Math.ceil(total / pageSize) - 1));
+    }
+  }, [isPlaceholderData, page, pageSize, total]);
 
   const openHandoff = (row: Row) => {
     if (!row['booking_id'] || !row['booking_container_id']) {
@@ -275,12 +289,26 @@ export function PortView() {
         </div>
       )}
 
+      <div className="cds-container-toolbar">
+        <label className="cds-container-search">
+          <Search size={16} aria-hidden="true" />
+          <input
+            value={searchInput}
+            onChange={event => setSearchInput(event.target.value)}
+            aria-label="Search the full port release queue"
+            placeholder="Search container, booking, vehicle, driver, seal or terminal…"
+          />
+          {isFetching && <span className="cds-search-indicator">Updating</span>}
+        </label>
+        <span className="text-[12px] text-slate-300">Only manifest-linked records can be released from this workspace.</span>
+      </div>
+
       <div className="cds-register-pagination flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
         <div>
           <div className="text-[12px] font-semibold text-white">Port release queue</div>
           <div className="text-[12px] text-slate-300 mt-0.5">{isPlaceholderData ? 'Updating queue results…' : total.toLocaleString() + ' trips awaiting port release'}</div>
         </div>
-        <div className="text-[12px] text-slate-300">Only manifest-linked records can be released from this workspace.</div>
+        <div className="text-[12px] text-slate-300">Server-side queue search and pagination</div>
       </div>
 
       <div className="cds-register-pagination flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
@@ -336,9 +364,8 @@ export function PortView() {
         ]}
         data={rows}
         keyExtractor={(r: Row) => s(r['id'])}
-        searchable
-        searchPlaceholder="Search container, booking, vehicle, seal or terminal…"
-        emptyMessage="No trips are currently awaiting port release."
+        searchable={false}
+        emptyMessage={serverSearch ? 'No port records match this search.' : 'No trips are currently awaiting port release.'}
         onRowClick={(r: Row) => openDrawer('Port handoff · ' + s(r['container_number']), (
           <>
             <DrawerField label="Container" value={s(r['container_number'])} />
