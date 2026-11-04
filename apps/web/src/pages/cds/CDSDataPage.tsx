@@ -10,6 +10,29 @@ export { BookingsView } from './CDSBookings.js';
 type Row = Record<string, unknown>;
 const s = (v: unknown) => String(v ?? '—');
 
+const ISO_6346_LETTER_VALUES: Record<string, number> = {
+  A: 10, B: 12, C: 13, D: 14, E: 15, F: 16, G: 17, H: 18, I: 19,
+  J: 20, K: 21, L: 23, M: 24, N: 25, O: 26, P: 27, Q: 28, R: 29,
+  S: 30, T: 31, U: 32, V: 34, W: 35, X: 36, Y: 37, Z: 38,
+};
+
+function isValidISO6346FreightContainerNumber(value: string): boolean {
+  if (!/^[A-Z]{3}U[0-9]{7}$/.test(value)) return false;
+  const identifier = value.slice(0, 10);
+  let weightedTotal = 0;
+  for (let index = 0; index < identifier.length; index += 1) {
+    const character = identifier[index];
+    const numericValue = /[0-9]/.test(character)
+      ? Number(character)
+      : ISO_6346_LETTER_VALUES[character];
+    if (!Number.isFinite(numericValue)) return false;
+    weightedTotal += numericValue * (2 ** index);
+  }
+  const remainder = weightedTotal % 11;
+  const expectedCheckDigit = remainder === 10 ? '0' : String(remainder);
+  return value[10] === expectedCheckDigit;
+}
+
 export function ContainersView() {
   const [filter, setFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
@@ -56,8 +79,8 @@ export function ContainersView() {
   const submitRegistration = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const cleanNumber = number.trim().toUpperCase();
-    if (!/^[A-Z0-9-]{6,20}$/.test(cleanNumber)) {
-      addToast('Enter the exact container identifier using 6–20 letters, numbers or hyphens.', 'error');
+    if (!isValidISO6346FreightContainerNumber(cleanNumber)) {
+      addToast('Enter a valid ISO 6346 freight-container number: three owner-code letters, U, six serial digits and the correct check digit. The owner code is not checked against the BIC registry.', 'error');
       return;
     }
     const built = yearBuilt ? Number(yearBuilt) : null;
@@ -128,10 +151,10 @@ export function ContainersView() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             <label className="cds-form-field">
               <span className="cds-form-label">Container number *</span>
-              <input required minLength={6} maxLength={20} autoCapitalize="characters" value={number}
-                onChange={event => setNumber(event.target.value.toUpperCase())}
-                className="cds-form-control" placeholder="e.g. MSKU1234567" />
-              <span className="cds-form-help">Use the exact identifier on the container.</span>
+              <input required minLength={11} maxLength={11} pattern="[A-Z]{3}U[0-9]{7}" autoCapitalize="characters" autoComplete="off" spellCheck={false} value={number}
+                onChange={event => setNumber(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11))}
+                className="cds-form-control" placeholder="e.g. MSKU1234565" />
+              <span className="cds-form-help">ISO 6346 check digit is validated. BIC owner-code registration is not verified.</span>
             </label>
 
             <label className="cds-form-field">
