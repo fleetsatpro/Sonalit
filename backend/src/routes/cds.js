@@ -2362,11 +2362,14 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   let transporterId = null;
   if (cleanTransporter) {
     const transporter = await req.db(
-      'SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',
+      'SELECT id FROM cds_transporters WHERE LOWER(BTRIM(company_name))=LOWER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL ORDER BY id LIMIT 2 FOR UPDATE',
       [cleanTransporter, orgId]
     );
     if (!transporter.rows.length) {
       return res.status(409).json({ error: 'transporter_not_registered', transporter_name: cleanTransporter });
+    }
+    if (transporter.rows.length > 1) {
+      return res.status(409).json({ error: 'ambiguous_transporter_name', transporter_name: cleanTransporter });
     }
     transporterId = transporter.rows[0].id;
   }
@@ -2375,11 +2378,14 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   // with an unexpired licence and no other open journey; never invent a
   // PENDING licence number or a future expiry date.
   const dr = await req.db(
-    'SELECT id, phone, license_number, license_expiry, status FROM cds_drivers WHERE name ILIKE $1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+    'SELECT id, phone, license_number, license_expiry, status FROM cds_drivers WHERE LOWER(BTRIM(name))=LOWER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL ORDER BY id LIMIT 2 FOR UPDATE',
     [cleanDriverName, orgId]
   );
   if (!dr.rows.length) {
     return res.status(409).json({ error: 'driver_not_registered', message: 'Register the driver and licence details before clamping.' });
+  }
+  if (dr.rows.length > 1) {
+    return res.status(409).json({ error: 'ambiguous_driver_name', message: 'More than one registered driver matches this name. Use a unique full name in the personnel register.' });
   }
   const driver = dr.rows[0];
   const cleanDriverPhone = driver.phone ? String(driver.phone).trim() : null;
@@ -2392,7 +2398,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   const driverTrip = await req.db(
     `SELECT id FROM cds_trips
       WHERE driver_id=$1 AND org_id=$2 AND deleted_at IS NULL
-        AND status IN ('locked','dispatched','checkpoint','delayed','at_port')
+        AND status IN ('created','vehicle_assigned','driver_assigned','awaiting_lock','locked','dispatched','checkpoint','delayed','at_port')
       LIMIT 1`,
     [driver.id, orgId]
   );
@@ -2404,7 +2410,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   // Resolve or create the vehicle register row. Its current operational status
   // and open-trip assignments are checked before it can take another box.
   const ve = await req.db(
-    'SELECT id, status FROM cds_vehicles WHERE registration ILIKE $1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+    'SELECT id, status FROM cds_vehicles WHERE UPPER(BTRIM(registration))=UPPER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
     [cleanTruckReg, orgId]
   );
   let vehicleId = ve.rows[0]?.id ?? null;
@@ -2415,7 +2421,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     const vehicleTrip = await req.db(
       `SELECT id FROM cds_trips
         WHERE vehicle_id=$1 AND org_id=$2 AND deleted_at IS NULL
-          AND status IN ('locked','dispatched','checkpoint','delayed','at_port')
+          AND status IN ('created','vehicle_assigned','driver_assigned','awaiting_lock','locked','dispatched','checkpoint','delayed','at_port')
         LIMIT 1`,
       [vehicleId, orgId]
     );
@@ -2443,7 +2449,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     return res.status(409).json({ error: 'booking_container_equipment_type_requires_correction' });
   }
   const co = await req.db(
-    'SELECT id, condition, status FROM cds_containers WHERE number ILIKE $1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+    'SELECT id, condition, status FROM cds_containers WHERE number=$1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
     [freightNumber, orgId]
   );
   let containerId = co.rows[0]?.id ?? null;
@@ -2488,7 +2494,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   // A lock already installed on another asset or reporting tamper/offline
   // must not be silently reassigned to this trip.
   const lk = await req.db(
-    'SELECT id, status, container_id, vehicle_id, tamper_detected, tamper_status FROM cds_electronic_locks WHERE serial ILIKE $1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
+    'SELECT id, status, container_id, vehicle_id, tamper_detected, tamper_status FROM cds_electronic_locks WHERE UPPER(BTRIM(serial))=UPPER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
     [cleanLockSerial, orgId]
   );
   if (lk.rows.length && (
@@ -2814,7 +2820,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
     const openDriverTrips = await req.db(
       `SELECT COUNT(*)::int AS count FROM cds_trips
         WHERE driver_id=$1 AND org_id=$2 AND deleted_at IS NULL
-          AND id<>$3 AND status IN ('locked','dispatched','checkpoint','delayed','at_port')`,
+          AND id<>$3 AND status IN ('created','vehicle_assigned','driver_assigned','awaiting_lock','locked','dispatched','checkpoint','delayed','at_port')`,
       [bc.rows[0].driver_id, orgId, bc.rows[0].trip_id]
     );
     if (openDriverTrips.rows[0].count === 0) {
