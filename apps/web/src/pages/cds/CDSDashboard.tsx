@@ -144,7 +144,7 @@ export default function CDSApp() {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const frame = window.requestAnimationFrame(() => {
-      mobileNavLayerRef.current?.querySelector<HTMLElement>('button:not([disabled]), a[href], input:not([disabled])')?.focus();
+      mobileNavLayerRef.current?.querySelector<HTMLElement>('nav button:not([disabled])')?.focus();
     });
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -245,9 +245,6 @@ export default function CDSApp() {
     }
   };
 
-
-  const currentView = CDS_VIEWS.find(v => v.id === activeView);
-  const railW = expanded ? 210 : 64;
 
   const currentView = CDS_VIEWS.find(v => v.id === activeView);
 
