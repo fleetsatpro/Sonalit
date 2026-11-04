@@ -366,7 +366,7 @@ async function updateRow(req, res, table, fields, { softDelete = true, hasUpdate
 // counts used to disagree about it: /trips/live already had this set right,
 // while the dashboard asked for status='dispatched' alone and so reported a
 // truck at a checkpoint, running late, or sitting at the port as not in transit.
-const ON_ROAD_STATUSES = "('dispatched','checkpoint','delayed','at_port')";
+const ON_ROAD_STATUSES = "('locked','dispatched','checkpoint','delayed','at_port')";
 
 router.get('/dashboard', asyncHandler(async (req, res) => {
   const kpis = await req.db(`
