@@ -302,7 +302,7 @@ export function ContainersView() {
           { id: 'type', header: 'Equipment', accessor: (r: Row) => <span className="font-medium text-text-1">{s(r['iso_type'] ?? r['container_type'])}</span> },
           { id: 'owner', header: 'Ownership', accessor: (r: Row) => <span className="capitalize">{s(r['ownership'])}</span> },
           { id: 'condition', header: 'Condition', accessor: (r: Row) => <span className="capitalize">{s(r['condition'] ?? 'Not recorded')}</span> },
-          { id: 'status', header: 'Asset status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
+          { id: 'status', header: 'Operational status', accessor: (r: Row) => <StatusBadge status={s(r['operational_status'] ?? r['status'])} /> },
           { id: 'assignment', header: 'Booking / trip', accessor: (r: Row) => (
             <div className="min-w-[145px]">
               <div className="font-mono text-[12px] text-cyan-200">{s(r['latest_booking_number'])}</div>
@@ -367,7 +367,8 @@ export function ContainersView() {
             <DrawerField label="Equipment type" value={s(r['iso_type'])} />
             <DrawerField label="Ownership" value={s(r['ownership'])} />
             <DrawerField label="Physical condition" value={s(r['condition'] ?? 'Not recorded')} />
-            <DrawerField label="Operational status" value={<StatusBadge status={s(r['status'])} />} />
+            <DrawerField label="Operational status" value={<StatusBadge status={s(r['operational_status'] ?? r['status'])} />} />
+            <DrawerField label="Stored asset status" value={s(r['status'])} />
             <DrawerField label="Last recorded location" value={s(r['current_location'])} />
             <DrawerField label="Stored coordinates" value={r['lat'] != null && r['lng'] != null ? Number(r['lat']).toFixed(6) + ', ' + Number(r['lng']).toFixed(6) : 'Not recorded'} />
             <div className="cds-drawer-section-heading">Booking manifest and yard handling</div>
