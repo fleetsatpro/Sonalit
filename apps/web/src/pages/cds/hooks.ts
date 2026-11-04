@@ -51,6 +51,17 @@ export function useActivity(limit = 30) {
   });
 }
 
+export function useCDSAuditLogs(limit = 100, offset = 0) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'audit', limit, offset],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/audit', { params: { limit, offset } });
+      return data;
+    },
+    refetchInterval: 60_000,
+  });
+}
+
 // Realtime (useCDSRealtime) invalidates these the instant the yard or port
 // acts, so the interval below is a safety floor, not the mechanism: if
 // Centrifugo is down or the socket drops, a control-room board still refreshes
@@ -197,7 +208,10 @@ export function useContainers(filters?: SearchFilters) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'containers', filters],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/containers', { params: filters });
+      const params: Record<string, unknown> = { limit: 200, offset: 0 };
+      if (filters?.status) params['status'] = filters.status;
+      if (filters?.query?.trim()) params['search'] = filters.query.trim();
+      const { data } = await cdsApi.get('/containers', { params });
       return data;
     },
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
