@@ -1600,11 +1600,14 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByRole('button', { name: /^Continue/ }).click();
 
     await expect(page.getByRole('heading', { name: 'Travel documents' })).toBeVisible();
+    await expect(page.getByLabel('Issuing country · recommended')).toHaveValue('');
+    await page.getByLabel('Issuing country · recommended').selectOption('France');
     await page.getByRole('button', { name: /^Continue/ }).click();
 
     await expect(page.getByRole('heading', { name: 'Review before saving' })).toBeVisible();
     await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
     await expect(page.getByText('Kenya', { exact: true })).toBeVisible();
+    await expect(page.locator('.sjm-traveller-wizard')).toContainText('No file selected; document metadata will not be saved');
     await page.getByRole('button', { name: 'Register traveller' }).last().click();
     await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
     await expect(page.getByText('Traveller profile registered to this journey.')).toBeVisible();

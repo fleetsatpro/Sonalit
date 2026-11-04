@@ -273,6 +273,8 @@ const COUNTRY_ALIASES: Record<string, string> = {
 export function countryCodeFromName(value?: string | null): string {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return '';
+  const isoCode = normalized.toUpperCase();
+  if (/^[A-Z]{2}$/.test(isoCode) && COUNTRIES.some(country => country.code === isoCode)) return isoCode;
   const byName = COUNTRIES.find(country => country.name.toLowerCase() === normalized);
   if (byName) return byName.code;
   return COUNTRY_ALIASES[normalized] || '';

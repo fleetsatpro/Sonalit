@@ -7,7 +7,7 @@ describe('ISO country labels and flag artwork', () => {
   });
   it.each([
     ['Kenya', 'KE'], ['Tanzania', 'TZ'], ['France', 'FR'], ['United Kingdom', 'GB'],
-    ['Kenyan', 'KE'], ['British', 'GB'],
+    ['Kenyan', 'KE'], ['British', 'GB'], ['KE', 'KE'], ['GB', 'GB'],
   ])('resolves %s to %s', (name, code) => {
     expect(countryCodeFromName(name)).toBe(code);
   });

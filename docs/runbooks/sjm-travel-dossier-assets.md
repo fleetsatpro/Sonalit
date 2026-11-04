@@ -2,7 +2,7 @@
 
 ## Traveller identity capture
 
-The traveller registration flow uses four short steps: identity, contacts and relationships, documents, and review. Enter legal names in the same order and spelling as the travel document; keep a preferred/known-as name as a separate operational label. Nationality/citizenship and issuing country are selected from the ISO 3166-1 alpha-2 catalogue and rendered with SVG country flags.
+The traveller registration flow uses four short steps: identity, contacts and relationships, documents, and review. Enter legal names in the same order and spelling as the travel document; keep a preferred/known-as name as a separate operational label. Nationality/citizenship is recorded separately from each document's issuing country. Never infer a visa, permit or other document's issuing country from the traveller's nationality. Both country fields use the ISO 3166-1 alpha-2 catalogue and render SVG country flags.
 
 Do not add passport or visa numbers to free-text fields. The uploaded document is the controlled identity record: it is stored in the dedicated private SJM evidence bucket, committed through the existing integrity-verification flow, and then awaits authorised manager review. Traveller identity and emergency contact data remain manager-only. Field roles receive the minimum traveller display and movement information they need.
 
