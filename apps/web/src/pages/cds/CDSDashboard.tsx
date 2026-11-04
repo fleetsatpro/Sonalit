@@ -429,7 +429,7 @@ function DashboardView() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <section className="lg:col-span-2 min-w-0 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
+        <section className="cds-panel lg:col-span-2 min-w-0 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
             <div className="font-bold text-sm text-text-0">Live movement</div>
             <div className="text-[10px] font-mono text-text-2">
@@ -471,7 +471,7 @@ function DashboardView() {
           </div>
         </section>
 
-        <section className="min-w-0 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
+        <section className="cds-panel min-w-0 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
           <div className="font-bold text-sm text-text-0 mb-3">Recent activity</div>
           <div className="space-y-0 max-h-[340px] overflow-y-auto">
             {(activity ?? []).map((item, index) => {
@@ -711,15 +711,13 @@ export function LiveView() {
 
 export function LoadingState() {
   return (
-    <div className="flex flex-col items-center justify-center h-64 gap-3">
-      <div className="flex gap-1.5">
-        {[0, 1, 2].map(i => (
-          <div key={i} className="w-2 h-2 rounded-full bg-[#F0B429]"
-            style={{ animation: 'cds-pulse 1s ease-in-out infinite', animationDelay: `${i * 0.15}s` }} />
-        ))}
+    <div className="cds-loading-state" role="status" aria-live="polite">
+      <div className="cds-loading-orbit" aria-hidden="true">
+        <span className="cds-loading-core" />
+        <span className="cds-loading-satellite" />
       </div>
-      <div className="text-text-2 font-mono text-xs">Loading data...</div>
-      <style>{`@keyframes cds-pulse { 0%,100%{opacity:.2;transform:scale(.8)} 50%{opacity:1;transform:scale(1.2)} }`}</style>
+      <div className="cds-loading-title">Synchronising operational data</div>
+      <div className="cds-loading-caption">Connecting to the authorised CDS workspace</div>
     </div>
   );
 }
