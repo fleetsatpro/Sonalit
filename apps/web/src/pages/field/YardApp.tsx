@@ -317,8 +317,13 @@ function ClampForm({ booking, container, onClose, onDone }: {
             disabled={resourcesLoading || locks.length === 0}
             options={locks.map(lock => ({
               value: s(lock['serial']),
-              label: s(lock['serial']) + ' · ' + (lock['last_heartbeat'] ? 'heartbeat received' : 'telemetry unverified'),
+              label: s(lock['serial']) + ' · ' + s(lock['provider'] || 'provider unverified') + ' · ' + (lock['last_heartbeat'] ? 'heartbeat received' : 'telemetry unverified'),
             }))} />
+          {!resourcesLoading && locks.length === 0 && (
+            <p className="text-[10px] leading-relaxed text-cds-red">
+              No available e-lock is registered. Ask the control room to register or release a lock before clamping.
+            </p>
+          )}
           <p className="text-[10px] leading-relaxed text-text-2 -mt-1">
             A lock without a heartbeat can still be physically assigned, but Sonalit will not show it as live hardware telemetry.
           </p>
@@ -334,6 +339,11 @@ function ClampForm({ booking, container, onClose, onDone }: {
             <IconField icon={<Truck size={14} />} label="Trailer reg" value={trailerReg} onChange={setTrailerReg}
               placeholder="KAA 456B" autoCapitalize="characters" />
           </div>
+          {!resourcesLoading && vehicles.length === 0 && (
+            <p className="text-[10px] leading-relaxed text-cds-red">
+              No available truck is registered. A vehicle must be added to the fleet register and released from any open trip.
+            </p>
+          )}
         </FieldSection>
 
         <FieldSection label="Registered driver">
@@ -344,6 +354,11 @@ function ClampForm({ booking, container, onClose, onDone }: {
               value: s(item['name']),
               label: s(item['name']) + ' · licence to ' + String(item['license_expiry'] ?? 'date not recorded').slice(0, 10),
             }))} />
+          {!resourcesLoading && drivers.length === 0 && (
+            <p className="text-[10px] leading-relaxed text-cds-red">
+              No eligible driver is available. The driver must be registered, have a current licence and be free of another active trip.
+            </p>
+          )}
           <p className="text-[10px] leading-relaxed text-text-2 -mt-1">
             Only drivers with an available duty status and a current, verified licence are listed. Contact details come from the personnel record.
           </p>
