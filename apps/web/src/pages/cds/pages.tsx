@@ -383,7 +383,7 @@ export function PortView() {
 
       {target && (
         <div className="cds-handoff-backdrop" role="presentation">
-          <section className="cds-handoff-dialog" role="dialog" aria-modal="true" aria-labelledby="cds-handoff-title" aria-describedby="cds-handoff-description">
+          <section className="cds-handoff-dialog" role="dialog" aria-modal="true" aria-labelledby="cds-handoff-title" aria-describedby="cds-handoff-description" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); closeHandoff(); } }}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="cds-eyebrow">CONTROLLED PORT HANDOFF</div>
@@ -404,7 +404,7 @@ export function PortView() {
               <legend className="cds-form-label">Seal outcome *</legend>
               <div className="cds-seal-options mt-2">
                 <label>
-                  <input type="radio" name="cds-seal-check" value="not_checked" checked={sealCheck === 'not_checked'} onChange={() => setSealCheck('not_checked')} />
+                  <input autoFocus type="radio" name="cds-seal-check" value="not_checked" checked={sealCheck === 'not_checked'} onChange={() => setSealCheck('not_checked')} />
                   <span>Not checked</span>
                 </label>
                 <label>
