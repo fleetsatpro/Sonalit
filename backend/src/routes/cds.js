@@ -1390,8 +1390,17 @@ router.patch('/containers/:id', asyncHandler(async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 const LOCK_JOINS = `LEFT JOIN cds_containers c ON c.id=t.container_id AND c.org_id=t.org_id
-  LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=t.org_id`;
-const LOCK_COLS = `t.*, c.number AS container_number, v.registration AS truck`;
+  LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=t.org_id
+  LEFT JOIN LATERAL (
+    SELECT e.type, e.created_at
+      FROM cds_lock_events e
+     WHERE e.lock_id=t.id AND e.org_id=t.org_id
+     ORDER BY e.created_at DESC, e.id DESC
+     LIMIT 1
+  ) latest_event ON TRUE`;
+const LOCK_COLS = `t.*, c.number AS container_number, v.registration AS truck,
+  latest_event.type AS last_event_type,
+  latest_event.created_at AS last_event_at`;
 router.get('/locks', asyncHandler(async (req, res) => {
   await listRows(req, res, 'cds_electronic_locks', {
     joins: LOCK_JOINS,
