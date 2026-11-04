@@ -1291,8 +1291,8 @@ router.post('/containers', asyncHandler(async (req, res) => {
   if (!Object.prototype.hasOwnProperty.call(equipmentTypes, isoType)) {
     return res.status(400).json({ error: 'invalid_container_equipment_type' });
   }
-  const ownership = String(body.ownership || 'leased');
-  if (!['owned', 'leased', 'customer'].includes(ownership)) {
+  const ownership = String(body.ownership || 'unverified');
+  if (!['owned', 'leased', 'customer', 'unverified'].includes(ownership)) {
     return res.status(400).json({ error: 'invalid_container_ownership' });
   }
   const condition = String(body.condition || 'good');
