@@ -1188,10 +1188,10 @@ router.get('/containers', asyncHandler(async (req, res) => {
       SELECT bc.id AS booking_container_id, bc.clamped_at, bc.lock_number,
              bc.transporter_name, bc.driver_name, bc.driver_contact, bc.horse_reg,
              b.booking_number, t.trip_number,
-             COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial', bc.lock_number, el.serial) AS lock_serial,
-             COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name, tr.company_name) AS transporter_name_resolved,
-             COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name, d.name) AS driver_name_resolved,
-             COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg, v.registration) AS vehicle_registration,
+             COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial', bc.lock_number) AS lock_serial,
+             COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name) AS transporter_name_resolved,
+             COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name) AS driver_name_resolved,
+             COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg) AS vehicle_registration,
              COALESCE(ce.actor_name, ca.user_name) AS actor_name
         FROM cds_booking_containers bc
         JOIN cds_bookings b ON b.id=bc.booking_id AND b.org_id=bc.org_id AND b.deleted_at IS NULL
@@ -1297,11 +1297,11 @@ router.get('/containers/:id/history', asyncHandler(async (req, res) => {
             bc.driver_name AS manifest_driver, bc.driver_contact AS manifest_driver_contact,
             b.booking_number,
             t.trip_number,
-            COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name, tr.company_name) AS transporter_name,
-            COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg, v.registration) AS vehicle_registration,
-            COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name, d.name) AS driver_name,
-            COALESCE(clamp_audit.after_data->>'driver_phone', bc.driver_contact, d.phone) AS driver_contact,
-            COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial', bc.lock_number, el.serial) AS assigned_lock,
+            COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name) AS transporter_name,
+            COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg) AS vehicle_registration,
+            COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name) AS driver_name,
+            COALESCE(clamp_audit.after_data->>'driver_phone', bc.driver_contact) AS driver_contact,
+            COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial', bc.lock_number) AS assigned_lock,
             (clamp_audit.after_data IS NOT NULL) AS has_clamp_audit_snapshot
        FROM cds_custody_events ce
        JOIN cds_booking_containers bc
@@ -1368,9 +1368,7 @@ router.get('/containers/:id/history', asyncHandler(async (req, res) => {
         transporter_name: row.transporter_name || row.manifest_transporter,
         assignment_source: row.has_clamp_audit_snapshot ? 'clamp_audit_snapshot'
           : (row.manifest_driver || row.manifest_vehicle || row.manifest_transporter || row.lock_number)
-            ? 'manifest_record'
-            : (row.driver_name || row.vehicle_registration || row.assigned_lock)
-              ? 'linked_trip_record' : 'not_recorded',
+            ? 'manifest_record' : 'not_recorded',
         seal_number: row.seal_number,
         seal_intact: row.seal_intact,
         lat: row.lat,
