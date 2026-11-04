@@ -265,29 +265,12 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
   const refresh = async () => queryClient.invalidateQueries({ queryKey: ['sjm-travel-workspace', journeyId] });
   const createTraveller = useMutation({
     mutationFn: async () => (await api.post(base + '/travellers', travellerDraft)).data.data,
-    onSuccess: async () => {
-      setTravellerDraft({ ...EMPTY_TRAVELLER });
-      setShowTravellerForm(false);
-      setTravellerStep(0);
-      setTravellerFormError('');
-      setTravellerDocumentFile(null);
-      setNotice({ kind: 'success', text: 'Traveller profile registered to this journey.' });
-      await refresh();
-    },
+    onSuccess: async () => { await refresh(); },
     onError: error => setNotice({ kind: 'error', text: errorMessage(error, 'Traveller registration failed.') }),
   });
   const updateTraveller = useMutation({
     mutationFn: async () => (await api.patch(base + '/travellers/' + editingTravellerId, travellerDraft)).data.data,
-    onSuccess: async () => {
-      setEditingTravellerId('');
-      setTravellerDraft({ ...EMPTY_TRAVELLER });
-      setShowTravellerForm(false);
-      setTravellerStep(0);
-      setTravellerFormError('');
-      setTravellerDocumentFile(null);
-      setNotice({ kind: 'success', text: 'Traveller profile updated.' });
-      await refresh();
-    },
+    onSuccess: async () => { await refresh(); },
     onError: error => setNotice({ kind: 'error', text: errorMessage(error, 'Traveller profile could not be updated.') }),
   });
   const createFlight = useMutation({
@@ -418,8 +401,8 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     onError: error => setNotice({ kind: 'error', text: errorMessage(error, 'The travel-document record could not be archived.') }),
   });
 
-  const uploadDocument = async (traveller: Traveller, file?: File) => {
-    if (!file || !canManage || !planEditable || documentUploadState) return;
+  const uploadDocument = async (traveller: Traveller, file?: File): Promise<boolean> => {
+    if (!file || !canManage || !planEditable || documentUploadState) return false;
     const maxBytes = file.type === 'application/pdf' ? 25 * 1024 * 1024 :
       file.type === 'image/jpeg' || file.type === 'image/png' ? 20 * 1024 * 1024 : 0;
     if (!maxBytes) {
@@ -456,8 +439,11 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
       setDocumentExpiryDate('');
       setNotice({ kind: 'success', text: 'Document stored privately and integrity-checked. It is now awaiting an authorised review.' });
       await refresh();
+      return true;
     } catch (error) {
       setNotice({ kind: 'error', text: errorMessage(error, 'Travel document upload failed.') });
+      await refresh();
+      return false;
     } finally {
       setDocumentUploadState(null);
     }
@@ -552,10 +538,25 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     if (validation) { setTravellerFormError(validation); return; }
     const displayName = displayTravellerName(travellerDraft);
     const selectedFile = travellerDocumentFile;
+    const wasEditing = Boolean(editingTravellerId);
     setTravellerFormError('');
     try {
-      const saved = (editingTravellerId ? await updateTraveller.mutateAsync() : await createTraveller.mutateAsync()) as Traveller;
-      if (selectedFile) await uploadDocument({ ...saved, display_name: saved.display_name || displayName } as Traveller, selectedFile);
+      const saved = (wasEditing ? await updateTraveller.mutateAsync() : await createTraveller.mutateAsync()) as Traveller;
+      if (selectedFile) {
+        const uploaded = await uploadDocument({ ...saved, display_name: saved.display_name || displayName } as Traveller, selectedFile);
+        if (!uploaded) {
+          setNotice({ kind: 'error', text: 'Traveller profile saved. The travel document was not uploaded or verified; check the document status below or attach it later when private SJM storage is available.' });
+        }
+      } else {
+        setNotice({ kind: 'success', text: wasEditing ? 'Traveller profile updated.' : 'Traveller profile registered to this journey.' });
+      }
+      setEditingTravellerId('');
+      setTravellerDraft({ ...EMPTY_TRAVELLER });
+      setShowTravellerForm(false);
+      setTravellerStep(0);
+      setTravellerFormError('');
+      setTravellerDocumentFile(null);
+      await refresh();
     } catch (error) {
       setTravellerFormError(errorMessage(error, 'The traveller record could not be saved.'));
     }
