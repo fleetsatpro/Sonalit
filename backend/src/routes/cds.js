@@ -11,6 +11,7 @@ const { scanManifest } = require('../utils/manifestAnomalies');
 // The dispatch log the dashboard and the Dispatch Log panel both read, derived
 // from the custody chain, lock events, trip transitions and alerts.
 const { activityFeed } = require('../utils/cdsActivityFeed');
+const { validateContainerNumber, normalise: normaliseContainerNumber } = require('../utils/containerNumber');
 const T = require('../utils/trackingEngine');
 const logger = require('../utils/logger');
 
@@ -1046,14 +1047,160 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 router.get('/containers', asyncHandler(async (req, res) => {
-  await listRows(req, res, 'cds_containers', {
-    searchCols: ['t.number', 't.container_type', 't.iso_type', 't.ownership', 't.condition', 't.status', 't.current_location', 't.manufacturer'],
+  const { limit, offset } = paginate(req.query);
+  const filters = ['t.deleted_at IS NULL'];
+  const params = [];
+  const allowedStatuses = new Set([
+    'available', 'booked', 'awaiting_pickup', 'in_transit', 'at_port', 'delivered', 'maintenance',
+  ]);
+  if (req.query.status) {
+    const statuses = String(req.query.status).split(',').map(value => value.trim()).filter(Boolean);
+    if (statuses.some(status => !allowedStatuses.has(status))) {
+      return res.status(400).json({ error: 'invalid_container_status_filter' });
+    }
+    if (statuses.length) {
+      params.push(statuses);
+      filters.push(`t.status = ANY(${params.length}::text[])`);
+    }
+  }
+  const search = String(req.query.search || '').trim();
+  if (search.length > 120) return res.status(400).json({ error: 'container_search_too_long' });
+  if (search) {
+    params.push(`%${search}%`);
+    const p = params.length;
+    filters.push(`(${[
+      't.number', 't.container_type', 't.iso_type', 't.ownership',
+      't.condition', 't.status', 't.current_location', 't.manufacturer',
+    ].map(column => `${column} ILIKE ${p}`).join(' OR ')})`);
+  }
+  const where = filters.join(' AND ');
+
+  const payload = await req.dbTx(async client => {
+    const result = await client.query(
+      `SELECT t.* FROM cds_containers t WHERE ${where}
+       ORDER BY t.created_at DESC, t.id DESC LIMIT ${params.length + 1} OFFSET ${params.length + 2}`,
+      [...params, limit, offset],
+    );
+    const total = await client.query(
+      `SELECT COUNT(*)::int AS count FROM cds_containers t WHERE ${where}`,
+      params,
+    );
+    const summary = await client.query(
+      `SELECT
+         COUNT(*)::int AS registered,
+         COUNT(*) FILTER (WHERE status = 'available')::int AS available,
+         COUNT(*) FILTER (WHERE status IN ('booked','awaiting_pickup','in_transit','at_port'))::int AS in_operational_flow,
+         COUNT(*) FILTER (WHERE status = 'maintenance' OR condition IN ('damaged','retired'))::int AS review_required
+       FROM cds_containers WHERE deleted_at IS NULL`,
+    );
+    return {
+      data: result.rows,
+      total: total.rows[0].count,
+      summary: summary.rows[0],
+      limit,
+      offset,
+    };
   });
+  res.json(payload);
 }));
 router.get('/containers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_containers'); }));
 router.post('/containers', asyncHandler(async (req, res) => {
-  await createRow(req, res, 'cds_containers',
-    ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'manufacturer', 'year_built', 'condition', 'status']);
+  const body = req.body || {};
+  const number = normaliseContainerNumber(body.number);
+  const validation = validateContainerNumber(number);
+  if (!validation.ok) {
+    return res.status(400).json({
+      error: validation.reason === 'check_digit' ? 'invalid_container_check_digit' : 'invalid_container_number',
+      reason: validation.reason,
+      expected_check_digit: validation.expected,
+    });
+  }
+  // This register stores freight containers, not detachable equipment (J) or
+  // chassis/trailers (Z). The owner prefix still requires a separate BIC lookup.
+  if (number[3] !== 'U') return res.status(400).json({ error: 'freight_container_category_must_be_U' });
+
+  const equipmentTypes = {
+    '20GP': "20' General Purpose", '40GP': "40' General Purpose", '40HC': "40' High Cube",
+    '20RF': "20' Reefer", '40RF': "40' Reefer", '20OT': "20' Open Top",
+    '40OT': "40' Open Top", '20FR': "20' Flat Rack", '40FR': "40' Flat Rack", '20TK': "20' Tank",
+  };
+  const isoType = String(body.iso_type || '40HC').trim().toUpperCase();
+  if (!Object.prototype.hasOwnProperty.call(equipmentTypes, isoType)) {
+    return res.status(400).json({ error: 'invalid_container_equipment_type' });
+  }
+  const ownership = String(body.ownership || 'leased');
+  if (!['owned', 'leased', 'customer'].includes(ownership)) {
+    return res.status(400).json({ error: 'invalid_container_ownership' });
+  }
+  const condition = String(body.condition || 'good');
+  if (!['new', 'good', 'fair', 'damaged', 'retired'].includes(condition)) {
+    return res.status(400).json({ error: 'invalid_container_condition' });
+  }
+  const status = String(body.status || 'available');
+  if (!['available', 'maintenance'].includes(status)) {
+    return res.status(400).json({ error: 'new_container_status_must_be_available_or_maintenance' });
+  }
+  if (['damaged', 'retired'].includes(condition) && status !== 'maintenance') {
+    return res.status(400).json({ error: 'damaged_or_retired_container_requires_maintenance_status' });
+  }
+
+  const numericField = (value, name) => {
+    if (value == null || value === '') return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      const error = new Error(`invalid_${name}`);
+      error.status = 400;
+      throw error;
+    }
+    return parsed;
+  };
+  const maxWeight = numericField(body.max_weight_kg, 'max_weight_kg');
+  const tareWeight = numericField(body.tare_weight_kg, 'tare_weight_kg');
+  const yearBuilt = body.year_built == null || body.year_built === '' ? null : Number(body.year_built);
+  if (yearBuilt !== null && (!Number.isInteger(yearBuilt) || yearBuilt < 1950 || yearBuilt > new Date().getUTCFullYear() + 1)) {
+    return res.status(400).json({ error: 'invalid_container_year_built' });
+  }
+  const manufacturer = String(body.manufacturer || '').trim();
+  if (manufacturer.length > 100) return res.status(400).json({ error: 'container_manufacturer_too_long' });
+
+  try {
+    const created = await req.dbTx(async client => {
+      const result = await client.query(
+        `INSERT INTO cds_containers
+          (number, iso_type, container_type, container_size, ownership, max_weight_kg, tare_weight_kg,
+           manufacturer, year_built, condition, status, org_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [
+          number, isoType, equipmentTypes[isoType], Number.parseInt(isoType, 10),
+          ownership, maxWeight, tareWeight, manufacturer || null, yearBuilt,
+          condition, status, req.user.org_id,
+        ],
+      );
+      const container = result.rows[0];
+      await client.query(
+        `INSERT INTO cds_audit_logs
+          (action, entity_type, entity_id, user_id, user_name, before_data, after_data, ip_address, user_agent, org_id)
+         VALUES ('create','container',$1,$2,$3,NULL,$4,$5,$6,$7)`,
+        [
+          container.id, req.user.id || null, req.user.name || null,
+          JSON.stringify({
+            number: container.number, iso_type: container.iso_type, ownership: container.ownership,
+            condition: container.condition, status: container.status, manufacturer: container.manufacturer,
+            year_built: container.year_built, max_weight_kg: container.max_weight_kg,
+            tare_weight_kg: container.tare_weight_kg,
+          }),
+          req.ip || null, req.get ? req.get('user-agent') || null : null, req.user.org_id,
+        ],
+      );
+      return container;
+    });
+    return res.status(201).json({ data: created });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'container_number_already_registered' });
+    }
+    throw error;
+  }
 }));
 router.patch('/containers/:id', asyncHandler(async (req, res) => {
   await updateRow(req, res, 'cds_containers',
