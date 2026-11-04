@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, FileSpreadsheet, FileText, RefreshCw, Search } from 'lucide-react';
 import { CDSActivityIcon } from './CDSActivityIcon.js';
 
@@ -427,21 +427,24 @@ function auditTime(value: unknown): string {
 }
 
 export function AuditView() {
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [serverSearch, setServerSearch] = useState('');
   const [page, setPage] = useState(0);
   const pageSize = 100;
-  const { data, isLoading, isError, isFetching, refetch } = useCDSAuditLogs(pageSize, page * pageSize);
-  const items = (data?.data ?? []) as Row[];
-  const query = search.trim().toLowerCase();
-  const rows = items.filter(item => [
-    item['action'], item['entity_type'], item['entity_id'],
-    item['user_name'], item['user_id'], item['ip_address'],
-  ].some(value => String(value ?? '').toLowerCase().includes(query)));
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setServerSearch(searchInput.trim());
+      setPage(0);
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [searchInput]);
+  const { data, isLoading, isError, isFetching, isPlaceholderData, refetch } = useCDSAuditLogs(pageSize, page * pageSize, serverSearch);
+  const rows = (data?.data ?? []) as Row[];
   const total = Number(data?.total ?? 0);
   const first = total === 0 ? 0 : page * pageSize + 1;
   const last = Math.min((page + 1) * pageSize, total);
 
-  if (isLoading) return <LoadingState />;
+  if (isLoading && !data) return <LoadingState />;
 
   return (
     <div className="p-4 sm:p-6 max-w-[1680px] mx-auto space-y-4">
@@ -462,14 +465,14 @@ export function AuditView() {
       <div className="cds-audit-summary flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
         <div>
           <div className="text-[12px] font-semibold text-white">Persisted audit events</div>
-          <div className="text-[12px] text-slate-300 mt-0.5">{total.toLocaleString()} records returned by the audit endpoint</div>
+          <div className="text-[12px] text-slate-300 mt-0.5">{total.toLocaleString()} {serverSearch ? 'matching' : 'total'} persisted events returned by the audit endpoint</div>
         </div>
-        <div className="text-[12px] text-slate-300 font-mono tabular-nums">{first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}</div>
+        <div className="text-[12px] text-slate-300 font-mono tabular-nums">{isPlaceholderData ? 'Updating results…' : first.toLocaleString() + '–' + last.toLocaleString() + ' of ' + total.toLocaleString()}</div>
       </div>
 
       <label className="cds-container-search cds-audit-search">
         <Search size={16} aria-hidden="true" />
-        <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Filter this page by action, entity, actor or IP…" aria-label="Filter current audit page" />
+        <input value={searchInput} onChange={event => setSearchInput(event.target.value)} placeholder="Search all audit events by action, entity, actor or IP…" aria-label="Search the full organisation audit trail" />
       </label>
 
       {isError ? (
@@ -526,18 +529,18 @@ export function AuditView() {
                   );
                 })}
                 {rows.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-[13px] text-slate-300">{query ? 'No audit events match this page filter.' : 'No audit events were returned for this organisation.'}</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-[13px] text-slate-300">{serverSearch ? 'No audit events match this search.' : 'No audit events were returned for this organisation.'}</td></tr>
                 )}
               </tbody>
             </table>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-white/[.08]">
-            <span className="text-[12px] text-slate-300">Page {page + 1} · {rows.length} matching rows on this page</span>
+            <span className="text-[12px] text-slate-300">{isPlaceholderData ? 'Updating audit results…' : 'Page ' + (page + 1) + ' · ' + rows.length + ' events on this page'}</span>
             <div className="flex items-center gap-2">
-              <button type="button" className="cds-audit-page-button" disabled={page === 0 || isFetching} onClick={() => setPage(value => Math.max(0, value - 1))}>
+              <button type="button" className="cds-audit-page-button" disabled={page === 0 || isFetching || isPlaceholderData} onClick={() => setPage(value => Math.max(0, value - 1))}>
                 <ChevronLeft size={15} /> Previous
               </button>
-              <button type="button" className="cds-audit-page-button" disabled={(page + 1) * pageSize >= total || isFetching} onClick={() => setPage(value => value + 1)}>
+              <button type="button" className="cds-audit-page-button" disabled={(page + 1) * pageSize >= total || isFetching || isPlaceholderData} onClick={() => setPage(value => value + 1)}>
                 Next <ChevronRight size={15} />
               </button>
             </div>
