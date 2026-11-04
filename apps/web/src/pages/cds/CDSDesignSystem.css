@@ -758,3 +758,30 @@
     transition-duration: .01ms !important;
   }
 }
+
+
+.cds-loading-state {
+  display: flex;
+  min-height: min(64dvh, 520px);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  padding: 32px 20px;
+  text-align: center;
+}
+.cds-loading-title {
+  color: #dcecff;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.cds-loading-caption {
+  color: #91a8c6;
+  font-size: 13px;
+  font-weight: 500;
+}
+@media (min-width: 768px) and (max-width: 1199px) {
+  .cds-navigation--desktop .cds-nav-collapse { display: none; }
+}
