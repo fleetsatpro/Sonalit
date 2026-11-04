@@ -448,6 +448,15 @@ test.describe('SJM command-centre responsive smoke', () => {
     expect(travelVisual.programmeRadius).toBe('14px');
     expect(travelVisual.sectionHeadingFont.toLowerCase()).toContain('space grotesk');
     await audit('traveller dossier');
+    await page.getByTestId('sjm-travel-people-flights').getByRole('button', { name: 'Register traveller' }).click();
+    const registration = page.getByTestId('sjm-travel-workspace').locator('.sjm-traveller-wizard');
+    await audit('traveller registration identity');
+    await registration.getByRole('button', { name: 'Continue' }).click();
+    await audit('traveller registration contacts');
+    await registration.getByRole('button', { name: 'Continue' }).click();
+    await audit('traveller registration documents');
+    await registration.getByRole('button', { name: 'Continue' }).click();
+    await audit('traveller registration review');
   });
 
   test('uses the SJM visual system for readable typography, layered blue surfaces and medium KPI cards', async ({ page }) => {
@@ -976,7 +985,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await wizard.getByLabel('Given name *').fill('Amina');
     await wizard.getByLabel('Family / surname *').fill('Example');
     await wizard.getByLabel('Nationality / citizenship').selectOption({ label: 'Kenya' });
-    await expect(wizard.locator('.sjm-country-select img')).toBeVisible();
+    await expect(wizard.locator('.sjm-country-select img')).toHaveAttribute('src', /\\/ke\\.svg$/);
     await wizard.getByRole('button', { name: 'Continue' }).click();
     await expect(wizard.getByRole('heading', { name: 'Contacts and relationships' })).toBeVisible();
     await wizard.getByLabel('Email address').fill('amina@example.invalid');
