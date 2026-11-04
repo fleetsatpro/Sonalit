@@ -1170,6 +1170,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
     ) latest_trip ON TRUE
   `;
   const operationalStatusSql = `CASE
+    WHEN t.status = 'maintenance' OR t.condition IN ('damaged','retired') THEN 'maintenance'
     WHEN latest_booking_container.status = 'pending' THEN 'awaiting_pickup'
     WHEN latest_booking_container.status = 'assigned' THEN 'booked'
     WHEN latest_booking_container.status = 'in_transit' AND latest_trip.status = 'at_port' THEN 'at_port'
