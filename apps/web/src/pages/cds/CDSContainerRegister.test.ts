@@ -14,7 +14,8 @@ describe('ISO 6346 container identity', () => {
 
   it('rejects a mismatched check digit and malformed equipment category', () => {
     expect(isValidIso6346ContainerNumber('MSCU6639871')).toBe(false);
-    expect(isValidIso6346ContainerNumber('MSCC6639870')).toBe(false);
+    expect(isValidIso6346ContainerNumber('MSCJ6639870')).toBe(false);
+    expect(isValidIso6346ContainerNumber('MSCZ6639870')).toBe(false);
     expect(iso6346CheckDigit('MSCU12345')).toBeNull();
   });
 });
