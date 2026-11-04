@@ -460,7 +460,7 @@ export function InboxView() {
             const Icon = iconMap[String(item['icon'] ?? item['type'] ?? '')] ?? FileText;
             const timestamp = item['created_at'] ? new Date(String(item['created_at'])) : null;
             const dateLabel = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleString() : 'Timestamp unavailable';
-            const detailPairs = [
+            const detailPairs: Array<[string, unknown]> = [
               ['Recorded by', item['actor']], ['Container', item['container_number']],
               ['Booking', item['booking_number']], ['Trip', item['trip_number']],
               ['Lock', item['lock_serial']], ['Driver', item['driver_name']],
@@ -626,6 +626,7 @@ export function AnalyticsView() {
   }
 
   const s = data.summary;
+  const transporterLeaderboard = data.transporter_leaderboard ?? [];
   const fmt = (value: number | null | undefined) => value == null ? '—' : new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
   const pct = (value: number | null | undefined) => value == null ? '—' : Number(value).toFixed(1) + '%';
   const dateLabel = (value: string) => {
@@ -958,7 +959,7 @@ export function AnalyticsView() {
             <h3 className="mt-1 text-base sm:text-lg font-semibold">Transport partner performance</h3>
             <p className="mt-1 text-[11px] text-text-2">Equipment handled and delivery outcomes within the selected reporting window.</p>
           </div>
-          <span className="text-[9px] font-mono uppercase tracking-wider text-text-2">{data.transporter_leaderboard.length} ranked partners</span>
+          <span className="text-[9px] font-mono uppercase tracking-wider text-text-2">{transporterLeaderboard.length} ranked partners</span>
         </div>
         <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)] gap-3 sm:gap-4">
           <Card className="min-w-0 overflow-hidden">
@@ -970,15 +971,15 @@ export function AnalyticsView() {
               <span className="rounded-md border border-[#8eb9ed]/15 bg-[#8eb9ed]/[.05] px-2 py-1 text-[9px] text-[#b9d6f5]">{days} day window</span>
             </div>
             <div className="p-4 sm:p-5">
-              {data.transporter_leaderboard.length === 0 ? (
+              {transporterLeaderboard.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-white/10 p-7 text-center">
                   <div className="text-sm font-medium text-text-0">No partner trips in this window</div>
                   <p className="mt-1 text-[10px] text-text-2">The ranking appears when transporter-linked trips are recorded.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {data.transporter_leaderboard.map((partner, index) => {
-                    const max = Math.max(1, ...data.transporter_leaderboard.map(row => row.containers_handled));
+                  {transporterLeaderboard.map((partner, index) => {
+                    const max = Math.max(1, ...transporterLeaderboard.map(row => row.containers_handled));
                     const width = Math.min(100, partner.containers_handled / max * 100);
                     const etaKnown = partner.delivery_eta_observed > 0 && partner.on_time_rate != null;
                     return (

@@ -1193,6 +1193,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
     LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=c.org_id
     LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=c.org_id
     LEFT JOIN cds_drivers d ON d.id=t.driver_id AND d.org_id=c.org_id
+    LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=c.org_id
     LEFT JOIN LATERAL (
       SELECT ce.actor_name FROM cds_custody_events ce
        WHERE ce.org_id=c.org_id AND ce.booking_container_id=bc.id AND ce.kind='clamped'
@@ -1222,7 +1223,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
             bc.clamped_at AS last_clamped_at, bc.unclamped_at AS last_unclamped_at,
             COALESCE(clamp_event.actor_name, clamp_audit.user_name) AS last_clamped_by,
             COALESCE(unclamp_event.actor_name, unclamp_audit.user_name) AS last_unclamped_by,
-            bc.lock_number AS last_lock_serial,
+            COALESCE(bc.lock_number, el.serial) AS last_lock_serial,
             COALESCE(bc.transporter_name, tr.company_name) AS last_transporter_name,
             COALESCE(bc.driver_name, d.name) AS last_driver_name,
             COALESCE(bc.horse_reg, v.registration) AS last_vehicle_registration,
@@ -1646,12 +1647,52 @@ router.patch('/customers/:id', asyncHandler(async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 router.get('/transporters', asyncHandler(async (req, res) => {
-  const { limit, offset } = paginate(req.query);
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 200));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
   const filters = ['tr.org_id=$1', 'tr.deleted_at IS NULL'];
   const params = [req.user.org_id];
   if (typeof req.query.search === 'string' && req.query.search.trim()) {
     params.push('%' + req.query.search.trim() + '%');
-    filters.push('(tr.company_name ILIKE 
+    const searchParam = '$' + params.length;
+    filters.push('(tr.company_name ILIKE ' + searchParam + ' OR tr.email ILIKE ' + searchParam + ' OR tr.phone ILIKE ' + searchParam + ')');
+  }
+
+  const from = `
+    FROM cds_transporters tr
+    LEFT JOIN cds_vehicles v ON v.transporter_id=tr.id AND v.org_id=tr.org_id AND v.deleted_at IS NULL
+    LEFT JOIN cds_drivers d ON d.transporter_id=tr.id AND d.org_id=tr.org_id AND d.deleted_at IS NULL
+    LEFT JOIN cds_trips t ON t.transporter_id=tr.id AND t.org_id=tr.org_id AND t.deleted_at IS NULL
+    LEFT JOIN cds_booking_containers bc ON bc.trip_id=t.id AND bc.org_id=t.org_id AND bc.deleted_at IS NULL
+    WHERE ${filters.join(' AND ')}`;
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT tr.*,
+            COUNT(DISTINCT v.id)::int AS registered_trucks,
+            COUNT(DISTINCT d.id)::int AS registered_drivers,
+            COUNT(DISTINCT t.id)::int AS total_trips,
+            COUNT(DISTINCT COALESCE(t.container_id::text, NULLIF(UPPER(BTRIM(bc.container_number)), '')))
+              FILTER (WHERE t.id IS NOT NULL)::int AS containers_handled,
+            COUNT(DISTINCT COALESCE(t.container_id::text, NULLIF(UPPER(BTRIM(bc.container_number)), '')))
+              FILTER (WHERE t.id IS NOT NULL AND t.created_at >= NOW() - INTERVAL '30 days')::int AS containers_handled_30d,
+            COUNT(DISTINCT t.id)
+              FILTER (WHERE t.status NOT IN ('delivered','lock_removed','completed','archived'))::int AS active_trips,
+            COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL)::int AS completed_trips,
+            COUNT(DISTINCT t.id) FILTER (WHERE t.status='delayed')::int AS delayed_trips,
+            COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL)::int AS deliveries_with_eta,
+            COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL AND t.delivered_at <= t.eta)::int AS on_time_deliveries,
+            CASE WHEN COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL) > 0
+              THEN ROUND(100.0 * COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL AND t.delivered_at <= t.eta)
+                / COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL), 1)
+              ELSE NULL END AS on_time_rate
+       ${from}
+      GROUP BY tr.id
+      ORDER BY containers_handled DESC, total_trips DESC, tr.company_name ASC
+      LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  );
+  const total = await req.db(`SELECT COUNT(*) FROM cds_transporters tr WHERE ${filters.join(' AND ')}`, params.slice(0, -2));
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
 router.get('/transporters/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_transporters'); }));
 router.post('/transporters', asyncHandler(async (req, res) => {
   await createRow(req, res, 'cds_transporters',

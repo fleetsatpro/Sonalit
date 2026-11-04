@@ -522,7 +522,7 @@ export interface CDSAnalyticsPayload {
     rank: number; operator_id: string; operator_name: string; containers_clamped: number;
     containers_unclamped: number; clamp_actions: number; unclamp_actions: number; last_action_at: string;
   }>;
-  transporter_leaderboard: Array<{
+  transporter_leaderboard?: Array<{
     rank: number; transporter_id: string; company_name: string; containers_handled: number;
     trips_started: number; deliveries_completed: number; currently_delayed: number;
     delivery_eta_observed: number; on_time_deliveries: number; on_time_rate: number | null;

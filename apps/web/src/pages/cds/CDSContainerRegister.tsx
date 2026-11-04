@@ -486,7 +486,7 @@ export function CDSContainerRegister() {
                   <th className="px-3 py-3">Ownership</th>
                   <th className="px-3 py-3">Operational state</th>
                   <th className="px-3 py-3">Condition</th>
-                  <th className="px-3 py-3">Last custody action</th>
+                  <th className="px-3 py-3">Clamp / unclamp history</th>
                   <th className="px-3 py-3">Last assignment</th>
                   <th className="px-3 py-3">Recorded location</th>
                   <th className="px-3 py-3">Next inspection</th>
@@ -505,8 +505,6 @@ export function CDSContainerRegister() {
                   const clampValid = Boolean(clampAt && !Number.isNaN(clampAt.getTime()));
                   const unclampValid = Boolean(unclampAt && !Number.isNaN(unclampAt.getTime()));
                   const latestIsUnclamp = unclampValid && (!clampValid || unclampAt!.getTime() >= clampAt!.getTime());
-                  const latestMovementAt = latestIsUnclamp ? row['last_unclamped_at'] : row['last_clamped_at'];
-                  const latestMovementBy = latestIsUnclamp ? row['last_unclamped_by'] : row['last_clamped_by'];
                   const hasMovement = clampValid || unclampValid;
                   return (
                     <tr key={text(row, 'id')} tabIndex={0} role="button" aria-label={'Open container ' + text(row, 'number')} onClick={() => openDetails(row)} onKeyDown={event => keyOpen(event, row)} className="cursor-pointer outline-none transition-colors hover:bg-[#18304d]/45 focus-visible:bg-[#18304d]/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8eb9ed]/70">
@@ -523,12 +521,22 @@ export function CDSContainerRegister() {
                       <td className="px-3 py-3.5"><ConditionBadge condition={text(row, 'condition')} /></td>
                       <td className="px-3 py-3.5">
                         {hasMovement ? (
-                          <>
-                            <div className={'text-[11px] font-semibold ' + (latestIsUnclamp ? 'text-violet-200' : 'text-cds-teal')}>{latestIsUnclamp ? 'Unclamped' : 'Clamped'}</div>
-                            <div className="mt-1 whitespace-nowrap text-[10px] text-white/70">{formatDateTime(latestMovementAt)}</div>
-                            <div className="mt-1 text-[10px] text-white/40">By {display(latestMovementBy)}</div>
-                          </>
-                        ) : <span className="text-[10px] text-white/35">No clamp record</span>}
+                          <div className="space-y-2">
+                            {clampValid && (
+                              <div>
+                                <div className="text-[10px] font-semibold text-cds-teal">Clamped · {formatDateTime(row['last_clamped_at'])}</div>
+                                <div className="mt-0.5 text-[10px] text-white/40">By {display(row['last_clamped_by'])}</div>
+                              </div>
+                            )}
+                            {unclampValid && (
+                              <div className="border-t border-white/[.06] pt-1.5">
+                                <div className="text-[10px] font-semibold text-violet-200">Unclamped · {formatDateTime(row['last_unclamped_at'])}</div>
+                                <div className="mt-0.5 text-[10px] text-white/40">By {display(row['last_unclamped_by'])}</div>
+                              </div>
+                            )}
+                            <div className={'text-[9px] font-semibold uppercase tracking-wider ' + (latestIsUnclamp ? 'text-violet-200' : 'text-cds-teal')}>Latest recorded action · {latestIsUnclamp ? 'Unclamp' : 'Clamp'}</div>
+                          </div>
+                        ) : <span className="text-[10px] text-white/35">No clamp / unclamp timestamp</span>}
                       </td>
                       <td className="max-w-[210px] px-3 py-3.5">
                         <div className="font-mono text-[10px] text-[#bad8fb]">Lock · {display(row['last_lock_serial'])}</div>
