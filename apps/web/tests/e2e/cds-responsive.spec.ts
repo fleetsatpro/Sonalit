@@ -19,7 +19,13 @@ async function prepareCds(page: Page, width: number, height: number) {
   }, { profile: user });
 
   // Navigation QA uses explicit empty/synthetic read responses only.
-  // No operational data is fabricated or written.
+  // No operational data is fabricated or written. Register the fallback first:
+  // Playwright evaluates route handlers in reverse registration order.
+  await page.route('**/api/v1/cds/**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: [], total: 0 }),
+  }));
   await page.route('**/api/v1/cds/dashboard', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -43,11 +49,6 @@ async function prepareCds(page: Page, width: number, height: number) {
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({ data: [] }),
-  }));
-  await page.route('**/api/v1/cds/**', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ data: [], total: 0 }),
   }));
   await page.goto('/cds', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.cds-navigation--desktop')).toBeAttached({
