@@ -9,7 +9,6 @@ import { CDSActivityIcon } from './CDSActivityIcon.js';
 import { useAuthStore } from '../../stores/auth.js';
 
 import { ContainersView, BookingsView, DriversView, TransportersView } from './CDSDataPage.js';
-import { CDSIntro } from './CDSIntro.js';
 import { CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
 import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack, useTransitionTrip, useMarkDeparted } from './hooks.js';
@@ -121,10 +120,6 @@ export default function CDSApp() {
   const [expanded, setExpanded] = useState(() => {
     try { return localStorage.getItem('cds-rail') !== '0'; } catch { return true; }
   });
-  // Once per session, not once per navigation.
-  const [showIntro, setShowIntro] = useState(() => {
-    try { return !sessionStorage.getItem('cds-intro-seen'); } catch { return false; }
-  });
   useEffect(() => {
     try { localStorage.setItem('cds-rail', expanded ? '1' : '0'); } catch { /* */ }
   }, [expanded]);
@@ -192,10 +187,6 @@ export default function CDSApp() {
   };
 
 
-  const endIntro = () => {
-    try { sessionStorage.setItem('cds-intro-seen', '1'); } catch { /* */ }
-    setShowIntro(false);
-  };
   const currentView = CDS_VIEWS.find(v => v.id === activeView);
   const activeSection = NAV_SECTIONS.flatMap(section => section.items).find(item => item.views.includes(activeView)) ?? NAV_SECTIONS[0].items[0];
   const secondaryTabs = SECONDARY_NAV[activeSection.id] ?? [];
@@ -203,7 +194,6 @@ export default function CDSApp() {
 
   return (
     <div className="cds-modern flex h-dvh text-white overflow-hidden">
-      {showIntro && <CDSIntro onDone={endIntro} />}
       {/* ── Primary navigation ── */}
       <nav
         aria-label="Container Management navigation"
