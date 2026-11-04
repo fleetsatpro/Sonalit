@@ -233,3 +233,51 @@ describe('GET /containers', () => {
     expect(req.statements).toHaveLength(0);
   });
 });
+
+
+describe('GET /audit', () => {
+  async function call(query = {}) {
+    const statements = [];
+    const req = {
+      query,
+      db: async (sql, params) => {
+        statements.push({ sql, params });
+        if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ count: '245' }] };
+        return { rows: [{
+          id: 'audit-1', action: 'create', entity_type: 'container',
+          entity_id: 'container-1', user_name: 'Operations Desk',
+        }] };
+      },
+    };
+    const res = response();
+    await handlerFor('/audit', 'get')(req, res, error => { if (error) throw error; });
+    return { res, statements };
+  }
+
+  test('searches the full organisation audit result set before pagination', async () => {
+    const { res, statements } = await call({
+      search: 'lock', entity_type: 'container', limit: '100', offset: '200',
+    });
+    expect(res.body).toMatchObject({
+      total: 245,
+      limit: 100,
+      offset: 200,
+      data: [{ id: 'audit-1', action: 'create', entity_type: 'container' }],
+    });
+    expect(statements[0].sql).toContain('action ILIKE $2');
+    expect(statements[0].sql).toContain('entity_id::text ILIKE $2');
+    expect(statements[0].sql).toContain('ORDER BY created_at DESC, id DESC LIMIT $3 OFFSET $4');
+    expect(statements[0].params).toEqual(['container', '%lock%', 100, 200]);
+    expect(statements[1].params).toEqual(['container', '%lock%']);
+  });
+
+  test('rejects excessively long audit search before querying', async () => {
+    const statements = [];
+    const req = { query: { search: 'x'.repeat(151) }, db: async (...args) => { statements.push(args); return { rows: [] }; } };
+    const res = response();
+    await handlerFor('/audit', 'get')(req, res, error => { if (error) throw error; });
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('audit_search_too_long');
+    expect(statements).toHaveLength(0);
+  });
+});
