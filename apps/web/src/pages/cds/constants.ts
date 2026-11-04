@@ -5,20 +5,20 @@ export interface CDSViewDef {
 }
 
 export const CDS_VIEWS: CDSViewDef[] = [
-  { id: 'dashboard', label: 'Dashboard', sub: "TODAY'S OPERATIONS OVERVIEW" },
-  { id: 'live', label: 'Live Operations', sub: 'REAL-TIME FLEET TRACKING' },
-  { id: 'containers', label: 'Containers', sub: 'CHAIN-OF-CUSTODY TRACKING' },
-  { id: 'bookings', label: 'Bookings', sub: 'BOOKING REF · CONTAINERS · CLIENT PULSE' },
-  { id: 'locks', label: 'E-Locks', sub: 'FLEET LOCK HEALTH' },
-  { id: 'drivers', label: 'Drivers', sub: 'FIELD TEAM ROSTER' },
-  { id: 'transporters', label: 'Transporters', sub: 'CONTRACTED PARTNERS' },
-  { id: 'port', label: 'Port Operations', sub: 'MOMBASA PORT UNCLAMP QUEUE' },
-  { id: 'pulse', label: 'Client Pulse', sub: 'HOURLY AUTO-UPDATES · EXCEPTION ALERTS' },
-  { id: 'inbox', label: 'Dispatch Log', sub: 'FIELD ACTIVITY · CUSTODY CHAIN · ALERTS' },
-  { id: 'billing', label: 'Billing', sub: 'BILLED BY BOOKING REFERENCE' },
-  { id: 'reports', label: 'Reports', sub: 'GENERATE & EXPORT' },
-  { id: 'analytics', label: 'Analytics', sub: 'FLEET PERFORMANCE, LAST 30 DAYS' },
-  { id: 'settings', label: 'Settings', sub: 'ACCOUNT & PLATFORM PREFERENCES' },
+  { id: 'dashboard', label: 'Overview', sub: 'CURRENT CONTAINER OPERATIONS' },
+  { id: 'live', label: 'Live tracking', sub: 'GPS POSITIONS WITH SOURCE AND FRESHNESS' },
+  { id: 'containers', label: 'Containers', sub: 'INVENTORY, CONDITION AND CUSTODY' },
+  { id: 'bookings', label: 'Bookings', sub: 'CUSTOMER REQUESTS AND CONTAINER ASSIGNMENTS' },
+  { id: 'locks', label: 'E-locks', sub: 'LOCK INVENTORY, HEALTH AND TAMPER EVENTS' },
+  { id: 'drivers', label: 'Drivers', sub: 'DRIVER RECORDS AND OPERATIONAL READINESS' },
+  { id: 'transporters', label: 'Transporters', sub: 'TRANSPORT PARTNERS AND CAPACITY' },
+  { id: 'port', label: 'Yard & port', sub: 'ARRIVALS, PORT QUEUES AND UNCLAMP ACTIONS' },
+  { id: 'pulse', label: 'Exceptions', sub: 'DELAYED, STALE AND ACTIONABLE BOOKINGS' },
+  { id: 'inbox', label: 'Activity log', sub: 'RECORDED FIELD ACTIVITY AND EVENT HISTORY' },
+  { id: 'billing', label: 'Billing', sub: 'COMPLETED BOOKINGS AWAITING BILLING' },
+  { id: 'reports', label: 'Reports', sub: 'GENERATED OPERATIONAL REPORTS' },
+  { id: 'analytics', label: 'Performance', sub: 'MOVEMENT, THROUGHPUT AND OPERATIONAL TRENDS' },
+  { id: 'settings', label: 'Administration', sub: 'ACCOUNT PROFILE AND FIELD ACCESS' },
 ];
 
 export const PIPELINE_STAGES = [
