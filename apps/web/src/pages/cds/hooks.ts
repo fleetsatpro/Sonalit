@@ -51,14 +51,17 @@ export function useActivity(limit = 30) {
   });
 }
 
-export function useCDSAuditLogs(limit = 100, offset = 0) {
+export function useCDSAuditLogs(limit = 100, offset = 0, search = '') {
   return useQuery<ApiList>({
-    queryKey: ['cds', 'audit', limit, offset],
+    queryKey: ['cds', 'audit', limit, offset, search],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/audit', { params: { limit, offset } });
+      const params: Record<string, unknown> = { limit, offset };
+      if (search.trim()) params['search'] = search.trim();
+      const { data } = await cdsApi.get('/audit', { params });
       return data;
     },
     refetchInterval: 60_000,
+    placeholderData: previous => previous,
   });
 }
 
