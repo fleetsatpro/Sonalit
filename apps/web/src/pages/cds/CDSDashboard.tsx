@@ -3,6 +3,7 @@ import {
   Search, Bell, ChevronLeft, PanelLeftClose, PanelLeft,
   LayoutDashboard, MapPin, ClipboardList, Package, Lock,
   Users, Truck, Anchor, Activity, FileText, BarChart2, Settings,
+  RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
