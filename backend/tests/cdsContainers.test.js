@@ -286,3 +286,44 @@ describe('GET /audit', () => {
     expect(statements).toHaveLength(0);
   });
 });
+
+
+describe('legacy trip mutation guards', () => {
+  async function call(path, method, action) {
+    const statements = [];
+    const req = {
+      params: { id: 'trip-1' },
+      body: action === 'clamp' ? { container_number: 'MSKU1234565' } : {},
+      user: { id: 'operator-1', org_id: 'org-1' },
+      db: async (sql, params) => {
+        statements.push({ sql, params });
+        if (sql.includes('SELECT id, booking_id FROM cds_trips')) {
+          return { rows: [{ id: 'trip-1', booking_id: 'booking-1' }] };
+        }
+        if (sql.includes('SELECT id FROM cds_booking_containers')) {
+          return { rows: [{ id: 'manifest-1' }] };
+        }
+        throw new Error('unexpected SQL for legacy trip guard');
+      },
+    };
+    const res = response();
+    await handlerFor(path, method)(req, res, error => { if (error) throw error; });
+    return { res, statements };
+  }
+
+  test.each([
+    ['/trips/:id/clamp', 'clamp'],
+    ['/trips/:id/unclamp', 'unclamp'],
+  ])('%s returns a manifest migration response and performs no mutation', async (path, action) => {
+    const { res, statements } = await call(path, 'post', action);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({
+      error: 'manifest_workflow_required',
+      booking_id: 'booking-1',
+      booking_container_id: 'manifest-1',
+      required_endpoint: '/api/v1/cds/bookings/booking-1/containers/manifest-1/' + action,
+    });
+    expect(statements).toHaveLength(2);
+    expect(statements.every(statement => statement.sql.trim().startsWith('SELECT'))).toBe(true);
+  });
+});
