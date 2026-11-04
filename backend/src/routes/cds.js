@@ -2311,13 +2311,14 @@ router.get('/field/departures', asyncHandler(async (req, res) => {
 }));
 
 // Yard team clamps an e-lock onto one container of a booking.
-// Auto-creates supporting rows (transporter, driver, vehicle, container, lock, trip)
-// so the mobile UI only needs to send free-text names and numbers.
-// requireIdempotencyKey is a no-op unless the caller sends x-idempotency-key,
-// so nothing changes for the online path. The field app's offline queue does
-// send one, and it must: a clamp creates a trip and upserts a driver/vehicle/
-// lock, so a queued submission retried after a flaky-network timeout would
-// otherwise create a second trip for the same container.
+// Supporting resources must already exist in the organisation register:
+// eligible drivers with valid licences, available vehicles, registered
+// transporters and available lock serials. The physical container may be
+// discovered from the booking manifest, but its ownership remains unverified
+// until documentary evidence is added.
+// requireIdempotencyKey serialises duplicate requests by organisation and key;
+// online requests and offline replays use the same action UUID so a lost
+// response cannot create a second trip or strand its one-time QR.
 router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTransaction(async (req, res) => {
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
@@ -2390,7 +2391,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   // with an unexpired licence and no other open journey; never invent a
   // PENDING licence number or a future expiry date.
   const dr = await req.db(
-    'SELECT id, phone, license_number, license_expiry, status FROM cds_drivers WHERE LOWER(BTRIM(name))=LOWER(BTRIM($1)) AND org_id=$2 AND deleted_at IS NULL ORDER BY id LIMIT 2 FOR UPDATE',
+    `SELECT id, phone, license_number, license_expiry, status,
+            (license_expiry >= CURRENT_DATE) AS license_is_current
+       FROM cds_drivers
+      WHERE LOWER(BTRIM(name))=LOWER(BTRIM($1))
+        AND org_id=$2 AND deleted_at IS NULL
+      ORDER BY id LIMIT 2 FOR UPDATE`,
     [cleanDriverName, orgId]
   );
   if (!dr.rows.length) {
@@ -2403,7 +2409,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   const cleanDriverPhone = driver.phone ? String(driver.phone).trim() : null;
   const licenseNumber = String(driver.license_number || '').trim().toUpperCase();
   if (!licenseNumber || ['PENDING','UNKNOWN','N/A','NA','TBC','-'].includes(licenseNumber)
-    || !driver.license_expiry || new Date(driver.license_expiry).getTime() <= Date.now()) {
+    || !driver.license_expiry || driver.license_is_current !== true) {
     return res.status(409).json({ error: 'driver_licence_not_valid', message: 'The driver needs a valid, unexpired licence on their personnel record.' });
   }
   if (driver.status !== 'available') {
