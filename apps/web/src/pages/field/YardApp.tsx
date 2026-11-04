@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
-import { useYardQueue, useBookingContainers, useClampBookingContainer } from '../cds/hooks.js';
+import { useYardQueue, useBookingContainers, useYardResources, useClampBookingContainer } from '../cds/hooks.js';
 
 import { OfflineBanner, useOfflineQueue } from './OfflineBanner.js';
 import { enqueue, isOnline } from './offlineQueue.js';
@@ -194,6 +194,11 @@ function ClampForm({ booking, container, onClose, onDone }: {
 }) {
   const clamp = useClampBookingContainer();
   const offline = !useOfflineQueue().online;
+  const { data: resourceResult, isLoading: resourcesLoading, isError: resourcesError, refetch: refetchResources } = useYardResources();
+  const drivers = resourceResult?.data?.drivers ?? [];
+  const vehicles = resourceResult?.data?.vehicles ?? [];
+  const transporters = resourceResult?.data?.transporters ?? [];
+  const locks = resourceResult?.data?.locks ?? [];
   const [lockSerial, setLockSerial] = useState('');
   const [transporter, setTransporter] = useState('');
   const [truckReg, setTruckReg] = useState('');
@@ -298,27 +303,49 @@ function ClampForm({ booking, container, onClose, onDone }: {
       </header>
 
       <form onSubmit={submit} className="p-4 space-y-4 pb-32">
+        {resourcesError && (
+          <div role="alert" className="rounded-xl border border-cds-red/25 bg-cds-red/10 px-3 py-2.5">
+            <div className="text-[11px] font-semibold text-cds-red">Resource register unavailable</div>
+            <p className="text-[10px] leading-relaxed text-text-2 mt-1">Do not type substitute names or serials. Refresh the verified resource list before confirming a clamp.</p>
+            <button type="button" onClick={() => { void refetchResources(); }} className="text-[11px] font-semibold text-cds-orange mt-2">Retry resource list</button>
+          </div>
+        )}
+
         <FieldSection label="Lock &amp; vehicle">
-          <IconField icon={<Lock size={14} />} label="E-Lock serial *" value={lockSerial} onChange={setLockSerial}
-            placeholder="e.g. SL-000123" autoCapitalize="characters" autoFocus />
-          <IconField icon={<Building2 size={14} />} label="Registered transporter" value={transporter} onChange={setTransporter}
-            placeholder="Exact company name from CDS register" />
+          <IconSelectField icon={<Lock size={14} />} label="Available E-lock *" value={lockSerial} onChange={setLockSerial}
+            placeholder={resourcesLoading ? 'Loading registered locks…' : 'Select an available lock'}
+            disabled={resourcesLoading || locks.length === 0}
+            options={locks.map(lock => ({
+              value: s(lock['serial']),
+              label: s(lock['serial']) + ' · ' + (lock['last_heartbeat'] ? 'heartbeat received' : 'telemetry unverified'),
+            }))} />
           <p className="text-[10px] leading-relaxed text-text-2 -mt-1">
-            Optional. The transporter must already exist in the CDS register; unregistered companies cannot be assigned at the gate.
+            A lock without a heartbeat can still be physically assigned, but Sonalit will not show it as live hardware telemetry.
           </p>
+          <IconSelectField icon={<Building2 size={14} />} label="Registered transporter" value={transporter} onChange={setTransporter}
+            placeholder="No transporter selected (optional)"
+            disabled={resourcesLoading}
+            options={transporters.map(item => ({ value: s(item['company_name']), label: s(item['company_name']) }))} />
           <div className="grid grid-cols-2 gap-2.5">
-            <IconField icon={<Truck size={14} />} label="Truck (horse) reg *" value={truckReg} onChange={setTruckReg}
-              placeholder="KAA 123A" autoCapitalize="characters" />
+            <IconSelectField icon={<Truck size={14} />} label="Available truck *" value={truckReg} onChange={setTruckReg}
+              placeholder={resourcesLoading ? 'Loading vehicles…' : 'Select a truck'}
+              disabled={resourcesLoading || vehicles.length === 0}
+              options={vehicles.map(item => ({ value: s(item['registration']), label: s(item['registration']) }))} />
             <IconField icon={<Truck size={14} />} label="Trailer reg" value={trailerReg} onChange={setTrailerReg}
               placeholder="KAA 456B" autoCapitalize="characters" />
           </div>
         </FieldSection>
 
         <FieldSection label="Registered driver">
-          <IconField icon={<UserRound size={14} />} label="Driver full name *" value={driverName} onChange={setDriverName}
-            placeholder="Exact name from CDS driver register" />
+          <IconSelectField icon={<UserRound size={14} />} label="Eligible driver *" value={driverName} onChange={setDriverName}
+            placeholder={resourcesLoading ? 'Loading eligible drivers…' : 'Select a licensed driver'}
+            disabled={resourcesLoading || drivers.length === 0}
+            options={drivers.map(item => ({
+              value: s(item['name']),
+              label: s(item['name']) + ' · licence to ' + String(item['license_expiry'] ?? 'date not recorded').slice(0, 10),
+            }))} />
           <p className="text-[10px] leading-relaxed text-text-2 -mt-1">
-            Select a driver already registered with a current, unexpired licence and an available duty status. Driver contact details are taken from that personnel record, not re-entered here.
+            Only drivers with an available duty status and a current, verified licence are listed. Contact details come from the personnel record.
           </p>
         </FieldSection>
 
@@ -363,6 +390,34 @@ function FieldSection({ label, children }: { label: string; children: React.Reac
     <div>
       <div className="text-[10px] font-bold font-mono uppercase tracking-widest text-cds-orange/80 mb-2">{label}</div>
       <div className="space-y-2.5">{children}</div>
+    </div>
+  );
+}
+
+function IconSelectField({ icon, label, value, onChange, placeholder, options, disabled = false }: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <div>
+      <label className="block text-[11px] font-medium text-text-2 mb-1">{label}</label>
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-2 pointer-events-none">{icon}</span>
+        <select
+          value={value}
+          onChange={event => onChange(event.target.value)}
+          disabled={disabled}
+          className="w-full h-11 pl-9 pr-3 rounded-lg bg-white/[.04] border border-white/[.08] text-text-0 text-[14px] outline-none focus:border-cds-orange/50 transition-colors disabled:opacity-45"
+        >
+          <option value="">{placeholder}</option>
+          {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </div>
     </div>
   );
 }
