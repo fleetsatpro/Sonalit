@@ -203,81 +203,72 @@ export default function CDSApp() {
   return (
     <div className="flex h-dvh bg-[#0c0e12] text-white overflow-hidden">
       {showIntro && <CDSIntro onDone={endIntro} />}
-      {/* ── sidebar ── */}
+      {/* ── Primary navigation ── */}
       <nav
-        className="flex flex-col flex-shrink-0 bg-[#08090d] border-r border-white/[.06] overflow-y-auto overflow-x-hidden"
-        style={{ width: railW, transition: 'width .2s ease', scrollbarWidth: 'none' }}
+        aria-label="Container Management navigation"
+        className="cds-sidebar hidden md:flex flex-col flex-shrink-0 overflow-y-auto overflow-x-hidden"
+        style={{ width: railW, transition: 'width 220ms cubic-bezier(.2,.75,.25,1)', scrollbarWidth: 'none' }}
       >
-        {/* brand */}
-        <div className="flex items-center gap-2.5 border-b border-white/[.06] flex-shrink-0"
-          style={{ padding: expanded ? '14px 14px 12px' : '14px 0 12px', justifyContent: expanded ? 'flex-start' : 'center' }}
-        >
+        <div className="cds-sidebar-brand flex items-center gap-3 flex-shrink-0">
           <button
+            type="button"
             onClick={() => nav({ to: '/' })}
-            className="flex items-center justify-center flex-shrink-0 rounded-lg text-[#0c0e12]"
+            className="cds-brand-mark flex items-center justify-center flex-shrink-0"
+            aria-label="Back to Sonalit"
             title="Back to Sonalit"
-            style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #F0B429, #ff7a00)', border: 'none', cursor: 'pointer' }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M20 7H4c-1.1 0-2 .9-2 2v6c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2ZM8 15H6v-6h2v6Zm4 0h-2v-6h2v6Zm4 0h-2v-6h2v6Zm4 0h-2v-6h2v6ZM21 4H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2ZM21 18H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z" fill="#0c0e12" />
-            </svg>
+            <span aria-hidden="true">C</span>
           </button>
           {expanded && (
             <div className="min-w-0">
-              <div className="text-[13px] font-bold tracking-wide text-white/90">CONTAINER MANAGEMENT</div>
-              <div className="text-[9px] font-mono tracking-widest text-white/30 mt-px">CONTAINERISED LOGISTICS</div>
+              <div className="text-[15px] font-semibold tracking-tight text-white">Container Management</div>
+              <div className="text-[11px] font-medium text-slate-300 mt-0.5">SONALIT OPERATIONS</div>
             </div>
           )}
         </div>
 
         <button
+          type="button"
           onClick={() => nav({ to: '/' })}
-          className="flex items-center gap-2 mx-2 mt-2 mb-1 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[.04] transition-colors"
-          style={{ padding: expanded ? '8px 10px' : '8px 0', justifyContent: expanded ? 'flex-start' : 'center' }}
+          className="cds-back-link flex items-center gap-2 mx-3 mt-3 mb-2 rounded-lg"
+          style={{ padding: expanded ? '10px 12px' : '10px 0', justifyContent: expanded ? 'flex-start' : 'center' }}
+          title="Back to Sonalit"
         >
-          <ChevronLeft size={14} strokeWidth={2} />
-          {expanded && <span className="text-[11px] font-medium">Back to Sonalit</span>}
+          <ChevronLeft size={17} strokeWidth={1.9} />
+          {expanded && <span className="text-[13px] font-medium">Back to Sonalit</span>}
         </button>
 
-        <div className="flex-1 py-1">
+        <div className="flex-1 py-2">
           {NAV_SECTIONS.map(section => (
-            <div key={section.label} className="mb-1">
+            <div key={section.label} className="mb-2">
               {expanded && (
-                <div className="px-4 pt-3 pb-1 text-[9px] font-semibold font-mono tracking-[.14em] uppercase text-white/20">
-                  {section.label}
-                </div>
+                <div className="cds-nav-section-label px-5 pt-4 pb-2">{section.label}</div>
               )}
               {!expanded && section !== NAV_SECTIONS[0] && (
-                <div className="mx-3 my-1.5 border-t border-white/[.06]" />
+                <div className="mx-4 my-3 border-t border-white/[.09]" />
               )}
-              {section.ids.map(id => {
-                const v = CDS_VIEWS.find(x => x.id === id);
-                if (!v) return null;
-                const iconData = VIEW_ICON_DATA[id];
-                const active = activeView === id;
+              {section.items.map(item => {
+                const Icon = item.icon;
+                const active = item.views.includes(activeView);
                 return (
                   <button
-                    key={id}
-                    onClick={() => setActiveView(id as CDSView)}
-                    title={expanded ? undefined : v.label}
-                    className="flex items-center w-full border-none cursor-pointer transition-all duration-150"
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveView(item.view)}
+                    title={expanded ? undefined : item.label}
+                    aria-current={active ? 'page' : undefined}
+                    className={'cds-nav-link flex items-center w-full text-left ' + (active ? 'is-active' : '')}
                     style={{
-                      gap: expanded ? 10 : 0,
-                      padding: expanded ? '9px 14px' : '9px 0',
+                      gap: expanded ? 12 : 0,
+                      padding: expanded ? '11px 18px' : '11px 0',
                       justifyContent: expanded ? 'flex-start' : 'center',
-                      background: active ? 'rgba(240,180,41,.10)' : 'transparent',
-                      borderLeft: active ? '3px solid #F0B429' : '3px solid transparent',
                     }}
                   >
-                    {iconData && (
-                      <span style={{ opacity: active ? 1 : 0.55, transition: 'opacity .15s' }}>
-                        <NavIcon d={iconData.d} from={iconData.from} to={iconData.to} id={`ni-${id}`} />
-                      </span>
-                    )}
+                    <Icon size={19} strokeWidth={1.85} className="flex-shrink-0" aria-hidden="true" />
                     {expanded && (
-                      <span className="text-[12.5px] font-medium truncate"
-                        style={{ color: active ? '#F0B429' : 'rgba(255,255,255,.5)' }}>
-                        {v.label}
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[14px] font-semibold truncate">{item.label}</span>
+                        <span className="cds-nav-description block text-[11px] mt-0.5 truncate">{item.description}</span>
                       </span>
                     )}
                   </button>
@@ -288,11 +279,14 @@ export default function CDSApp() {
         </div>
 
         <button
+          type="button"
           onClick={() => setExpanded(e => !e)}
-          className="flex items-center justify-center gap-2 mx-2 mb-3 py-2 rounded-lg text-white/25 hover:text-white/50 hover:bg-white/[.04] transition-colors border-none cursor-pointer bg-transparent"
+          className="cds-collapse-control flex items-center justify-center gap-2 mx-3 mb-4 py-3 rounded-xl"
+          aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
+          title={expanded ? 'Collapse navigation' : 'Expand navigation'}
         >
-          {expanded ? <PanelLeftClose size={15} /> : <PanelLeft size={15} />}
-          {expanded && <span className="text-[11px]">Collapse</span>}
+          {expanded ? <PanelLeftClose size={17} /> : <PanelLeft size={17} />}
+          {expanded && <span className="text-[13px] font-medium">Collapse navigation</span>}
         </button>
       </nav>
 
