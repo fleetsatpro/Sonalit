@@ -9,7 +9,9 @@
  * out of an operator log, ordering is newest-first across sources, and the
  * limit is applied to the merge rather than per source.
  */
-const { activityFeed } = require('../src/utils/cdsActivityFeed');
+const { activityFeed: buildActivityFeed } = require('../src/utils/cdsActivityFeed');
+const ORG_ID = 'org-1';
+const activityFeed = (db, limit) => buildActivityFeed(db, ORG_ID, limit);
 
 // Stands in for req.db. Routes each query to rows by matching the table it
 // reads, and records the SQL so the telemetry exclusion can be asserted.
@@ -190,5 +192,46 @@ describe('device, trip and alert entries', () => {
     const [ack] = await activityFeed(
       fakeDb({ cds_alerts: [{ ...ALERT, acknowledged: true }] }), 50);
     expect(ack.meta).toContain('acknowledged');
+  });
+});
+
+describe('tenant scope and clamp-time attribution', () => {
+  it('scopes all four activity sources to the authenticated organisation', async () => {
+    const db = fakeDb(allSources);
+    await activityFeed(db, 7);
+
+    expect(db.seen).toHaveLength(4);
+    for (const { sql, params } of db.seen) {
+      expect(sql).toMatch(/\\borg_id\\s*=\\s*\\$1/i);
+      expect(params).toEqual([ORG_ID, 7]);
+    }
+  });
+
+  it('uses the clamp audit snapshot instead of mutable trip or manifest assignments', async () => {
+    const db = fakeDb({
+      cds_custody_events: [{
+        ...CUSTODY,
+        driver_name: 'Driver at clamp',
+        driver_contact: '+254700000001',
+        vehicle_registration: 'KDA 222B',
+        transporter_name: 'Carrier at clamp',
+        has_clamp_audit_snapshot: true,
+      }],
+    });
+    const [entry] = await activityFeed(db, 10);
+
+    expect(entry).toMatchObject({
+      driver_name: 'Driver at clamp',
+      driver_contact: '+254700000001',
+      vehicle_registration: 'KDA 222B',
+      transporter_name: 'Carrier at clamp',
+      assignment_source: 'clamp_audit_snapshot',
+    });
+    const custodyQuery = db.seen.find(item => item.sql.includes('cds_custody_events'));
+    expect(custodyQuery.sql).toContain("clamp_audit.after_data->>'driver_name'");
+    expect(custodyQuery.sql).toContain("clamp_audit.after_data->>'truck_reg'");
+    expect(custodyQuery.sql).toContain("clamp_audit.after_data->>'transporter_name'");
+    expect(custodyQuery.sql).toContain('a.org_id=ce.org_id');
+    expect(custodyQuery.sql).not.toContain('COALESCE(bc.driver_name, d.name)');
   });
 });
