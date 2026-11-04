@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Search, Plus } from 'lucide-react';
-import { FilterChip, StatusBadge } from './components.js';
+import { Badge, FilterChip, StatusBadge } from './components.js';
 import { CONTAINER_TYPES } from './constants.js';
 import { useContainers, useCreateContainer } from './hooks.js';
 import { useCDSStore } from './store.js';
@@ -71,6 +71,14 @@ export function isValidIso6346ContainerNumber(containerNumber: string): boolean 
   return checkDigit !== null && checkDigit === Number(code[10]);
 }
 
+function ConditionBadge({ condition }: { condition: string }) {
+  const variant = condition === 'new' || condition === 'good'
+    ? 'ok'
+    : condition === 'fair' ? 'warn'
+      : condition === 'damaged' || condition === 'retired' ? 'bad' : 'neutral';
+  return <Badge variant={variant}>{condition ? pretty(condition).toUpperCase() : 'UNKNOWN'}</Badge>;
+}
+
 function Metric({ label, value, note }: { label: string; value: number | undefined; note: string }) {
   return (
     <div className="min-w-0 border-l border-white/[.09] pl-4 first:border-l-0 first:pl-0">
@@ -104,14 +112,14 @@ function ContainerDetails({ container }: { container: Row }) {
         <div className="mt-1 text-[11px] text-white/45">{display(container['container_type'])} · {display(container['iso_type'])}</div>
         <div className="mt-3 flex flex-wrap gap-2">
           <StatusBadge status={text(container, 'status') || 'unknown'} />
-          <StatusBadge status={text(container, 'condition') || 'unknown'} />
+          <ConditionBadge condition={text(container, 'condition')} />
         </div>
       </div>
       <section>
         <div className="mb-1 text-[9px] font-semibold uppercase tracking-[.16em] text-[#8eb9ed]">Identity & ownership</div>
         <dl>
           {field('Container number', number)}
-          {field('ISO equipment code', container['iso_type'])}
+          {field('Equipment type', container['iso_type'])}
           {field('Ownership', container['ownership'])}
           {field('Operational state', pretty(text(container, 'status')))}
           {field('Physical condition', pretty(text(container, 'condition')))}
@@ -218,7 +226,7 @@ function RegisterContainerForm() {
       </label>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block">
-          <span className={labelClass}>ISO equipment type *</span>
+          <span className={labelClass}>Equipment type / size *</span>
           <select value={isoType} onChange={event => setIsoType(event.target.value)} className={fieldClass}>
             {Object.entries(TYPES).map(([code, name]) => <option key={code} value={code}>{code} · {name}</option>)}
           </select>
@@ -412,7 +420,7 @@ export function CDSContainerRegister() {
                       </td>
                       <td className="px-3 py-3.5 text-[11px] text-white/65">{pretty(text(row, 'ownership')) || 'Not recorded'}</td>
                       <td className="px-3 py-3.5"><StatusBadge status={text(row, 'status') || 'unknown'} /></td>
-                      <td className="px-3 py-3.5"><StatusBadge status={text(row, 'condition') || 'unknown'} /></td>
+                      <td className="px-3 py-3.5"><ConditionBadge condition={text(row, 'condition')} /></td>
                       <td className="max-w-[180px] px-3 py-3.5">
                         <div className="truncate text-[11px] text-white/70">{text(row, 'current_location') || 'Not recorded'}</div>
                         {row['lat'] != null && row['lng'] != null && <div className="mt-1 font-mono text-[9px] text-white/35">{Number(row['lat']).toFixed(4)}, {Number(row['lng']).toFixed(4)}</div>}
