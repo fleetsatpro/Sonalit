@@ -136,7 +136,7 @@ function ContainerDetails({ container }: { container: Row }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[.15em] text-[#a9cdf4]">Movement & custody history</div>
-            <p className="mt-1 text-[10px] text-white/45">Recorded clamp and unclamp actions, with the assigned lock, driver and vehicle linked to each movement. The custody hash verifies the event itself. Driver, vehicle and lock attribution uses the clamp-time audit snapshot when available; older records fall back to manifest or linked-trip records.</p>
+            <p className="mt-1 text-[10px] text-white/45">Recorded clamp and unclamp actions, with the assigned lock, driver and vehicle linked to each movement. The custody hash verifies the event itself. Driver, vehicle and lock attribution uses the clamp-time audit snapshot when available, otherwise only the values stored on the manifest. Mutable trip assignments are never used to reconstruct history.</p>
           </div>
           <Badge variant={chainBadge}>
             {chainStatus === 'LOADING' ? 'CHECKING HISTORY' : chainStatus === 'UNAVAILABLE' ? 'STATUS UNAVAILABLE' : chainStatus === 'VERIFIED' ? 'CHAIN VERIFIED' : chainStatus === 'BROKEN' ? 'CHAIN INTEGRITY ALERT' : chainStatus === 'PARTIAL' ? 'PARTIAL / LEGACY EVENTS' : 'LEGACY / NO LEDGER'}
@@ -193,7 +193,7 @@ function ContainerDetails({ container }: { container: Row }) {
                         </div>
                       ))}
                     </div>
-                    {event['assignment_source'] && <p className="mt-2 text-[9px] leading-relaxed text-white/35">{event['assignment_source'] === 'clamp_audit_snapshot' ? 'Assignment captured in the clamp audit at handoff; this context is not part of the custody-event hash.' : event['assignment_source'] === 'manifest_record' ? 'Assignment context comes from the stored manifest and is not independently hash-verified.' : event['assignment_source'] === 'linked_trip_record' ? 'Assignment context comes from the linked trip record and may reflect later edits.' : 'No driver or vehicle assignment was recorded for this event.'}</p>}
+                    {event['assignment_source'] && <p className="mt-2 text-[9px] leading-relaxed text-white/35">{event['assignment_source'] === 'clamp_audit_snapshot' ? 'Assignment captured in the clamp audit at handoff; this context is not part of the custody-event hash.' : event['assignment_source'] === 'manifest_record' ? 'Assignment context comes from the stored manifest and is not independently hash-verified.' : 'No driver or vehicle assignment was recorded for this event.'}</p>}
                     {event['seal_intact'] === false && <div className="mt-2 rounded-md bg-red-400/[.08] px-2.5 py-2 text-[10px] font-semibold text-red-200">Seal verification failed at this handoff.</div>}
                     {event['seal_intact'] === true && <div className="mt-2 text-[10px] text-cds-teal">Seal reported intact at this handoff.</div>}
                     {event['notes'] ? <p className="mt-2 border-t border-white/[.06] pt-2 text-[10px] leading-relaxed text-white/50">{String(event['notes'])}</p> : null}
