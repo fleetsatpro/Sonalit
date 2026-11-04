@@ -233,6 +233,8 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
     const bookingId = s(row['booking_id']);
     const containerId = s(row['id']);
     const label = s(row['container_number']) || 'Container';
+    // Keep the same operation key for the first request and any offline retry.
+    const idempotencyKey = crypto.randomUUID();
     const tagPrefix = tags.size ? `[${Array.from(tags).join(', ')}] ` : '';
     const doSubmit = (lat?: number, lng?: number) => {
       const payload = {
@@ -246,7 +248,7 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
       };
 
       const queueIt = () => {
-        enqueue({ kind: 'unclamp', bookingId, containerId, label, payload });
+        enqueue({ id: idempotencyKey, kind: 'unclamp', bookingId, containerId, label, payload });
         setSuccess('queued');
         setTimeout(onDone, 1400);
       };
@@ -255,7 +257,7 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
       // time out, and treat a response-less failure as queueable.
       if (!isOnline()) { queueIt(); return; }
 
-      unclamp.mutate({ bookingId, cid: containerId, ...payload }, {
+      unclamp.mutate({ bookingId, cid: containerId, idempotencyKey, ...payload }, {
         onSuccess: () => { setSuccess('submitted'); setTimeout(onDone, 1100); },
         onError: (err: unknown) => {
           const ax = err as { response?: { data?: { error?: string } } };
