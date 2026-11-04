@@ -56,7 +56,7 @@ export function ContainersView() {
     }, 250);
     return () => window.clearTimeout(handle);
   }, [searchInput]);
-  const { data, isLoading, isError, isFetching, refetch } = useContainers({
+  const { data, isLoading, isError, isFetching, isPlaceholderData, refetch } = useContainers({
     query: serverSearch,
     status: filter === 'all' ? undefined : filter,
     limit: pageSize,
@@ -269,7 +269,7 @@ export function ContainersView() {
 
       <div className="cds-register-pagination flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
         <div className="text-[12px] text-slate-300 tabular-nums" aria-live="polite">
-          Showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {total.toLocaleString()} matching containers
+          {isPlaceholderData ? 'Updating register results…' : `Showing ${rangeStart.toLocaleString()}–${rangeEnd.toLocaleString()} of ${total.toLocaleString()} matching containers`}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="cds-page-size-label">
@@ -291,6 +291,10 @@ export function ContainersView() {
         </div>
       </div>
 
+      {isPlaceholderData && (
+        <p className="cds-register-coverage" role="status">Updating the register. Previous results remain visible until the new filter or page is confirmed.</p>
+      )}
+
       <DataTable
         key={serverSearch + ':' + filter + ':' + page + ':' + pageSize}
         columns={[
@@ -311,7 +315,7 @@ export function ContainersView() {
         keyExtractor={(r: Row) => s(r['id'])}
         pageSize={Math.max(rows.length, 1)}
         searchable={false}
-        emptyMessage={isError && !data ? 'Inventory unavailable. Retry before drawing conclusions.' : all.length === 0 ? (serverSearch ? 'No containers match this search.' : 'No container records yet. Register your first container to establish the inventory.') : 'No containers match the selected status.'}
+        emptyMessage={isError && !data ? 'Inventory unavailable. Retry before drawing conclusions.' : total === 0 ? (serverSearch ? 'No containers match this search.' : filter !== 'all' ? 'No containers match this operational status.' : 'No container records yet. Register your first container to establish the inventory.') : 'No containers match the current selection.'}
         filters={
           <div className="cds-container-toolbar">
             <div className="flex gap-2 flex-wrap">
