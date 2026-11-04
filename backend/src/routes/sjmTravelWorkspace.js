@@ -93,7 +93,9 @@ function travellerInput(body) {
     preferred_name: txt(body.preferred_name, 100) || null,
     nationality: txt(body.nationality, 80) || null, date_of_birth: dob,
     email, phone,
+    relationship_to_principal: txt(body.relationship_to_principal, 80) || null,
     emergency_contact_name: txt(body.emergency_contact_name, 160) || null,
+    emergency_contact_relationship: txt(body.emergency_contact_relationship, 80) || null,
     emergency_contact_phone: emergencyPhone,
     internal_notes: txt(body.internal_notes, 1200) || null,
   } };
