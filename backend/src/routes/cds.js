@@ -2559,6 +2559,21 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     ]
   );
 
+  // Keep the personnel/vehicle registers truthful while this trip is open.
+  // The driver and vehicle were row-locked and checked as available above.
+  await req.db(
+    `UPDATE cds_vehicles
+        SET status='in_use', current_driver_id=$1, updated_at=NOW()
+      WHERE id=$2 AND org_id=$3 AND deleted_at IS NULL`,
+    [driverId, vehicleId, orgId]
+  );
+  await req.db(
+    `UPDATE cds_drivers
+        SET status='active', current_vehicle_id=$1, updated_at=NOW()
+      WHERE id=$2 AND org_id=$3 AND deleted_at IS NULL`,
+    [vehicleId, driverId, orgId]
+  );
+
   // Fill the manifest columns the control room actually reads.
   //
   // GET /bookings/manifest selects bc.clamped_at, bc.lock_number,
