@@ -2850,11 +2850,11 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
        `${req.user.name || 'Port team'} reported a seal discrepancy unclamping ${bc.rows[0].container_number || bcId} on booking ${bc.rows[0].booking_number}. ${sealNote}`,
        bcId]
     );
-    if (bc.rows[0].lock_id) {
+    if (bc.rows[0].clamp_lock_id) {
       await req.db(
         `INSERT INTO cds_lock_events (org_id, lock_id, type, lat, lng, data)
          VALUES ($1,$2,'tamper',$3,$4,$5)`,
-        [orgId, bc.rows[0].lock_id, lat ?? null, lng ?? null,
+        [orgId, bc.rows[0].clamp_lock_id, lat ?? null, lng ?? null,
          JSON.stringify({
            source: 'seal_verification',
            expected_seal: expectedSeal, observed_seal: observed,
