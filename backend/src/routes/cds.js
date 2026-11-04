@@ -823,6 +823,7 @@ const TRIP_JOINS = `LEFT JOIN cds_customers cu ON cu.id=t.customer_id AND cu.org
   LEFT JOIN cds_containers co ON co.id=t.container_id AND co.org_id=t.org_id
   LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=t.org_id
   LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=t.org_id
+  LEFT JOIN cds_bookings bk ON bk.id=t.booking_id AND bk.org_id=t.org_id AND bk.deleted_at IS NULL
   LEFT JOIN LATERAL (
     SELECT bc.id, bc.status, bc.yard_status, bc.seal_number, bc.lock_number, bc.terminal
       FROM cds_booking_containers bc
@@ -830,7 +831,7 @@ const TRIP_JOINS = `LEFT JOIN cds_customers cu ON cu.id=t.customer_id AND cu.org
      ORDER BY bc.created_at DESC, bc.id DESC
      LIMIT 1
   ) manifest ON TRUE`;
-const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_name,
+const TRIP_COLS = `t.*, t.trip_number AS reference, bk.booking_number, cu.company_name AS customer_name,
   dr.name AS "driverName", ve.registration AS "vehicleReg",
   co.number AS container_number, el.serial AS lock_serial, tr.company_name AS transporter_name,
   manifest.id AS booking_container_id, manifest.status AS booking_container_status,
@@ -840,7 +841,7 @@ const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_
 router.get('/trips', asyncHandler(async (req, res) => {
   await listRows(req, res, 'cds_trips', {
     joins: TRIP_JOINS, selectCols: TRIP_COLS,
-    searchCols: ['t.trip_number', 'cu.company_name', 'dr.name'],
+    searchCols: ['t.trip_number', 'bk.booking_number', 'cu.company_name', 'dr.name', 've.registration', 'co.number', 'manifest.seal_number', 'manifest.lock_number', 'manifest.terminal'],
   });
 }));
 
