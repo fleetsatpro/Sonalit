@@ -7247,6 +7247,16 @@
           }
         }
       }
+    },
+    "/api/v1/sjm/journeys/{id}/travel-workspace/airline-logo/{code}": {
+      "get": {
+        "operationId": "get_api_v1_sjm_journeys_id_travel_workspace_airline_logo_code",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
