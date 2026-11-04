@@ -243,8 +243,21 @@ router.get('/airline-logo/:code', asyncHandler(async (req, res) => {
   if (current.error) return res.status(404).json({ error: 'journey_not_found' });
   const signature = crypto.createHash('md5').update(code + '_160_48_r_' + apiKey).digest('hex');
   const url = 'https://content.airhex.com/content/logos/airlines_' + code + '_160_48_r.png?md5apikey=' + signature + '&theme=dark&proportions=keep';
-  res.setHeader('Cache-Control', 'private, max-age=86400');
-  return res.redirect(302, url);
+  try {
+    const upstream = await fetch(url, { headers: { Accept: 'image/png' }, signal: AbortSignal.timeout(5000) });
+    if (!upstream.ok) return res.status(404).json({ error: 'airline_logo_not_found' });
+    const contentType = String(upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (contentType !== 'image/png') return res.status(502).json({ error: 'airline_logo_invalid_content_type' });
+    const image = Buffer.from(await upstream.arrayBuffer());
+    if (!image.length || image.length > 2 * 1024 * 1024) return res.status(502).json({ error: 'airline_logo_invalid_size' });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', String(image.length));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    return res.status(200).send(image);
+  } catch {
+    return res.status(502).json({ error: 'airline_logo_provider_unavailable' });
+  }
 }));
 
 router.get('/', asyncHandler(async (req, res) => {
