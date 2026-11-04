@@ -5,20 +5,19 @@ export interface CDSViewDef {
 }
 
 export const CDS_VIEWS: CDSViewDef[] = [
-  { id: 'dashboard', label: 'Dashboard', sub: "TODAY'S OPERATIONS OVERVIEW" },
-  { id: 'live', label: 'Live Operations', sub: 'REAL-TIME FLEET TRACKING' },
-  { id: 'containers', label: 'Containers', sub: 'CHAIN-OF-CUSTODY TRACKING' },
-  { id: 'bookings', label: 'Bookings', sub: 'BOOKING REF · CONTAINERS · CLIENT PULSE' },
-  { id: 'locks', label: 'E-Locks', sub: 'FLEET LOCK HEALTH' },
-  { id: 'drivers', label: 'Drivers', sub: 'FIELD TEAM ROSTER' },
-  { id: 'transporters', label: 'Transporters', sub: 'CONTRACTED PARTNERS' },
-  { id: 'port', label: 'Port Operations', sub: 'MOMBASA PORT UNCLAMP QUEUE' },
-  { id: 'pulse', label: 'Client Pulse', sub: 'HOURLY AUTO-UPDATES · EXCEPTION ALERTS' },
-  { id: 'inbox', label: 'Dispatch Log', sub: 'FIELD ACTIVITY · CUSTODY CHAIN · ALERTS' },
-  { id: 'billing', label: 'Billing', sub: 'BILLED BY BOOKING REFERENCE' },
-  { id: 'reports', label: 'Reports', sub: 'GENERATE & EXPORT' },
-  { id: 'analytics', label: 'Analytics', sub: 'FLEET PERFORMANCE, LAST 30 DAYS' },
-  { id: 'settings', label: 'Settings', sub: 'ACCOUNT & PLATFORM PREFERENCES' },
+  { id: 'dashboard', label: 'Operations Overview', sub: 'TODAY · TENANT-WIDE OPERATIONAL STATE' },
+  { id: 'live', label: 'Live Movement', sub: 'TRACKING EVIDENCE · TRIP PROGRESS' },
+  { id: 'bookings', label: 'Booking Desk', sub: 'CUSTOMER INTAKE · PLANNING · DISPATCH' },
+  { id: 'port', label: 'Port Clearance', sub: 'ARRIVAL · UNCLAMP · SEAL VERIFICATION' },
+  { id: 'pulse', label: 'Booking Health', sub: 'LIFECYCLE · DELAY · STALE RECORDS' },
+  { id: 'containers', label: 'Container Register', sub: 'EQUIPMENT IDENTITY · CONDITION · INSPECTIONS' },
+  { id: 'locks', label: 'E-Lock Control', sub: 'DEVICE HEALTH · ASSIGNMENTS · SEAL EVENTS' },
+  { id: 'drivers', label: 'Driver Roster', sub: 'CDS-AUTHORISED FIELD PERSONNEL' },
+  { id: 'transporters', label: 'Transport Partners', sub: 'CARRIER CAPACITY · SERVICE PROFILE' },
+  { id: 'inbox', label: 'Activity & Custody', sub: 'FIELD EVENTS · LOCK EVENTS · TRIP TRANSITIONS' },
+  { id: 'analytics', label: 'Performance Intelligence', sub: 'OPERATIONAL TRENDS · EQUIPMENT · LOCKS' },
+  { id: 'reports', label: 'Operational Reports', sub: 'EVIDENCE-BASED EXPORTS' },
+  { id: 'settings', label: 'Configuration', sub: 'TENANT PREFERENCES · FIELD ACCESS' },
 ];
 
 export const PIPELINE_STAGES = [
