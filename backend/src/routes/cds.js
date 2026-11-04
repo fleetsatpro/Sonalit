@@ -363,43 +363,37 @@ async function updateRow(req, res, table, fields, { softDelete = true, hasUpdate
 const ON_ROAD_STATUSES = "('dispatched','checkpoint','delayed','at_port')";
 
 router.get('/dashboard', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
   const kpis = await req.db(`
     SELECT
-      (SELECT COUNT(*) FROM cds_containers WHERE deleted_at IS NULL) AS active_containers,
-      (SELECT COUNT(*) FROM cds_trips WHERE status IN ${ON_ROAD_STATUSES} AND deleted_at IS NULL) AS in_transit,
+      (SELECT COUNT(*) FROM cds_containers WHERE org_id=$1 AND deleted_at IS NULL) AS active_containers,
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND status IN ${ON_ROAD_STATUSES} AND deleted_at IS NULL) AS in_transit,
 
       -- Counted by delivered_at, not by status. The port unclamp sets
-      -- status='lock_removed' and delivered_at in the same statement, so a
-      -- trip is never left sitting at 'delivered' — asking for that status
-      -- made this KPI read zero on days the port had cleared a full yard.
+      -- status='lock_removed' and delivered_at in the same statement.
       (SELECT COUNT(*) FROM cds_trips
-        WHERE delivered_at::date = CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
+        WHERE org_id=$1 AND delivered_at::date = CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
 
-      (SELECT COUNT(*) FROM cds_electronic_locks WHERE status IN ('assigned','installed') AND deleted_at IS NULL) AS active_locks,
-      (SELECT COUNT(*) FROM cds_electronic_locks WHERE status='removed' AND deleted_at IS NULL) AS locks_removed,
+      (SELECT COUNT(*) FROM cds_electronic_locks WHERE org_id=$1 AND status IN ('assigned','installed') AND deleted_at IS NULL) AS active_locks,
+      (SELECT COUNT(*) FROM cds_electronic_locks WHERE org_id=$1 AND status='removed' AND deleted_at IS NULL) AS locks_removed,
 
-      -- Arrived, lock still on. This previously counted status='lock_removed',
-      -- which is the state a trip reaches *after* the lock comes off — the
-      -- number was an exact inversion of its own label, and the port crew's
-      -- actual backlog was the one figure it could never show.
+      -- Arrived with the lock still attached; lock_removed means it is already off.
       (SELECT COUNT(*) FROM cds_trips
-        WHERE status IN ('at_port','delivered') AND lock_id IS NOT NULL
+        WHERE org_id=$1 AND status IN ('at_port','delivered') AND lock_id IS NOT NULL
           AND deleted_at IS NULL) AS pending_unclamp,
 
-      (SELECT COUNT(*) FROM cds_trips WHERE status='delayed' AND deleted_at IS NULL) AS delayed_trips,
-      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1) FROM cds_trips WHERE delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours,
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND status='delayed' AND deleted_at IS NULL) AS delayed_trips,
+      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1)
+         FROM cds_trips
+        WHERE org_id=$1 AND delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours,
 
-      -- Computed here rather than in the browser, which could only ever see
-      -- the newest page of trips: the Analytics card showed a rate derived
-      -- from 50 rows next to a total counted from all of them.
-      (SELECT COUNT(*) FROM cds_trips WHERE deleted_at IS NULL) AS total_trips,
-      (SELECT COUNT(*) FROM cds_trips
-        WHERE delivered_at IS NOT NULL AND deleted_at IS NULL) AS delivered_total,
-      (SELECT COUNT(*) FROM cds_trips
-        WHERE status='delayed' AND deleted_at IS NULL) AS delayed_total,
-      (SELECT COUNT(*) FROM cds_alerts WHERE acknowledged=false) AS unacknowledged_alerts
-  `);
-  const activity = await activityFeed(req.db, 20);
+      -- Whole-organisation totals; never derived from the browser's current page.
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND deleted_at IS NULL) AS total_trips,
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND delivered_at IS NOT NULL AND deleted_at IS NULL) AS delivered_total,
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND status='delayed' AND deleted_at IS NULL) AS delayed_total,
+      (SELECT COUNT(*) FROM cds_alerts WHERE org_id=$1 AND acknowledged=false) AS unacknowledged_alerts
+  `, [orgId]);
+  const activity = await activityFeed(req.db, orgId, 20);
   res.json({ data: { ...kpis.rows[0], recent_activity: activity } });
 }));
 
@@ -2747,20 +2741,30 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     return res.status(409).json({ error: 'Container already delivered' });
   }
 
-  // Seal verification. A seal is only worth anything if somebody compares it at
-  // the far end, so the decision is made here rather than trusting the client's
-  // verdict: even when the crew reports "intact", an observed seal that doesn't
-  // match the one recorded at clamp is a tamper. Older clients that send
-  // neither field still work — the outcome is then simply unverified (null),
-  // which is honest rather than a false "intact".
+  // An unclamp is a physical custody transition, not a shortcut to delivery.
+  // Require a recorded clamp with no later unclamp so pending/assigned
+  // manifest rows cannot release locks or be marked delivered.
+  const clampedAt = bc.rows[0].clamped_at ? new Date(bc.rows[0].clamped_at).getTime() : NaN;
+  const unclampedAt = bc.rows[0].unclamped_at ? new Date(bc.rows[0].unclamped_at).getTime() : null;
+  if (!Number.isFinite(clampedAt) ||
+      (unclampedAt !== null && (!Number.isFinite(unclampedAt) || unclampedAt >= clampedAt))) {
+    return res.status(409).json({
+      error: 'container_not_currently_clamped',
+      message: 'Only a container with a recorded, open clamp can be unclamped.',
+    });
+  }
+
+  // A reported intact seal is verified only when both the clamp baseline and
+  // the observed seal are present and match. Missing evidence stays unverified.
   const expectedSeal = bc.rows[0].seal_number;
   const observed = typeof observed_seal === 'string' ? observed_seal.trim() : null;
-  let sealVerdict = null;                      // null = not checked
+  const expectedSealNormalized = typeof expectedSeal === 'string' ? expectedSeal.trim().toUpperCase() : '';
+  const observedSealNormalized = typeof observed === 'string' ? observed.toUpperCase() : '';
+  let sealVerdict = null;                      // null = not verified
   if (seal_intact === false) {
     sealVerdict = false;
-  } else if (seal_intact === true) {
-    const mismatched = expectedSeal && observed && observed.toUpperCase() !== String(expectedSeal).toUpperCase();
-    sealVerdict = !mismatched;
+  } else if (seal_intact === true && expectedSealNormalized && observedSealNormalized) {
+    sealVerdict = observedSealNormalized === expectedSealNormalized;
   }
   const sealTampered = sealVerdict === false;
 
@@ -3040,8 +3044,8 @@ router.get('/audit', asyncHandler(async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 router.get('/activity', asyncHandler(async (req, res) => {
-  const limit = Math.min(100, parseInt(req.query.limit) || 30);
-  res.json(await activityFeed(req.db, limit));
+  const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 30));
+  res.json(await activityFeed(req.db, req.user.org_id, limit));
 }));
 
 // ══════════════════════════════════════════════════════════════
