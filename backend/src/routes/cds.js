@@ -1179,57 +1179,79 @@ router.get('/containers', asyncHandler(async (req, res) => {
     filters.push('c.ownership=$' + params.length);
   }
 
+  // Do not pick the newest booking row: a new, still-unclamped booking can be
+  // newer than the container's last physical movement. Clamp and unclamp are
+  // resolved independently across every booking this physical container has
+  // entered, so older, real handoffs never disappear from the quick register.
   const joins = `
     LEFT JOIN LATERAL (
-      SELECT bc.*
+      SELECT bc.id AS booking_container_id, bc.clamped_at, bc.lock_number,
+             bc.transporter_name, bc.driver_name, bc.driver_contact, bc.horse_reg,
+             b.booking_number, t.trip_number,
+             COALESCE(bc.lock_number, el.serial) AS lock_serial,
+             COALESCE(bc.transporter_name, tr.company_name) AS transporter_name_resolved,
+             COALESCE(bc.driver_name, d.name) AS driver_name_resolved,
+             COALESCE(bc.horse_reg, v.registration) AS vehicle_registration,
+             COALESCE(ce.actor_name, ca.user_name) AS actor_name
         FROM cds_booking_containers bc
+        JOIN cds_bookings b ON b.id=bc.booking_id AND b.org_id=bc.org_id AND b.deleted_at IS NULL
+        LEFT JOIN cds_trips t ON t.id=bc.trip_id AND t.org_id=bc.org_id AND t.deleted_at IS NULL
+        LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=bc.org_id
+        LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=bc.org_id
+        LEFT JOIN cds_drivers d ON d.id=t.driver_id AND d.org_id=bc.org_id
+        LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=bc.org_id
+        LEFT JOIN LATERAL (
+          SELECT e.actor_name FROM cds_custody_events e
+           WHERE e.org_id=bc.org_id AND e.booking_container_id=bc.id AND e.kind='clamped'
+           ORDER BY e.seq DESC LIMIT 1
+        ) ce ON true
+        LEFT JOIN LATERAL (
+          SELECT a.user_name FROM cds_audit_logs a
+           WHERE a.org_id=bc.org_id AND a.entity_type='booking_container'
+             AND a.entity_id=bc.id AND a.action='clamp'
+           ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+        ) ca ON true
        WHERE bc.org_id=c.org_id AND bc.deleted_at IS NULL
          AND UPPER(BTRIM(bc.container_number))=UPPER(c.number)
-       ORDER BY GREATEST(COALESCE(bc.clamped_at, bc.created_at), COALESCE(bc.unclamped_at, bc.created_at)) DESC,
-                bc.created_at DESC
+         AND bc.clamped_at IS NOT NULL
+       ORDER BY bc.clamped_at DESC, bc.created_at DESC
        LIMIT 1
-    ) bc ON true
-    LEFT JOIN cds_bookings b ON b.id=bc.booking_id AND b.org_id=c.org_id AND b.deleted_at IS NULL
-    LEFT JOIN cds_trips t ON t.id=bc.trip_id AND t.org_id=c.org_id AND t.deleted_at IS NULL
-    LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=c.org_id
-    LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=c.org_id
-    LEFT JOIN cds_drivers d ON d.id=t.driver_id AND d.org_id=c.org_id
-    LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=c.org_id
+    ) lc ON true
     LEFT JOIN LATERAL (
-      SELECT ce.actor_name FROM cds_custody_events ce
-       WHERE ce.org_id=c.org_id AND ce.booking_container_id=bc.id AND ce.kind='clamped'
-       ORDER BY ce.seq DESC LIMIT 1
-    ) clamp_event ON true
-    LEFT JOIN LATERAL (
-      SELECT ce.actor_name FROM cds_custody_events ce
-       WHERE ce.org_id=c.org_id AND ce.booking_container_id=bc.id AND ce.kind='unclamped'
-       ORDER BY ce.seq DESC LIMIT 1
-    ) unclamp_event ON true
-    LEFT JOIN LATERAL (
-      SELECT a.user_name FROM cds_audit_logs a
-       WHERE a.org_id=c.org_id AND a.entity_type='booking_container'
-         AND a.entity_id=bc.id AND a.action='clamp'
-       ORDER BY a.created_at DESC, a.id DESC LIMIT 1
-    ) clamp_audit ON true
-    LEFT JOIN LATERAL (
-      SELECT a.user_name FROM cds_audit_logs a
-       WHERE a.org_id=c.org_id AND a.entity_type='booking_container'
-         AND a.entity_id=bc.id AND a.action='unclamp'
-       ORDER BY a.created_at DESC, a.id DESC LIMIT 1
-    ) unclamp_audit ON true`;
+      SELECT bc.id AS booking_container_id, bc.unclamped_at,
+             COALESCE(ce.actor_name, ua.user_name) AS actor_name
+        FROM cds_booking_containers bc
+        LEFT JOIN LATERAL (
+          SELECT e.actor_name FROM cds_custody_events e
+           WHERE e.org_id=bc.org_id AND e.booking_container_id=bc.id AND e.kind='unclamped'
+           ORDER BY e.seq DESC LIMIT 1
+        ) ce ON true
+        LEFT JOIN LATERAL (
+          SELECT a.user_name FROM cds_audit_logs a
+           WHERE a.org_id=bc.org_id AND a.entity_type='booking_container'
+             AND a.entity_id=bc.id AND a.action='unclamp'
+           ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+        ) ua ON true
+       WHERE bc.org_id=c.org_id AND bc.deleted_at IS NULL
+         AND UPPER(BTRIM(bc.container_number))=UPPER(c.number)
+         AND bc.unclamped_at IS NOT NULL
+       ORDER BY bc.unclamped_at DESC, bc.created_at DESC
+       LIMIT 1
+    ) lu ON true`;
   const where = filters.join(' AND ');
   params.push(limit, offset);
   const result = await req.db(
     `SELECT c.*,
-            bc.clamped_at AS last_clamped_at, bc.unclamped_at AS last_unclamped_at,
-            COALESCE(clamp_event.actor_name, clamp_audit.user_name) AS last_clamped_by,
-            COALESCE(unclamp_event.actor_name, unclamp_audit.user_name) AS last_unclamped_by,
-            COALESCE(bc.lock_number, el.serial) AS last_lock_serial,
-            COALESCE(bc.transporter_name, tr.company_name) AS last_transporter_name,
-            COALESCE(bc.driver_name, d.name) AS last_driver_name,
-            COALESCE(bc.horse_reg, v.registration) AS last_vehicle_registration,
-            b.booking_number AS last_booking_number,
-            t.trip_number AS last_trip_number
+            lc.clamped_at AS last_clamped_at,
+            lu.unclamped_at AS last_unclamped_at,
+            lc.actor_name AS last_clamped_by,
+            lu.actor_name AS last_unclamped_by,
+            lc.lock_serial AS last_lock_serial,
+            lc.transporter_name_resolved AS last_transporter_name,
+            lc.driver_name_resolved AS last_driver_name,
+            lc.vehicle_registration AS last_vehicle_registration,
+            lc.booking_number AS last_booking_number,
+            lc.trip_number AS last_trip_number
        FROM cds_containers c ${joins}
       WHERE ${where}
       ORDER BY c.created_at DESC
@@ -1242,6 +1264,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
   );
   res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
 }));
+
 router.get('/containers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_containers'); }));
 router.get('/containers/:id/history', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
