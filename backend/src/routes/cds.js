@@ -1060,7 +1060,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
     }
     if (statuses.length) {
       params.push(statuses);
-      filters.push(`t.status = ANY(${params.length}::text[])`);
+      filters.push(`t.status = ANY($${params.length}::text[])`);
     }
   }
   const search = String(req.query.search || '').trim();
@@ -1071,14 +1071,14 @@ router.get('/containers', asyncHandler(async (req, res) => {
     filters.push(`(${[
       't.number', 't.container_type', 't.iso_type', 't.ownership',
       't.condition', 't.status', 't.current_location', 't.manufacturer',
-    ].map(column => `${column} ILIKE ${p}`).join(' OR ')})`);
+    ].map(column => `${column} ILIKE $${p}`).join(' OR ')})`);
   }
   const where = filters.join(' AND ');
 
   const payload = await req.dbTx(async client => {
     const result = await client.query(
       `SELECT t.* FROM cds_containers t WHERE ${where}
-       ORDER BY t.created_at DESC, t.id DESC LIMIT ${params.length + 1} OFFSET ${params.length + 2}`,
+       ORDER BY t.created_at DESC, t.id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset],
     );
     const total = await client.query(
