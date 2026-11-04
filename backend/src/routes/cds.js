@@ -2008,10 +2008,10 @@ router.post('/bookings/:id/containers', cdsTransaction(async (req, res) => {
   for (const row of prepared) {
     if (!row.number) continue;
     const allocated = await req.db(
-      \`SELECT id FROM cds_booking_containers
+      `SELECT id FROM cds_booking_containers
         WHERE org_id=$1 AND container_number=$2 AND deleted_at IS NULL
           AND status NOT IN ('delivered','completed')
-        LIMIT 1\`,
+        LIMIT 1`,
       [orgId, row.number]
     );
     if (allocated.rows.length) return res.status(409).json({ error: 'container_already_allocated' });
@@ -2021,10 +2021,10 @@ router.post('/bookings/:id/containers', cdsTransaction(async (req, res) => {
   for (const row of prepared) {
     const item = row.item;
     const result = await req.db(
-      \`INSERT INTO cds_booking_containers
+      `INSERT INTO cds_booking_containers
         (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
          packing_list_no, weight_kg, notes, status, yard_status, invoiced)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *\`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [
         orgId, bookingId, row.number, row.isoType,
         item.seal_number || null, item.seal_number_2 || null,
@@ -2034,9 +2034,9 @@ router.post('/bookings/:id/containers', cdsTransaction(async (req, res) => {
     );
     const manifest = result.rows[0];
     await req.db(
-      \`INSERT INTO cds_audit_logs
+      `INSERT INTO cds_audit_logs
         (action, entity_type, entity_id, user_id, user_name, before_data, after_data, ip_address, user_agent, org_id)
-       VALUES ('create','booking_container',$1,$2,$3,NULL,$4,$5,$6,$7)\`,
+       VALUES ('create','booking_container',$1,$2,$3,NULL,$4,$5,$6,$7)`,
       [
         manifest.id, req.user.id || null, req.user.name || null,
         JSON.stringify({
@@ -2104,10 +2104,10 @@ router.patch('/bookings/:id/containers/:cid', cdsTransaction(async (req, res) =>
         return res.status(409).json({ error: 'container_identity_locked_after_custody_begins' });
       }
       const allocated = await req.db(
-        \`SELECT id FROM cds_booking_containers
+        `SELECT id FROM cds_booking_containers
           WHERE org_id=$1 AND container_number=$2 AND deleted_at IS NULL
             AND status NOT IN ('delivered','completed') AND id<>$3
-          LIMIT 1\`,
+          LIMIT 1`,
         [orgId, values.container_number, containerId]
       );
       if (allocated.rows.length) return res.status(409).json({ error: 'container_already_allocated' });
@@ -2156,9 +2156,9 @@ router.patch('/bookings/:id/containers/:cid', cdsTransaction(async (req, res) =>
   if (!result.rows.length) return res.status(404).json({ error: 'not_found' });
   const after = result.rows[0];
   await req.db(
-    \`INSERT INTO cds_audit_logs
+    `INSERT INTO cds_audit_logs
       (action, entity_type, entity_id, user_id, user_name, before_data, after_data, ip_address, user_agent, org_id)
-     VALUES ('update','booking_container',$1,$2,$3,$4,$5,$6,$7,$8)\`,
+     VALUES ('update','booking_container',$1,$2,$3,$4,$5,$6,$7,$8)`,
     [
       containerId, req.user.id || null, req.user.name || null,
       JSON.stringify(before), JSON.stringify(after),
@@ -2196,9 +2196,9 @@ router.delete('/bookings/:id/containers/:cid', cdsTransaction(async (req, res) =
   );
   if (!result.rows.length) return res.status(404).json({ error: 'not_found' });
   await req.db(
-    \`INSERT INTO cds_audit_logs
+    `INSERT INTO cds_audit_logs
       (action, entity_type, entity_id, user_id, user_name, before_data, after_data, ip_address, user_agent, org_id)
-     VALUES ('delete','booking_container',$1,$2,$3,$4,$5,$6,$7,$8)\`,
+     VALUES ('delete','booking_container',$1,$2,$3,$4,$5,$6,$7,$8)`,
     [
       containerId, req.user.id || null, req.user.name || null,
       JSON.stringify(beforeResult.rows[0]), JSON.stringify({ deleted_at: result.rows[0].deleted_at }),
