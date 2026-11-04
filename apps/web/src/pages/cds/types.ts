@@ -419,6 +419,8 @@ export interface PaginatedResponse<T> {
 export interface SearchFilters {
   query?: string;
   status?: string;
+  condition?: string;
+  ownership?: string;
   dateFrom?: string;
   dateTo?: string;
   sortBy?: string;
