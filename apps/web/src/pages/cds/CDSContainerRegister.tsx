@@ -136,7 +136,7 @@ function ContainerDetails({ container }: { container: Row }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[.15em] text-[#a9cdf4]">Movement & custody history</div>
-            <p className="mt-1 text-[10px] text-white/45">Recorded clamp and unclamp actions, with the assigned lock, driver and vehicle linked to each movement. Hash verification covers the custody event; assignment context is read from linked trip and manifest records.</p>
+            <p className="mt-1 text-[10px] text-white/45">Recorded clamp and unclamp actions, with the assigned lock, driver and vehicle linked to each movement. The custody hash verifies the event itself. Driver, vehicle and lock attribution uses the clamp-time audit snapshot when available; older records fall back to manifest or linked-trip records.</p>
           </div>
           <Badge variant={chainBadge}>
             {chainStatus === 'LOADING' ? 'CHECKING HISTORY' : chainStatus === 'UNAVAILABLE' ? 'STATUS UNAVAILABLE' : chainStatus === 'VERIFIED' ? 'CHAIN VERIFIED' : chainStatus === 'BROKEN' ? 'CHAIN INTEGRITY ALERT' : chainStatus === 'PARTIAL' ? 'PARTIAL / LEGACY EVENTS' : 'LEGACY / NO LEDGER'}
@@ -179,7 +179,7 @@ function ContainerDetails({ container }: { container: Row }) {
                     <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
                       {[
                         ['Recorded by', event['actor']],
-                        ['Lock attached', event['lock_serial']],
+                        ['Lock at clamp', event['lock_serial']],
                         ['Driver', event['driver_name']],
                         ['Vehicle', event['vehicle_registration']],
                         ['Transport partner', event['transporter_name']],
@@ -193,6 +193,7 @@ function ContainerDetails({ container }: { container: Row }) {
                         </div>
                       ))}
                     </div>
+                    {event['assignment_source'] && <p className="mt-2 text-[9px] leading-relaxed text-white/35">{event['assignment_source'] === 'clamp_audit_snapshot' ? 'Assignment captured in the clamp audit at handoff; this context is not part of the custody-event hash.' : event['assignment_source'] === 'manifest_record' ? 'Assignment context comes from the stored manifest and is not independently hash-verified.' : event['assignment_source'] === 'linked_trip_record' ? 'Assignment context comes from the linked trip record and may reflect later edits.' : 'No driver or vehicle assignment was recorded for this event.'}</p>}
                     {event['seal_intact'] === false && <div className="mt-2 rounded-md bg-red-400/[.08] px-2.5 py-2 text-[10px] font-semibold text-red-200">Seal verification failed at this handoff.</div>}
                     {event['seal_intact'] === true && <div className="mt-2 text-[10px] text-cds-teal">Seal reported intact at this handoff.</div>}
                     {event['notes'] ? <p className="mt-2 border-t border-white/[.06] pt-2 text-[10px] leading-relaxed text-white/50">{String(event['notes'])}</p> : null}
@@ -487,7 +488,7 @@ export function CDSContainerRegister() {
                   <th className="px-3 py-3">Operational state</th>
                   <th className="px-3 py-3">Condition</th>
                   <th className="px-3 py-3">Clamp / unclamp history</th>
-                  <th className="px-3 py-3">Last assignment</th>
+                  <th className="px-3 py-3">Assignment at last clamp</th>
                   <th className="px-3 py-3">Recorded location</th>
                   <th className="px-3 py-3">Next inspection</th>
                 </tr>
@@ -539,7 +540,7 @@ export function CDSContainerRegister() {
                         ) : <span className="text-[10px] text-white/35">No clamp / unclamp timestamp</span>}
                       </td>
                       <td className="max-w-[210px] px-3 py-3.5">
-                        <div className="font-mono text-[10px] text-[#bad8fb]">Lock · {display(row['last_lock_serial'])}</div>
+                        <div className="font-mono text-[10px] text-[#bad8fb]">Lock at clamp · {display(row['last_lock_serial'])}</div>
                         <div className="mt-1 text-[10px] text-white/65">Driver · {display(row['last_driver_name'])}</div>
                         <div className="mt-1 text-[10px] text-white/65">Vehicle · {display(row['last_vehicle_registration'])}</div>
                         <div className="mt-1 text-[9px] text-white/35">{display(row['last_transporter_name'])}</div>
