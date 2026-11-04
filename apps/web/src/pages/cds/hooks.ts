@@ -461,8 +461,15 @@ export function useMarkDeparted() {
 export function useClampBookingContainer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ bookingId, cid, ...payload }: { bookingId: string; cid: string; [k: string]: unknown }) => {
-      const { data } = await cdsApi.post(`/bookings/${bookingId}/containers/${cid}/clamp`, payload);
+    mutationFn: async ({ bookingId, cid, idempotencyKey, ...payload }: {
+      bookingId: string; cid: string; idempotencyKey?: string; [k: string]: unknown;
+    }) => {
+      const key = idempotencyKey?.trim() || crypto.randomUUID();
+      const { data } = await cdsApi.post(
+        `/bookings/${bookingId}/containers/${cid}/clamp`,
+        payload,
+        { headers: { 'x-idempotency-key': key } },
+      );
       return data;
     },
     onSuccess: (_d, { bookingId }) => {
@@ -483,8 +490,15 @@ export function useClampBookingContainer() {
 export function useUnclampBookingContainer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ bookingId, cid, ...payload }: { bookingId: string; cid: string; [k: string]: unknown }) => {
-      const { data } = await cdsApi.post(`/bookings/${bookingId}/containers/${cid}/unclamp`, payload);
+    mutationFn: async ({ bookingId, cid, idempotencyKey, ...payload }: {
+      bookingId: string; cid: string; idempotencyKey?: string; [k: string]: unknown;
+    }) => {
+      const key = idempotencyKey?.trim() || crypto.randomUUID();
+      const { data } = await cdsApi.post(
+        `/bookings/${bookingId}/containers/${cid}/unclamp`,
+        payload,
+        { headers: { 'x-idempotency-key': key } },
+      );
       return data;
     },
     onSuccess: (_d, { bookingId }) => {
