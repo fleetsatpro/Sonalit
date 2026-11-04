@@ -97,7 +97,7 @@ export function useLiveTracking() {
   });
 }
 
-export function useTrips(filters?: SearchFilters) {
+export function useTrips(filters?: SearchFilters & { limit?: number; offset?: number }) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'trips', filters],
     queryFn: async () => {
@@ -105,6 +105,7 @@ export function useTrips(filters?: SearchFilters) {
       return data;
     },
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
+    placeholderData: previous => previous,
   });
 }
 
