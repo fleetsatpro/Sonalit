@@ -1,4 +1,5 @@
 const router = require('../src/routes/cds');
+const crypto = require('crypto');
 
 function routeLayer(path, method) {
   const layer = router.stack.find(item => item.route && item.route.path === path && item.route.methods[method]);
@@ -274,6 +275,9 @@ describe('CDS container custody history', () => {
     expect(calls[1].sql).toContain("COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial'");
     expect(calls[1].sql).toContain("a.action='clamp'");
     expect(calls[1].sql).toContain('a.org_id=bc.org_id');
+    expect(calls[1].sql).toContain("COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name) AS driver_name");
+    expect(calls[1].sql).toContain("COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg) AS vehicle_registration");
+    expect(calls[1].sql).toContain("COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name) AS transporter_name");
   });
 
   test('keeps tenant scope on the container identity, custody chain and audit snapshot', async () => {
@@ -363,5 +367,7 @@ describe('CDS container register assignment snapshot query', () => {
     expect(calls[0].sql).toContain("COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial'");
     expect(calls[0].sql).toContain('bc.org_id=c.org_id');
     expect(calls[0].sql).toContain('a.org_id=bc.org_id');
+    expect(calls[0].sql).toContain("COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name) AS driver_name_resolved");
+    expect(calls[0].sql).toContain("COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg) AS vehicle_registration");
   });
 });
