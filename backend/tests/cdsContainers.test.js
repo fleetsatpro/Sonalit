@@ -61,7 +61,7 @@ describe('CDS container register', () => {
     expect(res.result.status).toBe(201);
     expect(res.result.body.data.status).toBe('available');
     expect(statement).toContain('INSERT INTO cds_containers');
-    expect(statement.match(/INSERT INTO cds_containers \\(([^)]+)\\)/)?.[1]).not.toMatch(/\\bstatus\\b/);
+    expect(statement.match(/INSERT INTO cds_containers \(([^)]+)\)/)?.[1]).not.toMatch(/\bstatus\b/);
     expect(parameters).toContain('MSCU6639870');
     expect(parameters).toContain('org-1');
   });
@@ -85,7 +85,7 @@ describe('CDS container register', () => {
       query: { condition: 'damaged', ownership: 'owned', search: 'MSCU', limit: '25', offset: '0' },
       db: async (sql, values) => {
         calls.push({ sql, values });
-        return /COUNT\\(\\*\\)/.test(sql) ? { rows: [{ count: '2' }] } : { rows: [{ id: 'container-1' }] };
+        return /COUNT\(\*\)/.test(sql) ? { rows: [{ count: '2' }] } : { rows: [{ id: 'container-1' }] };
       },
     }, res, error => { if (error) throw error; });
 
