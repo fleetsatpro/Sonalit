@@ -404,7 +404,8 @@ export default function CDSApp() {
 
 function DashboardView() {
   const { data: kpis, isLoading } = useDashboardKPIs();
-  const { data: activity } = useActivity(20);
+  const { data: activity, isLoading: activityLoading, isError: activityError, refetch: refetchActivity } = useActivity(20);
+  const { setActiveView } = useCDSStore();
   if (isLoading) return <LoadingState />;
 
   const kv = (k: string) => String(kpis?.[k] ?? 0);
@@ -412,63 +413,89 @@ function DashboardView() {
   const avgH = Math.floor(avgHrs);
   const avgM = Math.round((avgHrs - avgH) * 60);
   const cards = [
-    { label: 'ACTIVE CONTAINERS', value: kv('active_containers'), delta: 'fleet total', trend: 'up' as const, accent: '#33d6a8' },
-    { label: 'IN TRANSIT', value: kv('in_transit'), delta: 'on road now', trend: 'up' as const, accent: '#37e6ff' },
-    { label: 'ACTIVE LOCKS', value: kv('active_locks'), delta: 'secured', trend: 'up' as const, accent: '#33d6a8' },
-    { label: 'LOCKS REMOVED', value: kv('locks_removed'), delta: 'unclamped', trend: 'up' as const, accent: '#a78bfa' },
-    { label: 'PENDING UNCLAMP', value: kv('pending_unclamp'), delta: 'port queue', trend: 'down' as const, accent: '#ffb020' },
-    { label: 'DELIVERED TODAY', value: kv('delivered_today'), delta: 'completed', trend: 'up' as const, accent: '#22c55e' },
-    { label: 'DELAYED', value: kv('delayed_trips'), delta: 'needs attention', trend: 'down' as const, accent: '#ff5c5c' },
-    { label: 'AVG TRANSIT TIME', value: avgHrs ? `${avgH}h ${avgM}m` : '—', delta: 'hours', trend: 'up' as const, accent: '#F0B429' },
+    { label: 'ACTIVE CONTAINERS', value: kv('active_containers'), delta: 'registered in operation' },
+    { label: 'IN TRANSIT', value: kv('in_transit'), delta: 'currently assigned to movement' },
+    { label: 'ACTIVE E-LOCKS', value: kv('active_locks'), delta: 'installed or assigned' },
+    { label: 'UNCLAMPED', value: kv('locks_removed'), delta: 'locks removed' },
+    { label: 'PENDING UNCLAMP', value: kv('pending_unclamp'), delta: 'awaiting port action' },
+    { label: 'DELIVERED TODAY', value: kv('delivered_today'), delta: 'recorded today' },
+    { label: 'DELAYED', value: kv('delayed_trips'), delta: 'requires review' },
+    { label: 'AVERAGE TRANSIT', value: avgHrs ? avgH + 'h ' + avgM + 'm' : '—', delta: 'completed trips with timestamps' },
   ];
 
-  const actIcons: Record<string, string> = {
-    clamp: '🔒', depart: '🚛', checkpoint: '📍', sync: '🔄',
-    arrival: '✅', unclamp: '🔓', ai: '🤖', alert: '⚠️',
-  };
-
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
-        {cards.map(k => <KPICard key={k.label} label={k.label} value={k.value} delta={k.delta} trend={k.trend} />)}
+    <div className="cds-dashboard p-4 sm:p-6 max-w-[1680px] mx-auto">
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
+        <div>
+          <div className="cds-eyebrow">OPERATIONAL SNAPSHOT</div>
+          <h2 className="text-[21px] sm:text-[24px] font-semibold text-white tracking-tight mt-1">Container activity, at a glance</h2>
+          <p className="text-[13px] text-slate-300 mt-1">A clear view of the current workload, movement and delivery position.</p>
+        </div>
+        <button type="button" onClick={() => setActiveView('pulse')} className="cds-secondary-action">
+          <Activity size={16} aria-hidden="true" />
+          Review exceptions
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
-          <div className="font-bold text-sm text-text-0 mb-3">Live Map</div>
-          <div className="h-[300px] rounded-xl bg-ink-3 relative overflow-hidden"
-            style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-2xl mb-2 opacity-40">🗺️</div>
-                <div className="text-text-2 text-[11px] font-mono">GPS positions load when vehicles are in transit</div>
-              </div>
-            </div>
+      <section aria-label="Operational key figures" className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8 gap-3">
+        {cards.map(k => (
+          <div key={k.label} className="cds-kpi-panel min-w-0 rounded-xl border p-3 sm:p-3.5">
+            <div className="text-[11px] font-semibold tracking-[.08em] text-slate-300 leading-snug min-h-[30px]">{k.label}</div>
+            <div className="cds-kpi-value font-semibold font-mono text-white text-[25px] sm:text-[27px] leading-none mt-3 tabular-nums">{k.value}</div>
+            <div className="text-[11px] text-slate-300 mt-2 leading-snug">{k.delta}</div>
+          </div>
+        ))}
+      </section>
+
+      <section className="cds-activity-panel mt-4 rounded-2xl border overflow-hidden" aria-labelledby="cds-recent-activity-title">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-white/[.08]">
+          <div>
+            <h3 id="cds-recent-activity-title" className="text-[16px] sm:text-[17px] font-semibold text-white">Recent activity</h3>
+            <p className="text-[12px] text-slate-300 mt-1">Recorded operational events from the activity feed.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => { void refetchActivity(); }} className="cds-tertiary-action" disabled={activityLoading}>
+              Refresh
+            </button>
+            <button type="button" onClick={() => setActiveView('inbox')} className="cds-secondary-action">
+              Open activity log
+            </button>
           </div>
         </div>
-        <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
-          <div className="font-bold text-sm text-text-0 mb-3">Recent Activity</div>
-          <div className="space-y-0 max-h-[340px] overflow-y-auto">
+
+        {activityError ? (
+          <div role="alert" className="px-5 py-6">
+            <div className="text-[14px] font-semibold text-white">Activity feed unavailable</div>
+            <p className="text-[13px] text-slate-300 mt-1">The operational snapshot is still available. Retry the activity feed without changing any records.</p>
+            <button type="button" onClick={() => { void refetchActivity(); }} className="cds-secondary-action mt-3">Retry activity feed</button>
+          </div>
+        ) : activityLoading && !activity ? (
+          <div className="px-5 py-8 text-[13px] text-slate-300">Loading recorded activity…</div>
+        ) : (activity ?? []).length === 0 ? (
+          <div className="px-5 py-9 text-center">
+            <Activity size={22} className="mx-auto text-slate-400" aria-hidden="true" />
+            <div className="text-[14px] font-semibold text-white mt-3">No recent activity</div>
+            <p className="text-[13px] text-slate-300 mt-1">Recorded clamps, departures, checkpoints and delivery events will appear here.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-white/[.06]">
             {(activity ?? []).map((item, i) => (
-              <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2 border-b border-white/[.05]">
-                <span className="text-sm flex-none mt-0.5">{actIcons[String(item['icon'] ?? item['type'] ?? '')] ?? '📋'}</span>
+              <div key={String(item['id'] ?? i)} className="flex items-start gap-3 px-4 sm:px-5 py-3">
+                <CDSActivityIcon kind={item['icon'] ?? item['type']} className="mt-0.5" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs text-text-0 truncate">{String(item['description'] ?? item['text'] ?? '—')}</div>
-                  <div className="text-[10px] text-text-2 font-mono mt-0.5 truncate">
+                  <div className="text-[13px] font-medium text-slate-100 break-words">{String(item['description'] ?? item['text'] ?? '—')}</div>
+                  <div className="text-[12px] text-slate-300 mt-1 break-words">
                     {[
-                      item['created_at'] ? new Date(String(item['created_at'])).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                      item['created_at'] ? new Date(String(item['created_at'])).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '',
                       item['meta'] ? String(item['meta']) : '',
                     ].filter(Boolean).join(' · ')}
                   </div>
                 </div>
               </div>
             ))}
-            {(activity ?? []).length === 0 && (
-              <div className="text-xs text-text-2 text-center py-8 font-mono">No recent activity</div>
-            )}
           </div>
-        </div>
-      </div>
+        )}
+      </section>
     </div>
   );
 }
