@@ -157,7 +157,7 @@ export default function CDSApp() {
       const root = mobileNavLayerRef.current;
       if (!root) return;
       const focusable = Array.from(root.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'))
-        .filter(element => element.offsetParent !== null);
+        .filter(element => element.getClientRects().length > 0);
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -174,6 +174,8 @@ export default function CDSApp() {
       window.cancelAnimationFrame(frame);
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKeyDown);
+    };
+      mobileMenuButtonRef.current?.focus();
     };
   }, [mobileNavOpen]);
 
