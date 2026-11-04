@@ -135,7 +135,7 @@ export function ContainersView() {
             </label>
 
             <label className="cds-form-field">
-              <span className="cds-form-label">ISO equipment type *</span>
+              <span className="cds-form-label">Equipment type *</span>
               <select required value={isoType} onChange={event => setIsoType(event.target.value)} className="cds-form-control">
                 {Object.entries(CONTAINER_TYPES).map(([code, label]) => <option key={code} value={code}>{code} · {label}</option>)}
               </select>
@@ -276,7 +276,7 @@ export function ContainersView() {
         onRowClick={(r: Row) => openDrawer('Container ' + s(r['number'] ?? r['container_number']), (
           <>
             <DrawerField label="Container number" value={s(r['number'] ?? r['container_number'])} />
-            <DrawerField label="ISO equipment type" value={s(r['iso_type'])} />
+            <DrawerField label="Equipment type" value={s(r['iso_type'])} />
             <DrawerField label="Ownership" value={s(r['ownership'])} />
             <DrawerField label="Physical condition" value={s(r['condition'] ?? 'Not recorded')} />
             <DrawerField label="Operational status" value={<StatusBadge status={s(r['status'])} />} />
