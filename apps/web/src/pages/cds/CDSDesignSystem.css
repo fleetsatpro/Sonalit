@@ -785,3 +785,20 @@
 @media (min-width: 768px) and (max-width: 1199px) {
   .cds-navigation--desktop .cds-nav-collapse { display: none; }
 }
+
+
+/* Bring inherited legacy utility colours back into an accessible reading range. */
+.cds-shell .text-text-0 { color: #f3f8ff !important; }
+.cds-shell .text-text-1 { color: #d7e4f4 !important; }
+.cds-shell .text-text-2 { color: #a4b8d2 !important; }
+.cds-shell [class~="text-white/20"],
+.cds-shell [class~="text-white/25"],
+.cds-shell [class~="text-white/30"],
+.cds-shell [class~="text-white/35"] { color: #8fa7c5 !important; }
+.cds-shell [class~="text-white/40"],
+.cds-shell [class~="text-white/45"],
+.cds-shell [class~="text-white/50"] { color: #a4b8d2 !important; }
+.cds-shell .text-cds-orange { color: #ffc18d; }
+.cds-shell .text-cds-teal { color: #73e9c0; }
+.cds-shell .text-cds-amber { color: #ffd184; }
+.cds-shell .text-cds-red { color: #ff929a; }
