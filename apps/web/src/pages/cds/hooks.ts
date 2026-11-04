@@ -173,48 +173,6 @@ export function useTransitionTrip() {
   });
 }
 
-export function useClampTrip() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, ...payload }: { id: string; [key: string]: unknown }) => {
-      const { data } = await cdsApi.post(`/trips/${id}/clamp`, payload);
-      return data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
-    },
-  });
-}
-
-export function useUnclampTrip() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, notes }: { id: string; notes?: string }) => {
-      const { data } = await cdsApi.post(`/trips/${id}/unclamp`, { notes });
-      return data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
-    },
-  });
-}
-
 export function useContainers(filters?: SearchFilters & { limit?: number; offset?: number }) {
   return useQuery<ApiList & { summary?: {
     registered: number;
