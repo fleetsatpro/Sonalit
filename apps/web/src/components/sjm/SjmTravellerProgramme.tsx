@@ -121,7 +121,7 @@ const nextTravellerReference = (travellers: Traveller[]) => {
   }
   return 'TRV-'+Math.random().toString(36).slice(2,9).toUpperCase();
 };
-const airlineIataCode = (flightNumber?: string | null) => /^([A-Z0-9]{2})\\s*(?=\\d)/.exec(String(flightNumber || '').trim().toUpperCase())?.[1] || '';
+const airlineIataCode = (flightNumber?: string | null) => /^([A-Z0-9]{2})\s*(?=\d)/.exec(String(flightNumber || '').trim().toUpperCase())?.[1] || '';
 const dateLabel = (value?: string | null, timezone?: string) => {
   if (!value) return 'Not recorded';
   const date = new Date(value);
