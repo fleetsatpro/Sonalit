@@ -353,7 +353,7 @@ export default function CDSApp() {
           <div className="cds-clock font-mono text-[13px] hidden lg:block flex-shrink-0">{clock}</div>
         </header>
 
-        <div className="cds-mobile-nav md:hidden flex-shrink-0" aria-label="Primary workspace navigation">
+        <nav className="cds-mobile-nav md:hidden flex-shrink-0" aria-label="Primary workspace navigation">
           {NAV_SECTIONS.flatMap(section => section.items).map(item => {
             const Icon = item.icon;
             const active = item.views.includes(activeView);
