@@ -234,6 +234,19 @@ function routeResultStatus(res, outcome, successStatus = 200) {
   return true;
 }
 
+router.get('/airline-logo/:code', asyncHandler(async (req, res) => {
+  const code = txt(req.params.code, 2).toUpperCase();
+  if (!/^[A-Z0-9]{2}$/.test(code)) return res.status(400).json({ error: 'invalid_airline_iata_code' });
+  const apiKey = String(process.env.AIRHEX_API_KEY || '').trim();
+  if (!apiKey) return res.status(404).json({ error: 'airline_logo_not_configured' });
+  const current = await req.dbTx(client => access((sql, params) => client.query(sql, params), req));
+  if (current.error) return res.status(404).json({ error: 'journey_not_found' });
+  const signature = crypto.createHash('md5').update(code + '_160_48_r_' + apiKey).digest('hex');
+  const url = 'https://content.airhex.com/content/logos/airlines_' + code + '_160_48_r.png?md5apikey=' + signature + '&theme=dark&proportions=keep';
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  return res.redirect(302, url);
+}));
+
 router.get('/', asyncHandler(async (req, res) => {
   const result = await req.dbTx(async client => {
     const db = (sql, params) => client.query(sql, params);
