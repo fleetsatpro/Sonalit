@@ -68,11 +68,11 @@ describe('booking-container lifecycle integrity', () => {
   });
 
   test.each([
-    [{ container_number: 'CSQU3054384' }, 'container_number'],
-    [{ seal_number: 'SEAL-99999' }, 'seal_number'],
-    [{ seal_number_2: 'SEAL-99998' }, 'seal_number_2'],
-    [{ iso_type: '40HC' }, 'iso_type'],
-  ])('locks container identity and seal fields after custody begins (%s)', async (body) => {
+    [{ container_number: 'MSKU1234565' }, 'container_identity_locked_after_custody_begins'],
+    [{ seal_number: 'SEAL-99999' }, 'manifest_identity_fields_locked_after_custody_begins'],
+    [{ seal_number_2: 'SEAL-99998' }, 'manifest_identity_fields_locked_after_custody_begins'],
+    [{ iso_type: '40HC' }, 'manifest_identity_fields_locked_after_custody_begins'],
+  ])('locks container identity and seal fields after custody begins (%s)', async (body, expectedError) => {
     const statements = [];
     const db = async (sql, params) => {
       statements.push({ sql, params });
@@ -82,7 +82,7 @@ describe('booking-container lifecycle integrity', () => {
     };
     const res = await callMutation('/bookings/:id/containers/:cid', 'patch', body, db);
     expect(res.statusCode).toBe(409);
-    expect(res.body.error).toBe('manifest_identity_fields_locked_after_custody_begins');
+    expect(res.body.error).toBe(expectedError);
     expect(statements.some(statement => statement.sql.startsWith('UPDATE cds_booking_containers'))).toBe(false);
   });
 
