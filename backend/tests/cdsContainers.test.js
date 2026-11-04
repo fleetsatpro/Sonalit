@@ -210,7 +210,7 @@ describe('GET /containers', () => {
     expect(req.statements[0].sql).toContain("WHEN latest_booking_container.status = 'assigned' THEN 'booked'");
     expect(req.statements[0].sql).toContain("WHEN latest_booking_container.status IN ('in_transit','at_port','delivered')");
     expect(req.statements[0].sql).toContain('ILIKE $2');
-    expect(req.statements[0].params).toEqual(['available', '%CSQU%', 25, 50]);
+    expect(req.statements[0].params).toEqual([['available'], '%CSQU%', 25, 50]);
   });
 
   test('rejects unknown status filters rather than silently returning no rows', async () => {
