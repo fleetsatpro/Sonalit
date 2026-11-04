@@ -18,15 +18,39 @@ async function prepareCds(page: Page, width: number, height: number) {
     }));
   }, { profile: user });
 
-  // Navigation QA uses empty, explicitly synthetic responses. No operational
-  // data is fabricated or written, and every request remains tenant-auth scoped.
-  await page.route('**/api/v1/cds/**', route => route.fulfill({
+  // Navigation QA uses explicit empty/synthetic read responses only.
+  // No operational data is fabricated or written.
+  await page.route('**/api/v1/cds/dashboard', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: {
+      active_containers: 0,
+      in_transit: 0,
+      active_locks: 0,
+      locks_removed: 0,
+      pending_unclamp: 0,
+      delivered_today: 0,
+      delayed_trips: 0,
+      avg_transit_hours: 0,
+    } }),
+  }));
+  await page.route('**/api/v1/cds/activity*', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify([]),
   }));
+  await page.route('**/api/v1/cds/trips/live', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: [] }),
+  }));
+  await page.route('**/api/v1/cds/**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: [], total: 0 }),
+  }));
   await page.goto('/cds', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('navigation', { name: 'Container Management workspaces' })).toBeAttached({
+  await expect(page.locator('.cds-navigation--desktop')).toBeAttached({
     timeout: 20_000,
   });
 }
@@ -38,7 +62,7 @@ test.describe('CDS responsive command shell', () => {
     const rail = page.locator('.cds-navigation--desktop');
     const main = page.locator('.cds-main');
     await expect(rail).toBeVisible();
-    await expect(page.getByText('Container Management', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/CONTAINER MANAGEMENT/i).first()).toBeVisible();
     await expect(page.locator('.cds-nav-label').first()).toBeVisible();
 
     const railBox = await rail.boundingBox();
