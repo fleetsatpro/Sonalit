@@ -1053,8 +1053,32 @@ router.get('/containers', asyncHandler(async (req, res) => {
   const joins = `
     LEFT JOIN LATERAL (
       SELECT
+        bc.id, bc.booking_id, bc.trip_id, bc.container_number, bc.seal_number, bc.weight_kg,
+        bc.status, bc.clamped_at, bc.unclamped_at, bc.terminal, bc.yard_status,
+        bc.lock_number, bc.transporter_name, bc.horse_reg, bc.trailer_reg,
+        bc.driver_name, bc.driver_contact, bc.created_at, bc.updated_at,
+        b.booking_number, b.status AS booking_status
+      FROM cds_booking_containers bc
+      LEFT JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = bc.org_id
+      WHERE bc.container_number = t.number
+        AND bc.org_id = t.org_id
+        AND bc.deleted_at IS NULL
+      ORDER BY COALESCE(bc.clamped_at, bc.updated_at, bc.created_at) DESC, bc.id DESC
+      LIMIT 1
+    ) latest_booking_container ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT
+        ce.id, ce.kind, ce.seq, ce.actor_name, ce.lat, ce.lng,
+        ce.seal_number, ce.seal_intact, ce.lock_serial, ce.notes, ce.created_at
+      FROM cds_custody_events ce
+      WHERE ce.booking_container_id = latest_booking_container.id
+        AND ce.org_id = t.org_id
+      ORDER BY ce.seq DESC
+      LIMIT 1
+    ) latest_custody ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT
         tr.id, tr.trip_number, tr.status, tr.origin, tr.destination, tr.eta, tr.departed_at,
-        b.booking_number,
         v.registration AS vehicle_registration,
         d.name AS driver_name,
         l.serial AS lock_serial,
@@ -1062,7 +1086,6 @@ router.get('/containers', asyncHandler(async (req, res) => {
         l.signal_strength AS lock_signal_strength,
         l.battery_level AS lock_battery_level
       FROM cds_trips tr
-      LEFT JOIN cds_bookings b ON b.id = tr.booking_id AND b.org_id = tr.org_id
       LEFT JOIN cds_vehicles v ON v.id = tr.vehicle_id AND v.org_id = tr.org_id
       LEFT JOIN cds_drivers d ON d.id = tr.driver_id AND d.org_id = tr.org_id
       LEFT JOIN cds_electronic_locks l ON l.id = tr.lock_id AND l.org_id = tr.org_id
@@ -1094,9 +1117,12 @@ router.get('/containers', asyncHandler(async (req, res) => {
     filters.push(`(${[
       't.number', 't.container_type', 't.iso_type', 't.ownership',
       't.condition', 't.status', 't.current_location', 't.manufacturer',
-      'latest_trip.booking_number', 'latest_trip.trip_number',
-      'latest_trip.vehicle_registration', 'latest_trip.lock_serial',
-    ].map(column => `${column} ILIKE ${p}`).join(' OR ')})`);
+      'latest_booking_container.booking_number', 'latest_booking_container.lock_number',
+      'latest_booking_container.terminal', 'latest_booking_container.horse_reg',
+      'latest_booking_container.trailer_reg', 'latest_booking_container.driver_name',
+      'latest_trip.trip_number', 'latest_trip.vehicle_registration',
+      'latest_trip.lock_serial', 'latest_custody.lock_serial',
+    ].map(column => `${column} ILIKE $${p}`).join(' OR ')})`);
   }
   const where = filters.join(' AND ');
 
@@ -1104,9 +1130,25 @@ router.get('/containers', asyncHandler(async (req, res) => {
     const result = await client.query(
       `SELECT
          t.*,
+         latest_booking_container.id AS latest_booking_container_id,
+         latest_booking_container.booking_number AS latest_booking_number,
+         latest_booking_container.booking_status AS latest_booking_status,
+         latest_booking_container.status AS latest_booking_container_status,
+         latest_booking_container.trip_id AS latest_booking_trip_id,
+         latest_booking_container.clamped_at AS latest_clamped_at,
+         latest_booking_container.unclamped_at AS latest_unclamped_at,
+         latest_booking_container.terminal AS latest_terminal,
+         latest_booking_container.yard_status AS latest_yard_status,
+         latest_booking_container.lock_number AS manifest_lock_number,
+         latest_booking_container.transporter_name AS manifest_transporter_name,
+         latest_booking_container.horse_reg AS manifest_vehicle_registration,
+         latest_booking_container.trailer_reg AS manifest_trailer_registration,
+         latest_booking_container.driver_name AS manifest_driver_name,
+         latest_booking_container.driver_contact AS manifest_driver_contact,
+         latest_booking_container.seal_number AS latest_seal_number,
+         latest_booking_container.weight_kg AS latest_manifest_weight_kg,
          latest_trip.trip_number AS latest_trip_number,
          latest_trip.status AS latest_trip_status,
-         latest_trip.booking_number AS latest_booking_number,
          latest_trip.origin AS latest_trip_origin,
          latest_trip.destination AS latest_trip_destination,
          latest_trip.eta AS latest_trip_eta,
@@ -1116,9 +1158,15 @@ router.get('/containers', asyncHandler(async (req, res) => {
          latest_trip.lock_serial AS latest_lock_serial,
          latest_trip.lock_status AS latest_lock_status,
          latest_trip.lock_signal_strength AS latest_lock_signal_strength,
-         latest_trip.lock_battery_level AS latest_lock_battery_level
+         latest_trip.lock_battery_level AS latest_lock_battery_level,
+         latest_custody.kind AS latest_custody_kind,
+         latest_custody.seq AS latest_custody_sequence,
+         latest_custody.actor_name AS latest_custody_actor,
+         latest_custody.seal_intact AS latest_custody_seal_intact,
+         latest_custody.created_at AS latest_custody_at,
+         latest_custody.lock_serial AS latest_custody_lock_serial
        FROM cds_containers t ${joins} WHERE ${where}
-       ORDER BY t.created_at DESC, t.id DESC LIMIT ${params.length + 1} OFFSET ${params.length + 2}`,
+       ORDER BY t.created_at DESC, t.id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset],
     );
     const total = await client.query(
