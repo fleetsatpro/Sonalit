@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, type LucideIcon } from 'lucide-react';
+import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, type LucideIcon } from 'lucide-react';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
@@ -456,7 +456,11 @@ export function ReportsView() {
         {isLoading && <div className="text-xs text-text-2 font-mono py-4 text-center">Loading reports…</div>}
         {reports.map(r => (
           <div key={r.id} className="flex items-center gap-3 py-3 border-b border-[rgba(255,255,255,.04)] last:border-0">
-            <span className="text-lg">{r.format === 'pdf' ? '📄' : r.format === 'excel' ? '📊' : '📋'}</span>
+            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-md border border-white/[.07] bg-white/[.025] text-text-2">
+              {r.format === 'excel'
+                ? <FileBarChart size={15} strokeWidth={1.8} aria-hidden="true" />
+                : <FileText size={15} strokeWidth={1.8} aria-hidden="true" />}
+            </span>
             <div className="flex-1 min-w-0">
               <div className="text-xs text-text-0">{r.name}</div>
               <div className="text-[10px] text-text-2 font-mono mt-0.5">
