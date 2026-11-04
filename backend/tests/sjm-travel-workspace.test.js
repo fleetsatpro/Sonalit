@@ -8,7 +8,7 @@ describe('SJM traveller and travel programme contracts', () => {
   test('validates distinct traveller identity and contact records', () => {
     const result = travellerInput({
       traveller_reference: 'TRV-001',
-      traveller_type: 'principal',
+      traveller_type: 'accompanying',
       given_name: 'Amina',
       middle_name: 'Njeri',
       family_name: 'Example',
@@ -24,7 +24,7 @@ describe('SJM traveller and travel programme contracts', () => {
     expect(result.error).toBeUndefined();
     expect(result.value).toMatchObject({
       traveller_reference: 'TRV-001',
-      traveller_type: 'principal',
+      traveller_type: 'accompanying',
       given_name: 'Amina',
       family_name: 'Example',
       email: 'amina@example.invalid',
