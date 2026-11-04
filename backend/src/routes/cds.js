@@ -2713,12 +2713,33 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   const { notes, lat, lng, seal_intact, observed_seal } = req.body || {};
 
   const bc = await req.db(
-    `SELECT bc.*, b.booking_number, t.id AS trip_id, t.lock_id
+    `SELECT bc.*, b.booking_number, t.id AS trip_id,
+            COALESCE(clamp_audit.after_data->>'lock_serial', bc.lock_number) AS clamp_lock_serial,
+            clamp_lock.id AS clamp_lock_id
        FROM cds_booking_containers bc
-       JOIN cds_bookings b ON b.id = bc.booking_id
-       LEFT JOIN cds_trips t ON t.id = bc.trip_id
-      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
-    [bcId, bookingId]
+       JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id=bc.org_id
+       LEFT JOIN cds_trips t ON t.id = bc.trip_id AND t.org_id=bc.org_id AND t.deleted_at IS NULL
+       LEFT JOIN LATERAL (
+         SELECT a.after_data
+           FROM cds_audit_logs a
+          WHERE a.org_id=bc.org_id
+            AND a.entity_type='booking_container'
+            AND a.entity_id=bc.id
+            AND a.action='clamp'
+          ORDER BY a.created_at ASC, a.id ASC
+          LIMIT 1
+       ) clamp_audit ON true
+       LEFT JOIN LATERAL (
+         SELECT el.id
+           FROM cds_electronic_locks el
+          WHERE el.org_id=bc.org_id
+            AND el.deleted_at IS NULL
+            AND UPPER(BTRIM(el.serial))=UPPER(BTRIM(COALESCE(clamp_audit.after_data->>'lock_serial', bc.lock_number)))
+          ORDER BY el.created_at DESC, el.id DESC
+          LIMIT 1
+       ) clamp_lock ON true
+      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.org_id=$3 AND b.org_id=$3 AND bc.deleted_at IS NULL`,
+    [bcId, bookingId, orgId]
   );
   if (!bc.rows.length) return res.status(404).json({ error: 'Booking container not found' });
   if (bc.rows[0].status === 'delivered' || bc.rows[0].status === 'completed') {
@@ -2744,12 +2765,12 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
 
   const now = new Date();
 
-  if (bc.rows[0].lock_id) {
+  if (bc.rows[0].clamp_lock_id) {
     await req.db(
       `UPDATE cds_electronic_locks
           SET status='available', container_id=NULL, vehicle_id=NULL, updated_at=NOW()
-        WHERE id=$1`,
-      [bc.rows[0].lock_id]
+        WHERE id=$1 AND org_id=$2`,
+      [bc.rows[0].clamp_lock_id, orgId]
     );
   }
 
@@ -2757,8 +2778,8 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     await req.db(
       `UPDATE cds_trips
           SET status='lock_removed', delivered_at=COALESCE(delivered_at, NOW()), updated_at=NOW()
-        WHERE id=$1`,
-      [bc.rows[0].trip_id]
+        WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,
+      [bc.rows[0].trip_id, orgId]
     );
   }
 
@@ -2768,18 +2789,18 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   await req.db(
     `UPDATE cds_booking_containers
         SET status='delivered', unclamped_at=$1, yard_status='complete', updated_at=$1
-      WHERE id=$2`,
-    [now, bcId]
+      WHERE id=$2 AND org_id=$3`,
+    [now, bcId, orgId]
   );
 
   // If every container on the booking is delivered, mark the booking delivered too.
   const remaining = await req.db(
     `SELECT COUNT(*)::int AS c FROM cds_booking_containers
-      WHERE booking_id=$1 AND deleted_at IS NULL AND status NOT IN ('delivered','completed')`,
-    [bookingId]
+      WHERE booking_id=$1 AND org_id=$2 AND deleted_at IS NULL AND status NOT IN ('delivered','completed')`,
+    [bookingId, orgId]
   );
   if (remaining.rows[0].c === 0) {
-    await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1`, [bookingId]);
+    await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1 AND org_id=$2`, [bookingId, orgId]);
   }
 
   // The container is physically delivered, so its tracking session ends here
@@ -2788,7 +2809,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   // caller keeps this correct when the port crew unclamps without one.
   try {
     const tripRow = bc.rows[0].trip_id
-      ? await req.db('SELECT container_id FROM cds_trips WHERE id=$1', [bc.rows[0].trip_id])
+      ? await req.db('SELECT container_id FROM cds_trips WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL', [bc.rows[0].trip_id, orgId])
       : null;
     const containerId = tripRow && tripRow.rows.length ? tripRow.rows[0].container_id : null;
     if (containerId) {
@@ -2809,7 +2830,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     bookingContainerId: bcId,
     tripId: bc.rows[0].trip_id,
     kind: 'unclamped',
-    lockSerial: bc.rows[0].lock_number || null,
+    lockSerial: bc.rows[0].clamp_lock_serial || bc.rows[0].lock_number || null,
     sealNumber: observed || expectedSeal,
     sealIntact: sealVerdict,
     lat, lng,
