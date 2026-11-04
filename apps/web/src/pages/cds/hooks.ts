@@ -204,6 +204,22 @@ export function useContainers(filters?: SearchFilters) {
   });
 }
 
+export function useCreateContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const { data } = await cdsApi.post('/containers', payload);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'analytics'] });
+    },
+  });
+}
+
 export function useLocks(filters?: SearchFilters) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'locks', filters],
