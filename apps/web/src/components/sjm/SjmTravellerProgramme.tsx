@@ -407,11 +407,11 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
       file.type === 'image/jpeg' || file.type === 'image/png' ? 20 * 1024 * 1024 : 0;
     if (!maxBytes) {
       setNotice({ kind: 'error', text: 'Only PDF, JPEG and PNG travel documents are accepted.' });
-      return;
+      return false;
     }
     if (file.size > maxBytes) {
       setNotice({ kind: 'error', text: 'This file exceeds the ' + (maxBytes / 1024 / 1024) + ' MiB limit for its file type.' });
-      return;
+      return false;
     }
     setNotice(null);
     setDocumentUploadState({ travellerId: traveller.id, phase: 'Requesting a private upload capability…' });
