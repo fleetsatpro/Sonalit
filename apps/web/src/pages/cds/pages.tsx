@@ -134,8 +134,8 @@ export function LocksView() {
               <DrawerField label="Battery" value={batteryValue(lock) === null ? 'Not reported' : batteryValue(lock) + '%'} />
               <DrawerField label="Last signal" value={s(lock['signal_strength'] ?? 'Not reported')} />
               <DrawerField label="Last heartbeat" value={heartbeatLabel(lock['last_heartbeat'])} />
-              <DrawerField label="Tamper status" value={s(lock['tamper_status'])} />
-              <DrawerField label="Tamper detected" value={lock['tamper_detected'] ? 'Yes' : 'No event recorded'} />
+              <DrawerField label="Tamper status" value={lock['tamper_status'] && s(lock['tamper_status']) !== 'normal' ? s(lock['tamper_status']) : lock['last_heartbeat'] ? 'No tamper reported' : 'Not reported'} />
+              <DrawerField label="Tamper detected" value={lock['tamper_detected'] ? 'Yes' : lock['last_heartbeat'] ? 'No tamper event recorded' : 'Not reported'} />
               <DrawerField label="Container" value={s(lock['container_number'])} />
               <DrawerField label="Vehicle" value={s(lock['truck'])} />
               <DrawerField label="Location reference" value={s(lock['location'])} />
@@ -195,7 +195,7 @@ export function PortView() {
     return () => window.clearTimeout(handle);
   }, [searchInput]);
   const { data, isLoading, isError, isFetching, isPlaceholderData, refetch } = useTrips({
-    status: 'at_port', query: serverSearch, limit: pageSize, offset: page * pageSize,
+    status: 'at_port,delivered', query: serverSearch, limit: pageSize, offset: page * pageSize,
   });
   const { addToast, openDrawer } = useCDSStore();
   const unclamp = useUnclampBookingContainer();
