@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Search, Plus } from 'lucide-react';
-import { Badge, FilterChip, StatusBadge } from './components.js';
+import { Badge, StatusBadge } from './components.js';
 import { CONTAINER_TYPES } from './constants.js';
 import { useContainerHistory, useContainers, useCreateContainer } from './hooks.js';
 import { useCDSStore } from './store.js';
@@ -8,12 +8,10 @@ import { useCDSStore } from './store.js';
 type Row = Record<string, unknown>;
 type StatusFilter = 'all' | 'available' | 'booked' | 'awaiting_pickup' | 'in_transit' | 'at_port' | 'delivered' | 'maintenance';
 type ConditionFilter = 'all' | 'new' | 'good' | 'fair' | 'damaged' | 'retired';
-type OwnershipFilter = 'all' | 'owned' | 'leased' | 'customer';
 
 const PAGE_SIZE = 25;
 const STATUS_FILTERS: StatusFilter[] = ['all', 'available', 'booked', 'awaiting_pickup', 'in_transit', 'at_port', 'delivered', 'maintenance'];
 const CONDITIONS: ConditionFilter[] = ['all', 'new', 'good', 'fair', 'damaged', 'retired'];
-const OWNERSHIPS: OwnershipFilter[] = ['all', 'owned', 'leased', 'customer'];
 const TYPES = CONTAINER_TYPES as Record<string, string>;
 const fieldClass = 'w-full min-h-[42px] rounded-lg bg-[#101a2b] border border-white/10 px-3 text-[13px] text-white outline-none focus:border-[#70a7e8] focus:ring-2 focus:ring-[#70a7e8]/20';
 const labelClass = 'mb-1.5 block text-[10px] font-semibold uppercase tracking-[.13em] text-white/55';
@@ -29,6 +27,49 @@ function display(value: unknown): string {
 
 function pretty(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b[a-z]/g, letter => letter.toUpperCase());
+}
+
+const EQUIPMENT_FAMILIES: Record<string, string> = {
+  GP: 'General-purpose dry',
+  HC: 'High-cube dry',
+  RF: 'Refrigerated',
+  OT: 'Open-top',
+  FR: 'Flat rack',
+  TK: 'Tank',
+};
+
+/** CDS shorthand describes nominal length and equipment family, not the full ISO size/type code. */
+export function equipmentTypeLabel(code: string, fallback?: string): string {
+  const normalized = code.trim().toUpperCase();
+  const match = normalized.match(/^(\d{2})(GP|HC|RF|OT|FR|TK)$/);
+  if (match) return `${match[1]} ft · ${EQUIPMENT_FAMILIES[match[2]]}`;
+  if (fallback) return fallback.replace(/^(\d{2})'\s*/, '$1 ft · ');
+  return normalized || 'Not recorded';
+}
+
+const MOVEMENT_STAGES: Record<string, { label: string; step: number; detail: string }> = {
+  booked: { label: 'Booked', step: 1, detail: 'Booking confirmed' },
+  awaiting_pickup: { label: 'Awaiting pickup', step: 2, detail: 'Pending yard departure' },
+  in_transit: { label: 'In transit', step: 3, detail: 'Movement underway' },
+  at_port: { label: 'At port', step: 4, detail: 'Awaiting port completion' },
+  delivered: { label: 'Delivered', step: 5, detail: 'Delivery milestone recorded' },
+};
+
+export function containerMovementProgress(status: string) {
+  const normalized = status.trim().toLowerCase();
+  const stage = MOVEMENT_STAGES[normalized];
+  if (stage) return { ...stage, total: 5, percent: stage.step * 20, active: true };
+  if (normalized === 'available') {
+    return { label: 'Available', step: 0, total: 5, percent: 0, active: false, detail: 'Not allocated to a journey' };
+  }
+  if (normalized === 'maintenance') {
+    return { label: 'Maintenance', step: 0, total: 5, percent: 0, active: false, detail: 'Not in active movement' };
+  }
+  return {
+    label: normalized ? pretty(normalized) : 'Unknown',
+    step: 0, total: 5, percent: 0, active: false,
+    detail: 'No recognised movement stage recorded',
+  };
 }
 
 function formatDate(value: unknown): string {
@@ -85,6 +126,36 @@ function ConditionBadge({ condition }: { condition: string }) {
   return <Badge variant={variant}>{condition ? pretty(condition).toUpperCase() : 'UNKNOWN'}</Badge>;
 }
 
+function MovementProgress({ status }: { status: string }) {
+  const movement = containerMovementProgress(status);
+  return (
+    <div className="cds-movement-progress min-w-[148px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="cds-movement-progress__label">{movement.label}</span>
+        {movement.active && <span className="cds-movement-progress__step">{movement.step}/{movement.total}</span>}
+      </div>
+      {movement.active ? (
+        <>
+          <div
+            className="cds-movement-progress__track mt-2"
+            role="progressbar"
+            aria-label={`${movement.label} journey stage`}
+            aria-valuemin={0}
+            aria-valuemax={movement.total}
+            aria-valuenow={movement.step}
+            aria-valuetext={`${movement.label}, stage ${movement.step} of ${movement.total}`}
+          >
+            <span className="cds-movement-progress__fill" style={{ width: `${movement.percent}%` }} />
+          </div>
+          <div className="cds-movement-progress__detail mt-1">{movement.detail}</div>
+        </>
+      ) : (
+        <div className="cds-movement-progress__detail mt-1">{movement.detail}</div>
+      )}
+    </div>
+  );
+}
+
 function Metric({ label, value, note }: { label: string; value: number | undefined; note: string }) {
   return (
     <div className="min-w-0 border-l border-white/[.09] pl-4 first:border-l-0 first:pl-0">
@@ -125,7 +196,8 @@ function ContainerDetails({ container }: { container: Row }) {
     <div className="space-y-5 pb-5">
       <div>
         <div className="font-mono text-[19px] font-semibold tracking-[.04em] text-white">{number}</div>
-        <div className="mt-1 text-[11px] text-white/45">{display(container['container_type'])} · {display(container['iso_type'])}</div>
+        <div className="mt-1 text-[13px] font-semibold text-white/80">{equipmentTypeLabel(text(container, 'iso_type'), text(container, 'container_type'))}</div>
+        <div className="mt-0.5 font-mono text-[11px] text-white/45">Group shorthand · {display(container['iso_type'])}</div>
         <div className="mt-3 flex flex-wrap gap-2">
           <StatusBadge status={text(container, 'status') || 'unknown'} />
           <ConditionBadge condition={text(container, 'condition')} />
@@ -207,11 +279,12 @@ function ContainerDetails({ container }: { container: Row }) {
         {chainStatus !== 'VERIFIED' && chainStatus !== 'BROKEN' && historyEvents.some(event => event['evidence_source'] === 'manifest_timestamp') && <p className="mt-3 text-[10px] leading-relaxed text-amber-100/70">Some earlier movements are represented by stored manifest timestamps and audit actors. They pre-date the verifiable custody chain and are not labelled cryptographically verified.</p>}
       </section>
       <section>
-        <div className="mb-1 text-[9px] font-semibold uppercase tracking-[.16em] text-[#8eb9ed]">Identity & ownership</div>
+        <div className="mb-1 text-[9px] font-semibold uppercase tracking-[.16em] text-[#8eb9ed]">Container identity & status</div>
         <dl>
           {field('Container number', number)}
-          {field('Equipment type', container['iso_type'])}
-          {field('Ownership', container['ownership'])}
+          {field('Equipment category', equipmentTypeLabel(text(container, 'iso_type'), text(container, 'container_type')))}
+          {field('Group shorthand', container['iso_type'])}
+          {field('Ownership record', container['ownership'])}
           {field('Operational state', pretty(text(container, 'status')))}
           {field('Physical condition', pretty(text(container, 'condition')))}
         </dl>
@@ -317,10 +390,11 @@ function RegisterContainerForm() {
       </label>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block">
-          <span className={labelClass}>Equipment type / size *</span>
+          <span className={labelClass}>Equipment category *</span>
           <select value={isoType} onChange={event => setIsoType(event.target.value)} className={fieldClass}>
-            {Object.entries(TYPES).map(([code, name]) => <option key={code} value={code}>{code} · {name}</option>)}
+            {Object.entries(TYPES).map(([code, name]) => <option key={code} value={code}>{equipmentTypeLabel(code, name)} ({code})</option>)}
           </select>
+          <span className="mt-1.5 block text-[11px] leading-relaxed text-white/45">GP = standard dry · HC = taller high-cube · RF = refrigerated · OT = open-top · FR = flat rack · TK = tank. The code is a size/type grouping shorthand.</span>
         </label>
         <label className="block">
           <span className={labelClass}>Ownership *</span>
@@ -364,7 +438,6 @@ function RegisterContainerForm() {
 export function CDSContainerRegister() {
   const [status, setStatus] = useState<StatusFilter>('all');
   const [condition, setCondition] = useState<ConditionFilter>('all');
-  const [ownership, setOwnership] = useState<OwnershipFilter>('all');
   const [queryInput, setQueryInput] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -383,7 +456,6 @@ export function CDSContainerRegister() {
     pageSize: PAGE_SIZE,
     ...(status !== 'all' ? { status } : {}),
     ...(condition !== 'all' ? { condition } : {}),
-    ...(ownership !== 'all' ? { ownership } : {}),
     ...(query ? { query } : {}),
   };
   const { data, isLoading, isError, refetch, isFetching } = useContainers(filters);
@@ -417,7 +489,7 @@ export function CDSContainerRegister() {
   };
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6 sm:py-6">
+    <div className="cds-container-register mx-auto max-w-[1600px] px-4 py-5 sm:px-6 sm:py-6">
       <div className="flex flex-col justify-between gap-4 border-b border-white/[.08] pb-5 sm:flex-row sm:items-end">
         <div className="min-w-0">
           <div className="text-[9px] font-semibold uppercase tracking-[.19em] text-[#8eb9ed]">Equipment control / Inventory</div>
@@ -456,10 +528,9 @@ export function CDSContainerRegister() {
             </label>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-[9px] font-semibold uppercase tracking-[.13em] text-white/35">Ownership</span>
-          {OWNERSHIPS.map(value => <FilterChip key={value} label={value === 'all' ? 'All' : pretty(value)} active={ownership === value} onClick={() => changeFilter(() => setOwnership(value))} />)}
-          <span className="ml-auto flex items-center gap-2 text-[10px] text-white/35" aria-live="polite">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="max-w-2xl text-[11px] leading-relaxed text-white/45">Journey bars show saved lifecycle milestones — they do not estimate route distance or replace live GPS tracking.</p>
+          <span className="flex items-center gap-2 text-[10px] text-white/45" aria-live="polite">
             {isFetching && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#8eb9ed]" />}
             {isFetching ? 'Refreshing records' : data ? 'Persisted register' : 'Awaiting records'}
           </span>
@@ -479,13 +550,12 @@ export function CDSContainerRegister() {
             <div className="text-[10px] text-white/35">{total === 0 ? 'No matching records' : 'Showing ' + first.toLocaleString() + '–' + last.toLocaleString() + ' of ' + total.toLocaleString()}</div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1220px] border-collapse text-left">
+            <table className="cds-register-table w-full min-w-[1120px] border-collapse text-left">
               <thead className="bg-white/[.025]">
                 <tr className="text-[9px] font-semibold uppercase tracking-[.12em] text-white/40">
                   <th className="px-4 py-3">Container identity</th>
-                  <th className="px-3 py-3">Equipment type</th>
-                  <th className="px-3 py-3">Ownership</th>
-                  <th className="px-3 py-3">Operational state</th>
+                  <th className="px-3 py-3">Equipment category</th>
+                  <th className="px-3 py-3">Journey progress</th>
                   <th className="px-3 py-3">Condition</th>
                   <th className="px-3 py-3">Clamp / unclamp history</th>
                   <th className="px-3 py-3">Assignment at last clamp</th>
@@ -496,7 +566,7 @@ export function CDSContainerRegister() {
               <tbody className="divide-y divide-white/[.06]">
                 {isLoading ? Array.from({ length: 7 }, (_, index) => (
                   <tr key={index}>
-                    {Array.from({ length: 9 }, (_, cell) => <td key={cell} className="px-3 py-4"><div className="h-3 animate-pulse rounded bg-white/[.06]" /></td>)}
+                    {Array.from({ length: 8 }, (_, cell) => <td key={cell} className="px-3 py-4"><div className="h-3 animate-pulse rounded bg-white/[.06]" /></td>)}
                   </tr>
                 )) : rows.map(row => {
                   const nextInspection = row['next_inspection'];
@@ -514,11 +584,10 @@ export function CDSContainerRegister() {
                         <div className="mt-1 text-[9px] text-white/35">{text(row, 'id').slice(0, 8) || 'No record reference'}</div>
                       </td>
                       <td className="px-3 py-3.5">
-                        <div className="text-[11px] text-white/80">{display(row['iso_type'])}</div>
-                        <div className="mt-1 text-[9px] text-white/35">{display(row['container_type'])}</div>
+                        <div className="cds-register-type-name">{equipmentTypeLabel(text(row, 'iso_type'), text(row, 'container_type'))}</div>
+                        <div className="cds-register-type-code mt-1">GROUP CODE · {display(row['iso_type'])}</div>
                       </td>
-                      <td className="px-3 py-3.5 text-[11px] text-white/65">{pretty(text(row, 'ownership')) || 'Not recorded'}</td>
-                      <td className="px-3 py-3.5"><StatusBadge status={text(row, 'status') || 'unknown'} /></td>
+                      <td className="px-3 py-3.5"><MovementProgress status={text(row, 'status')} /></td>
                       <td className="px-3 py-3.5"><ConditionBadge condition={text(row, 'condition')} /></td>
                       <td className="px-3 py-3.5">
                         {hasMovement ? (
@@ -556,9 +625,9 @@ export function CDSContainerRegister() {
                   );
                 })}
                 {!isLoading && rows.length === 0 && (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center">
-                    <div className="text-[13px] font-semibold text-white/75">{total === 0 && !query && status === 'all' && condition === 'all' && ownership === 'all' ? 'No containers registered yet' : 'No matching containers'}</div>
-                    <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-white/40">{total === 0 && !query && status === 'all' && condition === 'all' && ownership === 'all' ? 'Register the first equipment record to establish your container inventory.' : 'Adjust the search or filters to broaden the register.'}</p>
+                  <tr><td colSpan={8} className="px-4 py-12 text-center">
+                    <div className="text-[13px] font-semibold text-white/75">{total === 0 && !query && status === 'all' && condition === 'all' ? 'No containers registered yet' : 'No matching containers'}</div>
+                    <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-white/40">{total === 0 && !query && status === 'all' && condition === 'all' ? 'Register the first equipment record to establish your container inventory.' : 'Adjust the search or filters to broaden the register.'}</p>
                   </td></tr>
                 )}
               </tbody>
