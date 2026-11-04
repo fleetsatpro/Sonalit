@@ -223,16 +223,13 @@ function custodyPayload({
  * own contents together with the previous event's hash, so editing or removing
  * any historical link invalidates every hash after it.
  *
- * The read of the tail is FOR UPDATE so two concurrent appends can't both take
- * the same prev_hash and fork the chain. That only locks an existing row, so
- * the very first two events on a container could still race — the
- * UNIQUE (booking_container_id, seq) constraint is the backstop there, turning
- * a would-be fork into a failed insert.
+ * Appends are serialized by locking the parent booking-container row inside
+ * the same tenant transaction as the tail read and insert. Locking the parent
+ * also serializes the first event, when the ledger itself is still empty.
  *
- * Never throws into the caller's response path: a custody event is a record of
- * something that already physically happened, so failing to write it must not
- * roll back or 500 the clamp/unclamp the worker just performed. It is logged
- * loudly instead, and the chain's own gap in seq makes the omission visible.
+ * This helper deliberately throws on failure. Clamp/unclamp commands execute
+ * inside cdsTransaction, so an event that cannot be committed must roll back
+ * the related state change rather than report an incomplete custody handoff.
  */
 async function appendCustodyEvent(req, {
   bookingContainerId, tripId = null, kind, sealNumber = null, sealIntact = null,
@@ -2059,10 +2056,13 @@ router.patch('/bookings/:id/containers/:cid', cdsTransaction(async (req, res) =>
   if (!beforeResult.rows.length) return res.status(404).json({ error: 'not_found' });
   const before = beforeResult.rows[0];
 
+  // Lifecycle/evidence fields (status, clamp timestamps, yard status,
+  // trip link and lock assignment) are written only by their audited
+  // operational transitions. This endpoint is for manifest metadata and the
+  // invoice marker, not for bypassing a physical handoff.
   const allowed = [
     'container_number', 'iso_type', 'seal_number', 'seal_number_2', 'packing_list_no',
-    'weight_kg', 'notes', 'status', 'clamped_at', 'unclamped_at', 'terminal',
-    'yard_status', 'invoiced', 'lock_number', 'transporter_name', 'horse_reg',
+    'weight_kg', 'notes', 'terminal', 'invoiced', 'transporter_name', 'horse_reg',
     'trailer_reg', 'driver_name', 'driver_contact',
   ];
   const values = {};
@@ -2071,9 +2071,9 @@ router.patch('/bookings/:id/containers/:cid', cdsTransaction(async (req, res) =>
   }
   if (!Object.keys(values).length) return res.status(400).json({ error: 'nothing_to_update' });
 
-  if (values.container_number !== undefined && values.container_number !== null && values.container_number !== '') {
-    values.container_number = normaliseContainerNumber(values.container_number);
-    const validation = validateContainerNumber(values.container_number);
+  if (values.container_number !== undefined) {
+    values.container_number = values.container_number ? normaliseContainerNumber(values.container_number) : null;
+    const validation = values.container_number ? validateContainerNumber(values.container_number) : { ok: true };
     if (!validation.ok) {
       return res.status(400).json({
         error: validation.reason === 'check_digit' ? 'invalid_container_check_digit' : 'invalid_container_number',
@@ -2081,8 +2081,15 @@ router.patch('/bookings/:id/containers/:cid', cdsTransaction(async (req, res) =>
         expected_check_digit: validation.expected,
       });
     }
-    if (values.container_number[3] !== 'U') return res.status(400).json({ error: 'freight_container_category_must_be_U' });
+    if (values.container_number && values.container_number[3] !== 'U') return res.status(400).json({ error: 'freight_container_category_must_be_U' });
     if (values.container_number !== before.container_number) {
+      const custody = await req.db(
+        'SELECT COUNT(*)::int AS count FROM cds_custody_events WHERE booking_container_id=$1 AND org_id=$2',
+        [containerId, orgId]
+      );
+      if (before.trip_id || custody.rows[0].count > 0) {
+        return res.status(409).json({ error: 'container_identity_locked_after_custody_begins' });
+      }
       const allocated = await req.db(
         \`SELECT id FROM cds_booking_containers
           WHERE org_id=$1 AND container_number=$2 AND deleted_at IS NULL
@@ -2097,11 +2104,17 @@ router.patch('/bookings/:id/containers/:cid', cdsTransaction(async (req, res) =>
   if (values.iso_type !== undefined && !new Set(['20GP','40GP','40HC','20RF','40RF','20OT','40OT','20FR','40FR','20TK']).has(String(values.iso_type).toUpperCase())) {
     return res.status(400).json({ error: 'invalid_container_equipment_type' });
   }
-  if (values.status !== undefined && !new Set(['pending','assigned','in_transit','at_port','delivered','completed']).has(String(values.status))) {
-    return res.status(400).json({ error: 'invalid_booking_container_status' });
+  if (values.iso_type !== undefined || values.seal_number !== undefined || values.seal_number_2 !== undefined) {
+    const custody = await req.db(
+      'SELECT COUNT(*)::int AS count FROM cds_custody_events WHERE booking_container_id=$1 AND org_id=$2',
+      [containerId, orgId]
+    );
+    if (before.trip_id || custody.rows[0].count > 0) {
+      return res.status(409).json({ error: 'manifest_identity_fields_locked_after_custody_begins' });
+    }
   }
-  if (values.yard_status !== undefined && !new Set(['yard','inbound','outbound','complete']).has(String(values.yard_status))) {
-    return res.status(400).json({ error: 'invalid_booking_container_yard_status' });
+  if (values.invoiced !== undefined && typeof values.invoiced !== 'boolean') {
+    return res.status(400).json({ error: 'invalid_invoice_flag' });
   }
   if (values.weight_kg !== undefined && values.weight_kg !== null && values.weight_kg !== '') {
     const weight = Number(values.weight_kg);
