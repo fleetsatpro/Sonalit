@@ -47,7 +47,7 @@ type TravelReadiness = {
   phase: 'approval' | 'departure';
   ready: boolean;
   blockers: ReadinessBlocker[];
-  warnings: Array<{ code: string; message: string; document_count?: number; connection_count?: number }>;
+  warnings: Array<{ code: string; message: string; document_count?: number; connection_count?: number; missing_nationality_count?: number; missing_date_of_birth_count?: number }>;
   counts: {
     traveller_count: number; principal_traveller_count: number; flight_segment_count: number;
     programme_day_count: number; timed_activity_count: number; unassigned_activity_count: number; required_programme_day_count: number;
