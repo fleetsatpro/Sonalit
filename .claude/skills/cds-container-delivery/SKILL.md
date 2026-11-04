@@ -121,22 +121,22 @@ The CDS frontend is a self-contained sub-app under `apps/web/src/pages/cds/`.
 
 | File | Purpose |
 |------|---------|
-| `CDSDashboard.tsx` | Main CDS dashboard with KPIs and overview |
-| `CDSDataPage.tsx` | Data management pages |
-| `CDSBookings.tsx` | Booking management |
+| `CDSDashboard.tsx` | Production CDS command workspace and operator navigation |
+| `CDSContainerRegister.tsx` | Server-filtered equipment register, condition-aware intake and record detail |
+| `CDSDataPage.tsx` | Container register and driver/transporter views |
+| `CDSBookings.tsx` | Booking intake and booking management |
 | `BookingManifest.tsx` | Booking manifest view |
-| `CDSIntro.tsx`, `CDSIntroScene.tsx` | Onboarding/intro |
-| `store.ts` | Zustand store (CDSView, drawer, toasts, viewMode) |
+| `store.ts` | URL-backed CDS view, drawer and toast state |
 | `types.ts` | CDS TypeScript contracts aligned to persisted status constraints and analytics payload |
-| `hooks.ts` | CDS data hooks |
+| `hooks.ts` | CDS query and mutation hooks |
 | `api.ts` | CDS API client |
-| `constants.ts` | CDS constants |
+| `constants.ts` | Operator view definitions and domain status metadata |
 | `components.tsx` | Shared CDS components |
-| `pages.tsx` | Sub-page components |
+| `pages.tsx` | Port, booking health, activity/custody, analytics and report views |
 
 ### CDS Views (from store.ts)
 
-`dashboard` | `live` | `containers` | `bookings` | `locks` | `drivers` | `transporters` | `port` | `pulse` | `inbox` | `billing` | `reports` | `analytics` | `settings`
+`dashboard` | `live` | `bookings` | `port` | `pulse` | `containers` | `locks` | `drivers` | `transporters` | `inbox` | `analytics` | `reports` | `settings`
 
 ### Routing
 
@@ -149,6 +149,17 @@ Separate routes for yard/port teams (mobile/APK):
 - `/field` → `FieldHome.tsx`
 - `/field/yard` → `YardApp.tsx` (container clamp operations)
 - `/field/port` → `PortApp.tsx` (container unclamp operations)
+
+
+### Current production register boundaries
+
+- The production operator route is `/cds` in `apps/web/src/router.tsx`, rendered by `apps/web/src/pages/cds/CDSDashboard.tsx`. The separate `apps/container-delivery-system` frontend is not the production `/cds` implementation; do not redirect or duplicate operator workflows there without an explicit architecture decision.
+- Container inventory is a register, not a movement console. The register separates ISO 6346 freight-container identity, product equipment type/size shorthand, ownership, operational status, physical condition, recorded location and stored inspection dates.
+- ISO 6346 identifier check-digit validation is enforced in the browser and backend. The registration API derives initial status from physical condition: damaged/retired intake is placed into maintenance; serviceable intake starts available. It does not accept a client-supplied movement state.
+- Generic container PATCH cannot set the operational status. Booking, trip, clamp and unclamp routes remain the authoritative movement writers. Do not create a second status mutation pathway in a form or field device.
+- Yard and Port applications remain separate least-privilege field workflows. Container register access is not granted to yard/port-only roles.
+- The former Billing screen only marked a booking status as billed and had no invoice, tax, payment or reconciliation ledger; it is not exposed as a Billing module. Preserve historical `billed` booking data, but do not describe it as financial accounting.
+- The operator Booking Health view is not the automated Client Pulse dispatch service. The activity/custody view is a timeline, not an inbound communications inbox. Keep those semantics distinct in labels and capability copy.
 
 ## Dashboard KPIs
 

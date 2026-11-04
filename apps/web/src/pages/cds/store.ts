@@ -7,15 +7,15 @@ interface Toast {
 }
 
 export type CDSView =
-  | 'dashboard' | 'live' | 'containers' | 'bookings' | 'locks'
-  | 'drivers' | 'transporters' | 'port' | 'pulse' | 'inbox'
-  | 'billing' | 'reports' | 'analytics' | 'settings';
+  | 'dashboard' | 'live' | 'bookings' | 'port' | 'pulse'
+  | 'containers' | 'locks' | 'drivers' | 'transporters'
+  | 'inbox' | 'analytics' | 'reports' | 'settings';
 
 const CDS_HASH_PREFIX = 'cds:';
 const CDS_VIEWS = new Set<CDSView>([
-  'dashboard', 'live', 'containers', 'bookings', 'locks', 'drivers',
-  'transporters', 'port', 'pulse', 'inbox', 'billing', 'reports',
-  'analytics', 'settings',
+  'dashboard', 'live', 'bookings', 'port', 'pulse', 'containers',
+  'locks', 'drivers', 'transporters', 'inbox', 'analytics',
+  'reports', 'settings',
 ]);
 
 function viewFromLocation(): CDSView {

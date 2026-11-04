@@ -1,60 +1,15 @@
-import { useState } from 'react';
-import { DataTable, DrawerField, StatusBadge, FilterChip } from './components.js';
-import { useContainers, useCDSDrivers, useCDSTransporters } from './hooks.js';
+import { DataTable, DrawerField, StatusBadge } from './components.js';
+import { useCDSDrivers, useCDSTransporters } from './hooks.js';
 import { useCDSStore } from './store.js';
 import { LoadingState } from './CDSDashboard.js';
+import { CDSContainerRegister } from './CDSContainerRegister.js';
 export { BookingsView } from './CDSBookings.js';
 
 type Row = Record<string, unknown>;
 const s = (v: unknown) => String(v ?? '—');
 
 export function ContainersView() {
-  const [filter, setFilter] = useState('all');
-  const { data, isLoading } = useContainers();
-  const { openDrawer } = useCDSStore();
-  if (isLoading) return <LoadingState />;
-
-  const all = (data?.data ?? []) as Row[];
-  const rows = filter === 'all' ? all : all.filter(r => r['status'] === filter);
-  const statuses = ['all', 'available', 'booked', 'awaiting_pickup', 'in_transit', 'at_port', 'delivered', 'maintenance'];
-
-  return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <DataTable
-        columns={[
-          { id: 'num', header: 'Container #', accessor: (r: Row) => <span className="font-mono font-bold text-cds-orange text-xs">{s(r['number'] ?? r['container_number'])}</span> },
-          { id: 'type', header: 'Type', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['iso_type'])}</span> },
-          { id: 'owner', header: 'Ownership', accessor: (r: Row) => s(r['ownership']) },
-          { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
-          { id: 'loc', header: 'Location', accessor: (r: Row) => r['lat'] ? `${Number(r['lat']).toFixed(4)}, ${Number(r['lng']).toFixed(4)}` : '—' },
-        ]}
-        data={rows}
-        keyExtractor={(r: Row) => s(r['id'])}
-        searchable
-        searchPlaceholder="Search containers…"
-        filters={
-          <div className="flex gap-1 flex-wrap">
-            {statuses.map(st => (
-              <FilterChip key={st} label={st === 'all' ? 'All' : st.replace('_', ' ').toUpperCase()} active={filter === st} onClick={() => setFilter(st)} />
-            ))}
-          </div>
-        }
-        onRowClick={(r: Row) => openDrawer(`Container ${s(r['number'] ?? r['container_number'])}`, (
-          <>
-            <DrawerField label="Container #" value={s(r['number'] ?? r['container_number'])} />
-            <DrawerField label="ISO Type" value={s(r['iso_type'])} />
-            <DrawerField label="Ownership" value={s(r['ownership'])} />
-            <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
-            <DrawerField label="Max Weight" value={r['max_weight'] ? `${r['max_weight']} kg` : '—'} />
-            <DrawerField label="Tare Weight" value={r['tare_weight'] ? `${r['tare_weight']} kg` : '—'} />
-            <DrawerField label="Manufacturer" value={s(r['manufacturer'])} />
-            <DrawerField label="Year Built" value={s(r['year_built'])} />
-            <DrawerField label="Last Inspection" value={r['last_inspection'] ? new Date(s(r['last_inspection'])).toLocaleDateString() : '—'} />
-          </>
-        ))}
-      />
-    </div>
-  );
+  return <CDSContainerRegister />;
 }
 
 export function DriversView() {

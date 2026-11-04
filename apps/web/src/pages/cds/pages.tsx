@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, type LucideIcon } from 'lucide-react';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useDashboardKPIs, useCDSAnalytics, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useAcknowledgeAlert } from './hooks.js';
+import { useDashboardKPIs, useCDSAnalytics, useLocks, useTrips, useBookings, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useAcknowledgeAlert } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
@@ -359,16 +360,23 @@ export function InboxView() {
   if (isLoading) return <LoadingState />;
   const items = (activity ?? []) as Row[];
 
-  const iconMap: Record<string, string> = {
-    clamp: '🔒', depart: '🚛', checkpoint: '📍', sync: '🔄',
-    arrival: '✅', unclamp: '🔓', ai: '🤖', alert: '⚠️',
-    lock: '🔒', unlock: '🔓',
+  const iconMap: Record<string, LucideIcon> = {
+    clamp: Lock,
+    depart: Truck,
+    checkpoint: MapPin,
+    sync: RefreshCw,
+    arrival: CheckCircle2,
+    unclamp: Unlock,
+    ai: BrainCircuit,
+    alert: AlertTriangle,
+    lock: Lock,
+    unlock: Unlock,
   };
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
       <Card className="p-4">
-        <div className="font-bold text-sm text-text-0">Dispatch Log</div>
+        <div className="font-bold text-sm text-text-0">Activity & Custody</div>
         {/* Says where the entries come from, so an empty log reads as "nothing
             has happened yet" rather than "this screen may be broken". */}
         <div className="text-[10px] font-mono text-text-2 mt-0.5 mb-3">
@@ -377,7 +385,12 @@ export function InboxView() {
         <div className="space-y-0 max-h-[600px] overflow-y-auto">
           {items.map((item, i) => (
             <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2.5 border-b border-white/[.05] last:border-0">
-              <span className="text-sm flex-none mt-0.5">{iconMap[String(item['icon'] ?? item['type'] ?? '')] ?? '📋'}</span>
+              <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-md border border-white/[.07] bg-white/[.025] text-text-2">
+                {(() => {
+                  const Icon = iconMap[String(item['icon'] ?? item['type'] ?? '')] ?? FileText;
+                  return <Icon size={14} strokeWidth={1.8} aria-hidden="true" />;
+                })()}
+              </span>
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-text-0">{String(item['description'] ?? item['text'] ?? '—')}</div>
                 {item['meta'] ? (
@@ -397,83 +410,6 @@ export function InboxView() {
             </div>
           )}
         </div>
-      </Card>
-    </div>
-  );
-}
-
-export function BillingView() {
-  const [filter, setFilter] = useState<'all' | 'delivered' | 'completed' | 'billed'>('all');
-  const { data, isLoading } = useBookings();
-  const markBilled = useMarkBilled();
-  const { addToast } = useCDSStore();
-  if (isLoading) return <LoadingState />;
-
-  const all = (data?.data ?? []) as Row[];
-  const billingRows = all.filter(r => ['delivered', 'completed', 'billed'].includes(s(r['status'])));
-  const filtered = filter === 'all' ? billingRows : billingRows.filter(r => r['status'] === filter);
-  const readyCount = billingRows.filter(r => ['delivered', 'completed'].includes(s(r['status']))).length;
-  const billedCount = billingRows.filter(r => r['status'] === 'billed').length;
-
-  return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-        <KPICard label="READY TO BILL" value={String(readyCount)} delta="completed bookings" trend="up" />
-        <KPICard label="BILLED" value={String(billedCount)} delta="processed" trend="up" />
-        <KPICard label="TOTAL" value={String(billingRows.length)} delta="in billing cycle" trend="up" />
-      </div>
-      <div className="flex gap-1 mb-4">
-        {(['all', 'delivered', 'completed', 'billed'] as const).map(f => (
-          <FilterChip key={f} label={f === 'all' ? 'All' : f.toUpperCase()} active={filter === f} onClick={() => setFilter(f)} />
-        ))}
-      </div>
-      <Card className="overflow-hidden">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-[rgba(255,255,255,.06)]">
-              {['Booking #', 'Customer', 'Reference', 'Commodity', 'Status', 'Date', 'Action'].map(h => (
-                <th key={h} className="text-left px-4 py-3 text-text-2 font-mono text-[10px] tracking-wider">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(row => (
-              <tr key={s(row['id'])} className="border-b border-[rgba(255,255,255,.04)] hover:bg-[rgba(255,255,255,.02)]">
-                <td className="px-4 py-3 font-mono text-cds-orange">{s(row['booking_number'])}</td>
-                <td className="px-4 py-3">{s(row['customer_name'])}</td>
-                <td className="px-4 py-3 font-mono">{s(row['reference'])}</td>
-                <td className="px-4 py-3">{s(row['commodity'])}</td>
-                <td className="px-4 py-3"><StatusBadge status={s(row['status'])} /></td>
-                <td className="px-4 py-3 font-mono text-text-2">
-                  {row['created_at'] ? new Date(s(row['created_at'])).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—'}
-                </td>
-                <td className="px-4 py-3">
-                  {['delivered', 'completed'].includes(s(row['status'])) && (
-                    <button
-                      onClick={() => markBilled.mutate(s(row['id']), {
-                        onSuccess: () => addToast(`Booking ${s(row['booking_number'])} marked as billed`, 'success'),
-                      })}
-                      disabled={markBilled.isPending}
-                      className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/25 transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      Mark Billed
-                    </button>
-                  )}
-                  {s(row['status']) === 'billed' && (
-                    <span className="text-[10px] font-mono text-text-2">Processed</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-text-2 font-mono text-[11px]">
-                  No billing records. Completed bookings appear here automatically.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
       </Card>
     </div>
   );
@@ -520,7 +456,11 @@ export function ReportsView() {
         {isLoading && <div className="text-xs text-text-2 font-mono py-4 text-center">Loading reports…</div>}
         {reports.map(r => (
           <div key={r.id} className="flex items-center gap-3 py-3 border-b border-[rgba(255,255,255,.04)] last:border-0">
-            <span className="text-lg">{r.format === 'pdf' ? '📄' : r.format === 'excel' ? '📊' : '📋'}</span>
+            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-md border border-white/[.07] bg-white/[.025] text-text-2">
+              {r.format === 'excel'
+                ? <FileBarChart size={15} strokeWidth={1.8} aria-hidden="true" />
+                : <FileText size={15} strokeWidth={1.8} aria-hidden="true" />}
+            </span>
             <div className="flex-1 min-w-0">
               <div className="text-xs text-text-0">{r.name}</div>
               <div className="text-[10px] text-text-2 font-mono mt-0.5">

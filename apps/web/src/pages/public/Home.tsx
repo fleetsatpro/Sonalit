@@ -81,7 +81,7 @@ const APPLICATIONS = [
   ['CONTROL ROOM', 'One operating surface for live movement, alerts, incidents, communications and decision support.'],
   ['FLEET WORKSPACE', 'Vehicles, drivers, devices, shifts, maintenance, fuel, claims and the journeys tying them together.'],
   ['CONVOY WORKSPACE', 'Planning, corridor watch, CFO field activity, seals, evidence, reports and route-risk context.'],
-  ['CDS COMMAND', 'A dedicated Container Delivery System for bookings, trips, containers, e-locks, port and yard flow, pulse, billing and reporting.'],
+  ['CDS COMMAND', 'A dedicated Container Delivery System for booking intake, container records, trip execution, e-lock control, port and yard workflows, custody activity and operational reporting.'],
   ['YARD + PORT FIELD APPS', 'Role-specific mobile workflows for clamp, unclamp, departures and custody events where the work physically happens.'],
   ['GUARDIAN ANDROID', 'Device-backed field safety with live location, DMS, panic escalation, integrity controls, commands and signal anomaly detection.'],
   ['INTELLIGENCE CENTRE', 'Collection, source provenance, public-signal alerts, synthesis and controlled publication across security, logistics and geospatial context.'],
