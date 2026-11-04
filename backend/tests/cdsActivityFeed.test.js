@@ -106,7 +106,7 @@ describe('ordering and limit', () => {
     const db = fakeDb(allSources);
     await activityFeed(db, 7);
     expect(db.seen).toHaveLength(4);
-    for (const { params } of db.seen) expect(params).toEqual([7]);
+    for (const { params } of db.seen) expect(params).toEqual([ORG_ID, 7]);
   });
 });
 
