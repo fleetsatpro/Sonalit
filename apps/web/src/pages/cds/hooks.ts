@@ -535,17 +535,6 @@ export function useAddBookingContainers() {
   });
 }
 
-export function useMarkBilled() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { data } = await cdsApi.patch(`/bookings/${id}`, { status: 'billed' });
-      return data;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cds', 'bookings'] }),
-  });
-}
-
 export function useBookingPipeline() {
   return useQuery({
     queryKey: ['cds', 'bookings', 'pipeline'],
