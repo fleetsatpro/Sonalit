@@ -822,10 +822,20 @@ const TRIP_JOINS = `LEFT JOIN cds_customers cu ON cu.id=t.customer_id AND cu.org
   LEFT JOIN cds_vehicles ve ON ve.id=t.vehicle_id AND ve.org_id=t.org_id
   LEFT JOIN cds_containers co ON co.id=t.container_id AND co.org_id=t.org_id
   LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=t.org_id
-  LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=t.org_id`;
+  LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=t.org_id
+  LEFT JOIN LATERAL (
+    SELECT bc.id, bc.status, bc.yard_status, bc.seal_number, bc.lock_number, bc.terminal
+      FROM cds_booking_containers bc
+     WHERE bc.trip_id=t.id AND bc.org_id=t.org_id AND bc.deleted_at IS NULL
+     ORDER BY bc.created_at DESC, bc.id DESC
+     LIMIT 1
+  ) manifest ON TRUE`;
 const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_name,
   dr.name AS "driverName", ve.registration AS "vehicleReg",
-  co.number AS container_number, el.serial AS lock_serial, tr.company_name AS transporter_name`;
+  co.number AS container_number, el.serial AS lock_serial, tr.company_name AS transporter_name,
+  manifest.id AS booking_container_id, manifest.status AS booking_container_status,
+  manifest.yard_status, manifest.seal_number AS manifest_seal_number,
+  manifest.lock_number AS manifest_lock_number, manifest.terminal AS manifest_terminal`;
 
 router.get('/trips', asyncHandler(async (req, res) => {
   await listRows(req, res, 'cds_trips', {
@@ -2770,9 +2780,10 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
   let sealVerdict = null;                      // null = not checked
   if (seal_intact === false) {
     sealVerdict = false;
-  } else if (seal_intact === true) {
-    const mismatched = expectedSeal && observed && observed.toUpperCase() !== String(expectedSeal).toUpperCase();
-    sealVerdict = !mismatched;
+  } else if (seal_intact === true && expectedSeal && observed) {
+    // A positive result requires comparison of the recorded and observed
+    // identifiers. A bare checkbox is not proof that the seal was checked.
+    sealVerdict = observed.toUpperCase() === String(expectedSeal).trim().toUpperCase();
   }
   const sealTampered = sealVerdict === false;
 
