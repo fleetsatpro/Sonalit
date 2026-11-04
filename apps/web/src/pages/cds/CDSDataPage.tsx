@@ -65,14 +65,24 @@ export function ContainersView() {
       addToast('Enter a valid year of manufacture.', 'error');
       return;
     }
+    const maxPayload = maxWeight ? Number(maxWeight) : null;
+    const tare = tareWeight ? Number(tareWeight) : null;
+    if ([maxPayload, tare].some(value => value !== null && (!Number.isFinite(value) || value <= 0))) {
+      addToast('Weight values must be positive numbers when supplied.', 'error');
+      return;
+    }
+    if (['damaged', 'retired'].includes(condition) && initialStatus !== 'maintenance') {
+      addToast('Damaged or retired containers must begin in maintenance status.', 'error');
+      return;
+    }
     const payload: Record<string, unknown> = {
       number: cleanNumber,
       iso_type: isoType,
       container_type: CONTAINER_TYPES[isoType] ?? isoType,
       container_size: Number.parseInt(isoType, 10) || 20,
       ownership,
-      max_weight_kg: maxWeight ? Number(maxWeight) : null,
-      tare_weight_kg: tareWeight ? Number(tareWeight) : null,
+      max_weight_kg: maxPayload,
+      tare_weight_kg: tare,
       manufacturer: manufacturer.trim() || null,
       year_built: built,
       condition,
@@ -142,7 +152,11 @@ export function ContainersView() {
 
             <label className="cds-form-field">
               <span className="cds-form-label">Physical condition *</span>
-              <select required value={condition} onChange={event => setCondition(event.target.value)} className="cds-form-control">
+              <select required value={condition} onChange={event => {
+                  const next = event.target.value;
+                  setCondition(next);
+                  if (['damaged', 'retired'].includes(next)) setInitialStatus('maintenance');
+                }} className="cds-form-control">
                 <option value="new">New</option>
                 <option value="good">Good</option>
                 <option value="fair">Fair</option>
@@ -154,7 +168,7 @@ export function ContainersView() {
             <label className="cds-form-field">
               <span className="cds-form-label">Initial status *</span>
               <select required value={initialStatus} onChange={event => setInitialStatus(event.target.value)} className="cds-form-control">
-                <option value="available">Available</option>
+                <option value="available" disabled={condition === 'damaged' || condition === 'retired'}>Available</option>
                 <option value="maintenance">Maintenance</option>
               </select>
               <span className="cds-form-help">A new record cannot be registered as already in transit or delivered.</span>
