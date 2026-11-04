@@ -266,7 +266,7 @@ const COUNTRY_ALIASES: Record<string, string> = {
   emirati: 'AE', qatari: 'QA', saudi: 'SA', nigerian: 'NG', ghanaian: 'GH',
   senegalese: 'SN', ivorian: 'CI', moroccan: 'MA', egyptian: 'EG',
   sudanese: 'SD', zambian: 'ZM', zimbabwean: 'ZW', mauritian: 'MU',
-  malagasy: 'MG', australian: 'AU', new zealander: 'NZ', brazilian: 'BR',
+  malagasy: 'MG', australian: 'AU', 'new zealander': 'NZ', brazilian: 'BR',
   mexican: 'MX', russian: 'RU', ukrainian: 'UA', polish: 'PL',
 };
 
