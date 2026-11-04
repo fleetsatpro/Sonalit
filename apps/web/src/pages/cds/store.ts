@@ -8,13 +8,13 @@ interface Toast {
 
 export type CDSView =
   | 'dashboard' | 'live' | 'containers' | 'bookings' | 'locks'
-  | 'drivers' | 'transporters' | 'port' | 'pulse' | 'inbox'
+  | 'drivers' | 'transporters' | 'port' | 'pulse' | 'inbox' | 'audit'
   | 'billing' | 'reports' | 'analytics' | 'settings';
 
 const CDS_HASH_PREFIX = 'cds:';
 const CDS_VIEWS = new Set<CDSView>([
   'dashboard', 'live', 'containers', 'bookings', 'locks', 'drivers',
-  'transporters', 'port', 'pulse', 'inbox', 'billing', 'reports',
+  'transporters', 'port', 'pulse', 'inbox', 'audit', 'billing', 'reports',
   'analytics', 'settings',
 ]);
 
