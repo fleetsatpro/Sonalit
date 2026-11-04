@@ -972,7 +972,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     const wizard = workspace.locator('.sjm-traveller-wizard');
     await expect(wizard.getByRole('heading', { name: 'Add a traveller to this journey' })).toBeVisible();
     await expect(wizard.getByRole('navigation', { name: 'Traveller registration steps' })).toBeVisible();
-    await expect(wizard.getByLabel('Traveller reference')).toHaveValue('TRV-002');
+    await expect(wizard.getByLabel('Traveller reference')).toHaveValue('TRV-001');
     await wizard.getByLabel('Given name *').fill('Amina');
     await wizard.getByLabel('Family / surname *').fill('Example');
     await wizard.getByLabel('Nationality / citizenship').selectOption({ label: 'Kenya' });
