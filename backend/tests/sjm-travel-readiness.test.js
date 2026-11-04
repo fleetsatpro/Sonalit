@@ -28,6 +28,19 @@ describe('SJM server-side travel readiness', () => {
     expect(ambiguous.blockers.map(item => item.code)).toContain('principal_traveller_ambiguous');
   });
 
+  test('warns about identity details missing from the traveller register without blocking early intake', () => {
+    const incomplete = evaluateTravelReadiness({ journey: journey({}), travellers: [principal], flights: [], days: [], documents: [] }, 'approval');
+    expect(incomplete.ready).toBe(true);
+    expect(incomplete.warnings).toContainEqual(expect.objectContaining({
+      code: 'traveller_identity_details_incomplete',
+      missing_nationality_count: 1,
+      missing_date_of_birth_count: 1,
+    }));
+
+    const complete = evaluateTravelReadiness({ journey: journey({}), travellers: [{ ...principal, nationality: 'Kenya', date_of_birth: '1990-01-01' }], flights: [], days: [], documents: [] }, 'approval');
+    expect(complete.warnings.map(item => item.code)).not.toContain('traveller_identity_details_incomplete');
+  });
+
   test('requires a non-cancelled flight for every airport traveller or one shared flight', () => {
     const airportJourney = journey({ service_type: 'airport_arrival' });
     const accompanying = { id: '30000000-0000-4000-8000-000000000002', traveller_type: 'accompanying' };
