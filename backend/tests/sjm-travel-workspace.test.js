@@ -8,7 +8,7 @@ describe('SJM traveller and travel programme contracts', () => {
   test('validates distinct traveller identity and contact records', () => {
     const result = travellerInput({
       traveller_reference: 'TRV-001',
-      traveller_type: 'principal',
+      traveller_type: 'accompanying',
       given_name: 'Amina',
       middle_name: 'Njeri',
       family_name: 'Example',
@@ -16,17 +16,21 @@ describe('SJM traveller and travel programme contracts', () => {
       date_of_birth: '1994-04-18',
       email: 'amina@example.invalid',
       phone: '+254700000000',
+      relationship_to_principal: 'spouse',
       emergency_contact_name: 'Emergency Contact',
+      emergency_contact_relationship: 'sibling',
       emergency_contact_phone: '+254711111111',
     });
     expect(result.error).toBeUndefined();
     expect(result.value).toMatchObject({
       traveller_reference: 'TRV-001',
-      traveller_type: 'principal',
+      traveller_type: 'accompanying',
       given_name: 'Amina',
       family_name: 'Example',
       email: 'amina@example.invalid',
       phone: '+254700000000',
+      relationship_to_principal: 'spouse',
+      emergency_contact_relationship: 'sibling',
     });
   });
 
@@ -35,6 +39,8 @@ describe('SJM traveller and travel programme contracts', () => {
     expect(travellerInput({ traveller_reference: 'T', given_name: 'Amina', family_name: 'Example' }).error).toBe('invalid_traveller_reference');
     expect(travellerInput({ traveller_reference: 'TRV-001', given_name: 'Amina', family_name: 'Example', email: 'not-an-email' }).error).toBe('invalid_traveller_email');
     expect(travellerInput({ traveller_reference: 'TRV-001', given_name: 'Amina', family_name: 'Example', date_of_birth: '2099-01-01' }).error).toBe('invalid_date_of_birth');
+    expect(travellerInput({ traveller_reference: 'TRV-001', given_name: 'Amina', family_name: 'Example', relationship_to_principal: 'x'.repeat(81) }).value.relationship_to_principal.length).toBe(80);
+    expect(travellerInput({ traveller_reference: 'TRV-001', given_name: 'Amina', family_name: 'Example', emergency_contact_relationship: 'sibling' }).value.emergency_contact_relationship).toBe('sibling');
   });
 
   test('validates a multi-leg flight record with airport-local timezone semantics', () => {

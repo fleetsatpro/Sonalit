@@ -248,6 +248,27 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
   }
 
   const airportService = AIRPORT_SERVICES.has(String(journey.service_type || ''));
+  const missingNationalityCount = travellers.filter(person => !String(person.nationality || '').trim()).length;
+  const missingDateOfBirthCount = travellers.filter(person => !person.date_of_birth).length;
+  if (missingNationalityCount > 0 || missingDateOfBirthCount > 0) {
+    const identityGap = {
+      missing_nationality_count: missingNationalityCount,
+      missing_date_of_birth_count: missingDateOfBirthCount,
+    };
+    if (phase === 'departure' && airportService) {
+      blockers.push({
+        code: 'airport_traveller_identity_incomplete',
+        message: 'Record each airport traveller’s nationality/citizenship and date of birth before departure release; check both values against the official travel document.',
+        ...identityGap,
+      });
+    } else {
+      warnings.push({
+        code: 'traveller_identity_details_incomplete',
+        message: 'Confirm each traveller’s nationality and date of birth against their travel document before ticketing or international movement.',
+        ...identityGap,
+      });
+    }
+  }
   const flightCoverage = airportService
     ? analyseFlightCoverage(travellers, flights)
     : { uncovered_traveller_count: 0, overlapping_flight_count: 0, airport_change_count: 0 };
@@ -386,7 +407,7 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
 async function loadTravelReadiness(db, journey, phase = 'departure') {
   const org = journey.org_id, id = journey.id;
   const travellerResult = await db(
-    'SELECT id,traveller_type FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL',
+    'SELECT id,traveller_type,nationality,date_of_birth FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL',
     [org, id],
   );
   const flightResult = await db(

@@ -93,7 +93,9 @@ function travellerInput(body) {
     preferred_name: txt(body.preferred_name, 100) || null,
     nationality: txt(body.nationality, 80) || null, date_of_birth: dob,
     email, phone,
+    relationship_to_principal: txt(body.relationship_to_principal, 80) || null,
     emergency_contact_name: txt(body.emergency_contact_name, 160) || null,
+    emergency_contact_relationship: txt(body.emergency_contact_relationship, 80) || null,
     emergency_contact_phone: emergencyPhone,
     internal_notes: txt(body.internal_notes, 1200) || null,
   } };
@@ -232,6 +234,32 @@ function routeResultStatus(res, outcome, successStatus = 200) {
   return true;
 }
 
+router.get('/airline-logo/:code', asyncHandler(async (req, res) => {
+  const code = txt(req.params.code, 2).toUpperCase();
+  if (!/^[A-Z0-9]{2}$/.test(code)) return res.status(400).json({ error: 'invalid_airline_iata_code' });
+  const apiKey = String(process.env.AIRHEX_API_KEY || '').trim();
+  if (!apiKey) return res.status(404).json({ error: 'airline_logo_not_configured' });
+  const current = await req.dbTx(client => access((sql, params) => client.query(sql, params), req));
+  if (current.error) return res.status(404).json({ error: 'journey_not_found' });
+  const signature = crypto.createHash('md5').update(code + '_160_48_r_' + apiKey).digest('hex');
+  const url = 'https://content.airhex.com/content/logos/airlines_' + code + '_160_48_r.png?md5apikey=' + signature + '&theme=dark&proportions=keep';
+  try {
+    const upstream = await fetch(url, { headers: { Accept: 'image/png' }, signal: AbortSignal.timeout(5000) });
+    if (!upstream.ok) return res.status(404).json({ error: 'airline_logo_not_found' });
+    const contentType = String(upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (contentType !== 'image/png') return res.status(502).json({ error: 'airline_logo_invalid_content_type' });
+    const image = Buffer.from(await upstream.arrayBuffer());
+    if (!image.length || image.length > 2 * 1024 * 1024) return res.status(502).json({ error: 'airline_logo_invalid_size' });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', String(image.length));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    return res.status(200).send(image);
+  } catch {
+    return res.status(502).json({ error: 'airline_logo_provider_unavailable' });
+  }
+}));
+
 router.get('/', asyncHandler(async (req, res) => {
   const result = await req.dbTx(async client => {
     const db = (sql, params) => client.query(sql, params);
@@ -240,7 +268,7 @@ router.get('/', asyncHandler(async (req, res) => {
     const org = req.user.org_id, id = current.journey.id, isManager = manager(req.user);
     const travellerRows = await db(
       isManager
-        ? 'SELECT t.id,t.traveller_reference,t.traveller_type,t.title,t.given_name,t.middle_name,t.family_name,t.preferred_name,t.nationality,t.date_of_birth,t.email,t.phone,t.emergency_contact_name,t.emergency_contact_phone,t.internal_notes,t.created_at,t.updated_at,concat_ws(\' \',t.title,t.given_name,t.middle_name,t.family_name) AS display_name FROM sjm_travellers t WHERE t.org_id=$1 AND t.journey_id=$2 AND t.deleted_at IS NULL ORDER BY t.created_at,t.id'
+        ? 'SELECT t.id,t.traveller_reference,t.traveller_type,t.title,t.given_name,t.middle_name,t.family_name,t.preferred_name,t.nationality,t.date_of_birth,t.email,t.phone,t.relationship_to_principal,t.emergency_contact_name,t.emergency_contact_relationship,t.emergency_contact_phone,t.internal_notes,t.created_at,t.updated_at,concat_ws(\' \',t.title,t.given_name,t.middle_name,t.family_name) AS display_name FROM sjm_travellers t WHERE t.org_id=$1 AND t.journey_id=$2 AND t.deleted_at IS NULL ORDER BY t.created_at,t.id'
         : 'SELECT t.id,t.traveller_reference,t.traveller_type,concat_ws(\' \',t.title,t.given_name,t.family_name) AS display_name FROM sjm_travellers t WHERE t.org_id=$1 AND t.journey_id=$2 AND t.deleted_at IS NULL ORDER BY t.created_at,t.id',
       [org, id],
     );
@@ -313,9 +341,9 @@ router.post('/travellers', managerOnly, asyncHandler(async (req, res) => {
     const duplicate = await db('SELECT id FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND traveller_reference=$3 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,v.traveller_reference]);
     if (duplicate.rows.length) return { error: 'conflict', message: 'That traveller reference is already registered to this journey.' };
     const inserted = await db(
-      'INSERT INTO sjm_travellers (org_id,journey_id,traveller_reference,traveller_type,title,given_name,middle_name,family_name,preferred_name,nationality,date_of_birth,email,phone,emergency_contact_name,emergency_contact_phone,internal_notes,created_by,updated_by) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17) RETURNING id,traveller_reference,traveller_type,title,given_name,middle_name,family_name,preferred_name,nationality,date_of_birth,email,phone,emergency_contact_name,emergency_contact_phone,internal_notes,created_at,updated_at',
-      [req.user.org_id,current.journey.id,v.traveller_reference,v.traveller_type,v.title,v.given_name,v.middle_name,v.family_name,v.preferred_name,v.nationality,v.date_of_birth,v.email,v.phone,v.emergency_contact_name,v.emergency_contact_phone,v.internal_notes,req.user.id],
+      'INSERT INTO sjm_travellers (org_id,journey_id,traveller_reference,traveller_type,title,given_name,middle_name,family_name,preferred_name,nationality,date_of_birth,email,phone,relationship_to_principal,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,internal_notes,created_by,updated_by) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19) RETURNING id,traveller_reference,traveller_type,title,given_name,middle_name,family_name,preferred_name,nationality,date_of_birth,email,phone,relationship_to_principal,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,internal_notes,created_at,updated_at',
+      [req.user.org_id,current.journey.id,v.traveller_reference,v.traveller_type,v.title,v.given_name,v.middle_name,v.family_name,v.preferred_name,v.nationality,v.date_of_birth,v.email,v.phone,v.relationship_to_principal,v.emergency_contact_name,v.emergency_contact_relationship,v.emergency_contact_phone,v.internal_notes,req.user.id],
     );
     await audit(db, req, current.journey.id, 'TRAVELLER_CREATED', inserted.rows[0].id, { traveller_reference: v.traveller_reference, traveller_type: v.traveller_type });
     return { data: inserted.rows[0] };
@@ -338,9 +366,9 @@ router.patch('/travellers/:travellerId', managerOnly, asyncHandler(async (req, r
     const duplicate = await db('SELECT id FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND traveller_reference=$3 AND id<>$4 AND deleted_at IS NULL LIMIT 1', [req.user.org_id,current.journey.id,v.traveller_reference,req.params.travellerId]);
     if (duplicate.rows.length) return { error: 'conflict', message: 'That traveller reference is already registered to this journey.' };
     const saved = await db(
-      'UPDATE sjm_travellers SET traveller_reference=$1,traveller_type=$2,title=$3,given_name=$4,middle_name=$5,family_name=$6,preferred_name=$7,nationality=$8,date_of_birth=$9,email=$10,phone=$11,emergency_contact_name=$12,emergency_contact_phone=$13,internal_notes=$14,updated_by=$15,updated_at=NOW() ' +
-      'WHERE id=$16 AND org_id=$17 AND journey_id=$18 AND deleted_at IS NULL RETURNING id,traveller_reference,traveller_type,title,given_name,middle_name,family_name,preferred_name,nationality,date_of_birth,email,phone,emergency_contact_name,emergency_contact_phone,internal_notes,updated_at',
-      [v.traveller_reference,v.traveller_type,v.title,v.given_name,v.middle_name,v.family_name,v.preferred_name,v.nationality,v.date_of_birth,v.email,v.phone,v.emergency_contact_name,v.emergency_contact_phone,v.internal_notes,req.user.id,req.params.travellerId,req.user.org_id,current.journey.id],
+      'UPDATE sjm_travellers SET traveller_reference=$1,traveller_type=$2,title=$3,given_name=$4,middle_name=$5,family_name=$6,preferred_name=$7,nationality=$8,date_of_birth=$9,email=$10,phone=$11,relationship_to_principal=$12,emergency_contact_name=$13,emergency_contact_relationship=$14,emergency_contact_phone=$15,internal_notes=$16,updated_by=$17,updated_at=NOW() ' +
+      'WHERE id=$18 AND org_id=$19 AND journey_id=$20 AND deleted_at IS NULL RETURNING id,traveller_reference,traveller_type,title,given_name,middle_name,family_name,preferred_name,nationality,date_of_birth,email,phone,relationship_to_principal,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,internal_notes,updated_at',
+      [v.traveller_reference,v.traveller_type,v.title,v.given_name,v.middle_name,v.family_name,v.preferred_name,v.nationality,v.date_of_birth,v.email,v.phone,v.relationship_to_principal,v.emergency_contact_name,v.emergency_contact_relationship,v.emergency_contact_phone,v.internal_notes,req.user.id,req.params.travellerId,req.user.org_id,current.journey.id],
     );
     if (!saved.rows.length) return { error: 'traveller_not_found' };
     await audit(db, req, current.journey.id, 'TRAVELLER_UPDATED', req.params.travellerId, { traveller_reference: v.traveller_reference });

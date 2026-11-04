@@ -429,7 +429,34 @@ test.describe('SJM command-centre responsive smoke', () => {
     await openFirstJourney(page);
     await page.getByRole('tab', { name: 'Traveller' }).click();
     await expect(page.getByRole('heading', { name: 'Traveller register' })).toBeVisible();
+    const dossier = page.getByTestId('sjm-travel-workspace');
+    await expect(dossier).toHaveClass(/sjm-travel-programme/);
+    const travelVisual = await dossier.evaluate((root) => {
+      const people = root.querySelector<HTMLElement>('.sjm-travel-section--people');
+      const programme = root.querySelector<HTMLElement>('.sjm-travel-section--programme');
+      const heading = root.querySelector<HTMLElement>('.sjm-travel-section--people h4');
+      if (!people || !programme || !heading) throw new Error('Travel dossier visual contract elements are missing');
+      return {
+        bodyFont: getComputedStyle(root).fontFamily,
+        peopleBackground: getComputedStyle(people).backgroundImage,
+        programmeRadius: getComputedStyle(programme).borderRadius,
+        sectionHeadingFont: getComputedStyle(heading).fontFamily,
+      };
+    });
+    expect(travelVisual.bodyFont.toLowerCase()).toContain('archivo');
+    expect(travelVisual.peopleBackground).toContain('linear-gradient');
+    expect(travelVisual.programmeRadius).toBe('14px');
+    expect(travelVisual.sectionHeadingFont.toLowerCase()).toContain('space grotesk');
     await audit('traveller dossier');
+    await page.getByTestId('sjm-travel-people-flights').getByRole('button', { name: 'Register traveller' }).click();
+    const registration = page.getByTestId('sjm-travel-workspace').locator('.sjm-traveller-wizard');
+    await audit('traveller registration identity');
+    await registration.getByRole('button', { name: 'Continue' }).click();
+    await audit('traveller registration contacts');
+    await registration.getByRole('button', { name: 'Continue' }).click();
+    await audit('traveller registration documents');
+    await registration.getByRole('button', { name: 'Continue' }).click();
+    await audit('traveller registration review');
   });
 
   test('uses the SJM visual system for readable typography, layered blue surfaces and medium KPI cards', async ({ page }) => {
@@ -951,9 +978,25 @@ test.describe('SJM command-centre responsive smoke', () => {
     const registerButton = workspace.getByRole('button', { name: 'Register traveller' }).first();
     await expect(registerButton).toBeVisible();
     await registerButton.click();
-    await expect(workspace.getByText('Register a traveller', { exact: true })).toBeVisible();
-    await expect(workspace.getByLabel('Given name *')).toBeVisible();
-    await registerButton.click();
+    const wizard = workspace.locator('.sjm-traveller-wizard');
+    await expect(wizard.getByRole('heading', { name: 'Add a traveller to this journey' })).toBeVisible();
+    await expect(wizard.getByRole('navigation', { name: 'Traveller registration steps' })).toBeVisible();
+    await expect(wizard.getByLabel('Traveller reference')).toHaveValue('TRV-001');
+    await wizard.getByLabel('Given name *').fill('Amina');
+    await wizard.getByLabel('Family / surname *').fill('Example');
+    await wizard.getByLabel('Nationality / citizenship').selectOption({ label: 'Kenya' });
+    expect(await wizard.locator('.sjm-country-select img').getAttribute('src')).toContain('/flags/4x3/ke.svg');
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await expect(wizard.getByRole('heading', { name: 'Contacts and relationships' })).toBeVisible();
+    await wizard.getByLabel('Email address').fill('amina@example.invalid');
+    await wizard.getByLabel('Traveller phone').fill('+254 700 000 003');
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await expect(wizard.getByRole('heading', { name: 'Travel documents' })).toBeVisible();
+    await expect(wizard.getByText('Optional at registration')).toBeVisible();
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await expect(wizard.getByRole('heading', { name: 'Review before saving' })).toBeVisible();
+    await expect(wizard.getByText('Amina Example', { exact: true })).toBeVisible();
+    await wizard.locator('.sjm-traveller-wizard__header').getByRole('button', { name: 'Cancel' }).click();
 
     await workspace.getByRole('button', { name: 'Attach document' }).click();
     await expect(workspace.getByText('PRIVATE TRAVEL DOCUMENT', { exact: true })).toBeVisible();
@@ -993,6 +1036,74 @@ test.describe('SJM command-centre responsive smoke', () => {
     ]) {
       await expect(page.getByLabel(sectionLabel)).toBeChecked();
     }
+  });
+
+  test('traveller profile remains saved when optional private document storage is unavailable', async ({ page }) => {
+    await seedAuth(page);
+    await stubSjmApi(page);
+    let profileCreated = false;
+    let uploadAttempted = false;
+    let uploadStatus = 0;
+    await page.route('**/api/v1/sjm/**', async (route) => {
+      const url = new URL(route.request().url());
+      const method = route.request().method();
+      if (method === 'POST' && url.pathname.endsWith('/travel-workspace/travellers')) {
+        profileCreated = true;
+        return route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: {
+            id: 'traveller-sjm-e2e-created-002',
+            traveller_reference: 'TRV-002',
+            traveller_type: 'principal',
+            display_name: 'Amina Example',
+            given_name: 'Amina',
+            family_name: 'Example',
+            nationality: 'Kenya',
+          } }),
+        });
+      }
+      if (method === 'POST' && url.pathname.endsWith('/documents/upload-url')) {
+        uploadAttempted = true;
+        uploadStatus = 503;
+        return route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'travel_document_storage_unavailable', message: 'Dedicated private SJM storage is not configured.' }),
+        });
+      }
+      return route.fallback();
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/sjm', { waitUntil: 'domcontentloaded' });
+    await openFirstJourney(page);
+    await page.getByRole('button', { name: 'Open travel dossier' }).click();
+
+    const workspace = page.getByTestId('sjm-travel-workspace');
+    await workspace.getByRole('button', { name: 'Register traveller' }).first().click();
+    const wizard = workspace.locator('.sjm-traveller-wizard');
+    await wizard.getByLabel('Given name *').fill('Amina');
+    await wizard.getByLabel('Family / surname *').fill('Example');
+    await wizard.getByLabel('Nationality / citizenship').selectOption({ label: 'Kenya' });
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await wizard.getByLabel('Email address').fill('amina@example.invalid');
+    await wizard.getByLabel('Traveller phone').fill('+254 700 000 003');
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await wizard.locator('input[type="file"]').setInputFiles({
+      name: 'passport.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 synthetic document fixture'),
+    });
+    await wizard.getByRole('button', { name: 'Continue' }).click();
+    await expect(wizard.getByRole('heading', { name: 'Review before saving' })).toBeVisible();
+    await wizard.getByRole('button', { name: 'Register traveller' }).click();
+
+    await expect.poll(() => profileCreated).toBe(true);
+    await expect.poll(() => uploadAttempted).toBe(true);
+    expect(uploadStatus).toBe(503);
+    await expect(workspace.getByRole('alert')).toContainText('Traveller profile saved. The travel document was not uploaded or verified');
+    await expect(workspace.getByRole('alert')).not.toContainText('Document stored privately');
+    await expect(workspace.locator('.sjm-traveller-wizard')).toHaveCount(0);
   });
 
   test('focused travel dossier uses two task columns on desktop and stacks cleanly on mobile', async ({ page }, testInfo: TestInfo) => {
@@ -1477,11 +1588,26 @@ test.describe('SJM command-centre responsive smoke', () => {
     await expect(page.getByTestId('sjm-travel-readiness')).toContainText('Register one principal traveller before route approval or departure release.');
 
     await page.getByRole('button', { name: 'Register traveller' }).click();
+    await expect(page.getByRole('heading', { name: 'Identity details' })).toBeVisible();
     await page.getByLabel('Traveller reference *').fill('TRV-E2E-01');
     await page.getByLabel('Given name *').fill('Amina');
-    await page.getByLabel('Family name *').fill('Example');
-    await page.getByLabel('Nationality').fill('Kenyan');
-    await page.getByLabel('Email').fill('amina@example.invalid');
+    await page.getByLabel('Family / surname *').fill('Example');
+    await page.getByLabel('Nationality / citizenship · recommended').selectOption('Kenya');
+    await page.getByRole('button', { name: /^Continue/ }).click();
+
+    await expect(page.getByRole('heading', { name: 'Contacts and relationships' })).toBeVisible();
+    await page.getByLabel('Email address').fill('amina@example.invalid');
+    await page.getByRole('button', { name: /^Continue/ }).click();
+
+    await expect(page.getByRole('heading', { name: 'Travel documents' })).toBeVisible();
+    await expect(page.getByLabel('Issuing country · recommended')).toHaveValue('');
+    await page.getByLabel('Issuing country · recommended').selectOption('France');
+    await page.getByRole('button', { name: /^Continue/ }).click();
+
+    await expect(page.getByRole('heading', { name: 'Review before saving' })).toBeVisible();
+    await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
+    await expect(page.getByText('Kenya', { exact: true })).toBeVisible();
+    await expect(page.locator('.sjm-traveller-wizard')).toContainText('No file selected; document metadata will not be saved');
     await page.getByRole('button', { name: 'Register traveller' }).last().click();
     await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
     await expect(page.getByText('Traveller profile registered to this journey.')).toBeVisible();
