@@ -1048,6 +1048,7 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
 
 router.get('/containers', asyncHandler(async (req, res) => {
   const { limit, offset } = paginate(req.query);
+  if (offset < 0) return res.status(400).json({ error: 'invalid_container_offset' });
   const filters = ['t.deleted_at IS NULL'];
   const params = [];
   const joins = `
@@ -1059,7 +1060,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
         bc.driver_name, bc.driver_contact, bc.created_at, bc.updated_at,
         b.booking_number, b.status AS booking_status
       FROM cds_booking_containers bc
-      LEFT JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = bc.org_id
+      LEFT JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = bc.org_id AND b.deleted_at IS NULL
       WHERE bc.container_number = t.number
         AND bc.org_id = t.org_id
         AND bc.deleted_at IS NULL
@@ -1087,9 +1088,12 @@ router.get('/containers', asyncHandler(async (req, res) => {
       LEFT JOIN cds_vehicles v ON v.id = tr.vehicle_id AND v.org_id = tr.org_id
       LEFT JOIN cds_drivers d ON d.id = tr.driver_id AND d.org_id = tr.org_id
       LEFT JOIN cds_electronic_locks l ON l.id = tr.lock_id AND l.org_id = tr.org_id
-      WHERE tr.container_id = t.id
-        AND tr.org_id = t.org_id
+      WHERE tr.org_id = t.org_id
         AND tr.deleted_at IS NULL
+        AND (
+          (latest_booking_container.id IS NOT NULL AND tr.id = latest_booking_container.trip_id)
+          OR (latest_booking_container.id IS NULL AND tr.container_id = t.id)
+        )
       ORDER BY tr.updated_at DESC NULLS LAST, tr.created_at DESC
       LIMIT 1
     ) latest_trip ON TRUE
