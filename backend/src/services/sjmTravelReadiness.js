@@ -247,6 +247,17 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
     blockers.push({ code: 'principal_traveller_ambiguous', message: 'Exactly one principal traveller must be designated for this journey.' });
   }
 
+  const missingNationalityCount = travellers.filter(person => !String(person.nationality || '').trim()).length;
+  const missingDateOfBirthCount = travellers.filter(person => !person.date_of_birth).length;
+  if (missingNationalityCount > 0 || missingDateOfBirthCount > 0) {
+    warnings.push({
+      code: 'traveller_identity_details_incomplete',
+      message: 'Confirm each traveller’s nationality and date of birth against their travel document before ticketing or international movement.',
+      missing_nationality_count: missingNationalityCount,
+      missing_date_of_birth_count: missingDateOfBirthCount,
+    });
+  }
+
   const airportService = AIRPORT_SERVICES.has(String(journey.service_type || ''));
   const flightCoverage = airportService
     ? analyseFlightCoverage(travellers, flights)
@@ -386,7 +397,7 @@ function evaluateTravelReadiness({ journey, travellers = [], flights = [], days 
 async function loadTravelReadiness(db, journey, phase = 'departure') {
   const org = journey.org_id, id = journey.id;
   const travellerResult = await db(
-    'SELECT id,traveller_type FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL',
+    'SELECT id,traveller_type,nationality,date_of_birth FROM sjm_travellers WHERE org_id=$1 AND journey_id=$2 AND deleted_at IS NULL',
     [org, id],
   );
   const flightResult = await db(
