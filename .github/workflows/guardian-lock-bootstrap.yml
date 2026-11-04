@@ -1,7 +1,7 @@
 name: Bootstrap Guardian Convoy lockfile
 
 # One-time, branch-scoped lockfile repair for the Capacitor 8 migration.
-# Runs only for the exact bootstrap commit; removes itself after the audited
+# Runs only on this feature branch; removes itself after the audited
 # lockfile has been committed. No production secrets are used.
 on:
   push:
@@ -32,7 +32,9 @@ jobs:
         working-directory: apps/guardian-convoy
         env:
           NODE_OPTIONS: ""
-        run: npm install --package-lock-only --include=dev --ignore-scripts
+        run: |
+          npm install --package-lock-only --include=dev --ignore-scripts
+          npm audit fix
 
       - name: Verify clean install, dependency security and web build
         working-directory: apps/guardian-convoy
