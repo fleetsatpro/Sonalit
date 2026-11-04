@@ -2729,12 +2729,14 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
   const { notes, lat, lng, seal_intact, observed_seal } = req.body || {};
 
   const bc = await req.db(
-    `SELECT bc.*, b.booking_number, t.id AS trip_id, t.lock_id
+    `SELECT bc.*, b.booking_number, b.delivery_location,
+            t.id AS trip_id, t.lock_id, t.container_id
        FROM cds_booking_containers bc
-       JOIN cds_bookings b ON b.id = bc.booking_id
-       LEFT JOIN cds_trips t ON t.id = bc.trip_id
-      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
-    [bcId, bookingId]
+       JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = bc.org_id AND b.deleted_at IS NULL
+       LEFT JOIN cds_trips t ON t.id = bc.trip_id AND t.org_id = bc.org_id AND t.deleted_at IS NULL
+      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.org_id=$3 AND bc.deleted_at IS NULL
+      FOR UPDATE OF bc`,
+    [bcId, bookingId, orgId]
   );
   if (!bc.rows.length) return res.status(404).json({ error: 'Booking container not found' });
   if (bc.rows[0].status === 'delivered' || bc.rows[0].status === 'completed') {
@@ -2764,8 +2766,8 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
     await req.db(
       `UPDATE cds_electronic_locks
           SET status='available', container_id=NULL, vehicle_id=NULL, updated_at=NOW()
-        WHERE id=$1`,
-      [bc.rows[0].lock_id]
+        WHERE id=$1 AND org_id=$2`,
+      [bc.rows[0].lock_id, orgId]
     );
   }
 
@@ -2773,8 +2775,8 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
     await req.db(
       `UPDATE cds_trips
           SET status='lock_removed', delivered_at=COALESCE(delivered_at, NOW()), updated_at=NOW()
-        WHERE id=$1`,
-      [bc.rows[0].trip_id]
+        WHERE id=$1 AND org_id=$2`,
+      [bc.rows[0].trip_id, orgId]
     );
   }
 
@@ -2784,18 +2786,46 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
   await req.db(
     `UPDATE cds_booking_containers
         SET status='delivered', unclamped_at=$1, yard_status='complete', updated_at=$1
-      WHERE id=$2`,
-    [now, bcId]
+      WHERE id=$2 AND org_id=$3`,
+    [now, bcId, orgId]
   );
+
+  if (bc.rows[0].container_id) {
+    await req.db(
+      `UPDATE cds_containers
+          SET status='delivered',
+              current_location=COALESCE(NULLIF($2,''), current_location),
+              updated_at=NOW()
+        WHERE id=$1 AND org_id=$3 AND deleted_at IS NULL`,
+      [bc.rows[0].container_id, String(bc.rows[0].delivery_location || ''), orgId]
+    );
+    await req.db(
+      `INSERT INTO cds_audit_logs
+        (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
+       VALUES ('unclamp','container',$1,$2,$3,$4,$5)`,
+      [
+        bc.rows[0].container_id, req.user.id || null, req.user.name || null,
+        JSON.stringify({ status: 'delivered', booking_id: bookingId, booking_container_id: bcId, seal_intact: sealVerdict }),
+        orgId,
+      ]
+    );
+  }
+  if (bc.rows[0].lock_id) {
+    await req.db(
+      `INSERT INTO cds_lock_events (org_id, lock_id, type, lat, lng, data)
+       VALUES ($1,$2,'unlock',$3,$4,$5)`,
+      [orgId, bc.rows[0].lock_id, lat ?? null, lng ?? null, JSON.stringify({ booking_id: bookingId, booking_container_id: bcId, seal_intact: sealVerdict })]
+    );
+  }
 
   // If every container on the booking is delivered, mark the booking delivered too.
   const remaining = await req.db(
     `SELECT COUNT(*)::int AS c FROM cds_booking_containers
-      WHERE booking_id=$1 AND deleted_at IS NULL AND status NOT IN ('delivered','completed')`,
-    [bookingId]
+      WHERE booking_id=$1 AND org_id=$2 AND deleted_at IS NULL AND status NOT IN ('delivered','completed')`,
+    [bookingId, orgId]
   );
   if (remaining.rows[0].c === 0) {
-    await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1`, [bookingId]);
+    await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1 AND org_id=$2`, [bookingId, orgId]);
   }
 
   // Stop the driver's tracking session after the delivery transaction commits.
