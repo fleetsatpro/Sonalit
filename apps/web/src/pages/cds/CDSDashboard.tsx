@@ -137,6 +137,7 @@ export default function CDSApp() {
   const [expanded, setExpanded] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1200px)').matches);
   const mobileNavLayerRef = useRef<HTMLDivElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileSearchButtonRef = useRef<HTMLButtonElement>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -307,7 +308,7 @@ export default function CDSApp() {
 
       <div className="cds-main">
         <header className="cds-topbar">
-          <button ref={mobileMenuButtonRef} type="button" className="cds-mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open Container Management navigation" aria-expanded={mobileNavOpen}>
+          <button ref={mobileMenuButtonRef} type="button" className="cds-mobile-menu" onClick={() => { setMobileSearchOpen(false); setHeaderSearchOpen(false); setMobileNavOpen(true); }} aria-label="Open Container Management navigation" aria-expanded={mobileNavOpen}>
             <Menu size={22} strokeWidth={2.4}/>
           </button>
 
@@ -336,7 +337,7 @@ export default function CDSApp() {
             {searchResultsPanel}
           </div>
 
-          <button type="button" className="cds-mobile-search-toggle" onClick={() => { setMobileSearchOpen(value => !value); setHeaderSearchOpen(false); }} aria-label={mobileSearchOpen ? 'Close search' : 'Open search'} aria-expanded={mobileSearchOpen}>
+          <button ref={mobileSearchButtonRef} type="button" className="cds-mobile-search-toggle" onClick={() => { setMobileSearchOpen(value => !value); setHeaderSearchOpen(false); }} aria-label={mobileSearchOpen ? 'Close search' : 'Open search'} aria-expanded={mobileSearchOpen}>
             {mobileSearchOpen ? <X size={21} strokeWidth={2.3}/> : <Search size={21} strokeWidth={2.3}/>}
           </button>
 
@@ -357,7 +358,11 @@ export default function CDSApp() {
                 onFocus={() => { if (headerResults.length) setHeaderSearchOpen(true); }}
                 onKeyDown={event => {
                   if (event.key === 'Enter') { event.preventDefault(); void runHeaderSearch(); }
-                  if (event.key === 'Escape') { setHeaderSearchOpen(false); setMobileSearchOpen(false); }
+                  if (event.key === 'Escape') {
+                    setHeaderSearchOpen(false);
+                    setMobileSearchOpen(false);
+                    mobileSearchButtonRef.current?.focus();
+                  }
                 }}
                 aria-label="Search CDS trips, containers and e-locks"
                 aria-expanded={headerSearchOpen}
