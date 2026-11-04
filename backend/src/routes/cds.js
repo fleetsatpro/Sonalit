@@ -2771,6 +2771,26 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
 
   const now = new Date();
 
+  // Close the manifest with a compare-and-set before releasing the lock or
+  // recording downstream evidence. This is the concurrency fence: if two port
+  // operators race, only the request that still sees this open clamp can win.
+  const closedManifest = await req.db(
+    `UPDATE cds_booking_containers
+        SET status='delivered', unclamped_at=$1, yard_status='complete', updated_at=$1
+      WHERE id=$2 AND org_id=$3
+        AND clamped_at IS NOT NULL
+        AND (unclamped_at IS NULL OR unclamped_at < clamped_at)
+        AND status NOT IN ('delivered','completed')
+      RETURNING id`,
+    [now, bcId, orgId]
+  );
+  if (!closedManifest.rows.length) {
+    return res.status(409).json({
+      error: 'container_not_currently_clamped',
+      message: 'This clamp was already closed by another action or is no longer open.',
+    });
+  }
+
   if (bc.rows[0].clamp_lock_id) {
     await req.db(
       `UPDATE cds_electronic_locks
@@ -2788,16 +2808,6 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
       [bc.rows[0].trip_id, orgId]
     );
   }
-
-  // unclamped_at is the manifest's TIME UNCLAMPED column and had the same
-  // problem clamped_at did — nothing ever set it, so the desk could not tell a
-  // delivered container from one still on the road except by its status chip.
-  await req.db(
-    `UPDATE cds_booking_containers
-        SET status='delivered', unclamped_at=$1, yard_status='complete', updated_at=$1
-      WHERE id=$2 AND org_id=$3`,
-    [now, bcId, orgId]
-  );
 
   // If every container on the booking is delivered, mark the booking delivered too.
   const remaining = await req.db(
