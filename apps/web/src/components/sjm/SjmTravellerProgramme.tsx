@@ -215,6 +215,7 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
   const [showTravellerForm, setShowTravellerForm] = useState(false);
   const [travellerStep, setTravellerStep] = useState(0);
   const [travellerFormError, setTravellerFormError] = useState('');
+  const [isSavingTraveller, setIsSavingTraveller] = useState(false);
   const [travellerDocumentFile, setTravellerDocumentFile] = useState<File | null>(null);
   const [flightDraft, setFlightDraft] = useState<FlightDraft>({ ...EMPTY_FLIGHT, departure_timezone: timezone, arrival_timezone: timezone });
   const [editingFlightId, setEditingFlightId] = useState('');
@@ -534,12 +535,14 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     return '';
   };
   const saveTravellerWizard = async () => {
+    if (isSavingTraveller) return;
     const validation = [0,1,2].map(validateTravellerStep).find(Boolean) || '';
     if (validation) { setTravellerFormError(validation); return; }
     const displayName = displayTravellerName(travellerDraft);
     const selectedFile = travellerDocumentFile;
     const wasEditing = Boolean(editingTravellerId);
     setTravellerFormError('');
+    setIsSavingTraveller(true);
     try {
       const saved = (wasEditing ? await updateTraveller.mutateAsync() : await createTraveller.mutateAsync()) as Traveller;
       if (selectedFile) {
@@ -559,6 +562,8 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
       await refresh();
     } catch (error) {
       setTravellerFormError(errorMessage(error, 'The traveller record could not be saved.'));
+    } finally {
+      setIsSavingTraveller(false);
     }
   };
   const historyQuery = useQuery<Array<{ id: string; actor_name?: string | null; action: string; previous_status?: string | null; new_status?: string | null; detail?: { note?: string }; observed_at: string }>>({
@@ -617,14 +622,14 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
               {canManage && (docsByTraveller.get(traveller.id) || []).length > 0 && <div className="mt-3 space-y-2">{(docsByTraveller.get(traveller.id) || []).map(document => <div key={document.id} className="sjm-travel-document-card rounded border border-white/[0.06] bg-black/20 p-2.5"><div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="text-[11px] font-medium text-slate-200">{statusLabel(document.document_type)} · {document.file_name}</p><p className="mt-1 text-[10px] text-slate-500">{document.review_status.replaceAll('_',' ')} · {document.expiry_state==='expired'?'EXPIRED':document.expiry_state==='expiring_soon'?'EXPIRING WITHIN 90 DAYS':'expires '+(document.expiry_date || 'not recorded')} · {sizeLabel(document.size_bytes)}</p></div><button type="button" className={button} onClick={() => void downloadDocument(document)} disabled={document.review_status === 'UPLOAD_PENDING'}><Download size={11}/>Open</button></div>{planEditable && document.review_status === 'UPLOAD_PENDING' && <label className={label + ' mt-2'}>Retry the original file<input className={field} type="file" accept="application/pdf,image/jpeg,image/png" disabled={Boolean(documentUploadState)} onChange={event => { const file=event.target.files?.[0]; void retryDocumentUpload(document,file); event.currentTarget.value=''; }}/></label>}{planEditable && document.review_status === 'PENDING_REVIEW' && <div className="mt-2 space-y-2"><label className={label}>Review rationale<textarea className={field} rows={2} value={documentReviewNotes[document.id] || ''} onChange={event=>setDocumentReviewNotes(current=>({...current,[document.id]:event.target.value}))} placeholder="Confirm what was checked, any discrepancy, and the review basis."/></label><div className="flex flex-wrap gap-1.5"><button type="button" className={buttonPrimary} onClick={() => reviewDocument.mutate({ id: document.id, status: 'VERIFIED', note: documentReviewNotes[document.id] || '' })} disabled={reviewDocument.isPending || (documentReviewNotes[document.id] || '').trim().length<10}><Check size={11}/>Verify document</button><button type="button" className={button} onClick={() => reviewDocument.mutate({ id: document.id, status: 'REJECTED', note: documentReviewNotes[document.id] || '' })} disabled={reviewDocument.isPending || (documentReviewNotes[document.id] || '').trim().length<10}>Reject</button></div></div>}{planEditable && <div className="mt-2 border-t border-white/[0.05] pt-2">{archivingDocumentId===document.id ? <div className="space-y-2"><label className={label}>Archive / supersession reason<textarea className={field} rows={2} value={documentArchiveNotes[document.id] || ''} onChange={event=>setDocumentArchiveNotes(current=>({...current,[document.id]:event.target.value}))} placeholder="Explain why this copy is obsolete, replaced or should no longer count toward release readiness."/></label><div className="flex flex-wrap gap-1.5"><button type="button" className={button} onClick={()=>archiveDocument.mutate({id:document.id,reason:documentArchiveNotes[document.id]||''})} disabled={archiveDocument.isPending || (documentArchiveNotes[document.id]||'').trim().length<10}>Confirm archive</button><button type="button" className={button} onClick={()=>setArchivingDocumentId('')}>Cancel</button></div></div> : <button type="button" className={button} onClick={()=>setArchivingDocumentId(document.id)}>Archive / supersede record</button>}</div>}</div>)}</div>}
             </article>)}</div>}
         </div>
-        {canManage && planEditable && showTravellerForm && <form className="sjm-traveller-wizard" onSubmit={event => { event.preventDefault(); if (travellerStep < 3) { const error = validateTravellerStep(travellerStep); if (error) { setTravellerFormError(error); return; } setTravellerFormError(''); if (travellerStep === 1) { setDocumentHolder(displayTravellerName(travellerDraft)); setDocumentCountry(travellerDraft.nationality); } setTravellerStep(step => Math.min(3, step + 1)); } else { void saveTravellerWizard(); } }}>
+        {canManage && planEditable && showTravellerForm && <form className="sjm-traveller-wizard" aria-busy={isSavingTraveller} onSubmit={event => { event.preventDefault(); if (travellerStep < 3) { const error = validateTravellerStep(travellerStep); if (error) { setTravellerFormError(error); return; } setTravellerFormError(''); if (travellerStep === 1) { setDocumentHolder(displayTravellerName(travellerDraft)); setDocumentCountry(travellerDraft.nationality); } setTravellerStep(step => Math.min(3, step + 1)); } else { void saveTravellerWizard(); } }}>
           <div className="sjm-traveller-wizard__header">
             <div>
               <p className="sjm-travel-programme__eyebrow">TRAVELLER REGISTRATION</p>
               <h5>{editingTravellerId ? 'Update traveller details' : 'Add a traveller to this journey'}</h5>
               <p className="sjm-traveller-wizard__intro">Use the name and details shown on the current travel document. You can add the document now or attach it later.</p>
             </div>
-            <button type="button" className={button} onClick={() => { setShowTravellerForm(false); setTravellerFormError(''); setTravellerStep(0); setTravellerDocumentFile(null); }}>{editingTravellerId ? 'Close' : 'Cancel'}</button>
+            <button type="button" className={button} disabled={isSavingTraveller} onClick={() => { setShowTravellerForm(false); setTravellerFormError(''); setTravellerStep(0); setTravellerDocumentFile(null); }}>{editingTravellerId ? 'Close' : 'Cancel'}</button>
           </div>
           <nav className="sjm-traveller-steps" aria-label="Traveller registration steps">
             {['Identity','Contacts','Documents','Review'].map((name,index)=><button key={name} type="button" className={'sjm-traveller-step' + (travellerStep === index ? ' is-current' : travellerStep > index ? ' is-complete' : '')} aria-current={travellerStep === index ? 'step' : undefined} disabled={index > travellerStep} onClick={() => setTravellerStep(index)}><span className="sjm-traveller-step__number">{travellerStep > index ? '✓' : String(index+1).padStart(2,'0')}</span><span>{name}</span></button>)}
@@ -695,10 +700,11 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
               <div><dt>Travel document</dt><dd>{travellerDocumentFile ? documentType.replaceAll('_',' ')+' · '+travellerDocumentFile.name : 'Not attached now · can be added later'}</dd></div>
             </dl>
           </section>}
+          {isSavingTraveller && <p className="sr-only" role="status">Saving the traveller profile and verifying the private travel document. Do not close this form.</p>}
           <div className="sjm-traveller-wizard__actions">
-            <button type="button" className={button} onClick={()=>{ if (travellerStep===0) { setShowTravellerForm(false); setTravellerFormError(''); } else { setTravellerStep(step=>step-1); setTravellerFormError(''); } }} disabled={createTraveller.isPending || updateTraveller.isPending}>{travellerStep===0?'Cancel':'Back'}</button>
+            <button type="button" className={button} onClick={()=>{ if (travellerStep===0) { setShowTravellerForm(false); setTravellerFormError(''); } else { setTravellerStep(step=>step-1); setTravellerFormError(''); } }} disabled={isSavingTraveller || createTraveller.isPending || updateTraveller.isPending}>{travellerStep===0?'Cancel':'Back'}</button>
             <span className="sjm-traveller-wizard__action-spacer"/>
-            {travellerStep < 3 ? <button type="submit" className={buttonPrimary}>Continue <span aria-hidden="true">→</span></button> : <button type="submit" className={buttonPrimary} disabled={createTraveller.isPending || updateTraveller.isPending}>{createTraveller.isPending || updateTraveller.isPending ? 'Saving…' : editingTravellerId ? 'Save traveller changes' : 'Register traveller'}</button>}
+            {travellerStep < 3 ? <button type="submit" className={buttonPrimary}>Continue <span aria-hidden="true">→</span></button> : <button type="submit" className={buttonPrimary} disabled={isSavingTraveller || createTraveller.isPending || updateTraveller.isPending}>{isSavingTraveller ? 'Saving & verifying…' : createTraveller.isPending || updateTraveller.isPending ? 'Saving…' : editingTravellerId ? 'Save traveller changes' : 'Register traveller'}</button>}
           </div>
         </form>}
       </section>
