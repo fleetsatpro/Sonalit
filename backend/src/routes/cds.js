@@ -1391,11 +1391,14 @@ router.get('/locks/:id', asyncHandler(async (req, res) => {
 }));
 router.post('/locks', asyncHandler(async (req, res) => {
   await createRow(req, res, 'cds_electronic_locks',
-    ['serial', 'provider', 'firmware_version', 'status', 'battery_level']);
+    ['serial', 'provider', 'firmware_version', 'status']);
 }));
 router.patch('/locks/:id', asyncHandler(async (req, res) => {
+  // Battery, signal and heartbeat are device telemetry, not editable inventory
+  // fields. Keep them out of the operator CRUD path until a verified provider
+  // or device-ingest contract writes them.
   await updateRow(req, res, 'cds_electronic_locks',
-    ['serial', 'provider', 'firmware_version', 'status', 'battery_level', 'container_id', 'vehicle_id', 'location']);
+    ['serial', 'provider', 'firmware_version', 'status', 'container_id', 'vehicle_id', 'location']);
 }));
 router.get('/locks/:id/events', asyncHandler(async (req, res) => {
   const { limit, offset } = paginate(req.query);
