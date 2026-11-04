@@ -87,6 +87,20 @@ describe('CDS container register', () => {
     }
   });
 
+  test('rejects an equipment size that conflicts with its selected type', async () => {
+    const res = response();
+    let dbCalls = 0;
+    await routeLayer('/containers', 'post')({
+      body: { ...validInput(), iso_type: '40GP', container_size: 20 },
+      user: { org_id: 'org-1' },
+      db: async () => { dbCalls += 1; return { rows: [] }; },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(400);
+    expect(res.result.body.error).toBe('invalid_container_size');
+    expect(dbCalls).toBe(0);
+  });
+
   test('maps a duplicate ISO container number to a conflict response', async () => {
     const res = response();
     await routeLayer('/containers', 'post')({
