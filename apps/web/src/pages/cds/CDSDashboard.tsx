@@ -156,7 +156,7 @@ export default function CDSApp() {
       if (event.key !== 'Tab') return;
       const root = mobileNavLayerRef.current;
       if (!root) return;
-      const focusable = Array.from(root.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+      const focusable = Array.from(root.querySelectorAll<HTMLElement>('.cds-navigation button:not([disabled]), .cds-navigation a[href], .cds-navigation input:not([disabled]), .cds-navigation [tabindex]:not([tabindex="-1"])'))
         .filter(element => element.getClientRects().length > 0);
       if (!focusable.length) return;
       const first = focusable[0];
