@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Plus } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Plus, Search } from 'lucide-react';
 import { DataTable, DrawerField, StatusBadge, FilterChip } from './components.js';
 import { useContainers, useCreateContainer, useCDSDrivers, useCDSTransporters } from './hooks.js';
 import { useCDSStore } from './store.js';
@@ -12,6 +12,8 @@ const s = (v: unknown) => String(v ?? '—');
 
 export function ContainersView() {
   const [filter, setFilter] = useState('all');
+  const [searchInput, setSearchInput] = useState('');
+  const [serverSearch, setServerSearch] = useState('');
   const [showRegistration, setShowRegistration] = useState(false);
   const [number, setNumber] = useState('');
   const [isoType, setIsoType] = useState('40HC');
@@ -22,7 +24,11 @@ export function ContainersView() {
   const [yearBuilt, setYearBuilt] = useState('');
   const [maxWeight, setMaxWeight] = useState('');
   const [tareWeight, setTareWeight] = useState('');
-  const { data, isLoading, isError, refetch } = useContainers();
+  useEffect(() => {
+    const handle = window.setTimeout(() => setServerSearch(searchInput.trim()), 250);
+    return () => window.clearTimeout(handle);
+  }, [searchInput]);
+  const { data, isLoading, isError, isFetching, refetch } = useContainers({ query: serverSearch });
   const createContainer = useCreateContainer();
   const { openDrawer, addToast } = useCDSStore();
 
@@ -187,10 +193,10 @@ export function ContainersView() {
 
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-3" aria-label="Container register summary">
         {[
-          { label: 'REGISTERED', value: all.length, detail: 'records returned' },
-          { label: 'AVAILABLE', value: availableCount, detail: 'ready for allocation' },
-          { label: 'IN OPERATIONAL FLOW', value: deployedCount, detail: 'booked, picked up or moving' },
-          { label: 'REVIEW REQUIRED', value: reviewCount, detail: 'maintenance or condition review' },
+          { label: 'REGISTERED', value: data?.total ?? all.length, detail: serverSearch ? 'matching records' : 'records in this organisation' },
+          { label: 'AVAILABLE', value: availableCount, detail: 'among loaded records' },
+          { label: 'IN OPERATIONAL FLOW', value: deployedCount, detail: 'among loaded records' },
+          { label: 'REVIEW REQUIRED', value: reviewCount, detail: 'among loaded records' },
         ].map(item => (
           <div key={item.label} className="cds-kpi-panel rounded-xl border px-4 py-3">
             <div className="text-[11px] text-slate-300 font-semibold tracking-[.08em]">{item.label}</div>
@@ -199,6 +205,12 @@ export function ContainersView() {
           </div>
         ))}
       </section>
+
+      {(data?.total ?? all.length) > all.length && (
+        <p className="cds-register-coverage" role="status">
+          Showing the first {all.length} of {data?.total ?? all.length} matching records. Refine the search to locate containers outside this loaded set.
+        </p>
+      )}
 
       {isError && (
         <div role="alert" className="cds-data-error rounded-xl border px-4 py-4">
@@ -225,14 +237,25 @@ export function ContainersView() {
         ]}
         data={rows}
         keyExtractor={(r: Row) => s(r['id'])}
-        searchable
-        searchPlaceholder="Search container number, type, owner or status…"
+        searchable={false}
         emptyMessage={all.length === 0 ? 'No container records yet. Register your first container to establish the inventory.' : 'No containers match the selected status.'}
         filters={
-          <div className="flex gap-2 flex-wrap">
-            {statuses.map(status => (
-              <FilterChip key={status} label={status === 'all' ? 'All containers' : status.replace(/_/g, ' ')} active={filter === status} onClick={() => setFilter(status)} />
-            ))}
+          <div className="cds-container-toolbar">
+            <div className="flex gap-2 flex-wrap">
+              {statuses.map(status => (
+                <FilterChip key={status} label={status === 'all' ? 'All containers' : status.replace(/_/g, ' ')} active={filter === status} onClick={() => setFilter(status)} />
+              ))}
+            </div>
+            <label className="cds-container-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                value={searchInput}
+                onChange={event => setSearchInput(event.target.value)}
+                aria-label="Search all container records"
+                placeholder="Search the full register…"
+              />
+              {isFetching && <span className="cds-search-indicator">Updating</span>}
+            </label>
           </div>
         }
         onRowClick={(r: Row) => openDrawer('Container ' + s(r['number'] ?? r['container_number']), (
