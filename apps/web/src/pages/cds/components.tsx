@@ -288,7 +288,14 @@ function reactNodeText(value: React.ReactNode): string {
   if (value == null || typeof value === 'boolean') return '';
   if (typeof value === 'string' || typeof value === 'number') return String(value);
   if (Array.isArray(value)) return value.map(reactNodeText).join(' ');
-  if (React.isValidElement<{ children?: React.ReactNode }>(value)) return reactNodeText(value.props.children);
+  if (React.isValidElement<{ children?: React.ReactNode; status?: string; label?: string; value?: string | number; title?: string; name?: string }>(value)) {
+    const props = value.props;
+    const semanticText = [props.status, props.label, props.value, props.title, props.name]
+      .filter(item => item != null)
+      .map(String)
+      .join(' ');
+    return [reactNodeText(props.children), semanticText].filter(Boolean).join(' ');
+  }
   return '';
 }
 
