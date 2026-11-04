@@ -290,7 +290,7 @@ export function ContainersView() {
                 value={searchInput}
                 onChange={event => setSearchInput(event.target.value)}
                 aria-label="Search all container records"
-                placeholder="Search the full register…"
+                placeholder="Search number, equipment, owner, condition, status or location…"
               />
               {isFetching && <span className="cds-search-indicator">Updating</span>}
             </label>
