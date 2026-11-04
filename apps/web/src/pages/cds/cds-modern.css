@@ -756,3 +756,21 @@
     width: 100%;
   }
 }
+
+.cds-table-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.cds-table-sort-button:hover {
+  color: #f4f8ff;
+}
