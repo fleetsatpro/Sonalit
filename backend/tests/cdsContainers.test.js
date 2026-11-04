@@ -543,3 +543,20 @@ describe('CDS unclamp evidence validation', () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe('CDS clamp input validation', () => {
+  test('rejects whitespace-only lock, truck or driver identifiers before writing records', async () => {
+    const res = response();
+    const calls = [];
+    await routeLayer('/bookings/:id/containers/:cid/clamp', 'post')({
+      params: { id: 'booking-1', cid: 'booking-container-1' },
+      body: { lock_serial: '   ', truck_reg: 'KDA 222B', driver_name: 'Driver One' },
+      user: { id: 'yard-user', org_id: 'org-1', name: 'Yard operator' },
+      db: async (sql, values) => { calls.push({ sql, values }); return { rows: [] }; },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(400);
+    expect(res.result.body.error).toBe('lock_serial, truck_reg and driver_name are required');
+    expect(calls).toHaveLength(0);
+  });
+});
