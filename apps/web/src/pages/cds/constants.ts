@@ -15,6 +15,7 @@ export const CDS_VIEWS: CDSViewDef[] = [
   { id: 'port', label: 'Yard & port', sub: 'ARRIVALS, PORT QUEUES AND UNCLAMP ACTIONS' },
   { id: 'pulse', label: 'Exceptions', sub: 'DELAYED, STALE AND ACTIONABLE BOOKINGS' },
   { id: 'inbox', label: 'Activity log', sub: 'RECORDED FIELD ACTIVITY AND EVENT HISTORY' },
+  { id: 'audit', label: 'Audit trail', sub: 'PERSISTED RECORD CHANGES, ACTORS AND SOURCE ADDRESSES' },
   { id: 'billing', label: 'Billing', sub: 'COMPLETED BOOKINGS AWAITING BILLING' },
   { id: 'reports', label: 'Reports', sub: 'GENERATED OPERATIONAL REPORTS' },
   { id: 'analytics', label: 'Performance', sub: 'MOVEMENT, THROUGHPUT AND OPERATIONAL TRENDS' },
