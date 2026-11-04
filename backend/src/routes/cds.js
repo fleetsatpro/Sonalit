@@ -279,8 +279,12 @@ async function appendCustodyEvent(req, {
 }
 
 function paginate(query) {
-  const limit = Math.min(200, parseInt(query.limit) || 50);
-  const offset = parseInt(query.offset) || 0;
+  const requestedLimit = Number.parseInt(query.limit, 10);
+  const requestedOffset = Number.parseInt(query.offset, 10);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.max(1, Math.min(200, requestedLimit))
+    : 50;
+  const offset = Number.isFinite(requestedOffset) ? Math.max(0, requestedOffset) : 0;
   return { limit, offset };
 }
 
@@ -2947,21 +2951,26 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
       [bc.rows[0].driver_id, orgId, bc.rows[0].trip_id]
     );
     if (openDriverTrips.rows[0].count === 0) {
-      await req.db(
-        `UPDATE cds_drivers SET status='available', current_vehicle_id=NULL, updated_at=NOW()
-          WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,
-        [bc.rows[0].driver_id, orgId]
+      const releasedDriver = await req.db(
+        `UPDATE cds_drivers
+            SET status='available', current_vehicle_id=NULL, updated_at=NOW()
+          WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL
+            AND status='active' AND current_vehicle_id=$3
+          RETURNING id`,
+        [bc.rows[0].driver_id, orgId, bc.rows[0].vehicle_id]
       );
-      await req.db(
-        `INSERT INTO cds_audit_logs
-          (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
-         VALUES ('release','driver',$1,$2,$3,$4,$5)`,
-        [
-          bc.rows[0].driver_id, req.user.id || null, req.user.name || null,
-          JSON.stringify({ status: 'available', released_from_booking: bookingId, booking_container_id: bcId }),
-          orgId,
-        ]
-      );
+      if (releasedDriver.rows.length) {
+        await req.db(
+          `INSERT INTO cds_audit_logs
+            (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
+           VALUES ('release','driver',$1,$2,$3,$4,$5)`,
+          [
+            bc.rows[0].driver_id, req.user.id || null, req.user.name || null,
+            JSON.stringify({ status: 'available', released_from_booking: bookingId, booking_container_id: bcId }),
+            orgId,
+          ]
+        );
+      }
     }
   }
   if (bc.rows[0].vehicle_id) {
@@ -2972,21 +2981,26 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, cdsT
       [bc.rows[0].vehicle_id, orgId, bc.rows[0].trip_id]
     );
     if (openVehicleTrips.rows[0].count === 0) {
-      await req.db(
-        `UPDATE cds_vehicles SET status='available', current_driver_id=NULL, updated_at=NOW()
-          WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,
-        [bc.rows[0].vehicle_id, orgId]
+      const releasedVehicle = await req.db(
+        `UPDATE cds_vehicles
+            SET status='available', current_driver_id=NULL, updated_at=NOW()
+          WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL
+            AND status='in_use' AND current_driver_id=$3
+          RETURNING id`,
+        [bc.rows[0].vehicle_id, orgId, bc.rows[0].driver_id]
       );
-      await req.db(
-        `INSERT INTO cds_audit_logs
-          (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
-         VALUES ('release','vehicle',$1,$2,$3,$4,$5)`,
-        [
-          bc.rows[0].vehicle_id, req.user.id || null, req.user.name || null,
-          JSON.stringify({ status: 'available', released_from_booking: bookingId, booking_container_id: bcId }),
-          orgId,
-        ]
-      );
+      if (releasedVehicle.rows.length) {
+        await req.db(
+          `INSERT INTO cds_audit_logs
+            (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
+           VALUES ('release','vehicle',$1,$2,$3,$4,$5)`,
+          [
+            bc.rows[0].vehicle_id, req.user.id || null, req.user.name || null,
+            JSON.stringify({ status: 'available', released_from_booking: bookingId, booking_container_id: bcId }),
+            orgId,
+          ]
+        );
+      }
     }
   }
 
