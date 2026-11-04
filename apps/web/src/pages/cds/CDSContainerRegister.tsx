@@ -52,7 +52,7 @@ const ISO_LETTER_VALUES: Record<string, number> = (() => {
 
 export function iso6346CheckDigit(containerNumber: string): number | null {
   const code = containerNumber.trim().toUpperCase().replace(/\s+/g, '');
-  if (!/^[A-Z]{3}[UJZ][0-9]{7}$/.test(code)) return null;
+  if (!/^[A-Z]{3}U[0-9]{7}$/.test(code)) return null;
   let sum = 0;
   for (let index = 0; index < 10; index += 1) {
     const character = code[index];
@@ -123,7 +123,7 @@ function ContainerDetails({ container }: { container: Row }) {
           {field('Manufacturer', container['manufacturer'])}
           {field('Year built', container['year_built'])}
           {field('Nominal size', container['container_size'] ? String(container['container_size']) + ' ft' : null)}
-          {field('Maximum payload', container['max_weight_kg'] != null ? Number(container['max_weight_kg']).toLocaleString() + ' kg' : null)}
+          {field('Maximum gross mass', container['max_weight_kg'] != null ? Number(container['max_weight_kg']).toLocaleString() + ' kg' : null)}
           {field('Tare weight', container['tare_weight_kg'] != null ? Number(container['tare_weight_kg']).toLocaleString() + ' kg' : null)}
           {field('Length', container['length_m'] != null ? String(container['length_m']) + ' m' : null)}
           {field('Width', container['width_m'] != null ? String(container['width_m']) + ' m' : null)}
@@ -182,8 +182,8 @@ function RegisterContainerForm() {
     }
     const max = maxWeight ? Number(maxWeight) : null;
     const tare = tareWeight ? Number(tareWeight) : null;
-    if ((max != null && (!Number.isFinite(max) || max <= 0)) || (tare != null && (!Number.isFinite(tare) || tare <= 0))) {
-      setError('Weights must be positive numbers in kilograms.');
+    if ((max != null && (!Number.isFinite(max) || max <= 0)) || (tare != null && (!Number.isFinite(tare) || tare <= 0)) || (max != null && tare != null && max <= tare)) {
+      setError('Weights must be positive numbers in kilograms, and maximum gross mass must exceed tare mass.');
       return;
     }
     create.mutate({
@@ -208,7 +208,7 @@ function RegisterContainerForm() {
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-6">
-      <p className="text-[11px] leading-relaxed text-white/50">Register a physical equipment record. Newly registered containers enter the available inventory state; booking, dispatch, clamp and delivery workflows own subsequent operational transitions.</p>
+      <p className="text-[11px] leading-relaxed text-white/50">Register a physical equipment record. Serviceable units enter available inventory; damaged or retired units are placed into maintenance. Booking, dispatch, clamp and delivery workflows own subsequent movement transitions.</p>
       <label className="block">
         <span className={labelClass}>ISO 6346 container number *</span>
         <input required autoFocus maxLength={11} value={number} onChange={event => setNumber(event.target.value.toUpperCase())} className={fieldClass + ' font-mono tracking-[.08em]'} placeholder="MSCU6639870" autoCapitalize="characters" spellCheck={false} />
@@ -257,7 +257,7 @@ function RegisterContainerForm() {
         <button type="button" onClick={closeDrawer} disabled={create.isPending} className="min-h-[42px] flex-1 rounded-lg border border-white/10 px-3 text-[12px] font-semibold text-white/70 hover:bg-white/[.05] disabled:opacity-40">Cancel</button>
         <button type="submit" disabled={create.isPending || !numberValid} className="min-h-[42px] flex-[1.4] rounded-lg bg-[#a8c9ee] px-3 text-[12px] font-bold text-[#0a1727] hover:bg-[#c3dbf6] disabled:cursor-not-allowed disabled:opacity-40">{create.isPending ? 'Registering…' : 'Register container'}</button>
       </div>
-      <p className="text-[10px] leading-relaxed text-white/35">The operational state is assigned by the CDS record default. Registration does not create a booking, allocate a vehicle or lock, or record a custody event.</p>
+      <p className="text-[10px] leading-relaxed text-white/35">The operational state is assigned from the recorded physical condition. Registration does not create a booking, allocate a vehicle or lock, or record a custody event.</p>
     </form>
   );
 }
