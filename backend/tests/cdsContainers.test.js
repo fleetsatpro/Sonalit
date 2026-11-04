@@ -563,3 +563,43 @@ describe('CDS clamp input validation', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('CDS clamp lock allocation', () => {
+  test('refuses to reuse an e-lock that is already installed on another container', async () => {
+    const calls = [];
+    const res = response();
+    await routeLayer('/bookings/:id/containers/:cid/clamp', 'post')({
+      params: { id: 'booking-1', cid: 'booking-container-1' },
+      body: {
+        lock_serial: 'LOCK-IN-USE',
+        truck_reg: 'KDA 222B',
+        driver_name: 'Driver One',
+      },
+      user: { id: 'yard-user', org_id: 'org-1', name: 'Yard operator' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        if (sql.includes('SELECT bc.*, b.booking_number')) {
+          return { rows: [{
+            id: 'booking-container-1',
+            booking_id: 'booking-1',
+            status: 'pending',
+          }] };
+        }
+        if (sql.includes('FROM cds_electronic_locks') && sql.includes('UPPER(BTRIM(serial))')) {
+          return { rows: [{
+            id: 'lock-1',
+            status: 'installed',
+            container_id: 'other-container',
+            vehicle_id: 'vehicle-1',
+          }] };
+        }
+        return { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.status).toBe(409);
+    expect(res.result.body.error).toBe('lock_not_available');
+    expect(calls).toHaveLength(2);
+    expect(calls[1].values).toEqual(['org-1', 'LOCK-IN-USE']);
+  });
+});
