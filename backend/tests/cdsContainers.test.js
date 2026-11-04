@@ -177,7 +177,7 @@ describe('CDS container register', () => {
     let parameters = [];
     await routeLayer('/containers/:id', 'patch')({
       params: { id: 'container-1' },
-      body: { condition: 'damaged', status: 'available' },
+      body: { condition: 'damaged' },
       db: async (query, values) => {
         sql = query;
         parameters = values;
