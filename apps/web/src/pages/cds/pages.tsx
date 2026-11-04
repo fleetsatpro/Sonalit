@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FileSpreadsheet, FileText } from 'lucide-react';
 import { CDSActivityIcon } from './CDSActivityIcon.js';
 
 import { useAuthStore } from '../../stores/auth.js';
@@ -515,7 +516,9 @@ export function ReportsView() {
         {isLoading && <div className="text-xs text-text-2 font-mono py-4 text-center">Loading reports…</div>}
         {reports.map(r => (
           <div key={r.id} className="flex items-center gap-3 py-3 border-b border-[rgba(255,255,255,.04)] last:border-0">
-            <span className="text-lg">{r.format === 'pdf' ? '📄' : r.format === 'excel' ? '📊' : '📋'}</span>
+            <span className="cds-report-format-icon" aria-hidden="true">
+              {r.format === 'excel' ? <FileSpreadsheet size={19} /> : <FileText size={19} />}
+            </span>
             <div className="flex-1 min-w-0">
               <div className="text-xs text-text-0">{r.name}</div>
               <div className="text-[10px] text-text-2 font-mono mt-0.5">
