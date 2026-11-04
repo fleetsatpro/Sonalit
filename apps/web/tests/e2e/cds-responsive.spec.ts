@@ -18,6 +18,15 @@ async function prepareCds(page: Page, width: number, height: number) {
     }));
   }, { profile: user });
 
+  // Realtime is intentionally unavailable in this isolated shell-layout test.
+  // It must degrade gracefully without requiring a production Centrifugo session.
+  await page.route('**/api/v1/realtime/**', route => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'realtime_not_part_of_navigation_fixture' }),
+  }));
+  await page.routeWebSocket('wss://centrifugo-production-c103.up.railway.app/**', socket => socket.close());
+
   // Navigation QA uses explicit empty/synthetic read responses only.
   // No operational data is fabricated or written. Register the fallback first:
   // Playwright evaluates route handlers in reverse registration order.
