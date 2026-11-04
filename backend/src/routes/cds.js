@@ -2359,49 +2359,78 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     return res.status(409).json({ error: 'booking_container_number_requires_correction_before_clamp' });
   }
 
-  // Upsert transporter. contact_person/phone are NOT NULL on cds_transporters
-  // but the clamp form only collects a company name — same fallback the
-  // customer auto-create above uses (the name doubles as the placeholder
-  // contact until someone fills in the real one from the transporters view).
+  // Resolve the transporter from the organisation register. Do not fabricate
+  // contact names or phone numbers to satisfy NOT NULL columns.
   let transporterId = null;
-  if (transporter_name) {
-    const t = await req.db(
+  if (cleanTransporter) {
+    const transporter = await req.db(
       'SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',
       [cleanTransporter, orgId]
     );
-    if (t.rows.length) transporterId = t.rows[0].id;
-    else {
-      const ins = await req.db(
-        `INSERT INTO cds_transporters (company_name, contact_person, phone, code, org_id) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [cleanTransporter, cleanTransporter, '-', genCode('TR'), orgId]
-      );
-      transporterId = ins.rows[0].id;
+    if (!transporter.rows.length) {
+      return res.status(409).json({ error: 'transporter_not_registered', transporter_name: cleanTransporter });
     }
+    transporterId = transporter.rows[0].id;
   }
 
-  // Upsert driver. license_number/license_expiry are NOT NULL on cds_drivers
-  // but the clamp form doesn't collect them — placeholder + a generous expiry
-  // so the row is valid until ops backfills the real license from the
-  // drivers view; not a compliance record, just enough to satisfy the schema.
+  // A clamp is not a driver-registration shortcut. Require an existing driver
+  // with an unexpired licence and no other open journey; never invent a
+  // PENDING licence number or a future expiry date.
   const dr = await req.db(
-    'SELECT id FROM cds_drivers WHERE name ILIKE $1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',
+    'SELECT id, license_number, license_expiry, status FROM cds_drivers WHERE name ILIKE $1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
     [cleanDriverName, orgId]
   );
-  const driverId = dr.rows.length ? dr.rows[0].id : (await req.db(
-    `INSERT INTO cds_drivers (name, phone, license_number, license_expiry, transporter_id, org_id)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-    [cleanDriverName, cleanDriverPhone || '-', 'PENDING', new Date(Date.now() + 365 * 24 * 3600 * 1000), transporterId, orgId]
-  )).rows[0].id;
+  if (!dr.rows.length) {
+    return res.status(409).json({ error: 'driver_not_registered', message: 'Register the driver and licence details before clamping.' });
+  }
+  const driver = dr.rows[0];
+  if (!driver.license_number || !driver.license_expiry || new Date(driver.license_expiry).getTime() <= Date.now()) {
+    return res.status(409).json({ error: 'driver_licence_not_valid', message: 'The driver needs a valid, unexpired licence on their personnel record.' });
+  }
+  if (driver.status !== 'available') {
+    return res.status(409).json({ error: 'driver_not_available', driver_status: driver.status });
+  }
+  const driverTrip = await req.db(
+    `SELECT id FROM cds_trips
+      WHERE driver_id=$1 AND org_id=$2 AND deleted_at IS NULL
+        AND status IN ('locked','dispatched','checkpoint','delayed','at_port')
+      LIMIT 1`,
+    [driver.id, orgId]
+  );
+  if (driverTrip.rows.length) {
+    return res.status(409).json({ error: 'driver_already_assigned_to_open_trip' });
+  }
+  const driverId = driver.id;
 
-  // Upsert vehicle (truck horse)
+  // Resolve or create the vehicle register row. Its current operational status
+  // and open-trip assignments are checked before it can take another box.
   const ve = await req.db(
-    'SELECT id FROM cds_vehicles WHERE registration ILIKE $1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1',
+    'SELECT id, status FROM cds_vehicles WHERE registration ILIKE $1 AND org_id=$2 AND deleted_at IS NULL FOR UPDATE',
     [cleanTruckReg, orgId]
   );
-  const vehicleId = ve.rows.length ? ve.rows[0].id : (await req.db(
-    `INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [cleanTruckReg, genCode('FL'), transporterId, orgId]
-  )).rows[0].id;
+  let vehicleId = ve.rows[0]?.id ?? null;
+  if (ve.rows.length) {
+    if (ve.rows[0].status !== 'available') {
+      return res.status(409).json({ error: 'vehicle_not_available', vehicle_status: ve.rows[0].status });
+    }
+    const vehicleTrip = await req.db(
+      `SELECT id FROM cds_trips
+        WHERE vehicle_id=$1 AND org_id=$2 AND deleted_at IS NULL
+          AND status IN ('locked','dispatched','checkpoint','delayed','at_port')
+        LIMIT 1`,
+      [vehicleId, orgId]
+    );
+    if (vehicleTrip.rows.length) {
+      return res.status(409).json({ error: 'vehicle_already_assigned_to_open_trip' });
+    }
+  } else {
+    const createdVehicle = await req.db(
+      `INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id)
+       VALUES ($1,$2,$3,$4) RETURNING id`,
+      [cleanTruckReg, genCode('FL'), transporterId, orgId]
+    );
+    vehicleId = createdVehicle.rows[0].id;
+  }
 
   // Resolve and lock the physical asset. A manifest-discovered asset starts
   // with explicitly unverified ownership; the system must not infer a lease.
@@ -2472,6 +2501,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     error.status = 409;
     throw error;
   }
+  if (lk.rows.length && lk.rows[0].status === 'assigned'
+    && (lk.rows[0].container_id || lk.rows[0].vehicle_id)) {
+    const error = new Error('e_lock_already_assigned');
+    error.status = 409;
+    throw error;
+  }
   let lockId = lk.rows[0]?.id ?? null;
   if (!lockId) {
     const createdLock = await req.db(
@@ -2485,6 +2520,19 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     }
     lockId = createdLock.rows[0].id;
   }
+  const otherInstalledLock = await req.db(
+    `SELECT id FROM cds_electronic_locks
+      WHERE container_id=$1 AND org_id=$2 AND status='installed'
+        AND deleted_at IS NULL AND id<>$3
+      LIMIT 1 FOR UPDATE`,
+    [containerId, orgId, lockId]
+  );
+  if (otherInstalledLock.rows.length) {
+    const error = new Error('container_already_has_an_installed_lock');
+    error.status = 409;
+    throw error;
+  }
+
   // 'installed', matching cds_electronic_locks_status_check and the desktop
   // clamp handler above — 'locked' isn't a value the constraint allows.
   await req.db(
@@ -2539,7 +2587,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     [
       trip.rows[0].id, bcId,
       cleanLockSerial,
-      transporter_name ? String(transporter_name).trim() : null,
+      cleanTransporter,
       cleanTruckReg,
       cleanTrailerReg,
       cleanDriverName,
@@ -2587,10 +2635,10 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     tripId: trip.rows[0].id,
     kind: 'clamped',
     sealNumber: bc.rows[0].seal_number,
-    sealIntact: true,
+    sealIntact: null,
     lockSerial: cleanLockSerial,
     lat, lng,
-    notes: `Clamped by ${req.user.name || 'yard team'} · ${truck_reg} / ${driver_name}`,
+    notes: `Clamp recorded by ${req.user.name || 'yard team'} · ${cleanTruckReg} / ${cleanDriverName}. Seal condition not independently verified at clamp.`,
   });
 
   // Fire alert so supervisors see it in real-time
@@ -2599,7 +2647,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
      VALUES ($1,'container_clamped','info',$2,$3,'container',$4,'operator')`,
     [orgId,
      `Container clamped — ${bc.rows[0].container_number || bc.rows[0].booking_number}`,
-     `${req.user.name || 'Yard team'} clamped e-lock ${lock_serial} on ${bc.rows[0].container_number || bcId} for booking ${bc.rows[0].booking_number} (${truck_reg} / ${driver_name}).`,
+     `${req.user.name || 'Yard team'} clamped e-lock ${cleanLockSerial} on ${bc.rows[0].container_number || bcId} for booking ${bc.rows[0].booking_number} (${cleanTruckReg} / ${cleanDriverName}).`,
      bcId]
   );
 
@@ -2607,7 +2655,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
     `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
      VALUES ('clamp','booking_container',$1,$2,$3,$4,$5)`,
     [bcId, req.user.id, req.user.name || null,
-     JSON.stringify({ lock_serial, transporter_name, truck_reg, trailer_reg, driver_name, driver_phone, lat, lng }),
+     JSON.stringify({ lock_serial: cleanLockSerial, transporter_name: cleanTransporter, truck_reg: cleanTruckReg, trailer_reg: cleanTrailerReg, driver_name: cleanDriverName, driver_phone: cleanDriverPhone, lat, lng }),
      orgId]
   );
 
