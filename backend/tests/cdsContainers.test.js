@@ -61,9 +61,30 @@ describe('CDS container register', () => {
     expect(res.result.status).toBe(201);
     expect(res.result.body.data.status).toBe('available');
     expect(statement).toContain('INSERT INTO cds_containers');
-    expect(statement.match(/INSERT INTO cds_containers \(([^)]+)\)/)?.[1]).not.toMatch(/\bstatus\b/);
+    expect(statement.match(/INSERT INTO cds_containers \(([^)]+)\)/)?.[1]).toMatch(/\bstatus\b/);
     expect(parameters).toContain('MSCU6639870');
+    expect(parameters).toContain('available');
+    expect(parameters).not.toContain('in_transit');
     expect(parameters).toContain('org-1');
+  });
+
+  test('places damaged and retired intake records into maintenance', async () => {
+    for (const condition of ['damaged', 'retired']) {
+      const res = response();
+      let parameters = [];
+      await routeLayer('/containers', 'post')({
+        body: { ...validInput(), condition, status: 'available' },
+        user: { org_id: 'org-1' },
+        db: async (_sql, values) => {
+          parameters = values;
+          return { rows: [{ id: 'container-1', number: 'MSCU6639870', status: 'maintenance' }] };
+        },
+      }, res, error => { if (error) throw error; });
+
+      expect(res.result.status).toBe(201);
+      expect(parameters).toContain('maintenance');
+      expect(parameters).not.toContain('available');
+    }
   });
 
   test('maps a duplicate ISO container number to a conflict response', async () => {
