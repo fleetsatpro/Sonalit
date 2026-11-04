@@ -230,6 +230,8 @@ export function useCreateContainer() {
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
       qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'analytics'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'audit'] });
     },
   });
 }
