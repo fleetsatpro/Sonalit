@@ -183,13 +183,21 @@ export function LocksView() {
 }
 
 export function PortView() {
-  const { data, isLoading, isError, refetch } = useTrips({ status: 'at_port' });
+  const [page, setPage] = useState(0);
+  const pageSize = 50;
+  const { data, isLoading, isError, isFetching, isPlaceholderData, refetch } = useTrips({
+    status: 'at_port', limit: pageSize, offset: page * pageSize,
+  });
   const { addToast, openDrawer } = useCDSStore();
   const unclamp = useUnclampBookingContainer();
   const [target, setTarget] = useState<Row | null>(null);
   const [sealCheck, setSealCheck] = useState<'intact' | 'broken' | 'not_checked'>('not_checked');
   const [observedSeal, setObservedSeal] = useState('');
   const rows = (data?.data ?? []) as Row[];
+  const total = Number(data?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const rangeStart = total === 0 ? 0 : page * pageSize + 1;
+  const rangeEnd = Math.min((page + 1) * pageSize, total);
 
   const openHandoff = (row: Row) => {
     if (!row['booking_id'] || !row['booking_container_id']) {
@@ -256,7 +264,7 @@ export function PortView() {
       </div>
 
       <div className="cds-lock-telemetry-note" role="note">
-        An aircraft, vehicle or trip status alone is not proof of container handoff. The manifest, seal outcome and custody record are committed before the port release is confirmed.
+        A vehicle arrival or trip status alone is not proof of container handoff. The manifest, seal outcome and custody record are committed before the port release is confirmed.
       </div>
 
       {isError && (
@@ -270,12 +278,29 @@ export function PortView() {
       <div className="cds-register-pagination flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
         <div>
           <div className="text-[12px] font-semibold text-white">Port release queue</div>
-          <div className="text-[12px] text-slate-300 mt-0.5">{rows.length} trip records returned by the current queue query</div>
+          <div className="text-[12px] text-slate-300 mt-0.5">{isPlaceholderData ? 'Updating queue results…' : total.toLocaleString() + ' trips awaiting port release'}</div>
         </div>
-        <div className="text-[12px] text-slate-300">Manifest-linked records only can be released from this workspace.</div>
+        <div className="text-[12px] text-slate-300">Only manifest-linked records can be released from this workspace.</div>
+      </div>
+
+      <div className="cds-register-pagination flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
+        <div className="text-[12px] text-slate-300 tabular-nums" aria-live="polite">
+          {isPlaceholderData ? 'Updating queue results…' : 'Showing ' + rangeStart.toLocaleString() + '–' + rangeEnd.toLocaleString() + ' of ' + total.toLocaleString() + ' port records'}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-slate-300 font-mono">Page {page + 1} of {totalPages}</span>
+          <button type="button" className="cds-audit-page-button" disabled={page === 0 || isFetching || isPlaceholderData} onClick={() => setPage(value => Math.max(0, value - 1))}>
+            <ChevronLeft size={15} /> Previous
+          </button>
+          <button type="button" className="cds-audit-page-button" disabled={(page + 1) * pageSize >= total || isFetching || isPlaceholderData} onClick={() => setPage(value => value + 1)}>
+            Next <ChevronRight size={15} />
+          </button>
+        </div>
       </div>
 
       <DataTable
+        key={page}
+        pageSize={Math.max(rows.length, 1)}
         columns={[
           { id: 'container', header: 'Container', accessor: (r: Row) => <span className="font-mono font-semibold text-cyan-200">{s(r['container_number'])}</span> },
           { id: 'booking', header: 'Booking / manifest', accessor: (r: Row) => (
