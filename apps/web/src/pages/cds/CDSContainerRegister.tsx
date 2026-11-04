@@ -131,7 +131,7 @@ function ContainerDetails({ container }: { container: Row }) {
           {field('Manufacturer', container['manufacturer'])}
           {field('Year built', container['year_built'])}
           {field('Nominal size', container['container_size'] ? String(container['container_size']) + ' ft' : null)}
-          {field('Maximum gross mass', container['max_weight_kg'] != null ? Number(container['max_weight_kg']).toLocaleString() + ' kg' : null)}
+          {field('Maximum weight', container['max_weight_kg'] != null ? Number(container['max_weight_kg']).toLocaleString() + ' kg' : null)}
           {field('Tare weight', container['tare_weight_kg'] != null ? Number(container['tare_weight_kg']).toLocaleString() + ' kg' : null)}
           {field('Length', container['length_m'] != null ? String(container['length_m']) + ' m' : null)}
           {field('Width', container['width_m'] != null ? String(container['width_m']) + ' m' : null)}
@@ -190,8 +190,8 @@ function RegisterContainerForm() {
     }
     const max = maxWeight ? Number(maxWeight) : null;
     const tare = tareWeight ? Number(tareWeight) : null;
-    if ((max != null && (!Number.isFinite(max) || max <= 0)) || (tare != null && (!Number.isFinite(tare) || tare <= 0)) || (max != null && tare != null && max <= tare)) {
-      setError('Weights must be positive numbers in kilograms, and maximum gross mass must exceed tare mass.');
+    if ((max != null && (!Number.isFinite(max) || max <= 0)) || (tare != null && (!Number.isFinite(tare) || tare <= 0))) {
+      setError('Weights must be positive numbers in kilograms.');
       return;
     }
     create.mutate({
@@ -252,7 +252,7 @@ function RegisterContainerForm() {
           <input type="number" min="1950" max={new Date().getFullYear() + 1} value={yearBuilt} onChange={event => setYearBuilt(event.target.value)} className={fieldClass} placeholder="e.g. 2022" />
         </label>
         <label className="block">
-          <span className={labelClass}>Maximum payload (kg)</span>
+          <span className={labelClass}>Maximum weight (kg)</span>
           <input type="number" min="1" step="0.01" value={maxWeight} onChange={event => setMaxWeight(event.target.value)} className={fieldClass} placeholder="Optional" />
         </label>
         <label className="block">
