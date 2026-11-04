@@ -734,7 +734,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
     ),
     transporter_activity AS (
       SELECT tr.id AS transporter_id, tr.company_name,
-             COUNT(DISTINCT COALESCE(t.container_id::text, NULLIF(UPPER(BTRIM(bc.container_number)), '')))
+             COUNT(DISTINCT COALESCE(NULLIF(UPPER(BTRIM(c.number)), ''), NULLIF(UPPER(BTRIM(bc.container_number)), ''), t.container_id::text))
                FILTER (WHERE t.created_at >= win.start_at AND t.created_at < win.end_at)::int AS containers_handled,
              COUNT(DISTINCT t.id)
                FILTER (WHERE t.created_at >= win.start_at AND t.created_at < win.end_at)::int AS trips_started,
@@ -749,6 +749,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         FROM cds_transporters tr
         CROSS JOIN bounds win
         LEFT JOIN trip_rows t ON t.transporter_id=tr.id
+        LEFT JOIN cds_containers c ON c.id=t.container_id AND c.org_id=tr.org_id AND c.deleted_at IS NULL
         LEFT JOIN cds_booking_containers bc
           ON bc.trip_id=t.id AND bc.org_id=tr.org_id AND bc.deleted_at IS NULL
        WHERE tr.org_id=$2 AND tr.deleted_at IS NULL
@@ -1660,6 +1661,7 @@ router.get('/transporters', asyncHandler(async (req, res) => {
     LEFT JOIN cds_vehicles v ON v.transporter_id=tr.id AND v.org_id=tr.org_id AND v.deleted_at IS NULL
     LEFT JOIN cds_drivers d ON d.transporter_id=tr.id AND d.org_id=tr.org_id AND d.deleted_at IS NULL
     LEFT JOIN cds_trips t ON t.transporter_id=tr.id AND t.org_id=tr.org_id AND t.deleted_at IS NULL
+    LEFT JOIN cds_containers c ON c.id=t.container_id AND c.org_id=tr.org_id AND c.deleted_at IS NULL
     LEFT JOIN cds_booking_containers bc ON bc.trip_id=t.id AND bc.org_id=t.org_id AND bc.deleted_at IS NULL
     WHERE ${filters.join(' AND ')}`;
   params.push(limit, offset);
@@ -1668,9 +1670,9 @@ router.get('/transporters', asyncHandler(async (req, res) => {
             COUNT(DISTINCT v.id)::int AS registered_trucks,
             COUNT(DISTINCT d.id)::int AS registered_drivers,
             COUNT(DISTINCT t.id)::int AS total_trips,
-            COUNT(DISTINCT COALESCE(t.container_id::text, NULLIF(UPPER(BTRIM(bc.container_number)), '')))
+            COUNT(DISTINCT COALESCE(NULLIF(UPPER(BTRIM(c.number)), ''), NULLIF(UPPER(BTRIM(bc.container_number)), ''), t.container_id::text))
               FILTER (WHERE t.id IS NOT NULL)::int AS containers_handled,
-            COUNT(DISTINCT COALESCE(t.container_id::text, NULLIF(UPPER(BTRIM(bc.container_number)), '')))
+            COUNT(DISTINCT COALESCE(NULLIF(UPPER(BTRIM(c.number)), ''), NULLIF(UPPER(BTRIM(bc.container_number)), ''), t.container_id::text))
               FILTER (WHERE t.id IS NOT NULL AND t.created_at >= NOW() - INTERVAL '30 days')::int AS containers_handled_30d,
             COUNT(DISTINCT t.id)
               FILTER (WHERE t.status NOT IN ('delivered','lock_removed','completed','archived'))::int AS active_trips,
