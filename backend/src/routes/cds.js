@@ -1188,10 +1188,10 @@ router.get('/containers', asyncHandler(async (req, res) => {
       SELECT bc.id AS booking_container_id, bc.clamped_at, bc.lock_number,
              bc.transporter_name, bc.driver_name, bc.driver_contact, bc.horse_reg,
              b.booking_number, t.trip_number,
-             COALESCE(bc.lock_number, el.serial) AS lock_serial,
-             COALESCE(bc.transporter_name, tr.company_name) AS transporter_name_resolved,
-             COALESCE(bc.driver_name, d.name) AS driver_name_resolved,
-             COALESCE(bc.horse_reg, v.registration) AS vehicle_registration,
+             COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial', bc.lock_number, el.serial) AS lock_serial,
+             COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name, tr.company_name) AS transporter_name_resolved,
+             COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name, d.name) AS driver_name_resolved,
+             COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg, v.registration) AS vehicle_registration,
              COALESCE(ce.actor_name, ca.user_name) AS actor_name
         FROM cds_booking_containers bc
         JOIN cds_bookings b ON b.id=bc.booking_id AND b.org_id=bc.org_id AND b.deleted_at IS NULL
@@ -1201,7 +1201,7 @@ router.get('/containers', asyncHandler(async (req, res) => {
         LEFT JOIN cds_drivers d ON d.id=t.driver_id AND d.org_id=bc.org_id
         LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=bc.org_id
         LEFT JOIN LATERAL (
-          SELECT e.actor_name FROM cds_custody_events e
+          SELECT e.actor_name, e.lock_serial FROM cds_custody_events e
            WHERE e.org_id=bc.org_id AND e.booking_container_id=bc.id AND e.kind='clamped'
            ORDER BY e.seq DESC LIMIT 1
         ) ce ON true
@@ -1211,6 +1211,16 @@ router.get('/containers', asyncHandler(async (req, res) => {
              AND a.entity_id=bc.id AND a.action='clamp'
            ORDER BY a.created_at DESC, a.id DESC LIMIT 1
         ) ca ON true
+        LEFT JOIN LATERAL (
+          SELECT a.after_data
+            FROM cds_audit_logs a
+           WHERE a.org_id=bc.org_id
+             AND a.entity_type='booking_container'
+             AND a.entity_id=bc.id
+             AND a.action='clamp'
+           ORDER BY a.created_at ASC, a.id ASC
+           LIMIT 1
+        ) clamp_audit ON true
        WHERE bc.org_id=c.org_id AND bc.deleted_at IS NULL
          AND UPPER(BTRIM(bc.container_number))=UPPER(c.number)
          AND bc.clamped_at IS NOT NULL
@@ -1287,11 +1297,12 @@ router.get('/containers/:id/history', asyncHandler(async (req, res) => {
             bc.driver_name AS manifest_driver, bc.driver_contact AS manifest_driver_contact,
             b.booking_number,
             t.trip_number,
-            COALESCE(bc.transporter_name, tr.company_name) AS transporter_name,
-            COALESCE(bc.horse_reg, v.registration) AS vehicle_registration,
-            COALESCE(bc.driver_name, d.name) AS driver_name,
-            COALESCE(bc.driver_contact, d.phone) AS driver_contact,
-            COALESCE(bc.lock_number, el.serial, ce.lock_serial) AS assigned_lock
+            COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name, tr.company_name) AS transporter_name,
+            COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg, v.registration) AS vehicle_registration,
+            COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name, d.name) AS driver_name,
+            COALESCE(clamp_audit.after_data->>'driver_phone', bc.driver_contact, d.phone) AS driver_contact,
+            COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial', bc.lock_number, el.serial) AS assigned_lock,
+            (clamp_audit.after_data IS NOT NULL) AS has_clamp_audit_snapshot
        FROM cds_custody_events ce
        JOIN cds_booking_containers bc
          ON bc.id=ce.booking_container_id AND bc.org_id=ce.org_id AND bc.deleted_at IS NULL
@@ -1303,6 +1314,16 @@ router.get('/containers/:id/history', asyncHandler(async (req, res) => {
        LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=bc.org_id
        LEFT JOIN cds_drivers d ON d.id=t.driver_id AND d.org_id=bc.org_id
        LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=bc.org_id
+      LEFT JOIN LATERAL (
+        SELECT a.after_data
+          FROM cds_audit_logs a
+         WHERE a.org_id=bc.org_id
+           AND a.entity_type='booking_container'
+           AND a.entity_id=bc.id
+           AND a.action='clamp'
+         ORDER BY a.created_at ASC, a.id ASC
+         LIMIT 1
+      ) clamp_audit ON true
       WHERE ce.org_id=$1 AND bc.org_id=$1 AND UPPER(BTRIM(bc.container_number))=UPPER($2)
       ORDER BY ce.booking_container_id, ce.seq ASC`,
     [orgId, containerNumber]
@@ -1340,11 +1361,16 @@ router.get('/containers/:id/history', asyncHandler(async (req, res) => {
         kind: row.kind,
         actor: row.actor_name,
         timestamp: row.created_at,
-        lock_serial: row.assigned_lock || row.lock_serial,
+        lock_serial: row.lock_serial || row.assigned_lock,
         driver_name: row.driver_name || row.manifest_driver,
         driver_contact: row.driver_contact || row.manifest_driver_contact,
         vehicle_registration: row.vehicle_registration || row.manifest_vehicle,
         transporter_name: row.transporter_name || row.manifest_transporter,
+        assignment_source: row.has_clamp_audit_snapshot ? 'clamp_audit_snapshot'
+          : (row.manifest_driver || row.manifest_vehicle || row.manifest_transporter || row.lock_number)
+            ? 'manifest_record'
+            : (row.driver_name || row.vehicle_registration || row.assigned_lock)
+              ? 'linked_trip_record' : 'not_recorded',
         seal_number: row.seal_number,
         seal_intact: row.seal_intact,
         lat: row.lat,
@@ -1364,15 +1390,20 @@ router.get('/containers/:id/history', asyncHandler(async (req, res) => {
     `SELECT bc.id AS booking_container_id, bc.booking_id, bc.clamped_at, bc.unclamped_at,
             bc.lock_number, bc.driver_name, bc.driver_contact, bc.horse_reg,
             bc.transporter_name, b.booking_number, t.id AS trip_id, t.trip_number,
-            ca.user_name AS clamp_actor, ua.user_name AS unclamp_actor
+            ca.user_name AS clamp_actor, ua.user_name AS unclamp_actor,
+            ca.after_data->>'lock_serial' AS audit_lock_serial,
+            ca.after_data->>'driver_name' AS audit_driver_name,
+            ca.after_data->>'truck_reg' AS audit_vehicle_registration,
+            ca.after_data->>'transporter_name' AS audit_transporter_name,
+            (ca.after_data IS NOT NULL) AS has_clamp_audit_snapshot
        FROM cds_booking_containers bc
        JOIN cds_bookings b ON b.id=bc.booking_id AND b.org_id=bc.org_id AND b.deleted_at IS NULL
        LEFT JOIN cds_trips t ON t.id=bc.trip_id AND t.org_id=bc.org_id
        LEFT JOIN LATERAL (
-         SELECT a.user_name FROM cds_audit_logs a
+         SELECT a.user_name, a.after_data FROM cds_audit_logs a
           WHERE a.org_id=bc.org_id AND a.entity_type='booking_container'
             AND a.entity_id=bc.id AND a.action='clamp'
-          ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+          ORDER BY a.created_at ASC, a.id ASC LIMIT 1
        ) ca ON true
        LEFT JOIN LATERAL (
          SELECT a.user_name FROM cds_audit_logs a
@@ -1397,11 +1428,12 @@ router.get('/containers/:id/history', asyncHandler(async (req, res) => {
         kind: 'clamped',
         actor: row.clamp_actor,
         timestamp: row.clamped_at,
-        lock_serial: row.lock_number,
-        driver_name: row.driver_name,
+        lock_serial: row.audit_lock_serial || row.lock_number,
+        driver_name: row.audit_driver_name || row.driver_name,
         driver_contact: row.driver_contact,
-        vehicle_registration: row.horse_reg,
-        transporter_name: row.transporter_name,
+        vehicle_registration: row.audit_vehicle_registration || row.horse_reg,
+        transporter_name: row.audit_transporter_name || row.transporter_name,
+        assignment_source: row.has_clamp_audit_snapshot ? 'clamp_audit_snapshot' : 'manifest_record',
         evidence_source: 'manifest_timestamp',
         integrity_verified: null,
         chain_broken: null,
@@ -2779,6 +2811,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     bookingContainerId: bcId,
     tripId: bc.rows[0].trip_id,
     kind: 'unclamped',
+    lockSerial: bc.rows[0].lock_number || null,
     sealNumber: observed || expectedSeal,
     sealIntact: sealVerdict,
     lat, lng,
