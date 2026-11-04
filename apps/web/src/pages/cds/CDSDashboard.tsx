@@ -352,7 +352,7 @@ function DashboardView() {
   const avgH = Math.floor(avgHrs);
   const avgM = Math.round((avgHrs - avgH) * 60);
   const cards = [
-    { label: 'ACTIVE CONTAINERS', value: kv('active_containers'), delta: 'registered inventory', trend: 'up' as const },
+    { label: 'REGISTERED CONTAINERS', value: kv('active_containers'), delta: 'organisation inventory', trend: 'up' as const },
     { label: 'IN TRANSIT', value: kv('in_transit'), delta: 'operational trips', trend: 'up' as const },
     { label: 'ACTIVE LOCKS', value: kv('active_locks'), delta: 'assigned or installed', trend: 'up' as const },
     { label: 'LOCKS REMOVED', value: kv('locks_removed'), delta: 'unclamped', trend: 'up' as const },
