@@ -2386,7 +2386,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, cdsTra
   const cleanDriverName = String(driver_name).trim();
   const cleanTrailerReg = trailer_reg ? String(trailer_reg).trim().toUpperCase() : null;
   const cleanTransporter = transporter_name ? String(transporter_name).trim() : null;
-  const cleanDriverPhone = cleanDriverPhone;
+  const cleanDriverPhone = driver_phone ? String(driver_phone).trim() : null;
   if (cleanLockSerial.length > 30 || cleanTruckReg.length > 20 || cleanDriverName.length > 255
     || (cleanTrailerReg && cleanTrailerReg.length > 20)
     || (cleanTransporter && cleanTransporter.length > 255)
