@@ -10,7 +10,7 @@ import { useAuthStore } from '../../stores/auth.js';
 
 import { ContainersView, BookingsView, DriversView, TransportersView } from './CDSDataPage.js';
 import { CDSIntro } from './CDSIntro.js';
-import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
+import { CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
 import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack, useTransitionTrip, useMarkDeparted } from './hooks.js';
 import { LiveFleetMap, positioned } from './LiveFleetMap.js';
