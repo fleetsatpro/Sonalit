@@ -171,7 +171,7 @@ describe('GET /containers', () => {
         if (sql.includes('SELECT\n         t.*')) return { rows: [{
           id: 'container-1', number: 'CSQU3054383',
           latest_booking_number: 'BK-104', latest_trip_number: null,
-          latest_booking_container_status: 'assigned', latest_custody_kind: 'clamped',
+          latest_booking_container_status: 'assigned', latest_custody_kind: 'clamped', operational_status: 'booked',
         }] };
         throw new Error('unexpected SQL in container list test');
       },
@@ -193,7 +193,7 @@ describe('GET /containers', () => {
     const req = makeRequest({ limit: '25', offset: '50', search: 'CSQU', status: 'available' });
     const res = await call(req);
     expect(res.body).toMatchObject({
-      data: [{ id: 'container-1', number: 'CSQU3054383', latest_booking_number: 'BK-104', latest_trip_number: null, latest_booking_container_status: 'assigned', latest_custody_kind: 'clamped' }],
+      data: [{ id: 'container-1', number: 'CSQU3054383', latest_booking_number: 'BK-104', latest_trip_number: null, latest_booking_container_status: 'assigned', latest_custody_kind: 'clamped', operational_status: 'booked' }],
       total: 1,
       limit: 25,
       offset: 50,
@@ -204,6 +204,9 @@ describe('GET /containers', () => {
     expect(req.statements[0].sql).toContain('FROM cds_custody_events ce');
     expect(req.statements[0].sql).toContain('ce.org_id = t.org_id');
     expect(req.statements[0].sql).toContain('latest_booking_container.id IS NOT NULL AND tr.id = latest_booking_container.trip_id');
+    expect(req.statements[0].sql).toContain('AS operational_status');
+    expect(req.statements[0].sql).toContain("WHEN latest_booking_container.status = 'assigned' THEN 'booked'");
+    expect(req.statements[0].sql).toContain("WHEN latest_booking_container.status IN ('in_transit','at_port','delivered')");
     expect(req.statements[0].sql).toContain('ILIKE $2');
     expect(req.statements[0].params).toEqual(['available', '%CSQU%', 25, 50]);
   });
