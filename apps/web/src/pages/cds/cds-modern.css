@@ -804,3 +804,22 @@
   outline: 2px solid #78baff;
   outline-offset: 2px;
 }
+
+.cds-lock-telemetry-note {
+  padding: 12px 14px;
+  border: 1px solid rgba(145, 184, 230, .2);
+  border-radius: 11px;
+  color: #c6d7ea;
+  background: linear-gradient(145deg, rgba(20, 43, 71, .74), rgba(9, 22, 40, .78));
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.cds-lock-telemetry-note::before {
+  content: 'TELEMETRY INTEGRITY';
+  display: block;
+  margin-bottom: 4px;
+  color: #93c9ff;
+  font: 600 10px/1.35 var(--p-mono, 'IBM Plex Mono', monospace);
+  letter-spacing: .13em;
+}
