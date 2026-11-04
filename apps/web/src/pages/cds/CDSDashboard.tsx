@@ -456,7 +456,7 @@ function DashboardView() {
               <LiveFleetMap trips={trips} selectedId={selectedMapId} onSelect={setSelectedMapId} track={track} />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center px-6"
-                style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
+                style={{ background: 'linear-gradient(rgba(120,190,255,0.055) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(120,190,255,0.055) 1px, transparent 1px) 0 0/40px 40px, #0b1627' }}>
                 <div className="max-w-sm text-center">
                   <MapPin size={20} strokeWidth={1.6} className="mx-auto mb-2 text-white/30" aria-hidden="true" />
                   <div className="text-[11px] leading-relaxed text-text-2">
@@ -635,7 +635,7 @@ export function LiveView() {
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4 mb-4">
+      <div className="cds-panel rounded-2xl border border-white/[.07] bg-white/[.02] p-4 mb-4">
         <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
           <div className="font-bold text-sm text-text-0">Live Fleet Tracking</div>
           <div className="text-[10px] font-mono text-text-2">
@@ -651,7 +651,7 @@ export function LiveView() {
             // stated rather than implied: whether there are no trips at all or
             // trips with no fix are two very different problems for an operator.
             <div className="absolute inset-0 flex items-center justify-center px-6"
-              style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
+              style={{ background: 'linear-gradient(rgba(120,190,255,0.055) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(120,190,255,0.055) 1px, transparent 1px) 0 0/40px 40px, #0b1627' }}>
               <div className="text-center text-text-2 text-[11px] font-mono leading-relaxed">
                 {trips.length === 0
                   ? 'No open trips — the map draws vehicles once a trip is dispatched'
@@ -662,7 +662,7 @@ export function LiveView() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
+      <div className="cds-panel rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
         <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
           <div className="font-bold text-sm text-text-0">Open Trips ({trips.length})</div>
           <div className="text-[10px] font-mono text-text-2">
