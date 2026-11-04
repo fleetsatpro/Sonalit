@@ -235,12 +235,13 @@ export function ContainersView() {
       )}
 
       <DataTable
+        key={serverSearch + ':' + filter}
         columns={[
-          { id: 'num', header: 'Container number', accessor: (r: Row) => <span className="font-mono font-semibold text-cyan-200">{s(r['number'] ?? r['container_number'])}</span>, sortable: true },
-          { id: 'type', header: 'Equipment', accessor: (r: Row) => <span className="font-medium text-text-1">{s(r['iso_type'] ?? r['container_type'])}</span>, sortable: true },
-          { id: 'owner', header: 'Ownership', accessor: (r: Row) => <span className="capitalize">{s(r['ownership'])}</span>, sortable: true },
-          { id: 'condition', header: 'Condition', accessor: (r: Row) => <span className="capitalize">{s(r['condition'] ?? 'Not recorded')}</span>, sortable: true },
-          { id: 'status', header: 'Operational status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} />, sortable: true },
+          { id: 'num', header: 'Container number', accessor: (r: Row) => <span className="font-mono font-semibold text-cyan-200">{s(r['number'] ?? r['container_number'])}</span>, sortValue: (r: Row) => s(r['number'] ?? r['container_number']), sortable: true },
+          { id: 'type', header: 'Equipment', accessor: (r: Row) => <span className="font-medium text-text-1">{s(r['iso_type'] ?? r['container_type'])}</span>, sortValue: (r: Row) => s(r['iso_type'] ?? r['container_type']), sortable: true },
+          { id: 'owner', header: 'Ownership', accessor: (r: Row) => <span className="capitalize">{s(r['ownership'])}</span>, sortValue: (r: Row) => s(r['ownership']), sortable: true },
+          { id: 'condition', header: 'Condition', accessor: (r: Row) => <span className="capitalize">{s(r['condition'] ?? 'Not recorded')}</span>, sortValue: (r: Row) => s(r['condition'] ?? 'Not recorded'), sortable: true },
+          { id: 'status', header: 'Operational status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} />, sortValue: (r: Row) => s(r['status']), sortable: true },
           { id: 'loc', header: 'Last recorded location', accessor: (r: Row) => {
             const location = s(r['current_location']);
             if (location !== '—') return location;
