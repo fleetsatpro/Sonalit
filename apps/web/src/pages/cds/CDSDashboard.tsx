@@ -201,7 +201,7 @@ export default function CDSApp() {
   const railW = expanded ? 248 : 72;
 
   return (
-    <div className="flex h-dvh bg-[#0c0e12] text-white overflow-hidden">
+    <div className="cds-modern flex h-dvh text-white overflow-hidden">
       {showIntro && <CDSIntro onDone={endIntro} />}
       {/* ── Primary navigation ── */}
       <nav
@@ -290,18 +290,21 @@ export default function CDSApp() {
         </button>
       </nav>
 
-      {/* ── main ── */}
+      {/* ── Main workspace ── */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-[52px] flex-shrink-0 bg-[#0c0e12]/95 backdrop-blur-xl border-b border-white/[.06] flex items-center px-5 gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="font-bold text-[15px] text-white leading-tight">{currentView?.label ?? 'Dashboard'}</div>
-            <div className="text-[10px] font-mono tracking-wider text-white/30 mt-0.5">{currentView?.sub ?? ''}</div>
+        <header className="cds-topbar flex-shrink-0 flex items-center gap-4 px-4 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h1 className="text-[19px] sm:text-[21px] font-semibold tracking-tight text-white leading-tight">{activeSection.label}</h1>
+              {activeView !== activeSection.view && (
+                <span className="cds-current-view hidden sm:inline-flex">{currentView?.label ?? ''}</span>
+              )}
+            </div>
+            <p className="text-[12px] sm:text-[13px] text-slate-300 mt-1 truncate">{currentView?.sub ?? activeSection.description}</p>
           </div>
 
-
-
-          <div className="relative flex items-center gap-2 bg-white/[.04] border border-white/[.07] rounded-lg px-2.5 h-8">
-            <Search size={13} className="text-white/30 flex-shrink-0" />
+          <div className="cds-search relative flex items-center gap-2 rounded-xl px-3 h-10 flex-shrink-0">
+            <Search size={17} className="text-slate-300 flex-shrink-0" aria-hidden="true" />
             <input
               value={headerQuery}
               onChange={event => setHeaderQuery(event.target.value)}
@@ -310,15 +313,15 @@ export default function CDSApp() {
                 if (event.key === 'Enter') { event.preventDefault(); void runHeaderSearch(); }
                 if (event.key === 'Escape') setHeaderSearchOpen(false);
               }}
-              aria-label="Search CDS trips, containers and e-locks"
+              aria-label="Search trips, containers and e-locks"
               aria-expanded={headerSearchOpen}
-              placeholder="Search trips, containers, locks…"
-              className="bg-transparent border-none outline-none text-white text-[12px] w-32 md:w-44"
+              placeholder="Search records…"
+              className="bg-transparent border-none outline-none text-white text-[13px] w-28 sm:w-48"
             />
-            {headerSearching && <span className="text-[9px] text-white/40">Searching</span>}
+            {headerSearching && <span className="text-[11px] text-slate-300">Searching</span>}
             {headerSearchOpen && (
-              <div role="listbox" aria-label="CDS search results" className="absolute z-[90] top-full right-0 mt-2 w-[min(420px,85vw)] max-h-[360px] overflow-y-auto rounded-xl border border-white/[.12] bg-[#0e1117] shadow-2xl">
-                <div className="px-3 py-2 text-[9px] uppercase tracking-widest font-mono text-white/45 border-b border-white/[.06]">
+              <div role="listbox" aria-label="CDS search results" className="cds-search-results absolute z-[90] top-full right-0 mt-2 w-[min(440px,85vw)] max-h-[360px] overflow-y-auto rounded-xl shadow-2xl">
+                <div className="px-4 py-3 text-[11px] font-semibold text-slate-200 border-b border-white/[.08]">
                   {headerSearchPartial ? 'Partial results · one or more sources unavailable' : headerResults.length ? headerResults.length + ' matching records' : 'No matching records'}
                 </div>
                 {headerResults.map((result, index) => (
@@ -327,38 +330,55 @@ export default function CDSApp() {
                       setActiveView(result.target);
                       setHeaderSearchOpen(false);
                       useCDSStore.getState().openDrawer(result.source + ' · ' + result.title, (
-                        <div className="space-y-3 text-xs">
-                          <div className="text-[10px] uppercase tracking-wider font-mono text-cds-orange">{result.source} record search result</div>
-                          <div className="font-bold text-text-0 break-all">{result.title}</div>
+                        <div className="space-y-3 text-sm">
+                          <div className="text-[12px] uppercase tracking-wider font-mono text-cyan-300">{result.source} record</div>
+                          <div className="font-semibold text-text-0 break-all">{result.title}</div>
                           <div className="text-text-2 break-words">{result.detail || 'No additional summary fields are recorded.'}</div>
-                          <div className="text-[10px] text-text-2">Record ID: {result.id || 'not returned by API'}</div>
-                          <div className="text-[10px] text-text-2">Search uses live tenant-scoped CDS API results. Open the {result.source.toLowerCase()} workspace to continue operational work.</div>
+                          <div className="text-[12px] text-text-2">Record ID: {result.id || 'not returned by API'}</div>
                         </div>
                       ));
                     }}
-                    className="block w-full px-3 py-2.5 text-left border-b border-white/[.05] last:border-0 hover:bg-white/[.04]"
+                    className="block w-full px-4 py-3 text-left border-b border-white/[.06] last:border-0 hover:bg-white/[.05]"
                   >
-                    <div className="flex items-center justify-between gap-3"><span className="truncate text-xs font-semibold text-white/90">{result.title}</span><span className="text-[9px] uppercase font-mono tracking-wider text-cds-orange">{result.source}</span></div>
-                    <div className="text-[10px] text-white/45 mt-1 truncate">{result.detail || 'No secondary fields recorded'}</div>
+                    <div className="flex items-center justify-between gap-3"><span className="truncate text-[14px] font-semibold text-white">{result.title}</span><span className="text-[11px] uppercase font-mono tracking-wider text-cyan-300">{result.source}</span></div>
+                    <div className="text-[12px] text-slate-300 mt-1 truncate">{result.detail || 'No secondary fields recorded'}</div>
                   </button>
                 ))}
-                <button type="button" onClick={() => setHeaderSearchOpen(false)} className="w-full px-3 py-2 text-left text-[10px] text-white/45 hover:text-white/80">Close results · Esc</button>
+                <button type="button" onClick={() => setHeaderSearchOpen(false)} className="w-full px-4 py-3 text-left text-[12px] text-slate-300 hover:text-white">Close results · Esc</button>
               </div>
             )}
           </div>
 
-          <div className="font-mono text-[12px] text-white/40 tracking-wider hidden sm:block">{clock}</div>
-
-          <button
-            type="button"
-            title="Open Client Pulse and dispatch alerts"
-            aria-label="Open Client Pulse and dispatch alerts"
-            onClick={() => setActiveView('pulse')}
-            className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/55 cursor-pointer flex items-center justify-center hover:text-white transition-colors"
-          ><Bell size={15} /></button>
+          <div className="cds-clock font-mono text-[13px] hidden lg:block flex-shrink-0">{clock}</div>
         </header>
 
-        <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
+        <div className="cds-mobile-nav md:hidden flex-shrink-0" aria-label="Primary workspace navigation">
+          {NAV_SECTIONS.flatMap(section => section.items).map(item => {
+            const Icon = item.icon;
+            const active = item.views.includes(activeView);
+            return (
+              <button key={item.id} type="button" onClick={() => setActiveView(item.view)}
+                aria-current={active ? 'page' : undefined} className={'cds-mobile-nav-item ' + (active ? 'is-active' : '')}>
+                <Icon size={17} aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {secondaryTabs.length > 0 && (
+          <nav className="cds-context-nav flex-shrink-0 flex items-center gap-1 px-4 sm:px-6 overflow-x-auto" aria-label={activeSection.label + ' views'}>
+            {secondaryTabs.map(tab => (
+              <button key={tab.view} type="button" onClick={() => setActiveView(tab.view)}
+                aria-current={activeView === tab.view ? 'page' : undefined}
+                className={'cds-context-tab flex-shrink-0 ' + (activeView === tab.view ? 'is-active' : '')}>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        <div className="cds-content-scroll flex-1 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
           {activeView === 'dashboard' && <DashboardView />}
           {activeView === 'live' && <LiveView />}
           {activeView === 'containers' && <ContainersView />}
