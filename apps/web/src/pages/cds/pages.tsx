@@ -200,6 +200,7 @@ export function PortView() {
   const { addToast, openDrawer } = useCDSStore();
   const unclamp = useUnclampBookingContainer();
   const [target, setTarget] = useState<Row | null>(null);
+  const [handoffKey, setHandoffKey] = useState('');
   const [sealCheck, setSealCheck] = useState<'intact' | 'broken' | 'not_checked'>('not_checked');
   const [observedSeal, setObservedSeal] = useState('');
   const rows = (data?.data ?? []) as Row[];
@@ -220,6 +221,7 @@ export function PortView() {
     }
     setSealCheck('not_checked');
     setObservedSeal('');
+    setHandoffKey(crypto.randomUUID());
     setTarget(row);
   };
 
@@ -228,6 +230,7 @@ export function PortView() {
     setTarget(null);
     setObservedSeal('');
     setSealCheck('not_checked');
+    setHandoffKey('');
   };
 
   const confirmHandoff = () => {
@@ -241,6 +244,7 @@ export function PortView() {
     unclamp.mutate({
       bookingId: s(target['booking_id']),
       cid: s(target['booking_container_id']),
+      idempotencyKey: handoffKey,
       ...(sealCheck === 'not_checked' ? {} : { seal_intact: sealCheck === 'intact' }),
       ...(observed ? { observed_seal: observed } : {}),
     }, {
@@ -256,6 +260,7 @@ export function PortView() {
         setTarget(null);
         setObservedSeal('');
         setSealCheck('not_checked');
+        setHandoffKey('');
       },
       onError: () => addToast('The port handoff was not confirmed. The manifest and custody record were not reported as complete.', 'error'),
     });
