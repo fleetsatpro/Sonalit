@@ -12,7 +12,6 @@ export const CDS_VIEWS: CDSViewDef[] = [
   { id: 'pulse', label: 'Booking Health', sub: 'LIFECYCLE · DELAY · STALE RECORDS' },
   { id: 'containers', label: 'Container Register', sub: 'EQUIPMENT IDENTITY · CONDITION · INSPECTIONS' },
   { id: 'locks', label: 'E-Lock Control', sub: 'DEVICE HEALTH · ASSIGNMENTS · SEAL EVENTS' },
-  { id: 'drivers', label: 'Driver Roster', sub: 'CDS-AUTHORISED FIELD PERSONNEL' },
   { id: 'transporters', label: 'Transport Partners', sub: 'CARRIER CAPACITY · SERVICE PROFILE' },
   { id: 'inbox', label: 'Activity & Custody', sub: 'FIELD EVENTS · LOCK EVENTS · TRIP TRANSITIONS' },
   { id: 'analytics', label: 'Performance Intelligence', sub: 'OPERATIONAL TRENDS · EQUIPMENT · LOCKS' },

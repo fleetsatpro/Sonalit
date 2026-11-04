@@ -30,10 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      # Capacitor 8 requires Node >=22.0; Vite 8 requires Node >=20.19 or >=22.12.
+      # Keep the Android lane on Node 22 so npm ci and the Capacitor CLI agree.
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: apps/guardian-convoy/package-lock.json
 
@@ -74,10 +76,10 @@ jobs:
             exit 1
           fi
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Set up Android SDK
@@ -94,7 +96,7 @@ jobs:
         run: yes | sdkmanager --licenses || true
 
       - name: Install platform and build tools
-        run: sdkmanager "build-tools;34.0.0" "platforms;android-35"
+        run: sdkmanager "build-tools;36.0.0" "platforms;android-36"
 
       - name: Set local.properties
         working-directory: apps/guardian-convoy/android

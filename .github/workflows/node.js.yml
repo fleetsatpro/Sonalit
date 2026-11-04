@@ -117,6 +117,16 @@ jobs:
       - name: Build standalone CDS frontend
         run: pnpm --filter @sonalit/container-delivery-system build
 
+      - name: Guardian Convoy dependency audit, signatures and build
+        working-directory: apps/guardian-convoy
+        env:
+          NODE_OPTIONS: ""
+        run: |
+          npm ci --include=dev
+          npm audit --audit-level=moderate
+          npm audit signatures
+          npm run build
+
       # The web package owns unit and contract tests for offline queues, auth,
       # health indicators, and feature capability claims. Typecheck/build alone
       # does not execute these behavioural regressions.

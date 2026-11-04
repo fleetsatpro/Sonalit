@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import {
   Search, Bell, ChevronLeft, PanelLeftClose, PanelLeft, Menu, X,
   LayoutDashboard, MapPin, ClipboardList, Package, Lock,
-  Users, Truck, Anchor, Activity, FileText, BarChart2, Settings,
+  Truck, Anchor, Activity, FileText, BarChart2, Settings,
   RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
@@ -11,7 +11,7 @@ import './CDSDesignSystem.css';
 
 import { useAuthStore } from '../../stores/auth.js';
 
-import { ContainersView, BookingsView, DriversView, TransportersView } from './CDSDataPage.js';
+import { ContainersView, BookingsView, TransportersView } from './CDSDataPage.js';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
 import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack, useTransitionTrip, useMarkDeparted } from './hooks.js';
@@ -34,7 +34,6 @@ const VIEW_ICONS: Record<string, LucideIcon> = {
   pulse: Activity,
   containers: Package,
   locks: Lock,
-  drivers: Users,
   transporters: Truck,
   inbox: FileText,
   analytics: BarChart2,
@@ -46,7 +45,7 @@ const NAV_SECTIONS: { label: string; ids: string[] }[] = [
   { label: 'Command', ids: ['dashboard', 'live'] },
   { label: 'Movement', ids: ['bookings', 'port', 'pulse'] },
   { label: 'Equipment', ids: ['containers', 'locks'] },
-  { label: 'Partners', ids: ['drivers', 'transporters'] },
+  { label: 'Partners & Carriers', ids: ['transporters'] },
   { label: 'Records & Intelligence', ids: ['inbox', 'analytics', 'reports'] },
   { label: 'Administration', ids: ['settings'] },
 ];
@@ -381,7 +380,6 @@ export default function CDSApp() {
             {activeView === 'containers' && <ContainersView />}
             {activeView === 'bookings' && <BookingsView />}
             {activeView === 'locks' && <LocksView />}
-            {activeView === 'drivers' && <DriversView />}
             {activeView === 'transporters' && <TransportersView />}
             {activeView === 'port' && <PortView />}
             {activeView === 'pulse' && <PulseView />}

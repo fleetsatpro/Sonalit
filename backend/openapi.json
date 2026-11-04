@@ -7257,6 +7257,16 @@
           }
         }
       }
+    },
+    "/api/v1/cds/containers/{id}/history": {
+      "get": {
+        "operationId": "get_api_v1_cds_containers_id_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

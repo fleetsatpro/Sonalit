@@ -6,10 +6,11 @@
 // control room showed "no activity" while the yard had containers queued. A
 // derived feed cannot drift from the work, because it IS the work.
 //
-// Four sources, each capped and time-ordered, merged in JS: one UNION with four
-// different shapes forced into common columns reads far worse than four honest
-// queries. Heartbeats and GPS pings are excluded — they are telemetry, not
-// events an operator needs in a log.
+// Four sources, each capped and time-ordered, merged in JS. Every source is
+// explicitly scoped to the requesting organisation as well as protected by
+// the request's RLS transaction. Clamp-time assignment is read from the clamp
+// audit snapshot; mutable trip/manifest values must never rewrite history.
+// Heartbeats and GPS pings are telemetry, not events an operator needs in a log.
 
 const CUSTODY_LABEL = {
   clamped: ['clamp', 'E-lock clamped on'],
@@ -42,49 +43,99 @@ const coords = (lat, lng) =>
 
 const metaLine = (...parts) => parts.filter(Boolean).join(' · ') || null;
 
-async function activityFeed(db, limit) {
+async function activityFeed(db, orgId, limit) {
+  if (!orgId) throw new Error('activity_feed_org_required');
   const [custody, locks, trips, alerts] = await Promise.all([
     db(
       `SELECT ce.id, ce.created_at, ce.kind, ce.actor_name, ce.lat, ce.lng, ce.notes,
-              ce.seal_number, ce.lock_serial, ce.booking_container_id,
-              bc.container_number, b.booking_number
+              ce.seal_number, ce.lock_serial, ce.booking_container_id, ce.trip_id,
+              bc.container_number, b.booking_number, t.trip_number,
+              COALESCE(NULLIF(BTRIM(clamp_audit.after_data->>'transporter_name'), ''), NULLIF(BTRIM(bc.transporter_name), '')) AS transporter_name,
+              COALESCE(NULLIF(BTRIM(clamp_audit.after_data->>'truck_reg'), ''), NULLIF(BTRIM(bc.horse_reg), '')) AS vehicle_registration,
+              COALESCE(NULLIF(BTRIM(clamp_audit.after_data->>'driver_name'), ''), NULLIF(BTRIM(bc.driver_name), '')) AS driver_name,
+              (
+                NULLIF(BTRIM(clamp_audit.after_data->>'lock_serial'), '') IS NOT NULL
+                OR NULLIF(BTRIM(clamp_audit.after_data->>'driver_name'), '') IS NOT NULL
+                OR NULLIF(BTRIM(clamp_audit.after_data->>'truck_reg'), '') IS NOT NULL
+                OR NULLIF(BTRIM(clamp_audit.after_data->>'transporter_name'), '') IS NOT NULL
+              ) AS has_clamp_audit_snapshot
          FROM cds_custody_events ce
-         JOIN cds_booking_containers bc ON bc.id = ce.booking_container_id
-         LEFT JOIN cds_bookings b ON b.id = bc.booking_id
-        ORDER BY ce.created_at DESC LIMIT $1`, [limit]
+         JOIN cds_booking_containers bc
+           ON bc.id=ce.booking_container_id AND bc.org_id=ce.org_id AND bc.deleted_at IS NULL
+         LEFT JOIN cds_bookings b
+           ON b.id=bc.booking_id AND b.org_id=bc.org_id AND b.deleted_at IS NULL
+         LEFT JOIN cds_trips t
+           ON t.id=ce.trip_id AND t.org_id=ce.org_id AND t.deleted_at IS NULL
+         LEFT JOIN LATERAL (
+           SELECT a.after_data
+             FROM cds_audit_logs a
+            WHERE a.org_id=ce.org_id
+              AND a.entity_type='booking_container'
+              AND a.entity_id=bc.id
+              AND a.action='clamp'
+            ORDER BY a.created_at ASC, a.id ASC
+            LIMIT 1
+         ) clamp_audit ON true
+        WHERE ce.org_id=$1
+        ORDER BY ce.created_at DESC LIMIT $2`, [orgId, limit]
     ),
     db(
       `SELECT le.id, le.created_at, le.type, le.lat, le.lng, le.lock_id, el.serial
          FROM cds_lock_events le
-         LEFT JOIN cds_electronic_locks el ON el.id = le.lock_id
-        WHERE le.type NOT IN ('heartbeat','gps_update')
-        ORDER BY le.created_at DESC LIMIT $1`, [limit]
+         LEFT JOIN cds_electronic_locks el
+           ON el.id=le.lock_id AND el.org_id=le.org_id
+        WHERE le.org_id=$1 AND le.type NOT IN ('heartbeat','gps_update')
+        ORDER BY le.created_at DESC LIMIT $2`, [orgId, limit]
     ),
     db(
       `SELECT te.id, te.created_at, te.to_status, te.from_status, te.actor_name,
               te.notes, te.lat, te.lng, te.trip_id, b.booking_number
          FROM cds_trip_events te
-         LEFT JOIN cds_trips t ON t.id = te.trip_id
-         LEFT JOIN cds_bookings b ON b.id = t.booking_id
-        ORDER BY te.created_at DESC LIMIT $1`, [limit]
+         LEFT JOIN cds_trips t
+           ON t.id=te.trip_id AND t.org_id=te.org_id AND t.deleted_at IS NULL
+         LEFT JOIN cds_bookings b
+           ON b.id=t.booking_id AND b.org_id=t.org_id AND b.deleted_at IS NULL
+        WHERE te.org_id=$1
+        ORDER BY te.created_at DESC LIMIT $2`, [orgId, limit]
     ),
     db(
       `SELECT id, created_at, type, severity, title, message, entity_type, entity_id, acknowledged
          FROM cds_alerts
-        ORDER BY created_at DESC LIMIT $1`, [limit]
+        WHERE org_id=$1
+        ORDER BY created_at DESC LIMIT $2`, [orgId, limit]
     ),
   ]);
 
   const items = [
     ...custody.rows.map(r => {
       const [icon, verb] = CUSTODY_LABEL[r.kind] ?? ['checkpoint', r.kind];
+      const assignmentSource = r.has_clamp_audit_snapshot ? 'clamp_audit_snapshot'
+        : (r.driver_name || r.vehicle_registration || r.transporter_name) ? 'manifest_record' : 'not_recorded';
       return {
         id: `custody:${r.id}`,
+        source: 'custody',
         icon,
         text: `${verb} ${containerRef(r.container_number, r.booking_number)}`,
+        actor: r.actor_name,
+        container_number: r.container_number,
+        booking_number: r.booking_number,
+        trip_number: r.trip_number,
+        event_kind: r.kind,
+        lock_serial: r.lock_serial,
+        driver_name: r.driver_name,
+        vehicle_registration: r.vehicle_registration,
+        transporter_name: r.transporter_name,
+        assignment_source: assignmentSource,
+        evidence: 'hash_chained_custody_record',
         meta: metaLine(
           r.actor_name, r.lock_serial && `lock ${r.lock_serial}`,
-          r.seal_number && `seal ${r.seal_number}`, coords(r.lat, r.lng), r.notes
+          r.driver_name && `driver ${r.driver_name}`,
+          r.vehicle_registration && `vehicle ${r.vehicle_registration}`,
+          r.transporter_name,
+          assignmentSource === 'clamp_audit_snapshot' ? 'assignment captured at clamp'
+            : assignmentSource === 'manifest_record' ? 'assignment from manifest' : null,
+          r.seal_number && `seal ${r.seal_number}`,
+          coords(r.lat, r.lng), r.notes
         ),
         entity_type: 'booking_container',
         entity_id: r.booking_container_id,
@@ -95,8 +146,13 @@ async function activityFeed(db, limit) {
       const [icon, verb] = LOCK_LABEL[r.type] ?? ['lock', r.type];
       return {
         id: `lock:${r.id}`,
+        source: 'lock',
         icon,
         text: `E-lock ${r.serial || 'device'} ${verb}`,
+        actor: null,
+        lock_serial: r.serial,
+        event_kind: r.type,
+        evidence: 'device_event',
         meta: metaLine(coords(r.lat, r.lng)),
         entity_type: 'lock',
         entity_id: r.lock_id,
@@ -105,8 +161,13 @@ async function activityFeed(db, limit) {
     }),
     ...trips.rows.map(r => ({
       id: `trip:${r.id}`,
+      source: 'trip',
       icon: r.to_status === 'delivered' ? 'arrival' : r.to_status === 'dispatched' ? 'depart' : 'checkpoint',
       text: `Trip ${r.booking_number ? `on booking ${r.booking_number} ` : ''}moved to ${String(r.to_status).replace(/_/g, ' ')}`,
+      actor: r.actor_name,
+      booking_number: r.booking_number,
+      event_kind: r.to_status,
+      evidence: 'trip_transition',
       meta: metaLine(r.actor_name, coords(r.lat, r.lng), r.notes),
       entity_type: 'trip',
       entity_id: r.trip_id,
@@ -114,8 +175,13 @@ async function activityFeed(db, limit) {
     })),
     ...alerts.rows.map(r => ({
       id: `alert:${r.id}`,
+      source: 'alert',
       icon: 'alert',
       text: r.title,
+      actor: null,
+      severity: r.severity,
+      event_kind: r.type,
+      evidence: 'alert_record',
       meta: metaLine(
         r.severity && r.severity.toUpperCase(), r.message,
         r.acknowledged ? 'acknowledged' : null
@@ -126,9 +192,8 @@ async function activityFeed(db, limit) {
     })),
   ];
 
-  // Each source was capped at `limit`, so the merge holds at most 4x that
-  // before the slice — bounded, and the newest `limit` across all four is
-  // exactly what the log should show.
+  // Each source was capped at limit, so the merge holds at most 4x that before
+  // slicing. Sorting after the merge gives the newest limit across all sources.
   items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   return items.slice(0, limit);
 }

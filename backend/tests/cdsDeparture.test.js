@@ -251,7 +251,7 @@ describe('GET /dashboard KPIs', () => {
     const layer = router.stack.find(l => l.route && l.route.path === '/dashboard' && l.route.methods.get);
     const handler = layer.route.stack[layer.route.stack.length - 1].handle;
     await handler(
-      { query: {}, db: (q) => { if (!sql) sql = q; return Promise.resolve({ rows: [{}] }); } },
+      { query: {}, user: { org_id: 'org-test' }, db: (q) => { if (!sql) sql = q; return Promise.resolve({ rows: [{}] }); } },
       { json: () => {} },
       err => { if (err) throw err; },
     );

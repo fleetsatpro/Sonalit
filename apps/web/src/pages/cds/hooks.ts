@@ -219,6 +219,25 @@ export function useContainers(filters?: SearchFilters) {
   });
 }
 
+
+export function useContainerHistory(containerId: string | null) {
+  return useQuery<{
+    data: Record<string, unknown>[];
+    total: number;
+    container_number: string;
+    chain_status: 'VERIFIED' | 'BROKEN' | 'PARTIAL' | 'NO_LEDGER';
+  }>({
+    queryKey: ['cds', 'container-history', containerId],
+    queryFn: async () => {
+      const { data } = await cdsApi.get(`/containers/${containerId}/history`);
+      return data;
+    },
+    enabled: Boolean(containerId),
+    staleTime: 10_000,
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
+  });
+}
+
 export function useCreateContainer() {
   const qc = useQueryClient();
   return useMutation({

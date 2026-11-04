@@ -363,43 +363,37 @@ async function updateRow(req, res, table, fields, { softDelete = true, hasUpdate
 const ON_ROAD_STATUSES = "('dispatched','checkpoint','delayed','at_port')";
 
 router.get('/dashboard', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
   const kpis = await req.db(`
     SELECT
-      (SELECT COUNT(*) FROM cds_containers WHERE deleted_at IS NULL) AS active_containers,
-      (SELECT COUNT(*) FROM cds_trips WHERE status IN ${ON_ROAD_STATUSES} AND deleted_at IS NULL) AS in_transit,
+      (SELECT COUNT(*) FROM cds_containers WHERE org_id=$1 AND deleted_at IS NULL) AS active_containers,
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND status IN ${ON_ROAD_STATUSES} AND deleted_at IS NULL) AS in_transit,
 
       -- Counted by delivered_at, not by status. The port unclamp sets
-      -- status='lock_removed' and delivered_at in the same statement, so a
-      -- trip is never left sitting at 'delivered' — asking for that status
-      -- made this KPI read zero on days the port had cleared a full yard.
+      -- status='lock_removed' and delivered_at in the same statement.
       (SELECT COUNT(*) FROM cds_trips
-        WHERE delivered_at::date = CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
+        WHERE org_id=$1 AND delivered_at::date = CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
 
-      (SELECT COUNT(*) FROM cds_electronic_locks WHERE status IN ('assigned','installed') AND deleted_at IS NULL) AS active_locks,
-      (SELECT COUNT(*) FROM cds_electronic_locks WHERE status='removed' AND deleted_at IS NULL) AS locks_removed,
+      (SELECT COUNT(*) FROM cds_electronic_locks WHERE org_id=$1 AND status IN ('assigned','installed') AND deleted_at IS NULL) AS active_locks,
+      (SELECT COUNT(*) FROM cds_electronic_locks WHERE org_id=$1 AND status='removed' AND deleted_at IS NULL) AS locks_removed,
 
-      -- Arrived, lock still on. This previously counted status='lock_removed',
-      -- which is the state a trip reaches *after* the lock comes off — the
-      -- number was an exact inversion of its own label, and the port crew's
-      -- actual backlog was the one figure it could never show.
+      -- Arrived with the lock still attached; lock_removed means it is already off.
       (SELECT COUNT(*) FROM cds_trips
-        WHERE status IN ('at_port','delivered') AND lock_id IS NOT NULL
+        WHERE org_id=$1 AND status IN ('at_port','delivered') AND lock_id IS NOT NULL
           AND deleted_at IS NULL) AS pending_unclamp,
 
-      (SELECT COUNT(*) FROM cds_trips WHERE status='delayed' AND deleted_at IS NULL) AS delayed_trips,
-      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1) FROM cds_trips WHERE delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours,
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND status='delayed' AND deleted_at IS NULL) AS delayed_trips,
+      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1)
+         FROM cds_trips
+        WHERE org_id=$1 AND delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours,
 
-      -- Computed here rather than in the browser, which could only ever see
-      -- the newest page of trips: the Analytics card showed a rate derived
-      -- from 50 rows next to a total counted from all of them.
-      (SELECT COUNT(*) FROM cds_trips WHERE deleted_at IS NULL) AS total_trips,
-      (SELECT COUNT(*) FROM cds_trips
-        WHERE delivered_at IS NOT NULL AND deleted_at IS NULL) AS delivered_total,
-      (SELECT COUNT(*) FROM cds_trips
-        WHERE status='delayed' AND deleted_at IS NULL) AS delayed_total,
-      (SELECT COUNT(*) FROM cds_alerts WHERE acknowledged=false) AS unacknowledged_alerts
-  `);
-  const activity = await activityFeed(req.db, 20);
+      -- Whole-organisation totals; never derived from the browser's current page.
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND deleted_at IS NULL) AS total_trips,
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND delivered_at IS NOT NULL AND deleted_at IS NULL) AS delivered_total,
+      (SELECT COUNT(*) FROM cds_trips WHERE org_id=$1 AND status='delayed' AND deleted_at IS NULL) AS delayed_total,
+      (SELECT COUNT(*) FROM cds_alerts WHERE org_id=$1 AND acknowledged=false) AS unacknowledged_alerts
+  `, [orgId]);
+  const activity = await activityFeed(req.db, orgId, 20);
   res.json({ data: { ...kpis.rows[0], recent_activity: activity } });
 }));
 
@@ -732,6 +726,42 @@ router.get('/analytics', asyncHandler(async (req, res) => {
        ORDER BY (oa.clamp_actions + oa.unclamp_actions) DESC, oa.operator_name ASC
        LIMIT 12
     ),
+    transporter_activity AS (
+      SELECT tr.id AS transporter_id, tr.company_name,
+             COUNT(DISTINCT COALESCE(NULLIF(UPPER(BTRIM(c.number)), ''), NULLIF(UPPER(BTRIM(bc.container_number)), ''), t.container_id::text))
+               FILTER (WHERE t.created_at >= win.start_at AND t.created_at < win.end_at)::int AS containers_handled,
+             COUNT(DISTINCT t.id)
+               FILTER (WHERE t.created_at >= win.start_at AND t.created_at < win.end_at)::int AS trips_started,
+             COUNT(DISTINCT t.id)
+               FILTER (WHERE t.delivered_at >= win.start_at AND t.delivered_at < win.end_at)::int AS deliveries_completed,
+             COUNT(DISTINCT t.id) FILTER (WHERE t.status='delayed')::int AS currently_delayed,
+             COUNT(DISTINCT t.id)
+               FILTER (WHERE t.delivered_at >= win.start_at AND t.delivered_at < win.end_at AND t.eta IS NOT NULL)::int AS delivery_eta_observed,
+             COUNT(DISTINCT t.id)
+               FILTER (WHERE t.delivered_at >= win.start_at AND t.delivered_at < win.end_at
+                 AND t.eta IS NOT NULL AND t.delivered_at <= t.eta)::int AS on_time_deliveries
+        FROM cds_transporters tr
+        CROSS JOIN bounds win
+        LEFT JOIN trip_rows t ON t.transporter_id=tr.id
+        LEFT JOIN cds_containers c ON c.id=t.container_id AND c.org_id=tr.org_id AND c.deleted_at IS NULL
+        LEFT JOIN cds_booking_containers bc
+          ON bc.trip_id=t.id AND bc.org_id=tr.org_id AND bc.deleted_at IS NULL
+       WHERE tr.org_id=$2 AND tr.deleted_at IS NULL
+       GROUP BY tr.id, tr.company_name
+    ),
+    transporter_leaderboard AS (
+      SELECT ROW_NUMBER() OVER (ORDER BY ta.containers_handled DESC, ta.trips_started DESC, ta.company_name ASC)::int AS rank,
+             ta.transporter_id, ta.company_name,
+             ta.containers_handled, ta.trips_started, ta.deliveries_completed, ta.currently_delayed,
+             ta.delivery_eta_observed, ta.on_time_deliveries,
+             CASE WHEN ta.delivery_eta_observed > 0
+               THEN ROUND(100.0 * ta.on_time_deliveries / ta.delivery_eta_observed, 1)
+               ELSE NULL END AS on_time_rate
+        FROM transporter_activity ta
+       WHERE ta.trips_started > 0 OR ta.containers_handled > 0
+       ORDER BY ta.containers_handled DESC, ta.trips_started DESC, ta.company_name ASC
+       LIMIT 10
+    ),
     overdue_clamps AS (
       SELECT b.booking_number,
              COALESCE(NULLIF(BTRIM(bc.container_number), ''), 'Container not labelled') AS container_number,
@@ -785,6 +815,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       'summary', (SELECT to_jsonb(s) FROM summary s),
       'daily', COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.day) FROM daily d), '[]'::jsonb),
       'operator_leaderboard', COALESCE((SELECT jsonb_agg(to_jsonb(oa) ORDER BY oa.rank) FROM operator_leaderboard oa), '[]'::jsonb),
+      'transporter_leaderboard', COALESCE((SELECT jsonb_agg(to_jsonb(tl) ORDER BY tl.rank) FROM transporter_leaderboard tl), '[]'::jsonb),
       'overdue_clamps', COALESCE((SELECT jsonb_agg(to_jsonb(oc) ORDER BY oc.clamped_at ASC) FROM overdue_clamps oc), '[]'::jsonb),
       'clamp_state_mix', COALESCE((SELECT jsonb_agg(to_jsonb(csm) ORDER BY csm.count DESC, csm.state) FROM clamp_state_mix csm), '[]'::jsonb),
       'container_statuses', COALESCE((SELECT jsonb_agg(to_jsonb(cs) ORDER BY cs.count DESC, cs.status) FROM container_statuses cs), '[]'::jsonb),
@@ -1112,12 +1143,340 @@ router.get('/containers', asyncHandler(async (req, res) => {
       (typeof req.query.ownership !== 'string' || !allowedOwnerships.has(req.query.ownership))) {
     return res.status(400).json({ error: 'invalid_ownership_filter' });
   }
-  await listRows(req, res, 'cds_containers', {
-    searchCols: ['t.number', 't.iso_type', 't.container_type', 't.ownership', 't.condition', 't.current_location', 't.manufacturer'],
-    fieldFilters: { condition: 't.condition', ownership: 't.ownership' },
+
+  const { limit, offset } = paginate(req.query);
+  const filters = ['c.org_id=$1', 'c.deleted_at IS NULL'];
+  const params = [req.user.org_id];
+  if (req.query.status) {
+    const wanted = String(req.query.status).split(',').map(value => value.trim()).filter(Boolean);
+    if (wanted.length > 1) {
+      params.push(wanted);
+      filters.push('c.status = ANY($' + params.length + '::text[])');
+    } else if (wanted.length === 1) {
+      params.push(wanted[0]);
+      filters.push('c.status=$' + params.length);
+    }
+  }
+  if (req.query.search && typeof req.query.search === 'string') {
+    params.push('%' + req.query.search.trim() + '%');
+    filters.push('(c.number ILIKE $' + params.length + ' OR c.iso_type ILIKE $' + params.length +
+      ' OR c.container_type ILIKE $' + params.length + ' OR c.ownership ILIKE $' + params.length +
+      ' OR c.condition ILIKE $' + params.length + ' OR c.current_location ILIKE $' + params.length +
+      ' OR c.manufacturer ILIKE $' + params.length + ')');
+  }
+  if (req.query.condition) {
+    params.push(req.query.condition);
+    filters.push('c.condition=$' + params.length);
+  }
+  if (req.query.ownership) {
+    params.push(req.query.ownership);
+    filters.push('c.ownership=$' + params.length);
+  }
+
+  // Do not pick the newest booking row: a new, still-unclamped booking can be
+  // newer than the container's last physical movement. Clamp and unclamp are
+  // resolved independently across every booking this physical container has
+  // entered, so older, real handoffs never disappear from the quick register.
+  const joins = `
+    LEFT JOIN LATERAL (
+      SELECT bc.id AS booking_container_id, bc.clamped_at, bc.lock_number,
+             bc.transporter_name, bc.driver_name, bc.driver_contact, bc.horse_reg,
+             b.booking_number, t.trip_number,
+             COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial', bc.lock_number) AS lock_serial,
+             COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name) AS transporter_name_resolved,
+             COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name) AS driver_name_resolved,
+             COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg) AS vehicle_registration,
+             COALESCE(ce.actor_name, ca.user_name) AS actor_name
+        FROM cds_booking_containers bc
+        JOIN cds_bookings b ON b.id=bc.booking_id AND b.org_id=bc.org_id AND b.deleted_at IS NULL
+        LEFT JOIN cds_trips t ON t.id=bc.trip_id AND t.org_id=bc.org_id AND t.deleted_at IS NULL
+        LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=bc.org_id
+        LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=bc.org_id
+        LEFT JOIN cds_drivers d ON d.id=t.driver_id AND d.org_id=bc.org_id
+        LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=bc.org_id
+        LEFT JOIN LATERAL (
+          SELECT e.actor_name, e.lock_serial FROM cds_custody_events e
+           WHERE e.org_id=bc.org_id AND e.booking_container_id=bc.id AND e.kind='clamped'
+           ORDER BY e.seq DESC LIMIT 1
+        ) ce ON true
+        LEFT JOIN LATERAL (
+          SELECT a.user_name FROM cds_audit_logs a
+           WHERE a.org_id=bc.org_id AND a.entity_type='booking_container'
+             AND a.entity_id=bc.id AND a.action='clamp'
+           ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+        ) ca ON true
+        LEFT JOIN LATERAL (
+          SELECT a.after_data
+            FROM cds_audit_logs a
+           WHERE a.org_id=bc.org_id
+             AND a.entity_type='booking_container'
+             AND a.entity_id=bc.id
+             AND a.action='clamp'
+           ORDER BY a.created_at ASC, a.id ASC
+           LIMIT 1
+        ) clamp_audit ON true
+       WHERE bc.org_id=c.org_id AND bc.deleted_at IS NULL
+         AND UPPER(BTRIM(bc.container_number))=UPPER(c.number)
+         AND bc.clamped_at IS NOT NULL
+       ORDER BY bc.clamped_at DESC, bc.created_at DESC
+       LIMIT 1
+    ) lc ON true
+    LEFT JOIN LATERAL (
+      SELECT bc.id AS booking_container_id, bc.unclamped_at,
+             COALESCE(ce.actor_name, ua.user_name) AS actor_name
+        FROM cds_booking_containers bc
+        LEFT JOIN LATERAL (
+          SELECT e.actor_name FROM cds_custody_events e
+           WHERE e.org_id=bc.org_id AND e.booking_container_id=bc.id AND e.kind='unclamped'
+           ORDER BY e.seq DESC LIMIT 1
+        ) ce ON true
+        LEFT JOIN LATERAL (
+          SELECT a.user_name FROM cds_audit_logs a
+           WHERE a.org_id=bc.org_id AND a.entity_type='booking_container'
+             AND a.entity_id=bc.id AND a.action='unclamp'
+           ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+        ) ua ON true
+       WHERE bc.org_id=c.org_id AND bc.deleted_at IS NULL
+         AND UPPER(BTRIM(bc.container_number))=UPPER(c.number)
+         AND bc.unclamped_at IS NOT NULL
+       ORDER BY bc.unclamped_at DESC, bc.created_at DESC
+       LIMIT 1
+    ) lu ON true`;
+  const where = filters.join(' AND ');
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT c.*,
+            lc.clamped_at AS last_clamped_at,
+            lu.unclamped_at AS last_unclamped_at,
+            lc.actor_name AS last_clamped_by,
+            lu.actor_name AS last_unclamped_by,
+            lc.lock_serial AS last_lock_serial,
+            lc.transporter_name_resolved AS last_transporter_name,
+            lc.driver_name_resolved AS last_driver_name,
+            lc.vehicle_registration AS last_vehicle_registration,
+            lc.booking_number AS last_booking_number,
+            lc.trip_number AS last_trip_number
+       FROM cds_containers c ${joins}
+      WHERE ${where}
+      ORDER BY c.created_at DESC
+      LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  );
+  const total = await req.db(
+    'SELECT COUNT(*) FROM cds_containers c WHERE ' + where,
+    params.slice(0, -2)
+  );
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+
+router.get('/containers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_containers'); }));
+router.get('/containers/:id/history', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const identity = await req.db(
+    'SELECT id, number FROM cds_containers WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',
+    [req.params.id, orgId]
+  );
+  if (!identity.rows.length) return res.status(404).json({ error: 'Container not found' });
+  const containerNumber = identity.rows[0].number;
+
+  // Every booking-container is a separate custody chain. A physical container
+  // may be reused across bookings, so verify each chain independently and then
+  // merge the resulting events into one chronological equipment history.
+  const custody = await req.db(
+    `SELECT ce.id AS event_id, ce.booking_container_id, ce.trip_id, ce.seq, ce.kind,
+            ce.actor_user_id, ce.actor_name, ce.lat, ce.lng, ce.seal_number,
+            ce.seal_intact, ce.lock_serial, ce.notes, ce.hash, ce.prev_hash, ce.created_at,
+            bc.booking_id, bc.clamped_at, bc.unclamped_at, bc.lock_number,
+            bc.transporter_name AS manifest_transporter, bc.horse_reg AS manifest_vehicle,
+            bc.driver_name AS manifest_driver, bc.driver_contact AS manifest_driver_contact,
+            b.booking_number,
+            t.trip_number,
+            COALESCE(clamp_audit.after_data->>'transporter_name', bc.transporter_name) AS transporter_name,
+            COALESCE(clamp_audit.after_data->>'truck_reg', bc.horse_reg) AS vehicle_registration,
+            COALESCE(clamp_audit.after_data->>'driver_name', bc.driver_name) AS driver_name,
+            COALESCE(clamp_audit.after_data->>'driver_phone', bc.driver_contact) AS driver_contact,
+            COALESCE(ce.lock_serial, clamp_audit.after_data->>'lock_serial', bc.lock_number) AS assigned_lock,
+            (
+              NULLIF(BTRIM(clamp_audit.after_data->>'lock_serial'), '') IS NOT NULL
+              OR NULLIF(BTRIM(clamp_audit.after_data->>'driver_name'), '') IS NOT NULL
+              OR NULLIF(BTRIM(clamp_audit.after_data->>'driver_phone'), '') IS NOT NULL
+              OR NULLIF(BTRIM(clamp_audit.after_data->>'truck_reg'), '') IS NOT NULL
+              OR NULLIF(BTRIM(clamp_audit.after_data->>'transporter_name'), '') IS NOT NULL
+            ) AS has_clamp_audit_snapshot
+       FROM cds_custody_events ce
+       JOIN cds_booking_containers bc
+         ON bc.id=ce.booking_container_id AND bc.org_id=ce.org_id AND bc.deleted_at IS NULL
+       JOIN cds_bookings b
+         ON b.id=bc.booking_id AND b.org_id=bc.org_id AND b.deleted_at IS NULL
+       LEFT JOIN cds_trips t
+         ON t.id=COALESCE(ce.trip_id, bc.trip_id) AND t.org_id=bc.org_id AND t.deleted_at IS NULL
+       LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id AND tr.org_id=bc.org_id
+       LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id AND v.org_id=bc.org_id
+       LEFT JOIN cds_drivers d ON d.id=t.driver_id AND d.org_id=bc.org_id
+       LEFT JOIN cds_electronic_locks el ON el.id=t.lock_id AND el.org_id=bc.org_id
+      LEFT JOIN LATERAL (
+        SELECT a.after_data
+          FROM cds_audit_logs a
+         WHERE a.org_id=bc.org_id
+           AND a.entity_type='booking_container'
+           AND a.entity_id=bc.id
+           AND a.action='clamp'
+         ORDER BY a.created_at ASC, a.id ASC
+         LIMIT 1
+      ) clamp_audit ON true
+      WHERE ce.org_id=$1 AND bc.org_id=$1 AND UPPER(BTRIM(bc.container_number))=UPPER($2)
+      ORDER BY ce.booking_container_id, ce.seq ASC`,
+    [orgId, containerNumber]
+  );
+
+  const groups = new Map();
+  for (const row of custody.rows) {
+    const key = String(row.booking_container_id);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+
+  const events = [];
+  let chainBroken = false;
+  for (const [bookingContainerId, rows] of groups.entries()) {
+    rows.forEach((row, index) => {
+      const recomputed = crypto.createHash('sha256').update(custodyPayload({
+        seq: row.seq, kind: row.kind, bookingContainerId, orgId,
+        actorUserId: row.actor_user_id, actorName: row.actor_name,
+        sealNumber: row.seal_number, sealIntact: row.seal_intact,
+        lockSerial: row.lock_serial,
+        lat: normCoord(row.lat), lng: normCoord(row.lng),
+        notes: row.notes, prevHash: row.prev_hash,
+      })).digest('hex');
+      const verified = recomputed === row.hash;
+      const expectedPrev = index === 0 ? null : rows[index - 1].hash;
+      const broken = Number(row.seq) !== index || (row.prev_hash ?? null) !== expectedPrev;
+      if (!verified || broken) chainBroken = true;
+      events.push({
+        id: row.event_id,
+        booking_container_id: bookingContainerId,
+        booking_number: row.booking_number,
+        trip_id: row.trip_id,
+        trip_number: row.trip_number,
+        kind: row.kind,
+        actor: row.actor_name,
+        timestamp: row.created_at,
+        lock_serial: row.lock_serial || row.assigned_lock,
+        driver_name: row.driver_name || row.manifest_driver,
+        driver_contact: row.driver_contact || row.manifest_driver_contact,
+        vehicle_registration: row.vehicle_registration || row.manifest_vehicle,
+        transporter_name: row.transporter_name || row.manifest_transporter,
+        assignment_source: row.has_clamp_audit_snapshot ? 'clamp_audit_snapshot'
+          : (row.manifest_driver || row.manifest_vehicle || row.manifest_transporter || row.lock_number)
+            ? 'manifest_record' : 'not_recorded',
+        seal_number: row.seal_number,
+        seal_intact: row.seal_intact,
+        lat: row.lat,
+        lng: row.lng,
+        notes: row.notes,
+        evidence_source: 'custody_chain',
+        integrity_verified: verified,
+        chain_broken: broken,
+      });
+    });
+  }
+
+  // Older movements may pre-date the hash-chain migration. Preserve their
+  // stored clamp timestamps, but label them as manifest evidence rather than
+  // implying that they have cryptographic verification.
+  const legacy = await req.db(
+    `SELECT bc.id AS booking_container_id, bc.booking_id, bc.clamped_at, bc.unclamped_at,
+            bc.lock_number, bc.driver_name, bc.driver_contact, bc.horse_reg,
+            bc.transporter_name, b.booking_number, t.id AS trip_id, t.trip_number,
+            ca.user_name AS clamp_actor, ua.user_name AS unclamp_actor,
+            ca.after_data->>'lock_serial' AS audit_lock_serial,
+            ca.after_data->>'driver_name' AS audit_driver_name,
+            ca.after_data->>'driver_phone' AS audit_driver_contact,
+            ca.after_data->>'truck_reg' AS audit_vehicle_registration,
+            ca.after_data->>'transporter_name' AS audit_transporter_name,
+            (
+              NULLIF(BTRIM(ca.after_data->>'lock_serial'), '') IS NOT NULL
+              OR NULLIF(BTRIM(ca.after_data->>'driver_name'), '') IS NOT NULL
+              OR NULLIF(BTRIM(ca.after_data->>'driver_phone'), '') IS NOT NULL
+              OR NULLIF(BTRIM(ca.after_data->>'truck_reg'), '') IS NOT NULL
+              OR NULLIF(BTRIM(ca.after_data->>'transporter_name'), '') IS NOT NULL
+            ) AS has_clamp_audit_snapshot
+       FROM cds_booking_containers bc
+       JOIN cds_bookings b ON b.id=bc.booking_id AND b.org_id=bc.org_id AND b.deleted_at IS NULL
+       LEFT JOIN cds_trips t ON t.id=bc.trip_id AND t.org_id=bc.org_id
+       LEFT JOIN LATERAL (
+         SELECT a.user_name, a.after_data FROM cds_audit_logs a
+          WHERE a.org_id=bc.org_id AND a.entity_type='booking_container'
+            AND a.entity_id=bc.id AND a.action='clamp'
+          ORDER BY a.created_at ASC, a.id ASC LIMIT 1
+       ) ca ON true
+       LEFT JOIN LATERAL (
+         SELECT a.user_name FROM cds_audit_logs a
+          WHERE a.org_id=bc.org_id AND a.entity_type='booking_container'
+            AND a.entity_id=bc.id AND a.action='unclamp'
+          ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+       ) ua ON true
+      WHERE bc.org_id=$1 AND bc.deleted_at IS NULL
+        AND UPPER(BTRIM(bc.container_number))=UPPER($2)
+      ORDER BY bc.created_at ASC`,
+    [orgId, containerNumber]
+  );
+  for (const row of legacy.rows) {
+    const chain = groups.get(String(row.booking_container_id)) || [];
+    if (row.clamped_at && !chain.some(event => event.kind === 'clamped')) {
+      events.push({
+        id: 'legacy-clamp:' + row.booking_container_id,
+        booking_container_id: row.booking_container_id,
+        booking_number: row.booking_number,
+        trip_id: row.trip_id,
+        trip_number: row.trip_number,
+        kind: 'clamped',
+        actor: row.clamp_actor,
+        timestamp: row.clamped_at,
+        lock_serial: row.audit_lock_serial || row.lock_number,
+        driver_name: row.audit_driver_name || row.driver_name,
+        driver_contact: row.audit_driver_contact || row.driver_contact,
+        vehicle_registration: row.audit_vehicle_registration || row.horse_reg,
+        transporter_name: row.audit_transporter_name || row.transporter_name,
+        assignment_source: row.has_clamp_audit_snapshot ? 'clamp_audit_snapshot' : 'manifest_record',
+        evidence_source: 'manifest_timestamp',
+        integrity_verified: null,
+        chain_broken: null,
+      });
+    }
+    if (row.unclamped_at && !chain.some(event => event.kind === 'unclamped')) {
+      events.push({
+        id: 'legacy-unclamp:' + row.booking_container_id,
+        booking_container_id: row.booking_container_id,
+        booking_number: row.booking_number,
+        trip_id: row.trip_id,
+        trip_number: row.trip_number,
+        kind: 'unclamped',
+        actor: row.unclamp_actor,
+        timestamp: row.unclamped_at,
+        lock_serial: row.audit_lock_serial || row.lock_number,
+        driver_name: row.audit_driver_name || row.driver_name,
+        driver_contact: row.audit_driver_contact || row.driver_contact,
+        vehicle_registration: row.audit_vehicle_registration || row.horse_reg,
+        transporter_name: row.audit_transporter_name || row.transporter_name,
+        assignment_source: row.has_clamp_audit_snapshot ? 'clamp_audit_snapshot' : 'manifest_record',
+        evidence_source: 'manifest_timestamp',
+        integrity_verified: null,
+        chain_broken: null,
+      });
+    }
+  }
+
+  events.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const hasCustodyLedger = custody.rows.length > 0;
+  const hasManifestFallback = events.some(event => event.evidence_source === 'manifest_timestamp');
+  res.json({
+    data: events,
+    total: events.length,
+    container_number: containerNumber,
+    chain_status: !hasCustodyLedger ? 'NO_LEDGER' : chainBroken ? 'BROKEN' : hasManifestFallback ? 'PARTIAL' : 'VERIFIED',
   });
 }));
-router.get('/containers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_containers'); }));
 router.post('/containers', asyncHandler(async (req, res) => {
   const number = String(req.body?.number || '').trim().toUpperCase().replace(/\s+/g, '');
   if (!isValidIso6346ContainerNumber(number)) {
@@ -1349,7 +1708,51 @@ router.patch('/customers/:id', asyncHandler(async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 router.get('/transporters', asyncHandler(async (req, res) => {
-  await listRows(req, res, 'cds_transporters', { searchCols: ['t.company_name', 't.email', 't.phone'] });
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 200));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  const filters = ['tr.org_id=$1', 'tr.deleted_at IS NULL'];
+  const params = [req.user.org_id];
+  if (typeof req.query.search === 'string' && req.query.search.trim()) {
+    params.push('%' + req.query.search.trim() + '%');
+    const searchParam = '$' + params.length;
+    filters.push('(tr.company_name ILIKE ' + searchParam + ' OR tr.email ILIKE ' + searchParam + ' OR tr.phone ILIKE ' + searchParam + ')');
+  }
+  const from = `
+    FROM cds_transporters tr
+    LEFT JOIN cds_vehicles v ON v.transporter_id=tr.id AND v.org_id=tr.org_id AND v.deleted_at IS NULL
+    LEFT JOIN cds_drivers d ON d.transporter_id=tr.id AND d.org_id=tr.org_id AND d.deleted_at IS NULL
+    LEFT JOIN cds_trips t ON t.transporter_id=tr.id AND t.org_id=tr.org_id AND t.deleted_at IS NULL
+    LEFT JOIN cds_containers c ON c.id=t.container_id AND c.org_id=tr.org_id AND c.deleted_at IS NULL
+    LEFT JOIN cds_booking_containers bc ON bc.trip_id=t.id AND bc.org_id=t.org_id AND bc.deleted_at IS NULL
+    WHERE ${filters.join(' AND ')}`;
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT tr.*,
+            COUNT(DISTINCT v.id)::int AS registered_trucks,
+            COUNT(DISTINCT d.id)::int AS registered_drivers,
+            COUNT(DISTINCT t.id)::int AS total_trips,
+            COUNT(DISTINCT COALESCE(NULLIF(UPPER(BTRIM(c.number)), ''), NULLIF(UPPER(BTRIM(bc.container_number)), ''), t.container_id::text))
+              FILTER (WHERE t.id IS NOT NULL)::int AS containers_handled,
+            COUNT(DISTINCT COALESCE(NULLIF(UPPER(BTRIM(c.number)), ''), NULLIF(UPPER(BTRIM(bc.container_number)), ''), t.container_id::text))
+              FILTER (WHERE t.id IS NOT NULL AND t.created_at >= NOW() - INTERVAL '30 days')::int AS containers_handled_30d,
+            COUNT(DISTINCT t.id)
+              FILTER (WHERE t.status NOT IN ('delivered','lock_removed','completed','archived'))::int AS active_trips,
+            COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL)::int AS completed_trips,
+            COUNT(DISTINCT t.id) FILTER (WHERE t.status='delayed')::int AS delayed_trips,
+            COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL)::int AS deliveries_with_eta,
+            COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL AND t.delivered_at <= t.eta)::int AS on_time_deliveries,
+            CASE WHEN COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL) > 0
+              THEN ROUND(100.0 * COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL AND t.delivered_at <= t.eta)
+                / COUNT(DISTINCT t.id) FILTER (WHERE t.delivered_at IS NOT NULL AND t.eta IS NOT NULL), 1)
+              ELSE NULL END AS on_time_rate
+       ${from}
+      GROUP BY tr.id
+      ORDER BY containers_handled DESC, total_trips DESC, tr.company_name ASC
+      LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  );
+  const total = await req.db(`SELECT COUNT(*) FROM cds_transporters tr WHERE ${filters.join(' AND ')}`, params.slice(0, -2));
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
 }));
 router.get('/transporters/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_transporters'); }));
 router.post('/transporters', asyncHandler(async (req, res) => {
@@ -2063,7 +2466,16 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     driver_name, driver_phone, notes, lat, lng,
   } = req.body || {};
 
-  if (!lock_serial || !truck_reg || !driver_name) {
+  const cleanText = value => typeof value === 'string' ? value.trim() : '';
+  const lockSerial = cleanText(lock_serial);
+  const transporterName = cleanText(transporter_name);
+  const truckRegistration = cleanText(truck_reg);
+  const trailerRegistration = cleanText(trailer_reg);
+  const driverName = cleanText(driver_name);
+  const driverPhone = cleanText(driver_phone);
+  const clampNotes = cleanText(notes);
+
+  if (!lockSerial || !truckRegistration || !driverName) {
     return res.status(400).json({ error: 'lock_serial, truck_reg and driver_name are required' });
   }
 
@@ -2079,21 +2491,41 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     return res.status(409).json({ error: `Container already ${bc.rows[0].status}` });
   }
 
+  // A physical e-lock may secure only one active container. Resolve its
+  // organisation-owned record before creating any driver/vehicle/trip rows;
+  // assigned, installed, offline or maintenance locks are not reusable.
+  const existingLock = await req.db(
+    `SELECT id, status, container_id, vehicle_id
+       FROM cds_electronic_locks
+      WHERE org_id=$1 AND UPPER(BTRIM(serial))=UPPER($2) AND deleted_at IS NULL
+      LIMIT 1`,
+    [orgId, lockSerial]
+  );
+  if (existingLock.rows.length) {
+    const candidate = existingLock.rows[0];
+    if (candidate.status !== 'available' || candidate.container_id || candidate.vehicle_id) {
+      return res.status(409).json({
+        error: 'lock_not_available',
+        message: 'This e-lock is already assigned, installed or otherwise unavailable. Release and inspect it before re-use.',
+      });
+    }
+  }
+
   // Upsert transporter. contact_person/phone are NOT NULL on cds_transporters
   // but the clamp form only collects a company name — same fallback the
   // customer auto-create above uses (the name doubles as the placeholder
   // contact until someone fills in the real one from the transporters view).
   let transporterId = null;
-  if (transporter_name) {
+  if (transporterName) {
     const t = await req.db(
       'SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
-      [transporter_name.trim()]
+      [transporterName]
     );
     if (t.rows.length) transporterId = t.rows[0].id;
     else {
       const ins = await req.db(
         `INSERT INTO cds_transporters (company_name, contact_person, phone, code, org_id) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [transporter_name.trim(), transporter_name.trim(), '-', genCode('TR'), orgId]
+        [transporterName, transporterName, '-', genCode('TR'), orgId]
       );
       transporterId = ins.rows[0].id;
     }
@@ -2105,22 +2537,22 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   // drivers view; not a compliance record, just enough to satisfy the schema.
   const dr = await req.db(
     'SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
-    [driver_name.trim()]
+    [driverName]
   );
   const driverId = dr.rows.length ? dr.rows[0].id : (await req.db(
     `INSERT INTO cds_drivers (name, phone, license_number, license_expiry, transporter_id, org_id)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-    [driver_name.trim(), driver_phone || '-', 'PENDING', new Date(Date.now() + 365 * 24 * 3600 * 1000), transporterId, orgId]
+    [driverName, driverPhone || '-', 'PENDING', new Date(Date.now() + 365 * 24 * 3600 * 1000), transporterId, orgId]
   )).rows[0].id;
 
   // Upsert vehicle (truck horse)
   const ve = await req.db(
     'SELECT id FROM cds_vehicles WHERE registration ILIKE $1 AND deleted_at IS NULL LIMIT 1',
-    [truck_reg.trim()]
+    [truckRegistration]
   );
   const vehicleId = ve.rows.length ? ve.rows[0].id : (await req.db(
     `INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [truck_reg.trim(), genCode('FL'), transporterId, orgId]
+    [truckRegistration, genCode('FL'), transporterId, orgId]
   )).rows[0].id;
 
   // Upsert physical container (in cds_containers) so it can be tracked on the map
@@ -2136,24 +2568,33 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     )).rows[0].id;
   }
 
-  // Upsert e-lock and put it into 'locked' state on this container/vehicle
-  const lk = await req.db(
-    'SELECT id FROM cds_electronic_locks WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1',
-    [lock_serial.trim()]
+  // Claim the e-lock with a compare-and-set. Even if two operators pass
+  // the preflight simultaneously, only the first can move an available lock
+  // to installed; the second must stop rather than stealing a live device.
+  const lockId = existingLock.rows.length
+    ? existingLock.rows[0].id
+    : (await req.db(
+        `INSERT INTO cds_electronic_locks (serial, provider, status, org_id)
+         VALUES ($1,$2,'available',$3) RETURNING id`,
+        [lockSerial, 'SecuriSat', orgId]
+      )).rows[0].id;
+  const claimedLock = await req.db(
+    `UPDATE cds_electronic_locks
+        SET status='installed', container_id=$1, vehicle_id=$2, assigned_at=NOW(), updated_at=NOW()
+      WHERE id=$3 AND org_id=$4 AND deleted_at IS NULL
+        AND status='available' AND container_id IS NULL AND vehicle_id IS NULL
+      RETURNING id`,
+    [containerId, vehicleId, lockId, orgId]
   );
-  const lockId = lk.rows.length ? lk.rows[0].id : (await req.db(
-    `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [lock_serial.trim(), 'SecuriSat', 'assigned', orgId]
-  )).rows[0].id;
-  // 'installed', matching cds_electronic_locks_status_check and the desktop
-  // clamp handler above — 'locked' isn't a value the constraint allows.
-  await req.db(
-    `UPDATE cds_electronic_locks SET status='installed', container_id=$1, vehicle_id=$2, updated_at=NOW() WHERE id=$3`,
-    [containerId, vehicleId, lockId]
-  );
+  if (!claimedLock.rows.length) {
+    return res.status(409).json({
+      error: 'lock_not_available',
+      message: 'This e-lock was claimed by another operation or is no longer available. Refresh the register and select an available lock.',
+    });
+  }
 
   // Create the trip and link it back to the booking container
-  const trailerNote = trailer_reg ? `Trailer: ${trailer_reg.trim()}${notes ? ' | ' + notes : ''}` : (notes || null);
+  const trailerNote = trailerRegistration ? `Trailer: ${trailerRegistration}${clampNotes ? ' | ' + clampNotes : ''}` : (clampNotes || null);
   const trip = await req.db(
     `INSERT INTO cds_trips
       (trip_number, customer_id, driver_id, vehicle_id, container_id, lock_id, transporter_id,
@@ -2198,12 +2639,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       WHERE id=$2`,
     [
       trip.rows[0].id, bcId,
-      lock_serial.trim(),
-      transporter_name ? String(transporter_name).trim() : null,
-      truck_reg ? String(truck_reg).trim() : null,
-      trailer_reg ? String(trailer_reg).trim() : null,
-      driver_name ? String(driver_name).trim() : null,
-      driver_phone ? String(driver_phone).trim() : null,
+      lockSerial,
+      transporterName || null,
+      truckRegistration,
+      trailerRegistration || null,
+      driverName,
+      driverPhone || null,
       yardStatus,
     ]
   );
@@ -2226,9 +2667,9 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     kind: 'clamped',
     sealNumber: bc.rows[0].seal_number,
     sealIntact: true,
-    lockSerial: lock_serial.trim(),
+    lockSerial: lockSerial,
     lat, lng,
-    notes: `Clamped by ${req.user.name || 'yard team'} · ${truck_reg} / ${driver_name}`,
+    notes: `Clamped by ${req.user.name || 'yard team'} · ${truckRegistration} / ${driverName}`,
   });
 
   // Fire alert so supervisors see it in real-time
@@ -2237,7 +2678,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
      VALUES ($1,'container_clamped','info',$2,$3,'container',$4,'operator')`,
     [orgId,
      `Container clamped — ${bc.rows[0].container_number || bc.rows[0].booking_number}`,
-     `${req.user.name || 'Yard team'} clamped e-lock ${lock_serial} on ${bc.rows[0].container_number || bcId} for booking ${bc.rows[0].booking_number} (${truck_reg} / ${driver_name}).`,
+     `${req.user.name || 'Yard team'} clamped e-lock ${lockSerial} on ${bc.rows[0].container_number || bcId} for booking ${bc.rows[0].booking_number} (${truckRegistration} / ${driverName}).`,
      bcId]
   );
 
@@ -2245,7 +2686,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
      VALUES ('clamp','booking_container',$1,$2,$3,$4,$5)`,
     [bcId, req.user.id, req.user.name || null,
-     JSON.stringify({ lock_serial, transporter_name, truck_reg, trailer_reg, driver_name, driver_phone, lat, lng }),
+     JSON.stringify({ lock_serial: lockSerial, transporter_name: transporterName || null, truck_reg: truckRegistration, trailer_reg: trailerRegistration || null, driver_name: driverName, driver_phone: driverPhone || null, lat, lng }),
      orgId]
   );
 
@@ -2271,8 +2712,8 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       issuedBy: req.user.id,
       // Only what belongs on a gate pass — see the note in trackingEngine.issueQr.
       display: {
-        vehicle: truck_reg ? String(truck_reg).trim() : null,
-        driver: driver_name ? String(driver_name).trim() : null,
+        vehicle: truckRegistration,
+        driver: driverName,
         container: bc.rows[0].container_number || null,
         destination: bc.rows[0].delivery_location || null,
         booking: bc.rows[0].booking_number || null,
@@ -2299,9 +2740,9 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     container_number: bc.rows[0].container_number,
     trip_id: trip.rows[0].id,
     trip_number: trip.rows[0].trip_number,
-    lock_serial: lock_serial.trim(),
-    truck_reg,
-    driver_name,
+    lock_serial: lockSerial,
+    truck_reg: truckRegistration,
+    driver_name: driverName,
     tracking_qr_issued: !!tracking,
     lat: lat ?? null,
     lng: lng ?? null,
@@ -2318,43 +2759,98 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   const { notes, lat, lng, seal_intact, observed_seal } = req.body || {};
 
   const bc = await req.db(
-    `SELECT bc.*, b.booking_number, t.id AS trip_id, t.lock_id
+    `SELECT bc.*, b.booking_number, t.id AS trip_id,
+            COALESCE(clamp_audit.after_data->>'lock_serial', bc.lock_number) AS clamp_lock_serial,
+            clamp_lock.id AS clamp_lock_id
        FROM cds_booking_containers bc
-       JOIN cds_bookings b ON b.id = bc.booking_id
-       LEFT JOIN cds_trips t ON t.id = bc.trip_id
-      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
-    [bcId, bookingId]
+       JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id=bc.org_id
+       LEFT JOIN cds_trips t ON t.id = bc.trip_id AND t.org_id=bc.org_id AND t.deleted_at IS NULL
+       LEFT JOIN LATERAL (
+         SELECT a.after_data
+           FROM cds_audit_logs a
+          WHERE a.org_id=bc.org_id
+            AND a.entity_type='booking_container'
+            AND a.entity_id=bc.id
+            AND a.action='clamp'
+          ORDER BY a.created_at ASC, a.id ASC
+          LIMIT 1
+       ) clamp_audit ON true
+       LEFT JOIN LATERAL (
+         SELECT el.id
+           FROM cds_electronic_locks el
+          WHERE el.org_id=bc.org_id
+            AND el.deleted_at IS NULL
+            AND UPPER(BTRIM(el.serial))=UPPER(BTRIM(COALESCE(clamp_audit.after_data->>'lock_serial', bc.lock_number)))
+          ORDER BY el.created_at DESC, el.id DESC
+          LIMIT 1
+       ) clamp_lock ON true
+      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.org_id=$3 AND b.org_id=$3 AND bc.deleted_at IS NULL`,
+    [bcId, bookingId, orgId]
   );
   if (!bc.rows.length) return res.status(404).json({ error: 'Booking container not found' });
   if (bc.rows[0].status === 'delivered' || bc.rows[0].status === 'completed') {
     return res.status(409).json({ error: 'Container already delivered' });
   }
 
-  // Seal verification. A seal is only worth anything if somebody compares it at
-  // the far end, so the decision is made here rather than trusting the client's
-  // verdict: even when the crew reports "intact", an observed seal that doesn't
-  // match the one recorded at clamp is a tamper. Older clients that send
-  // neither field still work — the outcome is then simply unverified (null),
-  // which is honest rather than a false "intact".
+  // An unclamp is a physical custody transition, not a shortcut to delivery.
+  // Require a recorded clamp with no later unclamp so pending/assigned
+  // manifest rows cannot release locks or be marked delivered.
+  const clampedAt = bc.rows[0].clamped_at ? new Date(bc.rows[0].clamped_at).getTime() : NaN;
+  const unclampedAt = bc.rows[0].unclamped_at ? new Date(bc.rows[0].unclamped_at).getTime() : null;
+  if (!Number.isFinite(clampedAt) ||
+      (unclampedAt !== null && (!Number.isFinite(unclampedAt) || unclampedAt >= clampedAt))) {
+    return res.status(409).json({
+      error: 'container_not_currently_clamped',
+      message: 'Only a container with a recorded, open clamp can be unclamped.',
+    });
+  }
+
+  // A reported intact seal is verified only when both the clamp baseline and
+  // the observed seal are present and match. Missing evidence stays unverified.
   const expectedSeal = bc.rows[0].seal_number;
   const observed = typeof observed_seal === 'string' ? observed_seal.trim() : null;
-  let sealVerdict = null;                      // null = not checked
-  if (seal_intact === false) {
+  const expectedSealNormalized = typeof expectedSeal === 'string' ? expectedSeal.trim().toUpperCase() : '';
+  const observedSealNormalized = typeof observed === 'string' ? observed.toUpperCase() : '';
+  let sealVerdict = null;                      // null = not verified
+  const hasSealComparison = Boolean(expectedSealNormalized && observedSealNormalized);
+  const sealMismatch = hasSealComparison && observedSealNormalized !== expectedSealNormalized;
+  if (seal_intact === false || sealMismatch) {
+    // A discrepancy is material even when an older client omits the separate
+    // intact checkbox; the observed identifier itself contradicts the clamp.
     sealVerdict = false;
-  } else if (seal_intact === true) {
-    const mismatched = expectedSeal && observed && observed.toUpperCase() !== String(expectedSeal).toUpperCase();
-    sealVerdict = !mismatched;
+  } else if (seal_intact === true && hasSealComparison) {
+    sealVerdict = true;
   }
   const sealTampered = sealVerdict === false;
 
   const now = new Date();
 
-  if (bc.rows[0].lock_id) {
+  // Close the manifest with a compare-and-set before releasing the lock or
+  // recording downstream evidence. This is the concurrency fence: if two port
+  // operators race, only the request that still sees this open clamp can win.
+  const closedManifest = await req.db(
+    `UPDATE cds_booking_containers
+        SET status='delivered', unclamped_at=$1, yard_status='complete', updated_at=$1
+      WHERE id=$2 AND org_id=$3
+        AND clamped_at IS NOT NULL
+        AND (unclamped_at IS NULL OR unclamped_at < clamped_at)
+        AND status NOT IN ('delivered','completed')
+      RETURNING id`,
+    [now, bcId, orgId]
+  );
+  if (!closedManifest.rows.length) {
+    return res.status(409).json({
+      error: 'container_not_currently_clamped',
+      message: 'This clamp was already closed by another action or is no longer open.',
+    });
+  }
+
+  if (bc.rows[0].clamp_lock_id) {
     await req.db(
       `UPDATE cds_electronic_locks
           SET status='available', container_id=NULL, vehicle_id=NULL, updated_at=NOW()
-        WHERE id=$1`,
-      [bc.rows[0].lock_id]
+        WHERE id=$1 AND org_id=$2`,
+      [bc.rows[0].clamp_lock_id, orgId]
     );
   }
 
@@ -2362,29 +2858,19 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     await req.db(
       `UPDATE cds_trips
           SET status='lock_removed', delivered_at=COALESCE(delivered_at, NOW()), updated_at=NOW()
-        WHERE id=$1`,
-      [bc.rows[0].trip_id]
+        WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,
+      [bc.rows[0].trip_id, orgId]
     );
   }
-
-  // unclamped_at is the manifest's TIME UNCLAMPED column and had the same
-  // problem clamped_at did — nothing ever set it, so the desk could not tell a
-  // delivered container from one still on the road except by its status chip.
-  await req.db(
-    `UPDATE cds_booking_containers
-        SET status='delivered', unclamped_at=$1, yard_status='complete', updated_at=$1
-      WHERE id=$2`,
-    [now, bcId]
-  );
 
   // If every container on the booking is delivered, mark the booking delivered too.
   const remaining = await req.db(
     `SELECT COUNT(*)::int AS c FROM cds_booking_containers
-      WHERE booking_id=$1 AND deleted_at IS NULL AND status NOT IN ('delivered','completed')`,
-    [bookingId]
+      WHERE booking_id=$1 AND org_id=$2 AND deleted_at IS NULL AND status NOT IN ('delivered','completed')`,
+    [bookingId, orgId]
   );
   if (remaining.rows[0].c === 0) {
-    await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1`, [bookingId]);
+    await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1 AND org_id=$2`, [bookingId, orgId]);
   }
 
   // The container is physically delivered, so its tracking session ends here
@@ -2393,7 +2879,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   // caller keeps this correct when the port crew unclamps without one.
   try {
     const tripRow = bc.rows[0].trip_id
-      ? await req.db('SELECT container_id FROM cds_trips WHERE id=$1', [bc.rows[0].trip_id])
+      ? await req.db('SELECT container_id FROM cds_trips WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL', [bc.rows[0].trip_id, orgId])
       : null;
     const containerId = tripRow && tripRow.rows.length ? tripRow.rows[0].container_id : null;
     if (containerId) {
@@ -2414,6 +2900,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     bookingContainerId: bcId,
     tripId: bc.rows[0].trip_id,
     kind: 'unclamped',
+    lockSerial: bc.rows[0].clamp_lock_serial || bc.rows[0].lock_number || null,
     sealNumber: observed || expectedSeal,
     sealIntact: sealVerdict,
     lat, lng,
@@ -2433,11 +2920,11 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
        `${req.user.name || 'Port team'} reported a seal discrepancy unclamping ${bc.rows[0].container_number || bcId} on booking ${bc.rows[0].booking_number}. ${sealNote}`,
        bcId]
     );
-    if (bc.rows[0].lock_id) {
+    if (bc.rows[0].clamp_lock_id) {
       await req.db(
         `INSERT INTO cds_lock_events (org_id, lock_id, type, lat, lng, data)
          VALUES ($1,$2,'tamper',$3,$4,$5)`,
-        [orgId, bc.rows[0].lock_id, lat ?? null, lng ?? null,
+        [orgId, bc.rows[0].clamp_lock_id, lat ?? null, lng ?? null,
          JSON.stringify({
            source: 'seal_verification',
            expected_seal: expectedSeal, observed_seal: observed,
@@ -2622,8 +3109,8 @@ router.get('/audit', asyncHandler(async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 router.get('/activity', asyncHandler(async (req, res) => {
-  const limit = Math.min(100, parseInt(req.query.limit) || 30);
-  res.json(await activityFeed(req.db, limit));
+  const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 30));
+  res.json(await activityFeed(req.db, req.user.org_id, limit));
 }));
 
 // ══════════════════════════════════════════════════════════════
