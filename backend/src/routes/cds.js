@@ -3019,27 +3019,27 @@ router.get('/audit', asyncHandler(async (req, res) => {
   const { limit, offset } = paginate(req.query);
   const filters = [];
   const params = [];
-  if (req.query.entity_type) { params.push(req.query.entity_type); filters.push(`entity_type=${params.length}`); }
-  if (req.query.entity_id) { params.push(req.query.entity_id); filters.push(`entity_id=${params.length}`); }
-  if (req.query.action) { params.push(req.query.action); filters.push(`action=${params.length}`); }
+  if (req.query.entity_type) { params.push(req.query.entity_type); filters.push(`entity_type=$${params.length}`); }
+  if (req.query.entity_id) { params.push(req.query.entity_id); filters.push(`entity_id=$${params.length}`); }
+  if (req.query.action) { params.push(req.query.action); filters.push(`action=$${params.length}`); }
   const search = String(req.query.search || '').trim();
   if (search.length > 150) return res.status(400).json({ error: 'audit_search_too_long' });
   if (search) {
     params.push(`%${search}%`);
     const p = params.length;
     filters.push(`(
-      action ILIKE ${p}
-      OR entity_type ILIKE ${p}
-      OR entity_id::text ILIKE ${p}
-      OR COALESCE(user_name, '') ILIKE ${p}
-      OR COALESCE(user_id::text, '') ILIKE ${p}
-      OR COALESCE(ip_address::text, '') ILIKE ${p}
+      action ILIKE $${p}
+      OR entity_type ILIKE $${p}
+      OR entity_id::text ILIKE $${p}
+      OR COALESCE(user_name, '') ILIKE $${p}
+      OR COALESCE(user_id::text, '') ILIKE $${p}
+      OR COALESCE(ip_address::text, '') ILIKE $${p}
     )`);
   }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   params.push(limit, offset);
   const result = await req.db(
-    `SELECT * FROM cds_audit_logs ${where} ORDER BY created_at DESC, id DESC LIMIT ${params.length - 1} OFFSET ${params.length}`, params
+    `SELECT * FROM cds_audit_logs ${where} ORDER BY created_at DESC, id DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
   );
   const total = await req.db(`SELECT COUNT(*) FROM cds_audit_logs ${where}`, params.slice(0, -2));
   res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10), limit, offset });
