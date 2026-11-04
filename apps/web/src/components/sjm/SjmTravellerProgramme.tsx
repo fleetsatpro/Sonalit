@@ -186,6 +186,9 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
   const [travellerDraft, setTravellerDraft] = useState<TravellerDraft>({ ...EMPTY_TRAVELLER });
   const [editingTravellerId, setEditingTravellerId] = useState('');
   const [showTravellerForm, setShowTravellerForm] = useState(false);
+  const [travellerStep, setTravellerStep] = useState(0);
+  const [travellerFormError, setTravellerFormError] = useState('');
+  const [travellerDocumentFile, setTravellerDocumentFile] = useState<File | null>(null);
   const [flightDraft, setFlightDraft] = useState<FlightDraft>({ ...EMPTY_FLIGHT, departure_timezone: timezone, arrival_timezone: timezone });
   const [editingFlightId, setEditingFlightId] = useState('');
   const [showFlightForm, setShowFlightForm] = useState(false);
@@ -238,6 +241,9 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
     onSuccess: async () => {
       setTravellerDraft({ ...EMPTY_TRAVELLER });
       setShowTravellerForm(false);
+      setTravellerStep(0);
+      setTravellerFormError('');
+      setTravellerDocumentFile(null);
       setNotice({ kind: 'success', text: 'Traveller profile registered to this journey.' });
       await refresh();
     },
@@ -249,6 +255,9 @@ export default function SjmTravellerProgramme({ journeyId, timezone, canManage, 
       setEditingTravellerId('');
       setTravellerDraft({ ...EMPTY_TRAVELLER });
       setShowTravellerForm(false);
+      setTravellerStep(0);
+      setTravellerFormError('');
+      setTravellerDocumentFile(null);
       setNotice({ kind: 'success', text: 'Traveller profile updated.' });
       await refresh();
     },
