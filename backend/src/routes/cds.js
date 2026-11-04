@@ -2463,7 +2463,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   const { id: bookingId, cid: bcId } = req.params;
   const {
     lock_serial, transporter_name, truck_reg, trailer_reg,
-    driver_name: driverName, driver_phone, notes, lat, lng,
+    driver_name, driver_phone, notes, lat, lng,
   } = req.body || {};
 
   const cleanText = value => typeof value === 'string' ? value.trim() : '';
@@ -2638,7 +2638,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     kind: 'clamped',
     sealNumber: bc.rows[0].seal_number,
     sealIntact: true,
-    lockSerial: lock_serial.trim(),
+    lockSerial: lockSerial,
     lat, lng,
     notes: `Clamped by ${req.user.name || 'yard team'} · ${truckRegistration} / ${driverName}`,
   });
@@ -2683,8 +2683,8 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       issuedBy: req.user.id,
       // Only what belongs on a gate pass — see the note in trackingEngine.issueQr.
       display: {
-        vehicle: truck_reg ? String(truck_reg).trim() : null,
-        driver: driver_name ? String(driver_name).trim() : null,
+        vehicle: truckRegistration,
+        driver: driverName,
         container: bc.rows[0].container_number || null,
         destination: bc.rows[0].delivery_location || null,
         booking: bc.rows[0].booking_number || null,
@@ -2713,7 +2713,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     trip_number: trip.rows[0].trip_number,
     lock_serial: lockSerial,
     truck_reg: truckRegistration,
-    driver_name,
+    driver_name: driverName,
     tracking_qr_issued: !!tracking,
     lat: lat ?? null,
     lng: lng ?? null,
