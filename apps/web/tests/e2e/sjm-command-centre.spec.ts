@@ -1591,7 +1591,7 @@ test.describe('SJM command-centre responsive smoke', () => {
     await page.getByLabel('Traveller reference *').fill('TRV-E2E-01');
     await page.getByLabel('Given name *').fill('Amina');
     await page.getByLabel('Family / surname *').fill('Example');
-    await page.getByLabel('Nationality').fill('Kenyan');
+    await page.getByLabel('Nationality').selectOption('Kenya');
     await page.getByLabel('Email').fill('amina@example.invalid');
     await page.getByRole('button', { name: 'Register traveller' }).last().click();
     await expect(page.getByText('Amina Example', { exact: true })).toBeVisible();
