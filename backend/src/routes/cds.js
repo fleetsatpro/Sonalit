@@ -1416,15 +1416,17 @@ router.get('/locks/:id', asyncHandler(async (req, res) => {
   await getRow(req, res, 'cds_electronic_locks', { joins: LOCK_JOINS, selectCols: LOCK_COLS });
 }));
 router.post('/locks', asyncHandler(async (req, res) => {
+  // Assignment state is owned by clamp/unclamp transitions, not manual CRUD.
+  // New locks begin available with provider/telemetry provenance unverified.
   await createRow(req, res, 'cds_electronic_locks',
-    ['serial', 'provider', 'firmware_version', 'status']);
+    ['serial', 'provider', 'firmware_version']);
 }));
 router.patch('/locks/:id', asyncHandler(async (req, res) => {
-  // Battery, signal and heartbeat are device telemetry, not editable inventory
-  // fields. Keep them out of the operator CRUD path until a verified provider
-  // or device-ingest contract writes them.
+  // Battery, signal, heartbeat, tamper state and assignment status are not
+  // manual inventory fields. Hardware telemetry needs a verified ingest
+  // contract; assignment is owned by the manifest clamp/unclamp lifecycle.
   await updateRow(req, res, 'cds_electronic_locks',
-    ['serial', 'provider', 'firmware_version', 'status', 'container_id', 'vehicle_id', 'location']);
+    ['serial', 'provider', 'firmware_version', 'location']);
 }));
 router.get('/locks/:id/events', asyncHandler(async (req, res) => {
   const { limit, offset } = paginate(req.query);
