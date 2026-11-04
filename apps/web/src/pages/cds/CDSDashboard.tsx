@@ -66,12 +66,12 @@ function CDSNavigation({ expanded, activeView, mobile = false, onSelect, onBack,
   return (
     <nav className={`cds-navigation ${mobile ? 'cds-navigation--mobile' : 'cds-navigation--desktop'} ${expanded ? 'is-expanded' : 'is-collapsed'}`} aria-label="Container Management workspaces">
       <div className="cds-nav-brand">
-        <button type="button" className="cds-brand-mark" onClick={onBack} title="Back to Sonalit" aria-label="Back to Sonalit">
-          <svg width="28" height="28" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+        <div className="cds-brand-mark" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 36 36" fill="none">
             <path d="M6 11.5 18 5l12 6.5v13L18 31 6 24.5v-13Z" stroke="currentColor" strokeWidth="2.1" strokeLinejoin="round"/>
             <path d="M6 11.5 18 18l12-6.5M18 18v13M11 8.8l14 7.6M11 27.1V14.4M25 27.1V14.4" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
           </svg>
-        </button>
+        </div>
         {showLabels && <div className="cds-brand-copy"><strong>CONTAINER MANAGEMENT</strong><span>OPERATIONS SYSTEM <i>/</i> CDS</span></div>}
         {mobile && <button type="button" className="cds-nav-close" onClick={onClose} aria-label="Close navigation"><X size={21} strokeWidth={2.3}/></button>}
       </div>
@@ -183,6 +183,13 @@ export default function CDSApp() {
     const frame = window.requestAnimationFrame(() => mobileSearchInputRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [mobileSearchOpen]);
+
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1200px)');
+    const onBreakpointChange = (event: MediaQueryListEvent) => setExpanded(event.matches);
+    desktop.addEventListener('change', onBreakpointChange);
+    return () => desktop.removeEventListener('change', onBreakpointChange);
+  }, []);
 
   useEffect(() => {
     const tick = () => setClock(`${new Date().toLocaleTimeString('en-GB', { hour12: false })  } EAT`);
