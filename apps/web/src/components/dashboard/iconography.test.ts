@@ -4,8 +4,10 @@ const quickActions = readFileSync(new URL('./QuickActions.tsx', import.meta.url)
 const compactEmpty = readFileSync(new URL('./CompactEmpty.tsx', import.meta.url), 'utf8');
 const rail = readFileSync(new URL('../layout/Rail.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../styles/dashboard.css', import.meta.url), 'utf8');
+const launcher = readFileSync(new URL('../../layout/AppLauncherOverlay.tsx', import.meta.url), 'utf8');
 const cdsRail = readFileSync(new URL('../../../../../container-delivery-system/src/components/layout/Rail.tsx', import.meta.url), 'utf8');
 const cdsCss = readFileSync(new URL('../../../../../container-delivery-system/src/index.css', import.meta.url), 'utf8');
+const orbitCss = readFileSync(new URL('../../styles/orbit.css', import.meta.url), 'utf8');
 
 describe('premium operational iconography', () => {
   it('uses crisp vector icons instead of emoji in quick actions and empty states', () => {
@@ -16,6 +18,7 @@ describe('premium operational iconography', () => {
   });
   it('uses high-definition pictorial artwork and motion in both navigation rails', () => {
     expect(rail).toContain('son-rail-icon');
+    expect(rail).toContain('export function NavArtwork');
     expect(rail).toContain('son-rail-art');
     expect(rail).toContain('sonalit-nav-sprite.svg#');
     expect(rail).not.toContain('LucideIcon');
@@ -25,8 +28,11 @@ describe('premium operational iconography', () => {
     expect(cdsRail).toContain('sonalit-nav-sprite.svg#');
     expect(cdsRail).not.toContain('item.icon');
     expect(cdsRail).not.toContain('>S</div>');
+    expect(launcher).toContain('<NavArtwork name={it.art}');
+    expect(launcher).not.toContain('it.icon');
     expect(cdsCss).toContain('.cds-nav-art');
     expect(cdsCss).toContain('cds-nav-art-breathe');
+    expect(orbitCss).toContain('.o-app-image');
     expect(css).toContain('.son-icon-tile');
   });
 });
