@@ -29,7 +29,7 @@ describe('premium operational iconography', () => {
     expect(css).toContain('.son-rail-icon .son-rail-art');
     expect(css).toContain('son-nav-art-breathe');
     expect(cdsRail).toContain('NavArtwork');
-    expect(cdsRail).toContain('sonalit-nav-sprite.svg#');
+    expect(cdsRail).toContain("const NAV_ART_SPRITE = '/assets/nav/sonalit-nav-sprite.svg'");
     expect(cdsRail).not.toContain('item.icon');
     expect(cdsRail).not.toContain('>S</div>');
     expect(launcher).toContain('<NavArtwork name={it.art}');
