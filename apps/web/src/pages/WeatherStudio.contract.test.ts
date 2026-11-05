@@ -64,7 +64,7 @@ describe('Weather Studio evidence and interaction contract', () => {
   it('is routed and discoverable through the app navigation', () => {
     expect(router).toContain("path:'/weather-studio'");
     expect(router).toContain("import('./pages/WeatherStudio.js')");
-    expect(rail).toContain("path:'/weather-studio',icon:CloudSun,label:'Weather Studio'");
+    expect(rail).toContain("path:'/weather-studio',art:'nav-weather',label:'Weather Studio'");
   });
 
   it('renders a bounded, source-derived wind-flow field without faking radar imagery', () => {
