@@ -116,3 +116,38 @@ table {
     border-radius: 6px;
   }
 }
+
+
+/* Premium pictorial navigation artwork shared with the main Sonalit rail. */
+.cds-nav-art {
+  display: block;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+  overflow: visible;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.55));
+  transform-origin: 50% 55%;
+  transition: transform .24s cubic-bezier(.2,.8,.2,1), filter .24s ease;
+}
+.cds-nav-item:hover .cds-nav-art,
+.cds-nav-item:focus-visible .cds-nav-art {
+  transform: translateY(-1.5px) scale(1.12) rotate(1.5deg);
+  filter: drop-shadow(0 3px 6px rgba(255,145,50,.4));
+}
+.cds-nav-item.text-cds-orange .cds-nav-art {
+  filter: drop-shadow(0 2px 5px rgba(255,138,35,.48));
+  animation: cds-nav-art-breathe 3.2s ease-in-out infinite;
+}
+.cds-brand-art {
+  display: block;
+  width: 27px;
+  height: 27px;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.52));
+}
+@keyframes cds-nav-art-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-1px) scale(1.045); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cds-nav-art, .cds-brand-art { transition: none; animation: none !important; }
+}
