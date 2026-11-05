@@ -6,8 +6,8 @@ const rail = readFileSync(new URL('../layout/Rail.tsx', import.meta.url), 'utf8'
 const navSprite = readFileSync(new URL('../../../public/assets/nav/sonalit-nav-sprite.svg', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../styles/dashboard.css', import.meta.url), 'utf8');
 const launcher = readFileSync(new URL('../layout/AppLauncherOverlay.tsx', import.meta.url), 'utf8');
-const cdsRail = readFileSync(new URL('../../../../../container-delivery-system/src/components/layout/Rail.tsx', import.meta.url), 'utf8');
-const cdsCss = readFileSync(new URL('../../../../../container-delivery-system/src/index.css', import.meta.url), 'utf8');
+const cdsRail = readFileSync(new URL('../../../../container-delivery-system/src/components/layout/Rail.tsx', import.meta.url), 'utf8');
+const cdsCss = readFileSync(new URL('../../../../container-delivery-system/src/index.css', import.meta.url), 'utf8');
 const orbitCss = readFileSync(new URL('../../styles/orbit.css', import.meta.url), 'utf8');
 
 describe('premium operational iconography', () => {
