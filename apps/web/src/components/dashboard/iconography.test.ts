@@ -24,7 +24,7 @@ describe('premium operational iconography', () => {
     expect(cdsRail).toContain('NavArtwork');
     expect(cdsRail).toContain('sonalit-nav-sprite.svg#');
     expect(cdsRail).not.toContain('item.icon');
-    expect(cdsRail).not.toMatch(/title="CDS Home"\\s*>\\s*S/);
+    expect(cdsRail).not.toContain('>S</div>');
     expect(cdsCss).toContain('.cds-nav-art');
     expect(cdsCss).toContain('cds-nav-art-breathe');
     expect(css).toContain('.son-icon-tile');
