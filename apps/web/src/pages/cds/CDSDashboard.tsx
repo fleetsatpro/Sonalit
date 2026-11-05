@@ -603,7 +603,7 @@ function DashboardView() {
         <div className="cds-overview-date">
           <span className="cds-overview-date__label">OPERATIONAL SNAPSHOT</span>
           <time>{todayLabel}</time>
-          <span className="cds-overview-date__sub">Tenant-wide register · API sourced</span>
+          <span className="cds-overview-date__sub">Tenant-wide register · Refreshes every 30 seconds</span>
         </div>
       </header>
 
