@@ -570,7 +570,7 @@ function DashboardView() {
       label: 'DELAYED TRIPS',
       value: kv('delayed_trips'),
       detail: 'Movements requiring operator review',
-      image: 'https://images.unsplash.com/photo-1765571394962-c8d03a8d0ef5?auto=format&fit=crop&w=560&q=82',
+      image: 'https://images.unsplash.com/photo-1759273560543-7f0e66af2a4d?auto=format&fit=crop&w=560&q=82',
       tone: delayedCount > 0 ? 'red' : 'blue',
       onOpen: () => setActiveView('pulse'),
     },
