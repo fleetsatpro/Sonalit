@@ -590,6 +590,8 @@ function DashboardView() {
     { label: 'AWAITING DEPARTURE', count: trips.filter(trip => trip.phase === 'staged').length, tone: 'staged' },
   ];
 
+  const phaseTotal = phaseCounts.reduce((total, phase) => total + phase.count, 0);
+
   const activityTags: Record<string, { label: string; tone: string }> = {
     clamp: { label: 'CLAMP', tone: 'blue' },
     depart: { label: 'DEPART', tone: 'cyan' },
@@ -692,6 +694,28 @@ function DashboardView() {
                 <span className="cds-overview-phase__label">{phase.label}</span>
               </div>
             ))}
+          </div>
+
+          <div
+            className="cds-overview-phase-distribution"
+            role="img"
+            aria-label={phaseTotal > 0
+              ? 'Open-trip distribution: ' + phaseCounts.map(phase => phase.label.toLowerCase() + ' ' + phase.count).join(', ')
+              : 'No open trips to distribute by phase'}
+          >
+            <div className="cds-overview-phase-distribution__track" aria-hidden="true">
+              {phaseCounts.map(phase => (
+                <span
+                  key={phase.label}
+                  className={'cds-overview-phase-distribution__segment cds-overview-phase-distribution__segment--' + phase.tone}
+                  style={{ width: phaseTotal > 0 ? (phase.count / phaseTotal * 100) + '%' : '0%' }}
+                />
+              ))}
+            </div>
+            <div className="cds-overview-phase-distribution__caption">
+              <span>OPEN TRIP DISTRIBUTION</span>
+              <span>{phaseTotal.toLocaleString('en-GB')} {phaseTotal === 1 ? 'record' : 'records'} · current movement phase</span>
+            </div>
           </div>
 
           <div className="cds-overview-map">
