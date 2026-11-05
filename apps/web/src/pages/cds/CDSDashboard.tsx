@@ -1,17 +1,13 @@
 import { useNavigate } from '@tanstack/react-router';
 import {
   Search, Bell, ChevronLeft, PanelLeftClose, PanelLeft, Menu, X,
-  LayoutDashboard, MapPin, ClipboardList, Package, Lock,
-  Truck, Anchor, Activity, FileText, BarChart2, Settings,
-  RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle,
-  type LucideIcon,
 } from 'lucide-react';
 import { lazy, memo, Suspense, useState, useEffect, useRef } from 'react';
 import './CDSDesignSystem.css';
 
 import { useAuthStore } from '../../stores/auth.js';
 
-import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
+import { CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
 import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack, useTransitionTrip, useMarkDeparted } from './hooks.js';
 import { useCDSStore, type CDSView } from './store.js';
@@ -95,19 +91,19 @@ const CDSWorkspace = memo(function CDSWorkspace({ activeView }: { activeView: CD
   );
 });
 
-const VIEW_ICONS: Record<string, LucideIcon> = {
-  dashboard: LayoutDashboard,
-  live: MapPin,
-  bookings: ClipboardList,
-  port: Anchor,
-  pulse: Activity,
-  containers: Package,
-  locks: Lock,
-  transporters: Truck,
-  inbox: FileText,
-  analytics: BarChart2,
-  reports: FileText,
-  settings: Settings,
+const VIEW_CODES: Record<string, string> = {
+  dashboard: 'OV',
+  live: 'MV',
+  bookings: 'BK',
+  port: 'PT',
+  pulse: 'BH',
+  containers: 'CT',
+  locks: 'EL',
+  transporters: 'TP',
+  inbox: 'AC',
+  analytics: 'PI',
+  reports: 'RP',
+  settings: 'CF',
 };
 
 const NAV_SECTIONS: { label: string; ids: string[] }[] = [
@@ -134,12 +130,7 @@ function CDSNavigation({ expanded, activeView, mobile = false, onSelect, onBack,
   return (
     <nav className={`cds-navigation ${mobile ? 'cds-navigation--mobile' : 'cds-navigation--desktop'} ${expanded ? 'is-expanded' : 'is-collapsed'}`} aria-label="Container Management workspaces">
       <div className="cds-nav-brand">
-        <div className="cds-brand-mark" aria-hidden="true">
-          <svg width="28" height="28" viewBox="0 0 36 36" fill="none">
-            <path d="M6 11.5 18 5l12 6.5v13L18 31 6 24.5v-13Z" stroke="currentColor" strokeWidth="2.1" strokeLinejoin="round"/>
-            <path d="M6 11.5 18 18l12-6.5M18 18v13M11 8.8l14 7.6M11 27.1V14.4M25 27.1V14.4" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
-          </svg>
-        </div>
+        <div className="cds-brand-mark" aria-hidden="true"><span>CDS</span></div>
         {showLabels && <div className="cds-brand-copy"><strong>CONTAINER MANAGEMENT</strong><span>OPERATIONS SYSTEM <i>/</i> CDS</span></div>}
         {mobile && <button type="button" className="cds-nav-close" onClick={onClose} aria-label="Close navigation"><X size={21} strokeWidth={2.3}/></button>}
       </div>
@@ -153,11 +144,11 @@ function CDSNavigation({ expanded, activeView, mobile = false, onSelect, onBack,
             {section.ids.map(id => {
               const view = CDS_VIEWS.find(item => item.id === id);
               if (!view) return null;
-              const Icon = VIEW_ICONS[id];
+              const code = VIEW_CODES[id] ?? '—';
               const active = activeView === id;
               return (
                 <button key={id} type="button" onClick={() => onSelect(id as CDSView)} title={showLabels ? undefined : view.label} aria-label={view.label} aria-current={active ? 'page' : undefined} className={`cds-nav-item ${active ? 'is-active' : ''}`}>
-                  {Icon && <Icon className="cds-nav-icon" size={20} strokeWidth={2.25} aria-hidden="true"/>}
+                  <span className="cds-nav-code" aria-hidden="true">{code}</span>
                   {showLabels && <span className="cds-nav-label">{view.label}</span>}
                   {active && <span className="cds-nav-active-marker" aria-hidden="true"/>}
                 </button>
@@ -448,9 +439,72 @@ export default function CDSApp() {
   );
 }
 
+interface OverviewMetricCardProps {
+  index: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: 'blue' | 'cyan' | 'teal' | 'amber' | 'red' | 'violet';
+  onOpen: () => void;
+}
+
+function OverviewMetricCard({ index, label, value, detail, tone, onOpen }: OverviewMetricCardProps) {
+  const [displayValue, setDisplayValue] = useState(value === '—' ? value : '0');
+  const hasAnimated = useRef(false);
+
+  useEffect(() => {
+    if (hasAnimated.current) {
+      setDisplayValue(value);
+      return;
+    }
+    hasAnimated.current = true;
+    const target = Number(value);
+    if (!Number.isFinite(target)) {
+      setDisplayValue(value);
+      return;
+    }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setDisplayValue(value);
+      return;
+    }
+
+    const startedAt = performance.now();
+    let frame = 0;
+    const duration = Math.min(760, Math.max(280, target * 18 + 180));
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplayValue(Math.round(target * eased).toLocaleString('en-GB'));
+      if (progress < 1) frame = window.requestAnimationFrame(tick);
+      else setDisplayValue(value);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [value]);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={'cds-overview-metric cds-overview-metric--' + tone}
+      aria-label={label + ': ' + value + '. ' + detail + '. Open related workspace.'}
+      style={{ animationDelay: (Number(index) - 1) * 55 + 'ms' }}
+    >
+      <span className="cds-overview-metric__head">
+        <span className="cds-overview-metric__label">{label}</span>
+        <span className="cds-overview-metric__index">{index}</span>
+      </span>
+      <span className="cds-overview-metric__value" aria-live="off">{displayValue}</span>
+      <span className="cds-overview-metric__detail">{detail}</span>
+      <span className="cds-overview-metric__trace" aria-hidden="true" />
+    </button>
+  );
+}
+
 function DashboardView() {
-  const { data: kpis, isLoading } = useDashboardKPIs();
-  const { data: activity } = useActivity(20);
+  const kpiQuery = useDashboardKPIs();
+  const { data: kpis, isLoading, isError: kpiError, refetch: refetchKpis } = kpiQuery;
+  const { data: activity, isError: activityError } = useActivity(20);
   const { data: liveData, isLoading: liveLoading, isError: liveError } = useLiveTrips();
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
   const { setActiveView } = useCDSStore();
@@ -464,104 +518,250 @@ function DashboardView() {
 
   if (isLoading) return <LoadingState />;
 
-  const kv = (key: string) => String(kpis?.[key] ?? 0);
+  const kv = (key: string) => kpis ? String(kpis[key] ?? 0) : '—';
+  const delayedCount = Number(kpis?.['delayed_trips'] ?? 0);
+  const pendingUnclampCount = Number(kpis?.['pending_unclamp'] ?? 0);
+  const unacknowledgedCount = Number(kpis?.['unacknowledged_alerts'] ?? 0);
   const avgHrs = Number(kpis?.['avg_transit_hours'] ?? 0);
-  const avgH = Math.floor(avgHrs);
-  const avgM = Math.round((avgHrs - avgH) * 60);
-  const cards = [
-    { label: 'REGISTERED CONTAINERS', value: kv('active_containers'), delta: 'organisation inventory', trend: 'up' as const },
-    { label: 'IN TRANSIT', value: kv('in_transit'), delta: 'operational trips', trend: 'up' as const },
-    { label: 'ACTIVE LOCKS', value: kv('active_locks'), delta: 'assigned or installed', trend: 'up' as const },
-    { label: 'LOCKS REMOVED', value: kv('locks_removed'), delta: 'unclamped', trend: 'up' as const },
-    { label: 'PENDING UNCLAMP', value: kv('pending_unclamp'), delta: 'port clearance queue', trend: 'down' as const },
-    { label: 'DELIVERED TODAY', value: kv('delivered_today'), delta: 'recorded deliveries', trend: 'up' as const },
-    { label: 'DELAYED', value: kv('delayed_trips'), delta: 'needs attention', trend: 'down' as const },
-    { label: 'AVG TRANSIT TIME', value: avgHrs ? `${avgH}h ${avgM}m` : '—', delta: 'completed trips', trend: 'up' as const },
+  const avgTotalMinutes = Number.isFinite(avgHrs) && avgHrs > 0 ? Math.round(avgHrs * 60) : 0;
+  const avgH = Math.floor(avgTotalMinutes / 60);
+  const avgM = avgTotalMinutes % 60;
+  const avgTransit = avgTotalMinutes > 0 ? String(avgH) + 'h ' + String(avgM).padStart(2, '0') + 'm' : '—';
+  const todayLabel = new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+  }).format(new Date());
+
+  const metrics: OverviewMetricCardProps[] = [
+    {
+      index: '01',
+      label: 'REGISTERED CONTAINERS',
+      value: kv('active_containers'),
+      detail: 'Organisation-wide equipment register',
+      tone: 'blue',
+      onOpen: () => setActiveView('containers'),
+    },
+    {
+      index: '02',
+      label: 'ACTIVE MOVEMENTS',
+      value: kv('in_transit'),
+      detail: 'Dispatched, checkpoint, delayed or at port',
+      tone: 'cyan',
+      onOpen: () => setActiveView('live'),
+    },
+    {
+      index: '03',
+      label: 'ACTIVE E-LOCKS',
+      value: kv('active_locks'),
+      detail: 'Assigned or installed devices',
+      tone: 'teal',
+      onOpen: () => setActiveView('locks'),
+    },
+    {
+      index: '04',
+      label: 'DELAYED TRIPS',
+      value: kv('delayed_trips'),
+      detail: 'Movements requiring operator review',
+      tone: delayedCount > 0 ? 'red' : 'blue',
+      onOpen: () => setActiveView('pulse'),
+    },
   ];
 
-  const actIcons: Record<string, LucideIcon> = {
-    clamp: Lock, depart: Truck, checkpoint: MapPin, sync: RefreshCw,
-    arrival: CheckCircle2, unclamp: Unlock, ai: BrainCircuit, alert: AlertTriangle,
+  const secondaryMetrics = [
+    { label: 'PENDING UNCLAMP', value: kv('pending_unclamp'), detail: 'Arrived with lock attached', tone: pendingUnclampCount > 0 ? 'amber' : 'neutral', onOpen: () => setActiveView('port') },
+    { label: 'LOCKS REMOVED', value: kv('locks_removed'), detail: 'Recorded as unclamped', tone: 'violet', onOpen: () => setActiveView('locks') },
+    { label: 'DELIVERED TODAY', value: kv('delivered_today'), detail: 'By recorded delivery time', tone: 'teal', onOpen: () => setActiveView('live') },
+    { label: 'UNACKNOWLEDGED ALERTS', value: kv('unacknowledged_alerts'), detail: 'Alerts awaiting acknowledgement', tone: unacknowledgedCount > 0 ? 'red' : 'neutral', onOpen: () => setActiveView('inbox') },
+    { label: 'AVERAGE TRANSIT TIME', value: kpis ? avgTransit : '—', detail: 'Completed trips with both timestamps', tone: 'blue', onOpen: () => setActiveView('analytics') },
+  ];
+
+  const phaseCounts = [
+    { label: 'MOVING', count: trips.filter(trip => trip.phase === 'moving').length, tone: 'moving' },
+    { label: 'AT PORT', count: trips.filter(trip => trip.phase === 'at_port').length, tone: 'port' },
+    { label: 'AWAITING DEPARTURE', count: trips.filter(trip => trip.phase === 'staged').length, tone: 'staged' },
+  ];
+
+  const activityTags: Record<string, { label: string; tone: string }> = {
+    clamp: { label: 'CLAMP', tone: 'blue' },
+    depart: { label: 'DEPART', tone: 'cyan' },
+    checkpoint: { label: 'CHECKPOINT', tone: 'amber' },
+    sync: { label: 'SYNC', tone: 'neutral' },
+    arrival: { label: 'ARRIVAL', tone: 'teal' },
+    unclamp: { label: 'UNCLAMP', tone: 'violet' },
+    ai: { label: 'INTELLIGENCE', tone: 'violet' },
+    alert: { label: 'ALERT', tone: 'red' },
+    tamper: { label: 'SEAL ALERT', tone: 'red' },
   };
 
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
-        {cards.map(card => <KPICard key={card.label} label={card.label} value={card.value} delta={card.delta} trend={card.trend} />)}
-      </div>
+    <main className="cds-overview">
+      <header className="cds-overview-heading">
+        <div className="cds-overview-heading__copy">
+          <div className="cds-overview-eyebrow">CONTAINER MANAGEMENT <span>/</span> OPERATIONAL INTELLIGENCE</div>
+          <h1>Operations overview</h1>
+          <p>Container custody, active movements and equipment status across your organisation.</p>
+        </div>
+        <div className="cds-overview-date">
+          <span className="cds-overview-date__label">OPERATIONAL SNAPSHOT</span>
+          <time>{todayLabel}</time>
+          <span className="cds-overview-date__sub">Tenant-wide register · Refreshes every 30 seconds</span>
+        </div>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <section className="cds-panel lg:col-span-2 min-w-0 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
-          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <div className="font-bold text-sm text-text-0">Live movement</div>
-            <div className="text-[10px] font-mono text-text-2">
-              {liveLoading ? 'Checking position feed' : `${freshFixes} fresh · ${locatedTrips.length} with a recorded position · ${trips.length} open trips`}
+      {kpiError && !kpis && (
+        <div className="cds-overview-error" role="alert">
+          <div><strong>Operational metrics unavailable</strong><span>The dashboard could not retrieve its tenant-scoped KPI snapshot. No placeholder totals are being shown.</span></div>
+          <button type="button" onClick={() => void refetchKpis()}>Retry metrics</button>
+        </div>
+      )}
+
+      {(delayedCount > 0 || pendingUnclampCount > 0 || unacknowledgedCount > 0) && (
+        <section className="cds-overview-attention" aria-label="Operational attention required">
+          <div className="cds-overview-attention__copy">
+            <span className="cds-overview-attention__rule" aria-hidden="true" />
+            <div>
+              <strong>Operator attention</strong>
+              <span>
+                {[
+                  delayedCount > 0 ? delayedCount + ' delayed ' + (delayedCount === 1 ? 'movement' : 'movements') : '',
+                  pendingUnclampCount > 0 ? pendingUnclampCount + ' ' + (pendingUnclampCount === 1 ? 'arrival' : 'arrivals') + ' awaiting unclamp' : '',
+                  unacknowledgedCount > 0 ? unacknowledgedCount + ' unacknowledged ' + (unacknowledgedCount === 1 ? 'alert' : 'alerts') : '',
+                ].filter(Boolean).join(' · ')}
+              </span>
             </div>
           </div>
-          <div className="h-[300px] overflow-hidden rounded-xl bg-ink-2 relative">
+          <div className="cds-overview-attention__actions">
+            {delayedCount > 0 && <button type="button" onClick={() => setActiveView('pulse')}>Review delays</button>}
+            {pendingUnclampCount > 0 && <button type="button" onClick={() => setActiveView('port')}>Open port queue</button>}
+            {unacknowledgedCount > 0 && <button type="button" onClick={() => setActiveView('inbox')}>Review alerts</button>}
+          </div>
+        </section>
+      )}
+
+      <section className="cds-overview-primary" aria-label="Primary operational metrics">
+        {metrics.map(metric => <OverviewMetricCard key={metric.index} {...metric} />)}
+      </section>
+
+      <section className="cds-overview-secondary" aria-label="Operational flow indicators">
+        <div className="cds-overview-secondary__heading">
+          <span>FLOW &amp; EXCEPTIONS</span>
+          <span>LIVE REGISTER MEASURES</span>
+        </div>
+        <div className="cds-overview-secondary__grid">
+          {secondaryMetrics.map((metric, index) => (
+            <button
+              key={metric.label}
+              type="button"
+              className={'cds-overview-secondary__item cds-overview-secondary__item--' + metric.tone}
+              onClick={metric.onOpen}
+              style={{ animationDelay: (index * 45) + 'ms' }}
+              aria-label={metric.label + ': ' + metric.value + '. ' + metric.detail + '.'}
+            >
+              <span className="cds-overview-secondary__label">{metric.label}</span>
+              <span className="cds-overview-secondary__value">{metric.value}</span>
+              <span className="cds-overview-secondary__detail">{metric.detail}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="cds-overview-workspace">
+        <section className="cds-overview-panel cds-overview-movement" aria-label="Live movement picture">
+          <div className="cds-overview-panel__heading">
+            <div>
+              <span className="cds-overview-panel__eyebrow">MOVEMENT PICTURE</span>
+              <h2>Live movement</h2>
+              <p>{liveLoading ? 'Checking the authorised position feed' : trips.length + ' open trips · ' + locatedTrips.length + ' with a recorded position · ' + freshFixes + ' fresh GPS fixes'}</p>
+            </div>
+            <button type="button" className="cds-overview-panel__link" onClick={() => setActiveView('live')}>Open trip register <span aria-hidden="true">↗</span></button>
+          </div>
+
+          <div className="cds-overview-phase-strip" aria-label="Open movement phases">
+            {phaseCounts.map(phase => (
+              <div key={phase.label} className={'cds-overview-phase cds-overview-phase--' + phase.tone}>
+                <span className="cds-overview-phase__count">{phase.count.toLocaleString('en-GB')}</span>
+                <span className="cds-overview-phase__label">{phase.label}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="cds-overview-map">
             {liveError ? (
-              <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
-                <div>
-                  <div className="text-[12px] font-semibold text-text-0">Live movement feed unavailable</div>
-                  <div className="mt-1 text-[10px] text-text-2">No sample or inferred positions are shown.</div>
-                </div>
+              <div className="cds-overview-map-state">
+                <div className="cds-overview-map-state__title">Live movement feed unavailable</div>
+                <div className="cds-overview-map-state__detail">No sample, interpolated or inferred vehicle positions are shown.</div>
               </div>
             ) : locatedTrips.length > 0 ? (
               <CDSLiveFleetMap trips={trips} selectedId={selectedMapId} onSelect={setSelectedMapId} track={track} />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center px-6"
-                style={{ background: 'linear-gradient(rgba(120,190,255,0.055) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(120,190,255,0.055) 1px, transparent 1px) 0 0/40px 40px, #0b1627' }}>
-                <div className="max-w-sm text-center">
-                  <MapPin size={20} strokeWidth={1.6} className="mx-auto mb-2 text-white/30" aria-hidden="true" />
-                  <div className="text-[11px] leading-relaxed text-text-2">
-                    {liveLoading
-                      ? 'Loading authorised position evidence…'
-                      : trips.length === 0
-                        ? 'No open trips. Vehicles appear when a trip has a recorded position.'
-                        : `${trips.length} open trips have no available position fix. Operational status is not GPS proof.`}
-                  </div>
-                  <button type="button" onClick={() => setActiveView('live')} className="mt-3 rounded-md border border-white/10 px-3 py-2 text-[10px] font-semibold text-text-1 hover:bg-white/[.05]">
-                    Open Live Movement
-                  </button>
+              <div className="cds-overview-map-state">
+                <div className="cds-overview-reticle" aria-hidden="true"><span /></div>
+                <div className="cds-overview-map-state__title">
+                  {liveLoading ? 'Checking position evidence' : trips.length === 0 ? 'No open movements' : 'No current position fixes'}
                 </div>
+                <div className="cds-overview-map-state__detail">
+                  {liveLoading
+                    ? 'Authorised GPS evidence is being requested from the tracking service.'
+                    : trips.length === 0
+                      ? 'Vehicles will appear when open trips have recorded positions.'
+                      : trips.length + ' open ' + (trips.length === 1 ? 'trip has' : 'trips have') + ' no available position fix. Operational status is not GPS proof.'}
+                </div>
+                <button type="button" onClick={() => setActiveView('live')}>Inspect live movement</button>
               </div>
             )}
           </div>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[9px] text-white/35">
-            <span>Fresh fixes are distinguished from last-known positions.</span>
-            <button type="button" onClick={() => setActiveView('live')} className="font-semibold text-[#a8c9ee] hover:text-white">View trip register →</button>
+          <div className="cds-overview-map-foot">
+            <span>POSITION PROVENANCE</span>
+            <span>Fresh fixes are distinguished from last-known positions. Unlocated trips remain visible in the register.</span>
           </div>
         </section>
 
-        <section className="cds-panel min-w-0 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
-          <div className="font-bold text-sm text-text-0 mb-3">Recent activity</div>
-          <div className="space-y-0 max-h-[340px] overflow-y-auto">
+        <section className="cds-overview-panel cds-overview-activity" aria-label="Recent operational activity">
+          <div className="cds-overview-panel__heading cds-overview-activity__heading">
+            <div>
+              <span className="cds-overview-panel__eyebrow">AUDIT STREAM</span>
+              <h2>Recent activity</h2>
+              <p>Latest custody and movement events</p>
+            </div>
+            <button type="button" className="cds-overview-panel__link" onClick={() => setActiveView('inbox')}>View all <span aria-hidden="true">↗</span></button>
+          </div>
+          <div className="cds-overview-activity__list">
             {(activity ?? []).map((item, index) => {
-              const Icon = actIcons[String(item['icon'] ?? item['type'] ?? '')] ?? FileText;
+              const rawType = String(item['icon'] ?? item['type'] ?? 'event').toLowerCase();
+              const tag = activityTags[rawType] ?? (rawType.includes('tamper') ? activityTags['tamper'] : { label: 'EVENT', tone: 'neutral' });
+              const rawTime = item['created_at'] ? new Date(String(item['created_at'])) : null;
+              const eventTime = rawTime && Number.isFinite(rawTime.getTime())
+                ? rawTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                : 'TIME NOT RECORDED';
+              const description = String(item['description'] ?? item['text'] ?? 'Operational event');
+              const detail = item['meta'] ? String(item['meta']) : '';
               return (
-                <div key={String(item['id'] ?? index)} className="flex items-start gap-2.5 py-2 border-b border-white/[.05] last:border-0">
-                  <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-md border border-white/[.07] bg-white/[.025] text-text-2">
-                    <Icon size={14} strokeWidth={1.8} aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs text-text-0 truncate">{String(item['description'] ?? item['text'] ?? '—')}</div>
-                    <div className="text-[10px] text-text-2 font-mono mt-0.5 truncate">
-                      {[
-                        item['created_at'] ? new Date(String(item['created_at'])).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-                        item['meta'] ? String(item['meta']) : '',
-                      ].filter(Boolean).join(' · ')}
+                <article key={String(item['id'] ?? index)} className="cds-overview-event">
+                  <span className={'cds-overview-event__rail cds-overview-event__rail--' + tag.tone} aria-hidden="true" />
+                  <div className="cds-overview-event__body">
+                    <div className="cds-overview-event__topline">
+                      <span className={'cds-overview-event__tag cds-overview-event__tag--' + tag.tone}>{tag.label}</span>
+                      <time>{eventTime}</time>
                     </div>
+                    <p>{description}</p>
+                    {detail && <span className="cds-overview-event__detail">{detail}</span>}
                   </div>
-                </div>
+                </article>
               );
             })}
             {(activity ?? []).length === 0 && (
-              <div className="text-xs text-text-2 text-center py-8 font-mono">No recent activity</div>
+              <div className="cds-overview-activity__empty">
+                <strong>{activityError ? 'Activity feed unavailable' : 'No recent operational events'}</strong>
+                <span>{activityError ? 'The audit stream could not be loaded. Other dashboard measures remain independent.' : 'New custody, movement and lock events will appear here when recorded.'}</span>
+              </div>
             )}
+          </div>
+          <div className="cds-overview-activity__foot">
+            <span>20 MOST RECENT EVENTS</span>
+            <span>Source: tenant activity feed</span>
           </div>
         </section>
       </div>
-    </div>
+    </main>
   );
 }
 
