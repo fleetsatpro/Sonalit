@@ -54,25 +54,31 @@ export function Rail() {
     router.navigate({ to: path });
   };
 
-  const renderItem = (item: typeof navSections[0]['items'][0]) => (
-    <button
-      key={item.id}
-      className={\`$\{collapsed ? 'w-11 h-11 justify-center' : 'w-full h-9 px-3 gap-2.5 justify-start'} cds-nav-item group rounded-xl flex items-center cursor-pointer relative transition-all border-none bg-transparent $\{isActive(item.path) ? 'text-cds-orange bg-cds-orange/12' : 'text-text-2 hover:text-text-0 hover:bg-ink-3'}\`}
-      onClick={() => navigate(item.path)}
-      title={collapsed ? item.title : undefined}
-      aria-label={collapsed ? item.title : undefined}
-      aria-current={isActive(item.path) ? 'page' : undefined}
-    >
-      {isActive(item.path) && (
-        <span className="absolute -left-[13px] top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded bg-cds-orange shadow-glow" />
-      )}
-      <NavArtwork name={item.art} />
-      {!collapsed && <span className="text-[11.5px] font-medium truncate">{item.title}</span>}
-    </button>
-  );
+  const renderItem = (item: typeof navSections[0]['items'][0]) => {
+    const active = isActive(item.path);
+    const layoutClass = collapsed ? 'w-11 h-11 justify-center' : 'w-full h-9 px-3 gap-2.5 justify-start';
+    const stateClass = active ? 'text-cds-orange bg-cds-orange/12' : 'text-text-2 hover:text-text-0 hover:bg-ink-3';
+    return (
+      <button
+        key={item.id}
+        className={layoutClass + ' cds-nav-item group rounded-xl flex items-center cursor-pointer relative transition-all border-none bg-transparent ' + stateClass}
+        onClick={() => navigate(item.path)}
+        title={collapsed ? item.title : undefined}
+        aria-label={collapsed ? item.title : undefined}
+        aria-current={active ? 'page' : undefined}
+      >
+        {active && <span className="absolute -left-[13px] top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded bg-cds-orange shadow-glow" />}
+        <NavArtwork name={item.art} />
+        {!collapsed && <span className="text-[11.5px] font-medium truncate">{item.title}</span>}
+      </button>
+    );
+  };
+
+  const shellClass = collapsed ? 'w-[76px]' : 'w-[200px]';
+  const innerPadding = collapsed ? 'px-3.5' : 'px-2.5';
 
   return (
-    <div className={\`$\{collapsed ? 'w-[76px]' : 'w-[200px]'} bg-ink-1 border-r border-hair flex flex-col items-center py-4 gap-0.5 overflow-y-auto scrollbar-thin flex-none transition-all duration-200\`}>
+    <div className={shellClass + ' bg-ink-1 border-r border-hair flex flex-col items-center py-4 gap-0.5 overflow-y-auto scrollbar-thin flex-none transition-all duration-200'}>
       <div className="flex items-center gap-2.5 mb-4 px-3 w-full">
         <div
           className="w-[38px] h-[38px] rounded-[11px] bg-gradient-to-br from-cds-orange/90 to-[#ff9d3d] border border-white/10 shadow-glow flex items-center justify-center cursor-pointer flex-none overflow-hidden"
@@ -89,7 +95,7 @@ export function Rail() {
 
       <button
         onClick={toggleSidebar}
-        className={\`$\{collapsed ? 'w-11 h-7' : 'w-full h-7 px-3'} flex items-center justify-center rounded-lg text-text-2 hover:text-text-0 hover:bg-ink-3 border-none bg-transparent cursor-pointer transition-colors mb-2\`}
+        className={(collapsed ? 'w-11 h-7' : 'w-full h-7 px-3') + ' flex items-center justify-center rounded-lg text-text-2 hover:text-text-0 hover:bg-ink-3 border-none bg-transparent cursor-pointer transition-colors mb-2'}
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
@@ -98,16 +104,16 @@ export function Rail() {
         </svg>
       </button>
 
-      <div className={\`w-full $\{collapsed ? 'px-3.5' : 'px-2.5'} flex flex-col gap-0.5 flex-1\`}>
+      <div className={'w-full ' + innerPadding + ' flex flex-col gap-0.5 flex-1'}>
         {navSections.map((section, si) => (
           <React.Fragment key={si}>
-            {si > 0 && <div className={\`$\{collapsed ? 'mx-1' : ''} h-px bg-hair my-1.5\`} />}
+            {si > 0 && <div className={(collapsed ? 'mx-1' : '') + ' h-px bg-hair my-1.5'} />}
             {section.items.map(renderItem)}
           </React.Fragment>
         ))}
       </div>
 
-      <div className={\`w-full $\{collapsed ? 'px-3.5' : 'px-2.5'} flex flex-col gap-0.5 pt-2 border-t border-hair mt-2\`}>
+      <div className={'w-full ' + innerPadding + ' flex flex-col gap-0.5 pt-2 border-t border-hair mt-2'}>
         {bottomItems.map(renderItem)}
       </div>
     </div>
