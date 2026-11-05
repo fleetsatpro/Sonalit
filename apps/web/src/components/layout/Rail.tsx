@@ -5,6 +5,10 @@ import { useAuthStore } from '../../stores/auth.js';
 export interface NavItem { path:string; art:string; label:string }
 interface NavGroup { label:string; hue:string; items:NavItem[] }
 
+export function NavArtwork({ name, className }: { name:string; className?:string }) {
+  return <svg className={className ?? 'son-rail-art'} viewBox="0 0 64 64" aria-hidden="true" focusable="false"><use href={'/assets/nav/sonalit-nav-sprite.svg#'+name}/></svg>;
+}
+
 export const NAV_GROUPS:NavGroup[]=[
 {label:'Command',hue:'255,178,62',items:[{path:'/command',art:'nav-command',label:'Command Center'},{path:'/gps',art:'nav-gps',label:'GPS Live'},{path:'/gev',art:'nav-globe',label:"God's Eye View"},{path:'/weather-studio',art:'nav-weather',label:'Weather Studio'},{path:'/replay',art:'nav-analytics',label:'Ops Replay'},{path:'/panic-center',art:'nav-beacon',label:'Panic Center'},{path:'/messages',art:'nav-headset',label:'Messages'},{path:'/ai-decisions',art:'nav-command',label:'Sonalit Copilot'}]},
 {label:'Security',hue:'255,59,92',items:[{path:'/alerts',art:'nav-beacon',label:'Alerts & Incidents'},{path:'/signal-health',art:'nav-satellite',label:'Signal Integrity'},{path:'/guardian',art:'nav-shield',label:'Guardian AI'},{path:'/optical-recon',art:'nav-camera',label:'Optical Recon'},{path:'/geofences',art:'nav-map',label:'Geofences'},{path:'/corridor',art:'nav-camera',label:'XD Live Surveillance'},{path:'/rules',art:'nav-dossier',label:'Rules'},{path:'/route-analysis',art:'nav-map',label:'Route Safety'},{path:'/identity',art:'nav-shield',label:'Identity & Access'}]},
@@ -38,7 +42,7 @@ const Rail=React.memo(function Rail({onClose}:{onClose?:()=>void}){
           const active=currentPath===item.path||(item.path!=='/'&&item.path!=='/corridor'&&currentPath.startsWith(item.path));
           return <Link key={item.path+'-'+group.label} to={item.path} onClick={onClose} className={'d-rail-navlabel'+(active?' is-active':'')} style={{display:'flex',alignItems:'center',gap:10,padding:'6px 16px',textDecoration:'none',color:active?'rgb('+group.hue+')':'var(--d-t2)',background:active?'linear-gradient(90deg,rgba('+group.hue+',.10),transparent)':'transparent',borderLeft:active?'3px solid rgb('+group.hue+')':'3px solid transparent',boxShadow:active?'inset 4px 0 12px rgba('+group.hue+',.14)':'none',fontSize:14,transition:'all .15s'}}>
             <span className={'son-rail-icon'+(active?' is-active':'')} style={{color:active?'rgb('+group.hue+')':'rgba('+group.hue+',.7)'}} aria-hidden="true">
-              <svg className="son-rail-art" viewBox="0 0 64 64" focusable="false"><use href={'/assets/nav/sonalit-nav-sprite.svg#'+item.art}/></svg>
+              <NavArtwork name={item.art} />
             </span>
             {item.label}
           </Link>;
