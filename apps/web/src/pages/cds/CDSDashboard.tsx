@@ -608,7 +608,7 @@ function DashboardView() {
         <div className="cds-overview-heading__copy">
           <div className="cds-overview-eyebrow">CONTAINER MANAGEMENT <span>/</span> OPERATIONAL INTELLIGENCE</div>
           <h1>Operations overview</h1>
-          <p>Container custody, active movements and equipment status across your organisation.</p>
+          <p>A consolidated operating picture of container custody, movement phases and equipment readiness.</p>
         </div>
         <div className="cds-overview-date">
           <span className="cds-overview-date__label">OPERATIONAL SNAPSHOT</span>
@@ -653,8 +653,8 @@ function DashboardView() {
 
       <section className="cds-overview-secondary" aria-label="Operational flow indicators">
         <div className="cds-overview-secondary__heading">
-          <span>FLOW &amp; EXCEPTIONS</span>
-          <span>LIVE REGISTER MEASURES</span>
+          <span>OPERATIONS PULSE</span>
+          <span>QUEUE · COMPLETION · EFFICIENCY</span>
         </div>
         <div className="cds-overview-secondary__grid">
           {secondaryMetrics.map((metric, index) => (
