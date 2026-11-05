@@ -124,6 +124,11 @@ jobs:
         run: |
           npm ci --include=dev
           npm audit --audit-level=moderate
+          # Newer npm provenance attestations can outpace the npm CLI bundled
+          # with Node 22. Keep the lockfile install on the bundled npm, then
+          # use a pinned current CLI for attestation verification.
+          npm install --global npm@12.2.1 --ignore-scripts
+          test "$(npm --version)" = "12.2.1"
           npm audit signatures
           npm run build
 

@@ -6,25 +6,94 @@ import {
   RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { lazy, memo, Suspense, useState, useEffect, useRef } from 'react';
 import './CDSDesignSystem.css';
 
 import { useAuthStore } from '../../stores/auth.js';
 
-import { ContainersView, BookingsView, TransportersView } from './CDSDataPage.js';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
 import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack, useTransitionTrip, useMarkDeparted } from './hooks.js';
-import { LiveFleetMap, positioned } from './LiveFleetMap.js';
-import {
-  LocksView, PortView, PulseView, InboxView,
-  ReportsView, AnalyticsView, SettingsView,
-} from './pages.js';
 import { useCDSStore, type CDSView } from './store.js';
 import { useCDSRealtime } from './useCDSRealtime.js';
 import cdsApi from './api.js';
 
 import type { LiveTrip } from './LiveFleetMap.js';
+
+const CDSLiveFleetMap = lazy(() => import('./LiveFleetMap.js').then(module => ({ default: module.LiveFleetMap })));
+const ContainersView = lazy(() => import('./CDSDataPage.js').then(module => ({ default: module.ContainersView })));
+const BookingsView = lazy(() => import('./CDSDataPage.js').then(module => ({ default: module.BookingsView })));
+const TransportersView = lazy(() => import('./CDSDataPage.js').then(module => ({ default: module.TransportersView })));
+const LocksView = lazy(() => import('./pages.js').then(module => ({ default: module.LocksView })));
+const PortView = lazy(() => import('./pages.js').then(module => ({ default: module.PortView })));
+const PulseView = lazy(() => import('./pages.js').then(module => ({ default: module.PulseView })));
+const InboxView = lazy(() => import('./pages.js').then(module => ({ default: module.InboxView })));
+const ReportsView = lazy(() => import('./pages.js').then(module => ({ default: module.ReportsView })));
+const AnalyticsView = lazy(() => import('./pages.js').then(module => ({ default: module.AnalyticsView })));
+const SettingsView = lazy(() => import('./pages.js').then(module => ({ default: module.SettingsView })));
+
+function isPositionedTrip(trip: LiveTrip): boolean {
+  const valid = (value: number | string | null) =>
+    value != null && String(value).trim() !== '' && Number.isFinite(Number(value));
+  return valid(trip.lat) && valid(trip.lng);
+}
+
+function currentCDSClock(): string {
+  const time = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Africa/Nairobi',
+  }).format(new Date());
+  return `${time} EAT`;
+}
+
+function CDSClock() {
+  const [clock, setClock] = useState(currentCDSClock);
+  useEffect(() => {
+    let interval: number | undefined;
+    const delay = 60_000 - (Date.now() % 60_000);
+    const timeout = window.setTimeout(() => {
+      setClock(currentCDSClock());
+      interval = window.setInterval(() => setClock(currentCDSClock()), 60_000);
+    }, delay);
+    return () => {
+      window.clearTimeout(timeout);
+      if (interval !== undefined) window.clearInterval(interval);
+    };
+  }, []);
+  return <div className="cds-topbar-clock">{clock}</div>;
+}
+
+function CDSWorkspaceFallback() {
+  return (
+    <div className="cds-loading-state" role="status" aria-live="polite">
+      <div className="cds-loading-title">Opening workspace</div>
+      <div className="cds-loading-caption">Loading the selected operational tools</div>
+      <div className="mt-2 h-1 w-40 overflow-hidden rounded-full bg-white/10">
+        <div className="h-full w-1/2 rounded-full bg-[#83bdff] animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+const CDSWorkspace = memo(function CDSWorkspace({ activeView }: { activeView: CDSView }) {
+  return (
+    <div key={activeView} className="cds-view-stage">
+      <Suspense fallback={<CDSWorkspaceFallback />}>
+        {activeView === 'dashboard' && <DashboardView />}
+        {activeView === 'live' && <LiveView />}
+        {activeView === 'containers' && <ContainersView />}
+        {activeView === 'bookings' && <BookingsView />}
+        {activeView === 'locks' && <LocksView />}
+        {activeView === 'transporters' && <TransportersView />}
+        {activeView === 'port' && <PortView />}
+        {activeView === 'pulse' && <PulseView />}
+        {activeView === 'inbox' && <InboxView />}
+        {activeView === 'reports' && <ReportsView />}
+        {activeView === 'analytics' && <AnalyticsView />}
+        {activeView === 'settings' && <SettingsView />}
+      </Suspense>
+    </div>
+  );
+});
 
 const VIEW_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -108,7 +177,9 @@ function CDSNavigation({ expanded, activeView, mobile = false, onSelect, onBack,
 }
 
 export default function CDSApp() {
-  const { activeView, setActiveView, addToast } = useCDSStore();
+  const activeView = useCDSStore(state => state.activeView);
+  const setActiveView = useCDSStore(state => state.setActiveView);
+  const addToast = useCDSStore(state => state.addToast);
   const nav = useNavigate();
   // Mounted once for the whole control room rather than per view, so a
   // controller who leaves Trips open all shift sees the yard's clamps land
@@ -125,7 +196,6 @@ export default function CDSApp() {
       }
     },
   });
-  const [clock, setClock] = useState('');
   const [headerQuery, setHeaderQuery] = useState('');
   const [headerResults, setHeaderResults] = useState<Array<{ id: string; title: string; detail: string; target: CDSView; source: string }>>([]);
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
@@ -191,12 +261,6 @@ export default function CDSApp() {
     return () => desktop.removeEventListener('change', onBreakpointChange);
   }, []);
 
-  useEffect(() => {
-    const tick = () => setClock(`${new Date().toLocaleTimeString('en-GB', { hour12: false })  } EAT`);
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
   const runHeaderSearch = async () => {
     const query = headerQuery.trim();
     if (!query || headerSearching) return;
@@ -340,7 +404,7 @@ export default function CDSApp() {
             {mobileSearchOpen ? <X size={21} strokeWidth={2.3}/> : <Search size={21} strokeWidth={2.3}/>}
           </button>
 
-          <div className="cds-topbar-clock">{clock}</div>
+          <CDSClock />
           <button type="button" title="Open booking health and exceptions" aria-label="Open booking health and exceptions" onClick={() => setActiveView('pulse')} className="cds-alert-button">
             <Bell size={19} strokeWidth={2.2}/>
           </button>
@@ -374,20 +438,7 @@ export default function CDSApp() {
         )}
 
         <main id="cds-main-content" className="cds-view-scroll" style={{ overscrollBehavior: 'contain' }}>
-          <div key={activeView} className="cds-view-stage">
-            {activeView === 'dashboard' && <DashboardView />}
-            {activeView === 'live' && <LiveView />}
-            {activeView === 'containers' && <ContainersView />}
-            {activeView === 'bookings' && <BookingsView />}
-            {activeView === 'locks' && <LocksView />}
-            {activeView === 'transporters' && <TransportersView />}
-            {activeView === 'port' && <PortView />}
-            {activeView === 'pulse' && <PulseView />}
-            {activeView === 'inbox' && <InboxView />}
-            {activeView === 'reports' && <ReportsView />}
-            {activeView === 'analytics' && <AnalyticsView />}
-            {activeView === 'settings' && <SettingsView />}
-          </div>
+          <CDSWorkspace activeView={activeView} />
         </main>
       </div>
 
@@ -408,7 +459,7 @@ function DashboardView() {
   const { data: trackData } = useVehicleTrack(selectedTrip?.vehicle_id ?? null);
   const track = ((trackData?.data ?? []) as Record<string, unknown>[])
     .map(point => ({ lat: Number(point['lat']), lng: Number(point['lng']) }));
-  const locatedTrips = trips.filter(positioned);
+  const locatedTrips = trips.filter(isPositionedTrip);
   const freshFixes = trips.filter(trip => trip.position_is_live).length;
 
   if (isLoading) return <LoadingState />;
@@ -456,7 +507,7 @@ function DashboardView() {
                 </div>
               </div>
             ) : locatedTrips.length > 0 ? (
-              <LiveFleetMap trips={trips} selectedId={selectedMapId} onSelect={setSelectedMapId} track={track} />
+              <CDSLiveFleetMap trips={trips} selectedId={selectedMapId} onSelect={setSelectedMapId} track={track} />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center px-6"
                 style={{ background: 'linear-gradient(rgba(120,190,255,0.055) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(120,190,255,0.055) 1px, transparent 1px) 0 0/40px 40px, #0b1627' }}>
@@ -631,7 +682,7 @@ export function LiveView() {
   const onRoad = trips.filter(t => t.phase === 'moving');
   const atPort = trips.filter(t => t.phase === 'at_port');
   const staged = trips.filter(t => t.phase === 'staged');
-  const withFix = trips.filter(positioned);
+  const withFix = trips.filter(isPositionedTrip);
   // "Positioned" and "live" are different claims: a fix can be hours old. The
   // tracking engine decides which is which; this panel only reports it.
   const liveNow = trips.filter(t => t.position_is_live).length;
@@ -648,7 +699,7 @@ export function LiveView() {
         </div>
         <div className="h-[350px] rounded-xl overflow-hidden bg-ink-2 relative">
           {withFix.length > 0 ? (
-            <LiveFleetMap trips={trips} selectedId={selectedId} onSelect={setSelectedId} track={track} />
+            <CDSLiveFleetMap trips={trips} selectedId={selectedId} onSelect={setSelectedId} track={track} />
           ) : (
             // No map is drawn with nothing to draw on it, and the reason is
             // stated rather than implied: whether there are no trips at all or

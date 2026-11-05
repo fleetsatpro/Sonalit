@@ -808,3 +808,91 @@
     min-height: 44px;
   }
 }
+
+
+/* Container Register — stronger hierarchy, readable equipment labels and clear lifecycle bars. */
+.cds-container-register {
+  font-family: 'Archivo', 'Sora', system-ui, sans-serif;
+  color: #edf4ff;
+}
+.cds-container-register h1 {
+  color: #f5f8ff;
+  font-family: 'Space Grotesk', 'Archivo', sans-serif;
+  font-size: clamp(23px, 2vw, 27px);
+  font-weight: 700;
+  letter-spacing: -.04em;
+}
+.cds-container-register .cds-register-table thead th {
+  color: #a9bfd9;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .105em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.cds-container-register .cds-register-table tbody td {
+  color: #dce8f8;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.cds-container-register .cds-register-table tbody tr {
+  transition: background-color .16s ease;
+}
+.cds-register-type-name {
+  color: #f0f6ff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -.012em;
+  line-height: 1.35;
+}
+.cds-register-type-code {
+  color: #9fb4d0;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .055em;
+}
+.cds-movement-progress {
+  min-width: 148px;
+  max-width: 190px;
+}
+.cds-movement-progress__label {
+  color: #edf5ff;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.cds-movement-progress__step {
+  color: #a9c8ed;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cds-movement-progress__track {
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(144, 188, 237, .13);
+  border-radius: 999px;
+  background: rgba(132, 160, 194, .16);
+}
+.cds-movement-progress__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4d9ce9 0%, #54dce6 100%);
+  box-shadow: 0 0 12px rgba(84, 220, 230, .24);
+  transition: width .32s cubic-bezier(.2, .7, .2, 1);
+}
+.cds-movement-progress__detail {
+  color: #a6bad4;
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cds-container-register .cds-register-table tbody tr,
+  .cds-movement-progress__fill {
+    transition: none;
+  }
+}
