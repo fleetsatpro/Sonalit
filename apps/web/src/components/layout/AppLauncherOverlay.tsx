@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Home, X, LayoutDashboard, ShieldAlert, ShieldCheck, Truck, Briefcase, type LucideIcon } from 'lucide-react';
-import { NAV_GROUPS } from './Rail.js';
+import { NAV_GROUPS, NavArtwork } from './Rail.js';
 import '../../styles/orbit.css';
 
 // The Orbit folder launcher, reused as an on-demand overlay on deep pages so
@@ -64,12 +64,12 @@ export default function AppLauncherOverlay({ open, onClose }: Props) {
               <button className="o-x" onClick={() => setGroup(null)} aria-label="Back"><X size={18} /></button>
             </div>
             <div className="o-apps">
-              {gr.items.map((it) => { const Icon = it.icon; return (
+              {gr.items.map((it) => (
                 <button key={it.path} className="o-app" style={{ '--gc': `rgb(${gr.hue})` } as CSSProperties} onClick={() => go(it.path)}>
-                  <span className="o-aic"><Icon size={22} /></span>
+                  <span className="o-aic"><NavArtwork name={it.art} className="o-app-image" /></span>
                   <span className="o-atl">{it.label}</span>
                 </button>
-              ); })}
+              ))}
             </div>
           </div>
         );

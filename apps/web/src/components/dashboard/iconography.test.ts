@@ -3,7 +3,12 @@ import { readFileSync } from 'node:fs';
 const quickActions = readFileSync(new URL('./QuickActions.tsx', import.meta.url), 'utf8');
 const compactEmpty = readFileSync(new URL('./CompactEmpty.tsx', import.meta.url), 'utf8');
 const rail = readFileSync(new URL('../layout/Rail.tsx', import.meta.url), 'utf8');
+const navSprite = readFileSync(new URL('../../../public/assets/nav/sonalit-nav-sprite.svg', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../styles/dashboard.css', import.meta.url), 'utf8');
+const launcher = readFileSync(new URL('../layout/AppLauncherOverlay.tsx', import.meta.url), 'utf8');
+const cdsRail = readFileSync(new URL('../../../../container-delivery-system/src/components/layout/Rail.tsx', import.meta.url), 'utf8');
+const cdsCss = readFileSync(new URL('../../../../container-delivery-system/src/index.css', import.meta.url), 'utf8');
+const orbitCss = readFileSync(new URL('../../styles/orbit.css', import.meta.url), 'utf8');
 
 describe('premium operational iconography', () => {
   it('uses crisp vector icons instead of emoji in quick actions and empty states', () => {
@@ -12,10 +17,26 @@ describe('premium operational iconography', () => {
     expect(quickActions).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
     expect(compactEmpty).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
   });
-  it('renders beveled, touch-clear vector icons in the navigation rail', () => {
+  it('uses high-definition pictorial artwork and motion in both navigation rails', () => {
     expect(rail).toContain('son-rail-icon');
-    expect(css).toContain('.son-rail-icon svg');
-    expect(css).toContain('inset 0 1px 0 rgba(255,255,255,.14)');
+    expect(rail).toContain('export function NavArtwork');
+    expect(rail).toContain('son-rail-art');
+    expect(rail).toContain('name="nav-profile"');
+    expect(rail).not.toContain('initials');
+    expect(navSprite).toContain('id="nav-profile"');
+    expect(rail).toContain('sonalit-nav-sprite.svg#');
+    expect(rail).not.toContain('LucideIcon');
+    expect(css).toContain('.son-rail-icon .son-rail-art');
+    expect(css).toContain('son-nav-art-breathe');
+    expect(cdsRail).toContain('NavArtwork');
+    expect(cdsRail).toContain("const NAV_ART_SPRITE = '/assets/nav/sonalit-nav-sprite.svg'");
+    expect(cdsRail).not.toContain('item.icon');
+    expect(cdsRail).not.toContain('>S</div>');
+    expect(launcher).toContain('<NavArtwork name={it.art}');
+    expect(launcher).not.toContain('it.icon');
+    expect(cdsCss).toContain('.cds-nav-art');
+    expect(cdsCss).toContain('cds-nav-art-breathe');
+    expect(orbitCss).toContain('.o-app-image');
     expect(css).toContain('.son-icon-tile');
   });
 });

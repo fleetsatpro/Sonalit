@@ -290,3 +290,23 @@ button.o-rail-row:hover{background:rgba(255,255,255,.08)}
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
   .m-boot{display:none}.m-console{opacity:1}
 }
+
+
+/* High-definition imagery for the app-folder overlay, matching both rails. */
+.o-app-image {
+  display: block;
+  width: 28px;
+  height: 28px;
+  overflow: visible;
+  filter: drop-shadow(0 2px 4px rgba(26, 207, 224, .22));
+  transform-origin: 50% 55%;
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), filter .22s ease;
+}
+.o-app:hover .o-app-image,
+.o-app:focus-visible .o-app-image {
+  transform: translateY(-1.5px) scale(1.1) rotate(1.25deg);
+  filter: drop-shadow(0 3px 6px rgba(65, 222, 242, .42));
+}
+@media (prefers-reduced-motion: reduce) {
+  .o-app-image { transition: none; }
+}

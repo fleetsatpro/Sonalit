@@ -2,35 +2,41 @@ import React from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { useUIStore } from '@/stores/ui.js';
 
+const NAV_ART_SPRITE = '/assets/nav/sonalit-nav-sprite.svg';
+
+function NavArtwork({ name, className }: { name: string; className?: string }) {
+  return <svg className={className ?? 'cds-nav-art'} viewBox="0 0 64 64" aria-hidden="true" focusable="false"><use href={NAV_ART_SPRITE + '#' + name} /></svg>;
+}
+
 const navSections = [
   { items: [
-    { id: 'dashboard', path: '/cds', icon: <><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></>, title: 'Dashboard' },
-    { id: 'shipments', path: '/cds/shipments', icon: <><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/><path d="M12 11v4"/></>, title: 'Shipments' },
-    { id: 'live', path: '/cds/live', icon: <><circle cx="12" cy="12" r="3"/><path d="M4 12a8 8 0 0 1 8-8M20 12a8 8 0 0 1-8 8"/></>, title: 'Live Tracking' },
-    { id: 'containers', path: '/cds/containers', icon: <><rect x="3" y="7" width="18" height="12" rx="1.5"/><path d="M3 12h18M9 7v12M15 7v12"/></>, title: 'Containers' },
-    { id: 'locks', path: '/cds/locks', icon: <><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></>, title: 'E-Locks' },
-    { id: 'drivers', path: '/cds/drivers', icon: <><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></>, title: 'Drivers' },
-    { id: 'vehicles', path: '/cds/vehicles', icon: <><rect x="1" y="9" width="13" height="8" rx="1.5"/><path d="M14 12h4l3 3v2h-7z"/><circle cx="6" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></>, title: 'Vehicles' },
-    { id: 'transporters', path: '/cds/transporters', icon: <><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22V8"/><path d="m3 3 18 18"/></>, title: 'Transporters' },
-    { id: 'customers', path: '/cds/customers', icon: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>, title: 'Customers' },
-    { id: 'delivery', path: '/cds/delivery', icon: <><path d="M3 21h18M4 21V10l8-6 8 6v11M9 21v-6h6v6"/></>, title: 'Delivery Ops' },
+    { id: 'dashboard', path: '/cds', art: 'nav-command', title: 'Dashboard' },
+    { id: 'shipments', path: '/cds/shipments', art: 'nav-ship', title: 'Shipments' },
+    { id: 'live', path: '/cds/live', art: 'nav-gps', title: 'Live Tracking' },
+    { id: 'containers', path: '/cds/containers', art: 'nav-ship', title: 'Containers' },
+    { id: 'locks', path: '/cds/locks', art: 'nav-shield', title: 'E-Locks' },
+    { id: 'drivers', path: '/cds/drivers', art: 'nav-headset', title: 'Drivers' },
+    { id: 'vehicles', path: '/cds/vehicles', art: 'nav-sedan', title: 'Vehicles' },
+    { id: 'transporters', path: '/cds/transporters', art: 'nav-ship', title: 'Transporters' },
+    { id: 'customers', path: '/cds/customers', art: 'nav-headset', title: 'Customers' },
+    { id: 'delivery', path: '/cds/delivery', art: 'nav-suv', title: 'Delivery Ops' },
   ]},
   { items: [
-    { id: 'geofences', path: '/cds/geofences', icon: <><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/><path d="M12 22V15.5"/><path d="M22 8.5l-10 7-10-7"/></>, title: 'Geofences' },
-    { id: 'inbox', path: '/cds/inbox', icon: <><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.6-.8L3 21l1.9-5.1a8.4 8.4 0 1 1 16.1-4.4z"/><circle cx="8.5" cy="12" r=".6" fill="currentColor"/><circle cx="12" cy="12" r=".6" fill="currentColor"/><circle cx="15.5" cy="12" r=".6" fill="currentColor"/></>, title: 'AI Inbox' },
-    { id: 'incidents', path: '/cds/incidents', icon: <><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></>, title: 'Incidents' },
-    { id: 'alerts', path: '/cds/alerts', icon: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></>, title: 'Alerts' },
+    { id: 'geofences', path: '/cds/geofences', art: 'nav-map', title: 'Geofences' },
+    { id: 'inbox', path: '/cds/inbox', art: 'nav-headset', title: 'AI Inbox' },
+    { id: 'incidents', path: '/cds/incidents', art: 'nav-beacon', title: 'Incidents' },
+    { id: 'alerts', path: '/cds/alerts', art: 'nav-beacon', title: 'Alerts' },
   ]},
   { items: [
-    { id: 'reports', path: '/cds/reports', icon: <><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M9 13h6M9 17h6"/></>, title: 'Reports' },
-    { id: 'analytics', path: '/cds/analytics', icon: <><path d="M4 20V10M12 20V4M20 20v-7"/></>, title: 'Analytics' },
-    { id: 'documents', path: '/cds/documents', icon: <><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><path d="M14 2v6h6"/><path d="m3 15 2 2 4-4"/></>, title: 'Documents' },
+    { id: 'reports', path: '/cds/reports', art: 'nav-dossier', title: 'Reports' },
+    { id: 'analytics', path: '/cds/analytics', art: 'nav-analytics', title: 'Analytics' },
+    { id: 'documents', path: '/cds/documents', art: 'nav-dossier', title: 'Documents' },
   ]},
 ];
 
 const bottomItems = [
-  { id: 'audit', path: '/cds/audit', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></>, title: 'Audit Logs' },
-  { id: 'settings', path: '/cds/settings', icon: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>, title: 'Settings' },
+  { id: 'audit', path: '/cds/audit', art: 'nav-dossier', title: 'Audit Logs' },
+  { id: 'settings', path: '/cds/settings', art: 'nav-command', title: 'Settings' },
 ];
 
 export function Rail() {
@@ -48,60 +54,66 @@ export function Rail() {
     router.navigate({ to: path });
   };
 
-  const renderItem = (item: typeof navSections[0]['items'][0]) => (
-    <button
-      key={item.id}
-      className={`${collapsed ? 'w-11 h-11 justify-center' : 'w-full h-9 px-3 gap-2.5 justify-start'} rounded-xl flex items-center cursor-pointer relative transition-all border-none bg-transparent ${isActive(item.path) ? 'text-cds-orange bg-cds-orange/12' : 'text-text-2 hover:text-text-0 hover:bg-ink-3'}`}
-      onClick={() => navigate(item.path)}
-      title={collapsed ? item.title : undefined}
-    >
-      {isActive(item.path) && (
-        <span className="absolute -left-[13px] top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded bg-cds-orange shadow-glow" />
-      )}
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none">
-        {item.icon}
-      </svg>
-      {!collapsed && (
-        <span className="text-[11.5px] font-medium truncate">{item.title}</span>
-      )}
-    </button>
-  );
+  const renderItem = (item: typeof navSections[0]['items'][0]) => {
+    const active = isActive(item.path);
+    const layoutClass = collapsed ? 'w-11 h-11 justify-center' : 'w-full h-9 px-3 gap-2.5 justify-start';
+    const stateClass = active ? 'text-cds-orange bg-cds-orange/12' : 'text-text-2 hover:text-text-0 hover:bg-ink-3';
+    return (
+      <button
+        key={item.id}
+        className={layoutClass + ' cds-nav-item group rounded-xl flex items-center cursor-pointer relative transition-all border-none bg-transparent ' + stateClass}
+        onClick={() => navigate(item.path)}
+        title={collapsed ? item.title : undefined}
+        aria-label={collapsed ? item.title : undefined}
+        aria-current={active ? 'page' : undefined}
+      >
+        {active && <span className="absolute -left-[13px] top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded bg-cds-orange shadow-glow" />}
+        <NavArtwork name={item.art} />
+        {!collapsed && <span className="text-[11.5px] font-medium truncate">{item.title}</span>}
+      </button>
+    );
+  };
+
+  const shellClass = collapsed ? 'w-[76px]' : 'w-[200px]';
+  const innerPadding = collapsed ? 'px-3.5' : 'px-2.5';
 
   return (
-    <div className={`${collapsed ? 'w-[76px]' : 'w-[200px]'} bg-ink-1 border-r border-hair flex flex-col items-center py-4 gap-0.5 overflow-y-auto scrollbar-thin flex-none transition-all duration-200`}>
+    <div className={shellClass + ' bg-ink-1 border-r border-hair flex flex-col items-center py-4 gap-0.5 overflow-y-auto scrollbar-thin flex-none transition-all duration-200'}>
       <div className="flex items-center gap-2.5 mb-4 px-3 w-full">
         <div
-          className="w-[34px] h-[34px] rounded-[10px] bg-gradient-to-br from-cds-orange to-[#ff9d3d] flex items-center justify-center font-display font-extrabold text-[14px] text-[#0a0a0a] shadow-glow cursor-pointer flex-none"
+          className="w-[38px] h-[38px] rounded-[11px] bg-gradient-to-br from-cds-orange/90 to-[#ff9d3d] border border-white/10 shadow-glow flex items-center justify-center cursor-pointer flex-none overflow-hidden"
           onClick={() => navigate('/cds')}
           title="CDS Home"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') navigate('/cds'); }}
         >
-          S
+          <NavArtwork name="nav-command" className="cds-brand-art" />
         </div>
-        {!collapsed && (
-          <span className="font-display font-bold text-[13px] text-text-0 truncate">Sonalit CDS</span>
-        )}
+        {!collapsed && <span className="font-display font-bold text-[13px] text-text-0 truncate">Sonalit CDS</span>}
       </div>
 
       <button
         onClick={toggleSidebar}
-        className={`${collapsed ? 'w-11 h-7' : 'w-full h-7 px-3'} flex items-center justify-center rounded-lg text-text-2 hover:text-text-0 hover:bg-ink-3 border-none bg-transparent cursor-pointer transition-colors mb-2`}
+        className={(collapsed ? 'w-11 h-7' : 'w-full h-7 px-3') + ' flex items-center justify-center rounded-lg text-text-2 hover:text-text-0 hover:bg-ink-3 border-none bg-transparent cursor-pointer transition-colors mb-2'}
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
           {collapsed ? <><path d="M9 18l6-6-6-6" /></> : <><path d="M15 18l-6-6 6-6" /></>}
         </svg>
       </button>
 
-      <div className={`w-full ${collapsed ? 'px-3.5' : 'px-2.5'} flex flex-col gap-0.5 flex-1`}>
+      <div className={'w-full ' + innerPadding + ' flex flex-col gap-0.5 flex-1'}>
         {navSections.map((section, si) => (
           <React.Fragment key={si}>
-            {si > 0 && <div className={`${collapsed ? 'mx-1' : ''} h-px bg-hair my-1.5`} />}
+            {si > 0 && <div className={(collapsed ? 'mx-1' : '') + ' h-px bg-hair my-1.5'} />}
             {section.items.map(renderItem)}
           </React.Fragment>
         ))}
       </div>
 
-      <div className={`w-full ${collapsed ? 'px-3.5' : 'px-2.5'} flex flex-col gap-0.5 pt-2 border-t border-hair mt-2`}>
+      <div className={'w-full ' + innerPadding + ' flex flex-col gap-0.5 pt-2 border-t border-hair mt-2'}>
         {bottomItems.map(renderItem)}
       </div>
     </div>
