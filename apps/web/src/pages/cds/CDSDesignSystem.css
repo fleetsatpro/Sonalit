@@ -1708,3 +1708,45 @@
   }
   .cds-overview-metric:hover { transform: none; }
 }
+
+/* CDS navigation uses compact textual codes, not pictogram metaphors. */
+.cds-brand-mark span {
+  color: #d9f4ff;
+  font-family: 'Space Grotesk', 'Archivo', sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .09em;
+}
+.cds-nav-code {
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(131, 189, 255, .19);
+  border-radius: 7px;
+  color: #a8c9ef;
+  background: rgba(64, 104, 154, .12);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .035em;
+  line-height: 1;
+  transition: color .18s ease, border-color .18s ease, background .18s ease;
+}
+.cds-nav-item.is-active .cds-nav-code {
+  color: #bff5fb;
+  border-color: rgba(84, 228, 242, .42);
+  background: rgba(84, 228, 242, .12);
+}
+.cds-nav-item:hover .cds-nav-code {
+  color: #e6f5ff;
+  border-color: rgba(131, 189, 255, .42);
+}
+.cds-navigation--desktop.is-collapsed .cds-nav-item,
+.cds-navigation--desktop .cds-nav-item[aria-current="page"] {
+  gap: 9px;
+}
+@media (min-width: 768px) and (max-width: 1199px) {
+  .cds-navigation--desktop .cds-nav-code { flex-basis: 32px; width: 32px; height: 30px; }
+}
